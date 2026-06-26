@@ -156,7 +156,7 @@ namespace pitTeam
         public string[] jerkKillMessages { get; set; }
     }
 
-    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "0.8.5")]
+    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "0.8.6")]
     [BepInDependency("xyz.drakia.bigbrain")]
     public class pitFireTeam : BaseUnityPlugin
     {

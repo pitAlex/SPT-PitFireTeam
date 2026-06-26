@@ -1495,22 +1495,11 @@ namespace pitTeam.Patches
                 FriendlyTeammateBodyResponse<FriendlyTeammateBuyKitResponse> response =
                     DeserializeBodySuccess<FriendlyTeammateBuyKitResponse>(responseJson);
 
-                try
-                {
-                    OtherPlayerProfileScreenPatch.ApplyServerSavedPlayerStash(
-                        _session?.Profile,
-                        _backendInventoryController,
-                        _session?.RagFair,
-                        response?.data?.playerStashItems);
-                }
-                catch (Exception ex)
-                {
-                    pitFireTeam.Log.LogError("[UI] Failed to refresh live player stash after teammate kit purchase.");
-                    pitFireTeam.Log.LogError(ex);
-                    NotificationManagerClass.DisplayWarningNotification(
-                        GetSocialUiText("LoadoutEditorRealCommitRestartRequired"),
-                        ENotificationDurationType.Default);
-                }
+                OtherPlayerProfileScreenPatch.ApplyServerSavedPlayerStash(
+                    _session?.Profile,
+                    _backendInventoryController,
+                    _session?.RagFair,
+                    response?.data?.playerStashItems);
 
                 pitFireTeam.Log.LogInfo($"[UI] Teammate equipment build {GetQuoteActionButtonText(quote)} completed: build='{quote.BuildName}', price={quote.FinalPrice}, useItemsInStash={quote.ExcludeExistingItems}.");
 

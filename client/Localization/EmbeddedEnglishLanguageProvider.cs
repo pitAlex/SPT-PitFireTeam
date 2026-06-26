@@ -232,7 +232,6 @@ namespace pitTeam.Localization
                     ["ProfileRecoveredTitle"] = "Profile recovered",
                     ["ProfileRecoveredBody"] = "The profile of this teammate has been recovered from a bad state. Some items from his inventory may have been deleted in the process.",
                     ["LoadoutEditorSaveFailed"] = "Failed to save teammate inventory.",
-                    ["LoadoutEditorRealCommitRestartRequired"] = "Loadout saved. Restart the game to refresh the player stash view.",
                     ["PlayerStash"] = "Player Stash",
                     ["PlayerStashPlaceholder"] = "Failed to load cloned stash view.\n{0}",
                     ["BotInventory"] = "Follower Inventory",

@@ -316,6 +316,7 @@ namespace pitTeam.Patches
 
             LoadoutEditorProfile = editorProfile;
             LoadoutEditorInventoryController = editorInventoryController;
+            RebuildLoadoutEditorItemIndexes();
 
             itemUiContext.Configure(
                 editorInventoryController,
@@ -809,6 +810,7 @@ namespace pitTeam.Patches
             LoadoutEditorInitialEquipmentItems = null;
             LoadoutEditorInitialStashItems = null;
             ClearLoadoutEditorOriginalPinLocks();
+            ClearLoadoutEditorItemIndexes();
 
             RestoreProfileItemUiContext();
         }
@@ -1164,21 +1166,11 @@ namespace pitTeam.Patches
                 FriendlyTeammateBodyResponse<FriendlyTeammateDefaultEquipmentResponse> response =
                     DeserializeBodySuccess<FriendlyTeammateDefaultEquipmentResponse>(responseJson);
 
-                bool liveStashRefreshApplied = false;
                 if (realItemCommit)
                 {
-                    try
-                    {
-                        // The server save is authoritative. This only reconciles the currently open client
-                        // profile with the server-saved stash snapshot so a restart is not needed.
-                        ApplyServerSavedPlayerStash(response?.data?.playerStashItems);
-                        liveStashRefreshApplied = true;
-                    }
-                    catch (Exception ex)
-                    {
-                        pitFireTeam.Log.LogError("[UI] Failed to refresh live player stash after real loadout commit.");
-                        pitFireTeam.Log.LogError(ex);
-                    }
+                    // The server save is authoritative. This reconciles the currently open client
+                    // profile with the server-saved stash snapshot so a restart is not needed.
+                    ApplyServerSavedPlayerStash(response?.data?.playerStashItems);
                 }
 
                 ActiveTeammateLoadoutId = DefaultLoadoutId;
@@ -1188,12 +1180,6 @@ namespace pitTeam.Patches
                 RefreshCurrentTeammateLoadoutSelector(profile);
                 MarkSquadRosterDirty(profile.AccountId);
 
-                if (realItemCommit && !liveStashRefreshApplied)
-                {
-                    NotificationManagerClass.DisplayWarningNotification(
-                        GetSocialUiText("LoadoutEditorRealCommitRestartRequired"),
-                        ENotificationDurationType.Default);
-                }
             }
             finally
             {
@@ -1250,14 +1236,9 @@ namespace pitTeam.Patches
                 throw new InvalidOperationException("Server did not return a saved player stash for live refresh.");
             }
 
-            if (activeProfile?.Inventory?.Stash == null || activeInventoryController == null)
+            if (activeProfile?.Inventory?.Stash == null)
             {
                 throw new InvalidOperationException("Active player profile was unavailable for live stash refresh.");
-            }
-
-            if (!(activeInventoryController is GClass3388 profileInventoryController))
-            {
-                throw new InvalidOperationException("Active inventory controller does not support backend profile updates.");
             }
 
             FlatItemsDataClass[] liveStashItems = Singleton<ItemFactoryClass>.Instance.TreeToFlatItems(
@@ -1267,24 +1248,67 @@ namespace pitTeam.Patches
                 throw new InvalidOperationException("Active player stash was unavailable for live refresh.");
             }
 
-            GClass2337 delta = BuildPlayerStashRefreshDelta(liveStashItems, savedStashItems);
-            int newCount = delta.@new?.Length ?? 0;
-            int changeCount = delta.change?.Length ?? 0;
-            int delCount = delta.del?.Length ?? 0;
-            if (newCount == 0 && changeCount == 0 && delCount == 0)
+            if (activeInventoryController is GClass3388 profileInventoryController)
             {
-                pitFireTeam.Log.LogInfo("[UI] Live player stash already matched server-saved loadout commit.");
-                return;
+                try
+                {
+                    GClass2337 delta = BuildPlayerStashRefreshDelta(liveStashItems, savedStashItems);
+                    int newCount = delta.@new?.Length ?? 0;
+                    int changeCount = delta.change?.Length ?? 0;
+                    int delCount = delta.del?.Length ?? 0;
+                    if (newCount == 0 && changeCount == 0 && delCount == 0)
+                    {
+                        pitFireTeam.Log.LogInfo("[UI] Live player stash already matched server-saved loadout commit.");
+                        return;
+                    }
+
+                    var updater = new GClass2331(
+                        activeProfile,
+                        profileInventoryController,
+                        null,
+                        ragFair);
+                    updater.UpdateProfile(new ProfileChangesPocoClass { Stash = delta });
+
+                    pitFireTeam.Log.LogInfo($"[UI] Applied live player stash refresh for real loadout commit: new={newCount}, change={changeCount}, del={delCount}.");
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    pitFireTeam.Log.LogWarning($"[UI] Backend-style live stash refresh failed; applying server-saved stash snapshot directly. {ex.Message}");
+                }
+            }
+            else
+            {
+                pitFireTeam.Log.LogWarning("[UI] Backend inventory controller was unavailable; applying server-saved stash snapshot directly.");
             }
 
-            var updater = new GClass2331(
-                activeProfile,
-                profileInventoryController,
-                null,
-                ragFair);
-            updater.UpdateProfile(new ProfileChangesPocoClass { Stash = delta });
+            ApplyServerSavedPlayerStashSnapshot(activeProfile, activeInventoryController, savedStashItems);
+        }
 
-            pitFireTeam.Log.LogInfo($"[UI] Applied live player stash refresh for real loadout commit: new={newCount}, change={changeCount}, del={delCount}.");
+        private static void ApplyServerSavedPlayerStashSnapshot(
+            Profile activeProfile,
+            InventoryController activeInventoryController,
+            FlatItemsDataClass[] savedStashItems)
+        {
+            ItemFactoryClass.GStruct181 tree = Singleton<ItemFactoryClass>.Instance.FlatItemsToTree(savedStashItems, false, null);
+            string stashRootId = savedStashItems[0]._id.ToString();
+            if (!tree.Items.TryGetValue(stashRootId, out Item savedRoot) || !(savedRoot is StashItemClass savedStash))
+            {
+                throw new InvalidOperationException("Server-saved player stash root was unavailable for live refresh.");
+            }
+
+            activeProfile.Inventory.Stash = savedStash;
+            if (activeInventoryController?.Inventory != null)
+            {
+                activeInventoryController.Inventory.Stash = savedStash;
+            }
+
+            foreach (Item item in EnumerateLoadoutEditorItemTree(savedStash))
+            {
+                item?.RaiseRefreshEvent(true, true);
+            }
+
+            pitFireTeam.Log.LogInfo("[UI] Applied live player stash refresh from server-saved snapshot.");
         }
 
         private static void RememberActiveBackendInventoryController(ISession session, InventoryController inventoryController)
@@ -1581,6 +1605,7 @@ namespace pitTeam.Patches
 
                 ApplyLoadoutEditorOriginalPinLocks(savedStash);
                 LoadoutEditorProfile.Inventory.Stash = savedStash;
+                RebuildLoadoutEditorItemIndexes();
                 CaptureLoadoutEditorInitialState(LoadoutEditorProfile, realItemCommit: true);
             }
             catch (Exception ex)

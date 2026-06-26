@@ -231,7 +231,7 @@ Important behavior:
 - bot-to-player transfers become `new` entries into the live stash
 - when a returned item is placed inside an existing nested container, the client replaces the containing top-level container tree: delete the live container tree, then add the server-saved container tree
 - this nested-container replacement is required because EFT's backend updater can add a top-level item tree into an existing container, but cannot target an existing nested live container for a standalone `new` item
-- if live refresh fails, the server save remains valid and the client falls back to the restart-required warning
+- if the stock backend-style delta refresh cannot represent the change, the client rebuilds the live stash from the server-saved snapshot instead of asking for a restart
 
 ## Spawn Preparation
 
