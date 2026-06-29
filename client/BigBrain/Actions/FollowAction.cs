@@ -29,9 +29,12 @@ namespace pitTeam.BigBrain.Actions
         private const float SettleDestinationClaimTtlSeconds = 3f;
         private const float SettleDestinationClaimReleaseTolerance = 0.5f;
         private const float FollowPathRecoveryCooldown = 0.5f;
-        // Patrol camp sector size. This is a grid-cell boundary check used to decide
-        // whether the boss/player has left the remembered On Your Own sector; it is
-        // not a direct "player must move this many meters" distance threshold.
+        private const float PatrolLeaderIdleRequiredSeconds = 5f;
+        private const float PatrolLeaderMoveInputThresholdSqr = 0.01f;
+        private const float PatrolLeaderMoveSampleInterval = 0.35f;
+        private const float PatrolLeaderMoveSampleDeltaThresholdSqr = 0.09f;
+        // Patrol camp anchor radius. Active On Your Own patrol only reanchors when
+        // the boss/player moves this far from the remembered patrol anchor.
         private const float PatrolCampRadius = 20f;
 
         private Player? bossPlayer;
@@ -54,6 +57,11 @@ namespace pitTeam.BigBrain.Actions
         private bool isPatrolCampInitialized;
         private Vector3 activePatrolCampCenter;
         private bool returningToLeaderSector;
+        private bool patrolRuntimeArmed;
+        private bool hasLastPatrolLeaderPosition;
+        private Vector3 lastPatrolLeaderPosition;
+        private float patrolLeaderStoppedSince;
+        private float nextPatrolLeaderMoveSampleAt;
 
         private CustomNavigationPoint? lastCoverPoint;
         private bool noCoverFound;
@@ -97,6 +105,11 @@ namespace pitTeam.BigBrain.Actions
             nextPatrolUpdateAt = 0f;
             activePatrolCampCenter = Vector3.zero;
             returningToLeaderSector = false;
+            patrolRuntimeArmed = false;
+            hasLastPatrolLeaderPosition = false;
+            lastPatrolLeaderPosition = Vector3.zero;
+            patrolLeaderStoppedSince = 0f;
+            nextPatrolLeaderMoveSampleAt = 0f;
 
             poseCorrected = false;
 
@@ -120,13 +133,13 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            SetPatrolEnabled(followerData?.CanPatrol == true);
-
             if (!TryGetBossAndPlayer())
             {
                 BotOwner.StopMove();
                 return;
             }
+
+            SetPatrolEnabled(ShouldRunPatrolMode(followerData?.CanPatrol == true));
 
             try
             {
@@ -670,9 +683,6 @@ namespace pitTeam.BigBrain.Actions
             Vector3 leaderPosition = bossPlayer.Transform.position;
             Vector3 botPosition = BotOwner.GetPlayer.Transform.position;
             float followDistance = GetEffectiveFollowDistance();
-            Vector3 leaderSector = GetPatrolCampCenter(leaderPosition);
-            Vector3 botSector = GetPatrolCampCenter(botPosition);
-
             if (followerData == null)
             {
                 Follow();
@@ -681,14 +691,14 @@ namespace pitTeam.BigBrain.Actions
 
             if (!followerData.TryGetPatrolLeaderSectorAnchor(out Vector3 leaderAnchor))
             {
-                followerData.SetPatrolLeaderSectorAnchor(leaderSector);
-                activePatrolCampCenter = botSector;
+                followerData.SetPatrolLeaderSectorAnchor(leaderPosition);
+                activePatrolCampCenter = botPosition;
                 isPatrolCampInitialized = true;
             }
-            else if (leaderAnchor != leaderSector)
+            else if (HasLeaderLeftPatrolAnchor(leaderPosition, leaderAnchor))
             {
-                followerData.SetPatrolLeaderSectorAnchor(leaderSector);
-                activePatrolCampCenter = leaderSector;
+                followerData.SetPatrolLeaderSectorAnchor(leaderPosition);
+                activePatrolCampCenter = leaderPosition;
                 returningToLeaderSector = true;
                 isPatrolCampInitialized = false;
                 movingToPatrolPoint = false;
@@ -706,14 +716,14 @@ namespace pitTeam.BigBrain.Actions
 
                 returningToLeaderSector = false;
                 isPatrolCampInitialized = true;
-                activePatrolCampCenter = leaderSector;
+                activePatrolCampCenter = leaderPosition;
                 movingToPatrolPoint = false;
                 holdPositionUntil = 0f;
             }
 
             if (!isPatrolCampInitialized)
             {
-                activePatrolCampCenter = botSector;
+                activePatrolCampCenter = botPosition;
                 isPatrolCampInitialized = true;
             }
 
@@ -809,15 +819,110 @@ namespace pitTeam.BigBrain.Actions
             }
         }
 
-        private static Vector3 GetPatrolCampCenter(Vector3 position)
+        private bool ShouldRunPatrolMode(bool canPatrol)
         {
-            // Match the old camp-sector behavior: snap world position into a fixed grid
-            // cell, then compare cells. Crossing a cell edge can happen before/after
-            // 20m of travel depending on where the player started inside the cell.
-            return new Vector3(
-                Mathf.Floor(position.x / PatrolCampRadius) * PatrolCampRadius,
-                Mathf.Floor(position.y / PatrolCampRadius) * PatrolCampRadius,
-                Mathf.Floor(position.z / PatrolCampRadius) * PatrolCampRadius);
+            if (!canPatrol || bossPlayer == null)
+            {
+                ResetPatrolRuntimeGate(true);
+                return false;
+            }
+
+            Vector3 leaderPosition = GetLeaderTargetPosition();
+            Vector3 botPosition = BotOwner.GetPlayer.Transform.position;
+            float followDistance = GetEffectiveFollowDistance();
+            bool inFollowRange = (leaderPosition - botPosition).sqrMagnitude < followDistance * followDistance;
+            bool leaderMoved = HasLeaderMovedForPatrolGate(leaderPosition);
+
+            if (leaderMoved && !patrolRuntimeArmed)
+            {
+                ResetPatrolRuntimeGate(true);
+                return false;
+            }
+
+            if (patrolLeaderStoppedSince <= 0f)
+            {
+                patrolLeaderStoppedSince = Time.time;
+            }
+
+            if (!patrolRuntimeArmed && !inFollowRange)
+            {
+                ResetActivePatrolState();
+                return false;
+            }
+
+            if (!patrolRuntimeArmed && Time.time - patrolLeaderStoppedSince >= PatrolLeaderIdleRequiredSeconds)
+            {
+                patrolRuntimeArmed = true;
+                followerData?.ClearPatrolLeaderSectorAnchor();
+            }
+
+            return patrolRuntimeArmed;
+        }
+
+        private bool HasLeaderMovedForPatrolGate(Vector3 leaderPosition)
+        {
+            if (bossPlayer?.MovementContext != null)
+            {
+                Vector2 direction = bossPlayer.MovementContext.MovementDirection;
+                if (direction.sqrMagnitude > PatrolLeaderMoveInputThresholdSqr &&
+                    bossPlayer.MovementContext.CharacterMovementSpeed > 0.05f)
+                {
+                    lastPatrolLeaderPosition = leaderPosition;
+                    hasLastPatrolLeaderPosition = true;
+                    nextPatrolLeaderMoveSampleAt = Time.time + PatrolLeaderMoveSampleInterval;
+                    return true;
+                }
+            }
+
+            if (!hasLastPatrolLeaderPosition)
+            {
+                lastPatrolLeaderPosition = leaderPosition;
+                hasLastPatrolLeaderPosition = true;
+                nextPatrolLeaderMoveSampleAt = Time.time + PatrolLeaderMoveSampleInterval;
+                return false;
+            }
+
+            if (Time.time < nextPatrolLeaderMoveSampleAt)
+            {
+                return false;
+            }
+
+            Vector3 delta = leaderPosition - lastPatrolLeaderPosition;
+            delta.y = 0f;
+            bool movedByPosition = delta.sqrMagnitude > PatrolLeaderMoveSampleDeltaThresholdSqr;
+            lastPatrolLeaderPosition = leaderPosition;
+            nextPatrolLeaderMoveSampleAt = Time.time + PatrolLeaderMoveSampleInterval;
+            return movedByPosition;
+        }
+
+        private void ResetPatrolRuntimeGate(bool clearLeaderAnchor)
+        {
+            patrolRuntimeArmed = false;
+            patrolLeaderStoppedSince = 0f;
+            ResetActivePatrolState();
+
+            if (clearLeaderAnchor)
+            {
+                followerData?.ClearPatrolLeaderSectorAnchor();
+            }
+        }
+
+        private void ResetActivePatrolState()
+        {
+            movingToPatrolPoint = false;
+            holdPositionUntil = 0f;
+            isPatrolCampInitialized = false;
+            activePatrolCampCenter = Vector3.zero;
+            returningToLeaderSector = false;
+            nextPatrolUpdateAt = 0f;
+            ResetPeaceActions();
+        }
+
+        private static bool HasLeaderLeftPatrolAnchor(Vector3 leaderPosition, Vector3 anchor)
+        {
+            Vector3 delta = leaderPosition - anchor;
+            delta.y = 0f;
+            return delta.sqrMagnitude > PatrolCampRadius * PatrolCampRadius;
         }
 
 
@@ -869,12 +974,7 @@ namespace pitTeam.BigBrain.Actions
 
             if (!state)
             {
-                movingToPatrolPoint = false;
-                holdPositionUntil = 0f;
-                isPatrolCampInitialized = false;
-                activePatrolCampCenter = Vector3.zero;
-                returningToLeaderSector = false;
-                nextPatrolUpdateAt = 0f;
+                ResetActivePatrolState();
                 ReleaseSettleDestinationClaim();
             }
         }

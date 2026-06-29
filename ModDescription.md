@@ -116,7 +116,7 @@ In **Restricted**, **Immersive**, and **Realistic**, teammate equipment is treat
 
 The **Kit Loadouts** screen prices the selected kit, including nested weapon parts, armor plates, magazine contents, and container contents where applicable. The **Use items in stash** option lets you choose which matching stash items should be used instead of purchased; selected stash items reduce the final price. If every required item is supplied from your stash, the action becomes **Equip** instead of **Purchase**.
 
-When a kit is purchased or equipped, the teammate's current kit is returned through the pitFireTeam delivery service instead of being discarded. The new kit becomes the teammate's active equipment and new **Default** kit.
+When a kit is purchased or equipped, the teammate's current kit is returned through the -P|T- FireTeam delivery service instead of being discarded. The new kit becomes the teammate's active equipment and new **Default** kit.
 
 **Realistic** is the only mode where teammate secure containers are fully player-managed. In other modes, secure containers are managed automatically and are not counted as part of kit purchase or loadout editing. The auto-managed secure container gives saved teammates a Grizzly and a surgery kit for raid use, unless they already carry equivalent supplies in their backpack.
 
@@ -139,7 +139,7 @@ Commands influence teammate behavior but do not force exact actions. teammates w
 - **Stop** - stops teammates out of combat without forcing crouch. If the boss moves too far away, teammates resume normal follow behavior. Can be applied to an individual teammate by looking at him.
 - **Suppress** - orders teammates to create short pressure on a known enemy position. If you are looking directly at a teammate, only that teammate tries to suppress using his own current enemy or a boss-visible contact. If you are not looking at a teammate, eligible squadmates can suppress together while avoiding teammates who are already shooting, healing, under immediate pressure, or in a close fight. Riflemen are the normal suppression role. A Marksman can join only when no Rifleman is active and he has a loaded automatic second primary.
     - Riflemen need a suppress-capable weapon: full-auto, a magazine capacity of at least 25 rounds, or a usable grenade launcher in the second primary slot. Squad suppression allows only one grenadier, chosen by position, enemy target, launch lane, and friendly safety. If no safe lane or suitable equipment exists, the teammate can say "negative" and continue normal combat decisions.
-- **On Your Own** - lets teammates spread out and act more independently instead of staying tied to your position. Outside combat, they patrol around you using Patrol Radius. In combat, they fight from their own area or stay near another squadmate instead of constantly trying to return to you.
+- **On Your Own** - lets teammates spread out and act more independently instead of staying tied to your position. Outside combat, they use normal follow while you are moving, then patrol around the current area using Patrol Radius after you stop and they are close enough to start patrol. In combat, it lets them hold their own and manage the fight from where they are while you work somewhere else. Use **Go Forward** when you want Riflemen to take the initiative against a known enemy.
     - **Regroup** during combat still calls them back to you for that order, but it does not cancel On Your Own. Use **Cover Me** during combat if you want them to start watching your position again. Outside combat, **Cover Me**, **Regroup**, or **Follow Me** returns them to normal follow behavior.
 
 **In HELP:**
@@ -170,6 +170,12 @@ Commands influence teammate behavior but do not force exact actions. teammates w
 Saved teammates and recruited allies share the basic follower system once they are following you, but saved teammates have the full squad feature set. Saved teammates keep their customization, loadouts, tactics, aggression, progression, backpack access, and post-raid handling. Recruited allies are temporary raid pickups that use the default combat tactic with moderate aggression, rely on their current bot profile and gear, and have a simpler combat command set: they do not use **Need Sniper**, combat **There**, combat **Open Door**, or combat **Go Forward** push orders. If a recruited ally was told **Hold Position** in combat, **Go Forward** only clears that temporary aggression hold.
 
 ## Gameplay Guide
+
+---
+
+-P|T- FireTeam is built around command and coordination, not autonomous co-op buddies who independently clear the map for you. Your teammates react to danger, hold angles, seek cover, heal, and follow the priorities you set. They are not meant to behave like a separate squad that always hunts ahead while you tag along.
+
+Treat your squad like a tactical team you are responsible for managing. Use commands to shape who holds, who moves, who suppresses, who pushes, and who protects your position. Teammates perform best when you create openings, call contacts, give clear priorities, and avoid constantly interrupting their current fight. If you want them to take ground or pressure an enemy, give an explicit combat order instead of expecting them to read your intent.
 
 ---
 
@@ -276,7 +282,7 @@ The default squad style is that you create opportunities for your teammates to f
 
 If you play too aggressively, teammates may collapse onto your position to protect or rescue you. This can create crowding, blocked lines of fire, and friendly-fire risk.
 
-Use **On Your Own** in combat when you want teammates to fight independently of your situation.
+Use **On Your Own** in combat when you want teammates to hold their own while you handle something else.
 
 Use **Need Help** when you want to temporarily pull squad attention toward a threat near you.
 

@@ -171,7 +171,7 @@ Targeting:
 Behavior:
 
 - Clears current request command state and temporary combat aggression override.
-- Enables patrol-radius mode in `FollowAction`.
+- Enables patrol-radius intent in `FollowAction`.
 - `FollowMe` / `Cooperation` clears this mode.
 - Combat use does not create a request command; it only asks the current combat layer to stop anchoring behavior around the boss.
 
@@ -193,16 +193,17 @@ Execution:
 
 - `FollowAction` checks `followerData.CanPatrol` every update.
 - When disabled, the action uses normal close follow/settle behavior.
-- When enabled, the action uses sector-anchored patrol:
-  - remember the boss/player's current camp sector
-  - patrol around the follower's current sector after combat instead of running back only because boss distance is large
-  - return to the boss only after the boss/player leaves the remembered camp sector
-  - define the new camp sector around the boss after that return
+- When enabled, `CanPatrol` is treated as patrol intent, not immediate patrol ownership:
+  - before patrol arms, boss/player movement resets the patrol runtime gate and the follower behaves like normal follow
+  - if the follower is outside normal follow range, the follower catches up with normal follow behavior before patrol can arm
+  - after the boss/player has been still for about 5 seconds and the follower is in range, patrol runtime arms
+  - once armed, the follower patrols around the current area using `patrolRadius`
+  - while armed, small boss/player movement inside the patrol anchor radius does not cancel the current patrol point
+  - if the boss/player moves about 20m from the patrol anchor, patrol runtime reanchors and the follower returns to normal follow until the stillness/range checks pass again
   - choose random reachable nav points inside the configured `patrolRadius`
   - avoid points too close to the boss or other followers
   - walk slowly between patrol points and pause 6-10 seconds at each point
   - run peaceful look/actions while waiting when available
-  - if the boss exits the camp sector, temporarily follow the boss, then initialize the new patrol camp
 
 ## Out-Of-Combat Commands
 

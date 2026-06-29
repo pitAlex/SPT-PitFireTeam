@@ -2075,7 +2075,11 @@ namespace pitTeam.BigBrain.Actions
 
         private void CleanupDoorInteraction()
         {
-            BotOwner?.DoorOpener.OnEndInteract -= OnDoorInteractEnded;
+            if (BotOwner?.DoorOpener != null)
+            {
+                BotOwner.DoorOpener.OnEndInteract -= OnDoorInteractEnded;
+            }
+
             activeDoor = null;
             doorMoveIssued = false;
             doorInteractIssued = false;

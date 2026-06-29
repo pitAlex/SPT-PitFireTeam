@@ -396,6 +396,10 @@ namespace pitTeam.Patches
         public static FlatItemsDataClass[] LoadoutEditorInitialStashItems { get; set; }
         private static Dictionary<string, EItemPinLockState> LoadoutEditorOriginalPinLockStates { get; } =
             new Dictionary<string, EItemPinLockState>(StringComparer.OrdinalIgnoreCase);
+        private static Dictionary<string, Item> LoadoutEditorEquipmentItemsById { get; } =
+            new Dictionary<string, Item>(StringComparer.OrdinalIgnoreCase);
+        private static Dictionary<string, Item> LoadoutEditorStashItemsById { get; } =
+            new Dictionary<string, Item>(StringComparer.OrdinalIgnoreCase);
         public static string ActiveTeammateLoadoutId { get; set; }
         public static string ActiveTeammateLoadoutName { get; set; }
         public static string LoadoutEditorSourceLoadoutId { get; set; }
@@ -452,8 +456,18 @@ namespace pitTeam.Patches
                 return false;
             }
 
-            return EnumerateLoadoutEditorItemTree(LoadoutEditorProfile.Inventory.Equipment)
-                .Any(candidate => ReferenceEquals(candidate, item) || candidate.Id == item.Id);
+            if (IsItemInLoadoutEditorRoot(item, LoadoutEditorProfile.Inventory.Equipment))
+            {
+                return true;
+            }
+
+            RebuildLoadoutEditorItemIndexes();
+            return TryGetIndexedLoadoutEditorItem(
+                item.Id,
+                LoadoutEditorEquipmentItemsById,
+                LoadoutEditorProfile.Inventory.Equipment,
+                out Item indexedItem)
+                && ReferenceEquals(indexedItem, item);
         }
 
         internal static bool TryGetLoadoutEditorEquipmentItem(string itemId, out Item item)
@@ -464,9 +478,21 @@ namespace pitTeam.Patches
                 return false;
             }
 
-            item = EnumerateLoadoutEditorItemTree(LoadoutEditorProfile.Inventory.Equipment)
-                .FirstOrDefault(candidate => string.Equals(candidate?.Id, itemId, StringComparison.Ordinal));
-            return item != null;
+            if (TryGetIndexedLoadoutEditorItem(
+                itemId,
+                LoadoutEditorEquipmentItemsById,
+                LoadoutEditorProfile.Inventory.Equipment,
+                out item))
+            {
+                return true;
+            }
+
+            RebuildLoadoutEditorItemIndexes();
+            return TryGetIndexedLoadoutEditorItem(
+                itemId,
+                LoadoutEditorEquipmentItemsById,
+                LoadoutEditorProfile.Inventory.Equipment,
+                out item);
         }
 
         internal static bool TryGetLoadoutEditorItem(string itemId, out Item item)
@@ -482,20 +508,75 @@ namespace pitTeam.Patches
                 return true;
             }
 
-            item = EnumerateLoadoutEditorItemTree(LoadoutEditorProfile.Inventory.Stash)
-                .FirstOrDefault(candidate => string.Equals(candidate?.Id, itemId, StringComparison.Ordinal));
-            return item != null;
+            if (TryGetIndexedLoadoutEditorItem(
+                itemId,
+                LoadoutEditorStashItemsById,
+                LoadoutEditorProfile.Inventory.Stash,
+                out item))
+            {
+                return true;
+            }
+
+            RebuildLoadoutEditorItemIndexes();
+            if (TryGetIndexedLoadoutEditorItem(
+                    itemId,
+                    LoadoutEditorEquipmentItemsById,
+                    LoadoutEditorProfile.Inventory.Equipment,
+                    out item))
+            {
+                return true;
+            }
+
+            return TryGetIndexedLoadoutEditorItem(
+                itemId,
+                LoadoutEditorStashItemsById,
+                LoadoutEditorProfile.Inventory.Stash,
+                out item);
         }
 
         internal static bool IsLoadoutEditorStashItem(Item item)
         {
-            return IsItemInLoadoutEditorRoot(item, LoadoutEditorProfile?.Inventory?.Stash);
+            if (IsItemInLoadoutEditorRoot(item, LoadoutEditorProfile?.Inventory?.Stash))
+            {
+                return true;
+            }
+
+            RebuildLoadoutEditorItemIndexes();
+            return TryGetIndexedLoadoutEditorItem(
+                item?.Id,
+                LoadoutEditorStashItemsById,
+                LoadoutEditorProfile?.Inventory?.Stash,
+                out Item indexedItem)
+                && ReferenceEquals(indexedItem, item);
         }
 
         internal static bool IsLoadoutEditorItem(Item item)
         {
-            return IsItemInLoadoutEditorRoot(item, LoadoutEditorProfile?.Inventory?.Stash)
-                || IsItemInLoadoutEditorRoot(item, LoadoutEditorProfile?.Inventory?.Equipment);
+            if (IsItemInLoadoutEditorRoot(item, LoadoutEditorProfile?.Inventory?.Stash)
+                || IsItemInLoadoutEditorRoot(item, LoadoutEditorProfile?.Inventory?.Equipment))
+            {
+                return true;
+            }
+
+            string itemId = item?.Id;
+            return !string.IsNullOrWhiteSpace(itemId)
+                && (LoadoutEditorStashItemsById.ContainsKey(itemId)
+                    || LoadoutEditorEquipmentItemsById.ContainsKey(itemId));
+        }
+
+        internal static void RebuildLoadoutEditorItemIndexes()
+        {
+            LoadoutEditorEquipmentItemsById.Clear();
+            LoadoutEditorStashItemsById.Clear();
+
+            IndexLoadoutEditorItems(LoadoutEditorProfile?.Inventory?.Equipment, LoadoutEditorEquipmentItemsById);
+            IndexLoadoutEditorItems(LoadoutEditorProfile?.Inventory?.Stash, LoadoutEditorStashItemsById);
+        }
+
+        internal static void ClearLoadoutEditorItemIndexes()
+        {
+            LoadoutEditorEquipmentItemsById.Clear();
+            LoadoutEditorStashItemsById.Clear();
         }
 
         internal static bool IsLoadoutEditorPinLockInteraction(EItemInfoButton button)
@@ -617,13 +698,69 @@ namespace pitTeam.Patches
                 return false;
             }
 
-            if (ReferenceEquals(item, root) || item.Id == root.Id)
+            if (ReferenceEquals(item, root) || string.Equals(item.Id, root.Id, StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
 
-            return EnumerateLoadoutEditorItemTree(root)
-                .Any(candidate => ReferenceEquals(candidate, item) || candidate.Id == item.Id);
+            foreach (Item parent in item.GetAllParentItems(false))
+            {
+                if (parent == null)
+                {
+                    continue;
+                }
+
+                if (ReferenceEquals(parent, root) || string.Equals(parent.Id, root.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool TryGetIndexedLoadoutEditorItem(
+            string itemId,
+            Dictionary<string, Item> itemsById,
+            Item root,
+            out Item item)
+        {
+            item = null;
+            if (string.IsNullOrWhiteSpace(itemId) || itemsById == null || root == null || LoadoutEditorOverlayRoot == null)
+            {
+                return false;
+            }
+
+            if (!itemsById.TryGetValue(itemId, out Item candidate) || candidate == null)
+            {
+                return false;
+            }
+
+            if (!IsItemInLoadoutEditorRoot(candidate, root))
+            {
+                return false;
+            }
+
+            item = candidate;
+            return true;
+        }
+
+        private static void IndexLoadoutEditorItems(Item root, Dictionary<string, Item> destination)
+        {
+            if (root == null || destination == null)
+            {
+                return;
+            }
+
+            foreach (Item item in EnumerateLoadoutEditorItemTree(root))
+            {
+                if (item == null || string.IsNullOrWhiteSpace(item.Id))
+                {
+                    continue;
+                }
+
+                destination[item.Id] = item;
+            }
         }
 
         private static IEnumerable<Item> EnumerateItemTree(Item root)
