@@ -16,6 +16,16 @@ It is highly recommended for new players to read **Gameplay Guide** and **Known 
 
 ---
 
+**Gameplay:**
+
+<div style="position: relative; width: 100%; max-width: 960px; padding-bottom: 56.25%; height: 0; overflow: hidden;">
+  <iframe src="https://www.youtube.com/embed/cAwb9gRN8tU" title="PIT Fireteam - Live Combat Demo" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+</div>
+
+[Open video on YouTube](https://www.youtube.com/watch?v=CgQeimMDnls)
+
+---
+
 # Tabs {.tabset}
 
 ## Description
