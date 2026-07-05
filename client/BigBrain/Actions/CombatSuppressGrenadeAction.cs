@@ -20,7 +20,9 @@ namespace pitTeam.BigBrain.Actions
         public override void Update(CustomLayer.ActionData data)
         {
             FollowerGrenadeRuntimeGate.EnableExplicitThrow(BotOwner);
+            BotOwner.SetPose(1f);
             baseLogic.UpdateNodeByBrain(GetRawData(data));
+            BotOwner.SetPose(1f);
         }
     }
 }

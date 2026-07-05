@@ -269,6 +269,7 @@ namespace pitTeam.BigBrain.Actions
 
             if (BossPlayers.Instance?.GetFollower(BotOwner)?.CombatTactic == FollowerCombatTactic.Marksman)
             {
+                TryPreferMarksmanPrimaryAtRange(goalEnemy);
                 return;
             }
 
@@ -295,6 +296,27 @@ namespace pitTeam.BigBrain.Actions
             }
 
             selector.TryChangeToMain();
+        }
+
+        protected void TryPreferMarksmanPrimaryAtRange(EnemyInfo? goalEnemy)
+        {
+            if (goalEnemy == null ||
+                BossPlayers.Instance?.GetFollower(BotOwner)?.CombatTactic != FollowerCombatTactic.Marksman)
+            {
+                return;
+            }
+
+            if (!FollowerCombatCommon.IsUsingAutomaticSecondaryOverNonAutomaticPrimary(BotOwner))
+            {
+                return;
+            }
+
+            if (goalEnemy.Distance <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance())
+            {
+                return;
+            }
+
+            BotOwner?.WeaponManager?.Selector?.TryChangeToMain();
         }
 
         private bool ShouldRespectVanillaSupportWeaponFallback(BotWeaponSelector selector)

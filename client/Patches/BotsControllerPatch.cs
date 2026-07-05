@@ -1434,12 +1434,12 @@ namespace pitTeam.Patches
                     string locationId = Singleton<GameWorld>.Instance.LocationId;
                     CombatDistanceConfiguration.Instance.UpdateForCurrentMap(locationId);
 
-                    if (locationId == "factory4_day" || locationId == "factory4_night")
+                    if (CombatDistanceConfiguration.UsesFactoryDistanceProfile(locationId))
                     {
                         Props.FactoryMapSett();
                     }
 
-                    Modules.Logger.LogInfo($"[CombatDistances] map={locationId} factoryMode={CombatDistanceConfiguration.Instance.IsFactoryMode}");
+                    Modules.Logger.LogInfo($"[CombatDistances] map={locationId} factoryDistanceProfile={CombatDistanceConfiguration.Instance.IsFactoryMode}");
 
                     Modules.Logger.LogInfo("Raid Started");
                     BattleRecorder.StartRaid(locationId);

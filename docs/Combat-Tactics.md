@@ -152,6 +152,7 @@ Marksman behavior:
 - Marksman supports team push/search by finding a shooting position or support cover.
 - Marksman support positions reject wrong-level candidates when the boss/team is vertically separated, and reject directly close candidates that are actually path-separated from the boss.
 - If close automatic support is allowed by marksman aggression and safety checks, marksman can use automatic secondary behavior.
+- At support/reposition ranges, marksman switches back to the primary rifle instead of keeping an automatic secondary selected from a stale or non-close contact.
 - If a nearby Rifleman can reasonably take the push, marksman should prefer support/reposition instead of becoming the primary pusher.
 
 ### Suppression Order
@@ -360,12 +361,15 @@ When a movement action reaches cover or a point, common end logic arms a committ
 Arrival holders break for:
 
 - explicit push order
-- under fire or recent hit
+- recent hit/damage
+- under fire only when the follower is not actually in cover
 - settled boss-under-attack support
 - settled ally support when a valid support action can be prepared
 - real enemy contact
 - boss-distance regroup only when the hold reason is not protected
 - timer expiry
+
+If the follower is in cover and only under fire, the hold is extended instead of ended. Suppression against valid cover is treated as a reason to stay down, rescan, and look toward recent incoming-fire points, not as proof that the cover failed.
 
 ## Cover Contract
 
@@ -378,7 +382,7 @@ Cover lifecycle:
 3. Move to the committed cover.
 4. Detect arrival using EFT cover state, committed-cover proximity, or go-to-point arrival.
 5. Arm an arrival hold.
-6. During hold, scan for immediate fire, damage pressure, support, protection, and regroup.
+6. During hold, scan for immediate fire, damage pressure, suppression direction, support, protection, and regroup.
 7. Keep holding if nothing stronger wins.
 
 Cover intent matters:
@@ -399,13 +403,13 @@ Grenade activation requires:
 - valid combat enemy with a known position/person
 - distance at least 15m, with the far limit decided from the selected grenade's timer/fuse up to the 40m outer envelope
 - no active bot request or medical use
-- safe throw position
+- safe throw position: the follower must be settled in cover that hides from the target, rather than using `cannot shoot` alone as permission to throw
 - cooldown reservation
 - not dogfighting, under fire, recently hit, or in a fresh first-seen window
 - not already holding a reliable immediate-fire lane
 - boss/followers not too close to the target
 
-Committed grenade can still cancel if the throw becomes unsafe before release, combat enemy disappears before release, the grenade controller disappears, or the sequence times out. Regular grenade accepts and rejects are recorded as `grenadeEvent` entries so battle records can distinguish distance, timer/fuse, pressure, cooldown, controller, and trajectory failures.
+Committed grenade can still cancel if the throw becomes unsafe before release, the current throw arc no longer validates from the live weapon-root origin, combat enemy disappears before release, the grenade controller disappears, or the sequence times out. Regular grenade accepts and rejects are recorded as `grenadeEvent` entries so battle records can distinguish distance, timer/fuse, pressure, cover, cooldown, controller, and trajectory failures.
 
 Cooldown is tied to the actual throw release, not just grenade decision initialization. The explicit runtime gate allows the chosen grenade action to attempt the throw, but `DoThrow` still respects follower individual and group cooldowns so one suppress-grenade action cannot chain multiple throws.
 
@@ -483,7 +487,7 @@ Marksman behavior:
 - ignores generic assault push behavior unless marksman policy asks for close support/search
 - can switch to automatic secondary for close-quarter fights
 - does not run proactive automatic close-search while temporary boss `HoldPosition` aggression override is active
-- can switch back to primary when returning to real marksman decisions, and when combat drops before patrol reload maintenance starts
+- switches back to primary when returning to support/reposition marksman decisions, and when combat drops before patrol reload maintenance starts
 - supports team push/search through firing-position support, not blind rushing
 - hands boss-distance regroup to the shared regroup objective
 

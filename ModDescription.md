@@ -513,6 +513,8 @@ The Labyrinth is a special map with special AI, not meant to AI followers. Do no
 
 In teammate loadout editing, do not repair equipment and then move items into or out of the teammate loadout before saving. For now, repair should be the last step before saving. If the editor starts failing after this, cancel out of the Edit Loadout overlay, re-open Edit Loadout, then save without moving anything.
 
+In teammate loadout editing, if you happen to end up in a situation where you cannot save teammate loadout due to message regarding duplicate items, restart the game to recover the teammates profile. Note that any duplicate item will be stripped in the process.
+
 - Teammates can linger after combat. Use **Attention** to reset them.
 - Teammates might not heal their health all the way. It is a game issue, use the Heal key to force heal.
 - Teleporting teammates while they are interacting with doors or other objects can leave them in a bad state.
