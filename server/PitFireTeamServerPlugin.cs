@@ -34,7 +34,8 @@ public record PitFireTeamServerMetadata : AbstractModMetadata
 public class PitFireTeamServerPlugin(
     ISptLogger<PitFireTeamServerPlugin> logger,
     DatabaseService databaseService,
-    FriendlyServerSettingsService settingsService
+    FriendlyServerSettingsService settingsService,
+    FriendlyTeammateService teammateService
 ) : IOnLoad
 {
     public Task OnLoad()
@@ -43,6 +44,7 @@ public class PitFireTeamServerPlugin(
         EnsureCourierTraderLocales();
         EnsureCourierAvatarIsServed();
         settingsService.ApplyPersistedSettings();
+        teammateService.RecoverDuplicateTeammateItemsForAllProfiles();
         logger.Info("PitFireTeam loaded");
         return Task.CompletedTask;
     }

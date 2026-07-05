@@ -37,3 +37,16 @@ public record FriendlyTeammateProfileRecoveryNotice
 
     public string Message { get; set; } = string.Empty;
 }
+
+public record FriendlyTeammateStartupRecoveryNotice
+{
+    public bool Recovered { get; set; }
+
+    public int RemovedItemCount { get; set; }
+
+    public List<string> TeammateNames { get; set; } = [];
+
+    public string Title { get; set; } = string.Empty;
+
+    public string Message { get; set; } = string.Empty;
+}

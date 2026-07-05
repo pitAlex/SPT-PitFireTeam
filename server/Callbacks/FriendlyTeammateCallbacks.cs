@@ -57,6 +57,17 @@ public class FriendlyTeammateCallbacks(
         return new ValueTask<string>(httpResponse.GetBody(settingsService.GetLostOnDeathSettings()));
     }
 
+    public ValueTask<string> GetStartupRecoveryNotice(string url, EmptyRequestData _, MongoId sessionId)
+    {
+        return new ValueTask<string>(httpResponse.GetBody(teammateService.GetStartupRecoveryNotice(sessionId)));
+    }
+
+    public ValueTask<string> AcknowledgeStartupRecoveryNotice(string url, EmptyRequestData _, MongoId sessionId)
+    {
+        teammateService.AcknowledgeStartupRecoveryNotice(sessionId);
+        return new ValueTask<string>(httpResponse.NullResponse());
+    }
+
     public ValueTask<string> GetProfile(string url, GetOtherProfileRequest request, MongoId sessionId)
     {
         try

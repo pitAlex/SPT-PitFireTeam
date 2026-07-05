@@ -231,6 +231,8 @@ namespace pitTeam.Localization
                     ["EditLoadoutSubtitleReal"] = "Edit staged gear for {0}. Saving moves items between your stash and this teammate.",
                     ["ProfileRecoveredTitle"] = "Profile recovered",
                     ["ProfileRecoveredBody"] = "The profile of this teammate has been recovered from a bad state. Some items from his inventory may have been deleted in the process.",
+                    ["DuplicateProfileRecoveryTitle"] = "Profile recovered",
+                    ["DuplicateProfileRecoveryBody"] = "Duplicate items were found in both player and teammate profiles. The following teammate profiles have been stripped of the duplicate in order to safely recover them: {0}",
                     ["LoadoutEditorSaveFailed"] = "Failed to save teammate inventory.",
                     ["PlayerStash"] = "Player Stash",
                     ["PlayerStashPlaceholder"] = "Failed to load cloned stash view.\n{0}",

@@ -41,6 +41,7 @@ public class FriendlyTeammateService(
     ProfileActivityService profileActivityService,
     RepairService repairService,
     FriendlyServerSettingsService settingsService,
+    FriendlyLanguageService languageService,
     SaveServer saveServer,
     ICloner cloner,
     ISptLogger<FriendlyTeammateService> logger
@@ -48,8 +49,13 @@ public class FriendlyTeammateService(
 {
     private const string ProfileRecoveryMessage =
         "The profile of this teammate has been recovered from a bad state. Some items from his inventory may have been deleted in the process.";
+    private const string DuplicateProfileRecoveryTitleFallback = "Profile recovered";
+    private const string DuplicateProfileRecoveryBodyFallback =
+        "Duplicate items were found in both player and teammate profiles. The following teammate profiles have been stripped of the duplicate in order to safely recover them: {0}";
 
     private readonly Dictionary<string, FriendlyTeammateProfileRecoveryNotice> profileRecoveryNotices = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, FriendlyTeammateStartupRecoveryNotice> startupRecoveryNotices = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> duplicateRecoveryCheckedSessions = new(StringComparer.OrdinalIgnoreCase);
 
     private static readonly string[] WeaponSkillNames =
     [
@@ -87,6 +93,54 @@ public class FriendlyTeammateService(
     {
         "cartridges",
     };
+
+    public void RecoverDuplicateTeammateItemsForAllProfiles()
+    {
+        try
+        {
+            foreach (var profileEntry in saveServer.GetProfiles())
+            {
+                string? sessionIdValue = profileEntry.Key.ToString();
+                if (string.IsNullOrWhiteSpace(sessionIdValue))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    RecoverDuplicateTeammateItemsForSession(new MongoId(sessionIdValue));
+                }
+                catch (Exception ex)
+                {
+                    logger.Warning($"{nameof(FriendlyTeammateService)}: failed duplicate item startup recovery for session '{sessionIdValue}': {ex.Message}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.Warning($"{nameof(FriendlyTeammateService)}: failed duplicate item startup recovery: {ex.Message}");
+        }
+    }
+
+    public FriendlyTeammateStartupRecoveryNotice GetStartupRecoveryNotice(MongoId sessionId)
+    {
+        RecoverDuplicateTeammateItemsForSession(sessionId);
+
+        string key = sessionId.ToString();
+        if (!startupRecoveryNotices.TryGetValue(key, out var notice))
+        {
+            return new FriendlyTeammateStartupRecoveryNotice();
+        }
+
+        LocalizeStartupRecoveryNotice(sessionId, notice);
+        return notice;
+    }
+
+    public void AcknowledgeStartupRecoveryNotice(MongoId sessionId)
+    {
+        string key = sessionId.ToString();
+        startupRecoveryNotices.Remove(key);
+    }
 
     private static readonly HashSet<string> SurgicalKitTemplateIds =
     [
@@ -3728,6 +3782,227 @@ public class FriendlyTeammateService(
         }
 
         return false;
+    }
+
+    private void LocalizeStartupRecoveryNotice(MongoId sessionId, FriendlyTeammateStartupRecoveryNotice notice)
+    {
+        if (notice?.Recovered != true)
+        {
+            return;
+        }
+
+        Dictionary<string, string> socialUiText = languageService.GetStringMap(sessionId, "socialUi");
+        notice.Title = GetLanguageValue(socialUiText, "DuplicateProfileRecoveryTitle", DuplicateProfileRecoveryTitleFallback);
+
+        string bodyTemplate = GetLanguageValue(
+            socialUiText,
+            "DuplicateProfileRecoveryBody",
+            DuplicateProfileRecoveryBodyFallback);
+        string names = notice.TeammateNames == null || notice.TeammateNames.Count == 0
+            ? string.Empty
+            : string.Join(", ", notice.TeammateNames.Where(name => !string.IsNullOrWhiteSpace(name)));
+
+        try
+        {
+            notice.Message = string.Format(bodyTemplate, names);
+        }
+        catch
+        {
+            notice.Message = $"{bodyTemplate} {names}";
+        }
+    }
+
+    private static string GetLanguageValue(Dictionary<string, string> values, string key, string fallback)
+    {
+        return values != null && values.TryGetValue(key, out string? value) && !string.IsNullOrWhiteSpace(value)
+            ? value
+            : fallback;
+    }
+
+    private void RecoverDuplicateTeammateItemsForSession(MongoId sessionId)
+    {
+        string sessionKey = sessionId.ToString();
+        if (duplicateRecoveryCheckedSessions.Contains(sessionKey))
+        {
+            return;
+        }
+
+        try
+        {
+            var playerPmc = GetPlayerProfile(sessionId);
+            var playerItems = playerPmc.Inventory?.Items;
+            if (playerItems == null || playerItems.Count == 0)
+            {
+                duplicateRecoveryCheckedSessions.Add(sessionKey);
+                return;
+            }
+
+            string stashRootId = GetPlayerStashRootId(playerPmc);
+            var playerStashIds = GetItemTreeIds(playerItems, stashRootId);
+            if (playerStashIds.Count == 0)
+            {
+                duplicateRecoveryCheckedSessions.Add(sessionKey);
+                return;
+            }
+
+            string directory = GetTeammateDirectory(sessionId);
+            if (!fileUtil.DirectoryExists(directory))
+            {
+                duplicateRecoveryCheckedSessions.Add(sessionKey);
+                return;
+            }
+
+            var recoveredNames = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+            int removedTotal = 0;
+
+            foreach (string profileFilePath in fileUtil.GetFiles(directory).Where(IsTeammateProfileFile))
+            {
+                BotBase? teammate;
+                try
+                {
+                    teammate = jsonUtil.DeserializeFromFile<BotBase>(profileFilePath);
+                }
+                catch (Exception ex)
+                {
+                    logger.Warning($"{nameof(FriendlyTeammateService)}: skipped duplicate item recovery for unreadable teammate profile file '{profileFilePath}': {ex.Message}");
+                    continue;
+                }
+
+                if (teammate?.Id is null)
+                {
+                    continue;
+                }
+
+                int removedProfileItems = RecoverDuplicateTeammateProfileItems(teammate, profileFilePath, playerStashIds);
+                int removedDefaultItems = RecoverDuplicateDefaultEquipmentItems(sessionId, teammate, playerStashIds);
+                int removedForTeammate = removedProfileItems + removedDefaultItems;
+                if (removedForTeammate <= 0)
+                {
+                    continue;
+                }
+
+                recoveredNames.Add(GetTeammateDisplayName(teammate));
+                removedTotal += removedForTeammate;
+            }
+
+            if (recoveredNames.Count > 0)
+            {
+                startupRecoveryNotices[sessionKey] = new FriendlyTeammateStartupRecoveryNotice
+                {
+                    Recovered = true,
+                    RemovedItemCount = removedTotal,
+                    TeammateNames = recoveredNames.ToList(),
+                };
+                logger.Warning($"Recovered duplicate player/teammate item IDs for session '{sessionId}' by removing {removedTotal} item(s) from teammate profile(s): {string.Join(", ", recoveredNames)}.");
+            }
+
+            duplicateRecoveryCheckedSessions.Add(sessionKey);
+        }
+        catch (Exception ex)
+        {
+            logger.Warning($"Failed to run duplicate teammate item recovery for session '{sessionId}': {ex.Message}");
+        }
+    }
+
+    private int RecoverDuplicateTeammateProfileItems(BotBase teammate, string profileFilePath, HashSet<string> playerStashIds)
+    {
+        var items = teammate.Inventory?.Items;
+        if (items == null || items.Count == 0)
+        {
+            return 0;
+        }
+
+        int removedCount = RemoveDuplicatePlayerStashItemTrees(
+            items,
+            teammate.Inventory?.Equipment?.ToString(),
+            playerStashIds);
+        if (removedCount <= 0)
+        {
+            return 0;
+        }
+
+        BackupFileBeforeRecovery(profileFilePath);
+        WriteSerializedFile(profileFilePath, teammate, "teammate profile");
+        logger.Warning($"Recovered teammate '{GetTeammateDisplayName(teammate)}' profile by removing {removedCount} duplicate player stash item(s).");
+        return removedCount;
+    }
+
+    private int RecoverDuplicateDefaultEquipmentItems(MongoId sessionId, BotBase teammate, HashSet<string> playerStashIds)
+    {
+        string filePath = GetDefaultEquipmentFilePath(sessionId, teammate);
+        if (!fileUtil.FileExists(filePath))
+        {
+            return 0;
+        }
+
+        List<Item>? items;
+        try
+        {
+            items = jsonUtil.DeserializeFromFile<List<Item>>(filePath);
+        }
+        catch (Exception ex)
+        {
+            logger.Warning($"{nameof(FriendlyTeammateService)}: skipped duplicate item recovery for unreadable teammate default equipment file '{filePath}': {ex.Message}");
+            return 0;
+        }
+
+        if (items == null || items.Count == 0)
+        {
+            return 0;
+        }
+
+        string? rootId = teammate.Inventory?.Equipment?.ToString()
+            ?? items.FirstOrDefault(item => item?.Id != null)?.Id.ToString();
+        int removedCount = RemoveDuplicatePlayerStashItemTrees(items, rootId, playerStashIds);
+        if (removedCount <= 0)
+        {
+            return 0;
+        }
+
+        if (items.Count == 0)
+        {
+            logger.Warning($"{nameof(FriendlyTeammateService)}: skipped duplicate recovery write for teammate {GetTeammateDisplayName(teammate)} default equipment because no item remained.");
+            return 0;
+        }
+
+        BackupFileBeforeRecovery(filePath);
+        WriteSerializedFile(filePath, items, "teammate default equipment");
+        logger.Warning($"Recovered teammate '{GetTeammateDisplayName(teammate)}' default equipment by removing {removedCount} duplicate player stash item(s).");
+        return removedCount;
+    }
+
+    private static int RemoveDuplicatePlayerStashItemTrees(List<Item> items, string? protectedRootId, HashSet<string> playerStashIds)
+    {
+        if (items == null || items.Count == 0 || playerStashIds == null || playerStashIds.Count == 0)
+        {
+            return 0;
+        }
+
+        var duplicateRootIds = items
+            .Where(item => item?.Id != null)
+            .Select(item => item.Id.ToString())
+            .Where(id =>
+                playerStashIds.Contains(id)
+                && !string.Equals(id, protectedRootId, StringComparison.OrdinalIgnoreCase))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (duplicateRootIds.Count == 0)
+        {
+            return 0;
+        }
+
+        var removeIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (string duplicateRootId in duplicateRootIds)
+        {
+            foreach (string treeId in GetItemTreeIds(items, duplicateRootId))
+            {
+                if (!string.Equals(treeId, protectedRootId, StringComparison.OrdinalIgnoreCase))
+                {
+                    removeIds.Add(treeId);
+                }
+            }
+        }
+
+        return items.RemoveAll(item => item?.Id != null && removeIds.Contains(item.Id.ToString()));
     }
 
     private void RecoverTeammateProfileIfNeeded(MongoId sessionId, BotBase teammate, string profileFilePath)

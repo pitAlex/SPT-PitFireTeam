@@ -33,6 +33,14 @@ public class FriendlyTeammateStaticRouter(JsonUtil jsonUtil, FriendlyTeammateCal
                 "/singleplayer/pitfireteam/lostondeath",
                 async (url, info, sessionId, output) => await callbacks.GetLostOnDeathSettings(url, info, sessionId)
             ),
+            new RouteAction<EmptyRequestData>(
+                "/singleplayer/pitfireteam/recovery-notice",
+                async (url, info, sessionId, output) => await callbacks.GetStartupRecoveryNotice(url, info, sessionId)
+            ),
+            new RouteAction<EmptyRequestData>(
+                "/singleplayer/pitfireteam/recovery-notice/ack",
+                async (url, info, sessionId, output) => await callbacks.AcknowledgeStartupRecoveryNotice(url, info, sessionId)
+            ),
             new RouteAction<GetOtherProfileRequest>(
                 "/singleplayer/pitfireteam/teammate/profile",
                 async (url, info, sessionId, output) => await callbacks.GetProfile(url, info, sessionId)

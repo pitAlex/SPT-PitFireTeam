@@ -4,14 +4,17 @@ using BepInEx.Logging;
 using Comfort.Common;
 using EFT;
 using EFT.InventoryLogic;
+using EFT.UI;
 using HarmonyLib;
 using SPT.Common.Http;
 using SPT.Common.Utils;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
+using TMPro;
 using UnityEngine;
 using UnityEngine.AI;
 using Newtonsoft.Json;
@@ -156,12 +159,30 @@ namespace pitTeam
         public string[] jerkKillMessages { get; set; }
     }
 
+    internal sealed class StartupRecoveryNoticeBodyResponse<T>
+    {
+        public int err { get; set; }
+        public string errmsg { get; set; }
+        public T data { get; set; }
+    }
+
+    internal sealed class FriendlyTeammateStartupRecoveryNotice
+    {
+        public bool Recovered { get; set; }
+        public int RemovedItemCount { get; set; }
+        public List<string> TeammateNames { get; set; }
+        public string Title { get; set; }
+        public string Message { get; set; }
+    }
+
     [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "0.8.7")]
     [BepInDependency("xyz.drakia.bigbrain")]
     public class pitFireTeam : BaseUnityPlugin
     {
         public const string SainPluginId = "me.sol.sain";
         public const string SainAddonPluginId = "xyz.pit.fireteam.sainaddon";
+        private const string StartupRecoveryNoticeRoute = "/singleplayer/pitfireteam/recovery-notice";
+        private const string StartupRecoveryNoticeAckRoute = "/singleplayer/pitfireteam/recovery-notice/ack";
 
         public static bool awaken;
 
@@ -237,6 +258,7 @@ namespace pitTeam
         private static Dictionary<ConfigDefinition, string> savedConfigValues;
         private string currentLanguageCode = "en";
         private float nextLanguageCheckTime;
+        private bool startupRecoveryNoticeRequested;
 
         public static ManualLogSource Log => Instance.Logger;
 
@@ -481,6 +503,7 @@ namespace pitTeam
         private void Start()
         {
             RefreshPluginFlags();
+            StartCoroutine(ShowStartupRecoveryNoticeCoroutine());
         }
 
         private void OnDestroy()
@@ -498,6 +521,164 @@ namespace pitTeam
         {
             IsSAINInstalled = HasPlugin(SainPluginId);
             IsSAINAddonInstalled = HasPlugin(SainAddonPluginId);
+        }
+
+        private IEnumerator ShowStartupRecoveryNoticeCoroutine()
+        {
+            if (startupRecoveryNoticeRequested)
+            {
+                yield break;
+            }
+
+            startupRecoveryNoticeRequested = true;
+            yield return null;
+            yield return new WaitForSecondsRealtime(1f);
+
+            Task<FriendlyTeammateStartupRecoveryNotice> noticeTask = Task.Run(LoadStartupRecoveryNotice);
+            while (!noticeTask.IsCompleted)
+            {
+                yield return null;
+            }
+
+            if (noticeTask.IsFaulted)
+            {
+                Modules.Logger.LogInfo($"Failed to load pitFireTeam startup recovery notice: {noticeTask.Exception?.GetBaseException().Message}");
+                yield break;
+            }
+
+            FriendlyTeammateStartupRecoveryNotice notice = noticeTask.Result;
+            if (notice?.Recovered != true)
+            {
+                yield break;
+            }
+
+            string message = FormatStartupRecoveryNotice(notice);
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                yield break;
+            }
+
+            string title = FormatStartupRecoveryNoticeTitle(notice);
+            float modalDeadline = Time.realtimeSinceStartup + 20f;
+            while (ItemUiContext.Instance == null
+                   && !MonoBehaviourSingleton<PreloaderUI>.Instantiated
+                   && Time.realtimeSinceStartup < modalDeadline)
+            {
+                yield return null;
+            }
+
+            if (TryShowStartupRecoveryNoticeModal(title, message))
+            {
+                AcknowledgeStartupRecoveryNotice();
+            }
+        }
+
+        private static FriendlyTeammateStartupRecoveryNotice LoadStartupRecoveryNotice()
+        {
+            string responseJson = RequestHandler.GetJson(StartupRecoveryNoticeRoute);
+            if (string.IsNullOrWhiteSpace(responseJson))
+            {
+                return null;
+            }
+
+            StartupRecoveryNoticeBodyResponse<FriendlyTeammateStartupRecoveryNotice> body =
+                JsonConvert.DeserializeObject<StartupRecoveryNoticeBodyResponse<FriendlyTeammateStartupRecoveryNotice>>(responseJson);
+            if (body != null && body.err != 0)
+            {
+                throw new InvalidOperationException(body.errmsg ?? "Unknown teammate backend error");
+            }
+
+            return body?.data ?? JsonConvert.DeserializeObject<FriendlyTeammateStartupRecoveryNotice>(responseJson);
+        }
+
+        private static bool TryShowStartupRecoveryNoticeModal(string title, string message)
+        {
+            try
+            {
+                ItemUiContext itemUiContext = ItemUiContext.Instance;
+                if (itemUiContext != null)
+                {
+                    itemUiContext.ShowMessageWindow(
+                        message,
+                        null,
+                        null,
+                        title,
+                        0f,
+                        true,
+                        TextAlignmentOptions.Left);
+                    return true;
+                }
+
+                if (MonoBehaviourSingleton<PreloaderUI>.Instantiated)
+                {
+                    MonoBehaviourSingleton<PreloaderUI>.Instance.ShowErrorScreen(
+                        title,
+                        message,
+                        null);
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Modules.Logger.LogInfo($"Failed to show pitFireTeam startup recovery modal: {ex.Message}");
+            }
+
+            return false;
+        }
+
+        private static void AcknowledgeStartupRecoveryNotice()
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    RequestHandler.GetJson(StartupRecoveryNoticeAckRoute);
+                }
+                catch (Exception ex)
+                {
+                    Modules.Logger.LogInfo($"Failed to acknowledge pitFireTeam startup recovery notice: {ex.Message}");
+                }
+            });
+        }
+
+        private static string FormatStartupRecoveryNoticeTitle(FriendlyTeammateStartupRecoveryNotice notice)
+        {
+            if (!string.IsNullOrWhiteSpace(notice?.Title))
+            {
+                return notice.Title;
+            }
+
+            string localized = GetSocialUiText("DuplicateProfileRecoveryTitle");
+            return string.IsNullOrWhiteSpace(localized)
+                ? GetSocialUiText("ProfileRecoveredTitle")
+                : localized;
+        }
+
+        private static string FormatStartupRecoveryNotice(FriendlyTeammateStartupRecoveryNotice notice)
+        {
+            if (!string.IsNullOrWhiteSpace(notice?.Message))
+            {
+                return notice.Message;
+            }
+
+            var teammateNames = notice?.TeammateNames?
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (teammateNames == null || teammateNames.Count == 0)
+            {
+                return null;
+            }
+
+            string template = GetSocialUiText("DuplicateProfileRecoveryBody");
+            try
+            {
+                return string.Format(template, string.Join(", ", teammateNames));
+            }
+            catch
+            {
+                return $"{template} {string.Join(", ", teammateNames)}";
+            }
         }
 
         public static bool ShouldUseSainRegroupRoute(bool isCombatRegroupContext)
