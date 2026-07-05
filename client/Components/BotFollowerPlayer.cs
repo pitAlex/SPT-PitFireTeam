@@ -91,6 +91,7 @@ namespace pitTeam.Components
         private FollowerCommandType _activeCommand = FollowerCommandType.None;
         private Vector3 _commandTarget;
         private float _commandUntilTime;
+        private int _moveToPointIssueSequence;
         private bool _suppressEnemyRequiresLauncher;
         private bool _suppressEnemyForceWeapon;
         private bool _suppressEnemyUseAutomaticSecondary;
@@ -1195,6 +1196,11 @@ namespace pitTeam.Components
 
         public void SetMoveToPoint(Vector3 target, float duration)
         {
+            unchecked
+            {
+                _moveToPointIssueSequence++;
+            }
+
             _activeCommand = FollowerCommandType.MoveToPoint;
             _commandTarget = target;
             _commandUntilTime = float.PositiveInfinity;
@@ -1709,6 +1715,8 @@ namespace pitTeam.Components
             untilTime = _commandUntilTime;
             return command != FollowerCommandType.None;
         }
+
+        public int MoveToPointIssueSequence => _moveToPointIssueSequence;
 
         public bool SuppressEnemyRequiresLauncher =>
             _activeCommand == FollowerCommandType.SuppressEnemy && _suppressEnemyRequiresLauncher;
@@ -2645,6 +2653,7 @@ namespace pitTeam.Components
                 "SAIN : Squad Layer",
                 "Follow Player",
                 "Looting",
+                "OrbitBrainLayer",
                 "BotMind_Looting",
                 "BotMind_Questing"
             };
@@ -2659,11 +2668,12 @@ namespace pitTeam.Components
                 if (string.IsNullOrEmpty(name)) continue;
 
                 bool exactMatch = blockedExact.Contains(name);
+                bool orbitLayerMatch = IsNamedLayer(layer, name, "OrbitBrainLayer");
                 bool containsMatch =
                     name.IndexOf("Exfil", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     name.IndexOf("Extract", StringComparison.OrdinalIgnoreCase) >= 0;
 
-                if (exactMatch || containsMatch)
+                if (exactMatch || orbitLayerMatch || containsMatch)
                 {
                     toRemove.Add(kvp.Key);
                 }
@@ -2680,6 +2690,19 @@ namespace pitTeam.Components
                 brain.List_0.Remove(layer);
                 //brain.Dictionary_0.Remove(index);
             }
+        }
+
+        private static bool IsNamedLayer(AICoreLayerClass<BotLogicDecision> layer, string layerName, string expectedName)
+        {
+            if (string.Equals(layerName, expectedName, StringComparison.OrdinalIgnoreCase) ||
+                layerName.EndsWith("." + expectedName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            Type type = layer.GetType();
+            return string.Equals(type.Name, expectedName, StringComparison.OrdinalIgnoreCase) ||
+                   (type.FullName?.EndsWith("." + expectedName, StringComparison.OrdinalIgnoreCase) ?? false);
         }
 
         private void SuppressThirdPartyPeaceBehaviors()

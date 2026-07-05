@@ -61,6 +61,7 @@ namespace pitTeam.BigBrain.Actions
         private bool doorInteractIssued;
         private float doorTimeoutAt;
         private FollowerCommandType lastCommand = FollowerCommandType.None;
+        private int lastMoveToPointIssueSequence = -1;
         private const float RegroupArriveNavDistance = 4f;
         private const float RegroupRunDistance = 10f;
         private const float SameLevelTolerance = 1.75f;
@@ -115,6 +116,7 @@ namespace pitTeam.BigBrain.Actions
             doorInteractIssued = false;
             doorTimeoutAt = 0f;
             lastCommand = FollowerCommandType.None;
+            lastMoveToPointIssueSequence = -1;
         }
 
         public override void Update(CustomLayer.ActionData data)
@@ -124,10 +126,14 @@ namespace pitTeam.BigBrain.Actions
             {
                 ReleaseRegroupReservation();
                 lastCommand = FollowerCommandType.None;
+                lastMoveToPointIssueSequence = -1;
                 return;
             }
 
             EnsureCommandControl();
+            bool moveToPointReissued = command == FollowerCommandType.MoveToPoint &&
+                                        followerData.MoveToPointIssueSequence != lastMoveToPointIssueSequence;
+            bool commandInstanceChanged = command != lastCommand || moveToPointReissued;
 
             // Request-layer commands are lower priority than real combat contact. If the command can
             // no longer safely continue, clear interaction state and let combat/patrol take over.
@@ -141,10 +147,11 @@ namespace pitTeam.BigBrain.Actions
                 BotOwner.StopMove();
                 BotOwner.SetPose(1f);
                 lastCommand = FollowerCommandType.None;
+                lastMoveToPointIssueSequence = -1;
                 return;
             }
 
-            if (command != lastCommand)
+            if (commandInstanceChanged)
             {
                 // Command changes must release resources owned by the previous command. This avoids
                 // stale regroup reservations, loot pickup state, or door interaction state carrying
@@ -189,6 +196,11 @@ namespace pitTeam.BigBrain.Actions
                 bodyLootBackpackCapacityAttempted = false;
                 bodyLootAttemptedItemIds.Clear();
                 CleanupDoorInteraction();
+
+                if (command == FollowerCommandType.MoveToPoint)
+                {
+                    ResetMoveToPointState();
+                }
             }
 
             switch (command)
@@ -222,9 +234,10 @@ namespace pitTeam.BigBrain.Actions
                     break;
             }
 
-            if (command != lastCommand)
+            if (commandInstanceChanged)
             {
                 lastCommand = command;
+                lastMoveToPointIssueSequence = followerData.MoveToPointIssueSequence;
                 if (
                     command == FollowerCommandType.MoveToPoint ||
                     command == FollowerCommandType.ComeCloser
@@ -233,6 +246,16 @@ namespace pitTeam.BigBrain.Actions
                     BotOwner.Steering.LookToMovingDirection();
                 }
             }
+        }
+
+        private void ResetMoveToPointState()
+        {
+            moveCommandInitialized = false;
+            moveArrivalLookUntil = 0f;
+            activeMoveTarget = Vector3.zero;
+            nextPathCheckAt = 0f;
+            nextHoldLookChangeAt = 0f;
+            holdLookPoint = Vector3.zero;
         }
 
         private void EnsureCommandControl()
