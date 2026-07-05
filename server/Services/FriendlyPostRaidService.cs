@@ -68,6 +68,7 @@ public class FriendlyPostRaidService(
     public void HandleReturnItems(MongoId sessionId, FriendlyPostRaidReturnItemsRequest request)
     {
         List<SPTarkov.Server.Core.Models.Eft.Common.Tables.Item> items = request.Items ?? [];
+        StripProtectedTeammateItemsFromReturnItems(sessionId, items);
         if (items.Count == 0)
         {
             return;
@@ -90,6 +91,37 @@ public class FriendlyPostRaidService(
 
         mailSendService.SendMessageToPlayer(details);
         EnsureDialogHasSender(sessionId, sender);
+    }
+
+    private void StripProtectedTeammateItemsFromReturnItems(
+        MongoId sessionId,
+        List<SPTarkov.Server.Core.Models.Eft.Common.Tables.Item> items)
+    {
+        if (items.Count == 0)
+        {
+            return;
+        }
+
+        HashSet<string> protectedIds = teammateService.GetProtectedTeammateItemIdsForExtraction(sessionId);
+        string sessionKey = sessionId.ToString();
+        if (ProtectedRaidItemIds.TryGetValue(sessionKey, out HashSet<string>? registeredIds))
+        {
+            lock (registeredIds)
+            {
+                protectedIds.UnionWith(registeredIds);
+            }
+        }
+
+        if (protectedIds.Count == 0)
+        {
+            return;
+        }
+
+        int removed = RemoveItemTreesById(items, protectedIds);
+        if (removed > 0)
+        {
+            logger.Info($"Removed {removed} protected teammate item(s) from returned follower-loot delivery.");
+        }
     }
 
     private void RemoveReturnedItemsFromInsurance(MongoId sessionId, List<SPTarkov.Server.Core.Models.Eft.Common.Tables.Item> returnedItems)

@@ -266,7 +266,7 @@ Items placed into the inspected backpack during the session are registered as tr
 
 ## Protected Extraction Filtering
 
-`Simple` and `Restricted` allow teammate gear to be physically looted in raid so the player can inspect, reorganize, or recover from inventory edge cases without special slot locks. To prevent gear farming, extraction cleanup strips protected teammate item ids from the extracted player profile.
+`Simple` and `Restricted` allow teammate gear to be physically looted in raid so the player can inspect, reorganize, or recover from inventory edge cases without special slot locks. Commanded body recovery (`Check Him` / `Loot Body`) is stricter about protected roots: followers skip protected teammate gear roots, but non-protected backpacks and rigs are recovered as whole containers instead of being emptied item by item. To prevent gear farming, extraction and return-delivery cleanup strip protected teammate item ids from the extracted player profile or returned container tree.
 
 Protected ids come from two sources:
 

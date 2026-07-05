@@ -1404,6 +1404,7 @@ namespace pitTeam.BigBrain.Actions
                     if (candidate.Item == null ||
                         string.IsNullOrEmpty(candidate.Item.Id) ||
                         bodyLootAttemptedItemIds.Contains(candidate.Item.Id) ||
+                        InteractableObjects.IsProtectedFollowerEquipment(candidate.Item) ||
                         !IsBodyGearCandidateLootable(candidate.Item) ||
                         IsLootNowInBotInventory(BotOwner?.GetPlayer, candidate.Item))
                     {
@@ -1486,34 +1487,22 @@ namespace pitTeam.BigBrain.Actions
                 return null;
             }
 
-            if (!IsBodyGearCandidateLootable(corpseBackpack))
+            if (InteractableObjects.IsProtectedFollowerEquipment(corpseBackpack) ||
+                !IsBodyGearCandidateLootable(corpseBackpack))
             {
                 return null;
             }
 
-            bodyLootAttemptedItemIds.Add(corpseBackpack.Id);
+            BodyGearCandidate candidate = new BodyGearCandidate(
+                corpseBackpack,
+                EquipmentSlot.Backpack,
+                "bodyBackpackCapacity",
+                0);
 
-            Item followerBackpack = followerEquipment.GetSlot(EquipmentSlot.Backpack)?.ContainedItem;
-            if (followerBackpack is not SearchableItemItemClass followerSearchableBackpack)
+            if (TryBuildBodyGearMove(inventory, followerEquipment, candidate, out BodyGearMove? move))
             {
-                return null;
-            }
-
-            foreach (EFT.InventoryLogic.IContainer container in followerSearchableBackpack.Containers ?? Enumerable.Empty<EFT.InventoryLogic.IContainer>())
-            {
-                if (!container.TryFindLocationForItem(corpseBackpack, out ItemAddress address) ||
-                    corpseBackpack.Parent.Equals(address))
-                {
-                    continue;
-                }
-
-                GStruct154<GClass3411> moveResult = InteractionsHandlerClass.Move(corpseBackpack, address, inventory, true);
-                if (moveResult.Failed || moveResult.Value.ItemsDestroyRequired || !inventory.CanExecute(moveResult.Value))
-                {
-                    continue;
-                }
-
-                return new BodyGearMove(corpseBackpack, moveResult.Value, "bodyBackpackCapacity");
+                bodyLootAttemptedItemIds.Add(corpseBackpack.Id);
+                return move;
             }
 
             return null;
@@ -1654,7 +1643,8 @@ namespace pitTeam.BigBrain.Actions
             foreach (EquipmentSlot slot in BodyGearContentSlotOrder)
             {
                 Item root = corpseEquipment.GetSlot(slot)?.ContainedItem;
-                if (root is not CompoundItem compound)
+                if (root is not CompoundItem compound ||
+                    (slot != EquipmentSlot.Pockets && root is SearchableItemItemClass))
                 {
                     continue;
                 }
