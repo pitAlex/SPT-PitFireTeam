@@ -1135,12 +1135,15 @@ public class FriendlyTeammateService(
 
             logger.Info($"Repaired teammate '{teammate.Aid}' default equipment item '{targetItemId}' through stock {(repairWithKit ? "kit" : "trader")} repair service.");
 
+            var playerStashDelta = BuildPlayerStashDelta(playerPmc, originalPlayerItems);
             return new FriendlyTeammateRepairEquipmentResponse
             {
                 ItemId = targetItemId,
                 Durability = savedRepairable.Durability,
                 MaxDurability = savedRepairable.MaxDurability,
-                PlayerStashItems = GetPlayerStashItems(playerPmc),
+                PlayerNewStashItems = playerStashDelta.NewItems,
+                PlayerChangedStashItems = playerStashDelta.ChangedItems,
+                PlayerDeletedStashItemIds = playerStashDelta.DeletedItemIds,
             };
         }
         catch
@@ -1251,12 +1254,16 @@ public class FriendlyTeammateService(
             SaveTeammate(sessionId, teammate);
             saveServer.SaveProfileAsync(sessionId).GetAwaiter().GetResult();
 
+            var playerStashDelta = BuildPlayerStashDelta(playerPmc, originalPlayerItems);
             logger.Info($"Committed real default equipment movement for teammate '{teammate.Aid}' in loadout management mode '{NormalizeLoadoutManagementMode(settingsService.LoadSettings().LoadoutManagementMode)}'.");
 
             return new FriendlyTeammateDefaultEquipmentResponse
             {
                 RealItemCommit = true,
                 PlayerStashItems = cloner.Clone(replacementStashItems) ?? replacementStashItems,
+                PlayerNewStashItems = playerStashDelta.NewItems,
+                PlayerChangedStashItems = playerStashDelta.ChangedItems,
+                PlayerDeletedStashItemIds = playerStashDelta.DeletedItemIds,
             };
         }
         catch
@@ -1976,6 +1983,78 @@ public class FriendlyTeammateService(
         var stashIds = GetItemTreeIds(profile.Inventory.Items, playerStashRootId);
         return cloner.Clone(profile.Inventory.Items.Where(item => stashIds.Contains(item.Id.ToString())).ToList())
             ?? profile.Inventory.Items.Where(item => stashIds.Contains(item.Id.ToString())).ToList();
+    }
+
+    private (List<Item> NewItems, List<Item> ChangedItems, List<string> DeletedItemIds) BuildPlayerStashDelta(
+        PmcData profile,
+        List<Item> originalPlayerItems)
+    {
+        profile.Inventory ??= new BotBaseInventory { Items = [] };
+        profile.Inventory.Items ??= [];
+        originalPlayerItems ??= [];
+
+        string playerStashRootId = GetPlayerStashRootId(profile);
+        var originalStashIds = GetItemTreeIds(originalPlayerItems, playerStashRootId);
+        var currentStashIds = GetItemTreeIds(profile.Inventory.Items, playerStashRootId);
+        var originalById = ToItemDictionary(originalPlayerItems.Where(item =>
+            item?.Id != null && originalStashIds.Contains(item.Id.ToString())));
+        var currentById = ToItemDictionary(profile.Inventory.Items.Where(item =>
+            item?.Id != null && currentStashIds.Contains(item.Id.ToString())));
+
+        var newItems = new List<Item>();
+        var changedItems = new List<Item>();
+        var deletedItemIds = new List<string>();
+
+        foreach (string originalId in originalStashIds)
+        {
+            if (!currentStashIds.Contains(originalId))
+            {
+                deletedItemIds.Add(originalId);
+            }
+        }
+
+        foreach (string currentId in currentStashIds)
+        {
+            if (!currentById.TryGetValue(currentId, out Item? currentItem))
+            {
+                continue;
+            }
+
+            if (!originalById.TryGetValue(currentId, out Item? originalItem))
+            {
+                newItems.Add(currentItem);
+                continue;
+            }
+
+            if (!ItemPlacementEquals(originalItem, currentItem))
+            {
+                deletedItemIds.Add(currentId);
+                newItems.Add(currentItem);
+                continue;
+            }
+
+            if (!JsonValueEquals(originalItem.Upd, currentItem.Upd))
+            {
+                changedItems.Add(currentItem);
+            }
+        }
+
+        return (
+            cloner.Clone(newItems) ?? newItems,
+            cloner.Clone(changedItems) ?? changedItems,
+            deletedItemIds
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList());
+    }
+
+    private static bool ItemPlacementEquals(Item left, Item right)
+    {
+        return left != null
+            && right != null
+            && string.Equals(left.Template.ToString(), right.Template.ToString(), StringComparison.OrdinalIgnoreCase)
+            && string.Equals(left.ParentId, right.ParentId, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(left.SlotId, right.SlotId, StringComparison.Ordinal)
+            && JsonValueEquals(left.Location, right.Location);
     }
 
     private List<Item> BuildCurrentTeammateKitDeliveryItems(BotBase teammate, bool includeSecureContainer)

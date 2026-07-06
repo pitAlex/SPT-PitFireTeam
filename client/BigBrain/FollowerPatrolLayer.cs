@@ -79,6 +79,8 @@ namespace pitTeam.BigBrain
         private const float OutOfCombatReloadGiveUpCooldown = 300f;
         private const int OutOfCombatReloadMaxSwitchAttemptsPerWeapon = 2;
         private const int OutOfCombatReloadMaxFailedReloadsPerWeapon = 2;
+        private const float OutOfCombatTacticalDeviceInitialCooldown = 0.75f;
+        private const float OutOfCombatTacticalDeviceCheckInterval = 3f;
         private const float HealNodeStartTimeout = 4f;
         private const float HealActionStartRetryCooldown = 3f;
         private const float PatrolHealCoverSearchRadius = 60f;
@@ -88,6 +90,12 @@ namespace pitTeam.BigBrain
         private static readonly EquipmentSlot[] ReloadSlotOrder =
         {
             EquipmentSlot.FirstPrimaryWeapon,
+            EquipmentSlot.SecondPrimaryWeapon,
+            EquipmentSlot.Holster
+        };
+
+        private static readonly EquipmentSlot[] StowedTacticalDeviceSlotOrder =
+        {
             EquipmentSlot.SecondPrimaryWeapon,
             EquipmentSlot.Holster
         };
@@ -108,10 +116,12 @@ namespace pitTeam.BigBrain
         private readonly Dictionary<string, int> reloadSwitchAttemptsByWeapon = new Dictionary<string, int>(StringComparer.Ordinal);
         private readonly Dictionary<string, int> reloadFailuresByWeapon = new Dictionary<string, int>(StringComparer.Ordinal);
         private readonly Dictionary<string, float> reloadGiveUpUntilByWeapon = new Dictionary<string, float>(StringComparer.Ordinal);
+        private readonly HashSet<string> stowedTacticalDeviceWeaponsProcessed = new HashSet<string>(StringComparer.Ordinal);
         private EquipmentSlot? forcedTopOffSlot = null;
         private EquipmentSlot? returnAfterTopOffSlot = null;
         private string? reloadingWeaponId = null;
         private float nextPatrolLauncherFallbackRecordAt = 0f;
+        private float nextStowedTacticalDeviceCheckAt = 0f;
         private float nextHealWorkRefreshAt = 0f;
         private float nextHealActionRetryAt = 0f;
         private bool stoppedForHealDecision = false;
@@ -234,6 +244,7 @@ namespace pitTeam.BigBrain
             selectedAction = null;
             ResetPatrolHealCoverState();
             ResetReloadState();
+            ResetStowedTacticalDeviceState();
             base.Stop();
         }
 
@@ -247,6 +258,7 @@ namespace pitTeam.BigBrain
             healUseObserved = false;
             ResetPatrolHealCoverState();
             ResetReloadState();
+            ResetStowedTacticalDeviceState();
             BossPlayers.Instance?.GetFollower(BotOwner)?.ClearCombatIndependent();
             if (BossPlayers.Instance?.GetFollower(BotOwner)?.IsBackpackInspectionActive != true)
             {
@@ -351,6 +363,7 @@ namespace pitTeam.BigBrain
                 }
 
                 // put the weapon reload here
+                TryTurnOffStowedTacticalDevicesOutOfCombat();
                 TryHandleOutOfCombatReload();
 
                 selectedAction = new Action(typeof(FollowAction), "FollowerPatrol");
@@ -403,6 +416,7 @@ namespace pitTeam.BigBrain
 
                     if (!TryReturnSelectedLauncherToPrimaryAfterCombat())
                     {
+                        TryTurnOffStowedTacticalDevicesOutOfCombat();
                         TryHandleOutOfCombatReload();
                     }
 
@@ -901,6 +915,132 @@ namespace pitTeam.BigBrain
             nextPatrolLauncherFallbackRecordAt = 0f;
             nextReloadCheckAt = Time.time + OutOfCombatReloadInitialCooldown;
             nextMagazineFillCheckAt = Time.time + OutOfCombatReloadInitialCooldown;
+        }
+
+        private void ResetStowedTacticalDeviceState()
+        {
+            stowedTacticalDeviceWeaponsProcessed.Clear();
+            nextStowedTacticalDeviceCheckAt = Time.time + OutOfCombatTacticalDeviceInitialCooldown;
+        }
+
+        private void TryTurnOffStowedTacticalDevicesOutOfCombat()
+        {
+            try
+            {
+                TryTurnOffStowedTacticalDevicesOutOfCombatInternal();
+            }
+            catch (Exception ex)
+            {
+                LogLayerException("TryTurnOffStowedTacticalDevicesOutOfCombat", ex);
+                nextStowedTacticalDeviceCheckAt = Time.time + OutOfCombatTacticalDeviceCheckInterval;
+            }
+        }
+
+        private void TryTurnOffStowedTacticalDevicesOutOfCombatInternal()
+        {
+            if (BotOwner?.WeaponManager == null || Time.time < nextStowedTacticalDeviceCheckAt)
+            {
+                return;
+            }
+
+            nextStowedTacticalDeviceCheckAt = Time.time + OutOfCombatTacticalDeviceCheckInterval;
+
+            BotWeaponSelector? selector = BotOwner.WeaponManager.Selector;
+            EquipmentSlot currentSlot = selector?.LastEquipmentSlot ?? EquipmentSlot.FirstPrimaryWeapon;
+            Weapon? activeWeapon = BotOwner.WeaponManager.ShootController?.Item ?? BotOwner.WeaponManager.CurrentWeapon;
+
+            foreach (EquipmentSlot slot in StowedTacticalDeviceSlotOrder)
+            {
+                Weapon? weapon = GetWeaponInSlot(slot);
+                if (weapon == null || IsSelectedOrActiveWeapon(slot, weapon, currentSlot, activeWeapon))
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrEmpty(weapon.Id) && stowedTacticalDeviceWeaponsProcessed.Contains(weapon.Id))
+                {
+                    continue;
+                }
+
+                if (TryTurnOffTacticalDevices(weapon, out HashSet<string> changedDeviceIds))
+                {
+                    RefreshTacticalDeviceVisuals(changedDeviceIds);
+                    Modules.Logger.LogInfo(
+                        $"[PatrolLight] Turned off stowed tactical device(s) for {BotOwner?.Profile?.Nickname ?? BotOwner?.name ?? "<unknown>"} " +
+                        $"slot={slot} weaponId={weapon.Id} template={weapon.TemplateId} devices={changedDeviceIds.Count}");
+                }
+
+                if (!string.IsNullOrEmpty(weapon.Id))
+                {
+                    stowedTacticalDeviceWeaponsProcessed.Add(weapon.Id);
+                }
+            }
+        }
+
+        private static bool IsSelectedOrActiveWeapon(EquipmentSlot slot, Weapon weapon, EquipmentSlot currentSlot, Weapon? activeWeapon)
+        {
+            if (slot == currentSlot)
+            {
+                return true;
+            }
+
+            if (activeWeapon == null)
+            {
+                return false;
+            }
+
+            if (ReferenceEquals(weapon, activeWeapon))
+            {
+                return true;
+            }
+
+            return !string.IsNullOrEmpty(weapon.Id) &&
+                   !string.IsNullOrEmpty(activeWeapon.Id) &&
+                   string.Equals(weapon.Id, activeWeapon.Id, StringComparison.Ordinal);
+        }
+
+        private static bool TryTurnOffTacticalDevices(Weapon weapon, out HashSet<string> changedDeviceIds)
+        {
+            changedDeviceIds = new HashSet<string>(StringComparer.Ordinal);
+            if (weapon?.Mods == null)
+            {
+                return false;
+            }
+
+            foreach (LightComponent light in weapon.Mods.GetComponents<LightComponent>())
+            {
+                if (light?.Item == null || !light.IsActive)
+                {
+                    continue;
+                }
+
+                light.IsActive = false;
+                if (!string.IsNullOrEmpty(light.Item.Id))
+                {
+                    changedDeviceIds.Add(light.Item.Id);
+                }
+            }
+
+            return changedDeviceIds.Count > 0;
+        }
+
+        private void RefreshTacticalDeviceVisuals(HashSet<string> changedDeviceIds)
+        {
+            if (changedDeviceIds == null || changedDeviceIds.Count == 0 || BotOwner?.GetPlayer == null)
+            {
+                return;
+            }
+
+            TacticalComboVisualController[] controllers = BotOwner.GetPlayer.GetComponentsInChildren<TacticalComboVisualController>(true);
+            foreach (TacticalComboVisualController controller in controllers)
+            {
+                LightComponent light = controller?.LightMod;
+                string? lightId = light?.Item?.Id;
+                if (!string.IsNullOrEmpty(lightId) && changedDeviceIds.Contains(lightId))
+                {
+                    controller.UpdateBeams(false);
+                }
+            }
         }
 
         private bool TryReturnSelectedLauncherToPrimaryAfterCombat()
