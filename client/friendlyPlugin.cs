@@ -431,6 +431,7 @@ namespace pitTeam
             new MatchMakerPlayerPreviewFollowerUiPatch().Enable();
             new ContextInteractionsPlayerRemovePatch().Enable();
             new TransitPointPatch().Enable();
+            new TransitWeaponHeatVisualPatch().Enable();
             new MatchMakerSelectionLocationScreenPatch().Enable();
             new SelectSpawnPointPatch().Enable();
 

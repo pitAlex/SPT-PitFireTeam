@@ -22,6 +22,9 @@ namespace pitTeam.Modules
         private static readonly Dictionary<string, List<string>> TrackedReturnItemIdsByProfileId =
             new Dictionary<string, List<string>>(StringComparer.Ordinal);
 
+        private static readonly HashSet<string> TransitCooledWeaponIds =
+            new HashSet<string>(StringComparer.Ordinal);
+
         public static bool TryCapture(
             BotOwner bot,
             IEnumerable<string> protectedEquipmentIds,
@@ -146,6 +149,7 @@ namespace pitTeam.Modules
             TransitSpawnProfileIds.Clear();
             ProtectedEquipmentIdsByProfileId.Clear();
             TrackedReturnItemIdsByProfileId.Clear();
+            TransitCooledWeaponIds.Clear();
         }
 
         private static Profile CreateProfileSnapshot(BotOwner bot)
@@ -180,23 +184,79 @@ namespace pitTeam.Modules
             Profile profile = new Profile(descriptor);
             try
             {
-                int cooledWeapons = ClearTransitWeaponOverheat(profile);
+                int cooledWeapons = NormalizeTransitWeaponOverheat(profile);
                 if (cooledWeapons > 0)
                 {
                     Modules.Logger.LogInfo(
-                        $"[Transit] Cleared stale overheat visual state on {cooledWeapons} carried follower weapon(s) for '{profile.Nickname ?? profile.ProfileId}'.");
+                        $"[Transit] Normalized stale overheat visual state on {cooledWeapons} carried follower weapon(s) for '{profile.Nickname ?? profile.ProfileId}'.");
                 }
             }
             catch (Exception ex)
             {
-                Modules.Logger.LogError($"[Transit] Failed to clear stale carried weapon overheat for '{profile.Nickname ?? profile.ProfileId}'.");
+                Modules.Logger.LogError($"[Transit] Failed to normalize stale carried weapon overheat for '{profile.Nickname ?? profile.ProfileId}'.");
                 Modules.Logger.LogError(ex);
             }
 
             return profile;
         }
 
-        private static int ClearTransitWeaponOverheat(Profile profile)
+        public static void ResetTransitWeaponHeatVisuals(WeaponPrefab weaponPrefab, Weapon weapon)
+        {
+            if (weaponPrefab == null ||
+                weapon == null ||
+                string.IsNullOrWhiteSpace(weapon.Id) ||
+                !TransitCooledWeaponIds.Contains(weapon.Id))
+            {
+                return;
+            }
+
+            try
+            {
+                float ambientWeaponTemperature = HotObject.ConvertHeat2Celsio(0f);
+                int resetCount = 0;
+                HashSet<HotObject> resetObjects = new HashSet<HotObject>();
+
+                foreach (HotObject hotObject in weaponPrefab.HotObjects ?? Enumerable.Empty<HotObject>())
+                {
+                    if (ResetHotObject(hotObject, ambientWeaponTemperature, resetObjects))
+                    {
+                        resetCount++;
+                    }
+                }
+
+                foreach (HotObject hotObject in weaponPrefab.GetComponentsInChildren<HotObject>(true))
+                {
+                    if (ResetHotObject(hotObject, ambientWeaponTemperature, resetObjects))
+                    {
+                        resetCount++;
+                    }
+                }
+
+                if (resetCount > 0)
+                {
+                    Modules.Logger.LogInfo(
+                        $"[Transit] Reset stale heat renderer state on carried follower weapon '{weapon.Id}' hotObjects={resetCount}.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Modules.Logger.LogError($"[Transit] Failed to reset stale heat renderer state on carried follower weapon '{weapon.Id}'.");
+                Modules.Logger.LogError(ex);
+            }
+        }
+
+        private static bool ResetHotObject(HotObject hotObject, float temperatureCelsio, HashSet<HotObject> resetObjects)
+        {
+            if (hotObject == null || resetObjects == null || !resetObjects.Add(hotObject))
+            {
+                return false;
+            }
+
+            hotObject.SetTemperatureToRenderer(temperatureCelsio, true);
+            return true;
+        }
+
+        private static int NormalizeTransitWeaponOverheat(Profile profile)
         {
             InventoryEquipment equipment = profile?.Inventory?.Equipment;
             if (equipment == null)
@@ -207,7 +267,7 @@ namespace pitTeam.Modules
             int cooledWeapons = 0;
             foreach (Item item in equipment.GetAllItems())
             {
-                if (item is Weapon weapon && ClearWeaponOverheat(weapon))
+                if (item is Weapon weapon && NormalizeWeaponOverheat(weapon))
                 {
                     cooledWeapons++;
                 }
@@ -216,7 +276,7 @@ namespace pitTeam.Modules
             return cooledWeapons;
         }
 
-        private static bool ClearWeaponOverheat(Weapon weapon)
+        private static bool NormalizeWeaponOverheat(Weapon weapon)
         {
             Weapon.WeaponMalfunctionStateClass malfState = weapon?.MalfState;
             if (malfState == null)
@@ -224,18 +284,9 @@ namespace pitTeam.Modules
                 return false;
             }
 
-            bool hadOverheatState =
-                malfState.LastShotOverheat > 0f ||
-                malfState.SlideOnOverheatReached ||
-                malfState.OverheatFirerateMultInited ||
-                Math.Abs(malfState.OverheatFirerateMult) > Mathf.Epsilon ||
-                malfState.AutoshotChanceInited ||
-                malfState.AutoshotTime > 0f ||
-                Math.Abs(malfState.OverheatBarrelMoveMult) > Mathf.Epsilon;
-
-            if (!hadOverheatState)
+            if (!string.IsNullOrWhiteSpace(weapon.Id))
             {
-                return false;
+                TransitCooledWeaponIds.Add(weapon.Id);
             }
 
             // Keep real malfunction state and weapon durability, but do not carry the stale
