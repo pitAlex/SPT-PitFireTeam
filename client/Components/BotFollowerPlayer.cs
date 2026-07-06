@@ -12,6 +12,7 @@ using UnityEngine;
 
 using pitTeam.Modules;
 using DrakiaXYZ.BigBrain.Brains;
+using pitTeam.BigBrain;
 using pitTeam.Patches;
 
 namespace pitTeam.Components
@@ -1208,6 +1209,11 @@ namespace pitTeam.Components
             _resumeHoldAfterTakeLoot = false;
             _resumeHoldAfterTakeLootCrouch = false;
             BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(SetMoveToPoint));
+            if (!HasKnownEnemy() &&
+                !FollowerCombatLayer.TryForceReleaseCoreFollowerCombatState(_bot, nameof(SetMoveToPoint)))
+            {
+                Utils.FollowerRecovery.SoftReset(_bot);
+            }
         }
 
         public void SetComeCloser(float duration)

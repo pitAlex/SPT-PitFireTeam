@@ -86,12 +86,14 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            if (!followerData.IsReadyForPatrolAfterCombat())
+            bool hasKnownEnemy = hasCommand && followerData.HasKnownEnemy();
+            if (!followerData.IsReadyForPatrolAfterCombat() &&
+                !CanRunDuringPostCombatHandoff(command, hasKnownEnemy))
             {
                 return false;
             }
 
-            if (hasCommand && followerData.HasKnownEnemy())
+            if (hasCommand && hasKnownEnemy)
             {
                 if (command == FollowerCommandType.RegroupNearBoss)
                 {
@@ -125,6 +127,18 @@ namespace pitTeam.BigBrain
 
 
             return hasCommand;
+        }
+
+        private static bool CanRunDuringPostCombatHandoff(FollowerCommandType command, bool hasKnownEnemy)
+        {
+            if (hasKnownEnemy)
+            {
+                return false;
+            }
+
+            return command == FollowerCommandType.HoldPosition ||
+                   command == FollowerCommandType.MoveToPoint ||
+                   command == FollowerCommandType.ComeCloser;
         }
 
         public override Action GetNextAction()

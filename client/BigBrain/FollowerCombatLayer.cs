@@ -23,6 +23,7 @@ namespace pitTeam.BigBrain
 
         private static readonly HashSet<BotLogicDecision> LoggedUnsupportedDecisions = new HashSet<BotLogicDecision>();
         private static readonly HashSet<string> ActiveFollowerCombatBots = new HashSet<string>(StringComparer.Ordinal);
+        private static readonly Dictionary<string, string> PendingForceReleaseRequests = new Dictionary<string, string>(StringComparer.Ordinal);
 
         private FollowerCombatLogicBase? combatLogic;
         private readonly string brainShortName;
@@ -69,15 +70,21 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
+            if (TryConsumeForceReleaseRequest(out string forceReleaseReason))
+            {
+                CompletePostCombatLinger(forceReleaseReason);
+                return false;
+            }
+
             if (lingerArmed && IsLingerExpired() && !HasCurrentLiveGoalEnemy() && !TryKeepActiveForOrderedPush())
             {
-                CompletePostCombatLinger();
+                CompletePostCombatLinger("lingerExpired");
                 return false;
             }
 
             if (ShouldYieldPostCombatLingerToRequestCommand())
             {
-                CompletePostCombatLinger();
+                CompletePostCombatLinger("lingerYieldRequest");
                 return false;
             }
 
@@ -110,7 +117,7 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
-            CompletePostCombatLinger();
+            CompletePostCombatLinger("lingerExpired");
             return false;
         }
 
@@ -138,9 +145,8 @@ namespace pitTeam.BigBrain
 
         public override void Stop()
         {
-            BattleRecorder.RecordCombatLayerState(BotOwner, false, "layerStop");
             BeginPostCombatFullHealIfCombatEnded();
-            MarkActive(false);
+            ReleaseActiveCombatLayerState("layerStop");
             BotFollowerPlayer? followerData = BossPlayers.Instance?.GetFollower(BotOwner);
             followerData?.ClearTemporaryCombatAggressionOverrideAfterCombatCooldown();
             followerData?.ClearActiveCombatIndependent();
@@ -221,6 +227,12 @@ namespace pitTeam.BigBrain
 
         public override bool IsCurrentActionEnding()
         {
+            if (TryConsumeForceReleaseRequest(out string forceReleaseReason))
+            {
+                CompletePostCombatLinger(forceReleaseReason);
+                return true;
+            }
+
             if (combatLogic == null || currentDecision == null)
             {
                 return true;
@@ -239,7 +251,7 @@ namespace pitTeam.BigBrain
             {
                 if (ShouldYieldPostCombatLingerToRequestCommand())
                 {
-                    CompletePostCombatLinger();
+                    CompletePostCombatLinger("lingerYieldRequest");
                     return true;
                 }
 
@@ -263,7 +275,7 @@ namespace pitTeam.BigBrain
                 bool expired = IsLingerExpired();
                 if (expired)
                 {
-                    CompletePostCombatLinger();
+                    CompletePostCombatLinger("lingerExpired");
                 }
 
                 return expired;
@@ -359,12 +371,16 @@ namespace pitTeam.BigBrain
             lingerArmed = false;
         }
 
-        private void CompletePostCombatLinger()
+        private void CompletePostCombatLinger(string reason)
         {
             Utils.FollowerMedical.BeginPostCombatFullHeal(BotOwner);
             hadCombatSinceActivation = false;
+            currentDecision = null;
+            lastDecision = null;
+            combatLogicResetForInactive = false;
             ClearLinger();
             BossPlayers.Instance?.GetFollower(BotOwner)?.ClearTemporaryCombatAggressionOverrideAfterCombatCooldown();
+            ReleaseActiveCombatLayerState(reason);
         }
 
         private void BeginPostCombatFullHealIfCombatEnded()
@@ -397,20 +413,67 @@ namespace pitTeam.BigBrain
                 && ActiveFollowerCombatBots.Contains(botOwner.ProfileId);
         }
 
-        private void MarkActive(bool active)
+        internal static bool TryForceReleaseCoreFollowerCombatState(BotOwner? botOwner, string reason)
+        {
+            if (botOwner == null || string.IsNullOrEmpty(botOwner.ProfileId))
+            {
+                return false;
+            }
+
+            string releaseReason = string.IsNullOrWhiteSpace(reason) ? "forceRelease" : reason;
+            bool wasActive = ActiveFollowerCombatBots.Remove(botOwner.ProfileId);
+            if (!wasActive)
+            {
+                return false;
+            }
+
+            PendingForceReleaseRequests[botOwner.ProfileId] = releaseReason;
+            BattleRecorder.RecordCombatLayerState(botOwner, false, releaseReason);
+            FollowerRecovery.SoftReset(botOwner);
+            return true;
+        }
+
+        private bool TryConsumeForceReleaseRequest(out string reason)
+        {
+            reason = string.Empty;
+            string profileId = BotOwner?.ProfileId ?? string.Empty;
+            if (string.IsNullOrEmpty(profileId) ||
+                !PendingForceReleaseRequests.TryGetValue(profileId, out reason))
+            {
+                return false;
+            }
+
+            PendingForceReleaseRequests.Remove(profileId);
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                reason = "forceRelease";
+            }
+
+            return true;
+        }
+
+        private void ReleaseActiveCombatLayerState(string reason)
+        {
+            if (MarkActive(false))
+            {
+                BattleRecorder.RecordCombatLayerState(BotOwner, false, reason);
+            }
+        }
+
+        private bool MarkActive(bool active)
         {
             if (string.IsNullOrEmpty(BotOwner?.ProfileId))
             {
-                return;
+                return false;
             }
 
             if (active)
             {
-                ActiveFollowerCombatBots.Add(BotOwner.ProfileId);
+                return ActiveFollowerCombatBots.Add(BotOwner.ProfileId);
             }
             else
             {
-                ActiveFollowerCombatBots.Remove(BotOwner.ProfileId);
+                return ActiveFollowerCombatBots.Remove(BotOwner.ProfileId);
             }
         }
 
