@@ -1306,6 +1306,10 @@ namespace pitTeam.Components
                         Modules.Logger.LogError(ex);
                     }
                 }
+                else
+                {
+                    FollowerCombatLayer.TryForceReleaseCoreFollowerCombatState(follower, "Attention");
+                }
 
                 FollowerRecovery.SoftReset(follower);
 

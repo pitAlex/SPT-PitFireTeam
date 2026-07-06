@@ -1101,6 +1101,13 @@ namespace pitTeam.BigBrain
             {
                 TryHandleOutOfCombatReloadInternal();
             }
+            catch (InvalidOperationException ex) when (IsInventoryEnumerationMutation(ex))
+            {
+                // EFT inventory scans can race with item moves/auto-fill transactions; skip this patrol cycle.
+                ResetReloadState();
+                nextReloadCheckAt = Time.time + OutOfCombatReloadFullCycleCooldown;
+                nextMagazineFillCheckAt = Time.time + OutOfCombatReloadFullCycleCooldown;
+            }
             catch (Exception ex)
             {
                 LogLayerException("TryHandleOutOfCombatReload", ex);
@@ -1585,6 +1592,11 @@ namespace pitTeam.BigBrain
             {
                 reloadWeaponsProcessed.Add(weaponId);
             }
+        }
+
+        private static bool IsInventoryEnumerationMutation(InvalidOperationException ex)
+        {
+            return ex.Message?.IndexOf("Collection was modified", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private void TryReturnAfterTopOffSwitch(BotWeaponSelector selector)
