@@ -4,6 +4,7 @@ using EFT.InventoryLogic;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEngine;
 
 namespace pitTeam.Modules
 {
@@ -176,7 +177,79 @@ namespace pitTeam.Modules
                 descriptor.Skills = new SkillsDescriptorClass(bot.GetPlayer.Skills);
             }
 
-            return new Profile(descriptor);
+            Profile profile = new Profile(descriptor);
+            try
+            {
+                int cooledWeapons = ClearTransitWeaponOverheat(profile);
+                if (cooledWeapons > 0)
+                {
+                    Modules.Logger.LogInfo(
+                        $"[Transit] Cleared stale overheat visual state on {cooledWeapons} carried follower weapon(s) for '{profile.Nickname ?? profile.ProfileId}'.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Modules.Logger.LogError($"[Transit] Failed to clear stale carried weapon overheat for '{profile.Nickname ?? profile.ProfileId}'.");
+                Modules.Logger.LogError(ex);
+            }
+
+            return profile;
+        }
+
+        private static int ClearTransitWeaponOverheat(Profile profile)
+        {
+            InventoryEquipment equipment = profile?.Inventory?.Equipment;
+            if (equipment == null)
+            {
+                return 0;
+            }
+
+            int cooledWeapons = 0;
+            foreach (Item item in equipment.GetAllItems())
+            {
+                if (item is Weapon weapon && ClearWeaponOverheat(weapon))
+                {
+                    cooledWeapons++;
+                }
+            }
+
+            return cooledWeapons;
+        }
+
+        private static bool ClearWeaponOverheat(Weapon weapon)
+        {
+            Weapon.WeaponMalfunctionStateClass malfState = weapon?.MalfState;
+            if (malfState == null)
+            {
+                return false;
+            }
+
+            bool hadOverheatState =
+                malfState.LastShotOverheat > 0f ||
+                malfState.SlideOnOverheatReached ||
+                malfState.OverheatFirerateMultInited ||
+                Math.Abs(malfState.OverheatFirerateMult) > Mathf.Epsilon ||
+                malfState.AutoshotChanceInited ||
+                malfState.AutoshotTime > 0f ||
+                Math.Abs(malfState.OverheatBarrelMoveMult) > Mathf.Epsilon;
+
+            if (!hadOverheatState)
+            {
+                return false;
+            }
+
+            // Keep real malfunction state and weapon durability, but do not carry the stale
+            // previous-raid heat values that repaint suppressors red on follower world models.
+            malfState.LastShotOverheat = 0f;
+            malfState.LastShotTime = 0f;
+            malfState.SlideOnOverheatReached = false;
+            malfState.OverheatFirerateMult = 0f;
+            malfState.OverheatFirerateMultInited = false;
+            malfState.AutoshotChanceInited = false;
+            malfState.AutoshotTime = -1f;
+            malfState.OverheatBarrelMoveMult = 0f;
+            malfState.OverheatBarrelMoveDir = Vector2.zero;
+            return true;
         }
 
         private static void StoreState(string key, TransitFollowerState state)
