@@ -409,6 +409,7 @@ Command state:
 Targeting:
 
 - Requires `InteractableObjects.GetCurBodyLootTarget()`.
+- Only spawned squadmates (`IsSquadMate`) can be assigned to body-loot commands; recruited/picked-up followers are ignored.
 - Chooses the closest active follower for teammate corpses.
 - Chooses the closest active follower within 22m for non-teammate corpses, ignoring followers with no free backpack/pocket grid space.
 - Ignores followers with enemies or active loot/pickup commands.
@@ -434,6 +435,7 @@ Execution:
     - pocket and vest contents skip magazines entirely so follower reload space is not disturbed; backpack and container magazines can still be looted
     - armor plates are ignored, including loose/cargo plates and installed plates inside armor or plate-carrier trees
     - weapons are priced and moved as whole weapon trees, including attached mods, instead of being stripped part by part; they first try empty compatible weapon slots, such as second primary or holster, then fall back to backpack/pocket space
+    - category filters from `Looting Settings` are checked before price: `Pickup Food`, `Pickup Meds`, `Pickup Valuables`, and `Pickup Gear`; corpse dogtags bypass these category filters
     - item price is compared once against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound
     - non-weapon successful moves only target the follower's backpack and pockets, never the follower's rig
 - Stores successful moved items through `InteractableObjects.StoreItem(...)` for squadmates.
@@ -454,6 +456,7 @@ Command state:
 Targeting:
 
 - Requires `InteractableObjects.GetCurLootContainerTarget()`.
+- Only spawned squadmates (`IsSquadMate`) can be assigned to container-loot commands; recruited/picked-up followers are ignored.
 - Chooses the closest active follower within 22m, ignoring followers with no free backpack/pocket grid space.
 - Ignores followers with enemies or active loot/pickup commands.
 - Reserves container ownership through `InteractableObjects.SetContainerLootTaker(...)`.
@@ -465,6 +468,7 @@ Execution:
 - Opens the container if it is shut.
 - Checks whether at least one eligible item can be moved, says `EPhraseTrigger.OnLoot` if so, then plays the loot search sound and waits briefly before moving items. Delay is based on the total grid cells in the container tree, with a short bounded cap so it reads as searching without matching full player search time.
 - Searches container contents through the same filtered-loot planner used for non-teammate bodies.
+- Applies `Looting Settings` category filters before price: `Pickup Food`, `Pickup Meds`, `Pickup Valuables`, and `Pickup Gear`.
 - Compares each candidate item tree against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound.
 - Moves non-weapon candidates only into the follower's backpack and pockets, never the follower's rig.
 - Weapons are priced and moved as whole weapon trees; they first try empty compatible weapon slots, such as second primary or holster, then fall back to backpack/pocket space.

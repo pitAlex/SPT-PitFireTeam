@@ -84,6 +84,18 @@ namespace pitTeam.Localization
                 lootMaximumPrice = Entry(
                     "Maximum Price",
                     "Maximum rouble value for an item to be taken from a body or container. Set to 0 to disable the maximum."),
+                lootFilterFood = Entry(
+                    "Pickup Food",
+                    "Allow food and drink items to be taken from bodies and containers."),
+                lootFilterMeds = Entry(
+                    "Pickup Meds",
+                    "Allow usable medical items, drugs, stimulators, and med kits to be taken from bodies and containers."),
+                lootFilterValuables = Entry(
+                    "Pickup Valuables",
+                    "Allow barter items, keys, special items, info items, money, and other non-gear loot to be taken from bodies and containers."),
+                lootFilterGear = Entry(
+                    "Pickup Gear",
+                    "Allow weapons, armor, headgear, ammo, magazines, weapon mods, and grenades to be taken from bodies and containers. Armor plates are still ignored."),
                 memberTactic = Entry(
                     "Squad Member {0} Tactic",
                     "Set Squad member fight tactic."),

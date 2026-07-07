@@ -304,6 +304,10 @@ Verified entry groups:
 - `Looting Settings`
     - `Minimum Price`
     - `Maximum Price`
+    - `Pickup Food`
+    - `Pickup Meds`
+    - `Pickup Valuables`
+    - `Pickup Gear`
 - `Loadout Management`
     - `Simple`
     - `Restricted`
@@ -361,6 +365,13 @@ On confirmation, the client saves the BepInEx setting, syncs the new mode to the
 `Minimum Price` is the lowest rouble value an item tree must have before a follower will take it. `Maximum Price` is the highest rouble value an item tree may have before a follower will take it. A value of `0` disables that bound.
 
 These thresholds apply to each candidate item tree once: weapons include attached mods and helmets include attached devices. Armor plates are ignored by filtered body/container looting. The command still requires the item to fit in the follower's backpack or pockets.
+
+The category checkboxes default on and are applied before price:
+
+- `Pickup Food` covers food and drinks.
+- `Pickup Meds` covers usable medical items, drugs, stimulators, and med kits.
+- `Pickup Valuables` covers barter items, keys, special items, info items, money, and other non-gear loot.
+- `Pickup Gear` covers weapons, armor, headgear, ammo, magazines, weapon mods, and grenades. Armor plates remain ignored even when `Pickup Gear` is enabled.
 
 Crossing into or out of `Realistic` also strips the secure-container tree from saved teammate `Default` loadouts before the next profile/edit view can expose it.
 

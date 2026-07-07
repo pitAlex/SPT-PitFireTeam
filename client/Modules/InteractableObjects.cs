@@ -957,7 +957,7 @@ namespace pitTeam.Modules
             if (Instance == null || bot == null || string.IsNullOrEmpty(bot.ProfileId)) return false;
 
             var follower = BossPlayers.Instance.GetFollower(bot);
-            if (follower == null) return false;
+            if (follower == null || !follower.IsSquadMate) return false;
 
             Corpse targetCorpse = corpse ?? GetAssignedBodyLootTarget(bot) ?? Instance._bodyLootTarget;
             if (targetCorpse == null)
@@ -1006,7 +1006,7 @@ namespace pitTeam.Modules
             if (Instance == null || bot == null || string.IsNullOrEmpty(bot.ProfileId)) return false;
 
             var follower = BossPlayers.Instance.GetFollower(bot);
-            if (follower == null) return false;
+            if (follower == null || !follower.IsSquadMate) return false;
 
             LootableContainer targetContainer = container ?? GetAssignedLootContainerTarget(bot) ?? Instance._lootContainerTarget;
             if (targetContainer == null)

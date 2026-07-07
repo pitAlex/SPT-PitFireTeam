@@ -97,6 +97,10 @@ namespace pitTeam
         public Dictionary<string, string> teamEscapeUseAnyExtract { get; set; }
         public Dictionary<string, string> lootMinimumPrice { get; set; }
         public Dictionary<string, string> lootMaximumPrice { get; set; }
+        public Dictionary<string, string> lootFilterFood { get; set; }
+        public Dictionary<string, string> lootFilterMeds { get; set; }
+        public Dictionary<string, string> lootFilterValuables { get; set; }
+        public Dictionary<string, string> lootFilterGear { get; set; }
 
         public Dictionary<string, string> memberTactic { get; set; }
         public Dictionary<string, string> memberEquipment { get; set; }
@@ -211,6 +215,10 @@ namespace pitTeam
         public static ConfigEntry<bool> teamEscapeUseAnyExtract;
         public static ConfigEntry<int> lootMinimumPrice;
         public static ConfigEntry<int> lootMaximumPrice;
+        public static ConfigEntry<bool> lootFilterFood;
+        public static ConfigEntry<bool> lootFilterMeds;
+        public static ConfigEntry<bool> lootFilterValuables;
+        public static ConfigEntry<bool> lootFilterGear;
 
         public static ConfigEntry<bool> pitFireTeamFLAG;
         public static ConfigEntry<bool> badGuy;
@@ -964,6 +972,14 @@ namespace pitTeam
             lootMinimumPrice = Config.Bind("", "10 LootMinimumPrice", 0, new ConfigDescription(optionsLang.lootMinimumPrice["Description"], new AcceptableValueRange<int>(0, LootPriceMaximumRoubles), CreateConfigAttributes(-1002, false, optionsLang.lootMinimumPrice)));
 
             lootMaximumPrice = Config.Bind("", "10 LootMaximumPrice", 0, new ConfigDescription(optionsLang.lootMaximumPrice["Description"], new AcceptableValueRange<int>(0, LootPriceMaximumRoubles), CreateConfigAttributes(-1002, false, optionsLang.lootMaximumPrice)));
+
+            lootFilterFood = Config.Bind("", "10 LootFilterFood", true, new ConfigDescription(optionsLang.lootFilterFood["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootFilterFood)));
+
+            lootFilterMeds = Config.Bind("", "10 LootFilterMeds", true, new ConfigDescription(optionsLang.lootFilterMeds["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootFilterMeds)));
+
+            lootFilterValuables = Config.Bind("", "10 LootFilterValuables", true, new ConfigDescription(optionsLang.lootFilterValuables["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootFilterValuables)));
+
+            lootFilterGear = Config.Bind("", "10 LootFilterGear", true, new ConfigDescription(optionsLang.lootFilterGear["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootFilterGear)));
 
             npcSendMessage = Config.Bind("", "11 NpcSendMessage", true, new ConfigDescription(optionsLang.npcSendMessage["Description"], null, CreateConfigAttributes(-1003, false, optionsLang.npcSendMessage)));
 

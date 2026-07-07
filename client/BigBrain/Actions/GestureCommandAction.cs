@@ -77,6 +77,11 @@ namespace pitTeam.BigBrain.Actions
         private float doorTimeoutAt;
         private FollowerCommandType lastCommand = FollowerCommandType.None;
         private int lastMoveToPointIssueSequence = -1;
+        private float moveLastProgressDistance;
+        private float moveLastProgressAt;
+        private float nextMoveProgressDiagnosticAt;
+        private string lastMoveDiagnosticKey = string.Empty;
+        private float nextMoveDiagnosticAt;
         private const float RegroupArriveNavDistance = 4f;
         private const float RegroupRunDistance = 10f;
         private const float SameLevelTolerance = 1.75f;
@@ -87,8 +92,11 @@ namespace pitTeam.BigBrain.Actions
         private const float MoveToPointArrivalDistance = 1.5f;
         private const float MoveToPointForcedArrivalDistance = 0.75f;
         private const float MoveToPointTargetChangeDistanceSqr = 0.25f;
+        private const float MoveToPointProgressEpsilon = 0.25f;
+        private const float MoveToPointNoProgressSeconds = 1.5f;
+        private const float MoveToPointDiagnosticThrottleSeconds = 1f;
         private const float LootSearchDelayBaseSeconds = 1.20f;
-        private const float LootSearchDelayPerSqrtCellSeconds = 0.62f;
+        private const float LootSearchDelayPerSqrtCellSeconds = 0.82f;
         private const float LootSearchDelayMinSeconds = 1.75f;
         private const float LootSearchDelayMaxSeconds = 6.25f;
         private const float LootContainerOpenTimeoutSeconds = 3f;
@@ -150,6 +158,7 @@ namespace pitTeam.BigBrain.Actions
             doorTimeoutAt = 0f;
             lastCommand = FollowerCommandType.None;
             lastMoveToPointIssueSequence = -1;
+            ResetMoveToPointDiagnostics();
         }
 
         public override void Update(CustomLayer.ActionData data)
@@ -160,6 +169,7 @@ namespace pitTeam.BigBrain.Actions
                 ReleaseRegroupReservation();
                 lastCommand = FollowerCommandType.None;
                 lastMoveToPointIssueSequence = -1;
+                ResetMoveToPointDiagnostics();
                 return;
             }
 
@@ -182,6 +192,7 @@ namespace pitTeam.BigBrain.Actions
                 BotOwner.SetPose(1f);
                 lastCommand = FollowerCommandType.None;
                 lastMoveToPointIssueSequence = -1;
+                ResetMoveToPointDiagnostics();
                 return;
             }
 
@@ -251,6 +262,8 @@ namespace pitTeam.BigBrain.Actions
                 if (command == FollowerCommandType.MoveToPoint)
                 {
                     ResetMoveToPointState();
+                    float commandDistance = (target - BotOwner.Position).magnitude;
+                    RecordMoveToPointDiagnostic("commandStart", target, commandDistance, () => CreateMoveToPointDiagnostic(target, commandDistance));
                 }
             }
 
@@ -311,6 +324,16 @@ namespace pitTeam.BigBrain.Actions
             nextPathCheckAt = 0f;
             nextHoldLookChangeAt = 0f;
             holdLookPoint = Vector3.zero;
+            ResetMoveToPointDiagnostics();
+        }
+
+        private void ResetMoveToPointDiagnostics()
+        {
+            moveLastProgressDistance = 0f;
+            moveLastProgressAt = 0f;
+            nextMoveProgressDiagnosticAt = 0f;
+            lastMoveDiagnosticKey = string.Empty;
+            nextMoveDiagnosticAt = 0f;
         }
 
         private void EnsureCommandControl()
@@ -668,8 +691,10 @@ namespace pitTeam.BigBrain.Actions
             if (BotOwner.Mover.TargetPose != 1f) BotOwner.Mover.SetPose(1f);
 
             float distance = (target - BotOwner.Position).magnitude;
+            TrackMoveToPointProgress(target, distance);
             if (distance > MoveToPointArrivalDistance && moveArrivalLookUntil > 0f)
             {
+                RecordMoveToPointDiagnostic("arrivalHoldCancelled", target, distance, () => CreateMoveToPointDiagnostic(target, distance));
                 moveArrivalLookUntil = 0f;
             }
             if (HasArrivedAtMovePoint(distance))
@@ -677,6 +702,7 @@ namespace pitTeam.BigBrain.Actions
                 HandleMovePointArrivalLookAround();
                 if (Time.time < moveArrivalLookUntil)
                 {
+                    RecordMoveToPointDiagnostic("arrivalHoldWaiting", target, distance, () => CreateMoveToPointDiagnostic(target, distance));
                     return;
                 }
                 moveArrivalLookUntil = 0f;
@@ -684,6 +710,7 @@ namespace pitTeam.BigBrain.Actions
                 holdLookPoint = Vector3.zero;
                 nextHoldLookChangeAt = 0f;
                 moveCommandInitialized = false;
+                RecordMoveToPointDiagnostic("arrived", target, distance, () => CreateMoveToPointDiagnostic(target, distance));
                 followerData?.ClearCommand("MoveToPoint:arrived");
                 return;
             }
@@ -693,6 +720,19 @@ namespace pitTeam.BigBrain.Actions
             bool targetCompletedEarly = BotOwner.GoToSomePointData?.IsCome() == true && distance > MoveToPointArrivalDistance;
             if (targetChanged || targetMissing || targetCompletedEarly)
             {
+                RecordMoveToPointDiagnostic(
+                    "targetRefresh",
+                    target,
+                    distance,
+                    () => CreateMoveToPointDiagnostic(
+                        target,
+                        distance,
+                        new
+                        {
+                            targetChanged,
+                            targetMissing,
+                            targetCompletedEarly
+                        }));
                 BotOwner.GoToSomePointData.SetPoint(target);
                 moveCommandInitialized = true;
                 activeMoveTarget = target;
@@ -706,6 +746,18 @@ namespace pitTeam.BigBrain.Actions
                 NavMeshPath path = new NavMeshPath();
                 if (!NavMesh.CalculatePath(BotOwner.Position, target, NavMesh.AllAreas, path) || path.status != NavMeshPathStatus.PathComplete)
                 {
+                    RecordMoveToPointDiagnostic(
+                        "pathInvalid",
+                        target,
+                        distance,
+                        () => CreateMoveToPointDiagnostic(
+                            target,
+                            distance,
+                            new
+                            {
+                                pathStatus = path.status.ToString(),
+                                cornerCount = path.corners?.Length ?? 0
+                            }));
                     followerData?.ClearCommand("MoveToPoint:pathInvalid");
                     BotOwner.StopMove();
                     return;
@@ -725,6 +777,154 @@ namespace pitTeam.BigBrain.Actions
             }
 
             nextHoldLookChangeAt = 0f;
+        }
+
+        private void TrackMoveToPointProgress(Vector3 target, float distance)
+        {
+            if (!moveCommandInitialized || moveLastProgressAt <= 0f)
+            {
+                moveLastProgressDistance = distance;
+                moveLastProgressAt = Time.time;
+                return;
+            }
+
+            if (distance < moveLastProgressDistance - MoveToPointProgressEpsilon)
+            {
+                moveLastProgressDistance = distance;
+                moveLastProgressAt = Time.time;
+                return;
+            }
+
+            if (Time.time - moveLastProgressAt < MoveToPointNoProgressSeconds ||
+                Time.time < nextMoveProgressDiagnosticAt)
+            {
+                return;
+            }
+
+            nextMoveProgressDiagnosticAt = Time.time + MoveToPointDiagnosticThrottleSeconds;
+            RecordMoveToPointDiagnostic(
+                "noProgress",
+                target,
+                distance,
+                () => CreateMoveToPointDiagnostic(
+                    target,
+                    distance,
+                    new
+                    {
+                        lastProgressDistance = SanitizeFloat(moveLastProgressDistance),
+                        noProgressSeconds = SanitizeFloat(Time.time - moveLastProgressAt)
+                    }));
+        }
+
+        private void RecordMoveToPointDiagnostic(string reason, Vector3 target, float distance, Func<object?> detailsFactory)
+        {
+            if (BotOwner == null || !BattleRecorder.IsRecordingFor(BotOwner))
+            {
+                return;
+            }
+
+            string key = $"MoveToPoint:{reason}";
+            if (StringComparer.Ordinal.Equals(key, lastMoveDiagnosticKey) && Time.time < nextMoveDiagnosticAt)
+            {
+                return;
+            }
+
+            lastMoveDiagnosticKey = key;
+            nextMoveDiagnosticAt = Time.time + MoveToPointDiagnosticThrottleSeconds;
+            BattleRecorder.RecordCommandDiagnostic(BotOwner, FollowerCommandType.MoveToPoint, "moveToPoint", reason, detailsFactory);
+        }
+
+        private object CreateMoveToPointDiagnostic(Vector3 target, float distance, object? extra = null)
+        {
+            bool hasCurrentTarget = BotOwner.GoToSomePointData?.HaveTarget() == true;
+            Vector3 currentTarget = hasCurrentTarget ? BotOwner.GoToSomePointData.Point : Vector3.zero;
+            Vector3 lookOverridePoint = Vector3.zero;
+            bool hasLookOverride = followerData?.TryGetCommandLookOverride(out lookOverridePoint) == true;
+            return new
+            {
+                position = CreateDiagnosticVector(BotOwner.Position),
+                target = CreateDiagnosticVector(target),
+                activeMoveTarget = moveCommandInitialized ? CreateDiagnosticVector(activeMoveTarget) : null,
+                currentMoveTarget = hasCurrentTarget ? CreateDiagnosticVector(currentTarget) : null,
+                distance = SanitizeFloat(distance),
+                initialized = moveCommandInitialized,
+                issueSequence = followerData?.MoveToPointIssueSequence,
+                lastIssueSequence = lastMoveToPointIssueSequence,
+                arrivalHoldRemaining = moveArrivalLookUntil > 0f ? SanitizeFloat(Mathf.Max(0f, moveArrivalLookUntil - Time.time)) : null,
+                nextPathCheckIn = SanitizeFloat(Mathf.Max(0f, nextPathCheckAt - Time.time)),
+                movement = new
+                {
+                    moverPaused = BotOwner.Mover?.Pause == true,
+                    sprinting = BotOwner.Mover?.Sprinting == true,
+                    hasPathAndNoComplete = BotOwner.Mover?.HasPathAndNoComplete == true,
+                    hasGoToTarget = hasCurrentTarget,
+                    reachedTarget = BotOwner.GoToSomePointData?.IsCome() == true,
+                    targetPose = SanitizeFloat(BotOwner.Mover?.TargetPose ?? 0f),
+                    poseLevel = SanitizeFloat(BotOwner.GetPlayer?.MovementContext?.PoseLevel ?? 0f),
+                    isInPatrol = BotOwner.GetPlayer?.MovementContext?.IsInPatrol == true,
+                    blockFirearms = BotOwner.GetPlayer?.MovementContext?.BlockFirearms == true
+                },
+                weaponPosture = CreateWeaponPostureDiagnostic(),
+                look = new
+                {
+                    lookDirection = CreateDiagnosticVector(BotOwner.LookDirection),
+                    hasCommandLookOverride = hasLookOverride,
+                    commandLookOverride = hasLookOverride ? CreateDiagnosticVector(lookOverridePoint) : null
+                },
+                brain = new
+                {
+                    layer = BotOwner.Brain?.BaseBrain?.CurLayerInfo?.Name(),
+                    node = BotOwner.Brain?.Agent?.GetActiveNodeName(),
+                    lastAction = BotOwner.Brain?.Agent?.LastResult().Action.ToString(),
+                    lastReason = BotOwner.Brain?.Agent?.LastResult().Reason
+                },
+                extra
+            };
+        }
+
+        private object CreateWeaponPostureDiagnostic()
+        {
+            IFirearmHandsController? shootController = BotOwner.WeaponManager?.ShootController;
+            BotWeaponSelector? selector = BotOwner.WeaponManager?.Selector;
+            IBotAiming? currentAiming = BotOwner.AimingManager?.CurrentAiming;
+            return new
+            {
+                peaceHardAimActive = BotOwner.PeaceHardAim?.HaveActions() == true,
+                secondWeaponWatchActive = BotOwner.SecondWeaponData?.HaveActions() == true,
+                shootControllerPresent = shootController != null,
+                isAiming = shootController?.IsAiming == true,
+                weaponReady = BotOwner.WeaponManager?.IsWeaponReady == true,
+                selectorWeaponReady = selector?.IsWeaponReady == true,
+                selectorChanging = selector?.IsChanging == true,
+                canChangeToSecondWeapons = selector?.CanChangeToSecondWeapons == true,
+                currentSlot = selector?.LastEquipmentSlot.ToString(),
+                reloading = BotOwner.WeaponManager?.Reload?.Reloading == true,
+                canShootByState = BotOwner.ShootData?.CanShootByState == true,
+                aimingType = BotOwner.AimingManager?.Current.ToString(),
+                currentAimingReady = currentAiming?.IsReady == true,
+                currentAimingHardAim = currentAiming?.HardAim == true,
+                currentAimingDistance = currentAiming != null ? SanitizeFloat(currentAiming.LastDist2Target) : null
+            };
+        }
+
+        private static object CreateDiagnosticVector(Vector3 value)
+        {
+            return new
+            {
+                x = SanitizeFloat(value.x),
+                y = SanitizeFloat(value.y),
+                z = SanitizeFloat(value.z)
+            };
+        }
+
+        private static float? SanitizeFloat(float value)
+        {
+            if (float.IsNaN(value) || float.IsInfinity(value))
+            {
+                return null;
+            }
+
+            return value;
         }
 
         private bool HasArrivedAtMovePoint(float distance)
@@ -756,6 +956,11 @@ namespace pitTeam.BigBrain.Actions
             {
                 moveArrivalLookUntil = Time.time + Utils.Utils.Random(2f, 4f);
                 nextHoldLookChangeAt = 0f;
+                RecordMoveToPointDiagnostic(
+                    "arrivalHoldStart",
+                    activeMoveTarget,
+                    (activeMoveTarget - BotOwner.Position).magnitude,
+                    () => CreateMoveToPointDiagnostic(activeMoveTarget, (activeMoveTarget - BotOwner.Position).magnitude));
             }
 
             if (followerData?.TryGetCommandLookOverride(out Vector3 holdLookOverridePoint) == true)
@@ -1451,6 +1656,12 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
+            if (followerData?.IsSquadMate != true)
+            {
+                reason = "TakeBodyGear:notSquadMate";
+                return false;
+            }
+
             if (!InteractableObjects.IsBodyLootTaker(BotOwner))
             {
                 if (!InteractableObjects.SetBodyLootTaker(BotOwner) || !InteractableObjects.IsBodyLootTaker(BotOwner))
@@ -1923,6 +2134,7 @@ namespace pitTeam.BigBrain.Actions
                     "Dogtag",
                     0,
                     bypassPriceThreshold: true,
+                    bypassCategoryFilter: true,
                     bypassBodyGearLootability: true);
             }
 
@@ -2080,6 +2292,12 @@ namespace pitTeam.BigBrain.Actions
             }
 
             if (candidate.SkipMagazine && item is MagazineItemClass)
+            {
+                attemptedItemIds.Add(item.Id);
+                return false;
+            }
+
+            if (!candidate.BypassCategoryFilter && !FollowerLootCategoryService.PassesCategoryFilter(item))
             {
                 attemptedItemIds.Add(item.Id);
                 return false;
@@ -2729,6 +2947,12 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
+            if (followerData?.IsSquadMate != true)
+            {
+                reason = "TakeContainerLoot:notSquadMate";
+                return false;
+            }
+
             if (!InteractableObjects.IsContainerLootTaker(BotOwner))
             {
                 if (!InteractableObjects.SetContainerLootTaker(BotOwner) || !InteractableObjects.IsContainerLootTaker(BotOwner))
@@ -3027,6 +3251,7 @@ namespace pitTeam.BigBrain.Actions
                 int sourceTier,
                 bool skipMagazine = false,
                 bool bypassPriceThreshold = false,
+                bool bypassCategoryFilter = false,
                 bool bypassBodyGearLootability = false)
             {
                 Item = item;
@@ -3035,6 +3260,7 @@ namespace pitTeam.BigBrain.Actions
                 SourceTier = sourceTier;
                 SkipMagazine = skipMagazine;
                 BypassPriceThreshold = bypassPriceThreshold;
+                BypassCategoryFilter = bypassCategoryFilter;
                 BypassBodyGearLootability = bypassBodyGearLootability;
             }
 
@@ -3044,6 +3270,7 @@ namespace pitTeam.BigBrain.Actions
             public int SourceTier { get; }
             public bool SkipMagazine { get; }
             public bool BypassPriceThreshold { get; }
+            public bool BypassCategoryFilter { get; }
             public bool BypassBodyGearLootability { get; }
         }
 

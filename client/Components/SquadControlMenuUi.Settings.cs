@@ -260,7 +260,11 @@ namespace pitTeam.Components
             foreach (SquadSettingEntry setting in BuildSettingsSection(
                 pitFireTeam.GetLanguageText(language => language.lootingSettings),
                 pitFireTeam.lootMinimumPrice,
-                pitFireTeam.lootMaximumPrice))
+                pitFireTeam.lootMaximumPrice,
+                pitFireTeam.lootFilterFood,
+                pitFireTeam.lootFilterMeds,
+                pitFireTeam.lootFilterValuables,
+                pitFireTeam.lootFilterGear))
             {
                 yield return setting;
             }

@@ -4,13 +4,18 @@ using pitTeam.BigBrain.Actions;
 using pitTeam.Components;
 using pitTeam.Modules;
 using pitTeam.Utils;
+using System;
+using UnityEngine;
 
 namespace pitTeam.BigBrain
 {
     internal sealed class FollowerRequestLayer : CustomLayer
     {
         private const bool EnableRequestLayerDebug = false;
+        private const float RequestLayerDiagnosticThrottleSeconds = 1f;
         private BotFollowerPlayer? followerData;
+        private string lastDiagnosticKey = string.Empty;
+        private float nextDiagnosticAt;
 
         public FollowerRequestLayer(BotOwner botOwner, int priority) : base(botOwner, priority)
         {
@@ -83,13 +88,20 @@ namespace pitTeam.BigBrain
                  command == FollowerCommandType.CombatComeToBossCover ||
                  command == FollowerCommandType.CombatMoveToPointTactical))
             {
+                RecordRequestLayerDiagnostic(command, "combatOwnedCommand", () => CreateRequestLayerDiagnostic(command, false, false, false));
                 return false;
             }
 
             bool hasKnownEnemy = hasCommand && followerData.HasKnownEnemy();
-            if (!followerData.IsReadyForPatrolAfterCombat() &&
-                !CanRunDuringPostCombatHandoff(command, hasKnownEnemy))
+            bool readyForPatrolAfterCombat = followerData.IsReadyForPatrolAfterCombat();
+            bool canRunDuringPostCombatHandoff = CanRunDuringPostCombatHandoff(command, hasKnownEnemy);
+            if (!readyForPatrolAfterCombat &&
+                !canRunDuringPostCombatHandoff)
             {
+                RecordRequestLayerDiagnostic(
+                    command,
+                    "notReadyForPatrolAfterCombat",
+                    () => CreateRequestLayerDiagnostic(command, readyForPatrolAfterCombat, canRunDuringPostCombatHandoff, hasKnownEnemy));
                 return false;
             }
 
@@ -122,6 +134,10 @@ namespace pitTeam.BigBrain
                 InteractableObjects.RemoveBodyLootTaker(BotOwner);
                 InteractableObjects.RemoveContainerLootTaker(BotOwner);
                 InteractableObjects.RemoveOpener(BotOwner);
+                RecordRequestLayerDiagnostic(
+                    command,
+                    "knownEnemyAcquired",
+                    () => CreateRequestLayerDiagnostic(command, readyForPatrolAfterCombat, canRunDuringPostCombatHandoff, hasKnownEnemy));
                 followerData.ClearCommand("KnownEnemyAcquired");
                 return false;
             }
@@ -140,6 +156,57 @@ namespace pitTeam.BigBrain
             return command == FollowerCommandType.HoldPosition ||
                    command == FollowerCommandType.MoveToPoint ||
                    command == FollowerCommandType.ComeCloser;
+        }
+
+        private void RecordRequestLayerDiagnostic(FollowerCommandType command, string reason, Func<object?> detailsFactory)
+        {
+            if (command == FollowerCommandType.None || BotOwner == null || !BattleRecorder.IsRecordingFor(BotOwner))
+            {
+                return;
+            }
+
+            string key = $"{command}:{reason}";
+            if (StringComparer.Ordinal.Equals(key, lastDiagnosticKey) && Time.time < nextDiagnosticAt)
+            {
+                return;
+            }
+
+            lastDiagnosticKey = key;
+            nextDiagnosticAt = Time.time + RequestLayerDiagnosticThrottleSeconds;
+            BattleRecorder.RecordCommandDiagnostic(BotOwner, command, "requestLayer", reason, detailsFactory);
+        }
+
+        private object CreateRequestLayerDiagnostic(
+            FollowerCommandType command,
+            bool readyForPatrolAfterCombat,
+            bool canRunDuringPostCombatHandoff,
+            bool hasKnownEnemy)
+        {
+            EnemyInfo? goalEnemy = BotOwner?.Memory?.GoalEnemy;
+            return new
+            {
+                readyForPatrolAfterCombat,
+                canRunDuringPostCombatHandoff,
+                hasKnownEnemy,
+                activeCommand = command.ToString(),
+                memory = new
+                {
+                    haveEnemy = BotOwner?.Memory?.HaveEnemy == true,
+                    goalEnemyPresent = goalEnemy != null,
+                    goalEnemyAlive = goalEnemy?.Person?.HealthController?.IsAlive == true,
+                    goalEnemyVisible = goalEnemy?.IsVisible == true,
+                    goalEnemyCanShoot = goalEnemy?.CanShoot == true,
+                    underFire = BotOwner?.Memory?.IsUnderFire == true
+                },
+                brain = new
+                {
+                    layer = BotOwner?.Brain?.BaseBrain?.CurLayerInfo?.Name(),
+                    node = BotOwner?.Brain?.Agent?.GetActiveNodeName(),
+                    lastAction = BotOwner?.Brain?.Agent?.LastResult().Action.ToString(),
+                    lastReason = BotOwner?.Brain?.Agent?.LastResult().Reason
+                },
+                combatLayerActive = FollowerCombatLayer.IsFollowerCombatLayerActive(BotOwner)
+            };
         }
 
         public override Action GetNextAction()

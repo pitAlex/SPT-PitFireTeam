@@ -1704,8 +1704,8 @@ namespace pitTeam.Components
             InventoryEquipment corpseEquipment = corpse.ItemOwner?.RootItem as InventoryEquipment;
             bool teammateCorpse = TeammateCorpseIdentity.IsTeammateCorpseEquipment(corpseEquipment);
             BotOwner closestFollower = teammateCorpse
-                ? FindClosestEligibleInteractionFollower(corpse.transform.position)
-                : FindBestEligibleLootCarrierFollower(corpse.transform.position);
+                ? FindClosestEligibleInteractionFollower(corpse.transform.position, requireSquadMate: true)
+                : FindBestEligibleLootCarrierFollower(corpse.transform.position, requireSquadMate: true);
             if (closestFollower == null)
             {
                 return;
@@ -1744,7 +1744,7 @@ namespace pitTeam.Components
                 return;
             }
 
-            BotOwner closestFollower = FindBestEligibleLootCarrierFollower(container.transform.position);
+            BotOwner closestFollower = FindBestEligibleLootCarrierFollower(container.transform.position, requireSquadMate: true);
             if (closestFollower == null)
             {
                 return;
@@ -1769,7 +1769,7 @@ namespace pitTeam.Components
             closestFollower.Gesture.TryGestus(EInteraction.OkGesture, false);
         }
 
-        private BotOwner FindClosestEligibleInteractionFollower(Vector3 targetPosition)
+        private BotOwner FindClosestEligibleInteractionFollower(Vector3 targetPosition, bool requireSquadMate = false)
         {
             BotOwner closestFollower = null;
             float bestSqrDistance = float.MaxValue;
@@ -1787,7 +1787,7 @@ namespace pitTeam.Components
                 }
 
                 BotFollowerPlayer followerData = BossPlayers.Instance?.GetFollower(follower);
-                if (followerData == null)
+                if (followerData == null || (requireSquadMate && !followerData.IsSquadMate))
                 {
                     continue;
                 }
@@ -1805,7 +1805,7 @@ namespace pitTeam.Components
             return closestFollower;
         }
 
-        private BotOwner FindBestEligibleLootCarrierFollower(Vector3 targetPosition)
+        private BotOwner FindBestEligibleLootCarrierFollower(Vector3 targetPosition, bool requireSquadMate = false)
         {
             BotOwner bestFollower = null;
             float maxSqrDistance = LootCarrierCommandDistance * LootCarrierCommandDistance;
@@ -1824,7 +1824,9 @@ namespace pitTeam.Components
                 }
 
                 BotFollowerPlayer followerData = BossPlayers.Instance?.GetFollower(follower);
-                if (followerData == null || followerData.IsLootOrPickupCommandActive())
+                if (followerData == null ||
+                    (requireSquadMate && !followerData.IsSquadMate) ||
+                    followerData.IsLootOrPickupCommandActive())
                 {
                     continue;
                 }
@@ -2254,12 +2256,28 @@ namespace pitTeam.Components
                 : TryGetGoToCommandTarget(requester, out commandTarget);
             if (!hasTarget)
             {
+                RecordCommandSourceDiagnostic(
+                    closestFollower,
+                    combatCommand ? FollowerCommandType.CombatMoveToPointTactical : FollowerCommandType.MoveToPoint,
+                    "ThereGesture",
+                    "targetNotFound",
+                    requester,
+                    null,
+                    combatCommand);
                 return;
             }
 
             if (combatCommand &&
                 (commandTarget - requester.Position).sqrMagnitude > CombatThereMaxDistance * CombatThereMaxDistance)
             {
+                RecordCommandSourceDiagnostic(
+                    closestFollower,
+                    FollowerCommandType.CombatMoveToPointTactical,
+                    "ThereGesture",
+                    "combatTargetTooFar",
+                    requester,
+                    commandTarget,
+                    true);
                 closestFollower.BotTalk.TrySay(EPhraseTrigger.Negative, false);
                 closestFollower.Gesture.TryGestus(EInteraction.NoGesture, false);
                 return;
@@ -2269,6 +2287,14 @@ namespace pitTeam.Components
 
             if (combatCommand)
             {
+                RecordCommandSourceDiagnostic(
+                    closestFollower,
+                    FollowerCommandType.CombatMoveToPointTactical,
+                    "ThereGesture",
+                    "acceptedCombatTactical",
+                    requester,
+                    commandTarget,
+                    true);
                 followerData.SetCombatMoveToPointTactical(commandTarget, 8f);
                 closestFollower.Gesture.TryGestus(EInteraction.OkGesture, false);
                 return;
@@ -2276,8 +2302,27 @@ namespace pitTeam.Components
 
             if (CanAcceptThereCommand(closestFollower))
             {
+                RecordCommandSourceDiagnostic(
+                    closestFollower,
+                    FollowerCommandType.MoveToPoint,
+                    "ThereGesture",
+                    "acceptedMoveToPoint",
+                    requester,
+                    commandTarget,
+                    false);
                 // There gesture path: sampled world point -> MoveToPoint command -> GestureCommandAction movement.
                 followerData.SetMoveToPoint(commandTarget, 0f);
+            }
+            else
+            {
+                RecordCommandSourceDiagnostic(
+                    closestFollower,
+                    FollowerCommandType.MoveToPoint,
+                    "ThereGesture",
+                    "cannotAcceptThereCommand",
+                    requester,
+                    commandTarget,
+                    false);
             }
 
             closestFollower.Gesture.TryGestus(EInteraction.OkGesture, false);
@@ -2504,13 +2549,41 @@ namespace pitTeam.Components
                     continue;
                 }
 
-                if (!CanAcceptThereCommand(follower)) continue;
+                if (!CanAcceptThereCommand(follower))
+                {
+                    RecordCommandSourceDiagnostic(
+                        follower,
+                        FollowerCommandType.MoveToPoint,
+                        "GoForwardPhrase",
+                        "cannotAcceptThereCommand",
+                        requester,
+                        null,
+                        false);
+                    continue;
+                }
+
                 if (!TryGetGoToCommandTarget(requester, out Vector3 commandTarget))
                 {
+                    RecordCommandSourceDiagnostic(
+                        follower,
+                        FollowerCommandType.MoveToPoint,
+                        "GoForwardPhrase",
+                        "targetNotFound",
+                        requester,
+                        null,
+                        false);
                     return;
                 }
 
                 // Out of combat, GoForward falls back to the same MoveToPoint command as the There gesture.
+                RecordCommandSourceDiagnostic(
+                    follower,
+                    FollowerCommandType.MoveToPoint,
+                    "GoForwardPhrase",
+                    "acceptedMoveToPoint",
+                    requester,
+                    commandTarget,
+                    false);
                 followerData.SetMoveToPoint(commandTarget, 0f);
                 follower.Gesture.TryGestus(EInteraction.OkGesture, false);
             }
@@ -3487,6 +3560,86 @@ namespace pitTeam.Components
         {
             float maxGoToDistance = pitFireTeam.goToDistance?.Value ?? DefaultGoToDistance;
             return TryGetGoToCommandTarget(requester, maxGoToDistance, out commandTarget);
+        }
+
+        private static void RecordCommandSourceDiagnostic(
+            BotOwner follower,
+            FollowerCommandType command,
+            string source,
+            string reason,
+            IPlayer requester,
+            Vector3? commandTarget,
+            bool combatCommand)
+        {
+            if (follower == null || !BattleRecorder.IsRecordingFor(follower))
+            {
+                return;
+            }
+
+            BattleRecorder.RecordCommandDiagnostic(
+                follower,
+                command,
+                "commandSource",
+                reason,
+                () => CreateCommandSourceDiagnostic(follower, source, requester, commandTarget, combatCommand));
+        }
+
+        private static object CreateCommandSourceDiagnostic(
+            BotOwner follower,
+            string source,
+            IPlayer requester,
+            Vector3? commandTarget,
+            bool combatCommand)
+        {
+            Vector3 requesterPosition = requester?.Position ?? Vector3.zero;
+            Vector3 requesterLook = requester?.LookDirection ?? Vector3.zero;
+            Ray interactionRay = requester is Player player
+                ? player.InteractionRay
+                : new Ray(requesterPosition + Vector3.up * 1.5f, requesterLook.sqrMagnitude > 0.001f ? requesterLook.normalized : Vector3.forward);
+            EnemyInfo? goalEnemy = follower?.Memory?.GoalEnemy;
+            return new
+            {
+                source,
+                combatCommand,
+                requester = new
+                {
+                    position = CreateCommandDiagnosticVector(requesterPosition),
+                    lookDirection = CreateCommandDiagnosticVector(requesterLook),
+                    interactionRayOrigin = CreateCommandDiagnosticVector(interactionRay.origin),
+                    interactionRayDirection = CreateCommandDiagnosticVector(interactionRay.direction)
+                },
+                follower = new
+                {
+                    position = CreateCommandDiagnosticVector(follower?.Position ?? Vector3.zero),
+                    distanceToRequester = follower != null ? SanitizeDiagnosticFloat(Vector3.Distance(follower.Position, requesterPosition)) : null,
+                    haveEnemy = follower?.Memory?.HaveEnemy == true,
+                    goalEnemyPresent = goalEnemy != null,
+                    goalEnemyVisible = goalEnemy?.IsVisible == true,
+                    goalEnemyCanShoot = goalEnemy?.CanShoot == true,
+                    canAcceptThereCommand = CanAcceptThereCommand(follower)
+                },
+                commandTarget = commandTarget.HasValue ? CreateCommandDiagnosticVector(commandTarget.Value) : null
+            };
+        }
+
+        private static object CreateCommandDiagnosticVector(Vector3 value)
+        {
+            return new
+            {
+                x = SanitizeDiagnosticFloat(value.x),
+                y = SanitizeDiagnosticFloat(value.y),
+                z = SanitizeDiagnosticFloat(value.z)
+            };
+        }
+
+        private static float? SanitizeDiagnosticFloat(float value)
+        {
+            if (float.IsNaN(value) || float.IsInfinity(value))
+            {
+                return null;
+            }
+
+            return value;
         }
 
         private static bool TryGetGoToCommandTarget(IPlayer requester, float maxDistance, out Vector3 commandTarget)

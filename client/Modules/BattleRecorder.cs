@@ -190,6 +190,32 @@ namespace pitTeam.Modules
             });
         }
 
+        public static void RecordCommandDiagnostic(
+            BotOwner bot,
+            FollowerCommandType command,
+            string action,
+            string reason,
+            Func<object?> detailsFactory)
+        {
+            if (!CanRecordBot(bot))
+            {
+                return;
+            }
+
+            RecorderFollowerState state = GetOrCreateState(bot);
+            object? details = detailsFactory?.Invoke();
+
+            WriteEventInternal("commandDiagnostic", bot, new
+            {
+                action,
+                reason,
+                command = command.ToString(),
+                details,
+                context = CreateTransitionContext(bot, state),
+                snapshot = CreateBotSnapshot(bot, state)
+            });
+        }
+
         public static void RecordCombatLayerState(BotOwner bot, bool active, string reason)
         {
             if (!CanRecordBot(bot))
