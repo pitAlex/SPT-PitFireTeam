@@ -38,24 +38,29 @@ namespace pitTeam.Patches
                     bool flag2 = lootItem != null && lootItem.ItemOwner.RootItem is MoneyItemClass;
                     bool flag3 = lootItem != null && (lootItem.ItemOwner.RootItem is Weapon || lootItem.ItemOwner.RootItem.GetItemComponent<KnifeComponent>() != null);
                     Corpse? corpse = player.InteractableObject as Corpse;
+                    LootableContainer? lootContainer = player.InteractableObject as LootableContainer;
+                    bool canLootContainer = lootContainer != null &&
+                                            lootContainer.isActiveAndEnabled &&
+                                            lootContainer.DoorState != EDoorState.Locked;
 
                     // Commanded follower looting uses the same world target for key, money, weapon,
                     // and generic loot phrases. Keep it pinned for any loot phrase the panel exposes.
-                    InteractableObjects.SetCurLootItem(corpse == null ? lootItem : null);
+                    InteractableObjects.SetCurLootItem(corpse == null && lootContainer == null ? lootItem : null);
                     if (corpse != null)
                     {
                         InteractableObjects.SetCurBodyLootTarget(corpse);
                     }
+                    InteractableObjects.SetCurLootContainerTarget(canLootContainer ? lootContainer : null);
 
                     // original - loot command
                     __instance.method_7(EPhraseTrigger.LootKey, flag);
                     __instance.method_7(EPhraseTrigger.LootMoney, flag2);
                     __instance.method_7(EPhraseTrigger.LootWeapon, flag3);
-                    __instance.method_7(EPhraseTrigger.LootGeneric, corpse == null && lootItem != null && !flag && !flag2 && !flag3);
+                    __instance.method_7(EPhraseTrigger.LootGeneric, corpse == null && lootContainer == null && lootItem != null && !flag && !flag2 && !flag3);
                     // Body phrases are routed to a follower body-gear recovery command, not vanilla bot corpse work.
                     __instance.method_7(EPhraseTrigger.LootBody, corpse != null);
                     __instance.method_7(EPhraseTrigger.CheckHim, corpse != null);
-                    __instance.method_7(EPhraseTrigger.LootContainer, false);
+                    __instance.method_7(EPhraseTrigger.LootContainer, canLootContainer);
                 }
                 catch (Exception e)
                 {

@@ -40,7 +40,9 @@ namespace pitTeam.Components
         NeedSniper = 10,
         // Combat gesture movement commands.
         CombatComeToBossCover = 11,
-        CombatMoveToPointTactical = 12
+        CombatMoveToPointTactical = 12,
+        // Commanded searchable-container looting through backpack/pocket cargo space.
+        TakeContainerLoot = 13
     }
 
     public enum FollowerCombatTactic
@@ -105,6 +107,7 @@ namespace pitTeam.Components
         private bool _resumeHoldAfterComeCloser;
         private bool _resumeHoldAfterTakeLoot;
         private bool _resumeHoldAfterTakeLootCrouch;
+        private FollowerCommandType _committedLootCommand = FollowerCommandType.None;
         private float _commandLookPauseUntil;
         private Vector3 _commandLookOverridePoint;
         private float _commandLookOverrideUntil;
@@ -1184,6 +1187,11 @@ namespace pitTeam.Components
 
         public void SetHoldPosition(float duration, bool crouch = true)
         {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
             ClearVanillaRequestState(null, nameof(SetHoldPosition));
             _activeCommand = FollowerCommandType.HoldPosition;
             _commandUntilTime = float.PositiveInfinity;
@@ -1197,6 +1205,11 @@ namespace pitTeam.Components
 
         public void SetMoveToPoint(Vector3 target, float duration)
         {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
             unchecked
             {
                 _moveToPointIssueSequence++;
@@ -1218,6 +1231,11 @@ namespace pitTeam.Components
 
         public void SetComeCloser(float duration)
         {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
             FollowerCommandType previous = _activeCommand;
             if (_activeCommand == FollowerCommandType.HoldPosition)
             {
@@ -1240,6 +1258,11 @@ namespace pitTeam.Components
 
         public void SetRegroup(float duration)
         {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
             if (_activeCommand != FollowerCommandType.None && _activeCommand != FollowerCommandType.RegroupNearBoss)
             {
                 ClearCommand($"SetRegroup:replace({_activeCommand})");
@@ -1256,6 +1279,11 @@ namespace pitTeam.Components
 
         public void SetTakeLootItem(float duration)
         {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
             if (_activeCommand == FollowerCommandType.HoldPosition)
             {
                 _resumeHoldAfterTakeLoot = true;
@@ -1283,6 +1311,11 @@ namespace pitTeam.Components
 
         public void SetTakeBodyGear(float duration)
         {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
             if (_activeCommand == FollowerCommandType.HoldPosition)
             {
                 _resumeHoldAfterTakeLoot = true;
@@ -1308,8 +1341,45 @@ namespace pitTeam.Components
             BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(SetTakeBodyGear));
         }
 
+        public void SetTakeContainerLoot(float duration)
+        {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
+            if (_activeCommand == FollowerCommandType.HoldPosition)
+            {
+                _resumeHoldAfterTakeLoot = true;
+                _resumeHoldAfterTakeLootCrouch = _holdPositionShouldCrouch;
+            }
+            else if (_activeCommand != FollowerCommandType.TakeContainerLoot)
+            {
+                _resumeHoldAfterTakeLoot = false;
+                _resumeHoldAfterTakeLootCrouch = false;
+            }
+
+            if (_activeCommand != FollowerCommandType.None &&
+                _activeCommand != FollowerCommandType.TakeContainerLoot &&
+                _activeCommand != FollowerCommandType.HoldPosition)
+            {
+                ClearCommand($"SetTakeContainerLoot:replace({_activeCommand})");
+            }
+
+            _activeCommand = FollowerCommandType.TakeContainerLoot;
+            _commandTarget = Vector3.zero;
+            _commandUntilTime = Time.time + Mathf.Max(12f, duration);
+            _resumeHoldAfterComeCloser = false;
+            BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(SetTakeContainerLoot));
+        }
+
         public void SetOpenDoor(float duration)
         {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
             if (_activeCommand != FollowerCommandType.None && _activeCommand != FollowerCommandType.OpenDoor)
             {
                 ClearCommand($"SetOpenDoor:replace({_activeCommand})");
@@ -1326,6 +1396,11 @@ namespace pitTeam.Components
 
         public void SetPushEnemy(float duration)
         {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
             if (_activeCommand != FollowerCommandType.None && _activeCommand != FollowerCommandType.PushEnemy)
             {
                 ClearCommand($"SetPushEnemy:replace({_activeCommand})");
@@ -1367,6 +1442,11 @@ namespace pitTeam.Components
             bool forceWeapon,
             bool useAutomaticSecondary)
         {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
             if (_activeCommand != FollowerCommandType.None && _activeCommand != FollowerCommandType.SuppressEnemy)
             {
                 ClearCommand($"SetSuppressEnemy:replace({_activeCommand})");
@@ -1386,6 +1466,11 @@ namespace pitTeam.Components
 
         public void SetNeedSniper(float duration)
         {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
             if (_activeCommand != FollowerCommandType.None && _activeCommand != FollowerCommandType.NeedSniper)
             {
                 ClearCommand($"SetNeedSniper:replace({_activeCommand})");
@@ -1402,6 +1487,11 @@ namespace pitTeam.Components
 
         public void SetCombatComeToBossCover(float duration)
         {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
             if (_activeCommand != FollowerCommandType.None && _activeCommand != FollowerCommandType.CombatComeToBossCover)
             {
                 ClearCommand($"SetCombatComeToBossCover:replace({_activeCommand})");
@@ -1418,6 +1508,11 @@ namespace pitTeam.Components
 
         public void SetCombatMoveToPointTactical(Vector3 target, float duration)
         {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
             if (_activeCommand != FollowerCommandType.None && _activeCommand != FollowerCommandType.CombatMoveToPointTactical)
             {
                 ClearCommand($"SetCombatMoveToPointTactical:replace({_activeCommand})");
@@ -1562,9 +1657,66 @@ namespace pitTeam.Components
             ClearCommand("CompleteTakeBodyGear");
         }
 
+        public void CompleteTakeContainerLoot()
+        {
+            if (_activeCommand != FollowerCommandType.TakeContainerLoot)
+            {
+                return;
+            }
+
+            if (_resumeHoldAfterTakeLoot)
+            {
+                _activeCommand = FollowerCommandType.HoldPosition;
+                _commandTarget = Vector3.zero;
+                _commandUntilTime = float.PositiveInfinity;
+                _holdPositionShouldCrouch = _resumeHoldAfterTakeLootCrouch;
+                _resumeHoldAfterComeCloser = false;
+                _resumeHoldAfterTakeLoot = false;
+                _resumeHoldAfterTakeLootCrouch = false;
+                BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(CompleteTakeContainerLoot));
+                return;
+            }
+
+            ClearCommand("CompleteTakeContainerLoot");
+        }
+
         public bool ShouldCrouchForHoldPosition()
         {
             return _holdPositionShouldCrouch;
+        }
+
+        public bool IsCommittedLootCommandActive()
+        {
+            return _committedLootCommand != FollowerCommandType.None;
+        }
+
+        public bool IsLootOrPickupCommandActive()
+        {
+            return _activeCommand == FollowerCommandType.TakeLootItem ||
+                   _activeCommand == FollowerCommandType.TakeBodyGear ||
+                   _activeCommand == FollowerCommandType.TakeContainerLoot;
+        }
+
+        public void BeginCommittedLootCommand(FollowerCommandType command)
+        {
+            if (command == FollowerCommandType.TakeBodyGear ||
+                command == FollowerCommandType.TakeContainerLoot)
+            {
+                _committedLootCommand = command;
+            }
+        }
+
+        public void EndCommittedLootCommand(FollowerCommandType command)
+        {
+            if (_committedLootCommand == command)
+            {
+                _committedLootCommand = FollowerCommandType.None;
+            }
+        }
+
+        private bool ShouldIgnoreCommandSet()
+        {
+            return _committedLootCommand != FollowerCommandType.None;
         }
 
         public void PauseCommandLookRandom(float duration)
@@ -2252,6 +2404,12 @@ namespace pitTeam.Components
 
         public void ClearCommand(string reason = "unspecified")
         {
+            if (_committedLootCommand != FollowerCommandType.None &&
+                ShouldIgnoreCommittedLootClear(reason))
+            {
+                return;
+            }
+
             FollowerCommandType previousCommand = _activeCommand;
             Vector3 previousTarget = _commandTarget;
             float previousUntilTime = _commandUntilTime;
@@ -2266,6 +2424,11 @@ namespace pitTeam.Components
                 if (_activeCommand == FollowerCommandType.TakeBodyGear)
                 {
                     InteractableObjects.RemoveBodyLootTaker(_bot);
+                }
+
+                if (_activeCommand == FollowerCommandType.TakeContainerLoot)
+                {
+                    InteractableObjects.RemoveContainerLootTaker(_bot);
                 }
 
                 if (_activeCommand == FollowerCommandType.OpenDoor)
@@ -2283,11 +2446,19 @@ namespace pitTeam.Components
             _resumeHoldAfterComeCloser = false;
             _resumeHoldAfterTakeLoot = false;
             _resumeHoldAfterTakeLootCrouch = false;
+            _committedLootCommand = FollowerCommandType.None;
             _commandLookPauseUntil = 0f;
             _commandLookOverridePoint = Vector3.zero;
             _commandLookOverrideUntil = 0f;
 
             BattleRecorder.RecordCommandCleared(this, previousCommand, previousTarget, previousUntilTime, reason);
+        }
+
+        private static bool ShouldIgnoreCommittedLootClear(string reason)
+        {
+            return reason.StartsWith("ClearFollowerCommands", StringComparison.Ordinal) ||
+                   reason.StartsWith("OnYourOwn:", StringComparison.Ordinal) ||
+                   reason.StartsWith("Attention:", StringComparison.Ordinal);
         }
 
         private void ResetPickupFollowerRuntimeState()

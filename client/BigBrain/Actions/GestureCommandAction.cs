@@ -4,9 +4,11 @@ using DrakiaXYZ.BigBrain.Brains;
 using EFT;
 using EFT.Interactive;
 using EFT.InventoryLogic;
+using EFT.UI;
 using JsonType;
 using pitTeam.Components;
 using pitTeam.Modules;
+using pitTeam.Patches;
 using pitTeam.Utils;
 using System;
 using System.Collections.Generic;
@@ -47,6 +49,17 @@ namespace pitTeam.BigBrain.Actions
         private float lootPickupReadyAt;
         private float lootPickupAttemptStartedAt;
         private LootItem? activeLootItem;
+        private LootableContainer? activeLootContainer;
+        private bool containerLootMoveInProgress;
+        private float containerLootReadyAt;
+        private float containerLootNextMoveAt;
+        private float containerLootAttemptStartedAt;
+        private int containerLootMovesSucceeded;
+        private bool containerLootWeaponListDirty;
+        private bool containerLootOpened;
+        private float containerLootOpenRequestedAt;
+        private bool containerLootSearchStarted;
+        private readonly HashSet<string> containerLootAttemptedItemIds = new HashSet<string>(StringComparer.Ordinal);
         private Corpse? activeBodyLootCorpse;
         private bool bodyLootMoveInProgress;
         private float bodyLootReadyAt;
@@ -55,6 +68,8 @@ namespace pitTeam.BigBrain.Actions
         private int bodyLootMovesSucceeded;
         private bool bodyLootWeaponListDirty;
         private bool bodyLootBackpackCapacityAttempted;
+        private bool bodyLootSearchStarted;
+        private BetterSource? activeLootSearchSource;
         private readonly HashSet<string> bodyLootAttemptedItemIds = new HashSet<string>(StringComparer.Ordinal);
         private Door? activeDoor;
         private bool doorMoveIssued;
@@ -72,12 +87,18 @@ namespace pitTeam.BigBrain.Actions
         private const float MoveToPointArrivalDistance = 1.5f;
         private const float MoveToPointForcedArrivalDistance = 0.75f;
         private const float MoveToPointTargetChangeDistanceSqr = 0.25f;
+        private const float LootSearchDelayBaseSeconds = 1.20f;
+        private const float LootSearchDelayPerSqrtCellSeconds = 0.62f;
+        private const float LootSearchDelayMinSeconds = 1.75f;
+        private const float LootSearchDelayMaxSeconds = 6.25f;
+        private const float LootContainerOpenTimeoutSeconds = 3f;
 
         public GestureCommandAction(BotOwner botOwner) : base(botOwner) { }
 
         public override void Start()
         {
             followerData = BossPlayers.Instance?.GetFollower(BotOwner);
+            StopLootSearchSound();
             ReleaseRegroupReservation();
             nextPathCheckAt = 0f;
             moveCommandInitialized = false;
@@ -102,6 +123,17 @@ namespace pitTeam.BigBrain.Actions
             lootPickupReadyAt = 0f;
             lootPickupAttemptStartedAt = 0f;
             activeLootItem = null;
+            activeLootContainer = null;
+            containerLootMoveInProgress = false;
+            containerLootReadyAt = 0f;
+            containerLootNextMoveAt = 0f;
+            containerLootAttemptStartedAt = 0f;
+            containerLootMovesSucceeded = 0;
+            containerLootWeaponListDirty = false;
+            containerLootOpened = false;
+            containerLootOpenRequestedAt = 0f;
+            containerLootSearchStarted = false;
+            containerLootAttemptedItemIds.Clear();
             activeBodyLootCorpse = null;
             bodyLootMoveInProgress = false;
             bodyLootReadyAt = 0f;
@@ -110,6 +142,7 @@ namespace pitTeam.BigBrain.Actions
             bodyLootMovesSucceeded = 0;
             bodyLootWeaponListDirty = false;
             bodyLootBackpackCapacityAttempted = false;
+            bodyLootSearchStarted = false;
             bodyLootAttemptedItemIds.Clear();
             activeDoor = null;
             doorMoveIssued = false;
@@ -142,6 +175,7 @@ namespace pitTeam.BigBrain.Actions
                 ReleaseRegroupReservation();
                 CleanupLootInteraction($"CommandInterrupt:{command}");
                 CleanupBodyLootInteraction($"CommandInterrupt:{command}");
+                CleanupContainerLootInteraction($"CommandInterrupt:{command}");
                 CleanupDoorInteraction();
                 followerData?.ClearCommand($"CommandInterrupt:{command}");
                 BotOwner.StopMove();
@@ -171,6 +205,11 @@ namespace pitTeam.BigBrain.Actions
                     CleanupBodyLootInteraction($"CommandChanged:{command}");
                 }
 
+                if (lastCommand == FollowerCommandType.TakeContainerLoot)
+                {
+                    CleanupContainerLootInteraction($"CommandChanged:{command}");
+                }
+
                 comeTargetInitialized = false;
                 comeTarget = Vector3.zero;
                 comePoseInitialized = false;
@@ -186,6 +225,17 @@ namespace pitTeam.BigBrain.Actions
                 lootPickupReadyAt = 0f;
                 lootPickupAttemptStartedAt = 0f;
                 activeLootItem = null;
+                activeLootContainer = null;
+                containerLootMoveInProgress = false;
+                containerLootReadyAt = 0f;
+                containerLootNextMoveAt = 0f;
+                containerLootAttemptStartedAt = 0f;
+                containerLootMovesSucceeded = 0;
+                containerLootWeaponListDirty = false;
+                containerLootOpened = false;
+                containerLootOpenRequestedAt = 0f;
+                containerLootSearchStarted = false;
+                containerLootAttemptedItemIds.Clear();
                 activeBodyLootCorpse = null;
                 bodyLootMoveInProgress = false;
                 bodyLootReadyAt = 0f;
@@ -194,6 +244,7 @@ namespace pitTeam.BigBrain.Actions
                 bodyLootMovesSucceeded = 0;
                 bodyLootWeaponListDirty = false;
                 bodyLootBackpackCapacityAttempted = false;
+                bodyLootSearchStarted = false;
                 bodyLootAttemptedItemIds.Clear();
                 CleanupDoorInteraction();
 
@@ -227,6 +278,10 @@ namespace pitTeam.BigBrain.Actions
 
                 case FollowerCommandType.TakeBodyGear:
                     HandleTakeBodyGear();
+                    break;
+
+                case FollowerCommandType.TakeContainerLoot:
+                    HandleTakeContainerLoot();
                     break;
 
                 case FollowerCommandType.OpenDoor:
@@ -855,6 +910,13 @@ namespace pitTeam.BigBrain.Actions
                 CleanupBodyLootInteraction("TakeBodyGear:actionStop");
             }
 
+            if (followerData?.TryPeekActiveCommand(out FollowerCommandType containerCommand, out _, out _) != true ||
+                botInvalid ||
+                containerCommand != FollowerCommandType.TakeContainerLoot)
+            {
+                CleanupContainerLootInteraction("TakeContainerLoot:actionStop");
+            }
+
             CleanupDoorInteraction();
             base.Stop();
         }
@@ -872,7 +934,7 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            activeLootItem ??= InteractableObjects.GetCurLootItem();
+            activeLootItem ??= InteractableObjects.GetAssignedLootItem(BotOwner) ?? InteractableObjects.GetCurLootItem();
             if (activeLootItem == null)
             {
                 ClearTakeLootState("TakeLoot:itemMissing");
@@ -894,7 +956,7 @@ namespace pitTeam.BigBrain.Actions
             Vector3 lootPosition;
             try
             {
-                lootPosition = InteractableObjects.GetLootPosition();
+                lootPosition = InteractableObjects.GetLootPosition(BotOwner);
             }
             catch
             {
@@ -1157,6 +1219,7 @@ namespace pitTeam.BigBrain.Actions
         private void FinishLootPickupSuccess(Player? botPlayer, Item rootItem, string reason)
         {
             botPlayer?.UpdateInteractionCast();
+            InteractableObjects.RegisterLootedWeaponTree(BotOwner, rootItem);
 
             if (followerData?.IsSquadMate == true)
             {
@@ -1283,7 +1346,7 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            activeBodyLootCorpse ??= InteractableObjects.GetCurBodyLootTarget();
+            activeBodyLootCorpse ??= InteractableObjects.GetAssignedBodyLootTarget(BotOwner) ?? InteractableObjects.GetCurBodyLootTarget();
             if (activeBodyLootCorpse == null || activeBodyLootCorpse.gameObject == null)
             {
                 ClearBodyLootState("TakeBodyGear:corpseMissing");
@@ -1298,7 +1361,7 @@ namespace pitTeam.BigBrain.Actions
             Vector3 bodyPosition;
             try
             {
-                bodyPosition = InteractableObjects.GetBodyLootPosition();
+                bodyPosition = InteractableObjects.GetBodyLootPosition(BotOwner);
             }
             catch
             {
@@ -1335,9 +1398,19 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            if (bodyLootReadyAt <= 0f)
+            if (!bodyLootSearchStarted)
             {
-                bodyLootReadyAt = Time.time + 0.45f;
+                if (!TryGetBodyLootExecutionContext(
+                        out InventoryController? inventory,
+                        out InventoryEquipment? corpseEquipment,
+                        out InventoryEquipment? followerEquipment,
+                        out string contextFailureReason))
+                {
+                    ClearBodyLootState(contextFailureReason);
+                    return;
+                }
+
+                StartBodyLootSearchDelay(inventory, corpseEquipment, followerEquipment);
                 return;
             }
 
@@ -1347,6 +1420,25 @@ namespace pitTeam.BigBrain.Actions
             }
 
             TryStartNextBodyGearMove();
+        }
+
+        private void StartBodyLootSearchDelay(
+            InventoryController inventory,
+            InventoryEquipment corpseEquipment,
+            InventoryEquipment followerEquipment)
+        {
+            bodyLootSearchStarted = true;
+            followerData?.BeginCommittedLootCommand(FollowerCommandType.TakeBodyGear);
+
+            Item? soundSource = GetBestBodyLootSearchSoundSource(corpseEquipment);
+            int gridCells = GetBodyLootSearchGridCells(corpseEquipment);
+            bodyLootReadyAt = Time.time + CalculateLootSearchDelaySeconds(gridCells);
+            if (HasEligibleBodyLootMove(inventory, corpseEquipment, followerEquipment))
+            {
+                BotOwner.BotTalk.TrySay(EPhraseTrigger.OnLoot, false);
+            }
+
+            StartLootSearchSound(soundSource, BotOwner?.Position ?? Vector3.zero);
         }
 
         private bool CanContinueBodyLootCommand(out string? reason)
@@ -1384,6 +1476,12 @@ namespace pitTeam.BigBrain.Actions
                 if (!TryGetBodyLootExecutionContext(out InventoryController? inventory, out InventoryEquipment? corpseEquipment, out InventoryEquipment? followerEquipment, out string reason))
                 {
                     ClearBodyLootState(reason);
+                    return;
+                }
+
+                if (!TeammateCorpseIdentity.IsTeammateCorpseEquipment(corpseEquipment))
+                {
+                    TryStartNextFilteredBodyLootMove(inventory, corpseEquipment, followerEquipment);
                     return;
                 }
 
@@ -1469,6 +1567,88 @@ namespace pitTeam.BigBrain.Actions
             return true;
         }
 
+        private void TryStartNextFilteredBodyLootMove(
+            InventoryController inventory,
+            InventoryEquipment corpseEquipment,
+            InventoryEquipment followerEquipment)
+        {
+            foreach (BodyGearCandidate candidate in GetFilteredBodyLootCandidates(corpseEquipment))
+            {
+                if (!CanTryFilteredLootCandidate(candidate, bodyLootAttemptedItemIds) ||
+                    IsLootNowInBotInventory(BotOwner?.GetPlayer, candidate.Item))
+                {
+                    continue;
+                }
+
+                bodyLootAttemptedItemIds.Add(candidate.Item.Id);
+                if (!TryBuildFilteredLootMove(inventory, followerEquipment, candidate, out BodyGearMove? move))
+                {
+                    continue;
+                }
+
+                StartBodyGearMove(inventory, move);
+                return;
+            }
+
+            FinishBodyLootNoMoreMoves();
+        }
+
+        private bool HasEligibleBodyLootMove(
+            InventoryController inventory,
+            InventoryEquipment corpseEquipment,
+            InventoryEquipment followerEquipment)
+        {
+            if (inventory == null || corpseEquipment == null || followerEquipment == null)
+            {
+                return false;
+            }
+
+            if (!TeammateCorpseIdentity.IsTeammateCorpseEquipment(corpseEquipment))
+            {
+                return HasEligibleFilteredLootMove(
+                    inventory,
+                    followerEquipment,
+                    GetFilteredBodyLootCandidates(corpseEquipment));
+            }
+
+            Item corpseBackpack = corpseEquipment.GetSlot(EquipmentSlot.Backpack)?.ContainedItem;
+            if (corpseBackpack != null &&
+                !string.IsNullOrEmpty(corpseBackpack.Id) &&
+                !InteractableObjects.IsProtectedFollowerEquipment(corpseBackpack) &&
+                IsBodyGearCandidateLootable(corpseBackpack))
+            {
+                BodyGearCandidate backpackCandidate = new BodyGearCandidate(
+                    corpseBackpack,
+                    EquipmentSlot.Backpack,
+                    "bodyBackpackCapacity",
+                    0);
+
+                if (TryBuildBodyGearMove(inventory, followerEquipment, backpackCandidate, out _))
+                {
+                    return true;
+                }
+            }
+
+            foreach (BodyGearCandidate candidate in GetBodyGearCandidates(corpseEquipment))
+            {
+                if (candidate.Item == null ||
+                    string.IsNullOrEmpty(candidate.Item.Id) ||
+                    InteractableObjects.IsProtectedFollowerEquipment(candidate.Item) ||
+                    !IsBodyGearCandidateLootable(candidate.Item) ||
+                    IsLootNowInBotInventory(BotOwner?.GetPlayer, candidate.Item))
+                {
+                    continue;
+                }
+
+                if (TryBuildBodyGearMove(inventory, followerEquipment, candidate, out _))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private BodyGearMove? TryBuildCorpseBackpackCapacityMove(
             InventoryController inventory,
             InventoryEquipment corpseEquipment,
@@ -1546,6 +1726,75 @@ namespace pitTeam.BigBrain.Actions
             return false;
         }
 
+        private bool TryBuildFilteredLootMove(
+            InventoryController inventory,
+            InventoryEquipment followerEquipment,
+            BodyGearCandidate candidate,
+            out BodyGearMove? move)
+        {
+            move = null;
+            if (candidate.Item == null)
+            {
+                return false;
+            }
+
+            if (ShouldUseFilteredLootEquipmentSlot(candidate) &&
+                TryFindBodyGearEquipmentSlot(followerEquipment, candidate, out ItemAddress? equipAddress) &&
+                TryCreateBodyGearMove(inventory, candidate.Item, equipAddress, candidate.SourceName, out move))
+            {
+                return true;
+            }
+
+            foreach (EFT.InventoryLogic.IContainer container in GetFilteredLootCarryContainers(followerEquipment))
+            {
+                if (!container.TryFindLocationForItem(candidate.Item, out ItemAddress packAddress) ||
+                    candidate.Item.Parent.Equals(packAddress))
+                {
+                    continue;
+                }
+
+                if (TryCreateBodyGearMove(inventory, candidate.Item, packAddress, candidate.SourceName, out move))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool HasEligibleFilteredLootMove(
+            InventoryController inventory,
+            InventoryEquipment followerEquipment,
+            IEnumerable<BodyGearCandidate> candidates)
+        {
+            if (inventory == null || followerEquipment == null || candidates == null)
+            {
+                return false;
+            }
+
+            HashSet<string> dryRunAttemptedItemIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (BodyGearCandidate candidate in candidates)
+            {
+                if (!CanTryFilteredLootCandidate(candidate, dryRunAttemptedItemIds) ||
+                    IsLootNowInBotInventory(BotOwner?.GetPlayer, candidate.Item))
+                {
+                    continue;
+                }
+
+                if (TryBuildFilteredLootMove(inventory, followerEquipment, candidate, out _))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool ShouldUseFilteredLootEquipmentSlot(BodyGearCandidate candidate)
+        {
+            return candidate?.Item is Weapon weapon && weapon.GetItemComponent<KnifeComponent>() == null;
+        }
+
         private bool TryCreateBodyGearMove(
             InventoryController inventory,
             Item item,
@@ -1583,6 +1832,7 @@ namespace pitTeam.BigBrain.Actions
                 if (result?.Succeed == true || IsLootNowInBotInventory(BotOwner?.GetPlayer, move.Item))
                 {
                     bodyLootMovesSucceeded++;
+                    InteractableObjects.RegisterLootedWeaponTree(BotOwner, move.Item);
 
                     if (followerData?.IsSquadMate == true)
                     {
@@ -1620,12 +1870,12 @@ namespace pitTeam.BigBrain.Actions
 
             if (bodyLootMovesSucceeded > 0)
             {
-                BotOwner.BotTalk.TrySay(EPhraseTrigger.Roger, false);
+                BotOwner.BotTalk.TrySay(EPhraseTrigger.Ready, false);
                 ClearBodyLootState("TakeBodyGear:done");
                 return;
             }
 
-            BotOwner.BotTalk.TrySay(EPhraseTrigger.Negative, false);
+            BotOwner.BotTalk.TrySay(EPhraseTrigger.LootNothing, false);
             ClearBodyLootState("TakeBodyGear:noSpace");
         }
 
@@ -1661,6 +1911,187 @@ namespace pitTeam.BigBrain.Actions
                     yield return new BodyGearCandidate(item, null, $"{slot}.Contents", 1);
                 }
             }
+        }
+
+        private IEnumerable<BodyGearCandidate> GetFilteredBodyLootCandidates(InventoryEquipment corpseEquipment)
+        {
+            if (TryGetNonTeammatePmcDogtag(corpseEquipment, out Item dogtag))
+            {
+                yield return new BodyGearCandidate(
+                    dogtag,
+                    EquipmentSlot.Dogtag,
+                    "Dogtag",
+                    0,
+                    bypassPriceThreshold: true,
+                    bypassBodyGearLootability: true);
+            }
+
+            foreach (BodyGearCandidate candidate in GetStorageLootCandidates(
+                          corpseEquipment.GetSlot(EquipmentSlot.Backpack)?.ContainedItem,
+                          "Backpack.Contents",
+                          skipMagazines: false))
+            {
+                yield return candidate;
+            }
+
+            // Pocket and vest magazines belong to the corpse's reload setup; backpack/container
+            // magazines are regular cargo and can be moved into follower backpack/pocket space.
+            foreach (BodyGearCandidate candidate in GetStorageLootCandidates(
+                          corpseEquipment.GetSlot(EquipmentSlot.Pockets)?.ContainedItem,
+                          "Pockets.Contents",
+                          skipMagazines: true))
+            {
+                yield return candidate;
+            }
+
+            foreach (BodyGearCandidate candidate in GetStorageLootCandidates(
+                          corpseEquipment.GetSlot(EquipmentSlot.TacticalVest)?.ContainedItem,
+                          "TacticalVest.Contents",
+                          skipMagazines: true))
+            {
+                yield return candidate;
+            }
+
+            foreach (EquipmentSlot slot in BodyGearWeaponSlotOrder)
+            {
+                Item item = corpseEquipment.GetSlot(slot)?.ContainedItem;
+                if (item is Weapon && item.GetItemComponent<KnifeComponent>() == null)
+                {
+                    yield return new BodyGearCandidate(item, slot, slot.ToString(), 2);
+                }
+            }
+        }
+
+        private static bool TryGetNonTeammatePmcDogtag(InventoryEquipment corpseEquipment, out Item dogtag)
+        {
+            dogtag = null;
+            if (corpseEquipment == null ||
+                TeammateCorpseIdentity.IsTeammateCorpseEquipment(corpseEquipment))
+            {
+                return false;
+            }
+
+            Slot dogtagSlot = corpseEquipment.GetSlot(EquipmentSlot.Dogtag);
+            Item item = dogtagSlot?.ContainedItem;
+            DogtagComponent dogtagComponent = item?.GetItemComponent<DogtagComponent>();
+            if (item == null ||
+                dogtagComponent == null ||
+                (dogtagComponent.Side != EPlayerSide.Bear && dogtagComponent.Side != EPlayerSide.Usec))
+            {
+                return false;
+            }
+
+            dogtag = item;
+            return true;
+        }
+
+        private static IEnumerable<BodyGearCandidate> GetStorageLootCandidates(
+            Item root,
+            string sourceName,
+            bool skipMagazines)
+        {
+            if (root == null)
+            {
+                yield break;
+            }
+
+            foreach (Item item in GetDirectLootChildren(root)
+                         .OrderByDescending(GetBodyGearContentPriority)
+                         .ThenByDescending(GetItemArea)
+                         .ThenByDescending(item => item.Template?.CreditsPrice ?? 0))
+            {
+                if (item == null)
+                {
+                    continue;
+                }
+
+                // Price-only plate stripping makes followers over-prioritize armor internals.
+                // Filtered body/container looting leaves plates alone entirely.
+                if (item is ArmorPlateItemClass)
+                {
+                    continue;
+                }
+
+                if (ShouldSearchContentsInsteadOfMovingRoot(item))
+                {
+                    foreach (BodyGearCandidate child in GetStorageLootCandidates(
+                                 item,
+                                 $"{sourceName}.{item.TemplateId}",
+                                 skipMagazines))
+                    {
+                        yield return child;
+                    }
+
+                    continue;
+                }
+
+                yield return new BodyGearCandidate(item, null, sourceName, 1, skipMagazines);
+            }
+        }
+
+        private static IEnumerable<Item> GetDirectLootChildren(Item root)
+        {
+            if (root == null)
+            {
+                yield break;
+            }
+
+            foreach (Item child in root.GetAllItems())
+            {
+                if (child == null || ReferenceEquals(child, root))
+                {
+                    continue;
+                }
+
+                if (ReferenceEquals(child.Parent?.Container?.ParentItem, root))
+                {
+                    yield return child;
+                }
+            }
+        }
+
+        private static bool ShouldSearchContentsInsteadOfMovingRoot(Item item)
+        {
+            return item is SearchableItemItemClass && item is not Weapon;
+        }
+
+        private bool CanTryFilteredLootCandidate(
+            BodyGearCandidate candidate,
+            HashSet<string> attemptedItemIds)
+        {
+            Item item = candidate?.Item;
+            if (item == null ||
+                string.IsNullOrEmpty(item.Id) ||
+                attemptedItemIds.Contains(item.Id) ||
+                InteractableObjects.IsProtectedFollowerEquipment(item))
+            {
+                return false;
+            }
+
+            if (!candidate.BypassBodyGearLootability && !IsBodyGearCandidateLootable(item))
+            {
+                return false;
+            }
+
+            if (item is ArmorPlateItemClass)
+            {
+                attemptedItemIds.Add(item.Id);
+                return false;
+            }
+
+            if (candidate.SkipMagazine && item is MagazineItemClass)
+            {
+                attemptedItemIds.Add(item.Id);
+                return false;
+            }
+
+            if (!candidate.BypassPriceThreshold && !FollowerLootPriceService.PassesPriceThreshold(item))
+            {
+                attemptedItemIds.Add(item.Id);
+                return false;
+            }
+
+            return true;
         }
 
         private static bool TryFindBodyGearEquipmentSlot(
@@ -1777,6 +2208,28 @@ namespace pitTeam.BigBrain.Actions
             }
         }
 
+        private static IEnumerable<EFT.InventoryLogic.IContainer> GetFilteredLootCarryContainers(InventoryEquipment equipment)
+        {
+            HashSet<EFT.InventoryLogic.IContainer> seen = new HashSet<EFT.InventoryLogic.IContainer>();
+
+            foreach (EquipmentSlot slot in FilteredLootCarrySlotOrder)
+            {
+                Item root = equipment.GetSlot(slot)?.ContainedItem;
+                if (root is not SearchableItemItemClass searchable)
+                {
+                    continue;
+                }
+
+                foreach (EFT.InventoryLogic.IContainer container in GetSearchableContainersRecursive(searchable))
+                {
+                    if (container != null && seen.Add(container))
+                    {
+                        yield return container;
+                    }
+                }
+            }
+        }
+
         private static IEnumerable<EFT.InventoryLogic.IContainer> GetSearchableContainersRecursive(SearchableItemItemClass item)
         {
             foreach (EFT.InventoryLogic.IContainer container in item.Containers ?? Enumerable.Empty<EFT.InventoryLogic.IContainer>())
@@ -1793,6 +2246,175 @@ namespace pitTeam.BigBrain.Actions
                         yield return container;
                     }
                 }
+            }
+        }
+
+        private static float CalculateLootSearchDelaySeconds(int gridCells)
+        {
+            float searchedCells = Mathf.Max(1f, gridCells);
+            float delay = LootSearchDelayBaseSeconds + Mathf.Sqrt(searchedCells) * LootSearchDelayPerSqrtCellSeconds;
+            return Mathf.Clamp(delay, LootSearchDelayMinSeconds, LootSearchDelayMaxSeconds);
+        }
+
+        private static int GetBodyLootSearchGridCells(InventoryEquipment corpseEquipment)
+        {
+            if (corpseEquipment == null)
+            {
+                return 0;
+            }
+
+            return GetSearchableGridCellCount(corpseEquipment.GetSlot(EquipmentSlot.Pockets)?.ContainedItem) +
+                   GetSearchableGridCellCount(corpseEquipment.GetSlot(EquipmentSlot.Backpack)?.ContainedItem) +
+                   GetSearchableGridCellCount(corpseEquipment.GetSlot(EquipmentSlot.TacticalVest)?.ContainedItem);
+        }
+
+        private static int GetSearchableGridCellCount(Item? item)
+        {
+            if (item is not SearchableItemItemClass searchable || searchable.Grids == null)
+            {
+                return 0;
+            }
+
+            int cells = GetDirectGridCellCount(searchable);
+            foreach (Item child in searchable.GetAllItems())
+            {
+                if (child != null && child != searchable && child is SearchableItemItemClass nested)
+                {
+                    cells += GetDirectGridCellCount(nested);
+                }
+            }
+
+            return cells;
+        }
+
+        private static int GetDirectGridCellCount(SearchableItemItemClass searchable)
+        {
+            if (searchable?.Grids == null)
+            {
+                return 0;
+            }
+
+            int cells = 0;
+            foreach (StashGridClass grid in searchable.Grids)
+            {
+                if (grid != null)
+                {
+                    cells += Mathf.Max(0, grid.GridHeight * grid.GridWidth);
+                }
+            }
+
+            return cells;
+        }
+
+        private static Item? GetBestBodyLootSearchSoundSource(InventoryEquipment corpseEquipment)
+        {
+            if (corpseEquipment == null)
+            {
+                return null;
+            }
+
+            foreach (EquipmentSlot slot in new[] { EquipmentSlot.Backpack, EquipmentSlot.TacticalVest, EquipmentSlot.Pockets })
+            {
+                SearchableItemItemClass searchable = corpseEquipment.GetSlot(slot)?.ContainedItem as SearchableItemItemClass;
+                if (searchable != null && !string.IsNullOrWhiteSpace(searchable.SearchSound))
+                {
+                    return searchable;
+                }
+            }
+
+            return null;
+        }
+
+        private void StartLootSearchSound(Item? soundSource, Vector3 worldPosition)
+        {
+            StopLootSearchSound();
+
+            try
+            {
+                if (soundSource is not SearchableItemItemClass searchable ||
+                    string.IsNullOrWhiteSpace(searchable.SearchSound) ||
+                    !Singleton<GUISounds>.Instantiated)
+                {
+                    PlayLootSearchFallbackSound();
+                    return;
+                }
+
+                AudioClip clip = Singleton<GUISounds>.Instance.GetLootingClip(searchable.SearchSound);
+                if (clip == null)
+                {
+                    PlayLootSearchFallbackSound();
+                    return;
+                }
+
+                try
+                {
+                    BetterAudio audio = Singleton<BetterAudio>.Instance;
+                    BetterSource source = audio?.PlayAtPoint(
+                        worldPosition,
+                        clip,
+                        BetterAudio.AudioSourceGroupType.Character,
+                        30,
+                        1f,
+                        EOcclusionTest.None,
+                        null,
+                        spatialize: true,
+                        oneShot: false,
+                        autoReleaseSource: false,
+                        enabledHighPassFilter: true);
+
+                    if (source != null)
+                    {
+                        source.Loop = true;
+                        activeLootSearchSource = source;
+                        return;
+                    }
+                }
+                catch
+                {
+                    // Fall through to the guaranteed UI audio path below.
+                }
+
+                Singleton<GUISounds>.Instance.PlaySound(clip, false, true, 1f);
+            }
+            catch (Exception ex)
+            {
+                Modules.Logger.LogInfo($"[LootCommand] Failed to play loot search sound: {ex.Message}");
+            }
+        }
+
+        private void StopLootSearchSound()
+        {
+            BetterSource source = activeLootSearchSource;
+            activeLootSearchSource = null;
+            if (source == null)
+            {
+                return;
+            }
+
+            try
+            {
+                source.Loop = false;
+                source.Stop(0f);
+                source.Release();
+            }
+            catch (Exception ex)
+            {
+                Modules.Logger.LogInfo($"[LootCommand] Failed to stop loot search sound: {ex.Message}");
+            }
+        }
+
+        private static void PlayLootSearchFallbackSound()
+        {
+            try
+            {
+                if (Singleton<GUISounds>.Instantiated)
+                {
+                    GClass3517.PlayInstantSearchSound();
+                }
+            }
+            catch
+            {
+                // best-effort audio only
             }
         }
 
@@ -1903,11 +2525,13 @@ namespace pitTeam.BigBrain.Actions
                 bodyLootNextMoveAt <= 0f &&
                 bodyLootAttemptStartedAt <= 0f &&
                 activeBodyLootCorpse == null &&
+                activeLootSearchSource == null &&
                 bodyLootAttemptedItemIds.Count == 0)
             {
                 return;
             }
 
+            StopLootSearchSound();
             bodyLootMoveInProgress = false;
             bodyLootReadyAt = 0f;
             bodyLootNextMoveAt = 0f;
@@ -1915,8 +2539,11 @@ namespace pitTeam.BigBrain.Actions
             bodyLootMovesSucceeded = 0;
             bodyLootWeaponListDirty = false;
             bodyLootBackpackCapacityAttempted = false;
+            bodyLootSearchStarted = false;
+            activeLootSearchSource = null;
             bodyLootAttemptedItemIds.Clear();
             activeBodyLootCorpse = null;
+            followerData?.EndCommittedLootCommand(FollowerCommandType.TakeBodyGear);
 
             if (BotOwner != null)
             {
@@ -1953,6 +2580,430 @@ namespace pitTeam.BigBrain.Actions
             }
         }
 
+        private void HandleTakeContainerLoot()
+        {
+            if (followerData == null)
+            {
+                return;
+            }
+
+            if (!CanContinueContainerLootCommand(out string? guardFailureReason))
+            {
+                ClearContainerLootState(guardFailureReason ?? "TakeContainerLoot:invalidState");
+                return;
+            }
+
+            activeLootContainer ??= InteractableObjects.GetAssignedLootContainerTarget(BotOwner) ?? InteractableObjects.GetCurLootContainerTarget();
+            if (activeLootContainer == null || activeLootContainer.gameObject == null)
+            {
+                ClearContainerLootState("TakeContainerLoot:containerMissing");
+                return;
+            }
+
+            if (!activeLootContainer.isActiveAndEnabled || activeLootContainer.DoorState == EDoorState.Locked)
+            {
+                ClearContainerLootState("TakeContainerLoot:containerUnavailable");
+                return;
+            }
+
+            if (InteractableObjects.GetCurLootContainerTarget() == null)
+            {
+                InteractableObjects.SetCurLootContainerTarget(activeLootContainer);
+            }
+
+            Vector3 containerPosition;
+            try
+            {
+                containerPosition = InteractableObjects.GetContainerLootPosition(BotOwner);
+            }
+            catch
+            {
+                ClearContainerLootState("TakeContainerLoot:missingContainerPosition");
+                return;
+            }
+
+            float distance = Vector3.Distance(BotOwner.Position, containerPosition);
+            if (distance > 1.9f)
+            {
+                containerLootReadyAt = 0f;
+                BotOwner.GoToSomePointData.SetPoint(containerPosition);
+                BotOwner.GoToSomePointData.UpdateToGo(false);
+                BotOwner.Steering.LookToMovingDirection();
+                return;
+            }
+
+            BotOwner.StopMove();
+            if (BotOwner.Mover.Sprinting)
+            {
+                BotOwner.Mover.Sprint(false, false);
+            }
+            BotOwner.Steering.LookToPoint(activeLootContainer.transform.position);
+
+            if (activeLootContainer.DoorState != EDoorState.Open)
+            {
+                if (!containerLootOpened && activeLootContainer.DoorState == EDoorState.Shut)
+                {
+                    if (BotOwner.GetPlayer == null)
+                    {
+                        ClearContainerLootState("TakeContainerLoot:noPlayer");
+                        return;
+                    }
+
+                    InteractLootContainer(activeLootContainer, BotOwner.GetPlayer, EInteractionType.Open);
+                    containerLootOpened = true;
+                    containerLootOpenRequestedAt = Time.time;
+                    return;
+                }
+
+                if (containerLootOpened &&
+                    containerLootOpenRequestedAt > 0f &&
+                    Time.time - containerLootOpenRequestedAt > LootContainerOpenTimeoutSeconds)
+                {
+                    ClearContainerLootState("TakeContainerLoot:openTimeout");
+                }
+
+                return;
+            }
+
+            if (containerLootMoveInProgress)
+            {
+                if (containerLootAttemptStartedAt > 0f && Time.time - containerLootAttemptStartedAt > 4f)
+                {
+                    containerLootMoveInProgress = false;
+                    containerLootAttemptStartedAt = 0f;
+                    containerLootNextMoveAt = Time.time + 0.25f;
+                }
+
+                return;
+            }
+
+            if (!containerLootSearchStarted)
+            {
+                if (!TryGetContainerLootExecutionContext(
+                        out InventoryController? inventory,
+                        out SearchableItemItemClass? containerRoot,
+                        out InventoryEquipment? followerEquipment,
+                        out string contextFailureReason))
+                {
+                    ClearContainerLootState(contextFailureReason);
+                    return;
+                }
+
+                StartContainerLootSearchDelay(inventory, containerRoot, followerEquipment);
+                return;
+            }
+
+            if (Time.time < containerLootReadyAt || Time.time < containerLootNextMoveAt)
+            {
+                return;
+            }
+
+            TryStartNextContainerLootMove();
+        }
+
+        private void StartContainerLootSearchDelay(
+            InventoryController inventory,
+            SearchableItemItemClass containerRoot,
+            InventoryEquipment followerEquipment)
+        {
+            containerLootSearchStarted = true;
+            followerData?.BeginCommittedLootCommand(FollowerCommandType.TakeContainerLoot);
+
+            int gridCells = GetSearchableGridCellCount(containerRoot);
+            containerLootReadyAt = Time.time + CalculateLootSearchDelaySeconds(gridCells);
+            if (HasEligibleContainerLootMove(inventory, containerRoot, followerEquipment))
+            {
+                BotOwner.BotTalk.TrySay(EPhraseTrigger.OnLoot, false);
+            }
+
+            StartLootSearchSound(containerRoot, activeLootContainer?.transform?.position ?? BotOwner?.Position ?? Vector3.zero);
+        }
+
+        private bool CanContinueContainerLootCommand(out string? reason)
+        {
+            reason = null;
+
+            if (BotOwner == null || BotOwner.IsDead || BotOwner.BotState != EBotState.Active)
+            {
+                reason = "TakeContainerLoot:botInvalid";
+                return false;
+            }
+
+            if (!InteractableObjects.IsContainerLootTaker(BotOwner))
+            {
+                if (!InteractableObjects.SetContainerLootTaker(BotOwner) || !InteractableObjects.IsContainerLootTaker(BotOwner))
+                {
+                    reason = "TakeContainerLoot:notTaker";
+                    return false;
+                }
+            }
+
+            if (BotOwner.Memory?.HaveEnemy == true)
+            {
+                reason = "TakeContainerLoot:enemy";
+                return false;
+            }
+
+            return true;
+        }
+
+        private bool TryGetContainerLootExecutionContext(
+            out InventoryController? inventory,
+            out SearchableItemItemClass? containerRoot,
+            out InventoryEquipment? followerEquipment,
+            out string reason)
+        {
+            inventory = BotOwner?.GetPlayer?.InventoryController;
+            followerEquipment = inventory?.Inventory?.Equipment;
+            containerRoot = activeLootContainer?.ItemOwner?.Items?.FirstOrDefault() as SearchableItemItemClass;
+
+            if (!CanContinueContainerLootCommand(out string? guardFailureReason))
+            {
+                reason = guardFailureReason ?? "TakeContainerLoot:invalidState";
+                return false;
+            }
+
+            if (activeLootContainer == null || activeLootContainer.gameObject == null)
+            {
+                reason = "TakeContainerLoot:containerMissing";
+                return false;
+            }
+
+            if (!activeLootContainer.isActiveAndEnabled || activeLootContainer.DoorState == EDoorState.Locked)
+            {
+                reason = "TakeContainerLoot:containerUnavailable";
+                return false;
+            }
+
+            if (inventory == null || followerEquipment == null)
+            {
+                reason = "TakeContainerLoot:noInventory";
+                return false;
+            }
+
+            if (containerRoot == null)
+            {
+                reason = "TakeContainerLoot:noContainerRoot";
+                return false;
+            }
+
+            reason = string.Empty;
+            return true;
+        }
+
+        private void TryStartNextContainerLootMove()
+        {
+            try
+            {
+                if (!TryGetContainerLootExecutionContext(out InventoryController? inventory, out SearchableItemItemClass? containerRoot, out InventoryEquipment? followerEquipment, out string reason))
+                {
+                    ClearContainerLootState(reason);
+                    return;
+                }
+
+                foreach (BodyGearCandidate candidate in GetStorageLootCandidates(
+                             containerRoot,
+                             "Container.Contents",
+                             skipMagazines: false))
+                {
+                    if (!CanTryFilteredLootCandidate(candidate, containerLootAttemptedItemIds) ||
+                        IsLootNowInBotInventory(BotOwner?.GetPlayer, candidate.Item))
+                    {
+                        continue;
+                    }
+
+                    containerLootAttemptedItemIds.Add(candidate.Item.Id);
+                    if (!TryBuildFilteredLootMove(inventory, followerEquipment, candidate, out BodyGearMove? move))
+                    {
+                        continue;
+                    }
+
+                    StartContainerLootMove(inventory, move);
+                    return;
+                }
+
+                FinishContainerLootNoMoreMoves();
+            }
+            catch (Exception ex)
+            {
+                Modules.Logger.LogError("TakeContainerLoot planning failed");
+                Modules.Logger.LogError(ex);
+                ClearContainerLootState("TakeContainerLoot:planningException");
+            }
+        }
+
+        private bool HasEligibleContainerLootMove(
+            InventoryController inventory,
+            SearchableItemItemClass containerRoot,
+            InventoryEquipment followerEquipment)
+        {
+            return HasEligibleFilteredLootMove(
+                inventory,
+                followerEquipment,
+                GetStorageLootCandidates(containerRoot, "Container.Contents", skipMagazines: false));
+        }
+
+        private void StartContainerLootMove(InventoryController inventory, BodyGearMove move)
+        {
+            containerLootMoveInProgress = true;
+            containerLootAttemptStartedAt = Time.time;
+            inventory.RunNetworkTransaction(move.Operation, new Callback(result => CompleteContainerLootMove(result, move)));
+        }
+
+        private void CompleteContainerLootMove(IResult result, BodyGearMove move)
+        {
+            try
+            {
+                containerLootMoveInProgress = false;
+                containerLootAttemptStartedAt = 0f;
+                containerLootNextMoveAt = Time.time + 0.2f;
+
+                if (result?.Succeed == true || IsLootNowInBotInventory(BotOwner?.GetPlayer, move.Item))
+                {
+                    containerLootMovesSucceeded++;
+                    InteractableObjects.RegisterLootedWeaponTree(BotOwner, move.Item);
+
+                    if (followerData?.IsSquadMate == true)
+                    {
+                        InteractableObjects.StoreItem(BotOwner, move.Item);
+                    }
+
+                    if (move.Item is Weapon && move.Item.GetItemComponent<KnifeComponent>() == null)
+                    {
+                        containerLootWeaponListDirty = true;
+                    }
+
+                    return;
+                }
+
+                Modules.Logger.LogInfo(
+                    $"[LootCommand] Container loot move failed for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': {move.SourceName}:{move.Item?.TemplateId ?? "unknown"}");
+            }
+            catch (Exception ex)
+            {
+                Modules.Logger.LogError("TakeContainerLoot move completion failed");
+                Modules.Logger.LogError(ex);
+                containerLootMoveInProgress = false;
+                containerLootAttemptStartedAt = 0f;
+                containerLootNextMoveAt = Time.time + 0.2f;
+            }
+        }
+
+        private void FinishContainerLootNoMoreMoves()
+        {
+            if (containerLootWeaponListDirty)
+            {
+                BotOwner.WeaponManager.UpdateWeaponsList();
+                containerLootWeaponListDirty = false;
+            }
+
+            TryCloseActiveLootContainerAfterSearch();
+
+            if (containerLootMovesSucceeded > 0)
+            {
+                BotOwner.BotTalk.TrySay(EPhraseTrigger.Ready, false);
+                ClearContainerLootState("TakeContainerLoot:done");
+                return;
+            }
+
+            BotOwner.BotTalk.TrySay(EPhraseTrigger.LootNothing, false);
+            ClearContainerLootState("TakeContainerLoot:noSpace");
+        }
+
+        private void TryCloseActiveLootContainerAfterSearch()
+        {
+            if (activeLootContainer == null ||
+                activeLootContainer.gameObject == null ||
+                activeLootContainer.DoorState != EDoorState.Open)
+            {
+                return;
+            }
+
+            IPlayer player = BotOwner?.GetPlayer;
+            if (player == null)
+            {
+                return;
+            }
+
+            try
+            {
+                InteractLootContainer(activeLootContainer, player, EInteractionType.Close);
+            }
+            catch (Exception ex)
+            {
+                Modules.Logger.LogInfo($"[LootCommand] Failed to close looted container: {ex.Message}");
+            }
+        }
+
+        private void CleanupContainerLootInteraction(string reason)
+        {
+            if (!containerLootMoveInProgress &&
+                containerLootReadyAt <= 0f &&
+                containerLootNextMoveAt <= 0f &&
+                containerLootAttemptStartedAt <= 0f &&
+                activeLootContainer == null &&
+                activeLootSearchSource == null &&
+                containerLootAttemptedItemIds.Count == 0)
+            {
+                return;
+            }
+
+            StopLootSearchSound();
+            containerLootMoveInProgress = false;
+            containerLootReadyAt = 0f;
+            containerLootNextMoveAt = 0f;
+            containerLootAttemptStartedAt = 0f;
+            containerLootMovesSucceeded = 0;
+            containerLootWeaponListDirty = false;
+            containerLootOpened = false;
+            containerLootOpenRequestedAt = 0f;
+            containerLootSearchStarted = false;
+            containerLootAttemptedItemIds.Clear();
+            activeLootContainer = null;
+            followerData?.EndCommittedLootCommand(FollowerCommandType.TakeContainerLoot);
+
+            if (BotOwner != null)
+            {
+                InteractableObjects.RemoveContainerLootTaker(BotOwner);
+                BotOwner.Mover.Pause = false;
+                if (BotOwner.Mover.Sprinting)
+                {
+                    BotOwner.Mover.Sprint(false, false);
+                }
+
+                BotOwner.SetPose(1f);
+            }
+
+            InteractableObjects.ClearCurLootContainerTarget();
+        }
+
+        private void ClearContainerLootState(string reason)
+        {
+            if (!string.Equals(reason, "TakeContainerLoot:done", StringComparison.Ordinal) &&
+                !string.Equals(reason, "TakeContainerLoot:actionStop", StringComparison.Ordinal))
+            {
+                Modules.Logger.LogInfo(
+                    $"[LootCommand] Container loot ended for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': {reason}");
+            }
+
+            CleanupContainerLootInteraction(reason);
+            if (string.Equals(reason, "TakeContainerLoot:done", StringComparison.Ordinal))
+            {
+                followerData?.CompleteTakeContainerLoot();
+            }
+            else
+            {
+                followerData?.ClearCommand(reason);
+            }
+        }
+
+        private static void InteractLootContainer(LootableContainer container, IPlayer player, EInteractionType action)
+        {
+            InteractionResult result = new InteractionResult(action);
+            container.InteractingPlayer = player;
+            container.Interact(result);
+        }
+
         private sealed class BodyGearMove
         {
             public BodyGearMove(Item item, GInterface424 operation, string sourceName)
@@ -1969,18 +3020,31 @@ namespace pitTeam.BigBrain.Actions
 
         private sealed class BodyGearCandidate
         {
-            public BodyGearCandidate(Item item, EquipmentSlot? sourceSlot, string sourceName, int sourceTier)
+            public BodyGearCandidate(
+                Item item,
+                EquipmentSlot? sourceSlot,
+                string sourceName,
+                int sourceTier,
+                bool skipMagazine = false,
+                bool bypassPriceThreshold = false,
+                bool bypassBodyGearLootability = false)
             {
                 Item = item;
                 SourceSlot = sourceSlot;
                 SourceName = sourceName;
                 SourceTier = sourceTier;
+                SkipMagazine = skipMagazine;
+                BypassPriceThreshold = bypassPriceThreshold;
+                BypassBodyGearLootability = bypassBodyGearLootability;
             }
 
             public Item Item { get; }
             public EquipmentSlot? SourceSlot { get; }
             public string SourceName { get; }
             public int SourceTier { get; }
+            public bool SkipMagazine { get; }
+            public bool BypassPriceThreshold { get; }
+            public bool BypassBodyGearLootability { get; }
         }
 
         private static readonly EquipmentSlot[] BodyGearTopLevelSlotOrder =
@@ -2011,6 +3075,19 @@ namespace pitTeam.BigBrain.Actions
         {
             EquipmentSlot.Backpack,
             EquipmentSlot.TacticalVest,
+            EquipmentSlot.Pockets
+        };
+
+        private static readonly EquipmentSlot[] BodyGearWeaponSlotOrder =
+        {
+            EquipmentSlot.FirstPrimaryWeapon,
+            EquipmentSlot.SecondPrimaryWeapon,
+            EquipmentSlot.Holster
+        };
+
+        private static readonly EquipmentSlot[] FilteredLootCarrySlotOrder =
+        {
+            EquipmentSlot.Backpack,
             EquipmentSlot.Pockets
         };
 

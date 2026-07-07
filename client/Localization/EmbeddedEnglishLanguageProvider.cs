@@ -28,6 +28,7 @@ namespace pitTeam.Localization
                 miscSettings = "Miscellaneous",
                 testSettings = "Testing",
                 raidSettings = "Raid Settings",
+                lootingSettings = "Looting Settings",
                 loadoutManagementSettings = "Loadout Management",
                 equipOptions = new[] { "Default" },
                 tacticOptions = new[] { "Rifleman", "Support", "Marksman", "Pusher", "Holder", "Assist" },
@@ -77,6 +78,12 @@ namespace pitTeam.Localization
                 teamEscapeUseAnyExtract = Entry(
                     "Team Escape: Use Any Extraction Point",
                     "Allow the squad escape simulation to choose any usable extraction point on the map. Disable this to restrict escape routes to extraction points assigned to the player."),
+                lootMinimumPrice = Entry(
+                    "Minimum Price",
+                    "Minimum rouble value for an item to be taken from a body or container. Set to 0 to disable the minimum."),
+                lootMaximumPrice = Entry(
+                    "Maximum Price",
+                    "Maximum rouble value for an item to be taken from a body or container. Set to 0 to disable the maximum."),
                 memberTactic = Entry(
                     "Squad Member {0} Tactic",
                     "Set Squad member fight tactic."),

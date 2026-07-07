@@ -1092,6 +1092,7 @@ namespace pitTeam.Patches
                 TMP_InputField valueInput = NumberSliderValueInputField?.GetValue(slider) as TMP_InputField;
                 if (valueInput != null)
                 {
+                    ConfigureSliderValueInputChrome(valueInput);
                     valueInput.readOnly = false;
                     valueInput.interactable = true;
                 }
@@ -1155,6 +1156,7 @@ namespace pitTeam.Patches
 
             Slider stockSlider = slider.GetComponentInChildren<Slider>(true);
             TMP_InputField valueInput = NumberSliderValueInputField?.GetValue(slider) as TMP_InputField;
+            ConfigureSliderValueInputChrome(valueInput);
             if (stockSlider != null)
             {
                 stockSlider.interactable = interactable;
@@ -1276,10 +1278,35 @@ namespace pitTeam.Patches
             sliderRoot.localScale = Vector3.one;
 
             TMP_InputField valueInput = NumberSliderValueInputField?.GetValue(slider) as TMP_InputField;
+            ConfigureSliderValueInputChrome(valueInput);
             HideStockLabelContainers(sliderRoot, valueInput?.transform);
 
             slider.gameObject.SetActive(true);
             return slider;
+        }
+
+        private static void ConfigureSliderValueInputChrome(TMP_InputField valueInput)
+        {
+            if (valueInput == null)
+            {
+                return;
+            }
+
+            Image background = valueInput.GetComponent<Image>();
+            if (background != null)
+            {
+                background.color = Color.clear;
+                background.raycastTarget = true;
+                valueInput.targetGraphic = background;
+            }
+
+            ColorBlock colors = valueInput.colors;
+            colors.normalColor = Color.clear;
+            colors.highlightedColor = Color.clear;
+            colors.pressedColor = Color.clear;
+            colors.selectedColor = Color.clear;
+            colors.disabledColor = Color.clear;
+            valueInput.colors = colors;
         }
 
         private static void HideStockLabelContainers(Transform root, Transform exemptRoot)

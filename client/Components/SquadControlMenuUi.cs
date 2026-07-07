@@ -55,6 +55,10 @@ namespace pitTeam.Components
         private const float SettingsControlRightInset = 52f;
         private const float SettingsShortcutRightInset = 128f;
         private const float SettingsSliderVerticalOffset = 36f;
+        private const float SettingsNumericInputWidthMultiplier = 1.4f;
+        private const float SettingsLootPriceInputMinWidth = 156f;
+        private const float SettingsLootPriceInputLeftOffset = 40f;
+        private const float SettingsLootPriceInputBorderHeight = 1f;
         private const float RaidOverlayBackButtonYOffset = 50f;
 
         private static readonly FieldInfo HeaderLabelField = AccessTools.Field(typeof(DefaultUIButton), "_headerLabel");

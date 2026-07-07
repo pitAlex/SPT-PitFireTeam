@@ -1155,7 +1155,11 @@ namespace pitTeam.BigBrain
             if (!triedFillMagazines)
             {
                 FollowerOutOfCombatReloadPolicy.TryFillCarriedWeaponMagazines(BotOwner);
-                BotOwner.WeaponManager.Reload.TryFillMagazines();
+                if (!InteractableObjects.IsLootedWeapon(BotOwner, BotOwner.WeaponManager.CurrentWeapon))
+                {
+                    BotOwner.WeaponManager.Reload.TryFillMagazines();
+                }
+
                 triedFillMagazines = true;
                 nextReloadCheckAt = Time.time + OutOfCombatReloadCheckInterval;
                 nextMagazineFillCheckAt = Time.time + OutOfCombatReloadFullCycleCooldown;
@@ -1239,6 +1243,12 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
+            if (InteractableObjects.IsLootedWeapon(BotOwner, currentWeapon))
+            {
+                MarkReloadWeaponProcessed(currentWeapon.Id);
+                return false;
+            }
+
             EquipmentSlot currentSlot = BotOwner.WeaponManager.Selector?.LastEquipmentSlot ?? EquipmentSlot.FirstPrimaryWeapon;
             if (IsOutOfCombatReloadGiveUpActive(currentSlot, currentWeapon))
             {
@@ -1287,6 +1297,11 @@ namespace pitTeam.BigBrain
 
             Weapon currentWeapon = BotOwner.WeaponManager.CurrentWeapon;
             if (currentWeapon == null)
+            {
+                return false;
+            }
+
+            if (InteractableObjects.IsLootedWeapon(BotOwner, currentWeapon))
             {
                 return false;
             }
@@ -1348,6 +1363,13 @@ namespace pitTeam.BigBrain
 
             if (reloadSlotsTried.Contains(slot))
             {
+                return false;
+            }
+
+            if (InteractableObjects.IsLootedWeapon(BotOwner, weapon))
+            {
+                MarkReloadWeaponProcessed(weapon.Id);
+                processedSlot = true;
                 return false;
             }
 
@@ -1422,6 +1444,11 @@ namespace pitTeam.BigBrain
         private bool ShouldReloadWeaponInSlot(EquipmentSlot slot, Weapon weapon)
         {
             if (IsReloadWeaponProcessed(weapon))
+            {
+                return false;
+            }
+
+            if (InteractableObjects.IsLootedWeapon(BotOwner, weapon))
             {
                 return false;
             }
@@ -1654,6 +1681,11 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
+            if (InteractableObjects.IsLootedWeapon(botOwner, weapon))
+            {
+                return false;
+            }
+
             if (IsLauncherWeapon(weapon))
             {
                 // EFT's launcher reload checks can trigger automatic weapon switching when a
@@ -1682,6 +1714,11 @@ namespace pitTeam.BigBrain
         public static bool HasBetterMagazine(BotOwner botOwner, Weapon weapon)
         {
             if (botOwner?.GetPlayer?.InventoryController == null || weapon == null)
+            {
+                return false;
+            }
+
+            if (InteractableObjects.IsLootedWeapon(botOwner, weapon))
             {
                 return false;
             }
@@ -1733,6 +1770,7 @@ namespace pitTeam.BigBrain
             {
                 Weapon? weapon = botOwner.GetPlayer.InventoryController.Inventory.Equipment.GetSlot(slot)?.ContainedItem as Weapon;
                 if (weapon == null ||
+                    InteractableObjects.IsLootedWeapon(botOwner, weapon) ||
                     IsLauncherWeapon(weapon) ||
                     weapon.ReloadMode != Weapon.EReloadMode.ExternalMagazine)
                 {

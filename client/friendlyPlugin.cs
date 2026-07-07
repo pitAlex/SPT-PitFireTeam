@@ -79,6 +79,7 @@ namespace pitTeam
         public string miscSettings { get; set; }
         public string testSettings { get; set; }
         public string raidSettings { get; set; }
+        public string lootingSettings { get; set; }
         public string loadoutManagementSettings { get; set; }
         public string[] equipOptions { get; set; }
         public string[] tacticOptions { get; set; }
@@ -94,6 +95,8 @@ namespace pitTeam
         public Dictionary<string, string> recruitPickup { get; set; }
         public Dictionary<string, string> teamEscape { get; set; }
         public Dictionary<string, string> teamEscapeUseAnyExtract { get; set; }
+        public Dictionary<string, string> lootMinimumPrice { get; set; }
+        public Dictionary<string, string> lootMaximumPrice { get; set; }
 
         public Dictionary<string, string> memberTactic { get; set; }
         public Dictionary<string, string> memberEquipment { get; set; }
@@ -175,7 +178,7 @@ namespace pitTeam
         public string Message { get; set; }
     }
 
-    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "0.8.7")]
+    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "0.9.0")]
     [BepInDependency("xyz.drakia.bigbrain")]
     public class pitFireTeam : BaseUnityPlugin
     {
@@ -183,6 +186,7 @@ namespace pitTeam
         public const string SainAddonPluginId = "xyz.pit.fireteam.sainaddon";
         private const string StartupRecoveryNoticeRoute = "/singleplayer/pitfireteam/recovery-notice";
         private const string StartupRecoveryNoticeAckRoute = "/singleplayer/pitfireteam/recovery-notice/ack";
+        private const int LootPriceMaximumRoubles = 99999999;
 
         public static bool awaken;
 
@@ -205,6 +209,8 @@ namespace pitTeam
         public static ConfigEntry<bool> recruitPickup;
         public static ConfigEntry<bool> teamEscape;
         public static ConfigEntry<bool> teamEscapeUseAnyExtract;
+        public static ConfigEntry<int> lootMinimumPrice;
+        public static ConfigEntry<int> lootMaximumPrice;
 
         public static ConfigEntry<bool> pitFireTeamFLAG;
         public static ConfigEntry<bool> badGuy;
@@ -954,6 +960,10 @@ namespace pitTeam
             teamEscape = Config.Bind("", "10 TeamEscape", true, new ConfigDescription(optionsLang.teamEscape["Description"], null, CreateConfigAttributes(-1001, false, optionsLang.teamEscape)));
 
             teamEscapeUseAnyExtract = Config.Bind("", "10 TeamEscapeUseAnyExtract", true, new ConfigDescription(optionsLang.teamEscapeUseAnyExtract["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.teamEscapeUseAnyExtract)));
+
+            lootMinimumPrice = Config.Bind("", "10 LootMinimumPrice", 0, new ConfigDescription(optionsLang.lootMinimumPrice["Description"], new AcceptableValueRange<int>(0, LootPriceMaximumRoubles), CreateConfigAttributes(-1002, false, optionsLang.lootMinimumPrice)));
+
+            lootMaximumPrice = Config.Bind("", "10 LootMaximumPrice", 0, new ConfigDescription(optionsLang.lootMaximumPrice["Description"], new AcceptableValueRange<int>(0, LootPriceMaximumRoubles), CreateConfigAttributes(-1002, false, optionsLang.lootMaximumPrice)));
 
             npcSendMessage = Config.Bind("", "11 NpcSendMessage", true, new ConfigDescription(optionsLang.npcSendMessage["Description"], null, CreateConfigAttributes(-1003, false, optionsLang.npcSendMessage)));
 

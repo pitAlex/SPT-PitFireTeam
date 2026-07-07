@@ -270,6 +270,7 @@ Verified sections built today:
 - `Follow Settings`
 - `Combat Settings`
 - `Raid Settings`
+- `Looting Settings`
 - `Loadout Management`
 - `Input Settings`
 - `Miscellaneous`
@@ -300,6 +301,9 @@ Verified entry groups:
     - `npcSendMessage`
     - `pitFireTeamFLAG`
     - `badGuy`
+- `Looting Settings`
+    - `Minimum Price`
+    - `Maximum Price`
 - `Loadout Management`
     - `Simple`
     - `Restricted`
@@ -324,6 +328,7 @@ Supported control types:
 
 - `bool` -> toggle
 - ranged `int` -> slider
+- loot price ranged `int` settings -> integer input field
 - `LoadoutManagementMode` -> mutually exclusive radio-style toggle rows
 - `KeyboardShortcut` -> press-to-capture button
 - everything else -> read-only text fallback
@@ -348,6 +353,14 @@ When `Restricted` is the active mode, a `Field Upkeep` checkbox row appears betw
 Changing from the current mode opens a confirmation overlay before the setting is applied. The overlay warns that switching loadout management will switch all teammates to their `Default` loadout. `Continue` applies the mode and closes the overlay; the `X` cancels and leaves the previous mode selected.
 
 On confirmation, the client saves the BepInEx setting, syncs the new mode to the server, and rebuilds the settings entries so conditional rows such as `Field Upkeep` appear or disappear immediately.
+
+### Looting setting
+
+`Looting Settings` is placed after `Raid Settings` and controls follower-commanded looting from non-teammate bodies and containers.
+
+`Minimum Price` is the lowest rouble value an item tree must have before a follower will take it. `Maximum Price` is the highest rouble value an item tree may have before a follower will take it. A value of `0` disables that bound.
+
+These thresholds apply to each candidate item tree once: weapons include attached mods and helmets include attached devices. Armor plates are ignored by filtered body/container looting. The command still requires the item to fit in the follower's backpack or pockets.
 
 Crossing into or out of `Realistic` also strips the secure-container tree from saved teammate `Default` loadouts before the next profile/edit view can expose it.
 

@@ -257,6 +257,14 @@ namespace pitTeam.Components
                 yield return setting;
             }
 
+            foreach (SquadSettingEntry setting in BuildSettingsSection(
+                pitFireTeam.GetLanguageText(language => language.lootingSettings),
+                pitFireTeam.lootMinimumPrice,
+                pitFireTeam.lootMaximumPrice))
+            {
+                yield return setting;
+            }
+
             if (!IsRaidRestrictedSettingsContext())
             {
                 string loadoutSection = pitFireTeam.GetLanguageText(language => language.loadoutManagementSettings);
@@ -490,6 +498,13 @@ namespace pitTeam.Components
 
             if (entry.SettingType == typeof(int) && entry.Description?.AcceptableValues is AcceptableValueRange<int> acceptableRange)
             {
+                if (IsLootPriceSetting(entry))
+                {
+                    controlRect.anchorMin = new Vector2(1f, 0.5f);
+                    controlRect.anchorMax = new Vector2(1f, 0.5f);
+                    controlRect.pivot = new Vector2(1f, 0.5f);
+                }
+
                 controlRect.anchoredPosition = new Vector2(-SettingsControlRightInset, SettingsSliderVerticalOffset);
                 CreateIntSliderSettingControl(controlRect, entry, acceptableRange, !disabledDuringRaid);
                 AddRaidDisabledTooltipOverlay(rowObject, disabledDuringRaid);
@@ -1149,6 +1164,12 @@ namespace pitTeam.Components
 
         private void CreateIntSliderSettingControl(RectTransform parent, ConfigEntryBase entry, AcceptableValueRange<int> acceptableRange, bool interactable)
         {
+            if (IsLootPriceSetting(entry))
+            {
+                CreateIntNumericInputSettingControl(parent, entry, acceptableRange, interactable);
+                return;
+            }
+
             NumberSlider slider = CloneStockNumberSlider(parent);
             if (slider == null)
             {
@@ -1200,6 +1221,275 @@ namespace pitTeam.Components
                     pitFireTeam.Instance?.Config.Save();
                 });
             }
+        }
+
+        private void CreateIntNumericInputSettingControl(RectTransform parent, ConfigEntryBase entry, AcceptableValueRange<int> acceptableRange, bool interactable)
+        {
+            TMP_InputField input = CloneStockNumberInput(parent) ?? CreateBasicNumberInput(parent);
+            if (input == null)
+            {
+                CreateReadOnlySettingControl(parent, entry.BoxedValue?.ToString() ?? string.Empty);
+                return;
+            }
+
+            ConfigureNumberInput(input, entry, acceptableRange, interactable);
+        }
+
+        private static bool IsLootPriceSetting(ConfigEntryBase entry)
+        {
+            return entry == pitFireTeam.lootMinimumPrice ||
+                   entry == pitFireTeam.lootMaximumPrice;
+        }
+
+        private TMP_InputField CloneStockNumberInput(RectTransform parent)
+        {
+            NumberSlider template = ResolveSettingsSliderTemplate();
+            TMP_InputField templateInput = template != null
+                ? NumberSliderValueInputField?.GetValue(template) as TMP_InputField
+                : null;
+            if (templateInput == null)
+            {
+                return null;
+            }
+
+            TMP_InputField input = Instantiate(templateInput, parent, false);
+            input.name = "pitFireTeam_LootPriceNumberInput";
+            input.gameObject.SetActive(true);
+            ConfigureNumberInputRect(input.transform as RectTransform, templateInput.transform as RectTransform);
+            return input;
+        }
+
+        private TMP_InputField CreateBasicNumberInput(RectTransform parent)
+        {
+            GameObject inputObject = new GameObject("pitFireTeam_LootPriceNumberInput", typeof(RectTransform), typeof(Image), typeof(TMP_InputField));
+            inputObject.transform.SetParent(parent, false);
+
+            RectTransform inputRect = inputObject.GetComponent<RectTransform>();
+            ConfigureNumberInputRect(inputRect, null);
+
+            Image background = inputObject.GetComponent<Image>();
+            background.color = Color.black;
+            background.raycastTarget = true;
+
+            GameObject textObject = CreateText("Text", string.Empty, 18f, TextAlignmentOptions.MidlineLeft);
+            textObject.transform.SetParent(inputObject.transform, false);
+            RectTransform textRect = textObject.GetComponent<RectTransform>();
+            Stretch(textRect);
+            textRect.offsetMin = new Vector2(8f, 0f);
+            textRect.offsetMax = new Vector2(-8f, 0f);
+
+            TextMeshProUGUI text = textObject.GetComponent<TextMeshProUGUI>();
+            text.enableWordWrapping = false;
+            text.overflowMode = TextOverflowModes.Truncate;
+            text.raycastTarget = false;
+
+            GameObject placeholderObject = CreateText("Placeholder", "0", 18f, TextAlignmentOptions.MidlineLeft);
+            placeholderObject.transform.SetParent(inputObject.transform, false);
+            RectTransform placeholderRect = placeholderObject.GetComponent<RectTransform>();
+            Stretch(placeholderRect);
+            placeholderRect.offsetMin = new Vector2(8f, 0f);
+            placeholderRect.offsetMax = new Vector2(-8f, 0f);
+
+            TextMeshProUGUI placeholder = placeholderObject.GetComponent<TextMeshProUGUI>();
+            placeholder.color = new Color(0.54f, 0.54f, 0.54f, 0.78f);
+            placeholder.enableWordWrapping = false;
+            placeholder.raycastTarget = false;
+
+            TMP_InputField input = inputObject.GetComponent<TMP_InputField>();
+            input.textComponent = text;
+            input.placeholder = placeholder;
+            input.targetGraphic = background;
+            input.lineType = TMP_InputField.LineType.SingleLine;
+            input.transition = Selectable.Transition.ColorTint;
+
+            ColorBlock colors = input.colors;
+            colors.normalColor = Color.white;
+            colors.highlightedColor = new Color(1f, 0.96f, 0.9f, 1f);
+            colors.pressedColor = new Color(0.92f, 0.92f, 0.92f, 1f);
+            colors.selectedColor = Color.white;
+            colors.disabledColor = new Color(1f, 1f, 1f, 0.55f);
+            input.colors = colors;
+            ConfigureNumberInputChrome(input);
+
+            return input;
+        }
+
+        private static void ConfigureNumberInputRect(RectTransform inputRect, RectTransform templateRect)
+        {
+            if (inputRect == null)
+            {
+                return;
+            }
+
+            float templateWidth = 0f;
+            if (templateRect != null)
+            {
+                templateWidth = templateRect.rect.width > 1f ? templateRect.rect.width : templateRect.sizeDelta.x;
+            }
+
+            float width = Mathf.Max(SettingsLootPriceInputMinWidth, templateWidth * SettingsNumericInputWidthMultiplier);
+            inputRect.anchorMin = new Vector2(1f, 0.5f);
+            inputRect.anchorMax = new Vector2(1f, 0.5f);
+            inputRect.pivot = new Vector2(1f, 0.5f);
+            inputRect.sizeDelta = new Vector2(width, Mathf.Max(34f, inputRect.sizeDelta.y));
+            inputRect.anchoredPosition = new Vector2(-SettingsLootPriceInputLeftOffset, -SettingsSliderVerticalOffset);
+            inputRect.localScale = Vector3.one;
+        }
+
+        private void ConfigureNumberInput(TMP_InputField input, ConfigEntryBase entry, AcceptableValueRange<int> acceptableRange, bool interactable)
+        {
+            input.onValueChanged.RemoveAllListeners();
+            input.onSelect.RemoveAllListeners();
+            input.onDeselect.RemoveAllListeners();
+            input.onEndEdit.RemoveAllListeners();
+            input.contentType = TMP_InputField.ContentType.IntegerNumber;
+            input.characterValidation = TMP_InputField.CharacterValidation.Integer;
+            input.lineType = TMP_InputField.LineType.SingleLine;
+            input.onFocusSelectAll = false;
+            input.customCaretColor = true;
+            input.caretColor = new Color(0.88f, 0.82f, 0.66f, 1f);
+            input.selectionColor = new Color(0.78f, 0.72f, 0.58f, 0.62f);
+            input.caretWidth = 2;
+            input.characterLimit = Mathf.Max(
+                acceptableRange.MinValue.ToString().Length,
+                acceptableRange.MaxValue.ToString().Length);
+
+            ConfigureNumberInputText(input);
+
+            int currentValue = Convert.ToInt32(entry.BoxedValue);
+            input.SetTextWithoutNotify(currentValue.ToString());
+            SetSettingsControlInteractable(input.transform, interactable);
+
+            if (!interactable)
+            {
+                return;
+            }
+
+            input.onSelect.AddListener(_ => ActivateNumberInput(input));
+            input.onEndEdit.AddListener(value =>
+            {
+                int boxed = ParseClampedSettingInt(value, currentValue, acceptableRange);
+                input.SetTextWithoutNotify(boxed.ToString());
+                if (Equals(entry.BoxedValue, boxed))
+                {
+                    return;
+                }
+
+                entry.BoxedValue = boxed;
+                pitFireTeam.Instance?.Config.Save();
+            });
+        }
+
+        private static void ConfigureNumberInputText(TMP_InputField input)
+        {
+            if (input == null)
+            {
+                return;
+            }
+
+            if (input.targetGraphic != null)
+            {
+                input.targetGraphic.raycastTarget = true;
+            }
+
+            ConfigureNumberInputChrome(input);
+
+            if (input.textViewport != null)
+            {
+                input.textViewport.offsetMin = new Vector2(8f, 0f);
+                input.textViewport.offsetMax = new Vector2(-8f, 0f);
+            }
+
+            if (input.textComponent != null)
+            {
+                input.textComponent.alignment = TextAlignmentOptions.MidlineLeft;
+                input.textComponent.enableWordWrapping = false;
+                input.textComponent.overflowMode = TextOverflowModes.Truncate;
+                input.textComponent.raycastTarget = false;
+            }
+
+            if (input.placeholder is TMP_Text placeholder)
+            {
+                placeholder.alignment = TextAlignmentOptions.MidlineLeft;
+                placeholder.enableWordWrapping = false;
+                placeholder.raycastTarget = false;
+            }
+        }
+
+        private static void ConfigureNumberInputChrome(TMP_InputField input)
+        {
+            if (input == null)
+            {
+                return;
+            }
+
+            Image background = input.GetComponent<Image>();
+            if (background != null)
+            {
+                background.color = Color.black;
+                background.raycastTarget = true;
+                input.targetGraphic = background;
+            }
+
+            ColorBlock colors = input.colors;
+            colors.normalColor = Color.black;
+            colors.highlightedColor = Color.black;
+            colors.pressedColor = Color.black;
+            colors.selectedColor = Color.black;
+            colors.disabledColor = new Color(0f, 0f, 0f, 0.42f);
+            input.colors = colors;
+
+            Transform existingBorder = input.transform.Find("pitFireTeam_LootPriceInputBottomBorder");
+            RectTransform borderRect = existingBorder as RectTransform;
+            Image borderImage = existingBorder != null
+                ? existingBorder.GetComponent<Image>()
+                : null;
+
+            if (borderRect == null || borderImage == null)
+            {
+                GameObject borderObject = new GameObject("pitFireTeam_LootPriceInputBottomBorder", typeof(RectTransform), typeof(Image));
+                borderObject.transform.SetParent(input.transform, false);
+                borderRect = borderObject.GetComponent<RectTransform>();
+                borderImage = borderObject.GetComponent<Image>();
+            }
+
+            borderRect.anchorMin = new Vector2(0f, 0f);
+            borderRect.anchorMax = new Vector2(1f, 0f);
+            borderRect.pivot = new Vector2(0.5f, 0f);
+            borderRect.offsetMin = Vector2.zero;
+            borderRect.offsetMax = new Vector2(0f, SettingsLootPriceInputBorderHeight);
+            borderRect.localScale = Vector3.one;
+            borderRect.SetAsLastSibling();
+
+            borderImage.color = new Color(0.86f, 0.84f, 0.76f, 0.96f);
+            borderImage.raycastTarget = false;
+        }
+
+        private static void ActivateNumberInput(TMP_InputField input)
+        {
+            if (input == null || !input.interactable || input.readOnly)
+            {
+                return;
+            }
+
+            if (EventSystem.current != null &&
+                EventSystem.current.currentSelectedGameObject != input.gameObject &&
+                !EventSystem.current.alreadySelecting)
+            {
+                EventSystem.current.SetSelectedGameObject(input.gameObject);
+            }
+
+            input.ActivateInputField();
+        }
+
+        private static int ParseClampedSettingInt(string value, int fallback, AcceptableValueRange<int> acceptableRange)
+        {
+            if (!int.TryParse(value, out int parsed))
+            {
+                parsed = fallback;
+            }
+
+            return Mathf.Clamp(parsed, acceptableRange.MinValue, acceptableRange.MaxValue);
         }
 
         private void CreateShortcutSettingControl(RectTransform parent, ConfigEntry<KeyboardShortcut> entry, bool interactable)
@@ -1376,6 +1666,7 @@ namespace pitTeam.Components
             }
 
             ApplyStockSettingsLabelText(rowTemplate, clonedRow.transform, template.transform, GetSettingDisplayName(entry));
+            ConfigureSliderValueInputChrome(NumberSliderValueInputField?.GetValue(clonedSlider) as TMP_InputField);
             clonedSlider.Show(acceptableRange.MinValue, acceptableRange.MaxValue, "0");
             clonedSlider.UpdateValue(Convert.ToSingle(entry.BoxedValue), false, acceptableRange.MinValue, acceptableRange.MaxValue);
             clonedSlider.Bind(value =>
@@ -1515,10 +1806,35 @@ namespace pitTeam.Components
             }
 
             TMP_InputField valueInput = NumberSliderValueInputField?.GetValue(slider) as TMP_InputField;
+            ConfigureSliderValueInputChrome(valueInput);
             HideStockLabelContainers(sliderRoot, valueInput?.transform);
 
             slider.gameObject.SetActive(true);
             return slider;
+        }
+
+        private static void ConfigureSliderValueInputChrome(TMP_InputField valueInput)
+        {
+            if (valueInput == null)
+            {
+                return;
+            }
+
+            Image background = valueInput.GetComponent<Image>();
+            if (background != null)
+            {
+                background.color = Color.clear;
+                background.raycastTarget = true;
+                valueInput.targetGraphic = background;
+            }
+
+            ColorBlock colors = valueInput.colors;
+            colors.normalColor = Color.clear;
+            colors.highlightedColor = Color.clear;
+            colors.pressedColor = Color.clear;
+            colors.selectedColor = Color.clear;
+            colors.disabledColor = Color.clear;
+            valueInput.colors = colors;
         }
 
         private void HideStockLabelContainers(Transform root, Transform exemptRoot)
@@ -1985,6 +2301,8 @@ namespace pitTeam.Components
             if (entry == pitFireTeam.recruitPickup) return language.recruitPickup;
             if (entry == pitFireTeam.teamEscape) return language.teamEscape;
             if (entry == pitFireTeam.teamEscapeUseAnyExtract) return language.teamEscapeUseAnyExtract;
+            if (entry == pitFireTeam.lootMinimumPrice) return language.lootMinimumPrice;
+            if (entry == pitFireTeam.lootMaximumPrice) return language.lootMaximumPrice;
             if (entry == pitFireTeam.npcSendMessage) return language.npcSendMessage;
             if (entry == pitFireTeam.pitFireTeamFLAG) return language.pitFireTeam;
             if (entry == pitFireTeam.badGuy) return language.badGuy;

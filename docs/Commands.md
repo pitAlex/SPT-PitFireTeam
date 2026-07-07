@@ -384,7 +384,7 @@ Targeting:
 
 - Requires `InteractableObjects.GetCurLootItem()`.
 - Chooses closest active follower to the loot item.
-- Ignores followers with enemies.
+- Ignores followers with enemies or active loot/pickup commands.
 - Reserves taker ownership through `InteractableObjects.SetTaker(...)`.
 
 Execution:
@@ -409,22 +409,69 @@ Command state:
 Targeting:
 
 - Requires `InteractableObjects.GetCurBodyLootTarget()`.
-- Chooses the closest active follower to the corpse.
-- Ignores followers with enemies.
+- Chooses the closest active follower for teammate corpses.
+- Chooses the closest active follower within 22m for non-teammate corpses, ignoring followers with no free backpack/pocket grid space.
+- Ignores followers with enemies or active loot/pickup commands.
 - Reserves corpse ownership through `InteractableObjects.SetBodyLootTaker(...)`.
 
 Execution:
 
 - `GestureCommandAction.HandleTakeBodyGear()`
 - Moves to the corpse.
+- Checks whether at least one eligible item can be moved, says `EPhraseTrigger.OnLoot` if so, then plays the loot search sound and waits briefly before moving items. Delay is based on the total grid cells searched from corpse pockets, backpack, and vest containers, with a short bounded cap so it reads as searching without matching full player search time.
 - Plans one live inventory transaction at a time.
-- Uses empty compatible equipment slots as cargo space when possible, but does not swap or throw away the follower's current kit.
-- Tries backpack, rig, and pocket carry containers for the remaining body gear.
-- Treats backpacks and rigs as whole cargo: if the follower can carry the container, its contents ride with it; if the container cannot be carried, the command does not pull items out of it.
-- Pockets are not a movable cargo container, so pocket contents are still considered individually.
-- In `Simple` and `Restricted`, skips roots that are protected follower equipment. Non-protected containers may carry protected descendants, and post-raid filtering strips those protected descendants before extraction or return delivery.
+- Teammate corpses use the protected recovery path:
+    - uses empty compatible equipment slots as cargo space when possible, but does not swap or throw away the follower's current kit
+    - tries backpack, rig, and pocket carry containers for the remaining body gear
+    - treats backpacks and rigs as whole cargo: if the follower can carry the container, its contents ride with it; if the container cannot be carried, the command does not pull items out of it
+    - pockets are not a movable cargo container, so pocket contents are still considered individually
+    - in `Simple` and `Restricted`, skips roots that are protected follower equipment. Non-protected containers may carry protected descendants, and post-raid filtering strips those protected descendants before extraction or return delivery
 - In `Immersive` and `Realistic`, protected-equipment skipping is not applied because fallen teammate gear is lootable in those modes.
+- Non-teammate corpses use filtered looting:
+    - tries to take the corpse dogtag first only for non-teammate USEC/BEAR bodies; dogtags bypass the min/max price filter but still require a valid backpack/pocket move
+    - checks backpack contents first, then pockets, then vest contents
+    - does not take the corpse's worn backpack, armor, armored rig, or tactical vest as whole equipment
+    - pocket and vest contents skip magazines entirely so follower reload space is not disturbed; backpack and container magazines can still be looted
+    - armor plates are ignored, including loose/cargo plates and installed plates inside armor or plate-carrier trees
+    - weapons are priced and moved as whole weapon trees, including attached mods, instead of being stripped part by part; they first try empty compatible weapon slots, such as second primary or holster, then fall back to backpack/pocket space
+    - item price is compared once against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound
+    - non-weapon successful moves only target the follower's backpack and pockets, never the follower's rig
 - Stores successful moved items through `InteractableObjects.StoreItem(...)` for squadmates.
+- On completion, says `EPhraseTrigger.Ready` when at least one item was moved, or `EPhraseTrigger.LootNothing` when no eligible item could be taken.
+- Once searching starts, normal replacement commands are ignored until the loot command completes; combat, timeout, and safety invalidation can still stop the command.
+- Clears command on success/failure/invalid state.
+
+### Container Loot Phrase
+
+Input:
+
+- `EPhraseTrigger.LootContainer`
+
+Command state:
+
+- `SetTakeContainerLoot(75f)`
+
+Targeting:
+
+- Requires `InteractableObjects.GetCurLootContainerTarget()`.
+- Chooses the closest active follower within 22m, ignoring followers with no free backpack/pocket grid space.
+- Ignores followers with enemies or active loot/pickup commands.
+- Reserves container ownership through `InteractableObjects.SetContainerLootTaker(...)`.
+
+Execution:
+
+- `GestureCommandAction.HandleTakeContainerLoot()`
+- Moves to the container.
+- Opens the container if it is shut.
+- Checks whether at least one eligible item can be moved, says `EPhraseTrigger.OnLoot` if so, then plays the loot search sound and waits briefly before moving items. Delay is based on the total grid cells in the container tree, with a short bounded cap so it reads as searching without matching full player search time.
+- Searches container contents through the same filtered-loot planner used for non-teammate bodies.
+- Compares each candidate item tree against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound.
+- Moves non-weapon candidates only into the follower's backpack and pockets, never the follower's rig.
+- Weapons are priced and moved as whole weapon trees; they first try empty compatible weapon slots, such as second primary or holster, then fall back to backpack/pocket space.
+- Closes the container on normal completion. Combat, timeout, or safety interruption can leave it open.
+- Stores successful moved items through `InteractableObjects.StoreItem(...)` for squadmates.
+- On completion, says `EPhraseTrigger.Ready` when at least one item was moved, or `EPhraseTrigger.LootNothing` when no eligible item could be taken.
+- Once searching starts, normal replacement commands are ignored until the loot command completes; combat, timeout, and safety invalidation can still stop the command.
 - Clears command on success/failure/invalid state.
 
 ### View Backpack Quick Interaction

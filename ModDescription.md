@@ -489,17 +489,24 @@ In non-Realistic modes, the automatically managed secure container provides basi
 
 ## Upcoming
 
-The following are planned features in reaching a release version (1.0.0)
+The following are planned features in reaching a release version (1.0.0) and beyond.
 
 **Beta 0.9.0:**
 
-- **The Goons** - bringing back the the Goons as usable teammates along with Knight as trader and his quests.
-- **Squad Budget** - restricts the maximum number of teammates you can add to your squad based on available Command Points. Command Points are gained by leveling up, keeping teammates alive, and keeping picked-up raid allies alive. Points are lost if you kill teammates or allies.
+- **Simple Looting** - the ability for followers to loot bodies or containers via loot command and with filtering configuration in settings
+- **Teammate Insurance** - making it possible to insure teammate equipment when in Immersive or Realistic
 
 **Version 1.0.0:**
 
+- **Squad Budget** - restricts the maximum number of teammates you can add to your squad based on available Command Points. Command Points are gained by leveling up, keeping teammates alive, and keeping picked-up raid allies alive. Points are lost if you kill teammates or allies.
+- **Loadout Managment Reworked** - "Restricted" mode becomes "Standard" mode and "Simple" mode gets dropped
+
+### Addons:
+
 - **Scavs for hire** - being able to play with teammates as a Scav
+- **Going Rogue** - being able to recruit and command Goons along with the Rogues in raids
 - **SAIN tactics addon** - being able to use SAIN personalities as teammate tactics
+- **Enhanced looting** - enhanced looting introduced via "Go Loot" command with help from Looting Bots mod
 
 ## Known Issues and Conflicts
 
@@ -507,9 +514,7 @@ The mod changes bot grouping, teammate ownership, commands, and combat routing. 
 
 Mods that add custom gear like belts should not be used on teammates, it can cause game crashes.
 
-Career Log mod is not compatible with this mod as it causes the "add teammate" button to not work. 
-
-The Labyrinth is a special map with special AI, not meant to AI followers. Do not spawn with your teammates there.
+The Labyrinth is a special map with special AI, not meant to AI followers. They will not spawn there.
 
 In teammate loadout editing, do not repair equipment and then move items into or out of the teammate loadout before saving. For now, repair should be the last step before saving. If the editor starts failing after this, cancel out of the Edit Loadout overlay, re-open Edit Loadout, then save without moving anything.
 

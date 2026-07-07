@@ -4,6 +4,7 @@ using EFT.Interactive;
 using EFT.InventoryLogic;
 using pitTeam.BigBrain;
 using pitTeam.Modules;
+using pitTeam.Patches;
 using pitTeam.Utils;
 using System;
 using System.Collections.Generic;
@@ -58,6 +59,7 @@ namespace pitTeam.Components
         private const float HoldGestureDistance = 25f;
         private const float PhraseCommandDistance = 30f;
         private const float StopPhraseDistance = 35f;
+        private const float LootCarrierCommandDistance = 22f;
         private const float CommandLookOverrideMinSeconds = 1.5f;
         private const float CommandLookOverrideMaxSeconds = 3.5f;
         private const float ComeWithMeMaxDistance = 30f;
@@ -260,6 +262,12 @@ namespace pitTeam.Components
                 {
                     // Body check: closest eligible follower moves to the corpse and recovers gear as cargo.
                     ApplyTakeBodyGearCommand(info.PlayerRequester);
+                    return;
+                }
+                else if (info.phrase == EPhraseTrigger.LootContainer)
+                {
+                    // Container loot: best available carrier searches the target container for valuable items.
+                    ApplyTakeContainerLootCommand(info.PlayerRequester);
                     return;
                 }
                 else if (info.phrase == EPhraseTrigger.FollowMe || info.phrase == EPhraseTrigger.Cooperation)
@@ -1693,7 +1701,11 @@ namespace pitTeam.Components
                 return;
             }
 
-            BotOwner closestFollower = FindClosestEligibleInteractionFollower(corpse.transform.position);
+            InventoryEquipment corpseEquipment = corpse.ItemOwner?.RootItem as InventoryEquipment;
+            bool teammateCorpse = TeammateCorpseIdentity.IsTeammateCorpseEquipment(corpseEquipment);
+            BotOwner closestFollower = teammateCorpse
+                ? FindClosestEligibleInteractionFollower(corpse.transform.position)
+                : FindBestEligibleLootCarrierFollower(corpse.transform.position);
             if (closestFollower == null)
             {
                 return;
@@ -1715,6 +1727,44 @@ namespace pitTeam.Components
             // Body looting can take multiple inventory transactions, so reserve the corpse and
             // let the request action own the approach/interruption/cleanup lifecycle.
             closestFollowerData.SetTakeBodyGear(75f);
+            closestFollower.BotTalk.TrySay(EPhraseTrigger.Roger, false);
+            closestFollower.Gesture.TryGestus(EInteraction.OkGesture, false);
+        }
+
+        private void ApplyTakeContainerLootCommand(IPlayer requester)
+        {
+            if (requester == null)
+            {
+                return;
+            }
+
+            LootableContainer container = InteractableObjects.GetCurLootContainerTarget();
+            if (container == null || !container.isActiveAndEnabled || container.DoorState == EDoorState.Locked)
+            {
+                return;
+            }
+
+            BotOwner closestFollower = FindBestEligibleLootCarrierFollower(container.transform.position);
+            if (closestFollower == null)
+            {
+                return;
+            }
+
+            if (!InteractableObjects.SetContainerLootTaker(closestFollower, container))
+            {
+                closestFollower.BotTalk.TrySay(EPhraseTrigger.Negative, false);
+                return;
+            }
+
+            BotFollowerPlayer closestFollowerData = BossPlayers.Instance?.GetFollower(closestFollower);
+            if (closestFollowerData == null)
+            {
+                InteractableObjects.RemoveContainerLootTaker(closestFollower);
+                return;
+            }
+
+            FollowerLootPriceService.RequestMarketPricesIfNeeded();
+            closestFollowerData.SetTakeContainerLoot(75f);
             closestFollower.BotTalk.TrySay(EPhraseTrigger.Roger, false);
             closestFollower.Gesture.TryGestus(EInteraction.OkGesture, false);
         }
@@ -1753,6 +1803,50 @@ namespace pitTeam.Components
             }
 
             return closestFollower;
+        }
+
+        private BotOwner FindBestEligibleLootCarrierFollower(Vector3 targetPosition)
+        {
+            BotOwner bestFollower = null;
+            float maxSqrDistance = LootCarrierCommandDistance * LootCarrierCommandDistance;
+            float bestSqrDistance = float.MaxValue;
+
+            foreach (BotOwner follower in Followers)
+            {
+                if (follower == null || follower.IsDead || follower.BotState != EBotState.Active)
+                {
+                    continue;
+                }
+
+                if (follower.Memory?.HaveEnemy == true || HasActiveCombatEnemy(follower))
+                {
+                    continue;
+                }
+
+                BotFollowerPlayer followerData = BossPlayers.Instance?.GetFollower(follower);
+                if (followerData == null || followerData.IsLootOrPickupCommandActive())
+                {
+                    continue;
+                }
+
+                float sqrDistance = (follower.Position - targetPosition).sqrMagnitude;
+                if (sqrDistance > maxSqrDistance)
+                {
+                    continue;
+                }
+
+                int freeArea = FollowerLootPriceService.GetBackpackAndPocketFreeArea(
+                    follower.GetPlayer?.InventoryController?.Inventory?.Equipment);
+                if (freeArea <= 0 || sqrDistance >= bestSqrDistance)
+                {
+                    continue;
+                }
+
+                bestFollower = follower;
+                bestSqrDistance = sqrDistance;
+            }
+
+            return bestFollower;
         }
 
         private void ApplyOpenDoorCommand(IPlayer requester)
@@ -1806,7 +1900,7 @@ namespace pitTeam.Components
                 }
 
                 BotFollowerPlayer followerData = BossPlayers.Instance?.GetFollower(follower);
-                if (followerData == null)
+                if (followerData == null || followerData.IsLootOrPickupCommandActive())
                 {
                     continue;
                 }
