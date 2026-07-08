@@ -421,7 +421,8 @@ Execution:
 
 - `GestureCommandAction.HandleTakeBodyGear()`
 - Moves to the corpse.
-- Checks whether at least one eligible item can be moved, says `EPhraseTrigger.OnLoot` if so, then plays the loot search sound and waits briefly before moving items. Delay is based on the total grid cells searched from corpse pockets, backpack, and vest containers, with a short bounded cap so it reads as searching without matching full player search time.
+- Checks whether at least one eligible item can be moved, plays the loot search sound, and waits briefly before moving items. Delay is based on the total grid cells searched from corpse pockets, backpack, and vest containers, with a short bounded cap so it reads as searching without matching full player search time.
+- After the search delay, says `EPhraseTrigger.LootGeneric` once when the first real non-dogtag loot move is queued, then waits a short beat before executing that move so the pickup confirmation does not run into `Ready`.
 - Plans one live inventory transaction at a time.
 - Teammate corpses use the protected recovery path:
     - uses empty compatible equipment slots as cargo space when possible, but does not swap or throw away the follower's current kit
@@ -439,7 +440,7 @@ Execution:
     - armor plates are ignored, including loose/cargo plates and installed plates inside armor or plate-carrier trees
     - weapons are priced and moved as whole weapon trees, including attached mods, instead of being stripped part by part; they first try empty compatible weapon slots, such as second primary or holster, then fall back to backpack/pocket space
     - category filters from `Looting Settings` are checked before price: `Pickup Food`, `Pickup Meds`, `Pickup Valuables`, and `Pickup Gear`; corpse dogtags bypass these category filters
-    - item price is compared once against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound
+    - item price is compared once against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound; money ignores these price bounds when `Pickup Valuables` is enabled
     - non-weapon successful moves only target the follower's backpack and pockets, never the follower's rig
 - Stores successful moved items through `InteractableObjects.StoreItem(...)` for squadmates.
 - On completion, says `EPhraseTrigger.Ready` when at least one non-dogtag item was moved, or `EPhraseTrigger.LootNothing` when no eligible non-dogtag item could be taken.
@@ -469,10 +470,11 @@ Execution:
 - `GestureCommandAction.HandleTakeContainerLoot()`
 - Moves to the container.
 - Opens the container if it is shut.
-- Checks whether at least one eligible item can be moved, says `EPhraseTrigger.OnLoot` if so, then plays the loot search sound and waits briefly before moving items. Delay is based on the total grid cells in the container tree, with a short bounded cap so it reads as searching without matching full player search time.
+- Checks whether at least one eligible item can be moved, plays the loot search sound, and waits briefly before moving items. Delay is based on the total grid cells in the container tree, with a short bounded cap so it reads as searching without matching full player search time.
+- After the search delay, says `EPhraseTrigger.LootGeneric` once when the first real loot move is queued, then waits a short beat before executing that move so the pickup confirmation does not run into `Ready`.
 - Searches container contents through the same filtered-loot planner used for non-teammate bodies.
 - Applies `Looting Settings` category filters before price: `Pickup Food`, `Pickup Meds`, `Pickup Valuables`, and `Pickup Gear`.
-- Compares each candidate item tree against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound.
+- Compares each candidate item tree against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound. Money ignores these price bounds when `Pickup Valuables` is enabled.
 - Moves non-weapon candidates only into the follower's backpack and pockets, never the follower's rig.
 - Weapons are priced and moved as whole weapon trees; they first try empty compatible weapon slots, such as second primary or holster, then fall back to backpack/pocket space.
 - Closes the container on normal completion. Combat, timeout, or safety interruption can leave it open.

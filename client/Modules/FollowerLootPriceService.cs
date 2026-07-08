@@ -56,6 +56,11 @@ namespace pitTeam.Modules
 
         public static bool PassesPriceThreshold(Item item)
         {
+            if (IsMoneyItem(item))
+            {
+                return true;
+            }
+
             int min = Mathf.Max(0, pitFireTeam.lootMinimumPrice?.Value ?? 0);
             int max = Mathf.Max(0, pitFireTeam.lootMaximumPrice?.Value ?? 0);
 
@@ -141,6 +146,29 @@ namespace pitTeam.Modules
                    item is PocketsItemClass ||
                    item is BuiltInInsertsItemClass ||
                    string.IsNullOrWhiteSpace(item.TemplateId);
+        }
+
+        private static bool IsMoneyItem(Item item)
+        {
+            if (item == null)
+            {
+                return false;
+            }
+
+            if (item is MoneyItemClass)
+            {
+                return true;
+            }
+
+            try
+            {
+                return !string.IsNullOrWhiteSpace(item.TemplateId) &&
+                       GClass3130.IsCurrencyId(new MongoID(item.TemplateId));
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static double CalculateSingleItemRoublePrice(Item item)

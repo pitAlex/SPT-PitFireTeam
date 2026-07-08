@@ -100,11 +100,13 @@ Execution:
 
 - moves to the corpse
 - starts a search phase before moving items
-- says `EPhraseTrigger.OnLoot` if at least one eligible non-dogtag move exists before the simulated search
+- says `EPhraseTrigger.LootGeneric` after the simulated search, when the first real non-dogtag loot move is queued
+- waits a short beat after `LootGeneric` before executing that first move, so pickup confirmation does not run into `Ready`
 - says `EPhraseTrigger.LootNothing` if no eligible non-dogtag item can be moved
 - plays the loot-search sound while waiting
 - search delay is based on corpse pockets, backpack, and tactical vest grid cells, with a bounded cap
 - after the search delay, plans and executes one live inventory transaction at a time
+- marks the corpse loot tree searched for the player after normal completion, unless the player is actively viewing/searching that same body
 - says `EPhraseTrigger.Ready` when done after at least one successful non-dogtag move
 
 ### Teammate Corpses
@@ -172,11 +174,13 @@ Execution:
 - moves to the container
 - opens the container if shut
 - starts a search phase before moving items
-- says `EPhraseTrigger.OnLoot` if at least one eligible move exists before the simulated search
+- says `EPhraseTrigger.LootGeneric` after the simulated search, when the first real loot move is queued
+- waits a short beat after `LootGeneric` before executing that first move, so pickup confirmation does not run into `Ready`
 - says `EPhraseTrigger.LootNothing` if no eligible item can be moved
 - plays the loot-search sound while waiting
 - search delay is based on total grid cells in the container tree, with a bounded cap
 - after the search delay, plans and executes one live inventory transaction at a time
+- marks the container loot tree searched for the player after normal completion, unless the player is actively viewing/searching that same container
 - closes the container on normal completion
 - combat, timeout, or safety interruption can leave the container open
 - says `EPhraseTrigger.Ready` when done after at least one successful move
@@ -200,6 +204,7 @@ Category controls:
 - `Pickup Meds`
 - `Pickup Valuables`
 - `Pickup Gear`
+- `Allow Gear Swapping`
 
 All category checkboxes default on.
 
@@ -212,9 +217,13 @@ Category mapping:
 
 Armor plates remain ignored even when `Pickup Gear` is enabled.
 
+`Allow Gear Swapping` defaults off. It is the explicit phase 3 gate for future gear equip/swap behavior and is only treated as active when loadout management is `Immersive` or `Realistic`.
+
 ## Price Checks
 
 Filtered body/container looting checks category before price.
+
+Money is still controlled by `Pickup Valuables`, but it ignores `Minimum Price` and `Maximum Price` once that category is enabled.
 
 `FollowerLootPriceService.CalculateItemTreeRoublePrice(...)` prices the whole item tree once:
 
@@ -245,6 +254,8 @@ This preserves tactical vest space for magazines and avoids destabilizing combat
 Successful squadmate moves call `InteractableObjects.StoreItem(...)`.
 
 Weapon trees are also registered through `RegisterLootedWeaponTree(...)` so patrol reload maintenance can treat picked-up weapons as carried loot and avoid wasting spawned magazines on them.
+
+Weapon moves refresh the follower weapon list, item icon, and equipped slot model after the bot-side transaction so the assembled weapon tree is rendered from its current parts.
 
 Tracked follower loot is not the same thing as protected teammate gear:
 
@@ -295,7 +306,7 @@ The first phase 3 implementation should start with easy weapon opportunities and
 
 General rules:
 
-- expose gear equip/swap as an explicit `Looting Settings` option, separate from the existing `Pickup Gear` category filter
+- expose gear equip/swap through `Allow Gear Swapping`, separate from the existing `Pickup Gear` category filter
 - only run gear equip/swap behavior in `Immersive` or `Realistic` loadout management
 - keep `Simple` and `Restricted` loadout management on carry-only looting behavior
 - add easy gear equip as an explicit planner before the current carry-space planner
@@ -442,7 +453,7 @@ Transaction rules:
 Body/container basics:
 
 - no eligible non-dogtag items -> `LootNothing`
-- eligible non-dogtag items -> `OnLoot`, search sound, wait, move items, `Ready`
+- eligible non-dogtag items -> search sound, wait, `LootGeneric`, short beat, move items, `Ready`
 - search sound stops when search ends
 - completed container closes
 - interrupted container may remain open

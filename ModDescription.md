@@ -43,7 +43,7 @@ You can manage your teammates from the in-game **My Squad** screen. From there, 
 - **Map transitions** - teammates who you spawned with can follow you through map transitions.
 - **Progression system** - teammates gain raid experience and common-skill progress that persists between raids.
 - **Quest assist** - teammate kills can count toward player kill quests when the kill meets the quest criteria.
-- **Loot management** - teammates who you spawned with can return items after the raid and you can also manage their backpacks while in raid. (See Gameplay Guide > Loot Management)
+- **Looting and loot return** - teammates who you spawned with can pick up loot, search bodies and containers on command, return carried items after the raid, and let you manage their backpacks while in raid. (See Looting)
 - **Fallen teammate gear gathering** - outside combat, a teammate can be ordered to check a body and gather recoverable gear from it, mainly to help collect gear from fallen squadmates.
 - **Post-raid reports** - receive report about if your team made it out with the loot after you died. (See Gameplay Guide > Raid Survival Post Player)
 
@@ -178,6 +178,44 @@ Commands influence teammate behavior but do not force exact actions. teammates w
 - **Check Him / Loot Body** - the closest eligible teammate checks the targeted body and gathers recoverable gear. This is meant as a practical way to collect gear from fallen teammates. It does not do advanced gear management such as swapping the teammate's current weapons, armor, or vest for better equipment.
 
 Saved teammates and recruited allies share the basic follower system once they are following you, but saved teammates have the full squad feature set. Saved teammates keep their customization, loadouts, tactics, aggression, progression, backpack access, and post-raid handling. Recruited allies are temporary raid pickups that use the default combat tactic with moderate aggression, rely on their current bot profile and gear, and have a simpler combat command set: they do not use **Need Sniper**, combat **There**, combat **Open Door**, or combat **Go Forward** push orders. If a recruited ally was told **Hold Position** in combat, **Go Forward** only clears that temporary aggression hold.
+
+## Looting
+
+Looting is command-driven. Teammates do not roam the map vacuuming loot on their own; you point them at a loose item, body, or container and give the order.
+
+**Loose items:**
+
+Look at an item and use the interaction prompt shown in the lower-left corner of the screen.
+
+![Look Pickup](https://iili.io/BpKc90x.md.png)
+
+A teammate can pick up the item only if they:
+
+- are not in combat
+- can physically reach the item
+- have enough inventory space or a suitable empty weapon slot
+
+**Bodies and containers:**
+
+Look at a body and use **Check Him / Loot Body**, or look at a lootable container and use the loot-container command. For body and container searches, only saved teammates who spawned with you are eligible. Recruited raid allies are ignored for this deeper looting work.
+
+The closest eligible teammate within roughly 22 meters takes the job. Teammates who are fighting, already looting, already picking something up, or have no backpack/pocket space are skipped. This lets you rapidly point at multiple containers or bodies and send different available teammates to each one.
+
+When a teammate reaches the target, he simulates a short search instead of instantly grabbing items. The delay scales with the size of the body or container, plays the search sound, and then the teammate starts moving eligible loot. If nothing useful can be taken, he reports that nothing was found. If useful loot is found, he confirms the pickup and then reports ready when finished.
+
+Looting settings in **My Squad → Settings** control what the teammate considers worth taking:
+
+- **Minimum Price** and **Maximum Price** set the value window for body and container loot.
+- **Pickup Food**, **Pickup Meds**, **Pickup Valuables**, and **Pickup Gear** decide which broad loot groups are allowed.
+- Money is controlled by **Pickup Valuables** and is always worth taking when that group is enabled.
+
+Body and container looting uses real carry space. Normal items go into the teammate's backpack or pockets, while the rig is kept clear so magazines are less likely to be disturbed. Weapons are treated as whole weapons with their attachments, not stripped for parts. Armor plates are ignored for now, and teammates do not yet perform full gear optimization or swap out their current armor, vest, or primary weapon just because something better exists.
+
+You can also inspect a teammate's backpack by approaching them and using the lower-left interaction prompt. This can only be done while out of combat.
+
+![Teammate backpack inspection](https://iili.io/BpKvke1.md.png)
+
+Carried loot can be returned after the raid only by teammates you originally spawned with. You must successfully extract with that teammate, or the teammate must survive the post-death escape flow. If the teammate dies, the carried loot is lost.
 
 ## Gameplay Guide
 
@@ -447,28 +485,6 @@ These are especially useful before enemies become fully visible.
 
 Your teammates can still successfully extract after your death and return any loot they were carrying for you. The escape chance is calculated based on the distance to extraction, how many teammates are still alive, their equipment quality, the estimated threat level of enemies between them and the extraction, as well as their current health and available medical supplies. The amount of gear they will be able to return upon escaping depends on their available inventory space as well as their strength level.
 
-### Loot Management
-
-**You can give loot to teammates by looking at an item and using the interaction prompt shown in the lower-left corner of the screen.**
-
-![Look Pickup](https://iili.io/BpKc90x.md.png)
-
-A teammate can pick up the item only if they:
-
-- are not in combat
-- have enough inventory space
-- can physically reach the item
-
-You must successfully extract with that teammate for the loot to be returned after the raid. Only teammates you originally spawned with are able to return carried loot.
-
-If the teammate dies, the carried loot is lost.
-
-**You can also look at a body and use Check Him / Loot Body to have the closest eligible teammate gather recoverable gear from it.** This command is intended to help collect gear from fallen teammates. It uses available carry space and empty compatible slots, but it is not a full equipment-optimization system: teammates will not swap out their current weapons, armor, or vest for better gear.
-
-**You can also inspect a teammate’s backpack by approaching them and using the lower-left interaction prompt. This can only be done while out of combat.**
-
-![Look Pickup](https://iili.io/BpKvke1.md.png)
-
 ## Loadout Management
 
 Found in My Squad → Settings
@@ -491,11 +507,6 @@ In non-Realistic modes, the automatically managed secure container provides basi
 
 The following are planned features in reaching a release version (1.0.0) and beyond.
 
-**Beta 0.9.0:**
-
-- **Simple Looting** - the ability for followers to loot bodies or containers via loot command and with filtering configuration in settings
-- **Teammate Insurance** - making it possible to insure teammate equipment when in Immersive or Realistic
-
 **Version 1.0.0:**
 
 - **Squad Budget** - restricts the maximum number of teammates you can add to your squad based on available Command Points. Command Points are gained by leveling up, keeping teammates alive, and keeping picked-up raid allies alive. Points are lost if you kill teammates or allies.
@@ -506,7 +517,7 @@ The following are planned features in reaching a release version (1.0.0) and bey
 - **Scavs for hire** - being able to play with teammates as a Scav
 - **Going Rogue** - being able to recruit and command Goons along with the Rogues in raids
 - **SAIN tactics addon** - being able to use SAIN personalities as teammate tactics
-- **Enhanced looting** - enhanced looting introduced via "Go Loot" command with help from Looting Bots mod
+- **Looting gear swapping** - optional, controlled gear upgrades during commanded body and container looting
 
 ## Known Issues and Conflicts
 

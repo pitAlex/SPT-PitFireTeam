@@ -95,7 +95,10 @@ namespace pitTeam.Localization
                     "Allow barter items, keys, special items, info items, money, and other non-gear loot to be taken from bodies and containers."),
                 lootFilterGear = Entry(
                     "Pickup Gear",
-                    "Allow weapons, armor, headgear, ammo, magazines, weapon mods, and grenades to be taken from bodies and containers. Armor plates are still ignored."),
+                    "Allow weapons, armor, headgear, ammo, magazines, weapon mods, and grenades to be taken from bodies and containers."),
+                lootAllowGearSwapping = Entry(
+                    "Allow Gear Swapping",
+                    "Allow followers to equip or swap eligible gear while looting. Active only in Immersive or Realistic loadout management."),
                 memberTactic = Entry(
                     "Squad Member {0} Tactic",
                     "Set Squad member fight tactic."),
