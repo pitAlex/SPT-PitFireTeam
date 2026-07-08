@@ -74,6 +74,38 @@ namespace pitTeam.Components
             }
         }
 
+        public bool CanHandleBodyContainerLootCommands
+        {
+            get
+            {
+                if (!_IsSquadMate)
+                {
+                    return false;
+                }
+
+                string profileId = _bot?.ProfileId ?? _bot?.Profile?.ProfileId ?? _bot?.Profile?.Id ?? string.Empty;
+                string accountId = _bot?.Profile?.AccountId ?? string.Empty;
+
+                // Body/container looting is reserved for saved teammates that were generated
+                // through the raid squad flow. Recruited/picked-up allies can still be followers,
+                // but they should not satisfy these command assignments.
+                return IsSpawnedSquadMemberId(profileId) ||
+                       IsSpawnedSquadMemberId(accountId) ||
+                       FollowerTransitStateCache.IsTransitSpawnProfile(profileId);
+            }
+        }
+
+        private static bool IsSpawnedSquadMemberId(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return false;
+            }
+
+            return pitTeam.Utils.SpawnHelper.spawnMemberIds.Contains(id) ||
+                   pitTeam.Utils.SpawnHelper.spawnMemberIdsScav.Contains(id);
+        }
+
 
         protected WildSpawnType _botRole;
         protected bool _canPatrol = false;

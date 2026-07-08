@@ -1787,7 +1787,7 @@ namespace pitTeam.Components
                 }
 
                 BotFollowerPlayer followerData = BossPlayers.Instance?.GetFollower(follower);
-                if (followerData == null || (requireSquadMate && !followerData.IsSquadMate))
+                if (followerData == null || (requireSquadMate && !followerData.CanHandleBodyContainerLootCommands))
                 {
                     continue;
                 }
@@ -1825,7 +1825,7 @@ namespace pitTeam.Components
 
                 BotFollowerPlayer followerData = BossPlayers.Instance?.GetFollower(follower);
                 if (followerData == null ||
-                    (requireSquadMate && !followerData.IsSquadMate) ||
+                    (requireSquadMate && !followerData.CanHandleBodyContainerLootCommands) ||
                     followerData.IsLootOrPickupCommandActive())
                 {
                     continue;

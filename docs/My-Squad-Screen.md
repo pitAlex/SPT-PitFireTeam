@@ -362,6 +362,8 @@ On confirmation, the client saves the BepInEx setting, syncs the new mode to the
 
 `Looting Settings` is placed after `Raid Settings` and controls follower-commanded looting from non-teammate bodies and containers.
 
+Detailed looting behavior is documented in `docs/Looting.md`.
+
 `Minimum Price` is the lowest rouble value an item tree must have before a follower will take it. `Maximum Price` is the highest rouble value an item tree may have before a follower will take it. A value of `0` disables that bound.
 
 These thresholds apply to each candidate item tree once: weapons include attached mods and helmets include attached devices. Armor plates are ignored by filtered body/container looting. The command still requires the item to fit in the follower's backpack or pockets.

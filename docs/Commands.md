@@ -6,6 +6,8 @@ Last updated: 2026-05-04
 
 This document summarizes boss-issued follower commands as implemented in the client runtime.
 
+Detailed looting behavior, filtered-loot rules, and gear-swap design constraints are tracked in `docs/Looting.md`.
+
 Authoritative files:
 
 - `client/Components/AIBossPlayer.cs` - boss-side phrase/gesture router and command producers.
@@ -409,7 +411,7 @@ Command state:
 Targeting:
 
 - Requires `InteractableObjects.GetCurBodyLootTarget()`.
-- Only spawned squadmates (`IsSquadMate`) can be assigned to body-loot commands; recruited/picked-up followers are ignored.
+- Only saved teammates spawned through the raid squad flow can be assigned to body-loot commands; recruited/picked-up followers are ignored.
 - Chooses the closest active follower for teammate corpses.
 - Chooses the closest active follower within 22m for non-teammate corpses, ignoring followers with no free backpack/pocket grid space.
 - Ignores followers with enemies or active loot/pickup commands.
@@ -430,6 +432,7 @@ Execution:
 - In `Immersive` and `Realistic`, protected-equipment skipping is not applied because fallen teammate gear is lootable in those modes.
 - Non-teammate corpses use filtered looting:
     - tries to take the corpse dogtag first only for non-teammate USEC/BEAR bodies; dogtags bypass the min/max price filter but still require a valid backpack/pocket move
+    - dogtag-only body looting still says `EPhraseTrigger.LootNothing`
     - checks backpack contents first, then pockets, then vest contents
     - does not take the corpse's worn backpack, armor, armored rig, or tactical vest as whole equipment
     - pocket and vest contents skip magazines entirely so follower reload space is not disturbed; backpack and container magazines can still be looted
@@ -439,7 +442,7 @@ Execution:
     - item price is compared once against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound
     - non-weapon successful moves only target the follower's backpack and pockets, never the follower's rig
 - Stores successful moved items through `InteractableObjects.StoreItem(...)` for squadmates.
-- On completion, says `EPhraseTrigger.Ready` when at least one item was moved, or `EPhraseTrigger.LootNothing` when no eligible item could be taken.
+- On completion, says `EPhraseTrigger.Ready` when at least one non-dogtag item was moved, or `EPhraseTrigger.LootNothing` when no eligible non-dogtag item could be taken.
 - Once searching starts, normal replacement commands are ignored until the loot command completes; combat, timeout, and safety invalidation can still stop the command.
 - Clears command on success/failure/invalid state.
 
@@ -456,7 +459,7 @@ Command state:
 Targeting:
 
 - Requires `InteractableObjects.GetCurLootContainerTarget()`.
-- Only spawned squadmates (`IsSquadMate`) can be assigned to container-loot commands; recruited/picked-up followers are ignored.
+- Only saved teammates spawned through the raid squad flow can be assigned to container-loot commands; recruited/picked-up followers are ignored.
 - Chooses the closest active follower within 22m, ignoring followers with no free backpack/pocket grid space.
 - Ignores followers with enemies or active loot/pickup commands.
 - Reserves container ownership through `InteractableObjects.SetContainerLootTaker(...)`.

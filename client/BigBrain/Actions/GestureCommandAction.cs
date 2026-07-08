@@ -66,6 +66,7 @@ namespace pitTeam.BigBrain.Actions
         private float bodyLootNextMoveAt;
         private float bodyLootAttemptStartedAt;
         private int bodyLootMovesSucceeded;
+        private int bodyLootReportedMovesSucceeded;
         private bool bodyLootWeaponListDirty;
         private bool bodyLootBackpackCapacityAttempted;
         private bool bodyLootSearchStarted;
@@ -95,8 +96,8 @@ namespace pitTeam.BigBrain.Actions
         private const float MoveToPointProgressEpsilon = 0.25f;
         private const float MoveToPointNoProgressSeconds = 1.5f;
         private const float MoveToPointDiagnosticThrottleSeconds = 1f;
-        private const float LootSearchDelayBaseSeconds = 1.20f;
-        private const float LootSearchDelayPerSqrtCellSeconds = 0.82f;
+        private const float LootSearchDelayBaseSeconds = 1.50f;
+        private const float LootSearchDelayPerSqrtCellSeconds = 1f;
         private const float LootSearchDelayMinSeconds = 1.75f;
         private const float LootSearchDelayMaxSeconds = 6.25f;
         private const float LootContainerOpenTimeoutSeconds = 3f;
@@ -148,6 +149,7 @@ namespace pitTeam.BigBrain.Actions
             bodyLootNextMoveAt = 0f;
             bodyLootAttemptStartedAt = 0f;
             bodyLootMovesSucceeded = 0;
+            bodyLootReportedMovesSucceeded = 0;
             bodyLootWeaponListDirty = false;
             bodyLootBackpackCapacityAttempted = false;
             bodyLootSearchStarted = false;
@@ -1638,7 +1640,7 @@ namespace pitTeam.BigBrain.Actions
             Item? soundSource = GetBestBodyLootSearchSoundSource(corpseEquipment);
             int gridCells = GetBodyLootSearchGridCells(corpseEquipment);
             bodyLootReadyAt = Time.time + CalculateLootSearchDelaySeconds(gridCells);
-            if (HasEligibleBodyLootMove(inventory, corpseEquipment, followerEquipment))
+            if (HasEligibleBodyLootMove(inventory, corpseEquipment, followerEquipment, requireReportedLoot: true))
             {
                 BotOwner.BotTalk.TrySay(EPhraseTrigger.OnLoot, false);
             }
@@ -1656,7 +1658,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (followerData?.IsSquadMate != true)
+            if (followerData?.CanHandleBodyContainerLootCommands != true)
             {
                 reason = "TakeBodyGear:notSquadMate";
                 return false;
@@ -1807,7 +1809,8 @@ namespace pitTeam.BigBrain.Actions
         private bool HasEligibleBodyLootMove(
             InventoryController inventory,
             InventoryEquipment corpseEquipment,
-            InventoryEquipment followerEquipment)
+            InventoryEquipment followerEquipment,
+            bool requireReportedLoot = false)
         {
             if (inventory == null || corpseEquipment == null || followerEquipment == null)
             {
@@ -1819,7 +1822,8 @@ namespace pitTeam.BigBrain.Actions
                 return HasEligibleFilteredLootMove(
                     inventory,
                     followerEquipment,
-                    GetFilteredBodyLootCandidates(corpseEquipment));
+                    GetFilteredBodyLootCandidates(corpseEquipment),
+                    requireReportedLoot);
             }
 
             Item corpseBackpack = corpseEquipment.GetSlot(EquipmentSlot.Backpack)?.ContainedItem;
@@ -1915,7 +1919,7 @@ namespace pitTeam.BigBrain.Actions
             // Empty compatible slots are allowed because they increase carry capacity without
             // sacrificing the follower's current fighting kit. Existing gear is never thrown or swapped.
             if (TryFindBodyGearEquipmentSlot(followerEquipment, candidate, out ItemAddress? equipAddress) &&
-                TryCreateBodyGearMove(inventory, candidate.Item, equipAddress, candidate.SourceName, out move))
+                TryCreateBodyGearMove(inventory, candidate, equipAddress, out move))
             {
                 return true;
             }
@@ -1928,7 +1932,7 @@ namespace pitTeam.BigBrain.Actions
                     continue;
                 }
 
-                if (TryCreateBodyGearMove(inventory, candidate.Item, packAddress, candidate.SourceName, out move))
+                if (TryCreateBodyGearMove(inventory, candidate, packAddress, out move))
                 {
                     return true;
                 }
@@ -1951,7 +1955,7 @@ namespace pitTeam.BigBrain.Actions
 
             if (ShouldUseFilteredLootEquipmentSlot(candidate) &&
                 TryFindBodyGearEquipmentSlot(followerEquipment, candidate, out ItemAddress? equipAddress) &&
-                TryCreateBodyGearMove(inventory, candidate.Item, equipAddress, candidate.SourceName, out move))
+                TryCreateBodyGearMove(inventory, candidate, equipAddress, out move))
             {
                 return true;
             }
@@ -1964,7 +1968,7 @@ namespace pitTeam.BigBrain.Actions
                     continue;
                 }
 
-                if (TryCreateBodyGearMove(inventory, candidate.Item, packAddress, candidate.SourceName, out move))
+                if (TryCreateBodyGearMove(inventory, candidate, packAddress, out move))
                 {
                     return true;
                 }
@@ -1976,7 +1980,8 @@ namespace pitTeam.BigBrain.Actions
         private bool HasEligibleFilteredLootMove(
             InventoryController inventory,
             InventoryEquipment followerEquipment,
-            IEnumerable<BodyGearCandidate> candidates)
+            IEnumerable<BodyGearCandidate> candidates,
+            bool requireReportedLoot = false)
         {
             if (inventory == null || followerEquipment == null || candidates == null)
             {
@@ -1986,6 +1991,11 @@ namespace pitTeam.BigBrain.Actions
             HashSet<string> dryRunAttemptedItemIds = new HashSet<string>(StringComparer.Ordinal);
             foreach (BodyGearCandidate candidate in candidates)
             {
+                if (requireReportedLoot && candidate.ReportAsLootNothing)
+                {
+                    continue;
+                }
+
                 if (!CanTryFilteredLootCandidate(candidate, dryRunAttemptedItemIds) ||
                     IsLootNowInBotInventory(BotOwner?.GetPlayer, candidate.Item))
                 {
@@ -2008,12 +2018,16 @@ namespace pitTeam.BigBrain.Actions
 
         private bool TryCreateBodyGearMove(
             InventoryController inventory,
-            Item item,
+            BodyGearCandidate candidate,
             ItemAddress address,
-            string sourceName,
             out BodyGearMove? move)
         {
             move = null;
+            Item item = candidate?.Item;
+            if (item == null)
+            {
+                return false;
+            }
 
             GStruct154<GClass3411> moveResult = InteractionsHandlerClass.Move(item, address, inventory, true);
             if (moveResult.Failed || moveResult.Value.ItemsDestroyRequired || !inventory.CanExecute(moveResult.Value))
@@ -2021,7 +2035,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            move = new BodyGearMove(item, moveResult.Value, sourceName);
+            move = new BodyGearMove(item, moveResult.Value, candidate.SourceName, candidate.ReportAsLootNothing);
             return true;
         }
 
@@ -2043,6 +2057,11 @@ namespace pitTeam.BigBrain.Actions
                 if (result?.Succeed == true || IsLootNowInBotInventory(BotOwner?.GetPlayer, move.Item))
                 {
                     bodyLootMovesSucceeded++;
+                    if (!move.ReportAsLootNothing)
+                    {
+                        bodyLootReportedMovesSucceeded++;
+                    }
+
                     InteractableObjects.RegisterLootedWeaponTree(BotOwner, move.Item);
 
                     if (followerData?.IsSquadMate == true)
@@ -2079,7 +2098,7 @@ namespace pitTeam.BigBrain.Actions
                 bodyLootWeaponListDirty = false;
             }
 
-            if (bodyLootMovesSucceeded > 0)
+            if (bodyLootReportedMovesSucceeded > 0)
             {
                 BotOwner.BotTalk.TrySay(EPhraseTrigger.Ready, false);
                 ClearBodyLootState("TakeBodyGear:done");
@@ -2135,7 +2154,8 @@ namespace pitTeam.BigBrain.Actions
                     0,
                     bypassPriceThreshold: true,
                     bypassCategoryFilter: true,
-                    bypassBodyGearLootability: true);
+                    bypassBodyGearLootability: true,
+                    reportAsLootNothing: true);
             }
 
             foreach (BodyGearCandidate candidate in GetStorageLootCandidates(
@@ -2755,6 +2775,7 @@ namespace pitTeam.BigBrain.Actions
             bodyLootNextMoveAt = 0f;
             bodyLootAttemptStartedAt = 0f;
             bodyLootMovesSucceeded = 0;
+            bodyLootReportedMovesSucceeded = 0;
             bodyLootWeaponListDirty = false;
             bodyLootBackpackCapacityAttempted = false;
             bodyLootSearchStarted = false;
@@ -2947,7 +2968,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (followerData?.IsSquadMate != true)
+            if (followerData?.CanHandleBodyContainerLootCommands != true)
             {
                 reason = "TakeContainerLoot:notSquadMate";
                 return false;
@@ -3230,16 +3251,18 @@ namespace pitTeam.BigBrain.Actions
 
         private sealed class BodyGearMove
         {
-            public BodyGearMove(Item item, GInterface424 operation, string sourceName)
+            public BodyGearMove(Item item, GInterface424 operation, string sourceName, bool reportAsLootNothing)
             {
                 Item = item;
                 Operation = operation;
                 SourceName = sourceName;
+                ReportAsLootNothing = reportAsLootNothing;
             }
 
             public Item Item { get; }
             public GInterface424 Operation { get; }
             public string SourceName { get; }
+            public bool ReportAsLootNothing { get; }
         }
 
         private sealed class BodyGearCandidate
@@ -3252,7 +3275,8 @@ namespace pitTeam.BigBrain.Actions
                 bool skipMagazine = false,
                 bool bypassPriceThreshold = false,
                 bool bypassCategoryFilter = false,
-                bool bypassBodyGearLootability = false)
+                bool bypassBodyGearLootability = false,
+                bool reportAsLootNothing = false)
             {
                 Item = item;
                 SourceSlot = sourceSlot;
@@ -3262,6 +3286,7 @@ namespace pitTeam.BigBrain.Actions
                 BypassPriceThreshold = bypassPriceThreshold;
                 BypassCategoryFilter = bypassCategoryFilter;
                 BypassBodyGearLootability = bypassBodyGearLootability;
+                ReportAsLootNothing = reportAsLootNothing;
             }
 
             public Item Item { get; }
@@ -3272,6 +3297,7 @@ namespace pitTeam.BigBrain.Actions
             public bool BypassPriceThreshold { get; }
             public bool BypassCategoryFilter { get; }
             public bool BypassBodyGearLootability { get; }
+            public bool ReportAsLootNothing { get; }
         }
 
         private static readonly EquipmentSlot[] BodyGearTopLevelSlotOrder =
