@@ -102,7 +102,8 @@ Execution:
 - starts a search phase before moving items
 - says `EPhraseTrigger.LootGeneric` after the simulated search, when the first real non-dogtag loot move is queued
 - waits a short beat after `LootGeneric` before executing that first move, so pickup confirmation does not run into `Ready`
-- says `EPhraseTrigger.LootNothing` if no eligible non-dogtag item can be moved
+- says `EPhraseTrigger.Negative` if eligible non-dogtag loot exists but no executable move can be built
+- says `EPhraseTrigger.LootNothing` if no eligible non-dogtag item exists
 - plays the loot-search sound while waiting
 - search delay is based on corpse pockets, backpack, and tactical vest grid cells, with a bounded cap
 - after the search delay, plans and executes one live inventory transaction at a time
@@ -176,7 +177,8 @@ Execution:
 - starts a search phase before moving items
 - says `EPhraseTrigger.LootGeneric` after the simulated search, when the first real loot move is queued
 - waits a short beat after `LootGeneric` before executing that first move, so pickup confirmation does not run into `Ready`
-- says `EPhraseTrigger.LootNothing` if no eligible item can be moved
+- says `EPhraseTrigger.Negative` if eligible loot exists but no executable move can be built
+- says `EPhraseTrigger.LootNothing` if no eligible item exists
 - plays the loot-search sound while waiting
 - search delay is based on total grid cells in the container tree, with a bounded cap
 - after the search delay, plans and executes one live inventory transaction at a time
@@ -457,6 +459,7 @@ Transaction rules:
 Body/container basics:
 
 - no eligible non-dogtag items -> `LootNothing`
+- eligible item but no backpack/pocket/equipment destination -> `Negative`
 - eligible non-dogtag items -> search sound, wait, `LootGeneric`, short beat, move items, `Ready`
 - search sound stops when search ends
 - completed container closes

@@ -444,7 +444,7 @@ Execution:
     - item price is compared once against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound; money ignores these price bounds when `Pickup Valuables` is enabled
     - non-weapon successful moves only target the follower's backpack and pockets, never the follower's rig
 - Stores successful moved items through `InteractableObjects.StoreItem(...)` for squadmates.
-- On completion, says `EPhraseTrigger.Ready` when at least one non-dogtag item was moved, or `EPhraseTrigger.LootNothing` when no eligible non-dogtag item could be taken.
+- On completion, says `EPhraseTrigger.Ready` when at least one non-dogtag item was moved, `EPhraseTrigger.Negative` when eligible loot existed but no executable move could be built, or `EPhraseTrigger.LootNothing` when no eligible non-dogtag item existed.
 - Once searching starts, normal replacement commands are ignored until the loot command completes; combat, timeout, and safety invalidation can still stop the command.
 - Clears command on success/failure/invalid state.
 
@@ -481,7 +481,7 @@ Execution:
 - Weapons that do not qualify for empty first primary still try empty compatible cargo/support slots, such as second primary or holster, then fall back to backpack/pocket space.
 - Closes the container on normal completion. Combat, timeout, or safety interruption can leave it open.
 - Stores successful moved items through `InteractableObjects.StoreItem(...)` for squadmates.
-- On completion, says `EPhraseTrigger.Ready` when at least one item was moved, or `EPhraseTrigger.LootNothing` when no eligible item could be taken.
+- On completion, says `EPhraseTrigger.Ready` when at least one item was moved, `EPhraseTrigger.Negative` when eligible loot existed but no executable move could be built, or `EPhraseTrigger.LootNothing` when no eligible item existed.
 - Once searching starts, normal replacement commands are ignored until the loot command completes; combat, timeout, and safety invalidation can still stop the command.
 - Clears command on success/failure/invalid state.
 

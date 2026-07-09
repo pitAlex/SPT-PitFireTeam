@@ -61,6 +61,7 @@ namespace pitTeam.BigBrain.Actions
         private readonly Queue<BodyGearCandidate> pendingContainerGearSwapFollowUps = new Queue<BodyGearCandidate>();
         private int containerLootMovesSucceeded;
         private int containerLootReportedMovesSucceeded;
+        private bool containerLootHadEligibleButNoSpace;
         private bool containerLootGenericSpoken;
         private bool containerLootWeaponListDirty;
         private bool containerLootOpened;
@@ -77,6 +78,7 @@ namespace pitTeam.BigBrain.Actions
         private readonly Queue<BodyGearCandidate> pendingBodyGearSwapFollowUps = new Queue<BodyGearCandidate>();
         private int bodyLootMovesSucceeded;
         private int bodyLootReportedMovesSucceeded;
+        private bool bodyLootHadEligibleButNoSpace;
         private bool bodyLootGenericSpoken;
         private bool bodyLootWeaponListDirty;
         private bool bodyLootBackpackCapacityAttempted;
@@ -154,6 +156,7 @@ namespace pitTeam.BigBrain.Actions
             pendingContainerGearSwapFollowUps.Clear();
             containerLootMovesSucceeded = 0;
             containerLootReportedMovesSucceeded = 0;
+            containerLootHadEligibleButNoSpace = false;
             containerLootGenericSpoken = false;
             containerLootWeaponListDirty = false;
             containerLootOpened = false;
@@ -170,6 +173,7 @@ namespace pitTeam.BigBrain.Actions
             pendingBodyGearSwapFollowUps.Clear();
             bodyLootMovesSucceeded = 0;
             bodyLootReportedMovesSucceeded = 0;
+            bodyLootHadEligibleButNoSpace = false;
             bodyLootGenericSpoken = false;
             bodyLootWeaponListDirty = false;
             bodyLootBackpackCapacityAttempted = false;
@@ -269,6 +273,7 @@ namespace pitTeam.BigBrain.Actions
                 pendingContainerGearSwapFollowUps.Clear();
                 containerLootMovesSucceeded = 0;
                 containerLootReportedMovesSucceeded = 0;
+                containerLootHadEligibleButNoSpace = false;
                 containerLootGenericSpoken = false;
                 containerLootWeaponListDirty = false;
                 containerLootOpened = false;
@@ -285,6 +290,7 @@ namespace pitTeam.BigBrain.Actions
                 pendingBodyGearSwapFollowUps.Clear();
                 bodyLootMovesSucceeded = 0;
                 bodyLootReportedMovesSucceeded = 0;
+                bodyLootHadEligibleButNoSpace = false;
                 bodyLootGenericSpoken = false;
                 bodyLootWeaponListDirty = false;
                 bodyLootBackpackCapacityAttempted = false;

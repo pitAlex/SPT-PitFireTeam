@@ -281,6 +281,7 @@ namespace pitTeam.BigBrain.Actions
                     containerLootAttemptedItemIds.Add(candidate.Item.Id);
                     if (!TryBuildFilteredLootMove(inventory, followerEquipment, candidate, null, out BodyGearMove? move))
                     {
+                        containerLootHadEligibleButNoSpace = true;
                         continue;
                     }
 
@@ -383,6 +384,7 @@ namespace pitTeam.BigBrain.Actions
 
                 Modules.Logger.LogInfo(
                     $"[LootCommand] Container loot move failed for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': {move.SourceName}:{move.Item?.TemplateId ?? "unknown"}");
+                containerLootHadEligibleButNoSpace = true;
             }
             catch (Exception ex)
             {
@@ -414,7 +416,7 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            BotOwner.BotTalk.TrySay(EPhraseTrigger.LootNothing, false);
+            BotOwner.BotTalk.TrySay(containerLootHadEligibleButNoSpace ? EPhraseTrigger.Negative : EPhraseTrigger.LootNothing, false);
             ClearContainerLootState("TakeContainerLoot:noSpace");
         }
 
@@ -452,6 +454,7 @@ namespace pitTeam.BigBrain.Actions
                 containerLootAttemptStartedAt <= 0f &&
                 activeLootContainer == null &&
                 activeLootSearchSource == null &&
+                !containerLootHadEligibleButNoSpace &&
                 containerLootAttemptedItemIds.Count == 0)
             {
                 return;
@@ -467,6 +470,7 @@ namespace pitTeam.BigBrain.Actions
             pendingContainerLootMoveReadyAt = 0f;
             containerLootMovesSucceeded = 0;
             containerLootReportedMovesSucceeded = 0;
+            containerLootHadEligibleButNoSpace = false;
             containerLootGenericSpoken = false;
             containerLootWeaponListDirty = false;
             containerLootOpened = false;

@@ -218,6 +218,7 @@ namespace pitTeam.BigBrain.Actions
                     bodyLootAttemptedItemIds.Add(candidate.Item.Id);
                     if (!TryBuildBodyGearMove(inventory, followerEquipment, candidate, out BodyGearMove? move))
                     {
+                        bodyLootHadEligibleButNoSpace = true;
                         continue;
                     }
 
@@ -328,6 +329,7 @@ namespace pitTeam.BigBrain.Actions
                 bodyLootAttemptedItemIds.Add(candidate.Item.Id);
                 if (!TryBuildFilteredLootMove(inventory, followerEquipment, candidate, null, out BodyGearMove? move))
                 {
+                    bodyLootHadEligibleButNoSpace = true;
                     continue;
                 }
 
@@ -744,6 +746,7 @@ namespace pitTeam.BigBrain.Actions
 
                 Modules.Logger.LogInfo(
                     $"[LootCommand] Body gear move failed for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': {move.SourceName}:{move.Item?.TemplateId ?? "unknown"}");
+                bodyLootHadEligibleButNoSpace = true;
             }
             catch (Exception ex)
             {
@@ -772,7 +775,7 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            BotOwner.BotTalk.TrySay(EPhraseTrigger.LootNothing, false);
+            BotOwner.BotTalk.TrySay(bodyLootHadEligibleButNoSpace ? EPhraseTrigger.Negative : EPhraseTrigger.LootNothing, false);
             ClearBodyLootState("TakeBodyGear:noSpace");
         }
 
@@ -785,6 +788,7 @@ namespace pitTeam.BigBrain.Actions
                 bodyLootAttemptStartedAt <= 0f &&
                 activeBodyLootCorpse == null &&
                 activeLootSearchSource == null &&
+                !bodyLootHadEligibleButNoSpace &&
                 bodyLootAttemptedItemIds.Count == 0)
             {
                 return;
@@ -800,6 +804,7 @@ namespace pitTeam.BigBrain.Actions
             pendingBodyLootMoveReadyAt = 0f;
             bodyLootMovesSucceeded = 0;
             bodyLootReportedMovesSucceeded = 0;
+            bodyLootHadEligibleButNoSpace = false;
             bodyLootGenericSpoken = false;
             bodyLootWeaponListDirty = false;
             bodyLootBackpackCapacityAttempted = false;

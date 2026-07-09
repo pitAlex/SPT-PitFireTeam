@@ -2041,6 +2041,13 @@ namespace pitTeam.Components
         {
             if (deadFollower == null) return;
 
+            BotFollowerPlayer follower = BossPlayers.GetFollowerByProfileId(deadFollower.ProfileId);
+            follower?.ClearCommand("FollowerDeath");
+            InteractableObjects.RemoveTaker(deadFollower);
+            InteractableObjects.RemoveBodyLootTaker(deadFollower);
+            InteractableObjects.RemoveContainerLootTaker(deadFollower);
+            InteractableObjects.RemoveOpener(deadFollower);
+
             SaveDeadFollowerProgress(deadFollower);
 
             FallenFollowerInfo info = new FallenFollowerInfo
