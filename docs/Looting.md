@@ -206,7 +206,7 @@ Category controls:
 - `Pickup Gear`
 - `Allow Gear Swapping`
 
-All category checkboxes default on.
+The four pickup category checkboxes default on. `Allow Gear Swapping` defaults off.
 
 Category mapping:
 
@@ -217,7 +217,7 @@ Category mapping:
 
 Armor plates remain ignored even when `Pickup Gear` is enabled.
 
-`Allow Gear Swapping` defaults off. It is the explicit phase 3 gate for future gear equip/swap behavior and is only treated as active when loadout management is `Immersive` or `Realistic`.
+`Allow Gear Swapping` defaults off. It is the explicit phase 3 gate for gear equip/swap behavior and is only treated as active when loadout management is `Immersive` or `Realistic`.
 
 ## Price Checks
 
@@ -300,9 +300,9 @@ This is useful as a reference but does not match pitFireTeam's current constrain
 
 ## Phase 3 Gear Equip And Swap Contract
 
-Gear swapping is not live yet. This section records the intended constraints for the phase 3 implementation.
+Gear swapping is partially live. This section records the implemented first slice and the remaining constraints for later swap work.
 
-The first phase 3 implementation should start with easy weapon opportunities and narrow tactical-vest upgrades. Primary weapon replacement is intentionally deferred because vanilla bot weapon state is cached beyond the physical inventory slots.
+The first phase 3 implementation starts with easy weapon opportunities. Primary weapon replacement is intentionally deferred because vanilla bot weapon state is cached beyond the physical inventory slots. Tactical-vest replacement is still planned, but not active yet.
 
 General rules:
 
@@ -310,7 +310,7 @@ General rules:
 - only run gear equip/swap behavior in `Immersive` or `Realistic` loadout management
 - keep `Simple` and `Restricted` loadout management on carry-only looting behavior
 - add easy gear equip as an explicit planner before the current carry-space planner
-- keep destructive swaps disabled except for the narrow tactical-vest upgrade path described below
+- keep destructive swaps disabled; the narrow tactical-vest upgrade path below is still a design target, not active behavior
 - preflight the full swap before executing any destructive transaction
 - compare whole item trees; do not compare a weapon by disassembling it
 - do not strip weapons for attachments
@@ -329,6 +329,8 @@ Rules:
 
 - if `FirstPrimaryWeapon` is empty and at least one compatible spare magazine can be placed in the follower's tactical vest, a valid long gun may be equipped into first primary
 - compatible spare magazines must come from the same loot source and must physically fit in the tactical vest grid as operational magazines, not cargo
+- a compatible spare magazine must be loaded to count as operational support
+- when a compatible loaded spare magazine fits, the accepted weapon equip queues that magazine as the next move into the follower's tactical vest
 - magazine fit must use the actual magazine shape, not just total cell count; two-cell, three-cell vertical, and two-by-two magazines have different practical vest requirements
 - oversized compatible spare magazines that cannot fit in the tactical vest do not count as operational spares
 - if `FirstPrimaryWeapon` is empty and no compatible spare magazine fits in the tactical vest, the weapon may still become primary only when its installed magazine is full
@@ -343,9 +345,11 @@ Rules:
 
 Easy weapon equip should still respect price filters, category filters, whole-tree pricing, and found-space rules for any extra magazines or ammunition.
 
-### Narrow Tactical-Vest Upgrade
+### Planned Narrow Tactical-Vest Upgrade
 
 Tactical-vest replacement is an early gear-swap candidate, but only under strict preflight because it touches operational magazine space and, for plate carriers, protection.
+
+This path is not active yet.
 
 Eligible cases:
 
@@ -484,9 +488,8 @@ Phase 3 swap tests:
 - missing-primary weapon equip requires either one compatible spare magazine that physically fits in the tactical vest or a full installed magazine
 - large compatible spare magazines that do not fit the vest grid do not count as operational spares
 - no-vest-mag-space weapon pickup falls back to empty secondary or ordinary cargo
-- narrow vest upgrade preserves operational magazines and handles the old vest by backpack-first, throw-down-second
+- narrow vest upgrade remains deferred
 - looted weapon does not trigger patrol reload maintenance with spawned magazines
 - rejected swap leaves current follower gear untouched
 - accepted swap updates tracking and does not duplicate or orphan old gear
-- old backpack contents are not lost or duplicated
 - rig magazine space remains stable

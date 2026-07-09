@@ -856,6 +856,28 @@ namespace pitTeam.Modules
             return container;
         }
 
+        public static bool IsBodyLootTargetReserved(Corpse? corpse, BotOwner? allowedBot = null)
+        {
+            if (Instance == null || corpse == null)
+            {
+                return false;
+            }
+
+            // Body/container commands can target different objects in parallel, but one object may
+            // only have one active follower owner at a time.
+            return IsBodyLootTargetReservedByOther(corpse, allowedBot?.ProfileId);
+        }
+
+        public static bool IsContainerLootTargetReserved(LootableContainer? container, BotOwner? allowedBot = null)
+        {
+            if (Instance == null || container == null)
+            {
+                return false;
+            }
+
+            return IsContainerLootTargetReservedByOther(container, allowedBot?.ProfileId);
+        }
+
         public static Vector3 GetLootPosition()
         {
             if (Instance?._lootItem != null && TryGetLootNavPosition(Instance._lootItem, out Vector3 livePosition))
@@ -965,6 +987,11 @@ namespace pitTeam.Modules
                 return false;
             }
 
+            if (IsBodyLootTargetReservedByOther(targetCorpse, bot.ProfileId))
+            {
+                return false;
+            }
+
             try
             {
                 if (corpse != null)
@@ -1014,6 +1041,11 @@ namespace pitTeam.Modules
                 return false;
             }
 
+            if (IsContainerLootTargetReservedByOther(targetContainer, bot.ProfileId))
+            {
+                return false;
+            }
+
             try
             {
                 if (container != null)
@@ -1048,6 +1080,179 @@ namespace pitTeam.Modules
             }
 
             return false;
+        }
+
+        private static bool IsBodyLootTargetReservedByOther(Corpse targetCorpse, string? allowedProfileId)
+        {
+            if (Instance?._bodyLootTargetsByBot != null)
+            {
+                foreach (KeyValuePair<string, Corpse> reservation in Instance._bodyLootTargetsByBot.ToList())
+                {
+                    if (!IsSameBodyLootTarget(reservation.Value, targetCorpse) ||
+                        IsAllowedReservationOwner(reservation.Key, allowedProfileId))
+                    {
+                        continue;
+                    }
+
+                    if (IsActiveLootReservation(reservation.Key, FollowerCommandType.TakeBodyGear))
+                    {
+                        return true;
+                    }
+
+                    RemoveBodyLootReservation(reservation.Key);
+                }
+            }
+
+            if (IsSameBodyLootTarget(Instance?._bodyLootTarget, targetCorpse) &&
+                !string.IsNullOrEmpty(Instance?._botToBodyLootProfileId) &&
+                !IsAllowedReservationOwner(Instance._botToBodyLootProfileId, allowedProfileId))
+            {
+                if (IsActiveLootReservation(Instance._botToBodyLootProfileId, FollowerCommandType.TakeBodyGear))
+                {
+                    return true;
+                }
+
+                RemoveBodyLootReservation(Instance._botToBodyLootProfileId);
+            }
+
+            return false;
+        }
+
+        private static bool IsContainerLootTargetReservedByOther(LootableContainer targetContainer, string? allowedProfileId)
+        {
+            if (Instance?._lootContainerTargetsByBot != null)
+            {
+                foreach (KeyValuePair<string, LootableContainer> reservation in Instance._lootContainerTargetsByBot.ToList())
+                {
+                    if (!IsSameContainerLootTarget(reservation.Value, targetContainer) ||
+                        IsAllowedReservationOwner(reservation.Key, allowedProfileId))
+                    {
+                        continue;
+                    }
+
+                    if (IsActiveLootReservation(reservation.Key, FollowerCommandType.TakeContainerLoot))
+                    {
+                        return true;
+                    }
+
+                    RemoveContainerLootReservation(reservation.Key);
+                }
+            }
+
+            if (IsSameContainerLootTarget(Instance?._lootContainerTarget, targetContainer) &&
+                !string.IsNullOrEmpty(Instance?._botToContainerLootProfileId) &&
+                !IsAllowedReservationOwner(Instance._botToContainerLootProfileId, allowedProfileId))
+            {
+                if (IsActiveLootReservation(Instance._botToContainerLootProfileId, FollowerCommandType.TakeContainerLoot))
+                {
+                    return true;
+                }
+
+                RemoveContainerLootReservation(Instance._botToContainerLootProfileId);
+            }
+
+            return false;
+        }
+
+        private static bool IsAllowedReservationOwner(string ownerProfileId, string? allowedProfileId)
+        {
+            return !string.IsNullOrEmpty(ownerProfileId) &&
+                   !string.IsNullOrEmpty(allowedProfileId) &&
+                   string.Equals(ownerProfileId, allowedProfileId, StringComparison.Ordinal);
+        }
+
+        private static bool IsActiveLootReservation(string profileId, FollowerCommandType expectedCommand)
+        {
+            BotFollowerPlayer follower = BossPlayers.GetFollowerByProfileId(profileId);
+            BotOwner bot = follower?.GetBot();
+            if (follower == null ||
+                bot == null ||
+                bot.IsDead ||
+                bot.BotState != EBotState.Active ||
+                bot.GetPlayer?.HealthController?.IsAlive != true)
+            {
+                return false;
+            }
+
+            if (follower.TryPeekActiveCommand(out FollowerCommandType command, out _, out _) &&
+                command == expectedCommand)
+            {
+                return true;
+            }
+
+            // Once the follower starts the simulated search, command changes are ignored, so the
+            // committed command becomes the authoritative liveness signal for the reservation.
+            return follower.IsCommittedLootCommandActive(expectedCommand);
+        }
+
+        private static bool IsSameBodyLootTarget(Corpse? first, Corpse? second)
+        {
+            if (first == null || second == null)
+            {
+                return false;
+            }
+
+            if (ReferenceEquals(first, second))
+            {
+                return true;
+            }
+
+            Item firstRoot = first.ItemOwner?.RootItem as Item;
+            Item secondRoot = second.ItemOwner?.RootItem as Item;
+            return !string.IsNullOrEmpty(firstRoot?.Id) &&
+                   string.Equals(firstRoot.Id, secondRoot?.Id, StringComparison.Ordinal);
+        }
+
+        private static bool IsSameContainerLootTarget(LootableContainer? first, LootableContainer? second)
+        {
+            if (first == null || second == null)
+            {
+                return false;
+            }
+
+            if (ReferenceEquals(first, second))
+            {
+                return true;
+            }
+
+            Item firstRoot = first.ItemOwner?.Items?.FirstOrDefault();
+            Item secondRoot = second.ItemOwner?.Items?.FirstOrDefault();
+            return !string.IsNullOrEmpty(firstRoot?.Id) &&
+                   string.Equals(firstRoot.Id, secondRoot?.Id, StringComparison.Ordinal);
+        }
+
+        private static void RemoveBodyLootReservation(string profileId)
+        {
+            if (Instance == null || string.IsNullOrEmpty(profileId))
+            {
+                return;
+            }
+
+            Instance._bodyLootTargetsByBot?.Remove(profileId);
+            Instance._bodyLootPositionsByBot?.Remove(profileId);
+
+            if (string.Equals(Instance._botToBodyLootProfileId, profileId, StringComparison.Ordinal))
+            {
+                Instance._botToBodyLoot = null;
+                Instance._botToBodyLootProfileId = null;
+            }
+        }
+
+        private static void RemoveContainerLootReservation(string profileId)
+        {
+            if (Instance == null || string.IsNullOrEmpty(profileId))
+            {
+                return;
+            }
+
+            Instance._lootContainerTargetsByBot?.Remove(profileId);
+            Instance._lootContainerPositionsByBot?.Remove(profileId);
+
+            if (string.Equals(Instance._botToContainerLootProfileId, profileId, StringComparison.Ordinal))
+            {
+                Instance._botToContainerLoot = null;
+                Instance._botToContainerLootProfileId = null;
+            }
         }
 
         private static bool TryGetLootNavPosition(LootItem lootItem, out Vector3 position)

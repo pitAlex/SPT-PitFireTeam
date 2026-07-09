@@ -436,9 +436,10 @@ Execution:
     - dogtag-only body looting still says `EPhraseTrigger.LootNothing`
     - checks backpack contents first, then pockets, then vest contents
     - does not take the corpse's worn backpack, armor, armored rig, or tactical vest as whole equipment
-    - pocket and vest contents skip magazines entirely so follower reload space is not disturbed; backpack and container magazines can still be looted
+    - pocket and vest contents skip magazines during normal filtered looting so follower reload space is not disturbed; when `Allow Gear Swapping` is active, one compatible loaded magazine from the loot source may be moved into the follower's tactical vest as operational support for an accepted empty-primary weapon equip
     - armor plates are ignored, including loose/cargo plates and installed plates inside armor or plate-carrier trees
-    - weapons are priced and moved as whole weapon trees, including attached mods, instead of being stripped part by part; they first try empty compatible weapon slots, such as second primary or holster, then fall back to backpack/pocket space
+    - weapons are priced and moved as whole weapon trees, including attached mods, instead of being stripped part by part; with `Allow Gear Swapping` active in `Immersive` or `Realistic`, a long gun can equip into an empty first primary slot only when it has a full installed magazine or a compatible loaded spare magazine that fits the follower's tactical vest
+    - weapons that do not qualify for empty first primary still try empty compatible cargo/support slots, such as second primary or holster, then fall back to backpack/pocket space
     - category filters from `Looting Settings` are checked before price: `Pickup Food`, `Pickup Meds`, `Pickup Valuables`, and `Pickup Gear`; corpse dogtags bypass these category filters
     - item price is compared once against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound; money ignores these price bounds when `Pickup Valuables` is enabled
     - non-weapon successful moves only target the follower's backpack and pockets, never the follower's rig
@@ -476,7 +477,8 @@ Execution:
 - Applies `Looting Settings` category filters before price: `Pickup Food`, `Pickup Meds`, `Pickup Valuables`, and `Pickup Gear`.
 - Compares each candidate item tree against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound. Money ignores these price bounds when `Pickup Valuables` is enabled.
 - Moves non-weapon candidates only into the follower's backpack and pockets, never the follower's rig.
-- Weapons are priced and moved as whole weapon trees; they first try empty compatible weapon slots, such as second primary or holster, then fall back to backpack/pocket space.
+- Weapons are priced and moved as whole weapon trees; with `Allow Gear Swapping` active in `Immersive` or `Realistic`, a long gun can equip into an empty first primary slot only when it has a full installed magazine or a compatible loaded spare magazine that fits the follower's tactical vest.
+- Weapons that do not qualify for empty first primary still try empty compatible cargo/support slots, such as second primary or holster, then fall back to backpack/pocket space.
 - Closes the container on normal completion. Combat, timeout, or safety interruption can leave it open.
 - Stores successful moved items through `InteractableObjects.StoreItem(...)` for squadmates.
 - On completion, says `EPhraseTrigger.Ready` when at least one item was moved, or `EPhraseTrigger.LootNothing` when no eligible item could be taken.

@@ -207,9 +207,10 @@ Looting settings in **My Squad → Settings** control what the teammate consider
 
 - **Minimum Price** and **Maximum Price** set the value window for body and container loot.
 - **Pickup Food**, **Pickup Meds**, **Pickup Valuables**, and **Pickup Gear** decide which broad loot groups are allowed.
+- **Allow Gear Swapping** enables limited gear equip behavior in Immersive and Realistic loadout management.
 - Money is controlled by **Pickup Valuables** and is always worth taking when that group is enabled.
 
-Body and container looting uses real carry space. Normal items go into the teammate's backpack or pockets, while the rig is kept clear so magazines are less likely to be disturbed. Weapons are treated as whole weapons with their attachments, not stripped for parts. Armor plates are ignored for now, and teammates do not yet perform full gear optimization or swap out their current armor, vest, or primary weapon just because something better exists.
+Body and container looting uses real carry space. Normal items go into the teammate's backpack or pockets, while the rig is kept clear so magazines are less likely to be disturbed. Weapons are treated as whole weapons with their attachments, not stripped for parts. If gear swapping is enabled and a teammate has no primary weapon, he can equip a found long gun only when it has a full magazine or a compatible loaded spare magazine that fits his vest. Armor plates are ignored for now, and teammates do not yet perform full gear optimization or swap out their current armor, vest, or primary weapon just because something better exists.
 
 You can also inspect a teammate's backpack by approaching them and using the lower-left interaction prompt. This can only be done while out of combat.
 

@@ -1701,6 +1701,11 @@ namespace pitTeam.Components
                 return;
             }
 
+            if (InteractableObjects.IsBodyLootTargetReserved(corpse))
+            {
+                return;
+            }
+
             InventoryEquipment corpseEquipment = corpse.ItemOwner?.RootItem as InventoryEquipment;
             bool teammateCorpse = TeammateCorpseIdentity.IsTeammateCorpseEquipment(corpseEquipment);
             BotOwner closestFollower = teammateCorpse
@@ -1740,6 +1745,11 @@ namespace pitTeam.Components
 
             LootableContainer container = InteractableObjects.GetCurLootContainerTarget();
             if (container == null || !container.isActiveAndEnabled || container.DoorState == EDoorState.Locked)
+            {
+                return;
+            }
+
+            if (InteractableObjects.IsContainerLootTargetReserved(container))
             {
                 return;
             }

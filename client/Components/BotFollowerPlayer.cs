@@ -1722,6 +1722,11 @@ namespace pitTeam.Components
             return _committedLootCommand != FollowerCommandType.None;
         }
 
+        public bool IsCommittedLootCommandActive(FollowerCommandType command)
+        {
+            return _committedLootCommand == command;
+        }
+
         public bool IsLootOrPickupCommandActive()
         {
             return _activeCommand == FollowerCommandType.TakeLootItem ||
