@@ -493,13 +493,21 @@ The following are planned features in reaching a release version (1.0.0)
 
 **Beta 0.9.0:**
 
-- **The Goons** - bringing back the the Goons as usable teammates along with Knight as trader and his quests.
-- **Squad Budget** - restricts the maximum number of teammates you can add to your squad based on available Command Points. Command Points are gained by leveling up, keeping teammates alive, and keeping picked-up raid allies alive. Points are lost if you kill teammates or allies.
+- **Looting** - telling teammates to check containers and bodies, filter loot via settings and ability for gear swap.
 
 **Version 1.0.0:**
 
+- **Squad Budget** - restricts the maximum number of teammates you can add to your squad based on available Command Points. Command Points are gained by leveling up, keeping teammates alive, and keeping picked-up raid allies alive. Points are lost if you kill teammates or allies.
+- **Loadout Managment Reworked** - "Restricted" mode becomes "Standard" mode and "Simple" mode gets dropped
+
+### Addons:
+
+Addons are standalone features that extend the mod’s core functionality. They are developed independently and may be released alongside major mod versions or at any point between them, without following a fixed release order or schedule.
+
 - **Scavs for hire** - being able to play with teammates as a Scav
+- **Going Rogue** - being able to recruit and command Goons along with the Rogues in raids
 - **SAIN tactics addon** - being able to use SAIN personalities as teammate tactics
+- **Expanded looting gear swapping** - additional carefully controlled weapon, armor, and equipment upgrades beyond the limited empty-slot and protection-vest cases currently available
 
 ## Known Issues and Conflicts
 
