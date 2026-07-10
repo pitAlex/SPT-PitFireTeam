@@ -12377,6 +12377,27 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEndStruct("suppressGrenadeFriendlyImpact", true);
             }
 
+            if (!FollowerGrenadeRuntimeGate.HasReleasedThrow(botOwner) &&
+                grenades.AIGreanageThrowData != null &&
+                FollowerShotSafety.IsRegularGrenadeTrajectoryUnsafeForThrower(
+                    botOwner,
+                    grenades,
+                    grenades.AIGreanageThrowData,
+                    out string trajectoryRejectReason))
+            {
+                BattleRecorder.RecordGrenadeEvent(
+                    botOwner,
+                    "abort",
+                    trajectoryRejectReason,
+                    goalEnemy: goalEnemy,
+                    target: grenades.AIGreanageThrowData?.Target);
+                AbortPendingGrenadeThrow(grenades);
+                FollowerGrenadeCooldowns.CancelPending(botOwner);
+                FollowerGrenadeRuntimeGate.EnforceDisabled(botOwner);
+                ClearCommittedGrenade();
+                return new AICoreActionEndStruct("suppressGrenadeTrajectoryUnsafe", true);
+            }
+
             if (!HasAnyActiveCombatEnemy() &&
                 (grenades.ThrowindNow || grenades.ReadyToThrow) &&
                 !FollowerGrenadeRuntimeGate.HasReleasedThrow(botOwner))
@@ -12478,9 +12499,9 @@ namespace pitTeam.BigBrain
                 return RejectFollowerGrenade("medicine", goalEnemy: goalEnemy);
             }
 
-            if (!IsSafeGrenadeThrowPosition(goalEnemy, goalTargetPosition))
+            if (!TryValidateSafeGrenadeThrowPosition(goalEnemy, goalTargetPosition, out string safePositionRejectReason))
             {
-                return RejectFollowerGrenade("unsafePosition", goalEnemy: goalEnemy);
+                return RejectFollowerGrenade(safePositionRejectReason, goalEnemy: goalEnemy);
             }
 
             if (!FollowerGrenadeCooldowns.TryReserveThrow(botOwner))
@@ -12839,8 +12860,9 @@ namespace pitTeam.BigBrain
             for (int i = 0; i < candidateAngles.Length; i++)
             {
                 AIGreandeAng angle = candidateAngles[i];
+                Vector3 throwOrigin = FollowerShotSafety.GetGrenadeThrowOrigin(botOwner, grenades);
                 AIGreanageThrowData candidate = GClass577.CanThrowGrenade2(
-                    botOwner.Position,
+                    throwOrigin,
                     throwTarget,
                     grenades,
                     angle,
@@ -12848,6 +12870,16 @@ namespace pitTeam.BigBrain
                 if (candidate == null || !candidate.CanThrow)
                 {
                     lastRejectReason = $"trajectoryBlocked:{angle}";
+                    continue;
+                }
+
+                if (FollowerShotSafety.IsRegularGrenadeTrajectoryUnsafeForThrower(
+                        botOwner,
+                        grenades,
+                        candidate,
+                        out string trajectoryRejectReason))
+                {
+                    lastRejectReason = trajectoryRejectReason;
                     continue;
                 }
 
@@ -12944,26 +12976,41 @@ namespace pitTeam.BigBrain
             return horizontalSpeed > 0.01f ? horizontalDistance / horizontalSpeed : 0f;
         }
 
-        private bool IsSafeGrenadeThrowPosition(EnemyInfo goalEnemy, Vector3 enemyAnchor)
+        private bool TryValidateSafeGrenadeThrowPosition(EnemyInfo goalEnemy, Vector3 enemyAnchor, out string reason)
         {
+            reason = "unsafePosition";
             if (goalEnemy == null || botOwner.Memory.IsUnderFire || WasHitRecently(botOwner, 2f))
             {
+                reason = "unsafePosition:pressure";
                 return false;
             }
 
             if (botOwner.Mover?.HasPathAndNoComplete == true &&
                 botOwner.GoToSomePointData?.IsCome() != true)
             {
+                reason = "unsafePosition:moving";
+                return false;
+            }
+
+            if (!IsFinite(enemyAnchor))
+            {
+                reason = "unsafePosition:noTarget";
                 return false;
             }
 
             if (!botOwner.Memory.IsInCover || botOwner.Memory.CurCustomCoverPoint == null)
             {
-                return !goalEnemy.CanShoot;
+                reason = "unsafePosition:noCover";
+                return false;
             }
 
-            return !IsFinite(enemyAnchor) ||
-                   botOwner.Memory.CurCustomCoverPoint.CanIHideFromPos(0f, true, false, enemyAnchor);
+            if (!botOwner.Memory.CurCustomCoverPoint.CanIHideFromPos(0f, true, false, enemyAnchor))
+            {
+                reason = "unsafePosition:coverExposed";
+                return false;
+            }
+
+            return true;
         }
 
         private bool RejectFollowerGrenade(
@@ -13132,7 +13179,10 @@ namespace pitTeam.BigBrain
 
         private static void AbortPendingGrenadeThrow(BotGrenadeController grenades)
         {
-            grenades?.method_6(null);
+            if (grenades?.AIGreanageThrowData != null)
+            {
+                grenades.method_6(null);
+            }
         }
 
         public AICoreActionEndStruct EndBaseGoToPoint()
@@ -13265,12 +13315,6 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEndStruct("combatGestureBreakHold", true);
             }
 
-            if (holdActive && holdEndTime < Time.time)
-            {
-                holdActive = false;
-                return new AICoreActionEndStruct("holdExpired", true);
-            }
-
             if (string.Equals(reason, "reloadNoCover", StringComparison.Ordinal) &&
                 botOwner.WeaponManager?.Reload?.Reloading == true)
             {
@@ -13278,11 +13322,26 @@ namespace pitTeam.BigBrain
             }
 
             EnemyInfo? goalEnemy = botOwner.Memory.GoalEnemy;
-            if (botOwner.Memory.IsUnderFire ||
+            bool wasHitRecently =
                 WasHitRecently(botOwner, 0.75f) ||
-                FollowerAwareness.WasRecentlyHit(botOwner))
+                FollowerAwareness.WasRecentlyDamaged(botOwner);
+            if (wasHitRecently)
             {
-                return new AICoreActionEndStruct("underFireHold", true);
+                return new AICoreActionEndStruct("hitHold", true);
+            }
+
+            bool underFirePressure =
+                botOwner.Memory.IsUnderFire ||
+                FollowerAwareness.WasRecentlyThreatened(botOwner);
+            if (underFirePressure && botOwner.Memory.IsInCover)
+            {
+                HoldCoverForMaxDuration();
+            }
+
+            if (holdActive && holdEndTime < Time.time)
+            {
+                holdActive = false;
+                return new AICoreActionEndStruct("holdExpired", true);
             }
 
             if (!botOwner.Memory.IsInCover)
@@ -13293,7 +13352,7 @@ namespace pitTeam.BigBrain
                 }
 
                 // No-cover hold reasons are allowed to crouch-wait, but not under active pressure.
-                if (botOwner.Memory.IsUnderFire || WasHitRecently(botOwner, 0.5f))
+                if (underFirePressure)
                 {
                     return new AICoreActionEndStruct("underFireNoCover", true);
                 }

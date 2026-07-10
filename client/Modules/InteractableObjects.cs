@@ -1078,20 +1078,32 @@ namespace pitTeam.Modules
                 return;
             }
 
-            // Track the largest meaningful root. If a whole backpack/rig is tracked, its
-            // children ride inside that one return tree and must not be mailed separately.
-            if (HasTrackedAncestor(item, list))
+            TrackReturnRoot(item, treeIds, list);
+        }
+
+        private static void TrackReturnRoot(Item item, HashSet<string> treeIds, List<string> trackedReturnIds)
+        {
+            if (item == null || string.IsNullOrWhiteSpace(item.Id) || trackedReturnIds == null)
             {
                 return;
             }
 
-            list.RemoveAll(itemId =>
+            treeIds ??= GetItemTreeIds(item);
+
+            // Track the largest meaningful root. If a whole backpack/rig is tracked, its
+            // children ride inside that one return tree and must not be mailed separately.
+            if (HasTrackedAncestor(item, trackedReturnIds))
+            {
+                return;
+            }
+
+            trackedReturnIds.RemoveAll(itemId =>
                 !string.Equals(itemId, item.Id, StringComparison.Ordinal) &&
                 treeIds.Contains(itemId));
 
-            if (!list.Contains(item.Id))
+            if (!trackedReturnIds.Contains(item.Id))
             {
-                list.Add(item.Id);
+                trackedReturnIds.Add(item.Id);
             }
         }
 
@@ -1113,9 +1125,9 @@ namespace pitTeam.Modules
             }
 
             // Simple/Restricted teammate spawn gear may be moved around in raid for interaction
-            // parity, but it must not become return-mail cargo. Body-loot can put protected gear
-            // and unrelated cargo in the same backpack/rig, so split clean non-protected children
-            // back out for return tracking instead of mailing the protected parent.
+            // parity, but it must not become return-mail cargo. If a handled tree mixes protected
+            // gear and unrelated cargo, split clean non-protected children back out for return
+            // tracking instead of mailing the protected parent.
             HashSet<string> protectedHandledIds = treeIds
                 .Where(itemId => protectedFollowerGearIds.Contains(itemId))
                 .ToHashSet(StringComparer.Ordinal);
@@ -1124,6 +1136,12 @@ namespace pitTeam.Modules
                 protectedHandledIds,
                 "protected follower handled item",
                 synchronous: true);
+
+            if (!protectedFollowerGearIds.Contains(item.Id))
+            {
+                TrackReturnRoot(item, treeIds, trackedReturnIds);
+                return true;
+            }
 
             List<Item> returnableRoots = new List<Item>();
             CollectReturnableRootsExcludingProtected(item, protectedFollowerGearIds, returnableRoots);
@@ -1135,20 +1153,7 @@ namespace pitTeam.Modules
                     continue;
                 }
 
-                HashSet<string> returnableTreeIds = GetItemTreeIds(returnableRoot);
-                if (HasTrackedAncestor(returnableRoot, trackedReturnIds))
-                {
-                    continue;
-                }
-
-                trackedReturnIds.RemoveAll(itemId =>
-                    !string.Equals(itemId, returnableRoot.Id, StringComparison.Ordinal) &&
-                    returnableTreeIds.Contains(itemId));
-
-                if (!trackedReturnIds.Contains(returnableRoot.Id))
-                {
-                    trackedReturnIds.Add(returnableRoot.Id);
-                }
+                TrackReturnRoot(returnableRoot, GetItemTreeIds(returnableRoot), trackedReturnIds);
             }
 
             if (returnableRoots.Count == 0)
@@ -1158,6 +1163,17 @@ namespace pitTeam.Modules
             }
 
             return true;
+        }
+
+        public static bool IsProtectedFollowerEquipment(Item item)
+        {
+            if (item == null || string.IsNullOrWhiteSpace(item.Id) || pitFireTeam.IsFollowerLoadoutLootableMode())
+            {
+                return false;
+            }
+
+            HashSet<string> protectedFollowerGearIds = GetProtectedFollowerEquipmentIds();
+            return protectedFollowerGearIds.Contains(item.Id);
         }
 
         private static HashSet<string> GetProtectedFollowerEquipmentIds()

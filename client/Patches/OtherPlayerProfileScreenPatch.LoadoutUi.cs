@@ -1170,7 +1170,7 @@ namespace pitTeam.Patches
                 {
                     // The server save is authoritative. This reconciles the currently open client
                     // profile with the server-saved stash snapshot so a restart is not needed.
-                    ApplyServerSavedPlayerStash(response?.data?.playerStashItems);
+                    ApplyServerDefaultEquipmentPlayerStashChanges(response?.data);
                 }
 
                 ActiveTeammateLoadoutId = DefaultLoadoutId;
@@ -1350,7 +1350,19 @@ namespace pitTeam.Patches
 
         private static bool IsLoadoutEditorEquipmentItemSavedToTeammateProfile(Item item)
         {
-            if (item == null || ViewedProfile?.Equipment == null)
+            if (item == null)
+            {
+                return false;
+            }
+
+            if (IsRealDefaultLoadoutEditorCommit() && LoadoutEditorInitialEquipmentItems != null)
+            {
+                return LoadoutEditorInitialEquipmentItems.Any(candidate =>
+                    candidate?._id != null
+                    && string.Equals(candidate._id.ToString(), item.Id, StringComparison.Ordinal));
+            }
+
+            if (ViewedProfile?.Equipment == null)
             {
                 return false;
             }
@@ -1398,8 +1410,9 @@ namespace pitTeam.Patches
                 }
 
                 ApplyLoadoutEditorRepairResult(itemToRepair, data);
-                ApplyServerSavedPlayerStash(data.playerStashItems);
-                ApplyServerSavedLoadoutEditorStash(data.playerStashItems);
+                ApplyServerRepairPlayerStashChanges(data);
+                ApplyServerRepairLoadoutEditorStashChanges(data);
+                CaptureLoadoutEditorInitialState(LoadoutEditorProfile, IsRealDefaultLoadoutEditorCommit());
                 SyncLoadoutEditorRepairKitsFromActiveProfile(repairKitsInfo);
                 MarkSquadRosterDirty(ViewedProfile.AccountId);
                 pitFireTeam.Log.LogInfo($"[UI] Repaired teammate loadout item '{itemToRepair.Id}' through teammate repair route.");
@@ -1457,8 +1470,9 @@ namespace pitTeam.Patches
                 }
 
                 ApplyLoadoutEditorRepairResult(itemToRepair, data);
-                ApplyServerSavedPlayerStash(data.playerStashItems);
-                ApplyServerSavedLoadoutEditorStash(data.playerStashItems);
+                ApplyServerRepairPlayerStashChanges(data);
+                ApplyServerRepairLoadoutEditorStashChanges(data);
+                CaptureLoadoutEditorInitialState(LoadoutEditorProfile, IsRealDefaultLoadoutEditorCommit());
                 MarkSquadRosterDirty(ViewedProfile.AccountId);
                 pitFireTeam.Log.LogInfo($"[UI] Repaired teammate loadout item '{itemToRepair.Id}' through teammate trader repair route.");
                 return SuccessfulResult.New;
@@ -1547,8 +1561,15 @@ namespace pitTeam.Patches
 
                 if (realItemCommit)
                 {
-                    ApplyServerSavedPlayerStash(response?.data?.playerStashItems);
-                    ApplyServerSavedLoadoutEditorStash(response?.data?.playerStashItems);
+                    bool appliedDelta = ApplyServerDefaultEquipmentPlayerStashChanges(response?.data);
+                    if (appliedDelta)
+                    {
+                        CaptureLoadoutEditorInitialState(LoadoutEditorProfile, realItemCommit: true);
+                    }
+                    else
+                    {
+                        ApplyServerSavedLoadoutEditorStash(response?.data?.playerStashItems);
+                    }
                 }
                 else
                 {
@@ -1581,6 +1602,200 @@ namespace pitTeam.Patches
             repairable.Durability = Math.Min(repairable.MaxDurability, (float)response.durability.Value);
             itemToRepair.UpdateAttributes();
             itemToRepair.RaiseRefreshEvent(true, true);
+        }
+
+        private static bool ApplyServerDefaultEquipmentPlayerStashChanges(FriendlyTeammateDefaultEquipmentResponse response)
+        {
+            if (TryApplyPlayerStashDelta(
+                    response?.playerNewStashItems,
+                    response?.playerChangedStashItems,
+                    response?.playerDeletedStashItemIds,
+                    "real loadout commit"))
+            {
+                return true;
+            }
+
+            if (response?.playerStashItems != null && response.playerStashItems.Length > 0)
+            {
+                ApplyServerSavedPlayerStash(response.playerStashItems);
+            }
+
+            return false;
+        }
+
+        private static void ApplyServerRepairPlayerStashChanges(FriendlyTeammateRepairEquipmentResponse response)
+        {
+            if (TryApplyPlayerStashDelta(
+                    response?.playerNewStashItems,
+                    response?.playerChangedStashItems,
+                    response?.playerDeletedStashItemIds,
+                    "teammate repair"))
+            {
+                return;
+            }
+
+            if (response?.playerStashItems != null && response.playerStashItems.Length > 0)
+            {
+                ApplyServerSavedPlayerStash(response.playerStashItems);
+            }
+        }
+
+        private static bool TryApplyPlayerStashDelta(
+            FlatItemsDataClass[] newItems,
+            FlatItemsDataClass[] changedItems,
+            string[] deletedItemIds,
+            string reason)
+        {
+            if (newItems == null && changedItems == null && deletedItemIds == null)
+            {
+                return false;
+            }
+
+            newItems ??= Array.Empty<FlatItemsDataClass>();
+            changedItems ??= Array.Empty<FlatItemsDataClass>();
+            FlatItemsDataClass[] deletedItems = CreateDeletedFlatItems(deletedItemIds);
+            if (newItems.Length == 0 && changedItems.Length == 0 && deletedItems.Length == 0)
+            {
+                return true;
+            }
+
+            Profile activeProfile = ActiveProfileSession?.Profile;
+            InventoryController inventoryController = ResolveActiveProfileInventoryControllerForBackendUpdate(
+                activeProfile,
+                ActiveProfileInventoryController);
+            if (activeProfile == null || !(inventoryController is GClass3388 profileInventoryController))
+            {
+                return false;
+            }
+
+            try
+            {
+                var updater = new GClass2331(
+                    activeProfile,
+                    profileInventoryController,
+                    null,
+                    ActiveProfileSession?.RagFair);
+                updater.UpdateProfile(new ProfileChangesPocoClass
+                {
+                    Stash = new GClass2337
+                    {
+                        @new = newItems,
+                        change = changedItems,
+                        del = deletedItems
+                    }
+                });
+
+                pitFireTeam.Log.LogInfo($"[UI] Applied {reason} player stash delta: new={newItems.Length}, change={changedItems.Length}, del={deletedItems.Length}.");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                pitFireTeam.Log.LogWarning($"[UI] {reason} stash delta refresh failed; falling back to full refresh when available. {ex.Message}");
+                return false;
+            }
+        }
+
+        private static FlatItemsDataClass[] CreateDeletedFlatItems(IEnumerable<string> itemIds)
+        {
+            if (itemIds == null)
+            {
+                return Array.Empty<FlatItemsDataClass>();
+            }
+
+            List<FlatItemsDataClass> deletedItems = new List<FlatItemsDataClass>();
+            foreach (string itemId in itemIds)
+            {
+                if (string.IsNullOrWhiteSpace(itemId))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    deletedItems.Add(new FlatItemsDataClass { _id = new MongoID(itemId) });
+                }
+                catch (Exception ex)
+                {
+                    pitFireTeam.Log.LogWarning($"[UI] Ignoring invalid teammate repair deleted stash item id '{itemId}': {ex.Message}");
+                }
+            }
+
+            return deletedItems.ToArray();
+        }
+
+        private static void ApplyServerRepairLoadoutEditorStashChanges(FriendlyTeammateRepairEquipmentResponse response)
+        {
+            if (response == null || !IsRealDefaultLoadoutEditorCommit() || LoadoutEditorProfile?.Inventory == null)
+            {
+                return;
+            }
+
+            FlatItemsDataClass[] newItems = response.playerNewStashItems ?? Array.Empty<FlatItemsDataClass>();
+            FlatItemsDataClass[] changedItems = response.playerChangedStashItems ?? Array.Empty<FlatItemsDataClass>();
+            string[] deletedItemIds = response.playerDeletedStashItemIds ?? Array.Empty<string>();
+            if (newItems.Length > 0)
+            {
+                if (response.playerStashItems != null && response.playerStashItems.Length > 0)
+                {
+                    ApplyServerSavedLoadoutEditorStash(response.playerStashItems);
+                }
+                else
+                {
+                    pitFireTeam.Log.LogWarning("[UI] Teammate repair returned new player stash items without a full stash fallback for editor refresh.");
+                }
+
+                return;
+            }
+
+            try
+            {
+                foreach (FlatItemsDataClass changedItem in changedItems)
+                {
+                    string changedId = changedItem?._id.ToString();
+                    if (string.IsNullOrWhiteSpace(changedId)
+                        || changedItem.upd == null
+                        || !LoadoutEditorStashItemsById.TryGetValue(changedId, out Item editorItem)
+                        || editorItem == null)
+                    {
+                        continue;
+                    }
+
+                    changedItem.upd.ParseJsonTo(typeof(Item), editorItem, Array.Empty<Newtonsoft.Json.JsonConverter>());
+                    editorItem.RaiseRefreshEvent(false, true);
+                }
+
+                foreach (string deletedItemId in deletedItemIds)
+                {
+                    if (string.IsNullOrWhiteSpace(deletedItemId)
+                        || !LoadoutEditorStashItemsById.TryGetValue(deletedItemId, out Item editorItem)
+                        || editorItem == null)
+                    {
+                        continue;
+                    }
+
+                    var removeResult = InteractionsHandlerClass.DiscardWithoutRestrictions(editorItem, LoadoutEditorInventoryController);
+                    if (removeResult.Succeeded)
+                    {
+                        removeResult.Value.RaiseEvents(LoadoutEditorInventoryController, CommandStatus.Begin);
+                        removeResult.Value.RaiseEvents(LoadoutEditorInventoryController, CommandStatus.Succeed);
+                    }
+                    else
+                    {
+                        pitFireTeam.Log.LogWarning($"[UI] Failed to remove consumed repair stash item '{deletedItemId}' from loadout editor stash: {removeResult.Error}");
+                    }
+                }
+
+                RebuildLoadoutEditorItemIndexes();
+                CaptureLoadoutEditorInitialState(LoadoutEditorProfile, realItemCommit: true);
+            }
+            catch (Exception ex)
+            {
+                pitFireTeam.Log.LogWarning($"[UI] Teammate repair editor stash delta refresh failed; falling back to full refresh when available. {ex.Message}");
+                if (response.playerStashItems != null && response.playerStashItems.Length > 0)
+                {
+                    ApplyServerSavedLoadoutEditorStash(response.playerStashItems);
+                }
+            }
         }
 
         private static void ApplyServerSavedLoadoutEditorStash(FlatItemsDataClass[] savedStashItems)
@@ -1953,9 +2168,21 @@ namespace pitTeam.Patches
 
         private static bool JsonTokenEquals(GClass846 left, GClass846 right)
         {
-            string leftJson = left?.JToken?.ToString(Newtonsoft.Json.Formatting.None);
-            string rightJson = right?.JToken?.ToString(Newtonsoft.Json.Formatting.None);
-            return string.Equals(leftJson, rightJson, StringComparison.Ordinal);
+            Newtonsoft.Json.Linq.JToken leftToken = left?.JToken;
+            Newtonsoft.Json.Linq.JToken rightToken = right?.JToken;
+            if (IsNullOrEmptyJson(leftToken) && IsNullOrEmptyJson(rightToken))
+            {
+                return true;
+            }
+
+            return Newtonsoft.Json.Linq.JToken.DeepEquals(leftToken, rightToken);
+        }
+
+        private static bool IsNullOrEmptyJson(Newtonsoft.Json.Linq.JToken token)
+        {
+            return token == null
+                || token.Type == Newtonsoft.Json.Linq.JTokenType.Null
+                || (token.Type == Newtonsoft.Json.Linq.JTokenType.Object && !token.HasValues);
         }
 
         private static InventoryEquipment CreateSanitizedLoadoutEditorSaveEquipment()
@@ -1991,7 +2218,13 @@ namespace pitTeam.Patches
                 throw new InvalidOperationException("Loadout editor player stash was unavailable for real item save.");
             }
 
-            return serializedStash;
+            FlatItemsDataClass[] sanitizedStash = RemoveLoadoutEditorEquipmentItemsFromSavedStash(serializedStash);
+            if (sanitizedStash == null || sanitizedStash.Length == 0)
+            {
+                throw new InvalidOperationException("Loadout editor player stash was unavailable after real item save sanitization.");
+            }
+
+            return sanitizedStash;
         }
 
         private static void CaptureLoadoutEditorInitialState(Profile editorProfile, bool realItemCommit)
@@ -2127,6 +2360,9 @@ namespace pitTeam.Patches
         {
             public bool realItemCommit { get; set; }
             public FlatItemsDataClass[] playerStashItems { get; set; }
+            public FlatItemsDataClass[] playerNewStashItems { get; set; }
+            public FlatItemsDataClass[] playerChangedStashItems { get; set; }
+            public string[] playerDeletedStashItemIds { get; set; }
         }
 
         private sealed class FriendlyTeammateRepairEquipmentRequest
@@ -2144,6 +2380,9 @@ namespace pitTeam.Patches
             public double? durability { get; set; }
             public double? maxDurability { get; set; }
             public FlatItemsDataClass[] playerStashItems { get; set; }
+            public FlatItemsDataClass[] playerNewStashItems { get; set; }
+            public FlatItemsDataClass[] playerChangedStashItems { get; set; }
+            public string[] playerDeletedStashItemIds { get; set; }
         }
 
         private static async Task<bool> ShowReplaceBuildPromptAsync()

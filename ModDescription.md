@@ -16,6 +16,16 @@ It is highly recommended for new players to read **Gameplay Guide** and **Known 
 
 ---
 
+**Gameplay:**
+
+<div style="position: relative; width: 100%; max-width: 960px; padding-bottom: 56.25%; height: 0; overflow: hidden;">
+  <iframe src="https://www.youtube.com/embed/cAwb9gRN8tU" title="PIT Fireteam - Live Combat Demo" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+</div>
+
+[Open video on YouTube](https://www.youtube.com/watch?v=CgQeimMDnls)
+
+---
+
 # Tabs {.tabset}
 
 ## Description
@@ -483,13 +493,21 @@ The following are planned features in reaching a release version (1.0.0)
 
 **Beta 0.9.0:**
 
-- **The Goons** - bringing back the the Goons as usable teammates along with Knight as trader and his quests.
-- **Squad Budget** - restricts the maximum number of teammates you can add to your squad based on available Command Points. Command Points are gained by leveling up, keeping teammates alive, and keeping picked-up raid allies alive. Points are lost if you kill teammates or allies.
+- **Looting** - telling teammates to check containers and bodies, filter loot via settings and ability for gear swap.
 
 **Version 1.0.0:**
 
+- **Squad Budget** - restricts the maximum number of teammates you can add to your squad based on available Command Points. Command Points are gained by leveling up, keeping teammates alive, and keeping picked-up raid allies alive. Points are lost if you kill teammates or allies.
+- **Loadout Managment Reworked** - "Restricted" mode becomes "Standard" mode and "Simple" mode gets dropped
+
+### Addons:
+
+Addons are standalone features that extend the mod’s core functionality. They are developed independently and may be released alongside major mod versions or at any point between them, without following a fixed release order or schedule.
+
 - **Scavs for hire** - being able to play with teammates as a Scav
+- **Going Rogue** - being able to recruit and command Goons along with the Rogues in raids
 - **SAIN tactics addon** - being able to use SAIN personalities as teammate tactics
+- **Expanded looting gear swapping** - additional carefully controlled weapon, armor, and equipment upgrades beyond the limited empty-slot and protection-vest cases currently available
 
 ## Known Issues and Conflicts
 
@@ -502,6 +520,8 @@ Career Log mod is not compatible with this mod as it causes the "add teammate" b
 The Labyrinth is a special map with special AI, not meant to AI followers. Do not spawn with your teammates there.
 
 In teammate loadout editing, do not repair equipment and then move items into or out of the teammate loadout before saving. For now, repair should be the last step before saving. If the editor starts failing after this, cancel out of the Edit Loadout overlay, re-open Edit Loadout, then save without moving anything.
+
+In teammate loadout editing, if you happen to end up in a situation where you cannot save teammate loadout due to message regarding duplicate items, restart the game to recover the teammates profile. Note that any duplicate item will be stripped in the process.
 
 - Teammates can linger after combat. Use **Attention** to reset them.
 - Teammates might not heal their health all the way. It is a game issue, use the Heal key to force heal.

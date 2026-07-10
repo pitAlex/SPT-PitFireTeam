@@ -68,6 +68,7 @@ public class FriendlyPostRaidService(
     public void HandleReturnItems(MongoId sessionId, FriendlyPostRaidReturnItemsRequest request)
     {
         List<SPTarkov.Server.Core.Models.Eft.Common.Tables.Item> items = request.Items ?? [];
+        StripProtectedTeammateItemsFromReturnItems(sessionId, items);
         if (items.Count == 0)
         {
             return;
@@ -90,6 +91,37 @@ public class FriendlyPostRaidService(
 
         mailSendService.SendMessageToPlayer(details);
         EnsureDialogHasSender(sessionId, sender);
+    }
+
+    private void StripProtectedTeammateItemsFromReturnItems(
+        MongoId sessionId,
+        List<SPTarkov.Server.Core.Models.Eft.Common.Tables.Item> items)
+    {
+        if (items.Count == 0)
+        {
+            return;
+        }
+
+        HashSet<string> protectedIds = teammateService.GetProtectedTeammateItemIdsForExtraction(sessionId);
+        string sessionKey = sessionId.ToString();
+        if (ProtectedRaidItemIds.TryGetValue(sessionKey, out HashSet<string>? registeredIds))
+        {
+            lock (registeredIds)
+            {
+                protectedIds.UnionWith(registeredIds);
+            }
+        }
+
+        if (protectedIds.Count == 0)
+        {
+            return;
+        }
+
+        int removed = RemoveItemTreesById(items, protectedIds);
+        if (removed > 0)
+        {
+            logger.Info($"Removed {removed} protected teammate item(s) from returned follower-loot delivery.");
+        }
     }
 
     private void RemoveReturnedItemsFromInsurance(MongoId sessionId, List<SPTarkov.Server.Core.Models.Eft.Common.Tables.Item> returnedItems)
@@ -419,10 +451,13 @@ public class FriendlyPostRaidService(
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
 
         // Ammo can be split or merged into another stack, losing the original item id lineage.
-        // Treat loose ammo as an explicit anti-farming exception instead of stripping by template
-        // and risking legitimate raid-found rounds of the same type.
-        int exemptLooseAmmoRoots = protectedIds.RemoveWhere(id => byId.TryGetValue(id, out Item? item) && IsAmmoItem(item));
-        _ = exemptLooseAmmoRoots;
+        // Treat loose ammo as an explicit anti-farming exception, but re-key the extracted
+        // player copy so the teammate profile can keep owning the original protected id.
+        int copiedLooseAmmoRoots = AssignFreshIdsToExtractedProtectedCopies(inventoryItems, byId, protectedIds);
+        if (copiedLooseAmmoRoots > 0)
+        {
+            logger.Info($"Assigned fresh item ids to {copiedLooseAmmoRoots} extracted protected ammo stack(s).");
+        }
 
         if (protectedIds.Count == 0)
         {
@@ -443,6 +478,141 @@ public class FriendlyPostRaidService(
         return item?.Template != null
             && !item.Template.IsEmpty
             && itemHelper.IsOfBaseclass(item.Template, BaseClasses.AMMO);
+    }
+
+    private int AssignFreshIdsToExtractedProtectedCopies(
+        List<Item> inventoryItems,
+        Dictionary<string, Item> byId,
+        HashSet<string> protectedIds)
+    {
+        var copyRootIds = protectedIds
+            .Where(id =>
+                byId.TryGetValue(id, out Item? item)
+                && IsCopyableExtractedProtectedItem(item)
+                && !HasProtectedAncestor(item, byId, protectedIds))
+            .ToList();
+        if (copyRootIds.Count == 0)
+        {
+            return 0;
+        }
+
+        HashSet<string> usedIds = inventoryItems
+            .Where(item => item?.Id != null)
+            .Select(item => item.Id.ToString())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        int copied = 0;
+        foreach (string rootId in copyRootIds)
+        {
+            if (!byId.TryGetValue(rootId, out Item? root)
+                || root?.Id == null
+                || !string.Equals(root.Id.ToString(), rootId, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            HashSet<string> oldTreeIds = BuildItemTreeIds(inventoryItems, rootId);
+            if (oldTreeIds.Count == 0)
+            {
+                continue;
+            }
+
+            var idMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string oldId in oldTreeIds)
+            {
+                if (!byId.ContainsKey(oldId))
+                {
+                    continue;
+                }
+
+                string newId;
+                do
+                {
+                    newId = new MongoId().ToString();
+                }
+                while (!usedIds.Add(newId));
+
+                idMap[oldId] = newId;
+            }
+
+            if (idMap.Count == 0)
+            {
+                continue;
+            }
+
+            foreach ((string oldId, string newId) in idMap)
+            {
+                if (byId.TryGetValue(oldId, out Item? item) && item != null)
+                {
+                    item.Id = new MongoId(newId);
+                }
+            }
+
+            foreach (Item item in inventoryItems)
+            {
+                if (!string.IsNullOrWhiteSpace(item?.ParentId)
+                    && idMap.TryGetValue(item.ParentId, out string? newParentId))
+                {
+                    item.ParentId = newParentId;
+                }
+            }
+
+            foreach (string oldId in idMap.Keys)
+            {
+                protectedIds.Remove(oldId);
+            }
+
+            copied++;
+        }
+
+        return copied;
+    }
+
+    private bool IsCopyableExtractedProtectedItem(Item? item)
+    {
+        return IsAmmoItem(item);
+    }
+
+    private static bool HasProtectedAncestor(
+        Item? item,
+        Dictionary<string, Item> byId,
+        HashSet<string> protectedIds)
+    {
+        string? parentId = item?.ParentId;
+        HashSet<string> visited = new(StringComparer.OrdinalIgnoreCase);
+        while (!string.IsNullOrWhiteSpace(parentId) && visited.Add(parentId))
+        {
+            if (protectedIds.Contains(parentId))
+            {
+                return true;
+            }
+
+            parentId = byId.TryGetValue(parentId, out Item? parent) ? parent.ParentId : null;
+        }
+
+        return false;
+    }
+
+    private static HashSet<string> BuildItemTreeIds(List<Item> inventoryItems, string rootId)
+    {
+        HashSet<string> treeIds = new(StringComparer.OrdinalIgnoreCase);
+        AddItemTreeIds(inventoryItems, rootId, treeIds);
+        return treeIds;
+    }
+
+    private static void AddItemTreeIds(List<Item> inventoryItems, string itemId, HashSet<string> treeIds)
+    {
+        if (!treeIds.Add(itemId))
+        {
+            return;
+        }
+
+        foreach (Item child in inventoryItems.Where(item =>
+                     item?.Id != null &&
+                     string.Equals(item.ParentId, itemId, StringComparison.OrdinalIgnoreCase)).ToList())
+        {
+            AddItemTreeIds(inventoryItems, child.Id.ToString(), treeIds);
+        }
     }
 
     private static HashSet<string> BuildRemovalIdClosure(List<Item> inventoryItems, HashSet<string> rootItemIds)

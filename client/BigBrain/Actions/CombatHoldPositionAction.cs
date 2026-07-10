@@ -40,6 +40,7 @@ namespace pitTeam.BigBrain.Actions
 
             baseLogic.UpdateNodeByBrain(GetData<GClass28>(data));
 
+            TryPreferMarksmanPrimaryAtRange(BotOwner.Memory?.GoalEnemy);
             FollowerCombatCommon.TryRaiseForStandingCoverShot(BotOwner, out _);
         }
     }
@@ -107,6 +108,11 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
+            if (TryLookTowardSuppressionThreat())
+            {
+                return;
+            }
+
             if (TryLookTowardEnemy())
             {
                 return;
@@ -139,6 +145,29 @@ namespace pitTeam.BigBrain.Actions
                     BotOwner_0,
                     CombatDistanceConfiguration.Instance.GetTooCloseDistance(),
                     out Vector3 threatLookPoint))
+            {
+                return false;
+            }
+
+            BotOwner_0.Steering.LookToPoint(threatLookPoint);
+            return true;
+        }
+
+        private bool TryLookTowardSuppressionThreat()
+        {
+            EnemyInfo? goalEnemy = BotOwner_0?.Memory?.GoalEnemy;
+            if (goalEnemy?.IsVisible == true && goalEnemy.CanShoot)
+            {
+                return false;
+            }
+
+            if (BotOwner_0?.Memory?.IsInCover != true ||
+                BotOwner_0.Memory.IsUnderFire != true)
+            {
+                return false;
+            }
+
+            if (!FollowerAwareness.TryGetRecentThreatLookPoint(BotOwner_0, out Vector3 threatLookPoint))
             {
                 return false;
             }

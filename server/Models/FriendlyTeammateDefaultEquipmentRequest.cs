@@ -29,6 +29,15 @@ public record FriendlyTeammateDefaultEquipmentResponse
 
     [JsonPropertyName("playerStashItems")]
     public List<Item>? PlayerStashItems { get; set; }
+
+    [JsonPropertyName("playerNewStashItems")]
+    public List<Item>? PlayerNewStashItems { get; set; }
+
+    [JsonPropertyName("playerChangedStashItems")]
+    public List<Item>? PlayerChangedStashItems { get; set; }
+
+    [JsonPropertyName("playerDeletedStashItemIds")]
+    public List<string>? PlayerDeletedStashItemIds { get; set; }
 }
 
 public record FriendlyTeammateBuyKitRequest : IRequestData
@@ -95,4 +104,13 @@ public record FriendlyTeammateRepairEquipmentResponse
 
     [JsonPropertyName("playerStashItems")]
     public List<Item>? PlayerStashItems { get; set; }
+
+    [JsonPropertyName("playerNewStashItems")]
+    public List<Item>? PlayerNewStashItems { get; set; }
+
+    [JsonPropertyName("playerChangedStashItems")]
+    public List<Item>? PlayerChangedStashItems { get; set; }
+
+    [JsonPropertyName("playerDeletedStashItemIds")]
+    public List<string>? PlayerDeletedStashItemIds { get; set; }
 }

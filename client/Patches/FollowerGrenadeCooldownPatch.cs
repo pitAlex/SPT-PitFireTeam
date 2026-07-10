@@ -49,6 +49,21 @@ namespace pitTeam.Patches
             return false;
         }
 
+        [PatchPostfix]
+        private static void PatchPostfix(BotGrenadeController __instance)
+        {
+            BotOwner bot = BotOwnerField?.GetValue(__instance) as BotOwner;
+            if (bot == null || !BossPlayers.IsFollower(bot))
+            {
+                return;
+            }
+
+            if (FollowerGrenadeRuntimeGate.IsThrowAllowed(bot))
+            {
+                bot.SetPose(1f);
+            }
+        }
+
     }
 
     internal class FollowerGrenadeThrowFinishPatch : ModulePatch
@@ -95,6 +110,22 @@ namespace pitTeam.Patches
 
             if (throwResult.Succeed && throwResult.Value != null)
             {
+                if (__instance.AIGreanageThrowData != null &&
+                    FollowerShotSafety.IsRegularGrenadeTrajectoryUnsafeForThrower(
+                        bot,
+                        __instance,
+                        __instance.AIGreanageThrowData,
+                        out string trajectoryRejectReason))
+                {
+                    BattleRecorder.RecordGrenadeEvent(
+                        bot,
+                        "releaseBlocked",
+                        trajectoryRejectReason,
+                        target: __instance.AIGreanageThrowData?.Target);
+                    __instance.method_6(null);
+                    return false;
+                }
+
                 Vector3? target = __instance.AIGreanageThrowData?.Target;
                 if (target.HasValue &&
                     FollowerShotSafety.IsFriendlyNearGrenadeImpact(

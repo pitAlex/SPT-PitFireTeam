@@ -16,6 +16,9 @@ namespace pitTeam.Utils
         private const float SuppressionDistancePadding = 2.0f;
         private const float AimLaneRadius = 0.5f;
         private const float AimLaneDistancePadding = 0.5f;
+        private const float GrenadeThrowOriginFallbackHeight = 1.2f;
+        private const float GrenadeNearOriginClearanceRadius = 0.25f;
+        private const float GrenadeNearOriginClearanceDistance = 3.0f;
         public const float RegularGrenadeUnsafeRadius = 8f;
 
         public static bool IsFriendlyInShotLane(BotOwner shooter, Vector3 targetPosition)
@@ -217,6 +220,102 @@ namespace pitTeam.Utils
             return false;
         }
 
+        public static Vector3 GetGrenadeThrowOrigin(BotOwner shooter, BotGrenadeController grenades)
+        {
+            try
+            {
+                if (grenades != null && IsFinite(grenades.StartThrow))
+                {
+                    return grenades.StartThrow;
+                }
+            }
+            catch
+            {
+                // Some vanilla controllers expose the throw origin through live player bones only.
+            }
+
+            try
+            {
+                Vector3 weaponRoot = shooter?.GetPlayer?.WeaponRoot.position ?? Vector3.zero;
+                if (IsFinite(weaponRoot) && weaponRoot != Vector3.zero)
+                {
+                    return weaponRoot;
+                }
+            }
+            catch
+            {
+                // Fall back to a stable body-height origin below.
+            }
+
+            return shooter != null && IsFinite(shooter.Position)
+                ? shooter.Position + Vector3.up * GrenadeThrowOriginFallbackHeight
+                : Vector3.zero;
+        }
+
+        public static bool IsRegularGrenadeTrajectoryUnsafeForThrower(
+            BotOwner shooter,
+            BotGrenadeController grenades,
+            AIGreanageThrowData throwData,
+            out string reason)
+        {
+            reason = string.Empty;
+            if (shooter == null || grenades == null || throwData == null)
+            {
+                reason = "trajectoryMissing";
+                return true;
+            }
+
+            Vector3 target = throwData.Target;
+            if (!IsFinite(target))
+            {
+                reason = "trajectoryTargetMissing";
+                return true;
+            }
+
+            if (IsPlayerNearGrenadeImpact(shooter.GetPlayer, target, RegularGrenadeUnsafeRadius))
+            {
+                reason = "throwerNearImpact";
+                return true;
+            }
+
+            Vector3 origin = GetGrenadeThrowOrigin(shooter, grenades);
+            if (!IsFinite(origin))
+            {
+                reason = "trajectoryOriginMissing";
+                return true;
+            }
+
+            if (!TryGetGrenadeAngle(throwData.Ang, out AIGreandeAng angle))
+            {
+                reason = $"trajectoryAngleUnknown:{throwData.Ang:0.#}";
+                return true;
+            }
+
+            AIGreanageThrowData currentOriginThrow = GClass577.CanThrowGrenade2(
+                origin,
+                target,
+                grenades,
+                angle,
+                shooter.Settings.FileSettings.Grenade.MIN_THROW_GRENADE_DIST_SQRT);
+            if (currentOriginThrow == null || !currentOriginThrow.CanThrow)
+            {
+                reason = $"trajectoryBlockedCurrentOrigin:{angle}";
+                return true;
+            }
+
+            if (IsGrenadeArcNearOriginBlocked(origin, currentOriginThrow, out reason))
+            {
+                return true;
+            }
+
+            if (IsPredictedGrenadeDangerPointNearThrower(shooter, origin, currentOriginThrow, grenades, out reason))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
         private static bool IsPlayerNearGrenadeImpact(Player player, Vector3 impactPosition, float unsafeRadius)
         {
             if (player == null || !IsFinite(player.Position))
@@ -226,6 +325,105 @@ namespace pitTeam.Utils
 
             float unsafeRadiusSqr = unsafeRadius * unsafeRadius;
             return (player.Position - impactPosition).sqrMagnitude <= unsafeRadiusSqr;
+        }
+
+        private static bool IsGrenadeArcNearOriginBlocked(
+            Vector3 origin,
+            AIGreanageThrowData throwData,
+            out string reason)
+        {
+            reason = string.Empty;
+            Vector3 direction = throwData.Direction;
+            if (!IsFinite(direction) || direction.sqrMagnitude <= 0.0001f)
+            {
+                reason = "trajectoryDirectionMissing";
+                return true;
+            }
+
+            float targetDistance = (throwData.Target - origin).magnitude;
+            float castDistance = Mathf.Min(GrenadeNearOriginClearanceDistance, targetDistance - 0.5f);
+            if (castDistance <= 0.25f)
+            {
+                return false;
+            }
+
+            if (Physics.SphereCast(
+                    origin,
+                    GrenadeNearOriginClearanceRadius,
+                    direction.normalized,
+                    out RaycastHit hit,
+                    castDistance,
+                    LayerMaskClass.HighPolyWithTerrainMask,
+                    QueryTriggerInteraction.Ignore))
+            {
+                string hitName = hit.collider?.gameObject?.name ?? "geometry";
+                reason = $"trajectoryNearOriginBlocked:{hitName}";
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsPredictedGrenadeDangerPointNearThrower(
+            BotOwner shooter,
+            Vector3 origin,
+            AIGreanageThrowData throwData,
+            BotGrenadeController grenades,
+            out string reason)
+        {
+            reason = string.Empty;
+            Vector3 direction = throwData.Direction;
+            if (!IsFinite(direction) || direction.sqrMagnitude <= 0.0001f)
+            {
+                return false;
+            }
+
+            float mass = grenades.Mass > 0.01f ? grenades.Mass : 0.5f;
+            Vector3 force = direction.normalized * (throwData.Force * mass);
+            Vector3 dangerPoint = GClass577.FindDangerPoint(origin, force, mass);
+            if (!IsFinite(dangerPoint))
+            {
+                return false;
+            }
+
+            if (IsPlayerNearGrenadeImpact(shooter.GetPlayer, dangerPoint, RegularGrenadeUnsafeRadius))
+            {
+                reason = "throwerNearPredictedImpact";
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryGetGrenadeAngle(float angleDegrees, out AIGreandeAng angle)
+        {
+            switch (Mathf.RoundToInt(angleDegrees))
+            {
+                case 5:
+                    angle = AIGreandeAng.ang5;
+                    return true;
+                case 15:
+                    angle = AIGreandeAng.ang15;
+                    return true;
+                case 25:
+                    angle = AIGreandeAng.ang25;
+                    return true;
+                case 35:
+                    angle = AIGreandeAng.ang35;
+                    return true;
+                case 45:
+                    angle = AIGreandeAng.ang45;
+                    return true;
+                case 55:
+                    angle = AIGreandeAng.ang55;
+                    return true;
+                case 65:
+                    angle = AIGreandeAng.ang65;
+                    return true;
+                default:
+                    angle = AIGreandeAng.ang45;
+                    return false;
+            }
         }
 
         private static bool IsFollowerMovementSegmentNearImpact(

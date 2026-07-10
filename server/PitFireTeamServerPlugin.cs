@@ -20,7 +20,7 @@ public record PitFireTeamServerMetadata : AbstractModMetadata
     public override string Name { get; init; } = "PitFireTeam";
     public override string Author { get; init; } = "PitAlex";
     public override List<string>? Contributors { get; init; }
-    public override Version Version { get; init; } = new("0.8.6");
+    public override Version Version { get; init; } = new("0.8.7");
     public override Range SptVersion { get; init; } = new("~4.0.0");
     public override List<string>? Incompatibilities { get; init; }
     public override Dictionary<string, Range>? ModDependencies { get; init; }
@@ -34,7 +34,8 @@ public record PitFireTeamServerMetadata : AbstractModMetadata
 public class PitFireTeamServerPlugin(
     ISptLogger<PitFireTeamServerPlugin> logger,
     DatabaseService databaseService,
-    FriendlyServerSettingsService settingsService
+    FriendlyServerSettingsService settingsService,
+    FriendlyTeammateService teammateService
 ) : IOnLoad
 {
     public Task OnLoad()
@@ -43,6 +44,7 @@ public class PitFireTeamServerPlugin(
         EnsureCourierTraderLocales();
         EnsureCourierAvatarIsServed();
         settingsService.ApplyPersistedSettings();
+        teammateService.RecoverDuplicateTeammateItemsForAllProfiles();
         logger.Info("PitFireTeam loaded");
         return Task.CompletedTask;
     }

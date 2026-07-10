@@ -395,6 +395,38 @@ Execution:
 - Stores item through `InteractableObjects.StoreItem(...)` for squadmates.
 - Clears command on success/failure/invalid state.
 
+### Body Loot Phrases
+
+Input:
+
+- `EPhraseTrigger.CheckHim`
+- `EPhraseTrigger.LootBody`
+
+Command state:
+
+- `SetTakeBodyGear(75f)`
+
+Targeting:
+
+- Requires `InteractableObjects.GetCurBodyLootTarget()`.
+- Chooses the closest active follower to the corpse.
+- Ignores followers with enemies.
+- Reserves corpse ownership through `InteractableObjects.SetBodyLootTaker(...)`.
+
+Execution:
+
+- `GestureCommandAction.HandleTakeBodyGear()`
+- Moves to the corpse.
+- Plans one live inventory transaction at a time.
+- Uses empty compatible equipment slots as cargo space when possible, but does not swap or throw away the follower's current kit.
+- Tries backpack, rig, and pocket carry containers for the remaining body gear.
+- Treats backpacks and rigs as whole cargo: if the follower can carry the container, its contents ride with it; if the container cannot be carried, the command does not pull items out of it.
+- Pockets are not a movable cargo container, so pocket contents are still considered individually.
+- In `Simple` and `Restricted`, skips roots that are protected follower equipment. Non-protected containers may carry protected descendants, and post-raid filtering strips those protected descendants before extraction or return delivery.
+- In `Immersive` and `Realistic`, protected-equipment skipping is not applied because fallen teammate gear is lootable in those modes.
+- Stores successful moved items through `InteractableObjects.StoreItem(...)` for squadmates.
+- Clears command on success/failure/invalid state.
+
 ### View Backpack Quick Interaction
 
 Input:

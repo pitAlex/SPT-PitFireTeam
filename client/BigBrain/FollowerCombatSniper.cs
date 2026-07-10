@@ -489,14 +489,15 @@ namespace pitTeam.BigBrain
         private static bool ShouldUseCloseIntentSecondary(
             AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
         {
-            if (decision.Reason == null)
-            {
-                return false;
-            }
+            return IsCloseIntentDecisionReason(decision.Reason);
+        }
 
-            return decision.Reason.StartsWith("sniper.startClose", StringComparison.Ordinal) ||
-                   decision.Reason.StartsWith("sniper.closeSearch", StringComparison.Ordinal) ||
-                   decision.Reason.StartsWith("sniper.closeAuto", StringComparison.Ordinal);
+        private static bool IsCloseIntentDecisionReason(string? reason)
+        {
+            return reason != null &&
+                   (reason.StartsWith("sniper.startClose", StringComparison.Ordinal) ||
+                    reason.StartsWith("sniper.closeSearch", StringComparison.Ordinal) ||
+                    reason.StartsWith("sniper.closeAuto", StringComparison.Ordinal));
         }
 
         private bool CanUseCloseIntentSecondary(EnemyInfo goalEnemy, bool distanceIgnore = false)
@@ -548,34 +549,42 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            if (goalEnemy.Distance <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance())
+            if (!CombatCommon.IsUsingAutomaticSecondaryOverNonAutomaticPrimary())
             {
                 return false;
             }
 
-            if (goalEnemy.IsVisible && goalEnemy.CanShoot)
+            if (CanUseCloseIntentSecondary(goalEnemy))
             {
                 return false;
             }
 
-            if (Time.time - goalEnemy.PersonalSeenTime <= CloseIntentRecentSeenSeconds)
-            {
-                return false;
-            }
-
-            if (new List<string>
-            {
-                "sniper.reposition",
-                "sniper.FireSupport",
-                "sniper.protectBossShootCover",
-                "sniper.coverHold",
-                FireSupportHoldReason
-            }.Contains(decision.Reason))
+            if (IsCloseIntentDecisionReason(decision.Reason))
             {
                 return true;
             }
 
-            return CombatCommon.IsCommittedCoverRetreatingFromEnemy(goalEnemy);
+            return IsMarksmanPrimaryRangeDecision(decision.Reason) ||
+                   CombatCommon.IsCommittedCoverRetreatingFromEnemy(goalEnemy);
+        }
+
+        private static bool IsMarksmanPrimaryRangeDecision(string? reason)
+        {
+            if (reason == null)
+            {
+                return false;
+            }
+
+            return reason.StartsWith("sniper.reposition", StringComparison.Ordinal) ||
+                   reason.StartsWith("sniper.FireSupport", StringComparison.Ordinal) ||
+                   reason.StartsWith("sniper.NeedSniper", StringComparison.Ordinal) ||
+                   reason.StartsWith("sniper.protectBossShootCover", StringComparison.Ordinal) ||
+                   reason.StartsWith("sniper.coverHold", StringComparison.Ordinal) ||
+                   reason.StartsWith("sniper.recoverCover", StringComparison.Ordinal) ||
+                   string.Equals(reason, FireSupportHoldReason, StringComparison.Ordinal) ||
+                   string.Equals(reason, SupportPositionHoldReason, StringComparison.Ordinal) ||
+                   string.Equals(reason, NoActionHoldReason, StringComparison.Ordinal) ||
+                   string.Equals(reason, PositionHoldReason, StringComparison.Ordinal);
         }
 
         /// <summary>

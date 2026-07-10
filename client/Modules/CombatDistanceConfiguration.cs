@@ -6,7 +6,7 @@ namespace pitTeam.Modules
 {
     /// <summary>
     /// Centralized combat distance configuration that adapts based on map context.
-    /// Factory maps require tighter distances for close-quarters gameplay.
+    /// Factory and Labs require tighter distances for close-quarters gameplay.
     /// Larger maps (Customs, Woods, etc.) use standard open-engagement distances.
     /// </summary>
     internal sealed class CombatDistanceConfiguration
@@ -48,7 +48,7 @@ namespace pitTeam.Modules
         private const float DefaultRegroupBossMoveRefreshDistance = 10f;
 
 
-        // Factory map settings (compressed for close-quarters gameplay)
+        // Factory/Labs map settings (compressed for close-quarters gameplay)
         private const float FactoryBossCoverSearchRadius = 15f;
         private const float FactoryStartCloseCoverDistance = 12f;
         private const float FactoryVisiblePushDistance = 10f;
@@ -79,11 +79,16 @@ namespace pitTeam.Modules
 
         public void UpdateForCurrentMap(string? mapName)
         {
-            bool isFactory = !string.IsNullOrEmpty(mapName) &&
-                             (mapName!.IndexOf("factory", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                              string.Equals(mapName, "Factory4_day", StringComparison.OrdinalIgnoreCase) ||
-                              string.Equals(mapName, "Factory4_night", StringComparison.OrdinalIgnoreCase));
-            SetFactoryMode(isFactory);
+            SetFactoryMode(UsesFactoryDistanceProfile(mapName));
+        }
+
+        public static bool UsesFactoryDistanceProfile(string? mapName)
+        {
+            return !string.IsNullOrEmpty(mapName) &&
+                   (mapName!.IndexOf("factory", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    string.Equals(mapName, "Factory4_day", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(mapName, "Factory4_night", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(mapName, "laboratory", StringComparison.OrdinalIgnoreCase));
         }
 
         // Boss and cover search radii

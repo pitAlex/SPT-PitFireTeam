@@ -42,6 +42,8 @@ namespace pitTeam.BigBrain.Actions
 
         public override void Update(CustomLayer.ActionData data)
         {
+            TryPreferMarksmanPrimaryAtRange(BotOwner.Memory?.GoalEnemy);
+
             bool canRun = CanActuallyRun();
             if (movementMode == MovementMode.Walk)
             {

@@ -266,7 +266,7 @@ Items placed into the inspected backpack during the session are registered as tr
 
 ## Protected Extraction Filtering
 
-`Simple` and `Restricted` allow teammate gear to be physically looted in raid so the player can inspect, reorganize, or recover from inventory edge cases without special slot locks. To prevent gear farming, extraction cleanup strips protected teammate item ids from the extracted player profile.
+`Simple` and `Restricted` allow teammate gear to be physically looted in raid so the player can inspect, reorganize, or recover from inventory edge cases without special slot locks. Commanded body recovery (`Check Him` / `Loot Body`) is stricter about protected roots: followers skip protected teammate gear roots, but non-protected backpacks and rigs are recovered as whole containers instead of being emptied item by item. To prevent gear farming, extraction and return-delivery cleanup strip protected teammate item ids from the extracted player profile or returned container tree.
 
 Protected ids come from two sources:
 
@@ -277,7 +277,7 @@ Player-owned or return-tracked loot that temporarily moves through a teammate ba
 
 The cleanup removes the protected item tree, including nested weapon mods, armor plates, rigs, backpacks, and contained items. If a non-protected player-owned child tree is attached under a protected teammate-owned parent, the server tries to move that child tree into the player's equipped backpack. If it cannot fit, it is lost with the protected parent.
 
-Loose ammo is an explicit exception. Ammo can be split or merged into other stacks and magazines, which destroys the original item id lineage. The filter does not strip by ammo template/count because doing so could remove legitimate ammo found elsewhere in the same raid.
+Loose ammo is an explicit exception. Ammo can be split or merged into other stacks and magazines, which destroys the original item id lineage. The filter does not strip by ammo template/count because doing so could remove legitimate ammo found elsewhere in the same raid. When a protected loose ammo stack is extracted, the player profile keeps the same ammo template/count/state but receives a fresh item id so the teammate profile still owns the original protected id. Protected medical supplies are not part of this extraction exception.
 
 ## Death Handling
 

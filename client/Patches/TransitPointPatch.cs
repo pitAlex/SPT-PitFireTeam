@@ -1,6 +1,7 @@
 using Comfort.Common;
 using EFT;
 using EFT.Interactive;
+using EFT.InventoryLogic;
 using pitTeam.Components;
 using pitTeam.Modules;
 using HarmonyLib;
@@ -127,6 +128,23 @@ namespace pitTeam.Patches
 
             return string.Equals(parameters.target, LabyrinthLocationId, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(parameters.location, LabyrinthLocationName, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    internal class TransitWeaponHeatVisualPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+        {
+            return AccessTools.Method(
+                typeof(WeaponPrefab),
+                nameof(WeaponPrefab.InitHotObjects),
+                new Type[] { typeof(Weapon) });
+        }
+
+        [PatchPostfix]
+        private static void PatchPostfix(WeaponPrefab __instance, Weapon weapon)
+        {
+            FollowerTransitStateCache.ResetTransitWeaponHeatVisuals(__instance, weapon);
         }
     }
 }
