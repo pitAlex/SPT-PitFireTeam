@@ -2577,7 +2577,7 @@ public class FriendlyTeammateService(
         return pruned;
     }
 
-    private static void ValidateRealCommitItemSet(
+    private void ValidateRealCommitItemSet(
         List<Item> items,
         HashSet<string> allowedItemIds,
         string setName,
@@ -2613,7 +2613,7 @@ public class FriendlyTeammateService(
         }
     }
 
-    private static bool IsGeneratedSlotDescendantOfAllowedItem(
+    private bool IsGeneratedSlotDescendantOfAllowedItem(
         Item item,
         Dictionary<string, Item> submittedById,
         HashSet<string> allowedItemIds)
@@ -2623,7 +2623,7 @@ public class FriendlyTeammateService(
         // Those children do not exist in the saved JSON yet, but they are still part of an already-owned
         // parent item. Grid/location items remain blocked unless their own id came from the player stash or
         // teammate inventory; cartridge/chamber slots are the only generated children allowed with location.
-        bool isGeneratedAmmoSlot = IsLoadedAmmoSlotId(item?.SlotId);
+        bool isGeneratedAmmoSlot = IsLoadedAmmoSlotId(item?.SlotId) && IsAmmoItem(item);
 
         if (item == null
             || (item.Location != null && !isGeneratedAmmoSlot)
@@ -2656,9 +2656,19 @@ public class FriendlyTeammateService(
 
     private static bool IsLoadedAmmoSlotId(string? slotId)
     {
-        return !string.IsNullOrWhiteSpace(slotId)
-            && (LoadedAmmoSlotIds.Contains(slotId)
-                || slotId.StartsWith("patron_in_weapon", StringComparison.OrdinalIgnoreCase));
+        if (string.IsNullOrWhiteSpace(slotId))
+        {
+            return false;
+        }
+
+        return LoadedAmmoSlotIds.Contains(slotId)
+            || slotId.StartsWith("patron_in_weapon", StringComparison.OrdinalIgnoreCase)
+            || (int.TryParse(slotId, out int numericSlotId) && numericSlotId >= 0);
+    }
+
+    private bool IsAmmoItem(Item? item)
+    {
+        return item?.Template.IsEmpty == false && itemHelper.IsOfBaseclass(item.Template, BaseClasses.AMMO);
     }
 
     private static void ValidateNoRealCommitOverlap(
