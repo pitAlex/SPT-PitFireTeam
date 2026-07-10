@@ -61,6 +61,26 @@ namespace pitTeam.BigBrain.Actions
             }
         }
 
+        private IEnumerable<BodyGearCandidate> GetFollowerBackpackOperationalMagazineCandidates(
+            InventoryEquipment followerEquipment,
+            Weapon weapon)
+        {
+            Item backpack = followerEquipment?.GetSlot(EquipmentSlot.Backpack)?.ContainedItem;
+            foreach (MagazineItemClass magazine in GetOperationalMagazineItems(
+                         backpack,
+                         weapon,
+                         "FollowerBackpack.WeaponSupportMagazine"))
+            {
+                yield return new BodyGearCandidate(
+                    magazine,
+                    null,
+                    "FollowerBackpack.WeaponSupportMagazine",
+                    0,
+                    bypassPriceThreshold: true,
+                    bypassCategoryFilter: true);
+            }
+        }
+
         private IEnumerable<MagazineItemClass> GetOperationalMagazineItems(Item root, Weapon weapon, string sourceName)
         {
             OperationalMagazineScanStats stats = new OperationalMagazineScanStats(sourceName, root, weapon);
@@ -114,6 +134,12 @@ namespace pitTeam.BigBrain.Actions
                     continue;
                 }
 
+                if (IsMagazineInstalledInWeapon(magazine))
+                {
+                    stats.AddRejectedMagazine(magazineDescription, "installedInWeapon");
+                    continue;
+                }
+
                 if (magazine.Count <= 0)
                 {
                     stats.AddRejectedMagazine(magazineDescription, "empty");
@@ -140,6 +166,19 @@ namespace pitTeam.BigBrain.Actions
             LogOperationalMagazineScan(stats);
         }
 
+        private static bool IsMagazineInstalledInWeapon(Item magazine)
+        {
+            try
+            {
+                return magazine?.GetAllParentItems(false).Any(parent => parent is Weapon) == true;
+            }
+            catch
+            {
+                // A magazine whose ownership tree cannot be proven safe is not detached.
+                return true;
+            }
+        }
+
         private OperationalMagazinePlan PlanOperationalMagazineFollowUps(
             InventoryController inventory,
             InventoryEquipment followerEquipment,
@@ -156,6 +195,8 @@ namespace pitTeam.BigBrain.Actions
             plan.ScannedCount = candidateList.Count;
             SearchableItemItemClass simulatedVest = CloneSearchableContainer(
                 followerEquipment.GetSlot(EquipmentSlot.TacticalVest)?.ContainedItem);
+            SearchableItemItemClass simulatedPockets = CloneSearchableContainer(
+                followerEquipment.GetSlot(EquipmentSlot.Pockets)?.ContainedItem);
             SearchableItemItemClass simulatedBackpack = CloneSearchableContainer(
                 followerEquipment.GetSlot(EquipmentSlot.Backpack)?.ContainedItem);
             Item? reloadReserveMagazine = GetWeaponReloadReserveMagazine(weapon);
@@ -164,6 +205,7 @@ namespace pitTeam.BigBrain.Actions
                 $"[LootCommand][MagDebug] Plan start for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
                 $"weapon={DescribeOperationalWeapon(weapon)} candidates={candidateList.Count} " +
                 $"vest={DescribeLootDebugItem(followerEquipment.GetSlot(EquipmentSlot.TacticalVest)?.ContainedItem)} " +
+                $"pockets={DescribeLootDebugItem(followerEquipment.GetSlot(EquipmentSlot.Pockets)?.ContainedItem)} " +
                 $"backpack={DescribeLootDebugItem(followerEquipment.GetSlot(EquipmentSlot.Backpack)?.ContainedItem)} " +
                 $"reloadReserve={DescribeLootDebugItem(reloadReserveMagazine)}");
 
@@ -184,35 +226,59 @@ namespace pitTeam.BigBrain.Actions
                 }
 
                 plan.ValidLoadedCount++;
+                plan.CompatibleLoadedCandidates.Add(candidate);
                 LogOperationalMagazinePlanStep(candidate, $"consider mag={DescribeLootDebugItem(magazine)}");
-                // Operational support mags live in the rig because vanilla reload logic looks there.
-                // Keep one extra mag-shaped hole open so the weapon's current mag has somewhere to
-                // land during a reload; overflow mags become backpack cargo if there is room.
-                if (simulatedVest != null &&
-                    TrySimulateContainerAddWithReserve(simulatedVest, magazine, reloadReserveMagazine, out SearchableItemItemClass? nextVest))
+                // Vanilla reload searches both tactical vest and pockets. Plan against both while
+                // preserving one shared fast-access landing space for the inserted magazine.
+                if (TrySimulateFastAccessAddWithReserve(
+                        simulatedVest,
+                        simulatedPockets,
+                        magazine,
+                        reloadReserveMagazine,
+                        out SearchableItemItemClass? nextVest,
+                        out SearchableItemItemClass? nextPockets,
+                        out BodyGearFollowUpDestination fastAccessDestination))
                 {
-                    BodyGearCandidate vestCandidate = candidate.WithFollowUpDestination(BodyGearFollowUpDestination.OperationalVest);
-                    if (TryBuildOperationalMagazineVestMove(
+                    BodyGearCandidate fastAccessCandidate = candidate.WithFollowUpDestination(fastAccessDestination);
+                    if (TryBuildOperationalMagazineFastAccessMove(
                             inventory,
                             followerEquipment,
-                            vestCandidate,
+                            fastAccessCandidate,
                             out _,
-                            out string vestMoveFailure))
+                            out string fastAccessMoveFailure))
                     {
                         simulatedVest = nextVest;
-                        plan.OperationalVestCount++;
-                        plan.FollowUps.Add(vestCandidate);
-                        LogOperationalMagazinePlanStep(vestCandidate, "queued destination=OperationalVest");
+                        simulatedPockets = nextPockets;
+                        if (fastAccessDestination == BodyGearFollowUpDestination.OperationalVest)
+                        {
+                            plan.OperationalVestCount++;
+                        }
+                        else
+                        {
+                            plan.OperationalPocketsCount++;
+                        }
+
+                        plan.FollowUps.Add(fastAccessCandidate);
+                        LogOperationalMagazinePlanStep(fastAccessCandidate, $"queued destination={fastAccessDestination}");
                         continue;
                     }
 
-                    plan.AddRejection($"vestMove:{vestMoveFailure}");
-                    LogOperationalMagazinePlanStep(vestCandidate, $"reject vestMove={vestMoveFailure}");
+                    plan.AddRejection($"fastAccessMove:{fastAccessMoveFailure}");
+                    LogOperationalMagazinePlanStep(fastAccessCandidate, $"reject fastAccessMove={fastAccessMoveFailure}");
                 }
                 else
                 {
-                    plan.AddRejection("vestFit");
-                    LogOperationalMagazinePlanStep(candidate, "reject vestFit");
+                    plan.AddRejection("fastAccessFit");
+                    LogOperationalMagazinePlanStep(candidate, "reject fastAccessFit");
+                }
+
+                if (IsLootNowInBotInventory(BotOwner?.GetPlayer, magazine))
+                {
+                    // A loose follower-backpack magazine may move to fast access, but when it
+                    // does not fit it is already valid cargo and needs no backpack follow-up.
+                    plan.AddRejection("alreadyBackpackCargo");
+                    LogOperationalMagazinePlanStep(candidate, "retain destination=BackpackCargo");
+                    continue;
                 }
 
                 if (simulatedBackpack != null &&
@@ -245,6 +311,31 @@ namespace pitTeam.BigBrain.Actions
             return plan;
         }
 
+        private bool TryBuildOperationalMagazineFastAccessMove(
+            InventoryController inventory,
+            InventoryEquipment followerEquipment,
+            BodyGearCandidate candidate,
+            out BodyGearMove? move,
+            out string reason)
+        {
+            if (candidate?.FollowUpDestination == BodyGearFollowUpDestination.OperationalPockets)
+            {
+                return TryBuildOperationalMagazinePocketsMove(
+                    inventory,
+                    followerEquipment,
+                    candidate,
+                    out move,
+                    out reason);
+            }
+
+            return TryBuildOperationalMagazineVestMove(
+                inventory,
+                followerEquipment,
+                candidate,
+                out move,
+                out reason);
+        }
+
         private bool TryBuildOperationalMagazineVestMove(
             InventoryController inventory,
             InventoryEquipment followerEquipment,
@@ -273,6 +364,41 @@ namespace pitTeam.BigBrain.Actions
                     storeAsLoot: ShouldReturnGearSwapAsCargo()))
             {
                 reason = "vestMoveRejected";
+                return false;
+            }
+
+            reason = "ok";
+            return true;
+        }
+
+        private bool TryBuildOperationalMagazinePocketsMove(
+            InventoryController inventory,
+            InventoryEquipment followerEquipment,
+            BodyGearCandidate candidate,
+            out BodyGearMove? move,
+            out string reason)
+        {
+            move = null;
+            if (!TryGetOperationalMagazineCandidate(candidate, out MagazineItemClass? magazine))
+            {
+                reason = "invalidMagazine";
+                return false;
+            }
+
+            if (!TryFindOperationalMagazinePocketsAddress(followerEquipment, magazine, out ItemAddress? address))
+            {
+                reason = "noPocketsAddress";
+                return false;
+            }
+
+            if (!TryCreateBodyGearMove(
+                    inventory,
+                    candidate,
+                    address,
+                    out move,
+                    storeAsLoot: ShouldReturnGearSwapAsCargo()))
+            {
+                reason = "pocketsMoveRejected";
                 return false;
             }
 
@@ -366,28 +492,52 @@ namespace pitTeam.BigBrain.Actions
             }
         }
 
-        private static bool TrySimulateContainerAddWithReserve(
-            SearchableItemItemClass container,
+        private static bool TrySimulateFastAccessAddWithReserve(
+            SearchableItemItemClass vest,
+            SearchableItemItemClass pockets,
             Item item,
             Item? reserveItem,
-            out SearchableItemItemClass? nextContainer)
+            out SearchableItemItemClass? nextVest,
+            out SearchableItemItemClass? nextPockets,
+            out BodyGearFollowUpDestination destination)
         {
-            nextContainer = null;
-            if (!TrySimulateContainerAdd(container, item, out SearchableItemItemClass? trialContainer))
+            nextVest = vest;
+            nextPockets = pockets;
+            destination = BodyGearFollowUpDestination.Default;
+
+            if (vest != null &&
+                TrySimulateContainerAdd(vest, item, out SearchableItemItemClass? trialVest) &&
+                CanFitFastAccessReserve(trialVest, pockets, reserveItem))
             {
-                return false;
+                nextVest = trialVest;
+                destination = BodyGearFollowUpDestination.OperationalVest;
+                return true;
             }
 
-            if (reserveItem != null)
+            if (pockets != null &&
+                TrySimulateContainerAdd(pockets, item, out SearchableItemItemClass? trialPockets) &&
+                CanFitFastAccessReserve(vest, trialPockets, reserveItem))
             {
-                if (!TrySimulateContainerAdd(trialContainer, reserveItem, out _))
-                {
-                    return false;
-                }
+                nextPockets = trialPockets;
+                destination = BodyGearFollowUpDestination.OperationalPockets;
+                return true;
             }
 
-            nextContainer = trialContainer;
-            return true;
+            return false;
+        }
+
+        private static bool CanFitFastAccessReserve(
+            SearchableItemItemClass vest,
+            SearchableItemItemClass pockets,
+            Item? reserveItem)
+        {
+            if (reserveItem == null)
+            {
+                return true;
+            }
+
+            return (vest != null && TrySimulateContainerAdd(vest, reserveItem, out _)) ||
+                   (pockets != null && TrySimulateContainerAdd(pockets, reserveItem, out _));
         }
 
         private static bool TrySimulateContainerAdd(
@@ -449,7 +599,8 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (IsLootNowInBotInventory(BotOwner?.GetPlayer, candidateMagazine))
+            if (IsLootNowInBotInventory(BotOwner?.GetPlayer, candidateMagazine) &&
+                !IsFollowerBackpackOperationalCandidate(candidate))
             {
                 reason = "alreadyInBotInventory";
                 return false;
@@ -465,22 +616,12 @@ namespace pitTeam.BigBrain.Actions
             return true;
         }
 
-        private static bool HasFullHighCapacityMagazineForPrimary(Weapon weapon)
+        private static bool IsFollowerBackpackOperationalCandidate(BodyGearCandidate candidate)
         {
-            if (weapon == null)
-            {
-                return false;
-            }
-
-            try
-            {
-                MagazineItemClass magazine = weapon.GetCurrentMagazine();
-                return magazine != null && magazine.MaxCount >= 60 && magazine.Count >= magazine.MaxCount;
-            }
-            catch
-            {
-                return false;
-            }
+            return string.Equals(
+                candidate?.SourceName,
+                "FollowerBackpack.WeaponSupportMagazine",
+                StringComparison.Ordinal);
         }
 
         private static bool IsMagazineCompatibleWithWeapon(Weapon weapon, MagazineItemClass magazine)
@@ -513,9 +654,34 @@ namespace pitTeam.BigBrain.Actions
             Item magazine,
             out ItemAddress? address)
         {
+            return TryFindOperationalMagazineAddress(
+                followerEquipment,
+                EquipmentSlot.TacticalVest,
+                magazine,
+                out address);
+        }
+
+        private static bool TryFindOperationalMagazinePocketsAddress(
+            InventoryEquipment followerEquipment,
+            Item magazine,
+            out ItemAddress? address)
+        {
+            return TryFindOperationalMagazineAddress(
+                followerEquipment,
+                EquipmentSlot.Pockets,
+                magazine,
+                out address);
+        }
+
+        private static bool TryFindOperationalMagazineAddress(
+            InventoryEquipment followerEquipment,
+            EquipmentSlot equipmentSlot,
+            Item magazine,
+            out ItemAddress? address)
+        {
             address = null;
-            Item tacticalVest = followerEquipment?.GetSlot(EquipmentSlot.TacticalVest)?.ContainedItem;
-            if (tacticalVest is not SearchableItemItemClass searchable)
+            Item fastAccessRoot = followerEquipment?.GetSlot(equipmentSlot)?.ContainedItem;
+            if (fastAccessRoot is not SearchableItemItemClass searchable)
             {
                 return false;
             }
@@ -709,7 +875,10 @@ namespace pitTeam.BigBrain.Actions
         private sealed class OperationalMagazinePlan
         {
             public List<BodyGearCandidate> FollowUps { get; } = new List<BodyGearCandidate>();
+            public List<BodyGearCandidate> CompatibleLoadedCandidates { get; } = new List<BodyGearCandidate>();
             public int OperationalVestCount { get; set; }
+            public int OperationalPocketsCount { get; set; }
+            public int OperationalFastAccessCount => OperationalVestCount + OperationalPocketsCount;
             public int ScannedCount { get; set; }
             public int ValidLoadedCount { get; set; }
             public List<string> RejectionReasons { get; } = new List<string>();

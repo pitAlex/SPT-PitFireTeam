@@ -252,7 +252,8 @@ namespace pitTeam.BigBrain.Actions
                 // 2. finish weapon-equip/vest-swap follow-ups
                 // 3. optionally equip or narrowly swap tactical vest protection
                 // 4. optionally equip an empty primary slot
-                // 5. otherwise move eligible filtered cargo into backpack/pockets
+                // 5. promote a tracked backpack cargo weapon when newly found magazines complete it
+                // 6. otherwise move eligible filtered cargo into backpack/pockets
                 if (TryStartPendingContainerLootMove(inventory))
                 {
                     return;
@@ -268,7 +269,19 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
+                // Prefer completing the follower's tracked support weapon over introducing a
+                // second candidate before weapon-package comparison has been implemented.
+                if (TryStartContainerSecondaryWeaponPromotionMove(inventory, containerRoot, followerEquipment))
+                {
+                    return;
+                }
+
                 if (TryStartEasyContainerWeaponEquipMove(inventory, containerRoot, followerEquipment))
+                {
+                    return;
+                }
+
+                if (TryStartContainerBackpackCargoWeaponPromotionMove(inventory, containerRoot, followerEquipment))
                 {
                     return;
                 }
@@ -356,7 +369,12 @@ namespace pitTeam.BigBrain.Actions
 
             foreach (BodyGearCandidate candidate in move.FollowUpCandidates)
             {
-                bool allowAlreadyAttempted = candidate?.FollowUpDestination == BodyGearFollowUpDestination.PrimaryWeaponEquip;
+                bool allowAlreadyAttempted =
+                    candidate?.FollowUpDestination == BodyGearFollowUpDestination.PrimaryWeaponEquip ||
+                    candidate?.FollowUpDestination == BodyGearFollowUpDestination.EvaluateWeaponDestination ||
+                    candidate?.FollowUpDestination == BodyGearFollowUpDestination.EvaluateSecondaryWeaponPromotion ||
+                    candidate?.FollowUpDestination == BodyGearFollowUpDestination.EvaluateCargoWeaponPromotion ||
+                    candidate?.FollowUpDestination == BodyGearFollowUpDestination.BackpackCargo;
                 if (candidate?.Item != null &&
                     !string.IsNullOrEmpty(candidate.Item.Id) &&
                     (allowAlreadyAttempted || !containerLootAttemptedItemIds.Contains(candidate.Item.Id)))
@@ -416,6 +434,11 @@ namespace pitTeam.BigBrain.Actions
 
                 Modules.Logger.LogInfo(
                     $"[LootCommand] Container loot move failed for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': {move.SourceName}:{move.Item?.TemplateId ?? "unknown"}");
+                if (move.ContinueFollowUpsOnFailure)
+                {
+                    EnqueueContainerGearSwapFollowUps(move);
+                }
+
                 containerLootHadEligibleButNoSpace = true;
             }
             catch (Exception ex)
@@ -558,7 +581,7 @@ namespace pitTeam.BigBrain.Actions
         private sealed class BodyGearMove
         {
             // One executable inventory transaction plus optional follow-ups. Follow-ups let easy
-            // weapon equip move support mags first, then make the weapon primary after inventory settles.
+            // weapon equip move support mags first, then classify the weapon from settled live inventory.
             public BodyGearMove(
                 Item item,
                 GInterface424 operation,
@@ -567,7 +590,8 @@ namespace pitTeam.BigBrain.Actions
                 IReadOnlyList<BodyGearCandidate>? followUpCandidates = null,
                 bool storeAsLoot = true,
                 EPhraseTrigger successPhrase = EPhraseTrigger.LootGeneric,
-                bool rebindAsPrimaryWeapon = false)
+                bool rebindAsPrimaryWeapon = false,
+                bool continueFollowUpsOnFailure = false)
             {
                 Item = item;
                 Operation = operation;
@@ -577,6 +601,7 @@ namespace pitTeam.BigBrain.Actions
                 StoreAsLoot = storeAsLoot;
                 SuccessPhrase = successPhrase;
                 RebindAsPrimaryWeapon = rebindAsPrimaryWeapon;
+                ContinueFollowUpsOnFailure = continueFollowUpsOnFailure;
             }
 
             public Item Item { get; }
@@ -587,10 +612,12 @@ namespace pitTeam.BigBrain.Actions
             public bool StoreAsLoot { get; }
             public EPhraseTrigger SuccessPhrase { get; }
             public bool RebindAsPrimaryWeapon { get; }
+            public bool ContinueFollowUpsOnFailure { get; }
 
             public BodyGearMove WithFollowUps(
                 IReadOnlyList<BodyGearCandidate> followUpCandidates,
-                EPhraseTrigger? successPhrase = null)
+                EPhraseTrigger? successPhrase = null,
+                bool continueOnFailure = false)
             {
                 return new BodyGearMove(
                     Item,
@@ -600,7 +627,8 @@ namespace pitTeam.BigBrain.Actions
                     followUpCandidates,
                     StoreAsLoot,
                     successPhrase ?? SuccessPhrase,
-                    RebindAsPrimaryWeapon);
+                    RebindAsPrimaryWeapon,
+                    continueOnFailure);
             }
         }
 
@@ -664,8 +692,12 @@ namespace pitTeam.BigBrain.Actions
         {
             Default,
             OperationalVest,
+            OperationalPockets,
             BackpackCargo,
-            PrimaryWeaponEquip
+            PrimaryWeaponEquip,
+            EvaluateWeaponDestination,
+            EvaluateSecondaryWeaponPromotion,
+            EvaluateCargoWeaponPromotion
         }
 
         private static readonly EquipmentSlot[] BodyGearTopLevelSlotOrder =

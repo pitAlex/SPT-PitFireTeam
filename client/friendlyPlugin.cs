@@ -293,6 +293,9 @@ namespace pitTeam
                 awaken = true;
                 Instance = this;
                 new Modules.Logger();
+#if DEBUG
+                FollowerWeaponPrimaryReadiness.RunDeterministicSelfTests();
+#endif
                 RefreshPluginFlags();
             }
 

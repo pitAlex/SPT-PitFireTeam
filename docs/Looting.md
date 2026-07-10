@@ -344,23 +344,34 @@ This is the preferred first weapon path because it does not displace an existing
 
 Rules:
 
-- if `FirstPrimaryWeapon` is empty and at least one compatible spare magazine can be placed in the follower's tactical vest, a valid long gun may be equipped into first primary
-- compatible spare magazines must come from the same loot source and must physically fit in the tactical vest grid as operational magazines, not cargo
+- if `FirstPrimaryWeapon` is empty, a detachable-magazine long gun is evaluated from its inserted magazine and all compatible non-empty magazines in vanilla fast access
+- vanilla fast access is the follower's tactical vest plus pockets; backpack magazines remain cargo and never contribute
+- readiness requires two ordinary magazine equivalents, where the ordinary reference is the largest compatible capacity capped at 30 rounds
+- an inserted magazine below half full contributes its actual rounds; at least half full contributes at least one ordinary reference; compatible fast-access spares contribute their actual rounds
+- compatible spare magazines from the loot source must physically fit in the vest or pockets as operational magazines, not cargo
 - compatible spare magazines must be loaded to count as operational support
-- when at least one compatible loaded spare magazine fits, the accepted weapon equip queues every compatible loaded spare magazine from that source into the follower's tactical vest, moving them one at a time while space remains valid
-- support magazines bypass normal loot filters once the weapon itself has been accepted; they still must be loaded, compatible with the accepted weapon, safe to take, not already in the follower inventory, and physically placeable in the tactical vest
+- the accepted weapon equip queues compatible loaded source magazines one at a time while fast-access space remains valid, then decides the weapon destination from settled live inventory
+- support magazines bypass normal loot filters once the weapon itself has been accepted; they still must be loaded, compatible with the accepted weapon, safe to take, not already in the follower inventory, and physically placeable in fast access
 - magazine fit must use the actual magazine shape, not just total cell count; two-cell, three-cell vertical, and two-by-two magazines have different practical vest requirements
-- oversized compatible spare magazines that cannot fit in the tactical vest do not count as operational spares
-- when no compatible spare magazine fits in fast-access space, a weapon may still become primary only when its installed magazine is full and has a capacity of at least 60 rounds
-- all other no-fast-access weapons use empty `SecondPrimaryWeapon` as support/cargo, regardless of normal price and category filters
-- if second primary is occupied, move only the weapon tree into the backpack as cargo
-- if second primary is occupied and the weapon does not fit in the backpack, leave it at the source
-- loose spare magazines remain at the source in the no-fast-access branch because vanilla detachable-mag reloads do not search the backpack
+- oversized compatible spare magazines that cannot fit in vest or pockets do not count as operational spares
+- a weapon that reaches the readiness threshold goes into `FirstPrimaryWeapon`; a weapon still below threshold uses empty `SecondPrimaryWeapon` as an inert support holding slot
+- pitFireTeam does not force vanilla to treat a secondary-only long gun as the bot's main weapon
+- a compatible loose magazine already in the follower backpack may be moved into vest/pockets for a newly found weapon, but only when the complete combined plan makes that weapon primary-ready
+- if the weapon plus backpack spare remain under threshold, the spare stays in the backpack and the weapon goes to secondary
+- when a low-loaded found weapon, a found source spare, and a backpack spare collectively pass readiness, the source spare moves first, the backpack spare follows, and the weapon then equips as primary
+- when a later compatible magazine raises the actual fast-access total to the threshold, an idle out-of-combat follower promotes the tracked support weapon into the still-empty primary slot and registers it normally
+- when that later spare is found during another body/container search, it starts the transfer chain; compatible backpack cargo then moves into fast access before the tracked secondary promotes
+- evaluate a tracked secondary against newly found compatible magazines before evaluating another weapon package from the same body/container
+- if that secondary becomes ready, promote it to primary; other source weapons then use ordinary filtered cargo handling
+- if second primary is occupied when a new candidate remains unready, the gear planner leaves it untouched for ordinary `Pickup Gear`, price, and backpack-fit rules
+- if ordinary cargo rules reject that candidate, leave it at the source
+- compatible bundle magazines that do not fit in the backpack remain at the source
 - if `FirstPrimaryWeapon` is occupied and `SecondPrimaryWeapon` is empty, a valid long gun may still be equipped into second primary as cargo/support
 - if `Holster` is empty, a valid pistol may be equipped there
 - if the matching slot is occupied, do not replace it in the empty-slot phase
 - still register the moved weapon tree as looted so patrol reload maintenance does not feed spawned magazines into cargo/support weapons
 - after equip, refresh selector slot caches, rebuild `WeaponManager.Info[FirstPrimaryWeapon]` for the new weapon, and request a main-hand switch when hands can safely change
+- if a tracked looted weapon was already held inert in second primary, register `WeaponManager.Info[SecondPrimaryWeapon]` once the new first primary exists so vanilla can use it as the real support weapon
 - if hands are temporarily busy or selector state is mid-transition, retry the main-hand switch briefly through the bot delayed-task manager and log the final blocker if the new primary never becomes active
 
 Easy weapon equip ignores min/max price and bypasses the `Pickup Gear` category filter because it is an explicit equipment plan rather than ordinary gear cargo. Supporting spare magazines bypass the normal loot filters after the weapon itself is accepted so the follower can build a usable reload pool.
@@ -514,10 +525,13 @@ Filtered body/container rules:
 
 Gear swapping phase 1 tests:
 
-- missing-primary weapon equip requires either at least one compatible spare magazine that physically fits in fast-access space or a full installed magazine with at least 60-round capacity
+- missing-primary weapon equip uses the centralized two-ordinary-magazine readiness formula after all planned fast-access transfers settle
 - tube-fed/internal-magazine shotgun support remains a separate loose-ammunition scenario to implement
-- large compatible spare magazines that do not fit the vest grid do not count as operational spares
-- no-fast-access weapon pickup uses the 60-round exception, then empty secondary, backpack cargo, or leave-at-source order
+- large compatible spare magazines that do not fit the vest/pocket grids while preserving reload landing space do not count as operational spares
+- an under-threshold weapon uses empty secondary; with secondary occupied, only ordinary filtered cargo rules may move it into the backpack
+- a tracked under-threshold secondary weapon promotes into empty primary after later compatible fast-access ammunition makes it ready
+- newly found weapons recruit compatible backpack cargo only when the executable combined fast-access plan reaches readiness
+- a later source spare can recruit the backpack spare for a tracked secondary, then promote that weapon from settled live state
 - narrow vest upgrade can fill an empty tactical vest slot or replace a worn vest only after preserving the old vest tree in the backpack
 - `Simple`/`Restricted` narrow vest behavior stops at empty-slot add; occupied vest replacement is refused
 - looted weapon does not trigger patrol reload maintenance with spawned magazines

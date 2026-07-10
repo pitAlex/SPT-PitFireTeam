@@ -309,7 +309,8 @@ namespace pitTeam.BigBrain.Actions
             // 2. finish any follow-up magazine move produced by easy weapon equip
             // 3. optionally equip or narrowly swap tactical vest protection
             // 4. optionally equip an empty primary slot
-            // 5. otherwise loot eligible contents into backpack/pockets only
+            // 5. promote a tracked backpack cargo weapon when newly found magazines complete it
+            // 6. otherwise loot eligible contents into backpack/pockets only
             if (TryStartNonTeammatePmcDogtagMove(inventory, corpseEquipment, followerEquipment))
             {
                 return;
@@ -325,7 +326,19 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
+            // Make an already-carried support weapon usable before considering another weapon.
+            // This avoids choosing between weapon packages before comparison policy exists.
+            if (TryStartBodySecondaryWeaponPromotionMove(inventory, corpseEquipment, followerEquipment))
+            {
+                return;
+            }
+
             if (TryStartEasyBodyWeaponEquipMove(inventory, corpseEquipment, followerEquipment))
+            {
+                return;
+            }
+
+            if (TryStartBodyBackpackCargoWeaponPromotionMove(inventory, corpseEquipment, followerEquipment))
             {
                 return;
             }
@@ -633,7 +646,12 @@ namespace pitTeam.BigBrain.Actions
 
             foreach (BodyGearCandidate candidate in move.FollowUpCandidates)
             {
-                bool allowAlreadyAttempted = candidate?.FollowUpDestination == BodyGearFollowUpDestination.PrimaryWeaponEquip;
+                bool allowAlreadyAttempted =
+                    candidate?.FollowUpDestination == BodyGearFollowUpDestination.PrimaryWeaponEquip ||
+                    candidate?.FollowUpDestination == BodyGearFollowUpDestination.EvaluateWeaponDestination ||
+                    candidate?.FollowUpDestination == BodyGearFollowUpDestination.EvaluateSecondaryWeaponPromotion ||
+                    candidate?.FollowUpDestination == BodyGearFollowUpDestination.EvaluateCargoWeaponPromotion ||
+                    candidate?.FollowUpDestination == BodyGearFollowUpDestination.BackpackCargo;
                 if (candidate?.Item != null &&
                     !string.IsNullOrEmpty(candidate.Item.Id) &&
                     (allowAlreadyAttempted || !bodyLootAttemptedItemIds.Contains(candidate.Item.Id)))
@@ -693,6 +711,13 @@ namespace pitTeam.BigBrain.Actions
 
                 Modules.Logger.LogInfo(
                     $"[LootCommand] Body gear move failed for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': {move.SourceName}:{move.Item?.TemplateId ?? "unknown"}");
+                if (move.ContinueFollowUpsOnFailure)
+                {
+                    // P2 weapon chains must still classify the candidate from the resulting live
+                    // inventory when one planned fast-access magazine transaction fails.
+                    EnqueueBodyGearSwapFollowUps(move);
+                }
+
                 bodyLootHadEligibleButNoSpace = true;
             }
             catch (Exception ex)

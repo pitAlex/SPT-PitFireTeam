@@ -215,10 +215,10 @@ Body and container looting uses real carry space. Normal items go into the teamm
 **Current gear-swapping limits:**
 
 - A teammate can add a found long gun as his primary only when his primary slot is empty. The mod does not yet replace an existing primary weapon.
-- Compatible loaded spare magazines must physically fit in the teammate's vest. The planner also reserves enough vest space for the magazine removed from the weapon during a reload.
-- Once at least one usable spare fits the vest, additional compatible magazines may be carried in the backpack. Backpack magazines are cargo only; vanilla bots cannot use detachable magazines from the backpack when reloading.
-- If no spare magazine fits the vest, a weapon becomes primary only when its inserted magazine is completely full and holds at least 60 rounds.
-- Every other weapon without usable vest magazine space goes into the empty secondary slot as a support weapon. If secondary is occupied, it is carried in the backpack. If neither destination is available, it is left behind.
+- Compatible loaded spare magazines must physically fit in the teammate's vest or pockets. The planner also reserves enough fast-access space for the magazine removed from the weapon during a reload.
+- A weapon becomes primary when its inserted magazine plus compatible fast-access spares provide roughly two normal magazines of usable ammunition. Backpack magazines are cargo only and do not count because vanilla bots cannot use them for detachable-magazine reloads.
+- A compatible loose backpack magazine can be moved into vest or pockets when combining it with a newly found weapon and source magazines makes that weapon usable. If the combined ammunition remains insufficient, the backpack magazine stays where it is.
+- An under-supplied weapon goes into the empty secondary slot as a holding weapon. Newly found compatible magazines are used to make that existing secondary ready before another weapon is considered. If secondary is occupied and a new weapon still cannot become primary, only normal **Pickup Gear** and price rules may carry it in the backpack; otherwise it is left behind.
 - Loose spare magazines are left behind when none can be placed in usable vest space.
 - The secondary weapon slot is never replaced by looting.
 - Gear swapping can fill an empty tactical vest slot. Immersive and Realistic can also perform a narrow protection-vest upgrade, but only when the old vest can be preserved in the backpack without disturbing its operational contents.
