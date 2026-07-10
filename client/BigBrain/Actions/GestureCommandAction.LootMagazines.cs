@@ -34,86 +34,438 @@ namespace pitTeam.BigBrain.Actions
             foreach (EquipmentSlot slot in new[] { EquipmentSlot.TacticalVest, EquipmentSlot.Pockets, EquipmentSlot.Backpack })
             {
                 Item root = corpseEquipment.GetSlot(slot)?.ContainedItem;
-                foreach (MagazineItemClass magazine in GetOperationalMagazineItems(root, weapon))
+                foreach (MagazineItemClass magazine in GetOperationalMagazineItems(root, weapon, $"{slot}.WeaponSupportMagazine"))
                 {
                     yield return new BodyGearCandidate(
                         magazine,
                         null,
                         $"{slot}.WeaponSupportMagazine",
-                        0);
+                        0,
+                        bypassPriceThreshold: true,
+                        bypassCategoryFilter: true);
                 }
             }
         }
 
         private IEnumerable<BodyGearCandidate> GetContainerOperationalMagazineCandidates(SearchableItemItemClass containerRoot, Weapon weapon)
         {
-            foreach (MagazineItemClass magazine in GetOperationalMagazineItems(containerRoot, weapon))
+            foreach (MagazineItemClass magazine in GetOperationalMagazineItems(containerRoot, weapon, "Container.WeaponSupportMagazine"))
             {
                 yield return new BodyGearCandidate(
                     magazine,
                     null,
                     "Container.WeaponSupportMagazine",
-                    0);
+                    0,
+                    bypassPriceThreshold: true,
+                    bypassCategoryFilter: true);
             }
         }
 
-        private static IEnumerable<MagazineItemClass> GetOperationalMagazineItems(Item root, Weapon weapon)
+        private IEnumerable<MagazineItemClass> GetOperationalMagazineItems(Item root, Weapon weapon, string sourceName)
         {
+            OperationalMagazineScanStats stats = new OperationalMagazineScanStats(sourceName, root, weapon);
             if (root == null || weapon == null)
             {
+                stats.AddRejectedMagazine(DescribeLootDebugItem(root), root == null ? "rootMissing" : "weaponMissing");
+                LogOperationalMagazineScan(stats);
                 yield break;
             }
 
-            foreach (Item item in root.GetAllItems())
+            HashSet<string> weaponTreeItemIds = SnapshotLootTreeItemIds(weapon);
+            string? currentMagazineId = null;
+            try
             {
-                if (item is not MagazineItemClass magazine ||
-                    magazine.Count <= 0 ||
-                    IsItemInsideRoot(magazine, weapon))
+                currentMagazineId = weapon.GetCurrentMagazine()?.Id;
+            }
+            catch
+            {
+                currentMagazineId = null;
+            }
+
+            // Snapshot before filtering. EFT item trees are live dictionaries and can mutate while
+            // search/loot state changes, which otherwise turns a support-mag scan into a hard
+            // planning failure.
+            List<Item> snapshot = SnapshotLootTreeItems(root);
+            stats.TreeItemsScanned = snapshot.Count;
+            foreach (Item item in snapshot)
+            {
+                if (item is not MagazineItemClass magazine)
                 {
+                    continue;
+                }
+
+                stats.MagazinesSeen++;
+                string magazineDescription = DescribeLootDebugItem(magazine);
+                if (string.IsNullOrEmpty(magazine.Id))
+                {
+                    stats.AddRejectedMagazine(magazineDescription, "missingId");
+                    continue;
+                }
+
+                if (weaponTreeItemIds.Contains(magazine.Id))
+                {
+                    stats.AddRejectedMagazine(magazineDescription, "inWeaponTree");
+                    continue;
+                }
+
+                if (string.Equals(currentMagazineId, magazine.Id, StringComparison.Ordinal))
+                {
+                    stats.AddRejectedMagazine(magazineDescription, "currentWeaponMag");
+                    continue;
+                }
+
+                if (magazine.Count <= 0)
+                {
+                    stats.AddRejectedMagazine(magazineDescription, "empty");
+                    continue;
+                }
+
+                if (IsItemInsideRoot(magazine, weapon))
+                {
+                    stats.AddRejectedMagazine(magazineDescription, "insideWeapon");
                     continue;
                 }
 
                 if (IsMagazineCompatibleWithWeapon(weapon, magazine))
                 {
+                    stats.CompatibleCount++;
+                    stats.AddAcceptedMagazine(magazineDescription);
                     yield return magazine;
+                    continue;
                 }
+
+                stats.AddRejectedMagazine(magazineDescription, "incompatible");
             }
+
+            LogOperationalMagazineScan(stats);
         }
 
-        private BodyGearCandidate? FindFirstOperationalMagazineCandidate(
+        private OperationalMagazinePlan PlanOperationalMagazineFollowUps(
             InventoryController inventory,
             InventoryEquipment followerEquipment,
             Weapon weapon,
             IEnumerable<BodyGearCandidate>? candidates)
         {
+            OperationalMagazinePlan plan = new OperationalMagazinePlan();
             if (inventory == null || followerEquipment == null || weapon == null || candidates == null)
             {
-                return null;
+                return plan;
             }
 
-            // A support mag must be both eligible loot and physically placeable in the follower's
-            // vest, because combat reload logic does not search the backpack for this weapon.
-            foreach (BodyGearCandidate candidate in candidates)
+            List<BodyGearCandidate> candidateList = candidates.ToList();
+            plan.ScannedCount = candidateList.Count;
+            SearchableItemItemClass simulatedVest = CloneSearchableContainer(
+                followerEquipment.GetSlot(EquipmentSlot.TacticalVest)?.ContainedItem);
+            SearchableItemItemClass simulatedBackpack = CloneSearchableContainer(
+                followerEquipment.GetSlot(EquipmentSlot.Backpack)?.ContainedItem);
+            Item? reloadReserveMagazine = GetWeaponReloadReserveMagazine(weapon);
+            HashSet<string> consideredItemIds = new HashSet<string>(StringComparer.Ordinal);
+            Modules.Logger.LogInfo(
+                $"[LootCommand][MagDebug] Plan start for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                $"weapon={DescribeOperationalWeapon(weapon)} candidates={candidateList.Count} " +
+                $"vest={DescribeLootDebugItem(followerEquipment.GetSlot(EquipmentSlot.TacticalVest)?.ContainedItem)} " +
+                $"backpack={DescribeLootDebugItem(followerEquipment.GetSlot(EquipmentSlot.Backpack)?.ContainedItem)} " +
+                $"reloadReserve={DescribeLootDebugItem(reloadReserveMagazine)}");
+
+            foreach (BodyGearCandidate candidate in candidateList)
             {
-                if (candidate?.Item is not MagazineItemClass magazine ||
-                    string.IsNullOrEmpty(magazine.Id) ||
-                    !CanConsiderFilteredLootCandidate(candidate, new HashSet<string>(StringComparer.Ordinal)) ||
-                    !TryFindOperationalMagazineVestAddress(followerEquipment, magazine, out ItemAddress? address))
+                if (!TryGetOperationalMagazineCandidate(candidate, out MagazineItemClass? magazine, out string validationReason))
                 {
+                    plan.AddRejection(validationReason);
+                    LogOperationalMagazinePlanStep(candidate, $"reject validation={validationReason}");
                     continue;
                 }
 
-                GStruct154<GClass3411> moveResult = InteractionsHandlerClass.Move(magazine, address, inventory, true);
-                if (!moveResult.Failed && !moveResult.Value.ItemsDestroyRequired && inventory.CanExecute(moveResult.Value))
+                if (!consideredItemIds.Add(magazine.Id))
                 {
-                    return candidate;
+                    plan.AddRejection("duplicate");
+                    LogOperationalMagazinePlanStep(candidate, "reject duplicate");
+                    continue;
+                }
+
+                plan.ValidLoadedCount++;
+                LogOperationalMagazinePlanStep(candidate, $"consider mag={DescribeLootDebugItem(magazine)}");
+                // Operational support mags live in the rig because vanilla reload logic looks there.
+                // Keep one extra mag-shaped hole open so the weapon's current mag has somewhere to
+                // land during a reload; overflow mags become backpack cargo if there is room.
+                if (simulatedVest != null &&
+                    TrySimulateContainerAddWithReserve(simulatedVest, magazine, reloadReserveMagazine, out SearchableItemItemClass? nextVest))
+                {
+                    BodyGearCandidate vestCandidate = candidate.WithFollowUpDestination(BodyGearFollowUpDestination.OperationalVest);
+                    if (TryBuildOperationalMagazineVestMove(
+                            inventory,
+                            followerEquipment,
+                            vestCandidate,
+                            out _,
+                            out string vestMoveFailure))
+                    {
+                        simulatedVest = nextVest;
+                        plan.OperationalVestCount++;
+                        plan.FollowUps.Add(vestCandidate);
+                        LogOperationalMagazinePlanStep(vestCandidate, "queued destination=OperationalVest");
+                        continue;
+                    }
+
+                    plan.AddRejection($"vestMove:{vestMoveFailure}");
+                    LogOperationalMagazinePlanStep(vestCandidate, $"reject vestMove={vestMoveFailure}");
+                }
+                else
+                {
+                    plan.AddRejection("vestFit");
+                    LogOperationalMagazinePlanStep(candidate, "reject vestFit");
+                }
+
+                if (simulatedBackpack != null &&
+                    TrySimulateContainerAdd(simulatedBackpack, magazine, out SearchableItemItemClass? nextBackpack))
+                {
+                    BodyGearCandidate backpackCandidate = candidate.WithFollowUpDestination(BodyGearFollowUpDestination.BackpackCargo);
+                    if (TryBuildBackpackMagazineCargoMove(
+                            inventory,
+                            followerEquipment,
+                            backpackCandidate,
+                            out _,
+                            out string backpackMoveFailure))
+                    {
+                        simulatedBackpack = nextBackpack;
+                        plan.FollowUps.Add(backpackCandidate);
+                        LogOperationalMagazinePlanStep(backpackCandidate, "queued destination=BackpackCargo");
+                        continue;
+                    }
+
+                    plan.AddRejection($"backpackMove:{backpackMoveFailure}");
+                    LogOperationalMagazinePlanStep(backpackCandidate, $"reject backpackMove={backpackMoveFailure}");
+                }
+                else
+                {
+                    plan.AddRejection("backpackFit");
+                    LogOperationalMagazinePlanStep(candidate, "reject backpackFit");
                 }
             }
 
-            return null;
+            return plan;
         }
 
-        private static bool IsWeaponLoadedEnoughForPrimary(Weapon weapon)
+        private bool TryBuildOperationalMagazineVestMove(
+            InventoryController inventory,
+            InventoryEquipment followerEquipment,
+            BodyGearCandidate candidate,
+            out BodyGearMove? move,
+            out string reason)
+        {
+            move = null;
+            if (!TryGetOperationalMagazineCandidate(candidate, out MagazineItemClass? magazine))
+            {
+                reason = "invalidMagazine";
+                return false;
+            }
+
+            if (!TryFindOperationalMagazineVestAddress(followerEquipment, magazine, out ItemAddress? address))
+            {
+                reason = "noVestAddress";
+                return false;
+            }
+
+            if (!TryCreateBodyGearMove(
+                    inventory,
+                    candidate,
+                    address,
+                    out move,
+                    storeAsLoot: ShouldReturnGearSwapAsCargo()))
+            {
+                reason = "vestMoveRejected";
+                return false;
+            }
+
+            reason = "ok";
+            return true;
+        }
+
+        private bool TryBuildBackpackMagazineCargoMove(
+            InventoryController inventory,
+            InventoryEquipment followerEquipment,
+            BodyGearCandidate candidate,
+            out BodyGearMove? move,
+            out string reason)
+        {
+            move = null;
+            if (!TryGetOperationalMagazineCandidate(candidate, out MagazineItemClass? magazine))
+            {
+                reason = "invalidMagazine";
+                return false;
+            }
+
+            if (!TryFindBackpackAddressForItem(followerEquipment, magazine, out ItemAddress? backpackAddress))
+            {
+                reason = "noBackpackAddress";
+                return false;
+            }
+
+            if (!TryCreateBodyGearMove(
+                    inventory,
+                    candidate,
+                    backpackAddress,
+                    out move,
+                    storeAsLoot: ShouldReturnGearSwapAsCargo()))
+            {
+                reason = "backpackMoveRejected";
+                return false;
+            }
+
+            reason = "ok";
+            return true;
+        }
+
+        private static Item? GetWeaponReloadReserveMagazine(Weapon weapon)
+        {
+            try
+            {
+                // Only a magazine currently seated in the weapon needs a landing space during
+                // reload. If the weapon has no mag inserted, the first spare can be loaded without
+                // ejecting anything back into the vest.
+                return weapon?.GetCurrentMagazine();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static SearchableItemItemClass? CloneSearchableContainer(Item item)
+        {
+            try
+            {
+                Item clone = item?.CloneItem();
+                if (clone != null)
+                {
+                    clone.CurrentAddress = null;
+                }
+
+                return clone as SearchableItemItemClass;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static Item? ClonePlanningItem(Item item)
+        {
+            try
+            {
+                Item clone = item?.CloneItem();
+                if (clone != null)
+                {
+                    clone.CurrentAddress = null;
+                }
+
+                return clone;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static bool TrySimulateContainerAddWithReserve(
+            SearchableItemItemClass container,
+            Item item,
+            Item? reserveItem,
+            out SearchableItemItemClass? nextContainer)
+        {
+            nextContainer = null;
+            if (!TrySimulateContainerAdd(container, item, out SearchableItemItemClass? trialContainer))
+            {
+                return false;
+            }
+
+            if (reserveItem != null)
+            {
+                if (!TrySimulateContainerAdd(trialContainer, reserveItem, out _))
+                {
+                    return false;
+                }
+            }
+
+            nextContainer = trialContainer;
+            return true;
+        }
+
+        private static bool TrySimulateContainerAdd(
+            SearchableItemItemClass container,
+            Item item,
+            out SearchableItemItemClass? nextContainer)
+        {
+            nextContainer = CloneSearchableContainer(container);
+            if (nextContainer?.Grids == null || item == null)
+            {
+                nextContainer = null;
+                return false;
+            }
+
+            foreach (StashGridClass grid in nextContainer.Grids)
+            {
+                Item planningItem = ClonePlanningItem(item);
+                if (planningItem != null &&
+                    grid?.AddAnywhere(planningItem, EErrorHandlingType.Ignore).Succeeded == true)
+                {
+                    return true;
+                }
+            }
+
+            nextContainer = null;
+            return false;
+        }
+
+        private bool TryGetOperationalMagazineCandidate(
+            BodyGearCandidate candidate,
+            out MagazineItemClass? magazine)
+        {
+            return TryGetOperationalMagazineCandidate(candidate, out magazine, out _);
+        }
+
+        private bool TryGetOperationalMagazineCandidate(
+            BodyGearCandidate candidate,
+            out MagazineItemClass? magazine,
+            out string reason)
+        {
+            magazine = null;
+            reason = "ok";
+
+            if (candidate?.Item is not MagazineItemClass candidateMagazine)
+            {
+                reason = "notMagazine";
+                return false;
+            }
+
+            if (string.IsNullOrEmpty(candidateMagazine.Id))
+            {
+                reason = "missingId";
+                return false;
+            }
+
+            if (candidateMagazine.Count <= 0)
+            {
+                reason = "empty";
+                return false;
+            }
+
+            if (IsLootNowInBotInventory(BotOwner?.GetPlayer, candidateMagazine))
+            {
+                reason = "alreadyInBotInventory";
+                return false;
+            }
+
+            if (InteractableObjects.IsProtectedFollowerEquipment(candidateMagazine))
+            {
+                reason = "protectedFollowerEquipment";
+                return false;
+            }
+
+            magazine = candidateMagazine;
+            return true;
+        }
+
+        private static bool HasFullHighCapacityMagazineForPrimary(Weapon weapon)
         {
             if (weapon == null)
             {
@@ -123,9 +475,7 @@ namespace pitTeam.BigBrain.Actions
             try
             {
                 MagazineItemClass magazine = weapon.GetCurrentMagazine();
-                int maxCount = magazine?.MaxCount ?? weapon.GetMaxMagazineCount();
-                int currentCount = magazine?.Count ?? weapon.GetCurrentMagazineCount();
-                return maxCount > 0 && currentCount >= maxCount;
+                return magazine != null && magazine.MaxCount >= 60 && magazine.Count >= magazine.MaxCount;
             }
             catch
             {
@@ -174,7 +524,7 @@ namespace pitTeam.BigBrain.Actions
             {
                 if (container != null &&
                     container.TryFindLocationForItem(magazine, out ItemAddress candidateAddress) &&
-                    !magazine.Parent.Equals(candidateAddress))
+                    !object.Equals(magazine.Parent, candidateAddress))
                 {
                     address = candidateAddress;
                     return true;
@@ -182,6 +532,253 @@ namespace pitTeam.BigBrain.Actions
             }
 
             return false;
+        }
+
+        private void LogOperationalMagazineScan(OperationalMagazineScanStats stats)
+        {
+            if (stats == null)
+            {
+                return;
+            }
+
+            Modules.Logger.LogInfo(
+                $"[LootCommand][MagDebug] Scan for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                $"source={stats.SourceName} root={stats.RootDescription} weapon={stats.WeaponDescription} " +
+                $"items={stats.TreeItemsScanned} magsSeen={stats.MagazinesSeen} compatible={stats.CompatibleCount} " +
+                $"rejects={stats.RejectionSummary}");
+
+            if (stats.AcceptedSamples.Count > 0)
+            {
+                Modules.Logger.LogInfo(
+                    $"[LootCommand][MagDebug] Scan accepted source={stats.SourceName}: {string.Join(" | ", stats.AcceptedSamples)}");
+            }
+
+            if (stats.RejectedSamples.Count > 0)
+            {
+                Modules.Logger.LogInfo(
+                    $"[LootCommand][MagDebug] Scan rejected source={stats.SourceName}: {string.Join(" | ", stats.RejectedSamples)}");
+            }
+        }
+
+        private void LogOperationalMagazinePlanStep(BodyGearCandidate candidate, string message)
+        {
+            Modules.Logger.LogInfo(
+                $"[LootCommand][MagDebug] Plan step for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                $"{message} source={candidate?.SourceName ?? "unknown"} dest={candidate?.FollowUpDestination.ToString() ?? "unknown"} " +
+                $"item={DescribeLootDebugItem(candidate?.Item)}");
+        }
+
+        private static string DescribeOperationalWeapon(Weapon weapon)
+        {
+            MagazineItemClass currentMagazine = null;
+            try
+            {
+                currentMagazine = weapon?.GetCurrentMagazine();
+            }
+            catch
+            {
+                currentMagazine = null;
+            }
+
+            return $"{DescribeLootDebugItem(weapon)} currentMag={DescribeLootDebugItem(currentMagazine)}";
+        }
+
+        private static string DescribeLootDebugItem(Item item)
+        {
+            if (item == null)
+            {
+                return "none";
+            }
+
+            string size = "?";
+            try
+            {
+                XYCellSizeStruct cellSize = item.CalculateCellSize();
+                size = $"{cellSize.X}x{cellSize.Y}";
+            }
+            catch
+            {
+                size = "?";
+            }
+
+            string count = item is MagazineItemClass magazine
+                ? $" count={magazine.Count}/{magazine.MaxCount}"
+                : string.Empty;
+
+            string templateId = item.TemplateId.ToString();
+            if (string.IsNullOrEmpty(templateId))
+            {
+                templateId = "unknown";
+            }
+
+            return $"{item.GetType().Name}:{templateId} id={ShortLootId(item.Id)} size={size}{count}";
+        }
+
+        private static GStruct155 SafeCheckAction(Item item, ItemAddress address)
+        {
+            try
+            {
+                return item?.CheckAction(address) ?? default;
+            }
+            catch (Exception ex)
+            {
+                return new GClass1522(ex.Message);
+            }
+        }
+
+        private static GStruct156<bool> SafeCanBeMoved(GInterface409 item, EFT.InventoryLogic.IContainer container)
+        {
+            try
+            {
+                if (item == null || container == null)
+                {
+                    return new GClass1522(item == null ? "itemMissing" : "containerMissing");
+                }
+
+                return item.CanBeMoved(container);
+            }
+            catch (Exception ex)
+            {
+                return new GClass1522(ex.Message);
+            }
+        }
+
+        private static string DescribeInventoryEventResult(GStruct155 result)
+        {
+            return result.Failed ? $"failed:{DescribeInventoryError(result.Error)}" : "ok";
+        }
+
+        private static string DescribeInventoryEventResult(GStruct156<bool> result)
+        {
+            return result.Failed ? $"failed:{DescribeInventoryError(result.Error)}" : $"ok:{result.Value}";
+        }
+
+        private static string DescribeInventoryError(Error error)
+        {
+            return error?.ToString() ?? "none";
+        }
+
+        private static string DescribeLootAddress(ItemAddress address)
+        {
+            if (address == null)
+            {
+                return "none";
+            }
+
+            try
+            {
+                EFT.InventoryLogic.IContainer container = address.Container;
+                return $"{address.GetType().Name}:container={container?.ID ?? "none"} parent={DescribeLootDebugItem(container?.ParentItem)}";
+            }
+            catch (Exception ex)
+            {
+                return $"error:{ex.Message}";
+            }
+        }
+
+        private static string DescribeLootOwner(ItemAddress address)
+        {
+            if (address == null)
+            {
+                return "none";
+            }
+
+            try
+            {
+                IItemOwner owner = address.GetOwner();
+                return owner == null
+                    ? "none"
+                    : $"{owner.GetType().Name}:name={owner.ContainerName ?? "unknown"} type={owner.OwnerType}";
+            }
+            catch (Exception ex)
+            {
+                return $"error:{ex.Message}";
+            }
+        }
+
+        private static string ShortLootId(string id)
+        {
+            if (string.IsNullOrEmpty(id))
+            {
+                return "none";
+            }
+
+            return id.Length <= 8 ? id : id.Substring(0, 8);
+        }
+
+        private sealed class OperationalMagazinePlan
+        {
+            public List<BodyGearCandidate> FollowUps { get; } = new List<BodyGearCandidate>();
+            public int OperationalVestCount { get; set; }
+            public int ScannedCount { get; set; }
+            public int ValidLoadedCount { get; set; }
+            public List<string> RejectionReasons { get; } = new List<string>();
+
+            public void AddRejection(string reason)
+            {
+                if (RejectionReasons.Count >= 5)
+                {
+                    return;
+                }
+
+                RejectionReasons.Add(reason);
+            }
+        }
+
+        private sealed class OperationalMagazineScanStats
+        {
+            private readonly Dictionary<string, int> rejectionCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+
+            public OperationalMagazineScanStats(string sourceName, Item root, Weapon weapon)
+            {
+                SourceName = sourceName ?? "unknown";
+                RootDescription = DescribeLootDebugItem(root);
+                WeaponDescription = DescribeOperationalWeapon(weapon);
+            }
+
+            public string SourceName { get; }
+            public string RootDescription { get; }
+            public string WeaponDescription { get; }
+            public int TreeItemsScanned { get; set; }
+            public int MagazinesSeen { get; set; }
+            public int CompatibleCount { get; set; }
+            public List<string> AcceptedSamples { get; } = new List<string>();
+            public List<string> RejectedSamples { get; } = new List<string>();
+
+            public string RejectionSummary
+            {
+                get
+                {
+                    if (rejectionCounts.Count == 0)
+                    {
+                        return "none";
+                    }
+
+                    return string.Join(",", rejectionCounts.Select(pair => $"{pair.Key}={pair.Value}"));
+                }
+            }
+
+            public void AddAcceptedMagazine(string description)
+            {
+                if (AcceptedSamples.Count < 6)
+                {
+                    AcceptedSamples.Add(description);
+                }
+            }
+
+            public void AddRejectedMagazine(string description, string reason)
+            {
+                if (!rejectionCounts.ContainsKey(reason))
+                {
+                    rejectionCounts[reason] = 0;
+                }
+
+                rejectionCounts[reason]++;
+                if (RejectedSamples.Count < 8)
+                {
+                    RejectedSamples.Add($"{reason}:{description}");
+                }
+            }
         }
 
         private static bool TryFindBodyGearEquipmentSlot(

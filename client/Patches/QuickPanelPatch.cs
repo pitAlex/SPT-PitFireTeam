@@ -11,6 +11,37 @@ using System.Reflection;
 
 namespace pitTeam.Patches
 {
+    internal static class QuickPanelHurtPhraseFilter
+    {
+        private static readonly EPhraseTrigger[] BlockedPhrases =
+        [
+            EPhraseTrigger.HurtLight,
+            EPhraseTrigger.HurtMedium,
+            EPhraseTrigger.HurtHeavy,
+            EPhraseTrigger.HurtNearDeath,
+            EPhraseTrigger.OnBeingHurt,
+            EPhraseTrigger.OnBeingHurtDissapoinment
+        ];
+
+        public static bool IsBlocked(EPhraseTrigger phrase)
+        {
+            return Array.IndexOf(BlockedPhrases, phrase) >= 0;
+        }
+
+        public static void RemoveBlockedCommands(GesturesQuickPanel panel)
+        {
+            if (panel == null)
+            {
+                return;
+            }
+
+            foreach (EPhraseTrigger phrase in BlockedPhrases)
+            {
+                panel.method_7(phrase, false);
+            }
+        }
+    }
+
     internal class QuickPanelPatch : ModulePatch
     {
         private static readonly EPhraseTrigger ViewBackpackPhrase = (EPhraseTrigger)CustomPhrases.ViewBackpack;
@@ -28,6 +59,7 @@ namespace pitTeam.Patches
             Player player = QuickPanelPlayerField.GetValue(__instance) as Player;
             if (player != null)
             {
+                QuickPanelHurtPhraseFilter.RemoveBlockedCommands(__instance);
                 RefreshViewBackpackQuickCommand(__instance, player);
 
                 try
@@ -146,6 +178,27 @@ namespace pitTeam.Patches
         }
     }
 
+    internal class QuickPanelHurtPhrasePatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+        {
+            return AccessTools.Method(typeof(GesturesQuickPanel), "method_7");
+        }
+
+        [PatchPrefix]
+        private static void PatchPrefix(EPhraseTrigger phrase, ref bool active)
+        {
+            if (!QuickPanelHurtPhraseFilter.IsBlocked(phrase))
+            {
+                return;
+            }
+
+            // Hurt statuses have higher stock priority than interaction prompts, so keep them out
+            // of the player's quick-command panel entirely while leaving actual voice playback alone.
+            active = false;
+        }
+    }
+
     internal class QuickPanelUpdateBackpackInteractionPatch : ModulePatch
     {
         private static readonly FieldInfo QuickPanelPlayerField = AccessTools.Field(typeof(GesturesQuickPanel), "player_0");
@@ -166,6 +219,8 @@ namespace pitTeam.Patches
             {
                 return;
             }
+
+            QuickPanelHurtPhraseFilter.RemoveBlockedCommands(__instance);
 
             EPhraseTrigger viewBackpackPhrase = (EPhraseTrigger)CustomPhrases.ViewBackpack;
             HashSet<EPhraseTrigger> availablePhrases = AccessTools.Field(typeof(GesturesQuickPanel), "hashSet_0").GetValue(__instance) as HashSet<EPhraseTrigger>;

@@ -175,7 +175,7 @@ Commands influence teammate behavior but do not force exact actions. teammates w
 - **Over There Gesture** - gesture-based contact/attention toward the pointed direction.
 - **Open Door** - the closest eligible teammate opens the targeted door.
 - **Loot This** - the closest eligible teammate picks up the targeted loot item.
-- **Check Him / Loot Body** - the closest eligible teammate checks the targeted body and gathers recoverable gear. This is meant as a practical way to collect gear from fallen teammates. It does not do advanced gear management such as swapping the teammate's current weapons, armor, or vest for better equipment.
+- **Check Him / Loot Body** - the closest eligible saved teammate checks the targeted body. Fallen teammates use the recovery rules, while other bodies use your Looting Settings and the limited gear-swapping rules described below.
 
 Saved teammates and recruited allies share the basic follower system once they are following you, but saved teammates have the full squad feature set. Saved teammates keep their customization, loadouts, tactics, aggression, progression, backpack access, and post-raid handling. Recruited allies are temporary raid pickups that use the default combat tactic with moderate aggression, rely on their current bot profile and gear, and have a simpler combat command set: they do not use **Need Sniper**, combat **There**, combat **Open Door**, or combat **Go Forward** push orders. If a recruited ally was told **Hold Position** in combat, **Go Forward** only clears that temporary aggression hold.
 
@@ -207,10 +207,22 @@ Looting settings in **My Squad → Settings** control what the teammate consider
 
 - **Minimum Price** and **Maximum Price** set the value window for body and container loot.
 - **Pickup Food**, **Pickup Meds**, **Pickup Valuables**, and **Pickup Gear** decide which broad loot groups are allowed.
-- **Allow Gear Swapping** enables limited gear equip behavior in Immersive and Realistic loadout management.
+- **Allow Gear Swapping** enables limited gear equip behavior. In Simple and Restricted, followers only add gear into empty slots and that gear returns as cargo; in Immersive and Realistic, eligible swaps can become the teammate's new kit.
 - Money is controlled by **Pickup Valuables** and is always worth taking when that group is enabled.
 
-Body and container looting uses real carry space. Normal items go into the teammate's backpack or pockets, while the rig is kept clear so magazines are less likely to be disturbed. Weapons are treated as whole weapons with their attachments, not stripped for parts. If gear swapping is enabled and a teammate has no primary weapon, he can equip a found long gun only when it has a full magazine or a compatible loaded spare magazine that fits his vest. Armor plates are ignored for now, and teammates do not yet perform full gear optimization or swap out their current armor, vest, or primary weapon just because something better exists.
+Body and container looting uses real carry space. Normal items go into the teammate's backpack or pockets, while the rig is reserved for combat magazines. Weapons are treated as complete weapons with their attachments and are not stripped for parts.
+
+**Current gear-swapping limits:**
+
+- A teammate can add a found long gun as his primary only when his primary slot is empty. The mod does not yet replace an existing primary weapon.
+- Compatible loaded spare magazines must physically fit in the teammate's vest. The planner also reserves enough vest space for the magazine removed from the weapon during a reload.
+- Once at least one usable spare fits the vest, additional compatible magazines may be carried in the backpack. Backpack magazines are cargo only; vanilla bots cannot use detachable magazines from the backpack when reloading.
+- If no spare magazine fits the vest, a weapon becomes primary only when its inserted magazine is completely full and holds at least 60 rounds.
+- Every other weapon without usable vest magazine space goes into the empty secondary slot as a support weapon. If secondary is occupied, it is carried in the backpack. If neither destination is available, it is left behind.
+- Loose spare magazines are left behind when none can be placed in usable vest space.
+- The secondary weapon slot is never replaced by looting.
+- Gear swapping can fill an empty tactical vest slot. Immersive and Realistic can also perform a narrow protection-vest upgrade, but only when the old vest can be preserved in the backpack without disturbing its operational contents.
+- Armor plates are ignored as standalone loot. Teammates do not yet perform broad gear optimization.
 
 You can also inspect a teammate's backpack by approaching them and using the lower-left interaction prompt. This can only be done while out of combat.
 
@@ -518,7 +530,7 @@ The following are planned features in reaching a release version (1.0.0) and bey
 - **Scavs for hire** - being able to play with teammates as a Scav
 - **Going Rogue** - being able to recruit and command Goons along with the Rogues in raids
 - **SAIN tactics addon** - being able to use SAIN personalities as teammate tactics
-- **Looting gear swapping** - optional, controlled gear upgrades during commanded body and container looting
+- **Expanded looting gear swapping** - additional carefully controlled weapon, armor, and equipment upgrades beyond the limited empty-slot and protection-vest cases currently available
 
 ## Known Issues and Conflicts
 

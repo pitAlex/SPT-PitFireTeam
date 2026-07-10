@@ -95,22 +95,65 @@ namespace pitTeam.BigBrain.Actions
                 return true;
             }
 
-            try
+            foreach (Item child in SnapshotLootTreeItems(root))
             {
-                foreach (Item child in root.GetAllItems())
+                if (IsSameLootItem(item, child))
                 {
-                    if (IsSameLootItem(item, child))
-                    {
-                        return true;
-                    }
+                    return true;
                 }
-            }
-            catch
-            {
-                return false;
             }
 
             return false;
+        }
+
+        private static List<Item> SnapshotLootTreeItems(Item root)
+        {
+            List<Item> snapshot = new List<Item>();
+            if (root == null)
+            {
+                return snapshot;
+            }
+
+            try
+            {
+                foreach (Item item in root.GetAllItems())
+                {
+                    if (item != null)
+                    {
+                        snapshot.Add(item);
+                    }
+                }
+            }
+            catch (InvalidOperationException ex) when (IsInventoryEnumerationMutation(ex))
+            {
+                snapshot.Clear();
+            }
+
+            return snapshot;
+        }
+
+        private static HashSet<string> SnapshotLootTreeItemIds(Item root)
+        {
+            HashSet<string> itemIds = new HashSet<string>(StringComparer.Ordinal);
+            if (!string.IsNullOrEmpty(root?.Id))
+            {
+                itemIds.Add(root.Id);
+            }
+
+            foreach (Item item in SnapshotLootTreeItems(root))
+            {
+                if (!string.IsNullOrEmpty(item.Id))
+                {
+                    itemIds.Add(item.Id);
+                }
+            }
+
+            return itemIds;
+        }
+
+        private static bool IsInventoryEnumerationMutation(InvalidOperationException ex)
+        {
+            return ex.Message?.IndexOf("Collection was modified", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static bool IsSameLootItem(Item first, Item second)
@@ -150,7 +193,7 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            foreach (Item child in item.GetAllItems())
+            foreach (Item child in SnapshotLootTreeItems(item))
             {
                 MarkLootItemTreeSearched(searchController, child, visited);
             }

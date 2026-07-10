@@ -305,10 +305,22 @@ namespace pitTeam.BigBrain.Actions
             InventoryEquipment followerEquipment)
         {
             // Scenario order for non-teammate bodies:
-            // 1. finish any follow-up magazine move produced by easy weapon equip
-            // 2. optionally equip an empty primary slot
-            // 3. otherwise loot eligible contents into backpack/pockets only
+            // 1. secure the PMC dogtag before any equipment transaction can alter the action state
+            // 2. finish any follow-up magazine move produced by easy weapon equip
+            // 3. optionally equip or narrowly swap tactical vest protection
+            // 4. optionally equip an empty primary slot
+            // 5. otherwise loot eligible contents into backpack/pockets only
+            if (TryStartNonTeammatePmcDogtagMove(inventory, corpseEquipment, followerEquipment))
+            {
+                return;
+            }
+
             if (TryStartPendingBodyGearSwapFollowUpMove(inventory, followerEquipment))
+            {
+                return;
+            }
+
+            if (TryStartEasyBodyTacticalVestMove(inventory, corpseEquipment, followerEquipment))
             {
                 return;
             }
@@ -343,6 +355,35 @@ namespace pitTeam.BigBrain.Actions
             }
 
             FinishBodyLootNoMoreMoves();
+        }
+
+        private bool TryStartNonTeammatePmcDogtagMove(
+            InventoryController inventory,
+            InventoryEquipment corpseEquipment,
+            InventoryEquipment followerEquipment)
+        {
+            if (!TryCreateNonTeammatePmcDogtagCandidate(corpseEquipment, out BodyGearCandidate candidate) ||
+                !CanTryFilteredLootCandidate(candidate, bodyLootAttemptedItemIds) ||
+                IsLootNowInBotInventory(BotOwner?.GetPlayer, candidate.Item))
+            {
+                return false;
+            }
+
+            // Mark it before building so a full inventory cannot trap the planner on the dogtag.
+            // Dogtags still bypass filters and only use the normal backpack/pocket carry containers.
+            bodyLootAttemptedItemIds.Add(candidate.Item.Id);
+            if (!TryBuildFilteredLootMove(inventory, followerEquipment, candidate, null, out BodyGearMove move))
+            {
+                bodyLootHadEligibleButNoSpace = true;
+                Modules.Logger.LogInfo(
+                    $"[LootCommand] Dogtag left on body for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': no backpack/pocket space");
+                return false;
+            }
+
+            Modules.Logger.LogInfo(
+                $"[LootCommand] Dogtag move planned first for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}'");
+            StartBodyGearMove(inventory, move);
+            return true;
         }
 
         private BodyGearMove? TryBuildCorpseBackpackCapacityMove(
@@ -408,7 +449,7 @@ namespace pitTeam.BigBrain.Actions
             foreach (EFT.InventoryLogic.IContainer container in GetBodyGearCarryContainers(followerEquipment, candidate.Item))
             {
                 if (!container.TryFindLocationForItem(candidate.Item, out ItemAddress packAddress) ||
-                    candidate.Item.Parent.Equals(packAddress))
+                    object.Equals(candidate.Item.Parent, packAddress))
                 {
                     continue;
                 }
@@ -437,10 +478,23 @@ namespace pitTeam.BigBrain.Actions
 
             // Filtered looting never uses the follower rig for generic cargo. The only vest writes
             // here are tactical: an easy primary weapon's first operational magazine.
-            if (ShouldUseFilteredLootEquipmentSlot(candidate) &&
-                TryBuildEasyWeaponEquipMove(inventory, followerEquipment, candidate, operationalMagazineCandidates, out move))
+            if (ShouldUseFilteredLootEquipmentSlot(candidate))
             {
-                return true;
+                if (TryBuildEasyWeaponEquipMove(
+                        inventory,
+                        followerEquipment,
+                        candidate,
+                        operationalMagazineCandidates,
+                        out move,
+                        out bool handledByGearPolicy))
+                {
+                    return true;
+                }
+
+                if (handledByGearPolicy)
+                {
+                    return false;
+                }
             }
 
             if (ShouldUseFilteredLootEquipmentSlot(candidate) &&
@@ -453,7 +507,7 @@ namespace pitTeam.BigBrain.Actions
             foreach (EFT.InventoryLogic.IContainer container in GetFilteredLootCarryContainers(followerEquipment))
             {
                 if (!container.TryFindLocationForItem(candidate.Item, out ItemAddress packAddress) ||
-                    candidate.Item.Parent.Equals(packAddress))
+                    object.Equals(candidate.Item.Parent, packAddress))
                 {
                     continue;
                 }
@@ -467,197 +521,6 @@ namespace pitTeam.BigBrain.Actions
             return false;
         }
 
-        private bool TryStartEasyBodyWeaponEquipMove(
-            InventoryController inventory,
-            InventoryEquipment corpseEquipment,
-            InventoryEquipment followerEquipment)
-        {
-            if (!pitFireTeam.IsLootGearSwappingEnabled())
-            {
-                return false;
-            }
-
-            foreach (BodyGearCandidate candidate in GetFilteredBodyLootCandidates(corpseEquipment).Where(IsEasyWeaponEquipCandidate))
-            {
-                if (!CanConsiderFilteredLootCandidate(candidate, bodyLootAttemptedItemIds) ||
-                    IsLootNowInBotInventory(BotOwner?.GetPlayer, candidate.Item))
-                {
-                    continue;
-                }
-
-                IEnumerable<BodyGearCandidate> magazineCandidates = GetBodyOperationalMagazineCandidates(corpseEquipment, (Weapon)candidate.Item);
-                if (!TryBuildEasyWeaponEquipMove(inventory, followerEquipment, candidate, magazineCandidates, out BodyGearMove? move))
-                {
-                    continue;
-                }
-
-                bodyLootAttemptedItemIds.Add(candidate.Item.Id);
-                if (TryQueueBodyLootMoveAfterPickupSuccess(move))
-                {
-                    return true;
-                }
-
-                StartBodyGearMove(inventory, move);
-                return true;
-            }
-
-            return false;
-        }
-
-        private bool TryStartEasyContainerWeaponEquipMove(
-            InventoryController inventory,
-            SearchableItemItemClass containerRoot,
-            InventoryEquipment followerEquipment)
-        {
-            if (!pitFireTeam.IsLootGearSwappingEnabled())
-            {
-                return false;
-            }
-
-            foreach (BodyGearCandidate candidate in GetStorageLootCandidates(
-                         containerRoot,
-                         "Container.Contents",
-                         skipMagazines: false).Where(IsEasyWeaponEquipCandidate))
-            {
-                if (!CanConsiderFilteredLootCandidate(candidate, containerLootAttemptedItemIds) ||
-                    IsLootNowInBotInventory(BotOwner?.GetPlayer, candidate.Item))
-                {
-                    continue;
-                }
-
-                IEnumerable<BodyGearCandidate> magazineCandidates = GetContainerOperationalMagazineCandidates(containerRoot, (Weapon)candidate.Item);
-                if (!TryBuildEasyWeaponEquipMove(inventory, followerEquipment, candidate, magazineCandidates, out BodyGearMove? move))
-                {
-                    continue;
-                }
-
-                containerLootAttemptedItemIds.Add(candidate.Item.Id);
-                if (TryQueueContainerLootMoveAfterPickupSuccess(move))
-                {
-                    return true;
-                }
-
-                StartContainerLootMove(inventory, move);
-                return true;
-            }
-
-            return false;
-        }
-
-        private static bool IsEasyWeaponEquipCandidate(BodyGearCandidate candidate)
-        {
-            return candidate?.Item is Weapon weapon &&
-                   weapon.GetItemComponent<KnifeComponent>() == null &&
-                   weapon is not PistolItemClass &&
-                   weapon is not RevolverItemClass;
-        }
-
-        private bool TryBuildEasyWeaponEquipMove(
-            InventoryController inventory,
-            InventoryEquipment followerEquipment,
-            BodyGearCandidate candidate,
-            IEnumerable<BodyGearCandidate>? operationalMagazineCandidates,
-            out BodyGearMove? move)
-        {
-            move = null;
-            // Phase 3 starts with empty-slot weapon equip only. Replacing an existing primary
-            // weapon is intentionally deferred because bot weapon/reload state is cached elsewhere.
-            if (!pitFireTeam.IsLootGearSwappingEnabled() ||
-                candidate?.Item is not Weapon weapon ||
-                !IsEasyWeaponEquipCandidate(candidate) ||
-                followerEquipment?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem != null ||
-                !TryFindEquipmentSlotAddress(followerEquipment, EquipmentSlot.FirstPrimaryWeapon, weapon, out ItemAddress? firstPrimaryAddress))
-            {
-                return false;
-            }
-
-            List<BodyGearCandidate> followUps = new List<BodyGearCandidate>();
-            BodyGearCandidate? magazineCandidate = FindFirstOperationalMagazineCandidate(
-                inventory,
-                followerEquipment,
-                weapon,
-                operationalMagazineCandidates);
-
-            // A primary weapon is only combat-useful if it is already full enough or one compatible
-            // loaded mag can move into the vest. Otherwise it falls back to normal cargo handling.
-            if (magazineCandidate != null)
-            {
-                followUps.Add(magazineCandidate);
-            }
-
-            if (!IsWeaponLoadedEnoughForPrimary(weapon) && magazineCandidate == null)
-            {
-                return false;
-            }
-
-            if (!TryCreateBodyGearMove(inventory, candidate, firstPrimaryAddress, out BodyGearMove? primaryMove))
-            {
-                return false;
-            }
-
-            move = primaryMove.WithFollowUps(followUps);
-            return true;
-        }
-
-        private bool TryStartPendingBodyGearSwapFollowUpMove(
-            InventoryController inventory,
-            InventoryEquipment followerEquipment)
-        {
-            while (pendingBodyGearSwapFollowUps.Count > 0)
-            {
-                BodyGearCandidate candidate = pendingBodyGearSwapFollowUps.Dequeue();
-                if (!TryBuildOperationalMagazineMove(inventory, followerEquipment, candidate, out BodyGearMove? move))
-                {
-                    continue;
-                }
-
-                bodyLootAttemptedItemIds.Add(candidate.Item.Id);
-                StartBodyGearMove(inventory, move);
-                return true;
-            }
-
-            return false;
-        }
-
-        private bool TryStartPendingContainerGearSwapFollowUpMove(
-            InventoryController inventory,
-            InventoryEquipment followerEquipment)
-        {
-            while (pendingContainerGearSwapFollowUps.Count > 0)
-            {
-                BodyGearCandidate candidate = pendingContainerGearSwapFollowUps.Dequeue();
-                if (!TryBuildOperationalMagazineMove(inventory, followerEquipment, candidate, out BodyGearMove? move))
-                {
-                    continue;
-                }
-
-                containerLootAttemptedItemIds.Add(candidate.Item.Id);
-                StartContainerLootMove(inventory, move);
-                return true;
-            }
-
-            return false;
-        }
-
-        private bool TryBuildOperationalMagazineMove(
-            InventoryController inventory,
-            InventoryEquipment followerEquipment,
-            BodyGearCandidate candidate,
-            out BodyGearMove? move)
-        {
-            move = null;
-            if (candidate?.Item is not MagazineItemClass ||
-                string.IsNullOrEmpty(candidate.Item.Id) ||
-                IsLootNowInBotInventory(BotOwner?.GetPlayer, candidate.Item) ||
-                !CanConsiderFilteredLootCandidate(candidate, new HashSet<string>(StringComparer.Ordinal)))
-            {
-                return false;
-            }
-
-            return TryFindOperationalMagazineVestAddress(followerEquipment, candidate.Item, out ItemAddress? address) &&
-                   TryCreateBodyGearMove(inventory, candidate, address, out move);
-        }
-
         private static bool ShouldUseFilteredLootEquipmentSlot(BodyGearCandidate candidate)
         {
             return candidate?.Item is Weapon weapon && weapon.GetItemComponent<KnifeComponent>() == null;
@@ -667,7 +530,10 @@ namespace pitTeam.BigBrain.Actions
             InventoryController inventory,
             BodyGearCandidate candidate,
             ItemAddress address,
-            out BodyGearMove? move)
+            out BodyGearMove? move,
+            bool storeAsLoot = true,
+            EPhraseTrigger successPhrase = EPhraseTrigger.LootGeneric,
+            bool rebindAsPrimaryWeapon = false)
         {
             move = null;
             Item item = candidate?.Item;
@@ -677,17 +543,75 @@ namespace pitTeam.BigBrain.Actions
             }
 
             GStruct154<GClass3411> moveResult = InteractionsHandlerClass.Move(item, address, inventory, true);
-            if (moveResult.Failed || moveResult.Value.ItemsDestroyRequired || !inventory.CanExecute(moveResult.Value))
+            if (moveResult.Failed)
             {
+                LogBodyGearMoveBuildRejection(inventory, candidate, address, "moveResultFailed", moveResult.Error, null);
                 return false;
             }
 
-            move = new BodyGearMove(item, moveResult.Value, candidate.SourceName, candidate.ReportAsLootNothing);
+            bool itemsDestroyRequired = moveResult.Value.ItemsDestroyRequired;
+            bool canExecute = !itemsDestroyRequired && inventory.CanExecute(moveResult.Value);
+            if (itemsDestroyRequired || !canExecute)
+            {
+                LogBodyGearMoveBuildRejection(
+                    inventory,
+                    candidate,
+                    address,
+                    itemsDestroyRequired ? "itemsDestroyRequired" : "operationCanExecuteFalse",
+                    null,
+                    moveResult.Value);
+                return false;
+            }
+
+            move = new BodyGearMove(
+                item,
+                moveResult.Value,
+                candidate.SourceName,
+                candidate.ReportAsLootNothing,
+                storeAsLoot: storeAsLoot,
+                successPhrase: successPhrase,
+                rebindAsPrimaryWeapon: rebindAsPrimaryWeapon);
             return true;
+        }
+
+        private void LogBodyGearMoveBuildRejection(
+            InventoryController inventory,
+            BodyGearCandidate candidate,
+            ItemAddress address,
+            string reason,
+            Error error,
+            GClass3411 operation)
+        {
+            if (candidate?.Item is not MagazineItemClass ||
+                candidate.SourceName?.IndexOf("WeaponSupportMagazine", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                return;
+            }
+
+            Item item = candidate.Item;
+            string checkTo = DescribeInventoryEventResult(SafeCheckAction(item, address));
+            string checkCurrent = DescribeInventoryEventResult(SafeCheckAction(item, null));
+            string canBeMoved = "notGInterface409";
+            if (item is GInterface409 movable)
+            {
+                canBeMoved = DescribeInventoryEventResult(SafeCanBeMoved(movable, address?.Container));
+            }
+
+            Modules.Logger.LogInfo(
+                $"[LootCommand][MagDebug] Move build rejected for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                $"reason={reason} error={DescribeInventoryError(error)} item={DescribeLootDebugItem(item)} " +
+                $"source={candidate.SourceName} dest={candidate.FollowUpDestination} " +
+                $"from={DescribeLootAddress(item.CurrentAddress)} to={DescribeLootAddress(address)} " +
+                $"fromOwner={DescribeLootOwner(item.CurrentAddress)} toOwner={DescribeLootOwner(address)} " +
+                $"checkTo={checkTo} checkCurrent={checkCurrent} canBeMoved={canBeMoved} " +
+                $"operationCanExecute={(operation != null ? inventory?.CanExecute(operation).ToString() ?? "inventoryMissing" : "noOperation")}");
         }
 
         private void StartBodyGearMove(InventoryController inventory, BodyGearMove move)
         {
+            Modules.Logger.LogInfo(
+                $"[LootCommand][MagDebug] Body move starting for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                $"source={move?.SourceName ?? "unknown"} item={DescribeLootDebugItem(move?.Item)} followUps={move?.FollowUpCandidates?.Count ?? 0}");
             bodyLootMoveInProgress = true;
             bodyLootAttemptStartedAt = Time.time;
             inventory.RunNetworkTransaction(move.Operation, new Callback(result => CompleteBodyGearMove(result, move)));
@@ -697,17 +621,35 @@ namespace pitTeam.BigBrain.Actions
         {
             if (move?.FollowUpCandidates == null || move.FollowUpCandidates.Count == 0)
             {
+                Modules.Logger.LogInfo(
+                    $"[LootCommand][MagDebug] Body move has no follow-ups for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                    $"source={move?.SourceName ?? "unknown"} item={DescribeLootDebugItem(move?.Item)}");
                 return;
             }
 
+            Modules.Logger.LogInfo(
+                $"[LootCommand][MagDebug] Body move enqueue follow-ups for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                $"source={move.SourceName} item={DescribeLootDebugItem(move.Item)} count={move.FollowUpCandidates.Count}");
+
             foreach (BodyGearCandidate candidate in move.FollowUpCandidates)
             {
+                bool allowAlreadyAttempted = candidate?.FollowUpDestination == BodyGearFollowUpDestination.PrimaryWeaponEquip;
                 if (candidate?.Item != null &&
                     !string.IsNullOrEmpty(candidate.Item.Id) &&
-                    !bodyLootAttemptedItemIds.Contains(candidate.Item.Id))
+                    (allowAlreadyAttempted || !bodyLootAttemptedItemIds.Contains(candidate.Item.Id)))
                 {
                     pendingBodyGearSwapFollowUps.Enqueue(candidate);
+                    Modules.Logger.LogInfo(
+                        $"[LootCommand][MagDebug] Body follow-up enqueued for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                        $"source={candidate.SourceName} dest={candidate.FollowUpDestination} item={DescribeLootDebugItem(candidate.Item)} " +
+                        $"queue={pendingBodyGearSwapFollowUps.Count}");
+                    continue;
                 }
+
+                Modules.Logger.LogInfo(
+                    $"[LootCommand][MagDebug] Body follow-up not enqueued for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                    $"source={candidate?.SourceName ?? "unknown"} item={DescribeLootDebugItem(candidate?.Item)} " +
+                    $"reason={(candidate?.Item == null ? "itemMissing" : string.IsNullOrEmpty(candidate.Item.Id) ? "missingId" : bodyLootAttemptedItemIds.Contains(candidate.Item.Id) ? "alreadyAttempted" : "unknown")}");
             }
         }
 
@@ -730,13 +672,18 @@ namespace pitTeam.BigBrain.Actions
                     InteractableObjects.RegisterLootedWeaponTree(BotOwner, move.Item);
                     EnqueueBodyGearSwapFollowUps(move);
 
-                    if (followerData?.IsSquadMate == true)
+                    if (move.StoreAsLoot && followerData?.IsSquadMate == true)
                     {
                         InteractableObjects.StoreItem(BotOwner, move.Item);
                     }
 
                     if (move.Item is Weapon && move.Item.GetItemComponent<KnifeComponent>() == null)
                     {
+                        if (move.RebindAsPrimaryWeapon)
+                        {
+                            RebindLootedPrimaryWeapon(move.Item as Weapon);
+                        }
+
                         RefreshLootedWeaponPresentation(move.Item);
                         bodyLootWeaponListDirty = true;
                     }
@@ -767,6 +714,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             TryMarkBodyLootSearchedForBoss();
+            InteractableObjects.MarkBodyLootTargetChecked(activeBodyLootCorpse);
 
             if (bodyLootReportedMovesSucceeded > 0)
             {
@@ -805,7 +753,7 @@ namespace pitTeam.BigBrain.Actions
             bodyLootMovesSucceeded = 0;
             bodyLootReportedMovesSucceeded = 0;
             bodyLootHadEligibleButNoSpace = false;
-            bodyLootGenericSpoken = false;
+            bodyLootSuccessSpoken = false;
             bodyLootWeaponListDirty = false;
             bodyLootBackpackCapacityAttempted = false;
             bodyLootSearchStarted = false;

@@ -98,7 +98,7 @@ namespace pitTeam.Localization
                     "Allow weapons, armor, headgear, ammo, magazines, weapon mods, and grenades to be taken from bodies and containers."),
                 lootAllowGearSwapping = Entry(
                     "Allow Gear Swapping",
-                    "Allow followers to equip or swap eligible gear while looting. Active only in Immersive or Realistic loadout management."),
+                    "Allow followers to equip eligible gear while looting. Simple and Restricted only add into empty slots and return that gear as cargo; Immersive and Realistic may also swap eligible gear into the teammate kit."),
                 memberTactic = Entry(
                     "Squad Member {0} Tactic",
                     "Set Squad member fight tactic."),

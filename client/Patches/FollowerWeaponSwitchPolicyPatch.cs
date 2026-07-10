@@ -7,6 +7,7 @@ using SPT.Reflection.Patching;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using UnityEngine;
 
 namespace pitTeam.Patches
@@ -16,6 +17,26 @@ namespace pitTeam.Patches
         private const float EnemyNullReloadCooldownSeconds = 3.0f;
         private const float MidCombatRecentSeenSeconds = 2.5f;
         private static readonly Dictionary<string, float> EnemyLostAtByFollower = new Dictionary<string, float>();
+        private static readonly ConditionalWeakTable<BotOwner, DeadFollowerWeaponCallbackMarker> DeadFollowerWeaponCallbacks =
+            new ConditionalWeakTable<BotOwner, DeadFollowerWeaponCallbackMarker>();
+
+        private sealed class DeadFollowerWeaponCallbackMarker
+        {
+        }
+
+        public static void MarkDeadFollowerWeaponCallbacks(BotOwner botOwner)
+        {
+            if (botOwner != null)
+            {
+                DeadFollowerWeaponCallbacks.GetValue(botOwner, _ => new DeadFollowerWeaponCallbackMarker());
+            }
+        }
+
+        private static bool IsKnownFollowerForWeaponCallbacks(BotOwner botOwner)
+        {
+            return botOwner != null &&
+                   (BossPlayers.IsFollower(botOwner) || DeadFollowerWeaponCallbacks.TryGetValue(botOwner, out _));
+        }
 
         public static void UpdateEnemyState(BotOwner botOwner)
         {
@@ -168,17 +189,99 @@ namespace pitTeam.Patches
         public static bool ShouldSuppressDeadFollowerWeaponTaken(BotWeaponSelector selector)
         {
             BotOwner botOwner = GetSelectorBotOwner(selector);
-            if (botOwner == null || !BossPlayers.IsFollower(botOwner))
+            if (!IsKnownFollowerForWeaponCallbacks(botOwner))
             {
                 return false;
             }
 
-            if (botOwner.HealthController?.IsAlive == true)
+            if (!DeadFollowerWeaponCallbacks.TryGetValue(botOwner, out _) &&
+                botOwner.HealthController?.IsAlive == true)
             {
                 return false;
             }
 
             return true;
+        }
+
+        public static bool TryRecoverFollowerWeaponTakenException(BotWeaponSelector selector, Exception exception)
+        {
+            if (selector == null || exception == null)
+            {
+                return false;
+            }
+
+            BotOwner botOwner = GetSelectorBotOwner(selector);
+            if (!IsKnownFollowerForWeaponCallbacks(botOwner))
+            {
+                return false;
+            }
+
+            if (DeadFollowerWeaponCallbacks.TryGetValue(botOwner, out _) ||
+                botOwner.HealthController?.IsAlive != true)
+            {
+                selector.IsChanging = false;
+                selector.IsWeaponReady = true;
+                Modules.Logger.LogInfo(
+                    $"[WeaponSwitch] Suppressed dead follower OnWeaponTaken exception for '{botOwner.Profile?.Nickname ?? botOwner.ProfileId ?? "unknown"}': " +
+                    exception.Message);
+                return true;
+            }
+
+            try
+            {
+                selector.IsChanging = false;
+                selector.IsWeaponReady = true;
+                selector.UpdateWeaponsList();
+
+                BotWeaponManager weaponManager = botOwner.WeaponManager;
+                Weapon handsWeapon = botOwner.GetPlayer?.HandsController?.Item as Weapon;
+                if (weaponManager != null && handsWeapon != null)
+                {
+                    EquipmentSlot? slot = ResolveHandsWeaponSlot(botOwner, handsWeapon);
+                    if (slot.HasValue && !weaponManager.Info.ContainsKey(slot.Value))
+                    {
+                        weaponManager.Info[slot.Value] = new BotWeaponInfo(
+                            botOwner,
+                            handsWeapon,
+                            slot.Value,
+                            weaponManager.method_5);
+                    }
+                }
+            }
+            catch (Exception recoverException)
+            {
+                Modules.Logger.LogInfo($"[WeaponSwitch] Failed to recover follower OnWeaponTaken exception: {recoverException.Message}");
+            }
+
+            Modules.Logger.LogInfo(
+                $"[WeaponSwitch] Suppressed follower OnWeaponTaken exception for '{botOwner.Profile?.Nickname ?? botOwner.ProfileId ?? "unknown"}': " +
+                exception.Message);
+            return true;
+        }
+
+        private static EquipmentSlot? ResolveHandsWeaponSlot(BotOwner botOwner, Weapon weapon)
+        {
+            if (botOwner?.GetPlayer?.InventoryController?.Inventory?.Equipment == null || weapon == null)
+            {
+                return null;
+            }
+
+            InventoryEquipment equipment = botOwner.GetPlayer.InventoryController.Inventory.Equipment;
+            foreach (EquipmentSlot slot in new[]
+                     {
+                         EquipmentSlot.FirstPrimaryWeapon,
+                         EquipmentSlot.SecondPrimaryWeapon,
+                         EquipmentSlot.Holster,
+                         EquipmentSlot.Scabbard
+                     })
+            {
+                if (string.Equals(equipment.GetSlot(slot)?.ContainedItem?.Id, weapon.Id, StringComparison.Ordinal))
+                {
+                    return slot;
+                }
+            }
+
+            return null;
         }
 
         private static bool ShouldSuppressPatrolSupportAutoReturn(
@@ -237,6 +340,14 @@ namespace pitTeam.Patches
             __instance.IsChanging = false;
             __instance.IsWeaponReady = true;
             return false;
+        }
+
+        [PatchFinalizer]
+        private static Exception PatchFinalizer(BotWeaponSelector __instance, Exception __exception)
+        {
+            return FollowerWeaponSwitchPolicyRuntime.TryRecoverFollowerWeaponTakenException(__instance, __exception)
+                ? null
+                : __exception;
         }
     }
 

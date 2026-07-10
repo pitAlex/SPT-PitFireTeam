@@ -1701,6 +1701,13 @@ namespace pitTeam.Components
                 return;
             }
 
+            if (InteractableObjects.IsBodyLootTargetChecked(corpse))
+            {
+                BotOwner? follower = FindClosestEligibleInteractionFollower(corpse.transform.position, requireSquadMate: true);
+                follower?.BotTalk.TrySay(EPhraseTrigger.Negative, false);
+                return;
+            }
+
             if (InteractableObjects.IsBodyLootTargetReserved(corpse))
             {
                 return;

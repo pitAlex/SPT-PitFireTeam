@@ -329,12 +329,21 @@ namespace pitTeam.BigBrain.Actions
                 InteractableObjects.StoreItem(BotOwner, rootItem);
             }
 
-            if (rootItem is Weapon && rootItem.GetItemComponent<KnifeComponent>() == null)
+            if (rootItem is Weapon weapon && rootItem.GetItemComponent<KnifeComponent>() == null)
             {
                 BotOwner.WeaponManager.UpdateWeaponsList();
+
+                Weapon slottedPrimary = BotOwner?.GetPlayer?.InventoryController?.Inventory?.Equipment
+                    ?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem as Weapon;
+                if (IsSameLootItem(slottedPrimary, weapon))
+                {
+                    // EFT's loose-item pickup can physically fill an empty primary slot without
+                    // rebuilding the bot's spawn-time weapon info. Use the same rebind as commanded
+                    // body/container equip so the carried weapon becomes a real combat primary.
+                    RebindLootedPrimaryWeapon(weapon);
+                }
             }
 
-            BotOwner.BotTalk.TrySay(EPhraseTrigger.Roger, false);
             ClearTakeLootState(reason);
         }
 
@@ -407,11 +416,6 @@ namespace pitTeam.BigBrain.Actions
             return item?.GetItemComponent<DogtagComponent>() != null;
         }
 
-        private void SayLootPickupSuccess()
-        {
-            SayLootPhrase(EPhraseTrigger.LootGeneric);
-        }
-
         private bool TryBeginLootPickupSuccessLead(BodyGearMove move, ref bool alreadySpoken)
         {
             if (alreadySpoken ||
@@ -423,13 +427,13 @@ namespace pitTeam.BigBrain.Actions
             }
 
             alreadySpoken = true;
-            SayLootPickupSuccess();
+            SayLootPhrase(move.SuccessPhrase);
             return true;
         }
 
         private bool TryQueueBodyLootMoveAfterPickupSuccess(BodyGearMove move)
         {
-            if (!TryBeginLootPickupSuccessLead(move, ref bodyLootGenericSpoken))
+            if (!TryBeginLootPickupSuccessLead(move, ref bodyLootSuccessSpoken))
             {
                 return false;
             }
@@ -442,7 +446,7 @@ namespace pitTeam.BigBrain.Actions
 
         private bool TryQueueContainerLootMoveAfterPickupSuccess(BodyGearMove move)
         {
-            if (!TryBeginLootPickupSuccessLead(move, ref containerLootGenericSpoken))
+            if (!TryBeginLootPickupSuccessLead(move, ref containerLootSuccessSpoken))
             {
                 return false;
             }

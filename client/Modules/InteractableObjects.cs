@@ -43,6 +43,7 @@ namespace pitTeam.Modules
         private Dictionary<string, Vector3>? _bodyLootPositionsByBot;
         private Dictionary<string, LootableContainer>? _lootContainerTargetsByBot;
         private Dictionary<string, Vector3>? _lootContainerPositionsByBot;
+        private HashSet<string>? _checkedBodyLootTargetIds;
 
         private bool IsDisposed = false;
 
@@ -81,6 +82,7 @@ namespace pitTeam.Modules
                 _bodyLootPositionsByBot = new Dictionary<string, Vector3>(StringComparer.Ordinal);
                 _lootContainerTargetsByBot = new Dictionary<string, LootableContainer>(StringComparer.Ordinal);
                 _lootContainerPositionsByBot = new Dictionary<string, Vector3>(StringComparer.Ordinal);
+                _checkedBodyLootTargetIds = new HashSet<string>(StringComparer.Ordinal);
 
             }
 
@@ -88,6 +90,7 @@ namespace pitTeam.Modules
         /** Send items given to followers back to the player */
         private bool SendStoreItems()
         {
+            int trackedItemCount = _lootedItems?.Values.Sum(items => items?.Count ?? 0) ?? 0;
             GatherItems();
 
             if (!EnableBackendItemReturn)
@@ -104,13 +107,21 @@ namespace pitTeam.Modules
                 return false;
             }
 
+            if (trackedItemCount > 0 && _toSendItems.Count == 0)
+            {
+                Logger.LogInfo($"[Loot] Raid-end follower return had {trackedItemCount} tracked item id(s), but no readable return roots were found.");
+            }
+
             Dictionary<string, object>? member = null;
             if (_followersWithLoot != null && _followersWithLoot.Count > 0)
             {
                 member = _followersWithLoot.Values.FirstOrDefault();
             }
 
-            return SendReturnItems(_toSendItems, member, "post-raid returned follower items");
+            // Raid cleanup can unload the request owner immediately after this object is disposed.
+            // Send the return payload now so temporary Simple/Restricted gear cannot be stripped
+            // from teammate persistence before the mail request has actually reached the server.
+            return SendReturnItems(_toSendItems, member, "post-raid returned follower items", synchronous: true);
         }
         /** Gather what items where given to followers and which is still alive to count */
         private void GatherItems()
@@ -128,7 +139,7 @@ namespace pitTeam.Modules
             {
                 foreach (var bot in player.Value.Followers)
                 {
-                    if (bot.BotState != EBotState.Active || !bot.HealthController.IsAlive)
+                    if (!ShouldGatherRaidEndFollowerInventory(bot))
                     {
                         continue;
                     }
@@ -191,6 +202,9 @@ namespace pitTeam.Modules
                 Item item = FindStoredReturnItem(bot.GetPlayer.InventoryController, stored);
                 if (item == null)
                 {
+                    Logger.LogInfo(
+                        $"[Loot] Could not find tracked follower return item '{stored}' for " +
+                        $"'{bot.Profile?.Nickname ?? bot.ProfileId ?? "unknown"}' at raid end; botState={bot.BotState}.");
                     continue;
                 }
 
@@ -471,7 +485,8 @@ namespace pitTeam.Modules
         private static bool SendReturnItems(
             IEnumerable<Item> items,
             Dictionary<string, object>? member,
-            string context)
+            string context,
+            bool synchronous = false)
         {
             if (!EnableBackendItemReturn || items == null)
             {
@@ -507,19 +522,27 @@ namespace pitTeam.Modules
                     member,
                 }.ToJson(defaultJsonConverters);
 
-                Task.Run(() =>
+                bool Send()
                 {
                     try
                     {
                         RequestHandler.PostJson("/singleplayer/returnitems", returnItemsJson);
+                        return true;
                     }
                     catch (Exception ex)
                     {
                         Logger.LogError($"Failed to send {context}");
                         Logger.LogError(ex);
+                        return false;
                     }
-                });
+                }
 
+                if (synchronous)
+                {
+                    return Send();
+                }
+
+                Task.Run(() => Send());
                 return true;
             }
             catch (Exception ex)
@@ -566,10 +589,11 @@ namespace pitTeam.Modules
                 }
                 else
                 {
+                    bool returnedTrackedItems = SendStoreItems();
                     SendEscapedFollowerDefaultLoadoutOutcomes();
                     NpcMessage.SendLostTeammateOutcomes();
 
-                    if (!SendStoreItems())
+                    if (!returnedTrackedItems)
                     {
                         NpcMessage.NpcSendThankYou();
                     }
@@ -612,6 +636,7 @@ namespace pitTeam.Modules
             _bodyLootPositionsByBot?.Clear();
             _lootContainerTargetsByBot?.Clear();
             _lootContainerPositionsByBot?.Clear();
+            _checkedBodyLootTargetIds?.Clear();
 
             _currDoor = null;
             _doorsToOpen?.Clear();
@@ -630,6 +655,7 @@ namespace pitTeam.Modules
             _bodyLootPositionsByBot = null;
             _lootContainerTargetsByBot = null;
             _lootContainerPositionsByBot = null;
+            _checkedBodyLootTargetIds = null;
 
             _isBossDead = false;
 
@@ -653,10 +679,7 @@ namespace pitTeam.Modules
                 {
                     foreach (var bot in boss.Value.Followers)
                     {
-                        if (bot == null ||
-                            bot.BotState != EBotState.Active ||
-                            bot.HealthController?.IsAlive != true ||
-                            bot.GetPlayer?.InventoryController?.Inventory?.Equipment == null ||
+                        if (!ShouldGatherRaidEndFollowerInventory(bot) ||
                             string.IsNullOrWhiteSpace(bot.Profile?.AccountId) ||
                             !seenAids.Add(bot.Profile.AccountId))
                         {
@@ -751,6 +774,22 @@ namespace pitTeam.Modules
             return maximum > 0f ? Mathf.Clamp01(current / maximum) : 1d;
         }
 
+        private static bool ShouldGatherRaidEndFollowerInventory(BotOwner bot)
+        {
+            if (bot == null ||
+                bot.IsDead ||
+                bot.HealthController?.IsAlive != true ||
+                bot.GetPlayer?.InventoryController?.Inventory?.Equipment == null)
+            {
+                return false;
+            }
+
+            // BotsController.Stop can move a still-alive follower out of Active before our
+            // cleanup runs. Raid-end return and equipment snapshots only require a readable
+            // inventory, so do not drop tracked cargo just because BotState has already changed.
+            return true;
+        }
+
         public static void Dispose()
         {
             if (Instance != null)
@@ -798,6 +837,30 @@ namespace pitTeam.Modules
         {
             if (Instance == null) return null;
             return Instance._bodyLootTarget;
+        }
+
+        public static bool IsBodyLootTargetChecked(Corpse? corpse)
+        {
+            if (Instance?._checkedBodyLootTargetIds == null ||
+                corpse == null ||
+                !TryGetBodyLootTargetId(corpse, out string targetId))
+            {
+                return false;
+            }
+
+            return Instance._checkedBodyLootTargetIds.Contains(targetId);
+        }
+
+        public static void MarkBodyLootTargetChecked(Corpse? corpse)
+        {
+            if (Instance?._checkedBodyLootTargetIds == null ||
+                corpse == null ||
+                !TryGetBodyLootTargetId(corpse, out string targetId))
+            {
+                return;
+            }
+
+            Instance._checkedBodyLootTargetIds.Add(targetId);
         }
 
         public static void SetCurLootContainerTarget(LootableContainer? container)
@@ -983,6 +1046,11 @@ namespace pitTeam.Modules
 
             Corpse targetCorpse = corpse ?? GetAssignedBodyLootTarget(bot) ?? Instance._bodyLootTarget;
             if (targetCorpse == null)
+            {
+                return false;
+            }
+
+            if (IsBodyLootTargetChecked(targetCorpse))
             {
                 return false;
             }
@@ -1201,6 +1269,19 @@ namespace pitTeam.Modules
             Item secondRoot = second.ItemOwner?.RootItem as Item;
             return !string.IsNullOrEmpty(firstRoot?.Id) &&
                    string.Equals(firstRoot.Id, secondRoot?.Id, StringComparison.Ordinal);
+        }
+
+        private static bool TryGetBodyLootTargetId(Corpse corpse, out string targetId)
+        {
+            targetId = string.Empty;
+            Item root = corpse?.ItemOwner?.RootItem as Item;
+            if (string.IsNullOrEmpty(root?.Id))
+            {
+                return false;
+            }
+
+            targetId = root.Id;
+            return true;
         }
 
         private static bool IsSameContainerLootTarget(LootableContainer? first, LootableContainer? second)
@@ -1628,6 +1709,41 @@ namespace pitTeam.Modules
 
             RegisterLootedWeaponTree(bot, item);
             TrackReturnRoot(item, treeIds, list);
+            TrackReloadableWeaponMagazines(item, list);
+        }
+
+        private static void TrackReloadableWeaponMagazines(Item item, List<string> trackedReturnIds)
+        {
+            if (item == null || trackedReturnIds == null)
+            {
+                return;
+            }
+
+            foreach (Weapon weapon in GetWeaponTreeItems(item))
+            {
+                MagazineItemClass magazine;
+                try
+                {
+                    magazine = weapon.GetCurrentMagazine();
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (magazine == null ||
+                    string.IsNullOrWhiteSpace(magazine.Id) ||
+                    trackedReturnIds.Contains(magazine.Id))
+                {
+                    continue;
+                }
+
+                // The weapon is the normal return root, but EFT can eject its original magazine
+                // into the vest during combat. Keep the magazine id as a fallback root so it is
+                // still stripped/returned after reloading; ancestor checks suppress duplicates
+                // while the magazine remains seated in the tracked weapon.
+                trackedReturnIds.Add(magazine.Id);
+            }
         }
 
         public static void RegisterLootedWeaponTree(BotOwner bot, Item item)

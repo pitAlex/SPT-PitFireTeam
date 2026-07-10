@@ -130,6 +130,32 @@ namespace pitTeam.BigBrain.Actions
             }
         }
 
+        private static bool TryFindBackpackAddressForItem(
+            InventoryEquipment equipment,
+            Item item,
+            out ItemAddress? address)
+        {
+            address = null;
+            Item backpack = equipment?.GetSlot(EquipmentSlot.Backpack)?.ContainedItem;
+            if (backpack is not SearchableItemItemClass searchable)
+            {
+                return false;
+            }
+
+            foreach (EFT.InventoryLogic.IContainer container in GetSearchableContainersRecursive(searchable))
+            {
+                if (container != null &&
+                    container.TryFindLocationForItem(item, out ItemAddress candidateAddress) &&
+                    !object.Equals(item.Parent, candidateAddress))
+                {
+                    address = candidateAddress;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private static IEnumerable<EFT.InventoryLogic.IContainer> GetSearchableContainersRecursive(SearchableItemItemClass item)
         {
             foreach (EFT.InventoryLogic.IContainer container in item.Containers ?? Enumerable.Empty<EFT.InventoryLogic.IContainer>())
@@ -137,7 +163,7 @@ namespace pitTeam.BigBrain.Actions
                 yield return container;
             }
 
-            foreach (Item child in item.GetAllItems())
+            foreach (Item child in SnapshotLootTreeItems(item))
             {
                 if (child != null && child != item && child is SearchableItemItemClass nested)
                 {

@@ -62,7 +62,7 @@ namespace pitTeam.BigBrain.Actions
         private int containerLootMovesSucceeded;
         private int containerLootReportedMovesSucceeded;
         private bool containerLootHadEligibleButNoSpace;
-        private bool containerLootGenericSpoken;
+        private bool containerLootSuccessSpoken;
         private bool containerLootWeaponListDirty;
         private bool containerLootOpened;
         private float containerLootOpenRequestedAt;
@@ -79,7 +79,7 @@ namespace pitTeam.BigBrain.Actions
         private int bodyLootMovesSucceeded;
         private int bodyLootReportedMovesSucceeded;
         private bool bodyLootHadEligibleButNoSpace;
-        private bool bodyLootGenericSpoken;
+        private bool bodyLootSuccessSpoken;
         private bool bodyLootWeaponListDirty;
         private bool bodyLootBackpackCapacityAttempted;
         private bool bodyLootSearchStarted;
@@ -157,7 +157,7 @@ namespace pitTeam.BigBrain.Actions
             containerLootMovesSucceeded = 0;
             containerLootReportedMovesSucceeded = 0;
             containerLootHadEligibleButNoSpace = false;
-            containerLootGenericSpoken = false;
+            containerLootSuccessSpoken = false;
             containerLootWeaponListDirty = false;
             containerLootOpened = false;
             containerLootOpenRequestedAt = 0f;
@@ -174,7 +174,7 @@ namespace pitTeam.BigBrain.Actions
             bodyLootMovesSucceeded = 0;
             bodyLootReportedMovesSucceeded = 0;
             bodyLootHadEligibleButNoSpace = false;
-            bodyLootGenericSpoken = false;
+            bodyLootSuccessSpoken = false;
             bodyLootWeaponListDirty = false;
             bodyLootBackpackCapacityAttempted = false;
             bodyLootSearchStarted = false;
@@ -274,7 +274,7 @@ namespace pitTeam.BigBrain.Actions
                 containerLootMovesSucceeded = 0;
                 containerLootReportedMovesSucceeded = 0;
                 containerLootHadEligibleButNoSpace = false;
-                containerLootGenericSpoken = false;
+                containerLootSuccessSpoken = false;
                 containerLootWeaponListDirty = false;
                 containerLootOpened = false;
                 containerLootOpenRequestedAt = 0f;
@@ -291,7 +291,7 @@ namespace pitTeam.BigBrain.Actions
                 bodyLootMovesSucceeded = 0;
                 bodyLootReportedMovesSucceeded = 0;
                 bodyLootHadEligibleButNoSpace = false;
-                bodyLootGenericSpoken = false;
+                bodyLootSuccessSpoken = false;
                 bodyLootWeaponListDirty = false;
                 bodyLootBackpackCapacityAttempted = false;
                 bodyLootSearchStarted = false;

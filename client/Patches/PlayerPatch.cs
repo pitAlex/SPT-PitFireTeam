@@ -338,6 +338,10 @@ namespace pitTeam.Patches
                     return;
                 }
 
+                // A pending hands switch may finish after follower roster/chat cleanup begins.
+                // Preserve exact follower identity for the OnWeaponTaken death guard before any
+                // cleanup can make BossPlayers.IsFollower(...) return false.
+                FollowerWeaponSwitchPolicyRuntime.MarkDeadFollowerWeaponCallbacks(deadFollower.GetBot());
                 BattleRecorder.RecordFollowerDeath(
                     deadFollower,
                     player,

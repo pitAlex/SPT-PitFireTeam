@@ -62,17 +62,9 @@ namespace pitTeam.BigBrain.Actions
         {
             // Enemy PMC dogtags are always attempted, but report as "nothing" for voice feedback so
             // dogtag-only searches do not sound like useful loot was found.
-            if (TryGetNonTeammatePmcDogtag(corpseEquipment, out Item dogtag))
+            if (TryCreateNonTeammatePmcDogtagCandidate(corpseEquipment, out BodyGearCandidate dogtagCandidate))
             {
-                yield return new BodyGearCandidate(
-                    dogtag,
-                    EquipmentSlot.Dogtag,
-                    "Dogtag",
-                    0,
-                    bypassPriceThreshold: true,
-                    bypassCategoryFilter: true,
-                    bypassBodyGearLootability: true,
-                    reportAsLootNothing: true);
+                yield return dogtagCandidate;
             }
 
             // Enemy body content order is backpack, pockets, vest, then weapons. Vest/pocket mags
@@ -133,6 +125,28 @@ namespace pitTeam.BigBrain.Actions
             }
 
             dogtag = item;
+            return true;
+        }
+
+        private static bool TryCreateNonTeammatePmcDogtagCandidate(
+            InventoryEquipment corpseEquipment,
+            out BodyGearCandidate candidate)
+        {
+            candidate = null;
+            if (!TryGetNonTeammatePmcDogtag(corpseEquipment, out Item dogtag))
+            {
+                return false;
+            }
+
+            candidate = new BodyGearCandidate(
+                dogtag,
+                EquipmentSlot.Dogtag,
+                "Dogtag",
+                0,
+                bypassPriceThreshold: true,
+                bypassCategoryFilter: true,
+                bypassBodyGearLootability: true,
+                reportAsLootNothing: true);
             return true;
         }
 

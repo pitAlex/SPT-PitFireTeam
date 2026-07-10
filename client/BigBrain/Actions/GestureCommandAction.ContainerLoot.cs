@@ -249,15 +249,21 @@ namespace pitTeam.BigBrain.Actions
 
                 // Scenario order for containers:
                 // 1. finish delayed pickup-success moves
-                // 2. finish weapon-equip magazine follow-ups
-                // 3. optionally equip an empty primary slot
-                // 4. otherwise move eligible filtered cargo into backpack/pockets
+                // 2. finish weapon-equip/vest-swap follow-ups
+                // 3. optionally equip or narrowly swap tactical vest protection
+                // 4. optionally equip an empty primary slot
+                // 5. otherwise move eligible filtered cargo into backpack/pockets
                 if (TryStartPendingContainerLootMove(inventory))
                 {
                     return;
                 }
 
                 if (TryStartPendingContainerGearSwapFollowUpMove(inventory, followerEquipment))
+                {
+                    return;
+                }
+
+                if (TryStartEasyContainerTacticalVestMove(inventory, containerRoot, followerEquipment))
                 {
                     return;
                 }
@@ -326,6 +332,9 @@ namespace pitTeam.BigBrain.Actions
 
         private void StartContainerLootMove(InventoryController inventory, BodyGearMove move)
         {
+            Modules.Logger.LogInfo(
+                $"[LootCommand][MagDebug] Container move starting for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                $"source={move?.SourceName ?? "unknown"} item={DescribeLootDebugItem(move?.Item)} followUps={move?.FollowUpCandidates?.Count ?? 0}");
             containerLootMoveInProgress = true;
             containerLootAttemptStartedAt = Time.time;
             inventory.RunNetworkTransaction(move.Operation, new Callback(result => CompleteContainerLootMove(result, move)));
@@ -335,17 +344,35 @@ namespace pitTeam.BigBrain.Actions
         {
             if (move?.FollowUpCandidates == null || move.FollowUpCandidates.Count == 0)
             {
+                Modules.Logger.LogInfo(
+                    $"[LootCommand][MagDebug] Container move has no follow-ups for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                    $"source={move?.SourceName ?? "unknown"} item={DescribeLootDebugItem(move?.Item)}");
                 return;
             }
 
+            Modules.Logger.LogInfo(
+                $"[LootCommand][MagDebug] Container move enqueue follow-ups for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                $"source={move.SourceName} item={DescribeLootDebugItem(move.Item)} count={move.FollowUpCandidates.Count}");
+
             foreach (BodyGearCandidate candidate in move.FollowUpCandidates)
             {
+                bool allowAlreadyAttempted = candidate?.FollowUpDestination == BodyGearFollowUpDestination.PrimaryWeaponEquip;
                 if (candidate?.Item != null &&
                     !string.IsNullOrEmpty(candidate.Item.Id) &&
-                    !containerLootAttemptedItemIds.Contains(candidate.Item.Id))
+                    (allowAlreadyAttempted || !containerLootAttemptedItemIds.Contains(candidate.Item.Id)))
                 {
                     pendingContainerGearSwapFollowUps.Enqueue(candidate);
+                    Modules.Logger.LogInfo(
+                        $"[LootCommand][MagDebug] Container follow-up enqueued for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                        $"source={candidate.SourceName} dest={candidate.FollowUpDestination} item={DescribeLootDebugItem(candidate.Item)} " +
+                        $"queue={pendingContainerGearSwapFollowUps.Count}");
+                    continue;
                 }
+
+                Modules.Logger.LogInfo(
+                    $"[LootCommand][MagDebug] Container follow-up not enqueued for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                    $"source={candidate?.SourceName ?? "unknown"} item={DescribeLootDebugItem(candidate?.Item)} " +
+                    $"reason={(candidate?.Item == null ? "itemMissing" : string.IsNullOrEmpty(candidate.Item.Id) ? "missingId" : containerLootAttemptedItemIds.Contains(candidate.Item.Id) ? "alreadyAttempted" : "unknown")}");
             }
         }
 
@@ -368,13 +395,18 @@ namespace pitTeam.BigBrain.Actions
                     InteractableObjects.RegisterLootedWeaponTree(BotOwner, move.Item);
                     EnqueueContainerGearSwapFollowUps(move);
 
-                    if (followerData?.IsSquadMate == true)
+                    if (move.StoreAsLoot && followerData?.IsSquadMate == true)
                     {
                         InteractableObjects.StoreItem(BotOwner, move.Item);
                     }
 
                     if (move.Item is Weapon && move.Item.GetItemComponent<KnifeComponent>() == null)
                     {
+                        if (move.RebindAsPrimaryWeapon)
+                        {
+                            RebindLootedPrimaryWeapon(move.Item as Weapon);
+                        }
+
                         RefreshLootedWeaponPresentation(move.Item);
                         containerLootWeaponListDirty = true;
                     }
@@ -471,7 +503,7 @@ namespace pitTeam.BigBrain.Actions
             containerLootMovesSucceeded = 0;
             containerLootReportedMovesSucceeded = 0;
             containerLootHadEligibleButNoSpace = false;
-            containerLootGenericSpoken = false;
+            containerLootSuccessSpoken = false;
             containerLootWeaponListDirty = false;
             containerLootOpened = false;
             containerLootOpenRequestedAt = 0f;
@@ -526,19 +558,25 @@ namespace pitTeam.BigBrain.Actions
         private sealed class BodyGearMove
         {
             // One executable inventory transaction plus optional follow-ups. Follow-ups let easy
-            // weapon equip move the weapon first, then move a supporting mag after inventory settles.
+            // weapon equip move support mags first, then make the weapon primary after inventory settles.
             public BodyGearMove(
                 Item item,
                 GInterface424 operation,
                 string sourceName,
                 bool reportAsLootNothing,
-                IReadOnlyList<BodyGearCandidate>? followUpCandidates = null)
+                IReadOnlyList<BodyGearCandidate>? followUpCandidates = null,
+                bool storeAsLoot = true,
+                EPhraseTrigger successPhrase = EPhraseTrigger.LootGeneric,
+                bool rebindAsPrimaryWeapon = false)
             {
                 Item = item;
                 Operation = operation;
                 SourceName = sourceName;
                 ReportAsLootNothing = reportAsLootNothing;
                 FollowUpCandidates = followUpCandidates ?? Array.Empty<BodyGearCandidate>();
+                StoreAsLoot = storeAsLoot;
+                SuccessPhrase = successPhrase;
+                RebindAsPrimaryWeapon = rebindAsPrimaryWeapon;
             }
 
             public Item Item { get; }
@@ -546,17 +584,31 @@ namespace pitTeam.BigBrain.Actions
             public string SourceName { get; }
             public bool ReportAsLootNothing { get; }
             public IReadOnlyList<BodyGearCandidate> FollowUpCandidates { get; }
+            public bool StoreAsLoot { get; }
+            public EPhraseTrigger SuccessPhrase { get; }
+            public bool RebindAsPrimaryWeapon { get; }
 
-            public BodyGearMove WithFollowUps(IReadOnlyList<BodyGearCandidate> followUpCandidates)
+            public BodyGearMove WithFollowUps(
+                IReadOnlyList<BodyGearCandidate> followUpCandidates,
+                EPhraseTrigger? successPhrase = null)
             {
-                return new BodyGearMove(Item, Operation, SourceName, ReportAsLootNothing, followUpCandidates);
+                return new BodyGearMove(
+                    Item,
+                    Operation,
+                    SourceName,
+                    ReportAsLootNothing,
+                    followUpCandidates,
+                    StoreAsLoot,
+                    successPhrase ?? SuccessPhrase,
+                    RebindAsPrimaryWeapon);
             }
         }
 
         private sealed class BodyGearCandidate
         {
-            // Candidate flags describe why an item is allowed through normal filters. Dogtags are
-            // the main bypass case; support magazines use SkipMagazine/SourceName to track policy.
+            // Candidate flags describe why an item is allowed through normal filters. Dogtags and
+            // gear add/swap candidates are the main bypass cases; operational magazines use their
+            // own helper so they do not inherit ordinary loot price/category/body filters.
             public BodyGearCandidate(
                 Item item,
                 EquipmentSlot? sourceSlot,
@@ -566,7 +618,8 @@ namespace pitTeam.BigBrain.Actions
                 bool bypassPriceThreshold = false,
                 bool bypassCategoryFilter = false,
                 bool bypassBodyGearLootability = false,
-                bool reportAsLootNothing = false)
+                bool reportAsLootNothing = false,
+                BodyGearFollowUpDestination followUpDestination = BodyGearFollowUpDestination.Default)
             {
                 Item = item;
                 SourceSlot = sourceSlot;
@@ -577,6 +630,7 @@ namespace pitTeam.BigBrain.Actions
                 BypassCategoryFilter = bypassCategoryFilter;
                 BypassBodyGearLootability = bypassBodyGearLootability;
                 ReportAsLootNothing = reportAsLootNothing;
+                FollowUpDestination = followUpDestination;
             }
 
             public Item Item { get; }
@@ -588,6 +642,30 @@ namespace pitTeam.BigBrain.Actions
             public bool BypassCategoryFilter { get; }
             public bool BypassBodyGearLootability { get; }
             public bool ReportAsLootNothing { get; }
+            public BodyGearFollowUpDestination FollowUpDestination { get; }
+
+            public BodyGearCandidate WithFollowUpDestination(BodyGearFollowUpDestination destination)
+            {
+                return new BodyGearCandidate(
+                    Item,
+                    SourceSlot,
+                    SourceName,
+                    SourceTier,
+                    SkipMagazine,
+                    BypassPriceThreshold,
+                    BypassCategoryFilter,
+                    BypassBodyGearLootability,
+                    ReportAsLootNothing,
+                    destination);
+            }
+        }
+
+        private enum BodyGearFollowUpDestination
+        {
+            Default,
+            OperationalVest,
+            BackpackCargo,
+            PrimaryWeaponEquip
         }
 
         private static readonly EquipmentSlot[] BodyGearTopLevelSlotOrder =

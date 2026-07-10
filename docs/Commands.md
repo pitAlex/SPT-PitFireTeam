@@ -422,7 +422,7 @@ Execution:
 - `GestureCommandAction.HandleTakeBodyGear()`
 - Moves to the corpse.
 - Checks whether at least one eligible item can be moved, plays the loot search sound, and waits briefly before moving items. Delay is based on the total grid cells searched from corpse pockets, backpack, and vest containers, with a short bounded cap so it reads as searching without matching full player search time.
-- After the search delay, says `EPhraseTrigger.LootGeneric` once when the first real non-dogtag loot move is queued, then waits a short beat before executing that move so the pickup confirmation does not run into `Ready`.
+- After the search delay, says one pickup-confirmation phrase when the first real non-dogtag loot move is queued, then waits a short beat before executing that move so the pickup confirmation does not run into `Ready`. Weapon add/swap moves use `EPhraseTrigger.LootWeapon`; other loot uses `EPhraseTrigger.LootGeneric`.
 - Plans one live inventory transaction at a time.
 - Teammate corpses use the protected recovery path:
     - uses empty compatible equipment slots as cargo space when possible, but does not swap or throw away the follower's current kit
@@ -435,15 +435,19 @@ Execution:
     - tries to take the corpse dogtag first only for non-teammate USEC/BEAR bodies; dogtags bypass the min/max price filter but still require a valid backpack/pocket move
     - dogtag-only body looting still says `EPhraseTrigger.LootNothing`
     - checks backpack contents first, then pockets, then vest contents
-    - does not take the corpse's worn backpack, armor, armored rig, or tactical vest as whole equipment
-    - pocket and vest contents skip magazines during normal filtered looting so follower reload space is not disturbed; when `Allow Gear Swapping` is active, one compatible loaded magazine from the loot source may be moved into the follower's tactical vest as operational support for an accepted empty-primary weapon equip
+    - normal filtered carry looting does not take the corpse's worn backpack, armor, armored rig, or tactical vest as whole equipment
+    - pocket and vest contents skip magazines during normal filtered looting so follower reload space is not disturbed; when `Allow Gear Swapping` is active, compatible loaded magazines from the loot source may be moved into the follower's tactical vest as operational support for an accepted empty-primary weapon equip
     - armor plates are ignored, including loose/cargo plates and installed plates inside armor or plate-carrier trees
-    - weapons are priced and moved as whole weapon trees, including attached mods, instead of being stripped part by part; with `Allow Gear Swapping` active in `Immersive` or `Realistic`, a long gun can equip into an empty first primary slot only when it has a full installed magazine or a compatible loaded spare magazine that fits the follower's tactical vest
+    - normal cargo weapons are priced and moved as whole weapon trees, including attached mods, instead of being stripped part by part; gear add/swap ignores min/max price and is controlled by `Allow Gear Swapping`
+    - with `Allow Gear Swapping` active, a long gun can equip into an empty first primary slot only when it has a full installed magazine or at least one compatible loaded spare magazine that fits the follower's tactical vest
+    - successful empty-primary weapon equip rebuilds the follower weapon-manager primary info and requests a main-hand switch so combat can use the new weapon
     - weapons that do not qualify for empty first primary still try empty compatible cargo/support slots, such as second primary or holster, then fall back to backpack/pocket space
-    - category filters from `Looting Settings` are checked before price: `Pickup Food`, `Pickup Meds`, `Pickup Valuables`, and `Pickup Gear`; corpse dogtags bypass these category filters
-    - item price is compared once against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound; money ignores these price bounds when `Pickup Valuables` is enabled
+    - tactical vests are eligible for gear handling only when `Allow Gear Swapping` is active: an empty tactical vest slot may be filled directly in any mode; occupied vest replacement is only allowed in Immersive/Realistic, and only when the found vest is a protection upgrade, the old vest has no non-plate contents, and the old vest can be moved as a whole tree into the backpack first
+    - category filters from `Looting Settings` are checked before price for ordinary cargo: `Pickup Food`, `Pickup Meds`, `Pickup Valuables`, and `Pickup Gear`; corpse dogtags and `Allow Gear Swapping` add/swap candidates bypass these category filters
+    - compatible loaded magazines moved as support for an accepted weapon equip bypass the normal loot filters entirely; they only need to be loaded, safe to take, and able to fit in the follower's tactical vest
+    - ordinary cargo item price is compared once against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound; money ignores these price bounds when `Pickup Valuables` is enabled
     - non-weapon successful moves only target the follower's backpack and pockets, never the follower's rig
-- Stores successful moved items through `InteractableObjects.StoreItem(...)` for squadmates.
+- Stores successful cargo moves through `InteractableObjects.StoreItem(...)` for squadmates. Additive equipped gear moves are also stored in `Simple` and `Restricted`; Immersive/Realistic equipped gear can persist as the teammate's kit instead.
 - On completion, says `EPhraseTrigger.Ready` when at least one non-dogtag item was moved, `EPhraseTrigger.Negative` when eligible loot existed but no executable move could be built, or `EPhraseTrigger.LootNothing` when no eligible non-dogtag item existed.
 - Once searching starts, normal replacement commands are ignored until the loot command completes; combat, timeout, and safety invalidation can still stop the command.
 - Clears command on success/failure/invalid state.
@@ -472,15 +476,18 @@ Execution:
 - Moves to the container.
 - Opens the container if it is shut.
 - Checks whether at least one eligible item can be moved, plays the loot search sound, and waits briefly before moving items. Delay is based on the total grid cells in the container tree, with a short bounded cap so it reads as searching without matching full player search time.
-- After the search delay, says `EPhraseTrigger.LootGeneric` once when the first real loot move is queued, then waits a short beat before executing that move so the pickup confirmation does not run into `Ready`.
+- After the search delay, says one pickup-confirmation phrase when the first real loot move is queued, then waits a short beat before executing that move so the pickup confirmation does not run into `Ready`. Weapon add/swap moves use `EPhraseTrigger.LootWeapon`; other loot uses `EPhraseTrigger.LootGeneric`.
 - Searches container contents through the same filtered-loot planner used for non-teammate bodies.
-- Applies `Looting Settings` category filters before price: `Pickup Food`, `Pickup Meds`, `Pickup Valuables`, and `Pickup Gear`.
-- Compares each candidate item tree against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound. Money ignores these price bounds when `Pickup Valuables` is enabled.
+- Applies `Looting Settings` category filters before price for ordinary cargo: `Pickup Food`, `Pickup Meds`, `Pickup Valuables`, and `Pickup Gear`.
+- Compares each ordinary cargo candidate item tree against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound. Money ignores these price bounds when `Pickup Valuables` is enabled.
 - Moves non-weapon candidates only into the follower's backpack and pockets, never the follower's rig.
-- Weapons are priced and moved as whole weapon trees; with `Allow Gear Swapping` active in `Immersive` or `Realistic`, a long gun can equip into an empty first primary slot only when it has a full installed magazine or a compatible loaded spare magazine that fits the follower's tactical vest.
+- Normal cargo weapons are priced and moved as whole weapon trees. With `Allow Gear Swapping` active, gear add/swap ignores min/max price: a long gun can equip into an empty first primary slot only when it has a full installed magazine or at least one compatible loaded spare magazine that fits the follower's tactical vest. Once accepted, compatible loaded spare magazines from that loot source bypass normal loot filters and are moved into the vest while space remains valid.
+- Successful empty-primary weapon equip rebuilds the follower weapon-manager primary info and requests a main-hand switch so combat can use the new weapon.
 - Weapons that do not qualify for empty first primary still try empty compatible cargo/support slots, such as second primary or holster, then fall back to backpack/pocket space.
+- Tactical vests follow the same narrow gear rule: fill an empty tactical vest slot directly in any mode, or replace an occupied vest only in Immersive/Realistic when the found vest is a protection upgrade, the old vest has no non-plate contents, and the old vest can be moved as a whole tree into the backpack first.
+- `Allow Gear Swapping` add/swap candidates bypass min/max price and the `Pickup Gear` category filter; ordinary gear cargo fallback still respects both.
 - Closes the container on normal completion. Combat, timeout, or safety interruption can leave it open.
-- Stores successful moved items through `InteractableObjects.StoreItem(...)` for squadmates.
+- Stores successful cargo moves through `InteractableObjects.StoreItem(...)` for squadmates. Additive equipped gear moves are also stored in `Simple` and `Restricted`; Immersive/Realistic equipped gear can persist as the teammate's kit instead.
 - On completion, says `EPhraseTrigger.Ready` when at least one item was moved, `EPhraseTrigger.Negative` when eligible loot existed but no executable move could be built, or `EPhraseTrigger.LootNothing` when no eligible item existed.
 - Once searching starts, normal replacement commands are ignored until the loot command completes; combat, timeout, and safety invalidation can still stop the command.
 - Clears command on success/failure/invalid state.

@@ -375,7 +375,7 @@ The category checkboxes default on and are applied before price:
 - `Pickup Meds` covers usable medical items, drugs, stimulators, and med kits.
 - `Pickup Valuables` covers barter items, keys, special items, info items, money, and other non-gear loot.
 - `Pickup Gear` covers weapons, armor, headgear, ammo, magazines, weapon mods, and grenades.
-- `Allow Gear Swapping` is the explicit gate for future gear equip/swap behavior and is only active in `Immersive` or `Realistic` loadout management.
+- `Allow Gear Swapping` is the explicit gate for gear equip/swap behavior. `Simple` and `Restricted` only add gear into empty slots and return that added gear as tracked cargo, while `Immersive` and `Realistic` can also swap eligible gear into the teammate kit.
 
 Crossing into or out of `Realistic` also strips the secure-container tree from saved teammate `Default` loadouts before the next profile/edit view can expose it.
 

@@ -416,6 +416,7 @@ namespace pitTeam
 
             // command/request patches
             new QuickPanelPatch().Enable();
+            new QuickPanelHurtPhrasePatch().Enable();
             new QuickPanelUpdateBackpackInteractionPatch().Enable();
             new GestureMenuPatch().Enable();
             new CreatePhraseGroupPatch().Enable();
@@ -1076,7 +1077,7 @@ namespace pitTeam
 
         internal static bool IsLootGearSwappingEnabled()
         {
-            return lootAllowGearSwapping?.Value == true && IsFollowerLoadoutLootableMode();
+            return lootAllowGearSwapping?.Value == true;
         }
 
         private static void SyncServerSettings()
