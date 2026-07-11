@@ -104,6 +104,7 @@
 		"DuplicateProfileRecoveryTitle": "Profile recovered",
 		"DuplicateProfileRecoveryBody": "Duplicate items were found in both player and teammate profiles. The following teammate profiles have been stripped of the duplicate in order to safely recover them: {0}",
 		"LoadoutEditorSaveFailed": "Failed to save teammate inventory.",
+		"LockedStashItemBlocked": "Teammate loadout save blocked: an item inside a locked stash container was moved or changed. Unlock the container and try again. Locked container: id={0}, tpl={1}. Blocked item: id={2}, tpl={3}.",
 		"PlayerStash": "Player Stash",
 		"PlayerStashPlaceholder": "Failed to load cloned stash view.\n{0}",
 		"BotInventory": "Follower Inventory",
