@@ -52,6 +52,8 @@ public class FriendlyTeammateService(
     private const string DuplicateProfileRecoveryTitleFallback = "Profile recovered";
     private const string DuplicateProfileRecoveryBodyFallback =
         "Duplicate items were found in both player and teammate profiles. The following teammate profiles have been stripped of the duplicate in order to safely recover them: {0}";
+    private const string LockedStashItemBlockedFallback =
+        "Teammate loadout save blocked: an item inside a locked stash container was moved or changed. Unlock the container and try again. Locked container: id={0}, tpl={1}. Blocked item: id={2}, tpl={3}.";
 
     private readonly Dictionary<string, FriendlyTeammateProfileRecoveryNotice> profileRecoveryNotices = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, FriendlyTeammateStartupRecoveryNotice> startupRecoveryNotices = new(StringComparer.OrdinalIgnoreCase);
@@ -1216,11 +1218,16 @@ public class FriendlyTeammateService(
             allowGeneratedSlotDescendants: true);
         ValidateNoRealCommitOverlap(replacementEquipmentItems, replacementStashItems, playerStashRootId);
         ValidateNoEquippedPlayerItemCommit(playerPmc, replacementEquipmentItems, currentPlayerStashIds);
+        string lockedStashItemMessageTemplate = GetLanguageValue(
+            languageService.GetStringMap(sessionId, "socialUi"),
+            "LockedStashItemBlocked",
+            LockedStashItemBlockedFallback);
         ValidateLockedPlayerStashItemsUnchanged(
             playerPmc.Inventory.Items,
             replacementEquipmentItems,
             replacementStashItems,
-            playerStashRootId);
+            playerStashRootId,
+            lockedStashItemMessageTemplate);
 
         var originalPlayerItems = cloner.Clone(playerPmc.Inventory.Items) ?? playerPmc.Inventory.Items.ToList();
         var originalTeammateItems = cloner.Clone(teammate.Inventory.Items) ?? teammate.Inventory.Items.ToList();
@@ -2455,7 +2462,8 @@ public class FriendlyTeammateService(
         List<Item> currentPlayerItems,
         List<Item> replacementEquipmentItems,
         List<Item> replacementStashItems,
-        string playerStashRootId)
+        string playerStashRootId,
+        string messageTemplate)
     {
         var currentById = ToItemDictionary(currentPlayerItems);
         var replacementStashById = ToItemDictionary(replacementStashItems);
@@ -2465,7 +2473,7 @@ public class FriendlyTeammateService(
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var currentStashIds = GetItemTreeIds(currentPlayerItems, playerStashRootId);
-        var blockedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var lockedRootByBlockedId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in currentPlayerItems)
         {
             if (item?.Id == null
@@ -2475,36 +2483,56 @@ public class FriendlyTeammateService(
                 continue;
             }
 
-            blockedIds.UnionWith(GetItemTreeIds(currentPlayerItems, item.Id.ToString()));
+            string lockedRootId = item.Id.ToString();
+            foreach (string blockedId in GetItemTreeIds(currentPlayerItems, lockedRootId))
+            {
+                lockedRootByBlockedId.TryAdd(blockedId, lockedRootId);
+            }
         }
 
-        foreach (string id in blockedIds)
+        foreach (KeyValuePair<string, string> blockedEntry in lockedRootByBlockedId)
         {
+            string id = blockedEntry.Key;
             if (!currentById.TryGetValue(id, out Item? currentItem)
                 || !currentStashIds.Contains(id))
             {
                 continue;
             }
 
+            currentById.TryGetValue(blockedEntry.Value, out Item? lockedRootItem);
             if (replacementEquipmentIds.Contains(id))
             {
-                throw new FriendlyTeammateException(
-                    $"Locked player stash item cannot be moved to teammate equipment: id={currentItem.Id}, tpl={currentItem.Template}");
+                throw new FriendlyTeammateException(FormatLockedStashItemMessage(messageTemplate, lockedRootItem, currentItem));
             }
 
             if (!replacementStashById.TryGetValue(id, out Item? replacementItem))
             {
-                throw new FriendlyTeammateException(
-                    $"Locked player stash item cannot be removed during teammate equipment edit: id={currentItem.Id}, tpl={currentItem.Template}");
+                throw new FriendlyTeammateException(FormatLockedStashItemMessage(messageTemplate, lockedRootItem, currentItem));
             }
 
             if (!LockedStashItemStateEquals(currentItem, replacementItem))
             {
-                throw new FriendlyTeammateException(
-                    $"Locked player stash item cannot be moved or modified during teammate equipment edit: id={currentItem.Id}, tpl={currentItem.Template}");
+                throw new FriendlyTeammateException(FormatLockedStashItemMessage(messageTemplate, lockedRootItem, currentItem));
             }
 
             PreservePinLockState(currentItem, replacementItem);
+        }
+    }
+
+    private static string FormatLockedStashItemMessage(string messageTemplate, Item? lockedRootItem, Item blockedItem)
+    {
+        string lockedId = lockedRootItem != null ? lockedRootItem.Id.ToString() : blockedItem.Id.ToString();
+        string lockedTemplate = lockedRootItem != null ? lockedRootItem.Template.ToString() : blockedItem.Template.ToString();
+        string blockedId = blockedItem.Id.ToString();
+        string blockedTemplate = blockedItem.Template.ToString();
+
+        try
+        {
+            return string.Format(messageTemplate, lockedId, lockedTemplate, blockedId, blockedTemplate);
+        }
+        catch
+        {
+            return string.Format(LockedStashItemBlockedFallback, lockedId, lockedTemplate, blockedId, blockedTemplate);
         }
     }
 
