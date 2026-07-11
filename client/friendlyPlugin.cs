@@ -892,6 +892,11 @@ namespace pitTeam
                 normalized = normalized.Substring(0, separatorIndex);
             }
 
+            if (normalized.StartsWith("zh") || normalized.StartsWith("ch"))
+            {
+                return "chs";
+            }
+
             return normalized switch
             {
                 "de" => "ge",
