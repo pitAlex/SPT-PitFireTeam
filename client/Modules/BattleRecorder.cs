@@ -151,6 +151,11 @@ namespace pitTeam.Modules
                 return;
             }
 
+            if (ShouldSkipCommandRecord(bot!, command))
+            {
+                return;
+            }
+
             RecorderFollowerState state = GetOrCreateState(bot!);
 
             WriteEventInternal("commandSet", bot, new
@@ -173,6 +178,11 @@ namespace pitTeam.Modules
         {
             BotOwner? bot = follower?.GetBot();
             if (!CanRecordBot(bot) || previousCommand == FollowerCommandType.None)
+            {
+                return;
+            }
+
+            if (ShouldSkipCommandRecord(bot!, previousCommand))
             {
                 return;
             }
@@ -1221,6 +1231,16 @@ namespace pitTeam.Modules
                    IsRecording() &&
                    !string.IsNullOrEmpty(bot.ProfileId) &&
                    BossPlayers.IsFollower(bot);
+        }
+
+        private static bool ShouldSkipCommandRecord(BotOwner bot, FollowerCommandType command)
+        {
+            if (command != FollowerCommandType.MoveToPoint)
+            {
+                return false;
+            }
+
+            return bot.Memory?.HaveEnemy != true && !FollowerCombatLayer.IsFollowerCombatLayerActive(bot);
         }
 
         public static bool IsRecordingFor(BotOwner? bot, bool requireRecordedCombat = false)
