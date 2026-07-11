@@ -217,6 +217,11 @@ public class FriendlyLanguageService(ISptLogger<FriendlyLanguageService> logger)
             normalized = normalized[..separatorIndex];
         }
 
+        if (normalized.StartsWith("zh") || normalized.StartsWith("ch"))
+        {
+            return "chs";
+        }
+
         return normalized switch
         {
             "de" => "ge",
