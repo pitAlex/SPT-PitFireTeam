@@ -527,10 +527,12 @@ The following are planned features in reaching a release version (1.0.0) and bey
 
 ### Addons:
 
+Addons are standalone features that extend the mod’s core functionality. They are developed independently and may be released alongside major mod versions or at any point between them, without following a fixed release order or schedule.
+
 - **Scavs for hire** - being able to play with teammates as a Scav
 - **Going Rogue** - being able to recruit and command Goons along with the Rogues in raids
 - **SAIN tactics addon** - being able to use SAIN personalities as teammate tactics
-- **Expanded looting gear swapping** - additional carefully controlled weapon, armor, and equipment upgrades beyond the limited empty-slot and protection-vest cases currently available
+- **Expanded looting** - expanding the looting capabilities through existing mods (such as Looting Bots mod)
 
 ## Known Issues and Conflicts
 
