@@ -832,13 +832,35 @@ namespace pitTeam.BigBrain.Actions
         {
             move = null;
             handledByGearPolicy = false;
-            // Gear swapping phase 1 only equips an empty primary. Replacing a spawned primary is
-            // deferred because vanilla bot weapon/reload state is cached beyond the slot item.
             if (!pitFireTeam.IsLootGearSwappingEnabled() ||
                 candidate?.Item is not Weapon weapon ||
-                !IsEasyWeaponEquipCandidate(candidate) ||
-                followerEquipment?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem != null ||
-                !TryFindEquipmentSlotAddress(followerEquipment, EquipmentSlot.FirstPrimaryWeapon, weapon, out _))
+                !IsEasyWeaponEquipCandidate(candidate))
+            {
+                return false;
+            }
+
+            // A working primary makes an empty second-primary slot a real vanilla support role.
+            // This is an add, not a replacement: source magazines may join only when they fit in
+            // fast access with the inserted-magazine landing reserve still intact.
+            if (followerEquipment?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem is Weapon)
+            {
+                if (TryBuildWorkingPrimarySecondaryWeaponEquipChain(
+                        inventory,
+                        followerEquipment,
+                        candidate,
+                        operationalMagazineCandidates,
+                        out move))
+                {
+                    handledByGearPolicy = true;
+                    return true;
+                }
+
+                return false;
+            }
+
+            // The current primary phase only fills an empty slot. Replacing an existing primary is
+            // deferred because vanilla bot weapon/reload state is cached beyond the physical item.
+            if (!TryFindEquipmentSlotAddress(followerEquipment, EquipmentSlot.FirstPrimaryWeapon, weapon, out _))
             {
                 return false;
             }
@@ -884,14 +906,254 @@ namespace pitTeam.BigBrain.Actions
                     out move);
             }
 
-            // Until P3 can load a magazine through a real weapon transaction, a weapon with no
-            // inserted magazine cannot enter primary/secondary. Ordinary Pickup Gear and price
-            // own its cargo decision and may retain compatible source magazines with it.
+            if (TryBuildEmptyMagazineWeaponEquipChain(
+                    inventory,
+                    followerEquipment,
+                    candidate,
+                    magazinePlan,
+                    out move,
+                    out string emptyMagazineReason))
+            {
+                return true;
+            }
+
+            // An empty-magazine weapon is equipped only when a real source-magazine insertion and
+            // the resulting fast-access plan can make it primary-ready. Otherwise ordinary Pickup
+            // Gear and price own the existing potential-weapon cargo package behavior.
             handledByGearPolicy = false;
             Modules.Logger.LogInfo(
                 $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
                 $"weapon={DescribeLootDebugItem(weapon)} evaluation=gearCandidateRejected " +
-                "destination=OrdinaryCargo decisionReason=noInsertedMagazine");
+                $"destination=OrdinaryCargo decisionReason={emptyMagazineReason}");
+            return false;
+        }
+
+        private bool TryBuildWorkingPrimarySecondaryWeaponEquipChain(
+            InventoryController inventory,
+            InventoryEquipment followerEquipment,
+            BodyGearCandidate candidate,
+            IEnumerable<BodyGearCandidate>? operationalMagazineCandidates,
+            out BodyGearMove? move)
+        {
+            move = null;
+            if (candidate?.Item is not Weapon weapon ||
+                followerEquipment?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem is not Weapon ||
+                followerEquipment.GetSlot(EquipmentSlot.SecondPrimaryWeapon)?.ContainedItem != null ||
+                !HasInsertedMagazine(weapon))
+            {
+                return false;
+            }
+
+            OperationalMagazinePlan magazinePlan = PlanOperationalMagazineFollowUps(
+                inventory,
+                followerEquipment,
+                weapon,
+                operationalMagazineCandidates);
+            List<BodyGearCandidate> fastAccessCandidates = magazinePlan.FollowUps
+                .Where(IsOperationalFastAccessFollowUp)
+                .ToList();
+            List<MagazineItemClass> projectedFastAccessMagazines = fastAccessCandidates
+                .Select(followUp => followUp.Item)
+                .OfType<MagazineItemClass>()
+                .ToList();
+            WeaponPrimaryReadinessSnapshot projected = FollowerWeaponPrimaryReadiness.EvaluatePlannedProjection(
+                inventory,
+                weapon,
+                projectedFastAccessMagazines);
+
+            // Secondary does not need the two-magazine primary threshold. It only needs a real
+            // ammunition source: rounds already inserted, an existing compatible fast-access mag,
+            // or one of the source magazines this executable chain will move into fast access.
+            bool projectedUsable = projected.InsertedRounds > 0 ||
+                                   projected.FastAccessMagazineRounds.Any(rounds => rounds > 0);
+            Modules.Logger.LogInfo(
+                $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                $"weapon={DescribeLootDebugItem(weapon)} evaluation=workingPrimarySecondaryProjection " +
+                $"plannedFastAccess={fastAccessCandidates.Count} usable={projectedUsable} {projected.ToDiagnosticString()}");
+            if (!projectedUsable)
+            {
+                return false;
+            }
+
+            for (int firstIndex = 0; firstIndex < fastAccessCandidates.Count; firstIndex++)
+            {
+                BodyGearCandidate firstMagazineCandidate = fastAccessCandidates[firstIndex];
+                if (!TryBuildSupportMagazineFollowUpMove(
+                        inventory,
+                        followerEquipment,
+                        firstMagazineCandidate,
+                        out BodyGearMove? firstMagazineMove,
+                        out string firstMagazineReason))
+                {
+                    Modules.Logger.LogInfo(
+                        $"[LootCommand][MagDebug] Secondary-equip first move rejected for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                        $"weapon={DescribeLootDebugItem(weapon)} mag={DescribeLootDebugItem(firstMagazineCandidate.Item)} " +
+                        $"reason={firstMagazineReason}");
+                    continue;
+                }
+
+                List<BodyGearCandidate> followUps = new List<BodyGearCandidate>();
+                for (int i = 0; i < fastAccessCandidates.Count; i++)
+                {
+                    if (i != firstIndex)
+                    {
+                        followUps.Add(fastAccessCandidates[i]);
+                    }
+                }
+
+                // Overflow magazines remain at the source. Only the tactical fast-access subset
+                // bypasses normal magazine price filtering for this usable secondary weapon.
+                followUps.Add(candidate.WithFollowUpDestination(BodyGearFollowUpDestination.SecondaryWeaponEquip));
+                move = firstMagazineMove.WithFollowUps(
+                    followUps,
+                    EPhraseTrigger.LootWeapon,
+                    continueOnFailure: true);
+                Modules.Logger.LogInfo(
+                    $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                    $"weapon={DescribeLootDebugItem(weapon)} evaluation=workingPrimarySecondaryChainBuilt " +
+                    $"firstMag={DescribeLootDebugItem(firstMagazineCandidate.Item)} " +
+                    $"remainingFastAccessMags={fastAccessCandidates.Count - 1} destination=SecondPrimaryWeapon");
+                return true;
+            }
+
+            // No source move is needed when the inserted magazine or the follower's existing fast
+            // access already makes the support weapon usable.
+            return TryBuildOperationalSecondaryWeaponEquipMove(
+                inventory,
+                followerEquipment,
+                candidate,
+                out move,
+                out _);
+        }
+
+        private bool TryBuildEmptyMagazineWeaponEquipChain(
+            InventoryController inventory,
+            InventoryEquipment followerEquipment,
+            BodyGearCandidate weaponCandidate,
+            OperationalMagazinePlan sourceMagazinePlan,
+            out BodyGearMove? move,
+            out string reason)
+        {
+            move = null;
+            reason = "noCompatibleLoadedSourceMagazine";
+            if (weaponCandidate?.Item is not Weapon weapon || HasInsertedMagazine(weapon))
+            {
+                reason = "weaponStateChanged";
+                return false;
+            }
+
+            Slot magazineSlot;
+            try
+            {
+                magazineSlot = weapon.GetMagazineSlot();
+            }
+            catch
+            {
+                reason = "magazineSlotUnavailable";
+                return false;
+            }
+
+            if (magazineSlot == null)
+            {
+                reason = "magazineSlotUnavailable";
+                return false;
+            }
+
+            // Prefer the most-loaded source magazine. We never detach a magazine from another
+            // weapon and do not borrow manually supplied follower cargo for this first insertion.
+            List<BodyGearCandidate> loadCandidates = sourceMagazinePlan?.CompatibleLoadedCandidates
+                .Where(candidate =>
+                    candidate?.Item is MagazineItemClass &&
+                    !IsLootNowInBotInventory(BotOwner?.GetPlayer, candidate.Item))
+                .OrderByDescending(candidate => ((MagazineItemClass)candidate.Item).Count)
+                .ThenByDescending(candidate => ((MagazineItemClass)candidate.Item).MaxCount)
+                .ToList() ?? new List<BodyGearCandidate>();
+
+            foreach (BodyGearCandidate loadCandidate in loadCandidates)
+            {
+                MagazineItemClass magazineToLoad = loadCandidate.Item as MagazineItemClass;
+                if (magazineToLoad == null)
+                {
+                    continue;
+                }
+
+                List<BodyGearCandidate> remainingSourceMagazines = sourceMagazinePlan.CompatibleLoadedCandidates
+                    .Where(candidate =>
+                        candidate?.Item != null &&
+                        !string.Equals(candidate.Item.Id, magazineToLoad.Id, StringComparison.Ordinal))
+                    .ToList();
+                OperationalMagazinePlan remainingPlan = PlanOperationalMagazineFollowUps(
+                    inventory,
+                    followerEquipment,
+                    weapon,
+                    remainingSourceMagazines,
+                    reloadReserveOverride: magazineToLoad);
+                List<BodyGearCandidate> fastAccessCandidates = remainingPlan.FollowUps
+                    .Where(IsOperationalFastAccessFollowUp)
+                    .ToList();
+                List<MagazineItemClass> projectedFastAccessMagazines = fastAccessCandidates
+                    .Select(candidate => candidate.Item)
+                    .OfType<MagazineItemClass>()
+                    .ToList();
+                WeaponPrimaryReadinessSnapshot projected =
+                    FollowerWeaponPrimaryReadiness.EvaluatePlannedLoadedProjection(
+                        inventory,
+                        weapon,
+                        magazineToLoad,
+                        projectedFastAccessMagazines);
+                bool insertedAloneIsSufficient = projected.InsertedContribution >= projected.Threshold;
+                bool hasReloadLandingSpace = insertedAloneIsSufficient ||
+                    FollowerWeaponPrimaryReadiness.HasMagazineReloadLandingSpace(
+                        followerEquipment,
+                        magazineToLoad);
+
+                Modules.Logger.LogInfo(
+                    $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                    $"weapon={DescribeLootDebugItem(weapon)} evaluation=plannedMagazineLoad " +
+                    $"loadMag={DescribeLootDebugItem(magazineToLoad)} plannedFastAccess={projectedFastAccessMagazines.Count} " +
+                    $"landingSpace={hasReloadLandingSpace} {projected.ToDiagnosticString()}");
+
+                if (!projected.PrimaryReady || projected.RequiresMagazineLoad || !hasReloadLandingSpace)
+                {
+                    reason = !projected.PrimaryReady
+                        ? "loadedPackageNotPrimaryReady"
+                        : projected.RequiresMagazineLoad
+                        ? "projectedLoadNotRecognized"
+                        : "reloadLandingSpaceUnavailable";
+                    continue;
+                }
+
+                BodyGearCandidate loadMoveCandidate = loadCandidate.WithFollowUpDestination(
+                    BodyGearFollowUpDestination.LoadMagazineIntoWeapon);
+                if (!TryCreateBodyGearMove(
+                        inventory,
+                        loadMoveCandidate,
+                        magazineSlot.CreateItemAddress(),
+                        out BodyGearMove? loadMove,
+                        storeAsLoot: ShouldReturnGearSwapAsCargo(),
+                        successPhrase: EPhraseTrigger.LootWeapon,
+                        isStagingOperation: true))
+                {
+                    reason = "magazineLoadOperationRejected";
+                    continue;
+                }
+
+                List<BodyGearCandidate> followUps = new List<BodyGearCandidate>(fastAccessCandidates)
+                {
+                    weaponCandidate.WithFollowUpDestination(BodyGearFollowUpDestination.EvaluateWeaponDestination)
+                };
+                // The insertion must succeed before any spare or weapon move is attempted. Build-time
+                // rejection returns to normal cargo planning; a runtime failure leaves the source safe.
+                move = loadMove.WithFollowUps(followUps, EPhraseTrigger.LootWeapon);
+                reason = "readyAfterMagazineLoad";
+                Modules.Logger.LogInfo(
+                    $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                    $"weapon={DescribeLootDebugItem(weapon)} evaluation=magazineLoadChainBuilt " +
+                    $"loadMag={DescribeLootDebugItem(magazineToLoad)} fastAccessFollowUps={fastAccessCandidates.Count} " +
+                    "destination=PostTransferEvaluation");
+                return true;
+            }
+
             return false;
         }
 
@@ -1022,6 +1284,17 @@ namespace pitTeam.BigBrain.Actions
                 out move,
                 out _,
                 out _);
+        }
+
+        private static bool CanBuildPotentialPrimaryWeaponCargoPackage(
+            InventoryEquipment followerEquipment,
+            BodyGearCandidate candidate)
+        {
+            // Package magazines are an exception for a weapon that may later fill an empty
+            // primary. Once primary is occupied, another weapon is either the one usable support
+            // add handled above or ordinary cargo whose magazines keep their own loot filters.
+            return IsEasyWeaponEquipCandidate(candidate) &&
+                   followerEquipment?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem == null;
         }
 
         private bool TryBuildPotentialWeaponCargoChain(
@@ -1485,6 +1758,69 @@ namespace pitTeam.BigBrain.Actions
             return false;
         }
 
+        private bool TryBuildOperationalSecondaryWeaponEquipMove(
+            InventoryController inventory,
+            InventoryEquipment followerEquipment,
+            BodyGearCandidate candidate,
+            out BodyGearMove? move,
+            out string reason)
+        {
+            move = null;
+            reason = "weaponMissing";
+            if (candidate?.Item is not Weapon weapon || !IsEasyWeaponEquipCandidate(candidate))
+            {
+                return false;
+            }
+
+            if (followerEquipment?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem is not Weapon)
+            {
+                reason = "primaryMissing";
+                return false;
+            }
+
+            WeaponPrimaryReadinessSnapshot actual = FollowerWeaponPrimaryReadiness.EvaluateActual(inventory, weapon);
+            bool usable = actual.HasInsertedMagazine &&
+                          (actual.InsertedRounds > 0 || actual.FastAccessMagazineRounds.Any(rounds => rounds > 0));
+            if (!usable)
+            {
+                reason = actual.HasInsertedMagazine ? "noUsableAmmunition" : "insertedMagazineMissing";
+                Modules.Logger.LogInfo(
+                    $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                    $"weapon={DescribeLootDebugItem(weapon)} evaluation=secondaryEquipRejected " +
+                    $"destination=Source decisionReason={reason} {actual.ToDiagnosticString()}");
+                return false;
+            }
+
+            if (!TryFindEquipmentSlotAddress(
+                    followerEquipment,
+                    EquipmentSlot.SecondPrimaryWeapon,
+                    weapon,
+                    out ItemAddress? secondaryAddress))
+            {
+                reason = "secondaryUnavailable";
+                return false;
+            }
+
+            if (!TryCreateBodyGearMove(
+                    inventory,
+                    candidate,
+                    secondaryAddress,
+                    out move,
+                    storeAsLoot: ShouldReturnGearSwapAsCargo(),
+                    successPhrase: EPhraseTrigger.LootWeapon))
+            {
+                reason = "secondaryMoveRejected";
+                return false;
+            }
+
+            reason = "usableSupport";
+            Modules.Logger.LogInfo(
+                $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                $"weapon={DescribeLootDebugItem(weapon)} evaluation=secondaryEquip " +
+                $"destination=SecondPrimaryWeapon decisionReason={reason} {actual.ToDiagnosticString()}");
+            return true;
+        }
+
         private bool TryBuildPrimaryWeaponEquipMove(
             InventoryController inventory,
             InventoryEquipment followerEquipment,
@@ -1558,6 +1894,27 @@ namespace pitTeam.BigBrain.Actions
 
                     bodyLootAttemptedItemIds.Add(candidate.Item.Id);
                     StartBodyGearMove(inventory, vestMove);
+                    return true;
+                }
+
+                if (candidate?.FollowUpDestination == BodyGearFollowUpDestination.SecondaryWeaponEquip)
+                {
+                    if (!TryBuildOperationalSecondaryWeaponEquipMove(
+                            inventory,
+                            followerEquipment,
+                            candidate,
+                            out BodyGearMove? secondaryMove,
+                            out string secondaryReason))
+                    {
+                        bodyLootHadEligibleButNoSpace = true;
+                        Modules.Logger.LogInfo(
+                            $"[LootCommand] Body secondary equip follow-up rejected for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                            $"reason={secondaryReason} item={DescribeLootDebugItem(candidate?.Item)}");
+                        continue;
+                    }
+
+                    bodyLootAttemptedItemIds.Add(candidate.Item.Id);
+                    StartBodyGearMove(inventory, secondaryMove);
                     return true;
                 }
 
@@ -1728,6 +2085,27 @@ namespace pitTeam.BigBrain.Actions
 
                     containerLootAttemptedItemIds.Add(candidate.Item.Id);
                     StartContainerLootMove(inventory, vestMove);
+                    return true;
+                }
+
+                if (candidate?.FollowUpDestination == BodyGearFollowUpDestination.SecondaryWeaponEquip)
+                {
+                    if (!TryBuildOperationalSecondaryWeaponEquipMove(
+                            inventory,
+                            followerEquipment,
+                            candidate,
+                            out BodyGearMove? secondaryMove,
+                            out string secondaryReason))
+                    {
+                        containerLootHadEligibleButNoSpace = true;
+                        Modules.Logger.LogInfo(
+                            $"[LootCommand] Container secondary equip follow-up rejected for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                            $"reason={secondaryReason} item={DescribeLootDebugItem(candidate?.Item)}");
+                        continue;
+                    }
+
+                    containerLootAttemptedItemIds.Add(candidate.Item.Id);
+                    StartContainerLootMove(inventory, secondaryMove);
                     return true;
                 }
 

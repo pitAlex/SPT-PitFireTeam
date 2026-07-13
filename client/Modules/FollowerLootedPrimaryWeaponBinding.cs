@@ -11,7 +11,7 @@ namespace pitTeam.Modules
 
         internal static void RebindAndSelect(BotOwner bot, Weapon weapon, string context)
         {
-            if (!TryRebindWeaponInfo(bot, weapon, out string reason))
+            if (!TryRebindWeaponInfo(bot, weapon, context, out string reason))
             {
                 Logger.LogInfo($"[LootCommand] Skipped looted primary rebind ({context}): {reason}");
                 return;
@@ -20,7 +20,50 @@ namespace pitTeam.Modules
             TryEnsureSelected(bot, weapon, context, 0);
         }
 
-        private static bool TryRebindWeaponInfo(BotOwner bot, Weapon weapon, out string reason)
+        internal static void RegisterSupport(BotOwner bot, Weapon weapon, string context)
+        {
+            try
+            {
+                BotWeaponManager weaponManager = bot?.WeaponManager;
+                BotWeaponSelector selector = weaponManager?.Selector;
+                if (weaponManager == null || selector == null)
+                {
+                    Logger.LogInfo(
+                        $"[LootCommand][WeaponRegistration] follower='{bot?.Profile?.Nickname ?? bot?.ProfileId ?? "unknown"}' " +
+                        $"support={weapon?.TemplateId ?? "unknown"} context={context} result=skipped reason=weaponManagerMissing");
+                    return;
+                }
+
+                // UpdateWeaponsList is the vanilla source of SupportWeapon and
+                // CanChangeToSupportWeapons. The per-slot BotWeaponInfo still needs to be created
+                // because this weapon was not present when the bot initialized.
+                selector.UpdateWeaponsList();
+                if (!TryRegisterTrackedSupportWeapon(
+                        bot,
+                        weaponManager,
+                        selector,
+                        weapon,
+                        context,
+                        out string reason))
+                {
+                    Logger.LogInfo(
+                        $"[LootCommand][WeaponRegistration] follower='{bot?.Profile?.Nickname ?? bot?.ProfileId ?? "unknown"}' " +
+                        $"support={weapon?.TemplateId ?? "unknown"} context={context} result=skipped reason={reason}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogInfo(
+                    $"[LootCommand][WeaponRegistration] follower='{bot?.Profile?.Nickname ?? bot?.ProfileId ?? "unknown"}' " +
+                    $"support={weapon?.TemplateId ?? "unknown"} context={context} result=failed reason={ex.Message}");
+            }
+        }
+
+        private static bool TryRebindWeaponInfo(
+            BotOwner bot,
+            Weapon weapon,
+            string context,
+            out string reason)
         {
             reason = string.Empty;
             if (weapon == null)
@@ -70,7 +113,13 @@ namespace pitTeam.Modules
                     weaponManager.method_5);
                 weaponManager.Info[EquipmentSlot.FirstPrimaryWeapon] = mainInfo;
 
-                TryRegisterTrackedSupportWeapon(bot, weaponManager, selector);
+                TryRegisterTrackedSupportWeapon(
+                    bot,
+                    weaponManager,
+                    selector,
+                    null,
+                    context,
+                    out _);
 
                 if (weaponManager.CurrentWeaponInfo == null ||
                     selector.LastEquipmentSlot == EquipmentSlot.FirstPrimaryWeapon)
@@ -90,27 +139,49 @@ namespace pitTeam.Modules
             }
         }
 
-        private static void TryRegisterTrackedSupportWeapon(
+        private static bool TryRegisterTrackedSupportWeapon(
             BotOwner bot,
             BotWeaponManager weaponManager,
-            BotWeaponSelector selector)
+            BotWeaponSelector selector,
+            Weapon expectedSupportWeapon,
+            string context,
+            out string reason)
         {
+            reason = string.Empty;
+            Weapon primaryWeapon = bot.GetPlayer?.InventoryController?.Inventory?.Equipment
+                ?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem as Weapon;
             Weapon supportWeapon = bot.GetPlayer?.InventoryController?.Inventory?.Equipment
                 ?.GetSlot(EquipmentSlot.SecondPrimaryWeapon)?.ContainedItem as Weapon;
-            if (supportWeapon == null ||
-                supportWeapon.GetItemComponent<KnifeComponent>() != null ||
+            if (primaryWeapon == null)
+            {
+                reason = "primaryMissing";
+                return false;
+            }
+
+            if (supportWeapon == null)
+            {
+                reason = "secondaryMissing";
+                return false;
+            }
+
+            if (expectedSupportWeapon != null && !IsSameItem(expectedSupportWeapon, supportWeapon))
+            {
+                reason = "secondarySlotMismatch";
+                return false;
+            }
+
+            if (supportWeapon.GetItemComponent<KnifeComponent>() != null ||
                 !InteractableObjects.IsLootedWeapon(bot, supportWeapon) ||
                 InteractableObjects.IsStrictCargoItem(bot, supportWeapon))
             {
-                return;
+                reason = "supportNotEligible";
+                return false;
             }
 
             if (!IsSameItem(selector.SecondPrimaryWeaponItem, supportWeapon))
             {
-                Logger.LogInfo(
-                    $"[LootCommand][WeaponRegistration] follower='{bot.Profile?.Nickname ?? bot.ProfileId ?? "unknown"}' " +
-                    $"support={supportWeapon.TemplateId} result=selectorSecondaryCacheMismatch");
-                return;
+                reason = "selectorSecondaryCacheMismatch";
+                return false;
             }
 
             if (weaponManager.Info.TryGetValue(
@@ -118,7 +189,8 @@ namespace pitTeam.Modules
                     out BotWeaponInfo existingInfo) &&
                 IsSameItem(existingInfo?.weapon, supportWeapon))
             {
-                return;
+                reason = "alreadyRegistered";
+                return true;
             }
 
             // Vanilla only treats second primary as a usable support role after first primary
@@ -132,15 +204,17 @@ namespace pitTeam.Modules
             weaponManager.Info[EquipmentSlot.SecondPrimaryWeapon] = supportInfo;
             Logger.LogInfo(
                 $"[LootCommand][WeaponRegistration] follower='{bot.Profile?.Nickname ?? bot.ProfileId ?? "unknown"}' " +
-                $"support={supportWeapon.TemplateId} result=registered " +
+                $"support={supportWeapon.TemplateId} context={context} result=registered " +
                 $"supportSlot={selector.SupportWeapon} canChange={selector.CanChangeToSupportWeapons}");
+            reason = "registered";
+            return true;
         }
 
         private static bool TryEnsureSelected(BotOwner bot, Weapon weapon, string context, int attempt)
         {
             try
             {
-                if (!TryRebindWeaponInfo(bot, weapon, out string rebindReason))
+                if (!TryRebindWeaponInfo(bot, weapon, context, out string rebindReason))
                 {
                     LogFinalFailure(bot, weapon, context, attempt, rebindReason);
                     return false;

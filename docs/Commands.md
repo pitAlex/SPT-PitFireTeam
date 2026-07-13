@@ -87,6 +87,7 @@ Behavior:
 
 - Debounced in `AIBossPlayer`.
 - Calls `PingTeamates.Instance.Ping(this)`.
+- Highlights each living teammate with a green outline for the configured Status Report display time.
 - Nearby active followers without enemies play `FriendlyGesture`.
 - Does not create `FollowerCommandType` state.
 
@@ -442,15 +443,19 @@ Execution:
     - dogtag-only body looting still says `EPhraseTrigger.LootNothing`
     - checks backpack contents first, then pockets, then vest contents
     - normal filtered carry looting does not take the corpse's worn backpack, armor, armored rig, or tactical vest as whole equipment
-    - pocket and vest contents skip magazines during normal filtered looting so follower reload space is not disturbed; when `Allow Gear Swapping` is active, compatible loaded magazines from the loot source may be moved into the follower's tactical vest as operational support for an accepted empty-primary weapon equip
+    - pocket and vest contents skip magazines during normal filtered looting so follower reload space is not disturbed; when `Allow Gear Swapping` is active, compatible loaded magazines from the loot source may move into tactical vest or pockets for an accepted primary or working-primary support equip
     - armor plates are ignored, including loose/cargo plates and installed plates inside armor or plate-carrier trees
     - normal cargo weapons are priced and moved as whole weapon trees, including attached mods, instead of being stripped part by part; gear add/swap ignores min/max price and is controlled by `Allow Gear Swapping`
-    - with `Allow Gear Swapping` active, a long gun can equip into an empty first primary slot only when it has a full installed magazine or at least one compatible loaded spare magazine that fits the follower's tactical vest
+    - with `Allow Gear Swapping` active, an empty-primary long gun equips only when its inserted magazine plus compatible loaded fast-access magazines satisfy the readiness policy
+    - if the found detachable-magazine weapon has an empty magazine slot, a compatible loaded source magazine is inserted through a real inventory transaction only when the complete package can become primary-ready; remaining fitting spares move first and the weapon moves last
+    - an under-ready empty-magazine package remains ordinary potential cargo and still requires `Pickup Gear`, whole-tree price, and backpack fit
     - successful empty-primary weapon equip rebuilds the follower weapon-manager primary info and requests a main-hand switch so combat can use the new weapon
-    - weapons that do not qualify for empty first primary still try empty compatible cargo/support slots, such as second primary or holster, then fall back to backpack/pocket space
+    - with a working first primary and empty second primary, a usable found long gun becomes a registered vanilla support weapon; only compatible source magazines that fit fast access while preserving reload landing space join it
+    - once first and second primary are occupied, later long guns are ordinary filtered cargo and cannot recruit compatible magazines through the future-primary package bypass; an occupied holster applies the same boundary to pistols
+    - other weapons that do not qualify for equipment still try an empty compatible slot, such as holster, then fall back to backpack/pocket space
     - tactical vests are eligible for gear handling only when `Allow Gear Swapping` is active: an empty tactical vest slot may be filled directly in any mode; occupied vest replacement is only allowed in Immersive/Realistic, and only when the found vest is a protection upgrade, the old vest has no non-plate contents, and the old vest can be moved as a whole tree into the backpack first
     - category filters from `Looting Settings` are checked before price for ordinary cargo: `Pickup Food`, `Pickup Meds`, `Pickup Valuables`, and `Pickup Gear`; corpse dogtags and `Allow Gear Swapping` add/swap candidates bypass these category filters
-    - compatible loaded magazines moved as support for an accepted weapon equip bypass the normal loot filters entirely; they only need to be loaded, safe to take, and able to fit in the follower's tactical vest
+    - compatible loaded magazines moved as support for an accepted weapon equip bypass the normal loot filters entirely; they must be loaded, safe to take, and able to fit in tactical vest or pockets with the shared reload reserve preserved; overflow stays at the source
     - ordinary cargo item price is compared once against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound; money ignores these price bounds when `Pickup Valuables` is enabled
     - non-weapon successful moves only target the follower's backpack and pockets, never the follower's rig
 - Stores successful cargo moves through `InteractableObjects.StoreItem(...)` for squadmates. Additive equipped gear moves are also stored in `Simple` and `Restricted`; Immersive/Realistic equipped gear can persist as the teammate's kit instead.
@@ -490,9 +495,9 @@ Execution:
 - Applies `Looting Settings` category filters before price for ordinary cargo: `Pickup Food`, `Pickup Meds`, `Pickup Valuables`, and `Pickup Gear`.
 - Compares each ordinary cargo candidate item tree against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound. Money ignores these price bounds when `Pickup Valuables` is enabled.
 - Moves non-weapon candidates only into the follower's backpack and pockets, never the follower's rig.
-- Normal cargo weapons are priced and moved as whole weapon trees. With `Allow Gear Swapping` active, gear add/swap ignores min/max price: a long gun can equip into an empty first primary slot only when it has a full installed magazine or at least one compatible loaded spare magazine that fits the follower's tactical vest. Once accepted, compatible loaded spare magazines from that loot source bypass normal loot filters and are moved into the vest while space remains valid.
+- Normal cargo weapons are priced and moved as whole weapon trees. With `Allow Gear Swapping` active, gear add/swap ignores min/max price: a long gun can equip into an empty first primary slot when its loaded state and compatible fast-access magazines satisfy readiness, or become a registered second-primary support weapon when first primary is already working and second primary is empty. For an empty magazine slot, a compatible loaded source magazine is inserted first only when the complete body/container package can become primary-ready. Once accepted, compatible loaded source magazines bypass normal loot filters only while they fit reload-safe fast access.
 - Successful empty-primary weapon equip rebuilds the follower weapon-manager primary info and requests a main-hand switch so combat can use the new weapon.
-- Weapons that do not qualify for empty first primary still try empty compatible cargo/support slots, such as second primary or holster, then fall back to backpack/pocket space.
+- Once first and second primary are occupied, later long guns are ordinary filtered cargo and do not automatically take compatible magazines. An occupied holster applies the same rule to later pistols. Other eligible weapons may still use an empty compatible slot before backpack/pocket fallback.
 - Tactical vests follow the same narrow gear rule: fill an empty tactical vest slot directly in any mode, or replace an occupied vest only in Immersive/Realistic when the found vest is a protection upgrade, the old vest has no non-plate contents, and the old vest can be moved as a whole tree into the backpack first.
 - `Allow Gear Swapping` add/swap candidates bypass min/max price and the `Pickup Gear` category filter; ordinary gear cargo fallback still respects both.
 - Closes the container on normal completion. Combat, timeout, or safety interruption can leave it open.

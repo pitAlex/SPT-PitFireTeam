@@ -374,7 +374,9 @@ Rules:
 - theoretical compatible magazine templates do not affect the reference; five-round magazines require two full-magazine equivalents, where an inserted `4/5` or `5/5` counts as one and each full `5/5` fast-access spare counts as one
 - an inserted five-round magazine at `3/5` or below does not count as a full equivalent, so two full spares are required; partial spare magazines do not combine
 - for references larger than five rounds, an inserted magazine below half full contributes its actual rounds, at least half full contributes at least one ordinary reference, and compatible fast-access spares contribute their actual rounds
-- a detachable-magazine weapon with no inserted magazine is not eligible for primary or secondary until explicit magazine loading is implemented; when `Pickup Gear` and whole-tree price allow the weapon as cargo, the weapon and compatible loaded source magazines are preflighted as one backpack package
+- a detachable-magazine weapon with no inserted magazine can become primary only when a compatible loaded magazine from the same body/container can be inserted through a real transaction and the resulting loaded weapon plus fitting fast-access spares reaches readiness
+- the insertion magazine moves into the weapon first, remaining accepted spares move into fast access next, and the weapon moves last after settled live readiness is checked
+- an empty-magazine package that remains under-ready is not loaded merely to occupy secondary; `Pickup Gear`, whole-tree price, and backpack fit decide whether it remains potential-weapon cargo
 - a no-inserted-magazine cargo package moves compatible magazines first and the weapon last; if the complete package cannot fit, the magazines stay at the source and the weapon is tried alone as cargo; if the weapon also cannot fit, it stays at the source
 - compatible spare magazines from the loot source must physically fit in the vest or pockets as operational magazines, not cargo
 - compatible spare magazines must be loaded to count as operational support
@@ -393,12 +395,16 @@ Rules:
 - when that later spare is found during another body/container search, it starts the transfer chain; compatible backpack cargo then moves into fast access before the tracked secondary promotes
 - evaluate a tracked secondary against newly found compatible magazines before evaluating another weapon package from the same body/container
 - if that secondary becomes ready, promote it to primary; other source weapons then use ordinary filtered cargo handling
-- if second primary is occupied and a new candidate remains unready, `Pickup Gear` and the weapon's whole-tree minimum/maximum price decide whether it may become potential-weapon cargo
+- while first primary is empty, if second primary is occupied and a new candidate remains unready, `Pickup Gear` and the weapon's whole-tree minimum/maximum price decide whether it may become potential-weapon cargo
 - after the weapon passes those ordinary cargo filters, compatible loaded source magazines join its backpack package when space permits; magazines move first and the weapon moves last
 - if the package cannot fit, leave its magazines at the source and try the weapon alone; if the weapon cannot fit, leave it too
 - if `Pickup Gear` is disabled or the weapon fails price, leave both the weapon and its package magazines at the source
 - compatible bundle magazines that do not fit in the backpack remain at the source
-- if `FirstPrimaryWeapon` is occupied and `SecondPrimaryWeapon` is empty, a valid long gun may still be equipped into second primary as cargo/support
+- if `FirstPrimaryWeapon` is occupied and `SecondPrimaryWeapon` is empty, a long gun with an inserted magazine and usable ammunition may be added as a real vanilla support weapon
+- compatible loaded source magazines for that support add bypass price only while they fit in vest/pockets and preserve landing space for the inserted magazine; overflow magazines remain at the source
+- after that support weapon is moved, refresh vanilla slot state and create `WeaponManager.Info[SecondPrimaryWeapon]` without forcing a hand switch away from the working primary
+- once first and second primary are occupied, another long gun is ordinary filtered cargo; it cannot recruit a potential-weapon magazine package
+- when holster is occupied, a found pistol is likewise ordinary filtered cargo and its compatible magazines do not inherit a package bypass
 - if `Holster` is empty, a valid pistol may be equipped there
 - if the matching slot is occupied, do not replace it in the empty-slot phase
 - still register the moved weapon tree as looted so patrol reload maintenance does not feed spawned magazines into cargo/support weapons

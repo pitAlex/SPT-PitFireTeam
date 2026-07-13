@@ -22,7 +22,20 @@ namespace pitTeam.Modules
             Weapon weapon,
             IEnumerable<MagazineItemClass> projectedFastAccessMagazines)
         {
-            return EvaluateInventoryState(inventory, weapon, projectedFastAccessMagazines);
+            return EvaluateInventoryState(inventory, weapon, projectedFastAccessMagazines, null);
+        }
+
+        internal static WeaponPrimaryReadinessSnapshot EvaluatePlannedLoadedProjection(
+            InventoryController inventory,
+            Weapon weapon,
+            MagazineItemClass projectedInsertedMagazine,
+            IEnumerable<MagazineItemClass> projectedFastAccessMagazines)
+        {
+            return EvaluateInventoryState(
+                inventory,
+                weapon,
+                projectedFastAccessMagazines,
+                projectedInsertedMagazine);
         }
 
         internal static bool HasInsertedMagazineReloadLandingSpace(
@@ -39,7 +52,14 @@ namespace pitTeam.Modules
                 return false;
             }
 
-            if (insertedMagazine == null)
+            return insertedMagazine == null || HasMagazineReloadLandingSpace(equipment, insertedMagazine);
+        }
+
+        internal static bool HasMagazineReloadLandingSpace(
+            InventoryEquipment equipment,
+            MagazineItemClass magazine)
+        {
+            if (magazine == null)
             {
                 return true;
             }
@@ -49,10 +69,10 @@ namespace pitTeam.Modules
             // the reserved landing space.
             return CanFitClonedItem(
                        equipment?.GetSlot(EquipmentSlot.TacticalVest)?.ContainedItem,
-                       insertedMagazine) ||
+                       magazine) ||
                    CanFitClonedItem(
                        equipment?.GetSlot(EquipmentSlot.Pockets)?.ContainedItem,
-                       insertedMagazine);
+                       magazine);
         }
 
         internal static WeaponPrimaryReadinessSnapshot EvaluateFormula(
@@ -195,7 +215,8 @@ namespace pitTeam.Modules
         private static WeaponPrimaryReadinessSnapshot EvaluateInventoryState(
             InventoryController inventory,
             Weapon weapon,
-            IEnumerable<MagazineItemClass>? projectedFastAccessMagazines)
+            IEnumerable<MagazineItemClass>? projectedFastAccessMagazines,
+            MagazineItemClass? projectedInsertedMagazine = null)
         {
             if (weapon == null)
             {
@@ -214,9 +235,26 @@ namespace pitTeam.Modules
                 return EvaluateFormula(0, false, 0, 0, Array.Empty<int>(), 0, $"weaponRead:{ex.Message}");
             }
 
+            if (insertedMagazine == null && projectedInsertedMagazine != null)
+            {
+                try
+                {
+                    if (magazineSlot?.CanAccept(projectedInsertedMagazine) == true)
+                    {
+                        insertedMagazine = projectedInsertedMagazine;
+                    }
+                }
+                catch
+                {
+                    insertedMagazine = null;
+                }
+            }
+
             List<MagazineItemClass> compatibleMagazines = new List<MagazineItemClass>();
             HashSet<string> includedMagazineIds = new HashSet<string>(StringComparer.Ordinal);
-            string referenceReason = "availableLoadedMagazines";
+            string referenceReason = projectedInsertedMagazine != null
+                ? "availableLoadedMagazines;projectedMagazineLoad"
+                : "availableLoadedMagazines";
 
             if (inventory != null && magazineSlot != null)
             {

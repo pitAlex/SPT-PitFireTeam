@@ -188,7 +188,8 @@ namespace pitTeam.BigBrain.Actions
             InventoryController inventory,
             InventoryEquipment followerEquipment,
             Weapon weapon,
-            IEnumerable<BodyGearCandidate>? candidates)
+            IEnumerable<BodyGearCandidate>? candidates,
+            MagazineItemClass? reloadReserveOverride = null)
         {
             OperationalMagazinePlan plan = new OperationalMagazinePlan();
             if (inventory == null || followerEquipment == null || weapon == null || candidates == null)
@@ -204,7 +205,7 @@ namespace pitTeam.BigBrain.Actions
                 followerEquipment.GetSlot(EquipmentSlot.Pockets)?.ContainedItem);
             SearchableItemItemClass simulatedBackpack = CloneSearchableContainer(
                 followerEquipment.GetSlot(EquipmentSlot.Backpack)?.ContainedItem);
-            Item? reloadReserveMagazine = GetWeaponReloadReserveMagazine(weapon);
+            Item? reloadReserveMagazine = reloadReserveOverride ?? GetWeaponReloadReserveMagazine(weapon);
             HashSet<string> consideredItemIds = new HashSet<string>(StringComparer.Ordinal);
             Modules.Logger.LogInfo(
                 $"[LootCommand][MagDebug] Plan start for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +

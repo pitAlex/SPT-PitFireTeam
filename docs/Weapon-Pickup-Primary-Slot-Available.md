@@ -132,7 +132,7 @@ Known baseline differences from this contract:
 |---|---|---|
 | P1 | Central readiness model, available-magazine reference resolver, actual fast-access scanner, shadow diagnostics, deterministic formula tests | Complete |
 | P2 | Body/container pickup with an inserted magazine; final destination from post-transfer live state | Implemented; runtime testing pending |
-| P3 | No-inserted-magazine transaction and mandatory magazine load before primary equip | Cargo safety implemented; explicit load not started |
+| P3 | No-inserted-magazine transaction and mandatory magazine load before primary equip | Implemented for body/container sources; runtime testing pending |
 | P4 | Commanded loose weapon/magazine pickup integration without changing non-weapon pickup or voice behavior | Implemented; runtime retest pending |
 | P5 | Support-to-primary reevaluation and safe promotion | Implemented; happy-path runtime passed |
 | P6 | Failure hardening, ownership/return verification, final player documentation | Not started |
@@ -160,7 +160,7 @@ P1 acceptance:
 
 ## Phase P2 Contract
 
-P2 changes primary/support destination decisions only for body/container candidates that already have an inserted detachable magazine. Until P3 implements an explicit load transaction, a candidate without an inserted magazine and its compatible loose magazines are treated as one backpack-cargo package.
+P2 changes primary/support destination decisions only for body/container candidates that already have an inserted detachable magazine. Candidates without an inserted magazine use the separate P3 transaction below.
 
 P2 sequence:
 
@@ -171,7 +171,7 @@ P2 sequence:
 5. after all planned fast-access moves settle, recalculate readiness from the follower's actual inventory
 6. place the weapon in primary when ready, otherwise use empty secondary; when secondary is occupied, return the weapon to ordinary filtered cargo evaluation
 
-Occupied-secondary branch:
+Empty-primary, occupied-secondary branch:
 
 - when projected readiness is insufficient and secondary is occupied, do not move the candidate's magazines into fast access
 - when `Pickup Gear` is enabled and the whole weapon tree passes minimum/maximum price, treat the under-ready candidate and all compatible loaded source magazines as a potential-weapon cargo package
@@ -179,6 +179,15 @@ Occupied-secondary branch:
 - preflight the package and move magazines first so later loot can complete the weapon
 - if the complete package cannot fit, leave its magazines at the source and try the weapon alone as cargo
 - when `Pickup Gear` is disabled or the weapon fails price, leave the weapon and its package magazines at the source
+
+Working-primary support-add branch:
+
+- when first primary already contains a working weapon and second primary is empty, an accepted long gun with an inserted magazine and usable ammunition may be added directly as the real support weapon
+- compatible loaded source magazines join only when they fit in tactical vest or pockets while preserving reload landing space for the inserted magazine
+- source magazines that do not fit fast access remain at the source; they are not converted into automatic backpack cargo
+- after the weapon reaches second primary, refresh vanilla weapon slots and create `WeaponManager.Info[SecondPrimaryWeapon]` without switching hands away from the working primary
+- once first and second primary are occupied, later long guns use ordinary filtered cargo only; their magazines no longer inherit the future-primary package bypass
+- an occupied holster applies the same ordinary-cargo rule to later pistols and pistol magazines
 
 Cargo promotion branch:
 
@@ -215,6 +224,32 @@ P2 boundaries:
 - body and container commands use the same planner and post-transfer decision
 - when a tracked secondary can become ready from newly found compatible magazines, promote it before evaluating any new weapon package from the same source
 - after that promotion fills primary, other source weapons fall through to ordinary filtered cargo handling
+
+## Phase P3 Contract
+
+P3 handles a detachable-magazine weapon whose magazine slot is empty when it is found in a body or searchable container.
+
+P3 sequence:
+
+1. scan compatible non-empty loose source magazines without detaching magazines from another weapon
+2. prefer the source magazine with the most loaded rounds as the insertion candidate
+3. remove that magazine from the spare plan and reserve enough vest/pocket space for it to land during a later reload
+4. plan the remaining compatible source magazines into fast access
+5. evaluate the hypothetical loaded weapon from that inserted magazine, actual fast-access magazines, and planned fast-access magazines
+6. continue only when the complete executable state is primary-ready and reload landing space is safe
+7. execute a real `InteractionsHandlerClass.Move(...)` into `weapon.GetMagazineSlot().CreateItemAddress()`
+8. after insertion succeeds, move the planned spares one at a time and classify the weapon from settled live inventory
+9. move the weapon last, then use the existing primary bind/select path
+
+P3 boundaries:
+
+- the insertion magazine must come from the same body/container source; manually supplied follower cargo is not borrowed for this first load
+- a lone partial magazine or any other under-ready package is not loaded merely to occupy secondary
+- under-ready packages remain governed by `Pickup Gear`, whole-tree price, and backpack package fit
+- build-time load-operation rejection returns to ordinary cargo planning
+- a runtime load failure does not move the remaining magazines or weapon
+- tube-fed, internal-magazine, revolver, chamber-fed, loose-ammunition, and magazine-repacking policies remain deferred
+- commanded loose-world weapon pickup does not recruit a separate world magazine; that command still handles only the item explicitly targeted by the player
 
 ## Phase P4 Contract
 
@@ -288,7 +323,7 @@ Unless specified otherwise, the ordinary reference is 30 and the threshold is 60
 | WI-05 | Not ready, secondary occupied, `Pickup Gear` enabled, whole weapon tree passes price, and package fits | Weapon plus compatible loaded source magazines become filtered backpack cargo | P2 | Implemented; runtime pending |
 | WI-06 | Potential package does not fit | Leave package magazines at source, try weapon-only cargo, and leave weapon too when it cannot fit | P2 | Implemented; runtime pending |
 | WI-07 | Compatible magazine exists only in backpack | It contributes nothing while in backpack; a successful move into fast access can then make it eligible | P2/P5 | P2 implemented; runtime pending |
-| WI-08 | Candidate has no inserted magazine and loading succeeds | Load one, recalculate, then place | P3 | Not started |
+| WI-08 | Candidate has no inserted magazine and loading succeeds | Load one, recalculate, then place | P3 | Implemented; runtime pending |
 | WI-09 | Candidate has no inserted magazine and loading fails | Prefer the weapon-and-compatible-magazine backpack package; if it does not fit, leave the magazines and try the weapon alone; leave the weapon too when it cannot fit | P3 | Cargo safety implemented; runtime pending |
 | WI-10 | Compatible magazines arrive one at a time | Same final inventory state produces the same final decision | P4/P5 | Secondary manual-transfer path passed; cargo manual/loose-pickup fix implemented, runtime pending |
 | WI-11 | Primary becomes occupied before support promotion | Keep candidate in support | P5 | Implemented; runtime pending |
@@ -304,6 +339,9 @@ Unless specified otherwise, the ordinary reference is 30 and the threshold is 60
 | WI-21 | Commanded loose long gun cannot use primary and second primary is occupied | Move to backpack cargo when it fits | P4 | Implemented; runtime pending |
 | WI-22 | Commanded loose long gun has no support/backpack destination but has a safe inserted-magazine floor | Use first primary as a last resort and register/select it | P4 | Implemented; runtime pending |
 | WI-23 | Commanded loose long gun has no support/backpack destination and its inserted magazine is dangerously low or absent | Leave at source and report negative | P4 | Implemented; runtime pending |
+| WI-24 | Working primary, empty second primary, found usable long gun plus compatible source magazines | Move only fitting reload-safe magazines to fast access, equip/register the weapon as second-primary support, and keep the working primary in hand | Support add | Implemented; runtime pending |
+| WI-25 | First and second primary occupied, found long gun passes ordinary gear/price filters but its magazines do not | Move only the weapon as ordinary cargo; do not grant its magazines the future-primary package bypass | Cargo boundary | Implemented; runtime pending |
+| WI-26 | Holster occupied, found pistol passes ordinary gear/price filters but its magazines do not | Move only the pistol as ordinary cargo; magazines retain normal filters | Cargo boundary | Implemented; runtime pending |
 
 ## Backpack Spare Scenario Matrix
 
@@ -426,3 +464,6 @@ The final placement phases must log one additional post-transfer `actual` snapsh
 - Removed the gear planner's automatic weapon-and-magazine backpack bundle when secondary is occupied. Rejected candidates now fall through to ordinary `Pickup Gear` and price rules.
 - Moved tracked-secondary readiness evaluation ahead of new weapon candidates so newly found compatible magazines complete the existing weapon before any future weapon-comparison policy is required.
 - Extended ordinary filtered weapon cargo to retain compatible source magazines for future readiness. `Pickup Gear`, whole-tree price, and backpack fit gate the weapon; accepted compatible magazines join when the package fits.
+- Restricted that future-primary package to the empty-primary workflow and excluded pistols from it.
+- Added the working-primary support path: a usable long gun fills empty second primary, fitting compatible source magazines move only to reload-safe fast access, and vanilla receives a fresh second-primary `BotWeaponInfo` without a forced hand switch.
+- Once the matching usable weapon slots are occupied, later weapons fall through to ordinary filtered cargo and their magazines no longer inherit the weapon's price/category acceptance.

@@ -308,7 +308,7 @@ namespace pitTeam.BigBrain.Actions
             // 1. secure the PMC dogtag before any equipment transaction can alter the action state
             // 2. finish any follow-up magazine move produced by easy weapon equip
             // 3. optionally equip or narrowly swap tactical vest protection
-            // 4. optionally equip an empty primary slot
+            // 4. optionally equip an empty primary or add a usable support beside a working primary
             // 5. promote a tracked backpack cargo weapon when newly found magazines complete it
             // 6. otherwise loot eligible contents into backpack/pockets only
             if (TryStartNonTeammatePmcDogtagMove(inventory, corpseEquipment, followerEquipment))
@@ -497,8 +497,8 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            // Filtered looting never uses the follower rig for generic cargo. The only vest writes
-            // here are tactical: an easy primary weapon's first operational magazine.
+            // Filtered looting never uses the follower rig for generic cargo. Fast-access writes
+            // are tactical magazine moves for an accepted primary/support equipment plan.
             if (ShouldUseFilteredLootEquipmentSlot(candidate))
             {
                 if (TryBuildEasyWeaponEquipMove(
@@ -518,7 +518,7 @@ namespace pitTeam.BigBrain.Actions
                 }
             }
 
-            if (ShouldUseFilteredLootEquipmentSlot(candidate) &&
+            if (CanBuildPotentialPrimaryWeaponCargoPackage(followerEquipment, candidate) &&
                 operationalMagazineCandidates != null)
             {
                 OperationalMagazinePlan cargoMagazinePlan = PlanOperationalMagazineFollowUps(
@@ -578,7 +578,8 @@ namespace pitTeam.BigBrain.Actions
             out BodyGearMove? move,
             bool storeAsLoot = true,
             EPhraseTrigger successPhrase = EPhraseTrigger.LootGeneric,
-            bool rebindAsPrimaryWeapon = false)
+            bool rebindAsPrimaryWeapon = false,
+            bool isStagingOperation = false)
         {
             move = null;
             Item item = candidate?.Item;
@@ -615,7 +616,8 @@ namespace pitTeam.BigBrain.Actions
                 candidate.ReportAsLootNothing,
                 storeAsLoot: storeAsLoot,
                 successPhrase: successPhrase,
-                rebindAsPrimaryWeapon: rebindAsPrimaryWeapon);
+                rebindAsPrimaryWeapon: rebindAsPrimaryWeapon,
+                isStagingOperation: isStagingOperation);
             return true;
         }
 
@@ -681,6 +683,7 @@ namespace pitTeam.BigBrain.Actions
             {
                 bool allowAlreadyAttempted =
                     candidate?.FollowUpDestination == BodyGearFollowUpDestination.PrimaryWeaponEquip ||
+                    candidate?.FollowUpDestination == BodyGearFollowUpDestination.SecondaryWeaponEquip ||
                     candidate?.FollowUpDestination == BodyGearFollowUpDestination.EvaluateWeaponDestination ||
                     candidate?.FollowUpDestination == BodyGearFollowUpDestination.EvaluateSecondaryWeaponPromotion ||
                     candidate?.FollowUpDestination == BodyGearFollowUpDestination.EvaluateCargoWeaponPromotion ||
@@ -714,17 +717,23 @@ namespace pitTeam.BigBrain.Actions
 
                 if (result?.Succeed == true || IsLootNowInBotInventory(BotOwner?.GetPlayer, move.Item))
                 {
-                    bodyLootMovesSucceeded++;
-                    if (!move.ReportAsLootNothing && !IsDogtagLoot(move.Item))
+                    if (!move.IsStagingOperation)
                     {
-                        bodyLootReportedMovesSucceeded++;
+                        bodyLootMovesSucceeded++;
+                        if (!move.ReportAsLootNothing && !IsDogtagLoot(move.Item))
+                        {
+                            bodyLootReportedMovesSucceeded++;
+                        }
+
+                        InteractableObjects.ClearStrictCargoTree(BotOwner, move.Item);
+                        InteractableObjects.RegisterLootedWeaponTree(BotOwner, move.Item);
                     }
 
-                    InteractableObjects.ClearStrictCargoTree(BotOwner, move.Item);
-                    InteractableObjects.RegisterLootedWeaponTree(BotOwner, move.Item);
                     EnqueueBodyGearSwapFollowUps(move);
 
-                    if (move.StoreAsLoot && followerData?.IsSquadMate == true)
+                    if (!move.IsStagingOperation &&
+                        move.StoreAsLoot &&
+                        followerData?.IsSquadMate == true)
                     {
                         InteractableObjects.StoreItem(BotOwner, move.Item);
                     }
@@ -734,6 +743,18 @@ namespace pitTeam.BigBrain.Actions
                         if (move.RebindAsPrimaryWeapon)
                         {
                             RebindLootedPrimaryWeapon(move.Item as Weapon);
+                        }
+                        else
+                        {
+                            Weapon slottedSecondary = BotOwner?.GetPlayer?.InventoryController?.Inventory?.Equipment
+                                ?.GetSlot(EquipmentSlot.SecondPrimaryWeapon)?.ContainedItem as Weapon;
+                            if (IsSameLootItem(slottedSecondary, move.Item))
+                            {
+                                FollowerLootedPrimaryWeaponBinding.RegisterSupport(
+                                    BotOwner,
+                                    move.Item as Weapon,
+                                    "bodyLootMove");
+                            }
                         }
 
                         RefreshLootedWeaponPresentation(move.Item);
