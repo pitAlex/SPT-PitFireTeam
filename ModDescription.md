@@ -195,6 +195,8 @@ A teammate can pick up the item only if they:
 - can physically reach the item
 - have enough inventory space or a suitable empty weapon slot
 
+For a loose long gun ordered through **Loot This**, the shoulder placement communicates its state. A ready weapon uses the right shoulder as the active primary. An under-supplied weapon uses an empty left-shoulder secondary slot, then the backpack. If neither fallback is available, a weapon with a reasonably loaded inserted magazine may use the right shoulder as a last resort and is registered for combat; a dangerously low or empty weapon stays on the ground.
+
 **Bodies and containers:**
 
 Look at a body and use **Check Him / Loot Body**, or look at a lootable container and use the loot-container command. For body and container searches, only saved teammates who spawned with you are eligible. Recruited raid allies are ignored for this deeper looting work.
@@ -217,14 +219,15 @@ Body and container looting uses real carry space. Normal items go into the teamm
 - A teammate can add a found long gun as his primary only when his primary slot is empty. The mod does not yet replace an existing primary weapon.
 - Compatible loaded spare magazines must physically fit in the teammate's vest or pockets. The planner also reserves enough fast-access space for the magazine removed from the weapon during a reload.
 - A weapon becomes primary when its inserted magazine plus compatible fast-access spares provide roughly two normal magazines of usable ammunition. Backpack magazines are cargo only and do not count because vanilla bots cannot use them for detachable-magazine reloads.
+- A detachable-magazine weapon found without a magazine inserted is not equipped until a later phase can safely load and register it. When **Pickup Gear**, price, and backpack space allow it as cargo, compatible loose magazines can travel with it; otherwise they stay behind.
 - A compatible loose backpack magazine can be moved into vest or pockets when combining it with a newly found weapon and source magazines makes that weapon usable. If the combined ammunition remains insufficient, the backpack magazine stays where it is.
-- An under-supplied weapon goes into the empty secondary slot as a holding weapon. Newly found compatible magazines are used to make that existing secondary ready before another weapon is considered. If secondary is occupied and a new weapon still cannot become primary, only normal **Pickup Gear** and price rules may carry it in the backpack; otherwise it is left behind.
+- An under-supplied weapon goes into the empty secondary slot as a holding weapon. Newly found compatible magazines are used to make that existing secondary ready before another weapon is considered. If secondary is occupied, **Pickup Gear**, the weapon's full value, and backpack space decide whether the weapon and fitting compatible magazines can be retained as cargo for possible later use.
 - Loose spare magazines are left behind when none can be placed in usable vest space.
 - The secondary weapon slot is never replaced by looting.
 - Gear swapping can fill an empty tactical vest slot. Immersive and Realistic can also perform a narrow protection-vest upgrade, but only when the old vest can be preserved in the backpack without disturbing its operational contents.
 - Armor plates are ignored as standalone loot. Teammates do not yet perform broad gear optimization.
 
-You can also inspect a teammate's backpack by approaching them and using the lower-left interaction prompt. This can only be done while out of combat.
+You can also inspect a teammate's backpack by approaching them and using the lower-left interaction prompt. This can only be done while out of combat. Items you place there manually remain cargo and are not automatically used as weapons or supporting magazines. Taking an item back removes that restriction, so gear later acquired through **Loot This**, body searches, or container searches can use the limited gear-swapping rules above.
 
 ![Teammate backpack inspection](https://iili.io/BpKvke1.md.png)
 

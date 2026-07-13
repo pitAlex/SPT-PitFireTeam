@@ -209,6 +209,11 @@ namespace pitTeam.BigBrain.Actions
             }
 
             bodyLootAttemptedItemIds.Add(move.Item.Id);
+            if (TryQueueBodyLootMoveAfterPickupSuccess(move))
+            {
+                return true;
+            }
+
             StartBodyGearMove(inventory, move);
             return true;
         }
@@ -229,6 +234,11 @@ namespace pitTeam.BigBrain.Actions
             }
 
             containerLootAttemptedItemIds.Add(move.Item.Id);
+            if (TryQueueContainerLootMoveAfterPickupSuccess(move))
+            {
+                return true;
+            }
+
             StartContainerLootMove(inventory, move);
             return true;
         }
@@ -360,6 +370,11 @@ namespace pitTeam.BigBrain.Actions
             }
 
             bodyLootAttemptedItemIds.Add(move.Item.Id);
+            if (TryQueueBodyLootMoveAfterPickupSuccess(move))
+            {
+                return true;
+            }
+
             StartBodyGearMove(inventory, move);
             return true;
         }
@@ -380,6 +395,11 @@ namespace pitTeam.BigBrain.Actions
             }
 
             containerLootAttemptedItemIds.Add(move.Item.Id);
+            if (TryQueueContainerLootMoveAfterPickupSuccess(move))
+            {
+                return true;
+            }
+
             StartContainerLootMove(inventory, move);
             return true;
         }
@@ -506,7 +526,8 @@ namespace pitTeam.BigBrain.Actions
                     !yieldedWeaponIds.Add(weapon.Id) ||
                     !IsEasyWeaponEquipCandidate(new BodyGearCandidate(weapon, null, "FollowerBackpack", 0)) ||
                     !HasInsertedMagazine(weapon) ||
-                    !InteractableObjects.IsLootedWeapon(BotOwner, weapon))
+                    !InteractableObjects.IsLootedWeapon(BotOwner, weapon) ||
+                    InteractableObjects.IsStrictCargoItem(BotOwner, weapon))
                 {
                     continue;
                 }
@@ -863,21 +884,15 @@ namespace pitTeam.BigBrain.Actions
                     out move);
             }
 
-            // P3 will replace this legacy no-inserted-magazine path with an explicit load
-            // transaction. Keep its behavior isolated while P2 hardens inserted-mag candidates.
-            bool builtLegacyMove = TryBuildLegacyNoInsertedMagazineWeaponEquipChain(
-                inventory,
-                followerEquipment,
-                candidate,
-                magazinePlan,
-                out move);
-            if (!builtLegacyMove &&
-                followerEquipment?.GetSlot(EquipmentSlot.SecondPrimaryWeapon)?.ContainedItem != null)
-            {
-                handledByGearPolicy = false;
-            }
-
-            return builtLegacyMove;
+            // Until P3 can load a magazine through a real weapon transaction, a weapon with no
+            // inserted magazine cannot enter primary/secondary. Ordinary Pickup Gear and price
+            // own its cargo decision and may retain compatible source magazines with it.
+            handledByGearPolicy = false;
+            Modules.Logger.LogInfo(
+                $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                $"weapon={DescribeLootDebugItem(weapon)} evaluation=gearCandidateRejected " +
+                "destination=OrdinaryCargo decisionReason=noInsertedMagazine");
+            return false;
         }
 
         private OperationalMagazinePlan SelectNewWeaponMagazinePlan(
@@ -981,14 +996,22 @@ namespace pitTeam.BigBrain.Actions
                 // The destination marker stays last. Each preceding transaction is rebuilt from
                 // current inventory, and the final decision reads only transfers that succeeded.
                 followUps.Add(candidate.WithFollowUpDestination(BodyGearFollowUpDestination.EvaluateWeaponDestination));
+                bool projectedUsablePrimary =
+                    projected.PrimaryReady &&
+                    !projected.RequiresMagazineLoad &&
+                    (projected.InsertedContribution >= projected.Threshold ||
+                     FollowerWeaponPrimaryReadiness.HasInsertedMagazineReloadLandingSpace(
+                         followerEquipment,
+                         candidate.Item as Weapon));
                 move = firstMagazineMove.WithFollowUps(
                     followUps,
-                    EPhraseTrigger.LootWeapon,
+                    projectedUsablePrimary ? EPhraseTrigger.LootWeapon : EPhraseTrigger.LootGeneric,
                     continueOnFailure: true);
                 Modules.Logger.LogInfo(
                     $"[LootCommand][MagDebug] Inserted-mag live-evaluation chain built for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
                     $"weapon={DescribeLootDebugItem(candidate.Item)} firstMag={DescribeLootDebugItem(firstMagazineCandidate.Item)} " +
-                    $"remainingFastAccessMags={fastAccessCandidates.Count - 1}");
+                    $"remainingFastAccessMags={fastAccessCandidates.Count - 1} " +
+                    $"lootCue={(projectedUsablePrimary ? EPhraseTrigger.LootWeapon : EPhraseTrigger.LootGeneric)}");
                 return true;
             }
 
@@ -1001,73 +1024,168 @@ namespace pitTeam.BigBrain.Actions
                 out _);
         }
 
-        private bool TryBuildLegacyNoInsertedMagazineWeaponEquipChain(
+        private bool TryBuildPotentialWeaponCargoChain(
             InventoryController inventory,
             InventoryEquipment followerEquipment,
             BodyGearCandidate candidate,
             OperationalMagazinePlan magazinePlan,
+            string evaluation,
             out BodyGearMove? move)
         {
             move = null;
-            if (magazinePlan.OperationalVestCount == 0)
+            Item backpack = followerEquipment?.GetSlot(EquipmentSlot.Backpack)?.ContainedItem;
+            SearchableItemItemClass simulatedBackpack = CloneSearchableContainer(backpack);
+            if (simulatedBackpack == null)
             {
-                bool builtSupportMove = TryBuildUnreadyWeaponSupportMove(
+                return TryBuildPotentialWeaponOnlyCargoFallback(
                     inventory,
                     followerEquipment,
                     candidate,
-                    out move,
-                    out string cargoDestination);
-                Modules.Logger.LogInfo(
-                    $"[LootCommand] Legacy no-inserted-mag policy for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
-                    $"destination={cargoDestination} weapon={DescribeLootDebugItem(candidate.Item)}");
-                return builtSupportMove;
+                    evaluation,
+                    "noBackpackPackage",
+                    out move);
             }
 
-            if (magazinePlan.FollowUps.Count > 0)
+            List<BodyGearCandidate> cargoMagazines = magazinePlan?.CompatibleLoadedCandidates
+                .Where(packageCandidate =>
+                    packageCandidate?.Item != null &&
+                    !string.IsNullOrEmpty(packageCandidate.Item.Id) &&
+                    !IsLootNowInBotInventory(BotOwner?.GetPlayer, packageCandidate.Item))
+                .GroupBy(packageCandidate => packageCandidate.Item.Id, StringComparer.Ordinal)
+                .Select(group => group.First().WithFollowUpDestination(BodyGearFollowUpDestination.BackpackCargo))
+                .ToList() ?? new List<BodyGearCandidate>();
+
+            foreach (BodyGearCandidate cargoMagazine in cargoMagazines)
             {
-                BodyGearCandidate firstMagazineCandidate = magazinePlan.FollowUps[0];
-                if (!TryBuildSupportMagazineFollowUpMove(
+                if (!TrySimulateContainerAdd(
+                        simulatedBackpack,
+                        cargoMagazine.Item,
+                        out SearchableItemItemClass? nextBackpack))
+                {
+                    return TryBuildPotentialWeaponOnlyCargoFallback(
                         inventory,
                         followerEquipment,
-                        firstMagazineCandidate,
-                        out BodyGearMove? firstMagazineMove,
-                        out string firstMagazineReason))
-                {
-                    Modules.Logger.LogInfo(
-                        $"[LootCommand][MagDebug] Primary equip mag-first build rejected for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
-                        $"weapon={DescribeLootDebugItem(candidate.Item)} firstMag={DescribeLootDebugItem(firstMagazineCandidate?.Item)} reason={firstMagazineReason}");
-                    return false;
+                        candidate,
+                        evaluation,
+                        $"packageMagazineDoesNotFit:{cargoMagazine.Item.TemplateId}",
+                        out move);
                 }
 
-                List<BodyGearCandidate> followUps = new List<BodyGearCandidate>();
-                for (int i = 1; i < magazinePlan.FollowUps.Count; i++)
-                {
-                    followUps.Add(magazinePlan.FollowUps[i]);
-                }
-
-                followUps.Add(candidate.WithFollowUpDestination(BodyGearFollowUpDestination.PrimaryWeaponEquip));
-                move = firstMagazineMove.WithFollowUps(followUps, EPhraseTrigger.LootWeapon);
-                Modules.Logger.LogInfo(
-                    $"[LootCommand][MagDebug] Primary equip mag-first chain built for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
-                    $"weapon={DescribeLootDebugItem(candidate.Item)} firstMag={DescribeLootDebugItem(firstMagazineCandidate?.Item)} " +
-                    $"remainingFollowUps={followUps.Count} plannedMags={magazinePlan.FollowUps.Count}");
-                return true;
+                simulatedBackpack = nextBackpack;
             }
 
-            if (!TryBuildPrimaryWeaponEquipMove(
+            if (!TrySimulateContainerAdd(simulatedBackpack, candidate.Item, out _))
+            {
+                return TryBuildPotentialWeaponOnlyCargoFallback(
                     inventory,
                     followerEquipment,
                     candidate,
-                    out BodyGearMove? primaryMove,
-                    out _))
+                    evaluation,
+                    "packageWeaponDoesNotFitAfterMagazines",
+                    out move);
+            }
+
+            BodyGearCandidate weaponCargo = candidate.WithFollowUpDestination(BodyGearFollowUpDestination.BackpackCargo);
+            if (cargoMagazines.Count == 0)
             {
+                bool builtWeaponCargo = TryBuildBackpackWeaponCargoMove(
+                    inventory,
+                    followerEquipment,
+                    weaponCargo,
+                    out move,
+                    out string weaponCargoReason);
+                Modules.Logger.LogInfo(
+                    $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                    $"weapon={DescribeLootDebugItem(candidate?.Item)} evaluation={evaluation} " +
+                    $"destination={(builtWeaponCargo ? "BackpackCargo" : "Source")} decisionReason={weaponCargoReason} packageMags=0");
+                return builtWeaponCargo;
+            }
+
+            BodyGearCandidate firstMagazine = cargoMagazines[0];
+            if (!TryBuildBackpackMagazineCargoMove(
+                    inventory,
+                    followerEquipment,
+                    firstMagazine,
+                    out BodyGearMove? firstMagazineMove,
+                    out string firstMagazineReason))
+            {
+                return TryBuildPotentialWeaponOnlyCargoFallback(
+                    inventory,
+                    followerEquipment,
+                    candidate,
+                    evaluation,
+                    $"firstMagazineMoveRejected:{firstMagazineReason}",
+                    out move);
+            }
+
+            List<BodyGearCandidate> followUps = cargoMagazines.Skip(1).ToList();
+            followUps.Add(weaponCargo);
+            // A potential weapon package is still cargo. LootWeapon is reserved for a plan that
+            // makes a weapon usable in an equipment slot during this search.
+            move = firstMagazineMove.WithFollowUps(followUps, EPhraseTrigger.LootGeneric);
+            Modules.Logger.LogInfo(
+                $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                $"weapon={DescribeLootDebugItem(candidate?.Item)} evaluation={evaluation} " +
+                $"destination=BackpackCargo decisionReason=packageFits packageMags={cargoMagazines.Count}");
+            return true;
+        }
+
+        private bool TryBuildPotentialWeaponOnlyCargoFallback(
+            InventoryController inventory,
+            InventoryEquipment followerEquipment,
+            BodyGearCandidate candidate,
+            string evaluation,
+            string packageFailure,
+            out BodyGearMove? move)
+        {
+            BodyGearCandidate weaponCargo = candidate.WithFollowUpDestination(BodyGearFollowUpDestination.BackpackCargo);
+            bool builtWeaponCargo = TryBuildBackpackWeaponCargoMove(
+                inventory,
+                followerEquipment,
+                weaponCargo,
+                out move,
+                out string weaponCargoReason);
+            Modules.Logger.LogInfo(
+                $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                $"weapon={DescribeLootDebugItem(candidate?.Item)} evaluation={evaluation} " +
+                $"destination={(builtWeaponCargo ? "BackpackCargo" : "Source")} " +
+                $"decisionReason=weaponOnlyFallback packageFailure={packageFailure} weaponResult={weaponCargoReason}");
+            return builtWeaponCargo;
+        }
+
+        private bool TryBuildBackpackWeaponCargoMove(
+            InventoryController inventory,
+            InventoryEquipment followerEquipment,
+            BodyGearCandidate candidate,
+            out BodyGearMove? move,
+            out string reason)
+        {
+            move = null;
+            if (candidate?.Item is not Weapon weapon)
+            {
+                reason = "notWeapon";
                 return false;
             }
 
-            move = primaryMove.WithFollowUps(magazinePlan.FollowUps);
-            Modules.Logger.LogInfo(
-                $"[LootCommand][MagDebug] Primary equip move built for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
-                $"weapon={DescribeLootDebugItem(candidate.Item)} followUps={magazinePlan.FollowUps.Count}");
+            if (!TryFindBackpackAddressForItem(followerEquipment, weapon, out ItemAddress? backpackAddress))
+            {
+                reason = "noBackpackAddress";
+                return false;
+            }
+
+            if (!TryCreateBodyGearMove(
+                    inventory,
+                    candidate,
+                    backpackAddress,
+                    out move,
+                    storeAsLoot: ShouldReturnGearSwapAsCargo(),
+                    successPhrase: EPhraseTrigger.LootGeneric))
+            {
+                reason = "backpackMoveRejected";
+                return false;
+            }
+
+            reason = "ok";
             return true;
         }
 
@@ -1356,7 +1474,9 @@ namespace pitTeam.BigBrain.Actions
                     secondaryAddress,
                     out move,
                     storeAsLoot: ShouldReturnGearSwapAsCargo(),
-                    successPhrase: EPhraseTrigger.LootWeapon))
+                    // With primary empty, this left-shoulder slot is an inert holding state.
+                    // The weapon may become usable later, but this search did not make it usable.
+                    successPhrase: EPhraseTrigger.LootGeneric))
             {
                 destination = "SecondPrimaryWeapon";
                 return true;
@@ -1540,6 +1660,28 @@ namespace pitTeam.BigBrain.Actions
                     return true;
                 }
 
+                if (candidate?.FollowUpDestination == BodyGearFollowUpDestination.BackpackCargo &&
+                    candidate.Item is Weapon)
+                {
+                    if (!TryBuildBackpackWeaponCargoMove(
+                            inventory,
+                            followerEquipment,
+                            candidate,
+                            out BodyGearMove? weaponCargoMove,
+                            out string weaponCargoReason))
+                    {
+                        bodyLootHadEligibleButNoSpace = true;
+                        Modules.Logger.LogInfo(
+                            $"[LootCommand] Body weapon cargo follow-up rejected for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                            $"{candidate.SourceName}:{candidate.Item.TemplateId} reason={weaponCargoReason}");
+                        continue;
+                    }
+
+                    bodyLootAttemptedItemIds.Add(candidate.Item.Id);
+                    StartBodyGearMove(inventory, weaponCargoMove);
+                    return true;
+                }
+
                 Modules.Logger.LogInfo(
                     $"[LootCommand][MagDebug] Body follow-up dequeued for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
                     $"source={candidate?.SourceName ?? "unknown"} dest={candidate?.FollowUpDestination.ToString() ?? "unknown"} " +
@@ -1685,6 +1827,28 @@ namespace pitTeam.BigBrain.Actions
 
                     containerLootAttemptedItemIds.Add(candidate.Item.Id);
                     StartContainerLootMove(inventory, primaryMove);
+                    return true;
+                }
+
+                if (candidate?.FollowUpDestination == BodyGearFollowUpDestination.BackpackCargo &&
+                    candidate.Item is Weapon)
+                {
+                    if (!TryBuildBackpackWeaponCargoMove(
+                            inventory,
+                            followerEquipment,
+                            candidate,
+                            out BodyGearMove? weaponCargoMove,
+                            out string weaponCargoReason))
+                    {
+                        containerLootHadEligibleButNoSpace = true;
+                        Modules.Logger.LogInfo(
+                            $"[LootCommand] Container weapon cargo follow-up rejected for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                            $"{candidate.SourceName}:{candidate.Item.TemplateId} reason={weaponCargoReason}");
+                        continue;
+                    }
+
+                    containerLootAttemptedItemIds.Add(candidate.Item.Id);
+                    StartContainerLootMove(inventory, weaponCargoMove);
                     return true;
                 }
 

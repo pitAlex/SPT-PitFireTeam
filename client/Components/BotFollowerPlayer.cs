@@ -117,13 +117,13 @@ namespace pitTeam.Components
         private Vector3 _patrolLeaderSectorAnchor;
         private bool _peaceChangeHooked = false;
         private bool _manualUpdateHooked = false;
-        private bool _lootedSecondaryPromotionInProgress;
-        private float _nextLootedSecondaryPromotionCheckAt;
+        private bool _lootedWeaponPromotionInProgress;
+        private float _nextLootedWeaponPromotionCheckAt;
         private Vector3 _teleportGraceTarget;
         private float _teleportGraceUntil;
         private const float TeleportGraceSeconds = 0.45f;
         private const float TeleportReteleportDistance = 1.5f;
-        private const float LootedSecondaryPromotionCheckInterval = 0.75f;
+        private const float LootedWeaponPromotionCheckInterval = 0.75f;
         private const float TemporaryCombatAggressionClearDelaySeconds = 2f;
         private const float TemporaryCombatAggressionRecentEnemySeconds = 3f;
         private const float TemporaryCombatAggressionGroupEnemySeconds = 5f;
@@ -2677,7 +2677,7 @@ namespace pitTeam.Components
 
                 Utils.FollowerMedical.UpdateMedicalHandsWatchdog(owner);
                 UpdateTemporaryCombatAggressionClearDelay();
-                TryPromoteReadyLootedSecondaryWeapon(owner);
+                TryPromoteReadyLootedWeapon(owner);
 
                 if (_teleportGraceUntil > Time.time)
                 {
@@ -2699,16 +2699,17 @@ namespace pitTeam.Components
             }
         }
 
-        private void TryPromoteReadyLootedSecondaryWeapon(BotOwner owner)
+        private void TryPromoteReadyLootedWeapon(BotOwner owner)
         {
-            if (_lootedSecondaryPromotionInProgress ||
-                Time.time < _nextLootedSecondaryPromotionCheckAt)
+            if (_lootedWeaponPromotionInProgress ||
+                Time.time < _nextLootedWeaponPromotionCheckAt)
             {
                 return;
             }
 
-            _nextLootedSecondaryPromotionCheckAt = Time.time + LootedSecondaryPromotionCheckInterval;
+            _nextLootedWeaponPromotionCheckAt = Time.time + LootedWeaponPromotionCheckInterval;
             if (!pitFireTeam.IsLootGearSwappingEnabled() ||
+                _backpackInspectionActive ||
                 owner == null ||
                 owner.IsDead ||
                 owner.BotState != EBotState.Active ||
@@ -2722,14 +2723,10 @@ namespace pitTeam.Components
             InventoryController inventory = owner.GetPlayer?.InventoryController;
             InventoryEquipment equipment = inventory?.Inventory?.Equipment;
             Slot primarySlot = equipment?.GetSlot(EquipmentSlot.FirstPrimaryWeapon);
-            Weapon secondaryWeapon = equipment?.GetSlot(EquipmentSlot.SecondPrimaryWeapon)?.ContainedItem as Weapon;
             if (inventory == null ||
                 primarySlot == null ||
                 primarySlot.Deleted ||
-                primarySlot.ContainedItem != null ||
-                secondaryWeapon == null ||
-                secondaryWeapon.GetItemComponent<KnifeComponent>() != null ||
-                !InteractableObjects.IsLootedWeapon(owner, secondaryWeapon))
+                primarySlot.ContainedItem != null)
             {
                 return;
             }
@@ -2741,77 +2738,168 @@ namespace pitTeam.Components
                 selector == null ||
                 selector.IsChanging ||
                 weaponManager.Reload?.Reloading == true ||
-                !weaponManager.CanChangeHands() ||
-                IsSameItem(activeWeapon, secondaryWeapon))
+                !weaponManager.CanChangeHands())
             {
                 return;
             }
 
-            WeaponPrimaryReadinessSnapshot readiness =
-                FollowerWeaponPrimaryReadiness.EvaluateActual(inventory, secondaryWeapon);
-            bool insertedContributionIsSufficient =
-                readiness.InsertedContribution >= readiness.Threshold;
-            bool hasReloadLandingSpace = insertedContributionIsSufficient ||
-                FollowerWeaponPrimaryReadiness.HasInsertedMagazineReloadLandingSpace(
+            if (!TryFindReadyLootedWeaponPromotionCandidate(
+                    owner,
+                    inventory,
                     equipment,
-                    secondaryWeapon);
-            if (!readiness.PrimaryReady ||
-                readiness.RequiresMagazineLoad ||
-                !hasReloadLandingSpace)
+                    activeWeapon,
+                    out Weapon weapon,
+                    out WeaponPrimaryReadinessSnapshot readiness,
+                    out string evaluation))
             {
                 return;
             }
 
             Error locationError;
-            ItemAddress primaryAddress = primarySlot.FindLocationForItem(secondaryWeapon, out locationError);
+            ItemAddress primaryAddress = primarySlot.FindLocationForItem(weapon, out locationError);
             if (primaryAddress == null)
             {
                 Modules.Logger.LogInfo(
                     $"[LootCommand][Readiness] follower='{owner.Profile?.Nickname ?? owner.ProfileId ?? "unknown"}' " +
-                    $"weapon={secondaryWeapon.TemplateId} evaluation=secondaryPromotion " +
-                    $"destination=SecondPrimaryWeapon decisionReason=noPrimaryAddress {readiness.ToDiagnosticString()}");
+                    $"weapon={weapon.TemplateId} evaluation={evaluation} " +
+                    $"destination={DescribePromotionSource(evaluation)} decisionReason=noPrimaryAddress {readiness.ToDiagnosticString()}");
                 return;
             }
 
             GStruct154<GClass3411> moveResult =
-                InteractionsHandlerClass.Move(secondaryWeapon, primaryAddress, inventory, true);
+                InteractionsHandlerClass.Move(weapon, primaryAddress, inventory, true);
             if (moveResult.Failed ||
                 moveResult.Value.ItemsDestroyRequired ||
                 !inventory.CanExecute(moveResult.Value))
             {
                 Modules.Logger.LogInfo(
                     $"[LootCommand][Readiness] follower='{owner.Profile?.Nickname ?? owner.ProfileId ?? "unknown"}' " +
-                    $"weapon={secondaryWeapon.TemplateId} evaluation=secondaryPromotion " +
-                    $"destination=SecondPrimaryWeapon decisionReason=moveRejected {readiness.ToDiagnosticString()}");
+                    $"weapon={weapon.TemplateId} evaluation={evaluation} " +
+                    $"destination={DescribePromotionSource(evaluation)} decisionReason=moveRejected {readiness.ToDiagnosticString()}");
                 return;
             }
 
-            _lootedSecondaryPromotionInProgress = true;
+            _lootedWeaponPromotionInProgress = true;
             Modules.Logger.LogInfo(
                 $"[LootCommand][Readiness] follower='{owner.Profile?.Nickname ?? owner.ProfileId ?? "unknown"}' " +
-                $"weapon={secondaryWeapon.TemplateId} evaluation=secondaryPromotion " +
+                $"weapon={weapon.TemplateId} evaluation={evaluation} " +
                 $"destination=FirstPrimaryWeapon decisionReason=ready {readiness.ToDiagnosticString()}");
             inventory.RunNetworkTransaction(
                 moveResult.Value,
-                new Callback(result => CompleteLootedSecondaryWeaponPromotion(owner, secondaryWeapon, result)));
+                new Callback(result => CompleteLootedWeaponPromotion(owner, weapon, evaluation, result)));
         }
 
-        private void CompleteLootedSecondaryWeaponPromotion(
+        private bool TryFindReadyLootedWeaponPromotionCandidate(
+            BotOwner owner,
+            InventoryController inventory,
+            InventoryEquipment equipment,
+            Weapon activeWeapon,
+            out Weapon weapon,
+            out WeaponPrimaryReadinessSnapshot readiness,
+            out string evaluation)
+        {
+            weapon = equipment?.GetSlot(EquipmentSlot.SecondPrimaryWeapon)?.ContainedItem as Weapon;
+            readiness = null;
+            evaluation = "secondaryPromotion";
+            if (IsTrackedPrimaryCandidate(owner, weapon))
+            {
+                readiness = FollowerWeaponPrimaryReadiness.EvaluateActual(inventory, weapon);
+                if (IsPrimaryReadyWithReloadLandingSpace(equipment, weapon, readiness))
+                {
+                    // The tracked support weapon keeps priority. Wait until it leaves the hands
+                    // rather than promoting an unrelated cargo weapon around it.
+                    return !IsSameItem(activeWeapon, weapon);
+                }
+            }
+
+            Item backpack = equipment?.GetSlot(EquipmentSlot.Backpack)?.ContainedItem;
+            if (backpack == null)
+            {
+                weapon = null;
+                readiness = null;
+                return false;
+            }
+
+            List<(Weapon Weapon, WeaponPrimaryReadinessSnapshot Readiness)> readyCargo = backpack
+                .GetAllItems()
+                .OfType<Weapon>()
+                .Where(candidate => IsTrackedPrimaryCandidate(owner, candidate))
+                .GroupBy(candidate => candidate.Id, StringComparer.Ordinal)
+                .Select(group => group.First())
+                .Select(candidate => (
+                    Weapon: candidate,
+                    Readiness: FollowerWeaponPrimaryReadiness.EvaluateActual(inventory, candidate)))
+                .Where(candidate => IsPrimaryReadyWithReloadLandingSpace(
+                    equipment,
+                    candidate.Weapon,
+                    candidate.Readiness))
+                .Take(2)
+                .ToList();
+
+            // Weapon comparison is deliberately deferred. Promote only when inventory state
+            // identifies one unambiguous ready cargo weapon.
+            if (readyCargo.Count != 1)
+            {
+                weapon = null;
+                readiness = null;
+                return false;
+            }
+
+            weapon = readyCargo[0].Weapon;
+            readiness = readyCargo[0].Readiness;
+            evaluation = "cargoFastAccessPromotion";
+            return true;
+        }
+
+        private static bool IsTrackedPrimaryCandidate(BotOwner owner, Weapon weapon)
+        {
+            return weapon != null &&
+                   !string.IsNullOrEmpty(weapon.Id) &&
+                   weapon.GetItemComponent<KnifeComponent>() == null &&
+                   weapon is not PistolItemClass &&
+                   weapon is not RevolverItemClass &&
+                   InteractableObjects.IsLootedWeapon(owner, weapon) &&
+                   !InteractableObjects.IsStrictCargoItem(owner, weapon);
+        }
+
+        private static bool IsPrimaryReadyWithReloadLandingSpace(
+            InventoryEquipment equipment,
+            Weapon weapon,
+            WeaponPrimaryReadinessSnapshot readiness)
+        {
+            if (readiness == null || !readiness.PrimaryReady || readiness.RequiresMagazineLoad)
+            {
+                return false;
+            }
+
+            return readiness.InsertedContribution >= readiness.Threshold ||
+                   FollowerWeaponPrimaryReadiness.HasInsertedMagazineReloadLandingSpace(equipment, weapon);
+        }
+
+        private static string DescribePromotionSource(string evaluation)
+        {
+            return string.Equals(evaluation, "cargoFastAccessPromotion", StringComparison.Ordinal)
+                ? "BackpackCargo"
+                : "SecondPrimaryWeapon";
+        }
+
+        private void CompleteLootedWeaponPromotion(
             BotOwner owner,
             Weapon weapon,
+            string evaluation,
             IResult result)
         {
-            _lootedSecondaryPromotionInProgress = false;
-            _nextLootedSecondaryPromotionCheckAt = Time.time + LootedSecondaryPromotionCheckInterval;
+            _lootedWeaponPromotionInProgress = false;
+            _nextLootedWeaponPromotionCheckAt = Time.time + LootedWeaponPromotionCheckInterval;
 
             Weapon slottedPrimary = owner?.GetPlayer?.InventoryController?.Inventory?.Equipment
                 ?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem as Weapon;
             if (result?.Succeed != true && !IsSameItem(slottedPrimary, weapon))
             {
                 Modules.Logger.LogInfo(
-                    $"[LootCommand] Looted secondary promotion failed for " +
+                    $"[LootCommand] Looted weapon promotion failed for " +
                     $"'{owner?.Profile?.Nickname ?? owner?.ProfileId ?? "unknown"}': " +
-                    $"{weapon?.TemplateId ?? "unknown"}");
+                    $"{weapon?.TemplateId ?? "unknown"}:{evaluation}");
                 return;
             }
 
@@ -2824,7 +2912,7 @@ namespace pitTeam.Components
             FollowerLootedPrimaryWeaponBinding.RebindAndSelect(
                 owner,
                 weapon,
-                "secondaryPromotion");
+                evaluation);
         }
 
         private static bool IsSameItem(Item first, Item second)

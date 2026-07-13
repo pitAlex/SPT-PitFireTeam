@@ -201,6 +201,25 @@ namespace pitTeam.Patches
         }
     }
 
+    internal static class FollowerReloadPhraseRemap
+    {
+        public static EPhraseTrigger Remap(BotOwner owner, EPhraseTrigger phrase)
+        {
+            if (phrase != EPhraseTrigger.NeedAmmo ||
+                owner == null ||
+                !BossPlayers.IsFollower(owner) ||
+                owner.WeaponManager?.Reload?.Reloading != true)
+            {
+                return phrase;
+            }
+
+            // Vanilla BotReload announces NeedAmmo after it has already found ammunition and
+            // entered the reload transaction. Preserve genuine NeedAmmo calls outside reload,
+            // but use the semantically correct reload cue for followers here.
+            return EPhraseTrigger.OnWeaponReload;
+        }
+    }
+
     // patch for preventing bots from talking if silenced command is active
     internal class BotTalkTrySayPatch : ModulePatch
     {
@@ -211,8 +230,9 @@ namespace pitTeam.Patches
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(BotTalk __instance, EPhraseTrigger type, ETagStatus? additionaMask, bool withGroupDelay)
+        private static bool PatchPrefix(BotTalk __instance, ref EPhraseTrigger type, ETagStatus? additionaMask, bool withGroupDelay)
         {
+            type = FollowerReloadPhraseRemap.Remap(__instance.BotOwner_0, type);
             if (FollowerForcedPhraseGate.ShouldBlock(__instance.BotOwner_0, type))
             {
                 return false;
@@ -250,8 +270,9 @@ namespace pitTeam.Patches
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(BotTalk __instance, EPhraseTrigger type, bool sayImmediately = false, ETagStatus? additionalMask = null)
+        private static bool PatchPrefix(BotTalk __instance, ref EPhraseTrigger type, bool sayImmediately = false, ETagStatus? additionalMask = null)
         {
+            type = FollowerReloadPhraseRemap.Remap(__instance.BotOwner_0, type);
             if (FollowerForcedPhraseGate.ShouldBlock(__instance.BotOwner_0, type))
             {
                 return false;

@@ -37,7 +37,7 @@ Excluded:
 - replacing or comparing against an occupied primary weapon
 - choosing between multiple competing candidate weapons
 - using a cargo magazine to choose a newly found compatible weapon over an existing cargo weapon; this requires weapon comparison
-- passively promoting backpack cargo weapons outside an active body/container loot command
+- choosing between multiple simultaneously ready backpack cargo weapons without a comparison policy
 - demoting a primary after ammunition is fired
 - magazine repacking or loose-ammunition management
 - internal-magazine, tube-fed, revolver, and chamber-fed weapon policy
@@ -51,9 +51,9 @@ Excluded:
 
 `Compatible magazine` is a magazine accepted by the candidate's current magazine slot. Caliber alone is not sufficient.
 
-`Ordinary reference` is the largest compatible magazine capacity up to a maximum of 30 rounds. A weapon supporting 10-, 20-, 30-, and 60-round magazines therefore has a 30-round ordinary reference. A weapon whose largest compatible magazine is 24 rounds has a 24-round reference.
+`Ordinary reference` is the largest capacity among the compatible loaded magazines actually available to the current live or projected plan, capped at 30 rounds. It includes the inserted magazine, compatible magazines already in fast access, and compatible magazines proven to fit through the active transfer plan. Magazine templates that are merely compatible with the weapon do not affect readiness.
 
-`Primary-ready` means the candidate has at least two ordinary magazine equivalents of immediately usable ammunition.
+`Primary-ready` means the candidate has at least two ordinary magazine equivalents of immediately usable ammunition. For five-round magazines, those equivalents are counted by magazine state rather than by combining rounds.
 
 `Support weapon` is an unready candidate stored in `SecondPrimaryWeapon`. It is an inert holding slot in this scenario, not a custom vanilla main-weapon override. The support slot is never displaced by this feature.
 
@@ -63,9 +63,11 @@ A `recruited backpack spare` is a compatible loose cargo magazine that an active
 
 ## Frozen Readiness Rules
 
-Let `R` be the ordinary reference and `T = 2 * R` be the readiness threshold.
+Let `R` be the ordinary reference and, for magazines larger than five rounds, let `T = 2 * R` be the readiness threshold.
 
-Inserted-magazine contribution:
+Five-round magazines use a full-magazine-equivalent rule. An inserted `4/5` or `5/5` magazine counts as one full equivalent. An inserted magazine at `3/5` or below does not count as a full equivalent, so two full `5/5` spares are required. Partial spare magazines never combine into a full equivalent. Therefore `2/5 + 5/5 + 5/5`, `3/5 + 5/5 + 5/5`, `4/5 + 5/5`, and `5/5 + 5/5` are ready, while `3/5 + 5/5` and `5/5 + 4/5` are not.
+
+Inserted-magazine contribution for magazines larger than five rounds:
 
 - no inserted magazine contributes `0`
 - an inserted magazine below half full contributes its actual rounds
@@ -79,12 +81,20 @@ Fast-access spare contribution:
 - partial magazines combine by round count
 - incompatible, empty, backpack, and failed-transfer magazines contribute `0`
 
-Decision:
+Decision for magazines larger than five rounds:
 
 - primary-ready when total contribution is at least `T`
 - without an inserted magazine, at least one compatible non-empty fast-access magazine must also be loadable
 - a planned transfer never counts until the transaction succeeds
 - readiness is recalculated from current inventory state; no historical "magazines still needed" counter is kept
+
+Decision for five-round magazines:
+
+- an inserted magazine at `4/5` or `5/5` contributes one full magazine equivalent
+- an inserted magazine at `3/5` or below contributes no full magazine equivalent
+- each compatible `5/5` fast-access spare contributes one full magazine equivalent
+- partial spare rounds do not combine into a full magazine equivalent
+- the weapon is ready at two full magazine equivalents
 
 ## Existing Reload-Space Invariant
 
@@ -120,10 +130,10 @@ Known baseline differences from this contract:
 
 | Phase | Scope | Status |
 |---|---|---|
-| P1 | Central readiness model, template-capacity resolver, actual fast-access scanner, shadow diagnostics, deterministic formula tests | Complete |
+| P1 | Central readiness model, available-magazine reference resolver, actual fast-access scanner, shadow diagnostics, deterministic formula tests | Complete |
 | P2 | Body/container pickup with an inserted magazine; final destination from post-transfer live state | Implemented; runtime testing pending |
-| P3 | No-inserted-magazine transaction and mandatory magazine load before primary equip | Not started |
-| P4 | Commanded loose weapon/magazine pickup integration without changing non-weapon pickup or voice behavior | Not started |
+| P3 | No-inserted-magazine transaction and mandatory magazine load before primary equip | Cargo safety implemented; explicit load not started |
+| P4 | Commanded loose weapon/magazine pickup integration without changing non-weapon pickup or voice behavior | Implemented; runtime retest pending |
 | P5 | Support-to-primary reevaluation and safe promotion | Implemented; happy-path runtime passed |
 | P6 | Failure hardening, ownership/return verification, final player documentation | Not started |
 
@@ -134,9 +144,9 @@ P1 must not change live weapon destination decisions.
 P1 deliverables:
 
 - one side-effect-free round-contribution calculator
-- one EFT adapter that derives the ordinary reference from compatible magazine templates
+- one EFT adapter that derives the ordinary reference from compatible loaded magazines participating in the live or projected plan
 - one EFT adapter that snapshots compatible magazines from actual `Inventory.FastAccessSlots`
-- cached ordinary-reference resolution per assembled magazine-slot filter signature
+- reference resolution from the inserted magazine plus compatible actual or planned fast-access magazines
 - a diagnostic snapshot containing reference, threshold, inserted state, inserted contribution, spare rounds, total contribution, readiness, and reason
 - a projected diagnostic that may include planned fast-access transfers but is clearly labeled as projection rather than actual state
 - deterministic Debug-build tests covering the required arithmetic scenarios
@@ -150,7 +160,7 @@ P1 acceptance:
 
 ## Phase P2 Contract
 
-P2 changes destination decisions only for body/container candidates that already have an inserted detachable magazine. The no-inserted-magazine path remains on its isolated legacy behavior until P3.
+P2 changes primary/support destination decisions only for body/container candidates that already have an inserted detachable magazine. Until P3 implements an explicit load transaction, a candidate without an inserted magazine and its compatible loose magazines are treated as one backpack-cargo package.
 
 P2 sequence:
 
@@ -164,10 +174,11 @@ P2 sequence:
 Occupied-secondary branch:
 
 - when projected readiness is insufficient and secondary is occupied, do not move the candidate's magazines into fast access
-- do not move the weapon into the backpack through the gear planner
-- leave the candidate available to ordinary `Pickup Gear`, category, price, and backpack-fit evaluation
-- when ordinary cargo filters reject it, leave it at the source
-- this prevents `Allow Gear Swapping` from silently bypassing normal cargo policy after both equipment slots are unavailable
+- when `Pickup Gear` is enabled and the whole weapon tree passes minimum/maximum price, treat the under-ready candidate and all compatible loaded source magazines as a potential-weapon cargo package
+- cargo permission comes from the ordinary gear and price filters; `Allow Gear Swapping` does not bypass them
+- preflight the package and move magazines first so later loot can complete the weapon
+- if the complete package cannot fit, leave its magazines at the source and try the weapon alone as cargo
+- when `Pickup Gear` is disabled or the weapon fails price, leave the weapon and its package magazines at the source
 
 Cargo promotion branch:
 
@@ -205,6 +216,25 @@ P2 boundaries:
 - when a tracked secondary can become ready from newly found compatible magazines, promote it before evaluating any new weapon package from the same source
 - after that promotion fills primary, other source weapons fall through to ordinary filtered cargo handling
 
+## Phase P4 Contract
+
+P4 gives commanded loose long guns an explicit destination instead of allowing EFT's generic pickup order to choose the first available weapon slot.
+
+Destination order:
+
+1. if actual readiness passes, reload landing space is safe, and first primary is empty, move to `FirstPrimaryWeapon`
+2. otherwise move to empty `SecondPrimaryWeapon` as the visible under-ready holding state
+3. otherwise move to backpack cargo
+4. if support and backpack are unavailable while first primary is empty, permit `FirstPrimaryWeapon` only when the inserted magazine is not dangerously low
+5. otherwise leave the weapon at the source and report negative
+
+The last-resort minimum is half, rounded up, of the smaller of the inserted magazine capacity and ordinary reference. Examples with `R=30`:
+
+- `15/30`, `15/60`, and full `5/5` pass the last-resort floor
+- `14/30`, `14/60`, and no inserted magazine fail it
+
+This placement policy is part of the direct player command and does not depend on `Allow Gear Swapping`, `Pickup Gear`, or body/container price filters. A long gun physically placed in `FirstPrimaryWeapon` is always registered as the bot's primary so the right-shoulder visual state remains truthful. Pickup animation ownership is released before delayed binding/selection begins.
+
 ## Phase P5 Contract
 
 P5 handles the exact continuation of an under-threshold pickup when both long-gun slots were initially empty:
@@ -240,6 +270,12 @@ Unless specified otherwise, the ordinary reference is 30 and the threshold is 60
 | WP-13 | 11/24 | 24 | Not ready with `R=24` | Debug passed | Pending P2 |
 | WP-14 | 30/60 | none | Not ready | Debug passed | Pending P2 |
 | WP-15 | 31/60 | 29 | Primary-ready | Debug passed | Pending P2 |
+| WP-16 | 2/5 | 5 + 5 | Primary-ready with two full spare equivalents | Debug pending | Runtime pending |
+| WP-17 | 3/5 | 5 + 5 | Primary-ready with two full spare equivalents | Debug pending | Runtime pending |
+| WP-18 | 4/5 | 5 | Primary-ready with inserted plus spare equivalents | Debug pending | Runtime pending |
+| WP-19 | 5/5 | 5 | Primary-ready with inserted plus spare equivalents | Debug pending | Runtime pending |
+| WP-20 | 5/5 | 4 | Not ready; partial spare does not form an equivalent | Debug pending | Runtime pending |
+| WP-21 | 3/5 | 5 | Not ready; only one full equivalent | Debug pending | Runtime pending |
 
 ## Integration Scenario Matrix
 
@@ -249,18 +285,25 @@ Unless specified otherwise, the ordinary reference is 30 and the threshold is 60
 | WI-02 | One planned magazine transfer fails | Failed magazine contributes nothing; destination uses resulting live state | P2 | Implemented; runtime pending |
 | WI-03 | Primary-ready while secondary is occupied | Candidate still goes to primary | P2 | Implemented; runtime pending |
 | WI-04 | Not ready and secondary is empty | Candidate goes to support; primary remains empty | P2 | Runtime passed |
-| WI-05 | Not ready, secondary occupied, ordinary `Pickup Gear` allows it, backpack fits | Candidate becomes ordinary filtered backpack cargo | P2 | Implemented; runtime pending |
-| WI-06 | Not ready, secondary occupied, ordinary filters reject it or backpack is full | Candidate remains at source | P2 | Implemented; runtime pending |
+| WI-05 | Not ready, secondary occupied, `Pickup Gear` enabled, whole weapon tree passes price, and package fits | Weapon plus compatible loaded source magazines become filtered backpack cargo | P2 | Implemented; runtime pending |
+| WI-06 | Potential package does not fit | Leave package magazines at source, try weapon-only cargo, and leave weapon too when it cannot fit | P2 | Implemented; runtime pending |
 | WI-07 | Compatible magazine exists only in backpack | It contributes nothing while in backpack; a successful move into fast access can then make it eligible | P2/P5 | P2 implemented; runtime pending |
 | WI-08 | Candidate has no inserted magazine and loading succeeds | Load one, recalculate, then place | P3 | Not started |
-| WI-09 | Candidate has no inserted magazine and loading fails | Never place it in primary | P3 | Not started |
-| WI-10 | Compatible magazines arrive one at a time | Same final inventory state produces the same final decision | P4/P5 | P5 manual-transfer path passed; loose-pickup P4 pending |
+| WI-09 | Candidate has no inserted magazine and loading fails | Prefer the weapon-and-compatible-magazine backpack package; if it does not fit, leave the magazines and try the weapon alone; leave the weapon too when it cannot fit | P3 | Cargo safety implemented; runtime pending |
+| WI-10 | Compatible magazines arrive one at a time | Same final inventory state produces the same final decision | P4/P5 | Secondary manual-transfer path passed; cargo manual/loose-pickup fix implemented, runtime pending |
 | WI-11 | Primary becomes occupied before support promotion | Keep candidate in support | P5 | Implemented; runtime pending |
 | WI-12 | Follower dies or enters combat during promotion | Do not start the move; dead/inactive completion does not rebind | P5/P6 | Implemented; runtime pending |
 | WI-13 | `Simple` or `Restricted` follower extracts after equip | Weapon and supporting acquired magazines remain return cargo | P6 | Not started |
 | WI-14 | `Immersive` or `Realistic` follower extracts after equip | Accepted equipment remains part of the saved kit | P6 | Not started |
 | WI-15 | A newly found weapon and spare are compatible with a loose spare carried beside an existing cargo weapon | Compare the weapons before deciding which one receives the cargo spare | Future weapon swapping | Deferred |
 | WI-16 | A tracked cargo weapon and spare are in backpack, then a new compatible source spare is found | Move the new spare and loose cargo spare into fast access with reload reserve, then promote the cargo weapon from live state | P2 | Implemented; runtime pending |
+| WI-17 | One compatible magazine was manually placed through `View Backpack`, then another was acquired through a command | Only the command-acquired magazine may contribute to readiness; the manually placed magazine remains strict cargo | P2 | Implemented; runtime pending |
+| WI-18 | A strict-cargo weapon or magazine is removed through `View Backpack`, then acquired through `Loot This` | Removal clears strict provenance for the complete removed tree; commanded reacquisition may participate in gear readiness | P2 | Implemented; runtime pending |
+| WI-19 | Commanded loose long gun is primary-ready and first primary is empty | Move directly to first primary, then release pickup state and bind/select it | P4 | Implemented; runtime pending |
+| WI-20 | Commanded loose long gun is under-ready and second primary is empty | Move to second primary; do not register it as current primary | P4 | Implemented; runtime pending |
+| WI-21 | Commanded loose long gun cannot use primary and second primary is occupied | Move to backpack cargo when it fits | P4 | Implemented; runtime pending |
+| WI-22 | Commanded loose long gun has no support/backpack destination but has a safe inserted-magazine floor | Use first primary as a last resort and register/select it | P4 | Implemented; runtime pending |
+| WI-23 | Commanded loose long gun has no support/backpack destination and its inserted magazine is dangerously low or absent | Leave at source and report negative | P4 | Implemented; runtime pending |
 
 ## Backpack Spare Scenario Matrix
 
@@ -291,6 +334,13 @@ This ledger records observed in-raid results. `Implemented` elsewhere in this do
 | RT-12 | A tracked looted secondary was physically present when a new first primary became available | Shared binder created `WeaponManager.Info[SecondPrimaryWeapon]`; runtime log reported `supportSlot=SecondPrimaryWeapon` and `canChange=True` | Passed |
 | RT-13 | Existing secondary occupied; new weapon had `12/30` inserted and three compatible `30/30` source spares, but no spare could fit fast access with reload reserve | All three spares failed `fastAccessFit`; projected readiness remained `12/60`; gear planner rejected the weapon to ordinary cargo handling | Passed |
 | RT-14 | Existing secondary occupied; new weapon had `5/30` inserted and one compatible `30/30` source spare with sufficient fast-access space | Spare successfully planned for the vest, but projected readiness was only `35/60`; gear planner rejected the under-threshold weapon package without moving it | Passed |
+| RT-15 | Existing secondary occupied; new weapon had exactly `15/30` inserted and one compatible `30/30` source spare with reload reserve | Half-full inserted magazine contributed `30`; the spare raised readiness to exactly `60/60`; new weapon entered first primary and the prior weapon registered as usable second-primary support | Passed |
+| RT-16 | Existing secondary occupied; new weapon had `11/30` inserted plus one compatible `30/30` source spare | Earlier policy moved only the weapon through ordinary cargo and left the spare behind | Superseded by potential-package policy; retest pending |
+| RT-17 | Tracked cargo rifle with `7/30` inserted remained in backpack, then two compatible `30/30` magazines reached follower fast access | Idle cargo reevaluation reached `67/60` and moved the uniquely ready tracked cargo weapon to first primary; no promotion failure followed | Passed after fix |
+| RT-18 | Corpse shotgun had no inserted magazine and one loose half-loaded `2/4` compatible magazine in its tactical vest | Legacy no-inserted-magazine branch moved the loose magazine to fast access and equipped the shotgun directly into first primary without a final readiness gate | P3 gap reproduced; cargo fix implemented, retest pending |
+| RT-19 | Brick received manually placed weapon and magazine trees through `View Backpack`, then inspection remained closed for about 14 seconds | All 15 tree IDs remained strict cargo and no idle readiness promotion occurred | Passed |
+| RT-20 | RT-19 trees were taken back out through `View Backpack` | Close bookkeeping logged `removedFromBackpack` and cleared all 15 strict IDs | Passed |
+| RT-21 | Removed weapon was reacquired through the old generic `Loot This` path with one full magazine | EFT incorrectly placed it directly in first primary without readiness; selection exhausted retries with `handsBusy` | Bug reproduced; explicit P4 placement/hand-release fix implemented, runtime retest pending |
 
 Not yet runtime-covered:
 
@@ -302,7 +352,20 @@ Not yet runtime-covered:
 - occupied-secondary rejection with `Pickup Gear` disabled, enabled-but-price-rejected, and enabled-with-valid-backpack-cargo cases
 - promotion while primary becomes occupied, hands become busy, combat starts, or the follower dies during the sequence
 - post-raid return/persistence after a secondary-to-primary promotion in each loadout-management mode
+- mixed provenance: one manual strict-cargo magazine plus one command-acquired compatible magazine
 - no-inserted-magazine weapons, tube-fed/internal-magazine shotguns, revolvers, and loose-ammunition feed policy
+
+## Deferred Feed-System Revisit
+
+The current phase is intentionally limited to detachable magazines in their existing loaded state. Later phases must revisit weapon readiness from different ownership and transaction models:
+
+- tube-fed, internal-magazine, and chamber-fed weapons, including applicable shotguns and bolt-action rifles, need readiness based on rounds already in the weapon plus compatible loose cartridges that can actually be loaded
+- detachable-magazine weapons need a magazine top-off phase where compatible loose ammunition can fill an inserted or spare magazine and make that magazine eligible for readiness
+- multiple compatible partially loaded magazines need a repacking phase: transfer ammunition from donor magazines into compatible target magazines to create the fullest practical magazine states before evaluating readiness
+
+Repacking must use real inventory transactions and settled magazine counts. It should prefer topping off the fullest useful target magazines from the least useful partial donors, then rerun the existing largest-available reference and readiness evaluation against the resulting live magazine states. Donor rounds must not count twice, and a failed or interrupted transfer leaves readiness based only on the magazine states that actually settled.
+
+Loose cartridges must not contribute speculatively. Compatibility, available stack count, magazine capacity, inventory ownership, and every real load, top-off, or repacking transaction must succeed before the resulting loaded rounds count toward primary readiness. These feed systems require their own scenario matrices and runtime tests rather than being folded into the current magazine-move logic.
 
 ## Diagnostic Contract
 
@@ -331,12 +394,12 @@ The final placement phases must log one additional post-transfer `actual` snapsh
 - Began P1 against baseline `f16caed`.
 - Confirmed vanilla `Inventory.FastAccessSlots` contains `Pockets` and `TacticalVest`.
 - Confirmed vanilla `BotReload.GetMagazineForReload(...)` searches reachable fast-access magazines and validates the move against the candidate magazine slot.
-- Added the centralized readiness formula, compatible-template reference resolver, actual fast-access scanner, and planned-projection diagnostics.
+- Added the centralized readiness formula, reference resolver, actual fast-access scanner, and planned-projection diagnostics.
 - Added all 15 formula scenarios as Debug startup self-tests.
 - Verified the Debug client build with zero warnings and zero errors before runtime testing.
 - Verified the in-game Debug startup self-test passed all 15 formula scenarios.
 - Verified a live body candidate with `10/30` inserted and one projected `30/30` compatible spare resolved `R=30`, `T=60`, and `40` total contribution, producing `primaryReady=False`.
-- Verified the template resolver found 20 compatible magazine templates and the second diagnostic reused the cached reference.
+- The initial P1 implementation resolved the reference from every compatible magazine template; this was later replaced because theoretical magazines not present in the scenario must not affect readiness.
 - Completed P1 without changing the existing weapon destination decision.
 - Verified a live `60/60` inserted-magazine candidate with no compatible spare resolved `60/60`, produced `primaryReady=True`, and used the existing full-60 primary path. One unrelated `21/21` magazine at the source was correctly rejected as incompatible.
 - Implemented P2 for body and container candidates that already have an inserted magazine.
@@ -354,9 +417,12 @@ The final placement phases must log one additional post-transfer `actual` snapsh
 - Implemented periodic reevaluation of a tracked looted weapon held in `SecondPrimaryWeapon` when `FirstPrimaryWeapon` remains empty.
 - A later compatible magazine in vest or pockets now promotes the support weapon only after actual live readiness reaches `T` and reload landing space remains available.
 - Promotion uses a real second-primary-to-first-primary inventory transaction, then the same centralized primary registration and switch path used by immediate looting.
+- Extended the idle reevaluation path to a uniquely eligible tracked backpack weapon after manual inventory changes or commanded loose-magazine pickup. A ready secondary retains priority, and multiple ready cargo weapons remain deferred until weapon comparison exists.
+- Removed the legacy direct-primary path for weapons without an inserted magazine. Until explicit magazine loading is implemented, compatible loose magazines and the weapon are preflighted as one backpack package and moved magazines-first. When the complete package cannot fit, magazines remain at source and the weapon is attempted alone as cargo.
 - Runtime verified the complete support-promotion path with `R=30`, `T=60`: a `10/30` inserted magazine plus one `30/30` spare produced `40` and placed the weapon in second primary; a later manually transferred `30/30` compatible spare produced `70` and promoted it to first primary.
 - Verified the promoted weapon switched into the follower's hands and was selected and fired normally during subsequent combat.
 - Added readiness-gated recruitment of compatible loose follower-backpack magazines for a newly found weapon. Backpack cargo is moved only when the combined executable plan produces a primary-ready weapon.
 - Added source-triggered promotion for a tracked secondary weapon: a later found spare moves first, compatible backpack cargo follows, and the support weapon promotes only after actual readiness passes.
 - Removed the gear planner's automatic weapon-and-magazine backpack bundle when secondary is occupied. Rejected candidates now fall through to ordinary `Pickup Gear` and price rules.
 - Moved tracked-secondary readiness evaluation ahead of new weapon candidates so newly found compatible magazines complete the existing weapon before any future weapon-comparison policy is required.
+- Extended ordinary filtered weapon cargo to retain compatible source magazines for future readiness. `Pickup Gear`, whole-tree price, and backpack fit gate the weapon; accepted compatible magazines join when the package fits.

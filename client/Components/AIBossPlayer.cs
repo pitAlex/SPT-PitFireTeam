@@ -1701,13 +1701,6 @@ namespace pitTeam.Components
                 return;
             }
 
-            if (InteractableObjects.IsBodyLootTargetChecked(corpse))
-            {
-                BotOwner? follower = FindClosestEligibleInteractionFollower(corpse.transform.position, requireSquadMate: true);
-                follower?.BotTalk.TrySay(EPhraseTrigger.Negative, false);
-                return;
-            }
-
             if (InteractableObjects.IsBodyLootTargetReserved(corpse))
             {
                 return;
@@ -1723,7 +1716,9 @@ namespace pitTeam.Components
                 return;
             }
 
-            if (!InteractableObjects.SetBodyLootTaker(closestFollower, corpse))
+            // A direct player order may deliberately revisit a completed corpse. The checked-body
+            // history is an autonomous-looting filter; the active reservation remains authoritative.
+            if (!InteractableObjects.SetBodyLootTaker(closestFollower, corpse, allowAlreadyChecked: true))
             {
                 closestFollower.BotTalk.TrySay(EPhraseTrigger.Negative, false);
                 return;
@@ -1767,7 +1762,9 @@ namespace pitTeam.Components
                 return;
             }
 
-            if (!InteractableObjects.SetContainerLootTaker(closestFollower, container))
+            // As with bodies, the player's direct target selection may revisit a completed
+            // container; autonomous selection keeps the completed-target filter enabled.
+            if (!InteractableObjects.SetContainerLootTaker(closestFollower, container, allowAlreadyChecked: true))
             {
                 closestFollower.BotTalk.TrySay(EPhraseTrigger.Negative, false);
                 return;

@@ -99,7 +99,8 @@ namespace pitTeam.Modules
                 ?.GetSlot(EquipmentSlot.SecondPrimaryWeapon)?.ContainedItem as Weapon;
             if (supportWeapon == null ||
                 supportWeapon.GetItemComponent<KnifeComponent>() != null ||
-                !InteractableObjects.IsLootedWeapon(bot, supportWeapon))
+                !InteractableObjects.IsLootedWeapon(bot, supportWeapon) ||
+                InteractableObjects.IsStrictCargoItem(bot, supportWeapon))
             {
                 return;
             }
@@ -149,6 +150,9 @@ namespace pitTeam.Modules
                 BotWeaponSelector selector = weaponManager.Selector;
                 if (IsSelected(weaponManager, selector, weapon))
                 {
+                    Logger.LogInfo(
+                        $"[LootCommand][WeaponRegistration] follower='{bot.Profile?.Nickname ?? bot.ProfileId ?? "unknown"}' " +
+                        $"weapon={weapon.TemplateId} context={context} result=selected attempt={attempt}");
                     return true;
                 }
 

@@ -198,23 +198,14 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
-                var pickupResult = InteractionsHandlerClass.QuickFindAppropriatePlace(
-                    rootItem,
-                    inventory,
-                    inventory.Inventory.Equipment.ToEnumerable<InventoryEquipment>(),
-                    InteractionsHandlerClass.EMoveItemOrder.PickUp,
-                    true);
-
-                if (!pickupResult.Succeeded)
+                if (!TryBuildLootPickupOperation(
+                        rootItem,
+                        inventory,
+                        out GInterface424? pickupOperation,
+                        out string pickupFailureReason))
                 {
                     BotOwner.BotTalk.TrySay(EPhraseTrigger.Negative, false);
-                    ClearTakeLootState("TakeLoot:noSpace");
-                    return;
-                }
-
-                if (!inventory.CanExecute(pickupResult.Value))
-                {
-                    ClearTakeLootState("TakeLoot:cannotExecute");
+                    ClearTakeLootState($"TakeLoot:{pickupFailureReason}");
                     return;
                 }
 
@@ -223,14 +214,14 @@ namespace pitTeam.BigBrain.Actions
                 botPlayer.SaveInteractionRayInfo();
                 try
                 {
-                    botPlayer.CurrentManagedState.Pickup(true, () => ExecuteLootPickupTransaction(lootItem, rootItem, inventory, pickupResult.Value));
+                    botPlayer.CurrentManagedState.Pickup(true, () => ExecuteLootPickupTransaction(lootItem, rootItem, inventory, pickupOperation));
                 }
                 catch (Exception ex)
                 {
                     Modules.Logger.LogError("TakeLoot pickup animation failed; falling back to direct inventory transaction");
                     Modules.Logger.LogError(ex);
                     StopLootPickupState(botPlayer);
-                    ExecuteLootPickupTransaction(lootItem, rootItem, inventory, pickupResult.Value);
+                    ExecuteLootPickupTransaction(lootItem, rootItem, inventory, pickupOperation);
                 }
             }
             catch (Exception ex)
@@ -239,6 +230,209 @@ namespace pitTeam.BigBrain.Actions
                 Modules.Logger.LogError(ex);
                 ClearTakeLootState("TakeLoot:startException");
             }
+        }
+
+        private bool TryBuildLootPickupOperation(
+            Item rootItem,
+            InventoryController inventory,
+            out GInterface424? operation,
+            out string failureReason)
+        {
+            operation = null;
+            failureReason = "noSpace";
+            if (rootItem == null || inventory?.Inventory?.Equipment == null)
+            {
+                failureReason = "noInventory";
+                return false;
+            }
+
+            if (rootItem is Weapon weapon &&
+                weapon.GetItemComponent<KnifeComponent>() == null &&
+                weapon is not PistolItemClass &&
+                weapon is not RevolverItemClass)
+            {
+                // A direct player order owns its physical destination even when automatic gear
+                // swapping is disabled. The shoulder used must truthfully communicate whether the
+                // bot considers this weapon usable or merely held for later.
+                return TryBuildLooseWeaponPickupOperation(
+                    weapon,
+                    inventory,
+                    inventory.Inventory.Equipment,
+                    out operation,
+                    out failureReason);
+            }
+
+            GStruct154<GInterface424> pickupResult = InteractionsHandlerClass.QuickFindAppropriatePlace(
+                rootItem,
+                inventory,
+                inventory.Inventory.Equipment.ToEnumerable<InventoryEquipment>(),
+                InteractionsHandlerClass.EMoveItemOrder.PickUp,
+                true);
+            if (!pickupResult.Succeeded)
+            {
+                return false;
+            }
+
+            if (!inventory.CanExecute(pickupResult.Value))
+            {
+                failureReason = "cannotExecute";
+                return false;
+            }
+
+            operation = pickupResult.Value;
+            return true;
+        }
+
+        private bool TryBuildLooseWeaponPickupOperation(
+            Weapon weapon,
+            InventoryController inventory,
+            InventoryEquipment equipment,
+            out GInterface424? operation,
+            out string failureReason)
+        {
+            operation = null;
+            failureReason = "noSafeWeaponDestination";
+            WeaponPrimaryReadinessSnapshot readiness = FollowerWeaponPrimaryReadiness.EvaluateActual(inventory, weapon);
+            bool insertedAloneIsSufficient = readiness.InsertedContribution >= readiness.Threshold;
+            bool hasReloadLandingSpace = insertedAloneIsSufficient ||
+                                         FollowerWeaponPrimaryReadiness.HasInsertedMagazineReloadLandingSpace(
+                                             equipment,
+                                             weapon);
+
+            // Right shoulder is reserved for a weapon the bot will actually register and use.
+            if (readiness.PrimaryReady &&
+                !readiness.RequiresMagazineLoad &&
+                hasReloadLandingSpace &&
+                TryBuildLooseWeaponPickupMove(
+                    weapon,
+                    inventory,
+                    equipment,
+                    EquipmentSlot.FirstPrimaryWeapon,
+                    out operation))
+            {
+                LogLooseWeaponPickupDestination(weapon, readiness, "FirstPrimaryWeapon", "ready");
+                return true;
+            }
+
+            // Left shoulder is the visible holding state for a weapon that is not yet primary-ready.
+            if (TryBuildLooseWeaponPickupMove(
+                    weapon,
+                    inventory,
+                    equipment,
+                    EquipmentSlot.SecondPrimaryWeapon,
+                    out operation))
+            {
+                LogLooseWeaponPickupDestination(
+                    weapon,
+                    readiness,
+                    "SecondPrimaryWeapon",
+                    readiness.PrimaryReady ? "primaryUnavailable" : readiness.Reason);
+                return true;
+            }
+
+            if (TryFindBackpackAddressForItem(equipment, weapon, out ItemAddress? backpackAddress) &&
+                TryBuildLootPickupMove(weapon, backpackAddress, inventory, out operation))
+            {
+                LogLooseWeaponPickupDestination(
+                    weapon,
+                    readiness,
+                    "BackpackCargo",
+                    readiness.PrimaryReady ? "primaryAndSecondaryUnavailable" : readiness.Reason);
+                return true;
+            }
+
+            // If no honest fallback exists, a reasonably loaded weapon may use the right shoulder
+            // as a last resort. A physical first-primary weapon must then be registered as such;
+            // otherwise the bot's visible equipment would disagree with its combat weapon state.
+            if (HasSafeForcedPrimaryMagazine(readiness, out int minimumSafeRounds) &&
+                TryBuildLooseWeaponPickupMove(
+                    weapon,
+                    inventory,
+                    equipment,
+                    EquipmentSlot.FirstPrimaryWeapon,
+                    out operation))
+            {
+                LogLooseWeaponPickupDestination(
+                    weapon,
+                    readiness,
+                    "FirstPrimaryWeapon",
+                    $"forcedPrimaryFallback;minimumSafeRounds={minimumSafeRounds}");
+                return true;
+            }
+
+            LogLooseWeaponPickupDestination(
+                weapon,
+                readiness,
+                "Source",
+                $"noSafeDestination;minimumSafeRounds={GetForcedPrimaryMinimumSafeRounds(readiness)}");
+            return false;
+        }
+
+        private static bool TryBuildLooseWeaponPickupMove(
+            Weapon weapon,
+            InventoryController inventory,
+            InventoryEquipment equipment,
+            EquipmentSlot destination,
+            out GInterface424? operation)
+        {
+            operation = null;
+            return TryFindEquipmentSlotAddress(equipment, destination, weapon, out ItemAddress? address) &&
+                   TryBuildLootPickupMove(weapon, address, inventory, out operation);
+        }
+
+        private static bool TryBuildLootPickupMove(
+            Item item,
+            ItemAddress address,
+            InventoryController inventory,
+            out GInterface424? operation)
+        {
+            operation = null;
+            GStruct154<GClass3411> moveResult = InteractionsHandlerClass.Move(item, address, inventory, true);
+            if (moveResult.Failed ||
+                moveResult.Value.ItemsDestroyRequired ||
+                !inventory.CanExecute(moveResult.Value))
+            {
+                return false;
+            }
+
+            operation = moveResult.Value;
+            return true;
+        }
+
+        private static bool HasSafeForcedPrimaryMagazine(
+            WeaponPrimaryReadinessSnapshot readiness,
+            out int minimumSafeRounds)
+        {
+            minimumSafeRounds = GetForcedPrimaryMinimumSafeRounds(readiness);
+            return readiness?.HasInsertedMagazine == true &&
+                   readiness.InsertedRounds >= minimumSafeRounds;
+        }
+
+        private static int GetForcedPrimaryMinimumSafeRounds(WeaponPrimaryReadinessSnapshot readiness)
+        {
+            if (readiness == null || !readiness.HasInsertedMagazine)
+            {
+                return int.MaxValue;
+            }
+
+            int insertedCapacity = Math.Max(0, readiness.InsertedCapacity);
+            int ordinaryReference = Math.Max(0, readiness.OrdinaryReference);
+            int usableBasis = insertedCapacity > 0 && ordinaryReference > 0
+                ? Math.Min(insertedCapacity, ordinaryReference)
+                : Math.Max(insertedCapacity, ordinaryReference);
+            return Math.Max(1, (usableBasis + 1) / 2);
+        }
+
+        private void LogLooseWeaponPickupDestination(
+            Weapon weapon,
+            WeaponPrimaryReadinessSnapshot readiness,
+            string destination,
+            string reason)
+        {
+            Modules.Logger.LogInfo(
+                $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                $"weapon={DescribeLootDebugItem(weapon)} evaluation=loosePickup destination={destination} " +
+                $"decisionReason={reason} {readiness?.ToDiagnosticString() ?? "readinessMissing"}");
         }
 
         private void ExecuteLootPickupTransaction(LootItem lootItem, Item rootItem, InventoryController inventory, GInterface424 pickupAction)
@@ -287,6 +481,7 @@ namespace pitTeam.BigBrain.Actions
             {
                 if (result?.Succeed == true || IsLootNowInBotInventory(botPlayer, rootItem))
                 {
+                    StopLootPickupState(botPlayer);
                     FinishLootPickupSuccess(botPlayer, rootItem, "TakeLoot:done");
                     return;
                 }
@@ -315,6 +510,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
+            StopLootPickupState(botPlayer);
             FinishLootPickupSuccess(botPlayer, rootItem, reason);
             return true;
         }
@@ -322,7 +518,10 @@ namespace pitTeam.BigBrain.Actions
         private void FinishLootPickupSuccess(Player? botPlayer, Item rootItem, string reason)
         {
             botPlayer?.UpdateInteractionCast();
+            InteractableObjects.ClearStrictCargoTree(BotOwner, rootItem);
             InteractableObjects.RegisterLootedWeaponTree(BotOwner, rootItem);
+
+            Weapon? primaryWeaponToBind = null;
 
             if (followerData?.IsSquadMate == true)
             {
@@ -337,14 +536,31 @@ namespace pitTeam.BigBrain.Actions
                     ?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem as Weapon;
                 if (IsSameLootItem(slottedPrimary, weapon))
                 {
-                    // EFT's loose-item pickup can physically fill an empty primary slot without
-                    // rebuilding the bot's spawn-time weapon info. Use the same rebind as commanded
-                    // body/container equip so the carried weapon becomes a real combat primary.
-                    RebindLootedPrimaryWeapon(weapon);
+                    primaryWeaponToBind = weapon;
                 }
             }
 
             ClearTakeLootState(reason);
+            if (primaryWeaponToBind != null)
+            {
+                QueueLoosePickupPrimaryWeaponBinding(primaryWeaponToBind);
+            }
+        }
+
+        private void QueueLoosePickupPrimaryWeaponBinding(Weapon weapon)
+        {
+            BotOwner bot = BotOwner;
+            if (bot?.AITaskManager == null)
+            {
+                FollowerLootedPrimaryWeaponBinding.RebindAndSelect(bot, weapon, "loosePickup");
+                return;
+            }
+
+            // Let the pickup state release its hands before asking BotWeaponSelector to switch.
+            bot.AITaskManager.RegisterDelayedTask(
+                bot,
+                0.2f,
+                () => FollowerLootedPrimaryWeaponBinding.RebindAndSelect(bot, weapon, "loosePickup"));
         }
 
         private void RefreshLootedWeaponPresentation(Item item)
@@ -496,10 +712,7 @@ namespace pitTeam.BigBrain.Actions
                     botPlayer.MovementContext.PickupAction = null;
                 }
 
-                if (botPlayer.CurrentManagedState is PickupStateClass pickupState)
-                {
-                    pickupState.Pickup(false, null);
-                }
+                botPlayer.CurrentManagedState?.Pickup(false, null);
             }
             catch
             {

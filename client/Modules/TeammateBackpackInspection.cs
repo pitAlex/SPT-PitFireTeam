@@ -509,7 +509,6 @@ namespace pitTeam.Modules
             }
 
             _closeRequested = true;
-            ClearInspectionFlag(reason);
 
             try
             {
@@ -540,11 +539,6 @@ namespace pitTeam.Modules
             try
             {
                 TrackBackpackItemChanges();
-
-                if (clearInspectionFlag)
-                {
-                    ClearInspectionFlag(reason);
-                }
             }
             catch (Exception ex)
             {
@@ -553,6 +547,13 @@ namespace pitTeam.Modules
             }
             finally
             {
+                // Promotion stays paused until provenance has been recorded. Always release the
+                // follower even if EFT inventory traversal failed during close bookkeeping.
+                if (clearInspectionFlag)
+                {
+                    ClearInspectionFlag(reason);
+                }
+
                 _owner = null;
                 _targetBot = null;
                 _targetFollower = null;
@@ -578,15 +579,32 @@ namespace pitTeam.Modules
                 return;
             }
 
-            // Items newly placed into the follower backpack become return-tracked like normal handed-over loot.
+            // Items newly placed into the follower backpack become return-tracked like normal handed-over loot,
+            // but remain strict cargo until that exact tree is later acquired through a loot/pickup command.
             HashSet<string> currentBackpackItemIds = SnapshotAllItemIds(_targetBackpack);
             foreach (Item item in _targetBackpack.GetAllItems())
             {
                 if (!_initialBackpackItemIds.Contains(item.Id) &&
                     !HasNewAncestorInBackpack(item, _targetBackpack, _initialBackpackItemIds))
                 {
+                    InteractableObjects.RegisterStrictCargoTree(_targetBot, item);
                     InteractableObjects.StoreItem(_targetBot, item);
                 }
+            }
+
+            // Strict-cargo provenance ends as soon as the player takes the item back. Compare the
+            // complete backpack snapshots directly instead of relying on return-root bookkeeping;
+            // this also clears removed weapon parts, inserted magazines, and nested cargo items.
+            HashSet<string> removedBackpackItemIds = new HashSet<string>(_initialBackpackItemIds, StringComparer.Ordinal);
+            removedBackpackItemIds.ExceptWith(currentBackpackItemIds);
+            int clearedStrictItemCount = InteractableObjects.RemoveStrictCargoItemIds(
+                _targetBot.ProfileId,
+                removedBackpackItemIds);
+            if (clearedStrictItemCount > 0)
+            {
+                Logger.LogInfo(
+                    $"[LootCommand][CargoProvenance] follower='{_targetBot.Profile?.Nickname ?? _targetBot.ProfileId ?? "unknown"}' " +
+                    $"classification=removedFromBackpack clearedStrictItems={clearedStrictItemCount}");
             }
 
             if (_initialTrackedItemIds == null)

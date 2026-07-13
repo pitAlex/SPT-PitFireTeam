@@ -1,18 +1,14 @@
-using Comfort.Common;
 using EFT.InventoryLogic;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 
 namespace pitTeam.Modules
 {
     internal static class FollowerWeaponPrimaryReadiness
     {
         private const int MaximumOrdinaryMagazineReference = 30;
-        private static readonly object ReferenceCacheLock = new object();
-        private static readonly Dictionary<string, OrdinaryReferenceResolution> ReferenceCache =
-            new Dictionary<string, OrdinaryReferenceResolution>(StringComparer.Ordinal);
+        private const int TinyMagazineReference = 5;
 
         internal static WeaponPrimaryReadinessSnapshot EvaluateActual(
             InventoryController inventory,
@@ -65,24 +61,28 @@ namespace pitTeam.Modules
             int insertedRounds,
             int insertedCapacity,
             IEnumerable<int> compatibleFastAccessRounds,
-            int supportedMagazineTemplateCount = 0,
+            int availableMagazineCount = 0,
             string referenceReason = "provided")
         {
             int reference = Math.Max(0, ordinaryReference);
-            int threshold = reference > 0 ? reference * 2 : 0;
             int normalizedInsertedRounds = hasInsertedMagazine ? Math.Max(0, insertedRounds) : 0;
             int normalizedInsertedCapacity = hasInsertedMagazine ? Math.Max(0, insertedCapacity) : 0;
+            bool usesTinyMagazineReserve = reference == TinyMagazineReference;
+            int threshold = reference > 0 ? reference * 2 : 0;
             int insertedContribution = CalculateInsertedContribution(
                 reference,
                 hasInsertedMagazine,
                 normalizedInsertedRounds,
-                normalizedInsertedCapacity);
+                normalizedInsertedCapacity,
+                usesTinyMagazineReserve);
 
             List<int> spareRounds = compatibleFastAccessRounds?
                 .Where(rounds => rounds > 0)
                 .Select(rounds => Math.Max(0, rounds))
                 .ToList() ?? new List<int>();
-            int spareContribution = spareRounds.Sum();
+            int spareContribution = usesTinyMagazineReserve
+                ? spareRounds.Count(rounds => rounds >= reference) * reference
+                : spareRounds.Sum();
             int totalContribution = insertedContribution + spareContribution;
             bool primaryReady = reference > 0 && totalContribution >= threshold;
             bool requiresMagazineLoad = primaryReady && !hasInsertedMagazine;
@@ -106,6 +106,10 @@ namespace pitTeam.Modules
             {
                 reason = "noInsertedMagazineOrFastAccessSpare";
             }
+            else if (usesTinyMagazineReserve)
+            {
+                reason = "tinyMagazineNeedsTwoFullEquivalents";
+            }
             else
             {
                 reason = "insufficientUsableRounds";
@@ -124,7 +128,7 @@ namespace pitTeam.Modules
                 primaryReady,
                 requiresMagazineLoad,
                 reason,
-                supportedMagazineTemplateCount,
+                availableMagazineCount,
                 referenceReason);
         }
 
@@ -146,7 +150,13 @@ namespace pitTeam.Modules
                 new ReadinessScenario("WP-12", 24, true, 12, 24, new[] { 24 }, 48, true, false),
                 new ReadinessScenario("WP-13", 24, true, 11, 24, new[] { 24 }, 35, false, false),
                 new ReadinessScenario("WP-14", 30, true, 30, 60, Array.Empty<int>(), 30, false, false),
-                new ReadinessScenario("WP-15", 30, true, 31, 60, new[] { 29 }, 60, true, false)
+                new ReadinessScenario("WP-15", 30, true, 31, 60, new[] { 29 }, 60, true, false),
+                new ReadinessScenario("WP-16", 5, true, 2, 5, new[] { 5, 5 }, 10, true, false),
+                new ReadinessScenario("WP-17", 5, true, 3, 5, new[] { 5, 5 }, 10, true, false),
+                new ReadinessScenario("WP-18", 5, true, 4, 5, new[] { 5 }, 10, true, false),
+                new ReadinessScenario("WP-19", 5, true, 5, 5, new[] { 5 }, 10, true, false),
+                new ReadinessScenario("WP-20", 5, true, 5, 5, new[] { 4 }, 5, false, false),
+                new ReadinessScenario("WP-21", 5, true, 3, 5, new[] { 5 }, 5, false, false)
             };
 
             List<string> failures = new List<string>();
@@ -204,9 +214,9 @@ namespace pitTeam.Modules
                 return EvaluateFormula(0, false, 0, 0, Array.Empty<int>(), 0, $"weaponRead:{ex.Message}");
             }
 
-            OrdinaryReferenceResolution reference = ResolveOrdinaryReference(weapon, magazineSlot);
-            List<int> compatibleRounds = new List<int>();
+            List<MagazineItemClass> compatibleMagazines = new List<MagazineItemClass>();
             HashSet<string> includedMagazineIds = new HashSet<string>(StringComparer.Ordinal);
+            string referenceReason = "availableLoadedMagazines";
 
             if (inventory != null && magazineSlot != null)
             {
@@ -221,12 +231,12 @@ namespace pitTeam.Modules
                             insertedMagazine,
                             magazine,
                             includedMagazineIds,
-                            compatibleRounds);
+                            compatibleMagazines);
                     }
                 }
                 catch (Exception ex)
                 {
-                    reference = reference.WithReason($"{reference.Reason};fastAccessScan:{ex.Message}");
+                    referenceReason = $"{referenceReason};fastAccessScan:{ex.Message}";
                 }
             }
 
@@ -239,30 +249,48 @@ namespace pitTeam.Modules
                         insertedMagazine,
                         magazine,
                         includedMagazineIds,
-                        compatibleRounds,
+                        compatibleMagazines,
                         excludeInstalledMagazines: false);
                 }
             }
 
+            int availableReference = ResolveAvailableOrdinaryReference(
+                insertedMagazine,
+                compatibleMagazines,
+                out int availableMagazineCount);
+            if (availableReference <= 0)
+            {
+                referenceReason = $"{referenceReason};noneAvailable";
+            }
+
             return EvaluateFormula(
-                reference.OrdinaryReference,
+                availableReference,
                 insertedMagazine != null,
                 insertedMagazine?.Count ?? 0,
                 insertedMagazine?.MaxCount ?? 0,
-                compatibleRounds,
-                reference.SupportedMagazineTemplateCount,
-                reference.Reason);
+                compatibleMagazines.Select(magazine => magazine.Count),
+                availableMagazineCount,
+                referenceReason);
         }
 
         private static int CalculateInsertedContribution(
             int ordinaryReference,
             bool hasInsertedMagazine,
             int insertedRounds,
-            int insertedCapacity)
+            int insertedCapacity,
+            bool usesTinyMagazineReserve)
         {
             if (!hasInsertedMagazine || insertedRounds <= 0)
             {
                 return 0;
+            }
+
+            // Tiny magazines are counted as whole magazine states. A nearly full inserted
+            // magazine (4/5 or 5/5) is one full equivalent; lower states require two full
+            // spares instead of combining partial rounds into an artificial full magazine.
+            if (usesTinyMagazineReserve)
+            {
+                return insertedRounds >= 4 ? ordinaryReference : 0;
             }
 
             bool atLeastHalfFull = insertedCapacity > 0 && insertedRounds * 2 >= insertedCapacity;
@@ -310,7 +338,7 @@ namespace pitTeam.Modules
             MagazineItemClass insertedMagazine,
             MagazineItemClass candidate,
             HashSet<string> includedMagazineIds,
-            List<int> compatibleRounds,
+            List<MagazineItemClass> compatibleMagazines,
             bool excludeInstalledMagazines = true)
         {
             if (candidate == null ||
@@ -331,7 +359,7 @@ namespace pitTeam.Modules
             {
                 if (magazineSlot.CanAccept(candidate))
                 {
-                    compatibleRounds.Add(candidate.Count);
+                    compatibleMagazines.Add(candidate);
                 }
             }
             catch
@@ -360,137 +388,37 @@ namespace pitTeam.Modules
             return false;
         }
 
-        private static OrdinaryReferenceResolution ResolveOrdinaryReference(Weapon weapon, Slot magazineSlot)
+        private static int ResolveAvailableOrdinaryReference(
+            MagazineItemClass insertedMagazine,
+            IEnumerable<MagazineItemClass> compatibleMagazines,
+            out int availableMagazineCount)
         {
-            if (magazineSlot == null)
+            int largestAvailableCapacity = 0;
+            availableMagazineCount = 0;
+
+            if (insertedMagazine?.Count > 0)
             {
-                return new OrdinaryReferenceResolution(0, 0, "magazineSlotMissing");
+                largestAvailableCapacity = Math.Max(0, insertedMagazine.MaxCount);
+                availableMagazineCount++;
             }
 
-            string cacheKey = BuildMagazineSlotCacheKey(weapon, magazineSlot);
-            lock (ReferenceCacheLock)
+            if (compatibleMagazines != null)
             {
-                if (ReferenceCache.TryGetValue(cacheKey, out OrdinaryReferenceResolution cached))
+                foreach (MagazineItemClass magazine in compatibleMagazines)
                 {
-                    return cached.WithReason("cache");
-                }
-            }
-
-            int maximumReference = 0;
-            int supportedTemplateCount = 0;
-            string reason = "templates";
-            try
-            {
-                ItemFactoryClass itemFactory = Singleton<ItemFactoryClass>.Instance;
-                if (itemFactory?.ItemTemplates == null)
-                {
-                    return new OrdinaryReferenceResolution(0, 0, "itemTemplatesUnavailable");
-                }
-
-                foreach (var templateEntry in itemFactory.ItemTemplates)
-                {
-                    if (templateEntry.Value is not MagazineTemplateClass)
+                    if (magazine?.Count <= 0)
                     {
                         continue;
                     }
 
-                    try
-                    {
-                        Item item = itemFactory.CreateItem(
-                            $"pft-readiness-{templateEntry.Key}",
-                            templateEntry.Key.ToString(),
-                            null);
-                        if (item is not MagazineItemClass magazine || !magazineSlot.CanAccept(magazine))
-                        {
-                            continue;
-                        }
-
-                        supportedTemplateCount++;
-                        maximumReference = Math.Max(
-                            maximumReference,
-                            Math.Min(MaximumOrdinaryMagazineReference, Math.Max(0, magazine.MaxCount)));
-                    }
-                    catch
-                    {
-                        // Individual malformed or special-use templates must not abort the resolver.
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                reason = $"templateScan:{ex.Message}";
-            }
-
-            OrdinaryReferenceResolution resolution = new OrdinaryReferenceResolution(
-                maximumReference,
-                supportedTemplateCount,
-                maximumReference > 0 ? reason : $"{reason};noCompatibleMagazineTemplates");
-            lock (ReferenceCacheLock)
-            {
-                ReferenceCache[cacheKey] = resolution;
-            }
-
-            return resolution;
-        }
-
-        private static string BuildMagazineSlotCacheKey(Weapon weapon, Slot magazineSlot)
-        {
-            StringBuilder key = new StringBuilder();
-            key.Append(weapon?.TemplateId.ToString() ?? "weaponMissing");
-            key.Append('|');
-            key.Append(magazineSlot?.ParentItem?.TemplateId.ToString() ?? "slotParentMissing");
-
-            if (magazineSlot?.Filters == null)
-            {
-                return key.ToString();
-            }
-
-            foreach (ItemFilter filter in magazineSlot.Filters)
-            {
-                key.Append("|+");
-                if (filter?.Filter != null)
-                {
-                    foreach (var accepted in filter.Filter)
-                    {
-                        key.Append(accepted.ToString());
-                        key.Append(',');
-                    }
-                }
-
-                key.Append("|-");
-                if (filter?.ExcludedFilter != null)
-                {
-                    foreach (var excluded in filter.ExcludedFilter)
-                    {
-                        key.Append(excluded.ToString());
-                        key.Append(',');
-                    }
+                    largestAvailableCapacity = Math.Max(
+                        largestAvailableCapacity,
+                        Math.Max(0, magazine.MaxCount));
+                    availableMagazineCount++;
                 }
             }
 
-            return key.ToString();
-        }
-
-        private readonly struct OrdinaryReferenceResolution
-        {
-            public OrdinaryReferenceResolution(int ordinaryReference, int supportedMagazineTemplateCount, string reason)
-            {
-                OrdinaryReference = ordinaryReference;
-                SupportedMagazineTemplateCount = supportedMagazineTemplateCount;
-                Reason = reason ?? "unknown";
-            }
-
-            public int OrdinaryReference { get; }
-            public int SupportedMagazineTemplateCount { get; }
-            public string Reason { get; }
-
-            public OrdinaryReferenceResolution WithReason(string reason)
-            {
-                return new OrdinaryReferenceResolution(
-                    OrdinaryReference,
-                    SupportedMagazineTemplateCount,
-                    reason);
-            }
+            return Math.Min(MaximumOrdinaryMagazineReference, largestAvailableCapacity);
         }
 
         private readonly struct ReadinessScenario
@@ -544,7 +472,7 @@ namespace pitTeam.Modules
             bool primaryReady,
             bool requiresMagazineLoad,
             string reason,
-            int supportedMagazineTemplateCount,
+            int availableMagazineCount,
             string referenceReason)
         {
             OrdinaryReference = ordinaryReference;
@@ -559,7 +487,7 @@ namespace pitTeam.Modules
             PrimaryReady = primaryReady;
             RequiresMagazineLoad = requiresMagazineLoad;
             Reason = reason;
-            SupportedMagazineTemplateCount = supportedMagazineTemplateCount;
+            AvailableMagazineCount = availableMagazineCount;
             ReferenceReason = referenceReason;
         }
 
@@ -575,7 +503,7 @@ namespace pitTeam.Modules
         public bool PrimaryReady { get; }
         public bool RequiresMagazineLoad { get; }
         public string Reason { get; }
-        public int SupportedMagazineTemplateCount { get; }
+        public int AvailableMagazineCount { get; }
         public string ReferenceReason { get; }
 
         public string ToDiagnosticString()
@@ -585,7 +513,7 @@ namespace pitTeam.Modules
                    $"insertedContribution={InsertedContribution} fastAccessMags={FastAccessMagazineRounds.Count} " +
                    $"fastAccessRounds={FastAccessContribution} total={TotalContribution} " +
                    $"primaryReady={PrimaryReady} requiresMagazineLoad={RequiresMagazineLoad} reason={Reason} " +
-                   $"supportedTemplates={SupportedMagazineTemplateCount} referenceSource={ReferenceReason}";
+                   $"availableMags={AvailableMagazineCount} referenceSource={ReferenceReason}";
         }
     }
 }

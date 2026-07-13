@@ -44,11 +44,13 @@ namespace pitTeam.Modules
         private Dictionary<string, LootableContainer>? _lootContainerTargetsByBot;
         private Dictionary<string, Vector3>? _lootContainerPositionsByBot;
         private HashSet<string>? _checkedBodyLootTargetIds;
+        private HashSet<string>? _checkedContainerLootTargetIds;
 
         private bool IsDisposed = false;
 
         private Dictionary<string, List<string>>? _lootedItems;
         private Dictionary<string, HashSet<string>>? _lootedWeaponIds;
+        private Dictionary<string, HashSet<string>>? _strictCargoItemIds;
         private List<Item>? _toSendItems;
         private Dictionary<string, Dictionary<string, object>>? _followersWithLoot;
 
@@ -69,6 +71,7 @@ namespace pitTeam.Modules
 
                 _lootedItems = new Dictionary<string, List<string>>();
                 _lootedWeaponIds = new Dictionary<string, HashSet<string>>();
+                _strictCargoItemIds = new Dictionary<string, HashSet<string>>();
                 _toSendItems = new List<Item>();
                 _followersWithLoot = new Dictionary<string, Dictionary<string, object>>();
                 _doorsToOpen = new Dictionary<string, Door>();
@@ -83,6 +86,7 @@ namespace pitTeam.Modules
                 _lootContainerTargetsByBot = new Dictionary<string, LootableContainer>(StringComparer.Ordinal);
                 _lootContainerPositionsByBot = new Dictionary<string, Vector3>(StringComparer.Ordinal);
                 _checkedBodyLootTargetIds = new HashSet<string>(StringComparer.Ordinal);
+                _checkedContainerLootTargetIds = new HashSet<string>(StringComparer.Ordinal);
 
             }
 
@@ -625,6 +629,7 @@ namespace pitTeam.Modules
 
             _lootedItems?.Clear();
             _lootedWeaponIds?.Clear();
+            _strictCargoItemIds?.Clear();
             _toSendItems?.Clear();
             _followersWithLoot?.Clear();
             _enemiesSeen?.Clear();
@@ -637,6 +642,7 @@ namespace pitTeam.Modules
             _lootContainerTargetsByBot?.Clear();
             _lootContainerPositionsByBot?.Clear();
             _checkedBodyLootTargetIds?.Clear();
+            _checkedContainerLootTargetIds?.Clear();
 
             _currDoor = null;
             _doorsToOpen?.Clear();
@@ -645,6 +651,7 @@ namespace pitTeam.Modules
             _bodyLootTarget = null;
             _lootedItems = null;
             _lootedWeaponIds = null;
+            _strictCargoItemIds = null;
 
             _enemiesSeen = null;
 
@@ -656,6 +663,7 @@ namespace pitTeam.Modules
             _lootContainerTargetsByBot = null;
             _lootContainerPositionsByBot = null;
             _checkedBodyLootTargetIds = null;
+            _checkedContainerLootTargetIds = null;
 
             _isBossDead = false;
 
@@ -877,6 +885,30 @@ namespace pitTeam.Modules
             return Instance._lootContainerTarget;
         }
 
+        public static bool IsContainerLootTargetChecked(LootableContainer? container)
+        {
+            if (Instance?._checkedContainerLootTargetIds == null ||
+                container == null ||
+                !TryGetContainerLootTargetId(container, out string targetId))
+            {
+                return false;
+            }
+
+            return Instance._checkedContainerLootTargetIds.Contains(targetId);
+        }
+
+        public static void MarkContainerLootTargetChecked(LootableContainer? container)
+        {
+            if (Instance?._checkedContainerLootTargetIds == null ||
+                container == null ||
+                !TryGetContainerLootTargetId(container, out string targetId))
+            {
+                return;
+            }
+
+            Instance._checkedContainerLootTargetIds.Add(targetId);
+        }
+
         public static LootItem? GetAssignedLootItem(BotOwner bot)
         {
             if (Instance == null ||
@@ -1037,7 +1069,10 @@ namespace pitTeam.Modules
             return false;
         }
 
-        public static bool SetBodyLootTaker(BotOwner bot, Corpse? corpse = null)
+        public static bool SetBodyLootTaker(
+            BotOwner bot,
+            Corpse? corpse = null,
+            bool allowAlreadyChecked = false)
         {
             if (Instance == null || bot == null || string.IsNullOrEmpty(bot.ProfileId)) return false;
 
@@ -1050,7 +1085,9 @@ namespace pitTeam.Modules
                 return false;
             }
 
-            if (IsBodyLootTargetChecked(targetCorpse))
+            // Completed-body history prevents autonomous loot selection from repeating work.
+            // Explicit player orders opt out, but can never bypass another follower's reservation.
+            if (!allowAlreadyChecked && IsBodyLootTargetChecked(targetCorpse))
             {
                 return false;
             }
@@ -1096,7 +1133,10 @@ namespace pitTeam.Modules
             return false;
         }
 
-        public static bool SetContainerLootTaker(BotOwner bot, LootableContainer? container = null)
+        public static bool SetContainerLootTaker(
+            BotOwner bot,
+            LootableContainer? container = null,
+            bool allowAlreadyChecked = false)
         {
             if (Instance == null || bot == null || string.IsNullOrEmpty(bot.ProfileId)) return false;
 
@@ -1105,6 +1145,13 @@ namespace pitTeam.Modules
 
             LootableContainer targetContainer = container ?? GetAssignedLootContainerTarget(bot) ?? Instance._lootContainerTarget;
             if (targetContainer == null)
+            {
+                return false;
+            }
+
+            // Keep completed containers out of autonomous selection while allowing a direct player
+            // order to search one again. Active ownership is still checked independently below.
+            if (!allowAlreadyChecked && IsContainerLootTargetChecked(targetContainer))
             {
                 return false;
             }
@@ -1300,6 +1347,19 @@ namespace pitTeam.Modules
             Item secondRoot = second.ItemOwner?.Items?.FirstOrDefault();
             return !string.IsNullOrEmpty(firstRoot?.Id) &&
                    string.Equals(firstRoot.Id, secondRoot?.Id, StringComparison.Ordinal);
+        }
+
+        private static bool TryGetContainerLootTargetId(LootableContainer container, out string targetId)
+        {
+            targetId = string.Empty;
+            Item root = container?.ItemOwner?.Items?.FirstOrDefault();
+            if (string.IsNullOrEmpty(root?.Id))
+            {
+                return false;
+            }
+
+            targetId = root.Id;
+            return true;
         }
 
         private static void RemoveBodyLootReservation(string profileId)
@@ -1786,6 +1846,107 @@ namespace pitTeam.Modules
                    weaponIds.Contains(weapon.Id);
         }
 
+        public static void RegisterStrictCargoTree(BotOwner bot, Item item)
+        {
+            if (Instance?._strictCargoItemIds == null ||
+                bot == null ||
+                item == null ||
+                string.IsNullOrWhiteSpace(bot.ProfileId))
+            {
+                return;
+            }
+
+            if (!Instance._strictCargoItemIds.TryGetValue(bot.ProfileId, out HashSet<string> itemIds))
+            {
+                itemIds = new HashSet<string>(StringComparer.Ordinal);
+                Instance._strictCargoItemIds.Add(bot.ProfileId, itemIds);
+            }
+
+            // View Backpack is a player-owned cargo transfer, not permission to use the tree as
+            // equipment. Record every child independently so one later commanded magazine does
+            // not make manually supplied magazines beside it eligible for weapon readiness.
+            HashSet<string> treeIds = GetItemTreeIds(item);
+            itemIds.UnionWith(treeIds);
+            Logger.LogInfo(
+                $"[LootCommand][CargoProvenance] follower='{bot.Profile?.Nickname ?? bot.ProfileId ?? "unknown"}' " +
+                $"root={item.TemplateId}:{item.Id} classification=strictCargo treeItems={treeIds.Count}");
+        }
+
+        public static void ClearStrictCargoTree(BotOwner bot, Item item)
+        {
+            if (Instance?._strictCargoItemIds == null ||
+                bot == null ||
+                item == null ||
+                string.IsNullOrWhiteSpace(bot.ProfileId) ||
+                !Instance._strictCargoItemIds.TryGetValue(bot.ProfileId, out HashSet<string> itemIds))
+            {
+                return;
+            }
+
+            int removed = 0;
+            foreach (string itemId in GetItemTreeIds(item))
+            {
+                if (itemIds.Remove(itemId))
+                {
+                    removed++;
+                }
+            }
+
+            if (itemIds.Count == 0)
+            {
+                Instance._strictCargoItemIds.Remove(bot.ProfileId);
+            }
+
+            if (removed > 0)
+            {
+                Logger.LogInfo(
+                    $"[LootCommand][CargoProvenance] follower='{bot.Profile?.Nickname ?? bot.ProfileId ?? "unknown"}' " +
+                    $"root={item.TemplateId}:{item.Id} classification=commandAcquired clearedStrictItems={removed}");
+            }
+        }
+
+        public static bool IsStrictCargoItem(BotOwner bot, Item item)
+        {
+            if (Instance?._strictCargoItemIds == null ||
+                bot == null ||
+                item == null ||
+                string.IsNullOrWhiteSpace(bot.ProfileId) ||
+                string.IsNullOrWhiteSpace(item.Id))
+            {
+                return false;
+            }
+
+            return Instance._strictCargoItemIds.TryGetValue(bot.ProfileId, out HashSet<string> itemIds) &&
+                   itemIds.Contains(item.Id);
+        }
+
+        public static int RemoveStrictCargoItemIds(string bot, IEnumerable<string> itemIds)
+        {
+            if (Instance?._strictCargoItemIds == null ||
+                string.IsNullOrWhiteSpace(bot) ||
+                itemIds == null ||
+                !Instance._strictCargoItemIds.TryGetValue(bot, out HashSet<string> strictItemIds))
+            {
+                return 0;
+            }
+
+            int removed = 0;
+            foreach (string itemId in itemIds)
+            {
+                if (strictItemIds.Remove(itemId))
+                {
+                    removed++;
+                }
+            }
+
+            if (strictItemIds.Count == 0)
+            {
+                Instance._strictCargoItemIds.Remove(bot);
+            }
+
+            return removed;
+        }
+
         private static IEnumerable<Weapon> GetWeaponTreeItems(Item item)
         {
             if (item == null)
@@ -1994,6 +2155,8 @@ namespace pitTeam.Modules
             {
                 weaponIds.Remove(itemId);
             }
+
+            RemoveStrictCargoItemIds(bot, new[] { itemId });
         }
 
         public static List<string>? GetStoredItems(string bot)
@@ -2015,6 +2178,7 @@ namespace pitTeam.Modules
                 Instance._lootedItems.Remove(bot);
                 Instance._followersWithLoot.Remove(bot);
                 Instance._lootedWeaponIds?.Remove(bot);
+                Instance._strictCargoItemIds?.Remove(bot);
             }
         }
 

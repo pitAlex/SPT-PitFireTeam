@@ -352,7 +352,15 @@ namespace pitTeam.BigBrain.Actions
                 }
 
                 bodyLootAttemptedItemIds.Add(candidate.Item.Id);
-                if (!TryBuildFilteredLootMove(inventory, followerEquipment, candidate, null, out BodyGearMove? move))
+                IEnumerable<BodyGearCandidate>? operationalMagazineCandidates = candidate.Item is Weapon weapon
+                    ? GetBodyOperationalMagazineCandidates(corpseEquipment, weapon)
+                    : null;
+                if (!TryBuildFilteredLootMove(
+                        inventory,
+                        followerEquipment,
+                        candidate,
+                        operationalMagazineCandidates,
+                        out BodyGearMove? move))
                 {
                     bodyLootHadEligibleButNoSpace = true;
                     continue;
@@ -511,8 +519,32 @@ namespace pitTeam.BigBrain.Actions
             }
 
             if (ShouldUseFilteredLootEquipmentSlot(candidate) &&
+                operationalMagazineCandidates != null)
+            {
+                OperationalMagazinePlan cargoMagazinePlan = PlanOperationalMagazineFollowUps(
+                    inventory,
+                    followerEquipment,
+                    candidate.Item as Weapon,
+                    operationalMagazineCandidates);
+                return TryBuildPotentialWeaponCargoChain(
+                    inventory,
+                    followerEquipment,
+                    candidate,
+                    cargoMagazinePlan,
+                    "filteredPotentialWeaponCargo",
+                    out move);
+            }
+
+            if (ShouldUseFilteredLootEquipmentSlot(candidate) &&
                 TryFindFilteredWeaponCargoEquipmentSlot(followerEquipment, candidate, out ItemAddress? equipAddress) &&
-                TryCreateBodyGearMove(inventory, candidate, equipAddress, out move))
+                TryCreateBodyGearMove(
+                    inventory,
+                    candidate,
+                    equipAddress,
+                    out move,
+                    // This helper only returns an executable holster or second-primary slot.
+                    // Unlike the inert secondary-only gear-plan holder, this is usable equipment.
+                    successPhrase: EPhraseTrigger.LootWeapon))
             {
                 return true;
             }
@@ -624,7 +656,8 @@ namespace pitTeam.BigBrain.Actions
         {
             Modules.Logger.LogInfo(
                 $"[LootCommand][MagDebug] Body move starting for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
-                $"source={move?.SourceName ?? "unknown"} item={DescribeLootDebugItem(move?.Item)} followUps={move?.FollowUpCandidates?.Count ?? 0}");
+                $"source={move?.SourceName ?? "unknown"} item={DescribeLootDebugItem(move?.Item)} " +
+                $"followUps={move?.FollowUpCandidates?.Count ?? 0} lootCue={move?.SuccessPhrase}");
             bodyLootMoveInProgress = true;
             bodyLootAttemptStartedAt = Time.time;
             inventory.RunNetworkTransaction(move.Operation, new Callback(result => CompleteBodyGearMove(result, move)));
@@ -687,6 +720,7 @@ namespace pitTeam.BigBrain.Actions
                         bodyLootReportedMovesSucceeded++;
                     }
 
+                    InteractableObjects.ClearStrictCargoTree(BotOwner, move.Item);
                     InteractableObjects.RegisterLootedWeaponTree(BotOwner, move.Item);
                     EnqueueBodyGearSwapFollowUps(move);
 

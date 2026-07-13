@@ -71,6 +71,11 @@ namespace pitTeam.BigBrain.Actions
                          weapon,
                          "FollowerBackpack.WeaponSupportMagazine"))
             {
+                if (InteractableObjects.IsStrictCargoItem(BotOwner, magazine))
+                {
+                    continue;
+                }
+
                 yield return new BodyGearCandidate(
                     magazine,
                     null,
@@ -603,6 +608,13 @@ namespace pitTeam.BigBrain.Actions
                 !IsFollowerBackpackOperationalCandidate(candidate))
             {
                 reason = "alreadyInBotInventory";
+                return false;
+            }
+
+            if (IsFollowerBackpackOperationalCandidate(candidate) &&
+                InteractableObjects.IsStrictCargoItem(BotOwner, candidateMagazine))
+            {
+                reason = "strictCargo";
                 return false;
             }
 

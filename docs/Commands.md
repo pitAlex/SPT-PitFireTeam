@@ -393,7 +393,10 @@ Execution:
 
 - `GestureCommandAction.HandleTakeLootItem()`
 - Moves to loot.
-- Checks inventory space and executes pickup transaction.
+- Checks inventory space and executes one pickup transaction.
+- For a commanded loose long gun, uses explicit destination order: ready first primary, otherwise empty second primary, otherwise backpack.
+- If those fallback destinations are unavailable and first primary is empty, a non-dangerously-low inserted magazine permits last-resort first-primary placement; that visible right-shoulder weapon is always registered as the bot's usable primary.
+- Releases pickup hand state before registering/selecting a first-primary weapon.
 - Stores item through `InteractableObjects.StoreItem(...)` for squadmates.
 - Clears command on success/failure/invalid state.
 
@@ -416,13 +419,16 @@ Targeting:
 - Chooses the closest active follower within 22m for non-teammate corpses, ignoring followers with no free backpack/pocket grid space.
 - Ignores followers with enemies or active loot/pickup commands.
 - Reserves corpse ownership through `InteractableObjects.SetBodyLootTaker(...)`.
+- Direct `Check Him` / `Loot Body` orders may revisit a corpse after a previous follower search completed.
+- The completed-body marker is reserved for autonomous `Go loot` filtering, so automatic selection skips corpses already searched by a follower.
+- A live corpse reservation still blocks duplicate assignment while another follower is approaching or looting it.
 
 Execution:
 
 - `GestureCommandAction.HandleTakeBodyGear()`
 - Moves to the corpse.
 - Checks whether at least one eligible item can be moved, plays the loot search sound, and waits briefly before moving items. Delay is based on the total grid cells searched from corpse pockets, backpack, and vest containers, with a short bounded cap so it reads as searching without matching full player search time.
-- After the search delay, says one pickup-confirmation phrase when the first real non-dogtag loot move is queued, then waits a short beat before executing that move so the pickup confirmation does not run into `Ready`. Weapon add/swap moves use `EPhraseTrigger.LootWeapon`; other loot uses `EPhraseTrigger.LootGeneric`.
+- After the search delay, says one pickup-confirmation phrase when the first real non-dogtag loot move is queued, then waits a short beat before executing that move so the pickup confirmation does not run into `Ready`. `EPhraseTrigger.LootWeapon` means the executable plan makes a weapon usable as primary, secondary, or holster equipment during this search. Backpack weapon cargo, future-potential weapon packages, and under-ready left-shoulder holders use `EPhraseTrigger.LootGeneric`.
 - Plans one live inventory transaction at a time.
 - Teammate corpses use the protected recovery path:
     - uses empty compatible equipment slots as cargo space when possible, but does not swap or throw away the follower's current kit
@@ -465,6 +471,9 @@ Command state:
 Targeting:
 
 - Requires `InteractableObjects.GetCurLootContainerTarget()`.
+- Direct `Loot Container` orders may revisit a container after a previous follower search completed.
+- Autonomous `Go loot` selection skips containers marked completed by a follower.
+- A live container reservation still blocks duplicate assignment while another follower is approaching or looting it.
 - Only saved teammates spawned through the raid squad flow can be assigned to container-loot commands; recruited/picked-up followers are ignored.
 - Chooses the closest active follower within 22m, ignoring followers with no free backpack/pocket grid space.
 - Ignores followers with enemies or active loot/pickup commands.
@@ -476,7 +485,7 @@ Execution:
 - Moves to the container.
 - Opens the container if it is shut.
 - Checks whether at least one eligible item can be moved, plays the loot search sound, and waits briefly before moving items. Delay is based on the total grid cells in the container tree, with a short bounded cap so it reads as searching without matching full player search time.
-- After the search delay, says one pickup-confirmation phrase when the first real loot move is queued, then waits a short beat before executing that move so the pickup confirmation does not run into `Ready`. Weapon add/swap moves use `EPhraseTrigger.LootWeapon`; other loot uses `EPhraseTrigger.LootGeneric`.
+- After the search delay, says one pickup-confirmation phrase when the first real loot move is queued, then waits a short beat before executing that move so the pickup confirmation does not run into `Ready`. `EPhraseTrigger.LootWeapon` means the executable plan makes a weapon usable as primary, secondary, or holster equipment during this search. Backpack weapon cargo, future-potential weapon packages, and under-ready left-shoulder holders use `EPhraseTrigger.LootGeneric`.
 - Searches container contents through the same filtered-loot planner used for non-teammate bodies.
 - Applies `Looting Settings` category filters before price for ordinary cargo: `Pickup Food`, `Pickup Meds`, `Pickup Valuables`, and `Pickup Gear`.
 - Compares each ordinary cargo candidate item tree against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound. Money ignores these price bounds when `Pickup Valuables` is enabled.

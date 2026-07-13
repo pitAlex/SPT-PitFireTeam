@@ -4823,7 +4823,7 @@ namespace pitTeam.BigBrain
                 reload.ReloadType = BotReload.EReloadType.AmmoReload;
                 reload.Reloading = true;
                 AmmoPackReloadingClass ammoPack = new AmmoPackReloadingClass(ammoToLoad);
-                owner.BotTalk?.Say(EPhraseTrigger.NeedAmmo, false, null);
+                owner.BotTalk?.Say(EPhraseTrigger.OnWeaponReload, false, null);
 
                 if (launcher.ReloadMode == Weapon.EReloadMode.OnlyBarrel)
                 {

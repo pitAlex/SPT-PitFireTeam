@@ -76,8 +76,14 @@ Current behavior:
 - reserves ownership through `InteractableObjects.SetTaker(...)`
 - sets `FollowerCommandType.TakeLootItem` for 35 seconds
 - moves to the item, checks inventory destination, and runs one pickup transaction
+- keeps EFT's normal destination selection for non-weapons and pistols
+- evaluates commanded loose long guns with the same primary-readiness model, independently of `Allow Gear Swapping`
+- sends a primary-ready long gun to an empty `FirstPrimaryWeapon` slot
+- sends an under-ready long gun to empty `SecondPrimaryWeapon`, then backpack cargo
+- if support and backpack are unavailable while first primary is empty, permits a last-resort first-primary placement only when the inserted magazine has at least half of the smaller of its capacity and the weapon's ordinary magazine reference
+- leaves a dangerously underloaded weapon at the source when no honest support/cargo destination exists
 - registers looted weapon trees through `RegisterLootedWeaponTree(...)`
-- when EFT places a picked-up weapon into an empty first-primary slot, rebuilds the bot weapon-manager primary state and requests the same safe hand switch used by body/container gear equip
+- releases pickup animation/hand ownership before rebuilding a first-primary weapon's bot-manager state and requesting selection
 - stores the item through `StoreItem(...)` only when the follower is a spawned squadmate
 
 Current selection does not require spawned-teammate eligibility for loose item pickup. Body and container looting do.
@@ -97,6 +103,9 @@ Current assignment:
 - non-teammate corpses choose the closest eligible loot carrier within 22m
 - non-teammate assignment ignores followers with no free backpack/pocket grid area
 - ownership is reserved through `InteractableObjects.SetBodyLootTaker(...)`
+- an explicit player `Check Him` / `Loot Body` order may revisit a corpse that a follower already completed
+- checked-body history is retained for autonomous `Go loot` selection, which skips completed corpses
+- neither path can assign a corpse while another follower actively owns its loot reservation
 - command timeout is 75 seconds
 
 Execution:
@@ -104,7 +113,8 @@ Execution:
 - moves to the corpse
 - starts a search phase before moving items
 - says a pickup-confirmation phrase after the simulated search, when the first real non-dogtag loot move is queued
-- uses `EPhraseTrigger.LootWeapon` for weapon add/swap moves and `EPhraseTrigger.LootGeneric` for other loot
+- uses `EPhraseTrigger.LootWeapon` only when the executable plan makes a weapon usable as primary, secondary, or holster equipment during this search
+- uses `EPhraseTrigger.LootGeneric` for ordinary loot, backpack weapon cargo, potential-weapon packages, and an under-ready long gun held inert in the left-shoulder slot
 - waits a short beat after that pickup-confirmation phrase before executing the first move, so it does not run into `Ready`
 - says `EPhraseTrigger.Negative` if eligible non-dogtag loot exists but no executable move can be built
 - says `EPhraseTrigger.LootNothing` if no eligible non-dogtag item exists
@@ -167,6 +177,9 @@ Input:
 Current assignment:
 
 - requires `InteractableObjects.GetCurLootContainerTarget()`
+- an explicit player `Loot Container` order may revisit a container that a follower already completed
+- checked-container history is retained for autonomous `Go loot` selection, which skips completed containers
+- an active reservation still prevents two followers from searching the same container
 - only saved teammates spawned through the raid squad flow can be assigned; recruited/picked-up followers are ignored even if they are otherwise squad-managed
 - locked or inactive containers are ignored
 - chooses the closest eligible loot carrier within 22m
@@ -180,7 +193,8 @@ Execution:
 - opens the container if shut
 - starts a search phase before moving items
 - says a pickup-confirmation phrase after the simulated search, when the first real loot move is queued
-- uses `EPhraseTrigger.LootWeapon` for weapon add/swap moves and `EPhraseTrigger.LootGeneric` for other loot
+- uses `EPhraseTrigger.LootWeapon` only when the executable plan makes a weapon usable as primary, secondary, or holster equipment during this search
+- uses `EPhraseTrigger.LootGeneric` for ordinary loot, backpack weapon cargo, potential-weapon packages, and an under-ready long gun held inert in the left-shoulder slot
 - waits a short beat after that pickup-confirmation phrase before executing the first move, so it does not run into `Ready`
 - says `EPhraseTrigger.Negative` if eligible loot exists but no executable move can be built
 - says `EPhraseTrigger.LootNothing` if no eligible item exists
@@ -261,6 +275,16 @@ This preserves tactical vest space for magazines and avoids destabilizing combat
 ## Tracking And Return Bookkeeping
 
 Successful squadmate cargo moves call `InteractableObjects.StoreItem(...)`.
+
+Items transferred through `View Backpack` have a separate strict-cargo provenance:
+
+- each newly added root and every item currently inside that root are recorded by item id
+- strict-cargo weapons are not promoted into primary/support roles
+- strict-cargo magazines are not recruited from the backpack for weapon readiness
+- provenance is per item tree, so a manually supplied magazine remains strict cargo even when a different compatible magazine was acquired through a command
+- taking an item back out of the follower backpack removes its strict-cargo provenance; ordering the follower to pick it up later makes it gear-eligible again
+- an explicit loose-item pickup, body search, or container search clears strict-cargo status only for the exact tree acquired by that command
+- backpack inspection remains active until this provenance is recorded, preventing the idle weapon evaluator from racing the close callback
 
 Equipped gear moves use a mode-specific rule:
 
@@ -346,8 +370,12 @@ Rules:
 
 - if `FirstPrimaryWeapon` is empty, a detachable-magazine long gun is evaluated from its inserted magazine and all compatible non-empty magazines in vanilla fast access
 - vanilla fast access is the follower's tactical vest plus pockets; backpack magazines remain cargo and never contribute
-- readiness requires two ordinary magazine equivalents, where the ordinary reference is the largest compatible capacity capped at 30 rounds
-- an inserted magazine below half full contributes its actual rounds; at least half full contributes at least one ordinary reference; compatible fast-access spares contribute their actual rounds
+- readiness normally requires two ordinary magazine equivalents; the ordinary reference is the largest capacity among compatible loaded magazines actually inserted, already in fast access, or accepted by the active transfer plan, capped at 30 rounds
+- theoretical compatible magazine templates do not affect the reference; five-round magazines require two full-magazine equivalents, where an inserted `4/5` or `5/5` counts as one and each full `5/5` fast-access spare counts as one
+- an inserted five-round magazine at `3/5` or below does not count as a full equivalent, so two full spares are required; partial spare magazines do not combine
+- for references larger than five rounds, an inserted magazine below half full contributes its actual rounds, at least half full contributes at least one ordinary reference, and compatible fast-access spares contribute their actual rounds
+- a detachable-magazine weapon with no inserted magazine is not eligible for primary or secondary until explicit magazine loading is implemented; when `Pickup Gear` and whole-tree price allow the weapon as cargo, the weapon and compatible loaded source magazines are preflighted as one backpack package
+- a no-inserted-magazine cargo package moves compatible magazines first and the weapon last; if the complete package cannot fit, the magazines stay at the source and the weapon is tried alone as cargo; if the weapon also cannot fit, it stays at the source
 - compatible spare magazines from the loot source must physically fit in the vest or pockets as operational magazines, not cargo
 - compatible spare magazines must be loaded to count as operational support
 - the accepted weapon equip queues compatible loaded source magazines one at a time while fast-access space remains valid, then decides the weapon destination from settled live inventory
@@ -359,12 +387,16 @@ Rules:
 - a compatible loose magazine already in the follower backpack may be moved into vest/pockets for a newly found weapon, but only when the complete combined plan makes that weapon primary-ready
 - if the weapon plus backpack spare remain under threshold, the spare stays in the backpack and the weapon goes to secondary
 - when a low-loaded found weapon, a found source spare, and a backpack spare collectively pass readiness, the source spare moves first, the backpack spare follows, and the weapon then equips as primary
-- when a later compatible magazine raises the actual fast-access total to the threshold, an idle out-of-combat follower promotes the tracked support weapon into the still-empty primary slot and registers it normally
+- when a later compatible magazine raises the actual fast-access total to the threshold, an idle out-of-combat follower promotes the tracked support weapon, or one unambiguous tracked backpack cargo weapon, into the still-empty primary slot and registers it normally
+- this idle reevaluation runs after a commanded loose-magazine pickup finishes, so the pickup command keeps its existing placement and voice behavior while the settled inventory can make a carried weapon usable
+- a ready tracked secondary keeps priority; if multiple backpack weapons are simultaneously ready, automatic cargo promotion waits for the future weapon-comparison phase
 - when that later spare is found during another body/container search, it starts the transfer chain; compatible backpack cargo then moves into fast access before the tracked secondary promotes
 - evaluate a tracked secondary against newly found compatible magazines before evaluating another weapon package from the same body/container
 - if that secondary becomes ready, promote it to primary; other source weapons then use ordinary filtered cargo handling
-- if second primary is occupied when a new candidate remains unready, the gear planner leaves it untouched for ordinary `Pickup Gear`, price, and backpack-fit rules
-- if ordinary cargo rules reject that candidate, leave it at the source
+- if second primary is occupied and a new candidate remains unready, `Pickup Gear` and the weapon's whole-tree minimum/maximum price decide whether it may become potential-weapon cargo
+- after the weapon passes those ordinary cargo filters, compatible loaded source magazines join its backpack package when space permits; magazines move first and the weapon moves last
+- if the package cannot fit, leave its magazines at the source and try the weapon alone; if the weapon cannot fit, leave it too
+- if `Pickup Gear` is disabled or the weapon fails price, leave both the weapon and its package magazines at the source
 - compatible bundle magazines that do not fit in the backpack remain at the source
 - if `FirstPrimaryWeapon` is occupied and `SecondPrimaryWeapon` is empty, a valid long gun may still be equipped into second primary as cargo/support
 - if `Holster` is empty, a valid pistol may be equipped there
@@ -378,7 +410,10 @@ Easy weapon equip ignores min/max price and bypasses the `Pickup Gear` category 
 
 Known next weapon-feed case:
 
-- tube-fed and other internal-magazine shotguns are not covered by the detachable-magazine planner
+- tube-fed, internal-magazine, and chamber-fed weapons, including applicable shotguns and bolt-action rifles, are not covered by the detachable-magazine planner and will need a separate loose-round loading policy
+- compatible loose ammunition may later top off partial detachable magazines and make them readiness-eligible, but those rounds must not count until a real top-off transaction succeeds
+- when several compatible magazines are partially loaded, a later repacking phase should top off the fullest useful magazines from partial donor magazines first, then evaluate readiness from the resulting settled magazine states
+- repacked ammunition must move through real inventory transactions; failed or interrupted transfers must not contribute speculatively or count donor rounds twice
 - these weapons need a separate easy-equip rule based on their loaded shells plus compatible loose ammunition found in the same body/container
 - keep this separate from detachable-magazine handling and implement/test it as its own scenario
 
@@ -497,6 +532,8 @@ Body/container basics:
 - no eligible non-dogtag items -> `LootNothing`
 - eligible item but no backpack/pocket/equipment destination -> `Negative`
 - eligible non-dogtag items -> search sound, wait, pickup-confirmation phrase, short beat, move items, `Ready`
+- weapon becomes usable equipment during this search -> pickup confirmation is `LootWeapon`
+- weapon remains backpack cargo or an under-ready left-shoulder candidate -> pickup confirmation is `LootGeneric`
 - search sound stops when search ends
 - completed container closes
 - interrupted container may remain open
@@ -509,6 +546,8 @@ Assignment:
 - non-teammate body/container assignment only picks followers within 22m
 - followers with active/pending loot commands are skipped so rapid commands split across followers
 - followers with no backpack/pocket free area are skipped for filtered body/container looting
+- explicitly ordering a completed corpse searches it again; autonomous `Go loot` skips completed corpses
+- an active body reservation still prevents a second follower from looting the same corpse
 
 Filtered body/container rules:
 

@@ -298,7 +298,15 @@ namespace pitTeam.BigBrain.Actions
                     }
 
                     containerLootAttemptedItemIds.Add(candidate.Item.Id);
-                    if (!TryBuildFilteredLootMove(inventory, followerEquipment, candidate, null, out BodyGearMove? move))
+                    IEnumerable<BodyGearCandidate>? operationalMagazineCandidates = candidate.Item is Weapon weapon
+                        ? GetContainerOperationalMagazineCandidates(containerRoot, weapon)
+                        : null;
+                    if (!TryBuildFilteredLootMove(
+                            inventory,
+                            followerEquipment,
+                            candidate,
+                            operationalMagazineCandidates,
+                            out BodyGearMove? move))
                     {
                         containerLootHadEligibleButNoSpace = true;
                         continue;
@@ -347,7 +355,8 @@ namespace pitTeam.BigBrain.Actions
         {
             Modules.Logger.LogInfo(
                 $"[LootCommand][MagDebug] Container move starting for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
-                $"source={move?.SourceName ?? "unknown"} item={DescribeLootDebugItem(move?.Item)} followUps={move?.FollowUpCandidates?.Count ?? 0}");
+                $"source={move?.SourceName ?? "unknown"} item={DescribeLootDebugItem(move?.Item)} " +
+                $"followUps={move?.FollowUpCandidates?.Count ?? 0} lootCue={move?.SuccessPhrase}");
             containerLootMoveInProgress = true;
             containerLootAttemptStartedAt = Time.time;
             inventory.RunNetworkTransaction(move.Operation, new Callback(result => CompleteContainerLootMove(result, move)));
@@ -410,6 +419,7 @@ namespace pitTeam.BigBrain.Actions
                         containerLootReportedMovesSucceeded++;
                     }
 
+                    InteractableObjects.ClearStrictCargoTree(BotOwner, move.Item);
                     InteractableObjects.RegisterLootedWeaponTree(BotOwner, move.Item);
                     EnqueueContainerGearSwapFollowUps(move);
 
@@ -462,6 +472,7 @@ namespace pitTeam.BigBrain.Actions
             // Mark searched before closing so a player who opens the same container afterward does
             // not have to wait through vanilla search timers for the tree the follower just searched.
             TryMarkContainerLootSearchedForBoss();
+            InteractableObjects.MarkContainerLootTargetChecked(activeLootContainer);
             TryCloseActiveLootContainerAfterSearch();
 
             if (containerLootReportedMovesSucceeded > 0)
