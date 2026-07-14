@@ -86,6 +86,8 @@ namespace pitTeam
 
         public Dictionary<string, string> statusSound { get; set; }
         public Dictionary<string, string> enemyMarker { get; set; }
+        public Dictionary<string, string> enemyMarkerAlertColor { get; set; }
+        public Dictionary<string, string> enemyMarkerVisibleColor { get; set; }
         public Dictionary<string, string> scanDistance { get; set; }
         public Dictionary<string, string> enemyRemember { get; set; }
         public Dictionary<string, string> healthMultiplier { get; set; }
@@ -128,6 +130,13 @@ namespace pitTeam
         public Dictionary<string, string> pingSquad { get; set; }
         public Dictionary<string, string> pingRadioVolume { get; set; }
         public Dictionary<string, string> pingTime { get; set; }
+        public Dictionary<string, string> statusReportHighlight { get; set; }
+        public Dictionary<string, string> statusReportHighlightColor { get; set; }
+        public Dictionary<string, string> statusReportShowName { get; set; }
+        public Dictionary<string, string> statusReportShowDistance { get; set; }
+        public Dictionary<string, string> statusReportShowHealth { get; set; }
+        public Dictionary<string, string> statusReportShowTactic { get; set; }
+        public Dictionary<string, string> statusReportShowCombatStatus { get; set; }
         public Dictionary<string, string> enemyContact { get; set; }
         public Dictionary<string, string> overThere { get; set; }
         public Dictionary<string, string> hideUnsupportedCommands { get; set; }
@@ -207,6 +216,8 @@ namespace pitTeam
 
         public static ConfigEntry<int> statusSound;
         public static ConfigEntry<bool> enemyMarker;
+        public static ConfigEntry<string> enemyMarkerAlertColor;
+        public static ConfigEntry<string> enemyMarkerVisibleColor;
         public static ConfigEntry<bool> npcSendMessage;
         public static ConfigEntry<bool> pickupEnabled;
         public static ConfigEntry<bool> tieredPickup;
@@ -263,6 +274,13 @@ namespace pitTeam
         public static ConfigEntry<KeyboardShortcut> pingKey;
         public static ConfigEntry<int> pingRadioVolume;
         public static ConfigEntry<int> pingTime;
+        public static ConfigEntry<bool> statusReportHighlight;
+        public static ConfigEntry<string> statusReportHighlightColor;
+        public static ConfigEntry<bool> statusReportShowName;
+        public static ConfigEntry<bool> statusReportShowDistance;
+        public static ConfigEntry<bool> statusReportShowHealth;
+        public static ConfigEntry<bool> statusReportShowTactic;
+        public static ConfigEntry<bool> statusReportShowCombatStatus;
 
         public static ConfigEntry<KeyboardShortcut> contactKey;
         public static ConfigEntry<KeyboardShortcut> overThereKey;
@@ -968,6 +986,10 @@ namespace pitTeam
 
             enemyMarker = Config.Bind("", "06 EnemyMarker", true, new ConfigDescription(optionsLang.enemyMarker["Description"], null, CreateConfigAttributes(-600, false, optionsLang.enemyMarker)));
 
+            enemyMarkerAlertColor = Config.Bind("", "06 EnemyMarkerAlertColor", Utils.EnemyMarkerColor.AlertDefaultHex, new ConfigDescription(optionsLang.enemyMarkerAlertColor["Description"], null, CreateConfigAttributes(-601, false, optionsLang.enemyMarkerAlertColor)));
+
+            enemyMarkerVisibleColor = Config.Bind("", "06 EnemyMarkerVisibleColor", Utils.EnemyMarkerColor.VisibleDefaultHex, new ConfigDescription(optionsLang.enemyMarkerVisibleColor["Description"], null, CreateConfigAttributes(-602, false, optionsLang.enemyMarkerVisibleColor)));
+
             pickupEnabled = Config.Bind("", "07 Pickup", true, new ConfigDescription(optionsLang.pickup["Description"], null, CreateConfigAttributes(-700, false, optionsLang.pickup)));
 
             tieredPickup = Config.Bind("", "08 TieredPickup", true, new ConfigDescription(optionsLang.tieredPickup["Description"], null, CreateConfigAttributes(-800, false, optionsLang.tieredPickup)));
@@ -1019,6 +1041,20 @@ namespace pitTeam
             pingRadioVolume = Config.Bind("", "17 PingRadioVolume", 50, new ConfigDescription(optionsLang.pingRadioVolume["Description"], new AcceptableValueRange<int>(0, 100), CreateConfigAttributes(-1007, false, optionsLang.pingRadioVolume)));
 
             pingTime = Config.Bind("", "18 PingTime", 5, new ConfigDescription(optionsLang.pingTime["Description"], new AcceptableValueRange<int>(5, 30), CreateConfigAttributes(-1008, false, optionsLang.pingTime)));
+
+            statusReportHighlight = Config.Bind("", "18 StatusReportHighlight", true, new ConfigDescription(optionsLang.statusReportHighlight["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportHighlight)));
+
+            statusReportHighlightColor = Config.Bind("", "18 StatusReportHighlightColor", Utils.StatusReportHighlightColor.DefaultHex, new ConfigDescription(optionsLang.statusReportHighlightColor["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportHighlightColor)));
+
+            statusReportShowName = Config.Bind("", "18 StatusReportShowName", true, new ConfigDescription(optionsLang.statusReportShowName["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportShowName)));
+
+            statusReportShowDistance = Config.Bind("", "18 StatusReportShowDistance", true, new ConfigDescription(optionsLang.statusReportShowDistance["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportShowDistance)));
+
+            statusReportShowHealth = Config.Bind("", "18 StatusReportShowHealth", true, new ConfigDescription(optionsLang.statusReportShowHealth["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportShowHealth)));
+
+            statusReportShowTactic = Config.Bind("", "18 StatusReportShowTactic", true, new ConfigDescription(optionsLang.statusReportShowTactic["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportShowTactic)));
+
+            statusReportShowCombatStatus = Config.Bind("", "18 StatusReportShowCombatStatus", true, new ConfigDescription(optionsLang.statusReportShowCombatStatus["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportShowCombatStatus)));
 
             contactKey = Config.Bind("", "19 EnemyContact", new KeyboardShortcut(KeyCode.None), new ConfigDescription(optionsLang.enemyContact["Description"], null, CreateConfigAttributes(-1009, false, optionsLang.enemyContact)));
 

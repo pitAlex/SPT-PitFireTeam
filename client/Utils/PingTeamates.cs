@@ -84,10 +84,16 @@ namespace pitTeam.Utils
         private static RadioSound radioSound;
         private const float MaxSpatialPingDistance = 40f;
         private const float DirectionCalloutCooldownSeconds = 15f;
+        private const float StatusReportHeadGapPixels = 10f;
+        private const float StatusReportCloseHeadGapPixels = 20f;
+        private const float StatusReportCloseDistanceMeters = 6f;
+        private const float StatusReportNormalDistanceMeters = 12f;
+        private const float FallbackHeadTopOffsetMeters = 0.18f;
         private static readonly Color DeadEnemyMarkerColor = new Color(0.55f, 0.55f, 0.55f, 0.45f);
 
         private bool locationPing = false;
         private float _nextDirectionCalloutTime = 0f;
+        private readonly TeammatePingHighlight _teammateHighlight = new TeammatePingHighlight();
 
         public void Ping(pitAIBossPlayer player)
         {
@@ -151,6 +157,11 @@ namespace pitTeam.Utils
                 }
 
                 locationPing = true;
+            }
+
+            if (pitFireTeam.statusReportHighlight?.Value != false)
+            {
+                _teammateHighlight.Show(botMap, myPlayer);
             }
 
             if (radioSound != null && locationPing)
@@ -237,6 +248,7 @@ namespace pitTeam.Utils
 
         public void Dispose()
         {
+            _teammateHighlight.Dispose();
             botMap.Clear();
             botDataCache.Clear();
             Destroy(this);
@@ -255,6 +267,8 @@ namespace pitTeam.Utils
                     botMap.Clear();
                 }
             }
+
+            _teammateHighlight.Render(guiUpdate && pitFireTeam.statusReportHighlight?.Value != false);
 
 
             if (Time.time < nextUpdateTime)
@@ -280,6 +294,8 @@ namespace pitTeam.Utils
             {
                 CreateGuiStyle();
             }
+
+            guiStyle.normal.textColor = StatusReportHighlightColor.GetConfiguredTextColor();
 
             if (makerGuiStyle == null)
             {
@@ -310,12 +326,16 @@ namespace pitTeam.Utils
 
             if (bt == null || bt.Data == null || !bt.Data.HealthController.IsAlive) return;
 
-            Vector3 aboveBotHeadPos = bt.Data.Position + (Vector3.up * 1.6f);
-            Vector3 screenPos = Camera.main.WorldToScreenPoint(aboveBotHeadPos);
+            Camera mainCamera = Camera.main;
+            Player teammate = bt.Data.GetPlayer;
+            if (mainCamera == null || teammate == null) return;
+
+            Vector3 screenPos = mainCamera.WorldToScreenPoint(GetStatusReportHeadTop(teammate));
 
             if (screenPos.z > 0)
             {
-                int dist = Mathf.RoundToInt((bt.Data.Position - myPlayer.Transform.position).magnitude);
+                float teammateDistance = (bt.Data.Position - myPlayer.Transform.position).magnitude;
+                int dist = Mathf.RoundToInt(teammateDistance);
 
                 if (dist < 301)
                 {
@@ -328,130 +348,193 @@ namespace pitTeam.Utils
                         bt.GuiRect = new Rect();
                     }
 
-                    string botName = bt.Data.Profile.Nickname;
-
                     StringBuilder stringBuilder = _guiTextBuilder;
                     stringBuilder.Clear();
-                    stringBuilder.Append(botName);
-                    stringBuilder.Append(" - ");
-                    stringBuilder.Append(dist);
-                    stringBuilder.Append("m");
 
-                    if (!bt.Data.HealthController.IsAlive)
+                    bool showName = pitFireTeam.statusReportShowName?.Value != false;
+                    bool showDistance = pitFireTeam.statusReportShowDistance?.Value != false;
+                    bool showHealth = pitFireTeam.statusReportShowHealth?.Value != false;
+                    bool showTactic = pitFireTeam.statusReportShowTactic?.Value != false;
+                    bool showCombatStatus = pitFireTeam.statusReportShowCombatStatus?.Value != false;
+
+                    if (showName)
                     {
-                        stringBuilder.Append(": " + pitFireTeam.GetBotStatusText("Dead"));
+                        stringBuilder.Append(bt.Data.Profile.Nickname);
                     }
-                    else if (bt.Data.Memory.HaveEnemy)
+
+                    if (showDistance)
                     {
+                        if (stringBuilder.Length > 0)
+                        {
+                            stringBuilder.Append(" - ");
+                        }
+
+                        stringBuilder.Append(dist);
+                        stringBuilder.Append("m");
+                    }
+
+                    if (showCombatStatus && bt.Data.Memory.HaveEnemy)
+                    {
+                        string combatStatus;
                         EnemyInfo goalEnemy = bt.Data.Memory.GoalEnemy;
                         if (goalEnemy != null)
                         {
                             float lastSeenAgo = Time.time - goalEnemy.PersonalLastSeenTime;
                             if (IsEnemyReliablyVisibleForMarker(bt.Data, goalEnemy) || lastSeenAgo < 5f)
                             {
-                                stringBuilder.Append(": " + pitFireTeam.GetBotStatusText("Engaged"));
+                                combatStatus = pitFireTeam.GetBotStatusText("Engaged");
                             }
                             else
                             {
-                                stringBuilder.Append(": " + pitFireTeam.GetBotStatusText("Alerted"));
+                                combatStatus = pitFireTeam.GetBotStatusText("Alerted");
                             }
                         }
                         else
                         {
-                            stringBuilder.Append(": " + pitFireTeam.GetBotStatusText("Alerted"));
+                            combatStatus = pitFireTeam.GetBotStatusText("Alerted");
                         }
+
+                        if (stringBuilder.Length > 0)
+                        {
+                            stringBuilder.Append(": ");
+                        }
+
+                        stringBuilder.Append(combatStatus);
                     }
 
-                    float hp = 0;
-                    float hpmax = 0;
-
-                    string blackout = "";
-
-                    for (int i = 0; i < TrackedBodyParts.Length; i++)
+                    bool detailStarted = false;
+                    if (showHealth)
                     {
-                        EBodyPart part = TrackedBodyParts[i];
-                        bt.Data.Profile.Health.BodyParts.TryGetValue(part, out var bodyPart);
-                        if (bodyPart != null)
+                        float hp = 0;
+                        float hpmax = 0;
+                        string blackout = "";
+
+                        for (int i = 0; i < TrackedBodyParts.Length; i++)
                         {
-                            ValueStruct value = bt.Data.HealthController.GetBodyPartHealth(part, true);
-                            hp += value.Current;
-                            hpmax += value.Maximum;
-                            if (value.Current == 0)
+                            EBodyPart part = TrackedBodyParts[i];
+                            bt.Data.Profile.Health.BodyParts.TryGetValue(part, out var bodyPart);
+                            if (bodyPart != null)
                             {
-                                if (blackout.Length > 0) blackout += ", ";
-                                blackout += part.ToString().Localized();
+                                ValueStruct value = bt.Data.HealthController.GetBodyPartHealth(part, true);
+                                hp += value.Current;
+                                hpmax += value.Maximum;
+                                if (value.Current == 0)
+                                {
+                                    if (blackout.Length > 0) blackout += ", ";
+                                    blackout += part.ToString().Localized();
+                                }
                             }
                         }
 
-                    }
-
-                    if (hp > 0)
-                    {
-                        stringBuilder.Append(Environment.NewLine);
-                        if (hp < hpmax)
-                            stringBuilder.Append($"HP: {hp}/{hpmax}");
-                        else stringBuilder.Append($"HP: {hpmax}");
-
-                        if (blackout.Length > 0)
+                        if (hp > 0)
                         {
-                            stringBuilder.Append(Environment.NewLine);
-                            stringBuilder.Append("0%: " + blackout);
+                            AppendStatusReportDetailSeparator(stringBuilder, ref detailStarted);
+                            if (hp < hpmax)
+                                stringBuilder.Append($"HP: {hp}/{hpmax}");
+                            else stringBuilder.Append($"HP: {hpmax}");
+
+                            if (blackout.Length > 0)
+                            {
+                                stringBuilder.Append(Environment.NewLine);
+                                stringBuilder.Append("0%: " + blackout);
+                            }
                         }
                     }
 
                     if (BossPlayers.IsFollower(bt.Data))
                     {
                         BotFollowerPlayer followerData = BossPlayers.Instance?.GetFollower(bt.Data);
-                        if (IsFollowerCurrentlyHealing(bt.Data))
+                        if (showTactic)
                         {
-                            stringBuilder.Append($" | " + pitFireTeam.GetBotStatusText("Heal"));
-                        }
-                        else if (DoesFollowerWantToHeal(bt.Data))
-                        {
-                            stringBuilder.Append($" | " + pitFireTeam.GetBotStatusText("WantToHeal"));
-                        }
-                        else
-                        {
-                            string tactic = pitFireTeam.GetTacticOptionText(0);
-                            if (followerData != null)
+                            if (IsFollowerCurrentlyHealing(bt.Data))
                             {
-                                tactic = followerData.CombatTactic switch
-                                {
-                                    FollowerCombatTactic.Marksman => pitFireTeam.GetSocialUiText("ProfileTacticMarksman"),
-                                    FollowerCombatTactic.Protector => pitFireTeam.GetSocialUiText("ProfileTacticProtector"),
-                                    _ => pitFireTeam.GetTacticOptionText(0),
-                                };
+                                AppendStatusReportDetailSeparator(stringBuilder, ref detailStarted);
+                                stringBuilder.Append(pitFireTeam.GetBotStatusText("Heal"));
                             }
-                            if (tactic != null)
+                            else if (DoesFollowerWantToHeal(bt.Data))
                             {
-                                stringBuilder.Append($" | MD: {tactic}");
+                                AppendStatusReportDetailSeparator(stringBuilder, ref detailStarted);
+                                stringBuilder.Append(pitFireTeam.GetBotStatusText("WantToHeal"));
                             }
-                        }
-
-                        if (pitFireTeam.IsDebugBuild)
-                        {
-                            if (followerData != null)
+                            else
                             {
-                                stringBuilder.Append($" | AGG: {Mathf.RoundToInt(followerData.EffectiveCombatAggression)}");
-                                if (followerData.IsTemporaryCombatAggressionOverrideActive)
+                                string tactic = pitFireTeam.GetTacticOptionText(0);
+                                if (followerData != null)
                                 {
-                                    stringBuilder.Append("*");
+                                    tactic = followerData.CombatTactic switch
+                                    {
+                                        FollowerCombatTactic.Marksman => pitFireTeam.GetSocialUiText("ProfileTacticMarksman"),
+                                        FollowerCombatTactic.Protector => pitFireTeam.GetSocialUiText("ProfileTacticProtector"),
+                                        _ => pitFireTeam.GetTacticOptionText(0),
+                                    };
+                                }
+                                if (tactic != null)
+                                {
+                                    AppendStatusReportDetailSeparator(stringBuilder, ref detailStarted);
+                                    stringBuilder.Append($"MD: {tactic}");
                                 }
                             }
                         }
+
                     }
 
                     bt.GuiContent.text = stringBuilder.ToString();
+                    if (string.IsNullOrEmpty(bt.GuiContent.text))
+                    {
+                        return;
+                    }
 
                     Vector2 guiSize = guiStyle.CalcSize(bt.GuiContent);
 
                     bt.GuiRect.x = (screenPos.x * screenScale) - (guiSize.x / 2);
-                    bt.GuiRect.y = Screen.height - ((screenPos.y * screenScale) + guiSize.y);
+                    float headGapPixels = Mathf.Lerp(
+                        StatusReportCloseHeadGapPixels,
+                        StatusReportHeadGapPixels,
+                        Mathf.InverseLerp(StatusReportCloseDistanceMeters, StatusReportNormalDistanceMeters, teammateDistance));
+
+                    bt.GuiRect.y = Screen.height - ((screenPos.y * screenScale) + guiSize.y + headGapPixels);
                     bt.GuiRect.size = guiSize;
 
                     GUI.Box(bt.GuiRect, bt.GuiContent.text, guiStyle);
                 }
             }
+        }
+
+        private static Vector3 GetStatusReportHeadTop(Player teammate)
+        {
+            PlayerBones bones = teammate.PlayerBones;
+            if (bones != null)
+            {
+                if (bones.BodyPartCollidersDictionary.TryGetValue(EBodyPartColliderType.HeadCommon, out BodyPartCollider headCollider) &&
+                    headCollider?.Collider != null)
+                {
+                    Bounds headBounds = headCollider.Collider.bounds;
+                    return new Vector3(headBounds.center.x, headBounds.max.y, headBounds.center.z);
+                }
+
+                if (bones.Head != null)
+                {
+                    return bones.Head.position + (Vector3.up * FallbackHeadTopOffsetMeters);
+                }
+            }
+
+            return teammate.Position + (Vector3.up * 1.78f);
+        }
+
+        private static void AppendStatusReportDetailSeparator(StringBuilder stringBuilder, ref bool detailStarted)
+        {
+            if (detailStarted)
+            {
+                stringBuilder.Append(" | ");
+                return;
+            }
+
+            if (stringBuilder.Length > 0)
+            {
+                stringBuilder.Append(Environment.NewLine);
+            }
+
+            detailStarted = true;
         }
 
         private void DrawEnemyMarkerGUI(BotData bt)
@@ -490,7 +573,7 @@ namespace pitTeam.Utils
             }
 
             Vector3 targetZone = bt.EnemyZone ?? GetEnemyMarkerZone(bt.EnemyPos.Value);
-            Color marker = GetEnemyMarkerColor(bt, hasLiveEnemy);
+            Color marker = GetEnemyMarkerColor(bt, hasLiveEnemy, out bool isVisibleMarker);
 
             foreach (var item in botMap)
             {
@@ -499,7 +582,7 @@ namespace pitTeam.Utils
                     break;
                 }
 
-                if (item.EnemyPos.HasValue && item.EnemyZone.HasValue && item.EnemyZone == targetZone && marker != Color.red)
+                if (item.EnemyPos.HasValue && item.EnemyZone.HasValue && item.EnemyZone == targetZone && !isVisibleMarker)
                 {
                     return;
                 }
@@ -552,7 +635,7 @@ namespace pitTeam.Utils
             guiStyle.border = new RectOffset(0, 0, 0, 0);
             guiStyle.normal.background = MakeTexture(new Color(0, 0, 0, 0.3f));
 
-            guiStyle.normal.textColor = Color.green;
+            guiStyle.normal.textColor = StatusReportHighlightColor.GetConfiguredTextColor();
 
 
         }
@@ -644,17 +727,19 @@ namespace pitTeam.Utils
             }
         }
 
-        private static Color GetEnemyMarkerColor(BotData bt, bool hasLiveEnemy)
+        private static Color GetEnemyMarkerColor(BotData bt, bool hasLiveEnemy, out bool isVisibleMarker)
         {
+            isVisibleMarker = false;
             EnemyInfo? goalEnemy = bt.Data?.Memory?.GoalEnemy;
             if (IsMarkedEnemyDead(bt, goalEnemy))
             {
                 return DeadEnemyMarkerColor;
             }
 
-            return hasLiveEnemy && IsEnemyReliablyVisibleForMarker(bt.Data, goalEnemy)
-                ? Color.red
-                : Color.yellow;
+            isVisibleMarker = hasLiveEnemy && IsEnemyReliablyVisibleForMarker(bt.Data, goalEnemy);
+            return isVisibleMarker
+                ? EnemyMarkerColor.GetVisibleColor()
+                : EnemyMarkerColor.GetAlertColor();
         }
 
         private static bool IsMarkedEnemyDead(BotData bt, EnemyInfo? goalEnemy)

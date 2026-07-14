@@ -39,6 +39,12 @@ namespace pitTeam.Localization
                 enemyMarker = Entry(
                     "Enemy Marker",
                     "Show enemy position when reporting status. If disabled, the enemy marker sound will also be disabled"),
+                enemyMarkerAlertColor = Entry(
+                    "Enemy Marker: Alert Color",
+                    "Color of the enemy marker when the enemy is out of sight, in hexadecimal RGB format (#FFFF00)."),
+                enemyMarkerVisibleColor = Entry(
+                    "Enemy Marker: Visible Color",
+                    "Color of the enemy marker when the enemy is visible, in hexadecimal RGB format (#FF0000)."),
                 scanDistance = Entry(
                     "Maximum scan distance",
                     "Maximum distance to pick up any visible enemy that the player is signaling when issuing 'Contact' phrase"),
@@ -162,6 +168,27 @@ namespace pitTeam.Localization
                 pingTime = Entry(
                     "Report Status Display Time",
                     "Time in seconds to display the followers status"),
+                statusReportHighlight = Entry(
+                    "Status Report: Highlight",
+                    "Highlight living teammates with an outline during the Status Report. Disable if you notice performance issues."),
+                statusReportHighlightColor = Entry(
+                    "Status Report: Color",
+                    "Color of the Status Report text and teammate outline in hexadecimal RGB format (#00FF00)."),
+                statusReportShowName = Entry(
+                    "Status Report: Name",
+                    "Show each teammate's name in the Status Report."),
+                statusReportShowDistance = Entry(
+                    "Status Report: Distance",
+                    "Show the distance to each teammate in the Status Report."),
+                statusReportShowHealth = Entry(
+                    "Status Report: Health (HP)",
+                    "Show each teammate's current and maximum health in the Status Report."),
+                statusReportShowTactic = Entry(
+                    "Status Report: Tactic (MD)",
+                    "Show each teammate's current combat tactic or temporary healing state in the Status Report."),
+                statusReportShowCombatStatus = Entry(
+                    "Status Report: Combat Status",
+                    "Show whether each teammate is in combat or has detected an enemy in the Status Report."),
                 enemyContact = Entry(
                     "Enemy Contact Shortcut",
                     "Alternative shortcut key for the Contact quick phrase"),

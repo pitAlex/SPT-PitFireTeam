@@ -10,6 +10,7 @@ using EFT.UI.Ragfair;
 using EFT.UI.Settings;
 using pitTeam.Modules;
 using pitTeam.Patches;
+using pitTeam.Utils;
 using HarmonyLib;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -214,7 +215,14 @@ namespace pitTeam.Components
                 pitFireTeam.spawnPoint,
                 pitFireTeam.englishBear,
                 pitFireTeam.pingRadioVolume,
-                pitFireTeam.pingTime))
+                pitFireTeam.pingTime,
+                pitFireTeam.statusReportHighlightColor,
+                pitFireTeam.statusReportHighlight,
+                pitFireTeam.statusReportShowName,
+                pitFireTeam.statusReportShowDistance,
+                pitFireTeam.statusReportShowHealth,
+                pitFireTeam.statusReportShowTactic,
+                pitFireTeam.statusReportShowCombatStatus))
             {
                 yield return setting;
             }
@@ -233,6 +241,8 @@ namespace pitTeam.Components
                 pitFireTeam.botGrenades,
                 pitFireTeam.regroupRadius,
                 pitFireTeam.enemyMarker,
+                pitFireTeam.enemyMarkerAlertColor,
+                pitFireTeam.enemyMarkerVisibleColor,
                 pitFireTeam.statusSound,
                 pitFireTeam.enemyRemember,
                 pitFireTeam.scanDistance,
@@ -512,6 +522,22 @@ namespace pitTeam.Components
 
                 controlRect.anchoredPosition = new Vector2(-SettingsControlRightInset, SettingsSliderVerticalOffset);
                 CreateIntSliderSettingControl(controlRect, entry, acceptableRange, !disabledDuringRaid);
+                AddRaidDisabledTooltipOverlay(rowObject, disabledDuringRaid);
+                return;
+            }
+
+            if (TryGetHexColorDefault(entry, out string defaultHex))
+            {
+                controlRect.anchorMin = new Vector2(1f, 0.5f);
+                controlRect.anchorMax = new Vector2(1f, 0.5f);
+                controlRect.pivot = new Vector2(1f, 0.5f);
+                controlRect.sizeDelta = new Vector2(270f, 72f);
+                controlRect.anchoredPosition = new Vector2(-SettingsControlRightInset, 0f);
+                CreateHexColorSettingControl(
+                    controlRect,
+                    entry as ConfigEntry<string>,
+                    defaultHex,
+                    !disabledDuringRaid);
                 AddRaidDisabledTooltipOverlay(rowObject, disabledDuringRaid);
                 return;
             }
@@ -1240,10 +1266,170 @@ namespace pitTeam.Components
             ConfigureNumberInput(input, entry, acceptableRange, interactable);
         }
 
+        private void CreateHexColorSettingControl(
+            RectTransform parent,
+            ConfigEntry<string> entry,
+            string defaultHex,
+            bool interactable)
+        {
+            if (entry == null)
+            {
+                CreateReadOnlySettingControl(parent, defaultHex);
+                return;
+            }
+
+            GameObject swatchBorderObject = new GameObject(
+                "pitFireTeam_HexColorSwatchBorder",
+                typeof(RectTransform),
+                typeof(Image));
+            swatchBorderObject.transform.SetParent(parent, false);
+            RectTransform swatchBorderRect = swatchBorderObject.GetComponent<RectTransform>();
+            swatchBorderRect.anchorMin = new Vector2(1f, 0.5f);
+            swatchBorderRect.anchorMax = new Vector2(1f, 0.5f);
+            swatchBorderRect.pivot = new Vector2(1f, 0.5f);
+            swatchBorderRect.sizeDelta = new Vector2(28f, 28f);
+            swatchBorderRect.anchoredPosition = new Vector2(-138f, 0f);
+
+            Image swatchBorder = swatchBorderObject.GetComponent<Image>();
+            swatchBorder.color = new Color(0.86f, 0.84f, 0.76f, 0.96f);
+            swatchBorder.raycastTarget = false;
+
+            GameObject swatchObject = new GameObject(
+                "Color",
+                typeof(RectTransform),
+                typeof(Image));
+            swatchObject.transform.SetParent(swatchBorderObject.transform, false);
+            RectTransform swatchRect = swatchObject.GetComponent<RectTransform>();
+            Stretch(swatchRect);
+            swatchRect.offsetMin = new Vector2(2f, 2f);
+            swatchRect.offsetMax = new Vector2(-2f, -2f);
+
+            Image swatch = swatchObject.GetComponent<Image>();
+            swatch.raycastTarget = false;
+
+            TMP_InputField input = CloneStockNumberInput(parent) ?? CreateBasicNumberInput(parent);
+            if (input == null)
+            {
+                Destroy(swatchBorderObject);
+                CreateReadOnlySettingControl(parent, entry.Value);
+                return;
+            }
+
+            input.name = "pitFireTeam_HexColorInput";
+            RectTransform inputRect = input.transform as RectTransform;
+            if (inputRect != null)
+            {
+                inputRect.anchorMin = new Vector2(1f, 0.5f);
+                inputRect.anchorMax = new Vector2(1f, 0.5f);
+                inputRect.pivot = new Vector2(1f, 0.5f);
+                inputRect.sizeDelta = new Vector2(124f, 38f);
+                inputRect.anchoredPosition = Vector2.zero;
+                inputRect.localScale = Vector3.one;
+            }
+
+            ConfigureHexColorInput(input, entry, defaultHex, swatch, interactable);
+        }
+
+        private void ConfigureHexColorInput(
+            TMP_InputField input,
+            ConfigEntry<string> entry,
+            string defaultHex,
+            Image swatch,
+            bool interactable)
+        {
+            input.onValueChanged.RemoveAllListeners();
+            input.onSelect.RemoveAllListeners();
+            input.onDeselect.RemoveAllListeners();
+            input.onEndEdit.RemoveAllListeners();
+            input.contentType = TMP_InputField.ContentType.Standard;
+            input.characterValidation = TMP_InputField.CharacterValidation.None;
+            input.lineType = TMP_InputField.LineType.SingleLine;
+            input.onFocusSelectAll = false;
+            input.customCaretColor = true;
+            input.caretColor = new Color(0.88f, 0.82f, 0.66f, 1f);
+            input.selectionColor = new Color(0.78f, 0.72f, 0.58f, 0.62f);
+            input.caretWidth = 2;
+            input.characterLimit = 7;
+
+            ConfigureNumberInputText(input);
+            if (input.placeholder is TMP_Text placeholder)
+            {
+                placeholder.text = "#RRGGBB";
+            }
+
+            if (!HexColorSetting.TryNormalize(entry.Value, defaultHex, out string currentValue, out Color currentColor))
+            {
+                currentValue = defaultHex;
+                HexColorSetting.TryNormalize(currentValue, defaultHex, out _, out currentColor);
+            }
+
+            input.SetTextWithoutNotify(currentValue);
+            swatch.color = currentColor;
+            SetSettingsControlInteractable(input.transform, interactable);
+            if (!interactable)
+            {
+                return;
+            }
+
+            input.onSelect.AddListener(_ => ActivateNumberInput(input));
+            input.onValueChanged.AddListener(value =>
+            {
+                if (HexColorSetting.TryNormalize(value, defaultHex, out _, out Color previewColor))
+                {
+                    swatch.color = previewColor;
+                }
+            });
+            input.onEndEdit.AddListener(value =>
+            {
+                if (!HexColorSetting.TryNormalize(value, defaultHex, out string normalized, out Color color))
+                {
+                    input.SetTextWithoutNotify(currentValue);
+                    swatch.color = currentColor;
+                    return;
+                }
+
+                currentValue = normalized;
+                currentColor = color;
+                input.SetTextWithoutNotify(normalized);
+                swatch.color = color;
+                if (string.Equals(entry.Value, normalized, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                entry.Value = normalized;
+                pitFireTeam.Instance?.Config.Save();
+            });
+        }
+
         private static bool IsLootPriceSetting(ConfigEntryBase entry)
         {
             return entry == pitFireTeam.lootMinimumPrice ||
                    entry == pitFireTeam.lootMaximumPrice;
+        }
+
+        private static bool TryGetHexColorDefault(ConfigEntryBase entry, out string defaultHex)
+        {
+            if (entry == pitFireTeam.statusReportHighlightColor)
+            {
+                defaultHex = StatusReportHighlightColor.DefaultHex;
+                return true;
+            }
+
+            if (entry == pitFireTeam.enemyMarkerAlertColor)
+            {
+                defaultHex = EnemyMarkerColor.AlertDefaultHex;
+                return true;
+            }
+
+            if (entry == pitFireTeam.enemyMarkerVisibleColor)
+            {
+                defaultHex = EnemyMarkerColor.VisibleDefaultHex;
+                return true;
+            }
+
+            defaultHex = string.Empty;
+            return false;
         }
 
         private TMP_InputField CloneStockNumberInput(RectTransform parent)
@@ -2300,6 +2486,8 @@ namespace pitTeam.Components
             if (entry == pitFireTeam.heatlhMultiplier) return language.healthMultiplier;
             if (entry == pitFireTeam.statusSound) return language.statusSound;
             if (entry == pitFireTeam.enemyMarker) return language.enemyMarker;
+            if (entry == pitFireTeam.enemyMarkerAlertColor) return language.enemyMarkerAlertColor;
+            if (entry == pitFireTeam.enemyMarkerVisibleColor) return language.enemyMarkerVisibleColor;
             if (entry == pitFireTeam.pickupEnabled) return language.pickup;
             if (entry == pitFireTeam.tieredPickup) return language.tieredPickup;
             if (entry == pitFireTeam.maximumPickup) return language.maximumPickup;
@@ -2323,6 +2511,13 @@ namespace pitTeam.Components
             if (entry == pitFireTeam.pingKey) return language.pingSquad;
             if (entry == pitFireTeam.pingRadioVolume) return language.pingRadioVolume;
             if (entry == pitFireTeam.pingTime) return language.pingTime;
+            if (entry == pitFireTeam.statusReportHighlight) return language.statusReportHighlight;
+            if (entry == pitFireTeam.statusReportHighlightColor) return language.statusReportHighlightColor;
+            if (entry == pitFireTeam.statusReportShowName) return language.statusReportShowName;
+            if (entry == pitFireTeam.statusReportShowDistance) return language.statusReportShowDistance;
+            if (entry == pitFireTeam.statusReportShowHealth) return language.statusReportShowHealth;
+            if (entry == pitFireTeam.statusReportShowTactic) return language.statusReportShowTactic;
+            if (entry == pitFireTeam.statusReportShowCombatStatus) return language.statusReportShowCombatStatus;
             if (entry == pitFireTeam.contactKey) return language.enemyContact;
             if (entry == pitFireTeam.overThereKey) return language.overThere;
             if (entry == pitFireTeam.hideUnsupportedCommands) return language.hideUnsupportedCommands;

@@ -282,11 +282,20 @@ Verified entry groups:
     - `englishBear`
     - `pingRadioVolume`
     - `pingTime`
+    - `statusReportHighlightColor`
+    - `statusReportHighlight`
+    - `statusReportShowName`
+    - `statusReportShowDistance`
+    - `statusReportShowHealth`
+    - `statusReportShowTactic`
+    - `statusReportShowCombatStatus`
 - `Follow Settings`
     - `goToDistance`
 - `Combat Settings`
     - `botGrenades`
     - `enemyMarker`
+    - `enemyMarkerAlertColor`
+    - `enemyMarkerVisibleColor`
     - `statusSound`
     - `enemyRemember`
     - `scanDistance`
@@ -334,6 +343,9 @@ Supported control types:
 - `bool` -> toggle
 - ranged `int` -> slider
 - loot price ranged `int` settings -> integer input field
+- hex color settings -> validated `#RRGGBB` input with a color preview
+    - Status Report color applies to report text and the teammate outline
+    - Enemy Marker colors apply when the enemy is visible or out of sight
 - `LoadoutManagementMode` -> mutually exclusive radio-style toggle rows
 - `KeyboardShortcut` -> press-to-capture button
 - everything else -> read-only text fallback
