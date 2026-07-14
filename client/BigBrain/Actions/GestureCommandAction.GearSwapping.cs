@@ -64,7 +64,13 @@ namespace pitTeam.BigBrain.Actions
                     continue;
                 }
 
-                bodyLootAttemptedItemIds.Add(swapCandidate.Item.Id);
+                // Loading a source magazine into an empty weapon is only a staging move. Keep the
+                // weapon eligible so the next planning pass evaluates its new live loaded state
+                // through the normal inserted-magazine path.
+                if (!move.IsStagingOperation)
+                {
+                    bodyLootAttemptedItemIds.Add(swapCandidate.Item.Id);
+                }
                 if (TryQueueBodyLootMoveAfterPickupSuccess(move))
                 {
                     return true;
@@ -180,7 +186,10 @@ namespace pitTeam.BigBrain.Actions
                     continue;
                 }
 
-                containerLootAttemptedItemIds.Add(swapCandidate.Item.Id);
+                if (!move.IsStagingOperation)
+                {
+                    containerLootAttemptedItemIds.Add(swapCandidate.Item.Id);
+                }
                 if (TryQueueContainerLootMoveAfterPickupSuccess(move))
                 {
                     return true;
@@ -343,6 +352,10 @@ namespace pitTeam.BigBrain.Actions
                             0))
                     .WithFollowUpDestination(BodyGearFollowUpDestination.EvaluateSecondaryWeaponPromotion);
                 followUps.Add(promotionCandidate);
+                AppendOverflowMagazineAmmoSalvageMarkers(
+                    followUps,
+                    supportWeapon,
+                    magazinePlan.CompatibleLoadedCandidates);
                 move = firstMagazineMove.WithFollowUps(followUps, EPhraseTrigger.LootWeapon);
                 Modules.Logger.LogInfo(
                     $"[LootCommand] Secondary weapon promotion chain built for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
@@ -498,6 +511,10 @@ namespace pitTeam.BigBrain.Actions
                                 0))
                         .WithFollowUpDestination(BodyGearFollowUpDestination.EvaluateCargoWeaponPromotion);
                     followUps.Add(promotionCandidate);
+                    AppendOverflowMagazineAmmoSalvageMarkers(
+                        followUps,
+                        cargoWeapon,
+                        magazinePlan.CompatibleLoadedCandidates);
                     move = firstMagazineMove.WithFollowUps(followUps, EPhraseTrigger.LootWeapon);
                     Modules.Logger.LogInfo(
                         $"[LootCommand] Cargo weapon promotion chain built for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
@@ -906,9 +923,8 @@ namespace pitTeam.BigBrain.Actions
                     out move);
             }
 
-            if (TryBuildEmptyMagazineWeaponEquipChain(
+            if (TryBuildEmptyWeaponMagazineInsertionMove(
                     inventory,
-                    followerEquipment,
                     candidate,
                     magazinePlan,
                     out move,
@@ -917,9 +933,8 @@ namespace pitTeam.BigBrain.Actions
                 return true;
             }
 
-            // An empty-magazine weapon is equipped only when a real source-magazine insertion and
-            // the resulting fast-access plan can make it primary-ready. Otherwise ordinary Pickup
-            // Gear and price own the existing potential-weapon cargo package behavior.
+            // Insertion is a prerequisite transaction, not a projected equipment decision. If it
+            // cannot be built, ordinary Pickup Gear and price still own potential cargo handling.
             handledByGearPolicy = false;
             Modules.Logger.LogInfo(
                 $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
@@ -1001,8 +1016,8 @@ namespace pitTeam.BigBrain.Actions
                     }
                 }
 
-                // Overflow magazines remain at the source. Only the tactical fast-access subset
-                // bypasses normal magazine price filtering for this usable secondary weapon.
+                // Overflow magazines remain loaded at the source. Ammo salvage is reserved for a
+                // weapon that settles into FirstPrimaryWeapon, never this support-only branch.
                 followUps.Add(candidate.WithFollowUpDestination(BodyGearFollowUpDestination.SecondaryWeaponEquip));
                 move = firstMagazineMove.WithFollowUps(
                     followUps,
@@ -1018,17 +1033,21 @@ namespace pitTeam.BigBrain.Actions
 
             // No source move is needed when the inserted magazine or the follower's existing fast
             // access already makes the support weapon usable.
-            return TryBuildOperationalSecondaryWeaponEquipMove(
-                inventory,
-                followerEquipment,
-                candidate,
-                out move,
-                out _);
+            if (!TryBuildOperationalSecondaryWeaponEquipMove(
+                    inventory,
+                    followerEquipment,
+                    candidate,
+                    out move,
+                    out _))
+            {
+                return false;
+            }
+
+            return true;
         }
 
-        private bool TryBuildEmptyMagazineWeaponEquipChain(
+        private bool TryBuildEmptyWeaponMagazineInsertionMove(
             InventoryController inventory,
-            InventoryEquipment followerEquipment,
             BodyGearCandidate weaponCandidate,
             OperationalMagazinePlan sourceMagazinePlan,
             out BodyGearMove? move,
@@ -1077,52 +1096,6 @@ namespace pitTeam.BigBrain.Actions
                     continue;
                 }
 
-                List<BodyGearCandidate> remainingSourceMagazines = sourceMagazinePlan.CompatibleLoadedCandidates
-                    .Where(candidate =>
-                        candidate?.Item != null &&
-                        !string.Equals(candidate.Item.Id, magazineToLoad.Id, StringComparison.Ordinal))
-                    .ToList();
-                OperationalMagazinePlan remainingPlan = PlanOperationalMagazineFollowUps(
-                    inventory,
-                    followerEquipment,
-                    weapon,
-                    remainingSourceMagazines,
-                    reloadReserveOverride: magazineToLoad);
-                List<BodyGearCandidate> fastAccessCandidates = remainingPlan.FollowUps
-                    .Where(IsOperationalFastAccessFollowUp)
-                    .ToList();
-                List<MagazineItemClass> projectedFastAccessMagazines = fastAccessCandidates
-                    .Select(candidate => candidate.Item)
-                    .OfType<MagazineItemClass>()
-                    .ToList();
-                WeaponPrimaryReadinessSnapshot projected =
-                    FollowerWeaponPrimaryReadiness.EvaluatePlannedLoadedProjection(
-                        inventory,
-                        weapon,
-                        magazineToLoad,
-                        projectedFastAccessMagazines);
-                bool insertedAloneIsSufficient = projected.InsertedContribution >= projected.Threshold;
-                bool hasReloadLandingSpace = insertedAloneIsSufficient ||
-                    FollowerWeaponPrimaryReadiness.HasMagazineReloadLandingSpace(
-                        followerEquipment,
-                        magazineToLoad);
-
-                Modules.Logger.LogInfo(
-                    $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
-                    $"weapon={DescribeLootDebugItem(weapon)} evaluation=plannedMagazineLoad " +
-                    $"loadMag={DescribeLootDebugItem(magazineToLoad)} plannedFastAccess={projectedFastAccessMagazines.Count} " +
-                    $"landingSpace={hasReloadLandingSpace} {projected.ToDiagnosticString()}");
-
-                if (!projected.PrimaryReady || projected.RequiresMagazineLoad || !hasReloadLandingSpace)
-                {
-                    reason = !projected.PrimaryReady
-                        ? "loadedPackageNotPrimaryReady"
-                        : projected.RequiresMagazineLoad
-                        ? "projectedLoadNotRecognized"
-                        : "reloadLandingSpaceUnavailable";
-                    continue;
-                }
-
                 BodyGearCandidate loadMoveCandidate = loadCandidate.WithFollowUpDestination(
                     BodyGearFollowUpDestination.LoadMagazineIntoWeapon);
                 if (!TryCreateBodyGearMove(
@@ -1132,25 +1105,22 @@ namespace pitTeam.BigBrain.Actions
                         out BodyGearMove? loadMove,
                         storeAsLoot: ShouldReturnGearSwapAsCargo(),
                         successPhrase: EPhraseTrigger.LootWeapon,
-                        isStagingOperation: true))
+                        isStagingOperation: true,
+                        stagingWeapon: weapon))
                 {
                     reason = "magazineLoadOperationRejected";
                     continue;
                 }
 
-                List<BodyGearCandidate> followUps = new List<BodyGearCandidate>(fastAccessCandidates)
-                {
-                    weaponCandidate.WithFollowUpDestination(BodyGearFollowUpDestination.EvaluateWeaponDestination)
-                };
-                // The insertion must succeed before any spare or weapon move is attempted. Build-time
-                // rejection returns to normal cargo planning; a runtime failure leaves the source safe.
-                move = loadMove.WithFollowUps(followUps, EPhraseTrigger.LootWeapon);
-                reason = "readyAfterMagazineLoad";
+                // Stop after the real insertion. The next normal planning pass sees the magazine
+                // inside the weapon, applies the established readiness/destination policy, and only
+                // afterward salvages ammo from compatible magazines that remain at the source.
+                move = loadMove;
+                reason = "magazineInsertionStaged";
                 Modules.Logger.LogInfo(
                     $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
-                    $"weapon={DescribeLootDebugItem(weapon)} evaluation=magazineLoadChainBuilt " +
-                    $"loadMag={DescribeLootDebugItem(magazineToLoad)} fastAccessFollowUps={fastAccessCandidates.Count} " +
-                    "destination=PostTransferEvaluation");
+                    $"weapon={DescribeLootDebugItem(weapon)} evaluation=magazineInsertionMoveBuilt " +
+                    $"loadMag={DescribeLootDebugItem(magazineToLoad)} destination=WeaponMagazineSlot");
                 return true;
             }
 
@@ -1255,9 +1225,13 @@ namespace pitTeam.BigBrain.Actions
                     }
                 }
 
-                // The destination marker stays last. Each preceding transaction is rebuilt from
-                // current inventory, and the final decision reads only transfers that succeeded.
+                // Classify the weapon only after all fast-access transfers settle. Late salvage
+                // markers run afterward and independently verify that the result is first primary.
                 followUps.Add(candidate.WithFollowUpDestination(BodyGearFollowUpDestination.EvaluateWeaponDestination));
+                AppendOverflowMagazineAmmoSalvageMarkers(
+                    followUps,
+                    candidate.Item as Weapon,
+                    magazinePlan.CompatibleLoadedCandidates);
                 bool projectedUsablePrimary =
                     projected.PrimaryReady &&
                     !projected.RequiresMagazineLoad &&
@@ -1277,13 +1251,28 @@ namespace pitTeam.BigBrain.Actions
                 return true;
             }
 
-            return TryBuildPostTransferWeaponDestinationMove(
-                inventory,
-                followerEquipment,
-                candidate,
-                out move,
-                out _,
-                out _);
+            if (!TryBuildPostTransferWeaponDestinationMove(
+                    inventory,
+                    followerEquipment,
+                    candidate,
+                    out move,
+                    out _,
+                    out _))
+            {
+                return false;
+            }
+
+            List<BodyGearCandidate> directSalvageMarkers = new List<BodyGearCandidate>();
+            AppendOverflowMagazineAmmoSalvageMarkers(
+                directSalvageMarkers,
+                candidate.Item as Weapon,
+                magazinePlan.CompatibleLoadedCandidates);
+            if (directSalvageMarkers.Count > 0)
+            {
+                move = move.WithFollowUps(directSalvageMarkers);
+            }
+
+            return true;
         }
 
         private static bool CanBuildPotentialPrimaryWeaponCargoPackage(
@@ -1884,6 +1873,23 @@ namespace pitTeam.BigBrain.Actions
             while (pendingBodyGearSwapFollowUps.Count > 0)
             {
                 BodyGearCandidate candidate = pendingBodyGearSwapFollowUps.Dequeue();
+                AmmoSalvageFollowUpResult ammoSalvageResult = HandleAmmoSalvageFollowUp(
+                    inventory,
+                    followerEquipment,
+                    candidate,
+                    pendingBodyGearSwapFollowUps,
+                    bodyLootAttemptedItemIds,
+                    bodyContext: true);
+                if (ammoSalvageResult == AmmoSalvageFollowUpResult.MoveStarted)
+                {
+                    return true;
+                }
+
+                if (ammoSalvageResult == AmmoSalvageFollowUpResult.Continue)
+                {
+                    continue;
+                }
+
                 if (candidate?.Item is VestItemClass)
                 {
                     if (!TryBuildTacticalVestEquipIntoEmptySlot(inventory, followerEquipment, candidate, out BodyGearMove? vestMove))
@@ -2075,6 +2081,23 @@ namespace pitTeam.BigBrain.Actions
             while (pendingContainerGearSwapFollowUps.Count > 0)
             {
                 BodyGearCandidate candidate = pendingContainerGearSwapFollowUps.Dequeue();
+                AmmoSalvageFollowUpResult ammoSalvageResult = HandleAmmoSalvageFollowUp(
+                    inventory,
+                    followerEquipment,
+                    candidate,
+                    pendingContainerGearSwapFollowUps,
+                    containerLootAttemptedItemIds,
+                    bodyContext: false);
+                if (ammoSalvageResult == AmmoSalvageFollowUpResult.MoveStarted)
+                {
+                    return true;
+                }
+
+                if (ammoSalvageResult == AmmoSalvageFollowUpResult.Continue)
+                {
+                    continue;
+                }
+
                 if (candidate?.Item is VestItemClass)
                 {
                     if (!TryBuildTacticalVestEquipIntoEmptySlot(inventory, followerEquipment, candidate, out BodyGearMove? vestMove))

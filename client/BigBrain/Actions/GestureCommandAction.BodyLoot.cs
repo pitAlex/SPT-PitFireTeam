@@ -82,9 +82,15 @@ namespace pitTeam.BigBrain.Actions
             {
                 if (bodyLootAttemptStartedAt > 0f && Time.time - bodyLootAttemptStartedAt > 4f)
                 {
-                    bodyLootMoveInProgress = false;
-                    bodyLootAttemptStartedAt = 0f;
-                    bodyLootNextMoveAt = Time.time + 0.25f;
+                    // The EFT transaction may still complete after its callback timeout. Abort this
+                    // loot command and invalidate the callback instead of issuing an overlapping
+                    // retry against an inventory tree whose final state is unknown.
+                    Modules.Logger.LogInfo(
+                        $"[LootCommand] Body move timed out for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                        $"source={activeBodyLootMove?.SourceName ?? "unknown"} item={DescribeLootDebugItem(activeBodyLootMove?.Item)}");
+                    activeBodyLootMoveGeneration = 0;
+                    activeBodyLootMove = null;
+                    ClearBodyLootState("TakeBodyGear:moveTimeout");
                 }
 
                 return;
@@ -351,7 +357,6 @@ namespace pitTeam.BigBrain.Actions
                     continue;
                 }
 
-                bodyLootAttemptedItemIds.Add(candidate.Item.Id);
                 IEnumerable<BodyGearCandidate>? operationalMagazineCandidates = candidate.Item is Weapon weapon
                     ? GetBodyOperationalMagazineCandidates(corpseEquipment, weapon)
                     : null;
@@ -362,8 +367,14 @@ namespace pitTeam.BigBrain.Actions
                         operationalMagazineCandidates,
                         out BodyGearMove? move))
                 {
+                    bodyLootAttemptedItemIds.Add(candidate.Item.Id);
                     bodyLootHadEligibleButNoSpace = true;
                     continue;
+                }
+
+                if (!move.IsStagingOperation)
+                {
+                    bodyLootAttemptedItemIds.Add(candidate.Item.Id);
                 }
 
                 if (TryQueueBodyLootMoveAfterPickupSuccess(move))
@@ -579,7 +590,8 @@ namespace pitTeam.BigBrain.Actions
             bool storeAsLoot = true,
             EPhraseTrigger successPhrase = EPhraseTrigger.LootGeneric,
             bool rebindAsPrimaryWeapon = false,
-            bool isStagingOperation = false)
+            bool isStagingOperation = false,
+            Weapon? stagingWeapon = null)
         {
             move = null;
             Item item = candidate?.Item;
@@ -617,7 +629,9 @@ namespace pitTeam.BigBrain.Actions
                 storeAsLoot: storeAsLoot,
                 successPhrase: successPhrase,
                 rebindAsPrimaryWeapon: rebindAsPrimaryWeapon,
-                isStagingOperation: isStagingOperation);
+                isStagingOperation: isStagingOperation,
+                stagingWeapon: stagingWeapon,
+                ammoSalvageMagazineId: candidate.AmmoSalvageMagazine?.Id);
             return true;
         }
 
@@ -662,7 +676,13 @@ namespace pitTeam.BigBrain.Actions
                 $"followUps={move?.FollowUpCandidates?.Count ?? 0} lootCue={move?.SuccessPhrase}");
             bodyLootMoveInProgress = true;
             bodyLootAttemptStartedAt = Time.time;
-            inventory.RunNetworkTransaction(move.Operation, new Callback(result => CompleteBodyGearMove(result, move)));
+            int moveGeneration = ++bodyLootMoveGeneration;
+            activeBodyLootMoveGeneration = moveGeneration;
+            activeBodyLootMove = move;
+            RunBodyGearMoveTransaction(
+                inventory,
+                move,
+                new Callback(result => CompleteBodyGearMove(result, move, moveGeneration)));
         }
 
         private void EnqueueBodyGearSwapFollowUps(BodyGearMove move)
@@ -687,7 +707,8 @@ namespace pitTeam.BigBrain.Actions
                     candidate?.FollowUpDestination == BodyGearFollowUpDestination.EvaluateWeaponDestination ||
                     candidate?.FollowUpDestination == BodyGearFollowUpDestination.EvaluateSecondaryWeaponPromotion ||
                     candidate?.FollowUpDestination == BodyGearFollowUpDestination.EvaluateCargoWeaponPromotion ||
-                    candidate?.FollowUpDestination == BodyGearFollowUpDestination.BackpackCargo;
+                    candidate?.FollowUpDestination == BodyGearFollowUpDestination.BackpackCargo ||
+                    candidate?.FollowUpDestination == BodyGearFollowUpDestination.SalvageMagazineAmmo;
                 if (candidate?.Item != null &&
                     !string.IsNullOrEmpty(candidate.Item.Id) &&
                     (allowAlreadyAttempted || !bodyLootAttemptedItemIds.Contains(candidate.Item.Id)))
@@ -707,57 +728,83 @@ namespace pitTeam.BigBrain.Actions
             }
         }
 
-        private void CompleteBodyGearMove(IResult result, BodyGearMove move)
+        private void CompleteBodyGearMove(IResult result, BodyGearMove move, int moveGeneration)
         {
             try
             {
+                if (moveGeneration != activeBodyLootMoveGeneration)
+                {
+                    Modules.Logger.LogInfo(
+                        $"[LootCommand] Ignored stale body move callback for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                        $"source={move?.SourceName ?? "unknown"} generation={moveGeneration}");
+                    return;
+                }
+
+                activeBodyLootMoveGeneration = 0;
+                activeBodyLootMove = null;
                 bodyLootMoveInProgress = false;
                 bodyLootAttemptStartedAt = 0f;
                 bodyLootNextMoveAt = Time.time + 0.2f;
 
-                if (result?.Succeed == true || IsLootNowInBotInventory(BotOwner?.GetPlayer, move.Item))
+                Item completedItem = ResolveCompletedBodyGearMoveItem(move, result?.Succeed == true);
+                bool stagingApplied = move.IsStagingOperation &&
+                                      move.StagingWeapon != null &&
+                                      IsItemInsideRoot(move.Item, move.StagingWeapon);
+                if (result?.Succeed == true ||
+                    stagingApplied ||
+                    IsLootNowInBotInventory(BotOwner?.GetPlayer, completedItem))
                 {
                     if (!move.IsStagingOperation)
                     {
                         bodyLootMovesSucceeded++;
-                        if (!move.ReportAsLootNothing && !IsDogtagLoot(move.Item))
+                        if (!move.ReportAsLootNothing && !IsDogtagLoot(completedItem))
                         {
                             bodyLootReportedMovesSucceeded++;
                         }
 
-                        InteractableObjects.ClearStrictCargoTree(BotOwner, move.Item);
-                        InteractableObjects.RegisterLootedWeaponTree(BotOwner, move.Item);
+                        InteractableObjects.ClearStrictCargoTree(BotOwner, completedItem);
+                        InteractableObjects.RegisterLootedWeaponTree(BotOwner, completedItem);
                     }
 
-                    EnqueueBodyGearSwapFollowUps(move);
+                    RegisterAmmoSalvageTargetReplacement(move, completedItem);
+                    if (move.PrependFollowUps)
+                    {
+                        // The loose one-round seed must be filled before the next cartridge group
+                        // is touched, preserving EFT StackSlot's last-item-first unload order.
+                        PrependFollowUps(pendingBodyGearSwapFollowUps, move.FollowUpCandidates);
+                    }
+                    else
+                    {
+                        EnqueueBodyGearSwapFollowUps(move);
+                    }
 
                     if (!move.IsStagingOperation &&
                         move.StoreAsLoot &&
                         followerData?.IsSquadMate == true)
                     {
-                        InteractableObjects.StoreItem(BotOwner, move.Item);
+                        InteractableObjects.StoreItem(BotOwner, completedItem);
                     }
 
-                    if (move.Item is Weapon && move.Item.GetItemComponent<KnifeComponent>() == null)
+                    if (completedItem is Weapon && completedItem.GetItemComponent<KnifeComponent>() == null)
                     {
                         if (move.RebindAsPrimaryWeapon)
                         {
-                            RebindLootedPrimaryWeapon(move.Item as Weapon);
+                            RebindLootedPrimaryWeapon(completedItem as Weapon);
                         }
                         else
                         {
                             Weapon slottedSecondary = BotOwner?.GetPlayer?.InventoryController?.Inventory?.Equipment
                                 ?.GetSlot(EquipmentSlot.SecondPrimaryWeapon)?.ContainedItem as Weapon;
-                            if (IsSameLootItem(slottedSecondary, move.Item))
+                            if (IsSameLootItem(slottedSecondary, completedItem))
                             {
                                 FollowerLootedPrimaryWeaponBinding.RegisterSupport(
                                     BotOwner,
-                                    move.Item as Weapon,
+                                    completedItem as Weapon,
                                     "bodyLootMove");
                             }
                         }
 
-                        RefreshLootedWeaponPresentation(move.Item);
+                        RefreshLootedWeaponPresentation(completedItem);
                         bodyLootWeaponListDirty = true;
                     }
 
@@ -766,12 +813,23 @@ namespace pitTeam.BigBrain.Actions
 
                 Modules.Logger.LogInfo(
                     $"[LootCommand] Body gear move failed for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': {move.SourceName}:{move.Item?.TemplateId ?? "unknown"}");
+                if (move.IsStagingOperation && move.StagingWeapon != null)
+                {
+                    // A failed insertion leaves the source weapon empty. Mark the weapon terminal
+                    // for this search so the planner does not rebuild the same failed transaction.
+                    bodyLootAttemptedItemIds.Add(move.StagingWeapon.Id);
+                }
+
                 if (move.ContinueFollowUpsOnFailure)
                 {
                     // P2 weapon chains must still classify the candidate from the resulting live
                     // inventory when one planned fast-access magazine transaction fails.
                     EnqueueBodyGearSwapFollowUps(move);
                 }
+
+                RemovePendingAmmoSalvageTransfers(
+                    pendingBodyGearSwapFollowUps,
+                    move.AmmoSalvageMagazineId);
 
                 bodyLootHadEligibleButNoSpace = true;
             }
@@ -781,6 +839,8 @@ namespace pitTeam.BigBrain.Actions
                 Modules.Logger.LogError(ex);
                 bodyLootMoveInProgress = false;
                 bodyLootAttemptStartedAt = 0f;
+                activeBodyLootMoveGeneration = 0;
+                activeBodyLootMove = null;
                 bodyLootNextMoveAt = Time.time + 0.2f;
             }
         }
@@ -824,8 +884,11 @@ namespace pitTeam.BigBrain.Actions
 
             StopLootSearchSound();
             bodyLootMoveInProgress = false;
+            activeBodyLootMoveGeneration = 0;
+            activeBodyLootMove = null;
             pendingBodyLootMove = null;
             pendingBodyGearSwapFollowUps.Clear();
+            ClearAmmoSalvageRuntimeState();
             bodyLootReadyAt = 0f;
             bodyLootNextMoveAt = 0f;
             bodyLootAttemptStartedAt = 0f;

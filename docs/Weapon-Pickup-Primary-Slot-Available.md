@@ -132,7 +132,7 @@ Known baseline differences from this contract:
 |---|---|---|
 | P1 | Central readiness model, available-magazine reference resolver, actual fast-access scanner, shadow diagnostics, deterministic formula tests | Complete |
 | P2 | Body/container pickup with an inserted magazine; final destination from post-transfer live state | Implemented; runtime testing pending |
-| P3 | No-inserted-magazine transaction and mandatory magazine load before primary equip | Implemented for body/container sources; runtime testing pending |
+| P3 | No-inserted-magazine transaction and mandatory magazine load before primary equip | Implemented for body/container sources; staged insertion and overflow salvage paths passed separately at runtime |
 | P4 | Commanded loose weapon/magazine pickup integration without changing non-weapon pickup or voice behavior | Implemented; runtime retest pending |
 | P5 | Support-to-primary reevaluation and safe promotion | Implemented; happy-path runtime passed |
 | P6 | Failure hardening, ownership/return verification, final player documentation | Not started |
@@ -233,21 +233,22 @@ P3 sequence:
 
 1. scan compatible non-empty loose source magazines without detaching magazines from another weapon
 2. prefer the source magazine with the most loaded rounds as the insertion candidate
-3. remove that magazine from the spare plan and reserve enough vest/pocket space for it to land during a later reload
-4. plan the remaining compatible source magazines into fast access
-5. evaluate the hypothetical loaded weapon from that inserted magazine, actual fast-access magazines, and planned fast-access magazines
-6. continue only when the complete executable state is primary-ready and reload landing space is safe
-7. execute a real `InteractionsHandlerClass.Move(...)` into `weapon.GetMagazineSlot().CreateItemAddress()`
-8. after insertion succeeds, move the planned spares one at a time and classify the weapon from settled live inventory
-9. move the weapon last, then use the existing primary bind/select path
+3. execute a real `InteractionsHandlerClass.Move(...)` into `weapon.GetMagazineSlot().CreateItemAddress()` as a staging transaction
+4. leave the weapon unattempted so the next ordinary planning pass sees its live inserted magazine
+5. let the existing inserted-magazine planner reserve reload landing space and plan remaining compatible source magazines into fast access
+6. evaluate readiness and destination from the same live/projected rules used by every already-loaded weapon
+7. move accepted spares one at a time and classify the weapon from settled live inventory
+8. move the weapon last, then use the existing primary/support bind path when its destination is usable equipment
+9. after normal weapon planning, preflight and salvage ammunition from compatible source magazines that remain behind because no reload-safe fast-access slot was available
 
 P3 boundaries:
 
 - the insertion magazine must come from the same body/container source; manually supplied follower cargo is not borrowed for this first load
-- a lone partial magazine or any other under-ready package is not loaded merely to occupy secondary
-- under-ready packages remain governed by `Pickup Gear`, whole-tree price, and backpack package fit
+- insertion itself is not readiness-gated; the normal loaded-weapon policy decides whether the resulting weapon is primary-ready, held as secondary, or considered for cargo
+- under-ready ordinary cargo remains governed by `Pickup Gear`, whole-tree price, and backpack package fit
 - build-time load-operation rejection returns to ordinary cargo planning
 - a runtime load failure does not move the remaining magazines or weapon
+- overflow-ammo salvage fully preflights destination capacity per magazine before it starts, runs only while the weapon remains in `FirstPrimaryWeapon`, and does not make the loaded source magazine itself into cargo; EFT still commits each generated loose stack as its own inventory transaction, so an interruption or runtime transaction failure stops the remaining salvage rather than pretending the completed transactions can be rolled back atomically
 - tube-fed, internal-magazine, revolver, chamber-fed, loose-ammunition, and magazine-repacking policies remain deferred
 - commanded loose-world weapon pickup does not recruit a separate world magazine; that command still handles only the item explicitly targeted by the player
 
@@ -323,7 +324,7 @@ Unless specified otherwise, the ordinary reference is 30 and the threshold is 60
 | WI-05 | Not ready, secondary occupied, `Pickup Gear` enabled, whole weapon tree passes price, and package fits | Weapon plus compatible loaded source magazines become filtered backpack cargo | P2 | Implemented; runtime pending |
 | WI-06 | Potential package does not fit | Leave package magazines at source, try weapon-only cargo, and leave weapon too when it cannot fit | P2 | Implemented; runtime pending |
 | WI-07 | Compatible magazine exists only in backpack | It contributes nothing while in backpack; a successful move into fast access can then make it eligible | P2/P5 | P2 implemented; runtime pending |
-| WI-08 | Candidate has no inserted magazine and loading succeeds | Load one, recalculate, then place | P3 | Implemented; runtime pending |
+| WI-08 | Candidate has no inserted magazine and loading succeeds | Load one, recalculate, then place | P3 | Passed |
 | WI-09 | Candidate has no inserted magazine and loading fails | Prefer the weapon-and-compatible-magazine backpack package; if it does not fit, leave the magazines and try the weapon alone; leave the weapon too when it cannot fit | P3 | Cargo safety implemented; runtime pending |
 | WI-10 | Compatible magazines arrive one at a time | Same final inventory state produces the same final decision | P4/P5 | Secondary manual-transfer path passed; cargo manual/loose-pickup fix implemented, runtime pending |
 | WI-11 | Primary becomes occupied before support promotion | Keep candidate in support | P5 | Implemented; runtime pending |
@@ -342,6 +343,8 @@ Unless specified otherwise, the ordinary reference is 30 and the threshold is 60
 | WI-24 | Working primary, empty second primary, found usable long gun plus compatible source magazines | Move only fitting reload-safe magazines to fast access, equip/register the weapon as second-primary support, and keep the working primary in hand | Support add | Implemented; runtime pending |
 | WI-25 | First and second primary occupied, found long gun passes ordinary gear/price filters but its magazines do not | Move only the weapon as ordinary cargo; do not grant its magazines the future-primary package bypass | Cargo boundary | Implemented; runtime pending |
 | WI-26 | Holster occupied, found pistol passes ordinary gear/price filters but its magazines do not | Move only the pistol as ordinary cargo; magazines retain normal filters | Cargo boundary | Implemented; runtime pending |
+| WI-27 | No-inserted-magazine weapon has three compatible source magazines but reload-safe fast access accepts only the insertion magazine and one spare | Equip the ready weapon, leave the third magazine shell at the source, and move its consolidated ammo stacks in secure/pockets/backpack/vest order without consuming reload reserve | P3 ammo salvage | Passed through combined staging and overflow-salvage runtime coverage |
+| WI-28 | Follower spawned with a holstered pistol using a two-cell magazine and also has an equipped long gun | Vest-fallback ammo must preserve independent landing footprints for the largest compatible long-gun and pistol magazines; a raid-acquired pistol must not add the second reserve | P3 ammo salvage | Implemented; runtime pending |
 
 ## Backpack Spare Scenario Matrix
 
@@ -379,6 +382,7 @@ This ledger records observed in-raid results. `Implemented` elsewhere in this do
 | RT-19 | Brick received manually placed weapon and magazine trees through `View Backpack`, then inspection remained closed for about 14 seconds | All 15 tree IDs remained strict cargo and no idle readiness promotion occurred | Passed |
 | RT-20 | RT-19 trees were taken back out through `View Backpack` | Close bookkeeping logged `removedFromBackpack` and cleared all 15 strict IDs | Passed |
 | RT-21 | Removed weapon was reacquired through the old generic `Loot This` path with one full magazine | EFT incorrectly placed it directly in first primary without readiness; selection exhausted retries with `handsBusy` | Bug reproduced; explicit P4 placement/hand-release fix implemented, runtime retest pending |
+| RT-22 | Empty-weapon source-magazine staging was already verified; a later ready weapon had one fitting source spare and two additional magazines rejected by reload-safe fast-access fit | The fitting spare moved to the vest, readiness reached `65/60`, the weapon entered first primary and was selected, and both overflow magazines were emptied into the secure container without consuming reload reserve | Passed; together with the earlier staging test, closes WI-27 |
 
 Not yet runtime-covered:
 
@@ -425,6 +429,22 @@ Each snapshot should identify:
 The final placement phases must log one additional post-transfer `actual` snapshot immediately before selecting primary, support, backpack, or leave-at-source.
 
 ## Progress Log
+
+### 2026-07-14
+
+- Simplified P3 empty-weapon handling to a real insertion-first staging transaction.
+- Removed the hypothetical complete-package gate: after insertion, the established inserted-magazine planner runs again from live inventory and owns readiness, spare placement, destination, and late overflow-ammo salvage.
+- Staging insertion does not count as looted cargo, consume the weapon's attempted state, or emit an early loot voice cue.
+- Corrected overflow-ammo execution to use EFT's ammo-specific unload operations. Each planned loose stack is seeded with one round and then filled before the next internal magazine cartridge group is processed; internal cartridge groups are not moved as ordinary items.
+- Restricted overflow-ammo salvage to weapons that have settled into `FirstPrimaryWeapon`; secondary, holster, cargo, and rejected outcomes leave source magazines loaded.
+
+### 2026-07-13
+
+- Added P3 overflow-ammo salvage for an accepted body/container weapon package.
+- The complete left-behind magazine is preflighted before moving ammunition; cartridge groups are processed in StackSlot LIFO order, split at loose-ammo stack limits, and consolidated by ammo type where stack capacity permits.
+- Salvaged output stacks use secure container, pockets, backpack, then vest. Vest fallback preserves the largest structurally compatible long-gun magazine opening and ignores inserted magazine shapes that cannot fit that vest at all.
+- Initial-equipment holster identity is captured before commands can alter the loadout. Its largest compatible carried magazine gets a second vest landing reserve; acquired pistols do not.
+- Added `WI-27` as the next three-magazine runtime test.
 
 ### 2026-07-10
 

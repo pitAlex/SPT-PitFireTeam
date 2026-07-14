@@ -636,6 +636,7 @@ namespace pitTeam.BigBrain.Actions
         {
             if (alreadySpoken ||
                 move == null ||
+                move.IsStagingOperation ||
                 move.ReportAsLootNothing ||
                 IsDogtagLoot(move.Item))
             {

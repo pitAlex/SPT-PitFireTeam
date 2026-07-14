@@ -22,20 +22,7 @@ namespace pitTeam.Modules
             Weapon weapon,
             IEnumerable<MagazineItemClass> projectedFastAccessMagazines)
         {
-            return EvaluateInventoryState(inventory, weapon, projectedFastAccessMagazines, null);
-        }
-
-        internal static WeaponPrimaryReadinessSnapshot EvaluatePlannedLoadedProjection(
-            InventoryController inventory,
-            Weapon weapon,
-            MagazineItemClass projectedInsertedMagazine,
-            IEnumerable<MagazineItemClass> projectedFastAccessMagazines)
-        {
-            return EvaluateInventoryState(
-                inventory,
-                weapon,
-                projectedFastAccessMagazines,
-                projectedInsertedMagazine);
+            return EvaluateInventoryState(inventory, weapon, projectedFastAccessMagazines);
         }
 
         internal static bool HasInsertedMagazineReloadLandingSpace(
@@ -215,8 +202,7 @@ namespace pitTeam.Modules
         private static WeaponPrimaryReadinessSnapshot EvaluateInventoryState(
             InventoryController inventory,
             Weapon weapon,
-            IEnumerable<MagazineItemClass>? projectedFastAccessMagazines,
-            MagazineItemClass? projectedInsertedMagazine = null)
+            IEnumerable<MagazineItemClass>? projectedFastAccessMagazines)
         {
             if (weapon == null)
             {
@@ -235,26 +221,9 @@ namespace pitTeam.Modules
                 return EvaluateFormula(0, false, 0, 0, Array.Empty<int>(), 0, $"weaponRead:{ex.Message}");
             }
 
-            if (insertedMagazine == null && projectedInsertedMagazine != null)
-            {
-                try
-                {
-                    if (magazineSlot?.CanAccept(projectedInsertedMagazine) == true)
-                    {
-                        insertedMagazine = projectedInsertedMagazine;
-                    }
-                }
-                catch
-                {
-                    insertedMagazine = null;
-                }
-            }
-
             List<MagazineItemClass> compatibleMagazines = new List<MagazineItemClass>();
             HashSet<string> includedMagazineIds = new HashSet<string>(StringComparer.Ordinal);
-            string referenceReason = projectedInsertedMagazine != null
-                ? "availableLoadedMagazines;projectedMagazineLoad"
-                : "availableLoadedMagazines";
+            string referenceReason = "availableLoadedMagazines";
 
             if (inventory != null && magazineSlot != null)
             {

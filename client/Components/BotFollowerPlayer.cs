@@ -163,6 +163,8 @@ namespace pitTeam.Components
         private FollowerCombatTactic _combatTactic = FollowerCombatTactic.Balanced;
         private bool _backpackInspectionActive;
         private float? _pickupIndependence01;
+        private string? _initialHolsterWeaponId;
+        private bool _initialHolsterWeaponCaptured;
         public bool CanPatrol
         {
             get
@@ -236,6 +238,13 @@ namespace pitTeam.Components
             }
         }
 
+        public bool IsInitialHolsterWeapon(Weapon weapon)
+        {
+            return weapon != null &&
+                   !string.IsNullOrEmpty(_initialHolsterWeaponId) &&
+                   string.Equals(weapon.Id, _initialHolsterWeaponId, StringComparison.Ordinal);
+        }
+
         public float PickupIndependence01
         {
             get
@@ -287,11 +296,45 @@ namespace pitTeam.Components
             _botRole = botRole == WildSpawnType.assault ? _bot.Profile.Info.Settings.Role : botRole;
 
             _IsSquadMate = isSquad;
+            CaptureInitialHolsterWeapon(finalAttempt: false);
 
             settingModif = new BotLastBlindEffectModifierClass(1f, 1.4f, 1f, 0.9f, 1f, 1f, 1f, 1f, 1f);
 
             if (player.realPlayer.Side != EPlayerSide.Savage) NpcMessage.AddNpc(bot, isSquad);
 
+        }
+
+        private void CaptureInitialHolsterWeapon(bool finalAttempt)
+        {
+            if (_initialHolsterWeaponCaptured)
+            {
+                return;
+            }
+
+            try
+            {
+                InventoryEquipment equipment = _bot?.GetPlayer?.InventoryController?.Inventory?.Equipment;
+                if (equipment == null)
+                {
+                    return;
+                }
+
+                Weapon initialHolster = equipment.GetSlot(EquipmentSlot.Holster)?.ContainedItem as Weapon;
+                if (initialHolster != null)
+                {
+                    _initialHolsterWeaponId = initialHolster.Id;
+                    _initialHolsterWeaponCaptured = true;
+                    return;
+                }
+
+                // An empty constructor-time slot may still be inventory assembly. Only Init can
+                // finalize that the follower genuinely spawned without a holster weapon.
+                _initialHolsterWeaponCaptured = finalAttempt;
+            }
+            catch
+            {
+                // Init performs the final retry if the player inventory is still being assembled.
+            }
         }
 
         private float CalculatePickupIndependence01()
@@ -307,6 +350,9 @@ namespace pitTeam.Components
 
         public virtual void Init()
         {
+            // Constructor-time player inventory is normally ready, but follower initialization is
+            // the last safe retry before raid commands can alter equipment provenance.
+            CaptureInitialHolsterWeapon(finalAttempt: true);
             _canPatrol = false;
             BaseBrain baseBrain = _bot.Brain.BaseBrain;
             if (baseBrain == null)

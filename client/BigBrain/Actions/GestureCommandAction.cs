@@ -56,6 +56,9 @@ namespace pitTeam.BigBrain.Actions
         private float containerLootReadyAt;
         private float containerLootNextMoveAt;
         private float containerLootAttemptStartedAt;
+        private int containerLootMoveGeneration;
+        private int activeContainerLootMoveGeneration;
+        private BodyGearMove? activeContainerLootMove;
         private BodyGearMove? pendingContainerLootMove;
         private float pendingContainerLootMoveReadyAt;
         private readonly Queue<BodyGearCandidate> pendingContainerGearSwapFollowUps = new Queue<BodyGearCandidate>();
@@ -73,6 +76,9 @@ namespace pitTeam.BigBrain.Actions
         private float bodyLootReadyAt;
         private float bodyLootNextMoveAt;
         private float bodyLootAttemptStartedAt;
+        private int bodyLootMoveGeneration;
+        private int activeBodyLootMoveGeneration;
+        private BodyGearMove? activeBodyLootMove;
         private BodyGearMove? pendingBodyLootMove;
         private float pendingBodyLootMoveReadyAt;
         private readonly Queue<BodyGearCandidate> pendingBodyGearSwapFollowUps = new Queue<BodyGearCandidate>();
@@ -145,12 +151,15 @@ namespace pitTeam.BigBrain.Actions
             lootPickupInProgress = false;
             lootPickupReadyAt = 0f;
             lootPickupAttemptStartedAt = 0f;
+            ClearAmmoSalvageRuntimeState();
             activeLootItem = null;
             activeLootContainer = null;
             containerLootMoveInProgress = false;
             containerLootReadyAt = 0f;
             containerLootNextMoveAt = 0f;
             containerLootAttemptStartedAt = 0f;
+            activeContainerLootMoveGeneration = 0;
+            activeContainerLootMove = null;
             pendingContainerLootMove = null;
             pendingContainerLootMoveReadyAt = 0f;
             pendingContainerGearSwapFollowUps.Clear();
@@ -168,6 +177,8 @@ namespace pitTeam.BigBrain.Actions
             bodyLootReadyAt = 0f;
             bodyLootNextMoveAt = 0f;
             bodyLootAttemptStartedAt = 0f;
+            activeBodyLootMoveGeneration = 0;
+            activeBodyLootMove = null;
             pendingBodyLootMove = null;
             pendingBodyLootMoveReadyAt = 0f;
             pendingBodyGearSwapFollowUps.Clear();
@@ -268,6 +279,8 @@ namespace pitTeam.BigBrain.Actions
                 containerLootReadyAt = 0f;
                 containerLootNextMoveAt = 0f;
                 containerLootAttemptStartedAt = 0f;
+                activeContainerLootMoveGeneration = 0;
+                activeContainerLootMove = null;
                 pendingContainerLootMove = null;
                 pendingContainerLootMoveReadyAt = 0f;
                 pendingContainerGearSwapFollowUps.Clear();
@@ -285,6 +298,8 @@ namespace pitTeam.BigBrain.Actions
                 bodyLootReadyAt = 0f;
                 bodyLootNextMoveAt = 0f;
                 bodyLootAttemptStartedAt = 0f;
+                activeBodyLootMoveGeneration = 0;
+                activeBodyLootMove = null;
                 pendingBodyLootMove = null;
                 pendingBodyLootMoveReadyAt = 0f;
                 pendingBodyGearSwapFollowUps.Clear();
