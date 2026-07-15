@@ -292,7 +292,10 @@ namespace pitTeam.BigBrain.Actions
         {
             operation = null;
             failureReason = "noSafeWeaponDestination";
-            WeaponPrimaryReadinessSnapshot readiness = FollowerWeaponPrimaryReadiness.EvaluateActual(inventory, weapon);
+            WeaponPrimaryReadinessSnapshot readiness = FollowerWeaponPrimaryReadiness.EvaluateActual(
+                inventory,
+                weapon,
+                ammo => !InteractableObjects.IsStrictCargoItem(BotOwner, ammo));
             bool insertedAloneIsSufficient = readiness.InsertedContribution >= readiness.Threshold;
             bool hasReloadLandingSpace = insertedAloneIsSufficient ||
                                          FollowerWeaponPrimaryReadiness.HasInsertedMagazineReloadLandingSpace(
@@ -637,12 +640,15 @@ namespace pitTeam.BigBrain.Actions
             if (alreadySpoken ||
                 move == null ||
                 move.IsStagingOperation ||
-                move.ReportAsLootNothing ||
+                (move.ReportAsLootNothing && move.SuccessPhrase != EPhraseTrigger.LootWeapon) ||
                 IsDogtagLoot(move.Item))
             {
                 return false;
             }
 
+            // A usable-weapon plan may begin with a support-ammo move that is intentionally
+            // excluded from the final loot count. The plan still needs its LootWeapon cue before
+            // those transactions begin; ReportAsLootNothing only silences standalone hidden loot.
             alreadySpoken = true;
             SayLootPhrase(move.SuccessPhrase);
             return true;

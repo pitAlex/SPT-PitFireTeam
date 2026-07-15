@@ -303,11 +303,15 @@ namespace pitTeam.BigBrain.Actions
                     IEnumerable<BodyGearCandidate>? operationalMagazineCandidates = candidate.Item is Weapon weapon
                         ? GetContainerOperationalMagazineCandidates(containerRoot, weapon)
                         : null;
+                    IEnumerable<BodyGearCandidate>? operationalAmmoCandidates = candidate.Item is Weapon internalWeapon
+                        ? GetContainerWeaponLooseAmmoCandidates(containerRoot, internalWeapon)
+                        : null;
                     if (!TryBuildFilteredLootMove(
                             inventory,
                             followerEquipment,
                             candidate,
                             operationalMagazineCandidates,
+                            operationalAmmoCandidates,
                             out BodyGearMove? move))
                     {
                         containerLootAttemptedItemIds.Add(candidate.Item.Id);
@@ -440,7 +444,10 @@ namespace pitTeam.BigBrain.Actions
                 Item completedItem = ResolveCompletedBodyGearMoveItem(move, result?.Succeed == true);
                 bool stagingApplied = move.IsStagingOperation &&
                                       move.StagingWeapon != null &&
-                                      IsItemInsideRoot(move.Item, move.StagingWeapon);
+                                      (IsItemInsideRoot(move.Item, move.StagingWeapon) ||
+                                       (move.StagingWeaponLoadedRoundsBefore >= 0 &&
+                                        FollowerWeaponInternalReadiness.GetLoadedRounds(move.StagingWeapon) >
+                                        move.StagingWeaponLoadedRoundsBefore));
                 if (result?.Succeed == true ||
                     stagingApplied ||
                     IsLootNowInBotInventory(BotOwner?.GetPlayer, completedItem))
@@ -478,7 +485,9 @@ namespace pitTeam.BigBrain.Actions
 
                     if (completedItem is Weapon && completedItem.GetItemComponent<KnifeComponent>() == null)
                     {
-                        if (move.RebindAsPrimaryWeapon)
+                        Weapon slottedPrimary = BotOwner?.GetPlayer?.InventoryController?.Inventory?.Equipment
+                            ?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem as Weapon;
+                        if (move.RebindAsPrimaryWeapon || IsSameLootItem(slottedPrimary, completedItem))
                         {
                             RebindLootedPrimaryWeapon(completedItem as Weapon);
                         }
@@ -669,7 +678,7 @@ namespace pitTeam.BigBrain.Actions
             // weapon equip move support mags first, then classify the weapon from settled live inventory.
             public BodyGearMove(
                 Item item,
-                GInterface424 operation,
+                IRaiseEvents operation,
                 string sourceName,
                 bool reportAsLootNothing,
                 IReadOnlyList<BodyGearCandidate>? followUpCandidates = null,
@@ -683,7 +692,8 @@ namespace pitTeam.BigBrain.Actions
                 bool resolveResultItemById = false,
                 bool prependFollowUps = false,
                 string? ammoSalvageReplacementSourceId = null,
-                bool useVanillaAmmoTransaction = false)
+                bool useVanillaAmmoTransaction = false,
+                int stagingWeaponLoadedRoundsBefore = -1)
             {
                 Item = item;
                 Operation = operation;
@@ -701,10 +711,11 @@ namespace pitTeam.BigBrain.Actions
                 PrependFollowUps = prependFollowUps;
                 AmmoSalvageReplacementSourceId = ammoSalvageReplacementSourceId;
                 UseVanillaAmmoTransaction = useVanillaAmmoTransaction;
+                StagingWeaponLoadedRoundsBefore = stagingWeaponLoadedRoundsBefore;
             }
 
             public Item Item { get; }
-            public GInterface424 Operation { get; }
+            public IRaiseEvents Operation { get; }
             public string SourceName { get; }
             public bool ReportAsLootNothing { get; }
             public IReadOnlyList<BodyGearCandidate> FollowUpCandidates { get; }
@@ -719,6 +730,7 @@ namespace pitTeam.BigBrain.Actions
             public bool PrependFollowUps { get; }
             public string? AmmoSalvageReplacementSourceId { get; }
             public bool UseVanillaAmmoTransaction { get; }
+            public int StagingWeaponLoadedRoundsBefore { get; }
 
             public BodyGearMove WithFollowUps(
                 IReadOnlyList<BodyGearCandidate> followUpCandidates,
@@ -741,7 +753,8 @@ namespace pitTeam.BigBrain.Actions
                     ResolveResultItemById,
                     PrependFollowUps,
                     AmmoSalvageReplacementSourceId,
-                    UseVanillaAmmoTransaction);
+                    UseVanillaAmmoTransaction,
+                    StagingWeaponLoadedRoundsBefore);
             }
         }
 
@@ -764,7 +777,8 @@ namespace pitTeam.BigBrain.Actions
                 Weapon? ammoSalvageWeapon = null,
                 MagazineItemClass? ammoSalvageMagazine = null,
                 AmmoItemClass? ammoSalvageTargetStack = null,
-                int ammoSalvageTransferCount = 0)
+                int ammoSalvageTransferCount = 0,
+                Weapon? weaponSupportWeapon = null)
             {
                 Item = item;
                 SourceSlot = sourceSlot;
@@ -780,6 +794,7 @@ namespace pitTeam.BigBrain.Actions
                 AmmoSalvageMagazine = ammoSalvageMagazine;
                 AmmoSalvageTargetStack = ammoSalvageTargetStack;
                 AmmoSalvageTransferCount = ammoSalvageTransferCount;
+                WeaponSupportWeapon = weaponSupportWeapon;
             }
 
             public Item Item { get; }
@@ -796,6 +811,7 @@ namespace pitTeam.BigBrain.Actions
             public MagazineItemClass? AmmoSalvageMagazine { get; }
             public AmmoItemClass? AmmoSalvageTargetStack { get; }
             public int AmmoSalvageTransferCount { get; }
+            public Weapon? WeaponSupportWeapon { get; }
 
             public BodyGearCandidate WithFollowUpDestination(BodyGearFollowUpDestination destination)
             {
@@ -813,7 +829,8 @@ namespace pitTeam.BigBrain.Actions
                     AmmoSalvageWeapon,
                     AmmoSalvageMagazine,
                     AmmoSalvageTargetStack,
-                    AmmoSalvageTransferCount);
+                    AmmoSalvageTransferCount,
+                    WeaponSupportWeapon);
             }
 
             public BodyGearCandidate WithAmmoSalvageContext(
@@ -837,7 +854,8 @@ namespace pitTeam.BigBrain.Actions
                     weapon,
                     magazine,
                     targetStack,
-                    transferCount);
+                    transferCount,
+                    WeaponSupportWeapon);
             }
         }
 
@@ -853,6 +871,8 @@ namespace pitTeam.BigBrain.Actions
             EvaluateWeaponDestination,
             EvaluateSecondaryWeaponPromotion,
             EvaluateCargoWeaponPromotion,
+            InternalAmmoCarry,
+            WeaponSupportLooseAmmo,
             SalvageMagazineAmmo,
             SalvagedAmmoSecuredContainer,
             SalvagedAmmoPockets,

@@ -1822,8 +1822,10 @@ namespace pitTeam.Components
         private BotOwner FindBestEligibleLootCarrierFollower(Vector3 targetPosition, bool requireSquadMate = false)
         {
             BotOwner bestFollower = null;
+            BotOwner gearEvaluationFallback = null;
             float maxSqrDistance = LootCarrierCommandDistance * LootCarrierCommandDistance;
             float bestSqrDistance = float.MaxValue;
+            float gearFallbackSqrDistance = float.MaxValue;
 
             foreach (BotOwner follower in Followers)
             {
@@ -1853,7 +1855,21 @@ namespace pitTeam.Components
 
                 int freeArea = FollowerLootPriceService.GetBackpackAndPocketFreeArea(
                     follower.GetPlayer?.InventoryController?.Inventory?.Equipment);
-                if (freeArea <= 0 || sqrDistance >= bestSqrDistance)
+                if (freeArea <= 0)
+                {
+                    // General body/container cargo is limited to backpack and pockets. Gear-enabled
+                    // looting can still produce a valid move with empty weapon slots or vest space,
+                    // so retain the closest such follower only as a fallback for the real planner.
+                    if (pitFireTeam.IsLootGearSwappingEnabled() && sqrDistance < gearFallbackSqrDistance)
+                    {
+                        gearEvaluationFallback = follower;
+                        gearFallbackSqrDistance = sqrDistance;
+                    }
+
+                    continue;
+                }
+
+                if (sqrDistance >= bestSqrDistance)
                 {
                     continue;
                 }
@@ -1862,7 +1878,7 @@ namespace pitTeam.Components
                 bestSqrDistance = sqrDistance;
             }
 
-            return bestFollower;
+            return bestFollower ?? gearEvaluationFallback;
         }
 
         private void ApplyOpenDoorCommand(IPlayer requester)

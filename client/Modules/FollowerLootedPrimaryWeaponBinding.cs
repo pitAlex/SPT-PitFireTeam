@@ -7,6 +7,9 @@ namespace pitTeam.Modules
     internal static class FollowerLootedPrimaryWeaponBinding
     {
         private const int SwitchMaxAttempts = 8;
+        private const int TransientSwitchMaxAttempts = 40;
+        private const int StuckSelectorRecoveryAttempt = 6;
+        private const int StuckSelectorRecoveryInterval = 6;
         private const float SwitchRetryDelaySeconds = 0.45f;
 
         internal static void RebindAndSelect(BotOwner bot, Weapon weapon, string context)
@@ -214,6 +217,12 @@ namespace pitTeam.Modules
         {
             try
             {
+                if (!CanContinueWeaponSwitch(bot, out string inactiveReason))
+                {
+                    LogAbortedSwitch(bot, weapon, context, inactiveReason);
+                    return false;
+                }
+
                 if (!TryRebindWeaponInfo(bot, weapon, context, out string rebindReason))
                 {
                     LogFinalFailure(bot, weapon, context, attempt, rebindReason);
@@ -230,15 +239,25 @@ namespace pitTeam.Modules
                     return true;
                 }
 
+                TryRecoverStuckSelectorTransition(bot, selector, attempt);
                 string blockReason = GetSwitchBlockReason(weaponManager, selector);
                 if (string.IsNullOrEmpty(blockReason))
                 {
+                    // CanChangeHands is intentionally not a prerequisite here. It includes broad
+                    // interaction and controller-state checks which may remain false until EFT is
+                    // asked to start a weapon process. ChangeToMain owns that scheduled vanilla
+                    // hand-off and its OnWeaponTaken retry path.
                     blockReason = selector.ChangeToMain()
                         ? "switchRequested"
                         : "selectorRejectedChangeToMain";
                 }
 
-                if (attempt >= SwitchMaxAttempts)
+                // Inventory-driven weapon appearance and the selector callback are asynchronous.
+                // Keep the short limit only for a non-transient ChangeToMain rejection.
+                int maxAttempts = IsTransientSwitchBlockReason(blockReason)
+                    ? TransientSwitchMaxAttempts
+                    : SwitchMaxAttempts;
+                if (attempt >= maxAttempts)
                 {
                     LogFinalFailure(bot, weapon, context, attempt, blockReason);
                     return false;
@@ -302,12 +321,80 @@ namespace pitTeam.Modules
                 return "reloading";
             }
 
-            if (!weaponManager.CanChangeHands())
+            return string.Empty;
+        }
+
+        private static bool CanContinueWeaponSwitch(BotOwner bot, out string reason)
+        {
+            reason = string.Empty;
+            if (bot == null)
             {
-                return "handsBusy";
+                reason = "botMissing";
+                return false;
             }
 
-            return string.Empty;
+            if (bot.IsDead)
+            {
+                reason = "botDead";
+                return false;
+            }
+
+            if (bot.BotState != EBotState.Active)
+            {
+                reason = $"botState:{bot.BotState}";
+                return false;
+            }
+
+            Player player = bot.GetPlayer;
+            if (player == null)
+            {
+                reason = "playerMissing";
+                return false;
+            }
+
+            if (player.HealthController?.IsAlive != true)
+            {
+                reason = "playerDead";
+                return false;
+            }
+
+            if (player.HandsController == null)
+            {
+                reason = "handsControllerMissing";
+                return false;
+            }
+
+            return true;
+        }
+
+        private static void TryRecoverStuckSelectorTransition(
+            BotOwner bot,
+            BotWeaponSelector selector,
+            int attempt)
+        {
+            if (selector?.IsChanging != true ||
+                attempt < StuckSelectorRecoveryAttempt ||
+                (attempt - StuckSelectorRecoveryAttempt) % StuckSelectorRecoveryInterval != 0)
+            {
+                return;
+            }
+
+            try
+            {
+                // LootingBots uses the same recovery after inventory-driven weapon changes. Give
+                // the normal draw animation several ticks first, then finish only a stuck current
+                // hands state so EFT's pending selector callback can complete normally.
+                bot.GetPlayer.HandsController.FastForwardCurrentState();
+                Logger.LogInfo(
+                    $"[LootCommand][WeaponRegistration] follower='{bot.Profile?.Nickname ?? bot.ProfileId ?? "unknown"}' " +
+                    $"result=selectorRecovery attempt={attempt}");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogInfo(
+                    $"[LootCommand][WeaponRegistration] follower='{bot?.Profile?.Nickname ?? bot?.ProfileId ?? "unknown"}' " +
+                    $"result=selectorRecoveryFailed attempt={attempt} reason={ex.Message}");
+            }
         }
 
         private static void QueueRetry(BotOwner bot, Weapon weapon, string context, int attempt)
@@ -342,7 +429,10 @@ namespace pitTeam.Modules
             int attempt,
             string reason)
         {
-            if (attempt < SwitchMaxAttempts)
+            int maxAttempts = IsTransientSwitchBlockReason(reason)
+                ? TransientSwitchMaxAttempts
+                : SwitchMaxAttempts;
+            if (attempt < maxAttempts)
             {
                 return;
             }
@@ -351,6 +441,26 @@ namespace pitTeam.Modules
                 $"[LootCommand] Looted primary switch did not complete for " +
                 $"'{bot?.Profile?.Nickname ?? bot?.ProfileId ?? "unknown"}' ({context}): " +
                 $"{weapon?.TemplateId ?? "unknown"} reason={reason}");
+        }
+
+        private static void LogAbortedSwitch(
+            BotOwner bot,
+            Weapon weapon,
+            string context,
+            string reason)
+        {
+            Logger.LogInfo(
+                $"[LootCommand] Looted primary switch stopped for " +
+                $"'{bot?.Profile?.Nickname ?? bot?.ProfileId ?? "unknown"}' ({context}): " +
+                $"{weapon?.TemplateId ?? "unknown"} reason={reason}");
+        }
+
+        private static bool IsTransientSwitchBlockReason(string reason)
+        {
+            return string.Equals(reason, "selectorChanging", StringComparison.Ordinal) ||
+                   string.Equals(reason, "weaponNotReady", StringComparison.Ordinal) ||
+                   string.Equals(reason, "reloading", StringComparison.Ordinal) ||
+                   string.Equals(reason, "switchRequested", StringComparison.Ordinal);
         }
 
         private static bool IsSameItem(Item first, Item second)

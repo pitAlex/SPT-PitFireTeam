@@ -360,11 +360,15 @@ namespace pitTeam.BigBrain.Actions
                 IEnumerable<BodyGearCandidate>? operationalMagazineCandidates = candidate.Item is Weapon weapon
                     ? GetBodyOperationalMagazineCandidates(corpseEquipment, weapon)
                     : null;
+                IEnumerable<BodyGearCandidate>? operationalAmmoCandidates = candidate.Item is Weapon internalWeapon
+                    ? GetBodyWeaponLooseAmmoCandidates(corpseEquipment, internalWeapon)
+                    : null;
                 if (!TryBuildFilteredLootMove(
                         inventory,
                         followerEquipment,
                         candidate,
                         operationalMagazineCandidates,
+                        operationalAmmoCandidates,
                         out BodyGearMove? move))
                 {
                     bodyLootAttemptedItemIds.Add(candidate.Item.Id);
@@ -404,7 +408,7 @@ namespace pitTeam.BigBrain.Actions
             // Mark it before building so a full inventory cannot trap the planner on the dogtag.
             // Dogtags still bypass filters and only use the normal backpack/pocket carry containers.
             bodyLootAttemptedItemIds.Add(candidate.Item.Id);
-            if (!TryBuildFilteredLootMove(inventory, followerEquipment, candidate, null, out BodyGearMove move))
+            if (!TryBuildFilteredLootMove(inventory, followerEquipment, candidate, null, null, out BodyGearMove move))
             {
                 bodyLootHadEligibleButNoSpace = true;
                 Modules.Logger.LogInfo(
@@ -500,6 +504,7 @@ namespace pitTeam.BigBrain.Actions
             InventoryEquipment followerEquipment,
             BodyGearCandidate candidate,
             IEnumerable<BodyGearCandidate>? operationalMagazineCandidates,
+            IEnumerable<BodyGearCandidate>? operationalAmmoCandidates,
             out BodyGearMove? move)
         {
             move = null;
@@ -517,6 +522,7 @@ namespace pitTeam.BigBrain.Actions
                         followerEquipment,
                         candidate,
                         operationalMagazineCandidates,
+                        operationalAmmoCandidates,
                         out move,
                         out bool handledByGearPolicy))
                 {
@@ -537,13 +543,24 @@ namespace pitTeam.BigBrain.Actions
                     followerEquipment,
                     candidate.Item as Weapon,
                     operationalMagazineCandidates);
-                return TryBuildPotentialWeaponCargoChain(
+                bool builtCargoPackage = TryBuildPotentialWeaponCargoChain(
                     inventory,
                     followerEquipment,
                     candidate,
                     cargoMagazinePlan,
                     "filteredPotentialWeaponCargo",
                     out move);
+                if (builtCargoPackage && move != null && candidate.Item is Weapon cargoWeapon)
+                {
+                    move = AppendWeaponLooseAmmoSupportFollowUps(
+                        move,
+                        followerEquipment,
+                        cargoWeapon,
+                        operationalAmmoCandidates,
+                        "potentialWeaponCargo");
+                }
+
+                return builtCargoPackage;
             }
 
             if (ShouldUseFilteredLootEquipmentSlot(candidate) &&
@@ -557,6 +574,16 @@ namespace pitTeam.BigBrain.Actions
                     // Unlike the inert secondary-only gear-plan holder, this is usable equipment.
                     successPhrase: EPhraseTrigger.LootWeapon))
             {
+                if (candidate.Item is Weapon slottedWeapon)
+                {
+                    move = AppendWeaponLooseAmmoSupportFollowUps(
+                        move,
+                        followerEquipment,
+                        slottedWeapon,
+                        operationalAmmoCandidates,
+                        "filteredWeaponSlot");
+                }
+
                 return true;
             }
 
@@ -570,6 +597,16 @@ namespace pitTeam.BigBrain.Actions
 
                 if (TryCreateBodyGearMove(inventory, candidate, packAddress, out move))
                 {
+                    if (candidate.Item is Weapon cargoWeapon)
+                    {
+                        move = AppendWeaponLooseAmmoSupportFollowUps(
+                            move,
+                            followerEquipment,
+                            cargoWeapon,
+                            operationalAmmoCandidates,
+                            "filteredWeaponCargo");
+                    }
+
                     return true;
                 }
             }
@@ -749,7 +786,10 @@ namespace pitTeam.BigBrain.Actions
                 Item completedItem = ResolveCompletedBodyGearMoveItem(move, result?.Succeed == true);
                 bool stagingApplied = move.IsStagingOperation &&
                                       move.StagingWeapon != null &&
-                                      IsItemInsideRoot(move.Item, move.StagingWeapon);
+                                      (IsItemInsideRoot(move.Item, move.StagingWeapon) ||
+                                       (move.StagingWeaponLoadedRoundsBefore >= 0 &&
+                                        FollowerWeaponInternalReadiness.GetLoadedRounds(move.StagingWeapon) >
+                                        move.StagingWeaponLoadedRoundsBefore));
                 if (result?.Succeed == true ||
                     stagingApplied ||
                     IsLootNowInBotInventory(BotOwner?.GetPlayer, completedItem))
@@ -787,7 +827,9 @@ namespace pitTeam.BigBrain.Actions
 
                     if (completedItem is Weapon && completedItem.GetItemComponent<KnifeComponent>() == null)
                     {
-                        if (move.RebindAsPrimaryWeapon)
+                        Weapon slottedPrimary = BotOwner?.GetPlayer?.InventoryController?.Inventory?.Equipment
+                            ?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem as Weapon;
+                        if (move.RebindAsPrimaryWeapon || IsSameLootItem(slottedPrimary, completedItem))
                         {
                             RebindLootedPrimaryWeapon(completedItem as Weapon);
                         }

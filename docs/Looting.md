@@ -100,8 +100,8 @@ Current assignment:
 - requires `InteractableObjects.GetCurBodyLootTarget()`
 - only saved teammates spawned through the raid squad flow can be assigned; recruited/picked-up followers are ignored even if they are otherwise squad-managed
 - teammate corpses choose the closest eligible squadmate
-- non-teammate corpses choose the closest eligible loot carrier within 22m
-- non-teammate assignment ignores followers with no free backpack/pocket grid area
+- non-teammate corpses prefer the closest eligible loot carrier within 22m that has free backpack/pocket grid area
+- when no follower in range has ordinary cargo room and `Allow Gear Swapping` is enabled, assignment falls back to the closest eligible follower so the real planner can still use an empty weapon slot or operational vest space
 - ownership is reserved through `InteractableObjects.SetBodyLootTaker(...)`
 - an explicit player `Check Him` / `Loot Body` order may revisit a corpse that a follower already completed
 - checked-body history is retained for autonomous `Go loot` selection, which skips completed corpses
@@ -182,8 +182,8 @@ Current assignment:
 - an active reservation still prevents two followers from searching the same container
 - only saved teammates spawned through the raid squad flow can be assigned; recruited/picked-up followers are ignored even if they are otherwise squad-managed
 - locked or inactive containers are ignored
-- chooses the closest eligible loot carrier within 22m
-- ignores followers with no free backpack/pocket grid area
+- prefers the closest eligible loot carrier within 22m that has free backpack/pocket grid area
+- when no follower in range has ordinary cargo room and `Allow Gear Swapping` is enabled, assignment falls back to the closest eligible follower so the real planner can still use an empty weapon slot or operational vest space
 - ownership is reserved through `InteractableObjects.SetContainerLootTaker(...)`
 - command timeout is 75 seconds
 
@@ -415,20 +415,53 @@ Rules:
 - if `Holster` is empty, a valid pistol may be equipped there
 - if the matching slot is occupied, do not replace it in the empty-slot phase
 - still register the moved weapon tree as looted so patrol reload maintenance does not feed spawned magazines into cargo/support weapons
-- after equip, refresh selector slot caches, rebuild `WeaponManager.Info[FirstPrimaryWeapon]` for the new weapon, and request a main-hand switch when hands can safely change
+- after equip, refresh selector slot caches, rebuild `WeaponManager.Info[FirstPrimaryWeapon]` for the new weapon, and request the normal vanilla main-hand transition
 - if a tracked looted weapon was already held inert in second primary, register `WeaponManager.Info[SecondPrimaryWeapon]` once the new first primary exists so vanilla can use it as the real support weapon
-- if hands are temporarily busy or selector state is mid-transition, retry the main-hand switch briefly through the bot delayed-task manager and log the final blocker if the new primary never becomes active
+- do not pre-gate that request with `CanChangeHands()`: the check includes interaction/controller states that vanilla's scheduled weapon process owns and may not clear until the transition is requested
+- if selector state remains mid-transition, retry through the bot delayed-task manager and use a bounded current-state fast-forward only after the ordinary draw window; stop immediately if the follower dies or leaves the active bot state
 
 Easy weapon equip ignores min/max price and bypasses the `Pickup Gear` category filter because it is an explicit equipment plan rather than ordinary gear cargo. Supporting spare magazines bypass the normal loot filters after the weapon itself is accepted so the follower can build a usable reload pool.
 
-Known next weapon-feed case:
+### Compatible Loose-Ammunition Support
 
-- tube-fed, internal-magazine, and chamber-fed weapons, including applicable shotguns and bolt-action rifles, are not covered by the detachable-magazine planner and will need a separate loose-round loading policy
+Once a body/container weapon has been accepted as equipment or as filtered weapon cargo, compatible loose ammunition from that same source may accompany it regardless of whether the weapon uses detachable magazines or an internal feed.
+
+- loose ammunition never contributes directly to detachable-magazine readiness and does not top off magazines in this phase
+- internal-magazine weapons may first load compatible loose ammunition through their dedicated real transaction; only settled loaded rounds and fitting reserve stacks contribute to internal readiness
+- loose ammunition is placed in secure container, pockets, backpack, then tactical vest
+- tactical-vest fallback must preserve the existing long-gun and initial-holster reload landing spaces
+- source ammunition inside another weapon or magazine is not loose ammunition and is never selected by this path
+- `Simple`, `Restricted`, and `Immersive` followers count every compatible loose bullet already carried in secure container, pockets, backpack, or vest, including mixed ammo types and manually placed strict cargo
+- the normal reserve target is two stack capacities in bullets; shotguns use three stack capacities because their ordinary loose stack is smaller
+- when the carried bullet total already reaches that target, same-caliber source ammunition is ignored unless it is better than the best carried same-caliber round
+- ammo quality compares penetration first, then damage, then armor damage as deterministic tie-breaks
+- `Realistic` mode does not apply the reserve-saturation skip and takes every compatible source stack that physically fits
+- the saturation rule is decided from the follower's inventory at the start of that weapon plan; crossing the target while moving the accepted source batch does not discard later stacks from that same batch
+
+### Internal-Magazine Weapon Readiness
+
+Tube-fed and other `InternalMagazine` weapons use a separate loose-ammunition path:
+
+- the attached internal magazine capacity is the readiness reference; primary readiness requires two capacity equivalents
+- loaded contribution is the live rounds in the attached magazine plus live rounds in the chamber
+- reserve contribution comes only from compatible loose ammunition already carried in vanilla reload-search locations, or source stacks proven to fit in secure container, pockets, backpack, or reload-safe vest space
+- loose ammunition inside another magazine or weapon never counts
+- ammunition manually placed as strict cargo through `View Backpack` never counts until it is removed and reacquired through a command
+- if the attached magazine has room, the planner loads compatible source ammunition into it first through a real EFT transaction
+- the load transaction is verified by an increased live loaded-round count before reserve moves or weapon placement continue
+- compatible source reserves bypass price/category filters only inside the accepted internal-weapon plan; stacks that do not fit the shared loose-ammo destination policy remain at the source and contribute nothing
+- after all transactions settle, a ready weapon enters first primary; an under-ready loaded weapon uses empty second primary; with no equipment destination, ordinary `Pickup Gear` and price rules own cargo
+- when the follower already has a working primary, a loaded internal-magazine weapon may be added to empty second primary as usable support
+- later compatible source ammunition may complete and promote one tracked internal-magazine secondary or backpack weapon
+
+Still deferred weapon-feed cases:
+
+- `OnlyBarrel` chamber-fed weapons such as double-barrel shotguns
+- revolver cylinders
 - compatible loose ammunition may later top off partial detachable magazines and make them readiness-eligible, but those rounds must not count until a real top-off transaction succeeds
 - when several compatible magazines are partially loaded, a later repacking phase should top off the fullest useful magazines from partial donor magazines first, then evaluate readiness from the resulting settled magazine states
 - repacked ammunition must move through real inventory transactions; failed or interrupted transfers must not contribute speculatively or count donor rounds twice
-- these weapons need a separate easy-equip rule based on their loaded shells plus compatible loose ammunition found in the same body/container
-- keep this separate from detachable-magazine handling and implement/test it as its own scenario
+- keep each feed system separate from detachable-magazine handling and implement/test it as its own scenario
 
 ### Narrow Tactical-Vest Upgrade
 
@@ -578,7 +611,10 @@ Filtered body/container rules:
 Gear swapping phase 1 tests:
 
 - missing-primary weapon equip uses the centralized two-ordinary-magazine readiness formula after all planned fast-access transfers settle
-- tube-fed/internal-magazine shotgun support remains a separate loose-ammunition scenario to implement
+- tube-fed/internal-magazine weapons load the attached magazine first, then count only settled loaded rounds and fitting loose reserves toward two-load readiness
+- internal-feed loose ammunition nested in magazines/weapons or marked as strict cargo is ignored
+- accepted weapon-support loose ammunition uses secure container, pockets, backpack, then reload-safe vest space; detachable-magazine readiness remains magazine-only
+- non-Realistic followers stop taking ordinary compatible loose ammunition once their mixed carried bullet total reaches two stack capacities, or three capacities for shotgun ammunition, unless the source round is a better same-caliber type
 - large compatible spare magazines that do not fit the vest/pocket grids while preserving reload landing space do not count as operational spares
 - an under-threshold weapon uses empty secondary; with secondary occupied, only ordinary filtered cargo rules may move it into the backpack
 - a tracked under-threshold secondary weapon promotes into empty primary after later compatible fast-access ammunition makes it ready

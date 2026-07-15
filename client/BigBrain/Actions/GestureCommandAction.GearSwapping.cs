@@ -44,11 +44,14 @@ namespace pitTeam.BigBrain.Actions
                 Weapon candidateWeapon = (Weapon)swapCandidate.Item;
                 IEnumerable<BodyGearCandidate> magazineCandidates =
                     GetBodyOperationalMagazineCandidates(corpseEquipment, candidateWeapon);
+                IEnumerable<BodyGearCandidate> ammoCandidates =
+                    GetBodyWeaponLooseAmmoCandidates(corpseEquipment, candidateWeapon);
                 bool builtMove = TryBuildEasyWeaponEquipMove(
                     inventory,
                     followerEquipment,
                     swapCandidate,
                     magazineCandidates,
+                    ammoCandidates,
                     out BodyGearMove? move,
                     out bool handledByGearPolicy);
 
@@ -131,7 +134,7 @@ namespace pitTeam.BigBrain.Actions
             // disturbing current rig contents, treat it as cargo instead of throwing the old vest.
             if (CanConsiderFilteredLootCandidate(cargoCandidate, bodyLootAttemptedItemIds) &&
                 IsPotentialTacticalVestProtectionUpgrade(followerEquipment, vest) &&
-                TryBuildFilteredLootMove(inventory, followerEquipment, cargoCandidate, null, out BodyGearMove? cargoMove))
+                TryBuildFilteredLootMove(inventory, followerEquipment, cargoCandidate, null, null, out BodyGearMove? cargoMove))
             {
                 bodyLootAttemptedItemIds.Add(cargoCandidate.Item.Id);
                 if (TryQueueBodyLootMoveAfterPickupSuccess(cargoMove))
@@ -168,11 +171,14 @@ namespace pitTeam.BigBrain.Actions
                 Weapon candidateWeapon = (Weapon)swapCandidate.Item;
                 IEnumerable<BodyGearCandidate> magazineCandidates =
                     GetContainerOperationalMagazineCandidates(containerRoot, candidateWeapon);
+                IEnumerable<BodyGearCandidate> ammoCandidates =
+                    GetContainerWeaponLooseAmmoCandidates(containerRoot, candidateWeapon);
                 bool builtMove = TryBuildEasyWeaponEquipMove(
                     inventory,
                     followerEquipment,
                     swapCandidate,
                     magazineCandidates,
+                    ammoCandidates,
                     out BodyGearMove? move,
                     out bool handledByGearPolicy);
 
@@ -211,6 +217,7 @@ namespace pitTeam.BigBrain.Actions
                     inventory,
                     followerEquipment,
                     weapon => GetBodyOperationalMagazineCandidates(corpseEquipment, weapon),
+                    weapon => GetBodyWeaponLooseAmmoCandidates(corpseEquipment, weapon),
                     bodyLootAttemptedItemIds,
                     out BodyGearMove? move))
             {
@@ -236,6 +243,7 @@ namespace pitTeam.BigBrain.Actions
                     inventory,
                     followerEquipment,
                     weapon => GetContainerOperationalMagazineCandidates(containerRoot, weapon),
+                    weapon => GetContainerWeaponLooseAmmoCandidates(containerRoot, weapon),
                     containerLootAttemptedItemIds,
                     out BodyGearMove? move))
             {
@@ -256,6 +264,7 @@ namespace pitTeam.BigBrain.Actions
             InventoryController inventory,
             InventoryEquipment followerEquipment,
             Func<Weapon, IEnumerable<BodyGearCandidate>> sourceMagazineFactory,
+            Func<Weapon, IEnumerable<BodyGearCandidate>> sourceAmmoFactory,
             HashSet<string> attemptedSourceItemIds,
             out BodyGearMove? move)
         {
@@ -267,11 +276,33 @@ namespace pitTeam.BigBrain.Actions
                 inventory == null ||
                 followerEquipment == null ||
                 sourceMagazineFactory == null ||
+                sourceAmmoFactory == null ||
                 followerEquipment.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem != null ||
                 supportWeapon == null ||
                 !IsEasyWeaponEquipCandidate(new BodyGearCandidate(supportWeapon, null, "FollowerSecondPrimary", 0)) ||
-                !HasInsertedMagazine(supportWeapon) ||
                 !InteractableObjects.IsLootedWeapon(BotOwner, supportWeapon))
+            {
+                return false;
+            }
+
+            if (FollowerWeaponInternalReadiness.IsInternalMagazineWeapon(supportWeapon))
+            {
+                IEnumerable<BodyGearCandidate> internalAmmoCandidates = sourceAmmoFactory(supportWeapon)
+                    .Where(candidate =>
+                        candidate?.Item != null &&
+                        !string.IsNullOrEmpty(candidate.Item.Id) &&
+                        !attemptedSourceItemIds.Contains(candidate.Item.Id));
+                return TryBuildInternalExistingWeaponPromotionChain(
+                    inventory,
+                    followerEquipment,
+                    supportWeapon,
+                    internalAmmoCandidates,
+                    BodyGearFollowUpDestination.EvaluateSecondaryWeaponPromotion,
+                    "secondaryInternalSourcePromotion",
+                    out move);
+            }
+
+            if (!HasInsertedMagazine(supportWeapon))
             {
                 return false;
             }
@@ -376,6 +407,7 @@ namespace pitTeam.BigBrain.Actions
                     inventory,
                     followerEquipment,
                     weapon => GetBodyOperationalMagazineCandidates(corpseEquipment, weapon),
+                    weapon => GetBodyWeaponLooseAmmoCandidates(corpseEquipment, weapon),
                     bodyLootAttemptedItemIds,
                     out BodyGearMove? move))
             {
@@ -401,6 +433,7 @@ namespace pitTeam.BigBrain.Actions
                     inventory,
                     followerEquipment,
                     weapon => GetContainerOperationalMagazineCandidates(containerRoot, weapon),
+                    weapon => GetContainerWeaponLooseAmmoCandidates(containerRoot, weapon),
                     containerLootAttemptedItemIds,
                     out BodyGearMove? move))
             {
@@ -421,6 +454,7 @@ namespace pitTeam.BigBrain.Actions
             InventoryController inventory,
             InventoryEquipment followerEquipment,
             Func<Weapon, IEnumerable<BodyGearCandidate>> sourceMagazineFactory,
+            Func<Weapon, IEnumerable<BodyGearCandidate>> sourceAmmoFactory,
             HashSet<string> attemptedSourceItemIds,
             out BodyGearMove? move)
         {
@@ -429,6 +463,7 @@ namespace pitTeam.BigBrain.Actions
                 inventory == null ||
                 followerEquipment == null ||
                 sourceMagazineFactory == null ||
+                sourceAmmoFactory == null ||
                 followerEquipment.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem != null)
             {
                 return false;
@@ -436,6 +471,28 @@ namespace pitTeam.BigBrain.Actions
 
             foreach (Weapon cargoWeapon in GetPromotableBackpackCargoWeapons(followerEquipment))
             {
+                if (FollowerWeaponInternalReadiness.IsInternalMagazineWeapon(cargoWeapon))
+                {
+                    IEnumerable<BodyGearCandidate> internalAmmoCandidates = sourceAmmoFactory(cargoWeapon)
+                        .Where(candidate =>
+                            candidate?.Item != null &&
+                            !string.IsNullOrEmpty(candidate.Item.Id) &&
+                            !attemptedSourceItemIds.Contains(candidate.Item.Id));
+                    if (TryBuildInternalExistingWeaponPromotionChain(
+                            inventory,
+                            followerEquipment,
+                            cargoWeapon,
+                            internalAmmoCandidates,
+                            BodyGearFollowUpDestination.EvaluateCargoWeaponPromotion,
+                            "cargoInternalSourcePromotion",
+                            out move))
+                    {
+                        return true;
+                    }
+
+                    continue;
+                }
+
                 List<BodyGearCandidate> sourceMagazineCandidates = sourceMagazineFactory(cargoWeapon)
                     .Where(candidate =>
                         candidate?.Item != null &&
@@ -844,6 +901,7 @@ namespace pitTeam.BigBrain.Actions
             InventoryEquipment followerEquipment,
             BodyGearCandidate candidate,
             IEnumerable<BodyGearCandidate>? operationalMagazineCandidates,
+            IEnumerable<BodyGearCandidate>? operationalAmmoCandidates,
             out BodyGearMove? move,
             out bool handledByGearPolicy)
         {
@@ -855,6 +913,20 @@ namespace pitTeam.BigBrain.Actions
             {
                 return false;
             }
+
+            if (FollowerWeaponInternalReadiness.IsInternalMagazineWeapon(weapon))
+            {
+                return TryBuildInternalMagazineWeaponEquipChain(
+                    inventory,
+                    followerEquipment,
+                    candidate,
+                    operationalAmmoCandidates,
+                    out move,
+                    out handledByGearPolicy);
+            }
+
+            List<BodyGearCandidate> sourceLooseAmmoCandidates = operationalAmmoCandidates?
+                .ToList() ?? new List<BodyGearCandidate>();
 
             // A working primary makes an empty second-primary slot a real vanilla support role.
             // This is an add, not a replacement: source magazines may join only when they fit in
@@ -868,6 +940,12 @@ namespace pitTeam.BigBrain.Actions
                         operationalMagazineCandidates,
                         out move))
                 {
+                    move = AppendWeaponLooseAmmoSupportFollowUps(
+                        move,
+                        followerEquipment,
+                        weapon,
+                        sourceLooseAmmoCandidates,
+                        "newSecondaryWeapon");
                     handledByGearPolicy = true;
                     return true;
                 }
@@ -915,12 +993,23 @@ namespace pitTeam.BigBrain.Actions
                     return false;
                 }
 
-                return TryBuildInsertedMagazineWeaponEquipChain(
-                    inventory,
+                if (!TryBuildInsertedMagazineWeaponEquipChain(
+                        inventory,
+                        followerEquipment,
+                        candidate,
+                        magazinePlan,
+                        out move))
+                {
+                    return false;
+                }
+
+                move = AppendWeaponLooseAmmoSupportFollowUps(
+                    move,
                     followerEquipment,
-                    candidate,
-                    magazinePlan,
-                    out move);
+                    weapon,
+                    sourceLooseAmmoCandidates,
+                    "newPrimaryWeapon");
+                return true;
             }
 
             if (TryBuildEmptyWeaponMagazineInsertionMove(
@@ -1526,7 +1615,18 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            WeaponPrimaryReadinessSnapshot actual = FollowerWeaponPrimaryReadiness.EvaluateActual(inventory, weapon);
+            if (FollowerWeaponInternalReadiness.IsInternalMagazineWeapon(weapon))
+            {
+                return TryBuildInternalPostTransferWeaponDestinationMove(
+                    inventory,
+                    followerEquipment,
+                    candidate,
+                    out move,
+                    out destination,
+                    out reason);
+            }
+
+            WeaponPrimaryReadinessSnapshot actual = EvaluateActualWeaponReadiness(inventory, weapon);
             // A sufficiently loaded high-capacity inserted magazine can sustain the weapon by
             // itself. Otherwise preserve room for that inserted magazine to land during reload.
             bool insertedContributionIsSufficient = actual.InsertedContribution >= actual.Threshold;
@@ -1666,7 +1766,19 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            WeaponPrimaryReadinessSnapshot actual = FollowerWeaponPrimaryReadiness.EvaluateActual(inventory, weapon);
+            if (FollowerWeaponInternalReadiness.IsInternalMagazineWeapon(weapon))
+            {
+                return TryBuildInternalStoredWeaponPromotionMove(
+                    inventory,
+                    followerEquipment,
+                    candidate,
+                    evaluationKind,
+                    retainedDestination,
+                    out move,
+                    out reason);
+            }
+
+            WeaponPrimaryReadinessSnapshot actual = EvaluateActualWeaponReadiness(inventory, weapon);
             if (!actual.PrimaryReady ||
                 actual.RequiresMagazineLoad ||
                 !FollowerWeaponPrimaryReadiness.HasInsertedMagazineReloadLandingSpace(
@@ -1761,13 +1873,23 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
+            if (FollowerWeaponInternalReadiness.IsInternalMagazineWeapon(weapon))
+            {
+                return TryBuildInternalOperationalSecondaryWeaponEquipMove(
+                    inventory,
+                    followerEquipment,
+                    candidate,
+                    out move,
+                    out reason);
+            }
+
             if (followerEquipment?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem is not Weapon)
             {
                 reason = "primaryMissing";
                 return false;
             }
 
-            WeaponPrimaryReadinessSnapshot actual = FollowerWeaponPrimaryReadiness.EvaluateActual(inventory, weapon);
+            WeaponPrimaryReadinessSnapshot actual = EvaluateActualWeaponReadiness(inventory, weapon);
             bool usable = actual.HasInsertedMagazine &&
                           (actual.InsertedRounds > 0 || actual.FastAccessMagazineRounds.Any(rounds => rounds > 0));
             if (!usable)
@@ -1888,6 +2010,47 @@ namespace pitTeam.BigBrain.Actions
                 if (ammoSalvageResult == AmmoSalvageFollowUpResult.Continue)
                 {
                     continue;
+                }
+
+                if (candidate?.FollowUpDestination == BodyGearFollowUpDestination.WeaponSupportLooseAmmo)
+                {
+                    if (!TryBuildWeaponLooseAmmoMove(
+                            inventory,
+                            followerEquipment,
+                            candidate,
+                            requireWeaponOnFollower: true,
+                            out BodyGearMove? looseAmmoMove,
+                            out string looseAmmoReason))
+                    {
+                        Modules.Logger.LogInfo(
+                            $"[LootCommand][LooseAmmo] Body follow-up skipped: " +
+                            $"reason={looseAmmoReason} item={DescribeLootDebugItem(candidate?.Item)}");
+                        continue;
+                    }
+
+                    bodyLootAttemptedItemIds.Add(candidate.Item.Id);
+                    StartBodyGearMove(inventory, looseAmmoMove);
+                    return true;
+                }
+
+                if (candidate?.FollowUpDestination == BodyGearFollowUpDestination.InternalAmmoCarry)
+                {
+                    if (!TryBuildInternalAmmoCarryMove(
+                            inventory,
+                            followerEquipment,
+                            candidate,
+                            out BodyGearMove? internalAmmoMove,
+                            out string internalAmmoReason))
+                    {
+                        Modules.Logger.LogInfo(
+                            $"[LootCommand][InternalReadiness] Body reserve-ammo follow-up skipped: " +
+                            $"reason={internalAmmoReason} item={DescribeLootDebugItem(candidate?.Item)}");
+                        continue;
+                    }
+
+                    bodyLootAttemptedItemIds.Add(candidate.Item.Id);
+                    StartBodyGearMove(inventory, internalAmmoMove);
+                    return true;
                 }
 
                 if (candidate?.Item is VestItemClass)
@@ -2096,6 +2259,47 @@ namespace pitTeam.BigBrain.Actions
                 if (ammoSalvageResult == AmmoSalvageFollowUpResult.Continue)
                 {
                     continue;
+                }
+
+                if (candidate?.FollowUpDestination == BodyGearFollowUpDestination.WeaponSupportLooseAmmo)
+                {
+                    if (!TryBuildWeaponLooseAmmoMove(
+                            inventory,
+                            followerEquipment,
+                            candidate,
+                            requireWeaponOnFollower: true,
+                            out BodyGearMove? looseAmmoMove,
+                            out string looseAmmoReason))
+                    {
+                        Modules.Logger.LogInfo(
+                            $"[LootCommand][LooseAmmo] Container follow-up skipped: " +
+                            $"reason={looseAmmoReason} item={DescribeLootDebugItem(candidate?.Item)}");
+                        continue;
+                    }
+
+                    containerLootAttemptedItemIds.Add(candidate.Item.Id);
+                    StartContainerLootMove(inventory, looseAmmoMove);
+                    return true;
+                }
+
+                if (candidate?.FollowUpDestination == BodyGearFollowUpDestination.InternalAmmoCarry)
+                {
+                    if (!TryBuildInternalAmmoCarryMove(
+                            inventory,
+                            followerEquipment,
+                            candidate,
+                            out BodyGearMove? internalAmmoMove,
+                            out string internalAmmoReason))
+                    {
+                        Modules.Logger.LogInfo(
+                            $"[LootCommand][InternalReadiness] Container reserve-ammo follow-up skipped: " +
+                            $"reason={internalAmmoReason} item={DescribeLootDebugItem(candidate?.Item)}");
+                        continue;
+                    }
+
+                    containerLootAttemptedItemIds.Add(candidate.Item.Id);
+                    StartContainerLootMove(inventory, internalAmmoMove);
+                    return true;
                 }
 
                 if (candidate?.Item is VestItemClass)

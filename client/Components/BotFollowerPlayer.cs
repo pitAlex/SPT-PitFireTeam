@@ -2849,7 +2849,10 @@ namespace pitTeam.Components
             evaluation = "secondaryPromotion";
             if (IsTrackedPrimaryCandidate(owner, weapon))
             {
-                readiness = FollowerWeaponPrimaryReadiness.EvaluateActual(inventory, weapon);
+                readiness = FollowerWeaponPrimaryReadiness.EvaluateActual(
+                    inventory,
+                    weapon,
+                    ammo => !InteractableObjects.IsStrictCargoItem(owner, ammo));
                 if (IsPrimaryReadyWithReloadLandingSpace(equipment, weapon, readiness))
                 {
                     // The tracked support weapon keeps priority. Wait until it leaves the hands
@@ -2874,7 +2877,10 @@ namespace pitTeam.Components
                 .Select(group => group.First())
                 .Select(candidate => (
                     Weapon: candidate,
-                    Readiness: FollowerWeaponPrimaryReadiness.EvaluateActual(inventory, candidate)))
+                    Readiness: FollowerWeaponPrimaryReadiness.EvaluateActual(
+                        inventory,
+                        candidate,
+                        ammo => !InteractableObjects.IsStrictCargoItem(owner, ammo))))
                 .Where(candidate => IsPrimaryReadyWithReloadLandingSpace(
                     equipment,
                     candidate.Weapon,

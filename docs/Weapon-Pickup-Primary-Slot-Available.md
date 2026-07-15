@@ -136,6 +136,7 @@ Known baseline differences from this contract:
 | P4 | Commanded loose weapon/magazine pickup integration without changing non-weapon pickup or voice behavior | Implemented; runtime retest pending |
 | P5 | Support-to-primary reevaluation and safe promotion | Implemented; happy-path runtime passed |
 | P6 | Failure hardening, ownership/return verification, final player documentation | Not started |
+| P7 | Internal-magazine readiness, real tube loading, loose-ammo carry planning, and later promotion | Implemented; ready-primary and partial-fit runtime paths passed |
 
 ## Phase P1 Contract
 
@@ -345,6 +346,15 @@ Unless specified otherwise, the ordinary reference is 30 and the threshold is 60
 | WI-26 | Holster occupied, found pistol passes ordinary gear/price filters but its magazines do not | Move only the pistol as ordinary cargo; magazines retain normal filters | Cargo boundary | Implemented; runtime pending |
 | WI-27 | No-inserted-magazine weapon has three compatible source magazines but reload-safe fast access accepts only the insertion magazine and one spare | Equip the ready weapon, leave the third magazine shell at the source, and move its consolidated ammo stacks in secure/pockets/backpack/vest order without consuming reload reserve | P3 ammo salvage | Passed through combined staging and overflow-salvage runtime coverage |
 | WI-28 | Follower spawned with a holstered pistol using a two-cell magazine and also has an equipped long gun | Vest-fallback ammo must preserve independent landing footprints for the largest compatible long-gun and pistol magazines; a raid-acquired pistol must not add the second reserve | P3 ammo salvage | Implemented; runtime pending |
+| WI-29 | Empty-primary follower finds an internal-magazine weapon with enough compatible loose ammunition for two tube loads | Load the attached magazine first through a real EFT transaction, move fitting loose reserves in secure/pockets/backpack/reload-safe-vest order, then equip and register primary from settled counts | P7 | Runtime passed for loaded M870 plus fitting reserve |
+| WI-30 | Internal-magazine weapon plus loose ammunition remains below two-load readiness | Keep the loaded weapon in empty second primary; do not register it as the main weapon | P7 | Implemented; runtime pending |
+| WI-31 | Internal-magazine weapon is ready but only some source stacks fit the protected loose-ammo destinations | Count only the rounds loaded into the weapon and loose stacks accepted by the executable carry plan | P7 | Runtime passed |
+| WI-32 | Tracked internal-magazine secondary later finds enough compatible loose ammunition | Load the attached magazine first when space remains, carry fitting source rounds, then promote from the final live state | P7 | Implemented; runtime pending |
+| WI-33 | Loose ammunition is inside another weapon or magazine, or was manually placed as strict cargo | It does not contribute to internal-feed readiness | P7 | Implemented; runtime pending |
+| WI-34 | Accepted detachable-magazine weapon has compatible loose ammunition beside its magazines | Carry fitting loose ammunition in secure/pockets/backpack/reload-safe-vest order, but do not count it toward detachable readiness | P7 loose-ammo support | Implemented; runtime pending |
+| WI-35 | Non-Realistic follower already carries the compatible bullet target across mixed loose-ammo stacks | Ignore ordinary source ammunition; count bullets, not stack objects | P7 loose-ammo support | Implemented; runtime pending |
+| WI-36 | Saturated non-Realistic follower finds a better same-caliber round | Take the better source stack when it fits; compare penetration, then damage, then armor damage | P7 loose-ammo support | Implemented; runtime pending |
+| WI-37 | Realistic follower already carries the normal compatible bullet target | Ignore saturation and take every compatible source stack that fits | P7 loose-ammo support | Implemented; runtime pending |
 
 ## Backpack Spare Scenario Matrix
 
@@ -383,6 +393,8 @@ This ledger records observed in-raid results. `Implemented` elsewhere in this do
 | RT-20 | RT-19 trees were taken back out through `View Backpack` | Close bookkeeping logged `removedFromBackpack` and cleared all 15 strict IDs | Passed |
 | RT-21 | Removed weapon was reacquired through the old generic `Loot This` path with one full magazine | EFT incorrectly placed it directly in first primary without readiness; selection exhausted retries with `handsBusy` | Bug reproduced; explicit P4 placement/hand-release fix implemented, runtime retest pending |
 | RT-22 | Empty-weapon source-magazine staging was already verified; a later ready weapon had one fitting source spare and two additional magazines rejected by reload-safe fast-access fit | The fitting spare moved to the vest, readiness reached `65/60`, the weapon entered first primary and was selected, and both overflow magazines were emptied into the secure container without consuming reload reserve | Passed; together with the earlier staging test, closes WI-27 |
+| RT-23 | Empty internal-magazine shotgun plus loose source ammunition | The load reached `8` live rounds, but pre-load source references were then reused as reserve moves; the shotgun appeared empty while the loose ammunition reached the backpack | Bug reproduced; staging now discards the pre-load ammo plan and rebuilds from live state, runtime retest pending |
+| RT-24 | Empty-primary follower found a loaded M870 and two compatible 20-round shell stacks, with protected inventory room for only one stack | Planner accepted one stack, rejected the other before execution, calculated `8 + 20 = 28` against the internal-capacity threshold of `14`, moved the accepted stack to tactical vest, equipped first primary, and completed vanilla selection on retry 3 | Passed; closes the loaded form of WI-29 and the partial-fit boundary WI-31 |
 
 Not yet runtime-covered:
 
@@ -395,13 +407,21 @@ Not yet runtime-covered:
 - promotion while primary becomes occupied, hands become busy, combat starts, or the follower dies during the sequence
 - post-raid return/persistence after a secondary-to-primary promotion in each loadout-management mode
 - mixed provenance: one manual strict-cargo magazine plus one command-acquired compatible magazine
-- no-inserted-magazine weapons, tube-fed/internal-magazine shotguns, revolvers, and loose-ammunition feed policy
+- empty internal-magazine staging retest from `RT-23`, plus under-ready and later-promotion scenarios `WI-30` and `WI-32`
+- nested/manual strict-cargo exclusion scenario `WI-33`
+- loose-ammunition support and saturation scenarios `WI-34` through `WI-37`
+- `OnlyBarrel` chamber-fed weapons and revolvers
 
-## Deferred Feed-System Revisit
+## Feed-System Revisit
 
-The current phase is intentionally limited to detachable magazines in their existing loaded state. Later phases must revisit weapon readiness from different ownership and transaction models:
+Internal-magazine weapons now have a separate first implementation. Their reference is the attached magazine capacity, their readiness threshold is two complete capacity equivalents, and their contribution is the rounds already in the attached magazine/chamber plus compatible loose reserve rounds that are already carried or proven to fit in secure container, pockets, backpack, or reload-safe vest space. Before equipment placement, compatible source ammunition fills the attached magazine through a real EFT load transaction. A failed or interrupted load contributes nothing.
 
-- tube-fed, internal-magazine, and chamber-fed weapons, including applicable shotguns and bolt-action rifles, need readiness based on rounds already in the weapon plus compatible loose cartridges that can actually be loaded
+The internal-feed path deliberately excludes loose rounds nested inside another weapon or magazine and strict cargo placed manually through `View Backpack` from readiness. The shared saturation check still counts all compatible loose bullets physically carried by a non-Realistic follower, including strict cargo, so manual cargo can prevent unnecessary collection without silently becoming usable gear. The path supports later source-ammo promotion for one tracked second-primary or backpack weapon. It does not change detachable-magazine fast-access rules.
+
+Later phases still need these distinct ownership and transaction models:
+
+- `OnlyBarrel` chamber-fed weapons, including double-barrel shotguns, need a chamber-capacity policy rather than the attached-magazine formula
+- revolvers need cylinder-aware loading and readiness
 - detachable-magazine weapons need a magazine top-off phase where compatible loose ammunition can fill an inserted or spare magazine and make that magazine eligible for readiness
 - multiple compatible partially loaded magazines need a repacking phase: transfer ammunition from donor magazines into compatible target magazines to create the fullest practical magazine states before evaluating readiness
 
@@ -429,6 +449,15 @@ Each snapshot should identify:
 The final placement phases must log one additional post-transfer `actual` snapshot immediately before selecting primary, support, backpack, or leave-at-source.
 
 ## Progress Log
+
+### 2026-07-15
+
+- Added P7 loose-ammunition support for accepted weapons and a separate `InternalMagazine` readiness model based on settled loaded rounds plus executable compatible loose reserves.
+- Added real internal-feed loading before final placement, live-state replanning after staging, protected loose-ammo destinations, mixed-bullet saturation, and better-round bypass rules.
+- Preserved the detachable-magazine boundary: loose cartridges may accompany those weapons but do not contribute to readiness until a future real top-off/repacking phase exists.
+- Allowed body/container assignment to fall back to the closest in-range gear-capable follower when every candidate has zero ordinary backpack/pocket cargo area.
+- Made the physical `FirstPrimaryWeapon` result authoritative for registration and removed the broad `CanChangeHands()` precondition from the vanilla selector request. Retries now stop on follower death/inactivity and recover only a selector transition that remains stuck past the normal draw window.
+- Runtime verified a loaded M870 with only one of two source shell stacks fitting: only the accepted stack contributed, readiness resolved to `28/14`, and the shotgun equipped and selected as primary on retry 3 without `handsBusy` failure.
 
 ### 2026-07-14
 

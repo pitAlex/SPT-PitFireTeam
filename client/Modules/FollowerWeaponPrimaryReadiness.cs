@@ -12,8 +12,17 @@ namespace pitTeam.Modules
 
         internal static WeaponPrimaryReadinessSnapshot EvaluateActual(
             InventoryController inventory,
-            Weapon weapon)
+            Weapon weapon,
+            Func<AmmoItemClass, bool>? internalAmmoEligibility = null)
         {
+            if (FollowerWeaponInternalReadiness.IsInternalMagazineWeapon(weapon))
+            {
+                return FollowerWeaponInternalReadiness.EvaluateActual(
+                    inventory,
+                    weapon,
+                    internalAmmoEligibility);
+            }
+
             return EvaluateInventoryState(inventory, weapon, null);
         }
 
@@ -29,6 +38,12 @@ namespace pitTeam.Modules
             InventoryEquipment equipment,
             Weapon weapon)
         {
+            if (FollowerWeaponInternalReadiness.IsInternalMagazineWeapon(weapon))
+            {
+                // Internal feeds never eject the attached tube into the vest or pockets.
+                return true;
+            }
+
             MagazineItemClass insertedMagazine;
             try
             {
@@ -190,6 +205,7 @@ namespace pitTeam.Modules
             {
                 pitFireTeam.Log.LogInfo(
                     $"[LootCommand][Readiness] Deterministic formula self-test passed ({scenarios.Length}/{scenarios.Length}).");
+                FollowerWeaponInternalReadiness.RunDeterministicSelfTests();
                 return;
             }
 
@@ -197,6 +213,8 @@ namespace pitTeam.Modules
             {
                 pitFireTeam.Log.LogError($"[LootCommand][Readiness] Formula self-test failed: {failure}");
             }
+
+            FollowerWeaponInternalReadiness.RunDeterministicSelfTests();
         }
 
         private static WeaponPrimaryReadinessSnapshot EvaluateInventoryState(
@@ -480,7 +498,8 @@ namespace pitTeam.Modules
             bool requiresMagazineLoad,
             string reason,
             int availableMagazineCount,
-            string referenceReason)
+            string referenceReason,
+            string feedKind = "detachableMagazine")
         {
             OrdinaryReference = ordinaryReference;
             Threshold = threshold;
@@ -496,6 +515,7 @@ namespace pitTeam.Modules
             Reason = reason;
             AvailableMagazineCount = availableMagazineCount;
             ReferenceReason = referenceReason;
+            FeedKind = feedKind;
         }
 
         public int OrdinaryReference { get; }
@@ -512,11 +532,21 @@ namespace pitTeam.Modules
         public string Reason { get; }
         public int AvailableMagazineCount { get; }
         public string ReferenceReason { get; }
+        public string FeedKind { get; }
 
         public string ToDiagnosticString()
         {
+            if (string.Equals(FeedKind, "internalMagazine", StringComparison.Ordinal))
+            {
+                return $"feed={FeedKind} capacity={OrdinaryReference} threshold={Threshold} " +
+                       $"loaded={InsertedRounds} reserveStacks={FastAccessMagazineRounds.Count} " +
+                       $"reserveRounds={FastAccessContribution} total={TotalContribution} " +
+                       $"primaryReady={PrimaryReady} requiresInternalLoad={RequiresMagazineLoad} " +
+                       $"reason={Reason} referenceSource={ReferenceReason}";
+            }
+
             string inserted = HasInsertedMagazine ? $"{InsertedRounds}/{InsertedCapacity}" : "none";
-            return $"reference={OrdinaryReference} threshold={Threshold} inserted={inserted} " +
+            return $"feed={FeedKind} reference={OrdinaryReference} threshold={Threshold} inserted={inserted} " +
                    $"insertedContribution={InsertedContribution} fastAccessMags={FastAccessMagazineRounds.Count} " +
                    $"fastAccessRounds={FastAccessContribution} total={TotalContribution} " +
                    $"primaryReady={PrimaryReady} requiresMagazineLoad={RequiresMagazineLoad} reason={Reason} " +
