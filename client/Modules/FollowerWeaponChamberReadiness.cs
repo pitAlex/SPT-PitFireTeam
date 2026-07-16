@@ -5,8 +5,14 @@ using System.Linq;
 
 namespace pitTeam.Modules
 {
-    internal static class FollowerWeaponInternalReadiness
+    /// <summary>
+    /// Readiness policy for supported <see cref="Weapon.EReloadMode.OnlyBarrel"/> weapons.
+    /// Chamber contents are the live loaded state; compatible loose rounds are the reserve.
+    /// </summary>
+    internal static class FollowerWeaponChamberReadiness
     {
+        private const int MinimumReadinessRounds = 8;
+
         private static readonly EquipmentSlot[] VanillaLooseAmmoSlots =
         {
             EquipmentSlot.Pockets,
@@ -15,11 +21,17 @@ namespace pitTeam.Modules
             EquipmentSlot.SecuredContainer
         };
 
-        internal static bool IsInternalMagazineWeapon(Weapon weapon)
+        internal static bool IsSupportedChamberWeapon(Weapon weapon)
         {
             try
             {
-                return weapon?.ReloadMode == Weapon.EReloadMode.InternalMagazine;
+                // Vanilla reload selects Chambers[0] for a single-barrel weapon and the first
+                // free chamber for a multi-barrel weapon. Weapon.Apply delegates loose ammo to
+                // those chamber slots in both cases. Launchers retain their specialized hands path.
+                return weapon?.ReloadMode == Weapon.EReloadMode.OnlyBarrel &&
+                       weapon is not GrenadeLauncherItemClass &&
+                       weapon is not RocketLauncherItemClass &&
+                       weapon.Chambers?.Length > 0;
             }
             catch
             {
@@ -50,31 +62,20 @@ namespace pitTeam.Modules
 
         internal static bool IsCompatibleLooseAmmo(Weapon weapon, AmmoItemClass ammo)
         {
-            if (!IsInternalMagazineWeapon(weapon) ||
+            if (!IsSupportedChamberWeapon(weapon) ||
                 !FollowerWeaponLooseAmmoSupport.IsCompatible(weapon, ammo))
             {
                 return false;
             }
 
-            MagazineItemClass internalMagazine;
             try
             {
-                internalMagazine = weapon.GetCurrentMagazine();
-                if (internalMagazine == null || !internalMagazine.CheckCompatibility(ammo))
-                {
-                    return false;
-                }
-
-                // RevolverItemClass feeds directly from its cylinder. The M32 and similar
-                // shoulder-fired revolvers do not expose a separate chamber slot that accepts
-                // loose ammunition, so cylinder compatibility is the final feed check.
-                if (weapon is RevolverItemClass)
-                {
-                    return true;
-                }
-
-                return weapon.Chambers != null &&
-                       weapon.Chambers.Any(chamber => chamber?.CanAccept(ammo) == true);
+                // Slot.CanAccept also checks whether a chamber is occupied. Caliber compatibility
+                // therefore remains authoritative when every chamber is already loaded.
+                string weaponCaliber = NormalizeCaliber(weapon.AmmoCaliber);
+                string ammoCaliber = NormalizeCaliber(ammo.Caliber);
+                return !string.IsNullOrEmpty(weaponCaliber) &&
+                       string.Equals(weaponCaliber, ammoCaliber, StringComparison.OrdinalIgnoreCase);
             }
             catch
             {
@@ -84,27 +85,47 @@ namespace pitTeam.Modules
 
         internal static int GetLoadedRounds(Weapon weapon)
         {
-            if (!TryReadInternalState(weapon, out _, out int magazineRounds, out int chamberRounds))
+            return TryReadChamberState(weapon, out _, out int loadedRounds)
+                ? loadedRounds
+                : 0;
+        }
+
+        internal static int GetFreeChamberCount(Weapon weapon)
+        {
+            if (!TryReadChamberState(weapon, out int capacity, out _))
             {
                 return 0;
             }
 
-            return magazineRounds + chamberRounds;
+            try
+            {
+                // Weapon.Apply can fill an empty slot off-hands. Replacing spent shells is a
+                // different vanilla operation and is intentionally not projected here.
+                int empty = weapon.Chambers.Count(chamber => chamber?.ContainedItem == null);
+                return Math.Min(capacity, Math.Max(0, empty));
+            }
+            catch
+            {
+                return 0;
+            }
         }
 
         internal static void RunDeterministicSelfTests()
         {
-            InternalReadinessScenario[] scenarios =
+            ChamberReadinessScenario[] scenarios =
             {
-                new InternalReadinessScenario("IR-01", 8, 8, new[] { 8 }, 16, true, false),
-                new InternalReadinessScenario("IR-02", 8, 8, new[] { 7 }, 15, false, false),
-                new InternalReadinessScenario("IR-03", 8, 0, new[] { 8, 8 }, 16, true, true),
-                new InternalReadinessScenario("IR-04", 8, 9, new[] { 7 }, 16, true, false),
-                new InternalReadinessScenario("IR-05", 5, 5, new[] { 5 }, 10, true, false)
+                new ChamberReadinessScenario("CR-01", 2, 2, new[] { 6 }, 8, true, false),
+                new ChamberReadinessScenario("CR-02", 2, 2, new[] { 5 }, 7, false, false),
+                new ChamberReadinessScenario("CR-03", 2, 0, new[] { 8 }, 8, true, true),
+                new ChamberReadinessScenario("CR-04", 2, 1, new[] { 7 }, 8, true, true),
+                new ChamberReadinessScenario("CR-05", 1, 1, new[] { 7 }, 8, true, false),
+                new ChamberReadinessScenario("CR-06", 1, 1, new[] { 6 }, 7, false, false),
+                new ChamberReadinessScenario("CR-07", 1, 0, new[] { 8 }, 8, true, true),
+                new ChamberReadinessScenario("CR-08", 5, 5, new[] { 5 }, 10, true, false)
             };
 
             List<string> failures = new List<string>();
-            foreach (InternalReadinessScenario scenario in scenarios)
+            foreach (ChamberReadinessScenario scenario in scenarios)
             {
                 WeaponPrimaryReadinessSnapshot result = EvaluateFormula(
                     scenario.Capacity,
@@ -123,13 +144,13 @@ namespace pitTeam.Modules
             if (failures.Count == 0)
             {
                 pitFireTeam.Log.LogInfo(
-                    $"[LootCommand][InternalReadiness] Deterministic formula self-test passed ({scenarios.Length}/{scenarios.Length}).");
+                    $"[LootCommand][ChamberReadiness] Deterministic formula self-test passed ({scenarios.Length}/{scenarios.Length}).");
                 return;
             }
 
             foreach (string failure in failures)
             {
-                pitFireTeam.Log.LogError($"[LootCommand][InternalReadiness] Formula self-test failed: {failure}");
+                pitFireTeam.Log.LogError($"[LootCommand][ChamberReadiness] Formula self-test failed: {failure}");
             }
         }
 
@@ -138,13 +159,16 @@ namespace pitTeam.Modules
             IEnumerable<int> reserveStacks,
             int? loadedRoundsOverride = null)
         {
-            if (!TryReadInternalState(weapon, out int capacity, out int magazineRounds, out int chamberRounds))
+            if (!TryReadChamberState(weapon, out int capacity, out int loadedRounds))
             {
-                return EvaluateFormula(0, 0, reserveStacks, "internalMagazineUnavailable");
+                return EvaluateFormula(0, 0, reserveStacks, "chamberCapacityUnavailable");
             }
 
-            int loadedRounds = loadedRoundsOverride ?? magazineRounds + chamberRounds;
-            return EvaluateFormula(capacity, loadedRounds, reserveStacks, "internalMagazineCapacity");
+            return EvaluateFormula(
+                capacity,
+                loadedRoundsOverride ?? loadedRounds,
+                reserveStacks,
+                "chamberCapacity");
         }
 
         private static WeaponPrimaryReadinessSnapshot EvaluateFormula(
@@ -154,33 +178,38 @@ namespace pitTeam.Modules
             string referenceReason = "provided")
         {
             int normalizedCapacity = Math.Max(0, capacity);
-            int normalizedLoadedRounds = Math.Max(0, loadedRounds);
+            int normalizedLoadedRounds = Math.Min(
+                normalizedCapacity,
+                Math.Max(0, loadedRounds));
             List<int> normalizedReserveStacks = reserveStacks?
                 .Where(count => count > 0)
                 .Select(count => Math.Max(0, count))
                 .ToList() ?? new List<int>();
             int reserveRounds = normalizedReserveStacks.Sum();
-            int threshold = normalizedCapacity > 0 ? normalizedCapacity * 2 : 0;
+            // Two chamber loads are too permissive for low-capacity weapons: a double barrel
+            // would otherwise become the combat primary with only four shells. Eight total
+            // rounds gives it a small but useful reserve while larger feeds keep the two-load rule.
+            int threshold = normalizedCapacity > 0
+                ? Math.Max(normalizedCapacity * 2, MinimumReadinessRounds)
+                : 0;
             int total = normalizedLoadedRounds + reserveRounds;
             bool primaryReady = normalizedCapacity > 0 && total >= threshold;
-            bool requiresLoad = primaryReady && normalizedLoadedRounds <= 0;
+            bool requiresLoad = primaryReady && normalizedLoadedRounds < normalizedCapacity;
 
             string reason = normalizedCapacity <= 0
-                ? "internalCapacityUnavailable"
+                ? "chamberCapacityUnavailable"
                 : primaryReady && requiresLoad
-                ? "readyRequiresInternalLoad"
+                ? "readyRequiresChamberLoad"
                 : primaryReady
                 ? "ready"
                 : normalizedLoadedRounds <= 0 && reserveRounds <= 0
-                ? "noLoadedOrReserveAmmo"
+                ? "noChamberedOrReserveAmmo"
                 : "insufficientUsableRounds";
 
-            // Reuse the common readiness snapshot so primary binding and later promotion have one
-            // contract. For internal feeds, the spare-round list represents loose reserve stacks.
             return new WeaponPrimaryReadinessSnapshot(
                 normalizedCapacity,
                 threshold,
-                hasInsertedMagazine: normalizedCapacity > 0,
+                hasInsertedMagazine: normalizedLoadedRounds > 0,
                 insertedRounds: normalizedLoadedRounds,
                 insertedCapacity: normalizedCapacity,
                 insertedContribution: normalizedLoadedRounds,
@@ -192,7 +221,7 @@ namespace pitTeam.Modules
                 reason: reason,
                 availableMagazineCount: normalizedReserveStacks.Count,
                 referenceReason: referenceReason,
-                feedKind: "internalMagazine");
+                feedKind: "chamberFed");
         }
 
         private static IEnumerable<AmmoItemClass> GetCompatibleLooseAmmo(
@@ -201,7 +230,7 @@ namespace pitTeam.Modules
             Func<AmmoItemClass, bool>? reserveEligibility)
         {
             InventoryEquipment equipment = inventory?.Inventory?.Equipment;
-            if (equipment == null || !IsInternalMagazineWeapon(weapon))
+            if (equipment == null || !IsSupportedChamberWeapon(weapon))
             {
                 yield break;
             }
@@ -240,45 +269,42 @@ namespace pitTeam.Modules
             }
         }
 
-        private static bool TryReadInternalState(
+        private static bool TryReadChamberState(
             Weapon weapon,
             out int capacity,
-            out int magazineRounds,
-            out int chamberRounds)
+            out int loadedRounds)
         {
             capacity = 0;
-            magazineRounds = 0;
-            chamberRounds = 0;
+            loadedRounds = 0;
             try
             {
-                if (!IsInternalMagazineWeapon(weapon))
+                if (!IsSupportedChamberWeapon(weapon))
                 {
                     return false;
                 }
 
-                MagazineItemClass internalMagazine = weapon.GetCurrentMagazine();
-                if (internalMagazine == null || internalMagazine.MaxCount <= 0)
-                {
-                    return false;
-                }
-
-                capacity = internalMagazine.MaxCount;
-                magazineRounds = Math.Max(0, internalMagazine.Count);
-                chamberRounds = Math.Max(0, weapon.ChamberAmmoCount);
-                return true;
+                Slot[] chambers = weapon.Chambers;
+                capacity = chambers.Length;
+                loadedRounds = chambers.Count(chamber =>
+                    chamber?.ContainedItem is AmmoItemClass ammo && !ammo.IsUsed);
+                return capacity > 0;
             }
             catch
             {
                 capacity = 0;
-                magazineRounds = 0;
-                chamberRounds = 0;
+                loadedRounds = 0;
                 return false;
             }
         }
 
-        private readonly struct InternalReadinessScenario
+        private static string NormalizeCaliber(string caliber)
         {
-            public InternalReadinessScenario(
+            return (caliber ?? string.Empty).Replace("Caliber", string.Empty).Trim();
+        }
+
+        private readonly struct ChamberReadinessScenario
+        {
+            public ChamberReadinessScenario(
                 string id,
                 int capacity,
                 int loadedRounds,

@@ -15,9 +15,9 @@ namespace pitTeam.Modules
             Weapon weapon,
             Func<AmmoItemClass, bool>? internalAmmoEligibility = null)
         {
-            if (FollowerWeaponInternalReadiness.IsInternalMagazineWeapon(weapon))
+            if (FollowerWeaponLooseFeedReadiness.IsSupported(weapon))
             {
-                return FollowerWeaponInternalReadiness.EvaluateActual(
+                return FollowerWeaponLooseFeedReadiness.EvaluateActual(
                     inventory,
                     weapon,
                     internalAmmoEligibility);
@@ -38,9 +38,9 @@ namespace pitTeam.Modules
             InventoryEquipment equipment,
             Weapon weapon)
         {
-            if (FollowerWeaponInternalReadiness.IsInternalMagazineWeapon(weapon))
+            if (FollowerWeaponLooseFeedReadiness.IsSupported(weapon))
             {
-                // Internal feeds never eject the attached tube into the vest or pockets.
+                // Internal and chamber feeds never eject a detachable magazine into fast access.
                 return true;
             }
 
@@ -206,6 +206,7 @@ namespace pitTeam.Modules
                 pitFireTeam.Log.LogInfo(
                     $"[LootCommand][Readiness] Deterministic formula self-test passed ({scenarios.Length}/{scenarios.Length}).");
                 FollowerWeaponInternalReadiness.RunDeterministicSelfTests();
+                FollowerWeaponChamberReadiness.RunDeterministicSelfTests();
                 return;
             }
 
@@ -215,6 +216,7 @@ namespace pitTeam.Modules
             }
 
             FollowerWeaponInternalReadiness.RunDeterministicSelfTests();
+            FollowerWeaponChamberReadiness.RunDeterministicSelfTests();
         }
 
         private static WeaponPrimaryReadinessSnapshot EvaluateInventoryState(
@@ -252,6 +254,7 @@ namespace pitTeam.Modules
                     foreach (MagazineItemClass magazine in reachableMagazines.ToArray())
                     {
                         TryAddCompatibleFastAccessMagazine(
+                            weapon,
                             magazineSlot,
                             insertedMagazine,
                             magazine,
@@ -270,6 +273,7 @@ namespace pitTeam.Modules
                 foreach (MagazineItemClass magazine in projectedFastAccessMagazines.ToArray())
                 {
                     TryAddCompatibleFastAccessMagazine(
+                        weapon,
                         magazineSlot,
                         insertedMagazine,
                         magazine,
@@ -279,8 +283,12 @@ namespace pitTeam.Modules
                 }
             }
 
+            bool insertedAmmoCompatible = insertedMagazine == null ||
+                                          FollowerWeaponMagazineCompatibility.AreLoadedCartridgesCompatible(
+                                              weapon,
+                                              insertedMagazine);
             int availableReference = ResolveAvailableOrdinaryReference(
-                insertedMagazine,
+                insertedAmmoCompatible ? insertedMagazine : null,
                 compatibleMagazines,
                 out int availableMagazineCount);
             if (availableReference <= 0)
@@ -288,14 +296,37 @@ namespace pitTeam.Modules
                 referenceReason = $"{referenceReason};noneAvailable";
             }
 
-            return EvaluateFormula(
+            WeaponPrimaryReadinessSnapshot result = EvaluateFormula(
                 availableReference,
                 insertedMagazine != null,
-                insertedMagazine?.Count ?? 0,
+                insertedAmmoCompatible ? insertedMagazine?.Count ?? 0 : 0,
                 insertedMagazine?.MaxCount ?? 0,
                 compatibleMagazines.Select(magazine => magazine.Count),
                 availableMagazineCount,
                 referenceReason);
+
+            if (insertedAmmoCompatible)
+            {
+                return result;
+            }
+
+            // Compatible spares cannot make a weapon usable while a wrong-caliber magazine is
+            // still installed. A later explicit magazine-swap phase may resolve that state.
+            return new WeaponPrimaryReadinessSnapshot(
+                result.OrdinaryReference,
+                result.Threshold,
+                hasInsertedMagazine: true,
+                insertedRounds: 0,
+                insertedCapacity: result.InsertedCapacity,
+                insertedContribution: 0,
+                result.FastAccessMagazineRounds,
+                result.FastAccessContribution,
+                totalContribution: result.FastAccessContribution,
+                primaryReady: false,
+                requiresMagazineLoad: false,
+                reason: "insertedAmmoIncompatible",
+                result.AvailableMagazineCount,
+                referenceReason: $"{result.ReferenceReason};insertedRounds={insertedMagazine?.Count ?? 0}");
         }
 
         private static int CalculateInsertedContribution(
@@ -359,6 +390,7 @@ namespace pitTeam.Modules
         }
 
         private static void TryAddCompatibleFastAccessMagazine(
+            Weapon weapon,
             Slot magazineSlot,
             MagazineItemClass insertedMagazine,
             MagazineItemClass candidate,
@@ -382,7 +414,8 @@ namespace pitTeam.Modules
 
             try
             {
-                if (magazineSlot.CanAccept(candidate))
+                if (magazineSlot.CanAccept(candidate) &&
+                    FollowerWeaponMagazineCompatibility.AreLoadedCartridgesCompatible(weapon, candidate))
                 {
                     compatibleMagazines.Add(candidate);
                 }
@@ -536,12 +569,13 @@ namespace pitTeam.Modules
 
         public string ToDiagnosticString()
         {
-            if (string.Equals(FeedKind, "internalMagazine", StringComparison.Ordinal))
+            if (string.Equals(FeedKind, "internalMagazine", StringComparison.Ordinal) ||
+                string.Equals(FeedKind, "chamberFed", StringComparison.Ordinal))
             {
                 return $"feed={FeedKind} capacity={OrdinaryReference} threshold={Threshold} " +
                        $"loaded={InsertedRounds} reserveStacks={FastAccessMagazineRounds.Count} " +
                        $"reserveRounds={FastAccessContribution} total={TotalContribution} " +
-                       $"primaryReady={PrimaryReady} requiresInternalLoad={RequiresMagazineLoad} " +
+                       $"primaryReady={PrimaryReady} requiresFeedLoad={RequiresMagazineLoad} " +
                        $"reason={Reason} referenceSource={ReferenceReason}";
             }
 

@@ -84,6 +84,7 @@ public class FriendlyTeammateService(
     private const double DeathEscapeFarExtractDistance = 900d;
     private static readonly Random DeathEscapeRandom = new();
     private static readonly object DeathEscapeRandomLock = new();
+    private static readonly object RaidResultPersistenceLock = new();
     private static readonly string[] RequiredRaidWeaponSlots =
     [
         nameof(EquipmentSlots.FirstPrimaryWeapon),
@@ -1405,15 +1406,20 @@ public class FriendlyTeammateService(
             return;
         }
 
-        foreach (var progressEntry in progressEntries)
+        // Progress and raid-outcome requests are posted independently during teardown. Keep each
+        // read-modify-save operation atomic so a stale progress copy cannot overwrite live equipment.
+        lock (RaidResultPersistenceLock)
         {
-            if (!TryFindByAccountId(sessionId, progressEntry.Aid, out var teammate) || teammate == null)
+            foreach (var progressEntry in progressEntries)
             {
-                continue;
-            }
+                if (!TryFindByAccountId(sessionId, progressEntry.Aid, out var teammate) || teammate == null)
+                {
+                    continue;
+                }
 
-            ApplyFollowerProgress(teammate, progressEntry);
-            SaveTeammate(sessionId, teammate);
+                ApplyFollowerProgress(teammate, progressEntry);
+                SaveTeammate(sessionId, teammate);
+            }
         }
     }
 
@@ -1421,62 +1427,65 @@ public class FriendlyTeammateService(
         MongoId sessionId,
         IEnumerable<FriendlyTeammateDeathEscapeEntry>? entries)
     {
-        var summary = new FriendlyTeammateDeathEscapeSummary();
-        if (entries == null)
+        lock (RaidResultPersistenceLock)
         {
+            var summary = new FriendlyTeammateDeathEscapeSummary();
+            if (entries == null)
+            {
+                return summary;
+            }
+
+            Dictionary<string, HashSet<string>> protectedTeammateItemIdsByAid =
+                BuildProtectedTeammateItemIdsByAid(sessionId);
+
+            foreach (var entry in entries)
+            {
+                if (entry == null || string.IsNullOrWhiteSpace(entry.Aid))
+                {
+                    continue;
+                }
+
+                string displayName = string.IsNullOrWhiteSpace(entry.Nickname) ? "Squadmate" : entry.Nickname;
+                if (entry.Escaped)
+                {
+                    summary.EscapedNames.Add(displayName);
+                }
+                else
+                {
+                    summary.LostNames.Add(displayName);
+                }
+
+                if (string.IsNullOrWhiteSpace(summary.ExtractName) && !string.IsNullOrWhiteSpace(entry.ExtractName))
+                {
+                    summary.ExtractName = entry.ExtractName;
+                }
+
+                if (!TryFindByAccountId(sessionId, entry.Aid, out var teammate) || teammate == null)
+                {
+                    continue;
+                }
+
+                // Escape rolls are server-owned by the time outcomes are persisted. Client-provided
+                // live raid state is only input data for ResolveRaidOutcomes().
+                ApplyFollowerRaidOutcomeStats(teammate, entry.Escaped);
+                ApplyDeathEscapeOutcome(teammate, entry);
+
+                // Eligible surviving Default loadouts keep the in-raid state here. Immersive/Realistic
+                // always qualify; Restricted only qualifies when Field Upkeep is enabled.
+                ApplyImmersiveEscapedDefaultEquipmentState(sessionId, teammate, entry, protectedTeammateItemIdsByAid);
+
+                // Field Upkeep does not enable death gear loss, but it still needs the
+                // death-time equipment state so used consumables and durability loss cannot be duplicated.
+                ApplyRestrictedGearMaintenanceDeathEquipmentState(sessionId, teammate, entry, protectedTeammateItemIdsByAid);
+
+                // Immersive/Extreme loss is applied after the health/death outcome so the teammate's
+                // saved Default equipment reflects the post-raid penalty instead of regenerating gear.
+                ApplyImmersiveDefaultGearLoss(sessionId, teammate, entry);
+                SaveTeammate(sessionId, teammate);
+            }
+
             return summary;
         }
-
-        Dictionary<string, HashSet<string>> protectedTeammateItemIdsByAid =
-            BuildProtectedTeammateItemIdsByAid(sessionId);
-
-        foreach (var entry in entries)
-        {
-            if (entry == null || string.IsNullOrWhiteSpace(entry.Aid))
-            {
-                continue;
-            }
-
-            string displayName = string.IsNullOrWhiteSpace(entry.Nickname) ? "Squadmate" : entry.Nickname;
-            if (entry.Escaped)
-            {
-                summary.EscapedNames.Add(displayName);
-            }
-            else
-            {
-                summary.LostNames.Add(displayName);
-            }
-
-            if (string.IsNullOrWhiteSpace(summary.ExtractName) && !string.IsNullOrWhiteSpace(entry.ExtractName))
-            {
-                summary.ExtractName = entry.ExtractName;
-            }
-
-            if (!TryFindByAccountId(sessionId, entry.Aid, out var teammate) || teammate == null)
-            {
-                continue;
-            }
-
-            // Escape rolls are server-owned by the time outcomes are persisted. Client-provided
-            // live raid state is only input data for ResolveRaidOutcomes().
-            ApplyFollowerRaidOutcomeStats(teammate, entry.Escaped);
-            ApplyDeathEscapeOutcome(teammate, entry);
-
-            // Eligible surviving Default loadouts keep the in-raid state here. Immersive/Realistic
-            // always qualify; Restricted only qualifies when Field Upkeep is enabled.
-            ApplyImmersiveEscapedDefaultEquipmentState(sessionId, teammate, entry, protectedTeammateItemIdsByAid);
-
-            // Field Upkeep does not enable death gear loss, but it still needs the
-            // death-time equipment state so used consumables and durability loss cannot be duplicated.
-            ApplyRestrictedGearMaintenanceDeathEquipmentState(sessionId, teammate, entry, protectedTeammateItemIdsByAid);
-
-            // Immersive/Extreme loss is applied after the health/death outcome so the teammate's
-            // saved Default equipment reflects the post-raid penalty instead of regenerating gear.
-            ApplyImmersiveDefaultGearLoss(sessionId, teammate, entry);
-            SaveTeammate(sessionId, teammate);
-        }
-
-        return summary;
     }
 
     public FriendlyTeammateRaidOutcomeResponse ResolveRaidOutcomes(IEnumerable<FriendlyTeammateDeathEscapeEntry>? entries)

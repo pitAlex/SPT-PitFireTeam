@@ -246,10 +246,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (rootItem is Weapon weapon &&
-                weapon.GetItemComponent<KnifeComponent>() == null &&
-                weapon is not PistolItemClass &&
-                weapon is not RevolverItemClass)
+            if (rootItem is Weapon weapon && IsShoulderWeaponCandidate(weapon))
             {
                 // A direct player order owns its physical destination even when automatic gear
                 // swapping is disabled. The shoulder used must truthfully communicate whether the
@@ -552,18 +549,10 @@ namespace pitTeam.BigBrain.Actions
 
         private void QueueLoosePickupPrimaryWeaponBinding(Weapon weapon)
         {
-            BotOwner bot = BotOwner;
-            if (bot?.AITaskManager == null)
-            {
-                FollowerLootedPrimaryWeaponBinding.RebindAndSelect(bot, weapon, "loosePickup");
-                return;
-            }
-
-            // Let the pickup state release its hands before asking BotWeaponSelector to switch.
-            bot.AITaskManager.RegisterDelayedTask(
-                bot,
-                0.2f,
-                () => FollowerLootedPrimaryWeaponBinding.RebindAndSelect(bot, weapon, "loosePickup"));
+            FollowerLootedPrimaryWeaponBinding.SelectAfterLootCompletion(
+                BotOwner,
+                weapon,
+                "loosePickup");
         }
 
         private void RefreshLootedWeaponPresentation(Item item)

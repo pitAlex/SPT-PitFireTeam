@@ -17,6 +17,19 @@ namespace pitTeam.Modules
                 return false;
             }
 
+            return IsCartridgeCompatible(weapon, ammo);
+        }
+
+        internal static bool IsCartridgeCompatible(Weapon weapon, AmmoItemClass ammo)
+        {
+            if (weapon == null ||
+                ammo == null ||
+                ammo.IsUsed ||
+                ammo.StackObjectsCount <= 0)
+            {
+                return false;
+            }
+
             try
             {
                 if (weapon.Chambers?.Any(chamber => chamber?.CanAccept(ammo) == true) == true)

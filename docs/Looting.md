@@ -113,8 +113,8 @@ Execution:
 - moves to the corpse
 - starts a search phase before moving items
 - says a pickup-confirmation phrase after the simulated search, when the first real non-dogtag loot move is queued
-- uses `EPhraseTrigger.LootWeapon` only when the executable plan makes a weapon usable as primary, secondary, or holster equipment during this search
-- uses `EPhraseTrigger.LootGeneric` for ordinary loot, backpack weapon cargo, potential-weapon packages, and an under-ready long gun held inert in the left-shoulder slot
+- uses `EPhraseTrigger.LootWeapon` only when the executable plan makes a weapon the follower's combat primary during this search
+- uses `EPhraseTrigger.LootGeneric` for ordinary loot and every non-primary weapon result, including second-primary support, holster, backpack cargo, potential-weapon packages, and an under-ready long gun held inert in the left-shoulder slot
 - waits a short beat after that pickup-confirmation phrase before executing the first move, so it does not run into `Ready`
 - says `EPhraseTrigger.Negative` if eligible non-dogtag loot exists but no executable move can be built
 - says `EPhraseTrigger.LootNothing` if no eligible non-dogtag item exists
@@ -193,8 +193,8 @@ Execution:
 - opens the container if shut
 - starts a search phase before moving items
 - says a pickup-confirmation phrase after the simulated search, when the first real loot move is queued
-- uses `EPhraseTrigger.LootWeapon` only when the executable plan makes a weapon usable as primary, secondary, or holster equipment during this search
-- uses `EPhraseTrigger.LootGeneric` for ordinary loot, backpack weapon cargo, potential-weapon packages, and an under-ready long gun held inert in the left-shoulder slot
+- uses `EPhraseTrigger.LootWeapon` only when the executable plan makes a weapon the follower's combat primary during this search
+- uses `EPhraseTrigger.LootGeneric` for ordinary loot and every non-primary weapon result, including second-primary support, holster, backpack cargo, potential-weapon packages, and an under-ready long gun held inert in the left-shoulder slot
 - waits a short beat after that pickup-confirmation phrase before executing the first move, so it does not run into `Ready`
 - says `EPhraseTrigger.Negative` if eligible loot exists but no executable move can be built
 - says `EPhraseTrigger.LootNothing` if no eligible item exists
@@ -240,7 +240,7 @@ Armor plates remain ignored even when `Pickup Gear` is enabled.
 
 `Allow Gear Swapping` defaults off. It is the explicit gate for gear equip/swap behavior in every loadout mode; post-raid ownership follows the active loadout management mode.
 
-`Pickup Gear` controls gear taken as cargo. It does not disable `Allow Gear Swapping`: eligible add/swap candidates bypass category and min/max price filters but still keep protection, compatibility, and executable-placement safety gates. If the gear cannot be equipped and falls back to ordinary cargo handling, `Pickup Gear` and min/max price apply again.
+`Pickup Gear` controls ordinary gear cargo and optional weapon additions beyond the combat primary. With `Allow Gear Swapping` enabled, acquiring a missing primary and future accepted better-primary swaps remain independent of `Pickup Gear` and min/max price. Adding a weapon to second primary or holster requires `Pickup Gear`; any ordinary cargo fallback also requires `Pickup Gear` and must pass min/max price. Other implemented equipment plans retain their documented swap-specific filters, protection checks, and executable-placement safety gates.
 
 ## Price Checks
 
@@ -347,7 +347,7 @@ General rules:
 
 - expose gear equip/swap through `Allow Gear Swapping`, separate from the existing `Pickup Gear` category filter and min/max price filters
 - allow additive gear equip behavior in any loadout management mode when the setting is enabled
-- bypass `Pickup Gear` and min/max price for the actual add/swap planner, but keep those filters authoritative for ordinary gear cargo fallback
+- bypass `Pickup Gear` and min/max price for missing-primary acquisition and implemented true swap decisions, but require `Pickup Gear` for optional second-primary or holster weapon additions and keep ordinary cargo under both category and price filters
 - in `Simple` and `Restricted`, only add gear into empty equipment slots and treat that added gear as return cargo instead of saved kit
 - in `Immersive` and `Realistic`, allow implemented occupied-slot swaps and leave equipped gear untracked so it can persist as teammate kit
 - add easy gear equip as an explicit planner before the current carry-space planner
@@ -407,27 +407,29 @@ Rules:
 - if the package cannot fit, leave its magazines at the source and try the weapon alone; if the weapon cannot fit, leave it too
 - if `Pickup Gear` is disabled or the weapon fails price, leave both the weapon and its package magazines at the source
 - compatible bundle magazines that do not fit in the backpack remain at the source
-- if `FirstPrimaryWeapon` is occupied and `SecondPrimaryWeapon` is empty, a long gun with an inserted magazine and usable ammunition may be added as a real vanilla support weapon
+- if `FirstPrimaryWeapon` is occupied, `Pickup Gear` is enabled, and `SecondPrimaryWeapon` is empty, a long gun with an inserted magazine and usable ammunition may be added as a real vanilla support weapon
 - compatible loaded source magazines for that support add bypass price only while they fit in vest/pockets and preserve landing space for the inserted magazine; because the weapon remains second-primary support, overflow magazines remain loaded at the source
-- after that support weapon is moved, refresh vanilla slot state and create `WeaponManager.Info[SecondPrimaryWeapon]` without forcing a hand switch away from the working primary
+- after that support weapon is moved, announce it with `EPhraseTrigger.LootGeneric`, refresh vanilla slot state, and create `WeaponManager.Info[SecondPrimaryWeapon]` without forcing a hand switch away from the working primary
 - once first and second primary are occupied, another long gun is ordinary filtered cargo; it cannot recruit a potential-weapon magazine package
 - when holster is occupied, a found pistol is likewise ordinary filtered cargo and its compatible magazines do not inherit a package bypass
-- if `Holster` is empty, a valid pistol may be equipped there
+- if `Pickup Gear` is enabled and `Holster` is empty, a valid pistol may be equipped there as a non-primary `EPhraseTrigger.LootGeneric` result
 - if the matching slot is occupied, do not replace it in the empty-slot phase
 - still register the moved weapon tree as looted so patrol reload maintenance does not feed spawned magazines into cargo/support weapons
-- after equip, refresh selector slot caches, rebuild `WeaponManager.Info[FirstPrimaryWeapon]` for the new weapon, and request the normal vanilla main-hand transition
+- body/container looting records a newly equipped primary but does not select it while more loot transactions or the request-layer interaction remain active
+- after all moves finish and the loot command clears, wait one second for inventory/interaction ownership to close, apply the same `FollowerRecovery.SoftReset(...)` recovery step used by `Attention`, then refresh selector slot caches, rebuild `WeaponManager.Info[FirstPrimaryWeapon]`, and request the normal vanilla main-hand transition
+- commanded loose-primary pickup uses the same one-second post-pickup recovery and selection handoff after its pickup state clears
 - if a tracked looted weapon was already held inert in second primary, register `WeaponManager.Info[SecondPrimaryWeapon]` once the new first primary exists so vanilla can use it as the real support weapon
 - do not pre-gate that request with `CanChangeHands()`: the check includes interaction/controller states that vanilla's scheduled weapon process owns and may not clear until the transition is requested
 - if selector state remains mid-transition, retry through the bot delayed-task manager and use a bounded current-state fast-forward only after the ordinary draw window; stop immediately if the follower dies or leaves the active bot state
 
-Easy weapon equip ignores min/max price and bypasses the `Pickup Gear` category filter because it is an explicit equipment plan rather than ordinary gear cargo. Supporting spare magazines bypass the normal loot filters after the weapon itself is accepted so the follower can build a usable reload pool.
+Missing-primary weapon acquisition ignores min/max price and bypasses the `Pickup Gear` category filter because it is an explicit primary-equipment plan rather than ordinary gear cargo. A working-primary follower only adds an optional second-primary or holster weapon when `Pickup Gear` is enabled. Supporting spare magazines bypass the normal loot filters only after the corresponding primary or Pickup-Gear-authorized support plan is accepted.
 
 ### Compatible Loose-Ammunition Support
 
-Once a body/container weapon has been accepted as equipment or as filtered weapon cargo, compatible loose ammunition from that same source may accompany it regardless of whether the weapon uses detachable magazines or an internal feed.
+Once a body/container weapon has been accepted as equipment or as filtered weapon cargo, compatible loose ammunition from that same source may accompany it regardless of whether the weapon uses detachable magazines, an internal feed, or supported direct chambers.
 
 - loose ammunition never contributes directly to detachable-magazine readiness and does not top off magazines in this phase
-- internal-magazine weapons may first load compatible loose ammunition through their dedicated real transaction; only settled loaded rounds and fitting reserve stacks contribute to internal readiness
+- internal-magazine and supported chamber-fed weapons may first load compatible loose ammunition through their dedicated real transactions; only settled loaded rounds and fitting reserve stacks contribute to readiness
 - loose ammunition is placed in secure container, pockets, backpack, then tactical vest
 - tactical-vest fallback must preserve the existing long-gun and initial-holster reload landing spaces
 - source ammunition inside another weapon or magazine is not loose ammunition and is never selected by this path
@@ -449,15 +451,30 @@ Tube-fed and other `InternalMagazine` weapons use a separate loose-ammunition pa
 - ammunition manually placed as strict cargo through `View Backpack` never counts until it is removed and reacquired through a command
 - if the attached magazine has room, the planner loads compatible source ammunition into it first through a real EFT transaction
 - the load transaction is verified by an increased live loaded-round count before reserve moves or weapon placement continue
+- internal-magazine revolvers use the cylinder's ammunition compatibility directly; they do not require a separate chamber slot to accept loose reserves
 - compatible source reserves bypass price/category filters only inside the accepted internal-weapon plan; stacks that do not fit the shared loose-ammo destination policy remain at the source and contribute nothing
 - after all transactions settle, a ready weapon enters first primary; an under-ready loaded weapon uses empty second primary; with no equipment destination, ordinary `Pickup Gear` and price rules own cargo
-- when the follower already has a working primary, a loaded internal-magazine weapon may be added to empty second primary as usable support
+- when the follower already has a working primary and `Pickup Gear` is enabled, a loaded internal-magazine weapon may be added to empty second primary as usable support and announces `EPhraseTrigger.LootGeneric`
 - later compatible source ammunition may complete and promote one tracked internal-magazine secondary or backpack weapon
+
+### Chamber-Fed Weapon Readiness
+
+Supported non-launcher `OnlyBarrel` weapons, including single-shot and double-barrel break actions, use their live chambers as the attached feed:
+
+- readiness is the larger of two complete chamber-load equivalents or eight total rounds; a two-chamber shotgun therefore needs eight shells
+- only live, unspent chamber rounds contribute as loaded ammunition
+- compatible loose reserve rounds use the same strict-cargo exclusion and secure-container, pockets, backpack, reload-safe-vest placement rules as internal-magazine reserves
+- an empty or partially loaded weapon fills one empty chamber at a time through vanilla's off-hands `Weapon.Apply(...)` inventory transaction
+- every chamber transaction must settle and increase the live chamber count before another shell, reserve stack, or weapon destination is planned
+- eight rounds is only the primary-readiness threshold; accepted compatible source stacks still move whole through the established loose-ammo policy
+- a ready chamber-fed weapon enters first primary; an under-ready loaded weapon may use empty second primary; ordinary `Pickup Gear` and price rules own cargo when no equipment destination is available
+- with a working primary, an optional chamber-fed support add still requires `Pickup Gear` and announces `EPhraseTrigger.LootGeneric`
+- later compatible source shells may complete and promote one tracked chamber-fed secondary or backpack weapon
 
 Still deferred weapon-feed cases:
 
-- `OnlyBarrel` chamber-fed weapons such as double-barrel shotguns
-- revolver cylinders
+- launcher-specific hands and combat-reload transactions beyond the shared internal-cylinder inventory path
+- holster-revolver gear decisions and cylinder transactions that cannot use the shared internal-magazine path
 - compatible loose ammunition may later top off partial detachable magazines and make them readiness-eligible, but those rounds must not count until a real top-off transaction succeeds
 - when several compatible magazines are partially loaded, a later repacking phase should top off the fullest useful magazines from partial donor magazines first, then evaluate readiness from the resulting settled magazine states
 - repacked ammunition must move through real inventory transactions; failed or interrupted transfers must not contribute speculatively or count donor rounds twice
@@ -578,8 +595,8 @@ Body/container basics:
 - no eligible non-dogtag items -> `LootNothing`
 - eligible item but no backpack/pocket/equipment destination -> `Negative`
 - eligible non-dogtag items -> search sound, wait, pickup-confirmation phrase, short beat, move items, `Ready`
-- weapon becomes usable equipment during this search -> pickup confirmation is `LootWeapon`
-- weapon remains backpack cargo or an under-ready left-shoulder candidate -> pickup confirmation is `LootGeneric`
+- weapon becomes the follower's combat primary during this search -> pickup confirmation is `LootWeapon`
+- weapon becomes second-primary support, enters holster, remains backpack cargo, or stays an under-ready left-shoulder candidate -> pickup confirmation is `LootGeneric`
 - search sound stops when search ends
 - completed container closes
 - interrupted container may remain open
@@ -606,17 +623,20 @@ Filtered body/container rules:
 - tactical vest is not used as follower carry space, except operational magazine placement during an accepted weapon equip or vest upgrade
 - ordinary cargo price minimum and maximum apply to whole item trees
 - ordinary cargo category filters apply before price
-- gear add/swap is controlled by `Allow Gear Swapping`, not by cargo price/category filters
+- missing-primary acquisition and implemented true swaps are controlled by `Allow Gear Swapping`; optional support/holster weapon additions additionally require `Pickup Gear`
 
 Gear swapping phase 1 tests:
 
 - missing-primary weapon equip uses the centralized two-ordinary-magazine readiness formula after all planned fast-access transfers settle
 - tube-fed/internal-magazine weapons load the attached magazine first, then count only settled loaded rounds and fitting loose reserves toward two-load readiness
+- supported single- and multi-chamber break-action weapons load empty chambers one real round transaction at a time and require at least eight total rounds; accepted compatible loose-ammo stacks still move whole
 - internal-feed loose ammunition nested in magazines/weapons or marked as strict cargo is ignored
 - accepted weapon-support loose ammunition uses secure container, pockets, backpack, then reload-safe vest space; detachable-magazine readiness remains magazine-only
 - non-Realistic followers stop taking ordinary compatible loose ammunition once their mixed carried bullet total reaches two stack capacities, or three capacities for shotgun ammunition, unless the source round is a better same-caliber type
 - large compatible spare magazines that do not fit the vest/pocket grids while preserving reload landing space do not count as operational spares
 - an under-threshold weapon uses empty secondary; with secondary occupied, only ordinary filtered cargo rules may move it into the backpack
+- with a working primary and `Pickup Gear` disabled, an optional support weapon and its magazines/ammunition remain at the source
+- with a working primary and `Pickup Gear` enabled, an accepted second-primary support weapon uses `LootGeneric` and does not take the current primary out of hand
 - a tracked under-threshold secondary weapon promotes into empty primary after later compatible fast-access ammunition makes it ready
 - newly found weapons recruit compatible backpack cargo only when the executable combined fast-access plan reaches readiness
 - a later source spare can recruit the backpack spare for a tracked secondary, then promote that weapon from settled live state

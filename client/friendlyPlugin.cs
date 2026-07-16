@@ -1124,6 +1124,11 @@ namespace pitTeam
             return lootAllowGearSwapping?.Value == true;
         }
 
+        internal static bool IsLootGearPickupEnabled()
+        {
+            return lootFilterGear?.Value ?? true;
+        }
+
         private static void SyncServerSettings()
         {
             _ = SyncServerSettingsAsync();

@@ -446,7 +446,7 @@ namespace pitTeam.BigBrain.Actions
                                       move.StagingWeapon != null &&
                                       (IsItemInsideRoot(move.Item, move.StagingWeapon) ||
                                        (move.StagingWeaponLoadedRoundsBefore >= 0 &&
-                                        FollowerWeaponInternalReadiness.GetLoadedRounds(move.StagingWeapon) >
+                                        FollowerWeaponLooseFeedReadiness.GetLoadedRounds(move.StagingWeapon) >
                                         move.StagingWeaponLoadedRoundsBefore));
                 if (result?.Succeed == true ||
                     stagingApplied ||
@@ -489,7 +489,9 @@ namespace pitTeam.BigBrain.Actions
                             ?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem as Weapon;
                         if (move.RebindAsPrimaryWeapon || IsSameLootItem(slottedPrimary, completedItem))
                         {
-                            RebindLootedPrimaryWeapon(completedItem as Weapon);
+                            // Keep collecting until this container is complete. The post-loot
+                            // handoff performs selection only after the interaction is closed.
+                            pendingContainerPrimaryWeaponSelection = completedItem as Weapon;
                         }
                         else
                         {
@@ -543,6 +545,9 @@ namespace pitTeam.BigBrain.Actions
 
         private void FinishContainerLootNoMoreMoves()
         {
+            Weapon primaryWeaponToSelect = pendingContainerPrimaryWeaponSelection;
+            pendingContainerPrimaryWeaponSelection = null;
+
             if (containerLootWeaponListDirty)
             {
                 BotOwner.WeaponManager.UpdateWeaponsList();
@@ -559,11 +564,13 @@ namespace pitTeam.BigBrain.Actions
             {
                 BotOwner.BotTalk.TrySay(EPhraseTrigger.Ready, false);
                 ClearContainerLootState("TakeContainerLoot:done");
+                QueuePostLootPrimaryWeaponSelection(primaryWeaponToSelect, "containerLootComplete");
                 return;
             }
 
             BotOwner.BotTalk.TrySay(containerLootHadEligibleButNoSpace ? EPhraseTrigger.Negative : EPhraseTrigger.LootNothing, false);
             ClearContainerLootState("TakeContainerLoot:noSpace");
+            QueuePostLootPrimaryWeaponSelection(primaryWeaponToSelect, "containerLootComplete");
         }
 
         private void TryCloseActiveLootContainerAfterSearch()
@@ -622,6 +629,7 @@ namespace pitTeam.BigBrain.Actions
             containerLootHadEligibleButNoSpace = false;
             containerLootSuccessSpoken = false;
             containerLootWeaponListDirty = false;
+            pendingContainerPrimaryWeaponSelection = null;
             containerLootOpened = false;
             containerLootOpenRequestedAt = 0f;
             containerLootSearchStarted = false;

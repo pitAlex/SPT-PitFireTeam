@@ -313,6 +313,7 @@ Current escape-state persistence applies only to teammates whose selected loadou
 When an `Immersive`, `Realistic` / internal `Extreme`, or `Restricted` teammate with `Field Upkeep` enabled survives/extracts:
 
 - the client sends the teammate's live equipment snapshot to the server
+- follower progress and live-equipment persistence are serialized on the server so their independent post-raid requests cannot overwrite each other
 - tracked follower-loot/player-given item ids are sent with the snapshot
 - the server removes those tracked item trees before saving the new `Default`
 - the server also removes protected gear ids owned by other teammates before saving, so gear looted from a fallen or different squadmate cannot be permanently saved onto the survivor

@@ -570,9 +570,9 @@ namespace pitTeam.BigBrain.Actions
                     candidate,
                     equipAddress,
                     out move,
-                    // This helper only returns an executable holster or second-primary slot.
-                    // Unlike the inert secondary-only gear-plan holder, this is usable equipment.
-                    successPhrase: EPhraseTrigger.LootWeapon))
+                    // Pickup Gear may use an empty holster or second-primary slot as convenient
+                    // cargo placement. Only a weapon becoming combat primary earns LootWeapon.
+                    successPhrase: EPhraseTrigger.LootGeneric))
             {
                 if (candidate.Item is Weapon slottedWeapon)
                 {
@@ -788,7 +788,7 @@ namespace pitTeam.BigBrain.Actions
                                       move.StagingWeapon != null &&
                                       (IsItemInsideRoot(move.Item, move.StagingWeapon) ||
                                        (move.StagingWeaponLoadedRoundsBefore >= 0 &&
-                                        FollowerWeaponInternalReadiness.GetLoadedRounds(move.StagingWeapon) >
+                                        FollowerWeaponLooseFeedReadiness.GetLoadedRounds(move.StagingWeapon) >
                                         move.StagingWeaponLoadedRoundsBefore));
                 if (result?.Succeed == true ||
                     stagingApplied ||
@@ -831,7 +831,9 @@ namespace pitTeam.BigBrain.Actions
                             ?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem as Weapon;
                         if (move.RebindAsPrimaryWeapon || IsSameLootItem(slottedPrimary, completedItem))
                         {
-                            RebindLootedPrimaryWeapon(completedItem as Weapon);
+                            // Selection belongs to command completion, after every remaining loot
+                            // transaction and the request-layer interaction have released hands.
+                            pendingBodyPrimaryWeaponSelection = completedItem as Weapon;
                         }
                         else
                         {
@@ -889,6 +891,9 @@ namespace pitTeam.BigBrain.Actions
 
         private void FinishBodyLootNoMoreMoves()
         {
+            Weapon primaryWeaponToSelect = pendingBodyPrimaryWeaponSelection;
+            pendingBodyPrimaryWeaponSelection = null;
+
             if (bodyLootWeaponListDirty)
             {
                 BotOwner.WeaponManager.UpdateWeaponsList();
@@ -902,11 +907,13 @@ namespace pitTeam.BigBrain.Actions
             {
                 BotOwner.BotTalk.TrySay(EPhraseTrigger.Ready, false);
                 ClearBodyLootState("TakeBodyGear:done");
+                QueuePostLootPrimaryWeaponSelection(primaryWeaponToSelect, "bodyLootComplete");
                 return;
             }
 
             BotOwner.BotTalk.TrySay(bodyLootHadEligibleButNoSpace ? EPhraseTrigger.Negative : EPhraseTrigger.LootNothing, false);
             ClearBodyLootState("TakeBodyGear:noSpace");
+            QueuePostLootPrimaryWeaponSelection(primaryWeaponToSelect, "bodyLootComplete");
         }
 
         private void CleanupBodyLootInteraction(string reason)
@@ -940,6 +947,7 @@ namespace pitTeam.BigBrain.Actions
             bodyLootHadEligibleButNoSpace = false;
             bodyLootSuccessSpoken = false;
             bodyLootWeaponListDirty = false;
+            pendingBodyPrimaryWeaponSelection = null;
             bodyLootBackpackCapacityAttempted = false;
             bodyLootSearchStarted = false;
             activeLootSearchSource = null;

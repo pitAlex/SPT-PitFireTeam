@@ -9,6 +9,9 @@ namespace pitTeam.BigBrain.Actions
 {
     internal partial class GestureCommandAction
     {
+        // This pipeline began with attached internal magazines. It now deliberately also owns
+        // supported chamber-fed weapons because both use the same tactical contract: load from
+        // loose rounds, carry only protected reserves, then classify from settled live state.
         private bool TryBuildInternalMagazineWeaponEquipChain(
             InventoryController inventory,
             InventoryEquipment followerEquipment,
@@ -20,7 +23,7 @@ namespace pitTeam.BigBrain.Actions
             move = null;
             handledByGearPolicy = false;
             if (weaponCandidate?.Item is not Weapon weapon ||
-                !FollowerWeaponInternalReadiness.IsInternalMagazineWeapon(weapon))
+                !FollowerWeaponLooseFeedReadiness.IsSupported(weapon))
             {
                 return false;
             }
@@ -86,7 +89,7 @@ namespace pitTeam.BigBrain.Actions
                 ? BodyGearFollowUpDestination.SecondaryWeaponEquip
                 : BodyGearFollowUpDestination.EvaluateWeaponDestination;
             BodyGearCandidate finalCandidate = weaponCandidate.WithFollowUpDestination(finalDestination);
-            EPhraseTrigger cue = primaryOccupied || plan.Projected.PrimaryReady
+            EPhraseTrigger cue = !primaryOccupied && plan.Projected.PrimaryReady
                 ? EPhraseTrigger.LootWeapon
                 : EPhraseTrigger.LootGeneric;
 
@@ -102,7 +105,7 @@ namespace pitTeam.BigBrain.Actions
                         out string loadReason))
                 {
                     Modules.Logger.LogInfo(
-                        $"[LootCommand][InternalReadiness] load rejected weapon={DescribeLootDebugItem(weapon)} " +
+                        $"[LootCommand][LooseFeedReadiness] load rejected weapon={DescribeLootDebugItem(weapon)} " +
                         $"ammo={DescribeLootDebugItem(loadCandidate.Item)} reason={loadReason}");
                     return false;
                 }
@@ -254,7 +257,7 @@ namespace pitTeam.BigBrain.Actions
             foreach (BodyGearCandidate candidate in sourceAmmo ?? Array.Empty<BodyGearCandidate>())
             {
                 if (candidate?.Item is not AmmoItemClass ammo ||
-                    !FollowerWeaponLooseAmmoSupport.IsCompatible(weapon, ammo))
+                    !FollowerWeaponLooseFeedReadiness.IsCompatibleLooseAmmo(weapon, ammo))
                 {
                     continue;
                 }
@@ -282,9 +285,9 @@ namespace pitTeam.BigBrain.Actions
                 reserveStacks.Add(effectiveCount);
             }
 
-            int projectedLoaded = FollowerWeaponInternalReadiness.GetLoadedRounds(weapon) +
+            int projectedLoaded = FollowerWeaponLooseFeedReadiness.GetLoadedRounds(weapon) +
                                   Math.Max(0, consumedRounds);
-            plan.Projected = FollowerWeaponInternalReadiness.EvaluateProjected(
+            plan.Projected = FollowerWeaponLooseFeedReadiness.EvaluateProjected(
                 weapon,
                 reserveStacks,
                 projectedLoaded);
@@ -315,17 +318,26 @@ namespace pitTeam.BigBrain.Actions
         {
             loadCandidate = null;
             loadCount = 0;
-            MagazineItemClass internalMagazine;
-            try
+            int free;
+            if (FollowerWeaponChamberReadiness.IsSupportedChamberWeapon(weapon))
             {
-                internalMagazine = weapon?.GetCurrentMagazine();
+                free = FollowerWeaponChamberReadiness.GetFreeChamberCount(weapon);
             }
-            catch
+            else
             {
-                return;
+                MagazineItemClass internalMagazine;
+                try
+                {
+                    internalMagazine = weapon?.GetCurrentMagazine();
+                }
+                catch
+                {
+                    return;
+                }
+
+                free = Math.Max(0, (internalMagazine?.MaxCount ?? 0) - (internalMagazine?.Count ?? 0));
             }
 
-            int free = Math.Max(0, (internalMagazine?.MaxCount ?? 0) - (internalMagazine?.Count ?? 0));
             if (free <= 0)
             {
                 return;
@@ -333,13 +345,13 @@ namespace pitTeam.BigBrain.Actions
 
             loadCandidate = sourceAmmo?
                 .Where(candidate => candidate?.Item is AmmoItemClass ammo &&
-                    FollowerWeaponLooseAmmoSupport.IsCompatible(weapon, ammo))
+                    FollowerWeaponLooseFeedReadiness.IsCompatibleLooseAmmo(weapon, ammo))
                 .OrderByDescending(candidate => ((AmmoItemClass)candidate.Item).StackObjectsCount)
                 .FirstOrDefault();
             if (loadCandidate == null)
             {
                 AmmoItemClass carriedAmmo = followerAmmo?
-                    .Where(ammo => FollowerWeaponLooseAmmoSupport.IsCompatible(weapon, ammo))
+                    .Where(ammo => FollowerWeaponLooseFeedReadiness.IsCompatibleLooseAmmo(weapon, ammo))
                     .OrderByDescending(ammo => ammo.StackObjectsCount)
                     .FirstOrDefault();
                 if (carriedAmmo != null)
@@ -347,14 +359,18 @@ namespace pitTeam.BigBrain.Actions
                     loadCandidate = CreateWeaponLooseAmmoCandidate(
                         carriedAmmo,
                         weapon,
-                        "Follower.InternalWeaponAmmo")
+                        "Follower.LooseFeedWeaponAmmo")
                         .WithFollowUpDestination(BodyGearFollowUpDestination.InternalAmmoCarry);
                 }
             }
 
             if (loadCandidate?.Item is AmmoItemClass selectedAmmo)
             {
-                loadCount = Math.Min(free, selectedAmmo.StackObjectsCount);
+                // Weapon.Apply fills one chamber per off-hands transaction. Replanning after each
+                // settled shell keeps chamber count and split-stack references authoritative.
+                loadCount = FollowerWeaponChamberReadiness.IsSupportedChamberWeapon(weapon)
+                    ? Math.Min(1, selectedAmmo.StackObjectsCount)
+                    : Math.Min(free, selectedAmmo.StackObjectsCount);
             }
         }
 
@@ -374,23 +390,42 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            MagazineItemClass internalMagazine;
-            int loadedBefore = FollowerWeaponInternalReadiness.GetLoadedRounds(weapon);
-            try
+            int loadedBefore = FollowerWeaponLooseFeedReadiness.GetLoadedRounds(weapon);
+            GStruct153 loadResult;
+            int plannedLoadCount;
+            if (FollowerWeaponChamberReadiness.IsSupportedChamberWeapon(weapon))
             {
-                internalMagazine = weapon.GetCurrentMagazine();
-            }
-            catch
-            {
-                reason = "internalMagazineUnavailable";
-                return false;
-            }
+                if (FollowerWeaponChamberReadiness.GetFreeChamberCount(weapon) <= 0)
+                {
+                    reason = "emptyChamberUnavailable";
+                    return false;
+                }
 
-            GStruct153 loadResult = internalMagazine.ApplyWithoutRestrictions(
-                inventory,
-                ammo,
-                loadCount,
-                true);
+                plannedLoadCount = 1;
+                // This is the same off-hands operation used by vanilla
+                // TraderControllerClass.LoadMultiBarrelWeapon.
+                loadResult = weapon.Apply(inventory, ammo, plannedLoadCount, true);
+            }
+            else
+            {
+                MagazineItemClass internalMagazine;
+                try
+                {
+                    internalMagazine = weapon.GetCurrentMagazine();
+                }
+                catch
+                {
+                    reason = "internalMagazineUnavailable";
+                    return false;
+                }
+
+                plannedLoadCount = loadCount;
+                loadResult = internalMagazine.ApplyWithoutRestrictions(
+                    inventory,
+                    ammo,
+                    plannedLoadCount,
+                    true);
+            }
             if (loadResult.Failed)
             {
                 reason = $"applyRejected:{loadResult.Error}";
@@ -414,8 +449,8 @@ namespace pitTeam.BigBrain.Actions
                 stagingWeapon: weapon,
                 stagingWeaponLoadedRoundsBefore: loadedBefore);
             Modules.Logger.LogInfo(
-                $"[LootCommand][InternalReadiness] load planned weapon={DescribeLootDebugItem(weapon)} " +
-                $"ammo={DescribeLootDebugItem(ammo)} count={loadCount} loadedBefore={loadedBefore}");
+                $"[LootCommand][LooseFeedReadiness] load planned weapon={DescribeLootDebugItem(weapon)} " +
+                $"ammo={DescribeLootDebugItem(ammo)} count={plannedLoadCount} loadedBefore={loadedBefore}");
             reason = "ok";
             return true;
         }
@@ -526,7 +561,7 @@ namespace pitTeam.BigBrain.Actions
                     out destination))
             {
                 reason = actual.RequiresMagazineLoad
-                    ? "internalLoadRequired"
+                    ? "looseFeedLoadRequired"
                     : actual.Reason;
                 LogInternalWeaponDestination(weapon, actual, destination, reason);
                 return true;
@@ -558,6 +593,12 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
+            if (!pitFireTeam.IsLootGearPickupEnabled())
+            {
+                reason = "pickupGearDisabled";
+                return false;
+            }
+
             WeaponPrimaryReadinessSnapshot actual = EvaluateActualWeaponReadiness(inventory, weapon);
             if (actual.InsertedRounds <= 0)
             {
@@ -576,13 +617,13 @@ namespace pitTeam.BigBrain.Actions
                     secondaryAddress,
                     out move,
                     storeAsLoot: ShouldReturnGearSwapAsCargo(),
-                    successPhrase: EPhraseTrigger.LootWeapon))
+                    successPhrase: EPhraseTrigger.LootGeneric))
             {
                 reason = "secondaryUnavailable";
                 return false;
             }
 
-            reason = "usableInternalSupport";
+            reason = "usableLooseFeedSupport";
             LogInternalWeaponDestination(weapon, actual, "SecondPrimaryWeapon", reason);
             return true;
         }
@@ -606,7 +647,7 @@ namespace pitTeam.BigBrain.Actions
             WeaponPrimaryReadinessSnapshot actual = EvaluateActualWeaponReadiness(inventory, weapon);
             if (!actual.PrimaryReady || actual.RequiresMagazineLoad)
             {
-                reason = actual.RequiresMagazineLoad ? "internalLoadRequired" : actual.Reason;
+                reason = actual.RequiresMagazineLoad ? "looseFeedLoadRequired" : actual.Reason;
                 LogInternalWeaponDestination(weapon, actual, retainedDestination, reason, evaluationKind);
                 return false;
             }
@@ -630,7 +671,7 @@ namespace pitTeam.BigBrain.Actions
         private void LogInternalAmmoPlan(Weapon weapon, InternalAmmoPlan plan, string evaluation)
         {
             Modules.Logger.LogInfo(
-                $"[LootCommand][InternalReadiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                $"[LootCommand][LooseFeedReadiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
                 $"weapon={DescribeLootDebugItem(weapon)} evaluation={evaluation} " +
                 $"plannedSourceStacks={plan.AcceptedSourceAmmo.Count} rejectedNoSpace={plan.RejectedNoSpace} " +
                 plan.Projected.ToDiagnosticString());
@@ -644,7 +685,7 @@ namespace pitTeam.BigBrain.Actions
             string evaluation = "postTransfer")
         {
             Modules.Logger.LogInfo(
-                $"[LootCommand][InternalReadiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                $"[LootCommand][LooseFeedReadiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
                 $"weapon={DescribeLootDebugItem(weapon)} evaluation={evaluation} destination={destination} " +
                 $"decisionReason={reason} {readiness.ToDiagnosticString()}");
         }

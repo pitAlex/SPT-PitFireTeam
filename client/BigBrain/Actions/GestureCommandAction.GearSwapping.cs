@@ -285,7 +285,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (FollowerWeaponInternalReadiness.IsInternalMagazineWeapon(supportWeapon))
+            if (FollowerWeaponLooseFeedReadiness.IsSupported(supportWeapon))
             {
                 IEnumerable<BodyGearCandidate> internalAmmoCandidates = sourceAmmoFactory(supportWeapon)
                     .Where(candidate =>
@@ -471,7 +471,7 @@ namespace pitTeam.BigBrain.Actions
 
             foreach (Weapon cargoWeapon in GetPromotableBackpackCargoWeapons(followerEquipment))
             {
-                if (FollowerWeaponInternalReadiness.IsInternalMagazineWeapon(cargoWeapon))
+                if (FollowerWeaponLooseFeedReadiness.IsSupported(cargoWeapon))
                 {
                     IEnumerable<BodyGearCandidate> internalAmmoCandidates = sourceAmmoFactory(cargoWeapon)
                         .Where(candidate =>
@@ -599,7 +599,7 @@ namespace pitTeam.BigBrain.Actions
                     string.IsNullOrEmpty(weapon.Id) ||
                     !yieldedWeaponIds.Add(weapon.Id) ||
                     !IsEasyWeaponEquipCandidate(new BodyGearCandidate(weapon, null, "FollowerBackpack", 0)) ||
-                    !HasInsertedMagazine(weapon) ||
+                    !HasWeaponFeedForPromotion(weapon) ||
                     !InteractableObjects.IsLootedWeapon(BotOwner, weapon) ||
                     InteractableObjects.IsStrictCargoItem(BotOwner, weapon))
                 {
@@ -656,10 +656,29 @@ namespace pitTeam.BigBrain.Actions
 
         private static bool IsEasyWeaponEquipCandidate(BodyGearCandidate candidate)
         {
-            return candidate?.Item is Weapon weapon &&
-                   weapon.GetItemComponent<KnifeComponent>() == null &&
-                   weapon is not PistolItemClass &&
-                   weapon is not RevolverItemClass;
+            return candidate?.Item is Weapon weapon && IsShoulderWeaponCandidate(weapon);
+        }
+
+        private static bool IsShoulderWeaponCandidate(Weapon weapon)
+        {
+            if (weapon == null ||
+                weapon.GetItemComponent<KnifeComponent>() != null ||
+                weapon is PistolItemClass)
+            {
+                return false;
+            }
+
+            // EFT uses WeapClass to distinguish holster revolvers from shoulder-fired
+            // revolver mechanisms such as the MTs shotgun, launchers, and custom rifles.
+            return weapon is not RevolverItemClass ||
+                   !string.Equals(weapon.WeapClass, "pistol", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsHolsterWeapon(Weapon weapon)
+        {
+            return weapon is PistolItemClass ||
+                   (weapon is RevolverItemClass &&
+                    string.Equals(weapon.WeapClass, "pistol", StringComparison.OrdinalIgnoreCase));
         }
 
         private static IEnumerable<BodyGearCandidate> GetBodyWeaponEquipCandidates(InventoryEquipment corpseEquipment)
@@ -769,8 +788,9 @@ namespace pitTeam.BigBrain.Actions
 
         private static BodyGearCandidate CreateGearSwapCandidate(BodyGearCandidate candidate)
         {
-            // Allow Gear Swapping is the only user-facing filter for add/swap planning. Price,
-            // Pickup Gear, and normal magazine-skip rules belong to ordinary cargo looting.
+            // Let the equipment planner inspect this tree without ordinary cargo price/category
+            // filters. Weapon policy separately reapplies Pickup Gear to an optional support add;
+            // missing-primary acquisition and future true primary swaps remain equipment decisions.
             // Protection checks and executable inventory placement still apply downstream.
             return new BodyGearCandidate(
                 item: candidate.Item,
@@ -914,7 +934,22 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (FollowerWeaponInternalReadiness.IsInternalMagazineWeapon(weapon))
+            bool primaryOccupied = followerEquipment
+                ?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)
+                ?.ContainedItem is Weapon;
+            if (primaryOccupied && !pitFireTeam.IsLootGearPickupEnabled())
+            {
+                // The current occupied-primary phase can only add a support weapon. A future
+                // better-primary comparison must run before this support-only gate; until then,
+                // Pickup Gear remains authoritative even when second primary is empty.
+                Modules.Logger.LogInfo(
+                    $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                    $"weapon={DescribeLootDebugItem(weapon)} evaluation=secondaryAddRejected " +
+                    $"destination=Source decisionReason=pickupGearDisabled");
+                return false;
+            }
+
+            if (FollowerWeaponLooseFeedReadiness.IsSupported(weapon))
             {
                 return TryBuildInternalMagazineWeaponEquipChain(
                     inventory,
@@ -931,7 +966,7 @@ namespace pitTeam.BigBrain.Actions
             // A working primary makes an empty second-primary slot a real vanilla support role.
             // This is an add, not a replacement: source magazines may join only when they fit in
             // fast access with the inserted-magazine landing reserve still intact.
-            if (followerEquipment?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem is Weapon)
+            if (primaryOccupied)
             {
                 if (TryBuildWorkingPrimarySecondaryWeaponEquipChain(
                         inventory,
@@ -1110,7 +1145,7 @@ namespace pitTeam.BigBrain.Actions
                 followUps.Add(candidate.WithFollowUpDestination(BodyGearFollowUpDestination.SecondaryWeaponEquip));
                 move = firstMagazineMove.WithFollowUps(
                     followUps,
-                    EPhraseTrigger.LootWeapon,
+                    EPhraseTrigger.LootGeneric,
                     continueOnFailure: true);
                 Modules.Logger.LogInfo(
                     $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
@@ -1552,6 +1587,14 @@ namespace pitTeam.BigBrain.Actions
             }
         }
 
+        private static bool HasWeaponFeedForPromotion(Weapon weapon)
+        {
+            // Loose-feed weapons have no detachable magazine item. Their live attached feed or
+            // chambers can still be completed and promoted by a later looting command.
+            return FollowerWeaponLooseFeedReadiness.IsSupported(weapon) ||
+                   HasInsertedMagazine(weapon);
+        }
+
         private static bool IsOperationalFastAccessFollowUp(BodyGearCandidate candidate)
         {
             return candidate?.FollowUpDestination == BodyGearFollowUpDestination.OperationalVest ||
@@ -1615,7 +1658,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (FollowerWeaponInternalReadiness.IsInternalMagazineWeapon(weapon))
+            if (FollowerWeaponLooseFeedReadiness.IsSupported(weapon))
             {
                 return TryBuildInternalPostTransferWeaponDestinationMove(
                     inventory,
@@ -1766,7 +1809,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (FollowerWeaponInternalReadiness.IsInternalMagazineWeapon(weapon))
+            if (FollowerWeaponLooseFeedReadiness.IsSupported(weapon))
             {
                 return TryBuildInternalStoredWeaponPromotionMove(
                     inventory,
@@ -1873,7 +1916,13 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (FollowerWeaponInternalReadiness.IsInternalMagazineWeapon(weapon))
+            if (!pitFireTeam.IsLootGearPickupEnabled())
+            {
+                reason = "pickupGearDisabled";
+                return false;
+            }
+
+            if (FollowerWeaponLooseFeedReadiness.IsSupported(weapon))
             {
                 return TryBuildInternalOperationalSecondaryWeaponEquipMove(
                     inventory,
@@ -1918,7 +1967,7 @@ namespace pitTeam.BigBrain.Actions
                     secondaryAddress,
                     out move,
                     storeAsLoot: ShouldReturnGearSwapAsCargo(),
-                    successPhrase: EPhraseTrigger.LootWeapon))
+                    successPhrase: EPhraseTrigger.LootGeneric))
             {
                 reason = "secondaryMoveRejected";
                 return false;
@@ -1983,9 +2032,17 @@ namespace pitTeam.BigBrain.Actions
             return true;
         }
 
-        private void RebindLootedPrimaryWeapon(Weapon weapon)
+        private void QueuePostLootPrimaryWeaponSelection(Weapon weapon, string context)
         {
-            FollowerLootedPrimaryWeaponBinding.RebindAndSelect(BotOwner, weapon, "lootMove");
+            if (weapon == null)
+            {
+                return;
+            }
+
+            FollowerLootedPrimaryWeaponBinding.SelectAfterLootCompletion(
+                BotOwner,
+                weapon,
+                context);
         }
 
         private bool TryStartPendingBodyGearSwapFollowUpMove(
@@ -2043,7 +2100,7 @@ namespace pitTeam.BigBrain.Actions
                             out string internalAmmoReason))
                     {
                         Modules.Logger.LogInfo(
-                            $"[LootCommand][InternalReadiness] Body reserve-ammo follow-up skipped: " +
+                            $"[LootCommand][LooseFeedReadiness] Body reserve-ammo follow-up skipped: " +
                             $"reason={internalAmmoReason} item={DescribeLootDebugItem(candidate?.Item)}");
                         continue;
                     }
@@ -2292,7 +2349,7 @@ namespace pitTeam.BigBrain.Actions
                             out string internalAmmoReason))
                     {
                         Modules.Logger.LogInfo(
-                            $"[LootCommand][InternalReadiness] Container reserve-ammo follow-up skipped: " +
+                            $"[LootCommand][LooseFeedReadiness] Container reserve-ammo follow-up skipped: " +
                             $"reason={internalAmmoReason} item={DescribeLootDebugItem(candidate?.Item)}");
                         continue;
                     }

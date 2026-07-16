@@ -34,12 +34,12 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (item is PistolItemClass || item is RevolverItemClass)
+            if (item is Weapon holsterWeapon && IsHolsterWeapon(holsterWeapon))
             {
                 return TryFindEquipmentSlotAddress(equipment, EquipmentSlot.Holster, item, out address);
             }
 
-            if (item is Weapon weapon && weapon.GetItemComponent<KnifeComponent>() == null)
+            if (item is Weapon weapon && IsShoulderWeaponCandidate(weapon))
             {
                 return TryFindEquipmentSlotAddress(equipment, EquipmentSlot.SecondPrimaryWeapon, item, out address);
             }

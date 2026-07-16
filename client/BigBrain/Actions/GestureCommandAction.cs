@@ -67,6 +67,7 @@ namespace pitTeam.BigBrain.Actions
         private bool containerLootHadEligibleButNoSpace;
         private bool containerLootSuccessSpoken;
         private bool containerLootWeaponListDirty;
+        private Weapon? pendingContainerPrimaryWeaponSelection;
         private bool containerLootOpened;
         private float containerLootOpenRequestedAt;
         private bool containerLootSearchStarted;
@@ -87,6 +88,7 @@ namespace pitTeam.BigBrain.Actions
         private bool bodyLootHadEligibleButNoSpace;
         private bool bodyLootSuccessSpoken;
         private bool bodyLootWeaponListDirty;
+        private Weapon? pendingBodyPrimaryWeaponSelection;
         private bool bodyLootBackpackCapacityAttempted;
         private bool bodyLootSearchStarted;
         private BetterSource? activeLootSearchSource;
@@ -168,6 +170,7 @@ namespace pitTeam.BigBrain.Actions
             containerLootHadEligibleButNoSpace = false;
             containerLootSuccessSpoken = false;
             containerLootWeaponListDirty = false;
+            pendingContainerPrimaryWeaponSelection = null;
             containerLootOpened = false;
             containerLootOpenRequestedAt = 0f;
             containerLootSearchStarted = false;
@@ -187,6 +190,7 @@ namespace pitTeam.BigBrain.Actions
             bodyLootHadEligibleButNoSpace = false;
             bodyLootSuccessSpoken = false;
             bodyLootWeaponListDirty = false;
+            pendingBodyPrimaryWeaponSelection = null;
             bodyLootBackpackCapacityAttempted = false;
             bodyLootSearchStarted = false;
             bodyLootAttemptedItemIds.Clear();
@@ -289,6 +293,7 @@ namespace pitTeam.BigBrain.Actions
                 containerLootHadEligibleButNoSpace = false;
                 containerLootSuccessSpoken = false;
                 containerLootWeaponListDirty = false;
+                pendingContainerPrimaryWeaponSelection = null;
                 containerLootOpened = false;
                 containerLootOpenRequestedAt = 0f;
                 containerLootSearchStarted = false;
@@ -308,6 +313,7 @@ namespace pitTeam.BigBrain.Actions
                 bodyLootHadEligibleButNoSpace = false;
                 bodyLootSuccessSpoken = false;
                 bodyLootWeaponListDirty = false;
+                pendingBodyPrimaryWeaponSelection = null;
                 bodyLootBackpackCapacityAttempted = false;
                 bodyLootSearchStarted = false;
                 bodyLootAttemptedItemIds.Clear();

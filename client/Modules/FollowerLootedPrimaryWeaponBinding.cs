@@ -1,5 +1,6 @@
 using EFT;
 using EFT.InventoryLogic;
+using pitTeam.Utils;
 using System;
 
 namespace pitTeam.Modules
@@ -11,6 +12,7 @@ namespace pitTeam.Modules
         private const int StuckSelectorRecoveryAttempt = 6;
         private const int StuckSelectorRecoveryInterval = 6;
         private const float SwitchRetryDelaySeconds = 0.45f;
+        private const float PostLootSelectionDelaySeconds = 2f;
 
         internal static void RebindAndSelect(BotOwner bot, Weapon weapon, string context)
         {
@@ -21,6 +23,63 @@ namespace pitTeam.Modules
             }
 
             TryEnsureSelected(bot, weapon, context, 0);
+        }
+
+        internal static void SelectAfterLootCompletion(
+            BotOwner bot,
+            Weapon weapon,
+            string context)
+        {
+            if (weapon == null)
+            {
+                return;
+            }
+
+            if (bot?.AITaskManager == null)
+            {
+                RunPostLootSelection(bot, weapon, context);
+                return;
+            }
+
+            try
+            {
+                // The item transaction has completed, but EFT can keep the inventory/request
+                // controller occupied until the next UI/interaction tick. Wait for that release,
+                // then apply the same recovery reset used by the Attention command before asking
+                // vanilla BotWeaponSelector to take the new primary.
+                bot.AITaskManager.RegisterDelayedTask(
+                    bot,
+                    PostLootSelectionDelaySeconds,
+                    () => RunPostLootSelection(bot, weapon, context));
+                Logger.LogInfo(
+                    $"[LootCommand][WeaponRegistration] follower='{bot.Profile?.Nickname ?? bot.ProfileId ?? "unknown"}' " +
+                    $"weapon={weapon.TemplateId} context={context} result=postLootSelectionQueued " +
+                    $"delay={PostLootSelectionDelaySeconds:0.0}");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogInfo(
+                    $"[LootCommand] Post-loot primary selection could not be queued for " +
+                    $"'{bot?.Profile?.Nickname ?? bot?.ProfileId ?? "unknown"}' ({context}): {ex.Message}");
+            }
+        }
+
+        private static void RunPostLootSelection(
+            BotOwner bot,
+            Weapon weapon,
+            string context)
+        {
+            if (!CanContinueWeaponSwitch(bot, out string inactiveReason))
+            {
+                LogAbortedSwitch(bot, weapon, context, inactiveReason);
+                return;
+            }
+
+            // Attention uses this soft reset after clearing its command/combat ownership. Loot
+            // completion has already cleared the loot command, so this is the equivalent narrow
+            // recovery step without erasing enemy memory or playing Attention's voice response.
+            FollowerRecovery.SoftReset(bot);
+            RebindAndSelect(bot, weapon, context);
         }
 
         internal static void RegisterSupport(BotOwner bot, Weapon weapon, string context)

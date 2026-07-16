@@ -157,7 +157,19 @@ namespace pitTeam.BigBrain.Actions
                     continue;
                 }
 
-                if (IsMagazineCompatibleWithWeapon(weapon, magazine))
+                if (!IsMagazineCompatibleWithWeapon(weapon, magazine))
+                {
+                    stats.AddRejectedMagazine(magazineDescription, "incompatibleMagazine");
+                    continue;
+                }
+
+                if (!FollowerWeaponMagazineCompatibility.AreLoadedCartridgesCompatible(weapon, magazine))
+                {
+                    stats.AddRejectedMagazine(magazineDescription, "incompatibleCartridge");
+                    continue;
+                }
+
+                if (FollowerWeaponMagazineCompatibility.IsOperational(weapon, magazine))
                 {
                     stats.CompatibleCount++;
                     stats.AddAcceptedMagazine(magazineDescription);
@@ -165,7 +177,7 @@ namespace pitTeam.BigBrain.Actions
                     continue;
                 }
 
-                stats.AddRejectedMagazine(magazineDescription, "incompatible");
+                stats.AddRejectedMagazine(magazineDescription, "notOperational");
             }
 
             LogOperationalMagazineScan(stats);
@@ -639,27 +651,7 @@ namespace pitTeam.BigBrain.Actions
 
         private static bool IsMagazineCompatibleWithWeapon(Weapon weapon, MagazineItemClass magazine)
         {
-            if (weapon == null || magazine == null)
-            {
-                return false;
-            }
-
-            try
-            {
-                MagazineItemClass currentMagazine = weapon.GetCurrentMagazine();
-                if (currentMagazine != null &&
-                    string.Equals(currentMagazine.TemplateId, magazine.TemplateId, StringComparison.Ordinal))
-                {
-                    return true;
-                }
-
-                Slot magazineSlot = weapon.GetMagazineSlot();
-                return magazineSlot != null && magazineSlot.CanAccept(magazine);
-            }
-            catch
-            {
-                return false;
-            }
+            return FollowerWeaponMagazineCompatibility.IsMechanicallyCompatible(weapon, magazine);
         }
 
         private static bool TryFindOperationalMagazineVestAddress(

@@ -35,7 +35,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             Item item = candidate.Item;
-            if (item is PistolItemClass || item is RevolverItemClass)
+            if (item is Weapon holsterWeapon && IsHolsterWeapon(holsterWeapon))
             {
                 yield return EquipmentSlot.Holster;
                 yield break;
@@ -77,7 +77,7 @@ namespace pitTeam.BigBrain.Actions
                 yield break;
             }
 
-            if (item is Weapon && item.GetItemComponent<KnifeComponent>() == null)
+            if (item is Weapon weapon && IsShoulderWeaponCandidate(weapon))
             {
                 yield return EquipmentSlot.SecondPrimaryWeapon;
                 yield return EquipmentSlot.FirstPrimaryWeapon;
