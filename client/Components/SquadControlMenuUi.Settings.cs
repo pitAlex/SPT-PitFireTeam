@@ -66,6 +66,7 @@ namespace pitTeam.Components
             settingsContentRoot = null;
             settingsLayoutGroup = null;
             settingsScrollbar = null;
+            settingsEntriesBuilt = false;
 
             CreateScrollableSettingsArea(settingsRect);
             CreateSettingsVersionLabel(settingsRect);
@@ -179,6 +180,8 @@ namespace pitTeam.Components
                 return;
             }
 
+            bool raidRestrictedContext = IsRaidRestrictedSettingsContext();
+
             CancelShortcutCapture(false);
             ClearLoadoutManagementToggleGroup();
             loadoutManagementToggleSpawners.Clear();
@@ -206,6 +209,50 @@ namespace pitTeam.Components
             {
                 settingsScrollRect.verticalNormalizedPosition = 1f;
             }
+
+            settingsEntriesBuilt = true;
+            settingsEntriesBuiltForRaidRestrictedContext = raidRestrictedContext;
+        }
+
+        private bool SettingsEntriesNeedRebuildForCurrentContext()
+        {
+            if (settingsContentRoot == null || !settingsEntriesBuilt || settingsContentRoot.childCount == 0)
+            {
+                return true;
+            }
+
+            return settingsEntriesBuiltForRaidRestrictedContext != IsRaidRestrictedSettingsContext();
+        }
+
+        private void EnsureSettingsEntriesForCurrentContext()
+        {
+            if (SettingsEntriesNeedRebuildForCurrentContext())
+            {
+                RebuildSettingsEntries();
+            }
+        }
+
+        private void QueueRaidSettingsWarmup()
+        {
+            if (settingsWarmupCoroutine != null || !SettingsEntriesNeedRebuildForCurrentContext())
+            {
+                return;
+            }
+
+            settingsWarmupCoroutine = StartCoroutine(WarmRaidSettingsEntriesCoroutine());
+        }
+
+        private IEnumerator WarmRaidSettingsEntriesCoroutine()
+        {
+            yield return null;
+            settingsWarmupCoroutine = null;
+
+            if (raidSettingsOverlayActive || !IsRaidRestrictedSettingsContext())
+            {
+                yield break;
+            }
+
+            EnsureSettingsEntriesForCurrentContext();
         }
 
         private IEnumerable<SquadSettingEntry> BuildSquadSettingsEntries()
@@ -218,6 +265,10 @@ namespace pitTeam.Components
                 pitFireTeam.pingTime,
                 pitFireTeam.statusReportHighlightColor,
                 pitFireTeam.statusReportHighlight,
+                pitFireTeam.statusReportHealthColoring,
+                pitFireTeam.statusReportFullHealthColor,
+                pitFireTeam.statusReportMediumHealthColor,
+                pitFireTeam.statusReportLowHealthColor,
                 pitFireTeam.statusReportShowName,
                 pitFireTeam.statusReportShowDistance,
                 pitFireTeam.statusReportShowHealth,
@@ -450,7 +501,7 @@ namespace pitTeam.Components
             rowRect.sizeDelta = new Vector2(0f, SettingsRowHeight);
 
             CreateSettingsRowChrome(rowObject.transform);
-            if (entry == pitFireTeam.restrictedGearMaintenance)
+            if (IsNestedSettingsEntry(entry))
             {
                 background.enabled = false;
                 Transform topLine = rowObject.transform.Find("TopLine");
@@ -555,6 +606,15 @@ namespace pitTeam.Components
 
             CreateReadOnlySettingControl(controlRect, entry.BoxedValue?.ToString() ?? string.Empty);
             AddRaidDisabledTooltipOverlay(rowObject, disabledDuringRaid);
+        }
+
+        private static bool IsNestedSettingsEntry(ConfigEntryBase entry)
+        {
+            return entry == pitFireTeam.restrictedGearMaintenance
+                || entry == pitFireTeam.statusReportHealthColoring
+                || entry == pitFireTeam.statusReportFullHealthColor
+                || entry == pitFireTeam.statusReportMediumHealthColor
+                || entry == pitFireTeam.statusReportLowHealthColor;
         }
 
         private void CreateLoadoutManagementEntryRow(LoadoutManagementMode mode)
@@ -1288,7 +1348,7 @@ namespace pitTeam.Components
             swatchBorderRect.anchorMax = new Vector2(1f, 0.5f);
             swatchBorderRect.pivot = new Vector2(1f, 0.5f);
             swatchBorderRect.sizeDelta = new Vector2(28f, 28f);
-            swatchBorderRect.anchoredPosition = new Vector2(-138f, 0f);
+            swatchBorderRect.anchoredPosition = new Vector2(-145f, 0f);
 
             Image swatchBorder = swatchBorderObject.GetComponent<Image>();
             swatchBorder.color = new Color(0.86f, 0.84f, 0.76f, 0.96f);
@@ -1322,8 +1382,8 @@ namespace pitTeam.Components
                 inputRect.anchorMin = new Vector2(1f, 0.5f);
                 inputRect.anchorMax = new Vector2(1f, 0.5f);
                 inputRect.pivot = new Vector2(1f, 0.5f);
-                inputRect.sizeDelta = new Vector2(124f, 38f);
-                inputRect.anchoredPosition = Vector2.zero;
+                inputRect.sizeDelta = new Vector2(89f, 38f);
+                inputRect.anchoredPosition = new Vector2(-42f, 0f);
                 inputRect.localScale = Vector3.one;
             }
 
@@ -1413,6 +1473,24 @@ namespace pitTeam.Components
             if (entry == pitFireTeam.statusReportHighlightColor)
             {
                 defaultHex = StatusReportHighlightColor.DefaultHex;
+                return true;
+            }
+
+            if (entry == pitFireTeam.statusReportFullHealthColor)
+            {
+                defaultHex = StatusReportHighlightColor.FullHealthDefaultHex;
+                return true;
+            }
+
+            if (entry == pitFireTeam.statusReportMediumHealthColor)
+            {
+                defaultHex = StatusReportHighlightColor.MediumHealthDefaultHex;
+                return true;
+            }
+
+            if (entry == pitFireTeam.statusReportLowHealthColor)
+            {
+                defaultHex = StatusReportHighlightColor.LowHealthDefaultHex;
                 return true;
             }
 
@@ -2513,6 +2591,10 @@ namespace pitTeam.Components
             if (entry == pitFireTeam.pingTime) return language.pingTime;
             if (entry == pitFireTeam.statusReportHighlight) return language.statusReportHighlight;
             if (entry == pitFireTeam.statusReportHighlightColor) return language.statusReportHighlightColor;
+            if (entry == pitFireTeam.statusReportHealthColoring) return language.statusReportHealthColoring;
+            if (entry == pitFireTeam.statusReportFullHealthColor) return language.statusReportFullHealthColor;
+            if (entry == pitFireTeam.statusReportMediumHealthColor) return language.statusReportMediumHealthColor;
+            if (entry == pitFireTeam.statusReportLowHealthColor) return language.statusReportLowHealthColor;
             if (entry == pitFireTeam.statusReportShowName) return language.statusReportShowName;
             if (entry == pitFireTeam.statusReportShowDistance) return language.statusReportShowDistance;
             if (entry == pitFireTeam.statusReportShowHealth) return language.statusReportShowHealth;

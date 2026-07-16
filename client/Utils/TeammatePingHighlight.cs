@@ -33,6 +33,7 @@ namespace pitTeam.Utils
         private readonly List<Renderer> _rendererBuffer = new List<Renderer>();
         private readonly HashSet<Renderer> _seenRenderers = new HashSet<Renderer>();
         private readonly Dictionary<Renderer, HighlightMeshTarget> _targetCache = new Dictionary<Renderer, HighlightMeshTarget>();
+        private readonly Dictionary<BotOwner, Material> _healthHighlightMaterials = new Dictionary<BotOwner, Material>();
         private readonly List<HighlightMeshTarget> _viewmodelTargets = new List<HighlightMeshTarget>();
         private readonly HashSet<Renderer> _seenViewmodelRenderers = new HashSet<Renderer>();
 
@@ -107,7 +108,7 @@ namespace pitTeam.Utils
 
                     if (!_targetCache.TryGetValue(renderer, out HighlightMeshTarget target))
                     {
-                        target = HighlightMeshTarget.TryCreate(renderer);
+                        target = HighlightMeshTarget.TryCreate(renderer, bot);
                         if (target != null)
                         {
                             _targetCache[renderer] = target;
@@ -153,33 +154,120 @@ namespace pitTeam.Utils
 
             int pixelWidth = Mathf.Max(1, _mainCamera.pixelWidth);
             int pixelHeight = Mathf.Max(1, _mainCamera.pixelHeight);
+            Vector4 outlineOffset = new Vector4(
+                PingLineWidth / pixelWidth,
+                PingLineWidth / pixelHeight,
+                0f,
+                0f);
+
+            if (StatusReportHighlightColor.IsHealthColoringEnabled)
+            {
+                RenderHealthStatusHighlights(outlineOffset);
+                return;
+            }
+
             _highlightMaterial.SetColor(ColorProperty, StatusReportHighlightColor.GetConfiguredColor());
-            _highlightMaterial.SetVector(
-                OffsetProperty,
-                new Vector4(PingLineWidth / pixelWidth, PingLineWidth / pixelHeight, 0f, 0f));
-
-            _commandBuffer.SetRenderTarget(_maskTexture);
-            _commandBuffer.ClearRenderTarget(false, true, Color.black);
-
+            _highlightMaterial.SetVector(OffsetProperty, outlineOffset);
+            BeginMaskRender();
             for (int i = 0; i < _targets.Count; i++)
             {
                 _targets[i].Draw(_commandBuffer, _highlightMaterial, NativeAlwaysPass);
             }
 
-            if (_viewmodelMaskMaterial != null)
+            DrawViewmodelMask();
+            CompositeHighlight(_highlightMaterial);
+        }
+
+        private void RenderHealthStatusHighlights(Vector4 outlineOffset)
+        {
+            for (int teammateIndex = 0; teammateIndex < _teammates.Count; teammateIndex++)
             {
-                for (int i = 0; i < _viewmodelTargets.Count; i++)
+                BotOwner teammate = _teammates[teammateIndex];
+                if (teammate == null || teammate.IsDead || !HasTargetsFor(teammate))
                 {
-                    _viewmodelTargets[i].Draw(_commandBuffer, _viewmodelMaskMaterial, 0, requireVisible: true);
+                    continue;
+                }
+
+                Material material = GetHealthHighlightMaterial(teammate);
+                material.SetColor(ColorProperty, StatusReportHighlightColor.GetConfiguredHealthColor(teammate));
+                material.SetVector(OffsetProperty, outlineOffset);
+
+                BeginMaskRender();
+                for (int targetIndex = 0; targetIndex < _targets.Count; targetIndex++)
+                {
+                    HighlightMeshTarget target = _targets[targetIndex];
+                    if (target.IsOwnedBy(teammate))
+                    {
+                        target.Draw(_commandBuffer, material, NativeAlwaysPass);
+                    }
+                }
+
+                DrawViewmodelMask();
+                CompositeHighlight(material);
+            }
+        }
+
+        private bool HasTargetsFor(BotOwner teammate)
+        {
+            for (int i = 0; i < _targets.Count; i++)
+            {
+                if (_targets[i].IsOwnedBy(teammate))
+                {
+                    return true;
                 }
             }
 
+            return false;
+        }
+
+        private Material GetHealthHighlightMaterial(BotOwner teammate)
+        {
+            if (_healthHighlightMaterials.TryGetValue(teammate, out Material material) && material != null)
+            {
+                return material;
+            }
+
+            material = new Material(_highlightMaterial)
+            {
+                name = "pitFireTeam Status Report Health Highlight",
+                hideFlags = HideFlags.HideAndDontSave
+            };
+            if (_maskTexture != null)
+            {
+                material.SetTexture(MaskTextureProperty, _maskTexture);
+            }
+
+            _healthHighlightMaterials[teammate] = material;
+            return material;
+        }
+
+        private void BeginMaskRender()
+        {
+            _commandBuffer.SetRenderTarget(_maskTexture);
+            _commandBuffer.ClearRenderTarget(false, true, Color.black);
+        }
+
+        private void DrawViewmodelMask()
+        {
+            if (_viewmodelMaskMaterial == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < _viewmodelTargets.Count; i++)
+            {
+                _viewmodelTargets[i].Draw(_commandBuffer, _viewmodelMaskMaterial, 0, requireVisible: true);
+            }
+        }
+
+        private void CompositeHighlight(Material material)
+        {
             _commandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
             _commandBuffer.GetTemporaryRT(FinalTextureProperty, -1, -1);
             _commandBuffer.Blit(
                 BuiltinRenderTextureType.CameraTarget,
                 FinalTextureProperty,
-                _highlightMaterial,
+                material,
                 NativeCompositePass);
             _commandBuffer.Blit(FinalTextureProperty, BuiltinRenderTextureType.CameraTarget);
             _commandBuffer.ReleaseTemporaryRT(FinalTextureProperty);
@@ -230,7 +318,7 @@ namespace pitTeam.Utils
                 return;
             }
 
-            HighlightMeshTarget target = HighlightMeshTarget.TryCreate(renderer);
+            HighlightMeshTarget target = HighlightMeshTarget.TryCreate(renderer, null);
             if (target != null)
             {
                 _viewmodelTargets.Add(target);
@@ -344,6 +432,14 @@ namespace pitTeam.Utils
             }
 
             _highlightMaterial.SetTexture(MaskTextureProperty, _maskTexture);
+            foreach (Material material in _healthHighlightMaterials.Values)
+            {
+                if (material != null)
+                {
+                    material.SetTexture(MaskTextureProperty, _maskTexture);
+                }
+            }
+
             return true;
         }
 
@@ -386,6 +482,15 @@ namespace pitTeam.Utils
             _rendererBuffer.Clear();
             _seenRenderers.Clear();
             _targetCache.Clear();
+            foreach (Material material in _healthHighlightMaterials.Values)
+            {
+                if (material != null)
+                {
+                    UnityEngine.Object.Destroy(material);
+                }
+            }
+
+            _healthHighlightMaterials.Clear();
             _viewmodelTargets.Clear();
             _seenViewmodelRenderers.Clear();
             _localPlayer = null;
@@ -445,19 +550,21 @@ namespace pitTeam.Utils
         private sealed class HighlightMeshTarget
         {
             private readonly Renderer _renderer;
+            private readonly BotOwner _owner;
 
-            private HighlightMeshTarget(Renderer renderer)
+            private HighlightMeshTarget(Renderer renderer, BotOwner owner)
             {
                 _renderer = renderer;
+                _owner = owner;
             }
 
-            public static HighlightMeshTarget TryCreate(Renderer renderer)
+            public static HighlightMeshTarget TryCreate(Renderer renderer, BotOwner owner)
             {
                 if (renderer is SkinnedMeshRenderer skinnedRenderer)
                 {
                     Mesh sharedMesh = skinnedRenderer.sharedMesh;
                     return sharedMesh != null
-                        ? new HighlightMeshTarget(renderer)
+                        ? new HighlightMeshTarget(renderer, owner)
                         : null;
                 }
 
@@ -466,11 +573,16 @@ namespace pitTeam.Utils
                     MeshFilter meshFilter = renderer.GetComponent<MeshFilter>();
                     if (meshFilter?.sharedMesh != null)
                     {
-                        return new HighlightMeshTarget(renderer);
+                        return new HighlightMeshTarget(renderer, owner);
                     }
                 }
 
                 return null;
+            }
+
+            public bool IsOwnedBy(BotOwner owner)
+            {
+                return ReferenceEquals(_owner, owner);
             }
 
             public void Draw(

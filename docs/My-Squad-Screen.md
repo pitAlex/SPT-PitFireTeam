@@ -284,6 +284,10 @@ Verified entry groups:
     - `pingTime`
     - `statusReportHighlightColor`
     - `statusReportHighlight`
+    - `statusReportHealthColoring`
+    - `statusReportFullHealthColor`
+    - `statusReportMediumHealthColor`
+    - `statusReportLowHealthColor`
     - `statusReportShowName`
     - `statusReportShowDistance`
     - `statusReportShowHealth`
@@ -345,6 +349,9 @@ Supported control types:
 - loot price ranged `int` settings -> integer input field
 - hex color settings -> validated `#RRGGBB` input with a color preview
     - Status Report color applies to report text and the teammate outline
+    - optional Health Status coloring replaces the outline color per teammate while leaving report text on the normal Status Report color
+    - health colors blend continuously through Low at 30%, Medium at 65%, and Full at 100%
+    - the health score starts from total body HP, is capped by head/thorax health, and is partially reduced by stomach damage so critical torso damage cannot be hidden by healthy limbs
     - Enemy Marker colors apply when the enemy is visible or out of sight
 - `LoadoutManagementMode` -> mutually exclusive radio-style toggle rows
 - `KeyboardShortcut` -> press-to-capture button
@@ -407,6 +414,8 @@ There is also a separate in-raid-style access point for the settings panel:
 - `Squad Settings` button cloned from the menu `hide/resume` button
 
 This opens the same settings content inside `screenRoot` as a standalone overlay with a cloned back button. It shows only the settings tab and is separate from the side-selection-hosted `My Squad` entry flow.
+
+The completed settings hierarchy is retained while its menu/raid restriction context is unchanged. When the in-raid pause menu exposes the `Squad Settings` button, the raid-restricted version is prepared while the overlay is still hidden, so opening the overlay does not normally destroy and recreate every settings row. A context change between menu and raid still triggers one rebuild so hidden and disabled settings remain correct.
 
 ### Current settings limitations
 

@@ -174,6 +174,18 @@ namespace pitTeam.Localization
                 statusReportHighlightColor = Entry(
                     "Status Report: Color",
                     "Color of the Status Report text and teammate outline in hexadecimal RGB format (#00FF00)."),
+                statusReportHealthColoring = Entry(
+                    "Health Status",
+                    "Enable highlight coloring based on teammate health status."),
+                statusReportFullHealthColor = Entry(
+                    "Full Health Highlight Color",
+                    "Highlight color for a teammate at full health, in hexadecimal RGB format (#00FF00)."),
+                statusReportMediumHealthColor = Entry(
+                    "Medium Health Highlight Color",
+                    "Highlight color for a teammate at medium health, in hexadecimal RGB format (#FFFF00)."),
+                statusReportLowHealthColor = Entry(
+                    "Low Health Highlight Color",
+                    "Highlight color for a teammate at low health, in hexadecimal RGB format (#FF0000)."),
                 statusReportShowName = Entry(
                     "Status Report: Name",
                     "Show each teammate's name in the Status Report."),

@@ -216,6 +216,15 @@ namespace pitTeam.Components
         private RectTransform settingsContentRoot;
         private VerticalLayoutGroup settingsLayoutGroup;
         private Scrollbar settingsScrollbar;
+        private bool settingsEntriesBuilt;
+        private bool settingsEntriesBuiltForRaidRestrictedContext;
+        private Coroutine settingsWarmupCoroutine;
+        private SettingsScreen cachedSettingsScreenTemplate;
+        private GameSettingsTab cachedGameSettingsTabTemplate;
+        private ScrollRectNoDrag cachedSettingsScrollRectTemplate;
+        private UpdatableToggle cachedSettingsToggleTemplate;
+        private RectTransform cachedSettingsSliderContainerTemplate;
+        private NumberSlider cachedSettingsSliderTemplate;
         private GameObject rosterPanel;
         private GameObject settingsPanel;
         private DefaultUIButton addTeammateButton;
@@ -632,6 +641,10 @@ namespace pitTeam.Components
                     && hideScreenButton.gameObject.activeSelf
                     && !raidSettingsOverlayActive;
                 raidSettingsButton.gameObject.SetActive(showRaidSettingsButton);
+                if (showRaidSettingsButton)
+                {
+                    QueueRaidSettingsWarmup();
+                }
             }
         }
 
@@ -1045,7 +1058,7 @@ namespace pitTeam.Components
             List<string> pendingTileRefreshIds = pendingTileRefreshAccountIds.ToList();
             pendingTileRefreshAccountIds.Clear();
             bool needsRoster = rosterGridRoot != null && (rosterGridRoot.childCount == 0 || shouldForceRosterRefresh);
-            bool needsSettings = settingsContentRoot != null && settingsContentRoot.childCount == 0;
+            bool needsSettings = SettingsEntriesNeedRebuildForCurrentContext();
 
             if (!needsRoster && rosterGridRoot != null)
             {
@@ -1300,9 +1313,10 @@ namespace pitTeam.Components
 
             RetractPanels();
             raidSettingsOverlayActive = true;
-            screenRoot.SetActive(true);
             SetStandaloneTitle(GetSocialUiText("SquadControlRaidSettingsTitle"));
             ShowTab(false);
+            EnsureSettingsEntriesForCurrentContext();
+            screenRoot.SetActive(true);
 
             if (standaloneCloseButton != null)
             {
@@ -1313,11 +1327,6 @@ namespace pitTeam.Components
                 standaloneCloseButton.Interactable = true;
                 standaloneCloseButton.transform.SetAsLastSibling();
                 standaloneCloseButton.gameObject.SetActive(true);
-            }
-
-            if (settingsContentRoot != null)
-            {
-                RebuildSettingsEntries();
             }
 
             SyncButtonVisibility();

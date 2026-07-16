@@ -132,6 +132,10 @@ namespace pitTeam
         public Dictionary<string, string> pingTime { get; set; }
         public Dictionary<string, string> statusReportHighlight { get; set; }
         public Dictionary<string, string> statusReportHighlightColor { get; set; }
+        public Dictionary<string, string> statusReportHealthColoring { get; set; }
+        public Dictionary<string, string> statusReportFullHealthColor { get; set; }
+        public Dictionary<string, string> statusReportMediumHealthColor { get; set; }
+        public Dictionary<string, string> statusReportLowHealthColor { get; set; }
         public Dictionary<string, string> statusReportShowName { get; set; }
         public Dictionary<string, string> statusReportShowDistance { get; set; }
         public Dictionary<string, string> statusReportShowHealth { get; set; }
@@ -276,6 +280,10 @@ namespace pitTeam
         public static ConfigEntry<int> pingTime;
         public static ConfigEntry<bool> statusReportHighlight;
         public static ConfigEntry<string> statusReportHighlightColor;
+        public static ConfigEntry<bool> statusReportHealthColoring;
+        public static ConfigEntry<string> statusReportFullHealthColor;
+        public static ConfigEntry<string> statusReportMediumHealthColor;
+        public static ConfigEntry<string> statusReportLowHealthColor;
         public static ConfigEntry<bool> statusReportShowName;
         public static ConfigEntry<bool> statusReportShowDistance;
         public static ConfigEntry<bool> statusReportShowHealth;
@@ -1045,6 +1053,14 @@ namespace pitTeam
             statusReportHighlight = Config.Bind("", "18 StatusReportHighlight", true, new ConfigDescription(optionsLang.statusReportHighlight["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportHighlight)));
 
             statusReportHighlightColor = Config.Bind("", "18 StatusReportHighlightColor", Utils.StatusReportHighlightColor.DefaultHex, new ConfigDescription(optionsLang.statusReportHighlightColor["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportHighlightColor)));
+
+            statusReportHealthColoring = Config.Bind("", "18 StatusReportHealthColoring", false, new ConfigDescription(optionsLang.statusReportHealthColoring["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportHealthColoring)));
+
+            statusReportFullHealthColor = Config.Bind("", "18 StatusReportFullHealthColor", Utils.StatusReportHighlightColor.FullHealthDefaultHex, new ConfigDescription(optionsLang.statusReportFullHealthColor["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportFullHealthColor)));
+
+            statusReportMediumHealthColor = Config.Bind("", "18 StatusReportMediumHealthColor", Utils.StatusReportHighlightColor.MediumHealthDefaultHex, new ConfigDescription(optionsLang.statusReportMediumHealthColor["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportMediumHealthColor)));
+
+            statusReportLowHealthColor = Config.Bind("", "18 StatusReportLowHealthColor", Utils.StatusReportHighlightColor.LowHealthDefaultHex, new ConfigDescription(optionsLang.statusReportLowHealthColor["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportLowHealthColor)));
 
             statusReportShowName = Config.Bind("", "18 StatusReportShowName", true, new ConfigDescription(optionsLang.statusReportShowName["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportShowName)));
 

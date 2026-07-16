@@ -122,41 +122,70 @@ namespace pitTeam.Components
 
         private SettingsScreen ResolveSettingsScreenTemplate()
         {
-            return Resources.FindObjectsOfTypeAll<SettingsScreen>()
+            if (cachedSettingsScreenTemplate != null)
+            {
+                return cachedSettingsScreenTemplate;
+            }
+
+            cachedSettingsScreenTemplate = Resources.FindObjectsOfTypeAll<SettingsScreen>()
                 .FirstOrDefault(screen =>
                     screen != null &&
                     SettingsScreenGameTabField?.GetValue(screen) is GameSettingsTab);
+            return cachedSettingsScreenTemplate;
         }
 
         private ScrollRectNoDrag ResolveSettingsScrollRectTemplate()
         {
+            if (cachedSettingsScrollRectTemplate != null)
+            {
+                return cachedSettingsScrollRectTemplate;
+            }
+
             GameSettingsTab gameSettingsTab = ResolveGameSettingsTabTemplate();
             if (gameSettingsTab == null)
             {
                 return null;
             }
 
-            return gameSettingsTab.GetComponentsInChildren<ScrollRectNoDrag>(true)
+            cachedSettingsScrollRectTemplate = gameSettingsTab.GetComponentsInChildren<ScrollRectNoDrag>(true)
                 .FirstOrDefault(scrollRect =>
                     scrollRect != null &&
                     scrollRect.content != null &&
                     scrollRect.viewport != null);
+            return cachedSettingsScrollRectTemplate;
         }
 
         private GameSettingsTab ResolveGameSettingsTabTemplate()
         {
+            if (cachedGameSettingsTabTemplate != null)
+            {
+                return cachedGameSettingsTabTemplate;
+            }
+
             SettingsScreen settingsScreen = ResolveSettingsScreenTemplate();
-            return SettingsScreenGameTabField?.GetValue(settingsScreen) as GameSettingsTab;
+            cachedGameSettingsTabTemplate = SettingsScreenGameTabField?.GetValue(settingsScreen) as GameSettingsTab;
+            return cachedGameSettingsTabTemplate;
         }
 
         private UpdatableToggle ResolveSettingsToggleTemplate()
         {
+            if (cachedSettingsToggleTemplate != null)
+            {
+                return cachedSettingsToggleTemplate;
+            }
+
             GameSettingsTab gameSettingsTab = ResolveGameSettingsTabTemplate();
-            return GameSettingsToggleTemplateField?.GetValue(gameSettingsTab) as UpdatableToggle;
+            cachedSettingsToggleTemplate = GameSettingsToggleTemplateField?.GetValue(gameSettingsTab) as UpdatableToggle;
+            return cachedSettingsToggleTemplate;
         }
 
         private RectTransform ResolveSettingsSliderContainerTemplate()
         {
+            if (cachedSettingsSliderContainerTemplate != null)
+            {
+                return cachedSettingsSliderContainerTemplate;
+            }
+
             GameSettingsTab gameSettingsTab = ResolveGameSettingsTabTemplate();
             if (gameSettingsTab == null)
             {
@@ -166,17 +195,25 @@ namespace pitTeam.Components
             Transform sliderRoot = gameSettingsTab.transform.Find("Image/Scroll View/Viewport/Other Settings/Scrolls/FOV");
             if (sliderRoot is RectTransform sliderRect)
             {
-                return sliderRect;
+                cachedSettingsSliderContainerTemplate = sliderRect;
+                return cachedSettingsSliderContainerTemplate;
             }
 
             NumberSlider fallbackSlider = ResolveSettingsSliderTemplate();
-            return fallbackSlider?.transform as RectTransform;
+            cachedSettingsSliderContainerTemplate = fallbackSlider?.transform as RectTransform;
+            return cachedSettingsSliderContainerTemplate;
         }
 
         private NumberSlider ResolveSettingsSliderTemplate()
         {
+            if (cachedSettingsSliderTemplate != null)
+            {
+                return cachedSettingsSliderTemplate;
+            }
+
             GameSettingsTab gameSettingsTab = ResolveGameSettingsTabTemplate();
-            return GameSettingsSliderTemplateField?.GetValue(gameSettingsTab) as NumberSlider;
+            cachedSettingsSliderTemplate = GameSettingsSliderTemplateField?.GetValue(gameSettingsTab) as NumberSlider;
+            return cachedSettingsSliderTemplate;
         }
 
         private TradingPlayerPanel ResolveTradingPlayerPanelTemplate()
