@@ -881,7 +881,8 @@ namespace pitTeam.Modules
                     ? new
                     {
                         type = activeWeapon.GetType().Name,
-                        magazineCount = activeWeapon.GetCurrentMagazine()?.Cartridges?.Count
+                        magazineCount = activeWeapon.GetCurrentMagazine()?.Cartridges?.Count,
+                        loadedRounds = FollowerCombatCommon.CountLoadedRounds(activeWeapon)
                     }
                     : null
             };
@@ -927,7 +928,8 @@ namespace pitTeam.Modules
             {
                 id = weapon.Id,
                 type = weapon.GetType().Name,
-                magazineCount = weapon.GetCurrentMagazine()?.Cartridges?.Count
+                magazineCount = weapon.GetCurrentMagazine()?.Cartridges?.Count,
+                loadedRounds = FollowerCombatCommon.CountLoadedRounds(weapon)
             };
         }
 

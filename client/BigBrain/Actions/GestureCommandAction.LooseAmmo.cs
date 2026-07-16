@@ -16,6 +16,14 @@ namespace pitTeam.BigBrain.Actions
             EquipmentSlot.TacticalVest
         };
 
+        private static readonly EquipmentSlot[] LauncherLooseAmmoDestinationOrder =
+        {
+            EquipmentSlot.TacticalVest,
+            EquipmentSlot.Pockets,
+            EquipmentSlot.Backpack,
+            EquipmentSlot.SecuredContainer
+        };
+
         private IEnumerable<BodyGearCandidate> GetBodyWeaponLooseAmmoCandidates(
             InventoryEquipment corpseEquipment,
             Weapon weapon)
@@ -82,7 +90,10 @@ namespace pitTeam.BigBrain.Actions
             }
 
             HashSet<string> yieldedIds = new HashSet<string>(StringComparer.Ordinal);
-            foreach (EquipmentSlot slot in WeaponLooseAmmoDestinationOrder)
+            EquipmentSlot[] destinationOrder = FollowerCombatCommon.IsGrenadeLauncherWeapon(weapon)
+                ? LauncherLooseAmmoDestinationOrder
+                : WeaponLooseAmmoDestinationOrder;
+            foreach (EquipmentSlot slot in destinationOrder)
             {
                 Item root = followerEquipment.GetSlot(slot)?.ContainedItem;
                 foreach (AmmoItemClass ammo in SnapshotLootTreeItems(root).OfType<AmmoItemClass>())
@@ -239,7 +250,10 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            foreach (EquipmentSlot slot in WeaponLooseAmmoDestinationOrder)
+            EquipmentSlot[] destinationOrder = FollowerCombatCommon.IsGrenadeLauncherWeapon(weapon)
+                ? LauncherLooseAmmoDestinationOrder
+                : WeaponLooseAmmoDestinationOrder;
+            foreach (EquipmentSlot slot in destinationOrder)
             {
                 if (slot == EquipmentSlot.TacticalVest &&
                     !CanPlaceAmmoInVestWithReloadReserve(followerEquipment, ammo))
@@ -275,6 +289,7 @@ namespace pitTeam.BigBrain.Actions
         }
 
         private bool TrySimulateWeaponLooseAmmoPlacement(
+            Weapon weapon,
             AmmoItemClass ammo,
             VestReloadReserveSet vestReloadReserves,
             ref SearchableItemItemClass? secure,
@@ -282,6 +297,39 @@ namespace pitTeam.BigBrain.Actions
             ref SearchableItemItemClass? backpack,
             ref SearchableItemItemClass? vest)
         {
+            if (FollowerCombatCommon.IsGrenadeLauncherWeapon(weapon))
+            {
+                // Launcher rounds must remain reload-accessible whenever possible. Each simulated
+                // placement mutates its cloned container, so later one-round grenades naturally
+                // spill from vest to pockets to backpack before secure storage is considered.
+                if (TrySimulateContainerAdd(vest, ammo, out SearchableItemItemClass? nextLauncherVest) &&
+                    CanFitVestReloadReserves(nextLauncherVest, vestReloadReserves))
+                {
+                    vest = nextLauncherVest;
+                    return true;
+                }
+
+                if (TrySimulateContainerAdd(pockets, ammo, out SearchableItemItemClass? nextLauncherPockets))
+                {
+                    pockets = nextLauncherPockets;
+                    return true;
+                }
+
+                if (TrySimulateContainerAdd(backpack, ammo, out SearchableItemItemClass? nextLauncherBackpack))
+                {
+                    backpack = nextLauncherBackpack;
+                    return true;
+                }
+
+                if (TrySimulateContainerAdd(secure, ammo, out SearchableItemItemClass? nextLauncherSecure))
+                {
+                    secure = nextLauncherSecure;
+                    return true;
+                }
+
+                return false;
+            }
+
             if (TrySimulateContainerAdd(secure, ammo, out SearchableItemItemClass? nextSecure))
             {
                 secure = nextSecure;

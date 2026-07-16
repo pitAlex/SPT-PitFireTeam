@@ -180,24 +180,38 @@ namespace pitTeam.BigBrain.Actions
             EnemyInfo? goalEnemy = null,
             bool blockWhenWaiting = true)
         {
-            if (FollowerCombatCommon.IsGrenadeLauncherSuppressReason(reason))
+            if (FollowerCombatCommon.IsGrenadeLauncherCombatReason(reason))
             {
                 return false;
             }
 
-            BotWeaponSelector? selector = BotOwner?.WeaponManager?.Selector;
-            Weapon? secondPrimary = selector?.SecondPrimaryWeaponItem as Weapon;
-            Weapon? activeWeapon = BotOwner?.WeaponManager?.ShootController?.Item;
-            bool selectedSecondPrimaryLauncher =
-                selector?.LastEquipmentSlot == EquipmentSlot.SecondPrimaryWeapon &&
-                FollowerCombatCommon.IsGrenadeLauncherWeapon(secondPrimary);
-            bool activeLauncher = FollowerCombatCommon.IsGrenadeLauncherWeapon(activeWeapon);
-            if (!selectedSecondPrimaryLauncher && !activeLauncher)
+            bool firstPrimaryLauncher =
+                FollowerCombatCommon.IsFirstPrimaryGrenadeLauncherSelectedOrActive(BotOwner);
+            bool supportLauncher =
+                FollowerCombatCommon.IsSupportGrenadeLauncherSelectedOrActive(BotOwner);
+            if (!firstPrimaryLauncher && !supportLauncher)
             {
                 return false;
             }
 
             StopCombatShooting();
+            if (firstPrimaryLauncher)
+            {
+                if (Time.time >= nextUnownedLauncherGuardRecordAt)
+                {
+                    nextUnownedLauncherGuardRecordAt = Time.time + 2f;
+                    BattleRecorder.RecordGrenadeEvent(
+                        BotOwner,
+                        "launcherReject",
+                        $"primaryLauncherOutsideGrenadier:{reason ?? "unknown"}",
+                        goalEnemy: goalEnemy);
+                }
+
+                // A first-primary launcher belongs in the Grenadier objective. That objective
+                // validates explosive safety before deliberately returning the ordinary fire node.
+                return blockWhenWaiting;
+            }
+
             bool switched = FollowerCombatCommon.TrySwitchSelectedGrenadeLauncherToPrimaryForOpportunity(
                 BotOwner,
                 goalEnemy,

@@ -365,7 +365,11 @@ Unless specified otherwise, the ordinary reference is 30 and the threshold is 60
 | WI-40 | Empty non-launcher single-chamber `OnlyBarrel` weapon and compatible loose ammunition | Load `Chambers[0]` through the shared real transaction, require eight total rounds, carry accepted source stacks whole, then classify from settled state | P8 | Runtime passed |
 | WI-41 | A `RevolverItemClass` weapon is classified for equipment use | Keep `WeapClass=pistol` revolvers on the holster path; route shotgun, launcher, and custom rifle/sniper revolvers through the shoulder-weapon readiness pipeline | P9 | Implemented; MTs-255 runtime pending |
 | WI-42 | A mechanically compatible magazine contains ammunition for another caliber, or a mixed incompatible load | Reject it from support-magazine transfer and readiness; reject an incompatible inserted load as weapon-unready even when good spares exist | Magazine ammunition validation | Implemented; runtime pending |
-| WI-43 | A loaded internal-magazine revolver has enough compatible loose reserves but exposes no accepting chamber slot | Treat cylinder compatibility as authoritative, count only reserves proven to fit protected carry space, and classify primary at two cylinder capacities | P9 cylinder readiness | Implemented; M32 runtime retest pending |
+| WI-43 | A loaded internal-magazine revolver has enough compatible loose reserves but exposes no accepting chamber slot | Treat cylinder compatibility as authoritative, count only reserves proven to fit protected carry space, and classify primary at two cylinder capacities | P9 cylinder readiness | Runtime passed with M32 `6/6` plus six loose grenades |
+| WI-44 | A usable launcher is equipped in `FirstPrimaryWeapon` and combat starts | Keep it as the real primary, use the grenadier objective only for explosive safety/positioning, then fire through the ordinary weapon action so repeated shots and reload remain normal combat behavior | P9 launcher combat handoff | Runtime passed under old suppress action; normal-fire runtime retest pending |
+| WI-45 | A looted first-primary cylinder launcher becomes empty while compatible grenades remain carried | Store grenades in vest, pockets, backpack, then secure fallback; tolerate the automatic pistol switch, reselect the launcher within a bounded window, and allow this launcher alone through patrol reload maintenance | P9 launcher reload | Implemented; runtime pending |
+| WI-46 | A shallow launcher arc reaches an enemy root point on sloping terrain | Treat terrain contact within the grenade's effective and friendly-safe impact tolerance as a valid detonation; reject hard geometry farther up the arc and record its collider geometry | P9 launcher arc lane | Implemented; runtime pending |
+| WI-47 | A first-primary launcher cannot produce a safe ordinary shot during its grenadier opportunity | If a loaded non-launcher holster weapon exists, queue and settle a pistol switch before ordinary combat resumes; do not trigger after successful launcher fire or during launcher reload | P9 rejected-launcher fallback | Implemented; runtime pending |
 
 ## Backpack Spare Scenario Matrix
 
@@ -415,6 +419,9 @@ This ledger records observed in-raid results. `Implemented` elsewhere in this do
 | RT-31 | Empty MP-43-1C plus only three shells, followed by a later body with compatible shell stacks | First search settled two chambered plus one reserve shell and retained the under-ready weapon in `SecondPrimaryWeapon`; the later search promoted it to `FirstPrimaryWeapon` and vanilla selection succeeded on attempt 4 | Under-ready and later-promotion chain passed; provisional `4`-round threshold superseded by the eight-shell policy |
 | RT-32 | Empty MP-43-1C plus exactly seven shells, followed by a later container with two whole 20-shell stacks | Initial staging settled `2` chambered plus `5` reserve against `threshold=8`, retained the weapon in `SecondPrimaryWeapon`, and announced generic loot; the later whole-stack transfer reached `47/8`, promoted to first primary, announced weapon loot, and selected on attempt 4 | Passed; closes WI-39 |
 | RT-33 | Empty single-chamber `OnlyBarrel` weapon `61f7c9e189e6fb1a5e3ea78d` with 40 compatible loose rounds | Loaded one round into `Chambers[0]`, moved the remaining 39-round source stack whole, classified `40/8` as primary-ready, equipped `FirstPrimaryWeapon`, and selected it after the pickup reset | Passed |
+| RT-34 | M32 equipped in first primary entered combat with six loaded camoras and six compatible grenades stored in secure container | Grenadier objective selected the M32 and fired all six rounds; reload then failed because the revolver-style search saw only fast-access ammo and the selector abandoned the empty launcher | Combat handoff passed; opened WI-45 |
+| RT-35 | Loaded first-primary M32 engaged downhill targets at roughly `73m` to `101m` where only a shallow arc was required | Both autonomous and ordered grenadier windows rejected `launcherArcLaneBlocked`, default rifle fire was correctly blocked for the primary launcher, and the follower stood without firing until killed | False arc rejection reproduced; WI-46 arc fix and WI-47 loaded-pistol fallback implemented, runtime pending |
+| RT-36 | Loaded `6/6` first-primary M32 engaged a visible target near `81m`; the target later closed to `9.8m` | Grenadier never activated because the early autonomous gate required straight-rifle `CanShoot`; ordinary Default/OrderedPush actions correctly refused to fire an unowned launcher. The follow-up command was recorded as `SetPushEnemy`, not `SetSuppressEnemy` | Regression reproduced; activation gate removed, normal aim worker receives the validated arc point, and close dogfight requests holster fallback; runtime pending |
 
 Not yet runtime-covered:
 
@@ -431,8 +438,13 @@ Not yet runtime-covered:
 - nested/manual strict-cargo exclusion scenario `WI-33`
 - loose-ammunition support and saturation scenarios `WI-34` through `WI-37`
 - P8 single-chamber runtime passed: one chamber load settled, the accepted source stack moved whole, and 40 total rounds equipped/selected primary
-- P9 non-holster revolver classification is implemented; MTs-255 cylinder loading/readiness and launcher-specific behavior remain runtime pending
-- M32 baseline reproduced: its full `6/6` cylinder and six compatible loose grenades were incorrectly evaluated as `6/12` because the reserve check required a separate chamber; cylinder compatibility fix implemented, runtime retest pending
+- P9 non-holster revolver classification is implemented; MTs-255 cylinder loading/readiness remains runtime pending
+- M32 inventory/readiness passed: its full `6/6` cylinder plus six compatible loose grenades evaluated as `12/12`, equipped in `FirstPrimaryWeapon`, and selected successfully
+- M32 previously fired its complete six-round cylinder through launcher suppression; that route was rejected because it completed as a one-shot suppression task. The grenadier objective now returns the ordinary fire action after safety planning, and repeated-fire/runtime reload behavior requires retest.
+- M32 reload hardening is implemented and awaits runtime verification: launcher grenades now fill vest, pockets, and backpack before secure fallback; the custom reload search covers those destinations; and an empty first-primary launcher gets bounded combat reselection plus the narrow patrol reload exception
+- M32 shallow-arc regression `RT-35` awaits runtime verification: near-target terrain impact now uses the loaded grenade's blast radius constrained by the friendly-clear margin, while earlier hard obstructions remain rejected with detailed arc geometry in the recorder
+- M32 rejected-opportunity fallback `WI-47` awaits runtime verification: a loaded holster pistol is queued through a pending selector handoff after the grenadier window fails, preventing ordinary combat from remaining blocked behind a first-primary launcher
+- M32 normal-fire regression `RT-36` awaits runtime verification: visible launcher targets can activate without straight-rifle `CanShoot`, the `shootFromPlace` action passes the arc-compensated point to EFT's normal aiming/trigger worker, and point-blank dogfight requests the loaded holster before combat resumes
 
 ## Feed-System Revisit
 
@@ -444,7 +456,7 @@ Non-launcher `OnlyBarrel` weapons now use a separate chamber-fed implementation 
 
 Later phases still need these distinct ownership and transaction models:
 
-- grenade and rocket launchers still need specialized hands and combat-reload policy beyond the shared internal-cylinder inventory path
+- first-primary grenade and rocket launchers now enter the existing grenadier combat objective instead of vanilla rifle actions; reloadable launchers have dedicated loose-ammo storage/reload handling, while broader launcher weapon-comparison policy remains separate
 - non-pistol revolvers now enter the shoulder-weapon pipeline by `WeapClass`; the MTs-255 cylinder must verify the shared internal-magazine transaction path in raid, while holster-revolver gear behavior remains separate
 - detachable-magazine weapons need a magazine top-off phase where compatible loose ammunition can fill an inserted or spare magazine and make that magazine eligible for readiness
 - multiple compatible partially loaded magazines need a repacking phase: transfer ammunition from donor magazines into compatible target magazines to create the fullest practical magazine states before evaluating readiness
@@ -473,6 +485,17 @@ Each snapshot should identify:
 The final placement phases must log one additional post-transfer `actual` snapshot immediately before selecting primary, support, backpack, or leave-at-source.
 
 ## Progress Log
+
+### 2026-07-16
+
+- Runtime verified M32 inventory readiness at `12/12` and reproduced the combat failure: the weapon was selected in `FirstPrimaryWeapon`, but second-primary-only launcher ownership repeatedly rejected it as an unowned launcher and ordinary ammo logic treated its cylinder as empty.
+- Generalized launcher resolution, selection, preparation, command eligibility, and loaded-round diagnostics across both primary slots. First-primary launchers now route through the grenadier objective and remain the main weapon; second-primary launchers retain temporary support/fallback behavior.
+- Preserved launcher safety ownership: ordinary rifle actions stop explosive fire outside the grenadier objective, while launch planning still owns range, ballistic arc, launch lane, impact radius, and friendly checks.
+- Runtime verified that the M32 fired its full six-round cylinder, then reproduced reload failure after EFT automatically switched to the holster and the remaining grenades were invisible in secure-only storage.
+- Added launcher-grenade storage priority `vest -> pockets -> backpack -> secure`, matched combat reload search to those locations, retained a bounded empty-launcher reselection window, and allowed only a looted first-primary launcher through patrol reload maintenance.
+- Reproduced a false `launcherArcLaneBlocked` rejection against downhill targets at `73m` to `101m`. Ground-root terrain contact now counts as a valid near-target detonation only inside the loaded grenade's blast radius and remaining friendly-safety budget; earlier hard obstructions still reject and now emit collider-level arc diagnostics.
+- Added the separate failure fallback for first-primary launchers: when a grenadier opportunity genuinely expires or fails, a loaded holster pistol is selected through a persistent hands-ready retry before normal combat resumes.
+- Removed `SuppressShoot` ownership from grenadier firing. Arc, impact, and friendly safety stay in the grenadier planner and are rechecked during the action, while the ordinary `shootFromPlace` action feeds the compensated target into EFT's normal aim-and-trigger worker for cadence and repeated shots. Successful first-primary fire no longer starts the autonomous suppression cooldown.
 
 ### 2026-07-15
 

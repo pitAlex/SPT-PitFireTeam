@@ -2675,7 +2675,7 @@ namespace pitTeam.Components
 
                 float bossDistanceSqr = (follower.Position - requester.Position).sqrMagnitude;
                 bool hasSuppressWeapon = FollowerCombatCommon.IsSuppressCapableWeapon(follower.WeaponManager?.ShootController?.Item);
-                bool hasLauncher = !isMarksman && FollowerCombatCommon.HasUsableSecondPrimaryGrenadeLauncher(follower);
+                bool hasLauncher = !isMarksman && FollowerCombatCommon.HasUsableEquippedGrenadeLauncher(follower);
                 if (!hasSuppressWeapon && !hasLauncher && !useAutomaticSecondary)
                 {
                     if (bossDistanceSqr < closestUnavailableDistanceSqr)
@@ -3142,7 +3142,7 @@ namespace pitTeam.Components
                 return false;
             }
 
-            bool hasLauncher = FollowerCombatCommon.HasUsableSecondPrimaryGrenadeLauncher(follower);
+            bool hasLauncher = FollowerCombatCommon.HasUsableEquippedGrenadeLauncher(follower);
             if (requireLauncher && !hasLauncher)
             {
                 return false;

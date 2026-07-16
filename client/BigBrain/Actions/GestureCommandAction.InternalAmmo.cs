@@ -269,6 +269,7 @@ namespace pitTeam.BigBrain.Actions
                 }
 
                 if (!TrySimulateWeaponLooseAmmoPlacement(
+                        weapon,
                         ammo,
                         vestReloadReserves,
                         ref simulatedSecure,

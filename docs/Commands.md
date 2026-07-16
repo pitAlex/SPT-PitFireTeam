@@ -87,7 +87,10 @@ Behavior:
 
 - Debounced in `AIBossPlayer`.
 - Calls `PingTeamates.Instance.Ping(this)`.
-- Highlights each living teammate with a green outline for the configured Status Report display time.
+- Highlights each living teammate with an outline for the configured Status Report display time when the highlight option is enabled.
+- The outline color is configurable with a `#RRGGBB` value and defaults to green (`#00FF00`).
+- Name, distance, combat status, HP, and tactic (`MD`) can each be toggled under `My Squad > Settings > Base Settings`.
+- Disabling every text field while leaving the highlight enabled produces a highlight-only Status Report.
 - Nearby active followers without enemies play `FriendlyGesture`.
 - Does not create `FollowerCommandType` state.
 

@@ -1052,13 +1052,9 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            Weapon? secondPrimary = selector.SecondPrimaryWeaponItem as Weapon;
-            Weapon? activeWeapon = weaponManager.ShootController?.Item ?? weaponManager.CurrentWeapon;
-            bool selectedLauncher =
-                selector.LastEquipmentSlot == EquipmentSlot.SecondPrimaryWeapon &&
-                FollowerCombatCommon.IsGrenadeLauncherWeapon(secondPrimary);
-            bool activeLauncher = FollowerCombatCommon.IsGrenadeLauncherWeapon(activeWeapon);
-            if (!selectedLauncher && !activeLauncher)
+            // Only a support-slot launcher is temporary. A launcher in FirstPrimaryWeapon is the
+            // follower's real primary and must remain selected after combat.
+            if (!FollowerCombatCommon.IsSupportGrenadeLauncherSelectedOrActive(BotOwner))
             {
                 return false;
             }
@@ -1243,16 +1239,23 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            if (InteractableObjects.IsLootedWeapon(BotOwner, currentWeapon))
+            EquipmentSlot currentSlot = BotOwner.WeaponManager.Selector?.LastEquipmentSlot ?? EquipmentSlot.FirstPrimaryWeapon;
+            bool reloadLootedPrimaryLauncher = CanReloadLootedFirstPrimaryLauncher(currentSlot, currentWeapon);
+            if (InteractableObjects.IsLootedWeapon(BotOwner, currentWeapon) &&
+                !reloadLootedPrimaryLauncher)
             {
                 MarkReloadWeaponProcessed(currentWeapon.Id);
                 return false;
             }
 
-            EquipmentSlot currentSlot = BotOwner.WeaponManager.Selector?.LastEquipmentSlot ?? EquipmentSlot.FirstPrimaryWeapon;
             if (IsOutOfCombatReloadGiveUpActive(currentSlot, currentWeapon))
             {
                 return false;
+            }
+
+            if (reloadLootedPrimaryLauncher)
+            {
+                return true;
             }
 
             bool forceTopOffCurrentSlot =
@@ -1301,9 +1304,14 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
+            EquipmentSlot currentSlot = BotOwner.WeaponManager.Selector?.LastEquipmentSlot ?? EquipmentSlot.FirstPrimaryWeapon;
             if (InteractableObjects.IsLootedWeapon(BotOwner, currentWeapon))
             {
-                return false;
+                return CanReloadLootedFirstPrimaryLauncher(currentSlot, currentWeapon) &&
+                       FollowerCombatCommon.TryStartActiveGrenadeLauncherLooseAmmoReload(
+                           BotOwner,
+                           currentWeapon,
+                           out _);
             }
 
             if (currentWeapon.ReloadMode != Weapon.EReloadMode.ExternalMagazine)
@@ -1366,7 +1374,9 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            if (InteractableObjects.IsLootedWeapon(BotOwner, weapon))
+            bool reloadLootedPrimaryLauncher = CanReloadLootedFirstPrimaryLauncher(slot, weapon);
+            if (InteractableObjects.IsLootedWeapon(BotOwner, weapon) &&
+                !reloadLootedPrimaryLauncher)
             {
                 MarkReloadWeaponProcessed(weapon.Id);
                 processedSlot = true;
@@ -1421,7 +1431,7 @@ namespace pitTeam.BigBrain
             {
                 RecordOutOfCombatReloadSwitchAttempt(slot, weapon);
                 forcedTopOffSlot = slot;
-                if (previousSlot != slot)
+                if (previousSlot != slot && !reloadLootedPrimaryLauncher)
                 {
                     returnAfterTopOffSlot = previousSlot;
                 }
@@ -1448,7 +1458,9 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            if (InteractableObjects.IsLootedWeapon(BotOwner, weapon))
+            bool reloadLootedPrimaryLauncher = CanReloadLootedFirstPrimaryLauncher(slot, weapon);
+            if (InteractableObjects.IsLootedWeapon(BotOwner, weapon) &&
+                !reloadLootedPrimaryLauncher)
             {
                 return false;
             }
@@ -1463,12 +1475,24 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
+            if (reloadLootedPrimaryLauncher)
+            {
+                return true;
+            }
+
             if (weapon.ReloadMode == Weapon.EReloadMode.ExternalMagazine)
             {
                 return FollowerOutOfCombatReloadPolicy.HasBetterMagazine(BotOwner, weapon);
             }
 
             return FollowerOutOfCombatReloadPolicy.CanTopOffWeapon(BotOwner, weapon);
+        }
+
+        private bool CanReloadLootedFirstPrimaryLauncher(EquipmentSlot slot, Weapon weapon)
+        {
+            return slot == EquipmentSlot.FirstPrimaryWeapon &&
+                   InteractableObjects.IsLootedWeapon(BotOwner, weapon) &&
+                   FollowerCombatCommon.CanReloadGrenadeLauncherFromLooseAmmo(BotOwner, weapon);
         }
 
         private void MarkReloadSlotFailed(EquipmentSlot slot)

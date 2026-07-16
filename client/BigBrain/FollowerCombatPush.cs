@@ -520,6 +520,13 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
+            // Cylinder launchers report no conventional magazine cartridges. Their range,
+            // readiness, and firing safety are owned by the Grenadier objective instead.
+            if (FollowerCombatCommon.IsGrenadeLauncherWeapon(activeWeapon))
+            {
+                return false;
+            }
+
             if (!FollowerCombatCommon.IsAutomaticWeapon(activeWeapon) &&
                 combatCommon.HasLoadedAutomaticSecondaryForPush())
             {

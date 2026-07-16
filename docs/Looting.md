@@ -430,7 +430,9 @@ Once a body/container weapon has been accepted as equipment or as filtered weapo
 
 - loose ammunition never contributes directly to detachable-magazine readiness and does not top off magazines in this phase
 - internal-magazine and supported chamber-fed weapons may first load compatible loose ammunition through their dedicated real transactions; only settled loaded rounds and fitting reserve stacks contribute to readiness
-- loose ammunition is placed in secure container, pockets, backpack, then tactical vest
+- ordinary loose ammunition is placed in secure container, pockets, backpack, then tactical vest
+- launcher grenades are the deliberate exception: place them in tactical vest, pockets, and backpack before using the secure container as the final fallback
+- launcher-ammo planning and execution both re-evaluate live container occupancy after each move, so later grenades spill into the next normal storage area instead of being sent directly to secure storage
 - tactical-vest fallback must preserve the existing long-gun and initial-holster reload landing spaces
 - source ammunition inside another weapon or magazine is not loose ammunition and is never selected by this path
 - `Simple`, `Restricted`, and `Immersive` followers count every compatible loose bullet already carried in secure container, pockets, backpack, or vest, including mixed ammo types and manually placed strict cargo
@@ -473,7 +475,7 @@ Supported non-launcher `OnlyBarrel` weapons, including single-shot and double-ba
 
 Still deferred weapon-feed cases:
 
-- launcher-specific hands and combat-reload transactions beyond the shared internal-cylinder inventory path
+- launcher weapon comparison and replacement beyond the current missing-primary acquisition path
 - holster-revolver gear decisions and cylinder transactions that cannot use the shared internal-magazine path
 - compatible loose ammunition may later top off partial detachable magazines and make them readiness-eligible, but those rounds must not count until a real top-off transaction succeeds
 - when several compatible magazines are partially loaded, a later repacking phase should top off the fullest useful magazines from partial donor magazines first, then evaluate readiness from the resulting settled magazine states
@@ -645,6 +647,7 @@ Gear swapping phase 1 tests:
 - looted weapon does not trigger patrol reload maintenance with spawned magazines
 - after a looted primary reloads, follower death/raid-end cleanup does not leave its ejected original magazine in the teammate's persisted `Simple`/`Restricted` kit
 - loose weapon pickup into `FirstPrimaryWeapon` registers as the combat primary, and a pending weapon-taken callback cannot fault after that follower dies
+- a looted launcher in `FirstPrimaryWeapon` remains the follower's real primary and enters the grenadier objective for eligible combat targets; only a launcher used from `SecondPrimaryWeapon` returns to another main weapon after the attempt
 - rejected swap leaves current follower gear untouched
 - accepted swap updates tracking and does not duplicate or orphan old gear
 - rig magazine space remains stable
