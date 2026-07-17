@@ -1054,7 +1054,7 @@ namespace pitTeam
 
             statusReportHighlightColor = Config.Bind("", "18 StatusReportHighlightColor", Utils.StatusReportHighlightColor.DefaultHex, new ConfigDescription(optionsLang.statusReportHighlightColor["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportHighlightColor)));
 
-            statusReportHealthColoring = Config.Bind("", "18 StatusReportHealthColoring", false, new ConfigDescription(optionsLang.statusReportHealthColoring["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportHealthColoring)));
+            statusReportHealthColoring = Config.Bind("", "18 StatusReportHealthColoring", true, new ConfigDescription(optionsLang.statusReportHealthColoring["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportHealthColoring)));
 
             statusReportFullHealthColor = Config.Bind("", "18 StatusReportFullHealthColor", Utils.StatusReportHighlightColor.FullHealthDefaultHex, new ConfigDescription(optionsLang.statusReportFullHealthColor["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportFullHealthColor)));
 
@@ -1064,11 +1064,11 @@ namespace pitTeam
 
             statusReportShowName = Config.Bind("", "18 StatusReportShowName", true, new ConfigDescription(optionsLang.statusReportShowName["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportShowName)));
 
-            statusReportShowDistance = Config.Bind("", "18 StatusReportShowDistance", true, new ConfigDescription(optionsLang.statusReportShowDistance["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportShowDistance)));
+            statusReportShowDistance = Config.Bind("", "18 StatusReportShowDistance", false, new ConfigDescription(optionsLang.statusReportShowDistance["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportShowDistance)));
 
-            statusReportShowHealth = Config.Bind("", "18 StatusReportShowHealth", true, new ConfigDescription(optionsLang.statusReportShowHealth["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportShowHealth)));
+            statusReportShowHealth = Config.Bind("", "18 StatusReportShowHealth", false, new ConfigDescription(optionsLang.statusReportShowHealth["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportShowHealth)));
 
-            statusReportShowTactic = Config.Bind("", "18 StatusReportShowTactic", true, new ConfigDescription(optionsLang.statusReportShowTactic["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportShowTactic)));
+            statusReportShowTactic = Config.Bind("", "18 StatusReportShowTactic", false, new ConfigDescription(optionsLang.statusReportShowTactic["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportShowTactic)));
 
             statusReportShowCombatStatus = Config.Bind("", "18 StatusReportShowCombatStatus", true, new ConfigDescription(optionsLang.statusReportShowCombatStatus["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportShowCombatStatus)));
 

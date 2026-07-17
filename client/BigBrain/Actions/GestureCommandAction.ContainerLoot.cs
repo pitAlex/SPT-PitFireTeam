@@ -786,7 +786,8 @@ namespace pitTeam.BigBrain.Actions
                 MagazineItemClass? ammoSalvageMagazine = null,
                 AmmoItemClass? ammoSalvageTargetStack = null,
                 int ammoSalvageTransferCount = 0,
-                Weapon? weaponSupportWeapon = null)
+                Weapon? weaponSupportWeapon = null,
+                bool forcePrimaryForLauncherPreference = false)
             {
                 Item = item;
                 SourceSlot = sourceSlot;
@@ -803,6 +804,7 @@ namespace pitTeam.BigBrain.Actions
                 AmmoSalvageTargetStack = ammoSalvageTargetStack;
                 AmmoSalvageTransferCount = ammoSalvageTransferCount;
                 WeaponSupportWeapon = weaponSupportWeapon;
+                ForcePrimaryForLauncherPreference = forcePrimaryForLauncherPreference;
             }
 
             public Item Item { get; }
@@ -820,6 +822,7 @@ namespace pitTeam.BigBrain.Actions
             public AmmoItemClass? AmmoSalvageTargetStack { get; }
             public int AmmoSalvageTransferCount { get; }
             public Weapon? WeaponSupportWeapon { get; }
+            public bool ForcePrimaryForLauncherPreference { get; }
 
             public BodyGearCandidate WithFollowUpDestination(BodyGearFollowUpDestination destination)
             {
@@ -838,7 +841,29 @@ namespace pitTeam.BigBrain.Actions
                     AmmoSalvageMagazine,
                     AmmoSalvageTargetStack,
                     AmmoSalvageTransferCount,
-                    WeaponSupportWeapon);
+                    WeaponSupportWeapon,
+                    ForcePrimaryForLauncherPreference);
+            }
+
+            public BodyGearCandidate WithForcedPrimaryForLauncherPreference()
+            {
+                return new BodyGearCandidate(
+                    Item,
+                    SourceSlot,
+                    SourceName,
+                    SourceTier,
+                    SkipMagazine,
+                    BypassPriceThreshold,
+                    BypassCategoryFilter,
+                    BypassBodyGearLootability,
+                    ReportAsLootNothing,
+                    FollowUpDestination,
+                    AmmoSalvageWeapon,
+                    AmmoSalvageMagazine,
+                    AmmoSalvageTargetStack,
+                    AmmoSalvageTransferCount,
+                    WeaponSupportWeapon,
+                    forcePrimaryForLauncherPreference: true);
             }
 
             public BodyGearCandidate WithAmmoSalvageContext(
@@ -863,7 +888,8 @@ namespace pitTeam.BigBrain.Actions
                     magazine,
                     targetStack,
                     transferCount,
-                    WeaponSupportWeapon);
+                    WeaponSupportWeapon,
+                    ForcePrimaryForLauncherPreference);
             }
         }
 

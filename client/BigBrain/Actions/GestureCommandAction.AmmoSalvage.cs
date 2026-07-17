@@ -42,8 +42,9 @@ namespace pitTeam.BigBrain.Actions
                 }
 
                 // Every source magazine gets a late marker. Magazines successfully loaded or
-                // moved to fast access are in follower inventory by then and the marker becomes a
-                // no-op; only magazines the accepted weapon plan truly left behind are unloaded.
+                // moved to fast access/backpack are in follower inventory by then and the marker
+                // becomes a no-op; only magazines the accepted weapon plan truly left behind are
+                // unloaded.
                 followUps.Add(candidate.WithAmmoSalvageContext(
                     BodyGearFollowUpDestination.SalvageMagazineAmmo,
                     weapon,

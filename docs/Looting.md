@@ -380,11 +380,17 @@ Rules:
 - a no-inserted-magazine cargo package moves compatible magazines first and the weapon last; if the complete package cannot fit, the magazines stay at the source and the weapon is tried alone as cargo; if the weapon also cannot fit, it stays at the source
 - compatible spare magazines from the loot source must physically fit in the vest or pockets as operational magazines, not cargo
 - compatible spare magazines must be loaded to count as operational support
+- reload landing space is selected from the compatible magazines actually available for the weapon, not permanently from the inserted magazine
+- candidate magazine shapes are tested largest first; a shape qualifies as the reload reserve only when fast access can hold one magazine of that shape and still leave room for another of the same shape to land
+- if a large shape cannot satisfy that pair test, the planner tries the next smaller shape; after finding a valid reserve, it revisits larger magazines and carries each one that individually fits while preserving the selected smaller landing space
+- this permits layouts such as `1x1 magazine | 1x2 magazine | empty 1x1 landing space`: the `1x2` can be used and dropped when it cannot land, while the `1x1` magazine retains a valid reload cycle
+- an oversized inserted magazine that cannot land in available fast access does not block the weapon; vanilla may drop it on the first reload, after which the selected fitting magazine shape owns the reload reserve
 - the accepted weapon equip queues compatible loaded source magazines one at a time while fast-access space remains valid, then decides the weapon destination from settled live inventory
 - support magazines bypass normal loot filters once the weapon itself has been accepted; they still must be loaded, compatible with the accepted weapon, safe to take, not already in the follower inventory, and physically placeable in fast access
 - magazine fit must use the actual magazine shape, not just total cell count; two-cell, three-cell vertical, and two-by-two magazines have different practical vest requirements
 - oversized compatible spare magazines that cannot fit in vest or pockets do not count as operational spares
-- only after an accepted weapon is physically equipped in `FirstPrimaryWeapon`, compatible source magazines that could not be moved into fast access remain at the source but may be emptied for ammunition
+- compatible magazines that cannot enter fast access are moved to backpack cargo when space permits; those backpack magazines do not contribute to readiness
+- only after an accepted weapon is physically equipped in `FirstPrimaryWeapon`, compatible source magazines that fit neither fast access nor backpack remain at the source and may be emptied for ammunition
 - secondary, holster, backpack-cargo, and rejected weapon outcomes do not salvage ammunition; their leftover magazines remain loaded at the source
 - left-behind magazine ammo is planned one cartridge stack at a time in this order: secure container, pockets, backpack, then tactical vest; oversized internal cartridge groups are split at the ammo template's loose-stack limit, and the complete magazine is capacity-preflighted before its first stack moves, so known insufficient room leaves that magazine loaded at the source; EFT commits generated loose stacks separately, therefore an interruption or runtime transaction failure stops the remaining salvage without claiming cross-transaction rollback
 - cartridge groups inside a magazine are never moved as ordinary inventory items; execution follows EFT's unload model by seeding a one-round loose stack through the ammo-to-address operation, filling it through ammo-to-ammo transfers, then advancing to the next internal cartridge group
@@ -423,6 +429,22 @@ Rules:
 - if selector state remains mid-transition, retry through the bot delayed-task manager and use a bounded current-state fast-forward only after the ordinary draw window; stop immediately if the follower dies or leaves the active bot state
 
 Missing-primary weapon acquisition ignores min/max price and bypasses the `Pickup Gear` category filter because it is an explicit primary-equipment plan rather than ordinary gear cargo. A working-primary follower only adds an optional second-primary or holster weapon when `Pickup Gear` is enabled. Supporting spare magazines bypass the normal loot filters only after the corresponding primary or Pickup-Gear-authorized support plan is accepted.
+
+### Grenade-Launcher Slot Preference
+
+Standalone grenade and rocket launchers are the exception to the ordinary missing-primary destination policy. `Allow Gear Swapping` treats them as tactical support weapons and prefers `SecondPrimaryWeapon` whenever a conventional shoulder weapon can occupy `FirstPrimaryWeapon`.
+
+- when the same body/container contains a launcher and a conventional long gun, plan the conventional weapon first, force it into first primary even when it is empty or below the normal readiness threshold, and place the launcher in second primary
+- when the follower currently has a launcher in first primary and finds a conventional long gun, move the launcher to empty second primary before processing the new weapon; the conventional weapon then becomes first primary
+- when first primary is empty and a conventional weapon is being held in second primary for insufficient ammunition, finding a launcher promotes that conventional weapon to first primary without a readiness gate, then places the launcher in second primary
+- when the follower already has a conventional first primary and empty second primary, a found launcher may fill second primary as an equipment decision even if `Pickup Gear` is disabled; this support-only result uses `LootGeneric`
+- loose-ammunition support is planned in weapon-role order: finish the accepted conventional primary package first, then plan compatible ammunition for the accepted secondary launcher
+- accepted launcher grenades use the existing live-space order of tactical vest, pockets, backpack, then secure container; each follow-up rechecks the settled inventory before choosing its destination
+- when no conventional shoulder weapon is carried or found, a launcher may still use first primary through the existing missing-primary path
+- these internal slot moves are staging transactions: they do not count the already-carried weapon as newly looted or register it for post-raid return a second time
+- once the conventional primary exists, the normal delayed primary registration/selection path also refreshes the launcher as vanilla support weapon state
+
+This is slot-role normalization, not general weapon comparison. It does not compare two conventional primaries, displace an occupied second-primary slot, or select a better launcher.
 
 ### Compatible Loose-Ammunition Support
 
@@ -475,7 +497,7 @@ Supported non-launcher `OnlyBarrel` weapons, including single-shot and double-ba
 
 Still deferred weapon-feed cases:
 
-- launcher weapon comparison and replacement beyond the current missing-primary acquisition path
+- launcher-versus-launcher comparison and replacement, and any case requiring displacement of an occupied second-primary slot
 - holster-revolver gear decisions and cylinder transactions that cannot use the shared internal-magazine path
 - compatible loose ammunition may later top off partial detachable magazines and make them readiness-eligible, but those rounds must not count until a real top-off transaction succeeds
 - when several compatible magazines are partially loaded, a later repacking phase should top off the fullest useful magazines from partial donor magazines first, then evaluate readiness from the resulting settled magazine states

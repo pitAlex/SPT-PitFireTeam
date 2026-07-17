@@ -32,9 +32,36 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            foreach (BodyGearCandidate candidate in GetBodyWeaponEquipCandidates(corpseEquipment))
+            List<BodyGearCandidate> sourceCandidates = OrderLauncherPreferredWeaponCandidates(
+                GetBodyWeaponEquipCandidates(corpseEquipment));
+            if (TryBuildGrenadeLauncherSlotNormalizationMove(
+                    inventory,
+                    followerEquipment,
+                    sourceCandidates,
+                    bodyLootAttemptedItemIds,
+                    out BodyGearMove? normalizationMove))
+            {
+                if (TryQueueBodyLootMoveAfterPickupSuccess(normalizationMove))
+                {
+                    return true;
+                }
+
+                StartBodyGearMove(inventory, normalizationMove);
+                return true;
+            }
+
+            foreach (BodyGearCandidate candidate in sourceCandidates)
             {
                 BodyGearCandidate swapCandidate = CreateGearSwapCandidate(candidate);
+                if (ShouldForceConventionalPrimaryForLauncherPreference(
+                        followerEquipment,
+                        swapCandidate,
+                        sourceCandidates,
+                        bodyLootAttemptedItemIds))
+                {
+                    swapCandidate = swapCandidate.WithForcedPrimaryForLauncherPreference();
+                }
+
                 if (!CanConsiderFilteredLootCandidate(swapCandidate, bodyLootAttemptedItemIds) ||
                     IsLootNowInBotInventory(BotOwner?.GetPlayer, swapCandidate.Item))
                 {
@@ -159,9 +186,36 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            foreach (BodyGearCandidate candidate in GetContainerWeaponEquipCandidates(containerRoot))
+            List<BodyGearCandidate> sourceCandidates = OrderLauncherPreferredWeaponCandidates(
+                GetContainerWeaponEquipCandidates(containerRoot));
+            if (TryBuildGrenadeLauncherSlotNormalizationMove(
+                    inventory,
+                    followerEquipment,
+                    sourceCandidates,
+                    containerLootAttemptedItemIds,
+                    out BodyGearMove? normalizationMove))
+            {
+                if (TryQueueContainerLootMoveAfterPickupSuccess(normalizationMove))
+                {
+                    return true;
+                }
+
+                StartContainerLootMove(inventory, normalizationMove);
+                return true;
+            }
+
+            foreach (BodyGearCandidate candidate in sourceCandidates)
             {
                 BodyGearCandidate swapCandidate = CreateGearSwapCandidate(candidate);
+                if (ShouldForceConventionalPrimaryForLauncherPreference(
+                        followerEquipment,
+                        swapCandidate,
+                        sourceCandidates,
+                        containerLootAttemptedItemIds))
+                {
+                    swapCandidate = swapCandidate.WithForcedPrimaryForLauncherPreference();
+                }
+
                 if (!CanConsiderFilteredLootCandidate(swapCandidate, containerLootAttemptedItemIds) ||
                     IsLootNowInBotInventory(BotOwner?.GetPlayer, swapCandidate.Item))
                 {
@@ -801,7 +855,8 @@ namespace pitTeam.BigBrain.Actions
                 bypassPriceThreshold: true,
                 bypassCategoryFilter: true,
                 bypassBodyGearLootability: candidate.BypassBodyGearLootability,
-                reportAsLootNothing: candidate.ReportAsLootNothing);
+                reportAsLootNothing: candidate.ReportAsLootNothing,
+                forcePrimaryForLauncherPreference: candidate.ForcePrimaryForLauncherPreference);
         }
 
         private bool TryBuildTacticalVestEquipMove(
@@ -934,6 +989,23 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
+            Weapon equippedPrimary = followerEquipment
+                ?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)
+                ?.ContainedItem as Weapon;
+            if (FollowerCombatCommon.IsGrenadeLauncherWeapon(weapon) &&
+                equippedPrimary != null &&
+                !FollowerCombatCommon.IsGrenadeLauncherWeapon(equippedPrimary) &&
+                followerEquipment.GetSlot(EquipmentSlot.SecondPrimaryWeapon)?.ContainedItem == null)
+            {
+                handledByGearPolicy = true;
+                return TryBuildPreferredGrenadeLauncherSecondaryMove(
+                    inventory,
+                    followerEquipment,
+                    candidate,
+                    operationalAmmoCandidates,
+                    out move);
+            }
+
             bool primaryOccupied = followerEquipment
                 ?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)
                 ?.ContainedItem is Weapon;
@@ -1016,7 +1088,9 @@ namespace pitTeam.BigBrain.Actions
                 bool secondaryOccupied = followerEquipment
                     ?.GetSlot(EquipmentSlot.SecondPrimaryWeapon)
                     ?.ContainedItem != null;
-                if (!projected.PrimaryReady && secondaryOccupied)
+                if (!projected.PrimaryReady &&
+                    secondaryOccupied &&
+                    !candidate.ForcePrimaryForLauncherPreference)
                 {
                     // The gear planner cannot equip this candidate. Leave it untouched so the
                     // ordinary Pickup Gear + price path may still take it as backpack cargo.
@@ -1054,6 +1128,27 @@ namespace pitTeam.BigBrain.Actions
                     out move,
                     out string emptyMagazineReason))
             {
+                return true;
+            }
+
+            if (candidate.ForcePrimaryForLauncherPreference &&
+                TryBuildPrimaryWeaponEquipMove(
+                    inventory,
+                    followerEquipment,
+                    candidate,
+                    out move,
+                    out string forcedPrimaryReason))
+            {
+                move = AppendWeaponLooseAmmoSupportFollowUps(
+                    move,
+                    followerEquipment,
+                    weapon,
+                    sourceLooseAmmoCandidates,
+                    "launcherPreferredPrimary");
+                Modules.Logger.LogInfo(
+                    $"[LootCommand][LauncherSlots] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                    $"weapon={DescribeLootDebugItem(weapon)} destination=FirstPrimaryWeapon " +
+                    $"decisionReason=launcherSecondaryPreference;magazineInsertion={emptyMagazineReason};result={forcedPrimaryReason}");
                 return true;
             }
 
@@ -1309,10 +1404,13 @@ namespace pitTeam.BigBrain.Actions
             out BodyGearMove? move)
         {
             move = null;
-            // P2 moves only magazines that were proven to fit in vanilla fast access while
-            // retaining reload landing space. Backpack candidates remain ordinary cargo loot.
+            // Fast-access candidates contribute to readiness. Compatible overflow may still be
+            // carried in the backpack, but never contributes to the primary decision.
             List<BodyGearCandidate> fastAccessCandidates = magazinePlan.FollowUps
                 .Where(IsOperationalFastAccessFollowUp)
+                .ToList();
+            List<BodyGearCandidate> backpackCandidates = magazinePlan.FollowUps
+                .Where(followUp => followUp.FollowUpDestination == BodyGearFollowUpDestination.BackpackCargo)
                 .ToList();
 
             List<MagazineItemClass> projectedFastAccessMagazines = fastAccessCandidates
@@ -1350,19 +1448,20 @@ namespace pitTeam.BigBrain.Actions
                 }
 
                 // Classify the weapon only after all fast-access transfers settle. Late salvage
-                // markers run afterward and independently verify that the result is first primary.
+                // markers run after accepted backpack overflow; only magazines that still remain
+                // at the source are eligible to be emptied.
                 followUps.Add(candidate.WithFollowUpDestination(BodyGearFollowUpDestination.EvaluateWeaponDestination));
+                followUps.AddRange(backpackCandidates);
                 AppendOverflowMagazineAmmoSalvageMarkers(
                     followUps,
                     candidate.Item as Weapon,
                     magazinePlan.CompatibleLoadedCandidates);
                 bool projectedUsablePrimary =
-                    projected.PrimaryReady &&
-                    !projected.RequiresMagazineLoad &&
-                    (projected.InsertedContribution >= projected.Threshold ||
-                     FollowerWeaponPrimaryReadiness.HasInsertedMagazineReloadLandingSpace(
-                         followerEquipment,
-                         candidate.Item as Weapon));
+                    candidate.ForcePrimaryForLauncherPreference ||
+                    (projected.PrimaryReady &&
+                     !projected.RequiresMagazineLoad &&
+                     (projected.InsertedContribution >= projected.Threshold ||
+                      magazinePlan.ReloadReserveMagazine != null));
                 move = firstMagazineMove.WithFollowUps(
                     followUps,
                     projectedUsablePrimary ? EPhraseTrigger.LootWeapon : EPhraseTrigger.LootGeneric,
@@ -1386,7 +1485,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            List<BodyGearCandidate> directSalvageMarkers = new List<BodyGearCandidate>();
+            List<BodyGearCandidate> directSalvageMarkers = new List<BodyGearCandidate>(backpackCandidates);
             AppendOverflowMagazineAmmoSalvageMarkers(
                 directSalvageMarkers,
                 candidate.Item as Weapon,
@@ -1658,6 +1757,21 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
+            if (candidate.ForcePrimaryForLauncherPreference &&
+                TryBuildPrimaryWeaponEquipMove(
+                    inventory,
+                    followerEquipment,
+                    candidate,
+                    out move,
+                    out string forcedPrimaryReason))
+            {
+                destination = "FirstPrimaryWeapon";
+                reason = $"launcherSecondaryPreference:{forcedPrimaryReason}";
+                WeaponPrimaryReadinessSnapshot forcedSnapshot = EvaluateActualWeaponReadiness(inventory, weapon);
+                LogPostTransferWeaponDestination(weapon, forcedSnapshot, destination, reason);
+                return true;
+            }
+
             if (FollowerWeaponLooseFeedReadiness.IsSupported(weapon))
             {
                 return TryBuildInternalPostTransferWeaponDestinationMove(
@@ -1674,7 +1788,7 @@ namespace pitTeam.BigBrain.Actions
             // itself. Otherwise preserve room for that inserted magazine to land during reload.
             bool insertedContributionIsSufficient = actual.InsertedContribution >= actual.Threshold;
             bool hasReloadLandingSpace = insertedContributionIsSufficient ||
-                                         FollowerWeaponPrimaryReadiness.HasInsertedMagazineReloadLandingSpace(
+                                         HasOperationalMagazineReloadLandingSpace(
                                              followerEquipment,
                                              weapon);
             string primaryFailure = string.Empty;
@@ -1824,7 +1938,7 @@ namespace pitTeam.BigBrain.Actions
             WeaponPrimaryReadinessSnapshot actual = EvaluateActualWeaponReadiness(inventory, weapon);
             if (!actual.PrimaryReady ||
                 actual.RequiresMagazineLoad ||
-                !FollowerWeaponPrimaryReadiness.HasInsertedMagazineReloadLandingSpace(
+                !HasOperationalMagazineReloadLandingSpace(
                     followerEquipment,
                     weapon))
             {

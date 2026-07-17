@@ -142,6 +142,7 @@ Known baseline differences from this contract:
 | P5 | Support-to-primary reevaluation and safe promotion | Implemented; happy-path runtime passed |
 | P6 | Failure hardening, ownership/return verification, final player documentation | Not started |
 | P7 | Internal-magazine readiness, real tube loading, loose-ammo carry planning, and later promotion | Implemented; ready-primary and partial-fit runtime paths passed |
+| P10 | Grenade-launcher secondary-slot preference and forced conventional-primary normalization | Implemented; runtime testing pending |
 
 ## Phase P1 Contract
 
@@ -456,7 +457,7 @@ Non-launcher `OnlyBarrel` weapons now use a separate chamber-fed implementation 
 
 Later phases still need these distinct ownership and transaction models:
 
-- first-primary grenade and rocket launchers now enter the existing grenadier combat objective instead of vanilla rifle actions; reloadable launchers have dedicated loose-ammo storage/reload handling, while broader launcher weapon-comparison policy remains separate
+- first-primary grenade and rocket launchers enter the grenadier combat objective only when no conventional long gun is available; body/container gear planning now prefers launcher-as-secondary and can force an empty or under-ready conventional weapon into primary, while launcher-versus-launcher comparison and occupied-secondary displacement remain separate
 - non-pistol revolvers now enter the shoulder-weapon pipeline by `WeapClass`; the MTs-255 cylinder must verify the shared internal-magazine transaction path in raid, while holster-revolver gear behavior remains separate
 - detachable-magazine weapons need a magazine top-off phase where compatible loose ammunition can fill an inserted or spare magazine and make that magazine eligible for readiness
 - multiple compatible partially loaded magazines need a repacking phase: transfer ammunition from donor magazines into compatible target magazines to create the fullest practical magazine states before evaluating readiness
@@ -488,6 +489,11 @@ The final placement phases must log one additional post-transfer `actual` snapsh
 
 ### 2026-07-16
 
+- Added P10 launcher slot normalization for body/container gear swapping: conventional long guns are processed before launchers, an existing first-primary launcher can move to empty second primary, and an under-ready conventional second primary can be promoted without a readiness gate when a found launcher needs the support slot.
+- Kept launcher-only acquisition valid when no conventional long gun exists. A launcher added beside an already-working primary is an `Allow Gear Swapping` equipment decision and uses `LootGeneric`; paired plans that create/promote the conventional primary retain `LootWeapon`.
+- Routed preferred-secondary launchers back through the shared loose-ammunition carry planner after slot selection. Primary weapon support ammunition remains earlier in the candidate order; compatible launcher grenades then replan one move at a time through vest, pockets, backpack, and secure fallback.
+- Replaced the inserted-magazine-only landing reserve with an available-shape planner. It tests compatible magazines largest-to-smallest for `one carried + one landing` fit, preserves the first valid shape, then revisits larger magazines for individual placement against that smaller reserve. An oversized inserted magazine may therefore drop on first reload instead of blocking fitting spares.
+- Carried planned magazine overflow into execution before ammo salvage. A source magazine proven to fit the backpack now moves there; only a magazine still left at the source after that attempt may be emptied.
 - Runtime verified M32 inventory readiness at `12/12` and reproduced the combat failure: the weapon was selected in `FirstPrimaryWeapon`, but second-primary-only launcher ownership repeatedly rejected it as an unowned launcher and ordinary ammo logic treated its cylinder as empty.
 - Generalized launcher resolution, selection, preparation, command eligibility, and loaded-round diagnostics across both primary slots. First-primary launchers now route through the grenadier objective and remain the main weapon; second-primary launchers retain temporary support/fallback behavior.
 - Preserved launcher safety ownership: ordinary rifle actions stop explosive fire outside the grenadier objective, while launch planning still owns range, ballistic arc, launch lane, impact radius, and friendly checks.

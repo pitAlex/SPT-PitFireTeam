@@ -73,13 +73,18 @@ namespace pitTeam.BigBrain.Actions
                 loadCount);
             LogInternalAmmoPlan(weapon, plan, "newWeaponProjection");
 
-            if (plan.Projected.InsertedRounds <= 0 && plan.Projected.TotalContribution <= 0)
+            if (plan.Projected.InsertedRounds <= 0 &&
+                plan.Projected.TotalContribution <= 0 &&
+                !weaponCandidate.ForcePrimaryForLauncherPreference)
             {
                 handledByGearPolicy = false;
                 return false;
             }
 
-            if (!primaryOccupied && !plan.Projected.PrimaryReady && secondaryOccupied)
+            if (!primaryOccupied &&
+                !plan.Projected.PrimaryReady &&
+                secondaryOccupied &&
+                !weaponCandidate.ForcePrimaryForLauncherPreference)
             {
                 handledByGearPolicy = false;
                 return false;
@@ -89,7 +94,8 @@ namespace pitTeam.BigBrain.Actions
                 ? BodyGearFollowUpDestination.SecondaryWeaponEquip
                 : BodyGearFollowUpDestination.EvaluateWeaponDestination;
             BodyGearCandidate finalCandidate = weaponCandidate.WithFollowUpDestination(finalDestination);
-            EPhraseTrigger cue = !primaryOccupied && plan.Projected.PrimaryReady
+            EPhraseTrigger cue = !primaryOccupied &&
+                                 (plan.Projected.PrimaryReady || weaponCandidate.ForcePrimaryForLauncherPreference)
                 ? EPhraseTrigger.LootWeapon
                 : EPhraseTrigger.LootGeneric;
 
