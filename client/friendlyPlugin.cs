@@ -361,7 +361,9 @@ namespace pitTeam
             new PmcUsecCombatLayerSuppressionPatch().Enable();
             new PmcFlankCombatLayerSuppressionPatch().Enable();
 
-            if (!IsSAINInstalled)
+            // Core follower actions must own BotMover.Sprint even when SAIN is installed;
+            // SAIN's global sprint look-direction gate is only valid for SAIN-owned movement.
+            if (!UseSainFollowerCombat)
                 new FollowerSprintPatch().Enable();
             new FollowerSprintStateDirectionPatch().Enable();
 
