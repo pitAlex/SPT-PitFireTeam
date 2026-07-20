@@ -207,6 +207,7 @@ namespace pitTeam.Modules
                     $"[LootCommand][Readiness] Deterministic formula self-test passed ({scenarios.Length}/{scenarios.Length}).");
                 FollowerWeaponInternalReadiness.RunDeterministicSelfTests();
                 FollowerWeaponChamberReadiness.RunDeterministicSelfTests();
+                FollowerTacticalAmmoPolicy.RunDeterministicSelfTests();
                 return;
             }
 
@@ -217,6 +218,7 @@ namespace pitTeam.Modules
 
             FollowerWeaponInternalReadiness.RunDeterministicSelfTests();
             FollowerWeaponChamberReadiness.RunDeterministicSelfTests();
+            FollowerTacticalAmmoPolicy.RunDeterministicSelfTests();
         }
 
         private static WeaponPrimaryReadinessSnapshot EvaluateInventoryState(

@@ -22,7 +22,10 @@ namespace pitTeam.BigBrain.Actions
 {
     internal partial class GestureCommandAction
     {
-        private IEnumerable<BodyGearCandidate> GetBodyOperationalMagazineCandidates(InventoryEquipment corpseEquipment, Weapon weapon)
+        private IEnumerable<BodyGearCandidate> GetBodyOperationalMagazineCandidates(
+            InventoryEquipment corpseEquipment,
+            Weapon weapon,
+            bool includeEmptyForTopOff = false)
         {
             if (corpseEquipment == null || weapon == null)
             {
@@ -34,7 +37,11 @@ namespace pitTeam.BigBrain.Actions
             foreach (EquipmentSlot slot in new[] { EquipmentSlot.TacticalVest, EquipmentSlot.Pockets, EquipmentSlot.Backpack })
             {
                 Item root = corpseEquipment.GetSlot(slot)?.ContainedItem;
-                foreach (MagazineItemClass magazine in GetOperationalMagazineItems(root, weapon, $"{slot}.WeaponSupportMagazine"))
+                foreach (MagazineItemClass magazine in GetOperationalMagazineItems(
+                             root,
+                             weapon,
+                             $"{slot}.WeaponSupportMagazine",
+                             includeEmptyForTopOff))
                 {
                     yield return new BodyGearCandidate(
                         magazine,
@@ -42,14 +49,22 @@ namespace pitTeam.BigBrain.Actions
                         $"{slot}.WeaponSupportMagazine",
                         0,
                         bypassPriceThreshold: true,
-                        bypassCategoryFilter: true);
+                        bypassCategoryFilter: true,
+                        weaponSupportWeapon: weapon);
                 }
             }
         }
 
-        private IEnumerable<BodyGearCandidate> GetContainerOperationalMagazineCandidates(SearchableItemItemClass containerRoot, Weapon weapon)
+        private IEnumerable<BodyGearCandidate> GetContainerOperationalMagazineCandidates(
+            SearchableItemItemClass containerRoot,
+            Weapon weapon,
+            bool includeEmptyForTopOff = false)
         {
-            foreach (MagazineItemClass magazine in GetOperationalMagazineItems(containerRoot, weapon, "Container.WeaponSupportMagazine"))
+            foreach (MagazineItemClass magazine in GetOperationalMagazineItems(
+                         containerRoot,
+                         weapon,
+                         "Container.WeaponSupportMagazine",
+                         includeEmptyForTopOff))
             {
                 yield return new BodyGearCandidate(
                     magazine,
@@ -57,7 +72,8 @@ namespace pitTeam.BigBrain.Actions
                     "Container.WeaponSupportMagazine",
                     0,
                     bypassPriceThreshold: true,
-                    bypassCategoryFilter: true);
+                    bypassCategoryFilter: true,
+                    weaponSupportWeapon: weapon);
             }
         }
 
@@ -82,11 +98,16 @@ namespace pitTeam.BigBrain.Actions
                     "FollowerBackpack.WeaponSupportMagazine",
                     0,
                     bypassPriceThreshold: true,
-                    bypassCategoryFilter: true);
+                    bypassCategoryFilter: true,
+                    weaponSupportWeapon: weapon);
             }
         }
 
-        private IEnumerable<MagazineItemClass> GetOperationalMagazineItems(Item root, Weapon weapon, string sourceName)
+        private IEnumerable<MagazineItemClass> GetOperationalMagazineItems(
+            Item root,
+            Weapon weapon,
+            string sourceName,
+            bool includeEmptyForTopOff = false)
         {
             OperationalMagazineScanStats stats = new OperationalMagazineScanStats(sourceName, root, weapon);
             if (root == null || weapon == null)
@@ -145,7 +166,7 @@ namespace pitTeam.BigBrain.Actions
                     continue;
                 }
 
-                if (magazine.Count <= 0)
+                if (magazine.Count <= 0 && !includeEmptyForTopOff)
                 {
                     stats.AddRejectedMagazine(magazineDescription, "empty");
                     continue;
@@ -163,9 +184,18 @@ namespace pitTeam.BigBrain.Actions
                     continue;
                 }
 
-                if (!FollowerWeaponMagazineCompatibility.AreLoadedCartridgesCompatible(weapon, magazine))
+                if (magazine.Count > 0 &&
+                    !FollowerWeaponMagazineCompatibility.AreLoadedCartridgesCompatible(weapon, magazine))
                 {
                     stats.AddRejectedMagazine(magazineDescription, "incompatibleCartridge");
+                    continue;
+                }
+
+                if (magazine.Count <= 0 && includeEmptyForTopOff && magazine.MaxCount > 0)
+                {
+                    stats.CompatibleCount++;
+                    stats.AddAcceptedMagazine($"{magazineDescription}:refillableEmpty");
+                    yield return magazine;
                     continue;
                 }
 
@@ -200,7 +230,8 @@ namespace pitTeam.BigBrain.Actions
             InventoryController inventory,
             InventoryEquipment followerEquipment,
             Weapon weapon,
-            IEnumerable<BodyGearCandidate>? candidates)
+            IEnumerable<BodyGearCandidate>? candidates,
+            bool allowEmptyCandidates = false)
         {
             OperationalMagazinePlan plan = new OperationalMagazinePlan();
             if (inventory == null || followerEquipment == null || weapon == null || candidates == null)
@@ -227,7 +258,11 @@ namespace pitTeam.BigBrain.Actions
             List<BodyGearCandidate> validCandidates = new List<BodyGearCandidate>();
             foreach (BodyGearCandidate candidate in candidateList)
             {
-                if (!TryGetOperationalMagazineCandidate(candidate, out MagazineItemClass? magazine, out string validationReason))
+                if (!TryGetOperationalMagazineCandidate(
+                        candidate,
+                        out MagazineItemClass? magazine,
+                        out string validationReason,
+                        allowEmptyCandidates))
                 {
                     plan.AddRejection(validationReason);
                     LogOperationalMagazinePlanStep(candidate, $"reject validation={validationReason}");
@@ -253,9 +288,11 @@ namespace pitTeam.BigBrain.Actions
                     candidate))
                 .Concat(GetFastAccessMagazines(followerEquipment)
                     .Where(magazine =>
-                        magazine.Count > 0 &&
+                        (allowEmptyCandidates || magazine.Count > 0) &&
+                        magazine.MaxCount > 0 &&
                         IsMagazineCompatibleWithWeapon(weapon, magazine) &&
-                        FollowerWeaponMagazineCompatibility.AreLoadedCartridgesCompatible(weapon, magazine))
+                        (magazine.Count <= 0 ||
+                         FollowerWeaponMagazineCompatibility.AreLoadedCartridgesCompatible(weapon, magazine)))
                     .Select(magazine => new OperationalMagazineReserveOption(magazine, null)))
                 .GroupBy(option => option.Magazine.Id, StringComparer.Ordinal)
                 .Select(group => group.First())
@@ -724,13 +761,14 @@ namespace pitTeam.BigBrain.Actions
             BodyGearCandidate candidate,
             out MagazineItemClass? magazine)
         {
-            return TryGetOperationalMagazineCandidate(candidate, out magazine, out _);
+            return TryGetOperationalMagazineCandidate(candidate, out magazine, out _, allowEmptyCandidate: false);
         }
 
         private bool TryGetOperationalMagazineCandidate(
             BodyGearCandidate candidate,
             out MagazineItemClass? magazine,
-            out string reason)
+            out string reason,
+            bool allowEmptyCandidate = false)
         {
             magazine = null;
             reason = "ok";
@@ -747,7 +785,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (candidateMagazine.Count <= 0)
+            if (candidateMagazine.Count <= 0 && !allowEmptyCandidate)
             {
                 reason = "empty";
                 return false;

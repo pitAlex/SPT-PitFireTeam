@@ -25,7 +25,8 @@ namespace pitTeam.BigBrain.Actions
         private bool TryStartEasyBodyWeaponEquipMove(
             InventoryController inventory,
             InventoryEquipment corpseEquipment,
-            InventoryEquipment followerEquipment)
+            InventoryEquipment followerEquipment,
+            bool requirePrimaryCue = false)
         {
             if (!pitFireTeam.IsLootGearSwappingEnabled())
             {
@@ -39,7 +40,8 @@ namespace pitTeam.BigBrain.Actions
                     followerEquipment,
                     sourceCandidates,
                     bodyLootAttemptedItemIds,
-                    out BodyGearMove? normalizationMove))
+                    out BodyGearMove? normalizationMove) &&
+                (!requirePrimaryCue || CanLeadPrimaryCue(normalizationMove)))
             {
                 if (TryQueueBodyLootMoveAfterPickupSuccess(normalizationMove))
                 {
@@ -70,12 +72,16 @@ namespace pitTeam.BigBrain.Actions
 
                 Weapon candidateWeapon = (Weapon)swapCandidate.Item;
                 IEnumerable<BodyGearCandidate> magazineCandidates =
-                    GetBodyOperationalMagazineCandidates(corpseEquipment, candidateWeapon);
+                    GetBodyOperationalMagazineCandidates(
+                        corpseEquipment,
+                        candidateWeapon,
+                        includeEmptyForTopOff: true);
                 IEnumerable<BodyGearCandidate> ammoCandidates =
                     GetBodyWeaponLooseAmmoCandidates(corpseEquipment, candidateWeapon);
                 bool builtMove = TryBuildEasyWeaponEquipMove(
                     inventory,
                     followerEquipment,
+                    corpseEquipment,
                     swapCandidate,
                     magazineCandidates,
                     ammoCandidates,
@@ -91,6 +97,11 @@ namespace pitTeam.BigBrain.Actions
                         bodyLootAttemptedItemIds.Add(swapCandidate.Item.Id);
                     }
 
+                    continue;
+                }
+
+                if (requirePrimaryCue && !CanLeadPrimaryCue(move))
+                {
                     continue;
                 }
 
@@ -161,7 +172,7 @@ namespace pitTeam.BigBrain.Actions
             // disturbing current rig contents, treat it as cargo instead of throwing the old vest.
             if (CanConsiderFilteredLootCandidate(cargoCandidate, bodyLootAttemptedItemIds) &&
                 IsPotentialTacticalVestProtectionUpgrade(followerEquipment, vest) &&
-                TryBuildFilteredLootMove(inventory, followerEquipment, cargoCandidate, null, null, out BodyGearMove? cargoMove))
+                TryBuildFilteredLootMove(inventory, followerEquipment, corpseEquipment, cargoCandidate, null, null, out BodyGearMove? cargoMove))
             {
                 bodyLootAttemptedItemIds.Add(cargoCandidate.Item.Id);
                 if (TryQueueBodyLootMoveAfterPickupSuccess(cargoMove))
@@ -179,7 +190,8 @@ namespace pitTeam.BigBrain.Actions
         private bool TryStartEasyContainerWeaponEquipMove(
             InventoryController inventory,
             SearchableItemItemClass containerRoot,
-            InventoryEquipment followerEquipment)
+            InventoryEquipment followerEquipment,
+            bool requirePrimaryCue = false)
         {
             if (!pitFireTeam.IsLootGearSwappingEnabled())
             {
@@ -193,7 +205,8 @@ namespace pitTeam.BigBrain.Actions
                     followerEquipment,
                     sourceCandidates,
                     containerLootAttemptedItemIds,
-                    out BodyGearMove? normalizationMove))
+                    out BodyGearMove? normalizationMove) &&
+                (!requirePrimaryCue || CanLeadPrimaryCue(normalizationMove)))
             {
                 if (TryQueueContainerLootMoveAfterPickupSuccess(normalizationMove))
                 {
@@ -224,12 +237,16 @@ namespace pitTeam.BigBrain.Actions
 
                 Weapon candidateWeapon = (Weapon)swapCandidate.Item;
                 IEnumerable<BodyGearCandidate> magazineCandidates =
-                    GetContainerOperationalMagazineCandidates(containerRoot, candidateWeapon);
+                    GetContainerOperationalMagazineCandidates(
+                        containerRoot,
+                        candidateWeapon,
+                        includeEmptyForTopOff: true);
                 IEnumerable<BodyGearCandidate> ammoCandidates =
                     GetContainerWeaponLooseAmmoCandidates(containerRoot, candidateWeapon);
                 bool builtMove = TryBuildEasyWeaponEquipMove(
                     inventory,
                     followerEquipment,
+                    containerRoot,
                     swapCandidate,
                     magazineCandidates,
                     ammoCandidates,
@@ -243,6 +260,11 @@ namespace pitTeam.BigBrain.Actions
                         containerLootAttemptedItemIds.Add(swapCandidate.Item.Id);
                     }
 
+                    continue;
+                }
+
+                if (requirePrimaryCue && !CanLeadPrimaryCue(move))
+                {
                     continue;
                 }
 
@@ -270,7 +292,11 @@ namespace pitTeam.BigBrain.Actions
             if (!TryBuildSecondaryWeaponPromotionChain(
                     inventory,
                     followerEquipment,
-                    weapon => GetBodyOperationalMagazineCandidates(corpseEquipment, weapon),
+                    corpseEquipment,
+                    weapon => GetBodyOperationalMagazineCandidates(
+                        corpseEquipment,
+                        weapon,
+                        includeEmptyForTopOff: true),
                     weapon => GetBodyWeaponLooseAmmoCandidates(corpseEquipment, weapon),
                     bodyLootAttemptedItemIds,
                     out BodyGearMove? move))
@@ -278,7 +304,10 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            bodyLootAttemptedItemIds.Add(move.Item.Id);
+            if (!move.IsStagingOperation)
+            {
+                bodyLootAttemptedItemIds.Add(move.Item.Id);
+            }
             if (TryQueueBodyLootMoveAfterPickupSuccess(move))
             {
                 return true;
@@ -296,7 +325,11 @@ namespace pitTeam.BigBrain.Actions
             if (!TryBuildSecondaryWeaponPromotionChain(
                     inventory,
                     followerEquipment,
-                    weapon => GetContainerOperationalMagazineCandidates(containerRoot, weapon),
+                    containerRoot,
+                    weapon => GetContainerOperationalMagazineCandidates(
+                        containerRoot,
+                        weapon,
+                        includeEmptyForTopOff: true),
                     weapon => GetContainerWeaponLooseAmmoCandidates(containerRoot, weapon),
                     containerLootAttemptedItemIds,
                     out BodyGearMove? move))
@@ -304,7 +337,10 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            containerLootAttemptedItemIds.Add(move.Item.Id);
+            if (!move.IsStagingOperation)
+            {
+                containerLootAttemptedItemIds.Add(move.Item.Id);
+            }
             if (TryQueueContainerLootMoveAfterPickupSuccess(move))
             {
                 return true;
@@ -317,6 +353,7 @@ namespace pitTeam.BigBrain.Actions
         private bool TryBuildSecondaryWeaponPromotionChain(
             InventoryController inventory,
             InventoryEquipment followerEquipment,
+            Item sourceRoot,
             Func<Weapon, IEnumerable<BodyGearCandidate>> sourceMagazineFactory,
             Func<Weapon, IEnumerable<BodyGearCandidate>> sourceAmmoFactory,
             HashSet<string> attemptedSourceItemIds,
@@ -329,6 +366,7 @@ namespace pitTeam.BigBrain.Actions
             if (!pitFireTeam.IsLootGearSwappingEnabled() ||
                 inventory == null ||
                 followerEquipment == null ||
+                sourceRoot == null ||
                 sourceMagazineFactory == null ||
                 sourceAmmoFactory == null ||
                 followerEquipment.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem != null ||
@@ -367,6 +405,28 @@ namespace pitTeam.BigBrain.Actions
                     !string.IsNullOrEmpty(candidate.Item.Id) &&
                     !attemptedSourceItemIds.Contains(candidate.Item.Id))
                 .ToList();
+            List<BodyGearCandidate> sourceLooseAmmoCandidates = sourceAmmoFactory(supportWeapon)
+                .Where(candidate =>
+                    candidate?.Item != null &&
+                    !string.IsNullOrEmpty(candidate.Item.Id) &&
+                    !attemptedSourceItemIds.Contains(candidate.Item.Id))
+                .ToList();
+
+            // A later ammo find can complete the acquired magazine package just as a later loaded
+            // spare can. Commit one real top-off transaction first; the next planning pass will
+            // use the settled magazine counts before deciding whether the support is now primary.
+            if (TryBuildPrimaryMagazineTopOffStagingMove(
+                    inventory,
+                    followerEquipment,
+                    sourceRoot,
+                    supportWeapon,
+                    sourceMagazineCandidates,
+                    sourceLooseAmmoCandidates,
+                    out move))
+            {
+                return true;
+            }
+
             if (sourceMagazineCandidates.Count == 0)
             {
                 return false;
@@ -442,6 +502,12 @@ namespace pitTeam.BigBrain.Actions
                     supportWeapon,
                     magazinePlan.CompatibleLoadedCandidates);
                 move = firstMagazineMove.WithFollowUps(followUps, EPhraseTrigger.LootWeapon);
+                move = AppendWeaponLooseAmmoSupportFollowUps(
+                    move,
+                    followerEquipment,
+                    supportWeapon,
+                    sourceLooseAmmoCandidates,
+                    "secondarySourcePromotion");
                 Modules.Logger.LogInfo(
                     $"[LootCommand] Secondary weapon promotion chain built for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
                     $"weapon={DescribeLootDebugItem(supportWeapon)} firstSourceMag={DescribeLootDebugItem(firstCandidate.Item)} " +
@@ -460,7 +526,11 @@ namespace pitTeam.BigBrain.Actions
             if (!TryBuildBackpackCargoWeaponPromotionChain(
                     inventory,
                     followerEquipment,
-                    weapon => GetBodyOperationalMagazineCandidates(corpseEquipment, weapon),
+                    corpseEquipment,
+                    weapon => GetBodyOperationalMagazineCandidates(
+                        corpseEquipment,
+                        weapon,
+                        includeEmptyForTopOff: true),
                     weapon => GetBodyWeaponLooseAmmoCandidates(corpseEquipment, weapon),
                     bodyLootAttemptedItemIds,
                     out BodyGearMove? move))
@@ -468,7 +538,10 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            bodyLootAttemptedItemIds.Add(move.Item.Id);
+            if (!move.IsStagingOperation)
+            {
+                bodyLootAttemptedItemIds.Add(move.Item.Id);
+            }
             if (TryQueueBodyLootMoveAfterPickupSuccess(move))
             {
                 return true;
@@ -486,7 +559,11 @@ namespace pitTeam.BigBrain.Actions
             if (!TryBuildBackpackCargoWeaponPromotionChain(
                     inventory,
                     followerEquipment,
-                    weapon => GetContainerOperationalMagazineCandidates(containerRoot, weapon),
+                    containerRoot,
+                    weapon => GetContainerOperationalMagazineCandidates(
+                        containerRoot,
+                        weapon,
+                        includeEmptyForTopOff: true),
                     weapon => GetContainerWeaponLooseAmmoCandidates(containerRoot, weapon),
                     containerLootAttemptedItemIds,
                     out BodyGearMove? move))
@@ -494,7 +571,10 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            containerLootAttemptedItemIds.Add(move.Item.Id);
+            if (!move.IsStagingOperation)
+            {
+                containerLootAttemptedItemIds.Add(move.Item.Id);
+            }
             if (TryQueueContainerLootMoveAfterPickupSuccess(move))
             {
                 return true;
@@ -507,6 +587,7 @@ namespace pitTeam.BigBrain.Actions
         private bool TryBuildBackpackCargoWeaponPromotionChain(
             InventoryController inventory,
             InventoryEquipment followerEquipment,
+            Item sourceRoot,
             Func<Weapon, IEnumerable<BodyGearCandidate>> sourceMagazineFactory,
             Func<Weapon, IEnumerable<BodyGearCandidate>> sourceAmmoFactory,
             HashSet<string> attemptedSourceItemIds,
@@ -516,6 +597,7 @@ namespace pitTeam.BigBrain.Actions
             if (!pitFireTeam.IsLootGearSwappingEnabled() ||
                 inventory == null ||
                 followerEquipment == null ||
+                sourceRoot == null ||
                 sourceMagazineFactory == null ||
                 sourceAmmoFactory == null ||
                 followerEquipment.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem != null)
@@ -553,6 +635,27 @@ namespace pitTeam.BigBrain.Actions
                         !string.IsNullOrEmpty(candidate.Item.Id) &&
                         !attemptedSourceItemIds.Contains(candidate.Item.Id))
                     .ToList();
+                List<BodyGearCandidate> sourceLooseAmmoCandidates = sourceAmmoFactory(cargoWeapon)
+                    .Where(candidate =>
+                        candidate?.Item != null &&
+                        !string.IsNullOrEmpty(candidate.Item.Id) &&
+                        !attemptedSourceItemIds.Contains(candidate.Item.Id))
+                    .ToList();
+
+                // Cargo promotion follows the same staged order as secondary promotion: improve
+                // the acquired package first, then let the normal magazine planner reevaluate it.
+                if (TryBuildPrimaryMagazineTopOffStagingMove(
+                        inventory,
+                        followerEquipment,
+                        sourceRoot,
+                        cargoWeapon,
+                        sourceMagazineCandidates,
+                        sourceLooseAmmoCandidates,
+                        out move))
+                {
+                    return true;
+                }
+
                 if (sourceMagazineCandidates.Count == 0)
                 {
                     continue;
@@ -627,6 +730,12 @@ namespace pitTeam.BigBrain.Actions
                         cargoWeapon,
                         magazinePlan.CompatibleLoadedCandidates);
                     move = firstMagazineMove.WithFollowUps(followUps, EPhraseTrigger.LootWeapon);
+                    move = AppendWeaponLooseAmmoSupportFollowUps(
+                        move,
+                        followerEquipment,
+                        cargoWeapon,
+                        sourceLooseAmmoCandidates,
+                        "cargoSourcePromotion");
                     Modules.Logger.LogInfo(
                         $"[LootCommand] Cargo weapon promotion chain built for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
                         $"weapon={DescribeLootDebugItem(cargoWeapon)} firstSourceMag={DescribeLootDebugItem(firstCandidate.Item)} " +
@@ -974,6 +1083,7 @@ namespace pitTeam.BigBrain.Actions
         private bool TryBuildEasyWeaponEquipMove(
             InventoryController inventory,
             InventoryEquipment followerEquipment,
+            Item sourceRoot,
             BodyGearCandidate candidate,
             IEnumerable<BodyGearCandidate>? operationalMagazineCandidates,
             IEnumerable<BodyGearCandidate>? operationalAmmoCandidates,
@@ -1071,6 +1181,18 @@ namespace pitTeam.BigBrain.Actions
 
             List<BodyGearCandidate> sourceMagazineCandidates =
                 operationalMagazineCandidates?.ToList() ?? new List<BodyGearCandidate>();
+            if (TryBuildPrimaryMagazineTopOffStagingMove(
+                    inventory,
+                    followerEquipment,
+                    sourceRoot,
+                    weapon,
+                    sourceMagazineCandidates,
+                    sourceLooseAmmoCandidates,
+                    out move))
+            {
+                return true;
+            }
+
             OperationalMagazinePlan magazinePlan = SelectNewWeaponMagazinePlan(
                 inventory,
                 followerEquipment,
@@ -1160,6 +1282,58 @@ namespace pitTeam.BigBrain.Actions
                 $"weapon={DescribeLootDebugItem(weapon)} evaluation=gearCandidateRejected " +
                 $"destination=OrdinaryCargo decisionReason={emptyMagazineReason}");
             return false;
+        }
+
+        private bool TryStartPreferredBodyPrimaryWeaponMove(
+            InventoryController inventory,
+            InventoryEquipment corpseEquipment,
+            InventoryEquipment followerEquipment)
+        {
+            if (bodyLootSuccessSpoken ||
+                followerEquipment?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem != null)
+            {
+                return false;
+            }
+
+            // Resolve every path that can make a combat primary before ordinary gear/cargo is
+            // allowed to claim the search's single voice cue. This preserves the established
+            // promotion priority without pre-executing or speculating about inventory moves.
+            return TryStartBodySecondaryWeaponPromotionMove(inventory, corpseEquipment, followerEquipment) ||
+                   TryStartEasyBodyWeaponEquipMove(
+                       inventory,
+                       corpseEquipment,
+                       followerEquipment,
+                       requirePrimaryCue: true) ||
+                   TryStartBodyBackpackCargoWeaponPromotionMove(inventory, corpseEquipment, followerEquipment);
+        }
+
+        private bool TryStartPreferredContainerPrimaryWeaponMove(
+            InventoryController inventory,
+            SearchableItemItemClass containerRoot,
+            InventoryEquipment followerEquipment)
+        {
+            if (containerLootSuccessSpoken ||
+                followerEquipment?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem != null)
+            {
+                return false;
+            }
+
+            return TryStartContainerSecondaryWeaponPromotionMove(inventory, containerRoot, followerEquipment) ||
+                   TryStartEasyContainerWeaponEquipMove(
+                       inventory,
+                       containerRoot,
+                       followerEquipment,
+                       requirePrimaryCue: true) ||
+                   TryStartContainerBackpackCargoWeaponPromotionMove(inventory, containerRoot, followerEquipment);
+        }
+
+        private static bool CanLeadPrimaryCue(BodyGearMove move)
+        {
+            // Silent staging may be required before the planner can know the weapon's settled
+            // destination. A completed non-staging chain is preferred only when it already proves
+            // the weapon will become combat primary and therefore owns LootWeapon.
+            return move != null &&
+                   (move.IsStagingOperation || move.SuccessPhrase == EPhraseTrigger.LootWeapon);
         }
 
         private bool TryBuildWorkingPrimarySecondaryWeaponEquipChain(
@@ -2183,6 +2357,42 @@ namespace pitTeam.BigBrain.Actions
                     continue;
                 }
 
+                if (candidate?.FollowUpDestination == BodyGearFollowUpDestination.TopOffWeaponMagazine)
+                {
+                    if (!TryBuildMagazineTopOffMove(
+                            inventory,
+                            candidate,
+                            out BodyGearMove? topOffMove,
+                            out string topOffReason))
+                    {
+                        Modules.Logger.LogInfo(
+                            $"[LootCommand][MagazineTopOff] Body follow-up skipped: " +
+                            $"reason={topOffReason} item={DescribeLootDebugItem(candidate?.Item)}");
+                        continue;
+                    }
+
+                    StartBodyGearMove(inventory, topOffMove);
+                    return true;
+                }
+
+                if (candidate?.FollowUpDestination == BodyGearFollowUpDestination.RestoreMagazineToWeapon)
+                {
+                    if (!TryBuildRestoreMagazineToWeaponMove(
+                            inventory,
+                            candidate,
+                            out BodyGearMove? restoreMove,
+                            out string restoreReason))
+                    {
+                        Modules.Logger.LogInfo(
+                            $"[LootCommand][MagazineTopOff] Body restore skipped: " +
+                            $"reason={restoreReason} item={DescribeLootDebugItem(candidate?.Item)}");
+                        continue;
+                    }
+
+                    StartBodyGearMove(inventory, restoreMove);
+                    return true;
+                }
+
                 if (candidate?.FollowUpDestination == BodyGearFollowUpDestination.WeaponSupportLooseAmmo)
                 {
                     if (!TryBuildWeaponLooseAmmoMove(
@@ -2430,6 +2640,42 @@ namespace pitTeam.BigBrain.Actions
                 if (ammoSalvageResult == AmmoSalvageFollowUpResult.Continue)
                 {
                     continue;
+                }
+
+                if (candidate?.FollowUpDestination == BodyGearFollowUpDestination.TopOffWeaponMagazine)
+                {
+                    if (!TryBuildMagazineTopOffMove(
+                            inventory,
+                            candidate,
+                            out BodyGearMove? topOffMove,
+                            out string topOffReason))
+                    {
+                        Modules.Logger.LogInfo(
+                            $"[LootCommand][MagazineTopOff] Container follow-up skipped: " +
+                            $"reason={topOffReason} item={DescribeLootDebugItem(candidate?.Item)}");
+                        continue;
+                    }
+
+                    StartContainerLootMove(inventory, topOffMove);
+                    return true;
+                }
+
+                if (candidate?.FollowUpDestination == BodyGearFollowUpDestination.RestoreMagazineToWeapon)
+                {
+                    if (!TryBuildRestoreMagazineToWeaponMove(
+                            inventory,
+                            candidate,
+                            out BodyGearMove? restoreMove,
+                            out string restoreReason))
+                    {
+                        Modules.Logger.LogInfo(
+                            $"[LootCommand][MagazineTopOff] Container restore skipped: " +
+                            $"reason={restoreReason} item={DescribeLootDebugItem(candidate?.Item)}");
+                        continue;
+                    }
+
+                    StartContainerLootMove(inventory, restoreMove);
+                    return true;
                 }
 
                 if (candidate?.FollowUpDestination == BodyGearFollowUpDestination.WeaponSupportLooseAmmo)

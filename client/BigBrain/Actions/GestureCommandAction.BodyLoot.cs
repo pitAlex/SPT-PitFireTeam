@@ -313,16 +313,27 @@ namespace pitTeam.BigBrain.Actions
             // Scenario order for non-teammate bodies:
             // 1. secure the PMC dogtag before any equipment transaction can alter the action state
             // 2. finish any follow-up magazine move produced by easy weapon equip
-            // 3. optionally equip or narrowly swap tactical vest protection
-            // 4. optionally equip an empty primary or add a usable support beside a working primary
-            // 5. promote a tracked backpack cargo weapon when newly found magazines complete it
-            // 6. otherwise loot eligible contents into backpack/pockets only
+            // 3. replenish or upgrade the equipped primary from tactical loose-ammo decisions
+            // 4. optionally equip or narrowly swap tactical vest protection
+            // 5. optionally equip an empty primary or add a usable support beside a working primary
+            // 6. promote a tracked backpack cargo weapon when newly found magazines complete it
+            // 7. otherwise loot eligible contents into backpack/pockets only
             if (TryStartNonTeammatePmcDogtagMove(inventory, corpseEquipment, followerEquipment))
             {
                 return;
             }
 
             if (TryStartPendingBodyGearSwapFollowUpMove(inventory, followerEquipment))
+            {
+                return;
+            }
+
+            if (TryStartPreferredBodyPrimaryWeaponMove(inventory, corpseEquipment, followerEquipment))
+            {
+                return;
+            }
+
+            if (TryStartBodyPrimaryTacticalAmmoMove(inventory, corpseEquipment, followerEquipment))
             {
                 return;
             }
@@ -366,6 +377,7 @@ namespace pitTeam.BigBrain.Actions
                 if (!TryBuildFilteredLootMove(
                         inventory,
                         followerEquipment,
+                        corpseEquipment,
                         candidate,
                         operationalMagazineCandidates,
                         operationalAmmoCandidates,
@@ -408,7 +420,7 @@ namespace pitTeam.BigBrain.Actions
             // Mark it before building so a full inventory cannot trap the planner on the dogtag.
             // Dogtags still bypass filters and only use the normal backpack/pocket carry containers.
             bodyLootAttemptedItemIds.Add(candidate.Item.Id);
-            if (!TryBuildFilteredLootMove(inventory, followerEquipment, candidate, null, null, out BodyGearMove move))
+            if (!TryBuildFilteredLootMove(inventory, followerEquipment, corpseEquipment, candidate, null, null, out BodyGearMove move))
             {
                 bodyLootHadEligibleButNoSpace = true;
                 Modules.Logger.LogInfo(
@@ -502,6 +514,7 @@ namespace pitTeam.BigBrain.Actions
         private bool TryBuildFilteredLootMove(
             InventoryController inventory,
             InventoryEquipment followerEquipment,
+            Item sourceRoot,
             BodyGearCandidate candidate,
             IEnumerable<BodyGearCandidate>? operationalMagazineCandidates,
             IEnumerable<BodyGearCandidate>? operationalAmmoCandidates,
@@ -520,6 +533,7 @@ namespace pitTeam.BigBrain.Actions
                 if (TryBuildEasyWeaponEquipMove(
                         inventory,
                         followerEquipment,
+                        sourceRoot,
                         candidate,
                         operationalMagazineCandidates,
                         operationalAmmoCandidates,
@@ -668,7 +682,8 @@ namespace pitTeam.BigBrain.Actions
                 rebindAsPrimaryWeapon: rebindAsPrimaryWeapon,
                 isStagingOperation: isStagingOperation,
                 stagingWeapon: stagingWeapon,
-                ammoSalvageMagazineId: candidate.AmmoSalvageMagazine?.Id);
+                ammoSalvageMagazineId: candidate.AmmoSalvageMagazine?.Id,
+                approvedReloadWeapon: candidate.WeaponSupportWeapon);
             return true;
         }
 
@@ -788,22 +803,39 @@ namespace pitTeam.BigBrain.Actions
                                       move.StagingWeapon != null &&
                                       (IsItemInsideRoot(move.Item, move.StagingWeapon) ||
                                        (move.StagingWeaponLoadedRoundsBefore >= 0 &&
-                                        FollowerWeaponLooseFeedReadiness.GetLoadedRounds(move.StagingWeapon) >
-                                        move.StagingWeaponLoadedRoundsBefore));
-                if (result?.Succeed == true ||
-                    stagingApplied ||
-                    IsLootNowInBotInventory(BotOwner?.GetPlayer, completedItem))
+                                         FollowerWeaponLooseFeedReadiness.GetLoadedRounds(move.StagingWeapon) >
+                                         move.StagingWeaponLoadedRoundsBefore) ||
+                                       (move.StagingMagazine != null &&
+                                        move.StagingMagazineRoundsBefore >= 0 &&
+                                        move.StagingMagazine.Count > move.StagingMagazineRoundsBefore));
+                bool moveSucceeded = result?.Succeed == true ||
+                                     stagingApplied ||
+                                     (!move.IsStagingOperation &&
+                                      IsLootNowInBotInventory(BotOwner?.GetPlayer, completedItem));
+                if (moveSucceeded)
                 {
-                    if (!move.IsStagingOperation)
+                    bool countsAsLootMove = !move.IsStagingOperation || !move.ReportAsLootNothing;
+                    if (countsAsLootMove)
                     {
                         bodyLootMovesSucceeded++;
                         if (!move.ReportAsLootNothing && !IsDogtagLoot(completedItem))
                         {
                             bodyLootReportedMovesSucceeded++;
                         }
+                    }
 
+                    if (!move.IsStagingOperation)
+                    {
                         InteractableObjects.ClearStrictCargoTree(BotOwner, completedItem);
                         InteractableObjects.RegisterLootedWeaponTree(BotOwner, completedItem);
+                        if (completedItem is MagazineItemClass completedMagazine &&
+                            move.ApprovedReloadWeapon != null)
+                        {
+                            InteractableObjects.RegisterLootedWeaponMagazine(
+                                BotOwner,
+                                move.ApprovedReloadWeapon,
+                                completedMagazine);
+                        }
                     }
 
                     RegisterAmmoSalvageTargetReplacement(move, completedItem);
@@ -857,7 +889,9 @@ namespace pitTeam.BigBrain.Actions
 
                 Modules.Logger.LogInfo(
                     $"[LootCommand] Body gear move failed for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': {move.SourceName}:{move.Item?.TemplateId ?? "unknown"}");
-                if (move.IsStagingOperation && move.StagingWeapon != null)
+                if (move.IsStagingOperation &&
+                    move.TerminalOnStagingFailure &&
+                    move.StagingWeapon != null)
                 {
                     // A failed insertion leaves the source weapon empty. Mark the weapon terminal
                     // for this search so the planner does not rebuild the same failed transaction.

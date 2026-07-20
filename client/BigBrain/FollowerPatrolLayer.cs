@@ -1241,8 +1241,10 @@ namespace pitTeam.BigBrain
 
             EquipmentSlot currentSlot = BotOwner.WeaponManager.Selector?.LastEquipmentSlot ?? EquipmentSlot.FirstPrimaryWeapon;
             bool reloadLootedPrimaryLauncher = CanReloadLootedFirstPrimaryLauncher(currentSlot, currentWeapon);
+            bool reloadLootedPrimaryPackage = CanReloadLootedFirstPrimaryPackage(currentSlot, currentWeapon);
             if (InteractableObjects.IsLootedWeapon(BotOwner, currentWeapon) &&
-                !reloadLootedPrimaryLauncher)
+                !reloadLootedPrimaryLauncher &&
+                !reloadLootedPrimaryPackage)
             {
                 MarkReloadWeaponProcessed(currentWeapon.Id);
                 return false;
@@ -1307,11 +1309,18 @@ namespace pitTeam.BigBrain
             EquipmentSlot currentSlot = BotOwner.WeaponManager.Selector?.LastEquipmentSlot ?? EquipmentSlot.FirstPrimaryWeapon;
             if (InteractableObjects.IsLootedWeapon(BotOwner, currentWeapon))
             {
-                return CanReloadLootedFirstPrimaryLauncher(currentSlot, currentWeapon) &&
-                       FollowerCombatCommon.TryStartActiveGrenadeLauncherLooseAmmoReload(
-                           BotOwner,
-                           currentWeapon,
-                           out _);
+                if (CanReloadLootedFirstPrimaryLauncher(currentSlot, currentWeapon))
+                {
+                    return FollowerCombatCommon.TryStartActiveGrenadeLauncherLooseAmmoReload(
+                        BotOwner,
+                        currentWeapon,
+                        out _);
+                }
+
+                if (!CanReloadLootedFirstPrimaryPackage(currentSlot, currentWeapon))
+                {
+                    return false;
+                }
             }
 
             if (currentWeapon.ReloadMode != Weapon.EReloadMode.ExternalMagazine)
@@ -1322,6 +1331,16 @@ namespace pitTeam.BigBrain
             MagazineItemClass? bestMagazine = BotOwner.WeaponManager.Reload.GetMagazineForReload(currentWeapon);
             if (bestMagazine == null || bestMagazine.Count <= currentWeapon.GetCurrentMagazineCount())
             {
+                return false;
+            }
+
+            if (InteractableObjects.IsLootedWeapon(BotOwner, currentWeapon) &&
+                !InteractableObjects.IsApprovedLootedWeaponMagazine(BotOwner, currentWeapon, bestMagazine))
+            {
+                Modules.Logger.LogInfo(
+                    $"[PatrolReload] Rejected non-package magazine for looted primary " +
+                    $"'{BotOwner?.Profile?.Nickname ?? BotOwner?.name ?? "<unknown>"}' " +
+                    $"weapon={currentWeapon.TemplateId} magazine={bestMagazine.TemplateId}");
                 return false;
             }
 
@@ -1375,8 +1394,10 @@ namespace pitTeam.BigBrain
             }
 
             bool reloadLootedPrimaryLauncher = CanReloadLootedFirstPrimaryLauncher(slot, weapon);
+            bool reloadLootedPrimaryPackage = CanReloadLootedFirstPrimaryPackage(slot, weapon);
             if (InteractableObjects.IsLootedWeapon(BotOwner, weapon) &&
-                !reloadLootedPrimaryLauncher)
+                !reloadLootedPrimaryLauncher &&
+                !reloadLootedPrimaryPackage)
             {
                 MarkReloadWeaponProcessed(weapon.Id);
                 processedSlot = true;
@@ -1459,8 +1480,10 @@ namespace pitTeam.BigBrain
             }
 
             bool reloadLootedPrimaryLauncher = CanReloadLootedFirstPrimaryLauncher(slot, weapon);
+            bool reloadLootedPrimaryPackage = CanReloadLootedFirstPrimaryPackage(slot, weapon);
             if (InteractableObjects.IsLootedWeapon(BotOwner, weapon) &&
-                !reloadLootedPrimaryLauncher)
+                !reloadLootedPrimaryLauncher &&
+                !reloadLootedPrimaryPackage)
             {
                 return false;
             }
@@ -1493,6 +1516,18 @@ namespace pitTeam.BigBrain
             return slot == EquipmentSlot.FirstPrimaryWeapon &&
                    InteractableObjects.IsLootedWeapon(BotOwner, weapon) &&
                    FollowerCombatCommon.CanReloadGrenadeLauncherFromLooseAmmo(BotOwner, weapon);
+        }
+
+        private bool CanReloadLootedFirstPrimaryPackage(EquipmentSlot slot, Weapon weapon)
+        {
+            // Looted firearms normally stay outside patrol reload maintenance so they cannot
+            // consume compatible magazines from the bot's spawned kit. Gear planning now records
+            // magazines successfully acquired for each weapon package; only those magazines may
+            // unlock the first-primary reload path.
+            return slot == EquipmentSlot.FirstPrimaryWeapon &&
+                   weapon?.ReloadMode == Weapon.EReloadMode.ExternalMagazine &&
+                   InteractableObjects.IsLootedWeapon(BotOwner, weapon) &&
+                   FollowerOutOfCombatReloadPolicy.HasBetterMagazine(BotOwner, weapon);
         }
 
         private void MarkReloadSlotFailed(EquipmentSlot slot)
@@ -1742,11 +1777,6 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            if (InteractableObjects.IsLootedWeapon(botOwner, weapon))
-            {
-                return false;
-            }
-
             if (IsLauncherWeapon(weapon))
             {
                 return false;
@@ -1758,6 +1788,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
+            bool lootedWeapon = InteractableObjects.IsLootedWeapon(botOwner, weapon);
             int currentCount = weapon.GetCurrentMagazineCount();
             List<MagazineItemClass> magazines = new List<MagazineItemClass>();
             botOwner.GetPlayer.InventoryController.GetReachableItemsOfTypeNonAlloc<MagazineItemClass>(magazines, null);
@@ -1765,6 +1796,8 @@ namespace pitTeam.BigBrain
             {
                 if (magazine == null ||
                     IsInstalledInWeaponTree(magazine) ||
+                    (lootedWeapon &&
+                     !InteractableObjects.IsApprovedLootedWeaponMagazine(botOwner, weapon, magazine)) ||
                     magazine.Count - currentCount < MinimumBetterMagazineGain)
                 {
                     continue;

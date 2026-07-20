@@ -111,6 +111,101 @@ namespace pitTeam.BigBrain.Actions
             }
         }
 
+        private IEnumerable<AmmoItemClass> GetFollowerWeaponCartridgeItems(
+            InventoryEquipment followerEquipment,
+            Weapon weapon)
+        {
+            if (followerEquipment == null || weapon == null)
+            {
+                yield break;
+            }
+
+            // This is an ammunition-supply snapshot, not a reload-access scan. Rounds already in
+            // weapons/magazines and manually placed cargo still matter when deciding whether the
+            // follower needs a weaker loose stack, even when those items cannot satisfy immediate
+            // detachable-magazine readiness by themselves.
+            HashSet<string> yieldedIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (AmmoItemClass ammo in SnapshotLootTreeItems(followerEquipment).OfType<AmmoItemClass>())
+            {
+                if (string.IsNullOrEmpty(ammo.Id) ||
+                    !yieldedIds.Add(ammo.Id) ||
+                    !FollowerWeaponLooseAmmoSupport.IsCartridgeCompatible(weapon, ammo))
+                {
+                    continue;
+                }
+
+                yield return ammo;
+            }
+        }
+
+        private static TacticalAmmoDecision EvaluateTacticalAmmoCandidate(
+            AmmoItemClass candidate,
+            IEnumerable<AmmoItemClass> carriedAmmo,
+            int candidateAvailableRounds,
+            int reserveTargetRounds,
+            bool allowUpgrade)
+        {
+            List<AmmoItemClass> compatible = carriedAmmo?
+                .Where(ammo =>
+                    ammo != null &&
+                    ammo.StackObjectsCount > 0 &&
+                    FollowerWeaponLooseAmmoSupport.IsSameCaliber(candidate, ammo))
+                .ToList() ?? new List<AmmoItemClass>();
+            int currentRounds = compatible.Sum(ammo => Math.Max(0, ammo.StackObjectsCount));
+            double weightedPenetration = currentRounds > 0
+                ? compatible.Sum(ammo =>
+                      (double)Math.Max(0, ammo.StackObjectsCount) * ammo.PenetrationPower) /
+                  currentRounds
+                : 0d;
+            return FollowerTacticalAmmoPolicy.Evaluate(
+                currentRounds,
+                weightedPenetration,
+                candidate?.PenetrationPower ?? 0,
+                candidateAvailableRounds,
+                reserveTargetRounds,
+                allowUpgrade);
+        }
+
+        private int ResolveWeaponTacticalAmmoReserveTarget(
+            InventoryController inventory,
+            Weapon weapon,
+            IEnumerable<AmmoItemClass> availableAmmo)
+        {
+            WeaponPrimaryReadinessSnapshot readiness = FollowerWeaponPrimaryReadiness.EvaluateActual(
+                inventory,
+                weapon);
+            if (readiness?.Threshold > 0)
+            {
+                return readiness.Threshold;
+            }
+
+            List<MagazineItemClass> availableMagazines = GetFastAccessMagazines(
+                    inventory?.Inventory?.Equipment)
+                .Where(magazine => IsMagazineCompatibleWithWeapon(weapon, magazine))
+                .ToList();
+            MagazineItemClass insertedMagazine = GetCurrentMagazineSafely(weapon);
+            if (insertedMagazine != null && IsMagazineCompatibleWithWeapon(weapon, insertedMagazine))
+            {
+                availableMagazines.Add(insertedMagazine);
+            }
+
+            int largestAvailableMagazine = availableMagazines
+                .Select(magazine => Math.Max(0, magazine.MaxCount))
+                .DefaultIfEmpty(0)
+                .Max();
+            if (largestAvailableMagazine > 0)
+            {
+                return Math.Min(30, largestAvailableMagazine) * 2;
+            }
+
+            int stackCapacity = availableAmmo?
+                .Where(ammo => ammo != null)
+                .Select(ammo => Math.Max(1, ammo.StackMaxSize))
+                .DefaultIfEmpty(1)
+                .Max() ?? 1;
+            return stackCapacity * (FollowerWeaponLooseAmmoSupport.IsShotgun(weapon) ? 3 : 2);
+        }
+
         private static BodyGearCandidate CreateWeaponLooseAmmoCandidate(
             AmmoItemClass ammo,
             Weapon weapon,
@@ -148,46 +243,55 @@ namespace pitTeam.BigBrain.Actions
                 return source;
             }
 
-            // Saturation intentionally counts all compatible loose rounds on the follower,
-            // including manually placed strict cargo. Those rounds remain excluded from readiness,
-            // but they still mean a non-Realistic follower does not need more of the same quality.
-            List<AmmoItemClass> carried = GetFollowerWeaponLooseAmmoItems(
-                    followerEquipment,
-                    weapon,
-                    includeStrictCargo: true)
-                .ToList();
-            int carriedRounds = carried.Sum(ammo => Math.Max(0, ammo.StackObjectsCount));
-            int stackCapacity = carried
-                .Concat(source.Select(candidate => (AmmoItemClass)candidate.Item))
-                .Select(ammo => Math.Max(1, ammo.StackMaxSize))
-                .DefaultIfEmpty(1)
-                .Max();
-            int saturationRounds = stackCapacity *
-                                   (FollowerWeaponLooseAmmoSupport.IsShotgun(weapon) ? 3 : 2);
-            bool realistic = pitFireTeam.IsFollowerLoadoutRealisticMode();
-            bool alreadySaturated = carriedRounds >= saturationRounds;
+            // Ammunition need is based on every compatible cartridge already carried, including
+            // rounds loaded in weapons and magazines. Reload readiness remains stricter elsewhere;
+            // this broader snapshot only prevents collecting weaker ammunition unnecessarily.
+            List<AmmoItemClass> carried = GetFollowerWeaponCartridgeItems(followerEquipment, weapon).ToList();
+            InventoryController inventory = BotOwner?.GetPlayer?.InventoryController;
+            int reserveTargetRounds = ResolveWeaponTacticalAmmoReserveTarget(
+                inventory,
+                weapon,
+                carried.Concat(source.Select(candidate => (AmmoItemClass)candidate.Item)));
+            Dictionary<string, int> remainingSourceRoundsByTemplate = source
+                .GroupBy(candidate => candidate.Item.TemplateId.ToString(), StringComparer.Ordinal)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group.Sum(candidate => Math.Max(0, candidate.Item.StackObjectsCount)),
+                    StringComparer.Ordinal);
 
             List<BodyGearCandidate> accepted = new List<BodyGearCandidate>();
-            foreach (BodyGearCandidate candidate in source)
+            foreach (BodyGearCandidate candidate in source
+                         .OrderByDescending(entry => ((AmmoItemClass)entry.Item).PenetrationPower)
+                         .ThenByDescending(entry => ((AmmoItemClass)entry.Item).Damage)
+                         .ThenByDescending(entry => ((AmmoItemClass)entry.Item).ArmorDamage))
             {
                 AmmoItemClass ammo = (AmmoItemClass)candidate.Item;
-                AmmoItemClass bestSameCaliber = carried
-                    .Where(existing => FollowerWeaponLooseAmmoSupport.IsSameCaliber(ammo, existing))
-                    .OrderByDescending(existing => existing.PenetrationPower)
-                    .ThenByDescending(existing => existing.Damage)
-                    .ThenByDescending(existing => existing.ArmorDamage)
-                    .FirstOrDefault();
-                bool betterAmmo = bestSameCaliber == null ||
-                                  FollowerWeaponLooseAmmoSupport.IsMorePowerful(ammo, bestSameCaliber);
-                bool shouldTake = realistic || !alreadySaturated || betterAmmo;
+                string ammoTemplateId = ammo.TemplateId.ToString();
+                int sourceRoundsOfType = remainingSourceRoundsByTemplate.TryGetValue(
+                    ammoTemplateId,
+                    out int remainingRounds)
+                    ? remainingRounds
+                    : ammo.StackObjectsCount;
+                TacticalAmmoDecision decision = EvaluateTacticalAmmoCandidate(
+                    ammo,
+                    carried,
+                    sourceRoundsOfType,
+                    reserveTargetRounds,
+                    allowUpgrade: true);
                 Modules.Logger.LogInfo(
                     $"[LootCommand][LooseAmmo] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
                     $"weapon={DescribeLootDebugItem(weapon)} evaluation={evaluation} ammo={DescribeLooseAmmo(ammo)} " +
-                    $"carriedRounds={carriedRounds} saturationRounds={saturationRounds} mixedStacks={carried.Count} " +
-                    $"realistic={realistic} betterSameCaliber={betterAmmo} decision={(shouldTake ? "take" : "skipSaturated")}");
-                if (shouldTake)
+                    decision.ToDiagnosticString());
+                if (decision.ShouldAcquire)
                 {
                     accepted.Add(candidate.WithFollowUpDestination(destination));
+                    // Planning several source stacks is sequential. Count accepted rounds in the
+                    // next decision so a large source cannot bypass the reserve/opportunity limit
+                    // merely because its stacks have different item ids.
+                    carried.Add(ammo);
+                    remainingSourceRoundsByTemplate[ammoTemplateId] = Math.Max(
+                        0,
+                        sourceRoundsOfType - ammo.StackObjectsCount);
                 }
             }
 

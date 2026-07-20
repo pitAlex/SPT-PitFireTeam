@@ -34,6 +34,7 @@ Included:
 - internal-magazine revolver-cylinder reserve compatibility without requiring a separate chamber slot
 - non-launcher `OnlyBarrel` single- and multi-chamber readiness, one-round staging, loose-ammunition carry planning, and later promotion
 - non-holster revolver classification by weapon class, including shotgun, launcher, and custom rifle/sniper revolver mechanisms
+- first-primary reload from magazines successfully acquired with the looted weapon package
 - existing `Simple`/`Restricted` return and `Immersive`/`Realistic` persistence rules
 
 Excluded:
@@ -45,7 +46,7 @@ Excluded:
 - demoting a primary after ammunition is fired
 - detachable-magazine top-off and partial-magazine repacking
 - holster-revolver gear policy and launcher-specific hands/combat-reload policy
-- changing vanilla fast-access or reload behavior
+- general changes to vanilla fast-access or reload behavior outside the accepted looted-primary package
 
 ## Terms
 
@@ -143,6 +144,8 @@ Known baseline differences from this contract:
 | P6 | Failure hardening, ownership/return verification, final player documentation | Not started |
 | P7 | Internal-magazine readiness, real tube loading, loose-ammo carry planning, and later promotion | Implemented; ready-primary and partial-fit runtime paths passed |
 | P10 | Grenade-launcher secondary-slot preference and forced conventional-primary normalization | Implemented; runtime testing pending |
+| P11 | Primary-candidate detachable-magazine top-off from compatible loose source ammunition | Implemented; tracked-secondary top-off and promotion runtime path passed |
+| P12 | Equipped-primary tactical loose-ammo weighting and fast-access magazine top-off | Implemented; runtime testing pending; cartridge replacement deferred |
 
 ## Phase P1 Contract
 
@@ -371,6 +374,15 @@ Unless specified otherwise, the ordinary reference is 30 and the threshold is 60
 | WI-45 | A looted first-primary cylinder launcher becomes empty while compatible grenades remain carried | Store grenades in vest, pockets, backpack, then secure fallback; tolerate the automatic pistol switch, reselect the launcher within a bounded window, and allow this launcher alone through patrol reload maintenance | P9 launcher reload | Implemented; runtime pending |
 | WI-46 | A shallow launcher arc reaches an enemy root point on sloping terrain | Treat terrain contact within the grenade's effective and friendly-safe impact tolerance as a valid detonation; reject hard geometry farther up the arc and record its collider geometry | P9 launcher arc lane | Implemented; runtime pending |
 | WI-47 | A first-primary launcher cannot produce a safe ordinary shot during its grenadier opportunity | If a loaded non-launcher holster weapon exists, queue and settle a pistol switch before ordinary combat resumes; do not trigger after successful launcher fire or during launcher reload | P9 rejected-launcher fallback | Implemented; runtime pending |
+| WI-48 | Missing-primary candidate has partial acquired magazines and compatible loose source ammunition | Top off the fullest operational acquired magazines through settled transactions, then run ordinary readiness from their live counts | P11 magazine top-off | Implemented; runtime pending |
+| WI-49 | Missing-primary candidate has no inserted magazine, an empty compatible source magazine, and compatible loose source ammunition | Fill the source magazine when its shape is operational, then let the existing staged insertion path load it into the weapon | P11 magazine top-off | Implemented; runtime pending |
+| WI-50 | Candidate has a partial inserted external magazine and the source has compatible loose ammunition plus free grid space | Detach the magazine into the same source, top it off, restore it, then evaluate readiness | P11 inserted-magazine top-off | Implemented; runtime pending |
+| WI-51 | Loose ammunition fits the magazine mechanically but is incompatible with the candidate weapon, or top-off transaction fails | Do not load or count those rounds; decide from settled compatible magazine state only | P11 compatibility/failure boundary | Implemented; runtime pending |
+| WI-52 | Candidate source has 35-penetration loose ammunition while the follower already carries a two-magazine reserve averaging 45 penetration | Reject the weaker source ammunition; quantity need is zero and power weight is negative | P12 tactical ammo weighting | Implemented; runtime pending |
+| WI-53 | Follower has less than one magazine of 45-penetration compatible ammunition and finds 35-penetration rounds | Accept the weaker source because critical need overrides the downgrade | P12 tactical ammo weighting | Implemented; runtime pending |
+| WI-54 | Equipped primary is under-ready and has an empty or partial compatible fast-access magazine while `Pickup Gear` is disabled | Fill only free magazine capacity from carried loose ammunition first; Immersive/Realistic may then use searched-source ammunition | P12 primary top-off | Implemented; runtime pending |
+| WI-55 | Equipped primary is sufficiently stocked and finds stronger loose ammunition | Do not unload or replace existing cartridges in this phase; revisit only after top-off scenarios are stable | P12 opportunity swap | Deferred |
+| WI-56 | A looted weapon is promoted to first primary with an empty inserted magazine and loaded package magazines in fast access | Permit patrol reload only when EFT selects a magazine recorded from that weapon's accepted package; never consume a compatible spawned magazine | P6 reload hardening | Implemented; runtime pending |
 
 ## Backpack Spare Scenario Matrix
 
@@ -423,6 +435,8 @@ This ledger records observed in-raid results. `Implemented` elsewhere in this do
 | RT-34 | M32 equipped in first primary entered combat with six loaded camoras and six compatible grenades stored in secure container | Grenadier objective selected the M32 and fired all six rounds; reload then failed because the revolver-style search saw only fast-access ammo and the selector abandoned the empty launcher | Combat handoff passed; opened WI-45 |
 | RT-35 | Loaded first-primary M32 engaged downhill targets at roughly `73m` to `101m` where only a shallow arc was required | Both autonomous and ordered grenadier windows rejected `launcherArcLaneBlocked`, default rifle fire was correctly blocked for the primary launcher, and the follower stood without firing until killed | False arc rejection reproduced; WI-46 arc fix and WI-47 loaded-pistol fallback implemented, runtime pending |
 | RT-36 | Loaded `6/6` first-primary M32 engaged a visible target near `81m`; the target later closed to `9.8m` | Grenadier never activated because the early autonomous gate required straight-rifle `CanShoot`; ordinary Default/OrderedPush actions correctly refused to fire an unowned launcher. The follow-up command was recorded as `SetPushEnemy`, not `SetSuppressEnemy` | Regression reproduced; activation gate removed, normal aim worker receives the validated arc point, and close dogfight requests holster fallback; runtime pending |
+| RT-37 | Empty-primary follower carried a tracked HK416 in second primary with an empty `0/30` inserted magazine; a later corpse supplied one compatible `30/30` magazine and compatible loose ammunition | The inserted magazine was detached into the corpse vest, filled from `0/30` to `30/30`, restored, and reevaluated from settled state. The source spare moved to operational vest, readiness reached `60/60`, the weapon promoted to first primary with one `LootWeapon` cue, and accepted remaining loose rounds moved to secure storage | Passed; verifies top-off -> magazine plan -> promotion -> loose-ammo carry ordering |
+| RT-38 | Follower already had a working primary and empty second primary; a later corpse supplied a ready long gun with `50/50` inserted plus loaded `50/50`, `20/20`, and `20/20` compatible magazines | All three fitting magazines moved to operational vest while preserving reload reserve; projected support readiness reached `140/60`; the weapon entered `SecondPrimaryWeapon`, registered with `canChange=True`, and retained the expected `LootGeneric` cue | Passed; verifies intentional operational-secondary package acquisition |
 
 Not yet runtime-covered:
 
@@ -455,12 +469,23 @@ The internal-feed path deliberately excludes loose rounds nested inside another 
 
 Non-launcher `OnlyBarrel` weapons now use a separate chamber-fed implementation for both single- and multi-chamber break actions. Their threshold is the larger of two chamber-load equivalents or eight total rounds, so low-capacity weapons need eight rounds. Only live unspent chamber rounds plus compatible loose reserves that are already carried or proven to fit can contribute. Empty chambers are loaded one round at a time through vanilla's off-hands `Weapon.Apply(...)` transaction; vanilla selects `Chambers[0]` for a single chamber and the first free slot for multiple chambers. Each transaction must increase the live chamber count before planning continues, which prevents speculative rounds or stale split-stack references from entering readiness. The threshold controls weapon classification only; accepted compatible loose-ammo stacks retain the existing whole-stack transfer policy.
 
+The first detachable-magazine top-off slice is implemented for a missing-primary candidate:
+
+- compatible loose ammunition must be loose in the same body/container and accepted by both the weapon and target magazine
+- targets are the acquired weapon's inserted magazine plus same-source partial or empty magazines whose shapes are selected for operational fast-access carry
+- targets are filled from the highest fill ratio downward, with ammunition quality ordered by penetration, damage, then armor damage
+- the follower's full compatible cartridge stock, including rounds loaded in carried weapons and magazines, establishes quantity and round-weighted penetration; the shared tactical policy balances reserve deficit against the source penetration delta
+- an inserted external magazine is staged into free space on the same source, topped off, and restored before the ordinary planner resumes
+- every transaction settles before planning continues; no projected cartridge contributes to readiness
+- existing follower magazines are deliberately excluded so found ammunition cannot merge into pre-raid magazine ownership in `Simple`/`Restricted`
+
 Later phases still need these distinct ownership and transaction models:
 
 - first-primary grenade and rocket launchers enter the grenadier combat objective only when no conventional long gun is available; body/container gear planning now prefers launcher-as-secondary and can force an empty or under-ready conventional weapon into primary, while launcher-versus-launcher comparison and occupied-secondary displacement remain separate
 - non-pistol revolvers now enter the shoulder-weapon pipeline by `WeapClass`; the MTs-255 cylinder must verify the shared internal-magazine transaction path in raid, while holster-revolver gear behavior remains separate
-- detachable-magazine weapons need a magazine top-off phase where compatible loose ammunition can fill an inserted or spare magazine and make that magazine eligible for readiness
 - multiple compatible partially loaded magazines need a repacking phase: transfer ammunition from donor magazines into compatible target magazines to create the fullest practical magazine states before evaluating readiness
+
+P12 currently stops at equipped-primary top-off. It fills free capacity in compatible vest/pocket magazines, prefers loose ammunition already carried by the follower, and allows Immersive/Realistic to use searched-source rounds without consulting `Pickup Gear`. It does not unload or replace existing cartridges. Inserted-magazine maintenance, stronger-ammunition replacement, and general donor-magazine consolidation remain deferred.
 
 Repacking must use real inventory transactions and settled magazine counts. It should prefer topping off the fullest useful target magazines from the least useful partial donors, then rerun the existing largest-available reference and readiness evaluation against the resulting live magazine states. Donor rounds must not count twice, and a failed or interrupted transfer leaves readiness based only on the magazine states that actually settled.
 
@@ -486,6 +511,22 @@ Each snapshot should identify:
 The final placement phases must log one additional post-transfer `actual` snapshot immediately before selecting primary, support, backpack, or leave-at-source.
 
 ## Progress Log
+
+### 2026-07-18
+
+- Runtime verified the P11 tracked-secondary top-off chain: compatible loose ammunition filled the acquired empty inserted magazine through detach/apply/restore transactions, the next live pass combined it with a fitting full source spare at `60/60`, and the weapon promoted with a single `LootWeapon` cue.
+- Extended top-off-first replanning to tracked second-primary and backpack-cargo candidates. Their acquired inserted/source magazines settle before operational magazine readiness is recalculated, and accepted remaining loose rounds are appended through the protected storage planner.
+- Runtime verified the occupied-primary addition policy with a second ready weapon package: three compatible loaded magazines fit operational vest, the weapon registered as true second-primary support, and the non-primary result used `LootGeneric`.
+
+### 2026-07-17
+
+- Added the P11 missing-primary magazine top-off stage. Compatible loose rounds from the same body/container fill the fullest acquired operational magazines through real EFT transactions before readiness is recalculated.
+- Included partial inserted magazines and fitting partial or empty same-source magazines. External inserted magazines are detached into free same-source grid space, filled, and restored before the ordinary weapon planner continues.
+- Kept follower-owned magazines outside this first top-off slice so raid ammunition cannot merge into pre-raid equipment ownership in `Simple`/`Restricted`; donor-magazine repacking remains deferred.
+- Added tactical source-ammo suppression: loaded and loose cartridges already carried establish the quality baseline, and sufficient equal-or-better stock prevents weaker body/container rounds from being loaded or collected.
+- Replaced the hard quality cutoff with the P12 need/power/opportunity evaluator. Carried quantity and round-weighted penetration govern replenishment; stocked-ammo opportunity classification remains available for the deferred replacement phase.
+- Narrowed P12 to top-off before replacement: an equipped under-ready primary fills free capacity in compatible vest/pocket magazines without consulting `Pickup Gear` and never unloads existing cartridges.
+- Carried loose ammunition is now the first maintenance supply, including the generated secure-container primary-ammo stacks in non-Realistic modes. Immersive/Realistic may then use searched-source rounds; Simple/Restricted keep searched rounds out of protected spawned magazines.
 
 ### 2026-07-16
 

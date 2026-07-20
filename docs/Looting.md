@@ -115,6 +115,7 @@ Execution:
 - says a pickup-confirmation phrase after the simulated search, when the first real non-dogtag loot move is queued
 - uses `EPhraseTrigger.LootWeapon` only when the executable plan makes a weapon the follower's combat primary during this search
 - uses `EPhraseTrigger.LootGeneric` for ordinary loot and every non-primary weapon result, including second-primary support, holster, backpack cargo, potential-weapon packages, and an under-ready long gun held inert in the left-shoulder slot
+- before ordinary gear/cargo can claim the search cue, pre-evaluates executable secondary promotion, source-weapon primary equip, and backpack-cargo promotion paths; a primary-producing path runs first and owns the single `LootWeapon` cue
 - waits a short beat after that pickup-confirmation phrase before executing the first move, so it does not run into `Ready`
 - says `EPhraseTrigger.Negative` if eligible non-dogtag loot exists but no executable move can be built
 - says `EPhraseTrigger.LootNothing` if no eligible non-dogtag item exists
@@ -195,6 +196,7 @@ Execution:
 - says a pickup-confirmation phrase after the simulated search, when the first real loot move is queued
 - uses `EPhraseTrigger.LootWeapon` only when the executable plan makes a weapon the follower's combat primary during this search
 - uses `EPhraseTrigger.LootGeneric` for ordinary loot and every non-primary weapon result, including second-primary support, holster, backpack cargo, potential-weapon packages, and an under-ready long gun held inert in the left-shoulder slot
+- before ordinary gear/cargo can claim the search cue, pre-evaluates executable secondary promotion, source-weapon primary equip, and backpack-cargo promotion paths; a primary-producing path runs first and owns the single `LootWeapon` cue
 - waits a short beat after that pickup-confirmation phrase before executing the first move, so it does not run into `Ready`
 - says `EPhraseTrigger.Negative` if eligible loot exists but no executable move can be built
 - says `EPhraseTrigger.LootNothing` if no eligible item exists
@@ -380,6 +382,14 @@ Rules:
 - a no-inserted-magazine cargo package moves compatible magazines first and the weapon last; if the complete package cannot fit, the magazines stay at the source and the weapon is tried alone as cargo; if the weapon also cannot fit, it stays at the source
 - compatible spare magazines from the loot source must physically fit in the vest or pockets as operational magazines, not cargo
 - compatible spare magazines must be loaded to count as operational support
+- for an empty-primary candidate, compatible loose source ammunition first tops off the fullest useful acquired magazines through real EFT transactions; targets are the weapon's inserted magazine and same-source magazines selected for operational vest/pocket carry
+- empty same-source magazines may enter this top-off plan when their shape can satisfy the operational carry and reload-reserve rules after loading
+- an external inserted magazine is temporarily moved into free grid space on the same body/container, filled there, and restored before normal weapon planning resumes; no source grid space means that inserted magazine is left unchanged
+- top-off never modifies the follower's existing pre-raid magazines, preventing found rounds from being merged into an original equipment tree whose Simple/Restricted return ownership would be ambiguous
+- top-off compares each source cartridge with all compatible ammunition already carried by the follower, including rounds loaded in weapons and magazines; quantity need and the penetration delta against the round-weighted carried stock jointly decide whether a downgrade is worthwhile
+- this carried-ammunition comparison is broader than immediate reload readiness: strict cargo can prevent collecting redundant weaker rounds, but it still cannot make a detachable-magazine weapon operational until valid magazines occupy fast access
+- every top-off transaction must settle before the resulting magazine count participates in readiness; failures leave the weapon decision to the actual live counts
+- the same top-off-first order applies when a later body/container search supplies ammunition for a tracked second-primary or backpack-cargo candidate: fill its acquired inserted/source magazines, rerun operational-magazine placement and readiness, then route any remaining accepted loose rounds through secure container, pockets, backpack, and reload-safe vest space
 - reload landing space is selected from the compatible magazines actually available for the weapon, not permanently from the inserted magazine
 - candidate magazine shapes are tested largest first; a shape qualifies as the reload reserve only when fast access can hold one magazine of that shape and still leave room for another of the same shape to land
 - if a large shape cannot satisfy that pair test, the planner tries the next smaller shape; after finding a valid reserve, it revisits larger magazines and carries each one that individually fits while preserving the selected smaller landing space
@@ -421,6 +431,7 @@ Rules:
 - if `Pickup Gear` is enabled and `Holster` is empty, a valid pistol may be equipped there as a non-primary `EPhraseTrigger.LootGeneric` result
 - if the matching slot is occupied, do not replace it in the empty-slot phase
 - still register the moved weapon tree as looted so patrol reload maintenance does not feed spawned magazines into cargo/support weapons
+- when an accepted looted weapon becomes first primary, patrol reload may use its originally inserted magazine and magazines successfully acquired for that weapon package; mechanically compatible spawned magazines remain excluded
 - body/container looting records a newly equipped primary but does not select it while more loot transactions or the request-layer interaction remain active
 - after all moves finish and the loot command clears, wait one second for inventory/interaction ownership to close, apply the same `FollowerRecovery.SoftReset(...)` recovery step used by `Attention`, then refresh selector slot caches, rebuild `WeaponManager.Info[FirstPrimaryWeapon]`, and request the normal vanilla main-hand transition
 - commanded loose-primary pickup uses the same one-second post-pickup recovery and selection handoff after its pickup state clears
@@ -450,19 +461,31 @@ This is slot-role normalization, not general weapon comparison. It does not comp
 
 Once a body/container weapon has been accepted as equipment or as filtered weapon cargo, compatible loose ammunition from that same source may accompany it regardless of whether the weapon uses detachable magazines, an internal feed, or supported direct chambers.
 
-- loose ammunition never contributes directly to detachable-magazine readiness and does not top off magazines in this phase
+- loose ammunition never contributes speculatively to detachable-magazine readiness; only rounds committed by the dedicated top-off path count
 - internal-magazine and supported chamber-fed weapons may first load compatible loose ammunition through their dedicated real transactions; only settled loaded rounds and fitting reserve stacks contribute to readiness
 - ordinary loose ammunition is placed in secure container, pockets, backpack, then tactical vest
 - launcher grenades are the deliberate exception: place them in tactical vest, pockets, and backpack before using the secure container as the final fallback
 - launcher-ammo planning and execution both re-evaluate live container occupancy after each move, so later grenades spill into the next normal storage area instead of being sent directly to secure storage
 - tactical-vest fallback must preserve the existing long-gun and initial-holster reload landing spaces
 - source ammunition inside another weapon or magazine is not loose ammunition and is never selected by this path
-- `Simple`, `Restricted`, and `Immersive` followers count every compatible loose bullet already carried in secure container, pockets, backpack, or vest, including mixed ammo types and manually placed strict cargo
-- the normal reserve target is two stack capacities in bullets; shotguns use three stack capacities because their ordinary loose stack is smaller
-- when the carried bullet total already reaches that target, same-caliber source ammunition is ignored unless it is better than the best carried same-caliber round
-- ammo quality compares penetration first, then damage, then armor damage as deterministic tie-breaks
-- `Realistic` mode does not apply the reserve-saturation skip and takes every compatible source stack that physically fits
-- the saturation rule is decided from the follower's inventory at the start of that weapon plan; crossing the target while moving the accepted source batch does not discard later stacks from that same batch
+
+### Tactical Primary Ammunition
+
+With `Allow Gear Swapping` enabled, loose ammunition on a searched body/container is evaluated against the equipped detachable-magazine primary before ordinary filtered pickup:
+
+- magazine top-off is readiness maintenance and does not depend on `Pickup Gear` or ordinary price/category filters
+- if the primary is not ready, compatible empty or partial magazines already in vest/pockets are filled before source-ammo acquisition is considered; the inserted magazine is not modified by this phase
+- carried loose ammunition is preferred as the top-off supply; this includes the managed primary-ammo stacks injected into the secure container in every non-Realistic mode
+- `Immersive`/`Realistic` may use compatible searched-source ammunition after carried supply; `Simple`/`Restricted` do not merge searched rounds into protected spawned magazines and may only carry accepted source ammunition as returnable cargo
+- top-off only fills free capacity: it never unloads, replaces, or rearranges cartridges that are already inside a magazine
+- **need weight** is the compatible carried-round deficit against the weapon's two-magazine reserve target
+- **power weight** is source penetration versus the round-weighted penetration of all compatible rounds already carried, including loaded magazines, chambers, loose stacks, and strict cargo
+- below one ordinary magazine, critical need accepts any mechanically compatible source round
+- between one and two magazine equivalents, need weight and the relative penetration gain/loss are combined; severe downgrades can be rejected when the remaining shortage is small
+- at or above reserve, the existing-primary path acquires no additional source rounds; stronger-ammunition replacement remains deferred until the top-off cases are runtime-stable
+- these tactical decisions supersede ordinary price/category pickup only for loose rounds compatible with the equipped primary; unrelated ammunition remains under normal filters
+- compatible loose ammunition accompanying an accepted weapon package reuses this evaluator; accepted source stacks are counted sequentially so crossing the reserve target can stop later redundant stacks in the same search
+- penetration drives the weighted decision; damage and armor damage are deterministic ordering tie-breaks between otherwise equal source cartridges
 
 ### Internal-Magazine Weapon Readiness
 
@@ -656,11 +679,16 @@ Gear swapping phase 1 tests:
 - supported single- and multi-chamber break-action weapons load empty chambers one real round transaction at a time and require at least eight total rounds; accepted compatible loose-ammo stacks still move whole
 - internal-feed loose ammunition nested in magazines/weapons or marked as strict cargo is ignored
 - accepted weapon-support loose ammunition uses secure container, pockets, backpack, then reload-safe vest space; detachable-magazine readiness remains magazine-only
-- non-Realistic followers stop taking ordinary compatible loose ammunition once their mixed carried bullet total reaches two stack capacities, or three capacities for shotgun ammunition, unless the source round is a better same-caliber type
+- detachable-magazine loose-ammo top-off fills acquired inserted/source magazines before readiness and never counts uncommitted loose cartridges
+- tracked-secondary top-off runtime passed with an empty `0/30` inserted magazine, one `30/30` source spare, and compatible loose ammunition: settled readiness reached `60/60`, promotion used `LootWeapon`, and remaining accepted rounds entered protected storage
+- after magazine maintenance, remaining source-ammo pickup uses the shared need/power model against the follower's complete compatible cartridge stock; top-off itself is driven by missing operational magazine capacity
+- an equipped primary with a critical shortage accepts weaker compatible ammunition; a small shortage can reject a large penetration downgrade; sufficient stock rejects equal/weaker ammunition
+- equipped-primary top-off works with `Pickup Gear` disabled, uses carried loose supply before searched rounds, and never removes existing magazine cartridges
 - large compatible spare magazines that do not fit the vest/pocket grids while preserving reload landing space do not count as operational spares
 - an under-threshold weapon uses empty secondary; with secondary occupied, only ordinary filtered cargo rules may move it into the backpack
 - with a working primary and `Pickup Gear` disabled, an optional support weapon and its magazines/ammunition remain at the source
 - with a working primary and `Pickup Gear` enabled, an accepted second-primary support weapon uses `LootGeneric` and does not take the current primary out of hand
+- a ready second-primary package may take every compatible loaded source magazine that fits operational fast access while preserving reload reserve; the runtime `50/50 + 50/50 + 20/20 + 20/20` package registered successfully as support
 - a tracked under-threshold secondary weapon promotes into empty primary after later compatible fast-access ammunition makes it ready
 - newly found weapons recruit compatible backpack cargo only when the executable combined fast-access plan reaches readiness
 - a later source spare can recruit the backpack spare for a tracked secondary, then promote that weapon from settled live state

@@ -50,6 +50,7 @@ namespace pitTeam.Modules
 
         private Dictionary<string, List<string>>? _lootedItems;
         private Dictionary<string, HashSet<string>>? _lootedWeaponIds;
+        private Dictionary<string, Dictionary<string, HashSet<string>>>? _lootedWeaponMagazineIds;
         private Dictionary<string, HashSet<string>>? _strictCargoItemIds;
         private List<Item>? _toSendItems;
         private Dictionary<string, Dictionary<string, object>>? _followersWithLoot;
@@ -71,6 +72,7 @@ namespace pitTeam.Modules
 
                 _lootedItems = new Dictionary<string, List<string>>();
                 _lootedWeaponIds = new Dictionary<string, HashSet<string>>();
+                _lootedWeaponMagazineIds = new Dictionary<string, Dictionary<string, HashSet<string>>>(StringComparer.Ordinal);
                 _strictCargoItemIds = new Dictionary<string, HashSet<string>>();
                 _toSendItems = new List<Item>();
                 _followersWithLoot = new Dictionary<string, Dictionary<string, object>>();
@@ -629,6 +631,7 @@ namespace pitTeam.Modules
 
             _lootedItems?.Clear();
             _lootedWeaponIds?.Clear();
+            _lootedWeaponMagazineIds?.Clear();
             _strictCargoItemIds?.Clear();
             _toSendItems?.Clear();
             _followersWithLoot?.Clear();
@@ -651,6 +654,7 @@ namespace pitTeam.Modules
             _bodyLootTarget = null;
             _lootedItems = null;
             _lootedWeaponIds = null;
+            _lootedWeaponMagazineIds = null;
             _strictCargoItemIds = null;
 
             _enemiesSeen = null;
@@ -1828,7 +1832,83 @@ namespace pitTeam.Modules
                 {
                     weaponIds.Add(weapon.Id);
                 }
+
+                // The inserted magazine arrives as part of the weapon tree. Preserve that
+                // relationship after EFT ejects it during a later reload so it remains an
+                // approved magazine for this looted weapon, not an arbitrary spawned spare.
+                MagazineItemClass insertedMagazine = null;
+                try
+                {
+                    insertedMagazine = weapon.GetCurrentMagazine();
+                }
+                catch
+                {
+                    // Some transient weapon trees are incomplete while their move settles.
+                }
+
+                RegisterLootedWeaponMagazine(bot, weapon, insertedMagazine);
             }
+        }
+
+        public static void RegisterLootedWeaponMagazine(
+            BotOwner bot,
+            Weapon weapon,
+            MagazineItemClass magazine)
+        {
+            if (Instance?._lootedWeaponMagazineIds == null ||
+                bot == null ||
+                weapon == null ||
+                magazine == null ||
+                string.IsNullOrWhiteSpace(bot.ProfileId) ||
+                string.IsNullOrWhiteSpace(weapon.Id) ||
+                string.IsNullOrWhiteSpace(magazine.Id))
+            {
+                return;
+            }
+
+            if (!Instance._lootedWeaponMagazineIds.TryGetValue(
+                    bot.ProfileId,
+                    out Dictionary<string, HashSet<string>> magazinesByWeapon))
+            {
+                magazinesByWeapon = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+                Instance._lootedWeaponMagazineIds.Add(bot.ProfileId, magazinesByWeapon);
+            }
+
+            if (!magazinesByWeapon.TryGetValue(weapon.Id, out HashSet<string> magazineIds))
+            {
+                magazineIds = new HashSet<string>(StringComparer.Ordinal);
+                magazinesByWeapon.Add(weapon.Id, magazineIds);
+            }
+
+            if (magazineIds.Add(magazine.Id))
+            {
+                Logger.LogInfo(
+                    $"[LootCommand][WeaponReload] follower='{bot.Profile?.Nickname ?? bot.ProfileId}' " +
+                    $"weapon={weapon.TemplateId} magazine={magazine.TemplateId} result=approvedPackageMagazine");
+            }
+        }
+
+        public static bool IsApprovedLootedWeaponMagazine(
+            BotOwner bot,
+            Weapon weapon,
+            MagazineItemClass magazine)
+        {
+            if (Instance?._lootedWeaponMagazineIds == null ||
+                bot == null ||
+                weapon == null ||
+                magazine == null ||
+                string.IsNullOrWhiteSpace(bot.ProfileId) ||
+                string.IsNullOrWhiteSpace(weapon.Id) ||
+                string.IsNullOrWhiteSpace(magazine.Id))
+            {
+                return false;
+            }
+
+            return Instance._lootedWeaponMagazineIds.TryGetValue(
+                       bot.ProfileId,
+                       out Dictionary<string, HashSet<string>> magazinesByWeapon) &&
+                   magazinesByWeapon.TryGetValue(weapon.Id, out HashSet<string> magazineIds) &&
+                   magazineIds.Contains(magazine.Id);
         }
 
         public static bool IsLootedWeapon(BotOwner bot, Weapon weapon)
@@ -2156,6 +2236,18 @@ namespace pitTeam.Modules
                 weaponIds.Remove(itemId);
             }
 
+            if (Instance?._lootedWeaponMagazineIds != null &&
+                Instance._lootedWeaponMagazineIds.TryGetValue(
+                    bot,
+                    out Dictionary<string, HashSet<string>> magazinesByWeapon))
+            {
+                magazinesByWeapon.Remove(itemId);
+                foreach (HashSet<string> magazineIds in magazinesByWeapon.Values)
+                {
+                    magazineIds.Remove(itemId);
+                }
+            }
+
             RemoveStrictCargoItemIds(bot, new[] { itemId });
         }
 
@@ -2177,9 +2269,11 @@ namespace pitTeam.Modules
             {
                 Instance._lootedItems.Remove(bot);
                 Instance._followersWithLoot.Remove(bot);
-                Instance._lootedWeaponIds?.Remove(bot);
-                Instance._strictCargoItemIds?.Remove(bot);
             }
+
+            Instance._lootedWeaponIds?.Remove(bot);
+            Instance._lootedWeaponMagazineIds?.Remove(bot);
+            Instance._strictCargoItemIds?.Remove(bot);
         }
 
         /** Store what enemies the player might have seen during "CONTACT" phrase */

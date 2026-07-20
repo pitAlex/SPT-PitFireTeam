@@ -253,16 +253,27 @@ namespace pitTeam.BigBrain.Actions
                 // Scenario order for containers:
                 // 1. finish delayed pickup-success moves
                 // 2. finish weapon-equip/vest-swap follow-ups
-                // 3. optionally equip or narrowly swap tactical vest protection
-                // 4. optionally equip an empty primary or add a usable support beside a working primary
-                // 5. promote a tracked backpack cargo weapon when newly found magazines complete it
-                // 6. otherwise move eligible filtered cargo into backpack/pockets
+                // 3. replenish or upgrade the equipped primary from tactical loose-ammo decisions
+                // 4. optionally equip or narrowly swap tactical vest protection
+                // 5. optionally equip an empty primary or add a usable support beside a working primary
+                // 6. promote a tracked backpack cargo weapon when newly found magazines complete it
+                // 7. otherwise move eligible filtered cargo into backpack/pockets
                 if (TryStartPendingContainerLootMove(inventory))
                 {
                     return;
                 }
 
                 if (TryStartPendingContainerGearSwapFollowUpMove(inventory, followerEquipment))
+                {
+                    return;
+                }
+
+                if (TryStartPreferredContainerPrimaryWeaponMove(inventory, containerRoot, followerEquipment))
+                {
+                    return;
+                }
+
+                if (TryStartContainerPrimaryTacticalAmmoMove(inventory, containerRoot, followerEquipment))
                 {
                     return;
                 }
@@ -309,6 +320,7 @@ namespace pitTeam.BigBrain.Actions
                     if (!TryBuildFilteredLootMove(
                             inventory,
                             followerEquipment,
+                            containerRoot,
                             candidate,
                             operationalMagazineCandidates,
                             operationalAmmoCandidates,
@@ -446,22 +458,39 @@ namespace pitTeam.BigBrain.Actions
                                       move.StagingWeapon != null &&
                                       (IsItemInsideRoot(move.Item, move.StagingWeapon) ||
                                        (move.StagingWeaponLoadedRoundsBefore >= 0 &&
-                                        FollowerWeaponLooseFeedReadiness.GetLoadedRounds(move.StagingWeapon) >
-                                        move.StagingWeaponLoadedRoundsBefore));
-                if (result?.Succeed == true ||
-                    stagingApplied ||
-                    IsLootNowInBotInventory(BotOwner?.GetPlayer, completedItem))
+                                         FollowerWeaponLooseFeedReadiness.GetLoadedRounds(move.StagingWeapon) >
+                                         move.StagingWeaponLoadedRoundsBefore) ||
+                                       (move.StagingMagazine != null &&
+                                        move.StagingMagazineRoundsBefore >= 0 &&
+                                        move.StagingMagazine.Count > move.StagingMagazineRoundsBefore));
+                bool moveSucceeded = result?.Succeed == true ||
+                                     stagingApplied ||
+                                     (!move.IsStagingOperation &&
+                                      IsLootNowInBotInventory(BotOwner?.GetPlayer, completedItem));
+                if (moveSucceeded)
                 {
-                    if (!move.IsStagingOperation)
+                    bool countsAsLootMove = !move.IsStagingOperation || !move.ReportAsLootNothing;
+                    if (countsAsLootMove)
                     {
                         containerLootMovesSucceeded++;
                         if (!move.ReportAsLootNothing && !IsDogtagLoot(completedItem))
                         {
                             containerLootReportedMovesSucceeded++;
                         }
+                    }
 
+                    if (!move.IsStagingOperation)
+                    {
                         InteractableObjects.ClearStrictCargoTree(BotOwner, completedItem);
                         InteractableObjects.RegisterLootedWeaponTree(BotOwner, completedItem);
+                        if (completedItem is MagazineItemClass completedMagazine &&
+                            move.ApprovedReloadWeapon != null)
+                        {
+                            InteractableObjects.RegisterLootedWeaponMagazine(
+                                BotOwner,
+                                move.ApprovedReloadWeapon,
+                                completedMagazine);
+                        }
                     }
 
                     RegisterAmmoSalvageTargetReplacement(move, completedItem);
@@ -515,7 +544,9 @@ namespace pitTeam.BigBrain.Actions
 
                 Modules.Logger.LogInfo(
                     $"[LootCommand] Container loot move failed for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': {move.SourceName}:{move.Item?.TemplateId ?? "unknown"}");
-                if (move.IsStagingOperation && move.StagingWeapon != null)
+                if (move.IsStagingOperation &&
+                    move.TerminalOnStagingFailure &&
+                    move.StagingWeapon != null)
                 {
                     containerLootAttemptedItemIds.Add(move.StagingWeapon.Id);
                 }
@@ -701,7 +732,12 @@ namespace pitTeam.BigBrain.Actions
                 bool prependFollowUps = false,
                 string? ammoSalvageReplacementSourceId = null,
                 bool useVanillaAmmoTransaction = false,
-                int stagingWeaponLoadedRoundsBefore = -1)
+                int stagingWeaponLoadedRoundsBefore = -1,
+                MagazineItemClass? stagingMagazine = null,
+                int stagingMagazineRoundsBefore = -1,
+                bool terminalOnStagingFailure = true,
+                bool announceStagingLoot = false,
+                Weapon? approvedReloadWeapon = null)
             {
                 Item = item;
                 Operation = operation;
@@ -720,6 +756,11 @@ namespace pitTeam.BigBrain.Actions
                 AmmoSalvageReplacementSourceId = ammoSalvageReplacementSourceId;
                 UseVanillaAmmoTransaction = useVanillaAmmoTransaction;
                 StagingWeaponLoadedRoundsBefore = stagingWeaponLoadedRoundsBefore;
+                StagingMagazine = stagingMagazine;
+                StagingMagazineRoundsBefore = stagingMagazineRoundsBefore;
+                TerminalOnStagingFailure = terminalOnStagingFailure;
+                AnnounceStagingLoot = announceStagingLoot;
+                ApprovedReloadWeapon = approvedReloadWeapon;
             }
 
             public Item Item { get; }
@@ -739,6 +780,11 @@ namespace pitTeam.BigBrain.Actions
             public string? AmmoSalvageReplacementSourceId { get; }
             public bool UseVanillaAmmoTransaction { get; }
             public int StagingWeaponLoadedRoundsBefore { get; }
+            public MagazineItemClass? StagingMagazine { get; }
+            public int StagingMagazineRoundsBefore { get; }
+            public bool TerminalOnStagingFailure { get; }
+            public bool AnnounceStagingLoot { get; }
+            public Weapon? ApprovedReloadWeapon { get; }
 
             public BodyGearMove WithFollowUps(
                 IReadOnlyList<BodyGearCandidate> followUpCandidates,
@@ -762,7 +808,12 @@ namespace pitTeam.BigBrain.Actions
                     PrependFollowUps,
                     AmmoSalvageReplacementSourceId,
                     UseVanillaAmmoTransaction,
-                    StagingWeaponLoadedRoundsBefore);
+                    StagingWeaponLoadedRoundsBefore,
+                    StagingMagazine,
+                    StagingMagazineRoundsBefore,
+                    TerminalOnStagingFailure,
+                    AnnounceStagingLoot,
+                    ApprovedReloadWeapon);
             }
         }
 
@@ -891,6 +942,34 @@ namespace pitTeam.BigBrain.Actions
                     WeaponSupportWeapon,
                     ForcePrimaryForLauncherPreference);
             }
+
+            public BodyGearCandidate WithMagazineAmmoTransferContext(
+                BodyGearFollowUpDestination destination,
+                Weapon weapon,
+                MagazineItemClass magazine,
+                int transferCount)
+            {
+                // The existing ammo context fields describe a source stack, owning weapon, target
+                // magazine, and count. Reuse that transaction envelope without making magazine
+                // top-off depend on the later ammo-salvage policy.
+                return new BodyGearCandidate(
+                    Item,
+                    SourceSlot,
+                    SourceName,
+                    SourceTier,
+                    SkipMagazine,
+                    BypassPriceThreshold,
+                    BypassCategoryFilter,
+                    BypassBodyGearLootability,
+                    ReportAsLootNothing,
+                    destination,
+                    weapon,
+                    magazine,
+                    null,
+                    transferCount,
+                    WeaponSupportWeapon,
+                    ForcePrimaryForLauncherPreference);
+            }
         }
 
         private enum BodyGearFollowUpDestination
@@ -899,6 +978,8 @@ namespace pitTeam.BigBrain.Actions
             OperationalVest,
             OperationalPockets,
             LoadMagazineIntoWeapon,
+            TopOffWeaponMagazine,
+            RestoreMagazineToWeapon,
             BackpackCargo,
             PrimaryWeaponEquip,
             SecondaryWeaponEquip,

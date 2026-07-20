@@ -628,7 +628,7 @@ namespace pitTeam.BigBrain.Actions
         {
             if (alreadySpoken ||
                 move == null ||
-                move.IsStagingOperation ||
+                (move.IsStagingOperation && !move.AnnounceStagingLoot) ||
                 (move.ReportAsLootNothing && move.SuccessPhrase != EPhraseTrigger.LootWeapon) ||
                 IsDogtagLoot(move.Item))
             {
@@ -640,6 +640,9 @@ namespace pitTeam.BigBrain.Actions
             // those transactions begin; ReportAsLootNothing only silences standalone hidden loot.
             alreadySpoken = true;
             SayLootPhrase(move.SuccessPhrase);
+            Modules.Logger.LogInfo(
+                $"[LootCommand][Voice] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                $"cue={move.SuccessPhrase} result=spoken");
             return true;
         }
 

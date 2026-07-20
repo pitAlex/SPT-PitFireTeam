@@ -67,21 +67,31 @@ namespace pitTeam.Modules
                 return false;
             }
 
+            return ComparePower(candidate, baseline) > 0;
+        }
+
+        internal static int ComparePower(AmmoItemClass left, AmmoItemClass right)
+        {
+            if (left == null || right == null)
+            {
+                return left == null ? (right == null ? 0 : -1) : 1;
+            }
+
             // Penetration is the decisive Tarkov upgrade signal. Damage and armor damage provide
             // deterministic tie-breaks without inventing a broad combat-effectiveness formula.
-            int comparison = candidate.PenetrationPower.CompareTo(baseline.PenetrationPower);
+            int comparison = left.PenetrationPower.CompareTo(right.PenetrationPower);
             if (comparison != 0)
             {
-                return comparison > 0;
+                return comparison;
             }
 
-            comparison = candidate.Damage.CompareTo(baseline.Damage);
+            comparison = left.Damage.CompareTo(right.Damage);
             if (comparison != 0)
             {
-                return comparison > 0;
+                return comparison;
             }
 
-            return candidate.ArmorDamage > baseline.ArmorDamage;
+            return left.ArmorDamage.CompareTo(right.ArmorDamage);
         }
 
         internal static bool IsShotgun(Weapon weapon)
