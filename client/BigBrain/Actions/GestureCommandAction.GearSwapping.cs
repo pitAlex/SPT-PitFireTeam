@@ -507,7 +507,8 @@ namespace pitTeam.BigBrain.Actions
                     followerEquipment,
                     supportWeapon,
                     sourceLooseAmmoCandidates,
-                    "secondarySourcePromotion");
+                    "secondarySourcePromotion",
+                    GetOperationalMagazineCartridgeItems(magazinePlan));
                 Modules.Logger.LogInfo(
                     $"[LootCommand] Secondary weapon promotion chain built for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
                     $"weapon={DescribeLootDebugItem(supportWeapon)} firstSourceMag={DescribeLootDebugItem(firstCandidate.Item)} " +
@@ -735,7 +736,8 @@ namespace pitTeam.BigBrain.Actions
                         followerEquipment,
                         cargoWeapon,
                         sourceLooseAmmoCandidates,
-                        "cargoSourcePromotion");
+                        "cargoSourcePromotion",
+                        GetOperationalMagazineCartridgeItems(magazinePlan));
                     Modules.Logger.LogInfo(
                         $"[LootCommand] Cargo weapon promotion chain built for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
                         $"weapon={DescribeLootDebugItem(cargoWeapon)} firstSourceMag={DescribeLootDebugItem(firstCandidate.Item)} " +
@@ -1155,14 +1157,16 @@ namespace pitTeam.BigBrain.Actions
                         followerEquipment,
                         candidate,
                         operationalMagazineCandidates,
-                        out move))
+                        out move,
+                        out OperationalMagazinePlan? secondaryMagazinePlan))
                 {
                     move = AppendWeaponLooseAmmoSupportFollowUps(
                         move,
                         followerEquipment,
                         weapon,
                         sourceLooseAmmoCandidates,
-                        "newSecondaryWeapon");
+                        "newSecondaryWeapon",
+                        GetOperationalMagazineCartridgeItems(secondaryMagazinePlan));
                     handledByGearPolicy = true;
                     return true;
                 }
@@ -1239,7 +1243,8 @@ namespace pitTeam.BigBrain.Actions
                     followerEquipment,
                     weapon,
                     sourceLooseAmmoCandidates,
-                    "newPrimaryWeapon");
+                    "newPrimaryWeapon",
+                    GetOperationalMagazineCartridgeItems(magazinePlan));
                 return true;
             }
 
@@ -1341,9 +1346,11 @@ namespace pitTeam.BigBrain.Actions
             InventoryEquipment followerEquipment,
             BodyGearCandidate candidate,
             IEnumerable<BodyGearCandidate>? operationalMagazineCandidates,
-            out BodyGearMove? move)
+            out BodyGearMove? move,
+            out OperationalMagazinePlan? acceptedMagazinePlan)
         {
             move = null;
+            acceptedMagazinePlan = null;
             if (candidate?.Item is not Weapon weapon ||
                 followerEquipment?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem is not Weapon ||
                 followerEquipment.GetSlot(EquipmentSlot.SecondPrimaryWeapon)?.ContainedItem != null ||
@@ -1357,6 +1364,7 @@ namespace pitTeam.BigBrain.Actions
                 followerEquipment,
                 weapon,
                 operationalMagazineCandidates);
+            acceptedMagazinePlan = magazinePlan;
             List<BodyGearCandidate> fastAccessCandidates = magazinePlan.FollowUps
                 .Where(IsOperationalFastAccessFollowUp)
                 .ToList();

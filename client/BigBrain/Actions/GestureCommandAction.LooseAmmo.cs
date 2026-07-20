@@ -229,7 +229,8 @@ namespace pitTeam.BigBrain.Actions
             Weapon weapon,
             IEnumerable<BodyGearCandidate>? sourceCandidates,
             BodyGearFollowUpDestination destination,
-            string evaluation)
+            string evaluation,
+            IEnumerable<AmmoItemClass>? additionalCarriedAmmo = null)
         {
             List<BodyGearCandidate> source = sourceCandidates?
                 .Where(candidate =>
@@ -246,7 +247,12 @@ namespace pitTeam.BigBrain.Actions
             // Ammunition need is based on every compatible cartridge already carried, including
             // rounds loaded in weapons and magazines. Reload readiness remains stricter elsewhere;
             // this broader snapshot only prevents collecting weaker ammunition unnecessarily.
-            List<AmmoItemClass> carried = GetFollowerWeaponCartridgeItems(followerEquipment, weapon).ToList();
+            List<AmmoItemClass> carried = GetFollowerWeaponCartridgeItems(followerEquipment, weapon)
+                .Concat(additionalCarriedAmmo ?? Enumerable.Empty<AmmoItemClass>())
+                .Where(ammo => ammo != null && !string.IsNullOrEmpty(ammo.Id))
+                .GroupBy(ammo => ammo.Id, StringComparer.Ordinal)
+                .Select(group => group.First())
+                .ToList();
             InventoryController inventory = BotOwner?.GetPlayer?.InventoryController;
             int reserveTargetRounds = ResolveWeaponTacticalAmmoReserveTarget(
                 inventory,
@@ -303,7 +309,8 @@ namespace pitTeam.BigBrain.Actions
             InventoryEquipment followerEquipment,
             Weapon weapon,
             IEnumerable<BodyGearCandidate>? sourceCandidates,
-            string evaluation)
+            string evaluation,
+            IEnumerable<AmmoItemClass>? additionalCarriedAmmo = null)
         {
             if (move == null)
             {
@@ -315,7 +322,8 @@ namespace pitTeam.BigBrain.Actions
                 weapon,
                 sourceCandidates,
                 BodyGearFollowUpDestination.WeaponSupportLooseAmmo,
-                evaluation);
+                evaluation,
+                additionalCarriedAmmo);
             if (looseAmmo.Count == 0)
             {
                 return move;
@@ -327,6 +335,35 @@ namespace pitTeam.BigBrain.Actions
                 followUps,
                 move.SuccessPhrase,
                 move.ContinueFollowUpsOnFailure);
+        }
+
+        private static IEnumerable<AmmoItemClass> GetOperationalMagazineCartridgeItems(
+            OperationalMagazinePlan plan)
+        {
+            if (plan == null)
+            {
+                yield break;
+            }
+
+            HashSet<string> yieldedIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (BodyGearCandidate candidate in plan.FollowUps.Where(IsOperationalFastAccessFollowUp))
+            {
+                foreach (AmmoItemClass ammo in GetMagazineCartridgeItems(candidate.Item as MagazineItemClass))
+                {
+                    if (!string.IsNullOrEmpty(ammo.Id) && yieldedIds.Add(ammo.Id))
+                    {
+                        yield return ammo;
+                    }
+                }
+            }
+        }
+
+        private static IEnumerable<AmmoItemClass> GetMagazineCartridgeItems(MagazineItemClass magazine)
+        {
+            return magazine?.Cartridges?.Items?
+                .OfType<AmmoItemClass>()
+                .Where(ammo => ammo != null && ammo.StackObjectsCount > 0) ??
+                Enumerable.Empty<AmmoItemClass>();
         }
 
         private bool TryBuildWeaponLooseAmmoMove(

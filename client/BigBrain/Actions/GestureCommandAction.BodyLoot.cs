@@ -571,7 +571,8 @@ namespace pitTeam.BigBrain.Actions
                         followerEquipment,
                         cargoWeapon,
                         operationalAmmoCandidates,
-                        "potentialWeaponCargo");
+                        "potentialWeaponCargo",
+                        GetOperationalMagazineCartridgeItems(cargoMagazinePlan));
                 }
 
                 return builtCargoPackage;

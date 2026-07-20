@@ -545,7 +545,7 @@ Supported commands via `GestureCommandAction`:
 
 **Movement & Sprint Patches:**
 
-- `FollowerSprintPatch` (only when SAIN absent) — Sprint behavior tuning
+- `FollowerSprintPatch` (when core follower movement owns sprint, including SAIN-without-addon) — Sprint behavior tuning
 - `FollowerSprintStateDirectionPatch` — Prevent sprint/transition thrash during boss chase
 
 **Recruit/Request Patches:**
@@ -903,7 +903,7 @@ Follow movement:
     - in-range settle to cover/random nearby point using `GoToSomePointData`.
 - Sprint run-stop mitigation:
     - `FollowerSprintStateDirectionPatch` modifies sprint-state direction under strict follower-chase conditions to avoid `Sprint -> Transition` thrash.
-    - `FollowerSprintPatch` is only enabled when SAIN is **not** installed.
+    - `FollowerSprintPatch` is enabled whenever core follower movement owns sprint (`!UseSainFollowerCombat`), including when SAIN is installed without the addon; SAIN-addon-owned combat keeps SAIN movement ownership.
 
 Request/gesture movement:
 
@@ -1066,7 +1066,7 @@ Bugs are tracked in the local bug-tracker file listed in `LOCAL.md`.
 
 Movement:
 
-- `FollowerSprintPatch` (conditional: only when SAIN is absent)
+- `FollowerSprintPatch` (conditional: whenever core follower movement owns sprint, including SAIN-without-addon)
 - `FollowerSprintStateDirectionPatch`
 
 Recruit/request:

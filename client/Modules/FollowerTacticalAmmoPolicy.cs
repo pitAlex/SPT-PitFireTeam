@@ -69,7 +69,9 @@ namespace pitTeam.Modules
     internal static class FollowerTacticalAmmoPolicy
     {
         private const double MinimumCombinedNeedScore = 0.001d;
-        private const double MinimumUpgradeOpportunityScore = 0.02d;
+        private const double PenetrationStep = 5d;
+        private const int AlwaysTakePenetration = 50;
+        private const double MinimumUpgradeOpportunityScore = 0.5d;
 
         internal static TacticalAmmoDecision Evaluate(
             int currentRounds,
@@ -92,8 +94,12 @@ namespace pitTeam.Modules
                   Math.Max(1d, normalizedCurrentPenetration);
             double opportunityCoverage = Clamp01(
                 (double)normalizedCandidateRounds / normalizedReserve);
-            double opportunityWeight = Math.Max(0d, powerWeight) * opportunityCoverage;
+            double opportunityWeight = Math.Max(
+                    0d,
+                    (candidatePenetration - normalizedCurrentPenetration) / PenetrationStep) *
+                opportunityCoverage;
             double combinedWeight = needWeight + powerWeight;
+            double minimumAcceptedPenetration = GetPreviousPenetrationStep(normalizedCurrentPenetration);
 
             if (normalizedCandidateRounds <= 0)
             {
@@ -146,6 +152,26 @@ namespace pitTeam.Modules
 
             if (normalizedCurrent < normalizedReserve)
             {
+                // Ordinary shortage accepts the immediately lower five-point penetration band.
+                // Exact boundaries step down once as well: 38 -> 35 and 35 -> 30.
+                if (candidatePenetration >= minimumAcceptedPenetration)
+                {
+                    return Create(
+                        TacticalAmmoDecisionKind.Replenish,
+                        candidatePenetration >= AlwaysTakePenetration
+                            ? "highPenetration"
+                            : "withinPenetrationStep",
+                        normalizedCurrent,
+                        normalizedReserve,
+                        normalizedCurrentPenetration,
+                        candidatePenetration,
+                        normalizedCandidateRounds,
+                        needWeight,
+                        powerWeight,
+                        opportunityWeight,
+                        combinedWeight);
+                }
+
                 TacticalAmmoDecisionKind kind = combinedWeight >= MinimumCombinedNeedScore
                     ? TacticalAmmoDecisionKind.Replenish
                     : TacticalAmmoDecisionKind.Reject;
@@ -166,12 +192,15 @@ namespace pitTeam.Modules
             }
 
             bool worthwhileUpgrade = allowUpgrade &&
-                                      powerWeight > 0d &&
-                                      opportunityWeight >= MinimumUpgradeOpportunityScore;
+                                      (candidatePenetration >= AlwaysTakePenetration ||
+                                       powerWeight > 0d &&
+                                       opportunityWeight >= MinimumUpgradeOpportunityScore);
             return Create(
                 worthwhileUpgrade ? TacticalAmmoDecisionKind.Upgrade : TacticalAmmoDecisionKind.Reject,
                 worthwhileUpgrade
-                    ? "upgradeOpportunity"
+                        ? candidatePenetration >= AlwaysTakePenetration
+                            ? "highPenetration"
+                            : "upgradeOpportunity"
                     : powerWeight <= 0d
                         ? "stockedWithEqualOrBetter"
                         : allowUpgrade
@@ -200,7 +229,11 @@ namespace pitTeam.Modules
                 new TacticalAmmoScenario("TA-06", 120, 45d, 46, 5, 60, true, TacticalAmmoDecisionKind.Reject),
                 new TacticalAmmoScenario("TA-07", 60, 24.17d, 35, 30, 60, true, TacticalAmmoDecisionKind.Upgrade),
                 new TacticalAmmoScenario("TA-08", 0, 0d, 5, 8, 60, true, TacticalAmmoDecisionKind.Replenish),
-                new TacticalAmmoScenario("TA-09", 60, 35d, 45, 30, 60, false, TacticalAmmoDecisionKind.Reject)
+                new TacticalAmmoScenario("TA-09", 60, 35d, 45, 30, 60, false, TacticalAmmoDecisionKind.Reject),
+                new TacticalAmmoScenario("TA-10", 61, 55.48d, 57, 40, 60, true, TacticalAmmoDecisionKind.Upgrade),
+                new TacticalAmmoScenario("TA-11", 59, 38d, 35, 1, 60, true, TacticalAmmoDecisionKind.Replenish),
+                new TacticalAmmoScenario("TA-12", 59, 35d, 30, 1, 60, true, TacticalAmmoDecisionKind.Replenish),
+                new TacticalAmmoScenario("TA-13", 120, 60d, 50, 1, 60, true, TacticalAmmoDecisionKind.Upgrade)
             };
 
             List<string> failures = new List<string>();
@@ -262,6 +295,16 @@ namespace pitTeam.Modules
         private static double Clamp01(double value)
         {
             return Math.Max(0d, Math.Min(1d, value));
+        }
+
+        private static double GetPreviousPenetrationStep(double penetration)
+        {
+            if (penetration <= 0d)
+            {
+                return 0d;
+            }
+
+            return Math.Max(0d, (Math.Ceiling(penetration / PenetrationStep) - 1d) * PenetrationStep);
         }
 
         private readonly struct TacticalAmmoScenario

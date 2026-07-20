@@ -74,9 +74,8 @@ namespace pitTeam.BigBrain.Actions
             {
                 Modules.Logger.LogInfo(
                     $"[LootCommand][MagazineTopOff] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
-                    $"weapon={DescribeLootDebugItem(weapon)} result=skipAlreadyReady " +
+                    $"weapon={DescribeLootDebugItem(weapon)} result=evaluateReadyPackageOpportunity " +
                     projectedBeforeTopOff.ToDiagnosticString());
-                return false;
             }
 
             int reserveTargetRounds = ResolveMagazineTopOffReserveTargetRounds(
@@ -85,6 +84,11 @@ namespace pitTeam.BigBrain.Actions
             List<AmmoItemClass> carriedAmmo = GetFollowerWeaponCartridgeItems(
                     followerEquipment,
                     weapon)
+                .Concat(GetMagazineCartridgeItems(insertedMagazine))
+                .Concat(GetOperationalMagazineCartridgeItems(refillPlan))
+                .Where(ammo => ammo != null && !string.IsNullOrEmpty(ammo.Id))
+                .GroupBy(ammo => ammo.Id, StringComparer.Ordinal)
+                .Select(group => group.First())
                 .ToList();
             foreach (MagazineTopOffTarget target in targets)
             {
