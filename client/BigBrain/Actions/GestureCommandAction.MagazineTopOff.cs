@@ -46,10 +46,6 @@ namespace pitTeam.BigBrain.Actions
                 .GroupBy(candidate => candidate.Item.Id, StringComparer.Ordinal)
                 .Select(group => group.First())
                 .ToList() ?? new List<BodyGearCandidate>();
-            if (looseAmmo.Count == 0)
-            {
-                return false;
-            }
 
             List<BodyGearCandidate> refillableSourceMagazines = sourceMagazineCandidates?
                 .GroupBy(candidate => candidate.Item.Id, StringComparer.Ordinal)
@@ -66,6 +62,24 @@ namespace pitTeam.BigBrain.Actions
                 weapon,
                 insertedMagazine,
                 refillPlan);
+            // Placement is proven before any donor is touched. Consolidate one settled transfer
+            // at a time, then let the normal planner rebuild from the new live magazine counts.
+            if (TryBuildMagazineDonorTopOffStagingMove(
+                    inventory,
+                    sourceRoot,
+                    weapon,
+                    targets,
+                    refillPlan,
+                    out move))
+            {
+                return true;
+            }
+
+            if (looseAmmo.Count == 0)
+            {
+                return false;
+            }
+
             WeaponPrimaryReadinessSnapshot projectedBeforeTopOff = EvaluateMagazinePlanProjection(
                 inventory,
                 weapon,
@@ -179,16 +193,15 @@ namespace pitTeam.BigBrain.Actions
                     isInsertedMagazine: false);
             }
 
-            // Complete the fullest useful magazines first. This produces deterministic full-mag
-            // states for the existing readiness model and is especially important for five-round
-            // magazines, whose partial spares do not combine into a full-mag equivalent.
+            // The inserted magazine is the first combat target. Remaining accepted magazines are
+            // completed from fullest to least full so consolidation produces deterministic spares.
             return targets
-                .OrderByDescending(target =>
+                .OrderByDescending(target => target.IsInsertedMagazine)
+                .ThenByDescending(target =>
                     target.Magazine.MaxCount > 0
                         ? (float)target.Magazine.Count / target.Magazine.MaxCount
                         : 0f)
                 .ThenByDescending(target => target.Magazine.Count)
-                .ThenByDescending(target => target.IsInsertedMagazine)
                 .ThenBy(target => target.Magazine.Id, StringComparer.Ordinal)
                 .ToList();
         }
@@ -278,15 +291,25 @@ namespace pitTeam.BigBrain.Actions
             MagazineItemClass magazine,
             AmmoItemClass ammo)
         {
+            bool usesMagazineDonor = TryGetMagazineDonor(ammo, out MagazineItemClass? donor);
             if (weapon == null ||
                 magazine == null ||
                 ammo == null ||
                 magazine.Count >= magazine.MaxCount ||
-                !FollowerWeaponLooseAmmoSupport.IsCompatible(weapon, ammo) ||
+                !(usesMagazineDonor
+                    ? FollowerWeaponLooseAmmoSupport.IsCartridgeCompatible(weapon, ammo)
+                    : FollowerWeaponLooseAmmoSupport.IsCompatible(weapon, ammo)) ||
                 (magazine.Count > 0 &&
                  !FollowerWeaponMagazineCompatibility.AreLoadedCartridgesCompatible(weapon, magazine)))
             {
                 return false;
+            }
+
+            if (usesMagazineDonor)
+            {
+                return !IsSameLootItem(donor, magazine) &&
+                       IsSameLootItem(donor.Cartridges.Last, ammo) &&
+                       magazine.CheckCompatibility(ammo);
             }
 
             try
@@ -391,7 +414,16 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            GStruct153 applyResult = magazine.Apply(inventory, ammo, transferCount, true);
+            bool usesMagazineDonor = TryGetMagazineDonor(ammo, out MagazineItemClass? donor);
+            if (usesMagazineDonor && !IsSameLootItem(donor.Cartridges.Last, ammo))
+            {
+                reason = "donorStackNotOnTop";
+                return false;
+            }
+
+            GStruct153 applyResult = usesMagazineDonor
+                ? magazine.ApplyWithoutRestrictions(inventory, ammo, transferCount, true)
+                : magazine.Apply(inventory, ammo, transferCount, true);
             if (applyResult.Failed || applyResult.Value == null)
             {
                 reason = $"applyRejected:{DescribeInventoryError(applyResult.Error)}";
@@ -409,13 +441,31 @@ namespace pitTeam.BigBrain.Actions
                 isStagingOperation: true,
                 stagingWeapon: weapon,
                 stagingMagazine: magazine,
-                stagingMagazineRoundsBefore: roundsBefore);
+                stagingMagazineRoundsBefore: roundsBefore,
+                useDirectAmmoLoadTransaction: usesMagazineDonor);
             reason = "ok";
             Modules.Logger.LogInfo(
                 $"[LootCommand][MagazineTopOff] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
                 $"weapon={DescribeLootDebugItem(weapon)} target={DescribeLootDebugItem(magazine)} " +
-                $"ammo={DescribeLooseAmmo(ammo)} transfer={transferCount} roundsBefore={roundsBefore} " +
+                $"ammo={DescribeLooseAmmo(ammo)} donor={DescribeLootDebugItem(donor)} " +
+                $"transfer={transferCount} roundsBefore={roundsBefore} " +
                 $"roundsAfterProjected={roundsBefore + transferCount}");
+            return true;
+        }
+
+        private static bool TryGetMagazineDonor(
+            AmmoItemClass ammo,
+            out MagazineItemClass? magazine)
+        {
+            magazine = null;
+            EFT.InventoryLogic.IContainer container = ammo?.Parent?.Container;
+            if ((container is not StackSlot && container is not Slot) ||
+                container.ParentItem is not MagazineItemClass parentMagazine)
+            {
+                return false;
+            }
+
+            magazine = parentMagazine;
             return true;
         }
 

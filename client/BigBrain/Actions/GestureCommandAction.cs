@@ -68,6 +68,7 @@ namespace pitTeam.BigBrain.Actions
         private bool containerLootSuccessSpoken;
         private bool containerLootWeaponListDirty;
         private Weapon? pendingContainerPrimaryWeaponSelection;
+        private Weapon? pendingContainerSecondaryWeaponPromotion;
         private bool containerLootOpened;
         private float containerLootOpenRequestedAt;
         private bool containerLootSearchStarted;
@@ -89,6 +90,7 @@ namespace pitTeam.BigBrain.Actions
         private bool bodyLootSuccessSpoken;
         private bool bodyLootWeaponListDirty;
         private Weapon? pendingBodyPrimaryWeaponSelection;
+        private Weapon? pendingBodySecondaryWeaponPromotion;
         private bool bodyLootBackpackCapacityAttempted;
         private bool bodyLootSearchStarted;
         private BetterSource? activeLootSearchSource;

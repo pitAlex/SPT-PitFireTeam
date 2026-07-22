@@ -222,7 +222,7 @@ Secondary-source promotion branch:
 - a newly found compatible source spare triggers a combined source-plus-backpack projection for that support weapon
 - the new source spare must start the chain successfully before any backpack cargo is reorganized
 - after source and fitting backpack magazines move into fast access, actual live readiness is checked before moving second primary to first primary
-- if the immediate slot move is temporarily blocked by hands/reload state, the existing idle secondary-promotion watcher can complete it after the loot command ends
+- if the immediate slot move is temporarily blocked by hands/reload state, retain that exact validated weapon and retry its slot transaction after loot completion, the two-second Attention-style reset, and bounded hands-state checks; the combat-gated idle watcher remains only a fallback
 
 P2 boundaries:
 
@@ -383,6 +383,8 @@ Unless specified otherwise, the ordinary reference is 30 and the threshold is 60
 | WI-54 | Equipped primary is under-ready and has an empty or partial compatible fast-access magazine while `Pickup Gear` is disabled | Fill only free magazine capacity from carried loose ammunition first; Immersive/Realistic may then use searched-source ammunition | P12 primary top-off | Implemented; runtime pending |
 | WI-55 | Equipped primary is sufficiently stocked and finds stronger loose ammunition | Do not unload or replace existing cartridges in this phase; revisit only after top-off scenarios are stable | P12 opportunity swap | Deferred |
 | WI-56 | A looted weapon is promoted to first primary with an empty inserted magazine and loaded package magazines in fast access | Permit patrol reload only when EFT selects a magazine recorded from that weapon's accepted package; never consume a compatible spawned magazine | P6 reload hardening | Implemented; runtime pending |
+| WI-57 | An acquired weapon package contains a partial inserted magazine and several compatible partial source magazines | Prove operational placement, fill the inserted magazine first, then consolidate fullest accepted spares from least-full donors through settled EFT magazine-load transactions before readiness | P13 donor-magazine consolidation | Passed with `20/30 + 20/30 + 20/30` becoming one inserted `30/30`, one operational `30/30`, and one empty donor left at source |
+| WI-58 | Repacking makes a tracked second-primary package ready while the loot transaction still owns the follower's hands | Preserve the validated promotion, finish all remaining loot, then move second primary to first primary through the delayed command-owned binder without waiting for combat memory to clear | P13 promotion completion | Implemented; runtime pending |
 
 ## Backpack Spare Scenario Matrix
 
@@ -437,6 +439,7 @@ This ledger records observed in-raid results. `Implemented` elsewhere in this do
 | RT-36 | Loaded `6/6` first-primary M32 engaged a visible target near `81m`; the target later closed to `9.8m` | Grenadier never activated because the early autonomous gate required straight-rifle `CanShoot`; ordinary Default/OrderedPush actions correctly refused to fire an unowned launcher. The follow-up command was recorded as `SetPushEnemy`, not `SetSuppressEnemy` | Regression reproduced; activation gate removed, normal aim worker receives the validated arc point, and close dogfight requests holster fallback; runtime pending |
 | RT-37 | Empty-primary follower carried a tracked HK416 in second primary with an empty `0/30` inserted magazine; a later corpse supplied one compatible `30/30` magazine and compatible loose ammunition | The inserted magazine was detached into the corpse vest, filled from `0/30` to `30/30`, restored, and reevaluated from settled state. The source spare moved to operational vest, readiness reached `60/60`, the weapon promoted to first primary with one `LootWeapon` cue, and accepted remaining loose rounds moved to secure storage | Passed; verifies top-off -> magazine plan -> promotion -> loose-ammo carry ordering |
 | RT-38 | Follower already had a working primary and empty second primary; a later corpse supplied a ready long gun with `50/50` inserted plus loaded `50/50`, `20/20`, and `20/20` compatible magazines | All three fitting magazines moved to operational vest while preserving reload reserve; projected support readiness reached `140/60`; the weapon entered `SecondPrimaryWeapon`, registered with `canChange=True`, and retained the expected `LootGeneric` cue | Passed; verifies intentional operational-secondary package acquisition |
+| RT-39 | Tracked second-primary HK416 had `20/30`; a later corpse supplied `20/30`, `10/30`, one empty compatible magazine after donor consolidation, and `40` accepted loose rounds | Donor consolidation reached settled `60/60`, but the immediate promotion was discarded as `handsBusy`; the idle watcher promoted only after combat ended, and the empty magazine was rejected before top-off placement validation | Regression reproduced; delayed command-owned promotion and provisional empty-mag placement implemented, runtime retest pending |
 
 Not yet runtime-covered:
 
@@ -471,9 +474,9 @@ Non-launcher `OnlyBarrel` weapons now use a separate chamber-fed implementation 
 
 The first detachable-magazine top-off slice is implemented for a missing-primary candidate:
 
-- compatible loose ammunition must be loose in the same body/container and accepted by both the weapon and target magazine
+- compatible ammunition may come from a source magazine's top cartridge stack or exist loose in the same body/container; it must be accepted by both the weapon and target magazine
 - targets are the acquired weapon's inserted magazine plus same-source partial or empty magazines whose shapes are selected for operational fast-access carry
-- targets are filled from the highest fill ratio downward, with ammunition quality ordered by penetration, damage, then armor damage
+- the inserted magazine is filled first; remaining accepted targets are filled from the highest fill ratio downward, while donor magazines are drained from least-full upward
 - the follower's full compatible cartridge stock, including rounds loaded in carried weapons and magazines, establishes quantity and round-weighted penetration; the shared tactical policy balances reserve deficit against the source penetration delta
 - an inserted external magazine is staged into free space on the same source, topped off, and restored before the ordinary planner resumes
 - every transaction settles before planning continues; no projected cartridge contributes to readiness
@@ -483,11 +486,11 @@ Later phases still need these distinct ownership and transaction models:
 
 - first-primary grenade and rocket launchers enter the grenadier combat objective only when no conventional long gun is available; body/container gear planning now prefers launcher-as-secondary and can force an empty or under-ready conventional weapon into primary, while launcher-versus-launcher comparison and occupied-secondary displacement remain separate
 - non-pistol revolvers now enter the shoulder-weapon pipeline by `WeapClass`; the MTs-255 cylinder must verify the shared internal-magazine transaction path in raid, while holster-revolver gear behavior remains separate
-- multiple compatible partially loaded magazines need a repacking phase: transfer ammunition from donor magazines into compatible target magazines to create the fullest practical magazine states before evaluating readiness
+- equipped-primary donor consolidation remains separate from the acquired-package implementation
 
-P12 currently stops at equipped-primary top-off. It fills free capacity in compatible vest/pocket magazines, prefers loose ammunition already carried by the follower, and allows Immersive/Realistic to use searched-source rounds without consulting `Pickup Gear`. It does not unload or replace existing cartridges. Inserted-magazine maintenance, stronger-ammunition replacement, and general donor-magazine consolidation remain deferred.
+P12 equipped-primary top-off fills free capacity in compatible vest/pocket magazines, prefers loose ammunition already carried by the follower, and allows Immersive/Realistic to use searched-source rounds without consulting `Pickup Gear`. Weapon readiness requires two ordinary magazine equivalents, while tactical loose-ammunition stocking continues to three ordinary magazine equivalents before quantity need is considered satisfied. High-penetration ammunition at `50+` remains an upgrade opportunity even above that stock target. It does not unload or replace existing cartridges. Acquired-package donor consolidation is implemented separately; applying the same ownership model to spawned primary magazines remains deferred.
 
-Repacking must use real inventory transactions and settled magazine counts. It should prefer topping off the fullest useful target magazines from the least useful partial donors, then rerun the existing largest-available reference and readiness evaluation against the resulting live magazine states. Donor rounds must not count twice, and a failed or interrupted transfer leaves readiness based only on the magazine states that actually settled.
+Acquired-package repacking uses real EFT magazine-load transactions and settled counts. It tops off the inserted magazine first, then the fullest useful accepted targets from the least-full donors, and reruns the existing largest-available reference and readiness evaluation after each transfer. Donor rounds cannot count twice; a failed or interrupted transfer leaves readiness based only on the magazine states that actually settled.
 
 Loose cartridges must not contribute speculatively. Compatibility, available stack count, magazine capacity, inventory ownership, and every real load, top-off, or repacking transaction must succeed before the resulting loaded rounds count toward primary readiness. These feed systems require their own scenario matrices and runtime tests rather than being folded into the current magazine-move logic.
 
@@ -512,6 +515,11 @@ The final placement phases must log one additional post-transfer `actual` snapsh
 
 ## Progress Log
 
+### 2026-07-22
+
+- Preserved a readiness-qualified secondary promotion when the immediate slot move reports `handsBusy`; loot completion now owns the delayed reset, bounded slot-move retry, primary rebind, and selection instead of waiting for the idle combat gate.
+- Corrected empty source-magazine top-off planning so a mechanically compatible empty magazine may reserve a valid fast-access shape, receive accepted loose ammunition, and only then enter the ordinary loaded-magazine move plan.
+
 ### 2026-07-18
 
 - Runtime verified the P11 tracked-secondary top-off chain: compatible loose ammunition filled the acquired empty inserted magazine through detach/apply/restore transactions, the next live pass combined it with a fitting full source spare at `60/60`, and the weapon promoted with a single `LootWeapon` cue.
@@ -522,7 +530,7 @@ The final placement phases must log one additional post-transfer `actual` snapsh
 
 - Added the P11 missing-primary magazine top-off stage. Compatible loose rounds from the same body/container fill the fullest acquired operational magazines through real EFT transactions before readiness is recalculated.
 - Included partial inserted magazines and fitting partial or empty same-source magazines. External inserted magazines are detached into free same-source grid space, filled, and restored before the ordinary weapon planner continues.
-- Kept follower-owned magazines outside this first top-off slice so raid ammunition cannot merge into pre-raid equipment ownership in `Simple`/`Restricted`; donor-magazine repacking remains deferred.
+- Kept follower-owned magazines outside acquired-package top-off and donor consolidation so raid ammunition cannot merge into pre-raid magazine ownership in `Simple`/`Restricted`.
 - Added tactical source-ammo suppression: loaded and loose cartridges already carried establish the quality baseline, and sufficient equal-or-better stock prevents weaker body/container rounds from being loaded or collected.
 - Replaced the hard quality cutoff with the P12 need/power/opportunity evaluator. Carried quantity and round-weighted penetration govern replenishment; stocked-ammo opportunity classification remains available for the deferred replacement phase.
 - Corrected the ready-package boundary so arithmetic readiness from partial magazines no longer bypasses top-off. The weight baseline includes the inserted magazine and every source magazine planned for operational fast access, allowing worthwhile rounds to fill partials before readiness while rejecting redundant equal/weaker ammunition.

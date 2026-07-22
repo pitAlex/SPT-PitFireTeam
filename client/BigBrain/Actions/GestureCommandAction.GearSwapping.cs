@@ -2341,6 +2341,19 @@ namespace pitTeam.BigBrain.Actions
                 context);
         }
 
+        private void QueuePostLootSecondaryWeaponPromotion(Weapon weapon, string context)
+        {
+            if (weapon == null)
+            {
+                return;
+            }
+
+            FollowerLootedPrimaryWeaponBinding.PromoteSecondaryAfterLootCompletion(
+                BotOwner,
+                weapon,
+                context);
+        }
+
         private bool TryStartPendingBodyGearSwapFollowUpMove(
             InventoryController inventory,
             InventoryEquipment followerEquipment)
@@ -2505,6 +2518,15 @@ namespace pitTeam.BigBrain.Actions
                             out BodyGearMove? promotionMove,
                             out string promotionReason))
                     {
+                        if (string.Equals(promotionReason, "handsBusy", StringComparison.Ordinal) &&
+                            candidate?.Item is Weapon pendingPromotion)
+                        {
+                            // The loot transaction can keep EFT's hands/inventory controller busy
+                            // after readiness is settled. Preserve this exact validated candidate so
+                            // command completion, not the combat-gated idle watcher, finishes it.
+                            pendingBodySecondaryWeaponPromotion = pendingPromotion;
+                        }
+
                         Modules.Logger.LogInfo(
                             $"[LootCommand] Body secondary weapon promotion retained for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
                             $"reason={promotionReason} item={DescribeLootDebugItem(candidate?.Item)}");
@@ -2790,6 +2812,12 @@ namespace pitTeam.BigBrain.Actions
                             out BodyGearMove? promotionMove,
                             out string promotionReason))
                     {
+                        if (string.Equals(promotionReason, "handsBusy", StringComparison.Ordinal) &&
+                            candidate?.Item is Weapon pendingPromotion)
+                        {
+                            pendingContainerSecondaryWeaponPromotion = pendingPromotion;
+                        }
+
                         Modules.Logger.LogInfo(
                             $"[LootCommand] Container secondary weapon promotion retained for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
                             $"reason={promotionReason} item={DescribeLootDebugItem(candidate?.Item)}");

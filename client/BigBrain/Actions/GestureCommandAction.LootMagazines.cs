@@ -298,6 +298,7 @@ namespace pitTeam.BigBrain.Actions
                 .Select(group => group.First())
                 .OrderByDescending(option => GetMagazineCellArea(option.Magazine))
                 .ThenByDescending(option => GetMagazineLongestSide(option.Magazine))
+                .ThenByDescending(option => option.Magazine.Count)
                 .ThenByDescending(option => option.Magazine.MaxCount)
                 .ToList();
 
@@ -335,7 +336,8 @@ namespace pitTeam.BigBrain.Actions
                         followerEquipment,
                         anchorCandidate,
                         out _,
-                        out _))
+                        out _,
+                        allowEmptyCandidates))
                 {
                     continue;
                 }
@@ -357,6 +359,7 @@ namespace pitTeam.BigBrain.Actions
                          .Where(candidate => !ReferenceEquals(candidate, reserveAnchorCandidate))
                          .OrderByDescending(candidate => GetMagazineCellArea((MagazineItemClass)candidate.Item))
                          .ThenByDescending(candidate => GetMagazineLongestSide((MagazineItemClass)candidate.Item))
+                         .ThenByDescending(candidate => ((MagazineItemClass)candidate.Item).Count)
                          .ThenByDescending(candidate => ((MagazineItemClass)candidate.Item).MaxCount))
             {
                 MagazineItemClass magazine = (MagazineItemClass)candidate.Item;
@@ -377,7 +380,8 @@ namespace pitTeam.BigBrain.Actions
                             followerEquipment,
                             fastAccessCandidate,
                             out _,
-                            out string fastAccessMoveFailure))
+                            out string fastAccessMoveFailure,
+                            allowEmptyCandidates))
                     {
                         simulatedVest = nextVest;
                         simulatedPockets = nextPockets;
@@ -402,6 +406,14 @@ namespace pitTeam.BigBrain.Actions
 
                 if (placedInFastAccess)
                 {
+                    continue;
+                }
+
+                if (allowEmptyCandidates && magazine.Count <= 0)
+                {
+                    // Empty magazines participate only as prospective top-off targets. If their
+                    // shape cannot satisfy fast-access plus reload reserve, do not turn them into
+                    // ordinary backpack cargo during this temporary planning pass.
                     continue;
                 }
 
@@ -483,7 +495,8 @@ namespace pitTeam.BigBrain.Actions
             InventoryEquipment followerEquipment,
             BodyGearCandidate candidate,
             out BodyGearMove? move,
-            out string reason)
+            out string reason,
+            bool allowEmptyCandidate = false)
         {
             if (candidate?.FollowUpDestination == BodyGearFollowUpDestination.OperationalPockets)
             {
@@ -492,7 +505,8 @@ namespace pitTeam.BigBrain.Actions
                     followerEquipment,
                     candidate,
                     out move,
-                    out reason);
+                    out reason,
+                    allowEmptyCandidate);
             }
 
             return TryBuildOperationalMagazineVestMove(
@@ -500,7 +514,8 @@ namespace pitTeam.BigBrain.Actions
                 followerEquipment,
                 candidate,
                 out move,
-                out reason);
+                out reason,
+                allowEmptyCandidate);
         }
 
         private bool TryBuildOperationalMagazineVestMove(
@@ -508,10 +523,15 @@ namespace pitTeam.BigBrain.Actions
             InventoryEquipment followerEquipment,
             BodyGearCandidate candidate,
             out BodyGearMove? move,
-            out string reason)
+            out string reason,
+            bool allowEmptyCandidate = false)
         {
             move = null;
-            if (!TryGetOperationalMagazineCandidate(candidate, out MagazineItemClass? magazine))
+            if (!TryGetOperationalMagazineCandidate(
+                    candidate,
+                    out MagazineItemClass? magazine,
+                    out _,
+                    allowEmptyCandidate))
             {
                 reason = "invalidMagazine";
                 return false;
@@ -543,10 +563,15 @@ namespace pitTeam.BigBrain.Actions
             InventoryEquipment followerEquipment,
             BodyGearCandidate candidate,
             out BodyGearMove? move,
-            out string reason)
+            out string reason,
+            bool allowEmptyCandidate = false)
         {
             move = null;
-            if (!TryGetOperationalMagazineCandidate(candidate, out MagazineItemClass? magazine))
+            if (!TryGetOperationalMagazineCandidate(
+                    candidate,
+                    out MagazineItemClass? magazine,
+                    out _,
+                    allowEmptyCandidate))
             {
                 reason = "invalidMagazine";
                 return false;

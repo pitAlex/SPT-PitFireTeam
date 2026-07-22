@@ -70,6 +70,7 @@ namespace pitTeam.BigBrain.Actions
             {
                 if (string.IsNullOrEmpty(ammo.Id) ||
                     !yieldedIds.Add(ammo.Id) ||
+                    ammo.Parent?.Container is StackSlot or Slot ||
                     !FollowerWeaponLooseAmmoSupport.IsCompatible(weapon, ammo))
                 {
                     continue;
@@ -176,7 +177,9 @@ namespace pitTeam.BigBrain.Actions
                 weapon);
             if (readiness?.Threshold > 0)
             {
-                return readiness.Threshold;
+                // Two magazine equivalents make a weapon combat-ready; tactical stocking is a
+                // separate policy and continues until a third ordinary magazine is represented.
+                return readiness.Threshold + Math.Max(0, readiness.OrdinaryReference);
             }
 
             List<MagazineItemClass> availableMagazines = GetFastAccessMagazines(

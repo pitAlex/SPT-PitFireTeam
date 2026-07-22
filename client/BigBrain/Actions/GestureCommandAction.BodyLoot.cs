@@ -927,7 +927,9 @@ namespace pitTeam.BigBrain.Actions
         private void FinishBodyLootNoMoreMoves()
         {
             Weapon primaryWeaponToSelect = pendingBodyPrimaryWeaponSelection;
+            Weapon secondaryWeaponToPromote = pendingBodySecondaryWeaponPromotion;
             pendingBodyPrimaryWeaponSelection = null;
+            pendingBodySecondaryWeaponPromotion = null;
 
             if (bodyLootWeaponListDirty)
             {
@@ -943,12 +945,14 @@ namespace pitTeam.BigBrain.Actions
                 BotOwner.BotTalk.TrySay(EPhraseTrigger.Ready, false);
                 ClearBodyLootState("TakeBodyGear:done");
                 QueuePostLootPrimaryWeaponSelection(primaryWeaponToSelect, "bodyLootComplete");
+                QueuePostLootSecondaryWeaponPromotion(secondaryWeaponToPromote, "bodyLootSecondaryPromotion");
                 return;
             }
 
             BotOwner.BotTalk.TrySay(bodyLootHadEligibleButNoSpace ? EPhraseTrigger.Negative : EPhraseTrigger.LootNothing, false);
             ClearBodyLootState("TakeBodyGear:noSpace");
             QueuePostLootPrimaryWeaponSelection(primaryWeaponToSelect, "bodyLootComplete");
+            QueuePostLootSecondaryWeaponPromotion(secondaryWeaponToPromote, "bodyLootSecondaryPromotion");
         }
 
         private void CleanupBodyLootInteraction(string reason)
@@ -983,6 +987,7 @@ namespace pitTeam.BigBrain.Actions
             bodyLootSuccessSpoken = false;
             bodyLootWeaponListDirty = false;
             pendingBodyPrimaryWeaponSelection = null;
+            pendingBodySecondaryWeaponPromotion = null;
             bodyLootBackpackCapacityAttempted = false;
             bodyLootSearchStarted = false;
             activeLootSearchSource = null;

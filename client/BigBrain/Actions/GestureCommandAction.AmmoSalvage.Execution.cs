@@ -237,6 +237,25 @@ namespace pitTeam.BigBrain.Actions
             BodyGearMove move,
             Callback callback)
         {
+            if (move?.UseDirectAmmoLoadTransaction == true)
+            {
+                try
+                {
+                    // EFT's own LoadMagazine path converts ApplyWithoutRestrictions directly and
+                    // submits it without the generic CanExecute gate. Cartridge StackSlot sources
+                    // require that same path when consolidating one magazine into another.
+                    BaseInventoryOperationClass operation =
+                        inventory.ConvertOperationResultToOperation(move.Operation);
+                    inventory.vmethod_1(operation, callback);
+                }
+                catch (Exception ex)
+                {
+                    callback.Fail($"Direct ammo-load transaction failed: {ex.Message}");
+                }
+
+                return;
+            }
+
             if (move?.UseVanillaAmmoTransaction != true)
             {
                 inventory.RunNetworkTransaction(move.Operation, callback);

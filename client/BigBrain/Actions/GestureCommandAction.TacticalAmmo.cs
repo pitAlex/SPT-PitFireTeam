@@ -129,7 +129,7 @@ namespace pitTeam.BigBrain.Actions
                              carried,
                              availableRounds,
                              reserveTargetRounds,
-                             allowUpgrade: false));
+                             allowUpgrade: true));
                 })
                 .OrderByDescending(evaluation => evaluation.Decision.Kind)
                 .ThenByDescending(evaluation => ((AmmoItemClass)evaluation.Candidate.Item).PenetrationPower)

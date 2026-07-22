@@ -382,8 +382,13 @@ Rules:
 - a no-inserted-magazine cargo package moves compatible magazines first and the weapon last; if the complete package cannot fit, the magazines stay at the source and the weapon is tried alone as cargo; if the weapon also cannot fit, it stays at the source
 - compatible spare magazines from the loot source must physically fit in the vest or pockets as operational magazines, not cargo
 - compatible spare magazines must be loaded to count as operational support
-- for an empty-primary candidate, compatible loose source ammunition first tops off the fullest useful acquired magazines through real EFT transactions; targets are the weapon's inserted magazine and same-source magazines selected for operational vest/pocket carry
+- for an empty-primary candidate, magazine maintenance runs only after the planner proves which source magazines can enter operational vest/pocket carry
+- the inserted magazine is maintained first; accepted partial spares are then considered from fullest to least full, with equal-shape placement candidates ordered by their live round count
+- compatible source magazines may donate their top cartridge stack directly into the inserted magazine or a fuller accepted spare through EFT's real magazine-load transaction; the least-full useful donors are drained first
+- a source magazine that cannot itself be carried may still donate good compatible rounds, but accepted spares never pull rounds back out of a fuller accepted spare on a later planning pass
+- after donor consolidation, compatible standalone loose source ammunition tops off the remaining useful acquired magazines through the existing real EFT transactions
 - empty same-source magazines may enter this top-off plan when their shape can satisfy the operational carry and reload-reserve rules after loading
+- empty magazines are admitted only to this provisional placement plan; they are not moved as operational or backpack cargo until a successful top-off gives them usable rounds
 - an external inserted magazine is temporarily moved into free grid space on the same body/container, filled there, and restored before normal weapon planning resumes; no source grid space means that inserted magazine is left unchanged
 - top-off never modifies the follower's existing pre-raid magazines, preventing found rounds from being merged into an original equipment tree whose Simple/Restricted return ownership would be ambiguous
 - top-off compares each source cartridge with all compatible ammunition already carried by the follower plus the inserted/source magazines accepted into the operational package; quantity need and the penetration delta against that round-weighted stock jointly decide whether a downgrade is worthwhile
@@ -418,6 +423,7 @@ Rules:
 - when a later compatible magazine raises the actual fast-access total to the threshold, an idle out-of-combat follower promotes the tracked support weapon, or one unambiguous tracked backpack cargo weapon, into the still-empty primary slot and registers it normally
 - this idle reevaluation runs after a commanded loose-magazine pickup finishes, so the pickup command keeps its existing placement and voice behavior while the settled inventory can make a carried weapon usable
 - a ready tracked secondary keeps priority; if multiple backpack weapons are simultaneously ready, automatic cargo promotion waits for the future weapon-comparison phase
+- when settled magazine work makes the tracked secondary ready but EFT still reports busy hands, the command retains that exact promotion through loot completion, waits for the two-second Attention-style reset, and retries the slot transaction without waiting for combat memory to clear
 - when that later spare is found during another body/container search, it starts the transfer chain; compatible backpack cargo then moves into fast access before the tracked secondary promotes
 - evaluate a tracked secondary against newly found compatible magazines before evaluating another weapon package from the same body/container
 - if that secondary becomes ready, promote it to primary; other source weapons then use ordinary filtered cargo handling
@@ -525,9 +531,7 @@ Still deferred weapon-feed cases:
 
 - launcher-versus-launcher comparison and replacement, and any case requiring displacement of an occupied second-primary slot
 - holster-revolver gear decisions and cylinder transactions that cannot use the shared internal-magazine path
-- compatible loose ammunition may later top off partial detachable magazines and make them readiness-eligible, but those rounds must not count until a real top-off transaction succeeds
-- when several compatible magazines are partially loaded, a later repacking phase should top off the fullest useful magazines from partial donor magazines first, then evaluate readiness from the resulting settled magazine states
-- repacked ammunition must move through real inventory transactions; failed or interrupted transfers must not contribute speculatively or count donor rounds twice
+- equipped-primary donor-magazine consolidation remains separate from the acquired-weapon package path
 - keep each feed system separate from detachable-magazine handling and implement/test it as its own scenario
 
 ### Narrow Tactical-Vest Upgrade
@@ -683,7 +687,9 @@ Gear swapping phase 1 tests:
 - internal-feed loose ammunition nested in magazines/weapons or marked as strict cargo is ignored
 - accepted weapon-support loose ammunition uses secure container, pockets, backpack, then reload-safe vest space; detachable-magazine readiness remains magazine-only
 - detachable-magazine loose-ammo top-off fills acquired inserted/source magazines before readiness and never counts uncommitted loose cartridges
+- acquired detachable-magazine packages consolidate compatible partial donor magazines before loose-ammo top-off and readiness; every donor transfer must settle before the next planning pass
 - tracked-secondary top-off runtime passed with an empty `0/30` inserted magazine, one `30/30` source spare, and compatible loose ammunition: settled readiness reached `60/60`, promotion used `LootWeapon`, and remaining accepted rounds entered protected storage
+- a later donor-consolidation test exposed two ordering gaps now awaiting retest: loot-time `handsBusy` discarded a ready promotion until combat ended, and a refillable empty source magazine was rejected before top-off; both are now preserved through command-owned post-loot promotion and provisional empty-mag placement
 - after magazine maintenance, remaining source-ammo pickup uses the shared need/power model against the follower's complete compatible cartridge stock; top-off itself is driven by missing operational magazine capacity
 - an equipped primary with a critical shortage accepts weaker compatible ammunition; a small shortage can reject a large penetration downgrade; sufficient stock rejects equal/weaker ammunition
 - equipped-primary top-off works with `Pickup Gear` disabled, uses carried loose supply before searched rounds, and never removes existing magazine cartridges

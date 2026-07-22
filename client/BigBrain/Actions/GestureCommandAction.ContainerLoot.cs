@@ -577,7 +577,9 @@ namespace pitTeam.BigBrain.Actions
         private void FinishContainerLootNoMoreMoves()
         {
             Weapon primaryWeaponToSelect = pendingContainerPrimaryWeaponSelection;
+            Weapon secondaryWeaponToPromote = pendingContainerSecondaryWeaponPromotion;
             pendingContainerPrimaryWeaponSelection = null;
+            pendingContainerSecondaryWeaponPromotion = null;
 
             if (containerLootWeaponListDirty)
             {
@@ -596,12 +598,14 @@ namespace pitTeam.BigBrain.Actions
                 BotOwner.BotTalk.TrySay(EPhraseTrigger.Ready, false);
                 ClearContainerLootState("TakeContainerLoot:done");
                 QueuePostLootPrimaryWeaponSelection(primaryWeaponToSelect, "containerLootComplete");
+                QueuePostLootSecondaryWeaponPromotion(secondaryWeaponToPromote, "containerLootSecondaryPromotion");
                 return;
             }
 
             BotOwner.BotTalk.TrySay(containerLootHadEligibleButNoSpace ? EPhraseTrigger.Negative : EPhraseTrigger.LootNothing, false);
             ClearContainerLootState("TakeContainerLoot:noSpace");
             QueuePostLootPrimaryWeaponSelection(primaryWeaponToSelect, "containerLootComplete");
+            QueuePostLootSecondaryWeaponPromotion(secondaryWeaponToPromote, "containerLootSecondaryPromotion");
         }
 
         private void TryCloseActiveLootContainerAfterSearch()
@@ -661,6 +665,7 @@ namespace pitTeam.BigBrain.Actions
             containerLootSuccessSpoken = false;
             containerLootWeaponListDirty = false;
             pendingContainerPrimaryWeaponSelection = null;
+            pendingContainerSecondaryWeaponPromotion = null;
             containerLootOpened = false;
             containerLootOpenRequestedAt = 0f;
             containerLootSearchStarted = false;
@@ -737,7 +742,8 @@ namespace pitTeam.BigBrain.Actions
                 int stagingMagazineRoundsBefore = -1,
                 bool terminalOnStagingFailure = true,
                 bool announceStagingLoot = false,
-                Weapon? approvedReloadWeapon = null)
+                Weapon? approvedReloadWeapon = null,
+                bool useDirectAmmoLoadTransaction = false)
             {
                 Item = item;
                 Operation = operation;
@@ -761,6 +767,7 @@ namespace pitTeam.BigBrain.Actions
                 TerminalOnStagingFailure = terminalOnStagingFailure;
                 AnnounceStagingLoot = announceStagingLoot;
                 ApprovedReloadWeapon = approvedReloadWeapon;
+                UseDirectAmmoLoadTransaction = useDirectAmmoLoadTransaction;
             }
 
             public Item Item { get; }
@@ -785,6 +792,7 @@ namespace pitTeam.BigBrain.Actions
             public bool TerminalOnStagingFailure { get; }
             public bool AnnounceStagingLoot { get; }
             public Weapon? ApprovedReloadWeapon { get; }
+            public bool UseDirectAmmoLoadTransaction { get; }
 
             public BodyGearMove WithFollowUps(
                 IReadOnlyList<BodyGearCandidate> followUpCandidates,
@@ -813,7 +821,8 @@ namespace pitTeam.BigBrain.Actions
                     StagingMagazineRoundsBefore,
                     TerminalOnStagingFailure,
                     AnnounceStagingLoot,
-                    ApprovedReloadWeapon);
+                    ApprovedReloadWeapon,
+                    UseDirectAmmoLoadTransaction);
             }
         }
 

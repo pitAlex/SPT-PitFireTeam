@@ -1,3 +1,5 @@
+using Comfort.Common;
+using Diz.LanguageExtensions;
 using EFT;
 using EFT.InventoryLogic;
 using pitTeam.Utils;
@@ -11,6 +13,7 @@ namespace pitTeam.Modules
         private const int TransientSwitchMaxAttempts = 40;
         private const int StuckSelectorRecoveryAttempt = 6;
         private const int StuckSelectorRecoveryInterval = 6;
+        private const int PostLootPromotionMaxAttempts = 12;
         private const float SwitchRetryDelaySeconds = 0.45f;
         private const float PostLootSelectionDelaySeconds = 2f;
 
@@ -62,6 +65,202 @@ namespace pitTeam.Modules
                     $"[LootCommand] Post-loot primary selection could not be queued for " +
                     $"'{bot?.Profile?.Nickname ?? bot?.ProfileId ?? "unknown"}' ({context}): {ex.Message}");
             }
+        }
+
+        internal static void PromoteSecondaryAfterLootCompletion(
+            BotOwner bot,
+            Weapon weapon,
+            string context)
+        {
+            if (weapon == null)
+            {
+                return;
+            }
+
+            if (bot?.AITaskManager == null)
+            {
+                RunPostLootSecondaryPromotion(bot, weapon, context, 0);
+                return;
+            }
+
+            try
+            {
+                bot.AITaskManager.RegisterDelayedTask(
+                    bot,
+                    PostLootSelectionDelaySeconds,
+                    () => RunPostLootSecondaryPromotion(bot, weapon, context, 0));
+                Logger.LogInfo(
+                    $"[LootCommand][WeaponRegistration] follower='{bot.Profile?.Nickname ?? bot.ProfileId ?? "unknown"}' " +
+                    $"weapon={weapon.TemplateId} context={context} result=postLootPromotionQueued " +
+                    $"delay={PostLootSelectionDelaySeconds:0.0}");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogInfo(
+                    $"[LootCommand] Post-loot secondary promotion could not be queued for " +
+                    $"'{bot?.Profile?.Nickname ?? bot?.ProfileId ?? "unknown"}' ({context}): {ex.Message}");
+            }
+        }
+
+        private static void RunPostLootSecondaryPromotion(
+            BotOwner bot,
+            Weapon weapon,
+            string context,
+            int attempt)
+        {
+            if (!CanContinueWeaponSwitch(bot, out string inactiveReason))
+            {
+                LogAbortedSwitch(bot, weapon, context, inactiveReason);
+                return;
+            }
+
+            InventoryController inventory = bot.GetPlayer?.InventoryController;
+            InventoryEquipment equipment = inventory?.Inventory?.Equipment;
+            Slot primarySlot = equipment?.GetSlot(EquipmentSlot.FirstPrimaryWeapon);
+            Weapon slottedPrimary = primarySlot?.ContainedItem as Weapon;
+            if (IsSameItem(slottedPrimary, weapon))
+            {
+                RebindAndSelect(bot, weapon, context);
+                return;
+            }
+
+            Weapon slottedSecondary = equipment?.GetSlot(EquipmentSlot.SecondPrimaryWeapon)?.ContainedItem as Weapon;
+            if (inventory == null || primarySlot == null || primarySlot.Deleted)
+            {
+                LogPostLootPromotionStopped(bot, weapon, context, "inventoryMissing");
+                return;
+            }
+
+            if (slottedPrimary != null)
+            {
+                LogPostLootPromotionStopped(bot, weapon, context, "primaryOccupied");
+                return;
+            }
+
+            if (!IsSameItem(slottedSecondary, weapon))
+            {
+                LogPostLootPromotionStopped(bot, weapon, context, "weaponNotInSecondary");
+                return;
+            }
+
+            WeaponPrimaryReadinessSnapshot readiness = FollowerWeaponPrimaryReadiness.EvaluateActual(
+                inventory,
+                weapon,
+                ammo => !InteractableObjects.IsStrictCargoItem(bot, ammo));
+            if (readiness == null || !readiness.PrimaryReady || readiness.RequiresMagazineLoad)
+            {
+                LogPostLootPromotionStopped(
+                    bot,
+                    weapon,
+                    context,
+                    readiness?.Reason ?? "readinessMissing");
+                return;
+            }
+
+            if (attempt == 0)
+            {
+                // Loot completion has cleared request ownership. Apply the same narrow reset used
+                // by Attention before attempting the slot move so combat memory cannot postpone a
+                // command-owned equip until the fight ends.
+                FollowerRecovery.SoftReset(bot);
+            }
+
+            BotWeaponManager weaponManager = bot.WeaponManager;
+            BotWeaponSelector selector = weaponManager?.Selector;
+            Weapon activeWeapon = weaponManager?.ShootController?.Item ?? weaponManager?.CurrentWeapon;
+            string busyReason = selector == null
+                ? "selectorMissing"
+                : selector.IsChanging
+                ? "selectorChanging"
+                : weaponManager.Reload?.Reloading == true
+                ? "reloading"
+                : !weaponManager.CanChangeHands()
+                ? "handsBusy"
+                : IsSameItem(activeWeapon, weapon)
+                ? "secondaryInHands"
+                : string.Empty;
+            if (!string.IsNullOrEmpty(busyReason))
+            {
+                QueuePostLootPromotionRetry(bot, weapon, context, attempt, busyReason);
+                return;
+            }
+
+            Error locationError;
+            ItemAddress primaryAddress = primarySlot.FindLocationForItem(weapon, out locationError);
+            if (primaryAddress == null)
+            {
+                LogPostLootPromotionStopped(bot, weapon, context, "noPrimaryAddress");
+                return;
+            }
+
+            GStruct154<GClass3411> moveResult =
+                InteractionsHandlerClass.Move(weapon, primaryAddress, inventory, true);
+            if (moveResult.Failed ||
+                moveResult.Value.ItemsDestroyRequired ||
+                !inventory.CanExecute(moveResult.Value))
+            {
+                QueuePostLootPromotionRetry(bot, weapon, context, attempt, "moveRejected");
+                return;
+            }
+
+            Logger.LogInfo(
+                $"[LootCommand][Readiness] follower='{bot.Profile?.Nickname ?? bot.ProfileId ?? "unknown"}' " +
+                $"weapon={weapon.TemplateId} evaluation=postLootSecondaryPromotion " +
+                $"destination=FirstPrimaryWeapon decisionReason=ready attempt={attempt} " +
+                readiness.ToDiagnosticString());
+            inventory.RunNetworkTransaction(
+                moveResult.Value,
+                new Callback(result =>
+                {
+                    Weapon completedPrimary = bot.GetPlayer?.InventoryController?.Inventory?.Equipment
+                        ?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem as Weapon;
+                    if (result?.Succeed != true && !IsSameItem(completedPrimary, weapon))
+                    {
+                        LogPostLootPromotionStopped(bot, weapon, context, "transactionFailed");
+                        return;
+                    }
+
+                    bot.WeaponManager?.UpdateWeaponsList();
+                    RebindAndSelect(bot, weapon, context);
+                }));
+        }
+
+        private static void QueuePostLootPromotionRetry(
+            BotOwner bot,
+            Weapon weapon,
+            string context,
+            int attempt,
+            string reason)
+        {
+            if (attempt >= PostLootPromotionMaxAttempts || bot?.AITaskManager == null)
+            {
+                LogPostLootPromotionStopped(bot, weapon, context, reason);
+                return;
+            }
+
+            try
+            {
+                bot.AITaskManager.RegisterDelayedTask(
+                    bot,
+                    SwitchRetryDelaySeconds,
+                    () => RunPostLootSecondaryPromotion(bot, weapon, context, attempt + 1));
+            }
+            catch (Exception ex)
+            {
+                LogPostLootPromotionStopped(bot, weapon, context, ex.Message);
+            }
+        }
+
+        private static void LogPostLootPromotionStopped(
+            BotOwner bot,
+            Weapon weapon,
+            string context,
+            string reason)
+        {
+            Logger.LogInfo(
+                $"[LootCommand] Post-loot secondary promotion stopped for " +
+                $"'{bot?.Profile?.Nickname ?? bot?.ProfileId ?? "unknown"}' ({context}): " +
+                $"{weapon?.TemplateId ?? "unknown"} reason={reason}");
         }
 
         private static void RunPostLootSelection(
