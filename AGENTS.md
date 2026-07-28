@@ -551,7 +551,7 @@ Supported commands via `GestureCommandAction`:
 
 **Recruit/Request Patches:**
 
-- `BotReceiverFollowMeRecruitPatch` — Convert recruit requests to follower
+- `BotReceiverFollowMeRecruitPatch` — Convert recruit requests to follower; tiered PMC level-based refusals are remembered per bot for the rest of the raid
 - `FollowRequestPatch`, `HoldRequestPatch`, `OpenDoorRequestPatch` — Request type routing
 - `BotReceiverGestureOverridePatch` — Gesture override handling
 - `BotReceiverPhraseOverridePatch` — Route STOP phrase through pitAIBossPlayer instead of vanilla BotReceiver

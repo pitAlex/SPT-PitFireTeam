@@ -50,6 +50,7 @@ namespace pitTeam.Modules
         private List<BotFollowerPlayer> _followers;
         private Dictionary<string, BotFollowerPlayer> _followersByProfileId;
         private HashSet<string> _progressSavedFollowerProfileIds;
+        private HashSet<string> _recruitmentDeniedProfileIds;
         private List<string> _shallBeFollower;
         private List<int> _botsGroup;
 
@@ -68,6 +69,7 @@ namespace pitTeam.Modules
             _followers = new List<BotFollowerPlayer> { };
             _followersByProfileId = new Dictionary<string, BotFollowerPlayer>(StringComparer.Ordinal);
             _progressSavedFollowerProfileIds = new HashSet<string>(StringComparer.Ordinal);
+            _recruitmentDeniedProfileIds = new HashSet<string>(StringComparer.Ordinal);
             _shallBeFollower = new List<string> { };
             _removedBosses = new List<string> { };
             _botsGroup = new List<int> { };
@@ -220,6 +222,7 @@ namespace pitTeam.Modules
             _followers.Clear();
             _followersByProfileId.Clear();
             _progressSavedFollowerProfileIds.Clear();
+            _recruitmentDeniedProfileIds.Clear();
             _shallBeFollower.Clear();
             FollowerGrenadeCooldowns.ClearAll();
             FollowerGrenadeRuntimeGate.ClearAll();
@@ -1053,6 +1056,23 @@ namespace pitTeam.Modules
         {
             if (Instance == null || string.IsNullOrEmpty(profileId)) return false;
             return Instance._followersByProfileId.ContainsKey(profileId);
+        }
+
+        public static bool HasDeniedRecruitment(string profileId)
+        {
+            return Instance != null &&
+                   !string.IsNullOrEmpty(profileId) &&
+                   Instance._recruitmentDeniedProfileIds.Contains(profileId);
+        }
+
+        public static void RememberRecruitmentDenial(string profileId)
+        {
+            if (Instance == null || string.IsNullOrEmpty(profileId))
+            {
+                return;
+            }
+
+            Instance._recruitmentDeniedProfileIds.Add(profileId);
         }
 
         public static BotFollowerPlayer GetFollowerByProfileId(string profileId)

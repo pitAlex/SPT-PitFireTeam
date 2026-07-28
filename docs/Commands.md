@@ -157,6 +157,8 @@ Behavior:
 - Clears active `FollowerCommandType` state on all active followers.
 - Disables patrol-radius mode by setting `CanPatrol` false.
 - Does not otherwise change combat objective state directly.
+- For a same-side non-follower, the receiver path instead attempts in-raid recruitment.
+- When tiered PMC recruitment rejects that bot because of the level-based acceptance decision, the refusal is remembered for the rest of the raid. Repeating `Follow Me` or `Cooperation` cannot reroll that bot's decision.
 
 ### On Your Own
 
