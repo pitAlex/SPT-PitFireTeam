@@ -129,9 +129,22 @@ namespace pitTeam.Patches
             }
 
             pitAIBossPlayer? boss = BossPlayers.GetBoss(__instance.Player.ProfileId);
+            bool isGesture = GClass3937.IsPlayerGesture(actionId);
+            EPhraseTrigger phrase = (EPhraseTrigger)actionId;
 
-            if (!GClass3937.IsPlayerGesture(actionId) &&
-                (EPhraseTrigger)actionId == (EPhraseTrigger)CustomPhrases.TeamStatus)
+            if (!isGesture && IsLootCommandPhrase(phrase))
+            {
+                UnityEngine.Object liveTarget = __instance.Player?.InteractableObject as UnityEngine.Object;
+                Logger.LogInfo(
+                    $"[LootCommand][Route] result=menuAction phrase={phrase} " +
+                    $"liveTarget='{DescribeLootTarget(liveTarget)}' " +
+                    $"storedPickup='{DescribeLootTarget(InteractableObjects.GetCurLootItem())}' " +
+                    $"storedBody='{DescribeLootTarget(InteractableObjects.GetCurBodyLootTarget())}' " +
+                    $"storedContainer='{DescribeLootTarget(InteractableObjects.GetCurLootContainerTarget())}'");
+            }
+
+            if (!isGesture &&
+                phrase == (EPhraseTrigger)CustomPhrases.TeamStatus)
             {
 
                 if (boss != null)
@@ -170,6 +183,24 @@ namespace pitTeam.Patches
             }
 
             return true;
+        }
+
+        private static bool IsLootCommandPhrase(EPhraseTrigger phrase)
+        {
+            return phrase == EPhraseTrigger.LootGeneric ||
+                   phrase == EPhraseTrigger.LootWeapon ||
+                   phrase == EPhraseTrigger.LootKey ||
+                   phrase == EPhraseTrigger.LootMoney ||
+                   phrase == EPhraseTrigger.CheckHim ||
+                   phrase == EPhraseTrigger.LootBody ||
+                   phrase == EPhraseTrigger.LootContainer;
+        }
+
+        private static string DescribeLootTarget(UnityEngine.Object target)
+        {
+            return target != null
+                ? $"{target.name}#{target.GetInstanceID()}"
+                : "none";
         }
     }
 

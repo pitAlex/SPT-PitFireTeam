@@ -50,6 +50,7 @@
 	"npcSendMessage": { "Name": "Raid End Messages", "Description": "Followers will send message at the end of the raid based on conditions such as if all made it out or if you picked up a follower and kept him alive. Return items messages are excluded" },
 	"friendlyPMC": { "Name": "Friendly PMC Side", "Description": "Should PMC Bots of the same side always be friendly to each other. Turn this off would let the normal game aggro system decide if same side bots will be friendly to you or not." },
 	"badGuy": { "Name": "Bad Guy", "Description": "Should the player be hostile to all PMC bots, regardless of faction" },
+	"factionHostilities": { "Name": "Faction Hostilities", "Description": "Enable patch that attempts to fix the hostilities between factions not always working" },
 	"PmcArmbands": { "Name": "PMC Faction Arm Bands", "Description": "Should PMC bots have armbands (red for BEARs, blue for USECs)." },
 	"englishBear": { "Name": "BEARs speak English", "Description": "Should BEAR bots speak English only" },
 	"pingSquad": { "Name": "Status Report Shortcut", "Description": "Alternative shortcut key for the Status Report quick phrase" },

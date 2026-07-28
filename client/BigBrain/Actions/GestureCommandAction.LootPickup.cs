@@ -198,6 +198,16 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
+                if (rootItem is Weapon supportWeapon &&
+                    IsShoulderWeaponCandidate(supportWeapon) &&
+                    TryPrepareLoosePickupWeaponFromBackpack(
+                        supportWeapon,
+                        inventory,
+                        inventory.Inventory.Equipment))
+                {
+                    return;
+                }
+
                 if (!TryBuildLootPickupOperation(
                         rootItem,
                         inventory,
@@ -735,6 +745,7 @@ namespace pitTeam.BigBrain.Actions
             lootPickupReadyAt = 0f;
             lootPickupAttemptStartedAt = 0f;
             activeLootItem = null;
+            ResetLoosePickupBackpackSupport();
 
             if (BotOwner != null)
             {

@@ -43,6 +43,7 @@ You can manage your teammates from the in-game **My Squad** screen. From there, 
 - **Map transitions** - teammates who you spawned with can follow you through map transitions.
 - **Progression system** - teammates gain raid experience and common-skill progress that persists between raids.
 - **Quest assist** - teammate kills can count toward player kill quests when the kill meets the quest criteria.
+- **Faction hostility repair** - a default-on Raid setting repairs missing BEAR-versus-USEC and PMC-versus-Scav/Scav-boss enemy relationships. Cultists, Raiders, and Rogues use neutral warning relationships toward Scavs instead of immediate hostility, while existing player-Scav karma hostility remains authoritative.
 - **Looting and loot return** - teammates who you spawned with can pick up loot, search bodies and containers on command, return carried items after the raid, and let you manage their backpacks while in raid. (See Looting)
 - **Fallen teammate gear gathering** - outside combat, a teammate can be ordered to check a body and gather recoverable gear from it, mainly to help collect gear from fallen squadmates.
 - **Post-raid reports** - receive report about if your team made it out with the loot after you died. (See Gameplay Guide > Raid Survival Post Player)
@@ -559,7 +560,7 @@ In teammate loadout editing, if you happen to end up in a situation where you ca
 - Teammates might not heal their health all the way. It is a game issue, use the Heal key to force heal.
 - Teleporting teammates while they are interacting with doors or other objects can leave them in a bad state.
 - **The game has navigation problems that even SAIN is not able to fully resolve. If your bots get stuck, use teleportation. In other situations, their movement is in teleportation-like bursts. Be mindful of this and stay aware of their position or you will find yourself in a fight all alone or without all your squad as they got stuck somewhere.**
-- Ever since BSG introduced the agression system, opposing factions may not always be hostile to each other. However, this is never the case with you, you are always an enemy to the opposing side. Keep that in mind and be prepared for even your teammates to sometimes ignore a member of an opposing faction until he starts shooting or you give the "Contact" order.
+- **Faction Hostilities** repairs missing enemy relationships but does not grant bots awareness of enemies they have not seen or heard.
 - Teammates can sometimes pick up an enemy they never saw or heard. Use **Attention** to reset them. In some cases, they may keep reacquiring that enemy until the enemy is dead. This comes from the game's detection and memory logic, and broad workarounds can break normal enemy behavior.
 - SAIN can interfere with teleportation, teleporting the bot back to previous location. You may need to trigger teleportation multiple times for it to stick.
 - Teammates can occasionally have registration delay on enemies. This is buggy behavior within the game that I am not able to fix.

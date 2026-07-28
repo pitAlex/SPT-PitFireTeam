@@ -79,15 +79,19 @@ namespace pitTeam.BigBrain.Actions
 
         private IEnumerable<BodyGearCandidate> GetFollowerBackpackOperationalMagazineCandidates(
             InventoryEquipment followerEquipment,
-            Weapon weapon)
+            Weapon weapon,
+            bool includeStrictCargo = false,
+            bool includeEmptyForTopOff = false)
         {
             Item backpack = followerEquipment?.GetSlot(EquipmentSlot.Backpack)?.ContainedItem;
             foreach (MagazineItemClass magazine in GetOperationalMagazineItems(
                          backpack,
                          weapon,
-                         "FollowerBackpack.WeaponSupportMagazine"))
+                         "FollowerBackpack.WeaponSupportMagazine",
+                         includeEmptyForTopOff))
             {
-                if (InteractableObjects.IsStrictCargoItem(BotOwner, magazine))
+                if (!includeStrictCargo &&
+                    InteractableObjects.IsStrictCargoItem(BotOwner, magazine))
                 {
                     continue;
                 }

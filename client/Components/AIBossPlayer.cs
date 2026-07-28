@@ -145,6 +145,22 @@ namespace pitTeam.Components
         // FollowMe/Cooperation: recruit or clear follower commands back to normal follow.
         public void PhraseSaid(EventInfo info)
         {
+            if (info == null)
+            {
+                Modules.Logger.LogInfo("[LootCommand][Route] result=eventMissing");
+                return;
+            }
+
+            if (IsLootCommandPhrase(info.phrase))
+            {
+                Modules.Logger.LogInfo(
+                    $"[LootCommand][Route] result=phraseReceived " +
+                    $"command={GetLootCommandName(info.phrase)} phrase={info.phrase} " +
+                    $"requester='{info.PlayerRequester?.ProfileId ?? "none"}' " +
+                    $"boss='{realPlayer?.ProfileId ?? "none"}' " +
+                    $"requesterMatchesBoss={info.PlayerRequester?.ProfileId == realPlayer?.ProfileId}");
+            }
+
             if (info.PlayerRequester != null && info.PlayerRequester.ProfileId == realPlayer.ProfileId)
             {
                 // Phrase command path:
@@ -282,6 +298,27 @@ namespace pitTeam.Components
             {
                 item?.Receiver?.method_0(info);
             }
+        }
+
+        private static bool IsLootCommandPhrase(EPhraseTrigger phrase)
+        {
+            return phrase == EPhraseTrigger.LootGeneric ||
+                   phrase == EPhraseTrigger.LootWeapon ||
+                   phrase == EPhraseTrigger.LootKey ||
+                   phrase == EPhraseTrigger.LootMoney ||
+                   phrase == EPhraseTrigger.CheckHim ||
+                   phrase == EPhraseTrigger.LootBody ||
+                   phrase == EPhraseTrigger.LootContainer;
+        }
+
+        private static string GetLootCommandName(EPhraseTrigger phrase)
+        {
+            if (phrase == EPhraseTrigger.CheckHim || phrase == EPhraseTrigger.LootBody)
+            {
+                return "body";
+            }
+
+            return phrase == EPhraseTrigger.LootContainer ? "container" : "pickup";
         }
         public void GestusShown(GestusInfo info)
         {
@@ -1661,22 +1698,36 @@ namespace pitTeam.Components
                 return;
             }
 
-            BotOwner closestFollower = FindClosestEligibleInteractionFollower(lootItem.transform.position);
-
-            if (closestFollower == null)
+            if (!InteractableObjects.TryGetLootNavPosition(lootItem, out Vector3 lootPosition))
             {
+                LogLootAssignment("pickup", null, 0f, "targetNavPositionUnavailable", lootItem);
                 return;
             }
 
+            BotOwner closestFollower = FindClosestEligibleInteractionFollower(
+                lootPosition,
+                out float selectedNavDistance,
+                command: "pickup");
+
+            if (closestFollower == null)
+            {
+                LogLootAssignment("pickup", null, 0f, "noReachableEligibleFollower", lootItem);
+                return;
+            }
+
+            LogLootAssignment("pickup", closestFollower, selectedNavDistance, "selected", lootItem);
             if (!InteractableObjects.SetTaker(closestFollower, lootItem))
             {
+                LogLootAssignment("pickup", closestFollower, selectedNavDistance, "reservationRejected", lootItem);
                 closestFollower.BotTalk.TrySay(EPhraseTrigger.Negative, false);
                 return;
             }
 
+            LogLootAssignment("pickup", closestFollower, selectedNavDistance, "reservationAccepted", lootItem);
             BotFollowerPlayer closestFollowerData = BossPlayers.Instance?.GetFollower(closestFollower);
             if (closestFollowerData == null)
             {
+                LogLootAssignment("pickup", closestFollower, selectedNavDistance, "followerStateMissingAfterReservation", lootItem);
                 InteractableObjects.RemoveTaker(closestFollower);
                 return;
             }
@@ -1684,6 +1735,12 @@ namespace pitTeam.Components
             // Loot command path: reserve the world loot target, then store a timed TakeLootItem command
             // so GestureCommandAction can move to the item and transfer it.
             closestFollowerData.SetTakeLootItem(35f);
+            LogFollowerCommandState(
+                "pickup",
+                closestFollower,
+                closestFollowerData,
+                FollowerCommandType.TakeLootItem,
+                lootItem);
             closestFollower.BotTalk.TrySay(EPhraseTrigger.Roger, false);
             closestFollower.Gesture.TryGestus(EInteraction.OkGesture, false);
         }
@@ -1692,41 +1749,64 @@ namespace pitTeam.Components
         {
             if (requester == null)
             {
+                LogLootAssignment("body", null, 0f, "requesterMissing");
                 return;
             }
 
             Corpse corpse = InteractableObjects.GetCurBodyLootTarget();
+            LogLootAssignment("body", null, 0f, "requestReceived", corpse);
             if (corpse == null)
             {
+                LogLootAssignment("body", null, 0f, "targetMissing");
                 return;
             }
 
             if (InteractableObjects.IsBodyLootTargetReserved(corpse))
             {
+                LogLootAssignment("body", null, 0f, "targetReserved", corpse);
                 return;
             }
 
             InventoryEquipment corpseEquipment = corpse.ItemOwner?.RootItem as InventoryEquipment;
             bool teammateCorpse = TeammateCorpseIdentity.IsTeammateCorpseEquipment(corpseEquipment);
-            BotOwner closestFollower = teammateCorpse
-                ? FindClosestEligibleInteractionFollower(corpse.transform.position, requireSquadMate: true)
-                : FindBestEligibleLootCarrierFollower(corpse.transform.position, requireSquadMate: true);
-            if (closestFollower == null)
+            if (!InteractableObjects.TryGetLootNavPosition(corpse, out Vector3 bodyPosition))
             {
+                LogLootAssignment("body", null, 0f, "targetNavPositionUnavailable", corpse);
                 return;
             }
 
+            BotOwner closestFollower = teammateCorpse
+                ? FindClosestEligibleInteractionFollower(
+                    bodyPosition,
+                    out float selectedNavDistance,
+                    requireSquadMate: true,
+                    command: "body")
+                : FindBestEligibleLootCarrierFollower(
+                    bodyPosition,
+                    out selectedNavDistance,
+                    requireSquadMate: true,
+                    command: "body");
+            if (closestFollower == null)
+            {
+                LogLootAssignment("body", null, 0f, "noReachableEligibleFollower", corpse);
+                return;
+            }
+
+            LogLootAssignment("body", closestFollower, selectedNavDistance, "selected", corpse);
             // A direct player order may deliberately revisit a completed corpse. The checked-body
             // history is an autonomous-looting filter; the active reservation remains authoritative.
             if (!InteractableObjects.SetBodyLootTaker(closestFollower, corpse, allowAlreadyChecked: true))
             {
+                LogLootAssignment("body", closestFollower, selectedNavDistance, "reservationRejected", corpse);
                 closestFollower.BotTalk.TrySay(EPhraseTrigger.Negative, false);
                 return;
             }
 
+            LogLootAssignment("body", closestFollower, selectedNavDistance, "reservationAccepted", corpse);
             BotFollowerPlayer closestFollowerData = BossPlayers.Instance?.GetFollower(closestFollower);
             if (closestFollowerData == null)
             {
+                LogLootAssignment("body", closestFollower, selectedNavDistance, "followerStateMissingAfterReservation", corpse);
                 InteractableObjects.RemoveBodyLootTaker(closestFollower);
                 return;
             }
@@ -1734,6 +1814,12 @@ namespace pitTeam.Components
             // Body looting can take multiple inventory transactions, so reserve the corpse and
             // let the request action own the approach/interruption/cleanup lifecycle.
             closestFollowerData.SetTakeBodyGear(75f);
+            LogFollowerCommandState(
+                "body",
+                closestFollower,
+                closestFollowerData,
+                FollowerCommandType.TakeBodyGear,
+                corpse);
             closestFollower.BotTalk.TrySay(EPhraseTrigger.Roger, false);
             closestFollower.Gesture.TryGestus(EInteraction.OkGesture, false);
         }
@@ -1746,110 +1832,231 @@ namespace pitTeam.Components
             }
 
             LootableContainer container = InteractableObjects.GetCurLootContainerTarget();
+            Modules.Logger.LogInfo(
+                $"[LootCommand][Assignment] command=container result=requestReceived " +
+                $"target='{DescribeLootTarget(container)}'");
             if (container == null || !container.isActiveAndEnabled || container.DoorState == EDoorState.Locked)
             {
+                Modules.Logger.LogInfo(
+                    $"[LootCommand][Assignment] command=container " +
+                    $"result={(container == null ? "targetMissing" : !container.isActiveAndEnabled ? "targetInactive" : "targetLocked")} " +
+                    $"target='{DescribeLootTarget(container)}'");
                 return;
             }
 
             if (InteractableObjects.IsContainerLootTargetReserved(container))
             {
+                Modules.Logger.LogInfo(
+                    $"[LootCommand][Assignment] command=container result=targetReserved " +
+                    $"target='{DescribeLootTarget(container)}'");
                 return;
             }
 
-            BotOwner closestFollower = FindBestEligibleLootCarrierFollower(container.transform.position, requireSquadMate: true);
+            if (!InteractableObjects.TryGetLootNavPosition(container, out Vector3 containerPosition))
+            {
+                LogLootAssignment("container", null, 0f, "targetNavPositionUnavailable", container);
+                return;
+            }
+
+            BotOwner closestFollower = FindBestEligibleLootCarrierFollower(
+                containerPosition,
+                out float selectedNavDistance,
+                requireSquadMate: true,
+                command: "container");
             if (closestFollower == null)
             {
+                LogLootAssignment("container", null, 0f, "noReachableEligibleFollower", container);
                 return;
             }
 
+            LogLootAssignment("container", closestFollower, selectedNavDistance, "selected", container);
             // As with bodies, the player's direct target selection may revisit a completed
             // container; autonomous selection keeps the completed-target filter enabled.
             if (!InteractableObjects.SetContainerLootTaker(closestFollower, container, allowAlreadyChecked: true))
             {
+                LogLootAssignment("container", closestFollower, selectedNavDistance, "reservationRejected", container);
                 closestFollower.BotTalk.TrySay(EPhraseTrigger.Negative, false);
                 return;
             }
 
+            LogLootAssignment("container", closestFollower, selectedNavDistance, "reservationAccepted", container);
             BotFollowerPlayer closestFollowerData = BossPlayers.Instance?.GetFollower(closestFollower);
             if (closestFollowerData == null)
             {
+                LogLootAssignment("container", closestFollower, selectedNavDistance, "followerStateMissingAfterReservation", container);
                 InteractableObjects.RemoveContainerLootTaker(closestFollower);
                 return;
             }
 
             FollowerLootPriceService.RequestMarketPricesIfNeeded();
             closestFollowerData.SetTakeContainerLoot(75f);
+            LogFollowerCommandState(
+                "container",
+                closestFollower,
+                closestFollowerData,
+                FollowerCommandType.TakeContainerLoot,
+                container);
             closestFollower.BotTalk.TrySay(EPhraseTrigger.Roger, false);
             closestFollower.Gesture.TryGestus(EInteraction.OkGesture, false);
         }
 
-        private BotOwner FindClosestEligibleInteractionFollower(Vector3 targetPosition, bool requireSquadMate = false)
+        private BotOwner FindClosestEligibleInteractionFollower(
+            Vector3 targetPosition,
+            out float selectedNavDistance,
+            bool requireSquadMate = false,
+            string command = "interaction")
         {
             BotOwner closestFollower = null;
-            float bestSqrDistance = float.MaxValue;
+            float bestNavDistance = float.MaxValue;
+            NavMeshPath navMeshPath = new NavMeshPath();
 
             foreach (BotOwner follower in Followers)
             {
-                if (follower == null || follower.IsDead || follower.BotState != EBotState.Active)
+                if (follower == null)
                 {
+                    LogLootCandidate(command, null, "rejected", "missingFollower");
+                    continue;
+                }
+
+                if (follower.IsDead || follower.BotState != EBotState.Active)
+                {
+                    LogLootCandidate(
+                        command,
+                        follower,
+                        "rejected",
+                        follower.IsDead ? "dead" : $"botState:{follower.BotState}");
                     continue;
                 }
 
                 if (follower.Memory?.HaveEnemy == true || HasActiveCombatEnemy(follower))
                 {
+                    LogLootCandidate(command, follower, "rejected", "combatEnemy");
                     continue;
                 }
 
                 BotFollowerPlayer followerData = BossPlayers.Instance?.GetFollower(follower);
-                if (followerData == null || (requireSquadMate && !followerData.CanHandleBodyContainerLootCommands))
+                if (followerData == null)
                 {
+                    LogLootCandidate(command, follower, "rejected", "followerStateMissing");
                     continue;
                 }
 
-                float sqrDistance = (follower.Position - targetPosition).sqrMagnitude;
-                if (sqrDistance >= bestSqrDistance)
+                if (requireSquadMate && !followerData.CanHandleBodyContainerLootCommands)
                 {
+                    LogLootCandidate(command, follower, "rejected", "notSpawnedSquadmate");
                     continue;
                 }
 
+                if (followerData.IsLootOrPickupCommandActive())
+                {
+                    LogLootCandidate(
+                        command,
+                        follower,
+                        "rejected",
+                        $"activeCommand:{GetActiveFollowerCommandName(followerData)}");
+                    continue;
+                }
+
+                if (!Utils.Utils.TryGetCompletePathDistance(
+                        follower.Position,
+                        targetPosition,
+                        out float navDistance,
+                        navMeshPath))
+                {
+                    LogLootCandidate(command, follower, "rejected", "completePathUnavailable");
+                    continue;
+                }
+
+                if (navDistance >= bestNavDistance)
+                {
+                    LogLootCandidate(command, follower, "eligibleNotSelected", "longerPath", navDistance);
+                    continue;
+                }
+
+                LogLootCandidate(command, follower, "eligible", "shortestPathCandidate", navDistance);
                 closestFollower = follower;
-                bestSqrDistance = sqrDistance;
+                bestNavDistance = navDistance;
             }
 
+            selectedNavDistance = closestFollower != null ? bestNavDistance : 0f;
             return closestFollower;
         }
 
-        private BotOwner FindBestEligibleLootCarrierFollower(Vector3 targetPosition, bool requireSquadMate = false)
+        private BotOwner FindBestEligibleLootCarrierFollower(
+            Vector3 targetPosition,
+            out float selectedNavDistance,
+            bool requireSquadMate = false,
+            string command = "loot")
         {
             BotOwner bestFollower = null;
             BotOwner gearEvaluationFallback = null;
-            float maxSqrDistance = LootCarrierCommandDistance * LootCarrierCommandDistance;
-            float bestSqrDistance = float.MaxValue;
-            float gearFallbackSqrDistance = float.MaxValue;
+            float bestNavDistance = float.MaxValue;
+            float gearFallbackNavDistance = float.MaxValue;
+            NavMeshPath navMeshPath = new NavMeshPath();
 
             foreach (BotOwner follower in Followers)
             {
-                if (follower == null || follower.IsDead || follower.BotState != EBotState.Active)
+                if (follower == null)
                 {
+                    LogLootCandidate(command, null, "rejected", "missingFollower");
+                    continue;
+                }
+
+                if (follower.IsDead || follower.BotState != EBotState.Active)
+                {
+                    LogLootCandidate(
+                        command,
+                        follower,
+                        "rejected",
+                        follower.IsDead ? "dead" : $"botState:{follower.BotState}");
                     continue;
                 }
 
                 if (follower.Memory?.HaveEnemy == true || HasActiveCombatEnemy(follower))
                 {
+                    LogLootCandidate(command, follower, "rejected", "combatEnemy");
                     continue;
                 }
 
                 BotFollowerPlayer followerData = BossPlayers.Instance?.GetFollower(follower);
-                if (followerData == null ||
-                    (requireSquadMate && !followerData.CanHandleBodyContainerLootCommands) ||
-                    followerData.IsLootOrPickupCommandActive())
+                if (followerData == null)
                 {
+                    LogLootCandidate(command, follower, "rejected", "followerStateMissing");
                     continue;
                 }
 
-                float sqrDistance = (follower.Position - targetPosition).sqrMagnitude;
-                if (sqrDistance > maxSqrDistance)
+                if (requireSquadMate && !followerData.CanHandleBodyContainerLootCommands)
                 {
+                    LogLootCandidate(command, follower, "rejected", "notSpawnedSquadmate");
+                    continue;
+                }
+
+                if (followerData.IsLootOrPickupCommandActive())
+                {
+                    LogLootCandidate(
+                        command,
+                        follower,
+                        "rejected",
+                        $"activeCommand:{GetActiveFollowerCommandName(followerData)}");
+                    continue;
+                }
+
+                // Loot range and ranking both use the route the follower can actually walk.
+                // A direct-distance candidate behind walls or on another floor must not beat
+                // a slightly farther follower with a short complete path to the target.
+                if (!Utils.Utils.TryGetCompletePathDistance(
+                        follower.Position,
+                        targetPosition,
+                        out float navDistance,
+                        navMeshPath))
+                {
+                    LogLootCandidate(command, follower, "rejected", "completePathUnavailable");
+                    continue;
+                }
+
+                if (navDistance > LootCarrierCommandDistance)
+                {
+                    LogLootCandidate(command, follower, "rejected", "pathBeyond22m", navDistance);
                     continue;
                 }
 
@@ -1860,25 +2067,131 @@ namespace pitTeam.Components
                     // General body/container cargo is limited to backpack and pockets. Gear-enabled
                     // looting can still produce a valid move with empty weapon slots or vest space,
                     // so retain the closest such follower only as a fallback for the real planner.
-                    if (pitFireTeam.IsLootGearSwappingEnabled() && sqrDistance < gearFallbackSqrDistance)
+                    if (pitFireTeam.IsLootGearSwappingEnabled() && navDistance < gearFallbackNavDistance)
                     {
+                        LogLootCandidate(
+                            command,
+                            follower,
+                            "eligibleGearFallback",
+                            "noBackpackPocketArea",
+                            navDistance,
+                            freeArea);
                         gearEvaluationFallback = follower;
-                        gearFallbackSqrDistance = sqrDistance;
+                        gearFallbackNavDistance = navDistance;
+                    }
+                    else
+                    {
+                        LogLootCandidate(
+                            command,
+                            follower,
+                            "rejected",
+                            "noBackpackPocketArea",
+                            navDistance,
+                            freeArea);
                     }
 
                     continue;
                 }
 
-                if (sqrDistance >= bestSqrDistance)
+                if (navDistance >= bestNavDistance)
                 {
+                    LogLootCandidate(
+                        command,
+                        follower,
+                        "eligibleNotSelected",
+                        "longerPath",
+                        navDistance,
+                        freeArea);
                     continue;
                 }
 
+                LogLootCandidate(
+                    command,
+                    follower,
+                    "eligible",
+                    "cargoSpaceAndPath",
+                    navDistance,
+                    freeArea);
                 bestFollower = follower;
-                bestSqrDistance = sqrDistance;
+                bestNavDistance = navDistance;
             }
 
-            return bestFollower ?? gearEvaluationFallback;
+            BotOwner selectedFollower = bestFollower ?? gearEvaluationFallback;
+            selectedNavDistance = bestFollower != null
+                ? bestNavDistance
+                : gearEvaluationFallback != null
+                    ? gearFallbackNavDistance
+                    : 0f;
+            return selectedFollower;
+        }
+
+        private static string GetActiveFollowerCommandName(BotFollowerPlayer followerData)
+        {
+            return followerData != null &&
+                   followerData.TryPeekActiveCommand(out FollowerCommandType activeCommand, out _, out _)
+                ? activeCommand.ToString()
+                : "unknown";
+        }
+
+        private static void LogLootCandidate(
+            string command,
+            BotOwner follower,
+            string result,
+            string reason,
+            float? navDistance = null,
+            int? freeArea = null)
+        {
+            Modules.Logger.LogInfo(
+                $"[LootCommand][Candidate] command={command} " +
+                $"follower='{follower?.Profile?.Nickname ?? follower?.ProfileId ?? "none"}' " +
+                $"result={result} reason={reason} " +
+                $"navDistance={(navDistance.HasValue ? navDistance.Value.ToString("F1") : "n/a")} " +
+                $"freeBackpackPocketArea={(freeArea.HasValue ? freeArea.Value.ToString() : "n/a")}");
+        }
+
+        private static void LogFollowerCommandState(
+            string command,
+            BotOwner follower,
+            BotFollowerPlayer followerData,
+            FollowerCommandType expectedCommand,
+            UnityEngine.Object target)
+        {
+            FollowerCommandType activeCommand = FollowerCommandType.None;
+            bool hasCommand = followerData != null &&
+                              followerData.TryPeekActiveCommand(
+                                  out activeCommand,
+                                  out _,
+                                  out _);
+            bool accepted = hasCommand && activeCommand == expectedCommand;
+            Modules.Logger.LogInfo(
+                $"[LootCommand][Assignment] command={command} " +
+                $"result={(accepted ? "commandStateAccepted" : "commandStateRejected")} " +
+                $"follower='{follower?.Profile?.Nickname ?? follower?.ProfileId ?? "none"}' " +
+                $"expected={expectedCommand} actual={(hasCommand ? activeCommand.ToString() : "none")} " +
+                $"committed={followerData?.IsCommittedLootCommandActive() == true} " +
+                $"target='{DescribeLootTarget(target)}'");
+        }
+
+        private static void LogLootAssignment(
+            string command,
+            BotOwner follower,
+            float navDistance,
+            string result,
+            UnityEngine.Object target = null)
+        {
+            Modules.Logger.LogInfo(
+                $"[LootCommand][Assignment] command={command} " +
+                $"result={result} " +
+                $"follower='{follower?.Profile?.Nickname ?? follower?.ProfileId ?? "none"}' " +
+                $"navDistance={(follower != null ? navDistance.ToString("F1") : "n/a")} " +
+                $"target='{DescribeLootTarget(target)}'");
+        }
+
+        private static string DescribeLootTarget(UnityEngine.Object target)
+        {
+            return target != null
+                ? $"{target.name}#{target.GetInstanceID()}"
+                : "none";
         }
 
         private void ApplyOpenDoorCommand(IPlayer requester)

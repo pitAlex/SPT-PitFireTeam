@@ -132,6 +132,7 @@ namespace pitTeam.BigBrain.Actions
         {
             followerData = BossPlayers.Instance?.GetFollower(BotOwner);
             StopLootSearchSound();
+            ResetLoosePickupBackpackSupport();
             ReleaseRegroupReservation();
             nextPathCheckAt = 0f;
             moveCommandInitialized = false;

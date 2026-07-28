@@ -58,7 +58,11 @@ Related summaries:
 
 All looting commands are request-layer commands executed by `GestureCommandAction` out of combat.
 
+Quick-interaction loot selections enter `AIBossPlayer` through the player's `OnPhraseSay` event. Diagnostic builds trace the menu action, current and stored target, phrase arrival, follower eligibility, target reservation, and accepted command state.
+
 Followers with enemies are not eligible for new body/container loot assignment. A follower already handling an active loot/pickup command is skipped so rapid player commands can be assigned to the next available follower.
+
+A body/container reservation is authoritative through the per-follower target map. The mutable quick-menu target and legacy global owner fields are not paired when that owner already has a mapped target; otherwise looking at target two could make it inherit target one's owner and be rejected as already reserved.
 
 Once body/container searching begins, normal replacement commands are ignored until the loot command finishes. Combat, timeout, target invalidation, player death, or safety cleanup can still interrupt the command.
 
@@ -72,7 +76,7 @@ Inputs:
 Current behavior:
 
 - requires `InteractableObjects.GetCurLootItem()`
-- chooses the closest active eligible follower to the world item
+- chooses the reachable active eligible follower with the shortest complete NavMesh path to the world item
 - reserves ownership through `InteractableObjects.SetTaker(...)`
 - sets `FollowerCommandType.TakeLootItem` for 35 seconds
 - moves to the item, checks inventory destination, and runs one pickup transaction
@@ -99,9 +103,9 @@ Current assignment:
 
 - requires `InteractableObjects.GetCurBodyLootTarget()`
 - only saved teammates spawned through the raid squad flow can be assigned; recruited/picked-up followers are ignored even if they are otherwise squad-managed
-- teammate corpses choose the closest eligible squadmate
-- non-teammate corpses prefer the closest eligible loot carrier within 22m that has free backpack/pocket grid area
-- when no follower in range has ordinary cargo room and `Allow Gear Swapping` is enabled, assignment falls back to the closest eligible follower so the real planner can still use an empty weapon slot or operational vest space
+- teammate corpses choose the eligible squadmate with the shortest complete NavMesh path
+- non-teammate corpses prefer the eligible loot carrier within a 22m complete NavMesh path that has free backpack/pocket grid area
+- when no follower in range has ordinary cargo room and `Allow Gear Swapping` is enabled, assignment falls back to the reachable eligible follower with the shortest path so the real planner can still use an empty weapon slot or operational vest space
 - ownership is reserved through `InteractableObjects.SetBodyLootTaker(...)`
 - an explicit player `Check Him` / `Loot Body` order may revisit a corpse that a follower already completed
 - checked-body history is retained for autonomous `Go loot` selection, which skips completed corpses
@@ -183,8 +187,8 @@ Current assignment:
 - an active reservation still prevents two followers from searching the same container
 - only saved teammates spawned through the raid squad flow can be assigned; recruited/picked-up followers are ignored even if they are otherwise squad-managed
 - locked or inactive containers are ignored
-- prefers the closest eligible loot carrier within 22m that has free backpack/pocket grid area
-- when no follower in range has ordinary cargo room and `Allow Gear Swapping` is enabled, assignment falls back to the closest eligible follower so the real planner can still use an empty weapon slot or operational vest space
+- prefers the eligible loot carrier within a 22m complete NavMesh path that has free backpack/pocket grid area
+- when no follower in range has ordinary cargo room and `Allow Gear Swapping` is enabled, assignment falls back to the reachable eligible follower with the shortest path so the real planner can still use an empty weapon slot or operational vest space
 - ownership is reserved through `InteractableObjects.SetContainerLootTaker(...)`
 - command timeout is 75 seconds
 
@@ -286,6 +290,8 @@ Items transferred through `View Backpack` have a separate strict-cargo provenanc
 - provenance is per item tree, so a manually supplied magazine remains strict cargo even when a different compatible magazine was acquired through a command
 - taking an item back out of the follower backpack removes its strict-cargo provenance; ordering the follower to pick it up later makes it gear-eligible again
 - an explicit loose-item pickup, body search, or container search clears strict-cargo status only for the exact tree acquired by that command
+- narrow missing-weapon exception: when both shoulder slots are empty and the player orders a compatible loose detachable-magazine weapon pickup, compatible magazines and loose ammunition already in the follower backpack are adopted as that weapon's support package; unrelated manually placed cargo remains strict
+- this exception settles magazine top-off or insertion and reload-safe fast-access moves before the existing live-readiness evaluator selects first primary or second primary
 - backpack inspection remains active until this provenance is recorded, preventing the idle weapon evaluator from racing the close callback
 
 Equipped gear moves use a mode-specific rule:
@@ -660,7 +666,7 @@ Body/container basics:
 Assignment:
 
 - body/container commands only assign saved teammates spawned through the raid squad flow
-- non-teammate body/container assignment only picks followers within 22m
+- non-teammate body/container assignment only picks followers with a complete NavMesh path of 22m or less
 - followers with active/pending loot commands are skipped so rapid commands split across followers
 - followers with no backpack/pocket free area are skipped for filtered body/container looting
 - explicitly ordering a completed corpse searches it again; autonomous `Go loot` skips completed corpses

@@ -314,6 +314,8 @@ Verified entry groups:
     - `npcSendMessage`
     - `pitFireTeamFLAG`
     - `badGuy`
+    - `factionHostilities`
+    - `pmcArmbands`
 - `Looting Settings`
     - `Minimum Price`
     - `Maximum Price`
@@ -356,6 +358,10 @@ Supported control types:
 - `LoadoutManagementMode` -> mutually exclusive radio-style toggle rows
 - `KeyboardShortcut` -> press-to-capture button
 - everything else -> read-only text fallback
+
+### Raid faction hostility setting
+
+`Faction Hostilities` is a default-on Raid setting that registers BEAR and USEC as opposing factions and registers PMCs against Scavs, Scav bosses, and their followers when bots activate. Scavs start neutral toward Cultists, Raiders, and Rogues; those three factions warn Scavs and can turn hostile if the warning is ignored. A player Scav already marked hostile by Fence karma or as free-to-kill keeps the game's existing hostility instead of being reset to neutral. Existing non-combat/quest-protected roles remain excluded. It does not make same-side PMCs hostile or bypass normal sight and hearing. The setting is disabled while a raid is active because existing bot relationships cannot be safely undone or rebuilt mid-raid.
 
 ### Loadout Management setting
 

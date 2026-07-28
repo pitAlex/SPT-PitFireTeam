@@ -350,6 +350,10 @@ namespace pitTeam.Components
 
         public virtual void Init()
         {
+            // ORBIT registers its own agent/squad runtime when its layer is constructed. Claim the bot
+            // before resetting brain layers so ORBIT cannot keep ticking or re-register this follower.
+            OrbitCompatibility.ClaimFollower(_bot);
+
             // Constructor-time player inventory is normally ready, but follower initialization is
             // the last safe retry before raid commands can alter equipment provenance.
             CaptureInitialHolsterWeapon(finalAttempt: true);

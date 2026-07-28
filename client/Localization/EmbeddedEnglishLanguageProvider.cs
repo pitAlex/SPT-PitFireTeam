@@ -153,6 +153,9 @@ namespace pitTeam.Localization
                 badGuy = Entry(
                     "Bad Guy",
                     "Should the player be hostile to all PMC bots, regardless of faction"),
+                factionHostilities = Entry(
+                    "Faction Hostilities",
+                    "Enable patch that attempts to fix the hostilities between factions not always working"),
                 pmcArmbands = Entry(
                     "PMC Faction Arm Bands",
                     "Should PMC bots have armbands (red for BEARs, blue for USECs)."),

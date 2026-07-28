@@ -1452,7 +1452,8 @@ namespace pitTeam.BigBrain.Actions
             BodyGearCandidate weaponCandidate,
             OperationalMagazinePlan sourceMagazinePlan,
             out BodyGearMove? move,
-            out string reason)
+            out string reason,
+            bool allowFollowerInventoryMagazine = false)
         {
             move = null;
             reason = "noCompatibleLoadedSourceMagazine";
@@ -1484,7 +1485,8 @@ namespace pitTeam.BigBrain.Actions
             List<BodyGearCandidate> loadCandidates = sourceMagazinePlan?.CompatibleLoadedCandidates
                 .Where(candidate =>
                     candidate?.Item is MagazineItemClass &&
-                    !IsLootNowInBotInventory(BotOwner?.GetPlayer, candidate.Item))
+                    (allowFollowerInventoryMagazine ||
+                     !IsLootNowInBotInventory(BotOwner?.GetPlayer, candidate.Item)))
                 .OrderByDescending(candidate => ((MagazineItemClass)candidate.Item).Count)
                 .ThenByDescending(candidate => ((MagazineItemClass)candidate.Item).MaxCount)
                 .ToList() ?? new List<BodyGearCandidate>();
@@ -1504,7 +1506,7 @@ namespace pitTeam.BigBrain.Actions
                         loadMoveCandidate,
                         magazineSlot.CreateItemAddress(),
                         out BodyGearMove? loadMove,
-                        storeAsLoot: ShouldReturnGearSwapAsCargo(),
+                        storeAsLoot: !allowFollowerInventoryMagazine && ShouldReturnGearSwapAsCargo(),
                         successPhrase: EPhraseTrigger.LootWeapon,
                         isStagingOperation: true,
                         stagingWeapon: weapon))

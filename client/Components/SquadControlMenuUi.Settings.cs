@@ -313,6 +313,7 @@ namespace pitTeam.Components
                 pitFireTeam.npcSendMessage,
                 pitFireTeam.pitFireTeamFLAG,
                 pitFireTeam.badGuy,
+                pitFireTeam.factionHostilities,
                 pitFireTeam.pmcArmbands))
             {
                 yield return setting;
@@ -734,6 +735,7 @@ namespace pitTeam.Components
                 || entry == pitFireTeam.heatlhMultiplier
                 || entry == pitFireTeam.pitFireTeamFLAG
                 || entry == pitFireTeam.badGuy
+                || entry == pitFireTeam.factionHostilities
                 || entry == pitFireTeam.pmcArmbands
                 || entry == pitFireTeam.botPrefetch
                 || entry == pitFireTeam.battleRecorderEnabled;
@@ -2582,6 +2584,7 @@ namespace pitTeam.Components
             if (entry == pitFireTeam.npcSendMessage) return language.npcSendMessage;
             if (entry == pitFireTeam.pitFireTeamFLAG) return language.pitFireTeam;
             if (entry == pitFireTeam.badGuy) return language.badGuy;
+            if (entry == pitFireTeam.factionHostilities) return language.factionHostilities;
             if (entry == pitFireTeam.pmcArmbands) return language.pmcArmbands;
             if (entry == pitFireTeam.englishBear) return language.englishBear;
             if (entry == pitFireTeam.restrictedGearMaintenance) return language.loadoutManagementRestrictedGearMaintenance;

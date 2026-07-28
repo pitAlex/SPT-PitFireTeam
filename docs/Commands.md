@@ -377,6 +377,8 @@ Combat variant:
 
 ### Loot Phrases
 
+Loot and pickup selections enter `AIBossPlayer` through the player's `OnPhraseSay` event. Assignment diagnostics record the quick-menu action, live and stored targets, phrase arrival, follower eligibility, reservation, and final command state so a lost order can be located at its exact boundary.
+
 Input:
 
 - `EPhraseTrigger.LootGeneric`
@@ -389,7 +391,7 @@ Command state:
 Targeting:
 
 - Requires `InteractableObjects.GetCurLootItem()`.
-- Chooses closest active follower to the loot item.
+- Chooses the active follower with the shortest complete NavMesh path to the loot item.
 - Ignores followers with enemies or active loot/pickup commands.
 - Reserves taker ownership through `InteractableObjects.SetTaker(...)`.
 
@@ -399,6 +401,7 @@ Execution:
 - Moves to loot.
 - Checks inventory space and executes one pickup transaction.
 - For a commanded loose long gun, uses explicit destination order: ready first primary, otherwise empty second primary, otherwise backpack.
+- When both shoulder slots are empty, a commanded loose detachable-magazine long gun may adopt only its compatible magazines and loose ammunition already carried in the follower's backpack. Magazine top-off or insertion and reload-safe vest/pocket placement settle before the normal live-readiness destination check; unrelated backpack cargo remains strict.
 - If those fallback destinations are unavailable and first primary is empty, a non-dangerously-low inserted magazine permits last-resort first-primary placement; that visible right-shoulder weapon is always registered as the bot's usable primary.
 - Releases pickup hand state before registering/selecting a first-primary weapon.
 - Stores item through `InteractableObjects.StoreItem(...)` for squadmates.
@@ -419,8 +422,8 @@ Targeting:
 
 - Requires `InteractableObjects.GetCurBodyLootTarget()`.
 - Only saved teammates spawned through the raid squad flow can be assigned to body-loot commands; recruited/picked-up followers are ignored.
-- Chooses the closest active follower for teammate corpses.
-- Chooses the closest active follower within 22m for non-teammate corpses, ignoring followers with no free backpack/pocket grid space.
+- Chooses the active follower with the shortest complete NavMesh path for teammate corpses.
+- Chooses the active follower with the shortest complete NavMesh path of 22m or less for non-teammate corpses, ignoring followers with no free backpack/pocket grid space.
 - Ignores followers with enemies or active loot/pickup commands.
 - Reserves corpse ownership through `InteractableObjects.SetBodyLootTaker(...)`.
 - Direct `Check Him` / `Loot Body` orders may revisit a corpse after a previous follower search completed.
@@ -484,7 +487,7 @@ Targeting:
 - Autonomous `Go loot` selection skips containers marked completed by a follower.
 - A live container reservation still blocks duplicate assignment while another follower is approaching or looting it.
 - Only saved teammates spawned through the raid squad flow can be assigned to container-loot commands; recruited/picked-up followers are ignored.
-- Chooses the closest active follower within 22m, ignoring followers with no free backpack/pocket grid space.
+- Chooses the active follower with the shortest complete NavMesh path of 22m or less, ignoring followers with no free backpack/pocket grid space.
 - Ignores followers with enemies or active loot/pickup commands.
 - Reserves container ownership through `InteractableObjects.SetContainerLootTaker(...)`.
 

@@ -385,6 +385,7 @@ Unless specified otherwise, the ordinary reference is 30 and the threshold is 60
 | WI-56 | A looted weapon is promoted to first primary with an empty inserted magazine and loaded package magazines in fast access | Permit patrol reload only when EFT selects a magazine recorded from that weapon's accepted package; never consume a compatible spawned magazine | P6 reload hardening | Implemented; runtime pending |
 | WI-57 | An acquired weapon package contains a partial inserted magazine and several compatible partial source magazines | Prove operational placement, fill the inserted magazine first, then consolidate fullest accepted spares from least-full donors through settled EFT magazine-load transactions before readiness | P13 donor-magazine consolidation | Passed with `20/30 + 20/30 + 20/30` becoming one inserted `30/30`, one operational `30/30`, and one empty donor left at source |
 | WI-58 | Repacking makes a tracked second-primary package ready while the loot transaction still owns the follower's hands | Preserve the validated promotion, finish all remaining loot, then move second primary to first primary through the delayed command-owned binder without waiting for combat memory to clear | P13 promotion completion | Implemented; runtime pending |
+| WI-59 | Both shoulder slots are empty; compatible magazines and loose ammunition were manually placed in the follower backpack before a compatible loose detachable-magazine weapon is commanded | Adopt only the compatible backpack support package for this pickup, settle top-off/insertion and reload-safe fast-access moves, then choose first or second primary from live readiness; unrelated backpack cargo remains strict | P14 direct-pickup backpack support | Passed; two `20/30` backpack magazines plus `40` loose rounds supported a `20/30` inserted weapon, settled to `90/60`, equipped first primary, and selected successfully |
 
 ## Backpack Spare Scenario Matrix
 
@@ -440,6 +441,7 @@ This ledger records observed in-raid results. `Implemented` elsewhere in this do
 | RT-37 | Empty-primary follower carried a tracked HK416 in second primary with an empty `0/30` inserted magazine; a later corpse supplied one compatible `30/30` magazine and compatible loose ammunition | The inserted magazine was detached into the corpse vest, filled from `0/30` to `30/30`, restored, and reevaluated from settled state. The source spare moved to operational vest, readiness reached `60/60`, the weapon promoted to first primary with one `LootWeapon` cue, and accepted remaining loose rounds moved to secure storage | Passed; verifies top-off -> magazine plan -> promotion -> loose-ammo carry ordering |
 | RT-38 | Follower already had a working primary and empty second primary; a later corpse supplied a ready long gun with `50/50` inserted plus loaded `50/50`, `20/20`, and `20/20` compatible magazines | All three fitting magazines moved to operational vest while preserving reload reserve; projected support readiness reached `140/60`; the weapon entered `SecondPrimaryWeapon`, registered with `canChange=True`, and retained the expected `LootGeneric` cue | Passed; verifies intentional operational-secondary package acquisition |
 | RT-39 | Tracked second-primary HK416 had `20/30`; a later corpse supplied `20/30`, `10/30`, one empty compatible magazine after donor consolidation, and `40` accepted loose rounds | Donor consolidation reached settled `60/60`, but the immediate promotion was discarded as `handsBusy`; the idle watcher promoted only after combat ended, and the empty magazine was rejected before top-off placement validation | Regression reproduced; delayed command-owned promotion and provisional empty-mag placement implemented, runtime retest pending |
+| RT-40 | Brick had both shoulder slots empty; two compatible `20/30` magazines and `40` compatible loose rounds were manually placed through `View Backpack`, then a compatible loose weapon with a `20/30` inserted magazine was commanded | Only the compatible backpack package was adopted. Repacking/top-off settled the inserted and two operational magazines to `30/30`, readiness reached `90/60`, the weapon entered first primary, and post-loot selection succeeded on attempt 4 | Passed; verifies WI-59 direct-pickup backpack support |
 
 Not yet runtime-covered:
 
@@ -514,6 +516,13 @@ Each snapshot should identify:
 The final placement phases must log one additional post-transfer `actual` snapshot immediately before selecting primary, support, backpack, or leave-at-source.
 
 ## Progress Log
+
+### 2026-07-28
+
+- Added the WI-59 direct-pickup exception: with both shoulder slots empty, a compatible loose detachable-magazine weapon can evaluate compatible magazines and loose ammunition already carried in the follower backpack without making unrelated manual cargo gear-eligible.
+- Reused the settled body/container magazine planner for backpack support. Top-off, empty-weapon magazine insertion, and reload-safe fast-access moves complete before the existing live-readiness destination check.
+- Runtime passed with two strict `20/30` backpack magazines, `40` loose rounds, and a commanded weapon carrying `20/30`: the package settled to `90/60`, equipped first primary, and selected successfully.
+- Changed body/container follower ranking and the `22m` eligibility gate to complete NavMesh path distance. Added request-boundary container diagnostics after a rapid two-container test produced only one recorded assignment.
 
 ### 2026-07-22
 

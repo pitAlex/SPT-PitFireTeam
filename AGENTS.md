@@ -535,6 +535,7 @@ Supported commands via `GestureCommandAction`:
 **Core Bot/Group/Follower Stability Patches:**
 
 - `BotGroupAddEnemyPatch`, `BotGroupReportEnemyPatch`, `BotGroupUsecEnemyPatch` — Enemy propagation safety
+- `FactionHostility` — Default-on activation-time faction relationship repair: reciprocal BEAR/USEC and Scav/Scav-boss/PMC hostility, Cultist/Raider/Rogue warning-neutral relationships toward Scavs, player-Scav karma hostility preservation, and protected special-role exclusions
 - `BotGroupCalcGoalPatch` — Enemy acquisition assist hook
 - `BotControllerEnemyPropagationSafetyPatch` — Validate player refs before propagation
 - `BotOwnerIsFolowerPatch`, `BotOwnerManualUpdatePatch`, `BotOwnerActivatePatch` — Bot activation/update flow

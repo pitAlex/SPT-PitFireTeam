@@ -124,6 +124,7 @@ namespace pitTeam
         [JsonProperty("friendlyPMC")]
         public Dictionary<string, string> pitFireTeam { get; set; }
         public Dictionary<string, string> badGuy { get; set; }
+        public Dictionary<string, string> factionHostilities { get; set; }
         public Dictionary<string, string> pmcArmbands { get; set; }
         public Dictionary<string, string> englishBear { get; set; }
 
@@ -202,6 +203,7 @@ namespace pitTeam
     {
         public const string SainPluginId = "me.sol.sain";
         public const string SainAddonPluginId = "xyz.pit.fireteam.sainaddon";
+        public const string SeparateHostilityPluginId = "dk.sptplugins.separatehostility";
         private const string StartupRecoveryNoticeRoute = "/singleplayer/pitfireteam/recovery-notice";
         private const string StartupRecoveryNoticeAckRoute = "/singleplayer/pitfireteam/recovery-notice/ack";
         private const int LootPriceMaximumRoubles = 99999999;
@@ -239,6 +241,7 @@ namespace pitTeam
 
         public static ConfigEntry<bool> pitFireTeamFLAG;
         public static ConfigEntry<bool> badGuy;
+        public static ConfigEntry<bool> factionHostilities;
 
         public static ConfigEntry<bool> englishBear;
         public static ConfigEntry<bool> pmcArmbands;
@@ -306,6 +309,7 @@ namespace pitTeam
 
         public static bool IsSAINInstalled { get; private set; }
         public static bool IsSAINAddonInstalled { get; private set; }
+        public static bool IsSeparateHostilityInstalled { get; private set; }
 
         public static bool UseSainFollowerCombat => IsSAINInstalled && IsSAINAddonInstalled;
         public static bool HasSainRegroupAddon => UseSainFollowerCombat;
@@ -329,6 +333,7 @@ namespace pitTeam
             FollowerLayerRegistry.Init();
 
             var harmony = new Harmony("xyz.pit.fireteam");
+            OrbitCompatibility.PatchIfInstalled(harmony);
 
             // bot patches to help with various scenarios while being a follower of the player
             // Temporarily disabled for 4.x stability; revisit once BotsGroup method signatures are remapped.
@@ -552,6 +557,12 @@ namespace pitTeam
         private void Start()
         {
             RefreshPluginFlags();
+            if (IsSeparateHostilityInstalled && factionHostilities?.Value == true)
+            {
+                Log.LogWarning(
+                    "Faction Hostilities is installed but will not register enemies because SeparateHostility is also installed. " +
+                    "SeparateHostility keeps its broader PMC free-for-all behavior.");
+            }
             StartCoroutine(ShowStartupRecoveryNoticeCoroutine());
         }
 
@@ -570,6 +581,7 @@ namespace pitTeam
         {
             IsSAINInstalled = HasPlugin(SainPluginId);
             IsSAINAddonInstalled = HasPlugin(SainAddonPluginId);
+            IsSeparateHostilityInstalled = HasPlugin(SeparateHostilityPluginId);
         }
 
         private IEnumerator ShowStartupRecoveryNoticeCoroutine()
@@ -1031,6 +1043,8 @@ namespace pitTeam
             pitFireTeamFLAG = Config.Bind("", "12 PitFireTeam", true, new ConfigDescription(optionsLang.pitFireTeam["Description"], null, CreateConfigAttributes(-1004, false, optionsLang.pitFireTeam)));
 
             badGuy = Config.Bind("", "13 BadGuy", false, new ConfigDescription(optionsLang.badGuy["Description"], null, CreateConfigAttributes(-1005, false, optionsLang.badGuy)));
+
+            factionHostilities = Config.Bind("", "13 FactionHostilities", true, new ConfigDescription(optionsLang.factionHostilities["Description"], null, CreateConfigAttributes(-1005, false, optionsLang.factionHostilities)));
 
             englishBear = Config.Bind("", "14 EnglishBear", true, new ConfigDescription(optionsLang.englishBear["Description"], null, CreateConfigAttributes(-1006, false, optionsLang.englishBear)));
 

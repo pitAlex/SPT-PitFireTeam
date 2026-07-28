@@ -1222,16 +1222,24 @@ namespace pitTeam.Modules
                 }
             }
 
-            if (IsSameBodyLootTarget(Instance?._bodyLootTarget, targetCorpse) &&
-                !string.IsNullOrEmpty(Instance?._botToBodyLootProfileId) &&
-                !IsAllowedReservationOwner(Instance._botToBodyLootProfileId, allowedProfileId))
+            string? legacyOwnerProfileId = Instance?._botToBodyLootProfileId;
+            bool legacyOwnerHasMappedTarget =
+                !string.IsNullOrEmpty(legacyOwnerProfileId) &&
+                Instance?._bodyLootTargetsByBot?.ContainsKey(legacyOwnerProfileId) == true;
+            if (!legacyOwnerHasMappedTarget &&
+                IsSameBodyLootTarget(Instance?._bodyLootTarget, targetCorpse) &&
+                !string.IsNullOrEmpty(legacyOwnerProfileId) &&
+                !IsAllowedReservationOwner(legacyOwnerProfileId, allowedProfileId))
             {
-                if (IsActiveLootReservation(Instance._botToBodyLootProfileId, FollowerCommandType.TakeBodyGear))
+                // The global target is also the quick-menu target. Once per-follower maps exist,
+                // pairing that mutable target with an older global owner creates a false reservation
+                // for the next body. Use this fallback only for an unmapped legacy owner.
+                if (IsActiveLootReservation(legacyOwnerProfileId, FollowerCommandType.TakeBodyGear))
                 {
                     return true;
                 }
 
-                RemoveBodyLootReservation(Instance._botToBodyLootProfileId);
+                RemoveBodyLootReservation(legacyOwnerProfileId);
             }
 
             return false;
@@ -1258,16 +1266,23 @@ namespace pitTeam.Modules
                 }
             }
 
-            if (IsSameContainerLootTarget(Instance?._lootContainerTarget, targetContainer) &&
-                !string.IsNullOrEmpty(Instance?._botToContainerLootProfileId) &&
-                !IsAllowedReservationOwner(Instance._botToContainerLootProfileId, allowedProfileId))
+            string? legacyOwnerProfileId = Instance?._botToContainerLootProfileId;
+            bool legacyOwnerHasMappedTarget =
+                !string.IsNullOrEmpty(legacyOwnerProfileId) &&
+                Instance?._lootContainerTargetsByBot?.ContainsKey(legacyOwnerProfileId) == true;
+            if (!legacyOwnerHasMappedTarget &&
+                IsSameContainerLootTarget(Instance?._lootContainerTarget, targetContainer) &&
+                !string.IsNullOrEmpty(legacyOwnerProfileId) &&
+                !IsAllowedReservationOwner(legacyOwnerProfileId, allowedProfileId))
             {
-                if (IsActiveLootReservation(Instance._botToContainerLootProfileId, FollowerCommandType.TakeContainerLoot))
+                // Keep the same protection as bodies: a menu target refresh must not inherit
+                // another follower's legacy global owner while mapped reservations are active.
+                if (IsActiveLootReservation(legacyOwnerProfileId, FollowerCommandType.TakeContainerLoot))
                 {
                     return true;
                 }
 
-                RemoveContainerLootReservation(Instance._botToContainerLootProfileId);
+                RemoveContainerLootReservation(legacyOwnerProfileId);
             }
 
             return false;
@@ -1400,7 +1415,7 @@ namespace pitTeam.Modules
             }
         }
 
-        private static bool TryGetLootNavPosition(LootItem lootItem, out Vector3 position)
+        internal static bool TryGetLootNavPosition(LootItem lootItem, out Vector3 position)
         {
             position = Vector3.zero;
 
@@ -1435,7 +1450,7 @@ namespace pitTeam.Modules
             return true;
         }
 
-        private static bool TryGetLootNavPosition(LootableContainer container, out Vector3 position)
+        internal static bool TryGetLootNavPosition(LootableContainer container, out Vector3 position)
         {
             position = Vector3.zero;
 
