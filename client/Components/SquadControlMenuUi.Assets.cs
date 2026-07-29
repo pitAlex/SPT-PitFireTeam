@@ -58,7 +58,10 @@ namespace pitTeam.Components
 
         private DefaultUIButton CreateOverlayActionButton(Transform parent, Vector2 anchoredPosition, Vector2 size)
         {
-            DefaultUIButton button = Instantiate(playerButton, parent, false);
+            DefaultUIButton buttonTemplate = ResolveSideSelectionBackButton(parent)
+                ?? standaloneCloseButton
+                ?? playerButton;
+            DefaultUIButton button = Instantiate(buttonTemplate, parent, false);
             button.name = "pitFireTeam_OverlayActionButton";
             RectTransform rect = button.transform as RectTransform;
             if (rect != null)

@@ -730,18 +730,29 @@ namespace pitTeam.Patches
                 return true;
             }
 
-            Dictionary<string, int> stashCounts = CreateStashOnlyTemplateCounts();
-            foreach (UsedStashItemSummary requiredItem in requiredItems)
-            {
-                if (requiredItem == null || string.IsNullOrWhiteSpace(requiredItem.TemplateId) || requiredItem.Count <= 0)
-                {
-                    continue;
-                }
+            List<UsedStashItemSummary> requestedItems = requiredItems
+                .Where(item => item != null && !string.IsNullOrWhiteSpace(item.TemplateId) && item.Count > 0)
+                .ToList();
+            Dictionary<string, int> requestedCounts = requestedItems
+                .GroupBy(item => item.TemplateId, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.Sum(item => item.Count), StringComparer.Ordinal);
+            List<FriendlyTeammateBuyKitUsedItem> exactSelections =
+                CreateSafeExactStashSelections(requestedCounts, out Dictionary<string, int> fulfilledCounts);
 
-                if (!stashCounts.TryGetValue(requiredItem.TemplateId, out int available) || available < requiredItem.Count)
+            foreach (KeyValuePair<string, int> requested in requestedCounts)
+            {
+                if (!fulfilledCounts.TryGetValue(requested.Key, out int fulfilled) || fulfilled != requested.Value)
                 {
                     return false;
                 }
+            }
+
+            foreach (UsedStashItemSummary requestedItem in requestedItems)
+            {
+                requestedItem.ExactItems = exactSelections
+                    .Where(item => string.Equals(item.templateId, requestedItem.TemplateId, StringComparison.Ordinal))
+                    .Select(CloneExactStashItem)
+                    .ToList();
             }
 
             return true;
@@ -1484,11 +1495,8 @@ namespace pitTeam.Patches
                         price = quote.FinalPrice,
                         useItemsInStash = quote.ExcludeExistingItems,
                         usedItems = quote.UsedStashItems
-                            .Select(item => new FriendlyTeammateBuyKitUsedItem
-                            {
-                                templateId = item.TemplateId,
-                                count = item.Count
-                            })
+                            .SelectMany(item => item.ExactItems ?? new List<FriendlyTeammateBuyKitUsedItem>())
+                            .Select(CloneExactStashItem)
                             .ToArray()
                     })));
 
@@ -1861,7 +1869,21 @@ namespace pitTeam.Patches
                 DisplayName = item.DisplayName,
                 Count = item.Count,
                 TotalPrice = item.TotalPrice,
-                Selected = item.Selected
+                Selected = item.Selected,
+                ExactItems = item.ExactItems?
+                    .Select(CloneExactStashItem)
+                    .ToList()
+                    ?? new List<FriendlyTeammateBuyKitUsedItem>()
+            };
+        }
+
+        private static FriendlyTeammateBuyKitUsedItem CloneExactStashItem(FriendlyTeammateBuyKitUsedItem item)
+        {
+            return new FriendlyTeammateBuyKitUsedItem
+            {
+                itemId = item.itemId,
+                templateId = item.templateId,
+                count = item.count
             };
         }
 
@@ -2091,8 +2113,22 @@ namespace pitTeam.Patches
         private static StashOnlyExclusionPlan CreateStashOnlyExclusionPlan(InventoryEquipment equipment, int fullKitPrice, KitLoadoutPricingContext pricingContext)
         {
             List<BuildItemRequirement> requirements = CreateBuildItemRequirements(equipment, pricingContext);
-            Dictionary<string, int> stashCounts = CreateStashOnlyTemplateCounts();
             Dictionary<string, int> missingCounts = new Dictionary<string, int>(_selectedBuildMissingCounts, StringComparer.Ordinal);
+            Dictionary<string, int> requestedStashCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (BuildItemRequirement requirement in requirements)
+            {
+                missingCounts.TryGetValue(requirement.TemplateId, out int missingCount);
+                int stockAvailableCount = Mathf.Max(
+                    0,
+                    requirement.RequiredCount - Mathf.Min(requirement.RequiredCount, missingCount));
+                if (stockAvailableCount > 0)
+                {
+                    requestedStashCounts[requirement.TemplateId] = stockAvailableCount;
+                }
+            }
+
+            List<FriendlyTeammateBuyKitUsedItem> exactSelections =
+                CreateSafeExactStashSelections(requestedStashCounts, out Dictionary<string, int> fulfilledCounts);
             List<UsedStashItemSummary> usedItems = new List<UsedStashItemSummary>();
             List<UsedStashItemSummary> purchasedItems = new List<UsedStashItemSummary>();
             double usedValue = 0.0;
@@ -2104,13 +2140,9 @@ namespace pitTeam.Patches
                     continue;
                 }
 
-                missingCounts.TryGetValue(requirement.TemplateId, out int missingCount);
-                int stockAvailableCount = Mathf.Max(0, requirement.RequiredCount - Mathf.Min(requirement.RequiredCount, missingCount));
-                stashCounts.TryGetValue(requirement.TemplateId, out int stashAvailableCount);
-                int usedCount = Mathf.Min(stockAvailableCount, stashAvailableCount);
+                fulfilledCounts.TryGetValue(requirement.TemplateId, out int usedCount);
                 if (usedCount > 0)
                 {
-                    stashCounts[requirement.TemplateId] = stashAvailableCount - usedCount;
                     usedValue += requirement.TotalPrice * ((double)usedCount / requirement.RequiredCount);
                     usedItems.Add(new UsedStashItemSummary
                     {
@@ -2118,7 +2150,11 @@ namespace pitTeam.Patches
                         DisplayName = requirement.DisplayName,
                         Count = usedCount,
                         TotalPrice = requirement.TotalPrice * ((double)usedCount / requirement.RequiredCount),
-                        Selected = true
+                        Selected = true,
+                        ExactItems = exactSelections
+                            .Where(item => string.Equals(item.templateId, requirement.TemplateId, StringComparison.Ordinal))
+                            .Select(CloneExactStashItem)
+                            .ToList()
                     });
                 }
 
@@ -2222,39 +2258,117 @@ namespace pitTeam.Patches
                 || item is BuiltInInsertsItemClass;
         }
 
-        private static Dictionary<string, int> CreateStashOnlyTemplateCounts()
+        private static List<FriendlyTeammateBuyKitUsedItem> CreateSafeExactStashSelections(
+            IReadOnlyDictionary<string, int> requestedCounts,
+            out Dictionary<string, int> fulfilledCounts)
         {
-            Dictionary<string, int> counts = new Dictionary<string, int>(StringComparer.Ordinal);
+            fulfilledCounts = new Dictionary<string, int>(StringComparer.Ordinal);
             Inventory inventory = _backendInventoryController?.Inventory;
             CompoundItem stash = inventory?.Stash;
-            if (stash == null)
+            if (stash == null || requestedCounts == null || requestedCounts.Count == 0)
             {
-                return counts;
+                return new List<FriendlyTeammateBuyKitUsedItem>();
             }
 
-            foreach (Item item in CollectDeepItemTree(stash))
+            List<Item> allStashItems = CollectDeepItemTree(stash);
+            List<Item> candidates = allStashItems
+                .Where(item => item != null
+                    && !ReferenceEquals(item, stash)
+                    && !IsIgnoredKitRequirementItem(item)
+                    && !IsLockedForStashUse(item)
+                    && !string.IsNullOrWhiteSpace(item.Id)
+                    && !string.IsNullOrWhiteSpace(item.TemplateId))
+                .ToList();
+            HashSet<string> unsafeContainerIds = new HashSet<string>(StringComparer.Ordinal);
+
+            for (int iteration = 0; iteration <= candidates.Count; iteration++)
             {
-                if (item == null
-                    || ReferenceEquals(item, stash)
-                    || IsIgnoredKitRequirementItem(item)
-                    || IsLockedForStashUse(item)
-                    || string.IsNullOrWhiteSpace(item.TemplateId))
+                Dictionary<string, int> remainingCounts = requestedCounts
+                    .Where(pair => !string.IsNullOrWhiteSpace(pair.Key) && pair.Value > 0)
+                    .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+                Dictionary<string, ExactStashSelection> selectionsById =
+                    new Dictionary<string, ExactStashSelection>(StringComparer.Ordinal);
+
+                foreach (Item candidate in candidates)
                 {
-                    continue;
+                    if (unsafeContainerIds.Contains(candidate.Id)
+                        || !remainingCounts.TryGetValue(candidate.TemplateId, out int remaining)
+                        || remaining <= 0)
+                    {
+                        continue;
+                    }
+
+                    int selectedCount = Mathf.Min(Mathf.Max(1, candidate.StackObjectsCount), remaining);
+                    selectionsById[candidate.Id] = new ExactStashSelection
+                    {
+                        Item = candidate,
+                        Count = selectedCount
+                    };
+                    remainingCounts[candidate.TemplateId] = remaining - selectedCount;
                 }
 
-                int count = Mathf.Max(1, item.StackObjectsCount);
-                if (counts.TryGetValue(item.TemplateId, out int existing))
+                HashSet<string> newlyUnsafeIds = new HashSet<string>(StringComparer.Ordinal);
+                foreach (ExactStashSelection selection in selectionsById.Values)
                 {
-                    counts[item.TemplateId] = existing + count;
+                    if (selection.Count < Mathf.Max(1, selection.Item.StackObjectsCount)
+                        && CollectDeepItemTree(selection.Item).Count > 1)
+                    {
+                        newlyUnsafeIds.Add(selection.Item.Id);
+                    }
                 }
-                else
+
+                foreach (Item descendant in allStashItems)
                 {
-                    counts[item.TemplateId] = count;
+                    if (descendant == null
+                        || ReferenceEquals(descendant, stash)
+                        || IsIgnoredKitRequirementItem(descendant))
+                    {
+                        continue;
+                    }
+
+                    foreach (Item parent in descendant.GetAllParentItems())
+                    {
+                        if (parent == null
+                            || ReferenceEquals(parent, stash)
+                            || !selectionsById.TryGetValue(parent.Id, out ExactStashSelection parentSelection)
+                            || parentSelection.Count < Mathf.Max(1, parent.StackObjectsCount))
+                        {
+                            continue;
+                        }
+
+                        if (!selectionsById.TryGetValue(descendant.Id, out ExactStashSelection descendantSelection)
+                            || descendantSelection.Count < Mathf.Max(1, descendant.StackObjectsCount))
+                        {
+                            newlyUnsafeIds.Add(parent.Id);
+                        }
+                    }
+                }
+
+                if (newlyUnsafeIds.Count == 0)
+                {
+                    List<FriendlyTeammateBuyKitUsedItem> result = selectionsById.Values
+                        .Select(selection => new FriendlyTeammateBuyKitUsedItem
+                        {
+                            itemId = selection.Item.Id,
+                            templateId = selection.Item.TemplateId,
+                            count = selection.Count
+                        })
+                        .ToList();
+                    fulfilledCounts = result
+                        .GroupBy(item => item.templateId, StringComparer.Ordinal)
+                        .ToDictionary(group => group.Key, group => group.Sum(item => item.count), StringComparer.Ordinal);
+                    return result;
+                }
+
+                int previousUnsafeCount = unsafeContainerIds.Count;
+                unsafeContainerIds.UnionWith(newlyUnsafeIds);
+                if (unsafeContainerIds.Count == previousUnsafeCount)
+                {
+                    break;
                 }
             }
 
-            return counts;
+            return new List<FriendlyTeammateBuyKitUsedItem>();
         }
 
         private static bool IsLockedForStashUse(Item item)
@@ -4049,6 +4163,7 @@ namespace pitTeam.Patches
 
         private sealed class FriendlyTeammateBuyKitUsedItem
         {
+            public string itemId { get; set; }
             public string templateId { get; set; }
             public int count { get; set; }
         }
@@ -4158,6 +4273,13 @@ namespace pitTeam.Patches
             public int Count;
             public double TotalPrice;
             public bool Selected;
+            public List<FriendlyTeammateBuyKitUsedItem> ExactItems = new List<FriendlyTeammateBuyKitUsedItem>();
+        }
+
+        private sealed class ExactStashSelection
+        {
+            public Item Item;
+            public int Count;
         }
 
         private sealed class OverlayItemIconRequest

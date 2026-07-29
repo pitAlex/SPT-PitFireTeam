@@ -743,6 +743,11 @@ namespace pitTeam.Components
 
         private bool IsRaidRestrictedSettingsContext()
         {
+            if (IsHideoutGameActive())
+            {
+                return false;
+            }
+
             if (raidSettingsOverlayActive)
             {
                 return true;
@@ -773,10 +778,28 @@ namespace pitTeam.Components
             }
         }
 
+        private static bool IsHideoutGameActive()
+        {
+            try
+            {
+                return Singleton<AbstractGame>.Instantiated
+                    && Singleton<AbstractGame>.Instance is HideoutGame;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private static bool IsRaidActive()
         {
             try
             {
+                if (IsHideoutGameActive())
+                {
+                    return false;
+                }
+
                 if (LocalGameCtorPatch.Instance != null)
                 {
                     return true;
@@ -1059,14 +1082,21 @@ namespace pitTeam.Components
                 return;
             }
 
-            if (pitFireTeam.loadoutManagementMode.Value == mode)
+            LoadoutManagementMode previousMode = pitFireTeam.loadoutManagementMode.Value;
+            if (previousMode == mode)
             {
                 pitFireTeam.Log.LogInfo($"[UI] Loadout management mode '{mode}' is already selected.");
                 return;
             }
 
-            pitFireTeam.Log.LogInfo($"[UI] Loadout management mode change requested: {pitFireTeam.loadoutManagementMode.Value} -> {mode}");
-            ShowLoadoutManagementConfirmOverlay(mode);
+            pitFireTeam.Log.LogInfo($"[UI] Loadout management mode change requested: {previousMode} -> {mode}");
+            if (previousMode == LoadoutManagementMode.Simple && mode != LoadoutManagementMode.Simple)
+            {
+                ShowLoadoutManagementConfirmOverlay(mode);
+                return;
+            }
+
+            ApplyLoadoutManagementModeChange(mode);
         }
 
         private void ApplyLoadoutManagementModeChange(LoadoutManagementMode mode)

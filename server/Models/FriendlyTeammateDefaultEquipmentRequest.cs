@@ -66,6 +66,9 @@ public record FriendlyTeammateBuyKitResponse
 
 public record FriendlyTeammateBuyKitUsedItem
 {
+    [JsonPropertyName("itemId")]
+    public string? ItemId { get; set; }
+
     [JsonPropertyName("templateId")]
     public string? TemplateId { get; set; }
 

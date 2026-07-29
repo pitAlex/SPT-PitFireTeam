@@ -1050,6 +1050,13 @@ namespace pitTeam.Components
                 settingsPanel.transform.SetParent(newParent, false);
             }
 
+            DefaultUIButton sideSelectionBackButton = ResolveSideSelectionBackButton(newParent);
+            if (sideSelectionBackButton != null && rosterPanelRect != null)
+            {
+                CreateAddTeammateButton(rosterPanelRect, sideSelectionBackButton);
+                UpdateRosterPanelLayout(emptyRosterLabel != null && emptyRosterLabel.gameObject.activeSelf);
+            }
+
             ShowTab(true);
 
             // Rebuild roster only on first open or when explicitly requested by add-teammate flow.
@@ -1200,10 +1207,7 @@ namespace pitTeam.Components
 
         private DefaultUIButton ResolveOverlayBackButtonTemplate()
         {
-            MatchMakerSideSelectionScreen sideSelectionScreen = Resources.FindObjectsOfTypeAll<MatchMakerSideSelectionScreen>()
-                .FirstOrDefault(screen => screen != null);
-            DefaultUIButton template = sideSelectionScreen?.transform.Find("ScreenDefaultButtons/BackButton")?.GetComponent<DefaultUIButton>()
-                ?? MatchmakerBackButtonField?.GetValue(sideSelectionScreen) as DefaultUIButton;
+            DefaultUIButton template = ResolveSideSelectionBackButton();
             if (template == null)
             {
                 return null;
@@ -1224,6 +1228,25 @@ namespace pitTeam.Components
             }
 
             return clone;
+        }
+
+        private static DefaultUIButton ResolveSideSelectionBackButton(Transform context = null)
+        {
+            MatchMakerSideSelectionScreen sideSelectionScreen = null;
+            Transform current = context;
+            while (current != null && sideSelectionScreen == null)
+            {
+                sideSelectionScreen = current.GetComponent<MatchMakerSideSelectionScreen>();
+                current = current.parent;
+            }
+
+            sideSelectionScreen ??= Resources.FindObjectsOfTypeAll<MatchMakerSideSelectionScreen>()
+                .FirstOrDefault(screen => screen != null && screen.gameObject.activeInHierarchy)
+                ?? Resources.FindObjectsOfTypeAll<MatchMakerSideSelectionScreen>()
+                    .FirstOrDefault(screen => screen != null);
+
+            return sideSelectionScreen?.transform.Find("ScreenDefaultButtons/BackButton")?.GetComponent<DefaultUIButton>()
+                ?? MatchmakerBackButtonField?.GetValue(sideSelectionScreen) as DefaultUIButton;
         }
 
         private bool TryCreateStockTraderChrome(RectTransform rootRect)

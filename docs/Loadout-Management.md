@@ -150,8 +150,9 @@ When `loadoutManagementMode` changes:
 
 1. the server keeps every teammate's saved inventory and `Default` equipment snapshot unchanged
 2. if the change moves into or out of `Realistic` / internal `Extreme`, the saved `Default` secure-container tree is removed and the default snapshot is overwritten
-3. each teammate's selected loadout is set to `Default`
-4. teammate settings are saved
+3. when leaving `Simple` for any non-`Simple` mode, each teammate's selected loadout is set to `Default`
+4. switching between non-`Simple` modes does not repeat the `Default` selection because those modes already require it
+5. the client only shows the `Default`-selection warning when leaving `Simple`
 
 This avoids on-the-fly ownership checks against non-default selected equipment when the economic rules change, without destroying the existing `Default` gear.
 
@@ -193,7 +194,7 @@ The buy screen reuses EFT's stock `EquipmentBuildsScreen` in a custom teammate-b
 
 When the user confirms a purchase:
 
-1. if `Use items in stash` is enabled, the server consumes the exact stash template/count summary shown in the overlay
+1. if `Use items in stash` is enabled, the client submits the exact stash item ids and quantities behind the checked summary rows; the server rejects changed, locked, or unsafe selections instead of choosing another matching item by template, and a selected container with unselected contents produces a warning explaining that it must be emptied or deselected
 2. the server deducts the quoted rouble price
 3. the server sends the teammate's previous active `Default` kit by courier delivery
 4. because the previous kit is delivered by mail, stash space is not checked as part of the buy transaction
@@ -231,7 +232,8 @@ Important behavior:
 - bot-to-player transfers become `new` entries into the live stash
 - when a returned item is placed inside an existing nested container, the client replaces the containing top-level container tree: delete the live container tree, then add the server-saved container tree
 - this nested-container replacement is required because EFT's backend updater can add a top-level item tree into an existing container, but cannot target an existing nested live container for a standalone `new` item
-- if the stock backend-style delta refresh cannot represent the change, the client rebuilds the live stash from the server-saved snapshot instead of asking for a restart
+- after EFT applies the delta, the client verifies the full live stash against the server-saved snapshot; silent partial updater failures therefore enter the fallback instead of being treated as success
+- if the stock backend-style delta refresh cannot represent the change, the client rebuilds the live stash from the server-saved snapshot and attaches it through the active inventory controller so the normal stash grid retains a valid owner/address
 
 ## Spawn Preparation
 

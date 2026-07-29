@@ -1268,6 +1268,11 @@ namespace pitTeam.Patches
                         null,
                         ragFair);
                     updater.UpdateProfile(new ProfileChangesPocoClass { Stash = delta });
+                    if (!PlayerStashMatchesSavedSnapshot(activeProfile, savedStashItems))
+                    {
+                        throw CreateLiveStashRefreshException(
+                            "EFT's backend-style updater left the live player stash out of sync.");
+                    }
 
                     pitFireTeam.Log.LogInfo($"[UI] Applied live player stash refresh for real loadout commit: new={newCount}, change={changeCount}, del={delCount}.");
                     return;
@@ -1291,16 +1296,37 @@ namespace pitTeam.Patches
             FlatItemsDataClass[] savedStashItems)
         {
             ItemFactoryClass.GStruct181 tree = Singleton<ItemFactoryClass>.Instance.FlatItemsToTree(savedStashItems, false, null);
+            if (tree.DeserializationErrors != null && tree.DeserializationErrors.Count > 0)
+            {
+                throw CreateLiveStashRefreshException(
+                    $"Server-saved player stash contained {tree.DeserializationErrors.Count} deserialization error(s).");
+            }
+
             string stashRootId = savedStashItems[0]._id.ToString();
             if (!tree.Items.TryGetValue(stashRootId, out Item savedRoot) || !(savedRoot is StashItemClass savedStash))
             {
                 throw new InvalidOperationException("Server-saved player stash root was unavailable for live refresh.");
             }
 
-            activeProfile.Inventory.Stash = savedStash;
-            if (activeInventoryController?.Inventory != null)
+            if (activeInventoryController == null)
             {
-                activeInventoryController.Inventory.Stash = savedStash;
+                throw CreateLiveStashRefreshException(
+                    "Player inventory controller was unavailable for owner-safe live stash refresh.");
+            }
+
+            Inventory activeInventory = activeProfile.Inventory;
+            activeInventory.Stash = savedStash;
+            activeInventoryController.ReplaceInventory(activeInventory);
+            if (!ReferenceEquals(activeInventoryController.Inventory?.Stash, savedStash)
+                || savedStash.Parent?.GetOwner() != activeInventoryController)
+            {
+                throw CreateLiveStashRefreshException(
+                    "Server-saved player stash could not be attached to the active inventory controller.");
+            }
+
+            if (Singleton<HideoutClass>.Instantiated)
+            {
+                Singleton<HideoutClass>.Instance.method_24();
             }
 
             foreach (Item item in EnumerateLoadoutEditorItemTree(savedStash))
@@ -1606,6 +1632,13 @@ namespace pitTeam.Patches
 
         private static bool ApplyServerDefaultEquipmentPlayerStashChanges(FriendlyTeammateDefaultEquipmentResponse response)
         {
+            if (response?.playerStashItems != null && response.playerStashItems.Length > 0)
+            {
+                ApplyServerSavedPlayerStash(response.playerStashItems);
+                return true;
+            }
+
+            // Compatibility fallback for older servers that only returned item-granular changes.
             if (TryApplyPlayerStashDelta(
                     response?.playerNewStashItems,
                     response?.playerChangedStashItems,
@@ -1615,16 +1648,18 @@ namespace pitTeam.Patches
                 return true;
             }
 
-            if (response?.playerStashItems != null && response.playerStashItems.Length > 0)
-            {
-                ApplyServerSavedPlayerStash(response.playerStashItems);
-            }
-
             return false;
         }
 
         private static void ApplyServerRepairPlayerStashChanges(FriendlyTeammateRepairEquipmentResponse response)
         {
+            if (response?.playerStashItems != null && response.playerStashItems.Length > 0)
+            {
+                ApplyServerSavedPlayerStash(response.playerStashItems);
+                return;
+            }
+
+            // Compatibility fallback for older servers that only returned item-granular changes.
             if (TryApplyPlayerStashDelta(
                     response?.playerNewStashItems,
                     response?.playerChangedStashItems,
@@ -1632,11 +1667,6 @@ namespace pitTeam.Patches
                     "teammate repair"))
             {
                 return;
-            }
-
-            if (response?.playerStashItems != null && response.playerStashItems.Length > 0)
-            {
-                ApplyServerSavedPlayerStash(response.playerStashItems);
             }
         }
 
@@ -2176,6 +2206,46 @@ namespace pitTeam.Patches
             }
 
             return Newtonsoft.Json.Linq.JToken.DeepEquals(leftToken, rightToken);
+        }
+
+        private static bool PlayerStashMatchesSavedSnapshot(Profile activeProfile, FlatItemsDataClass[] savedStashItems)
+        {
+            if (activeProfile?.Inventory?.Stash == null || savedStashItems == null || savedStashItems.Length == 0)
+            {
+                return false;
+            }
+
+            FlatItemsDataClass[] liveItems = Singleton<ItemFactoryClass>.Instance.TreeToFlatItems(
+                new Item[] { activeProfile.Inventory.Stash });
+            if (liveItems == null || liveItems.Length != savedStashItems.Length)
+            {
+                return false;
+            }
+
+            Dictionary<string, FlatItemsDataClass> liveById = ToFlatItemDictionary(liveItems);
+            Dictionary<string, FlatItemsDataClass> savedById = ToFlatItemDictionary(savedStashItems);
+            if (liveById.Count != savedById.Count)
+            {
+                return false;
+            }
+
+            foreach (KeyValuePair<string, FlatItemsDataClass> savedEntry in savedById)
+            {
+                if (!liveById.TryGetValue(savedEntry.Key, out FlatItemsDataClass liveItem)
+                    || PlacementChanged(liveItem, savedEntry.Value)
+                    || !JsonTokenEquals(liveItem.upd, savedEntry.Value.upd))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static InvalidOperationException CreateLiveStashRefreshException(string diagnostic)
+        {
+            pitFireTeam.Log.LogWarning($"[UI] {diagnostic}");
+            return new InvalidOperationException(GetSocialUiText("LiveStashRefreshFailed"));
         }
 
         private static bool IsNullOrEmptyJson(Newtonsoft.Json.Linq.JToken token)

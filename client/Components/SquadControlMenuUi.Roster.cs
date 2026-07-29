@@ -216,9 +216,10 @@ namespace pitTeam.Components
             return bool.TryParse(value, out bool parsed) ? parsed : defaultValue;
         }
 
-        private void CreateAddTeammateButton(RectTransform rosterRect)
+        private void CreateAddTeammateButton(RectTransform rosterRect, DefaultUIButton buttonTemplate = null)
         {
-            if (rosterRect == null || playerButton == null)
+            buttonTemplate ??= playerButton;
+            if (rosterRect == null || buttonTemplate == null || playerButton == null)
             {
                 return;
             }
@@ -229,7 +230,7 @@ namespace pitTeam.Components
                 addTeammateButton = null;
             }
 
-            addTeammateButton = Instantiate(playerButton, rosterRect, false);
+            addTeammateButton = Instantiate(buttonTemplate, rosterRect, false);
             addTeammateButton.name = "pitFireTeam_SquadControlAddTeammateButton";
             addTeammateButton.SetRawText(GetSocialUiText("AddTeammate"), playerButton.HeaderSize);
             addTeammateButton.SetIcon(null);

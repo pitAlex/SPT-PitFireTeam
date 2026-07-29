@@ -517,8 +517,12 @@ public class FriendlyTeammateService(
     public void SelectDefaultLoadoutForAllTeammates(MongoId sessionId, string? previousMode = null, string? nextMode = null)
     {
         var teammates = LoadTeammates(sessionId);
-        bool crossedRealisticBoundary = IsExtremeLoadoutManagementMode(NormalizeLoadoutManagementMode(previousMode))
-            || IsExtremeLoadoutManagementMode(NormalizeLoadoutManagementMode(nextMode));
+        string normalizedPreviousMode = NormalizeLoadoutManagementMode(previousMode);
+        string normalizedNextMode = NormalizeLoadoutManagementMode(nextMode);
+        bool crossedRealisticBoundary = IsExtremeLoadoutManagementMode(normalizedPreviousMode)
+            || IsExtremeLoadoutManagementMode(normalizedNextMode);
+        bool shouldSelectDefault = IsSimpleLoadoutManagementMode(normalizedPreviousMode)
+            && !IsSimpleLoadoutManagementMode(normalizedNextMode);
 
         foreach (var teammate in teammates)
         {
@@ -531,15 +535,18 @@ public class FriendlyTeammateService(
                     logger.Info($"Removed secure container from teammate '{teammate.Aid}' default loadout after Realistic boundary switch.");
                 }
 
-                var settings = GetTeammateSettings(sessionId, teammate);
-                settings.SelectedLoadoutId = DefaultLoadoutId;
+                if (shouldSelectDefault)
+                {
+                    var settings = GetTeammateSettings(sessionId, teammate);
+                    settings.SelectedLoadoutId = DefaultLoadoutId;
 
-                SaveTeammateSettings(sessionId, teammate, settings);
-                logger.Info($"Selected existing Default loadout for teammate '{teammate.Aid}' after loadout management mode change.");
+                    SaveTeammateSettings(sessionId, teammate, settings);
+                    logger.Info($"Selected existing Default loadout for teammate '{teammate.Aid}' after leaving Simple loadout management.");
+                }
             }
             catch (Exception ex)
             {
-                logger.Warning($"Failed to select Default loadout for teammate '{teammate.Aid}' after loadout management mode change: {ex.Message}");
+                logger.Warning($"Failed to apply loadout management mode change for teammate '{teammate.Aid}': {ex.Message}");
             }
         }
     }
@@ -931,6 +938,14 @@ public class FriendlyTeammateService(
     public FriendlyTeammateBuyKitResponse BuyTeammateKit(MongoId sessionId, FriendlyTeammateBuyKitRequest request)
     {
         var teammate = FindByAccountId(sessionId, request.Aid);
+        string mode = NormalizeLoadoutManagementMode(settingsService.LoadSettings().LoadoutManagementMode);
+        if (!IsRealTransferLoadoutManagementMode(mode))
+        {
+            throw CreateKitPurchaseException(
+                sessionId,
+                "Rejected teammate kit purchase outside a real-transfer loadout management mode.");
+        }
+
         var buildItems = request.Items?.Where(item => item != null).ToList();
         if (buildItems == null || buildItems.Count == 0)
         {
@@ -954,7 +969,7 @@ public class FriendlyTeammateService(
         {
             if (request.UseItemsInStash)
             {
-                ConsumeStashItemsForKit(playerPmc, request.UsedItems);
+                ConsumeStashItemsForKit(sessionId, playerPmc, request.UsedItems);
             }
 
             DeductRoublesFromPlayerStash(playerPmc, price);
@@ -963,7 +978,6 @@ public class FriendlyTeammateService(
             var normalizedBuild = itemHelper.ReplaceIDs(clonedBuild, playerPmc).ToList();
             MongoId rootId = normalizedBuild.First().Id;
 
-            string mode = NormalizeLoadoutManagementMode(settingsService.LoadSettings().LoadoutManagementMode);
             List<Item> previousKitDeliveryItems = BuildCurrentTeammateKitDeliveryItems(teammate, includeSecureContainer: IsExtremeLoadoutManagementMode(mode));
             teammate.Inventory.Items = MergeEquipmentWithPreservedSpecialItems(
                 teammate.Inventory.Items,
@@ -1144,6 +1158,7 @@ public class FriendlyTeammateService(
                 ItemId = targetItemId,
                 Durability = savedRepairable.Durability,
                 MaxDurability = savedRepairable.MaxDurability,
+                PlayerStashItems = GetPlayerStashItems(playerPmc),
                 PlayerNewStashItems = playerStashDelta.NewItems,
                 PlayerChangedStashItems = playerStashDelta.ChangedItems,
                 PlayerDeletedStashItemIds = playerStashDelta.DeletedItemIds,
@@ -2180,12 +2195,15 @@ public class FriendlyTeammateService(
                 || string.Equals(slotId, "Armband", StringComparison.OrdinalIgnoreCase));
     }
 
-    private void ConsumeStashItemsForKit(PmcData profile, IEnumerable<FriendlyTeammateBuyKitUsedItem>? usedItems)
+    private void ConsumeStashItemsForKit(
+        MongoId sessionId,
+        PmcData profile,
+        IEnumerable<FriendlyTeammateBuyKitUsedItem>? usedItems)
     {
         profile.Inventory ??= new BotBaseInventory { Items = [] };
         profile.Inventory.Items ??= [];
-        Dictionary<string, int> requirements = BuildRequestedStashUseRequirements(usedItems);
-        if (requirements.Count == 0)
+        List<FriendlyTeammateBuyKitUsedItem> requestedItems = usedItems?.ToList() ?? [];
+        if (requestedItems.Count == 0)
         {
             return;
         }
@@ -2193,97 +2211,98 @@ public class FriendlyTeammateService(
         string playerStashRootId = GetPlayerStashRootId(profile);
         var stashIds = GetItemTreeIds(profile.Inventory.Items, playerStashRootId);
         var inventoryById = ToItemDictionary(profile.Inventory.Items);
-        var consumedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var countedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var requirement in requirements)
+        var selectedItems = new Dictionary<string, (Item Item, int Count)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var request in requestedItems)
         {
-            int remaining = requirement.Value;
-            if (remaining <= 0)
+            if (request == null
+                || string.IsNullOrWhiteSpace(request.ItemId)
+                || string.IsNullOrWhiteSpace(request.TemplateId)
+                || request.Count <= 0)
             {
-                continue;
+                throw CreateKitStashSelectionException(
+                    sessionId,
+                    "Rejected an invalid exact player stash item selection for teammate kit purchase.");
             }
 
-            foreach (var candidate in profile.Inventory.Items.ToList())
+            if (!selectedItems.TryAdd(request.ItemId, default))
             {
-                if (remaining <= 0)
-                {
-                    break;
-                }
+                throw CreateKitStashSelectionException(
+                    sessionId,
+                    $"Player stash item '{request.ItemId}' was selected more than once for teammate kit purchase.");
+            }
 
-                if (candidate?.Id == null
-                    || countedIds.Contains(candidate.Id.ToString())
-                    || !stashIds.Contains(candidate.Id.ToString())
-                    || IsIgnoredKitRequirementItem(candidate)
-                    || IsLockedForStashUse(candidate, inventoryById)
-                    || !string.Equals(candidate.Template.ToString(), requirement.Key, StringComparison.OrdinalIgnoreCase))
+            if (!inventoryById.TryGetValue(request.ItemId, out Item? candidate)
+                || candidate?.Id == null
+                || !stashIds.Contains(request.ItemId)
+                || IsIgnoredKitRequirementItem(candidate)
+                || IsLockedForStashUse(candidate, inventoryById)
+                || !string.Equals(candidate.Template.ToString(), request.TemplateId, StringComparison.OrdinalIgnoreCase))
+            {
+                throw CreateKitStashSelectionException(
+                    sessionId,
+                    $"Player stash item '{request.ItemId}' was unavailable, locked, outside the stash, or changed template before teammate kit purchase.");
+            }
+
+            int candidateCount = GetItemStackCount(candidate);
+            if (request.Count > candidateCount)
+            {
+                throw CreateKitStashSelectionException(
+                    sessionId,
+                    $"Player stash item '{request.ItemId}' did not contain the requested quantity for teammate kit purchase.");
+            }
+
+            selectedItems[request.ItemId] = (candidate, request.Count);
+        }
+
+        var fullyConsumedIds = selectedItems
+            .Where(entry => entry.Value.Count == GetItemStackCount(entry.Value.Item))
+            .Select(entry => entry.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (string fullyConsumedId in fullyConsumedIds)
+        {
+            foreach (string descendantId in GetItemTreeIds(profile.Inventory.Items, fullyConsumedId))
+            {
+                if (string.Equals(descendantId, fullyConsumedId, StringComparison.OrdinalIgnoreCase)
+                    || !inventoryById.TryGetValue(descendantId, out Item? descendant)
+                    || IsImplicitKitTreeItem(descendant))
                 {
                     continue;
                 }
 
-                string candidateId = candidate.Id.ToString();
-                bool alreadyRemovedWithParent = consumedIds.Contains(candidateId);
-                int candidateCount = GetItemStackCount(candidate);
-                if (candidateCount > remaining)
+                if (!selectedItems.TryGetValue(descendantId, out var selectedDescendant)
+                    || selectedDescendant.Count != GetItemStackCount(descendant))
                 {
-                    countedIds.Add(candidateId);
-                    if (alreadyRemovedWithParent)
-                    {
-                        remaining = 0;
-                        break;
-                    }
-
-                    candidate.Upd ??= new Upd();
-                    candidate.Upd.StackObjectsCount = candidateCount - remaining;
-                    remaining = 0;
-                    break;
+                    throw CreateKitStashContainerContentsException(
+                        sessionId,
+                        $"Player stash item '{fullyConsumedId}' contains descendant '{descendantId}' that was not selected in full.");
                 }
-
-                countedIds.Add(candidateId);
-                if (!alreadyRemovedWithParent)
-                {
-                    foreach (string itemId in GetItemTreeIds(profile.Inventory.Items, candidateId))
-                    {
-                        consumedIds.Add(itemId);
-                    }
-                }
-
-                remaining -= candidateCount;
-            }
-
-            if (remaining > 0)
-            {
-                throw new FriendlyTeammateException($"Player stash item '{requirement.Key}' was unavailable for teammate kit purchase");
             }
         }
 
-        if (consumedIds.Count > 0)
+        foreach (KeyValuePair<string, (Item Item, int Count)> entry in selectedItems)
         {
-            RemoveItemTreesById(profile.Inventory.Items, consumedIds);
-        }
-    }
-
-    private static Dictionary<string, int> BuildRequestedStashUseRequirements(IEnumerable<FriendlyTeammateBuyKitUsedItem>? usedItems)
-    {
-        var requirements = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        if (usedItems == null)
-        {
-            return requirements;
-        }
-
-        foreach (var item in usedItems)
-        {
-            if (item == null || string.IsNullOrWhiteSpace(item.TemplateId) || item.Count <= 0)
+            int currentCount = GetItemStackCount(entry.Value.Item);
+            if (entry.Value.Count >= currentCount)
             {
                 continue;
             }
 
-            requirements[item.TemplateId] = requirements.TryGetValue(item.TemplateId, out int existing)
-                ? existing + item.Count
-                : item.Count;
+            if (GetItemTreeIds(profile.Inventory.Items, entry.Key).Count > 1)
+            {
+                throw CreateKitStashContainerContentsException(
+                    sessionId,
+                    $"Player stash item '{entry.Key}' was selected partially while it still contained descendants.");
+            }
+
+            entry.Value.Item.Upd ??= new Upd();
+            entry.Value.Item.Upd.StackObjectsCount = currentCount - entry.Value.Count;
         }
 
-        return requirements;
+        if (fullyConsumedIds.Count > 0)
+        {
+            RemoveItemTreesById(profile.Inventory.Items, fullyConsumedIds);
+        }
     }
 
     private void DeductRoublesFromPlayerStash(PmcData profile, int amount)
@@ -2365,6 +2384,47 @@ public class FriendlyTeammateService(
     private static int GetItemStackCount(Item item)
     {
         return Math.Max(1, (int)Math.Ceiling(item.Upd?.StackObjectsCount ?? 1d));
+    }
+
+    private bool IsImplicitKitTreeItem(Item item)
+    {
+        return IsIgnoredKitRequirementItem(item)
+            || item?.Template.IsEmpty == false
+            && itemHelper.IsOfBaseclass(item.Template, BaseClasses.BUILT_IN_INSERTS);
+    }
+
+    private FriendlyTeammateException CreateKitStashSelectionException(MongoId sessionId, string diagnostic)
+    {
+        logger.Warning(diagnostic);
+        Dictionary<string, string> socialUiText = languageService.GetStringMap(sessionId, "socialUi");
+        string fallback = GetLanguageValue(
+            socialUiText,
+            "KitLoadoutPurchaseFailed",
+            "KitStashSelectionChanged");
+        return new FriendlyTeammateException(
+            GetLanguageValue(socialUiText, "KitStashSelectionChanged", fallback));
+    }
+
+    private FriendlyTeammateException CreateKitStashContainerContentsException(
+        MongoId sessionId,
+        string diagnostic)
+    {
+        logger.Warning(diagnostic);
+        Dictionary<string, string> socialUiText = languageService.GetStringMap(sessionId, "socialUi");
+        string fallback = GetLanguageValue(
+            socialUiText,
+            "KitStashSelectionChanged",
+            "KitLoadoutPurchaseFailed");
+        return new FriendlyTeammateException(
+            GetLanguageValue(socialUiText, "KitStashContainerHasUnselectedContents", fallback));
+    }
+
+    private FriendlyTeammateException CreateKitPurchaseException(MongoId sessionId, string diagnostic)
+    {
+        logger.Warning(diagnostic);
+        Dictionary<string, string> socialUiText = languageService.GetStringMap(sessionId, "socialUi");
+        return new FriendlyTeammateException(
+            GetLanguageValue(socialUiText, "KitLoadoutPurchaseFailed", "KitLoadoutPurchaseFailed"));
     }
 
     private static ItemEventRouterResponse CreateEmptyRepairOutput(MongoId sessionId, PmcData profile)
@@ -2817,6 +2877,11 @@ public class FriendlyTeammateService(
     private static bool IsExtremeLoadoutManagementMode(string mode)
     {
         return string.Equals(mode, "Extreme", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsSimpleLoadoutManagementMode(string mode)
+    {
+        return string.Equals(mode, "Simple", StringComparison.OrdinalIgnoreCase);
     }
 
     private bool IsCurrentLoadoutManagementModeExtreme()
