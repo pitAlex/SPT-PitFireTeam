@@ -108,7 +108,7 @@ When multiple approaches are possible, prefer:
 Current verified custom teammate feature state:
 
 - Dedicated Team Management FE is the primary entry point:
-    - main menu now has a localized `My Squad` entry that opens the real `MatchMakerSideSelectionScreen` in squad mode
+    - main menu now has a localized `My Squad` entry that opens the real `MatchMakerSideSelectionScreen` in squad mode, using `squad-inverse.png` for its icon when Menu Overhaul is loaded
     - roster/settings panels from `SquadControlMenuUi` are injected into side-selection and controlled by EFT-style animated tabs (`Roster` / `Settings`)
     - roster tab supports add/remove teammate flows, delayed sequential portrait loading, teammate profile open/return, and scrolling layout for larger squads
     - settings tab exposes the main pitFireTeam config set in a stock-style scrollable UI using EFT toggle/slider controls for checkbox and ranged settings

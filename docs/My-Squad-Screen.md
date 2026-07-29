@@ -62,6 +62,7 @@ Verified behavior:
 
 - the button is a cloned `DefaultUIButton`, not a custom prefab
 - it uses a custom icon and localized title
+- when Menu Overhaul (`com.moxopixel.menuoverhaul`) is loaded, the icon uses `squad-inverse.png`; if that asset is missing, it falls back to `squad.png`
 - reconnect/minimized menu states re-sync its visibility
 
 ### Squad mode host

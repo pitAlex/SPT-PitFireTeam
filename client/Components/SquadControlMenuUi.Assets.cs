@@ -1,4 +1,5 @@
 using ChatShared;
+using BepInEx.Bootstrap;
 using BepInEx.Configuration;
 using Comfort.Common;
 using EFT;
@@ -388,14 +389,15 @@ namespace pitTeam.Components
                 return squadIconSprite;
             }
 
-            string[] candidates =
+            const string menuOverhaulPluginGuid = "com.moxopixel.menuoverhaul";
+            bool useInverseIcon = Chainloader.PluginInfos.ContainsKey(menuOverhaulPluginGuid);
+            string iconPath = FindSquadIconPath(useInverseIcon ? "squad-inverse.png" : "squad.png");
+            if (string.IsNullOrEmpty(iconPath) && useInverseIcon)
             {
-                Path.Combine(PluginDirectory, "squad.png"),
-                Path.Combine(PluginDirectory, "resources", "squad.png"),
-                Path.Combine(Directory.GetParent(PluginDirectory)?.FullName ?? PluginDirectory, "resources", "squad.png")
-            };
+                pitFireTeam.Log.LogWarning("[UI] Menu Overhaul detected, but squad-inverse.png could not be found. Falling back to squad.png.");
+                iconPath = FindSquadIconPath("squad.png");
+            }
 
-            string iconPath = candidates.FirstOrDefault(File.Exists);
             if (string.IsNullOrEmpty(iconPath))
             {
                 pitFireTeam.Log.LogWarning("[UI] Squad Control icon could not be found.");
@@ -415,6 +417,18 @@ namespace pitTeam.Components
             squadIconSprite = Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height), new Vector2(0.5f, 0.5f), 200f);
             squadIconSprite.name = "pitFireTeam_SquadControlIcon";
             return squadIconSprite;
+        }
+
+        private static string FindSquadIconPath(string fileName)
+        {
+            string[] candidates =
+            {
+                Path.Combine(PluginDirectory, fileName),
+                Path.Combine(PluginDirectory, "resources", fileName),
+                Path.Combine(Directory.GetParent(PluginDirectory)?.FullName ?? PluginDirectory, "resources", fileName)
+            };
+
+            return candidates.FirstOrDefault(File.Exists);
         }
 
         private Sprite LoadRosterTileDiagonalSprite()
