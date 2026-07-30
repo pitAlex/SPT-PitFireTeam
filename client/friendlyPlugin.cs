@@ -102,6 +102,7 @@ namespace pitTeam
         public Dictionary<string, string> lootFilterFood { get; set; }
         public Dictionary<string, string> lootFilterMeds { get; set; }
         public Dictionary<string, string> lootFilterValuables { get; set; }
+        public Dictionary<string, string> lootFilterWeapons { get; set; }
         public Dictionary<string, string> lootFilterGear { get; set; }
         public Dictionary<string, string> lootAllowGearSwapping { get; set; }
 
@@ -236,6 +237,7 @@ namespace pitTeam
         public static ConfigEntry<bool> lootFilterFood;
         public static ConfigEntry<bool> lootFilterMeds;
         public static ConfigEntry<bool> lootFilterValuables;
+        public static ConfigEntry<bool> lootFilterWeapons;
         public static ConfigEntry<bool> lootFilterGear;
         public static ConfigEntry<bool> lootAllowGearSwapping;
 
@@ -1036,6 +1038,10 @@ namespace pitTeam
 
             lootFilterGear = Config.Bind("", "10 LootFilterGear", true, new ConfigDescription(optionsLang.lootFilterGear["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootFilterGear)));
 
+            // The old Pickup Gear value controlled both weapons and wearables. Use it as the
+            // first-run default for the new weapon setting so existing profiles keep their intent.
+            lootFilterWeapons = Config.Bind("", "10 LootFilterWeapons", lootFilterGear?.Value ?? true, new ConfigDescription(optionsLang.lootFilterWeapons["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootFilterWeapons)));
+
             lootAllowGearSwapping = Config.Bind("", "10 LootAllowGearSwapping", false, new ConfigDescription(optionsLang.lootAllowGearSwapping["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootAllowGearSwapping)));
 
             npcSendMessage = Config.Bind("", "11 NpcSendMessage", true, new ConfigDescription(optionsLang.npcSendMessage["Description"], null, CreateConfigAttributes(-1003, false, optionsLang.npcSendMessage)));
@@ -1156,9 +1162,9 @@ namespace pitTeam
             return lootAllowGearSwapping?.Value == true;
         }
 
-        internal static bool IsLootGearPickupEnabled()
+        internal static bool IsLootWeaponPickupEnabled()
         {
-            return lootFilterGear?.Value ?? true;
+            return lootFilterWeapons?.Value ?? true;
         }
 
         private static void SyncServerSettings()

@@ -1043,6 +1043,13 @@ namespace pitTeam.BigBrain.Actions
             EquipmentSlot.Holster
         };
 
+        private static readonly EquipmentSlot[] FilteredBodyWearableSlotOrder =
+        {
+            EquipmentSlot.TacticalVest,
+            EquipmentSlot.ArmorVest,
+            EquipmentSlot.Headwear
+        };
+
         private static readonly EquipmentSlot[] FilteredLootCarrySlotOrder =
         {
             EquipmentSlot.Backpack,

@@ -17,6 +17,8 @@ namespace pitTeam.Modules
                     return pitFireTeam.lootFilterFood?.Value ?? true;
                 case FollowerLootCategory.Meds:
                     return pitFireTeam.lootFilterMeds?.Value ?? true;
+                case FollowerLootCategory.Weapons:
+                    return pitFireTeam.lootFilterWeapons?.Value ?? true;
                 case FollowerLootCategory.Gear:
                     return pitFireTeam.lootFilterGear?.Value ?? true;
                 default:
@@ -36,24 +38,41 @@ namespace pitTeam.Modules
                 return FollowerLootCategory.Meds;
             }
 
-            if (IsGear(item))
+            if (IsWearableGear(item))
             {
                 return FollowerLootCategory.Gear;
+            }
+
+            if (IsWeaponLoot(item))
+            {
+                return FollowerLootCategory.Weapons;
             }
 
             return FollowerLootCategory.Valuables;
         }
 
-        private static bool IsGear(Item item)
+        public static bool IsWholeWearableTree(Item item)
+        {
+            return item is ArmorItemClass ||
+                   item is VestItemClass ||
+                   item is HeadwearItemClass;
+        }
+
+        private static bool IsWearableGear(Item item)
+        {
+            return IsWholeWearableTree(item) ||
+                   item is ArmorPlateItemClass ||
+                   item is ArmoredEquipmentItemClass;
+        }
+
+        private static bool IsWeaponLoot(Item item)
         {
             return item is Weapon ||
                    item is IWeapon ||
                    item is EFT.InventoryLogic.Mod ||
                    item is AmmoItemClass ||
                    item is MagazineItemClass ||
-                   item is ThrowWeapItemClass ||
-                   item is ArmoredEquipmentItemClass ||
-                   item is EquipmentItemClass;
+                   item is ThrowWeapItemClass;
         }
 
         private enum FollowerLootCategory
@@ -61,6 +80,7 @@ namespace pitTeam.Modules
             Food,
             Meds,
             Valuables,
+            Weapons,
             Gear
         }
     }

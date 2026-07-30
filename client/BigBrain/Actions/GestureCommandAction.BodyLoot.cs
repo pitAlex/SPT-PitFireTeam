@@ -585,7 +585,7 @@ namespace pitTeam.BigBrain.Actions
                     candidate,
                     equipAddress,
                     out move,
-                    // Pickup Gear may use an empty holster or second-primary slot as convenient
+                    // Pickup Weapons may use an empty holster or second-primary slot as convenient
                     // cargo placement. Only a weapon becoming combat primary earns LootWeapon.
                     successPhrase: EPhraseTrigger.LootGeneric))
             {

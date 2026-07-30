@@ -67,8 +67,8 @@ namespace pitTeam.BigBrain.Actions
                 yield return dogtagCandidate;
             }
 
-            // Enemy body content order is backpack, pockets, vest, then weapons. Vest/pocket mags
-            // are skipped so we do not steal the corpse weapon's reload setup as generic loot.
+            // Enemy body content order is backpack, pockets, worn equipment, then weapons.
+            // A wearable is considered as one tree before its eligible fallback contents.
             foreach (BodyGearCandidate candidate in GetStorageLootCandidates(
                           corpseEquipment.GetSlot(EquipmentSlot.Backpack)?.ContainedItem,
                           "Backpack.Contents",
@@ -87,12 +87,23 @@ namespace pitTeam.BigBrain.Actions
                 yield return candidate;
             }
 
-            foreach (BodyGearCandidate candidate in GetStorageLootCandidates(
-                          corpseEquipment.GetSlot(EquipmentSlot.TacticalVest)?.ContainedItem,
-                          "TacticalVest.Contents",
-                          skipMagazines: true))
+            foreach (EquipmentSlot slot in FilteredBodyWearableSlotOrder)
             {
-                yield return candidate;
+                Item wearable = corpseEquipment.GetSlot(slot)?.ContainedItem;
+                if (!FollowerLootCategoryService.IsWholeWearableTree(wearable))
+                {
+                    continue;
+                }
+
+                foreach (BodyGearCandidate candidate in GetWearableLootCandidates(
+                             wearable,
+                             slot,
+                             slot.ToString(),
+                             sourceTier: 1,
+                             skipMagazines: slot == EquipmentSlot.TacticalVest))
+                {
+                    yield return candidate;
+                }
             }
 
             foreach (EquipmentSlot slot in BodyGearWeaponSlotOrder)
@@ -170,10 +181,23 @@ namespace pitTeam.BigBrain.Actions
                     continue;
                 }
 
-                // Price-only plate stripping makes followers over-prioritize armor internals.
-                // Filtered body/container looting leaves plates alone entirely.
-                if (item is ArmorPlateItemClass)
+                if (item is BuiltInInsertsItemClass)
                 {
+                    continue;
+                }
+
+                if (FollowerLootCategoryService.IsWholeWearableTree(item))
+                {
+                    foreach (BodyGearCandidate wearableCandidate in GetWearableLootCandidates(
+                                 item,
+                                 sourceSlot: null,
+                                 sourceName: sourceName,
+                                 sourceTier: 1,
+                                 skipMagazines: skipMagazines))
+                    {
+                        yield return wearableCandidate;
+                    }
+
                     continue;
                 }
 
@@ -193,6 +217,48 @@ namespace pitTeam.BigBrain.Actions
                 }
 
                 yield return new BodyGearCandidate(item, null, sourceName, 1, skipMagazines);
+            }
+        }
+
+        private static IEnumerable<BodyGearCandidate> GetWearableLootCandidates(
+            Item wearable,
+            EquipmentSlot? sourceSlot,
+            string sourceName,
+            int sourceTier,
+            bool skipMagazines)
+        {
+            if (!FollowerLootCategoryService.IsWholeWearableTree(wearable))
+            {
+                yield break;
+            }
+
+            // The root carries its plates, attachments, and grid contents as one priced tree.
+            // Fallback children are only reached on a later planning pass when the root stayed put.
+            yield return new BodyGearCandidate(wearable, sourceSlot, sourceName, sourceTier);
+
+            if (wearable is VestItemClass)
+            {
+                foreach (BodyGearCandidate candidate in GetStorageLootCandidates(
+                             wearable,
+                             $"{sourceName}.Contents",
+                             skipMagazines))
+                {
+                    yield return candidate;
+                }
+
+                yield break;
+            }
+
+            if (wearable is ArmorItemClass)
+            {
+                foreach (ArmorPlateItemClass plate in GetDirectLootChildren(wearable).OfType<ArmorPlateItemClass>())
+                {
+                    yield return new BodyGearCandidate(
+                        plate,
+                        sourceSlot: null,
+                        sourceName: $"{sourceName}.InstalledPlate",
+                        sourceTier: sourceTier + 1);
+                }
             }
         }
 
@@ -248,7 +314,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (item is ArmorPlateItemClass)
+            if (item is ArmorPlateItemClass && !IsEligibleInstalledArmorPlate(item))
             {
                 if (markRejectedAttempt)
                 {
@@ -291,6 +357,22 @@ namespace pitTeam.BigBrain.Actions
             }
 
             return true;
+        }
+
+        private static bool IsEligibleInstalledArmorPlate(Item item)
+        {
+            if (item is not ArmorPlateItemClass ||
+                item.CurrentAddress?.Container is not Slot slot ||
+                (slot.ParentItem is not ArmorItemClass && slot.ParentItem is not VestItemClass) ||
+                !item.TryGetItemComponent<RepairableComponent>(out RepairableComponent repairable))
+            {
+                return false;
+            }
+
+            float maxDurability = repairable.MaxDurability > 0f
+                ? repairable.MaxDurability
+                : repairable.TemplateDurability;
+            return maxDurability > 0f && repairable.Durability >= maxDurability * 0.5f;
         }
 
     }

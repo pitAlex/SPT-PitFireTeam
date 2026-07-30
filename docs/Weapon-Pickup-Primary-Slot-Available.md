@@ -1,6 +1,6 @@
 # Weapon Pickup: Primary Slot Available
 
-Date: 2026-07-10
+Date: 2026-07-30
 
 Baseline commit: `f16caed` (`Implement limited follower gear swapping`)
 
@@ -184,11 +184,11 @@ P2 sequence:
 Empty-primary, occupied-secondary branch:
 
 - when projected readiness is insufficient and secondary is occupied, do not move the candidate's magazines into fast access
-- when `Pickup Gear` is enabled and the whole weapon tree passes minimum/maximum price, treat the under-ready candidate and all compatible loaded source magazines as a potential-weapon cargo package
+- when `Pickup Weapons` is enabled and the whole weapon tree passes minimum/maximum price, treat the under-ready candidate and all compatible loaded source magazines as a potential-weapon cargo package
 - cargo permission comes from the ordinary gear and price filters; `Allow Gear Swapping` does not bypass them
 - preflight the package and move magazines first so later loot can complete the weapon
 - if the complete package cannot fit, leave its magazines at the source and try the weapon alone as cargo
-- when `Pickup Gear` is disabled or the weapon fails price, leave the weapon and its package magazines at the source
+- when `Pickup Weapons` is disabled or the weapon fails price, leave the weapon and its package magazines at the source
 
 Working-primary support-add branch:
 
@@ -255,7 +255,7 @@ P3 boundaries:
 
 - the insertion magazine must come from the same body/container source; manually supplied follower cargo is not borrowed for this first load
 - insertion itself is not readiness-gated; the normal loaded-weapon policy decides whether the resulting weapon is primary-ready, held as secondary, or considered for cargo
-- under-ready ordinary cargo remains governed by `Pickup Gear`, whole-tree price, and backpack package fit
+- under-ready ordinary cargo remains governed by `Pickup Weapons`, whole-tree price, and backpack package fit
 - build-time load-operation rejection returns to ordinary cargo planning
 - a runtime load failure does not move the remaining magazines or weapon
 - overflow-ammo salvage fully preflights destination capacity per magazine before it starts, runs only while the weapon remains in `FirstPrimaryWeapon`, and does not make the loaded source magazine itself into cargo; EFT still commits each generated loose stack as its own inventory transaction, so an interruption or runtime transaction failure stops the remaining salvage rather than pretending the completed transactions can be rolled back atomically
@@ -279,7 +279,7 @@ The last-resort minimum is half, rounded up, of the smaller of the inserted maga
 - `15/30`, `15/60`, and full `5/5` pass the last-resort floor
 - `14/30`, `14/60`, and no inserted magazine fail it
 
-This placement policy is part of the direct player command and does not depend on `Allow Gear Swapping`, `Pickup Gear`, or body/container price filters. A long gun physically placed in `FirstPrimaryWeapon` is always registered as the bot's primary so the right-shoulder visual state remains truthful. After pickup ownership clears, selection waits two seconds for inventory and interaction state to settle, applies the same soft recovery reset used by `Attention`, and then enters the vanilla binding/selection path.
+This placement policy is part of the direct player command and does not depend on `Allow Gear Swapping`, `Pickup Weapons`, or body/container price filters. A long gun physically placed in `FirstPrimaryWeapon` is always registered as the bot's primary so the right-shoulder visual state remains truthful. After pickup ownership clears, selection waits two seconds for inventory and interaction state to settle, applies the same soft recovery reset used by `Attention`, and then enters the vanilla binding/selection path.
 
 ## Phase P5 Contract
 
@@ -331,7 +331,7 @@ Unless specified otherwise, the ordinary reference is 30 and the threshold is 60
 | WI-02 | One planned magazine transfer fails | Failed magazine contributes nothing; destination uses resulting live state | P2 | Implemented; runtime pending |
 | WI-03 | Primary-ready while secondary is occupied | Candidate still goes to primary | P2 | Implemented; runtime pending |
 | WI-04 | Not ready and secondary is empty | Candidate goes to support; primary remains empty | P2 | Runtime passed |
-| WI-05 | Not ready, secondary occupied, `Pickup Gear` enabled, whole weapon tree passes price, and package fits | Weapon plus compatible loaded source magazines become filtered backpack cargo | P2 | Implemented; runtime pending |
+| WI-05 | Not ready, secondary occupied, `Pickup Weapons` enabled, whole weapon tree passes price, and package fits | Weapon plus compatible loaded source magazines become filtered backpack cargo | P2 | Implemented; runtime pending |
 | WI-06 | Potential package does not fit | Leave package magazines at source, try weapon-only cargo, and leave weapon too when it cannot fit | P2 | Implemented; runtime pending |
 | WI-07 | Compatible magazine exists only in backpack | It contributes nothing while in backpack; a successful move into fast access can then make it eligible | P2/P5 | P2 implemented; runtime pending |
 | WI-08 | Candidate has no inserted magazine and loading succeeds | Load one, recalculate, then place | P3 | Passed |
@@ -350,7 +350,7 @@ Unless specified otherwise, the ordinary reference is 30 and the threshold is 60
 | WI-21 | Commanded loose long gun cannot use primary and second primary is occupied | Move to backpack cargo when it fits | P4 | Implemented; runtime pending |
 | WI-22 | Commanded loose long gun has no support/backpack destination but has a safe inserted-magazine floor | Use first primary as a last resort and register/select it | P4 | Implemented; runtime pending |
 | WI-23 | Commanded loose long gun has no support/backpack destination and its inserted magazine is dangerously low or absent | Leave at source and report negative | P4 | Implemented; runtime pending |
-| WI-24 | Working primary, `Pickup Gear` enabled, empty second primary, found usable long gun plus compatible source magazines | Move only fitting reload-safe magazines to fast access, equip/register the weapon as second-primary support, announce `LootGeneric`, and keep the working primary in hand | Support add | Runtime passed |
+| WI-24 | Working primary, `Pickup Weapons` enabled, empty second primary, found usable long gun plus compatible source magazines | Move only fitting reload-safe magazines to fast access, equip/register the weapon as second-primary support, announce `LootGeneric`, and keep the working primary in hand | Support add | Runtime passed |
 | WI-25 | First and second primary occupied, found long gun passes ordinary gear/price filters but its magazines do not | Move only the weapon as ordinary cargo; do not grant its magazines the future-primary package bypass | Cargo boundary | Implemented; runtime pending |
 | WI-26 | Holster occupied, found pistol passes ordinary gear/price filters but its magazines do not | Move only the pistol as ordinary cargo; magazines retain normal filters | Cargo boundary | Implemented; runtime pending |
 | WI-27 | No-inserted-magazine weapon has three compatible source magazines but reload-safe fast access accepts only the insertion magazine and one spare | Equip the ready weapon, leave the third magazine shell at the source, and move its consolidated ammo stacks in secure/pockets/backpack/vest order without consuming reload reserve | P3 ammo salvage | Passed through combined staging and overflow-salvage runtime coverage |
@@ -364,7 +364,7 @@ Unless specified otherwise, the ordinary reference is 30 and the threshold is 60
 | WI-35 | Non-Realistic follower already carries the compatible bullet target across mixed loose-ammo stacks | Ignore ordinary source ammunition; count bullets, not stack objects | P7 loose-ammo support | Implemented; runtime pending |
 | WI-36 | Saturated non-Realistic follower finds a better same-caliber round | Take the better source stack when it fits; compare penetration, then damage, then armor damage | P7 loose-ammo support | Implemented; runtime pending |
 | WI-37 | Realistic follower already carries the normal compatible bullet target | Ignore saturation and take every compatible source stack that fits | P7 loose-ammo support | Implemented; runtime pending |
-| WI-38 | Working primary, `Pickup Gear` disabled, empty second primary, and `Allow Gear Swapping` enabled | Reject the optional support add before moving its weapon, magazines, or loose ammunition; ordinary filtered looting also leaves that gear at the source | Support gate | Runtime passed |
+| WI-38 | Working primary, `Pickup Weapons` disabled, empty second primary, and `Allow Gear Swapping` enabled | Reject the optional support add before moving its weapon, magazines, or loose ammunition; ordinary filtered looting also leaves that gear at the source | Support gate | Runtime passed |
 | WI-39 | Empty `OnlyBarrel` double-barrel shotgun and compatible loose shells | Load both chambers through real transactions, keep seven total rounds under-ready, require eight or more for primary readiness, and carry accepted compatible source stacks whole | P8 | Runtime passed |
 | WI-40 | Empty non-launcher single-chamber `OnlyBarrel` weapon and compatible loose ammunition | Load `Chambers[0]` through the shared real transaction, require eight total rounds, carry accepted source stacks whole, then classify from settled state | P8 | Runtime passed |
 | WI-41 | A `RevolverItemClass` weapon is classified for equipment use | Keep `WeapClass=pistol` revolvers on the holster path; route shotgun, launcher, and custom rifle/sniper revolvers through the shoulder-weapon readiness pipeline | P9 | Implemented; MTs-255 runtime pending |
@@ -380,7 +380,7 @@ Unless specified otherwise, the ordinary reference is 30 and the threshold is 60
 | WI-51 | Loose ammunition fits the magazine mechanically but is incompatible with the candidate weapon, or top-off transaction fails | Do not load or count those rounds; decide from settled compatible magazine state only | P11 compatibility/failure boundary | Implemented; runtime pending |
 | WI-52 | Candidate source has 35-penetration loose ammunition while the follower already carries a two-magazine reserve averaging 45 penetration | Reject the weaker source ammunition; quantity need is zero and power weight is negative | P12 tactical ammo weighting | Implemented; runtime pending |
 | WI-53 | Follower has less than one magazine of 45-penetration compatible ammunition and finds 35-penetration rounds | Accept the weaker source because critical need overrides the downgrade | P12 tactical ammo weighting | Implemented; runtime pending |
-| WI-54 | Equipped primary is under-ready and has an empty or partial compatible fast-access magazine while `Pickup Gear` is disabled | Fill only free magazine capacity from carried loose ammunition first; Immersive/Realistic may then use searched-source ammunition | P12 primary top-off | Implemented; runtime pending |
+| WI-54 | Equipped primary is under-ready and has an empty or partial compatible fast-access magazine while `Pickup Weapons` is disabled | Fill only free magazine capacity from carried loose ammunition first; Immersive/Realistic may then use searched-source ammunition | P12 primary top-off | Implemented; runtime pending |
 | WI-55 | Equipped primary is sufficiently stocked and finds stronger loose ammunition | Do not unload or replace existing cartridges in this phase; revisit only after top-off scenarios are stable | P12 opportunity swap | Deferred |
 | WI-56 | A looted weapon is promoted to first primary with an empty inserted magazine and loaded package magazines in fast access | Permit patrol reload only when EFT selects a magazine recorded from that weapon's accepted package; never consume a compatible spawned magazine | P6 reload hardening | Implemented; runtime pending |
 | WI-57 | An acquired weapon package contains a partial inserted magazine and several compatible partial source magazines | Prove operational placement, fill the inserted magazine first, then consolidate fullest accepted spares from least-full donors through settled EFT magazine-load transactions before readiness | P13 donor-magazine consolidation | Passed with `20/30 + 20/30 + 20/30` becoming one inserted `30/30`, one operational `30/30`, and one empty donor left at source |
@@ -427,8 +427,8 @@ This ledger records observed in-raid results. `Implemented` elsewhere in this do
 | RT-23 | Empty internal-magazine shotgun plus loose source ammunition | The load reached `8` live rounds, but pre-load source references were then reused as reserve moves; the shotgun appeared empty while the loose ammunition reached the backpack | Bug reproduced; staging now discards the pre-load ammo plan and rebuilds from live state, runtime retest pending |
 | RT-24 | Empty-primary follower found a loaded M870 and two compatible 20-round shell stacks, with protected inventory room for only one stack | Planner accepted one stack, rejected the other before execution, calculated `8 + 20 = 28` against the internal-capacity threshold of `14`, moved the accepted stack to tactical vest, equipped first primary, and completed vanilla selection on retry 3 | Passed; closes the loaded form of WI-29 and the partial-fit boundary WI-31 |
 | RT-25 | Container search equipped a primary-ready M870, then completed the remaining loot command before requesting the weapon switch | Selection queued with the one-second post-loot delay and completed through the centralized binder on attempt 4 | Passed; post-loot Attention-style handoff verified |
-| RT-26 | Working primary and empty second primary with `Pickup Gear` disabled; corpse contained a usable long gun package plus unrelated eligible loot | Planner repeatedly reported `secondaryAddRejected`, `destination=Source`, `decisionReason=pickupGearDisabled`; the weapon package stayed while unrelated material and money moved normally | Passed; closes WI-38 |
-| RT-27 | Same occupied-primary support opportunity after enabling `Pickup Gear`; candidate had `5/10` inserted plus one compatible `10/10` source magazine | Source magazine moved to reload-safe fast access, readiness reached `20/20`, weapon entered and registered in `SecondPrimaryWeapon`, and both moves used `LootGeneric` without selecting away from the working primary | Passed; closes WI-24 |
+| RT-26 | Working primary and empty second primary with `Pickup Weapons` disabled; corpse contained a usable long gun package plus unrelated eligible loot | Planner repeatedly reported `secondaryAddRejected`, `destination=Source`, `decisionReason=pickupGearDisabled`; the weapon package stayed while unrelated material and money moved normally | Passed; closes WI-38 |
+| RT-27 | Same occupied-primary support opportunity after enabling `Pickup Weapons`; candidate had `5/10` inserted plus one compatible `10/10` source magazine | Source magazine moved to reload-safe fast access, readiness reached `20/20`, weapon entered and registered in `SecondPrimaryWeapon`, and both moves used `LootGeneric` without selecting away from the working primary | Passed; closes WI-24 |
 | RT-28 | Empty double-barrel shotgun plus 47 compatible loose shells in one searched container | Current planner classified the shotgun as `detachableMagazine`, found no magazine candidates, produced `ordinaryReferenceUnavailable`, then rejected equipment staging with `magazineSlotUnavailable`; loose shells never entered weapon readiness | Expected unsupported baseline; opens WI-39 |
 | RT-29 | Same double-barrel test after placing live rounds in its chambers | Planner still classified it as `detachableMagazine`, reported no inserted magazine, and rejected it at `magazineSlotUnavailable`; chamber contents were never read | Baseline reproduced; confirms WI-39 is feed classification rather than reserve quantity |
 | RT-30 | Empty-primary follower searched a body containing an empty MP-43-1C double barrel and `47` compatible shells in three source stacks | Planner classified `feed=chamberFed`, staged two one-shell transactions from settled `loadedBefore=0` and `1`, carried all accepted remaining shell stacks, equipped `FirstPrimaryWeapon`, and completed vanilla selection on attempt 4; readiness still used the provisional `47/4` result | Feed transactions, whole-stack carry, and selection passed; threshold superseded |
@@ -450,7 +450,7 @@ Not yet runtime-covered:
 - `BS-03`: low inserted magazine plus source spare plus backpack spare becomes primary-ready
 - `BS-04`: a later source spare recruits backpack cargo and promotes an existing tracked secondary
 - equivalent backpack-recruitment and secondary-promotion paths from searchable containers
-- occupied-secondary rejection with `Pickup Gear` disabled, enabled-but-price-rejected, and enabled-with-valid-backpack-cargo cases
+- occupied-secondary rejection with `Pickup Weapons` disabled, enabled-but-price-rejected, and enabled-with-valid-backpack-cargo cases
 - promotion while primary becomes occupied, hands become busy, combat starts, or the follower dies during the sequence
 - post-raid return/persistence after a secondary-to-primary promotion in each loadout-management mode
 - mixed provenance: one manual strict-cargo magazine plus one command-acquired compatible magazine
@@ -490,7 +490,7 @@ Later phases still need these distinct ownership and transaction models:
 - non-pistol revolvers now enter the shoulder-weapon pipeline by `WeapClass`; the MTs-255 cylinder must verify the shared internal-magazine transaction path in raid, while holster-revolver gear behavior remains separate
 - equipped-primary donor consolidation remains separate from the acquired-package implementation
 
-P12 equipped-primary top-off fills free capacity in compatible vest/pocket magazines, prefers loose ammunition already carried by the follower, and allows Immersive/Realistic to use searched-source rounds without consulting `Pickup Gear`. Weapon readiness requires two ordinary magazine equivalents, while tactical loose-ammunition stocking continues to three ordinary magazine equivalents before quantity need is considered satisfied. High-penetration ammunition at `50+` remains an upgrade opportunity even above that stock target. It does not unload or replace existing cartridges. Acquired-package donor consolidation is implemented separately; applying the same ownership model to spawned primary magazines remains deferred.
+P12 equipped-primary top-off fills free capacity in compatible vest/pocket magazines, prefers loose ammunition already carried by the follower, and allows Immersive/Realistic to use searched-source rounds without consulting `Pickup Weapons`. Weapon readiness requires two ordinary magazine equivalents, while tactical loose-ammunition stocking continues to three ordinary magazine equivalents before quantity need is considered satisfied. High-penetration ammunition at `50+` remains an upgrade opportunity even above that stock target. It does not unload or replace existing cartridges. Acquired-package donor consolidation is implemented separately; applying the same ownership model to spawned primary magazines remains deferred.
 
 Acquired-package repacking uses real EFT magazine-load transactions and settled counts. It tops off the inserted magazine first, then the fullest useful accepted targets from the least-full donors, and reruns the existing largest-available reference and readiness evaluation after each transfer. Donor rounds cannot count twice; a failed or interrupted transfer leaves readiness based only on the magazine states that actually settled.
 
@@ -544,7 +544,7 @@ The final placement phases must log one additional post-transfer `actual` snapsh
 - Replaced the hard quality cutoff with the P12 need/power/opportunity evaluator. Carried quantity and round-weighted penetration govern replenishment; stocked-ammo opportunity classification remains available for the deferred replacement phase.
 - Corrected the ready-package boundary so arithmetic readiness from partial magazines no longer bypasses top-off. The weight baseline includes the inserted magazine and every source magazine planned for operational fast access, allowing worthwhile rounds to fill partials before readiness while rejecting redundant equal/weaker ammunition.
 - Replaced percentage-scale opportunity tuning with five-point penetration bands. Shortage accepts the immediately lower band (`38 -> 35`, exact `35 -> 30`), stocked upgrades combine band improvement with useful quantity, and `50+` penetration is accepted outright when upgrades are enabled.
-- Narrowed P12 to top-off before replacement: an equipped under-ready primary fills free capacity in compatible vest/pocket magazines without consulting `Pickup Gear` and never unloads existing cartridges.
+- Narrowed P12 to top-off before replacement: an equipped under-ready primary fills free capacity in compatible vest/pocket magazines without consulting `Pickup Weapons` and never unloads existing cartridges.
 - Carried loose ammunition is now the first maintenance supply, including the generated secure-container primary-ammo stacks in non-Realistic modes. Immersive/Realistic may then use searched-source rounds; Simple/Restricted keep searched rounds out of protected spawned magazines.
 
 ### 2026-07-16
@@ -572,8 +572,8 @@ The final placement phases must log one additional post-transfer `actual` snapsh
 - Made the physical `FirstPrimaryWeapon` result authoritative for registration and removed the broad `CanChangeHands()` precondition from the vanilla selector request. Retries now stop on follower death/inactivity and recover only a selector transition that remains stuck past the normal draw window.
 - Runtime verified a loaded M870 with only one of two source shell stacks fitting: only the accepted stack contributed, readiness resolved to `28/14`, and the shotgun equipped and selected as primary on retry 3 without `handsBusy` failure.
 - Deferred primary selection until body/container looting has completed every move and cleared its command ownership. Body, container, and commanded loose-primary pickup now wait one additional second, apply the `Attention` command's `FollowerRecovery.SoftReset(...)` step, and only then request vanilla selection.
-- Restricted occupied-primary weapon additions to `Pickup Gear`: with that filter disabled, gear swapping still acquires a missing primary but does not add a second-primary/holster/cargo weapon. Non-primary weapon outcomes announce `LootGeneric`; only a weapon becoming combat primary announces `LootWeapon`.
-- Runtime verified both sides of that boundary: disabled `Pickup Gear` left the optional support package untouched while ordinary loot continued, and enabled `Pickup Gear` moved a `5/10` weapon plus `10/10` spare into registered second-primary support with `LootGeneric`.
+- Restricted occupied-primary weapon additions to `Pickup Weapons`: with that filter disabled, gear swapping still acquires a missing primary but does not add a second-primary/holster/cargo weapon. Non-primary weapon outcomes announce `LootGeneric`; only a weapon becoming combat primary announces `LootWeapon`.
+- Runtime verified both sides of that boundary: disabled `Pickup Weapons` left the optional support package untouched while ordinary loot continued, and enabled `Pickup Weapons` moved a `5/10` weapon plus `10/10` spare into registered second-primary support with `LootGeneric`.
 - Captured the `OnlyBarrel` baseline with an empty double barrel and 47 loose shells in one container: the detachable fallback rejected it at `magazineSlotUnavailable` and never associated the shells, providing the first chamber-fed regression fixture.
 - Confirmed that loading the double barrel did not change the old failure: chamber contents were also invisible to the detachable fallback. Added the initial P8 multi-barrel `OnlyBarrel` readiness path with live chamber counting, one-shell vanilla staging, protected loose-shell reserves, and later secondary/backpack promotion.
 - Runtime verified MP-43-1C chamber staging and primary selection, then separately verified the under-ready-secondary to later-primary promotion chain. Those tests exposed the provisional `4`-round threshold, so P8 changed to eight total shells while preserving whole-stack compatible-ammo pickup; RT-32 subsequently passed the final seven-versus-eight boundary.
@@ -630,9 +630,9 @@ The final placement phases must log one additional post-transfer `actual` snapsh
 - Verified the promoted weapon switched into the follower's hands and was selected and fired normally during subsequent combat.
 - Added readiness-gated recruitment of compatible loose follower-backpack magazines for a newly found weapon. Backpack cargo is moved only when the combined executable plan produces a primary-ready weapon.
 - Added source-triggered promotion for a tracked secondary weapon: a later found spare moves first, compatible backpack cargo follows, and the support weapon promotes only after actual readiness passes.
-- Removed the gear planner's automatic weapon-and-magazine backpack bundle when secondary is occupied. Rejected candidates now fall through to ordinary `Pickup Gear` and price rules.
+- Removed the gear planner's automatic weapon-and-magazine backpack bundle when secondary is occupied. Rejected candidates now fall through to ordinary `Pickup Weapons` and price rules.
 - Moved tracked-secondary readiness evaluation ahead of new weapon candidates so newly found compatible magazines complete the existing weapon before any future weapon-comparison policy is required.
-- Extended ordinary filtered weapon cargo to retain compatible source magazines for future readiness. `Pickup Gear`, whole-tree price, and backpack fit gate the weapon; accepted compatible magazines join when the package fits.
+- Extended ordinary filtered weapon cargo to retain compatible source magazines for future readiness. `Pickup Weapons`, whole-tree price, and backpack fit gate the weapon; accepted compatible magazines join when the package fits.
 - Restricted that future-primary package to the empty-primary workflow and excluded pistols from it.
 - Added the working-primary support path: a usable long gun fills empty second primary, fitting compatible source magazines move only to reload-safe fast access, and vanilla receives a fresh second-primary `BotWeaponInfo` without a forced hand switch.
 - Once the matching usable weapon slots are occupied, later weapons fall through to ordinary filtered cargo and their magazines no longer inherit the weapon's price/category acceptance.

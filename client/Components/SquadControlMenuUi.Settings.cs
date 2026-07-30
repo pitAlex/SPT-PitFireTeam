@@ -394,6 +394,7 @@ namespace pitTeam.Components
                 pitFireTeam.lootFilterFood,
                 pitFireTeam.lootFilterMeds,
                 pitFireTeam.lootFilterValuables,
+                pitFireTeam.lootFilterWeapons,
                 pitFireTeam.lootFilterGear,
                 pitFireTeam.lootAllowGearSwapping))
             {
@@ -2677,6 +2678,7 @@ namespace pitTeam.Components
             if (entry == pitFireTeam.lootFilterFood) return language.lootFilterFood;
             if (entry == pitFireTeam.lootFilterMeds) return language.lootFilterMeds;
             if (entry == pitFireTeam.lootFilterValuables) return language.lootFilterValuables;
+            if (entry == pitFireTeam.lootFilterWeapons) return language.lootFilterWeapons;
             if (entry == pitFireTeam.lootFilterGear) return language.lootFilterGear;
             if (entry == pitFireTeam.lootAllowGearSwapping) return language.lootAllowGearSwapping;
             if (entry == pitFireTeam.npcSendMessage) return language.npcSendMessage;

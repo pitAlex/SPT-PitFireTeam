@@ -99,9 +99,12 @@ namespace pitTeam.Localization
                 lootFilterValuables = Entry(
                     "Pickup Valuables",
                     "Allow barter items, keys, special items, info items, money, and other non-gear loot to be taken from bodies and containers."),
+                lootFilterWeapons = Entry(
+                    "Pickup Weapons",
+                    "Allow weapons, ammunition, magazines, weapon mods, and grenades to be taken from bodies and containers."),
                 lootFilterGear = Entry(
                     "Pickup Gear",
-                    "Allow weapons, armor, headgear, ammo, magazines, weapon mods, and grenades to be taken from bodies and containers."),
+                    "Allow helmets, body armor, armored rigs, and tactical rigs to be taken from bodies and containers."),
                 lootAllowGearSwapping = Entry(
                     "Allow Gear Swapping",
                     "Allow followers to equip eligible gear while looting. Simple and Restricted only add into empty slots and return that gear as cargo; Immersive and Realistic may also swap eligible gear into the teammate kit."),

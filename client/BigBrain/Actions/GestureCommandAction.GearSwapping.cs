@@ -954,7 +954,7 @@ namespace pitTeam.BigBrain.Actions
         private static BodyGearCandidate CreateGearSwapCandidate(BodyGearCandidate candidate)
         {
             // Let the equipment planner inspect this tree without ordinary cargo price/category
-            // filters. Weapon policy separately reapplies Pickup Gear to an optional support add;
+            // filters. Weapon policy separately reapplies Pickup Weapons to an optional support add;
             // missing-primary acquisition and future true primary swaps remain equipment decisions.
             // Protection checks and executable inventory placement still apply downstream.
             return new BodyGearCandidate(
@@ -1121,11 +1121,11 @@ namespace pitTeam.BigBrain.Actions
             bool primaryOccupied = followerEquipment
                 ?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)
                 ?.ContainedItem is Weapon;
-            if (primaryOccupied && !pitFireTeam.IsLootGearPickupEnabled())
+            if (primaryOccupied && !pitFireTeam.IsLootWeaponPickupEnabled())
             {
                 // The current occupied-primary phase can only add a support weapon. A future
                 // better-primary comparison must run before this support-only gate; until then,
-                // Pickup Gear remains authoritative even when second primary is empty.
+                // Pickup Weapons remains authoritative even when second primary is empty.
                 Modules.Logger.LogInfo(
                     $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
                     $"weapon={DescribeLootDebugItem(weapon)} evaluation=secondaryAddRejected " +
@@ -1219,7 +1219,7 @@ namespace pitTeam.BigBrain.Actions
                     !candidate.ForcePrimaryForLauncherPreference)
                 {
                     // The gear planner cannot equip this candidate. Leave it untouched so the
-                    // ordinary Pickup Gear + price path may still take it as backpack cargo.
+                    // ordinary Pickup Weapons + price path may still take it as backpack cargo.
                     handledByGearPolicy = false;
                     Modules.Logger.LogInfo(
                         $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
@@ -1280,7 +1280,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             // Insertion is a prerequisite transaction, not a projected equipment decision. If it
-            // cannot be built, ordinary Pickup Gear and price still own potential cargo handling.
+            // cannot be built, ordinary Pickup Weapons and price still own potential cargo handling.
             handledByGearPolicy = false;
             Modules.Logger.LogInfo(
                 $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
@@ -2176,7 +2176,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             // The gear planner owns only the empty support slot. With that slot occupied, the
-            // candidate is left for ordinary Pickup Gear cargo evaluation instead of bypassing
+            // candidate is left for ordinary Pickup Weapons cargo evaluation instead of bypassing
             // category and price filters through an automatic backpack move.
             if (TryFindEquipmentSlotAddress(
                     followerEquipment,
@@ -2214,7 +2214,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (!pitFireTeam.IsLootGearPickupEnabled())
+            if (!pitFireTeam.IsLootWeaponPickupEnabled())
             {
                 reason = "pickupGearDisabled";
                 return false;

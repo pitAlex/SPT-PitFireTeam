@@ -180,65 +180,57 @@ Commands influence teammate behavior but do not force exact actions. teammates w
 
 Saved teammates and recruited allies share the basic follower system once they are following you, but saved teammates have the full squad feature set. Saved teammates keep their customization, loadouts, tactics, aggression, progression, backpack access, and post-raid handling. Recruited allies are temporary raid pickups that use the default combat tactic with moderate aggression, rely on their current bot profile and gear, and have a simpler combat command set: they do not use **Need Sniper**, combat **There**, combat **Open Door**, or combat **Go Forward** push orders. If a recruited ally was told **Hold Position** in combat, **Go Forward** only clears that temporary aggression hold.
 
-## Looting
+## Looting (WIP)
 
-Looting is command-driven. Teammates do not roam the map vacuuming loot on their own; you point them at a loose item, body, or container and give the order.
+Looting is currently command-driven. Teammates do not wander away to loot on their own: you choose the item, body, or container and give the order.
 
-**Loose items:**
+**Giving an order:**
 
-Look at an item and use the interaction prompt shown in the lower-left corner of the screen.
+- Look at a loose item and use **Loot This**. Any available follower can collect it if they can reach it and have somewhere suitable to put it.
+- Look at a body and use **Check Him / Loot Body**, or use the loot command while looking at a container. Body and container searches are handled only by saved teammates who spawned into the raid with you.
+- The closest available teammate by walking route, within roughly 22 meters, takes the job. A teammate who is fighting or already carrying out another loot order is skipped.
+- Different teammates can search different targets when you issue several orders quickly. A target already being handled cannot be assigned to a second teammate.
 
 ![Look Pickup](https://iili.io/BpKc90x.md.png)
 
-A teammate can pick up the item only if they:
+A body or container search takes a short amount of time and plays the familiar searching sound. Containers are closed again after a completed search. Combat can interrupt the search and leave the container open, allowing you to resume later.
 
-- are not in combat
-- can physically reach the item
-- have enough inventory space or a suitable empty weapon slot
+The voice response also gives useful feedback. A weapon callout means a found weapon is ready to become the teammate's combat primary. A general found-loot response means something was accepted as ordinary loot or support gear. A negative response usually means the teammate found something but could not carry it, while a nothing-found response means no qualifying loot was available.
 
-For a loose long gun ordered through **Loot This**, the shoulder placement communicates its state. A ready weapon uses the right shoulder as the active primary. An under-supplied weapon uses an empty left-shoulder secondary slot, then the backpack. If neither fallback is available, a weapon with a reasonably loaded inserted magazine may use the right shoulder as a last resort and is registered for combat; a dangerously low or empty weapon stays on the ground.
+**Choosing what to take:**
 
-**Bodies and containers:**
+Looting settings are found under **My Squad → Settings**.
 
-Look at a body and use **Check Him / Loot Body**, or look at a lootable container and use the loot-container command. For body and container searches, only saved teammates who spawned with you are eligible. Recruited raid allies are ignored for this deeper looting work.
+- **Minimum Price** and **Maximum Price** control the value range for ordinary body and container loot.
+- **Pickup Food**, **Pickup Meds**, **Pickup Valuables**, **Pickup Weapons**, and **Pickup Gear** control the broad types of loot your teammates may take.
+- Money is always accepted when **Pickup Valuables** is enabled, regardless of the price range.
+- Dogtags are always attempted on enemy USEC and BEAR bodies. A teammate may still report that he found nothing when the dogtag was the only item taken.
 
-The closest eligible teammate within roughly 22 meters takes the job. Teammates who are fighting, already looting, already picking something up, or have no backpack/pocket space are skipped. This lets you rapidly point at multiple containers or bodies and send different available teammates to each one.
+Teammates use real inventory space. Ordinary loot goes into backpacks and pockets, leaving tactical rigs available for combat magazines and reloads. Weapons, helmets, armor, and rigs are valued and carried as complete items rather than being stripped for their best parts.
 
-When a teammate reaches the target, he simulates a short search instead of instantly grabbing items. The delay scales with the size of the body or container, plays the search sound, and then the teammate starts moving eligible loot. If nothing useful can be taken, he reports that nothing was found. If useful loot is found, he confirms the pickup and then reports ready when finished.
+When **Pickup Gear** is enabled, a helmet, armor vest, armored rig, or tactical rig is considered as one complete package first. If armor or a rig cannot be carried whole, its eligible contents can still be considered separately. Installed armor plates are taken only as this fallback, and only when they pass the price settings and still have at least half their durability. Loose plates remain untouched.
 
-Looting settings in **My Squad → Settings** control what the teammate considers worth taking:
+**Weapons and gear:**
 
-- **Minimum Price** and **Maximum Price** set the value window for body and container loot.
-- **Pickup Food**, **Pickup Meds**, **Pickup Valuables**, and **Pickup Gear** decide which broad loot groups are allowed.
-- **Allow Gear Swapping** enables limited gear equip behavior. Acquiring a missing primary remains allowed even when **Pickup Gear** is off, but optional secondary/holster weapons require **Pickup Gear**. In Simple and Restricted, added gear returns as cargo; in Immersive and Realistic, eligible swaps can become the teammate's new kit.
-- Money is controlled by **Pickup Valuables** and is always worth taking when that group is enabled.
+**Allow Gear Swapping** enables the current weapon-readiness system. Despite the setting name, it is currently focused mainly on filling missing weapon slots safely; it does not yet compare every found weapon, armor, helmet, or rig against a teammate's complete loadout.
 
-Body and container looting uses real carry space. Normal items go into the teammate's backpack or pockets, while the rig is reserved for combat magazines. Weapons are treated as complete weapons with their attachments and are not stripped for parts.
+- A teammate with no primary weapon checks the weapon, its magazines, and available ammunition before deciding whether it is ready for combat.
+- A usable weapon becomes the active primary on the right shoulder. The weapon-specific voice response tells you that the teammate intends to fight with it.
+- An under-supplied weapon may be kept on the left shoulder or in the backpack while the teammate waits for compatible magazines or ammunition. A later loot order can make that weapon ready.
+- Detachable magazines must fit in the tactical rig or pockets before the bot can rely on them. Magazines left in a backpack are cargo and are not used by the game's normal bot reload behavior. Leave enough suitable rig space if you want a found weapon to become dependable.
+- A teammate who already has a working primary may add a usable support weapon only when the secondary slot is empty and **Pickup Weapons** allows it. Looting never replaces an occupied secondary weapon or holster.
+- Grenade launchers prefer the secondary slot when a conventional primary weapon is available.
+- Tactical-vest changes are currently limited to filling an empty slot or making a narrow protection upgrade in Immersive and Realistic. Broad armor and equipment optimization is planned for a later phase.
 
-**Current gear-swapping limits:**
-
-- A teammate can normally add a found long gun as his primary only when his primary slot is empty. The narrow launcher rule below can reorganize the two shoulder slots without discarding either weapon; broad primary-weapon comparison and replacement are not implemented yet.
-- Compatible loaded spare magazines must physically fit in the teammate's vest or pockets. The planner also reserves enough fast-access space for the magazine removed from the weapon during a reload.
-- A weapon becomes primary when its inserted magazine plus compatible fast-access spares provide roughly two normal magazines of usable ammunition. Backpack magazines are cargo only and do not count because vanilla bots cannot use them for detachable-magazine reloads.
-- A detachable-magazine weapon found with an empty magazine slot can become primary when a compatible loaded magazine from that body or container can be inserted and the complete package has enough usable ammunition. Under-supplied packages remain subject to **Pickup Gear**, price, and backpack cargo space.
-- With **Allow Gear Swapping** active, primary-magazine top-off is independent of **Pickup Gear**. Empty or partial vest/pocket magazines are filled without removing existing cartridges: non-Realistic teammates use their managed carried ammunition first, while Immersive/Realistic may also use compatible loose rounds from the searched body or container. Remaining source ammunition is judged by quantity need and penetration against the teammate's carried stock.
-- Tube-fed shotguns load their attached magazine before placement and use the normal two-load readiness rule. Supported single- and multi-chamber break-action weapons load empty chambers one shell at a time and require at least eight total compatible rounds. Eight is the readiness threshold; compatible loose-ammo stacks are still taken whole under the normal support-ammo policy.
-- A compatible loose backpack magazine can be moved into vest or pockets when combining it with a newly found weapon and source magazines makes that weapon usable. If the combined ammunition remains insufficient, the backpack magazine stays where it is.
-- While primary is empty, an under-supplied weapon goes into the empty secondary slot as a holding weapon. Newly found compatible magazines are used to make that existing weapon ready before another weapon is considered. If secondary is occupied, **Pickup Gear**, the weapon's full value, and backpack space decide whether a future-primary package can be retained as cargo.
-- When **Pickup Gear** is enabled and the teammate already has a working primary, a usable found long gun can fill an empty secondary slot. Compatible source magazines join only while they fit in vest or pockets with reload room preserved. With **Pickup Gear** disabled, the teammate leaves that optional weapon and its support package at the source.
-- Grenade launchers prefer the left-shoulder secondary slot whenever a normal long gun is available. If a launcher is the current primary and a normal weapon is found, the launcher moves left and the normal weapon becomes primary. If an under-supplied normal weapon is already waiting on the left shoulder, finding a launcher promotes that weapon to primary and gives the launcher the secondary slot. A launcher remains primary only when there is no normal long gun to use instead.
-- The weapon-specific voice cue means the search produced the teammate's combat primary. Secondary, holster, and cargo weapons use the generic found-loot response instead.
-- Once primary and secondary are both occupied, later long guns are ordinary cargo. An occupied holster does the same for found pistols. Their magazines are no longer automatically bundled with them and must pass the normal loot filters on their own.
-- When an equipped weapon has more compatible source magazines than usable vest space, the extra magazine stays behind. If every resulting ammo stack fits, its ammunition is kept in the secure container, pockets, backpack, or finally the vest. Vest placement preserves the largest usable long-gun magazine footprint and a separate pistol-magazine footprint when the holstered pistol belongs to the teammate's starting kit.
-- The secondary weapon slot is never replaced by looting.
-- Gear swapping can fill an empty tactical vest slot. Immersive and Realistic can also perform a narrow protection-vest upgrade, but only when the old vest can be preserved in the backpack without disturbing its operational contents.
-- Armor plates are ignored as standalone loot. Teammates do not yet perform broad gear optimization.
-
-You can also inspect a teammate's backpack by approaching them and using the lower-left interaction prompt. This can only be done while out of combat. Items you place there manually remain cargo and are not automatically used as weapons or supporting magazines. Taking an item back removes that restriction, so gear later acquired through **Loot This**, body searches, or container searches can use the limited gear-swapping rules above.
+You can inspect a teammate's backpack while out of combat using the lower-left interaction prompt. Items placed there manually remain ordinary cargo. To have a weapon or magazine reconsidered for combat use, take it back out and order the teammate to use **Loot This** on it.
 
 ![Teammate backpack inspection](https://iili.io/BpKvke1.md.png)
 
-Carried loot can be returned after the raid only by teammates you originally spawned with. You must successfully extract with that teammate, or the teammate must survive the post-death escape flow. If the teammate dies, the carried loot is lost.
+**After the raid:**
+
+Only saved teammates who spawned with you can return carried loot. You must extract together, or the teammate must survive after your death. If the teammate dies, the loot carried by that teammate is lost.
+
+In **Simple** and **Restricted**, weapons and gear added during the raid are treated as loot and returned instead of becoming permanent equipment. In **Immersive** and **Realistic**, accepted equipment can remain as part of the teammate's new kit.
 
 ## Gameplay Guide
 

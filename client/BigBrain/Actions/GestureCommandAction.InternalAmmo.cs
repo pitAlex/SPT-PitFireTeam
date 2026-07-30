@@ -41,7 +41,7 @@ namespace pitTeam.BigBrain.Actions
                     weapon,
                     out _)))
             {
-                // With no equipment destination, ordinary Pickup Gear and price own cargo.
+                // With no equipment destination, ordinary Pickup Weapons and price own cargo.
                 return false;
             }
 
@@ -600,7 +600,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (!pitFireTeam.IsLootGearPickupEnabled())
+            if (!pitFireTeam.IsLootWeaponPickupEnabled())
             {
                 reason = "pickupGearDisabled";
                 return false;
