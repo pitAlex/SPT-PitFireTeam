@@ -196,9 +196,11 @@ Roster group state is live-linked to `MatchmakerPlayerControllerClass`.
 Supported group actions:
 
 - invite teammate to group
-- remove teammate from group through stock context interactions
+- remove teammate from group through the stock confirmation UI
 - detect in-group state for badges
 - show toast feedback for accepted/failed invite and removal flows
+
+Canceling the stock `Remove from group` confirmation is treated as a normal no-op: the teammate stays in the group and no removal-failed toast is shown.
 
 The roster also uses the opening group snapshot from `SquadSideSelectionFlow` so group badges can stay coherent while the side-selection screen is being opened.
 
@@ -381,9 +383,9 @@ The rows are intentionally vertical: each row shows the mode description on the 
 
 When `Restricted` is the active mode, a `Field Upkeep` checkbox row appears between `Restricted` and `Immersive`. It defaults off and uses the same settings-row layout as other checkbox settings instead of joining the radio `ToggleGroup`.
 
-Changing from the current mode opens a confirmation overlay before the setting is applied. The overlay warns that switching loadout management will switch all teammates to their `Default` loadout. `Continue` applies the mode and closes the overlay; the `X` cancels and leaves the previous mode selected.
+Changing from `Simple` to a non-`Simple` mode opens a confirmation overlay before the setting is applied. The overlay warns that switching loadout management will switch all teammates to their `Default` loadout. `Continue` applies the mode and closes the overlay; the `X` cancels and leaves the previous mode selected. Other mode changes apply immediately because non-`Simple` modes already require `Default`.
 
-On confirmation, the client saves the BepInEx setting, syncs the new mode to the server, and rebuilds the settings entries so conditional rows such as `Field Upkeep` appear or disappear immediately.
+When a mode change is applied, the client saves the BepInEx setting, syncs the new mode to the server, and rebuilds the settings entries so conditional rows such as `Field Upkeep` appear or disappear immediately. The settings scroll position is captured before this rebuild and restored after Unity finishes recalculating the layout, so the view does not jump back to the top.
 
 ### Looting setting
 

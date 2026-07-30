@@ -33,6 +33,8 @@ namespace pitTeam.Components
 {
     internal partial class SquadControlMenuUi
     {
+        private Coroutine settingsScrollRestoreCoroutine;
+
         private void BuildSettingsPanel()
         {
             if (settingsPanel == null)
@@ -67,6 +69,7 @@ namespace pitTeam.Components
             settingsLayoutGroup = null;
             settingsScrollbar = null;
             settingsEntriesBuilt = false;
+            StopSettingsScrollRestore();
 
             CreateScrollableSettingsArea(settingsRect);
             CreateSettingsVersionLabel(settingsRect);
@@ -173,7 +176,7 @@ namespace pitTeam.Components
             settingsScrollRect.Alignment = TextAnchor.UpperLeft;
         }
 
-        private void RebuildSettingsEntries()
+        private void RebuildSettingsEntries(bool preserveScrollPosition = false)
         {
             if (settingsContentRoot == null)
             {
@@ -181,15 +184,22 @@ namespace pitTeam.Components
             }
 
             bool raidRestrictedContext = IsRaidRestrictedSettingsContext();
+            float targetTopScrollOffset = preserveScrollPosition
+                ? GetSettingsTopScrollOffset()
+                : 0f;
 
             CancelShortcutCapture(false);
             ClearLoadoutManagementToggleGroup();
             loadoutManagementToggleSpawners.Clear();
             loadoutManagementFallbackToggles.Clear();
+            StopSettingsScrollRestore();
+            settingsScrollRect?.StopMovement();
 
             for (int index = settingsContentRoot.childCount - 1; index >= 0; index--)
             {
-                Destroy(settingsContentRoot.GetChild(index).gameObject);
+                GameObject oldEntry = settingsContentRoot.GetChild(index).gameObject;
+                oldEntry.SetActive(false);
+                Destroy(oldEntry);
             }
 
             string currentSection = null;
@@ -207,11 +217,69 @@ namespace pitTeam.Components
             LayoutRebuilder.ForceRebuildLayoutImmediate(settingsContentRoot);
             if (settingsScrollRect != null)
             {
-                settingsScrollRect.verticalNormalizedPosition = 1f;
+                SetSettingsTopScrollOffset(targetTopScrollOffset);
+                if (preserveScrollPosition)
+                {
+                    settingsScrollRestoreCoroutine = StartCoroutine(
+                        RestoreSettingsScrollPositionAfterLayout(targetTopScrollOffset));
+                }
             }
 
             settingsEntriesBuilt = true;
             settingsEntriesBuiltForRaidRestrictedContext = raidRestrictedContext;
+        }
+
+        private float GetSettingsTopScrollOffset()
+        {
+            if (settingsContentRoot == null)
+            {
+                return 0f;
+            }
+
+            return Mathf.Max(0f, settingsContentRoot.anchoredPosition.y);
+        }
+
+        private void SetSettingsTopScrollOffset(float targetTopScrollOffset)
+        {
+            if (settingsScrollRect == null || settingsContentRoot == null || settingsViewport == null)
+            {
+                return;
+            }
+
+            float maxTopScrollOffset = Mathf.Max(
+                0f,
+                settingsContentRoot.rect.height - settingsViewport.rect.height);
+            Vector2 anchoredPosition = settingsContentRoot.anchoredPosition;
+            anchoredPosition.y = Mathf.Clamp(targetTopScrollOffset, 0f, maxTopScrollOffset);
+            settingsScrollRect.StopMovement();
+            settingsScrollRect.SetContentAnchoredPosition(anchoredPosition);
+        }
+
+        private IEnumerator RestoreSettingsScrollPositionAfterLayout(float targetTopScrollOffset)
+        {
+            yield return null;
+
+            if (settingsScrollRect == null || settingsContentRoot == null)
+            {
+                settingsScrollRestoreCoroutine = null;
+                yield break;
+            }
+
+            Canvas.ForceUpdateCanvases();
+            LayoutRebuilder.ForceRebuildLayoutImmediate(settingsContentRoot);
+            SetSettingsTopScrollOffset(targetTopScrollOffset);
+            settingsScrollRestoreCoroutine = null;
+        }
+
+        private void StopSettingsScrollRestore()
+        {
+            if (settingsScrollRestoreCoroutine == null)
+            {
+                return;
+            }
+
+            StopCoroutine(settingsScrollRestoreCoroutine);
+            settingsScrollRestoreCoroutine = null;
         }
 
         private bool SettingsEntriesNeedRebuildForCurrentContext()
@@ -1111,7 +1179,7 @@ namespace pitTeam.Components
             pitFireTeam.Instance?.Config.Save();
             Task serverSyncTask = pitFireTeam.SyncServerSettingsNowAsync();
             CloseLoadoutManagementConfirmOverlay();
-            RebuildSettingsEntries();
+            RebuildSettingsEntries(preserveScrollPosition: true);
             RefreshRosterPortraitsAfterLoadoutManagementSync(serverSyncTask);
         }
 

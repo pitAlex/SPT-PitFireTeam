@@ -121,37 +121,27 @@ namespace pitTeam.Components
 
             SetPortraitLoading(entry.AccountId, true);
 
-            bool removeTriggered;
+            bool confirmationShown;
             try
             {
-                removeTriggered = TryExecuteStockRemovePlayerInteraction(controller, entry.AccountId);
+                confirmationShown = TryShowStockRemovePlayerConfirmation(controller, entry.AccountId, entry.Nickname);
             }
             catch (Exception ex)
             {
                 SetPortraitLoading(entry.AccountId, false);
                 groupRequestsInFlight.Remove(entry.AccountId);
-                pitFireTeam.Log.LogError($"[UI] Failed to remove teammate '{entry.AccountId}' from the group.");
+                pitFireTeam.Log.LogError($"[UI] Failed to show the remove-group confirmation for teammate '{entry.AccountId}'.");
                 pitFireTeam.Log.LogError(ex);
                 return;
             }
 
-            if (!removeTriggered)
+            if (!confirmationShown)
             {
                 SetPortraitLoading(entry.AccountId, false);
                 groupRequestsInFlight.Remove(entry.AccountId);
                 SyncGroupBadgesFromKnownState();
                 pitFireTeam.Log.LogWarning($"[UI] Stock remove-player interaction was not available for teammate '{entry.AccountId}'.");
-                return;
             }
-
-            if (pitFireTeam.Instance == null)
-            {
-                SetPortraitLoading(entry.AccountId, false);
-                groupRequestsInFlight.Remove(entry.AccountId);
-                return;
-            }
-
-            pitFireTeam.Instance.StartCoroutine(WaitForGroupRemovalCoroutine(entry.AccountId, entry.Nickname));
         }
 
         private IEnumerator WaitForInviteResolutionCoroutine(string accountId, string nickname)
@@ -240,11 +230,13 @@ namespace pitTeam.Components
                 yield break;
             }
 
-            string failureTemplate = GetSocialUiText("SquadControlRemoveFromGroupFailedToast");
-            AddTeammateCreationFlow.ShowToast(string.Format(failureTemplate, nickname ?? string.Empty));
+            ShowGroupRemovalFailure(nickname);
         }
 
-        private bool TryExecuteStockRemovePlayerInteraction(MatchmakerPlayerControllerClass controller, string accountId)
+        private bool TryShowStockRemovePlayerConfirmation(
+            MatchmakerPlayerControllerClass controller,
+            string accountId,
+            string nickname)
         {
             if (controller == null || string.IsNullOrWhiteSpace(accountId))
             {
@@ -266,7 +258,79 @@ namespace pitTeam.Components
                 return false;
             }
 
-            return contextInteractions.ExecuteInteraction(ERaidPlayerButton.RemovePlayer);
+            if (!contextInteractions.IsInteractionAvailable(ERaidPlayerButton.RemovePlayer).Succeed)
+            {
+                return false;
+            }
+
+            ItemUiContext itemUiContext = ItemUiContext.Instance;
+            if (itemUiContext == null)
+            {
+                pitFireTeam.Log.LogWarning($"[UI] Could not show the remove-player confirmation for teammate '{accountId}': item UI context unavailable.");
+                return false;
+            }
+
+            itemUiContext.ShowMessageWindow(
+                "RemovePlayer message".Localized(null),
+                () => BeginConfirmedGroupRemoval(accountId, nickname),
+                () => CancelGroupRemoval(accountId),
+                null,
+                0f,
+                false,
+                TextAlignmentOptions.Center);
+            return true;
+        }
+
+        private void BeginConfirmedGroupRemoval(string accountId, string nickname)
+        {
+            if (!TryGetMatchmakerController(out MatchmakerPlayerControllerClass controller) ||
+                controller == null ||
+                !controller.IsInGroup(accountId))
+            {
+                CompleteGroupRemovalRequest(accountId);
+                ShowGroupRemovalFailure(nickname);
+                return;
+            }
+
+            try
+            {
+                controller.RemovePlayerFromGroup(accountId, null);
+            }
+            catch (Exception ex)
+            {
+                CompleteGroupRemovalRequest(accountId);
+                pitFireTeam.Log.LogError($"[UI] Failed to remove teammate '{accountId}' from the group.");
+                pitFireTeam.Log.LogError(ex);
+                ShowGroupRemovalFailure(nickname);
+                return;
+            }
+
+            if (pitFireTeam.Instance == null)
+            {
+                CompleteGroupRemovalRequest(accountId);
+                ShowGroupRemovalFailure(nickname);
+                return;
+            }
+
+            pitFireTeam.Instance.StartCoroutine(WaitForGroupRemovalCoroutine(accountId, nickname));
+        }
+
+        private void CancelGroupRemoval(string accountId)
+        {
+            CompleteGroupRemovalRequest(accountId);
+        }
+
+        private void CompleteGroupRemovalRequest(string accountId)
+        {
+            SetPortraitLoading(accountId, false);
+            groupRequestsInFlight.Remove(accountId);
+            SyncGroupBadgesFromKnownState();
+        }
+
+        private static void ShowGroupRemovalFailure(string nickname)
+        {
+            string failureTemplate = GetSocialUiText("SquadControlRemoveFromGroupFailedToast");
+            AddTeammateCreationFlow.ShowToast(string.Format(failureTemplate, nickname ?? string.Empty));
         }
 
         private void ToggleTeammateAutoJoin(SquadRosterEntry entry)
