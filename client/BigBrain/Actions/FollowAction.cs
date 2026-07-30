@@ -259,6 +259,10 @@ namespace pitTeam.BigBrain.Actions
                 {
                     MaintainOutOfRangeChase(leaderPosition, distance, followDistance);
                 }
+                else if (coverCommitment.IsCommitted && !movingToSettlePoint)
+                {
+                    UpdateSettledFollowPresentation();
+                }
                 return;
             }
             nextFollowUpdateAt = Time.time + Utils.Utils.Random(1f, 2f);
@@ -354,8 +358,10 @@ namespace pitTeam.BigBrain.Actions
                         return;
                     }
 
-                    // At committed cover position: hold and let combat layer scan
+                    // The follower is intentionally stationary here, but must continue running
+                    // vanilla peaceful look/watch behavior so this does not resemble a stuck bot.
                     BotOwner.StopMove();
+                    UpdateSettledFollowPresentation();
                     return;
                 }
             }
@@ -943,6 +949,46 @@ namespace pitTeam.BigBrain.Actions
         private bool TryApplyCommandLookOverride()
         {
             return BotFollowerPlayer.TryApplyCommandLookOverride(BotOwner);
+        }
+
+        private void UpdateSettledFollowPresentation()
+        {
+            if (TryApplyCommandLookOverride())
+            {
+                return;
+            }
+
+            // These are the same non-combat presentation systems used by vanilla peaceful logic
+            // and our active patrol pauses. They animate awareness without moving the follower
+            // away from the stable formation position selected by normal follow.
+            if (BotOwner.PeaceHardAim.HaveActions())
+            {
+                BotOwner.PeaceHardAim.ManualUpdate();
+                return;
+            }
+
+            if (BotOwner.PeaceLook.HaveActions())
+            {
+                BotOwner.PeaceLook.ManualUpdate();
+                return;
+            }
+
+            if (BotOwner.PeacefulActions.HaveActions())
+            {
+                BotOwner.PeacefulActions.UpdateAction();
+                return;
+            }
+
+            if (BotOwner.SecondWeaponData.HaveActions())
+            {
+                BotOwner.SecondWeaponData.ManualUpdate();
+                return;
+            }
+
+            if (bossPlayer != null)
+            {
+                BotOwner.Steering.LookToPoint(bossPlayer.Position + Vector3.up * 1.2f);
+            }
         }
 
         private void UpdateFollowPath(Vector3 leaderPosition)

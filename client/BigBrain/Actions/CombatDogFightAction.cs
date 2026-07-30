@@ -351,13 +351,21 @@ namespace pitTeam.BigBrain.Actions
         private Vector3? FindBackUpTarget(EnemyInfo goalEnemy)
         {
             BotOwner? enemyBot = goalEnemy.Person?.AIData?.BotOwner;
-            if (enemyBot != null &&
-                (enemyBot.WeaponManager.Reload.Reloading ||
-                 !enemyBot.WeaponManager.HaveBullets ||
-                 enemyBot.Medecine?.Using == true ||
-                 (goalEnemy.IsVisible && Time.time - goalEnemy.PersonalSeenTime < RecentSeenThreshold)))
+            if (enemyBot != null)
             {
-                return goalEnemy.CurrPosition;
+                // A newly spawned enemy can publish AIData before its weapon and reload
+                // controllers are ready. Treat that transient state as unknown instead of
+                // faulting the follower's dogfight action.
+                var enemyWeapons = enemyBot.WeaponManager;
+                bool enemyWeaponVulnerable = enemyWeapons != null &&
+                                             (enemyWeapons.Reload?.Reloading == true ||
+                                              !enemyWeapons.HaveBullets);
+                if (enemyWeaponVulnerable ||
+                    enemyBot.Medecine?.Using == true ||
+                    (goalEnemy.IsVisible && Time.time - goalEnemy.PersonalSeenTime < RecentSeenThreshold))
+                {
+                    return goalEnemy.CurrPosition;
+                }
             }
 
             if (goalEnemy.IsVisible && Time.time - goalEnemy.PersonalSeenTime < RecentSeenThreshold)
