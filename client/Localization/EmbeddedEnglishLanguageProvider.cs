@@ -325,6 +325,7 @@ namespace pitTeam.Localization
                     ["SquadControlDeleteTooltip"] = "Delete",
                     ["SquadControlInviteToGroup"] = "Invite to group",
                     ["SquadControlRemoveFromGroup"] = "Remove from group",
+                    ["SquadControlRemoveFromGroupConfirm"] = "Remove {0} from the current raid group?",
                     ["SquadControlViewProfile"] = "View profile",
                     ["SquadControlAutoJoinOn"] = "Auto join: On",
                     ["SquadControlAutoJoinOff"] = "Auto join: Off",

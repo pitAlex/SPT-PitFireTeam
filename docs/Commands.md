@@ -407,7 +407,8 @@ Execution:
 - If those fallback destinations are unavailable and first primary is empty, a non-dangerously-low inserted magazine permits last-resort first-primary placement; that visible right-shoulder weapon is always registered as the bot's usable primary.
 - Releases pickup hand state before registering/selecting a first-primary weapon.
 - Stores item through `InteractableObjects.StoreItem(...)` for squadmates.
-- Clears command on success/failure/invalid state.
+- After a successful pickup, walks to a reachable uncrowded same-level point within 3m of the loot position before resuming normal follow or the previous hold order.
+- Clears command immediately on failure or invalid state.
 
 ### Body Loot Phrases
 
@@ -471,7 +472,8 @@ Execution:
 - Stores successful cargo moves through `InteractableObjects.StoreItem(...)` for squadmates. Additive equipped gear moves are also stored in `Simple` and `Restricted`; Immersive/Realistic equipped gear can persist as the teammate's kit instead.
 - On completion, says `EPhraseTrigger.Ready` when at least one non-dogtag item was moved, `EPhraseTrigger.Negative` when eligible loot existed but no executable move could be built, or `EPhraseTrigger.LootNothing` when no eligible non-dogtag item existed.
 - Once searching starts, normal replacement commands are ignored until the loot command completes; combat, timeout, and safety invalidation can still stop the command.
-- Clears command on success/failure/invalid state.
+- After successful looting, walks to a reachable uncrowded same-level point within 3m of the corpse before resuming normal follow or the previous hold order.
+- Clears command immediately on failure or invalid state.
 
 ### Container Loot Phrase
 
@@ -517,7 +519,8 @@ Execution:
 - Stores successful cargo moves through `InteractableObjects.StoreItem(...)` for squadmates. Additive equipped gear moves are also stored in `Simple` and `Restricted`; Immersive/Realistic equipped gear can persist as the teammate's kit instead.
 - On completion, says `EPhraseTrigger.Ready` when at least one item was moved, `EPhraseTrigger.Negative` when eligible loot existed but no executable move could be built, or `EPhraseTrigger.LootNothing` when no eligible item existed.
 - Once searching starts, normal replacement commands are ignored until the loot command completes; combat, timeout, and safety invalidation can still stop the command.
-- Clears command on success/failure/invalid state.
+- After successful looting, walks to a reachable uncrowded same-level point within 3m of the container before resuming normal follow or the previous hold order.
+- Clears command immediately on failure or invalid state.
 
 ### View Backpack Quick Interaction
 

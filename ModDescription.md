@@ -43,7 +43,7 @@ You can manage your teammates from the in-game **My Squad** screen. From there, 
 - **Map transitions** - teammates who you spawned with can follow you through map transitions.
 - **Progression system** - teammates gain raid experience and common-skill progress that persists between raids.
 - **Quest assist** - teammate kills can count toward player kill quests when the kill meets the quest criteria.
-- **Faction hostility repair** - a default-on Raid setting repairs missing BEAR-versus-USEC and PMC-versus-Scav/Scav-boss enemy relationships. Cultists, Raiders, and Rogues use neutral warning relationships toward Scavs instead of immediate hostility, while existing player-Scav karma hostility remains authoritative.
+- **Faction hostility repair** - a default-on Raid setting repairs missing BEAR-versus-USEC and PMC-versus-Scav/Scav-boss enemy relationships. Cultists, Raiders, and Rogues use neutral warning relationships toward Scavs instead of immediate hostility, while existing player-Scav karma hostility remains authoritative. Partisan is excluded so his stock karma, zone, and proximity behavior remains in control.
 - **Looting and loot return** - teammates who you spawned with can pick up loot, search bodies and containers on command, return carried items after the raid, and let you manage their backpacks while in raid. (See Looting)
 - **Fallen teammate gear gathering** - outside combat, a teammate can be ordered to check a body and gather recoverable gear from it, mainly to help collect gear from fallen squadmates.
 - **Post-raid reports** - receive report about if your team made it out with the loot after you died. (See Gameplay Guide > Raid Survival Post Player)

@@ -165,10 +165,14 @@ namespace pitTeam.Modules
                 return true;
             }
 
-            // EFT classifies Lighthouse Rogues and the Goons together through IsExUsec().
-            // Keep those roles, plus existing non-combat/quest-protected roles, outside the
-            // Scav faction hostility policy.
-            if (role.IsExUsec() || role.IsSectant() || Props.friendlyBotTypes.Contains(role))
+            // EFT classifies Lighthouse Rogues and the Goons together through IsExUsec(),
+            // but Partisan has dedicated karma/zone/proximity hostility logic under his own
+            // boss role. Keep all of them, plus existing non-combat/quest-protected roles,
+            // outside the Scav faction hostility policy.
+            if (role == WildSpawnType.bossPartisan ||
+                role.IsExUsec() ||
+                role.IsSectant() ||
+                Props.friendlyBotTypes.Contains(role))
             {
                 return false;
             }

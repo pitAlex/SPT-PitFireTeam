@@ -270,9 +270,10 @@ namespace pitTeam.Components
                 return false;
             }
 
+            string confirmationTemplate = GetSocialUiText("SquadControlRemoveFromGroupConfirm");
             itemUiContext.ShowMessageWindow(
-                "RemovePlayer message".Localized(null),
-                () => BeginConfirmedGroupRemoval(accountId, nickname),
+                string.Format(confirmationTemplate, nickname ?? string.Empty),
+                () => BeginConfirmedGroupRemoval(contextInteractions, accountId, nickname),
                 () => CancelGroupRemoval(accountId),
                 null,
                 0f,
@@ -281,8 +282,19 @@ namespace pitTeam.Components
             return true;
         }
 
-        private void BeginConfirmedGroupRemoval(string accountId, string nickname)
+        private void BeginConfirmedGroupRemoval(
+            ContextInteractionsClass contextInteractions,
+            string accountId,
+            string nickname)
         {
+            if (contextInteractions?.GroupPlayerDataClass == null ||
+                !string.Equals(contextInteractions.GroupPlayerDataClass.AccountId, accountId, StringComparison.Ordinal))
+            {
+                CompleteGroupRemovalRequest(accountId);
+                ShowGroupRemovalFailure(nickname);
+                return;
+            }
+
             if (!TryGetMatchmakerController(out MatchmakerPlayerControllerClass controller) ||
                 controller == null ||
                 !controller.IsInGroup(accountId))
@@ -294,7 +306,7 @@ namespace pitTeam.Components
 
             try
             {
-                controller.RemovePlayerFromGroup(accountId, null);
+                contextInteractions.method_21();
             }
             catch (Exception ex)
             {

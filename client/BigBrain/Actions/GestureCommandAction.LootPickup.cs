@@ -776,7 +776,10 @@ namespace pitTeam.BigBrain.Actions
             CleanupLootInteraction(reason);
             if (IsTakeLootSuccess(reason))
             {
-                followerData?.CompleteTakeLootItem();
+                if (!TryBeginPostLootMove(FollowerCommandType.TakeLootItem))
+                {
+                    followerData?.CompleteTakeLootItem();
+                }
             }
             else
             {

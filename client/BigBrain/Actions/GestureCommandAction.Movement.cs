@@ -417,7 +417,7 @@ namespace pitTeam.BigBrain.Actions
                 nextHoldLookChangeAt = 0f;
                 moveCommandInitialized = false;
                 RecordMoveToPointDiagnostic("arrived", target, distance, () => CreateMoveToPointDiagnostic(target, distance));
-                followerData?.ClearCommand("MoveToPoint:arrived");
+                followerData?.CompleteMoveToPoint("MoveToPoint:arrived");
                 return;
             }
 
@@ -464,7 +464,7 @@ namespace pitTeam.BigBrain.Actions
                                 pathStatus = path.status.ToString(),
                                 cornerCount = path.corners?.Length ?? 0
                             }));
-                    followerData?.ClearCommand("MoveToPoint:pathInvalid");
+                    followerData?.CompleteMoveToPoint("MoveToPoint:pathInvalid");
                     BotOwner.StopMove();
                     return;
                 }

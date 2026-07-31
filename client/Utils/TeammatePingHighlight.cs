@@ -49,6 +49,13 @@ namespace pitTeam.Utils
         private bool _loadFailureLogged;
         private bool _wasActive;
 
+        public void Reset()
+        {
+            _commandBuffer?.Clear();
+            ClearTargets();
+            _wasActive = false;
+        }
+
         public void Show(IReadOnlyList<BotData> teammates, Player localPlayer)
         {
             if (HasSameTeammateRoster(teammates, localPlayer))

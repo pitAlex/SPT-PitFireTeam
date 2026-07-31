@@ -286,6 +286,7 @@
     "SquadControlDeleteTooltip": "删除",
     "SquadControlInviteToGroup": "邀请入队",
     "SquadControlRemoveFromGroup": "移出队伍",
+    "SquadControlRemoveFromGroupConfirm": "将 {0} 移出当前突袭队伍？",
     "SquadControlViewProfile": "查看角色",
     "SquadControlAutoJoinOn": "自动加入：开",
     "SquadControlAutoJoinOff": "自动加入：关",

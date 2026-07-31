@@ -143,6 +143,9 @@ namespace pitTeam.Components
         private bool _resumeHoldAfterComeCloser;
         private bool _resumeHoldAfterTakeLoot;
         private bool _resumeHoldAfterTakeLootCrouch;
+        private bool _postLootMoveToPoint;
+        private bool _resumeHoldAfterPostLootMove;
+        private bool _resumeHoldAfterPostLootMoveCrouch;
         private FollowerCommandType _committedLootCommand = FollowerCommandType.None;
         private float _commandLookPauseUntil;
         private Vector3 _commandLookOverridePoint;
@@ -1286,6 +1289,7 @@ namespace pitTeam.Components
             _resumeHoldAfterComeCloser = false;
             _resumeHoldAfterTakeLoot = false;
             _resumeHoldAfterTakeLootCrouch = false;
+            ResetPostLootMoveState();
             BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(SetHoldPosition));
         }
 
@@ -1296,6 +1300,11 @@ namespace pitTeam.Components
                 return;
             }
 
+            SetMoveToPointState(target, nameof(SetMoveToPoint), refreshBrain: true);
+        }
+
+        private void SetMoveToPointState(Vector3 target, string source, bool refreshBrain)
+        {
             unchecked
             {
                 _moveToPointIssueSequence++;
@@ -1307,12 +1316,34 @@ namespace pitTeam.Components
             _resumeHoldAfterComeCloser = false;
             _resumeHoldAfterTakeLoot = false;
             _resumeHoldAfterTakeLootCrouch = false;
-            BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(SetMoveToPoint));
-            if (!HasKnownEnemy() &&
+            ResetPostLootMoveState();
+            BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, source);
+            if (refreshBrain &&
+                !HasKnownEnemy() &&
                 !FollowerCombatLayer.TryForceReleaseCoreFollowerCombatState(_bot, nameof(SetMoveToPoint)))
             {
                 Utils.FollowerRecovery.SoftReset(_bot);
             }
+        }
+
+        public bool TrySetPostLootMoveToPoint(FollowerCommandType completedLootCommand, Vector3 target)
+        {
+            if (ShouldIgnoreCommandSet() ||
+                _activeCommand != completedLootCommand ||
+                (completedLootCommand != FollowerCommandType.TakeLootItem &&
+                 completedLootCommand != FollowerCommandType.TakeBodyGear &&
+                 completedLootCommand != FollowerCommandType.TakeContainerLoot))
+            {
+                return false;
+            }
+
+            bool resumeHold = _resumeHoldAfterTakeLoot;
+            bool resumeHoldCrouch = _resumeHoldAfterTakeLootCrouch;
+            SetMoveToPointState(target, nameof(TrySetPostLootMoveToPoint), refreshBrain: false);
+            _postLootMoveToPoint = true;
+            _resumeHoldAfterPostLootMove = resumeHold;
+            _resumeHoldAfterPostLootMoveCrouch = resumeHoldCrouch;
+            return true;
         }
 
         public void SetComeCloser(float duration)
@@ -1695,6 +1726,35 @@ namespace pitTeam.Components
         public bool IsComeCloserFromHold()
         {
             return _activeCommand == FollowerCommandType.ComeCloser && _resumeHoldAfterComeCloser;
+        }
+
+        public void CompleteMoveToPoint(string reason)
+        {
+            if (_activeCommand != FollowerCommandType.MoveToPoint)
+            {
+                return;
+            }
+
+            if (_postLootMoveToPoint && _resumeHoldAfterPostLootMove)
+            {
+                bool crouch = _resumeHoldAfterPostLootMoveCrouch;
+                ResetPostLootMoveState();
+                _activeCommand = FollowerCommandType.HoldPosition;
+                _commandTarget = Vector3.zero;
+                _commandUntilTime = float.PositiveInfinity;
+                _holdPositionShouldCrouch = crouch;
+                BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(CompleteMoveToPoint));
+                return;
+            }
+
+            ClearCommand(reason);
+        }
+
+        private void ResetPostLootMoveState()
+        {
+            _postLootMoveToPoint = false;
+            _resumeHoldAfterPostLootMove = false;
+            _resumeHoldAfterPostLootMoveCrouch = false;
         }
 
         public void CompleteTakeLootItem()
@@ -2537,6 +2597,7 @@ namespace pitTeam.Components
             _resumeHoldAfterComeCloser = false;
             _resumeHoldAfterTakeLoot = false;
             _resumeHoldAfterTakeLootCrouch = false;
+            ResetPostLootMoveState();
             _committedLootCommand = FollowerCommandType.None;
             _commandLookPauseUntil = 0f;
             _commandLookOverridePoint = Vector3.zero;

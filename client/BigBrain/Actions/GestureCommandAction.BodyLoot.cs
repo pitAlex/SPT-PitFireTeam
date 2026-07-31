@@ -1022,7 +1022,10 @@ namespace pitTeam.BigBrain.Actions
             CleanupBodyLootInteraction(reason);
             if (string.Equals(reason, "TakeBodyGear:done", StringComparison.Ordinal))
             {
-                followerData?.CompleteTakeBodyGear();
+                if (!TryBeginPostLootMove(FollowerCommandType.TakeBodyGear))
+                {
+                    followerData?.CompleteTakeBodyGear();
+                }
             }
             else
             {

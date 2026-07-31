@@ -1099,7 +1099,7 @@ namespace pitTeam
 
             statusReportShowName = Config.Bind("", "18 StatusReportShowName", true, new ConfigDescription(optionsLang.statusReportShowName["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportShowName)));
 
-            statusReportShowDistance = Config.Bind("", "18 StatusReportShowDistance", false, new ConfigDescription(optionsLang.statusReportShowDistance["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportShowDistance)));
+            statusReportShowDistance = Config.Bind("", "18 StatusReportShowDistance", true, new ConfigDescription(optionsLang.statusReportShowDistance["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportShowDistance)));
 
             statusReportShowHealth = Config.Bind("", "18 StatusReportShowHealth", false, new ConfigDescription(optionsLang.statusReportShowHealth["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportShowHealth)));
 

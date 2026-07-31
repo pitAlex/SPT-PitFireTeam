@@ -360,6 +360,7 @@ Supported control types:
     - health colors blend continuously through Low at 30%, Medium at 65%, and Full at 100%
     - the health score starts from total body HP, is capped by head/thorax health, and is partially reduced by stomach damage so critical torso damage cannot be hidden by healthy limbs
     - optional Always Highlight keeps only the teammate outline active between Status Reports; the Status Report highlight master toggle must also be enabled, and report text remains timed
+    - triggering Status Report while Always Highlight is active clears the outline renderer state for one frame before rebuilding it, matching an Off/On cycle so stale EFT LOD or equipment renderers do not leave stray lines
     - Enemy Marker colors apply when the enemy is visible or out of sight
 - `LoadoutManagementMode` -> mutually exclusive radio-style toggle rows
 - `KeyboardShortcut` -> press-to-capture button
@@ -376,7 +377,7 @@ Fresh configurations and Reset to Defaults use:
 
 ### Raid faction hostility setting
 
-`Faction Hostilities` is a default-on Raid setting that registers BEAR and USEC as opposing factions and registers PMCs against Scavs, Scav bosses, and their followers when bots activate. Scavs start neutral toward Cultists, Raiders, and Rogues; those three factions warn Scavs and can turn hostile if the warning is ignored. A player Scav already marked hostile by Fence karma or as free-to-kill keeps the game's existing hostility instead of being reset to neutral. Existing non-combat/quest-protected roles remain excluded. It does not make same-side PMCs hostile or bypass normal sight and hearing. The setting is disabled while a raid is active because existing bot relationships cannot be safely undone or rebuilt mid-raid.
+`Faction Hostilities` is a default-on Raid setting that registers BEAR and USEC as opposing factions and registers PMCs against Scavs, Scav bosses, and their followers when bots activate. Scavs start neutral toward Cultists, Raiders, and Rogues; those three factions warn Scavs and can turn hostile if the warning is ignored. Partisan is excluded so his stock karma, zone, and proximity hostility logic remains authoritative. A player Scav already marked hostile by Fence karma or as free-to-kill keeps the game's existing hostility instead of being reset to neutral. Existing non-combat/quest-protected roles remain excluded. It does not make same-side PMCs hostile or bypass normal sight and hearing. The setting is disabled while a raid is active because existing bot relationships cannot be safely undone or rebuilt mid-raid.
 
 ### Loadout Management setting
 

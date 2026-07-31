@@ -701,7 +701,10 @@ namespace pitTeam.BigBrain.Actions
             CleanupContainerLootInteraction(reason);
             if (string.Equals(reason, "TakeContainerLoot:done", StringComparison.Ordinal))
             {
-                followerData?.CompleteTakeContainerLoot();
+                if (!TryBeginPostLootMove(FollowerCommandType.TakeContainerLoot))
+                {
+                    followerData?.CompleteTakeContainerLoot();
+                }
             }
             else
             {

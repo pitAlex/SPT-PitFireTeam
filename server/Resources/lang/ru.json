@@ -139,6 +139,7 @@
     "SquadControlInGroupTooltip": "В группе",
     "SquadControlInviteAcceptedToast": "{0} присоединился к группе.",
     "SquadControlInvitePendingFailedToast": "Приглашение в группу для {0} не было принято.",
+    "SquadControlRemoveFromGroupConfirm": "Удалить {0} из текущей рейдовой группы?",
     "SquadControlRemovedFromGroupToast": "{0} удален из группы.",
     "SquadControlRemoveFromGroupFailedToast": "Не удалось удалить {0} из группы.",
     "SquadControlAutoJoinEnabledToast": "Автодобавление в PMC-рейд включено для {0}.",

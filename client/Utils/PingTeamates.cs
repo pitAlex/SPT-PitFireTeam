@@ -97,6 +97,7 @@ namespace pitTeam.Utils
         private float _nextAlwaysHighlightRosterUpdateTime;
         private bool _alwaysHighlightWasActive;
         private bool _alwaysHighlightRosterReady;
+        private int _highlightRebuildAfterFrame = -1;
         private readonly TeammatePingHighlight _teammateHighlight = new TeammatePingHighlight();
 
         public void Ping(pitAIBossPlayer player)
@@ -165,7 +166,18 @@ namespace pitTeam.Utils
 
             if (pitFireTeam.statusReportHighlight?.Value != false)
             {
-                _teammateHighlight.Show(botMap, myPlayer);
+                if (pitFireTeam.statusReportAlwaysHighlight?.Value == true)
+                {
+                    // Match a manual Off/On cycle: clear the command buffer and cached
+                    // renderers now, then let EFT settle LOD visibility for one frame
+                    // before collecting the live teammate renderers again.
+                    _teammateHighlight.Reset();
+                    _highlightRebuildAfterFrame = Time.frameCount + 1;
+                }
+                else
+                {
+                    _teammateHighlight.Show(botMap, myPlayer);
+                }
             }
 
             if (radioSound != null && locationPing)
@@ -266,8 +278,23 @@ namespace pitTeam.Utils
             bool alwaysHighlightActive =
                 highlightEnabled &&
                 pitFireTeam.statusReportAlwaysHighlight?.Value == true;
+            bool highlightRebuildPending = _highlightRebuildAfterFrame >= 0;
 
-            if (alwaysHighlightActive &&
+            if (highlightRebuildPending &&
+                Time.frameCount >= _highlightRebuildAfterFrame)
+            {
+                if (highlightEnabled && myPlayer != null)
+                {
+                    _teammateHighlight.Show(botMap, myPlayer);
+                    _alwaysHighlightRosterReady = alwaysHighlightActive;
+                }
+
+                _highlightRebuildAfterFrame = -1;
+                highlightRebuildPending = false;
+            }
+
+            if (!highlightRebuildPending &&
+                alwaysHighlightActive &&
                 (!_alwaysHighlightWasActive || Time.time >= _nextAlwaysHighlightRosterUpdateTime))
             {
                 _alwaysHighlightRosterReady = RefreshAlwaysHighlightRoster();
@@ -295,6 +322,7 @@ namespace pitTeam.Utils
             }
 
             _teammateHighlight.Render(
+                !highlightRebuildPending &&
                 highlightEnabled &&
                 (guiUpdate || (alwaysHighlightActive && _alwaysHighlightRosterReady)));
 
