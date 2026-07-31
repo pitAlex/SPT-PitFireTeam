@@ -40,9 +40,13 @@ public class FriendlyTeammateCallbacks(
 
     public ValueTask<string> SetServerSettings(string url, FriendlyServerSettingsRequest request, MongoId sessionId)
     {
-        string previousMode = settingsService.LoadSettings().LoadoutManagementMode ?? "Simple";
+        string previousMode =
+            settingsService.LoadSettings().LoadoutManagementMode ??
+            FriendlyServerSettingsRequest.DefaultLoadoutManagementMode;
         settingsService.SaveAndApply(request);
-        string nextMode = request?.LoadoutManagementMode ?? "Simple";
+        string nextMode =
+            request?.LoadoutManagementMode ??
+            FriendlyServerSettingsRequest.DefaultLoadoutManagementMode;
         if (!string.Equals(previousMode, nextMode, StringComparison.OrdinalIgnoreCase))
         {
             teammateService.LogLoadoutManagementModeChange(sessionId, previousMode, nextMode);

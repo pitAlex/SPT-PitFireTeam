@@ -291,6 +291,7 @@ Verified entry groups:
     - `statusReportFullHealthColor`
     - `statusReportMediumHealthColor`
     - `statusReportLowHealthColor`
+    - `statusReportAlwaysHighlight`
     - `statusReportShowName`
     - `statusReportShowDistance`
     - `statusReportShowHealth`
@@ -358,10 +359,20 @@ Supported control types:
     - optional Health Status coloring replaces the outline color per teammate while leaving report text on the normal Status Report color
     - health colors blend continuously through Low at 30%, Medium at 65%, and Full at 100%
     - the health score starts from total body HP, is capped by head/thorax health, and is partially reduced by stomach damage so critical torso damage cannot be hidden by healthy limbs
+    - optional Always Highlight keeps only the teammate outline active between Status Reports; the Status Report highlight master toggle must also be enabled, and report text remains timed
     - Enemy Marker colors apply when the enemy is visible or out of sight
 - `LoadoutManagementMode` -> mutually exclusive radio-style toggle rows
 - `KeyboardShortcut` -> press-to-capture button
 - everything else -> read-only text fallback
+
+Fresh configurations and Reset to Defaults use:
+
+- Minimum Price: `20000`
+- Maximum Price: `5000000`
+- Pickup Food, Pickup Meds, and Pickup Gear: disabled
+- Pickup Weapons and Pickup Valuables: enabled
+- Loadout Management: `Restricted`
+- Field Upkeep: disabled
 
 ### Raid faction hostility setting
 

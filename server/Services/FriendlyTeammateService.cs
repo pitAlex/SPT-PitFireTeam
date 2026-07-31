@@ -2871,7 +2871,9 @@ public class FriendlyTeammateService(
 
     private static string NormalizeLoadoutManagementMode(string? mode)
     {
-        return string.IsNullOrWhiteSpace(mode) ? "Simple" : mode.Trim();
+        return string.IsNullOrWhiteSpace(mode)
+            ? FriendlyServerSettingsRequest.DefaultLoadoutManagementMode
+            : mode.Trim();
     }
 
     private static bool IsExtremeLoadoutManagementMode(string mode)

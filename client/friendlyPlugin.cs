@@ -138,6 +138,7 @@ namespace pitTeam
         public Dictionary<string, string> statusReportFullHealthColor { get; set; }
         public Dictionary<string, string> statusReportMediumHealthColor { get; set; }
         public Dictionary<string, string> statusReportLowHealthColor { get; set; }
+        public Dictionary<string, string> statusReportAlwaysHighlight { get; set; }
         public Dictionary<string, string> statusReportShowName { get; set; }
         public Dictionary<string, string> statusReportShowDistance { get; set; }
         public Dictionary<string, string> statusReportShowHealth { get; set; }
@@ -205,8 +206,11 @@ namespace pitTeam
         public const string SainPluginId = "me.sol.sain";
         public const string SainAddonPluginId = "xyz.pit.fireteam.sainaddon";
         public const string SeparateHostilityPluginId = "dk.sptplugins.separatehostility";
+        internal const LoadoutManagementMode DefaultLoadoutManagementMode = LoadoutManagementMode.Restricted;
         private const string StartupRecoveryNoticeRoute = "/singleplayer/pitfireteam/recovery-notice";
         private const string StartupRecoveryNoticeAckRoute = "/singleplayer/pitfireteam/recovery-notice/ack";
+        private const int DefaultLootMinimumPriceRoubles = 20_000;
+        private const int DefaultLootMaximumPriceRoubles = 5_000_000;
         private const int LootPriceMaximumRoubles = 99999999;
 
         public static bool awaken;
@@ -289,6 +293,7 @@ namespace pitTeam
         public static ConfigEntry<string> statusReportFullHealthColor;
         public static ConfigEntry<string> statusReportMediumHealthColor;
         public static ConfigEntry<string> statusReportLowHealthColor;
+        public static ConfigEntry<bool> statusReportAlwaysHighlight;
         public static ConfigEntry<bool> statusReportShowName;
         public static ConfigEntry<bool> statusReportShowDistance;
         public static ConfigEntry<bool> statusReportShowHealth;
@@ -1026,21 +1031,27 @@ namespace pitTeam
 
             teamEscapeUseAnyExtract = Config.Bind("", "10 TeamEscapeUseAnyExtract", true, new ConfigDescription(optionsLang.teamEscapeUseAnyExtract["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.teamEscapeUseAnyExtract)));
 
-            lootMinimumPrice = Config.Bind("", "10 LootMinimumPrice", 0, new ConfigDescription(optionsLang.lootMinimumPrice["Description"], new AcceptableValueRange<int>(0, LootPriceMaximumRoubles), CreateConfigAttributes(-1002, false, optionsLang.lootMinimumPrice)));
+            lootMinimumPrice = Config.Bind("", "10 LootMinimumPrice", DefaultLootMinimumPriceRoubles, new ConfigDescription(optionsLang.lootMinimumPrice["Description"], new AcceptableValueRange<int>(0, LootPriceMaximumRoubles), CreateConfigAttributes(-1002, false, optionsLang.lootMinimumPrice)));
 
-            lootMaximumPrice = Config.Bind("", "10 LootMaximumPrice", 0, new ConfigDescription(optionsLang.lootMaximumPrice["Description"], new AcceptableValueRange<int>(0, LootPriceMaximumRoubles), CreateConfigAttributes(-1002, false, optionsLang.lootMaximumPrice)));
+            lootMaximumPrice = Config.Bind("", "10 LootMaximumPrice", DefaultLootMaximumPriceRoubles, new ConfigDescription(optionsLang.lootMaximumPrice["Description"], new AcceptableValueRange<int>(0, LootPriceMaximumRoubles), CreateConfigAttributes(-1002, false, optionsLang.lootMaximumPrice)));
 
-            lootFilterFood = Config.Bind("", "10 LootFilterFood", true, new ConfigDescription(optionsLang.lootFilterFood["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootFilterFood)));
+            lootFilterFood = Config.Bind("", "10 LootFilterFood", false, new ConfigDescription(optionsLang.lootFilterFood["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootFilterFood)));
 
-            lootFilterMeds = Config.Bind("", "10 LootFilterMeds", true, new ConfigDescription(optionsLang.lootFilterMeds["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootFilterMeds)));
+            lootFilterMeds = Config.Bind("", "10 LootFilterMeds", false, new ConfigDescription(optionsLang.lootFilterMeds["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootFilterMeds)));
 
             lootFilterValuables = Config.Bind("", "10 LootFilterValuables", true, new ConfigDescription(optionsLang.lootFilterValuables["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootFilterValuables)));
 
-            lootFilterGear = Config.Bind("", "10 LootFilterGear", true, new ConfigDescription(optionsLang.lootFilterGear["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootFilterGear)));
+            lootFilterGear = Config.Bind("", "10 LootFilterGear", false, new ConfigDescription(optionsLang.lootFilterGear["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootFilterGear)));
 
-            // The old Pickup Gear value controlled both weapons and wearables. Use it as the
-            // first-run default for the new weapon setting so existing profiles keep their intent.
-            lootFilterWeapons = Config.Bind("", "10 LootFilterWeapons", lootFilterGear?.Value ?? true, new ConfigDescription(optionsLang.lootFilterWeapons["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootFilterWeapons)));
+            // The old Pickup Gear value controlled both weapons and wearables. Inherit it only
+            // for configs that predate the split; fresh configs keep weapon pickup enabled.
+            bool inheritLegacyWeaponPickupDefault =
+                savedConfigValues.ContainsKey(new ConfigDefinition("", "10 LootFilterGear")) &&
+                !savedConfigValues.ContainsKey(new ConfigDefinition("", "10 LootFilterWeapons"));
+            bool defaultWeaponPickup =
+                !inheritLegacyWeaponPickupDefault ||
+                (lootFilterGear?.Value ?? true);
+            lootFilterWeapons = Config.Bind("", "10 LootFilterWeapons", defaultWeaponPickup, new ConfigDescription(optionsLang.lootFilterWeapons["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootFilterWeapons)));
 
             lootAllowGearSwapping = Config.Bind("", "10 LootAllowGearSwapping", false, new ConfigDescription(optionsLang.lootAllowGearSwapping["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootAllowGearSwapping)));
 
@@ -1057,7 +1068,7 @@ namespace pitTeam
             pmcArmbands = Config.Bind("", "14 PmcArmbands", true, new ConfigDescription(optionsLang.pmcArmbands["Description"], null, CreateConfigAttributes(-1007, false, optionsLang.pmcArmbands)));
             pmcArmbands.SettingChanged += (_, _) => SyncServerSettings();
 
-            loadoutManagementMode = Config.Bind("", "14 LoadoutManagement", LoadoutManagementMode.Simple, new ConfigDescription(optionsLang.loadoutManagement["Description"], null, CreateConfigAttributes(-1005, false, optionsLang.loadoutManagement)));
+            loadoutManagementMode = Config.Bind("", "14 LoadoutManagement", DefaultLoadoutManagementMode, new ConfigDescription(optionsLang.loadoutManagement["Description"], null, CreateConfigAttributes(-1005, false, optionsLang.loadoutManagement)));
 
             restrictedGearMaintenance = Config.Bind("", "14 LoadoutManagementRestrictedGearMaintenance", false, new ConfigDescription(optionsLang.loadoutManagementRestrictedGearMaintenance["Description"], null, CreateConfigAttributes(-1005, false, optionsLang.loadoutManagementRestrictedGearMaintenance)));
             restrictedGearMaintenance.SettingChanged += (_, _) => SyncServerSettings();
@@ -1083,6 +1094,8 @@ namespace pitTeam
             statusReportMediumHealthColor = Config.Bind("", "18 StatusReportMediumHealthColor", Utils.StatusReportHighlightColor.MediumHealthDefaultHex, new ConfigDescription(optionsLang.statusReportMediumHealthColor["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportMediumHealthColor)));
 
             statusReportLowHealthColor = Config.Bind("", "18 StatusReportLowHealthColor", Utils.StatusReportHighlightColor.LowHealthDefaultHex, new ConfigDescription(optionsLang.statusReportLowHealthColor["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportLowHealthColor)));
+
+            statusReportAlwaysHighlight = Config.Bind("", "18 StatusReportAlwaysHighlight", false, new ConfigDescription(optionsLang.statusReportAlwaysHighlight["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportAlwaysHighlight)));
 
             statusReportShowName = Config.Bind("", "18 StatusReportShowName", true, new ConfigDescription(optionsLang.statusReportShowName["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportShowName)));
 
@@ -1140,13 +1153,13 @@ namespace pitTeam
 
         internal static bool IsFollowerLoadoutLootableMode()
         {
-            LoadoutManagementMode mode = loadoutManagementMode?.Value ?? LoadoutManagementMode.Simple;
+            LoadoutManagementMode mode = loadoutManagementMode?.Value ?? DefaultLoadoutManagementMode;
             return mode == LoadoutManagementMode.Immersive || mode == LoadoutManagementMode.Extreme;
         }
 
         internal static bool IsFollowerLoadoutRealTransferMode()
         {
-            LoadoutManagementMode mode = loadoutManagementMode?.Value ?? LoadoutManagementMode.Simple;
+            LoadoutManagementMode mode = loadoutManagementMode?.Value ?? DefaultLoadoutManagementMode;
             return mode == LoadoutManagementMode.Restricted
                 || mode == LoadoutManagementMode.Immersive
                 || mode == LoadoutManagementMode.Extreme;
@@ -1154,7 +1167,7 @@ namespace pitTeam
 
         internal static bool IsFollowerLoadoutRealisticMode()
         {
-            return (loadoutManagementMode?.Value ?? LoadoutManagementMode.Simple) == LoadoutManagementMode.Extreme;
+            return (loadoutManagementMode?.Value ?? DefaultLoadoutManagementMode) == LoadoutManagementMode.Extreme;
         }
 
         internal static bool IsLootGearSwappingEnabled()
@@ -1179,7 +1192,7 @@ namespace pitTeam
                 string requestBody = JsonConvert.SerializeObject(new
                 {
                     pmcArmbands = pmcArmbands?.Value ?? true,
-                    loadoutManagementMode = (loadoutManagementMode?.Value ?? LoadoutManagementMode.Simple).ToString(),
+                    loadoutManagementMode = (loadoutManagementMode?.Value ?? DefaultLoadoutManagementMode).ToString(),
                     restrictedGearMaintenance = restrictedGearMaintenance?.Value ?? false
                 });
                 return Task.Run(() =>

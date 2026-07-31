@@ -337,6 +337,7 @@ namespace pitTeam.Components
                 pitFireTeam.statusReportFullHealthColor,
                 pitFireTeam.statusReportMediumHealthColor,
                 pitFireTeam.statusReportLowHealthColor,
+                pitFireTeam.statusReportAlwaysHighlight,
                 pitFireTeam.statusReportShowName,
                 pitFireTeam.statusReportShowDistance,
                 pitFireTeam.statusReportShowHealth,
@@ -684,7 +685,8 @@ namespace pitTeam.Components
                 || entry == pitFireTeam.statusReportHealthColoring
                 || entry == pitFireTeam.statusReportFullHealthColor
                 || entry == pitFireTeam.statusReportMediumHealthColor
-                || entry == pitFireTeam.statusReportLowHealthColor;
+                || entry == pitFireTeam.statusReportLowHealthColor
+                || entry == pitFireTeam.statusReportAlwaysHighlight;
         }
 
         private void CreateLoadoutManagementEntryRow(LoadoutManagementMode mode)
@@ -1227,7 +1229,9 @@ namespace pitTeam.Components
 
         private void UpdateLoadoutManagementRadioStates()
         {
-            LoadoutManagementMode current = pitFireTeam.loadoutManagementMode?.Value ?? LoadoutManagementMode.Simple;
+            LoadoutManagementMode current =
+                pitFireTeam.loadoutManagementMode?.Value ??
+                pitFireTeam.DefaultLoadoutManagementMode;
 
             foreach (KeyValuePair<LoadoutManagementMode, UIAnimatedToggleSpawner> pair in loadoutManagementToggleSpawners)
             {
@@ -2698,6 +2702,7 @@ namespace pitTeam.Components
             if (entry == pitFireTeam.statusReportFullHealthColor) return language.statusReportFullHealthColor;
             if (entry == pitFireTeam.statusReportMediumHealthColor) return language.statusReportMediumHealthColor;
             if (entry == pitFireTeam.statusReportLowHealthColor) return language.statusReportLowHealthColor;
+            if (entry == pitFireTeam.statusReportAlwaysHighlight) return language.statusReportAlwaysHighlight;
             if (entry == pitFireTeam.statusReportShowName) return language.statusReportShowName;
             if (entry == pitFireTeam.statusReportShowDistance) return language.statusReportShowDistance;
             if (entry == pitFireTeam.statusReportShowHealth) return language.statusReportShowHealth;

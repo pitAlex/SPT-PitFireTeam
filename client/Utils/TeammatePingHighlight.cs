@@ -51,6 +51,11 @@ namespace pitTeam.Utils
 
         public void Show(IReadOnlyList<BotData> teammates, Player localPlayer)
         {
+            if (HasSameTeammateRoster(teammates, localPlayer))
+            {
+                return;
+            }
+
             _commandBuffer?.Clear();
             ClearTargets();
             if (!EnsureInitialized())
@@ -73,6 +78,35 @@ namespace pitTeam.Utils
 
             RefreshTargets();
             RefreshViewmodelTargets();
+        }
+
+        private bool HasSameTeammateRoster(IReadOnlyList<BotData> teammates, Player localPlayer)
+        {
+            if (!ReferenceEquals(_localPlayer, localPlayer))
+            {
+                return false;
+            }
+
+            int currentIndex = 0;
+            for (int i = 0; i < teammates.Count; i++)
+            {
+                BotOwner bot = teammates[i]?.Data;
+                Player player = bot?.GetPlayer;
+                if (player == null || bot.IsDead || player.PlayerBody == null)
+                {
+                    continue;
+                }
+
+                if (currentIndex >= _teammates.Count ||
+                    !ReferenceEquals(_teammates[currentIndex], bot))
+                {
+                    return false;
+                }
+
+                currentIndex++;
+            }
+
+            return currentIndex == _teammates.Count;
         }
 
         private void RefreshTargets()

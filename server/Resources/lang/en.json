@@ -63,6 +63,7 @@
 	"statusReportFullHealthColor": { "Name": "Full Health Highlight Color", "Description": "Highlight color for a teammate at full health, in hexadecimal RGB format (#00FF00)." },
 	"statusReportMediumHealthColor": { "Name": "Medium Health Highlight Color", "Description": "Highlight color for a teammate at medium health, in hexadecimal RGB format (#FFFF00)." },
 	"statusReportLowHealthColor": { "Name": "Low Health Highlight Color", "Description": "Highlight color for a teammate at low health, in hexadecimal RGB format (#FF0000)." },
+	"statusReportAlwaysHighlight": { "Name": "Always Highlight", "Description": "Keep teammate highlighting always on." },
 	"statusReportShowName": { "Name": "Status Report: Name", "Description": "Show each teammate's name in the Status Report." },
 	"statusReportShowDistance": { "Name": "Status Report: Distance", "Description": "Show the distance to each teammate in the Status Report." },
 	"statusReportShowHealth": { "Name": "Status Report: Health (HP)", "Description": "Show each teammate's current and maximum health in the Status Report." },

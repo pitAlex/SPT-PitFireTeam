@@ -192,6 +192,9 @@ namespace pitTeam.Localization
                 statusReportLowHealthColor = Entry(
                     "Low Health Highlight Color",
                     "Highlight color for a teammate at low health, in hexadecimal RGB format (#FF0000)."),
+                statusReportAlwaysHighlight = Entry(
+                    "Always Highlight",
+                    "Keep teammate highlighting always on."),
                 statusReportShowName = Entry(
                     "Status Report: Name",
                     "Show each teammate's name in the Status Report."),

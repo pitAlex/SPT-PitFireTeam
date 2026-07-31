@@ -89,10 +89,14 @@ namespace pitTeam.Utils
         private const float StatusReportCloseDistanceMeters = 6f;
         private const float StatusReportNormalDistanceMeters = 12f;
         private const float FallbackHeadTopOffsetMeters = 0.18f;
+        private const float AlwaysHighlightRosterRefreshSeconds = 1f;
         private static readonly Color DeadEnemyMarkerColor = new Color(0.55f, 0.55f, 0.55f, 0.45f);
 
         private bool locationPing = false;
         private float _nextDirectionCalloutTime = 0f;
+        private float _nextAlwaysHighlightRosterUpdateTime;
+        private bool _alwaysHighlightWasActive;
+        private bool _alwaysHighlightRosterReady;
         private readonly TeammatePingHighlight _teammateHighlight = new TeammatePingHighlight();
 
         public void Ping(pitAIBossPlayer player)
@@ -258,17 +262,41 @@ namespace pitTeam.Utils
 
         public void Update()
         {
+            bool highlightEnabled = pitFireTeam.statusReportHighlight?.Value != false;
+            bool alwaysHighlightActive =
+                highlightEnabled &&
+                pitFireTeam.statusReportAlwaysHighlight?.Value == true;
+
+            if (alwaysHighlightActive &&
+                (!_alwaysHighlightWasActive || Time.time >= _nextAlwaysHighlightRosterUpdateTime))
+            {
+                _alwaysHighlightRosterReady = RefreshAlwaysHighlightRoster();
+                _nextAlwaysHighlightRosterUpdateTime =
+                    Time.time + AlwaysHighlightRosterRefreshSeconds;
+            }
+            else if (!alwaysHighlightActive)
+            {
+                _alwaysHighlightRosterReady = false;
+            }
+
+            _alwaysHighlightWasActive = alwaysHighlightActive;
+
             if (botMap.Count > 0)
             {
-                guiUpdate = true;
-                if (lasttime <= Time.time)
+                guiUpdate = lasttime > Time.time;
+                if (!guiUpdate && !alwaysHighlightActive)
                 {
-                    guiUpdate = false;
                     botMap.Clear();
                 }
             }
+            else
+            {
+                guiUpdate = false;
+            }
 
-            _teammateHighlight.Render(guiUpdate && pitFireTeam.statusReportHighlight?.Value != false);
+            _teammateHighlight.Render(
+                highlightEnabled &&
+                (guiUpdate || (alwaysHighlightActive && _alwaysHighlightRosterReady)));
 
 
             if (Time.time < nextUpdateTime)
@@ -283,6 +311,49 @@ namespace pitTeam.Utils
                 float inputWidth = CameraClass.Instance.SSAA.GetInputWidth();
                 screenScale = outputWidth / inputWidth;
             }
+        }
+
+        private bool RefreshAlwaysHighlightRoster()
+        {
+            Player localPlayer = GamePlayerOwner.MyPlayer;
+            pitAIBossPlayer boss =
+                localPlayer != null
+                    ? BossPlayers.Instance?.GetBossPlayer(localPlayer.ProfileId)
+                    : null;
+
+            botMap.Clear();
+            if (localPlayer == null || boss == null)
+            {
+                return false;
+            }
+
+            myPlayer = localPlayer;
+            List<Components.BotFollowerPlayer> followers =
+                BossPlayers.GetFollowersByBoss(localPlayer.ProfileId);
+            for (int i = 0; i < followers.Count; i++)
+            {
+                BotOwner bot = followers[i]?.GetBot();
+                if (bot == null || bot.IsDead || string.IsNullOrEmpty(bot.ProfileId))
+                {
+                    continue;
+                }
+
+                if (!botDataCache.TryGetValue(bot.ProfileId, out BotData botData))
+                {
+                    botData = new BotData();
+                    botDataCache[bot.ProfileId] = botData;
+                    botData.SetData(bot);
+                }
+                else if (!ReferenceEquals(botData.Data, bot))
+                {
+                    botData.SetData(bot);
+                }
+
+                botMap.Add(botData);
+            }
+
+            _teammateHighlight.Show(botMap, myPlayer);
+            return true;
         }
 
         void OnGUI()
