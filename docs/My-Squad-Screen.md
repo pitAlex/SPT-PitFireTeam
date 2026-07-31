@@ -1,6 +1,6 @@
 # My Squad Current State Review
 
-Date: 2026-05-13
+Date: 2026-07-30
 
 ## Goal
 
@@ -62,6 +62,7 @@ Verified behavior:
 
 - the button is a cloned `DefaultUIButton`, not a custom prefab
 - it uses a custom icon and localized title
+- when Menu Overhaul (`com.moxopixel.menuoverhaul`) is loaded, the icon uses `squad-inverse.png`; if that asset is missing, it falls back to `squad.png`
 - reconnect/minimized menu states re-sync its visibility
 
 ### Squad mode host
@@ -195,9 +196,11 @@ Roster group state is live-linked to `MatchmakerPlayerControllerClass`.
 Supported group actions:
 
 - invite teammate to group
-- remove teammate from group through stock context interactions
+- remove teammate from group through the stock confirmation UI
 - detect in-group state for badges
 - show toast feedback for accepted/failed invite and removal flows
+
+Canceling the stock `Remove from group` confirmation is treated as a normal no-op: the teammate stays in the group and no removal-failed toast is shown.
 
 The roster also uses the opening group snapshot from `SquadSideSelectionFlow` so group badges can stay coherent while the side-selection screen is being opened.
 
@@ -270,6 +273,7 @@ Verified sections built today:
 - `Follow Settings`
 - `Combat Settings`
 - `Raid Settings`
+- `Looting Settings`
 - `Loadout Management`
 - `Input Settings`
 - `Miscellaneous`
@@ -281,11 +285,25 @@ Verified entry groups:
     - `englishBear`
     - `pingRadioVolume`
     - `pingTime`
+    - `statusReportHighlightColor`
+    - `statusReportHighlight`
+    - `statusReportHealthColoring`
+    - `statusReportFullHealthColor`
+    - `statusReportMediumHealthColor`
+    - `statusReportLowHealthColor`
+    - `statusReportAlwaysHighlight`
+    - `statusReportShowName`
+    - `statusReportShowDistance`
+    - `statusReportShowHealth`
+    - `statusReportShowTactic`
+    - `statusReportShowCombatStatus`
 - `Follow Settings`
     - `goToDistance`
 - `Combat Settings`
     - `botGrenades`
     - `enemyMarker`
+    - `enemyMarkerAlertColor`
+    - `enemyMarkerVisibleColor`
     - `statusSound`
     - `enemyRemember`
     - `scanDistance`
@@ -300,6 +318,17 @@ Verified entry groups:
     - `npcSendMessage`
     - `pitFireTeamFLAG`
     - `badGuy`
+    - `factionHostilities`
+    - `pmcArmbands`
+- `Looting Settings`
+    - `Minimum Price`
+    - `Maximum Price`
+    - `Pickup Food`
+    - `Pickup Meds`
+    - `Pickup Valuables`
+    - `Pickup Weapons`
+    - `Pickup Gear`
+    - `Allow Gear Swapping`
 - `Loadout Management`
     - `Simple`
     - `Restricted`
@@ -324,9 +353,31 @@ Supported control types:
 
 - `bool` -> toggle
 - ranged `int` -> slider
+- loot price ranged `int` settings -> integer input field
+- hex color settings -> validated `#RRGGBB` input with a color preview
+    - Status Report color applies to report text and the teammate outline
+    - optional Health Status coloring replaces the outline color per teammate while leaving report text on the normal Status Report color
+    - health colors blend continuously through Low at 30%, Medium at 65%, and Full at 100%
+    - the health score starts from total body HP, is capped by head/thorax health, and is partially reduced by stomach damage so critical torso damage cannot be hidden by healthy limbs
+    - optional Always Highlight keeps only the teammate outline active between Status Reports; the Status Report highlight master toggle must also be enabled, and report text remains timed
+    - triggering Status Report while Always Highlight is active clears the outline renderer state for one frame before rebuilding it, matching an Off/On cycle so stale EFT LOD or equipment renderers do not leave stray lines
+    - Enemy Marker colors apply when the enemy is visible or out of sight
 - `LoadoutManagementMode` -> mutually exclusive radio-style toggle rows
 - `KeyboardShortcut` -> press-to-capture button
 - everything else -> read-only text fallback
+
+Fresh configurations and Reset to Defaults use:
+
+- Minimum Price: `20000`
+- Maximum Price: `5000000`
+- Pickup Food, Pickup Meds, and Pickup Gear: disabled
+- Pickup Weapons and Pickup Valuables: enabled
+- Loadout Management: `Restricted`
+- Field Upkeep: disabled
+
+### Raid faction hostility setting
+
+`Faction Hostilities` is a default-on Raid setting that registers BEAR and USEC as opposing factions and registers PMCs against Scavs, Scav bosses, and their followers when bots activate. Scavs start neutral toward Cultists, Raiders, and Rogues; those three factions warn Scavs and can turn hostile if the warning is ignored. Partisan is excluded so his stock karma, zone, and proximity hostility logic remains authoritative. A player Scav already marked hostile by Fence karma or as free-to-kill keeps the game's existing hostility instead of being reset to neutral. Existing non-combat/quest-protected roles remain excluded. It does not make same-side PMCs hostile or bypass normal sight and hearing. The setting is disabled while a raid is active because existing bot relationships cannot be safely undone or rebuilt mid-raid.
 
 ### Loadout Management setting
 
@@ -345,9 +396,28 @@ The rows are intentionally vertical: each row shows the mode description on the 
 
 When `Restricted` is the active mode, a `Field Upkeep` checkbox row appears between `Restricted` and `Immersive`. It defaults off and uses the same settings-row layout as other checkbox settings instead of joining the radio `ToggleGroup`.
 
-Changing from the current mode opens a confirmation overlay before the setting is applied. The overlay warns that switching loadout management will switch all teammates to their `Default` loadout. `Continue` applies the mode and closes the overlay; the `X` cancels and leaves the previous mode selected.
+Changing from `Simple` to a non-`Simple` mode opens a confirmation overlay before the setting is applied. The overlay warns that switching loadout management will switch all teammates to their `Default` loadout. `Continue` applies the mode and closes the overlay; the `X` cancels and leaves the previous mode selected. Other mode changes apply immediately because non-`Simple` modes already require `Default`.
 
-On confirmation, the client saves the BepInEx setting, syncs the new mode to the server, and rebuilds the settings entries so conditional rows such as `Field Upkeep` appear or disappear immediately.
+When a mode change is applied, the client saves the BepInEx setting, syncs the new mode to the server, and rebuilds the settings entries so conditional rows such as `Field Upkeep` appear or disappear immediately. The settings scroll position is captured before this rebuild and restored after Unity finishes recalculating the layout, so the view does not jump back to the top.
+
+### Looting setting
+
+`Looting Settings` is placed after `Raid Settings` and controls follower-commanded looting from non-teammate bodies and containers.
+
+Detailed looting behavior is documented in `docs/Looting.md`.
+
+`Minimum Price` is the lowest rouble value an item tree must have before a follower will take it. `Maximum Price` is the highest rouble value an item tree may have before a follower will take it. A value of `0` disables that bound. Money ignores both bounds when `Pickup Valuables` is enabled.
+
+These thresholds apply to each candidate item tree once: weapons include attached mods, helmets include attached devices, and armor or rigs include their installed plates and carried contents. The command still requires the complete item to fit in the follower's backpack or pockets. If armor or a rig stays behind, eligible contents can be considered separately; installed plates require at least 50 percent durability, while loose plates remain excluded.
+
+The category checkboxes default on and are applied before price:
+
+- `Pickup Food` covers food and drinks.
+- `Pickup Meds` covers usable medical items, drugs, stimulators, and med kits.
+- `Pickup Valuables` covers barter items, keys, special items, info items, money, and other non-gear loot.
+- `Pickup Weapons` covers weapons, ammunition, magazines, weapon mods, and grenades.
+- `Pickup Gear` covers helmets, body armor, armored rigs, and tactical rigs.
+- `Allow Gear Swapping` is the explicit gate for gear equip/swap behavior. `Simple` and `Restricted` only add gear into empty slots and return that added gear as tracked cargo, while `Immersive` and `Realistic` can also swap eligible gear into the teammate kit.
 
 Crossing into or out of `Realistic` also strips the secure-container tree from saved teammate `Default` loadouts before the next profile/edit view can expose it.
 
@@ -367,6 +437,8 @@ There is also a separate in-raid-style access point for the settings panel:
 - `Squad Settings` button cloned from the menu `hide/resume` button
 
 This opens the same settings content inside `screenRoot` as a standalone overlay with a cloned back button. It shows only the settings tab and is separate from the side-selection-hosted `My Squad` entry flow.
+
+The completed settings hierarchy is retained while its menu/raid restriction context is unchanged. When the in-raid pause menu exposes the `Squad Settings` button, the raid-restricted version is prepared while the overlay is still hidden, so opening the overlay does not normally destroy and recreate every settings row. A context change between menu and raid still triggers one rebuild so hidden and disabled settings remain correct.
 
 ### Current settings limitations
 

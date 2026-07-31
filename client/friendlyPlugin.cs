@@ -79,12 +79,15 @@ namespace pitTeam
         public string miscSettings { get; set; }
         public string testSettings { get; set; }
         public string raidSettings { get; set; }
+        public string lootingSettings { get; set; }
         public string loadoutManagementSettings { get; set; }
         public string[] equipOptions { get; set; }
         public string[] tacticOptions { get; set; }
 
         public Dictionary<string, string> statusSound { get; set; }
         public Dictionary<string, string> enemyMarker { get; set; }
+        public Dictionary<string, string> enemyMarkerAlertColor { get; set; }
+        public Dictionary<string, string> enemyMarkerVisibleColor { get; set; }
         public Dictionary<string, string> scanDistance { get; set; }
         public Dictionary<string, string> enemyRemember { get; set; }
         public Dictionary<string, string> healthMultiplier { get; set; }
@@ -94,6 +97,14 @@ namespace pitTeam
         public Dictionary<string, string> recruitPickup { get; set; }
         public Dictionary<string, string> teamEscape { get; set; }
         public Dictionary<string, string> teamEscapeUseAnyExtract { get; set; }
+        public Dictionary<string, string> lootMinimumPrice { get; set; }
+        public Dictionary<string, string> lootMaximumPrice { get; set; }
+        public Dictionary<string, string> lootFilterFood { get; set; }
+        public Dictionary<string, string> lootFilterMeds { get; set; }
+        public Dictionary<string, string> lootFilterValuables { get; set; }
+        public Dictionary<string, string> lootFilterWeapons { get; set; }
+        public Dictionary<string, string> lootFilterGear { get; set; }
+        public Dictionary<string, string> lootAllowGearSwapping { get; set; }
 
         public Dictionary<string, string> memberTactic { get; set; }
         public Dictionary<string, string> memberEquipment { get; set; }
@@ -114,12 +125,25 @@ namespace pitTeam
         [JsonProperty("friendlyPMC")]
         public Dictionary<string, string> pitFireTeam { get; set; }
         public Dictionary<string, string> badGuy { get; set; }
+        public Dictionary<string, string> factionHostilities { get; set; }
         public Dictionary<string, string> pmcArmbands { get; set; }
         public Dictionary<string, string> englishBear { get; set; }
 
         public Dictionary<string, string> pingSquad { get; set; }
         public Dictionary<string, string> pingRadioVolume { get; set; }
         public Dictionary<string, string> pingTime { get; set; }
+        public Dictionary<string, string> statusReportHighlight { get; set; }
+        public Dictionary<string, string> statusReportHighlightColor { get; set; }
+        public Dictionary<string, string> statusReportHealthColoring { get; set; }
+        public Dictionary<string, string> statusReportFullHealthColor { get; set; }
+        public Dictionary<string, string> statusReportMediumHealthColor { get; set; }
+        public Dictionary<string, string> statusReportLowHealthColor { get; set; }
+        public Dictionary<string, string> statusReportAlwaysHighlight { get; set; }
+        public Dictionary<string, string> statusReportShowName { get; set; }
+        public Dictionary<string, string> statusReportShowDistance { get; set; }
+        public Dictionary<string, string> statusReportShowHealth { get; set; }
+        public Dictionary<string, string> statusReportShowTactic { get; set; }
+        public Dictionary<string, string> statusReportShowCombatStatus { get; set; }
         public Dictionary<string, string> enemyContact { get; set; }
         public Dictionary<string, string> overThere { get; set; }
         public Dictionary<string, string> hideUnsupportedCommands { get; set; }
@@ -175,14 +199,19 @@ namespace pitTeam
         public string Message { get; set; }
     }
 
-    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "0.8.7")]
+    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "0.9.0")]
     [BepInDependency("xyz.drakia.bigbrain")]
     public class pitFireTeam : BaseUnityPlugin
     {
         public const string SainPluginId = "me.sol.sain";
         public const string SainAddonPluginId = "xyz.pit.fireteam.sainaddon";
+        public const string SeparateHostilityPluginId = "dk.sptplugins.separatehostility";
+        internal const LoadoutManagementMode DefaultLoadoutManagementMode = LoadoutManagementMode.Restricted;
         private const string StartupRecoveryNoticeRoute = "/singleplayer/pitfireteam/recovery-notice";
         private const string StartupRecoveryNoticeAckRoute = "/singleplayer/pitfireteam/recovery-notice/ack";
+        private const int DefaultLootMinimumPriceRoubles = 20_000;
+        private const int DefaultLootMaximumPriceRoubles = 5_000_000;
+        private const int LootPriceMaximumRoubles = 99999999;
 
         public static bool awaken;
 
@@ -198,6 +227,8 @@ namespace pitTeam
 
         public static ConfigEntry<int> statusSound;
         public static ConfigEntry<bool> enemyMarker;
+        public static ConfigEntry<string> enemyMarkerAlertColor;
+        public static ConfigEntry<string> enemyMarkerVisibleColor;
         public static ConfigEntry<bool> npcSendMessage;
         public static ConfigEntry<bool> pickupEnabled;
         public static ConfigEntry<bool> tieredPickup;
@@ -205,9 +236,18 @@ namespace pitTeam
         public static ConfigEntry<bool> recruitPickup;
         public static ConfigEntry<bool> teamEscape;
         public static ConfigEntry<bool> teamEscapeUseAnyExtract;
+        public static ConfigEntry<int> lootMinimumPrice;
+        public static ConfigEntry<int> lootMaximumPrice;
+        public static ConfigEntry<bool> lootFilterFood;
+        public static ConfigEntry<bool> lootFilterMeds;
+        public static ConfigEntry<bool> lootFilterValuables;
+        public static ConfigEntry<bool> lootFilterWeapons;
+        public static ConfigEntry<bool> lootFilterGear;
+        public static ConfigEntry<bool> lootAllowGearSwapping;
 
         public static ConfigEntry<bool> pitFireTeamFLAG;
         public static ConfigEntry<bool> badGuy;
+        public static ConfigEntry<bool> factionHostilities;
 
         public static ConfigEntry<bool> englishBear;
         public static ConfigEntry<bool> pmcArmbands;
@@ -247,6 +287,18 @@ namespace pitTeam
         public static ConfigEntry<KeyboardShortcut> pingKey;
         public static ConfigEntry<int> pingRadioVolume;
         public static ConfigEntry<int> pingTime;
+        public static ConfigEntry<bool> statusReportHighlight;
+        public static ConfigEntry<string> statusReportHighlightColor;
+        public static ConfigEntry<bool> statusReportHealthColoring;
+        public static ConfigEntry<string> statusReportFullHealthColor;
+        public static ConfigEntry<string> statusReportMediumHealthColor;
+        public static ConfigEntry<string> statusReportLowHealthColor;
+        public static ConfigEntry<bool> statusReportAlwaysHighlight;
+        public static ConfigEntry<bool> statusReportShowName;
+        public static ConfigEntry<bool> statusReportShowDistance;
+        public static ConfigEntry<bool> statusReportShowHealth;
+        public static ConfigEntry<bool> statusReportShowTactic;
+        public static ConfigEntry<bool> statusReportShowCombatStatus;
 
         public static ConfigEntry<KeyboardShortcut> contactKey;
         public static ConfigEntry<KeyboardShortcut> overThereKey;
@@ -264,6 +316,7 @@ namespace pitTeam
 
         public static bool IsSAINInstalled { get; private set; }
         public static bool IsSAINAddonInstalled { get; private set; }
+        public static bool IsSeparateHostilityInstalled { get; private set; }
 
         public static bool UseSainFollowerCombat => IsSAINInstalled && IsSAINAddonInstalled;
         public static bool HasSainRegroupAddon => UseSainFollowerCombat;
@@ -277,6 +330,9 @@ namespace pitTeam
                 awaken = true;
                 Instance = this;
                 new Modules.Logger();
+#if DEBUG
+                FollowerWeaponPrimaryReadiness.RunDeterministicSelfTests();
+#endif
                 RefreshPluginFlags();
             }
 
@@ -284,6 +340,7 @@ namespace pitTeam
             FollowerLayerRegistry.Init();
 
             var harmony = new Harmony("xyz.pit.fireteam");
+            OrbitCompatibility.PatchIfInstalled(harmony);
 
             // bot patches to help with various scenarios while being a follower of the player
             // Temporarily disabled for 4.x stability; revisit once BotsGroup method signatures are remapped.
@@ -316,7 +373,9 @@ namespace pitTeam
             new PmcUsecCombatLayerSuppressionPatch().Enable();
             new PmcFlankCombatLayerSuppressionPatch().Enable();
 
-            if (!IsSAINInstalled)
+            // Core follower actions must own BotMover.Sprint even when SAIN is installed;
+            // SAIN's global sprint look-direction gate is only valid for SAIN-owned movement.
+            if (!UseSainFollowerCombat)
                 new FollowerSprintPatch().Enable();
             new FollowerSprintStateDirectionPatch().Enable();
 
@@ -400,6 +459,7 @@ namespace pitTeam
 
             // command/request patches
             new QuickPanelPatch().Enable();
+            new QuickPanelHurtPhrasePatch().Enable();
             new QuickPanelUpdateBackpackInteractionPatch().Enable();
             new GestureMenuPatch().Enable();
             new CreatePhraseGroupPatch().Enable();
@@ -504,6 +564,12 @@ namespace pitTeam
         private void Start()
         {
             RefreshPluginFlags();
+            if (IsSeparateHostilityInstalled && factionHostilities?.Value == true)
+            {
+                Log.LogWarning(
+                    "Faction Hostilities is installed but will not register enemies because SeparateHostility is also installed. " +
+                    "SeparateHostility keeps its broader PMC free-for-all behavior.");
+            }
             StartCoroutine(ShowStartupRecoveryNoticeCoroutine());
         }
 
@@ -522,6 +588,7 @@ namespace pitTeam
         {
             IsSAINInstalled = HasPlugin(SainPluginId);
             IsSAINAddonInstalled = HasPlugin(SainAddonPluginId);
+            IsSeparateHostilityInstalled = HasPlugin(SeparateHostilityPluginId);
         }
 
         private IEnumerator ShowStartupRecoveryNoticeCoroutine()
@@ -948,6 +1015,10 @@ namespace pitTeam
 
             enemyMarker = Config.Bind("", "06 EnemyMarker", true, new ConfigDescription(optionsLang.enemyMarker["Description"], null, CreateConfigAttributes(-600, false, optionsLang.enemyMarker)));
 
+            enemyMarkerAlertColor = Config.Bind("", "06 EnemyMarkerAlertColor", Utils.EnemyMarkerColor.AlertDefaultHex, new ConfigDescription(optionsLang.enemyMarkerAlertColor["Description"], null, CreateConfigAttributes(-601, false, optionsLang.enemyMarkerAlertColor)));
+
+            enemyMarkerVisibleColor = Config.Bind("", "06 EnemyMarkerVisibleColor", Utils.EnemyMarkerColor.VisibleDefaultHex, new ConfigDescription(optionsLang.enemyMarkerVisibleColor["Description"], null, CreateConfigAttributes(-602, false, optionsLang.enemyMarkerVisibleColor)));
+
             pickupEnabled = Config.Bind("", "07 Pickup", true, new ConfigDescription(optionsLang.pickup["Description"], null, CreateConfigAttributes(-700, false, optionsLang.pickup)));
 
             tieredPickup = Config.Bind("", "08 TieredPickup", true, new ConfigDescription(optionsLang.tieredPickup["Description"], null, CreateConfigAttributes(-800, false, optionsLang.tieredPickup)));
@@ -960,18 +1031,44 @@ namespace pitTeam
 
             teamEscapeUseAnyExtract = Config.Bind("", "10 TeamEscapeUseAnyExtract", true, new ConfigDescription(optionsLang.teamEscapeUseAnyExtract["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.teamEscapeUseAnyExtract)));
 
+            lootMinimumPrice = Config.Bind("", "10 LootMinimumPrice", DefaultLootMinimumPriceRoubles, new ConfigDescription(optionsLang.lootMinimumPrice["Description"], new AcceptableValueRange<int>(0, LootPriceMaximumRoubles), CreateConfigAttributes(-1002, false, optionsLang.lootMinimumPrice)));
+
+            lootMaximumPrice = Config.Bind("", "10 LootMaximumPrice", DefaultLootMaximumPriceRoubles, new ConfigDescription(optionsLang.lootMaximumPrice["Description"], new AcceptableValueRange<int>(0, LootPriceMaximumRoubles), CreateConfigAttributes(-1002, false, optionsLang.lootMaximumPrice)));
+
+            lootFilterFood = Config.Bind("", "10 LootFilterFood", false, new ConfigDescription(optionsLang.lootFilterFood["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootFilterFood)));
+
+            lootFilterMeds = Config.Bind("", "10 LootFilterMeds", false, new ConfigDescription(optionsLang.lootFilterMeds["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootFilterMeds)));
+
+            lootFilterValuables = Config.Bind("", "10 LootFilterValuables", true, new ConfigDescription(optionsLang.lootFilterValuables["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootFilterValuables)));
+
+            lootFilterGear = Config.Bind("", "10 LootFilterGear", false, new ConfigDescription(optionsLang.lootFilterGear["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootFilterGear)));
+
+            // The old Pickup Gear value controlled both weapons and wearables. Inherit it only
+            // for configs that predate the split; fresh configs keep weapon pickup enabled.
+            bool inheritLegacyWeaponPickupDefault =
+                savedConfigValues.ContainsKey(new ConfigDefinition("", "10 LootFilterGear")) &&
+                !savedConfigValues.ContainsKey(new ConfigDefinition("", "10 LootFilterWeapons"));
+            bool defaultWeaponPickup =
+                !inheritLegacyWeaponPickupDefault ||
+                (lootFilterGear?.Value ?? true);
+            lootFilterWeapons = Config.Bind("", "10 LootFilterWeapons", defaultWeaponPickup, new ConfigDescription(optionsLang.lootFilterWeapons["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootFilterWeapons)));
+
+            lootAllowGearSwapping = Config.Bind("", "10 LootAllowGearSwapping", false, new ConfigDescription(optionsLang.lootAllowGearSwapping["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootAllowGearSwapping)));
+
             npcSendMessage = Config.Bind("", "11 NpcSendMessage", true, new ConfigDescription(optionsLang.npcSendMessage["Description"], null, CreateConfigAttributes(-1003, false, optionsLang.npcSendMessage)));
 
             pitFireTeamFLAG = Config.Bind("", "12 PitFireTeam", true, new ConfigDescription(optionsLang.pitFireTeam["Description"], null, CreateConfigAttributes(-1004, false, optionsLang.pitFireTeam)));
 
             badGuy = Config.Bind("", "13 BadGuy", false, new ConfigDescription(optionsLang.badGuy["Description"], null, CreateConfigAttributes(-1005, false, optionsLang.badGuy)));
 
+            factionHostilities = Config.Bind("", "13 FactionHostilities", true, new ConfigDescription(optionsLang.factionHostilities["Description"], null, CreateConfigAttributes(-1005, false, optionsLang.factionHostilities)));
+
             englishBear = Config.Bind("", "14 EnglishBear", true, new ConfigDescription(optionsLang.englishBear["Description"], null, CreateConfigAttributes(-1006, false, optionsLang.englishBear)));
 
             pmcArmbands = Config.Bind("", "14 PmcArmbands", true, new ConfigDescription(optionsLang.pmcArmbands["Description"], null, CreateConfigAttributes(-1007, false, optionsLang.pmcArmbands)));
             pmcArmbands.SettingChanged += (_, _) => SyncServerSettings();
 
-            loadoutManagementMode = Config.Bind("", "14 LoadoutManagement", LoadoutManagementMode.Simple, new ConfigDescription(optionsLang.loadoutManagement["Description"], null, CreateConfigAttributes(-1005, false, optionsLang.loadoutManagement)));
+            loadoutManagementMode = Config.Bind("", "14 LoadoutManagement", DefaultLoadoutManagementMode, new ConfigDescription(optionsLang.loadoutManagement["Description"], null, CreateConfigAttributes(-1005, false, optionsLang.loadoutManagement)));
 
             restrictedGearMaintenance = Config.Bind("", "14 LoadoutManagementRestrictedGearMaintenance", false, new ConfigDescription(optionsLang.loadoutManagementRestrictedGearMaintenance["Description"], null, CreateConfigAttributes(-1005, false, optionsLang.loadoutManagementRestrictedGearMaintenance)));
             restrictedGearMaintenance.SettingChanged += (_, _) => SyncServerSettings();
@@ -985,6 +1082,30 @@ namespace pitTeam
             pingRadioVolume = Config.Bind("", "17 PingRadioVolume", 50, new ConfigDescription(optionsLang.pingRadioVolume["Description"], new AcceptableValueRange<int>(0, 100), CreateConfigAttributes(-1007, false, optionsLang.pingRadioVolume)));
 
             pingTime = Config.Bind("", "18 PingTime", 5, new ConfigDescription(optionsLang.pingTime["Description"], new AcceptableValueRange<int>(5, 30), CreateConfigAttributes(-1008, false, optionsLang.pingTime)));
+
+            statusReportHighlight = Config.Bind("", "18 StatusReportHighlight", true, new ConfigDescription(optionsLang.statusReportHighlight["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportHighlight)));
+
+            statusReportHighlightColor = Config.Bind("", "18 StatusReportHighlightColor", Utils.StatusReportHighlightColor.DefaultHex, new ConfigDescription(optionsLang.statusReportHighlightColor["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportHighlightColor)));
+
+            statusReportHealthColoring = Config.Bind("", "18 StatusReportHealthColoring", true, new ConfigDescription(optionsLang.statusReportHealthColoring["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportHealthColoring)));
+
+            statusReportFullHealthColor = Config.Bind("", "18 StatusReportFullHealthColor", Utils.StatusReportHighlightColor.FullHealthDefaultHex, new ConfigDescription(optionsLang.statusReportFullHealthColor["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportFullHealthColor)));
+
+            statusReportMediumHealthColor = Config.Bind("", "18 StatusReportMediumHealthColor", Utils.StatusReportHighlightColor.MediumHealthDefaultHex, new ConfigDescription(optionsLang.statusReportMediumHealthColor["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportMediumHealthColor)));
+
+            statusReportLowHealthColor = Config.Bind("", "18 StatusReportLowHealthColor", Utils.StatusReportHighlightColor.LowHealthDefaultHex, new ConfigDescription(optionsLang.statusReportLowHealthColor["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportLowHealthColor)));
+
+            statusReportAlwaysHighlight = Config.Bind("", "18 StatusReportAlwaysHighlight", false, new ConfigDescription(optionsLang.statusReportAlwaysHighlight["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportAlwaysHighlight)));
+
+            statusReportShowName = Config.Bind("", "18 StatusReportShowName", true, new ConfigDescription(optionsLang.statusReportShowName["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportShowName)));
+
+            statusReportShowDistance = Config.Bind("", "18 StatusReportShowDistance", true, new ConfigDescription(optionsLang.statusReportShowDistance["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportShowDistance)));
+
+            statusReportShowHealth = Config.Bind("", "18 StatusReportShowHealth", false, new ConfigDescription(optionsLang.statusReportShowHealth["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportShowHealth)));
+
+            statusReportShowTactic = Config.Bind("", "18 StatusReportShowTactic", false, new ConfigDescription(optionsLang.statusReportShowTactic["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportShowTactic)));
+
+            statusReportShowCombatStatus = Config.Bind("", "18 StatusReportShowCombatStatus", true, new ConfigDescription(optionsLang.statusReportShowCombatStatus["Description"], null, CreateConfigAttributes(-1008, false, optionsLang.statusReportShowCombatStatus)));
 
             contactKey = Config.Bind("", "19 EnemyContact", new KeyboardShortcut(KeyCode.None), new ConfigDescription(optionsLang.enemyContact["Description"], null, CreateConfigAttributes(-1009, false, optionsLang.enemyContact)));
 
@@ -1032,13 +1153,13 @@ namespace pitTeam
 
         internal static bool IsFollowerLoadoutLootableMode()
         {
-            LoadoutManagementMode mode = loadoutManagementMode?.Value ?? LoadoutManagementMode.Simple;
+            LoadoutManagementMode mode = loadoutManagementMode?.Value ?? DefaultLoadoutManagementMode;
             return mode == LoadoutManagementMode.Immersive || mode == LoadoutManagementMode.Extreme;
         }
 
         internal static bool IsFollowerLoadoutRealTransferMode()
         {
-            LoadoutManagementMode mode = loadoutManagementMode?.Value ?? LoadoutManagementMode.Simple;
+            LoadoutManagementMode mode = loadoutManagementMode?.Value ?? DefaultLoadoutManagementMode;
             return mode == LoadoutManagementMode.Restricted
                 || mode == LoadoutManagementMode.Immersive
                 || mode == LoadoutManagementMode.Extreme;
@@ -1046,7 +1167,17 @@ namespace pitTeam
 
         internal static bool IsFollowerLoadoutRealisticMode()
         {
-            return (loadoutManagementMode?.Value ?? LoadoutManagementMode.Simple) == LoadoutManagementMode.Extreme;
+            return (loadoutManagementMode?.Value ?? DefaultLoadoutManagementMode) == LoadoutManagementMode.Extreme;
+        }
+
+        internal static bool IsLootGearSwappingEnabled()
+        {
+            return lootAllowGearSwapping?.Value == true;
+        }
+
+        internal static bool IsLootWeaponPickupEnabled()
+        {
+            return lootFilterWeapons?.Value ?? true;
         }
 
         private static void SyncServerSettings()
@@ -1061,7 +1192,7 @@ namespace pitTeam
                 string requestBody = JsonConvert.SerializeObject(new
                 {
                     pmcArmbands = pmcArmbands?.Value ?? true,
-                    loadoutManagementMode = (loadoutManagementMode?.Value ?? LoadoutManagementMode.Simple).ToString(),
+                    loadoutManagementMode = (loadoutManagementMode?.Value ?? DefaultLoadoutManagementMode).ToString(),
                     restrictedGearMaintenance = restrictedGearMaintenance?.Value ?? false
                 });
                 return Task.Run(() =>

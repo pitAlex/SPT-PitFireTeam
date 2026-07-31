@@ -55,6 +55,10 @@ namespace pitTeam.Components
         private const float SettingsControlRightInset = 52f;
         private const float SettingsShortcutRightInset = 128f;
         private const float SettingsSliderVerticalOffset = 36f;
+        private const float SettingsNumericInputWidthMultiplier = 1.4f;
+        private const float SettingsLootPriceInputMinWidth = 156f;
+        private const float SettingsLootPriceInputLeftOffset = 40f;
+        private const float SettingsLootPriceInputBorderHeight = 1f;
         private const float RaidOverlayBackButtonYOffset = 50f;
 
         private static readonly FieldInfo HeaderLabelField = AccessTools.Field(typeof(DefaultUIButton), "_headerLabel");
@@ -212,6 +216,15 @@ namespace pitTeam.Components
         private RectTransform settingsContentRoot;
         private VerticalLayoutGroup settingsLayoutGroup;
         private Scrollbar settingsScrollbar;
+        private bool settingsEntriesBuilt;
+        private bool settingsEntriesBuiltForRaidRestrictedContext;
+        private Coroutine settingsWarmupCoroutine;
+        private SettingsScreen cachedSettingsScreenTemplate;
+        private GameSettingsTab cachedGameSettingsTabTemplate;
+        private ScrollRectNoDrag cachedSettingsScrollRectTemplate;
+        private UpdatableToggle cachedSettingsToggleTemplate;
+        private RectTransform cachedSettingsSliderContainerTemplate;
+        private NumberSlider cachedSettingsSliderTemplate;
         private GameObject rosterPanel;
         private GameObject settingsPanel;
         private DefaultUIButton addTeammateButton;
@@ -628,6 +641,10 @@ namespace pitTeam.Components
                     && hideScreenButton.gameObject.activeSelf
                     && !raidSettingsOverlayActive;
                 raidSettingsButton.gameObject.SetActive(showRaidSettingsButton);
+                if (showRaidSettingsButton)
+                {
+                    QueueRaidSettingsWarmup();
+                }
             }
         }
 
@@ -1033,6 +1050,13 @@ namespace pitTeam.Components
                 settingsPanel.transform.SetParent(newParent, false);
             }
 
+            DefaultUIButton sideSelectionBackButton = ResolveSideSelectionBackButton(newParent);
+            if (sideSelectionBackButton != null && rosterPanelRect != null)
+            {
+                CreateAddTeammateButton(rosterPanelRect, sideSelectionBackButton);
+                UpdateRosterPanelLayout(emptyRosterLabel != null && emptyRosterLabel.gameObject.activeSelf);
+            }
+
             ShowTab(true);
 
             // Rebuild roster only on first open or when explicitly requested by add-teammate flow.
@@ -1041,7 +1065,7 @@ namespace pitTeam.Components
             List<string> pendingTileRefreshIds = pendingTileRefreshAccountIds.ToList();
             pendingTileRefreshAccountIds.Clear();
             bool needsRoster = rosterGridRoot != null && (rosterGridRoot.childCount == 0 || shouldForceRosterRefresh);
-            bool needsSettings = settingsContentRoot != null && settingsContentRoot.childCount == 0;
+            bool needsSettings = SettingsEntriesNeedRebuildForCurrentContext();
 
             if (!needsRoster && rosterGridRoot != null)
             {
@@ -1183,10 +1207,7 @@ namespace pitTeam.Components
 
         private DefaultUIButton ResolveOverlayBackButtonTemplate()
         {
-            MatchMakerSideSelectionScreen sideSelectionScreen = Resources.FindObjectsOfTypeAll<MatchMakerSideSelectionScreen>()
-                .FirstOrDefault(screen => screen != null);
-            DefaultUIButton template = sideSelectionScreen?.transform.Find("ScreenDefaultButtons/BackButton")?.GetComponent<DefaultUIButton>()
-                ?? MatchmakerBackButtonField?.GetValue(sideSelectionScreen) as DefaultUIButton;
+            DefaultUIButton template = ResolveSideSelectionBackButton();
             if (template == null)
             {
                 return null;
@@ -1207,6 +1228,25 @@ namespace pitTeam.Components
             }
 
             return clone;
+        }
+
+        private static DefaultUIButton ResolveSideSelectionBackButton(Transform context = null)
+        {
+            MatchMakerSideSelectionScreen sideSelectionScreen = null;
+            Transform current = context;
+            while (current != null && sideSelectionScreen == null)
+            {
+                sideSelectionScreen = current.GetComponent<MatchMakerSideSelectionScreen>();
+                current = current.parent;
+            }
+
+            sideSelectionScreen ??= Resources.FindObjectsOfTypeAll<MatchMakerSideSelectionScreen>()
+                .FirstOrDefault(screen => screen != null && screen.gameObject.activeInHierarchy)
+                ?? Resources.FindObjectsOfTypeAll<MatchMakerSideSelectionScreen>()
+                    .FirstOrDefault(screen => screen != null);
+
+            return sideSelectionScreen?.transform.Find("ScreenDefaultButtons/BackButton")?.GetComponent<DefaultUIButton>()
+                ?? MatchmakerBackButtonField?.GetValue(sideSelectionScreen) as DefaultUIButton;
         }
 
         private bool TryCreateStockTraderChrome(RectTransform rootRect)
@@ -1296,9 +1336,10 @@ namespace pitTeam.Components
 
             RetractPanels();
             raidSettingsOverlayActive = true;
-            screenRoot.SetActive(true);
             SetStandaloneTitle(GetSocialUiText("SquadControlRaidSettingsTitle"));
             ShowTab(false);
+            EnsureSettingsEntriesForCurrentContext();
+            screenRoot.SetActive(true);
 
             if (standaloneCloseButton != null)
             {
@@ -1309,11 +1350,6 @@ namespace pitTeam.Components
                 standaloneCloseButton.Interactable = true;
                 standaloneCloseButton.transform.SetAsLastSibling();
                 standaloneCloseButton.gameObject.SetActive(true);
-            }
-
-            if (settingsContentRoot != null)
-            {
-                RebuildSettingsEntries();
             }
 
             SyncButtonVisibility();

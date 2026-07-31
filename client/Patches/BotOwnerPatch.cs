@@ -254,7 +254,8 @@ namespace pitTeam.Patches
                         }
                     }
                 });
-            })
+            }),
+            new Action<BotOwner>(FactionHostility.Apply)
         };
         protected override MethodBase GetTargetMethod()
         {

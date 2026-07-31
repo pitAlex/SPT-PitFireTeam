@@ -28,6 +28,7 @@ namespace pitTeam.Localization
                 miscSettings = "Miscellaneous",
                 testSettings = "Testing",
                 raidSettings = "Raid Settings",
+                lootingSettings = "Looting Settings",
                 loadoutManagementSettings = "Loadout Management",
                 equipOptions = new[] { "Default" },
                 tacticOptions = new[] { "Rifleman", "Support", "Marksman", "Pusher", "Holder", "Assist" },
@@ -38,6 +39,12 @@ namespace pitTeam.Localization
                 enemyMarker = Entry(
                     "Enemy Marker",
                     "Show enemy position when reporting status. If disabled, the enemy marker sound will also be disabled"),
+                enemyMarkerAlertColor = Entry(
+                    "Enemy Marker: Alert Color",
+                    "Color of the enemy marker when the enemy is out of sight, in hexadecimal RGB format (#FFFF00)."),
+                enemyMarkerVisibleColor = Entry(
+                    "Enemy Marker: Visible Color",
+                    "Color of the enemy marker when the enemy is visible, in hexadecimal RGB format (#FF0000)."),
                 scanDistance = Entry(
                     "Maximum scan distance",
                     "Maximum distance to pick up any visible enemy that the player is signaling when issuing 'Contact' phrase"),
@@ -77,6 +84,30 @@ namespace pitTeam.Localization
                 teamEscapeUseAnyExtract = Entry(
                     "Team Escape: Use Any Extraction Point",
                     "Allow the squad escape simulation to choose any usable extraction point on the map. Disable this to restrict escape routes to extraction points assigned to the player."),
+                lootMinimumPrice = Entry(
+                    "Minimum Price",
+                    "Minimum rouble value for an item to be taken from a body or container. Set to 0 to disable the minimum."),
+                lootMaximumPrice = Entry(
+                    "Maximum Price",
+                    "Maximum rouble value for an item to be taken from a body or container. Set to 0 to disable the maximum."),
+                lootFilterFood = Entry(
+                    "Pickup Food",
+                    "Allow food and drink items to be taken from bodies and containers."),
+                lootFilterMeds = Entry(
+                    "Pickup Meds",
+                    "Allow usable medical items, drugs, stimulators, and med kits to be taken from bodies and containers."),
+                lootFilterValuables = Entry(
+                    "Pickup Valuables",
+                    "Allow barter items, keys, special items, info items, money, and other non-gear loot to be taken from bodies and containers."),
+                lootFilterWeapons = Entry(
+                    "Pickup Weapons",
+                    "Allow weapons, ammunition, magazines, weapon mods, and grenades to be taken from bodies and containers."),
+                lootFilterGear = Entry(
+                    "Pickup Gear",
+                    "Allow helmets, body armor, armored rigs, and tactical rigs to be taken from bodies and containers."),
+                lootAllowGearSwapping = Entry(
+                    "Allow Gear Swapping",
+                    "Allow followers to equip eligible gear while looting. Simple and Restricted only add into empty slots and return that gear as cargo; Immersive and Realistic may also swap eligible gear into the teammate kit."),
                 memberTactic = Entry(
                     "Squad Member {0} Tactic",
                     "Set Squad member fight tactic."),
@@ -125,6 +156,9 @@ namespace pitTeam.Localization
                 badGuy = Entry(
                     "Bad Guy",
                     "Should the player be hostile to all PMC bots, regardless of faction"),
+                factionHostilities = Entry(
+                    "Faction Hostilities",
+                    "Enable patch that attempts to fix the hostilities between factions not always working"),
                 pmcArmbands = Entry(
                     "PMC Faction Arm Bands",
                     "Should PMC bots have armbands (red for BEARs, blue for USECs)."),
@@ -140,6 +174,42 @@ namespace pitTeam.Localization
                 pingTime = Entry(
                     "Report Status Display Time",
                     "Time in seconds to display the followers status"),
+                statusReportHighlight = Entry(
+                    "Status Report: Highlight",
+                    "Highlight living teammates with an outline during the Status Report. Disable if you notice performance issues."),
+                statusReportHighlightColor = Entry(
+                    "Status Report: Color",
+                    "Color of the Status Report text and teammate outline in hexadecimal RGB format (#00FF00)."),
+                statusReportHealthColoring = Entry(
+                    "Health Status",
+                    "Enable highlight coloring based on teammate health status."),
+                statusReportFullHealthColor = Entry(
+                    "Full Health Highlight Color",
+                    "Highlight color for a teammate at full health, in hexadecimal RGB format (#00FF00)."),
+                statusReportMediumHealthColor = Entry(
+                    "Medium Health Highlight Color",
+                    "Highlight color for a teammate at medium health, in hexadecimal RGB format (#FFFF00)."),
+                statusReportLowHealthColor = Entry(
+                    "Low Health Highlight Color",
+                    "Highlight color for a teammate at low health, in hexadecimal RGB format (#FF0000)."),
+                statusReportAlwaysHighlight = Entry(
+                    "Always Highlight",
+                    "Keep teammate highlighting always on."),
+                statusReportShowName = Entry(
+                    "Status Report: Name",
+                    "Show each teammate's name in the Status Report."),
+                statusReportShowDistance = Entry(
+                    "Status Report: Distance",
+                    "Show the distance to each teammate in the Status Report."),
+                statusReportShowHealth = Entry(
+                    "Status Report: Health (HP)",
+                    "Show each teammate's current and maximum health in the Status Report."),
+                statusReportShowTactic = Entry(
+                    "Status Report: Tactic (MD)",
+                    "Show each teammate's current combat tactic or temporary healing state in the Status Report."),
+                statusReportShowCombatStatus = Entry(
+                    "Status Report: Combat Status",
+                    "Show whether each teammate is in combat or has detected an enemy in the Status Report."),
                 enemyContact = Entry(
                     "Enemy Contact Shortcut",
                     "Alternative shortcut key for the Contact quick phrase"),
@@ -214,6 +284,9 @@ namespace pitTeam.Localization
                     ["KitLoadoutsOpenFailed"] = "Unable to open teammate kit loadouts.",
                     ["KitLoadoutPriceFailed"] = "Unable to price selected teammate kit.",
                     ["KitLoadoutPurchaseFailed"] = "Unable to purchase teammate kit.",
+                    ["KitStashSelectionChanged"] = "The selected stash items changed. Review the kit and try again.",
+                    ["KitStashContainerHasUnselectedContents"] = "Purchase rejected: a selected stash container still contains unselected items. Empty the container or deselect it, then try again.",
+                    ["LiveStashRefreshFailed"] = "Player stash refresh failed. Restart the game before making more inventory changes.",
                     ["NotEnoughResourcesKitPrompt"] = "Not enough resources to purchase {0} kit",
                     ["BuyKitTitle"] = "BUY KIT",
                     ["PurchaseKitPrompt"] = "Purchase {0} Kit for {1}?",
@@ -252,6 +325,7 @@ namespace pitTeam.Localization
                     ["SquadControlDeleteTooltip"] = "Delete",
                     ["SquadControlInviteToGroup"] = "Invite to group",
                     ["SquadControlRemoveFromGroup"] = "Remove from group",
+                    ["SquadControlRemoveFromGroupConfirm"] = "Remove {0} from the current raid group?",
                     ["SquadControlViewProfile"] = "View profile",
                     ["SquadControlAutoJoinOn"] = "Auto join: On",
                     ["SquadControlAutoJoinOff"] = "Auto join: Off",

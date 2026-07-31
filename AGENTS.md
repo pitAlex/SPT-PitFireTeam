@@ -108,7 +108,7 @@ When multiple approaches are possible, prefer:
 Current verified custom teammate feature state:
 
 - Dedicated Team Management FE is the primary entry point:
-    - main menu now has a localized `My Squad` entry that opens the real `MatchMakerSideSelectionScreen` in squad mode
+    - main menu now has a localized `My Squad` entry that opens the real `MatchMakerSideSelectionScreen` in squad mode, using `squad-inverse.png` for its icon when Menu Overhaul is loaded
     - roster/settings panels from `SquadControlMenuUi` are injected into side-selection and controlled by EFT-style animated tabs (`Roster` / `Settings`)
     - roster tab supports add/remove teammate flows, delayed sequential portrait loading, teammate profile open/return, and scrolling layout for larger squads
     - settings tab exposes the main pitFireTeam config set in a stock-style scrollable UI using EFT toggle/slider controls for checkbox and ranged settings
@@ -535,6 +535,7 @@ Supported commands via `GestureCommandAction`:
 **Core Bot/Group/Follower Stability Patches:**
 
 - `BotGroupAddEnemyPatch`, `BotGroupReportEnemyPatch`, `BotGroupUsecEnemyPatch` — Enemy propagation safety
+- `FactionHostility` — Default-on activation-time faction relationship repair: reciprocal BEAR/USEC and Scav/Scav-boss/PMC hostility, Cultist/Raider/Rogue warning-neutral relationships toward Scavs, player-Scav karma hostility preservation, and protected special-role exclusions including Partisan so his stock karma/zone/proximity behavior remains authoritative
 - `BotGroupCalcGoalPatch` — Enemy acquisition assist hook
 - `BotControllerEnemyPropagationSafetyPatch` — Validate player refs before propagation
 - `BotOwnerIsFolowerPatch`, `BotOwnerManualUpdatePatch`, `BotOwnerActivatePatch` — Bot activation/update flow
@@ -545,12 +546,12 @@ Supported commands via `GestureCommandAction`:
 
 **Movement & Sprint Patches:**
 
-- `FollowerSprintPatch` (only when SAIN absent) — Sprint behavior tuning
+- `FollowerSprintPatch` (when core follower movement owns sprint, including SAIN-without-addon) — Sprint behavior tuning
 - `FollowerSprintStateDirectionPatch` — Prevent sprint/transition thrash during boss chase
 
 **Recruit/Request Patches:**
 
-- `BotReceiverFollowMeRecruitPatch` — Convert recruit requests to follower
+- `BotReceiverFollowMeRecruitPatch` — Convert recruit requests to follower; tiered PMC level-based refusals are remembered per bot for the rest of the raid
 - `FollowRequestPatch`, `HoldRequestPatch`, `OpenDoorRequestPatch` — Request type routing
 - `BotReceiverGestureOverridePatch` — Gesture override handling
 - `BotReceiverPhraseOverridePatch` — Route STOP phrase through pitAIBossPlayer instead of vanilla BotReceiver
@@ -903,7 +904,7 @@ Follow movement:
     - in-range settle to cover/random nearby point using `GoToSomePointData`.
 - Sprint run-stop mitigation:
     - `FollowerSprintStateDirectionPatch` modifies sprint-state direction under strict follower-chase conditions to avoid `Sprint -> Transition` thrash.
-    - `FollowerSprintPatch` is only enabled when SAIN is **not** installed.
+    - `FollowerSprintPatch` is enabled whenever core follower movement owns sprint (`!UseSainFollowerCombat`), including when SAIN is installed without the addon; SAIN-addon-owned combat keeps SAIN movement ownership.
 
 Request/gesture movement:
 
@@ -1066,7 +1067,7 @@ Bugs are tracked in the local bug-tracker file listed in `LOCAL.md`.
 
 Movement:
 
-- `FollowerSprintPatch` (conditional: only when SAIN is absent)
+- `FollowerSprintPatch` (conditional: whenever core follower movement owns sprint, including SAIN-without-addon)
 - `FollowerSprintStateDirectionPatch`
 
 Recruit/request:

@@ -134,7 +134,7 @@ In teammate buy mode, pitFireTeam keeps the availability data but suppresses the
 
 The retained missing-count data is part of the quote source of truth. The selected build provides the full deep requirement list, and stock `notFoundItems` provides the deep requirements EFT could not source while simulating the build.
 
-The teammate buy quote then caps stock availability with a nested scan of `Inventory.Stash`. This third list is the actual `Use items in stash` set: items EFT can source, minus anything that is only available because it is currently equipped on the player. The stash scan walks through boxes, backpacks, assembled guns, armor plate slots, and other nested containers under the stash root.
+The teammate buy quote then caps stock availability with a nested scan of `Inventory.Stash`. This third list is the actual `Use items in stash` set: items EFT can source, minus anything that is only available because it is currently equipped on the player. The stash scan walks through boxes, backpacks, assembled guns, armor plate slots, and other nested containers under the stash root. Each match retains its exact live stash item id and quantity. A container or assembled item is only matched as a whole when all of its non-structural descendants are also selected; otherwise the parent stays in the stash and independently safe nested items can still be matched.
 
 The visible checkbox uses the label `Use items in stash` and is reset to off each time the teammate buy screen opens. It is cloned from the stock edit-build `OnlyAvailable` checkbox so it keeps EFT's native checkbox visuals and hover/click behavior.
 
@@ -160,7 +160,7 @@ When clicked in buy mode:
 - repeated lines with the same visible item name are grouped for overlay readability
 - the stash-used list prefers full localized item names; EFT short names are only a fallback because some stock short names are intentionally truncated
 - the stash-used list is scrollable so large nested kits do not hide entries behind ellipsis
-- before the confirmation overlay opens, the client checks current stash roubles and the planned `Use items in stash` template/count list
+- before the confirmation overlay opens and again before purchase, the client checks current stash roubles and rebuilds the exact `Use items in stash` id/quantity plan
 - if resources are not available, a `Not enough resources to purchase {name} kit` overlay opens with an `OK` button and no purchase action
 - a confirmation overlay asks the user to purchase the selected kit for the quoted price; its header is `{kit name} - {price}` and updates whenever stash-use checkboxes change
 - if `Use items in stash` covers every required kit item, the overlay skips the purchase question, shows only the stash-take list, and the action button is `EQUIP`
@@ -169,7 +169,9 @@ When clicked in buy mode:
 Server-side transaction behavior:
 
 - validates the teammate and selected build tree
-- if `Use items in stash` is enabled, consumes the exact template/count summary shown in the confirmation overlay from the player's stash tree only; if those items are no longer present, the purchase is rejected
+- if `Use items in stash` is enabled, consumes only the exact item ids and quantities behind the checked summary rows from the player's stash tree; changed, locked, missing, duplicate, and unsafe partial-tree selections are rejected
+- removing a selected container or assembled item requires every non-structural descendant that would be removed with it to be selected in full, preventing unrelated contents from disappearing
+- if a selected container still has unselected contents, the client shows a localized rejection warning telling the player to empty or deselect that container
 - deducts the quoted rouble price from rouble stacks under the player's stash tree
 - sends the teammate's previous active kit roots through the pitFireTeam courier before replacing the teammate equipment, so stash space is not part of the buy transaction
 - when delivering the previous kit, the equipment root and dogtag are not delivered; pocket contents and special-slot items are delivered as normal reward roots; non-Realistic managed secure containers are skipped; Realistic secure containers and their contents are delivered

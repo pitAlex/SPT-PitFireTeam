@@ -96,8 +96,13 @@ namespace pitTeam.Patches
                     int configuredPickups = Math.Max(0, pitFireTeam.maximumPickup.Value);
                     int hardPickupLimit = Math.Min(10, configuredPickups);
                     int currentPickups = activeFollowers.FindAll(f => !f.IsSquadMate).Count;
+                    if (BossPlayers.HasDeniedRecruitment(posibleExecuter.ProfileId))
+                    {
+                        // A tiered level-based refusal is final for this bot for the current raid.
+                        canPickup = false;
+                    }
                     // Tiered pickup uses the old player-vs-bot acceptance rules.
-                    if (pitFireTeam.tieredPickup.Value)
+                    else if (pitFireTeam.tieredPickup.Value)
                     {
                         // - SCAV : based on fence level
                         if (player.Side == EPlayerSide.Savage)
@@ -123,6 +128,7 @@ namespace pitTeam.Patches
                             int playerLevel = player.Profile.Info.Level;
                             int botLevel = posibleExecuter.Profile.Info.Level;
                             int levelDiff = playerLevel - botLevel;
+                            bool rememberDenial = false;
                             // - - limit reached → deny
                             if (currentPickups >= hardPickupLimit)
                             {
@@ -137,17 +143,25 @@ namespace pitTeam.Patches
                             {
                                 // - - bot much stronger → always deny
                                 canPickup = false;
+                                rememberDenial = true;
                             }
                             else if (playerLevel == botLevel)
                             {
                                 // -- equal levels → 50/50 chance
                                 canPickup = new System.Random().NextDouble() < 0.5;
+                                rememberDenial = !canPickup;
                             }
                             else
                             {
                                 // -- different levels → 0% to 100% chance based on level difference
                                 double chance = MathClamp((levelDiff + 10) / 20.0, 0.0, 1.0);
                                 canPickup = new System.Random().NextDouble() < chance;
+                                rememberDenial = !canPickup;
+                            }
+
+                            if (rememberDenial)
+                            {
+                                BossPlayers.RememberRecruitmentDenial(posibleExecuter.ProfileId);
                             }
                         }
                     }
@@ -168,6 +182,13 @@ namespace pitTeam.Patches
                             {
                                 if (me == null || me.IsDead || me.BotState != EBotState.Active || me.GetPlayer == null || !me.GetPlayer.HealthController.IsAlive)
                                 {
+                                    return;
+                                }
+
+                                if (BossPlayers.HasDeniedRecruitment(me.ProfileId))
+                                {
+                                    me.BotTalk.TrySay(EPhraseTrigger.Negative, false);
+                                    me.Gesture.TryGestus(EInteraction.NoGesture, true);
                                     return;
                                 }
 
@@ -251,6 +272,16 @@ namespace pitTeam.Patches
         {
             if (bot == null || playerBoss == null || bot.IsDead || bot.BotState != EBotState.Active || bot.GetPlayer == null || !bot.GetPlayer.HealthController.IsAlive)
             {
+                return;
+            }
+
+            if (BossPlayers.HasDeniedRecruitment(bot.ProfileId))
+            {
+                FollowerForcedPhraseGate.Arm(bot, EPhraseTrigger.Negative, 1.5f);
+                bot.BotTalk.SetSilence(0f);
+                bot.BotTalk.DropNextSayPeriod();
+                bot.BotTalk.Say(EPhraseTrigger.Negative, true);
+                bot.Gesture.TryGestus(EInteraction.NoGesture, true);
                 return;
             }
 

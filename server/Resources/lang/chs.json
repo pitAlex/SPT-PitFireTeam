@@ -140,6 +140,10 @@
     "Name": "恶人",
     "Description": "玩家和队友是否对所有 PMC 人机敌对，不考虑阵营。"
   },
+  "factionHostilities": {
+    "Name": "阵营敌对关系",
+    "Description": "启用补丁，尝试修复阵营之间的敌对关系未能始终正常生效的问题。"
+  },
   "PmcArmbands": {
     "Name": "PMC 阵营臂章",
     "Description": "PMC 人机是否佩戴臂章（BEAR 为红色，USEC 为蓝色）。"
@@ -243,6 +247,9 @@
     "KitLoadoutsOpenFailed": "无法打开小队成员装备包方案。",
     "KitLoadoutPriceFailed": "无法为选定的小队成员装备包定价。",
     "KitLoadoutPurchaseFailed": "无法购买小队成员装备包。",
+    "KitStashSelectionChanged": "所选仓库物品已发生变化。请检查装备包后重试。",
+    "KitStashContainerHasUnselectedContents": "购买被拒绝：选中的仓库容器中仍有未选择的物品。请清空容器或取消选择该容器，然后重试。",
+    "LiveStashRefreshFailed": "玩家仓库刷新失败。请重启游戏后再进行其他库存操作。",
     "NotEnoughResourcesKitPrompt": "资源不足，无法购买 {0} 装备包",
     "BuyKitTitle": "购买装备包",
     "PurchaseKitPrompt": "花费 {1} 购买 {0} 装备包？",
@@ -279,6 +286,7 @@
     "SquadControlDeleteTooltip": "删除",
     "SquadControlInviteToGroup": "邀请入队",
     "SquadControlRemoveFromGroup": "移出队伍",
+    "SquadControlRemoveFromGroupConfirm": "将 {0} 移出当前突袭队伍？",
     "SquadControlViewProfile": "查看角色",
     "SquadControlAutoJoinOn": "自动加入：开",
     "SquadControlAutoJoinOff": "自动加入：关",

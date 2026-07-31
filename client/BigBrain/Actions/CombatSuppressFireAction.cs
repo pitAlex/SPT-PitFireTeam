@@ -407,28 +407,15 @@ namespace pitTeam.BigBrain.Actions
 
         private bool IsGrenadeLauncherSelectedForSuppress()
         {
-            BotWeaponSelector? selector = BotOwner?.WeaponManager?.Selector;
-            if (selector == null)
-            {
-                return false;
-            }
-
-            return selector.LastEquipmentSlot == EquipmentSlot.SecondPrimaryWeapon &&
-                   FollowerCombatCommon.IsGrenadeLauncherWeapon(selector.SecondPrimaryWeaponItem as Weapon);
+            return FollowerCombatCommon.IsEquippedGrenadeLauncherSelectedAndActive(BotOwner);
         }
 
         private bool TryRestoreGrenadeLauncherSuppressSelection()
         {
-            BotWeaponSelector? selector = BotOwner?.WeaponManager?.Selector;
-            if (selector == null ||
-                selector.IsChanging ||
-                !selector.CanChangeToSecondWeapons ||
-                !FollowerCombatCommon.IsGrenadeLauncherWeapon(selector.SecondPrimaryWeaponItem as Weapon))
-            {
-                return false;
-            }
-
-            return selector.ChangeToSecond();
+            return FollowerCombatCommon.TrySelectEquippedGrenadeLauncher(
+                BotOwner,
+                out _,
+                out _);
         }
 
         private Vector3 GetLauncherSuppressAimPoint(Vector3 fireOrigin, Vector3 impactTarget)

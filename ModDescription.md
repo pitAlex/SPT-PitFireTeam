@@ -43,7 +43,8 @@ You can manage your teammates from the in-game **My Squad** screen. From there, 
 - **Map transitions** - teammates who you spawned with can follow you through map transitions.
 - **Progression system** - teammates gain raid experience and common-skill progress that persists between raids.
 - **Quest assist** - teammate kills can count toward player kill quests when the kill meets the quest criteria.
-- **Loot management** - teammates who you spawned with can return items after the raid and you can also manage their backpacks while in raid. (See Gameplay Guide > Loot Management)
+- **Faction hostility repair** - a default-on Raid setting repairs missing BEAR-versus-USEC and PMC-versus-Scav/Scav-boss enemy relationships. Cultists, Raiders, and Rogues use neutral warning relationships toward Scavs instead of immediate hostility, while existing player-Scav karma hostility remains authoritative. Partisan is excluded so his stock karma, zone, and proximity behavior remains in control.
+- **Looting and loot return** - teammates who you spawned with can pick up loot, search bodies and containers on command, return carried items after the raid, and let you manage their backpacks while in raid. (See Looting)
 - **Fallen teammate gear gathering** - outside combat, a teammate can be ordered to check a body and gather recoverable gear from it, mainly to help collect gear from fallen squadmates.
 - **Post-raid reports** - receive report about if your team made it out with the loot after you died. (See Gameplay Guide > Raid Survival Post Player)
 
@@ -175,9 +176,61 @@ Commands influence teammate behavior but do not force exact actions. teammates w
 - **Over There Gesture** - gesture-based contact/attention toward the pointed direction.
 - **Open Door** - the closest eligible teammate opens the targeted door.
 - **Loot This** - the closest eligible teammate picks up the targeted loot item.
-- **Check Him / Loot Body** - the closest eligible teammate checks the targeted body and gathers recoverable gear. This is meant as a practical way to collect gear from fallen teammates. It does not do advanced gear management such as swapping the teammate's current weapons, armor, or vest for better equipment.
+- **Check Him / Loot Body** - the closest eligible saved teammate checks the targeted body. Fallen teammates use the recovery rules, while other bodies use your Looting Settings and the limited gear-swapping rules described below.
 
 Saved teammates and recruited allies share the basic follower system once they are following you, but saved teammates have the full squad feature set. Saved teammates keep their customization, loadouts, tactics, aggression, progression, backpack access, and post-raid handling. Recruited allies are temporary raid pickups that use the default combat tactic with moderate aggression, rely on their current bot profile and gear, and have a simpler combat command set: they do not use **Need Sniper**, combat **There**, combat **Open Door**, or combat **Go Forward** push orders. If a recruited ally was told **Hold Position** in combat, **Go Forward** only clears that temporary aggression hold.
+
+## Looting (WIP)
+
+Looting is currently command-driven. Teammates do not wander away to loot on their own: you choose the item, body, or container and give the order.
+
+**Giving an order:**
+
+- Look at a loose item and use **Loot This**. Any available follower can collect it if they can reach it and have somewhere suitable to put it.
+- Look at a body and use **Check Him / Loot Body**, or use the loot command while looking at a container. Body and container searches are handled only by saved teammates who spawned into the raid with you.
+- The closest available teammate by walking route, within roughly 22 meters, takes the job. A teammate who is fighting or already carrying out another loot order is skipped.
+- Different teammates can search different targets when you issue several orders quickly. A target already being handled cannot be assigned to a second teammate.
+
+![Look Pickup](https://iili.io/BpKc90x.md.png)
+
+A body or container search takes a short amount of time and plays the familiar searching sound. Containers are closed again after a completed search. Combat can interrupt the search and leave the container open, allowing you to resume later.
+
+The voice response also gives useful feedback. A weapon callout means a found weapon is ready to become the teammate's combat primary. A general found-loot response means something was accepted as ordinary loot or support gear. A negative response usually means the teammate found something but could not carry it, while a nothing-found response means no qualifying loot was available.
+
+**Choosing what to take:**
+
+Looting settings are found under **My Squad → Settings**.
+
+- **Minimum Price** and **Maximum Price** control the value range for ordinary body and container loot.
+- **Pickup Food**, **Pickup Meds**, **Pickup Valuables**, **Pickup Weapons**, and **Pickup Gear** control the broad types of loot your teammates may take.
+- Money is always accepted when **Pickup Valuables** is enabled, regardless of the price range.
+- Dogtags are always attempted on enemy USEC and BEAR bodies. A teammate may still report that he found nothing when the dogtag was the only item taken.
+
+Teammates use real inventory space. Ordinary loot goes into backpacks and pockets, leaving tactical rigs available for combat magazines and reloads. Weapons, helmets, armor, and rigs are valued and carried as complete items rather than being stripped for their best parts.
+
+When **Pickup Gear** is enabled, a helmet, armor vest, armored rig, or tactical rig is considered as one complete package first. If armor or a rig cannot be carried whole, its eligible contents can still be considered separately. Installed armor plates are taken only as this fallback, and only when they pass the price settings and still have at least half their durability. Loose plates remain untouched.
+
+**Weapons and gear:**
+
+**Allow Gear Swapping** enables the current weapon-readiness system. Despite the setting name, it is currently focused mainly on filling missing weapon slots safely; it does not yet compare every found weapon, armor, helmet, or rig against a teammate's complete loadout.
+
+- A teammate with no primary weapon checks the weapon, its magazines, and available ammunition before deciding whether it is ready for combat.
+- A usable weapon becomes the active primary on the right shoulder. The weapon-specific voice response tells you that the teammate intends to fight with it.
+- An under-supplied weapon may be kept on the left shoulder or in the backpack while the teammate waits for compatible magazines or ammunition. A later loot order can make that weapon ready.
+- Detachable magazines must fit in the tactical rig or pockets before the bot can rely on them. Magazines left in a backpack are cargo and are not used by the game's normal bot reload behavior. Leave enough suitable rig space if you want a found weapon to become dependable.
+- A teammate who already has a working primary may add a usable support weapon only when the secondary slot is empty and **Pickup Weapons** allows it. Looting never replaces an occupied secondary weapon or holster.
+- Grenade launchers prefer the secondary slot when a conventional primary weapon is available.
+- Tactical-vest changes are currently limited to filling an empty slot or making a narrow protection upgrade in Immersive and Realistic. Broad armor and equipment optimization is planned for a later phase.
+
+You can inspect a teammate's backpack while out of combat using the lower-left interaction prompt. Items placed there manually remain ordinary cargo. To have a weapon or magazine reconsidered for combat use, take it back out and order the teammate to use **Loot This** on it.
+
+![Teammate backpack inspection](https://iili.io/BpKvke1.md.png)
+
+**After the raid:**
+
+Only saved teammates who spawned with you can return carried loot. You must extract together, or the teammate must survive after your death. If the teammate dies, the loot carried by that teammate is lost.
+
+In **Simple** and **Restricted**, weapons and gear added during the raid are treated as loot and returned instead of becoming permanent equipment. In **Immersive** and **Realistic**, accepted equipment can remain as part of the teammate's new kit.
 
 ## Gameplay Guide
 
@@ -447,28 +500,6 @@ These are especially useful before enemies become fully visible.
 
 Your teammates can still successfully extract after your death and return any loot they were carrying for you. The escape chance is calculated based on the distance to extraction, how many teammates are still alive, their equipment quality, the estimated threat level of enemies between them and the extraction, as well as their current health and available medical supplies. The amount of gear they will be able to return upon escaping depends on their available inventory space as well as their strength level.
 
-### Loot Management
-
-**You can give loot to teammates by looking at an item and using the interaction prompt shown in the lower-left corner of the screen.**
-
-![Look Pickup](https://iili.io/BpKc90x.md.png)
-
-A teammate can pick up the item only if they:
-
-- are not in combat
-- have enough inventory space
-- can physically reach the item
-
-You must successfully extract with that teammate for the loot to be returned after the raid. Only teammates you originally spawned with are able to return carried loot.
-
-If the teammate dies, the carried loot is lost.
-
-**You can also look at a body and use Check Him / Loot Body to have the closest eligible teammate gather recoverable gear from it.** This command is intended to help collect gear from fallen teammates. It uses available carry space and empty compatible slots, but it is not a full equipment-optimization system: teammates will not swap out their current weapons, armor, or vest for better gear.
-
-**You can also inspect a teammate’s backpack by approaching them and using the lower-left interaction prompt. This can only be done while out of combat.**
-
-![Look Pickup](https://iili.io/BpKvke1.md.png)
-
 ## Loadout Management
 
 Found in My Squad → Settings
@@ -489,11 +520,7 @@ In non-Realistic modes, the automatically managed secure container provides basi
 
 ## Upcoming
 
-The following are planned features in reaching a release version (1.0.0)
-
-**Beta 0.9.0:**
-
-- **Looting** - telling teammates to check containers and bodies, filter loot via settings and ability for gear swap.
+The following are planned features in reaching a release version (1.0.0) and beyond.
 
 **Version 1.0.0:**
 
@@ -507,7 +534,7 @@ Addons are standalone features that extend the mod’s core functionality. They 
 - **Scavs for hire** - being able to play with teammates as a Scav
 - **Going Rogue** - being able to recruit and command Goons along with the Rogues in raids
 - **SAIN tactics addon** - being able to use SAIN personalities as teammate tactics
-- **Expanded looting gear swapping** - additional carefully controlled weapon, armor, and equipment upgrades beyond the limited empty-slot and protection-vest cases currently available
+- **Expanded looting** - expanding the looting capabilities through existing mods (such as Looting Bots mod)
 
 ## Known Issues and Conflicts
 
@@ -515,9 +542,7 @@ The mod changes bot grouping, teammate ownership, commands, and combat routing. 
 
 Mods that add custom gear like belts should not be used on teammates, it can cause game crashes.
 
-Career Log mod is not compatible with this mod as it causes the "add teammate" button to not work. 
-
-The Labyrinth is a special map with special AI, not meant to AI followers. Do not spawn with your teammates there.
+The Labyrinth is a special map with special AI, not meant to AI followers. They will not spawn there.
 
 In teammate loadout editing, do not repair equipment and then move items into or out of the teammate loadout before saving. For now, repair should be the last step before saving. If the editor starts failing after this, cancel out of the Edit Loadout overlay, re-open Edit Loadout, then save without moving anything.
 
@@ -527,7 +552,7 @@ In teammate loadout editing, if you happen to end up in a situation where you ca
 - Teammates might not heal their health all the way. It is a game issue, use the Heal key to force heal.
 - Teleporting teammates while they are interacting with doors or other objects can leave them in a bad state.
 - **The game has navigation problems that even SAIN is not able to fully resolve. If your bots get stuck, use teleportation. In other situations, their movement is in teleportation-like bursts. Be mindful of this and stay aware of their position or you will find yourself in a fight all alone or without all your squad as they got stuck somewhere.**
-- Ever since BSG introduced the agression system, opposing factions may not always be hostile to each other. However, this is never the case with you, you are always an enemy to the opposing side. Keep that in mind and be prepared for even your teammates to sometimes ignore a member of an opposing faction until he starts shooting or you give the "Contact" order.
+- **Faction Hostilities** repairs missing enemy relationships but does not grant bots awareness of enemies they have not seen or heard.
 - Teammates can sometimes pick up an enemy they never saw or heard. Use **Attention** to reset them. In some cases, they may keep reacquiring that enemy until the enemy is dead. This comes from the game's detection and memory logic, and broad workarounds can break normal enemy behavior.
 - SAIN can interfere with teleportation, teleporting the bot back to previous location. You may need to trigger teleportation multiple times for it to stick.
 - Teammates can occasionally have registration delay on enemies. This is buggy behavior within the game that I am not able to fix.

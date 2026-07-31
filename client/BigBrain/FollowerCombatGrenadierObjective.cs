@@ -1,4 +1,5 @@
 using EFT;
+using EFT.InventoryLogic;
 using pitTeam.Components;
 using pitTeam.Modules;
 using System;
@@ -37,7 +38,7 @@ namespace pitTeam.BigBrain
         private float lastBossDistance;
         private float retryScanUntil;
         private Vector3 highestObservedPosition;
-        private FollowerCombatCommon.GrenadeLauncherSuppressPlan? launcherPlan;
+        private FollowerCombatCommon.GrenadeLauncherFirePlan? launcherPlan;
 
         public FollowerCombatGrenadierObjective(BotOwner botOwner, FollowerCombatCommon combatCommon)
             : base(botOwner, combatCommon)
@@ -128,8 +129,20 @@ namespace pitTeam.BigBrain
 
             if (TryGetEmergencyDecision(goalEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> emergencyDecision))
             {
+                // A first-primary launcher must not remain in hand while the shared combat stack
+                // retreats, heals, reloads, or enters a point-blank fight. The support launcher
+                // path is unaffected because this helper only accepts the first-primary launcher.
+                string emergencyReason = emergencyDecision.Reason ?? emergencyDecision.Action.ToString();
+                CombatCommon.RequestFirstPrimaryLauncherHolsterFallback(
+                    $"grenadierEmergency.{emergencyReason}");
+                if (CombatCommon.TryCreatePendingFirstPrimaryLauncherHolsterFallbackDecision(
+                        out AICoreActionResultStruct<BotLogicDecision, GClass26> holsterFallbackDecision))
+                {
+                    emergencyDecision = holsterFallbackDecision;
+                }
+
                 complete = true;
-                RecordAttemptCooldown($"emergency.{emergencyDecision.Reason ?? emergencyDecision.Action.ToString()}");
+                RecordAttemptCooldown($"emergency.{emergencyReason}");
                 CombatCommon.PrepareLauncherSuppressWeaponFallback();
                 ClearObjectiveCommitments();
                 return emergencyDecision;
@@ -180,14 +193,13 @@ namespace pitTeam.BigBrain
             if (!CombatCommon.HasActiveCombatEnemy(goalEnemy))
             {
                 complete = true;
-                RecordAttemptCooldown("enemyMissing");
                 ClearObjectiveCommitments();
                 return new AICoreActionEndStruct("grenadierEnemyMissing", true);
             }
 
-            if (currentDecision.Action == BotLogicDecision.suppressFire)
+            if (currentDecision.Action == BotLogicDecision.shootFromPlace)
             {
-                return EndLauncherSuppress(currentDecision.Reason);
+                return EndLauncherFire(currentDecision.Reason);
             }
 
             if (currentDecision.Action == BotLogicDecision.goToPoint &&
@@ -371,11 +383,11 @@ namespace pitTeam.BigBrain
             }
 
             launcherPlan = null;
-            if (!CombatCommon.TryPrepareGrenadeLauncherSuppressPlan(
+            if (!CombatCommon.TryPrepareGrenadeLauncherFirePlan(
                     goalEnemy,
                     GetModeReasonPrefix(),
                     ordered,
-                    out FollowerCombatCommon.GrenadeLauncherSuppressPlan? preparedPlan) ||
+                    out FollowerCombatCommon.GrenadeLauncherFirePlan? preparedPlan) ||
                 preparedPlan == null)
             {
                 return false;
@@ -387,20 +399,19 @@ namespace pitTeam.BigBrain
 
         private bool TryUseLauncherPlan(
             EnemyInfo goalEnemy,
-            FollowerCombatCommon.GrenadeLauncherSuppressPlan plan,
+            FollowerCombatCommon.GrenadeLauncherFirePlan plan,
             out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
         {
             decision = default;
             if (plan.HasSuppressFrom &&
-                !CombatCommon.IsAtGrenadeLauncherSuppressPosition(plan))
+                !CombatCommon.IsAtGrenadeLauncherFirePosition(plan))
             {
                 decision = CombatCommon.CreateGrenadeLauncherMoveDecision(plan);
                 return true;
             }
 
-            if (CombatCommon.TryStartGrenadeLauncherSuppressDecision(goalEnemy, plan, out decision))
+            if (CombatCommon.TryStartGrenadeLauncherFireDecision(goalEnemy, plan, out decision))
             {
-                launcherPlan = null;
                 return true;
             }
 
@@ -408,26 +419,67 @@ namespace pitTeam.BigBrain
             return false;
         }
 
-        private AICoreActionEndStruct EndLauncherSuppress(string? reason)
+        private AICoreActionEndStruct EndLauncherFire(string? reason)
         {
-            AICoreActionEndStruct end = CombatCommon.EndSuppressFire(reason);
-            if (!end.Value)
+            EnemyInfo? goalEnemy = BotOwner.Memory?.GoalEnemy;
+            if (!CombatCommon.HasActiveCombatEnemy(goalEnemy))
             {
-                return end;
-            }
-
-            if (ShouldRetryAfterLauncherEnd(end.Reason) && Time.time < activeUntil)
-            {
-                CombatCommon.ClearFollowerSuppressState();
+                complete = true;
                 launcherPlan = null;
-                return end;
+                ClearObjectiveCommitments();
+                return new AICoreActionEndStruct("grenadierEnemyMissing", true);
             }
 
-            complete = true;
-            RecordAttemptCooldown($"end.{end.Reason}");
-            CombatCommon.PrepareLauncherSuppressWeaponFallback();
-            ClearObjectiveCommitments();
-            return end;
+            Weapon? launcher = FollowerCombatCommon.GetActiveOrEquippedGrenadeLauncher(BotOwner);
+            if (FollowerCombatCommon.CountLoadedRounds(launcher) <= 0)
+            {
+                if (FollowerCombatCommon.IsSingleUseLauncherWeapon(launcher))
+                {
+                    complete = true;
+                    RecordAttemptCooldown("launcherSingleUseSpent");
+                    CombatCommon.PrepareLauncherSuppressWeaponFallback();
+                    CombatCommon.RequestFirstPrimaryLauncherHolsterFallback("launcherSingleUseSpent");
+                    ClearObjectiveCommitments();
+                    return new AICoreActionEndStruct("launcherSingleUseSpent", true);
+                }
+
+                // Leave the ordinary shooting node as soon as the cylinder/barrel is empty. The
+                // objective preparation step owns the bounded loose-ammo reload and then returns to
+                // normal fire without completing a one-shot suppression task.
+                launcherReady = false;
+                launcherPlan = null;
+                activeUntil = Time.time + OpportunityWindowSeconds;
+                return new AICoreActionEndStruct("launcherNeedsReload", true);
+            }
+
+            if (!FollowerCombatCommon.TryCanUseGrenadeLauncherNormalFire(
+                    BotOwner,
+                    goalEnemy,
+                    ordered,
+                    out _,
+                    out string fireRejectReason))
+            {
+                bool continueCommittedPrimaryShot =
+                    string.Equals(fireRejectReason, "enemyNotVisible", StringComparison.Ordinal) &&
+                    FollowerCombatCommon.TryContinueFirstPrimaryGrenadeLauncherNormalFire(
+                        BotOwner,
+                        goalEnemy,
+                        ordered,
+                        out _,
+                        out _);
+                if (continueCommittedPrimaryShot)
+                {
+                    return default;
+                }
+
+                launcherPlan = null;
+                return new AICoreActionEndStruct($"launcherNormalFireRejected:{fireRejectReason}", true);
+            }
+
+            // CombatShootFromPlaceAction runs EFT's normal aim-and-trigger worker directly after
+            // launcher arc safety succeeds. Do not delegate to EndShootFromPlace here because that
+            // outer rifle end gate rejects the same valid arc whenever GoalEnemy.CanShoot is false.
+            return default;
         }
 
         private AICoreActionEndStruct EndLauncherMove()
@@ -438,7 +490,7 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEndStruct("grenadierMovePlanMissing", true);
             }
 
-            if (CombatCommon.IsAtGrenadeLauncherSuppressPosition(launcherPlan))
+            if (CombatCommon.IsAtGrenadeLauncherFirePosition(launcherPlan))
             {
                 return new AICoreActionEndStruct("grenadierMoveArrived", true);
             }
@@ -486,6 +538,7 @@ namespace pitTeam.BigBrain
             complete = true;
             RecordAttemptCooldown($"fail.{suffix}");
             CombatCommon.PrepareLauncherSuppressWeaponFallback();
+            CombatCommon.RequestFirstPrimaryLauncherHolsterFallback($"grenadierFail.{suffix}");
             ClearObjectiveCommitments();
             BattleRecorder.RecordObjectiveDiagnostic(
                 BotOwner,
@@ -542,20 +595,22 @@ namespace pitTeam.BigBrain
                 return;
             }
 
+            // A launcher occupying FirstPrimaryWeapon is the follower's ordinary combat weapon.
+            // Normal action completion, enemy loss, healing, or an objective switch must not apply
+            // the old support-suppression cooldown. Only a genuine failed opportunity uses the
+            // cooldown so the loaded-pistol fallback is not immediately undone.
+            if (FollowerCombatCommon.HasUsableFirstPrimaryGrenadeLauncher(BotOwner) &&
+                !reason.StartsWith("fail.", StringComparison.Ordinal))
+            {
+                return;
+            }
+
             cooldownRecorded = true;
             CombatCommon.StartGrenadeLauncherSuppressCooldown(ordered, reason);
             if (ordered)
             {
                 CombatCommon.StartGrenadeLauncherSuppressCooldown(ordered: false, $"ordered.{reason}");
             }
-        }
-
-        private static bool ShouldRetryAfterLauncherEnd(string? endReason)
-        {
-            return string.Equals(endReason, "followerSuppressHardBlockedLane", StringComparison.Ordinal) ||
-                   string.Equals(endReason, "followerSuppressBlockedLane", StringComparison.Ordinal) ||
-                   string.Equals(endReason, "launcherImpactUnsafe", StringComparison.Ordinal) ||
-                   string.Equals(endReason, "launcherNoLane", StringComparison.Ordinal);
         }
 
         internal static bool IsGrenadierReason(string? reason)

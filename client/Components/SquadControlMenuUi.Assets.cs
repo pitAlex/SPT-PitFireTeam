@@ -1,4 +1,5 @@
 using ChatShared;
+using BepInEx.Bootstrap;
 using BepInEx.Configuration;
 using Comfort.Common;
 using EFT;
@@ -58,7 +59,10 @@ namespace pitTeam.Components
 
         private DefaultUIButton CreateOverlayActionButton(Transform parent, Vector2 anchoredPosition, Vector2 size)
         {
-            DefaultUIButton button = Instantiate(playerButton, parent, false);
+            DefaultUIButton buttonTemplate = ResolveSideSelectionBackButton(parent)
+                ?? standaloneCloseButton
+                ?? playerButton;
+            DefaultUIButton button = Instantiate(buttonTemplate, parent, false);
             button.name = "pitFireTeam_OverlayActionButton";
             RectTransform rect = button.transform as RectTransform;
             if (rect != null)
@@ -122,41 +126,70 @@ namespace pitTeam.Components
 
         private SettingsScreen ResolveSettingsScreenTemplate()
         {
-            return Resources.FindObjectsOfTypeAll<SettingsScreen>()
+            if (cachedSettingsScreenTemplate != null)
+            {
+                return cachedSettingsScreenTemplate;
+            }
+
+            cachedSettingsScreenTemplate = Resources.FindObjectsOfTypeAll<SettingsScreen>()
                 .FirstOrDefault(screen =>
                     screen != null &&
                     SettingsScreenGameTabField?.GetValue(screen) is GameSettingsTab);
+            return cachedSettingsScreenTemplate;
         }
 
         private ScrollRectNoDrag ResolveSettingsScrollRectTemplate()
         {
+            if (cachedSettingsScrollRectTemplate != null)
+            {
+                return cachedSettingsScrollRectTemplate;
+            }
+
             GameSettingsTab gameSettingsTab = ResolveGameSettingsTabTemplate();
             if (gameSettingsTab == null)
             {
                 return null;
             }
 
-            return gameSettingsTab.GetComponentsInChildren<ScrollRectNoDrag>(true)
+            cachedSettingsScrollRectTemplate = gameSettingsTab.GetComponentsInChildren<ScrollRectNoDrag>(true)
                 .FirstOrDefault(scrollRect =>
                     scrollRect != null &&
                     scrollRect.content != null &&
                     scrollRect.viewport != null);
+            return cachedSettingsScrollRectTemplate;
         }
 
         private GameSettingsTab ResolveGameSettingsTabTemplate()
         {
+            if (cachedGameSettingsTabTemplate != null)
+            {
+                return cachedGameSettingsTabTemplate;
+            }
+
             SettingsScreen settingsScreen = ResolveSettingsScreenTemplate();
-            return SettingsScreenGameTabField?.GetValue(settingsScreen) as GameSettingsTab;
+            cachedGameSettingsTabTemplate = SettingsScreenGameTabField?.GetValue(settingsScreen) as GameSettingsTab;
+            return cachedGameSettingsTabTemplate;
         }
 
         private UpdatableToggle ResolveSettingsToggleTemplate()
         {
+            if (cachedSettingsToggleTemplate != null)
+            {
+                return cachedSettingsToggleTemplate;
+            }
+
             GameSettingsTab gameSettingsTab = ResolveGameSettingsTabTemplate();
-            return GameSettingsToggleTemplateField?.GetValue(gameSettingsTab) as UpdatableToggle;
+            cachedSettingsToggleTemplate = GameSettingsToggleTemplateField?.GetValue(gameSettingsTab) as UpdatableToggle;
+            return cachedSettingsToggleTemplate;
         }
 
         private RectTransform ResolveSettingsSliderContainerTemplate()
         {
+            if (cachedSettingsSliderContainerTemplate != null)
+            {
+                return cachedSettingsSliderContainerTemplate;
+            }
+
             GameSettingsTab gameSettingsTab = ResolveGameSettingsTabTemplate();
             if (gameSettingsTab == null)
             {
@@ -166,17 +199,25 @@ namespace pitTeam.Components
             Transform sliderRoot = gameSettingsTab.transform.Find("Image/Scroll View/Viewport/Other Settings/Scrolls/FOV");
             if (sliderRoot is RectTransform sliderRect)
             {
-                return sliderRect;
+                cachedSettingsSliderContainerTemplate = sliderRect;
+                return cachedSettingsSliderContainerTemplate;
             }
 
             NumberSlider fallbackSlider = ResolveSettingsSliderTemplate();
-            return fallbackSlider?.transform as RectTransform;
+            cachedSettingsSliderContainerTemplate = fallbackSlider?.transform as RectTransform;
+            return cachedSettingsSliderContainerTemplate;
         }
 
         private NumberSlider ResolveSettingsSliderTemplate()
         {
+            if (cachedSettingsSliderTemplate != null)
+            {
+                return cachedSettingsSliderTemplate;
+            }
+
             GameSettingsTab gameSettingsTab = ResolveGameSettingsTabTemplate();
-            return GameSettingsSliderTemplateField?.GetValue(gameSettingsTab) as NumberSlider;
+            cachedSettingsSliderTemplate = GameSettingsSliderTemplateField?.GetValue(gameSettingsTab) as NumberSlider;
+            return cachedSettingsSliderTemplate;
         }
 
         private TradingPlayerPanel ResolveTradingPlayerPanelTemplate()
@@ -348,14 +389,15 @@ namespace pitTeam.Components
                 return squadIconSprite;
             }
 
-            string[] candidates =
+            const string menuOverhaulPluginGuid = "com.moxopixel.menuoverhaul";
+            bool useInverseIcon = Chainloader.PluginInfos.ContainsKey(menuOverhaulPluginGuid);
+            string iconPath = FindSquadIconPath(useInverseIcon ? "squad-inverse.png" : "squad.png");
+            if (string.IsNullOrEmpty(iconPath) && useInverseIcon)
             {
-                Path.Combine(PluginDirectory, "squad.png"),
-                Path.Combine(PluginDirectory, "resources", "squad.png"),
-                Path.Combine(Directory.GetParent(PluginDirectory)?.FullName ?? PluginDirectory, "resources", "squad.png")
-            };
+                pitFireTeam.Log.LogWarning("[UI] Menu Overhaul detected, but squad-inverse.png could not be found. Falling back to squad.png.");
+                iconPath = FindSquadIconPath("squad.png");
+            }
 
-            string iconPath = candidates.FirstOrDefault(File.Exists);
             if (string.IsNullOrEmpty(iconPath))
             {
                 pitFireTeam.Log.LogWarning("[UI] Squad Control icon could not be found.");
@@ -375,6 +417,18 @@ namespace pitTeam.Components
             squadIconSprite = Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height), new Vector2(0.5f, 0.5f), 200f);
             squadIconSprite.name = "pitFireTeam_SquadControlIcon";
             return squadIconSprite;
+        }
+
+        private static string FindSquadIconPath(string fileName)
+        {
+            string[] candidates =
+            {
+                Path.Combine(PluginDirectory, fileName),
+                Path.Combine(PluginDirectory, "resources", fileName),
+                Path.Combine(Directory.GetParent(PluginDirectory)?.FullName ?? PluginDirectory, "resources", fileName)
+            };
+
+            return candidates.FirstOrDefault(File.Exists);
         }
 
         private Sprite LoadRosterTileDiagonalSprite()

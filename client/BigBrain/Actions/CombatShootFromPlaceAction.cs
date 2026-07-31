@@ -1,5 +1,6 @@
 using DrakiaXYZ.BigBrain.Brains;
 using EFT;
+using pitTeam.Modules;
 using pitTeam.Utils;
 using UnityEngine;
 
@@ -19,6 +20,8 @@ namespace pitTeam.BigBrain.Actions
         private const float StandingFireProbeHeight = 1.45f;
         private readonly GClass276 baseLogic;
         private float aimAlignStartedAt;
+        private float nextLauncherNormalFireRejectAt;
+        private float nextLauncherNormalFireRecordAt;
         private Vector3 startPosition;
 
         public CombatShootFromPlaceAction(BotOwner botOwner) : base(botOwner)
@@ -63,6 +66,51 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
+            if (FollowerCombatCommon.IsGrenadeLauncherCombatReason(reason))
+            {
+                bool usingFirstPrimaryVisualGrace = false;
+                if (!FollowerCombatCommon.TryCanUseGrenadeLauncherNormalFire(
+                        BotOwner,
+                        goalEnemy,
+                        FollowerCombatGrenadierObjective.IsOrderedGrenadierReason(reason),
+                        out Vector3 launcherImpactTarget,
+                        out string launcherRejectReason))
+                {
+                    bool canContinueCommittedPrimaryShot =
+                        string.Equals(launcherRejectReason, "enemyNotVisible", System.StringComparison.Ordinal) &&
+                        FollowerCombatCommon.TryContinueFirstPrimaryGrenadeLauncherNormalFire(
+                            BotOwner,
+                            goalEnemy,
+                            FollowerCombatGrenadierObjective.IsOrderedGrenadierReason(reason),
+                            out launcherImpactTarget,
+                            out _);
+                    if (!canContinueCommittedPrimaryShot)
+                    {
+                        StopCombatShooting();
+                        if (Time.time >= nextLauncherNormalFireRejectAt)
+                        {
+                            nextLauncherNormalFireRejectAt = Time.time + 2f;
+                            BattleRecorder.RecordGrenadeEvent(
+                                BotOwner,
+                                "launcherNormalFireHold",
+                                $"{reason}:{launcherRejectReason}",
+                                goalEnemy: goalEnemy);
+                        }
+
+                        return;
+                    }
+
+                    usingFirstPrimaryVisualGrace = true;
+                }
+
+                UpdateGrenadeLauncherNormalFire(
+                    launcherImpactTarget,
+                    reason,
+                    goalEnemy,
+                    usingFirstPrimaryVisualGrace);
+                return;
+            }
+
             // If an immediate-fire decision briefly loses CanShoot because of foliage or a small
             // visibility flicker, keep a short suppressive shot at the last verified point instead
             // of dropping into movement churn.
@@ -85,6 +133,55 @@ namespace pitTeam.BigBrain.Actions
 
             baseLogic.UpdateNodeByBrain(GetData<GClass28>(data));
             EnforceSupportedFirePose(goalEnemy, allowProne);
+        }
+
+        /// <summary>
+        /// Runs EFT's ordinary aim-and-trigger worker with an explicit ballistic point. The outer
+        /// shoot-from-place node only invokes this worker when the straight rifle CanShoot flag is
+        /// true, which would suppress valid arcing launcher shots. The grenadier objective has
+        /// already validated the live target, impact radius, friendly lane, and sampled arc before
+        /// this method is allowed to bypass that outer rifle gate.
+        /// </summary>
+        private void UpdateGrenadeLauncherNormalFire(
+            Vector3 impactTarget,
+            string? reason,
+            EnemyInfo? goalEnemy,
+            bool usingFirstPrimaryVisualGrace)
+        {
+            StopStationaryCombatMovement();
+            BotOwner.SetPose(1f);
+            baseLogic.CanLay = false;
+
+            Vector3 fireOrigin = BotOwner.WeaponRoot != null
+                ? BotOwner.WeaponRoot.position
+                : BotOwner.Position + Vector3.up * 1.2f;
+            Vector3 aimPoint = FollowerCombatCommon.GetGrenadeLauncherSuppressAimPoint(
+                BotOwner,
+                fireOrigin,
+                impactTarget);
+
+            BotOwner.Steering.LookToPoint(aimPoint);
+            baseLogic.Gclass178_0.UpdateNodeByBrain(new GClass27(aimPoint));
+
+            if (Time.time >= nextLauncherNormalFireRecordAt)
+            {
+                nextLauncherNormalFireRecordAt = Time.time + 1f;
+                BattleRecorder.RecordGrenadeEvent(
+                    BotOwner,
+                    "launcherNormalFire",
+                    $"{reason}:canShoot={goalEnemy?.CanShoot == true}" +
+                    $":visible={goalEnemy?.IsVisible == true}" +
+                    $":visualGrace={usingFirstPrimaryVisualGrace}" +
+                    $":aimReady={BotOwner.AimingManager?.CurrentAiming?.IsReady == true}" +
+                    $":weaponReady={BotOwner.WeaponManager?.IsWeaponReady == true}" +
+                    $":stateReady={BotOwner.ShootData?.CanShootByState == true}" +
+                    $":shooting={BotOwner.ShootData?.Shooting == true}" +
+                    $":loaded={FollowerCombatCommon.CountLoadedRounds(FollowerCombatCommon.GetActiveOrEquippedGrenadeLauncher(BotOwner))}" +
+                    $":aimRaise={aimPoint.y - impactTarget.y:0.00}",
+                    goalEnemy: goalEnemy,
+                    target: impactTarget,
+                    suppressFrom: aimPoint);
+            }
         }
 
         /// <summary>

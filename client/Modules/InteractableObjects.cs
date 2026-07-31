@@ -29,14 +29,29 @@ namespace pitTeam.Modules
         private Vector3? _lootPosition;
         private Components.BotFollowerPlayer? _botToLoot;
         private string? _botToLootProfileId;
+        private LootableContainer? _lootContainerTarget;
+        private Vector3? _lootContainerPosition;
+        private Components.BotFollowerPlayer? _botToContainerLoot;
+        private string? _botToContainerLootProfileId;
         private Corpse? _bodyLootTarget;
         private Vector3? _bodyLootPosition;
         private Components.BotFollowerPlayer? _botToBodyLoot;
         private string? _botToBodyLootProfileId;
+        private Dictionary<string, LootItem>? _lootItemsByBot;
+        private Dictionary<string, Vector3>? _lootPositionsByBot;
+        private Dictionary<string, Corpse>? _bodyLootTargetsByBot;
+        private Dictionary<string, Vector3>? _bodyLootPositionsByBot;
+        private Dictionary<string, LootableContainer>? _lootContainerTargetsByBot;
+        private Dictionary<string, Vector3>? _lootContainerPositionsByBot;
+        private HashSet<string>? _checkedBodyLootTargetIds;
+        private HashSet<string>? _checkedContainerLootTargetIds;
 
         private bool IsDisposed = false;
 
         private Dictionary<string, List<string>>? _lootedItems;
+        private Dictionary<string, HashSet<string>>? _lootedWeaponIds;
+        private Dictionary<string, Dictionary<string, HashSet<string>>>? _lootedWeaponMagazineIds;
+        private Dictionary<string, HashSet<string>>? _strictCargoItemIds;
         private List<Item>? _toSendItems;
         private Dictionary<string, Dictionary<string, object>>? _followersWithLoot;
 
@@ -56,6 +71,9 @@ namespace pitTeam.Modules
                 Instance = this;
 
                 _lootedItems = new Dictionary<string, List<string>>();
+                _lootedWeaponIds = new Dictionary<string, HashSet<string>>();
+                _lootedWeaponMagazineIds = new Dictionary<string, Dictionary<string, HashSet<string>>>(StringComparer.Ordinal);
+                _strictCargoItemIds = new Dictionary<string, HashSet<string>>();
                 _toSendItems = new List<Item>();
                 _followersWithLoot = new Dictionary<string, Dictionary<string, object>>();
                 _doorsToOpen = new Dictionary<string, Door>();
@@ -63,6 +81,14 @@ namespace pitTeam.Modules
                 _enemiesSeen = new List<Player>();
 
                 _followersEquipment = new Dictionary<string, List<string>>();
+                _lootItemsByBot = new Dictionary<string, LootItem>(StringComparer.Ordinal);
+                _lootPositionsByBot = new Dictionary<string, Vector3>(StringComparer.Ordinal);
+                _bodyLootTargetsByBot = new Dictionary<string, Corpse>(StringComparer.Ordinal);
+                _bodyLootPositionsByBot = new Dictionary<string, Vector3>(StringComparer.Ordinal);
+                _lootContainerTargetsByBot = new Dictionary<string, LootableContainer>(StringComparer.Ordinal);
+                _lootContainerPositionsByBot = new Dictionary<string, Vector3>(StringComparer.Ordinal);
+                _checkedBodyLootTargetIds = new HashSet<string>(StringComparer.Ordinal);
+                _checkedContainerLootTargetIds = new HashSet<string>(StringComparer.Ordinal);
 
             }
 
@@ -70,6 +96,7 @@ namespace pitTeam.Modules
         /** Send items given to followers back to the player */
         private bool SendStoreItems()
         {
+            int trackedItemCount = _lootedItems?.Values.Sum(items => items?.Count ?? 0) ?? 0;
             GatherItems();
 
             if (!EnableBackendItemReturn)
@@ -86,13 +113,21 @@ namespace pitTeam.Modules
                 return false;
             }
 
+            if (trackedItemCount > 0 && _toSendItems.Count == 0)
+            {
+                Logger.LogInfo($"[Loot] Raid-end follower return had {trackedItemCount} tracked item id(s), but no readable return roots were found.");
+            }
+
             Dictionary<string, object>? member = null;
             if (_followersWithLoot != null && _followersWithLoot.Count > 0)
             {
                 member = _followersWithLoot.Values.FirstOrDefault();
             }
 
-            return SendReturnItems(_toSendItems, member, "post-raid returned follower items");
+            // Raid cleanup can unload the request owner immediately after this object is disposed.
+            // Send the return payload now so temporary Simple/Restricted gear cannot be stripped
+            // from teammate persistence before the mail request has actually reached the server.
+            return SendReturnItems(_toSendItems, member, "post-raid returned follower items", synchronous: true);
         }
         /** Gather what items where given to followers and which is still alive to count */
         private void GatherItems()
@@ -110,7 +145,7 @@ namespace pitTeam.Modules
             {
                 foreach (var bot in player.Value.Followers)
                 {
-                    if (bot.BotState != EBotState.Active || !bot.HealthController.IsAlive)
+                    if (!ShouldGatherRaidEndFollowerInventory(bot))
                     {
                         continue;
                     }
@@ -173,6 +208,9 @@ namespace pitTeam.Modules
                 Item item = FindStoredReturnItem(bot.GetPlayer.InventoryController, stored);
                 if (item == null)
                 {
+                    Logger.LogInfo(
+                        $"[Loot] Could not find tracked follower return item '{stored}' for " +
+                        $"'{bot.Profile?.Nickname ?? bot.ProfileId ?? "unknown"}' at raid end; botState={bot.BotState}.");
                     continue;
                 }
 
@@ -453,7 +491,8 @@ namespace pitTeam.Modules
         private static bool SendReturnItems(
             IEnumerable<Item> items,
             Dictionary<string, object>? member,
-            string context)
+            string context,
+            bool synchronous = false)
         {
             if (!EnableBackendItemReturn || items == null)
             {
@@ -489,19 +528,27 @@ namespace pitTeam.Modules
                     member,
                 }.ToJson(defaultJsonConverters);
 
-                Task.Run(() =>
+                bool Send()
                 {
                     try
                     {
                         RequestHandler.PostJson("/singleplayer/returnitems", returnItemsJson);
+                        return true;
                     }
                     catch (Exception ex)
                     {
                         Logger.LogError($"Failed to send {context}");
                         Logger.LogError(ex);
+                        return false;
                     }
-                });
+                }
 
+                if (synchronous)
+                {
+                    return Send();
+                }
+
+                Task.Run(() => Send());
                 return true;
             }
             catch (Exception ex)
@@ -548,10 +595,11 @@ namespace pitTeam.Modules
                 }
                 else
                 {
+                    bool returnedTrackedItems = SendStoreItems();
                     SendEscapedFollowerDefaultLoadoutOutcomes();
                     NpcMessage.SendLostTeammateOutcomes();
 
-                    if (!SendStoreItems())
+                    if (!returnedTrackedItems)
                     {
                         NpcMessage.NpcSendThankYou();
                     }
@@ -582,11 +630,22 @@ namespace pitTeam.Modules
             }
 
             _lootedItems?.Clear();
+            _lootedWeaponIds?.Clear();
+            _lootedWeaponMagazineIds?.Clear();
+            _strictCargoItemIds?.Clear();
             _toSendItems?.Clear();
             _followersWithLoot?.Clear();
             _enemiesSeen?.Clear();
 
             _followersEquipment?.Clear();
+            _lootItemsByBot?.Clear();
+            _lootPositionsByBot?.Clear();
+            _bodyLootTargetsByBot?.Clear();
+            _bodyLootPositionsByBot?.Clear();
+            _lootContainerTargetsByBot?.Clear();
+            _lootContainerPositionsByBot?.Clear();
+            _checkedBodyLootTargetIds?.Clear();
+            _checkedContainerLootTargetIds?.Clear();
 
             _currDoor = null;
             _doorsToOpen?.Clear();
@@ -594,10 +653,21 @@ namespace pitTeam.Modules
             _lootItem = null;
             _bodyLootTarget = null;
             _lootedItems = null;
+            _lootedWeaponIds = null;
+            _lootedWeaponMagazineIds = null;
+            _strictCargoItemIds = null;
 
             _enemiesSeen = null;
 
             _doorsToOpen = null;
+            _lootItemsByBot = null;
+            _lootPositionsByBot = null;
+            _bodyLootTargetsByBot = null;
+            _bodyLootPositionsByBot = null;
+            _lootContainerTargetsByBot = null;
+            _lootContainerPositionsByBot = null;
+            _checkedBodyLootTargetIds = null;
+            _checkedContainerLootTargetIds = null;
 
             _isBossDead = false;
 
@@ -621,10 +691,7 @@ namespace pitTeam.Modules
                 {
                     foreach (var bot in boss.Value.Followers)
                     {
-                        if (bot == null ||
-                            bot.BotState != EBotState.Active ||
-                            bot.HealthController?.IsAlive != true ||
-                            bot.GetPlayer?.InventoryController?.Inventory?.Equipment == null ||
+                        if (!ShouldGatherRaidEndFollowerInventory(bot) ||
                             string.IsNullOrWhiteSpace(bot.Profile?.AccountId) ||
                             !seenAids.Add(bot.Profile.AccountId))
                         {
@@ -719,6 +786,22 @@ namespace pitTeam.Modules
             return maximum > 0f ? Mathf.Clamp01(current / maximum) : 1d;
         }
 
+        private static bool ShouldGatherRaidEndFollowerInventory(BotOwner bot)
+        {
+            if (bot == null ||
+                bot.IsDead ||
+                bot.HealthController?.IsAlive != true ||
+                bot.GetPlayer?.InventoryController?.Inventory?.Equipment == null)
+            {
+                return false;
+            }
+
+            // BotsController.Stop can move a still-alive follower out of Active before our
+            // cleanup runs. Raid-end return and equipment snapshots only require a readable
+            // inventory, so do not drop tracked cargo just because BotState has already changed.
+            return true;
+        }
+
         public static void Dispose()
         {
             if (Instance != null)
@@ -768,6 +851,132 @@ namespace pitTeam.Modules
             return Instance._bodyLootTarget;
         }
 
+        public static bool IsBodyLootTargetChecked(Corpse? corpse)
+        {
+            if (Instance?._checkedBodyLootTargetIds == null ||
+                corpse == null ||
+                !TryGetBodyLootTargetId(corpse, out string targetId))
+            {
+                return false;
+            }
+
+            return Instance._checkedBodyLootTargetIds.Contains(targetId);
+        }
+
+        public static void MarkBodyLootTargetChecked(Corpse? corpse)
+        {
+            if (Instance?._checkedBodyLootTargetIds == null ||
+                corpse == null ||
+                !TryGetBodyLootTargetId(corpse, out string targetId))
+            {
+                return;
+            }
+
+            Instance._checkedBodyLootTargetIds.Add(targetId);
+        }
+
+        public static void SetCurLootContainerTarget(LootableContainer? container)
+        {
+            if (Instance != null)
+            {
+                Instance._lootContainerTarget = container;
+            }
+        }
+
+        public static LootableContainer? GetCurLootContainerTarget()
+        {
+            if (Instance == null) return null;
+            return Instance._lootContainerTarget;
+        }
+
+        public static bool IsContainerLootTargetChecked(LootableContainer? container)
+        {
+            if (Instance?._checkedContainerLootTargetIds == null ||
+                container == null ||
+                !TryGetContainerLootTargetId(container, out string targetId))
+            {
+                return false;
+            }
+
+            return Instance._checkedContainerLootTargetIds.Contains(targetId);
+        }
+
+        public static void MarkContainerLootTargetChecked(LootableContainer? container)
+        {
+            if (Instance?._checkedContainerLootTargetIds == null ||
+                container == null ||
+                !TryGetContainerLootTargetId(container, out string targetId))
+            {
+                return;
+            }
+
+            Instance._checkedContainerLootTargetIds.Add(targetId);
+        }
+
+        public static LootItem? GetAssignedLootItem(BotOwner bot)
+        {
+            if (Instance == null ||
+                bot == null ||
+                string.IsNullOrEmpty(bot.ProfileId) ||
+                Instance._lootItemsByBot == null ||
+                !Instance._lootItemsByBot.TryGetValue(bot.ProfileId, out LootItem lootItem))
+            {
+                return null;
+            }
+
+            return lootItem;
+        }
+
+        public static Corpse? GetAssignedBodyLootTarget(BotOwner bot)
+        {
+            if (Instance == null ||
+                bot == null ||
+                string.IsNullOrEmpty(bot.ProfileId) ||
+                Instance._bodyLootTargetsByBot == null ||
+                !Instance._bodyLootTargetsByBot.TryGetValue(bot.ProfileId, out Corpse corpse))
+            {
+                return null;
+            }
+
+            return corpse;
+        }
+
+        public static LootableContainer? GetAssignedLootContainerTarget(BotOwner bot)
+        {
+            if (Instance == null ||
+                bot == null ||
+                string.IsNullOrEmpty(bot.ProfileId) ||
+                Instance._lootContainerTargetsByBot == null ||
+                !Instance._lootContainerTargetsByBot.TryGetValue(bot.ProfileId, out LootableContainer container))
+            {
+                return null;
+            }
+
+            return container;
+        }
+
+        public static bool IsBodyLootTargetReserved(Corpse? corpse, BotOwner? allowedBot = null)
+        {
+            if (Instance == null || corpse == null)
+            {
+                return false;
+            }
+
+            // Body/container commands can target different objects in parallel, but one object may
+            // only have one active follower owner at a time.
+            return IsBodyLootTargetReservedByOther(corpse, allowedBot?.ProfileId);
+        }
+
+        public static bool IsContainerLootTargetReserved(LootableContainer? container, BotOwner? allowedBot = null)
+        {
+            if (Instance == null || container == null)
+            {
+                return false;
+            }
+
+            return IsContainerLootTargetReservedByOther(container, allowedBot?.ProfileId);
+        }
+
         public static Vector3 GetLootPosition()
         {
             if (Instance?._lootItem != null && TryGetLootNavPosition(Instance._lootItem, out Vector3 livePosition))
@@ -779,27 +988,50 @@ namespace pitTeam.Modules
             return Instance?._lootPosition ?? Vector3.zero;
         }
 
+        public static Vector3 GetLootPosition(BotOwner bot)
+        {
+            if (Instance == null || bot == null || string.IsNullOrEmpty(bot.ProfileId))
+            {
+                return GetLootPosition();
+            }
+
+            LootItem? lootItem = GetAssignedLootItem(bot);
+            if (lootItem != null && TryGetLootNavPosition(lootItem, out Vector3 livePosition))
+            {
+                if (Instance._lootPositionsByBot != null)
+                {
+                    Instance._lootPositionsByBot[bot.ProfileId] = livePosition;
+                }
+
+                return livePosition;
+            }
+
+            return Instance._lootPositionsByBot != null &&
+                   Instance._lootPositionsByBot.TryGetValue(bot.ProfileId, out Vector3 reservedPosition)
+                ? reservedPosition
+                : GetLootPosition();
+        }
+
         /** Set what bot is going to pick up the loot */
         public static bool SetTaker(BotOwner bot, LootItem? lootItem = null)
         {
-            if (Instance == null) return false;
+            if (Instance == null || bot == null || string.IsNullOrEmpty(bot.ProfileId)) return false;
 
             var _follower = BossPlayers.Instance.GetFollower(bot);
 
             if (_follower == null) return false;
 
-            if (lootItem != null)
-            {
-                // Pin the target at command issue time. The quick panel can clear its current
-                // interactable before the follower action starts moving toward the item.
-                Instance._lootItem = lootItem;
-            }
-
-            if (Instance._lootItem != null)
+            LootItem targetLootItem = lootItem ?? GetAssignedLootItem(bot) ?? Instance._lootItem;
+            if (targetLootItem != null)
             {
                 try
                 {
-                    Collider collider = Instance._lootItem.GetComponentInChildren<Collider>();
+                    if (lootItem != null)
+                    {
+                        Instance._lootItem = lootItem;
+                    }
+
+                    Collider collider = targetLootItem.GetComponentInChildren<Collider>();
                     if (collider == null)
                     {
                         return false;
@@ -818,6 +1050,15 @@ namespace pitTeam.Modules
 
                     Instance._botToLoot = _follower;
                     Instance._botToLootProfileId = bot.ProfileId;
+                    if (Instance._lootItemsByBot != null)
+                    {
+                        Instance._lootItemsByBot[bot.ProfileId] = targetLootItem;
+                    }
+
+                    if (Instance._lootPositionsByBot != null)
+                    {
+                        Instance._lootPositionsByBot[bot.ProfileId] = navMeshHit.position;
+                    }
 
                     return true;
 
@@ -832,28 +1073,42 @@ namespace pitTeam.Modules
             return false;
         }
 
-        public static bool SetBodyLootTaker(BotOwner bot, Corpse? corpse = null)
+        public static bool SetBodyLootTaker(
+            BotOwner bot,
+            Corpse? corpse = null,
+            bool allowAlreadyChecked = false)
         {
-            if (Instance == null || bot == null) return false;
+            if (Instance == null || bot == null || string.IsNullOrEmpty(bot.ProfileId)) return false;
 
             var follower = BossPlayers.Instance.GetFollower(bot);
-            if (follower == null) return false;
+            if (follower == null || !follower.CanHandleBodyContainerLootCommands) return false;
 
-            if (corpse != null)
+            Corpse targetCorpse = corpse ?? GetAssignedBodyLootTarget(bot) ?? Instance._bodyLootTarget;
+            if (targetCorpse == null)
             {
-                // Pin the corpse at command issue time. The quick panel can clear its current
-                // interactable before the follower reaches the body.
-                Instance._bodyLootTarget = corpse;
+                return false;
             }
 
-            if (Instance._bodyLootTarget == null)
+            // Completed-body history prevents autonomous loot selection from repeating work.
+            // Explicit player orders opt out, but can never bypass another follower's reservation.
+            if (!allowAlreadyChecked && IsBodyLootTargetChecked(targetCorpse))
+            {
+                return false;
+            }
+
+            if (IsBodyLootTargetReservedByOther(targetCorpse, bot.ProfileId))
             {
                 return false;
             }
 
             try
             {
-                if (!TryGetLootNavPosition(Instance._bodyLootTarget, out Vector3 bodyPosition))
+                if (corpse != null)
+                {
+                    Instance._bodyLootTarget = corpse;
+                }
+
+                if (!TryGetLootNavPosition(targetCorpse, out Vector3 bodyPosition))
                 {
                     return false;
                 }
@@ -861,6 +1116,15 @@ namespace pitTeam.Modules
                 Instance._bodyLootPosition = bodyPosition;
                 Instance._botToBodyLoot = follower;
                 Instance._botToBodyLootProfileId = bot.ProfileId;
+                if (Instance._bodyLootTargetsByBot != null)
+                {
+                    Instance._bodyLootTargetsByBot[bot.ProfileId] = targetCorpse;
+                }
+
+                if (Instance._bodyLootPositionsByBot != null)
+                {
+                    Instance._bodyLootPositionsByBot[bot.ProfileId] = bodyPosition;
+                }
 
                 return true;
             }
@@ -873,7 +1137,285 @@ namespace pitTeam.Modules
             return false;
         }
 
-        private static bool TryGetLootNavPosition(LootItem lootItem, out Vector3 position)
+        public static bool SetContainerLootTaker(
+            BotOwner bot,
+            LootableContainer? container = null,
+            bool allowAlreadyChecked = false)
+        {
+            if (Instance == null || bot == null || string.IsNullOrEmpty(bot.ProfileId)) return false;
+
+            var follower = BossPlayers.Instance.GetFollower(bot);
+            if (follower == null || !follower.CanHandleBodyContainerLootCommands) return false;
+
+            LootableContainer targetContainer = container ?? GetAssignedLootContainerTarget(bot) ?? Instance._lootContainerTarget;
+            if (targetContainer == null)
+            {
+                return false;
+            }
+
+            // Keep completed containers out of autonomous selection while allowing a direct player
+            // order to search one again. Active ownership is still checked independently below.
+            if (!allowAlreadyChecked && IsContainerLootTargetChecked(targetContainer))
+            {
+                return false;
+            }
+
+            if (IsContainerLootTargetReservedByOther(targetContainer, bot.ProfileId))
+            {
+                return false;
+            }
+
+            try
+            {
+                if (container != null)
+                {
+                    Instance._lootContainerTarget = container;
+                }
+
+                if (!TryGetLootNavPosition(targetContainer, out Vector3 containerPosition))
+                {
+                    return false;
+                }
+
+                Instance._lootContainerPosition = containerPosition;
+                Instance._botToContainerLoot = follower;
+                Instance._botToContainerLootProfileId = bot.ProfileId;
+                if (Instance._lootContainerTargetsByBot != null)
+                {
+                    Instance._lootContainerTargetsByBot[bot.ProfileId] = targetContainer;
+                }
+
+                if (Instance._lootContainerPositionsByBot != null)
+                {
+                    Instance._lootContainerPositionsByBot[bot.ProfileId] = containerPosition;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("Could not make bot a Container Loot Taker");
+                Logger.LogError(ex);
+            }
+
+            return false;
+        }
+
+        private static bool IsBodyLootTargetReservedByOther(Corpse targetCorpse, string? allowedProfileId)
+        {
+            if (Instance?._bodyLootTargetsByBot != null)
+            {
+                foreach (KeyValuePair<string, Corpse> reservation in Instance._bodyLootTargetsByBot.ToList())
+                {
+                    if (!IsSameBodyLootTarget(reservation.Value, targetCorpse) ||
+                        IsAllowedReservationOwner(reservation.Key, allowedProfileId))
+                    {
+                        continue;
+                    }
+
+                    if (IsActiveLootReservation(reservation.Key, FollowerCommandType.TakeBodyGear))
+                    {
+                        return true;
+                    }
+
+                    RemoveBodyLootReservation(reservation.Key);
+                }
+            }
+
+            string? legacyOwnerProfileId = Instance?._botToBodyLootProfileId;
+            bool legacyOwnerHasMappedTarget =
+                !string.IsNullOrEmpty(legacyOwnerProfileId) &&
+                Instance?._bodyLootTargetsByBot?.ContainsKey(legacyOwnerProfileId) == true;
+            if (!legacyOwnerHasMappedTarget &&
+                IsSameBodyLootTarget(Instance?._bodyLootTarget, targetCorpse) &&
+                !string.IsNullOrEmpty(legacyOwnerProfileId) &&
+                !IsAllowedReservationOwner(legacyOwnerProfileId, allowedProfileId))
+            {
+                // The global target is also the quick-menu target. Once per-follower maps exist,
+                // pairing that mutable target with an older global owner creates a false reservation
+                // for the next body. Use this fallback only for an unmapped legacy owner.
+                if (IsActiveLootReservation(legacyOwnerProfileId, FollowerCommandType.TakeBodyGear))
+                {
+                    return true;
+                }
+
+                RemoveBodyLootReservation(legacyOwnerProfileId);
+            }
+
+            return false;
+        }
+
+        private static bool IsContainerLootTargetReservedByOther(LootableContainer targetContainer, string? allowedProfileId)
+        {
+            if (Instance?._lootContainerTargetsByBot != null)
+            {
+                foreach (KeyValuePair<string, LootableContainer> reservation in Instance._lootContainerTargetsByBot.ToList())
+                {
+                    if (!IsSameContainerLootTarget(reservation.Value, targetContainer) ||
+                        IsAllowedReservationOwner(reservation.Key, allowedProfileId))
+                    {
+                        continue;
+                    }
+
+                    if (IsActiveLootReservation(reservation.Key, FollowerCommandType.TakeContainerLoot))
+                    {
+                        return true;
+                    }
+
+                    RemoveContainerLootReservation(reservation.Key);
+                }
+            }
+
+            string? legacyOwnerProfileId = Instance?._botToContainerLootProfileId;
+            bool legacyOwnerHasMappedTarget =
+                !string.IsNullOrEmpty(legacyOwnerProfileId) &&
+                Instance?._lootContainerTargetsByBot?.ContainsKey(legacyOwnerProfileId) == true;
+            if (!legacyOwnerHasMappedTarget &&
+                IsSameContainerLootTarget(Instance?._lootContainerTarget, targetContainer) &&
+                !string.IsNullOrEmpty(legacyOwnerProfileId) &&
+                !IsAllowedReservationOwner(legacyOwnerProfileId, allowedProfileId))
+            {
+                // Keep the same protection as bodies: a menu target refresh must not inherit
+                // another follower's legacy global owner while mapped reservations are active.
+                if (IsActiveLootReservation(legacyOwnerProfileId, FollowerCommandType.TakeContainerLoot))
+                {
+                    return true;
+                }
+
+                RemoveContainerLootReservation(legacyOwnerProfileId);
+            }
+
+            return false;
+        }
+
+        private static bool IsAllowedReservationOwner(string ownerProfileId, string? allowedProfileId)
+        {
+            return !string.IsNullOrEmpty(ownerProfileId) &&
+                   !string.IsNullOrEmpty(allowedProfileId) &&
+                   string.Equals(ownerProfileId, allowedProfileId, StringComparison.Ordinal);
+        }
+
+        private static bool IsActiveLootReservation(string profileId, FollowerCommandType expectedCommand)
+        {
+            BotFollowerPlayer follower = BossPlayers.GetFollowerByProfileId(profileId);
+            BotOwner bot = follower?.GetBot();
+            if (follower == null ||
+                bot == null ||
+                bot.IsDead ||
+                bot.BotState != EBotState.Active ||
+                bot.GetPlayer?.HealthController?.IsAlive != true)
+            {
+                return false;
+            }
+
+            if (follower.TryPeekActiveCommand(out FollowerCommandType command, out _, out _) &&
+                command == expectedCommand)
+            {
+                return true;
+            }
+
+            // Once the follower starts the simulated search, command changes are ignored, so the
+            // committed command becomes the authoritative liveness signal for the reservation.
+            return follower.IsCommittedLootCommandActive(expectedCommand);
+        }
+
+        private static bool IsSameBodyLootTarget(Corpse? first, Corpse? second)
+        {
+            if (first == null || second == null)
+            {
+                return false;
+            }
+
+            if (ReferenceEquals(first, second))
+            {
+                return true;
+            }
+
+            Item firstRoot = first.ItemOwner?.RootItem as Item;
+            Item secondRoot = second.ItemOwner?.RootItem as Item;
+            return !string.IsNullOrEmpty(firstRoot?.Id) &&
+                   string.Equals(firstRoot.Id, secondRoot?.Id, StringComparison.Ordinal);
+        }
+
+        private static bool TryGetBodyLootTargetId(Corpse corpse, out string targetId)
+        {
+            targetId = string.Empty;
+            Item root = corpse?.ItemOwner?.RootItem as Item;
+            if (string.IsNullOrEmpty(root?.Id))
+            {
+                return false;
+            }
+
+            targetId = root.Id;
+            return true;
+        }
+
+        private static bool IsSameContainerLootTarget(LootableContainer? first, LootableContainer? second)
+        {
+            if (first == null || second == null)
+            {
+                return false;
+            }
+
+            if (ReferenceEquals(first, second))
+            {
+                return true;
+            }
+
+            Item firstRoot = first.ItemOwner?.Items?.FirstOrDefault();
+            Item secondRoot = second.ItemOwner?.Items?.FirstOrDefault();
+            return !string.IsNullOrEmpty(firstRoot?.Id) &&
+                   string.Equals(firstRoot.Id, secondRoot?.Id, StringComparison.Ordinal);
+        }
+
+        private static bool TryGetContainerLootTargetId(LootableContainer container, out string targetId)
+        {
+            targetId = string.Empty;
+            Item root = container?.ItemOwner?.Items?.FirstOrDefault();
+            if (string.IsNullOrEmpty(root?.Id))
+            {
+                return false;
+            }
+
+            targetId = root.Id;
+            return true;
+        }
+
+        private static void RemoveBodyLootReservation(string profileId)
+        {
+            if (Instance == null || string.IsNullOrEmpty(profileId))
+            {
+                return;
+            }
+
+            Instance._bodyLootTargetsByBot?.Remove(profileId);
+            Instance._bodyLootPositionsByBot?.Remove(profileId);
+
+            if (string.Equals(Instance._botToBodyLootProfileId, profileId, StringComparison.Ordinal))
+            {
+                Instance._botToBodyLoot = null;
+                Instance._botToBodyLootProfileId = null;
+            }
+        }
+
+        private static void RemoveContainerLootReservation(string profileId)
+        {
+            if (Instance == null || string.IsNullOrEmpty(profileId))
+            {
+                return;
+            }
+
+            Instance._lootContainerTargetsByBot?.Remove(profileId);
+            Instance._lootContainerPositionsByBot?.Remove(profileId);
+
+            if (string.Equals(Instance._botToContainerLootProfileId, profileId, StringComparison.Ordinal))
+            {
+                Instance._botToContainerLoot = null;
+                Instance._botToContainerLootProfileId = null;
+            }
+        }
+
+        internal static bool TryGetLootNavPosition(LootItem lootItem, out Vector3 position)
         {
             position = Vector3.zero;
 
@@ -908,9 +1450,50 @@ namespace pitTeam.Modules
             return true;
         }
 
+        internal static bool TryGetLootNavPosition(LootableContainer container, out Vector3 position)
+        {
+            position = Vector3.zero;
+
+            if (container == null)
+            {
+                return false;
+            }
+
+            Vector3 samplePoint = container.transform.position;
+
+            try
+            {
+                Collider collider = container.GetComponentInChildren<Collider>();
+                if (collider != null)
+                {
+                    samplePoint = collider.bounds.center;
+                    samplePoint.y = collider.bounds.center.y - collider.bounds.extents.y - 0.4f;
+                }
+
+                if (NavMesh.SamplePosition(samplePoint, out NavMeshHit navMeshHit, 2f, -1))
+                {
+                    position = navMeshHit.position;
+                    return true;
+                }
+            }
+            catch
+            {
+                // fall back to raw transform position below
+            }
+
+            position = container.transform.position;
+            return true;
+        }
+
         public static bool IsTaker(BotOwner bot)
         {
             if (Instance == null || bot == null) return false;
+            if (!string.IsNullOrEmpty(bot.ProfileId) &&
+                Instance._lootItemsByBot?.ContainsKey(bot.ProfileId) == true)
+            {
+                return true;
+            }
+
             if (!string.IsNullOrEmpty(Instance._botToLootProfileId) &&
                 !string.IsNullOrEmpty(bot.ProfileId) &&
                 string.Equals(Instance._botToLootProfileId, bot.ProfileId, StringComparison.Ordinal))
@@ -925,6 +1508,12 @@ namespace pitTeam.Modules
         public static bool IsBodyLootTaker(BotOwner bot)
         {
             if (Instance == null || bot == null) return false;
+            if (!string.IsNullOrEmpty(bot.ProfileId) &&
+                Instance._bodyLootTargetsByBot?.ContainsKey(bot.ProfileId) == true)
+            {
+                return true;
+            }
+
             if (!string.IsNullOrEmpty(Instance._botToBodyLootProfileId) &&
                 !string.IsNullOrEmpty(bot.ProfileId) &&
                 string.Equals(Instance._botToBodyLootProfileId, bot.ProfileId, StringComparison.Ordinal))
@@ -936,9 +1525,32 @@ namespace pitTeam.Modules
             return follower != null && follower == Instance._botToBodyLoot;
         }
 
+        public static bool IsContainerLootTaker(BotOwner bot)
+        {
+            if (Instance == null || bot == null) return false;
+            if (!string.IsNullOrEmpty(bot.ProfileId) &&
+                Instance._lootContainerTargetsByBot?.ContainsKey(bot.ProfileId) == true)
+            {
+                return true;
+            }
+
+            if (!string.IsNullOrEmpty(Instance._botToContainerLootProfileId) &&
+                !string.IsNullOrEmpty(bot.ProfileId) &&
+                string.Equals(Instance._botToContainerLootProfileId, bot.ProfileId, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            var follower = BossPlayers.Instance.GetFollower(bot);
+            return follower != null && follower == Instance._botToContainerLoot;
+        }
+
         public static void RemoveTaker(BotOwner bot)
         {
             if (Instance == null || bot == null || string.IsNullOrEmpty(bot.ProfileId)) return;
+
+            Instance._lootItemsByBot?.Remove(bot.ProfileId);
+            Instance._lootPositionsByBot?.Remove(bot.ProfileId);
 
             if (!string.IsNullOrEmpty(Instance._botToLootProfileId) &&
                 string.Equals(Instance._botToLootProfileId, bot.ProfileId, StringComparison.Ordinal))
@@ -960,6 +1572,9 @@ namespace pitTeam.Modules
         {
             if (Instance == null || bot == null || string.IsNullOrEmpty(bot.ProfileId)) return;
 
+            Instance._bodyLootTargetsByBot?.Remove(bot.ProfileId);
+            Instance._bodyLootPositionsByBot?.Remove(bot.ProfileId);
+
             if (!string.IsNullOrEmpty(Instance._botToBodyLootProfileId) &&
                 string.Equals(Instance._botToBodyLootProfileId, bot.ProfileId, StringComparison.Ordinal))
             {
@@ -973,6 +1588,29 @@ namespace pitTeam.Modules
             {
                 Instance._botToBodyLoot = null;
                 Instance._botToBodyLootProfileId = null;
+            }
+        }
+
+        public static void RemoveContainerLootTaker(BotOwner bot)
+        {
+            if (Instance == null || bot == null || string.IsNullOrEmpty(bot.ProfileId)) return;
+
+            Instance._lootContainerTargetsByBot?.Remove(bot.ProfileId);
+            Instance._lootContainerPositionsByBot?.Remove(bot.ProfileId);
+
+            if (!string.IsNullOrEmpty(Instance._botToContainerLootProfileId) &&
+                string.Equals(Instance._botToContainerLootProfileId, bot.ProfileId, StringComparison.Ordinal))
+            {
+                Instance._botToContainerLoot = null;
+                Instance._botToContainerLootProfileId = null;
+                return;
+            }
+
+            Components.BotFollowerPlayer follower = BossPlayers.Instance.GetFollower(bot);
+            if (follower != null && Instance._botToContainerLoot == follower)
+            {
+                Instance._botToContainerLoot = null;
+                Instance._botToContainerLootProfileId = null;
             }
         }
         /** Set what bot is going to open the door */
@@ -1035,6 +1673,65 @@ namespace pitTeam.Modules
             return Instance?._bodyLootPosition ?? Vector3.zero;
         }
 
+        public static Vector3 GetBodyLootPosition(BotOwner bot)
+        {
+            if (Instance == null || bot == null || string.IsNullOrEmpty(bot.ProfileId))
+            {
+                return GetBodyLootPosition();
+            }
+
+            Corpse? corpse = GetAssignedBodyLootTarget(bot);
+            if (corpse != null && TryGetLootNavPosition(corpse, out Vector3 livePosition))
+            {
+                if (Instance._bodyLootPositionsByBot != null)
+                {
+                    Instance._bodyLootPositionsByBot[bot.ProfileId] = livePosition;
+                }
+
+                return livePosition;
+            }
+
+            return Instance._bodyLootPositionsByBot != null &&
+                   Instance._bodyLootPositionsByBot.TryGetValue(bot.ProfileId, out Vector3 reservedPosition)
+                ? reservedPosition
+                : GetBodyLootPosition();
+        }
+
+        public static Vector3 GetContainerLootPosition()
+        {
+            if (Instance?._lootContainerTarget != null && TryGetLootNavPosition(Instance._lootContainerTarget, out Vector3 livePosition))
+            {
+                Instance._lootContainerPosition = livePosition;
+                return livePosition;
+            }
+
+            return Instance?._lootContainerPosition ?? Vector3.zero;
+        }
+
+        public static Vector3 GetContainerLootPosition(BotOwner bot)
+        {
+            if (Instance == null || bot == null || string.IsNullOrEmpty(bot.ProfileId))
+            {
+                return GetContainerLootPosition();
+            }
+
+            LootableContainer? container = GetAssignedLootContainerTarget(bot);
+            if (container != null && TryGetLootNavPosition(container, out Vector3 livePosition))
+            {
+                if (Instance._lootContainerPositionsByBot != null)
+                {
+                    Instance._lootContainerPositionsByBot[bot.ProfileId] = livePosition;
+                }
+
+                return livePosition;
+            }
+
+            return Instance._lootContainerPositionsByBot != null &&
+                   Instance._lootContainerPositionsByBot.TryGetValue(bot.ProfileId, out Vector3 reservedPosition)
+                ? reservedPosition
+                : GetContainerLootPosition();
+        }
+
         public static void ClearCurBodyLootTarget()
         {
             if (Instance != null)
@@ -1043,6 +1740,17 @@ namespace pitTeam.Modules
                 Instance._bodyLootPosition = null;
                 Instance._botToBodyLoot = null;
                 Instance._botToBodyLootProfileId = null;
+            }
+        }
+
+        public static void ClearCurLootContainerTarget()
+        {
+            if (Instance != null)
+            {
+                Instance._lootContainerTarget = null;
+                Instance._lootContainerPosition = null;
+                Instance._botToContainerLoot = null;
+                Instance._botToContainerLootProfileId = null;
             }
         }
         /** Store the item that was given to a follower */
@@ -1078,7 +1786,283 @@ namespace pitTeam.Modules
                 return;
             }
 
+            RegisterLootedWeaponTree(bot, item);
             TrackReturnRoot(item, treeIds, list);
+            TrackReloadableWeaponMagazines(item, list);
+        }
+
+        private static void TrackReloadableWeaponMagazines(Item item, List<string> trackedReturnIds)
+        {
+            if (item == null || trackedReturnIds == null)
+            {
+                return;
+            }
+
+            foreach (Weapon weapon in GetWeaponTreeItems(item))
+            {
+                MagazineItemClass magazine;
+                try
+                {
+                    magazine = weapon.GetCurrentMagazine();
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (magazine == null ||
+                    string.IsNullOrWhiteSpace(magazine.Id) ||
+                    trackedReturnIds.Contains(magazine.Id))
+                {
+                    continue;
+                }
+
+                // The weapon is the normal return root, but EFT can eject its original magazine
+                // into the vest during combat. Keep the magazine id as a fallback root so it is
+                // still stripped/returned after reloading; ancestor checks suppress duplicates
+                // while the magazine remains seated in the tracked weapon.
+                trackedReturnIds.Add(magazine.Id);
+            }
+        }
+
+        public static void RegisterLootedWeaponTree(BotOwner bot, Item item)
+        {
+            if (Instance?._lootedWeaponIds == null ||
+                bot == null ||
+                item == null ||
+                string.IsNullOrWhiteSpace(bot.ProfileId))
+            {
+                return;
+            }
+
+            if (!Instance._lootedWeaponIds.TryGetValue(bot.ProfileId, out HashSet<string> weaponIds))
+            {
+                weaponIds = new HashSet<string>(StringComparer.Ordinal);
+                Instance._lootedWeaponIds.Add(bot.ProfileId, weaponIds);
+            }
+
+            foreach (Weapon weapon in GetWeaponTreeItems(item))
+            {
+                if (!string.IsNullOrWhiteSpace(weapon.Id))
+                {
+                    weaponIds.Add(weapon.Id);
+                }
+
+                // The inserted magazine arrives as part of the weapon tree. Preserve that
+                // relationship after EFT ejects it during a later reload so it remains an
+                // approved magazine for this looted weapon, not an arbitrary spawned spare.
+                MagazineItemClass insertedMagazine = null;
+                try
+                {
+                    insertedMagazine = weapon.GetCurrentMagazine();
+                }
+                catch
+                {
+                    // Some transient weapon trees are incomplete while their move settles.
+                }
+
+                RegisterLootedWeaponMagazine(bot, weapon, insertedMagazine);
+            }
+        }
+
+        public static void RegisterLootedWeaponMagazine(
+            BotOwner bot,
+            Weapon weapon,
+            MagazineItemClass magazine)
+        {
+            if (Instance?._lootedWeaponMagazineIds == null ||
+                bot == null ||
+                weapon == null ||
+                magazine == null ||
+                string.IsNullOrWhiteSpace(bot.ProfileId) ||
+                string.IsNullOrWhiteSpace(weapon.Id) ||
+                string.IsNullOrWhiteSpace(magazine.Id))
+            {
+                return;
+            }
+
+            if (!Instance._lootedWeaponMagazineIds.TryGetValue(
+                    bot.ProfileId,
+                    out Dictionary<string, HashSet<string>> magazinesByWeapon))
+            {
+                magazinesByWeapon = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+                Instance._lootedWeaponMagazineIds.Add(bot.ProfileId, magazinesByWeapon);
+            }
+
+            if (!magazinesByWeapon.TryGetValue(weapon.Id, out HashSet<string> magazineIds))
+            {
+                magazineIds = new HashSet<string>(StringComparer.Ordinal);
+                magazinesByWeapon.Add(weapon.Id, magazineIds);
+            }
+
+            if (magazineIds.Add(magazine.Id))
+            {
+                Logger.LogInfo(
+                    $"[LootCommand][WeaponReload] follower='{bot.Profile?.Nickname ?? bot.ProfileId}' " +
+                    $"weapon={weapon.TemplateId} magazine={magazine.TemplateId} result=approvedPackageMagazine");
+            }
+        }
+
+        public static bool IsApprovedLootedWeaponMagazine(
+            BotOwner bot,
+            Weapon weapon,
+            MagazineItemClass magazine)
+        {
+            if (Instance?._lootedWeaponMagazineIds == null ||
+                bot == null ||
+                weapon == null ||
+                magazine == null ||
+                string.IsNullOrWhiteSpace(bot.ProfileId) ||
+                string.IsNullOrWhiteSpace(weapon.Id) ||
+                string.IsNullOrWhiteSpace(magazine.Id))
+            {
+                return false;
+            }
+
+            return Instance._lootedWeaponMagazineIds.TryGetValue(
+                       bot.ProfileId,
+                       out Dictionary<string, HashSet<string>> magazinesByWeapon) &&
+                   magazinesByWeapon.TryGetValue(weapon.Id, out HashSet<string> magazineIds) &&
+                   magazineIds.Contains(magazine.Id);
+        }
+
+        public static bool IsLootedWeapon(BotOwner bot, Weapon weapon)
+        {
+            if (Instance?._lootedWeaponIds == null ||
+                bot == null ||
+                weapon == null ||
+                string.IsNullOrWhiteSpace(bot.ProfileId) ||
+                string.IsNullOrWhiteSpace(weapon.Id))
+            {
+                return false;
+            }
+
+            return Instance._lootedWeaponIds.TryGetValue(bot.ProfileId, out HashSet<string> weaponIds) &&
+                   weaponIds.Contains(weapon.Id);
+        }
+
+        public static void RegisterStrictCargoTree(BotOwner bot, Item item)
+        {
+            if (Instance?._strictCargoItemIds == null ||
+                bot == null ||
+                item == null ||
+                string.IsNullOrWhiteSpace(bot.ProfileId))
+            {
+                return;
+            }
+
+            if (!Instance._strictCargoItemIds.TryGetValue(bot.ProfileId, out HashSet<string> itemIds))
+            {
+                itemIds = new HashSet<string>(StringComparer.Ordinal);
+                Instance._strictCargoItemIds.Add(bot.ProfileId, itemIds);
+            }
+
+            // View Backpack is a player-owned cargo transfer, not permission to use the tree as
+            // equipment. Record every child independently so one later commanded magazine does
+            // not make manually supplied magazines beside it eligible for weapon readiness.
+            HashSet<string> treeIds = GetItemTreeIds(item);
+            itemIds.UnionWith(treeIds);
+            Logger.LogInfo(
+                $"[LootCommand][CargoProvenance] follower='{bot.Profile?.Nickname ?? bot.ProfileId ?? "unknown"}' " +
+                $"root={item.TemplateId}:{item.Id} classification=strictCargo treeItems={treeIds.Count}");
+        }
+
+        public static void ClearStrictCargoTree(BotOwner bot, Item item)
+        {
+            if (Instance?._strictCargoItemIds == null ||
+                bot == null ||
+                item == null ||
+                string.IsNullOrWhiteSpace(bot.ProfileId) ||
+                !Instance._strictCargoItemIds.TryGetValue(bot.ProfileId, out HashSet<string> itemIds))
+            {
+                return;
+            }
+
+            int removed = 0;
+            foreach (string itemId in GetItemTreeIds(item))
+            {
+                if (itemIds.Remove(itemId))
+                {
+                    removed++;
+                }
+            }
+
+            if (itemIds.Count == 0)
+            {
+                Instance._strictCargoItemIds.Remove(bot.ProfileId);
+            }
+
+            if (removed > 0)
+            {
+                Logger.LogInfo(
+                    $"[LootCommand][CargoProvenance] follower='{bot.Profile?.Nickname ?? bot.ProfileId ?? "unknown"}' " +
+                    $"root={item.TemplateId}:{item.Id} classification=commandAcquired clearedStrictItems={removed}");
+            }
+        }
+
+        public static bool IsStrictCargoItem(BotOwner bot, Item item)
+        {
+            if (Instance?._strictCargoItemIds == null ||
+                bot == null ||
+                item == null ||
+                string.IsNullOrWhiteSpace(bot.ProfileId) ||
+                string.IsNullOrWhiteSpace(item.Id))
+            {
+                return false;
+            }
+
+            return Instance._strictCargoItemIds.TryGetValue(bot.ProfileId, out HashSet<string> itemIds) &&
+                   itemIds.Contains(item.Id);
+        }
+
+        public static int RemoveStrictCargoItemIds(string bot, IEnumerable<string> itemIds)
+        {
+            if (Instance?._strictCargoItemIds == null ||
+                string.IsNullOrWhiteSpace(bot) ||
+                itemIds == null ||
+                !Instance._strictCargoItemIds.TryGetValue(bot, out HashSet<string> strictItemIds))
+            {
+                return 0;
+            }
+
+            int removed = 0;
+            foreach (string itemId in itemIds)
+            {
+                if (strictItemIds.Remove(itemId))
+                {
+                    removed++;
+                }
+            }
+
+            if (strictItemIds.Count == 0)
+            {
+                Instance._strictCargoItemIds.Remove(bot);
+            }
+
+            return removed;
+        }
+
+        private static IEnumerable<Weapon> GetWeaponTreeItems(Item item)
+        {
+            if (item == null)
+            {
+                yield break;
+            }
+
+            if (item is Weapon rootWeapon && rootWeapon.GetItemComponent<KnifeComponent>() == null)
+            {
+                yield return rootWeapon;
+            }
+
+            foreach (Item child in item.GetAllItems())
+            {
+                if (child is Weapon weapon &&
+                    !ReferenceEquals(child, item) &&
+                    weapon.GetItemComponent<KnifeComponent>() == null)
+                {
+                    yield return weapon;
+                }
+            }
         }
 
         private static void TrackReturnRoot(Item item, HashSet<string> treeIds, List<string> trackedReturnIds)
@@ -1260,6 +2244,26 @@ namespace pitTeam.Modules
                     list.Remove(itemId);
                 }
             }
+
+            if (Instance?._lootedWeaponIds != null &&
+                Instance._lootedWeaponIds.TryGetValue(bot, out HashSet<string> weaponIds))
+            {
+                weaponIds.Remove(itemId);
+            }
+
+            if (Instance?._lootedWeaponMagazineIds != null &&
+                Instance._lootedWeaponMagazineIds.TryGetValue(
+                    bot,
+                    out Dictionary<string, HashSet<string>> magazinesByWeapon))
+            {
+                magazinesByWeapon.Remove(itemId);
+                foreach (HashSet<string> magazineIds in magazinesByWeapon.Values)
+                {
+                    magazineIds.Remove(itemId);
+                }
+            }
+
+            RemoveStrictCargoItemIds(bot, new[] { itemId });
         }
 
         public static List<string>? GetStoredItems(string bot)
@@ -1281,6 +2285,10 @@ namespace pitTeam.Modules
                 Instance._lootedItems.Remove(bot);
                 Instance._followersWithLoot.Remove(bot);
             }
+
+            Instance._lootedWeaponIds?.Remove(bot);
+            Instance._lootedWeaponMagazineIds?.Remove(bot);
+            Instance._strictCargoItemIds?.Remove(bot);
         }
 
         /** Store what enemies the player might have seen during "CONTACT" phrase */

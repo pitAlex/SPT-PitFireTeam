@@ -1,10 +1,12 @@
 # Command System Notes
 
-Last updated: 2026-05-04
+Last updated: 2026-07-30
 
 ## Scope
 
 This document summarizes boss-issued follower commands as implemented in the client runtime.
+
+Detailed looting behavior, filtered-loot rules, and gear-swap design constraints are tracked in `docs/Looting.md`.
 
 Authoritative files:
 
@@ -85,6 +87,10 @@ Behavior:
 
 - Debounced in `AIBossPlayer`.
 - Calls `PingTeamates.Instance.Ping(this)`.
+- Highlights each living teammate with an outline for the configured Status Report display time when the highlight option is enabled.
+- The outline color is configurable with a `#RRGGBB` value and defaults to green (`#00FF00`).
+- Name, distance, combat status, HP, and tactic (`MD`) can each be toggled under `My Squad > Settings > Base Settings`.
+- Disabling every text field while leaving the highlight enabled produces a highlight-only Status Report.
 - Nearby active followers without enemies play `FriendlyGesture`.
 - Does not create `FollowerCommandType` state.
 
@@ -151,6 +157,8 @@ Behavior:
 - Clears active `FollowerCommandType` state on all active followers.
 - Disables patrol-radius mode by setting `CanPatrol` false.
 - Does not otherwise change combat objective state directly.
+- For a same-side non-follower, the receiver path instead attempts in-raid recruitment.
+- When tiered PMC recruitment rejects that bot because of the level-based acceptance decision, the refusal is remembered for the rest of the raid. Repeating `Follow Me` or `Cooperation` cannot reroll that bot's decision.
 
 ### On Your Own
 
@@ -371,6 +379,8 @@ Combat variant:
 
 ### Loot Phrases
 
+Loot and pickup selections enter `AIBossPlayer` through the player's `OnPhraseSay` event. Assignment diagnostics record the quick-menu action, live and stored targets, phrase arrival, follower eligibility, reservation, and final command state so a lost order can be located at its exact boundary.
+
 Input:
 
 - `EPhraseTrigger.LootGeneric`
@@ -383,17 +393,22 @@ Command state:
 Targeting:
 
 - Requires `InteractableObjects.GetCurLootItem()`.
-- Chooses closest active follower to the loot item.
-- Ignores followers with enemies.
+- Chooses the active follower with the shortest complete NavMesh path to the loot item.
+- Ignores followers with enemies or active loot/pickup commands.
 - Reserves taker ownership through `InteractableObjects.SetTaker(...)`.
 
 Execution:
 
 - `GestureCommandAction.HandleTakeLootItem()`
 - Moves to loot.
-- Checks inventory space and executes pickup transaction.
+- Checks inventory space and executes one pickup transaction.
+- For a commanded loose long gun, uses explicit destination order: ready first primary, otherwise empty second primary, otherwise backpack.
+- When both shoulder slots are empty, a commanded loose detachable-magazine long gun may adopt only its compatible magazines and loose ammunition already carried in the follower's backpack. Magazine top-off or insertion and reload-safe vest/pocket placement settle before the normal live-readiness destination check; unrelated backpack cargo remains strict.
+- If those fallback destinations are unavailable and first primary is empty, a non-dangerously-low inserted magazine permits last-resort first-primary placement; that visible right-shoulder weapon is always registered as the bot's usable primary.
+- Releases pickup hand state before registering/selecting a first-primary weapon.
 - Stores item through `InteractableObjects.StoreItem(...)` for squadmates.
-- Clears command on success/failure/invalid state.
+- After a successful pickup, walks to a reachable uncrowded same-level point within 3m of the loot position before resuming normal follow or the previous hold order.
+- Clears command immediately on failure or invalid state.
 
 ### Body Loot Phrases
 
@@ -409,23 +424,103 @@ Command state:
 Targeting:
 
 - Requires `InteractableObjects.GetCurBodyLootTarget()`.
-- Chooses the closest active follower to the corpse.
-- Ignores followers with enemies.
+- Only saved teammates spawned through the raid squad flow can be assigned to body-loot commands; recruited/picked-up followers are ignored.
+- Chooses the active follower with the shortest complete NavMesh path for teammate corpses.
+- Chooses the active follower with the shortest complete NavMesh path of 22m or less for non-teammate corpses, ignoring followers with no free backpack/pocket grid space.
+- Ignores followers with enemies or active loot/pickup commands.
 - Reserves corpse ownership through `InteractableObjects.SetBodyLootTaker(...)`.
+- Direct `Check Him` / `Loot Body` orders may revisit a corpse after a previous follower search completed.
+- The completed-body marker is reserved for autonomous `Go loot` filtering, so automatic selection skips corpses already searched by a follower.
+- A live corpse reservation still blocks duplicate assignment while another follower is approaching or looting it.
 
 Execution:
 
 - `GestureCommandAction.HandleTakeBodyGear()`
 - Moves to the corpse.
+- Checks whether at least one eligible item can be moved, plays the loot search sound, and waits briefly before moving items. Delay is based on the total grid cells searched from corpse pockets, backpack, and vest containers, with a short bounded cap so it reads as searching without matching full player search time.
+- After the search delay, says one pickup-confirmation phrase when the first real non-dogtag loot move is queued, then waits a short beat before executing that move so the pickup confirmation does not run into `Ready`. `EPhraseTrigger.LootWeapon` means the executable plan makes a weapon the follower's combat primary during this search. Every non-primary weapon result, including second-primary support, holster, backpack cargo, future-potential packages, and under-ready left-shoulder holders, uses `EPhraseTrigger.LootGeneric`.
 - Plans one live inventory transaction at a time.
-- Uses empty compatible equipment slots as cargo space when possible, but does not swap or throw away the follower's current kit.
-- Tries backpack, rig, and pocket carry containers for the remaining body gear.
-- Treats backpacks and rigs as whole cargo: if the follower can carry the container, its contents ride with it; if the container cannot be carried, the command does not pull items out of it.
-- Pockets are not a movable cargo container, so pocket contents are still considered individually.
-- In `Simple` and `Restricted`, skips roots that are protected follower equipment. Non-protected containers may carry protected descendants, and post-raid filtering strips those protected descendants before extraction or return delivery.
+- Teammate corpses use the protected recovery path:
+    - uses empty compatible equipment slots as cargo space when possible, but does not swap or throw away the follower's current kit
+    - tries backpack, rig, and pocket carry containers for the remaining body gear
+    - treats backpacks and rigs as whole cargo: if the follower can carry the container, its contents ride with it; if the container cannot be carried, the command does not pull items out of it
+    - pockets are not a movable cargo container, so pocket contents are still considered individually
+    - in `Simple` and `Restricted`, skips roots that are protected follower equipment. Non-protected containers may carry protected descendants, and post-raid filtering strips those protected descendants before extraction or return delivery
 - In `Immersive` and `Realistic`, protected-equipment skipping is not applied because fallen teammate gear is lootable in those modes.
-- Stores successful moved items through `InteractableObjects.StoreItem(...)` for squadmates.
-- Clears command on success/failure/invalid state.
+- Non-teammate corpses use filtered looting:
+    - tries to take the corpse dogtag first only for non-teammate USEC/BEAR bodies; dogtags bypass the min/max price filter but still require a valid backpack/pocket move
+    - dogtag-only body looting still says `EPhraseTrigger.LootNothing`
+    - checks backpack contents first, then pockets, then vest contents
+    - normal filtered carry looting does not take the corpse's worn backpack as a container shortcut
+    - when `Pickup Gear` is enabled, worn armor, armored rigs, tactical rigs, and headwear are priced and moved as whole trees before eligible fallback contents are considered
+    - pocket and vest contents skip magazines during normal filtered looting so follower reload space is not disturbed; when `Allow Gear Swapping` is active, compatible loaded magazines from the loot source may move into tactical vest or pockets for an accepted primary, or for a working-primary support equip when `Pickup Weapons` is also enabled
+    - loose armor plates remain excluded; an installed plate is a fallback candidate only after its parent armor/rig remains at the source, it passes `Pickup Gear` and price, and current durability is at least 50 percent of maximum
+    - normal cargo weapons are priced and moved as whole weapon trees, including attached mods, instead of being stripped part by part; missing-primary acquisition and implemented true swaps ignore min/max price and are controlled by `Allow Gear Swapping`, while optional secondary/holster weapon additions additionally require `Pickup Weapons`
+    - with `Allow Gear Swapping` active, an empty-primary long gun equips only when its inserted magazine plus compatible loaded fast-access magazines satisfy the readiness policy
+    - if the found detachable-magazine weapon has an empty magazine slot, the most-loaded compatible source magazine is inserted through a real inventory transaction before normal weapon planning resumes; the existing loaded-weapon rules then decide fitting spares and weapon destination from live inventory
+    - an under-ready empty-magazine package remains ordinary potential cargo and still requires `Pickup Weapons`, whole-tree price, and backpack fit
+    - successful empty-primary weapon equip rebuilds the follower weapon-manager primary info and requests a main-hand switch so combat can use the new weapon
+    - with `Pickup Weapons` enabled, a working first primary, and an empty second primary, a usable found long gun becomes a registered vanilla support weapon; only compatible source magazines that fit fast access while preserving reload landing space join it, and this non-primary result uses `EPhraseTrigger.LootGeneric`
+    - once first and second primary are occupied, later long guns are ordinary filtered cargo and cannot recruit compatible magazines through the future-primary package bypass; an occupied holster applies the same boundary to pistols
+    - other weapons that do not qualify for equipment still try an empty compatible slot, such as holster, then fall back to backpack/pocket space
+    - tactical vests are eligible for gear handling only when `Allow Gear Swapping` is active: an empty tactical vest slot may be filled directly in any mode; occupied vest replacement is only allowed in Immersive/Realistic, and only when the found vest is a protection upgrade, the old vest has no non-plate contents, and the old vest can be moved as a whole tree into the backpack first
+    - category filters from `Looting Settings` are checked before price for ordinary cargo: `Pickup Food`, `Pickup Meds`, `Pickup Valuables`, `Pickup Weapons`, and `Pickup Gear`; corpse dogtags, missing-primary acquisition, and implemented true swaps bypass these category filters, but optional second-primary/holster weapon additions require `Pickup Weapons`
+    - compatible loaded magazines moved as support for an accepted weapon equip bypass the normal loot filters entirely; they must be loaded, safe to take, and able to fit in tactical vest or pockets with the shared reload reserve preserved; overflow stays at the source
+    - with `Allow Gear Swapping` active, an equipped detachable-magazine primary may top off empty or partial compatible vest/pocket magazines independently of `Pickup Weapons`; carried loose ammunition is used first, and Immersive/Realistic may use searched-source rounds after carried supply; top-off never unloads or replaces existing cartridges
+    - ordinary cargo item price is compared once against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound; money ignores these price bounds when `Pickup Valuables` is enabled
+    - non-weapon successful moves only target the follower's backpack and pockets, never the follower's rig
+- Stores successful cargo moves through `InteractableObjects.StoreItem(...)` for squadmates. Additive equipped gear moves are also stored in `Simple` and `Restricted`; Immersive/Realistic equipped gear can persist as the teammate's kit instead.
+- On completion, says `EPhraseTrigger.Ready` when at least one non-dogtag item was moved, `EPhraseTrigger.Negative` when eligible loot existed but no executable move could be built, or `EPhraseTrigger.LootNothing` when no eligible non-dogtag item existed.
+- Once searching starts, normal replacement commands are ignored until the loot command completes; combat, timeout, and safety invalidation can still stop the command.
+- After successful looting, walks to a reachable uncrowded same-level point within 3m of the corpse before resuming normal follow or the previous hold order.
+- Clears command immediately on failure or invalid state.
+
+### Container Loot Phrase
+
+Input:
+
+- `EPhraseTrigger.LootContainer`
+
+Command state:
+
+- `SetTakeContainerLoot(75f)`
+
+Targeting:
+
+- Requires `InteractableObjects.GetCurLootContainerTarget()`.
+- Direct `Loot Container` orders may revisit a container after a previous follower search completed.
+- Autonomous `Go loot` selection skips containers marked completed by a follower.
+- A live container reservation still blocks duplicate assignment while another follower is approaching or looting it.
+- Only saved teammates spawned through the raid squad flow can be assigned to container-loot commands; recruited/picked-up followers are ignored.
+- Chooses the active follower with the shortest complete NavMesh path of 22m or less, ignoring followers with no free backpack/pocket grid space.
+- Ignores followers with enemies or active loot/pickup commands.
+- Reserves container ownership through `InteractableObjects.SetContainerLootTaker(...)`.
+
+Execution:
+
+- `GestureCommandAction.HandleTakeContainerLoot()`
+- Moves to the container.
+- Opens the container if it is shut.
+- Checks whether at least one eligible item can be moved, plays the loot search sound, and waits briefly before moving items. Delay is based on the total grid cells in the container tree, with a short bounded cap so it reads as searching without matching full player search time.
+- After the search delay, says one pickup-confirmation phrase when the first real loot move is queued, then waits a short beat before executing that move so the pickup confirmation does not run into `Ready`. `EPhraseTrigger.LootWeapon` means the executable plan makes a weapon the follower's combat primary during this search. Every non-primary weapon result, including second-primary support, holster, backpack cargo, future-potential packages, and under-ready left-shoulder holders, uses `EPhraseTrigger.LootGeneric`.
+- Searches container contents through the same filtered-loot planner used for non-teammate bodies.
+- Applies `Looting Settings` category filters before price for ordinary cargo: `Pickup Food`, `Pickup Meds`, `Pickup Valuables`, `Pickup Weapons`, and `Pickup Gear`.
+- Compares each ordinary cargo candidate item tree against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound. Money ignores these price bounds when `Pickup Valuables` is enabled.
+- With `Pickup Gear` enabled, helmets, armor, armored rigs, and tactical rigs found in a container are tried as complete cargo trees first. If armor or a rig stays at the source, its eligible contents are reconsidered individually; installed plates additionally require at least 50 percent durability, while loose plates remain excluded.
+- Moves non-weapon candidates only into the follower's backpack and pockets, never the follower's rig.
+- Normal cargo weapons are priced and moved as whole weapon trees. With `Allow Gear Swapping` active, a long gun can equip into an empty first-primary slot without min/max price or `Pickup Weapons` when its loaded state and compatible fast-access magazines satisfy readiness. A working-primary follower may add a registered second-primary support weapon only when `Pickup Weapons` is enabled and second primary is empty. For an empty magazine slot, the most-loaded compatible body/container magazine is inserted first as a staging transaction, then the same live loaded-weapon planner decides its destination. Once a primary or Pickup-Weapons-authorized support plan is accepted, compatible loaded source magazines bypass normal loot filters only while they fit reload-safe fast access.
+- Equipped-primary magazine top-off follows the same body-loot rule: `Allow Gear Swapping`, not `Pickup Weapons`, owns the operation; carried loose ammunition is preferred, searched loose ammunition may be used in Immersive/Realistic, and no loaded cartridge is removed or replaced.
+- When a later search supplies compatible ammunition for a tracked secondary or backpack weapon candidate, acquired inserted/source magazines are topped off first, operational magazine placement and readiness are then recalculated, and only the remaining accepted loose rounds enter the normal protected ammo-storage order.
+- Successful empty-primary weapon equip rebuilds the follower weapon-manager primary info and requests a main-hand switch so combat can use the new weapon.
+- Once first and second primary are occupied, later long guns are ordinary filtered cargo and do not automatically take compatible magazines. An occupied holster applies the same rule to later pistols. With `Pickup Weapons` enabled, other eligible weapons may still use an empty compatible slot before backpack/pocket fallback.
+- Tactical vests follow the same narrow gear rule: fill an empty tactical vest slot directly in any mode, or replace an occupied vest only in Immersive/Realistic when the found vest is a protection upgrade, the old vest has no non-plate contents, and the old vest can be moved as a whole tree into the backpack first.
+- Missing-primary acquisition and implemented true swaps bypass min/max price and the `Pickup Weapons` category filter. Optional second-primary/holster weapon additions require `Pickup Weapons`; ordinary weapon and wearable cargo fallbacks respect their separate category filters plus price.
+- Closes the container on normal completion. Combat, timeout, or safety interruption can leave it open.
+- Stores successful cargo moves through `InteractableObjects.StoreItem(...)` for squadmates. Additive equipped gear moves are also stored in `Simple` and `Restricted`; Immersive/Realistic equipped gear can persist as the teammate's kit instead.
+- On completion, says `EPhraseTrigger.Ready` when at least one item was moved, `EPhraseTrigger.Negative` when eligible loot existed but no executable move could be built, or `EPhraseTrigger.LootNothing` when no eligible item existed.
+- Once searching starts, normal replacement commands are ignored until the loot command completes; combat, timeout, and safety invalidation can still stop the command.
+- After successful looting, walks to a reachable uncrowded same-level point within 3m of the container before resuming normal follow or the previous hold order.
+- Clears command immediately on failure or invalid state.
 
 ### View Backpack Quick Interaction
 

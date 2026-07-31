@@ -1,5 +1,6 @@
 using BepInEx.Bootstrap;
 using Comfort.Common;
+using Diz.LanguageExtensions;
 using EFT;
 using EFT.InventoryLogic;
 
@@ -40,7 +41,9 @@ namespace pitTeam.Components
         NeedSniper = 10,
         // Combat gesture movement commands.
         CombatComeToBossCover = 11,
-        CombatMoveToPointTactical = 12
+        CombatMoveToPointTactical = 12,
+        // Commanded searchable-container looting through backpack/pocket cargo space.
+        TakeContainerLoot = 13
     }
 
     public enum FollowerCombatTactic
@@ -72,6 +75,38 @@ namespace pitTeam.Components
             }
         }
 
+        public bool CanHandleBodyContainerLootCommands
+        {
+            get
+            {
+                if (!_IsSquadMate)
+                {
+                    return false;
+                }
+
+                string profileId = _bot?.ProfileId ?? _bot?.Profile?.ProfileId ?? _bot?.Profile?.Id ?? string.Empty;
+                string accountId = _bot?.Profile?.AccountId ?? string.Empty;
+
+                // Body/container looting is reserved for saved teammates that were generated
+                // through the raid squad flow. Recruited/picked-up allies can still be followers,
+                // but they should not satisfy these command assignments.
+                return IsSpawnedSquadMemberId(profileId) ||
+                       IsSpawnedSquadMemberId(accountId) ||
+                       FollowerTransitStateCache.IsTransitSpawnProfile(profileId);
+            }
+        }
+
+        private static bool IsSpawnedSquadMemberId(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return false;
+            }
+
+            return pitTeam.Utils.SpawnHelper.spawnMemberIds.Contains(id) ||
+                   pitTeam.Utils.SpawnHelper.spawnMemberIdsScav.Contains(id);
+        }
+
 
         protected WildSpawnType _botRole;
         protected bool _canPatrol = false;
@@ -82,10 +117,13 @@ namespace pitTeam.Components
         private Vector3 _patrolLeaderSectorAnchor;
         private bool _peaceChangeHooked = false;
         private bool _manualUpdateHooked = false;
+        private bool _lootedWeaponPromotionInProgress;
+        private float _nextLootedWeaponPromotionCheckAt;
         private Vector3 _teleportGraceTarget;
         private float _teleportGraceUntil;
         private const float TeleportGraceSeconds = 0.45f;
         private const float TeleportReteleportDistance = 1.5f;
+        private const float LootedWeaponPromotionCheckInterval = 0.75f;
         private const float TemporaryCombatAggressionClearDelaySeconds = 2f;
         private const float TemporaryCombatAggressionRecentEnemySeconds = 3f;
         private const float TemporaryCombatAggressionGroupEnemySeconds = 5f;
@@ -105,6 +143,10 @@ namespace pitTeam.Components
         private bool _resumeHoldAfterComeCloser;
         private bool _resumeHoldAfterTakeLoot;
         private bool _resumeHoldAfterTakeLootCrouch;
+        private bool _postLootMoveToPoint;
+        private bool _resumeHoldAfterPostLootMove;
+        private bool _resumeHoldAfterPostLootMoveCrouch;
+        private FollowerCommandType _committedLootCommand = FollowerCommandType.None;
         private float _commandLookPauseUntil;
         private Vector3 _commandLookOverridePoint;
         private float _commandLookOverrideUntil;
@@ -124,6 +166,8 @@ namespace pitTeam.Components
         private FollowerCombatTactic _combatTactic = FollowerCombatTactic.Balanced;
         private bool _backpackInspectionActive;
         private float? _pickupIndependence01;
+        private string? _initialHolsterWeaponId;
+        private bool _initialHolsterWeaponCaptured;
         public bool CanPatrol
         {
             get
@@ -197,6 +241,13 @@ namespace pitTeam.Components
             }
         }
 
+        public bool IsInitialHolsterWeapon(Weapon weapon)
+        {
+            return weapon != null &&
+                   !string.IsNullOrEmpty(_initialHolsterWeaponId) &&
+                   string.Equals(weapon.Id, _initialHolsterWeaponId, StringComparison.Ordinal);
+        }
+
         public float PickupIndependence01
         {
             get
@@ -248,11 +299,45 @@ namespace pitTeam.Components
             _botRole = botRole == WildSpawnType.assault ? _bot.Profile.Info.Settings.Role : botRole;
 
             _IsSquadMate = isSquad;
+            CaptureInitialHolsterWeapon(finalAttempt: false);
 
             settingModif = new BotLastBlindEffectModifierClass(1f, 1.4f, 1f, 0.9f, 1f, 1f, 1f, 1f, 1f);
 
             if (player.realPlayer.Side != EPlayerSide.Savage) NpcMessage.AddNpc(bot, isSquad);
 
+        }
+
+        private void CaptureInitialHolsterWeapon(bool finalAttempt)
+        {
+            if (_initialHolsterWeaponCaptured)
+            {
+                return;
+            }
+
+            try
+            {
+                InventoryEquipment equipment = _bot?.GetPlayer?.InventoryController?.Inventory?.Equipment;
+                if (equipment == null)
+                {
+                    return;
+                }
+
+                Weapon initialHolster = equipment.GetSlot(EquipmentSlot.Holster)?.ContainedItem as Weapon;
+                if (initialHolster != null)
+                {
+                    _initialHolsterWeaponId = initialHolster.Id;
+                    _initialHolsterWeaponCaptured = true;
+                    return;
+                }
+
+                // An empty constructor-time slot may still be inventory assembly. Only Init can
+                // finalize that the follower genuinely spawned without a holster weapon.
+                _initialHolsterWeaponCaptured = finalAttempt;
+            }
+            catch
+            {
+                // Init performs the final retry if the player inventory is still being assembled.
+            }
         }
 
         private float CalculatePickupIndependence01()
@@ -268,6 +353,13 @@ namespace pitTeam.Components
 
         public virtual void Init()
         {
+            // ORBIT registers its own agent/squad runtime when its layer is constructed. Claim the bot
+            // before resetting brain layers so ORBIT cannot keep ticking or re-register this follower.
+            OrbitCompatibility.ClaimFollower(_bot);
+
+            // Constructor-time player inventory is normally ready, but follower initialization is
+            // the last safe retry before raid commands can alter equipment provenance.
+            CaptureInitialHolsterWeapon(finalAttempt: true);
             _canPatrol = false;
             BaseBrain baseBrain = _bot.Brain.BaseBrain;
             if (baseBrain == null)
@@ -1184,6 +1276,11 @@ namespace pitTeam.Components
 
         public void SetHoldPosition(float duration, bool crouch = true)
         {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
             ClearVanillaRequestState(null, nameof(SetHoldPosition));
             _activeCommand = FollowerCommandType.HoldPosition;
             _commandUntilTime = float.PositiveInfinity;
@@ -1192,10 +1289,21 @@ namespace pitTeam.Components
             _resumeHoldAfterComeCloser = false;
             _resumeHoldAfterTakeLoot = false;
             _resumeHoldAfterTakeLootCrouch = false;
+            ResetPostLootMoveState();
             BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(SetHoldPosition));
         }
 
         public void SetMoveToPoint(Vector3 target, float duration)
+        {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
+            SetMoveToPointState(target, nameof(SetMoveToPoint), refreshBrain: true);
+        }
+
+        private void SetMoveToPointState(Vector3 target, string source, bool refreshBrain)
         {
             unchecked
             {
@@ -1208,16 +1316,43 @@ namespace pitTeam.Components
             _resumeHoldAfterComeCloser = false;
             _resumeHoldAfterTakeLoot = false;
             _resumeHoldAfterTakeLootCrouch = false;
-            BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(SetMoveToPoint));
-            if (!HasKnownEnemy() &&
+            ResetPostLootMoveState();
+            BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, source);
+            if (refreshBrain &&
+                !HasKnownEnemy() &&
                 !FollowerCombatLayer.TryForceReleaseCoreFollowerCombatState(_bot, nameof(SetMoveToPoint)))
             {
                 Utils.FollowerRecovery.SoftReset(_bot);
             }
         }
 
+        public bool TrySetPostLootMoveToPoint(FollowerCommandType completedLootCommand, Vector3 target)
+        {
+            if (ShouldIgnoreCommandSet() ||
+                _activeCommand != completedLootCommand ||
+                (completedLootCommand != FollowerCommandType.TakeLootItem &&
+                 completedLootCommand != FollowerCommandType.TakeBodyGear &&
+                 completedLootCommand != FollowerCommandType.TakeContainerLoot))
+            {
+                return false;
+            }
+
+            bool resumeHold = _resumeHoldAfterTakeLoot;
+            bool resumeHoldCrouch = _resumeHoldAfterTakeLootCrouch;
+            SetMoveToPointState(target, nameof(TrySetPostLootMoveToPoint), refreshBrain: false);
+            _postLootMoveToPoint = true;
+            _resumeHoldAfterPostLootMove = resumeHold;
+            _resumeHoldAfterPostLootMoveCrouch = resumeHoldCrouch;
+            return true;
+        }
+
         public void SetComeCloser(float duration)
         {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
             FollowerCommandType previous = _activeCommand;
             if (_activeCommand == FollowerCommandType.HoldPosition)
             {
@@ -1240,6 +1375,11 @@ namespace pitTeam.Components
 
         public void SetRegroup(float duration)
         {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
             if (_activeCommand != FollowerCommandType.None && _activeCommand != FollowerCommandType.RegroupNearBoss)
             {
                 ClearCommand($"SetRegroup:replace({_activeCommand})");
@@ -1256,6 +1396,11 @@ namespace pitTeam.Components
 
         public void SetTakeLootItem(float duration)
         {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
             if (_activeCommand == FollowerCommandType.HoldPosition)
             {
                 _resumeHoldAfterTakeLoot = true;
@@ -1283,6 +1428,11 @@ namespace pitTeam.Components
 
         public void SetTakeBodyGear(float duration)
         {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
             if (_activeCommand == FollowerCommandType.HoldPosition)
             {
                 _resumeHoldAfterTakeLoot = true;
@@ -1308,8 +1458,45 @@ namespace pitTeam.Components
             BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(SetTakeBodyGear));
         }
 
+        public void SetTakeContainerLoot(float duration)
+        {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
+            if (_activeCommand == FollowerCommandType.HoldPosition)
+            {
+                _resumeHoldAfterTakeLoot = true;
+                _resumeHoldAfterTakeLootCrouch = _holdPositionShouldCrouch;
+            }
+            else if (_activeCommand != FollowerCommandType.TakeContainerLoot)
+            {
+                _resumeHoldAfterTakeLoot = false;
+                _resumeHoldAfterTakeLootCrouch = false;
+            }
+
+            if (_activeCommand != FollowerCommandType.None &&
+                _activeCommand != FollowerCommandType.TakeContainerLoot &&
+                _activeCommand != FollowerCommandType.HoldPosition)
+            {
+                ClearCommand($"SetTakeContainerLoot:replace({_activeCommand})");
+            }
+
+            _activeCommand = FollowerCommandType.TakeContainerLoot;
+            _commandTarget = Vector3.zero;
+            _commandUntilTime = Time.time + Mathf.Max(12f, duration);
+            _resumeHoldAfterComeCloser = false;
+            BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(SetTakeContainerLoot));
+        }
+
         public void SetOpenDoor(float duration)
         {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
             if (_activeCommand != FollowerCommandType.None && _activeCommand != FollowerCommandType.OpenDoor)
             {
                 ClearCommand($"SetOpenDoor:replace({_activeCommand})");
@@ -1326,6 +1513,11 @@ namespace pitTeam.Components
 
         public void SetPushEnemy(float duration)
         {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
             if (_activeCommand != FollowerCommandType.None && _activeCommand != FollowerCommandType.PushEnemy)
             {
                 ClearCommand($"SetPushEnemy:replace({_activeCommand})");
@@ -1367,6 +1559,11 @@ namespace pitTeam.Components
             bool forceWeapon,
             bool useAutomaticSecondary)
         {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
             if (_activeCommand != FollowerCommandType.None && _activeCommand != FollowerCommandType.SuppressEnemy)
             {
                 ClearCommand($"SetSuppressEnemy:replace({_activeCommand})");
@@ -1386,6 +1583,11 @@ namespace pitTeam.Components
 
         public void SetNeedSniper(float duration)
         {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
             if (_activeCommand != FollowerCommandType.None && _activeCommand != FollowerCommandType.NeedSniper)
             {
                 ClearCommand($"SetNeedSniper:replace({_activeCommand})");
@@ -1402,6 +1604,11 @@ namespace pitTeam.Components
 
         public void SetCombatComeToBossCover(float duration)
         {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
             if (_activeCommand != FollowerCommandType.None && _activeCommand != FollowerCommandType.CombatComeToBossCover)
             {
                 ClearCommand($"SetCombatComeToBossCover:replace({_activeCommand})");
@@ -1418,6 +1625,11 @@ namespace pitTeam.Components
 
         public void SetCombatMoveToPointTactical(Vector3 target, float duration)
         {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
             if (_activeCommand != FollowerCommandType.None && _activeCommand != FollowerCommandType.CombatMoveToPointTactical)
             {
                 ClearCommand($"SetCombatMoveToPointTactical:replace({_activeCommand})");
@@ -1516,6 +1728,35 @@ namespace pitTeam.Components
             return _activeCommand == FollowerCommandType.ComeCloser && _resumeHoldAfterComeCloser;
         }
 
+        public void CompleteMoveToPoint(string reason)
+        {
+            if (_activeCommand != FollowerCommandType.MoveToPoint)
+            {
+                return;
+            }
+
+            if (_postLootMoveToPoint && _resumeHoldAfterPostLootMove)
+            {
+                bool crouch = _resumeHoldAfterPostLootMoveCrouch;
+                ResetPostLootMoveState();
+                _activeCommand = FollowerCommandType.HoldPosition;
+                _commandTarget = Vector3.zero;
+                _commandUntilTime = float.PositiveInfinity;
+                _holdPositionShouldCrouch = crouch;
+                BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(CompleteMoveToPoint));
+                return;
+            }
+
+            ClearCommand(reason);
+        }
+
+        private void ResetPostLootMoveState()
+        {
+            _postLootMoveToPoint = false;
+            _resumeHoldAfterPostLootMove = false;
+            _resumeHoldAfterPostLootMoveCrouch = false;
+        }
+
         public void CompleteTakeLootItem()
         {
             if (_activeCommand != FollowerCommandType.TakeLootItem)
@@ -1562,9 +1803,71 @@ namespace pitTeam.Components
             ClearCommand("CompleteTakeBodyGear");
         }
 
+        public void CompleteTakeContainerLoot()
+        {
+            if (_activeCommand != FollowerCommandType.TakeContainerLoot)
+            {
+                return;
+            }
+
+            if (_resumeHoldAfterTakeLoot)
+            {
+                _activeCommand = FollowerCommandType.HoldPosition;
+                _commandTarget = Vector3.zero;
+                _commandUntilTime = float.PositiveInfinity;
+                _holdPositionShouldCrouch = _resumeHoldAfterTakeLootCrouch;
+                _resumeHoldAfterComeCloser = false;
+                _resumeHoldAfterTakeLoot = false;
+                _resumeHoldAfterTakeLootCrouch = false;
+                BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(CompleteTakeContainerLoot));
+                return;
+            }
+
+            ClearCommand("CompleteTakeContainerLoot");
+        }
+
         public bool ShouldCrouchForHoldPosition()
         {
             return _holdPositionShouldCrouch;
+        }
+
+        public bool IsCommittedLootCommandActive()
+        {
+            return _committedLootCommand != FollowerCommandType.None;
+        }
+
+        public bool IsCommittedLootCommandActive(FollowerCommandType command)
+        {
+            return _committedLootCommand == command;
+        }
+
+        public bool IsLootOrPickupCommandActive()
+        {
+            return _activeCommand == FollowerCommandType.TakeLootItem ||
+                   _activeCommand == FollowerCommandType.TakeBodyGear ||
+                   _activeCommand == FollowerCommandType.TakeContainerLoot;
+        }
+
+        public void BeginCommittedLootCommand(FollowerCommandType command)
+        {
+            if (command == FollowerCommandType.TakeBodyGear ||
+                command == FollowerCommandType.TakeContainerLoot)
+            {
+                _committedLootCommand = command;
+            }
+        }
+
+        public void EndCommittedLootCommand(FollowerCommandType command)
+        {
+            if (_committedLootCommand == command)
+            {
+                _committedLootCommand = FollowerCommandType.None;
+            }
+        }
+
+        private bool ShouldIgnoreCommandSet()
+        {
+            return _committedLootCommand != FollowerCommandType.None;
         }
 
         public void PauseCommandLookRandom(float duration)
@@ -2252,6 +2555,12 @@ namespace pitTeam.Components
 
         public void ClearCommand(string reason = "unspecified")
         {
+            if (_committedLootCommand != FollowerCommandType.None &&
+                ShouldIgnoreCommittedLootClear(reason))
+            {
+                return;
+            }
+
             FollowerCommandType previousCommand = _activeCommand;
             Vector3 previousTarget = _commandTarget;
             float previousUntilTime = _commandUntilTime;
@@ -2266,6 +2575,11 @@ namespace pitTeam.Components
                 if (_activeCommand == FollowerCommandType.TakeBodyGear)
                 {
                     InteractableObjects.RemoveBodyLootTaker(_bot);
+                }
+
+                if (_activeCommand == FollowerCommandType.TakeContainerLoot)
+                {
+                    InteractableObjects.RemoveContainerLootTaker(_bot);
                 }
 
                 if (_activeCommand == FollowerCommandType.OpenDoor)
@@ -2283,11 +2597,20 @@ namespace pitTeam.Components
             _resumeHoldAfterComeCloser = false;
             _resumeHoldAfterTakeLoot = false;
             _resumeHoldAfterTakeLootCrouch = false;
+            ResetPostLootMoveState();
+            _committedLootCommand = FollowerCommandType.None;
             _commandLookPauseUntil = 0f;
             _commandLookOverridePoint = Vector3.zero;
             _commandLookOverrideUntil = 0f;
 
             BattleRecorder.RecordCommandCleared(this, previousCommand, previousTarget, previousUntilTime, reason);
+        }
+
+        private static bool ShouldIgnoreCommittedLootClear(string reason)
+        {
+            return reason.StartsWith("ClearFollowerCommands", StringComparison.Ordinal) ||
+                   reason.StartsWith("OnYourOwn:", StringComparison.Ordinal) ||
+                   reason.StartsWith("Attention:", StringComparison.Ordinal);
         }
 
         private void ResetPickupFollowerRuntimeState()
@@ -2465,6 +2788,7 @@ namespace pitTeam.Components
 
                 Utils.FollowerMedical.UpdateMedicalHandsWatchdog(owner);
                 UpdateTemporaryCombatAggressionClearDelay();
+                TryPromoteReadyLootedWeapon(owner);
 
                 if (_teleportGraceUntil > Time.time)
                 {
@@ -2484,6 +2808,240 @@ namespace pitTeam.Components
                 Modules.Logger.LogError("Exception in BotFollowerPlayer manual update combat debounce");
                 Modules.Logger.LogError(ex);
             }
+        }
+
+        private void TryPromoteReadyLootedWeapon(BotOwner owner)
+        {
+            if (_lootedWeaponPromotionInProgress ||
+                Time.time < _nextLootedWeaponPromotionCheckAt)
+            {
+                return;
+            }
+
+            _nextLootedWeaponPromotionCheckAt = Time.time + LootedWeaponPromotionCheckInterval;
+            if (!pitFireTeam.IsLootGearSwappingEnabled() ||
+                _backpackInspectionActive ||
+                owner == null ||
+                owner.IsDead ||
+                owner.BotState != EBotState.Active ||
+                owner.Memory?.HaveEnemy == true ||
+                _teleportGraceUntil > Time.time ||
+                IsLootOrPickupCommandActive())
+            {
+                return;
+            }
+
+            InventoryController inventory = owner.GetPlayer?.InventoryController;
+            InventoryEquipment equipment = inventory?.Inventory?.Equipment;
+            Slot primarySlot = equipment?.GetSlot(EquipmentSlot.FirstPrimaryWeapon);
+            if (inventory == null ||
+                primarySlot == null ||
+                primarySlot.Deleted ||
+                primarySlot.ContainedItem != null)
+            {
+                return;
+            }
+
+            BotWeaponManager weaponManager = owner.WeaponManager;
+            BotWeaponSelector selector = weaponManager?.Selector;
+            Weapon activeWeapon = weaponManager?.ShootController?.Item ?? weaponManager?.CurrentWeapon;
+            if (weaponManager == null ||
+                selector == null ||
+                selector.IsChanging ||
+                weaponManager.Reload?.Reloading == true ||
+                !weaponManager.CanChangeHands())
+            {
+                return;
+            }
+
+            if (!TryFindReadyLootedWeaponPromotionCandidate(
+                    owner,
+                    inventory,
+                    equipment,
+                    activeWeapon,
+                    out Weapon weapon,
+                    out WeaponPrimaryReadinessSnapshot readiness,
+                    out string evaluation))
+            {
+                return;
+            }
+
+            Error locationError;
+            ItemAddress primaryAddress = primarySlot.FindLocationForItem(weapon, out locationError);
+            if (primaryAddress == null)
+            {
+                Modules.Logger.LogInfo(
+                    $"[LootCommand][Readiness] follower='{owner.Profile?.Nickname ?? owner.ProfileId ?? "unknown"}' " +
+                    $"weapon={weapon.TemplateId} evaluation={evaluation} " +
+                    $"destination={DescribePromotionSource(evaluation)} decisionReason=noPrimaryAddress {readiness.ToDiagnosticString()}");
+                return;
+            }
+
+            GStruct154<GClass3411> moveResult =
+                InteractionsHandlerClass.Move(weapon, primaryAddress, inventory, true);
+            if (moveResult.Failed ||
+                moveResult.Value.ItemsDestroyRequired ||
+                !inventory.CanExecute(moveResult.Value))
+            {
+                Modules.Logger.LogInfo(
+                    $"[LootCommand][Readiness] follower='{owner.Profile?.Nickname ?? owner.ProfileId ?? "unknown"}' " +
+                    $"weapon={weapon.TemplateId} evaluation={evaluation} " +
+                    $"destination={DescribePromotionSource(evaluation)} decisionReason=moveRejected {readiness.ToDiagnosticString()}");
+                return;
+            }
+
+            _lootedWeaponPromotionInProgress = true;
+            Modules.Logger.LogInfo(
+                $"[LootCommand][Readiness] follower='{owner.Profile?.Nickname ?? owner.ProfileId ?? "unknown"}' " +
+                $"weapon={weapon.TemplateId} evaluation={evaluation} " +
+                $"destination=FirstPrimaryWeapon decisionReason=ready {readiness.ToDiagnosticString()}");
+            inventory.RunNetworkTransaction(
+                moveResult.Value,
+                new Callback(result => CompleteLootedWeaponPromotion(owner, weapon, evaluation, result)));
+        }
+
+        private bool TryFindReadyLootedWeaponPromotionCandidate(
+            BotOwner owner,
+            InventoryController inventory,
+            InventoryEquipment equipment,
+            Weapon activeWeapon,
+            out Weapon weapon,
+            out WeaponPrimaryReadinessSnapshot readiness,
+            out string evaluation)
+        {
+            weapon = equipment?.GetSlot(EquipmentSlot.SecondPrimaryWeapon)?.ContainedItem as Weapon;
+            readiness = null;
+            evaluation = "secondaryPromotion";
+            if (IsTrackedPrimaryCandidate(owner, weapon))
+            {
+                readiness = FollowerWeaponPrimaryReadiness.EvaluateActual(
+                    inventory,
+                    weapon,
+                    ammo => !InteractableObjects.IsStrictCargoItem(owner, ammo));
+                if (IsPrimaryReadyWithReloadLandingSpace(equipment, weapon, readiness))
+                {
+                    // The tracked support weapon keeps priority. Wait until it leaves the hands
+                    // rather than promoting an unrelated cargo weapon around it.
+                    return !IsSameItem(activeWeapon, weapon);
+                }
+            }
+
+            Item backpack = equipment?.GetSlot(EquipmentSlot.Backpack)?.ContainedItem;
+            if (backpack == null)
+            {
+                weapon = null;
+                readiness = null;
+                return false;
+            }
+
+            List<(Weapon Weapon, WeaponPrimaryReadinessSnapshot Readiness)> readyCargo = backpack
+                .GetAllItems()
+                .OfType<Weapon>()
+                .Where(candidate => IsTrackedPrimaryCandidate(owner, candidate))
+                .GroupBy(candidate => candidate.Id, StringComparer.Ordinal)
+                .Select(group => group.First())
+                .Select(candidate => (
+                    Weapon: candidate,
+                    Readiness: FollowerWeaponPrimaryReadiness.EvaluateActual(
+                        inventory,
+                        candidate,
+                        ammo => !InteractableObjects.IsStrictCargoItem(owner, ammo))))
+                .Where(candidate => IsPrimaryReadyWithReloadLandingSpace(
+                    equipment,
+                    candidate.Weapon,
+                    candidate.Readiness))
+                .Take(2)
+                .ToList();
+
+            // Weapon comparison is deliberately deferred. Promote only when inventory state
+            // identifies one unambiguous ready cargo weapon.
+            if (readyCargo.Count != 1)
+            {
+                weapon = null;
+                readiness = null;
+                return false;
+            }
+
+            weapon = readyCargo[0].Weapon;
+            readiness = readyCargo[0].Readiness;
+            evaluation = "cargoFastAccessPromotion";
+            return true;
+        }
+
+        private static bool IsTrackedPrimaryCandidate(BotOwner owner, Weapon weapon)
+        {
+            return weapon != null &&
+                   !string.IsNullOrEmpty(weapon.Id) &&
+                   weapon.GetItemComponent<KnifeComponent>() == null &&
+                   weapon is not PistolItemClass &&
+                   weapon is not RevolverItemClass &&
+                   InteractableObjects.IsLootedWeapon(owner, weapon) &&
+                   !InteractableObjects.IsStrictCargoItem(owner, weapon);
+        }
+
+        private static bool IsPrimaryReadyWithReloadLandingSpace(
+            InventoryEquipment equipment,
+            Weapon weapon,
+            WeaponPrimaryReadinessSnapshot readiness)
+        {
+            if (readiness == null || !readiness.PrimaryReady || readiness.RequiresMagazineLoad)
+            {
+                return false;
+            }
+
+            return readiness.InsertedContribution >= readiness.Threshold ||
+                   FollowerWeaponPrimaryReadiness.HasInsertedMagazineReloadLandingSpace(equipment, weapon);
+        }
+
+        private static string DescribePromotionSource(string evaluation)
+        {
+            return string.Equals(evaluation, "cargoFastAccessPromotion", StringComparison.Ordinal)
+                ? "BackpackCargo"
+                : "SecondPrimaryWeapon";
+        }
+
+        private void CompleteLootedWeaponPromotion(
+            BotOwner owner,
+            Weapon weapon,
+            string evaluation,
+            IResult result)
+        {
+            _lootedWeaponPromotionInProgress = false;
+            _nextLootedWeaponPromotionCheckAt = Time.time + LootedWeaponPromotionCheckInterval;
+
+            Weapon slottedPrimary = owner?.GetPlayer?.InventoryController?.Inventory?.Equipment
+                ?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem as Weapon;
+            if (result?.Succeed != true && !IsSameItem(slottedPrimary, weapon))
+            {
+                Modules.Logger.LogInfo(
+                    $"[LootCommand] Looted weapon promotion failed for " +
+                    $"'{owner?.Profile?.Nickname ?? owner?.ProfileId ?? "unknown"}': " +
+                    $"{weapon?.TemplateId ?? "unknown"}:{evaluation}");
+                return;
+            }
+
+            if (owner == null || owner.IsDead || owner.BotState != EBotState.Active)
+            {
+                return;
+            }
+
+            owner?.WeaponManager?.UpdateWeaponsList();
+            FollowerLootedPrimaryWeaponBinding.RebindAndSelect(
+                owner,
+                weapon,
+                evaluation);
+        }
+
+        private static bool IsSameItem(Item first, Item second)
+        {
+            if (ReferenceEquals(first, second))
+            {
+                return true;
+            }
+
+            return !string.IsNullOrEmpty(first?.Id) &&
+                   !string.IsNullOrEmpty(second?.Id) &&
+                   string.Equals(first.Id, second.Id, StringComparison.Ordinal);
         }
 
         private static object GetSainBot(BotOwner owner)

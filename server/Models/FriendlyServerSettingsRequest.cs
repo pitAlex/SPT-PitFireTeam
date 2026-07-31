@@ -5,12 +5,14 @@ namespace pitTeam.Server.Models;
 
 public record FriendlyServerSettingsRequest : IRequestData
 {
+    public const string DefaultLoadoutManagementMode = "Restricted";
+
     [JsonPropertyName("pmcArmbands")]
     public bool PmcArmbands { get; set; } = true;
 
     [JsonPropertyName("loadoutManagementMode")]
-    public string LoadoutManagementMode { get; set; } = "Simple";
+    public string LoadoutManagementMode { get; set; } = DefaultLoadoutManagementMode;
 
     [JsonPropertyName("restrictedGearMaintenance")]
-    public bool RestrictedGearMaintenance { get; set; }
+    public bool RestrictedGearMaintenance { get; set; } = false;
 }
