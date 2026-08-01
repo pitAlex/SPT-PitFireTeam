@@ -113,11 +113,15 @@ namespace pitTeam.BigBrain.Actions
             string sourceName,
             bool includeEmptyForTopOff = false)
         {
+#if DEBUG
             OperationalMagazineScanStats stats = new OperationalMagazineScanStats(sourceName, root, weapon);
+#endif
             if (root == null || weapon == null)
             {
+#if DEBUG
                 stats.AddRejectedMagazine(DescribeLootDebugItem(root), root == null ? "rootMissing" : "weaponMissing");
                 LogOperationalMagazineScan(stats);
+#endif
                 yield break;
             }
 
@@ -136,7 +140,9 @@ namespace pitTeam.BigBrain.Actions
             // search/loot state changes, which otherwise turns a support-mag scan into a hard
             // planning failure.
             List<Item> snapshot = SnapshotLootTreeItems(root);
+#if DEBUG
             stats.TreeItemsScanned = snapshot.Count;
+#endif
             foreach (Item item in snapshot)
             {
                 if (item is not MagazineItemClass magazine)
@@ -144,77 +150,103 @@ namespace pitTeam.BigBrain.Actions
                     continue;
                 }
 
+#if DEBUG
                 stats.MagazinesSeen++;
                 string magazineDescription = DescribeLootDebugItem(magazine);
+#endif
                 if (string.IsNullOrEmpty(magazine.Id))
                 {
+#if DEBUG
                     stats.AddRejectedMagazine(magazineDescription, "missingId");
+#endif
                     continue;
                 }
 
                 if (weaponTreeItemIds.Contains(magazine.Id))
                 {
+#if DEBUG
                     stats.AddRejectedMagazine(magazineDescription, "inWeaponTree");
+#endif
                     continue;
                 }
 
                 if (string.Equals(currentMagazineId, magazine.Id, StringComparison.Ordinal))
                 {
+#if DEBUG
                     stats.AddRejectedMagazine(magazineDescription, "currentWeaponMag");
+#endif
                     continue;
                 }
 
                 if (IsMagazineInstalledInWeapon(magazine))
                 {
+#if DEBUG
                     stats.AddRejectedMagazine(magazineDescription, "installedInWeapon");
+#endif
                     continue;
                 }
 
                 if (magazine.Count <= 0 && !includeEmptyForTopOff)
                 {
+#if DEBUG
                     stats.AddRejectedMagazine(magazineDescription, "empty");
+#endif
                     continue;
                 }
 
                 if (IsItemInsideRoot(magazine, weapon))
                 {
+#if DEBUG
                     stats.AddRejectedMagazine(magazineDescription, "insideWeapon");
+#endif
                     continue;
                 }
 
                 if (!IsMagazineCompatibleWithWeapon(weapon, magazine))
                 {
+#if DEBUG
                     stats.AddRejectedMagazine(magazineDescription, "incompatibleMagazine");
+#endif
                     continue;
                 }
 
                 if (magazine.Count > 0 &&
                     !FollowerWeaponMagazineCompatibility.AreLoadedCartridgesCompatible(weapon, magazine))
                 {
+#if DEBUG
                     stats.AddRejectedMagazine(magazineDescription, "incompatibleCartridge");
+#endif
                     continue;
                 }
 
                 if (magazine.Count <= 0 && includeEmptyForTopOff && magazine.MaxCount > 0)
                 {
+#if DEBUG
                     stats.CompatibleCount++;
                     stats.AddAcceptedMagazine($"{magazineDescription}:refillableEmpty");
+#endif
                     yield return magazine;
                     continue;
                 }
 
                 if (FollowerWeaponMagazineCompatibility.IsOperational(weapon, magazine))
                 {
+#if DEBUG
                     stats.CompatibleCount++;
                     stats.AddAcceptedMagazine(magazineDescription);
+#endif
                     yield return magazine;
                     continue;
                 }
 
+#if DEBUG
                 stats.AddRejectedMagazine(magazineDescription, "notOperational");
+#endif
             }
 
+#if DEBUG
             LogOperationalMagazineScan(stats);
+#endif
         }
 
         private static bool IsMagazineInstalledInWeapon(Item magazine)
@@ -908,6 +940,7 @@ namespace pitTeam.BigBrain.Actions
             return false;
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private void LogOperationalMagazineScan(OperationalMagazineScanStats stats)
         {
             if (stats == null)
@@ -934,6 +967,7 @@ namespace pitTeam.BigBrain.Actions
             }
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private void LogOperationalMagazinePlanStep(BodyGearCandidate candidate, string message)
         {
             Modules.Logger.LogInfo(
@@ -1090,8 +1124,10 @@ namespace pitTeam.BigBrain.Actions
             public int OperationalFastAccessCount => OperationalVestCount + OperationalPocketsCount;
             public int ScannedCount { get; set; }
             public int ValidLoadedCount { get; set; }
-            public List<string> RejectionReasons { get; } = new List<string>();
+            private List<string>? rejectionReasons;
+            public List<string> RejectionReasons => rejectionReasons ??= new List<string>();
 
+            [System.Diagnostics.Conditional("DEBUG")]
             public void AddRejection(string reason)
             {
                 if (RejectionReasons.Count >= 5)

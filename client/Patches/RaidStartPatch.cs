@@ -58,7 +58,7 @@ namespace pitTeam.Patches
             raidSettings.RaidMode = ERaidMode.Local;
             raidSettings.IsPveOffline = true;
             _lastSyntheticRaidStartUtc = DateTime.UtcNow;
-            pitFireTeam.Log.LogInfo($"[Raid] Forced local teammate raid at {reason}. groupPlayers={MainMenuControllerPatch.GroupPlayers.Count}");
+            Modules.Logger.LogInfo($"[Raid] Forced local teammate raid at {reason}. groupPlayers={MainMenuControllerPatch.GroupPlayers.Count}");
             return true;
         }
 
@@ -1159,7 +1159,7 @@ namespace pitTeam.Patches
                         }
 
                         controller.GroupPlayers.Add(teammate);
-                        pitFireTeam.Log.LogInfo($"[UI] Added teammate {teammate.AccountId} to controller before preview population");
+                        Modules.Logger.LogInfo($"[UI] Added teammate {teammate.AccountId} to controller before preview population");
                     }
                 }
             }
@@ -1190,7 +1190,7 @@ namespace pitTeam.Patches
                 // Rebuild the entire group preview with updated controller.GroupPlayers
                 groupPreview.Show(string_2, controller, raidSettings_0, new Func<GroupPlayerViewModelClass, bool, bool, ContextInteractionsClass>(controller.GetContextInteractions));
 
-                pitFireTeam.Log.LogInfo($"[UI] Rebuilt group preview with {controller.GroupPlayers.Count} players");
+                Modules.Logger.LogInfo($"[UI] Rebuilt group preview with {controller.GroupPlayers.Count} players");
             }
             catch (Exception ex)
             {

@@ -251,6 +251,7 @@ namespace pitTeam.Modules
             }
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private static void LogPostLootPromotionStopped(
             BotOwner bot,
             Weapon weapon,
@@ -680,6 +681,7 @@ namespace pitTeam.Modules
             }
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private static void LogFinalFailure(
             BotOwner bot,
             Weapon weapon,
@@ -701,6 +703,7 @@ namespace pitTeam.Modules
                 $"{weapon?.TemplateId ?? "unknown"} reason={reason}");
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private static void LogAbortedSwitch(
             BotOwner bot,
             Weapon weapon,

@@ -433,6 +433,7 @@ namespace pitTeam.BigBrain.Actions
             return Math.Max(1, (usableBasis + 1) / 2);
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private void LogLooseWeaponPickupDestination(
             Weapon weapon,
             WeaponPrimaryReadinessSnapshot readiness,

@@ -688,6 +688,7 @@ namespace pitTeam.BigBrain.Actions
             return true;
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private void LogBodyGearMoveBuildRejection(
             InventoryController inventory,
             BodyGearCandidate candidate,

@@ -54,7 +54,7 @@ namespace pitTeam.Patches
         private const int RagfairWeaponOfferPageSize = 50;
         private const double DiscountComparisonTolerance = 0.000001;
         private static bool DisableKitLoadoutDiscountPricing = false;
-        private static bool EnableKitLoadoutPricingDiagnostics = true;
+        private static bool EnableKitLoadoutPricingDiagnostics => pitFireTeam.IsDebugBuild;
 
         private static string _accountId;
         private static ResultProfile _profile;
@@ -161,7 +161,7 @@ namespace pitTeam.Patches
 
             if (EnableKitLoadoutPricingDiagnostics)
             {
-                pitFireTeam.Log.LogInfo($"[UI] Opening teammate equipment builds screen for '{profile.AccountId}'. Kit pricing diagnostics phase='{_buildPricingLogPhase}', marketPricesLoaded={_marketPrices != null}.");
+                Modules.Logger.LogInfo($"[UI] Opening teammate equipment builds screen for '{profile.AccountId}'. Kit pricing diagnostics phase='{_buildPricingLogPhase}', marketPricesLoaded={_marketPrices != null}.");
             }
         }
 
@@ -640,7 +640,7 @@ namespace pitTeam.Patches
             clonedToggle.onValueChanged.AddListener(isOn =>
             {
                 _excludeExistingItems = isOn;
-                pitFireTeam.Log.LogInfo($"[UI] Teammate buy exclude existing items changed: {isOn}");
+                Modules.Logger.LogInfo($"[UI] Teammate buy exclude existing items changed: {isOn}");
                 ApplyActionButtonText(screen);
             });
 
@@ -833,7 +833,7 @@ namespace pitTeam.Patches
 
             closeButton.onClick.AddListener(() =>
             {
-                pitFireTeam.Log.LogInfo("[UI] Teammate equipment build buy confirmation closed.");
+                Modules.Logger.LogInfo("[UI] Teammate equipment build buy confirmation closed.");
                 CloseBuyConfirmOverlay();
             });
 
@@ -885,7 +885,7 @@ namespace pitTeam.Patches
             }
 
             _buyConfirmOverlay = overlayRoot;
-            pitFireTeam.Log.LogInfo($"[UI] Teammate equipment build buy confirmation opened: build='{quote.BuildName}', price={quote.FinalPrice}, excludeExistingItems={quote.ExcludeExistingItems}, stashItemsUsed={quote.UsedStashItems.Count}, missingTemplates={quote.MissingTemplateCounts.Count}.");
+            Modules.Logger.LogInfo($"[UI] Teammate equipment build buy confirmation opened: build='{quote.BuildName}', price={quote.FinalPrice}, excludeExistingItems={quote.ExcludeExistingItems}, stashItemsUsed={quote.UsedStashItems.Count}, missingTemplates={quote.MissingTemplateCounts.Count}.");
         }
 
         private static void CreateInteractiveBuyQuoteBody(
@@ -1454,7 +1454,7 @@ namespace pitTeam.Patches
             }
 
             _buyConfirmOverlay = overlayRoot;
-            pitFireTeam.Log.LogInfo($"[UI] Teammate equipment build purchase blocked by resources: build='{quote?.BuildName}', price={quote?.FinalPrice ?? 0}, availableRoubles={GetAvailableStashRoubles()}, excludeExistingItems={quote?.ExcludeExistingItems ?? false}.");
+            Modules.Logger.LogInfo($"[UI] Teammate equipment build purchase blocked by resources: build='{quote?.BuildName}', price={quote?.FinalPrice ?? 0}, availableRoubles={GetAvailableStashRoubles()}, excludeExistingItems={quote?.ExcludeExistingItems ?? false}.");
         }
 
         private static void ConfirmBuyQuote(EquipmentBuildBuyQuote quote)
@@ -1509,7 +1509,7 @@ namespace pitTeam.Patches
                     _session?.RagFair,
                     response?.data?.playerStashItems);
 
-                pitFireTeam.Log.LogInfo($"[UI] Teammate equipment build {GetQuoteActionButtonText(quote)} completed: build='{quote.BuildName}', price={quote.FinalPrice}, useItemsInStash={quote.ExcludeExistingItems}.");
+                Modules.Logger.LogInfo($"[UI] Teammate equipment build {GetQuoteActionButtonText(quote)} completed: build='{quote.BuildName}', price={quote.FinalPrice}, useItemsInStash={quote.ExcludeExistingItems}.");
 
                 // The server has already saved the teammate's new Default gear here, so the
                 // roster portrait can be regenerated from the updated profile when My Squad
@@ -2020,6 +2020,7 @@ namespace pitTeam.Patches
             return Mathf.Max(0, Convert.ToInt32(Math.Floor(total)));
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private static void LogBuildPriceDiagnosticsOnce(GClass3953 build, KitLoadoutPricingContext pricingContext, int finalPrice, string source)
         {
             if (!EnableKitLoadoutPricingDiagnostics || build?.Equipment == null || pricingContext == null)
@@ -2038,11 +2039,11 @@ namespace pitTeam.Patches
                 .Where(item => !IsIgnoredKitRequirementItem(item))
                 .ToList();
             double rawTotal = items.Sum(item => Math.Max(0.0, CalculateSingleItemMarketRoublePrice(item)));
-            pitFireTeam.Log.LogInfo($"[UI][KitPrice] phase={_buildPricingLogPhase} source={source} build='{buildName}' items={items.Count} rawTotal={Math.Floor(rawTotal)} finalTotal={finalPrice} marketPricesLoaded={_marketPrices != null}");
+            Modules.Logger.LogInfo($"[UI][KitPrice] phase={_buildPricingLogPhase} source={source} build='{buildName}' items={items.Count} rawTotal={Math.Floor(rawTotal)} finalTotal={finalPrice} marketPricesLoaded={_marketPrices != null}");
 
             foreach (string line in pricingContext.Diagnostics)
             {
-                pitFireTeam.Log.LogInfo($"[UI][KitPrice] build='{buildName}' {line}");
+                Modules.Logger.LogInfo($"[UI][KitPrice] build='{buildName}' {line}");
             }
 
             foreach (Item item in items)
@@ -2053,7 +2054,7 @@ namespace pitTeam.Patches
                     : rawPrice;
                 string rule = entry?.Rule ?? "full value";
                 string slotLabel = GetEquipmentSlotLabel(build.Equipment, item);
-                pitFireTeam.Log.LogInfo(
+                Modules.Logger.LogInfo(
                     $"[UI][KitPrice] build='{buildName}' slot={slotLabel} item='{GetItemDisplayName(item)}' tpl={item.TemplateId} raw={Math.Floor(rawPrice)} final={Math.Floor(finalItemPrice)} rule={rule}");
             }
         }
@@ -2175,7 +2176,7 @@ namespace pitTeam.Patches
             int requiredUnits = requirements.Sum(requirement => requirement.RequiredCount);
             int usedUnits = usedItems.Sum(item => item.Count);
             int purchasedUnits = purchasedItems.Sum(item => item.Count);
-            pitFireTeam.Log.LogInfo($"[UI] Teammate kit stash-use quote scanned {requirements.Count} template(s), {requiredUnits} required item unit(s), {usedUnits} stash-matched unit(s), {purchasedUnits} purchase unit(s), finalPrice={finalPrice}.");
+            Modules.Logger.LogInfo($"[UI] Teammate kit stash-use quote scanned {requirements.Count} template(s), {requiredUnits} required item unit(s), {usedUnits} stash-matched unit(s), {purchasedUnits} purchase unit(s), finalPrice={finalPrice}.");
             return new StashOnlyExclusionPlan
             {
                 FinalPrice = finalPrice,
@@ -2991,18 +2992,18 @@ namespace pitTeam.Patches
                 {
                     if (plan?.HasMatch == true)
                     {
-                        pitFireTeam.Log.LogInfo($"[UI][KitPrice][Ragfair] weaponTpl={weaponTemplateId} result=match adjustedPrice={Math.Floor(plan.TotalPrice)} coverage={FormatPercent(plan.TargetCoverage)} offer={plan.SourceDescription}");
+                        Modules.Logger.LogInfo($"[UI][KitPrice][Ragfair] weaponTpl={weaponTemplateId} result=match adjustedPrice={Math.Floor(plan.TotalPrice)} coverage={FormatPercent(plan.TargetCoverage)} offer={plan.SourceDescription}");
                     }
                     else
                     {
                         double targetRawPrice = CalculateItemsRawPrice(targetPriceableItems);
-                        pitFireTeam.Log.LogInfo($"[UI][KitPrice][Ragfair] weaponTpl={weaponTemplateId} result=noMatch targetItems={targetPriceableItems?.Count ?? 0} targetRaw={Math.Floor(targetRawPrice)}");
+                        Modules.Logger.LogInfo($"[UI][KitPrice][Ragfair] weaponTpl={weaponTemplateId} result=noMatch targetItems={targetPriceableItems?.Count ?? 0} targetRaw={Math.Floor(targetRawPrice)}");
                     }
                 }
             }
             catch (Exception ex)
             {
-                pitFireTeam.Log.LogDebug($"[UI] Ragfair weapon offer pricing failed for '{weaponTemplateId}': {ex.Message}");
+                Modules.Logger.LogInfo($"[UI] Ragfair weapon offer pricing failed for '{weaponTemplateId}': {ex.Message}");
                 RagfairWeaponOfferPricingPlanCache[cacheKey] = RagfairWeaponOfferPricingPlan.NoMatch;
             }
             finally
@@ -3063,7 +3064,7 @@ namespace pitTeam.Patches
             {
                 if (EnableKitLoadoutPricingDiagnostics)
                 {
-                    pitFireTeam.Log.LogInfo($"[UI][KitPrice][Ragfair] weaponTpl={weaponTemplateId} handbookId={handbookId} result=emptyOrFailed succeed={result.Succeed} offers={result.Value?.offers?.Length ?? 0}");
+                    Modules.Logger.LogInfo($"[UI][KitPrice][Ragfair] weaponTpl={weaponTemplateId} handbookId={handbookId} result=emptyOrFailed succeed={result.Succeed} offers={result.Value?.offers?.Length ?? 0}");
                 }
 
                 return RagfairWeaponOfferPricingPlan.NoMatch;
@@ -3175,7 +3176,7 @@ namespace pitTeam.Patches
 
             if (bestPlan == null && EnableKitLoadoutPricingDiagnostics)
             {
-                pitFireTeam.Log.LogInfo($"[UI][KitPrice][Ragfair] weaponTpl={weaponTemplateId} handbookId={handbookId} conditionFrom={conditionFrom} offers={result.Value.offers.Length} targetRaw={Math.Floor(targetRawPrice)} result=noUsableOffer rejectedEligibility={rejectedEligibility} rejectedPrice={rejectedPrice} rejectedCondition={rejectedCondition} rejectedEmptyTree={rejectedEmptyTree} rejectedOverlap={rejectedOverlap} rejectedCoverage={rejectedCoverage} rejectedRaw={rejectedRaw}");
+                Modules.Logger.LogInfo($"[UI][KitPrice][Ragfair] weaponTpl={weaponTemplateId} handbookId={handbookId} conditionFrom={conditionFrom} offers={result.Value.offers.Length} targetRaw={Math.Floor(targetRawPrice)} result=noUsableOffer rejectedEligibility={rejectedEligibility} rejectedPrice={rejectedPrice} rejectedCondition={rejectedCondition} rejectedEmptyTree={rejectedEmptyTree} rejectedOverlap={rejectedOverlap} rejectedCoverage={rejectedCoverage} rejectedRaw={rejectedRaw}");
             }
 
             return bestPlan ?? RagfairWeaponOfferPricingPlan.NoMatch;
@@ -3465,7 +3466,7 @@ namespace pitTeam.Patches
             }
             catch (Exception ex)
             {
-                pitFireTeam.Log.LogDebug($"[UI] Exact trader weapon offer pricing failed for '{targetWeapon.Id}': {ex.Message}");
+                Modules.Logger.LogInfo($"[UI] Exact trader weapon offer pricing failed for '{targetWeapon.Id}': {ex.Message}");
                 pricingPlan = TraderWeaponOfferPricingPlan.NoMatch;
                 TraderWeaponOfferPricingPlanCache[cacheKey] = pricingPlan;
                 return false;
@@ -4221,7 +4222,8 @@ namespace pitTeam.Patches
         private sealed class KitLoadoutPricingContext
         {
             private readonly Dictionary<string, KitLoadoutPricingEntry> _itemPriceOverrides = new Dictionary<string, KitLoadoutPricingEntry>(StringComparer.Ordinal);
-            public readonly List<string> Diagnostics = new List<string>();
+            private List<string> diagnostics;
+            public List<string> Diagnostics => diagnostics ??= new List<string>();
 
             public void SetItemPriceOverride(Item item, double price, string rule)
             {
@@ -4257,6 +4259,7 @@ namespace pitTeam.Patches
                     && _itemPriceOverrides.TryGetValue(item.Id, out entry);
             }
 
+            [System.Diagnostics.Conditional("DEBUG")]
             public void AddDiagnostic(string line)
             {
                 if (!string.IsNullOrWhiteSpace(line))

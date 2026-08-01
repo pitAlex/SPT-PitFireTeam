@@ -102,7 +102,7 @@ namespace pitTeam.Modules
 
             if (!string.IsNullOrWhiteSpace(reason))
             {
-                pitFireTeam.Log.LogInfo($"[SquadFlow] Squad side-selection mode disabled: {reason}");
+                Logger.LogInfo($"[SquadFlow] Squad side-selection mode disabled: {reason}");
             }
         }
 

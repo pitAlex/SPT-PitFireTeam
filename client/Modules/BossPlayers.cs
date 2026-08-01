@@ -656,6 +656,7 @@ namespace pitTeam.Modules
             return UnityEngine.Mathf.Clamp01(UnityEngine.Mathf.InverseLerp(limits.x, limits.y, weight));
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private static void LogFollowerOverweightLimitDebug(
             Player player,
             float inventoryWeight,
@@ -709,6 +710,7 @@ namespace pitTeam.Modules
             }
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private static void LogFollowerProgressSource(BotFollowerPlayer follower, Profile profile)
         {
             try
@@ -734,6 +736,7 @@ namespace pitTeam.Modules
             }
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private static void LogFollowerInventoryWeightDebug(Player player, string reason)
         {
             try

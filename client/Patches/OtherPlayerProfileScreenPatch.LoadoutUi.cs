@@ -1144,13 +1144,13 @@ namespace pitTeam.Patches
                     serializedPlayerStash = CreateLoadoutEditorSaveStashItems();
                     if (!HasLoadoutEditorRealChanges(serializedEquipment, serializedPlayerStash))
                     {
-                        pitFireTeam.Log.LogInfo("[UI] No real loadout editor changes detected; closing without teammate default commit.");
+                        Modules.Logger.LogInfo("[UI] No real loadout editor changes detected; closing without teammate default commit.");
                         CloseLoadoutEditorOverlay();
                         RefreshCurrentTeammateLoadoutSelector(profile);
                         return;
                     }
 
-                    pitFireTeam.Log.LogInfo("[UI] Prepared server-authoritative real loadout commit.");
+                    Modules.Logger.LogInfo("[UI] Prepared server-authoritative real loadout commit.");
                 }
 
                 string responseJson = await Task.Run(() => RequestHandler.PostJson(
@@ -1258,7 +1258,7 @@ namespace pitTeam.Patches
                     int delCount = delta.del?.Length ?? 0;
                     if (newCount == 0 && changeCount == 0 && delCount == 0)
                     {
-                        pitFireTeam.Log.LogInfo("[UI] Live player stash already matched server-saved loadout commit.");
+                        Modules.Logger.LogInfo("[UI] Live player stash already matched server-saved loadout commit.");
                         return;
                     }
 
@@ -1274,7 +1274,7 @@ namespace pitTeam.Patches
                             "EFT's backend-style updater left the live player stash out of sync.");
                     }
 
-                    pitFireTeam.Log.LogInfo($"[UI] Applied live player stash refresh for real loadout commit: new={newCount}, change={changeCount}, del={delCount}.");
+                    Modules.Logger.LogInfo($"[UI] Applied live player stash refresh for real loadout commit: new={newCount}, change={changeCount}, del={delCount}.");
                     return;
                 }
                 catch (Exception ex)
@@ -1334,7 +1334,7 @@ namespace pitTeam.Patches
                 item?.RaiseRefreshEvent(true, true);
             }
 
-            pitFireTeam.Log.LogInfo("[UI] Applied live player stash refresh from server-saved snapshot.");
+            Modules.Logger.LogInfo("[UI] Applied live player stash refresh from server-saved snapshot.");
         }
 
         private static void RememberActiveBackendInventoryController(ISession session, InventoryController inventoryController)
@@ -1441,7 +1441,7 @@ namespace pitTeam.Patches
                 CaptureLoadoutEditorInitialState(LoadoutEditorProfile, IsRealDefaultLoadoutEditorCommit());
                 SyncLoadoutEditorRepairKitsFromActiveProfile(repairKitsInfo);
                 MarkSquadRosterDirty(ViewedProfile.AccountId);
-                pitFireTeam.Log.LogInfo($"[UI] Repaired teammate loadout item '{itemToRepair.Id}' through teammate repair route.");
+                Modules.Logger.LogInfo($"[UI] Repaired teammate loadout item '{itemToRepair.Id}' through teammate repair route.");
                 return SuccessfulResult.New;
             }
             catch (Exception ex)
@@ -1500,7 +1500,7 @@ namespace pitTeam.Patches
                 ApplyServerRepairLoadoutEditorStashChanges(data);
                 CaptureLoadoutEditorInitialState(LoadoutEditorProfile, IsRealDefaultLoadoutEditorCommit());
                 MarkSquadRosterDirty(ViewedProfile.AccountId);
-                pitFireTeam.Log.LogInfo($"[UI] Repaired teammate loadout item '{itemToRepair.Id}' through teammate trader repair route.");
+                Modules.Logger.LogInfo($"[UI] Repaired teammate loadout item '{itemToRepair.Id}' through teammate trader repair route.");
                 return SuccessfulResult.New;
             }
             catch (Exception ex)
@@ -1571,7 +1571,7 @@ namespace pitTeam.Patches
                     ? CreateLoadoutEditorSaveStashItems()
                     : null;
 
-                pitFireTeam.Log.LogInfo("[UI] Saving pending teammate loadout editor changes before repair.");
+                Modules.Logger.LogInfo("[UI] Saving pending teammate loadout editor changes before repair.");
                 string responseJson = await Task.Run(() => RequestHandler.PostJson(
                     DefaultEquipmentRoute,
                     SerializeBody(new FriendlyTeammateDefaultEquipmentRequest
@@ -1715,7 +1715,7 @@ namespace pitTeam.Patches
                     }
                 });
 
-                pitFireTeam.Log.LogInfo($"[UI] Applied {reason} player stash delta: new={newItems.Length}, change={changedItems.Length}, del={deletedItems.Length}.");
+                Modules.Logger.LogInfo($"[UI] Applied {reason} player stash delta: new={newItems.Length}, change={changedItems.Length}, del={deletedItems.Length}.");
                 return true;
             }
             catch (Exception ex)

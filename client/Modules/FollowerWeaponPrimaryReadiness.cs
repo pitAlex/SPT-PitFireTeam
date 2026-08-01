@@ -203,7 +203,7 @@ namespace pitTeam.Modules
 
             if (failures.Count == 0)
             {
-                pitFireTeam.Log.LogInfo(
+                Logger.LogInfo(
                     $"[LootCommand][Readiness] Deterministic formula self-test passed ({scenarios.Length}/{scenarios.Length}).");
                 FollowerWeaponInternalReadiness.RunDeterministicSelfTests();
                 FollowerWeaponChamberReadiness.RunDeterministicSelfTests();

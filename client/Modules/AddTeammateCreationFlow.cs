@@ -165,7 +165,7 @@ namespace pitTeam.Modules
             };
 
             string json = JsonConvert.SerializeObject(payload);
-            pitFireTeam.Log.LogInfo($"[UI] Add teammate selection complete: {json}");
+            Logger.LogInfo($"[UI] Add teammate selection complete: {json}");
 
             submitInProgress = true;
             ConfigureHeadSelectionUi(screen);
@@ -662,7 +662,7 @@ namespace pitTeam.Modules
                 throw new Exception(string.IsNullOrEmpty(backendError) ? GetLocalizedSocialUi("AddTeammateCreateFailed") : backendError);
             }
 
-            pitFireTeam.Log.LogInfo($"[UI] Add teammate created in backend: {responseJson}");
+            Logger.LogInfo($"[UI] Add teammate created in backend: {responseJson}");
             pitFireTeam.Instance.StartCoroutine(ShowSuccessAndReturn(payload.nickname));
         }
 

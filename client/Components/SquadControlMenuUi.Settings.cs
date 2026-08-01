@@ -1047,12 +1047,12 @@ namespace pitTeam.Components
                 {
                     toggle.SpawnedObject.OnMouseDown += () =>
                     {
-                        pitFireTeam.Log.LogInfo($"[UI] Loadout management toggle clicked: {mode}");
+                        Modules.Logger.LogInfo($"[UI] Loadout management toggle clicked: {mode}");
                         RequestLoadoutManagementModeChange(mode);
                     };
                     toggle.SpawnedObject.onValueChanged.AddListener(isOn =>
                     {
-                        pitFireTeam.Log.LogInfo($"[UI] Loadout management toggle value changed: {mode}={isOn}");
+                        Modules.Logger.LogInfo($"[UI] Loadout management toggle value changed: {mode}={isOn}");
                     });
                 }
             }
@@ -1082,7 +1082,7 @@ namespace pitTeam.Components
             {
                 hoverController.OnClick = _ =>
                 {
-                    pitFireTeam.Log.LogInfo($"[UI] Loadout management toggle clicked: {mode}");
+                    Modules.Logger.LogInfo($"[UI] Loadout management toggle clicked: {mode}");
                     RequestLoadoutManagementModeChange(mode);
                 };
             }
@@ -1156,11 +1156,11 @@ namespace pitTeam.Components
             LoadoutManagementMode previousMode = pitFireTeam.loadoutManagementMode.Value;
             if (previousMode == mode)
             {
-                pitFireTeam.Log.LogInfo($"[UI] Loadout management mode '{mode}' is already selected.");
+                Modules.Logger.LogInfo($"[UI] Loadout management mode '{mode}' is already selected.");
                 return;
             }
 
-            pitFireTeam.Log.LogInfo($"[UI] Loadout management mode change requested: {previousMode} -> {mode}");
+            Modules.Logger.LogInfo($"[UI] Loadout management mode change requested: {previousMode} -> {mode}");
             if (previousMode == LoadoutManagementMode.Simple && mode != LoadoutManagementMode.Simple)
             {
                 ShowLoadoutManagementConfirmOverlay(mode);
@@ -1223,7 +1223,7 @@ namespace pitTeam.Components
                 yield break;
             }
 
-            pitFireTeam.Log.LogInfo("[UI] Refreshing roster portraits after loadout management mode switch.");
+            Modules.Logger.LogInfo("[UI] Refreshing roster portraits after loadout management mode switch.");
             RebuildRosterTiles();
         }
 
@@ -1341,7 +1341,7 @@ namespace pitTeam.Components
             confirmButton.OnClick.AddListener(() => ApplyLoadoutManagementModeChange(mode));
 
             loadoutManagementConfirmOverlay = overlayRoot;
-            pitFireTeam.Log.LogInfo($"[UI] Loadout management confirmation overlay opened for mode: {mode}");
+            Modules.Logger.LogInfo($"[UI] Loadout management confirmation overlay opened for mode: {mode}");
         }
 
         private void CloseLoadoutManagementConfirmOverlay(bool rebuild = false)

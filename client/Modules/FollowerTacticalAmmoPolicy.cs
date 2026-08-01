@@ -254,7 +254,7 @@ namespace pitTeam.Modules
 
             if (failures.Count == 0)
             {
-                pitFireTeam.Log.LogInfo(
+                Logger.LogInfo(
                     $"[LootCommand][TacticalAmmo] Deterministic policy self-test passed ({scenarios.Length}/{scenarios.Length}).");
                 return;
             }

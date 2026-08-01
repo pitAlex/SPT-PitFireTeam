@@ -44,7 +44,7 @@ namespace pitTeam.Components
             {
                 string message = $"Cannot add {entry.Nickname} to the raid group without a proper kit.";
                 AddTeammateCreationFlow.ShowToast(message);
-                pitFireTeam.Log.LogInfo($"[UI] Blocked group invite for teammate '{entry.AccountId}': missing primary or pistol weapon.");
+                Modules.Logger.LogInfo($"[UI] Blocked group invite for teammate '{entry.AccountId}': missing primary or pistol weapon.");
                 return;
             }
 

@@ -2133,6 +2133,7 @@ namespace pitTeam.Components
                 : "unknown";
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private static void LogLootCandidate(
             string command,
             BotOwner follower,
@@ -2149,6 +2150,7 @@ namespace pitTeam.Components
                 $"freeBackpackPocketArea={(freeArea.HasValue ? freeArea.Value.ToString() : "n/a")}");
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private static void LogFollowerCommandState(
             string command,
             BotOwner follower,
@@ -2172,6 +2174,7 @@ namespace pitTeam.Components
                 $"target='{DescribeLootTarget(target)}'");
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private static void LogLootAssignment(
             string command,
             BotOwner follower,

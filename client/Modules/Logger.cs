@@ -10,6 +10,7 @@ namespace pitTeam.Modules
         {
         }
 
+        [Conditional("DEBUG")]
         public static void LogInfo(string message)
         {
             if (pitFireTeam.IsDebugBuild)
@@ -17,6 +18,7 @@ namespace pitTeam.Modules
 
         }
 
+        [Conditional("DEBUG")]
         public static void LogTrace(string message)
         {
             if (pitFireTeam.IsDebugBuild)

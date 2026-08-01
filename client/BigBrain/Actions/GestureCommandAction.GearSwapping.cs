@@ -1900,6 +1900,7 @@ namespace pitTeam.BigBrain.Actions
                 plannedFastAccessMagazines);
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private void LogPrimaryReadinessShadow(
             InventoryController inventory,
             Weapon weapon,
@@ -2030,6 +2031,7 @@ namespace pitTeam.BigBrain.Actions
             return false;
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private void LogPostTransferWeaponDestination(
             Weapon weapon,
             WeaponPrimaryReadinessSnapshot actual,
@@ -3000,6 +3002,7 @@ namespace pitTeam.BigBrain.Actions
             return false;
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private void LogOperationalMagazinePlan(Weapon weapon, OperationalMagazinePlan plan)
         {
             if (plan == null)

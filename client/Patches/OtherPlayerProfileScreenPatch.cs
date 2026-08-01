@@ -938,7 +938,7 @@ namespace pitTeam.Patches
                 return;
             }
 
-            pitFireTeam.Log.LogInfo($"[UI] Applying teammate profile customization UI for '{profile.AccountId}'.");
+            Modules.Logger.LogInfo($"[UI] Applying teammate profile customization UI for '{profile.AccountId}'.");
             ViewedProfile = profile;
             TeammateEquipmentBuildsScreenFlow.FinishReturnIfMatches(profile.AccountId);
             ActiveProfileScreen = __instance;

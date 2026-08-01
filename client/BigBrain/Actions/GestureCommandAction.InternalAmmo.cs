@@ -675,6 +675,7 @@ namespace pitTeam.BigBrain.Actions
             return true;
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private void LogInternalAmmoPlan(Weapon weapon, InternalAmmoPlan plan, string evaluation)
         {
             Modules.Logger.LogInfo(
@@ -684,6 +685,7 @@ namespace pitTeam.BigBrain.Actions
                 plan.Projected.ToDiagnosticString());
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private void LogInternalWeaponDestination(
             Weapon weapon,
             WeaponPrimaryReadinessSnapshot readiness,
