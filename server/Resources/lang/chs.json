@@ -6,6 +6,7 @@
   "miscSettings": "杂项设置",
   "testSettings": "实验性设置",
   "raidSettings": "战局设置",
+  "lootingSettings": "战利品设置",
   "loadoutManagementSettings": "装备管理",
   "equipOptions": ["默认"],
   "tacticOptions": [
@@ -23,6 +24,14 @@
   "enemyMarker": {
     "Name": "敌方人员标记",
     "Description": "说「报告状态」命令时标记出敌方人员的位置。关闭后敌方人员标记音效也会禁用。"
+  },
+  "enemyMarkerAlertColor": {
+    "Name": "敌方人员标记：警戒颜色",
+    "Description": "敌方人员不可见时，标记所使用的颜色，使用十六进制 RGB 格式（#FFFF00）。"
+  },
+  "enemyMarkerVisibleColor": {
+    "Name": "敌方人员标记：可见颜色",
+    "Description": "敌方人员可见时，标记所使用的颜色，使用十六进制 RGB 格式（#FF0000）。"
   },
   "scanDistance": {
     "Name": "最大扫描距离",
@@ -75,6 +84,38 @@
   "teamEscapeUseAnyExtract": {
     "Name": "小队撤离：使用任意撤离点",
     "Description": "启用后，小队撤离时会模拟选择地图上所有可用撤离点。关闭后仅会模拟选择分配给玩家的撤离路线。"
+  },
+  "lootMinimumPrice": {
+    "Name": "最低价格",
+    "Description": "从尸体或容器中拾取物品所需的最低卢布价值。设为 0 以禁用该下限。"
+  },
+  "lootMaximumPrice": {
+    "Name": "最高价格",
+    "Description": "从尸体或容器中拾取物品所允许的最高卢布价值。设为 0 以禁用该上限。"
+  },
+  "lootFilterFood": {
+    "Name": "拾取食物",
+    "Description": "允许从尸体和容器中拾取食物与饮品。"
+  },
+  "lootFilterMeds": {
+    "Name": "拾取医疗用品",
+    "Description": "允许从尸体和容器中拾取可用医疗物品、药品、刺激剂与医疗包。"
+  },
+  "lootFilterValuables": {
+    "Name": "拾取贵重物品",
+    "Description": "允许从尸体和容器中拾取以物易物物品、钥匙、特殊物品、信息物品、金钱及其他非装备类战利品。"
+  },
+  "lootFilterWeapons": {
+    "Name": "拾取武器",
+    "Description": "允许从尸体和容器中拾取武器、弹药、弹匣、武器配件与手雷。"
+  },
+  "lootFilterGear": {
+    "Name": "拾取装备",
+    "Description": "允许从尸体和容器中拾取头盔、防弹衣、防弹胸挂与战术胸挂。"
+  },
+  "lootAllowGearSwapping": {
+    "Name": "允许替换装备",
+    "Description": "允许队员在搜刮时装备符合条件的物品。「简单」和「受限」模式只会将其放入空槽位并作为货物归还；「沉浸」和「拟真」模式还可能将符合条件的装备替换进小队成员的装备包。"
   },
   "memberTactic": {
     "Name": "小队成员 {0} 战术",
@@ -144,7 +185,7 @@
     "Name": "阵营敌对关系",
     "Description": "启用补丁，尝试修复阵营之间的敌对关系未能始终正常生效的问题。"
   },
-  "PmcArmbands": {
+  "pmcArmbands": {
     "Name": "PMC 阵营臂章",
     "Description": "PMC 人机是否佩戴臂章（BEAR 为红色，USEC 为蓝色）。"
   },
@@ -163,6 +204,54 @@
   "pingTime": {
     "Name": "报告状态显示时间",
     "Description": "显示队员状态的时长（秒）。"
+  },
+  "statusReportHighlight": {
+    "Name": "报告状态：高亮",
+    "Description": "在报告状态期间为存活的队员添加轮廓高亮。若注意到性能问题请关闭。"
+  },
+  "statusReportHighlightColor": {
+    "Name": "报告状态：颜色",
+    "Description": "报告状态文本与队员轮廓的颜色，使用十六进制 RGB 格式（#00FF00）。"
+  },
+  "statusReportHealthColoring": {
+    "Name": "生命值状态",
+    "Description": "根据队员的生命值状态启用高亮着色。"
+  },
+  "statusReportFullHealthColor": {
+    "Name": "满生命值高亮颜色",
+    "Description": "队员生命值满时的高亮颜色，使用十六进制 RGB 格式（#00FF00）。"
+  },
+  "statusReportMediumHealthColor": {
+    "Name": "中等生命值高亮颜色",
+    "Description": "队员生命值中等时的高亮颜色，使用十六进制 RGB 格式（#FFFF00）。"
+  },
+  "statusReportLowHealthColor": {
+    "Name": "低生命值高亮颜色",
+    "Description": "队员生命值低时的高亮颜色，使用十六进制 RGB 格式（#FF0000）。"
+  },
+  "statusReportAlwaysHighlight": {
+    "Name": "始终高亮",
+    "Description": "始终保持队员高亮开启。"
+  },
+  "statusReportShowName": {
+    "Name": "报告状态：名称",
+    "Description": "在报告状态中显示每个队员的名称。"
+  },
+  "statusReportShowDistance": {
+    "Name": "报告状态：距离",
+    "Description": "在报告状态中显示与每个队员的距离。"
+  },
+  "statusReportShowHealth": {
+    "Name": "报告状态：生命值（HP）",
+    "Description": "在报告状态中显示每个队员的当前与最大生命值。"
+  },
+  "statusReportShowTactic": {
+    "Name": "报告状态：战术（MD）",
+    "Description": "在报告状态中显示每个队员当前的战斗战术或临时治疗状态。"
+  },
+  "statusReportShowCombatStatus": {
+    "Name": "报告状态：战斗状态",
+    "Description": "在报告状态中显示每个队员是否处于战斗中或已发现敌人。"
   },
   "enemyContact": {
     "Name": "接敌快捷键",
