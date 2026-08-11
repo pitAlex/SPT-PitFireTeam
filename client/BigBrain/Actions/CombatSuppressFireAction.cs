@@ -27,6 +27,8 @@ namespace pitTeam.BigBrain.Actions
         private float nextLauncherSuppressSafetyRejectAt;
         private float nextLauncherSuppressAimHoldRecordAt;
         private float nextLauncherSuppressShootRecordAt;
+        private string? lastWeaponSuppressRecordState;
+        private float nextWeaponSuppressRecordAt;
 
         public CombatSuppressFireAction(BotOwner botOwner) : base(botOwner)
         {
@@ -150,6 +152,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             if (FollowerCombatCommon.IsAutoSuppressReason(reason) ||
+                FollowerCombatCommon.IsRecoverySuppressReason(reason) ||
                 FollowerCombatSuppressionObjective.IsSuppressionObjectiveReason(reason) ||
                 FollowerCombatGrenadierObjective.IsGrenadierReason(reason))
             {
@@ -169,6 +172,7 @@ namespace pitTeam.BigBrain.Actions
             Vector3? target = BotOwner.SuppressShoot?.GetPoint();
             if (!target.HasValue)
             {
+                RecordWeaponSuppressState(reason, "targetMissing", null);
                 StopCombatShooting();
                 return;
             }
@@ -200,7 +204,7 @@ namespace pitTeam.BigBrain.Actions
 
             if (launcherSuppress && FollowerShotSafety.IsFriendlyNearImpact(BotOwner, target.Value, effectiveLauncherUnsafeRadius))
             {
-                RecordLauncherSuppressSafetyReject($"{reason}:launcherImpactUnsafe", target.Value);
+                RecordLauncherSuppressSafetyReject(reason, "launcherImpactUnsafe", target.Value);
                 StopCombatShooting();
                 return;
             }
@@ -214,7 +218,7 @@ namespace pitTeam.BigBrain.Actions
                         out string initialLauncherLaneRejectReason,
                         out launcherFireOrigin))
                 {
-                    RecordLauncherSuppressSafetyReject($"{reason}:{initialLauncherLaneRejectReason}", target.Value);
+                    RecordLauncherSuppressSafetyReject(reason, initialLauncherLaneRejectReason, target.Value);
                     StopCombatShooting();
                     return;
                 }
@@ -224,6 +228,7 @@ namespace pitTeam.BigBrain.Actions
             }
             else if (FollowerShotSafety.IsFriendlyInSuppressionLane(BotOwner, fireOrigin, target.Value))
             {
+                RecordWeaponSuppressState(reason, "friendlySuppressionLane", target.Value);
                 StopCombatShooting();
                 return;
             }
@@ -240,11 +245,13 @@ namespace pitTeam.BigBrain.Actions
                 }
 
                 StopCombatShooting();
+                RecordWeaponSuppressState(reason, "aimLaneUnsafe", target.Value);
                 return;
             }
 
             if (ShouldHoldCloseThreatSuppressFire(target.Value))
             {
+                RecordWeaponSuppressState(reason, "closeThreatNotAligned", target.Value);
                 StopCombatShooting();
                 return;
             }
@@ -285,12 +292,14 @@ namespace pitTeam.BigBrain.Actions
 
                 if (ShouldHoldCloseThreatSuppressFire(target.Value))
                 {
+                    RecordWeaponSuppressState(reason, "movingCloseThreatNotAligned", target.Value);
                     StopCombatShooting();
                     return;
                 }
 
                 if (!CanSuppressFromCurrentPosition(fireOrigin, target.Value))
                 {
+                    RecordWeaponSuppressState(reason, "movingLaneBlocked", target.Value);
                     StopCombatShooting();
                     return;
                 }
@@ -303,20 +312,23 @@ namespace pitTeam.BigBrain.Actions
                     }
 
                     StopCombatShooting();
+                    RecordWeaponSuppressState(reason, "movingAimLaneUnsafe", target.Value);
                     return;
                 }
 
                 if (ShouldHoldSuppressFireUntilAimed(fireOrigin, aimTarget, launcherSuppress))
                 {
+                    RecordWeaponSuppressState(reason, "movingAimNotReadyOrAligned", target.Value);
                     return;
                 }
 
                 if (ShouldAbortFinalSuppressShot(reason, fireOrigin, target.Value, launcherSuppress, launcherUnsafeRadius))
                 {
+                    RecordWeaponSuppressState(reason, "movingFinalSafetyReject", target.Value);
                     return;
                 }
 
-                BotOwner.ShootData.Shoot();
+                FireWeaponSuppress(reason, target.Value);
                 return;
             }
 
@@ -327,12 +339,14 @@ namespace pitTeam.BigBrain.Actions
 
             if (ShouldHoldCloseThreatSuppressFire(target.Value))
             {
+                RecordWeaponSuppressState(reason, "closeThreatNotAligned", target.Value);
                 StopCombatShooting();
                 return;
             }
 
             if (standingSuppress && !CanSuppressFromCurrentPosition(fireOrigin, target.Value))
             {
+                RecordWeaponSuppressState(reason, "standingLaneBlocked", target.Value);
                 StopCombatShooting();
                 return;
             }
@@ -345,7 +359,7 @@ namespace pitTeam.BigBrain.Actions
                     out string readyLauncherLaneRejectReason,
                     out launcherFireOrigin))
             {
-                RecordLauncherSuppressSafetyReject($"{reason}:{readyLauncherLaneRejectReason}", target.Value);
+                RecordLauncherSuppressSafetyReject(reason, readyLauncherLaneRejectReason, target.Value);
                 StopCombatShooting();
                 return;
             }
@@ -380,15 +394,69 @@ namespace pitTeam.BigBrain.Actions
 
             if (ShouldHoldSuppressFireUntilAimed(fireOrigin, target.Value))
             {
+                RecordWeaponSuppressState(reason, "aimNotReadyOrAligned", target.Value);
                 return;
             }
 
             if (ShouldAbortFinalSuppressShot(reason, fireOrigin, target.Value, launcherSuppress, launcherUnsafeRadius))
             {
+                RecordWeaponSuppressState(reason, "finalSafetyReject", target.Value);
                 return;
             }
 
-            BotOwner.ShootData?.Shoot();
+            FireWeaponSuppress(reason, target.Value);
+        }
+
+        private void FireWeaponSuppress(string? reason, Vector3 target)
+        {
+            bool alreadyShooting = BotOwner.ShootData?.Shooting == true;
+            bool shootStarted = alreadyShooting || BotOwner.ShootData?.Shoot() == true;
+            RecordWeaponSuppressState(
+                reason,
+                shootStarted ? (alreadyShooting ? "firing" : "shootStarted") : "shootRejected",
+                target,
+                shootRequested: !alreadyShooting,
+                shootStarted: shootStarted);
+        }
+
+        [System.Diagnostics.Conditional("DEBUG")]
+        private void RecordWeaponSuppressState(
+            string? reason,
+            string gate,
+            Vector3? target,
+            bool shootRequested = false,
+            bool shootStarted = false)
+        {
+            if (!BattleRecorder.IsRecordingFor(BotOwner, requireRecordedCombat: true))
+            {
+                return;
+            }
+
+            if (FollowerCombatCommon.IsGrenadeLauncherSuppressReason(reason))
+            {
+                return;
+            }
+
+            string state = $"{reason}:{gate}";
+            if (string.Equals(lastWeaponSuppressRecordState, state, System.StringComparison.Ordinal) &&
+                Time.time < nextWeaponSuppressRecordAt)
+            {
+                return;
+            }
+
+            lastWeaponSuppressRecordState = state;
+            nextWeaponSuppressRecordAt = Time.time + 1f;
+            BattleRecorder.RecordCombatFireEvent(
+                BotOwner,
+                "suppressFire",
+                reason,
+                gate,
+                "preparedSuppressTarget",
+                suppression: true,
+                shootRequested,
+                shootStarted,
+                aimAngle: null,
+                target);
         }
 
         private void HoldLauncherSuppressPosition(Vector3 target, CustomNavigationPoint suppressFrom)
@@ -472,7 +540,7 @@ namespace pitTeam.BigBrain.Actions
         {
             if (launcherSuppress && FollowerShotSafety.IsFriendlyNearImpact(BotOwner, target, launcherUnsafeRadius))
             {
-                RecordLauncherSuppressSafetyReject($"{reason}:launcherImpactUnsafeFinal", target);
+                RecordLauncherSuppressSafetyReject(reason, "launcherImpactUnsafeFinal", target);
                 StopCombatShooting();
                 return true;
             }
@@ -485,7 +553,7 @@ namespace pitTeam.BigBrain.Actions
                         launcherUnsafeRadius,
                         out string launcherLaneRejectReason))
                 {
-                    RecordLauncherSuppressSafetyReject($"{reason}:launcherLaneUnsafeFinal:{launcherLaneRejectReason}", target);
+                    RecordLauncherSuppressSafetyReject(reason, "launcherLaneUnsafeFinal", target, launcherLaneRejectReason);
                     StopCombatShooting();
                     return true;
                 }
@@ -540,11 +608,15 @@ namespace pitTeam.BigBrain.Actions
             aiming.SetTarget(suppressTarget);
             BotOwner.AimingManager.NodeUpdate();
 
-            Vector3 aimDirection = launcherSuppress
-                ? BotOwner.LookDirection
-                : BotOwner.WeaponRoot != null
-                    ? BotOwner.WeaponRoot.forward
-                    : BotOwner.LookDirection;
+            Vector3 aimDirection;
+            if (launcherSuppress)
+            {
+                aimDirection = BotOwner.LookDirection;
+            }
+            else
+            {
+                TryGetCurrentShotVector(BotOwner, out fireOrigin, out aimDirection);
+            }
             aimDirection.y = 0f;
             if (aimDirection.sqrMagnitude <= 0.0001f)
             {
@@ -603,8 +675,21 @@ namespace pitTeam.BigBrain.Actions
             return Vector3.Angle(aimDirection.normalized, targetDirection.normalized) > maxAngle;
         }
 
-        private void RecordLauncherSuppressSafetyReject(string reason, Vector3 target)
+        [System.Diagnostics.Conditional("DEBUG")]
+        private void RecordLauncherSuppressSafetyReject(
+            string? reasonPrefix,
+            string reasonSuffix,
+            Vector3 target,
+            string? detail = null)
         {
+            if (!BattleRecorder.IsRecordingFor(BotOwner, requireRecordedCombat: true))
+            {
+                return;
+            }
+
+            string reason = string.IsNullOrEmpty(detail)
+                ? $"{reasonPrefix}:{reasonSuffix}"
+                : $"{reasonPrefix}:{reasonSuffix}:{detail}";
             if (string.Equals(lastLauncherSuppressSafetyRejectReason, reason, System.StringComparison.Ordinal) &&
                 Time.time < nextLauncherSuppressSafetyRejectAt)
             {
@@ -621,8 +706,14 @@ namespace pitTeam.BigBrain.Actions
                 target: target);
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private void RecordLauncherSuppressAimHold(string reason, Vector3 target)
         {
+            if (!BattleRecorder.IsRecordingFor(BotOwner, requireRecordedCombat: true))
+            {
+                return;
+            }
+
             if (Time.time < nextLauncherSuppressAimHoldRecordAt)
             {
                 return;
@@ -700,8 +791,13 @@ namespace pitTeam.BigBrain.Actions
                 haveBullets && normalShoot)
             {
                 RecordLauncherSuppressShootAttempt(
-                    $"{reason}:launcherShootNormal={normalShoot}:loaded={loadedRounds}:haveBullets={haveBullets}:aimRaise={aimRaise:0.0}",
-                    target);
+                    reason,
+                    target,
+                    "launcherShootNormal",
+                    normalShoot,
+                    loadedRounds,
+                    haveBullets,
+                    aimRaise);
                 return;
             }
 
@@ -711,8 +807,16 @@ namespace pitTeam.BigBrain.Actions
                 BotOwner?.ShootData?.CanShootByState == false)
             {
                 RecordLauncherSuppressShootAttempt(
-                    $"{reason}:launcherShootBlocked:normal={normalShoot}:loaded={loadedRounds}:haveBullets={haveBullets}:aimRaise={aimRaise:0.0}:ready={weaponManager?.IsWeaponReady}:reloading={weaponManager?.Reload?.Reloading}:state={BotOwner?.ShootData?.CanShootByState}",
-                    target);
+                    reason,
+                    target,
+                    "launcherShootBlocked",
+                    normalShoot,
+                    loadedRounds,
+                    haveBullets,
+                    aimRaise,
+                    weaponManager?.IsWeaponReady,
+                    weaponManager?.Reload?.Reloading,
+                    BotOwner?.ShootData?.CanShootByState);
                 return;
             }
 
@@ -729,22 +833,49 @@ namespace pitTeam.BigBrain.Actions
             }
 
             RecordLauncherSuppressShootAttempt(
-                $"{reason}:launcherDirectTrigger:normal={normalShoot}:loaded={loadedRounds}:haveBullets={haveBullets}:aimRaise={aimRaise:0.0}",
-                target);
+                reason,
+                target,
+                "launcherDirectTrigger",
+                normalShoot,
+                loadedRounds,
+                haveBullets,
+                aimRaise);
         }
 
-        private void RecordLauncherSuppressShootAttempt(string reason, Vector3 target)
+        [System.Diagnostics.Conditional("DEBUG")]
+        private void RecordLauncherSuppressShootAttempt(
+            string? reason,
+            Vector3 target,
+            string attempt,
+            bool normalShoot,
+            int loadedRounds,
+            bool haveBullets,
+            float aimRaise,
+            bool? weaponReady = null,
+            bool? reloading = null,
+            bool? canShootByState = null)
         {
+            if (!BattleRecorder.IsRecordingFor(BotOwner, requireRecordedCombat: true))
+            {
+                return;
+            }
+
             if (Time.time < nextLauncherSuppressShootRecordAt)
             {
                 return;
             }
 
             nextLauncherSuppressShootRecordAt = Time.time + 1f;
+            string detail = $"{reason}:{attempt}:normal={normalShoot}:loaded={loadedRounds}:haveBullets={haveBullets}:aimRaise={aimRaise:0.0}";
+            if (string.Equals(attempt, "launcherShootBlocked", System.StringComparison.Ordinal))
+            {
+                detail += $":ready={weaponReady}:reloading={reloading}:state={canShootByState}";
+            }
+
             BattleRecorder.RecordGrenadeEvent(
                 BotOwner,
                 "launcherShootAttempt",
-                reason,
+                detail,
                 goalEnemy: BotOwner.Memory?.GoalEnemy,
                 target: target);
         }

@@ -1,6 +1,7 @@
 using Comfort.Common;
 using EFT;
 using UnityEngine;
+using pitTeam.BigBrain;
 using pitTeam.Components;
 using pitTeam.Modules;
 

@@ -55,6 +55,7 @@ namespace pitTeam.BigBrain
 
         public AICoreActionResultStruct<BotLogicDecision, GClass26> GetMedicalDecision()
         {
+            combatCommon.BeginCoverEvaluationCycle();
             combatCommon.RepairGoalEnemyMemory();
             AICoreActionResultStruct<BotLogicDecision, GClass26>? healDecision = combatCommon.TryGetNeedHealDecision();
             if (healDecision != null)
@@ -85,6 +86,7 @@ namespace pitTeam.BigBrain
 
         public virtual AICoreActionResultStruct<BotLogicDecision, GClass26> GetDecision()
         {
+            combatCommon.BeginCoverEvaluationCycle();
             combatCommon.RepairGoalEnemyMemory();
             combatCommon.TryRestoreMissionTargetIfReady("combatDecisionRestoreMission", out _);
             EnemyInfo? goalEnemy = BotOwner.Memory.GoalEnemy;
@@ -164,6 +166,7 @@ namespace pitTeam.BigBrain
         public virtual AICoreActionEndStruct ShallEndCurrentDecision(
             AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision)
         {
+            combatCommon.BeginCoverEvaluationCycle();
             combatCommon.TryApplyPendingLauncherPrimaryFallback(currentDecision);
 
             BotFollowerPlayer? followerData = BossPlayers.Instance?.GetFollower(BotOwner);
@@ -344,15 +347,13 @@ namespace pitTeam.BigBrain
             AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision)
         {
             return !combatCommon.IsInFight(currentDecision.Action) &&
-                   currentDecision.Action != BotLogicDecision.heal &&
-                   currentDecision.Action != BotLogicDecision.healStimulators;
+                   !FollowerCombatCommon.IsMedicalDecision(currentDecision);
         }
 
         protected virtual bool CanInterruptForRegroupOrder(
             AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision)
         {
-            if (currentDecision.Action == BotLogicDecision.heal ||
-                currentDecision.Action == BotLogicDecision.healStimulators ||
+            if (FollowerCombatCommon.IsMedicalDecision(currentDecision) ||
                 currentDecision.Action == BotLogicDecision.dogFight)
             {
                 return false;
@@ -370,8 +371,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            return currentDecision.Action != BotLogicDecision.heal &&
-                   currentDecision.Action != BotLogicDecision.healStimulators &&
+            return !FollowerCombatCommon.IsMedicalDecision(currentDecision) &&
                    currentDecision.Action != BotLogicDecision.dogFight;
         }
 

@@ -463,6 +463,8 @@ Roster profile open calls:
 
 Before opening, the code sets a pending back override. When the profile screen closes, that override re-opens `My Squad`, so the user returns to the roster rather than being dropped somewhere else in menu history.
 
+If EFT cannot fetch the teammate profile and returns no profile-screen controller, the pending back override is cleared and a localized corruption/fetch warning is shown instead of failing silently.
+
 ### Teammate gating
 
 The profile patch only activates when:

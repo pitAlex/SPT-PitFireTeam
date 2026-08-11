@@ -1,4 +1,5 @@
 using EFT;
+using pitTeam.BigBrain;
 using UnityEngine;
 
 namespace pitTeam.Utils
@@ -10,6 +11,56 @@ namespace pitTeam.Utils
         // crouch probes before allowing the shoot-from-place node to choose crouch.
         private const float VanillaCrouchProbeHeight = 0.6f;
         private const float CrouchWeaponProbeHeight = 0.95f;
+        private const float MinCombatCrouchFireDistance = 50f;
+
+        public static bool CanUseCombatCrouchFire(
+            BotOwner botOwner,
+            Vector3 target,
+            out string reason,
+            out float enemyDistance)
+        {
+            reason = "allowed";
+            enemyDistance = botOwner?.Memory?.GoalEnemy?.Distance ??
+                            (botOwner != null ? Vector3.Distance(botOwner.Position, target) : 0f);
+
+            EnemyInfo? goalEnemy = botOwner?.Memory?.GoalEnemy;
+            if (botOwner == null ||
+                goalEnemy?.Person?.HealthController?.IsAlive != true ||
+                !goalEnemy.IsVisible ||
+                !goalEnemy.CanShoot)
+            {
+                reason = "enemyNotShootable";
+                return false;
+            }
+
+            if (enemyDistance < MinCombatCrouchFireDistance)
+            {
+                reason = "enemyTooClose";
+                return false;
+            }
+
+            if (botOwner.Memory.IsUnderFire ||
+                FollowerCombatCommon.WasHitRecently(botOwner, 1.25f) ||
+                FollowerAwareness.WasRecentlyDamaged(botOwner))
+            {
+                reason = "damagePressure";
+                return false;
+            }
+
+            if (!botOwner.Memory.IsInCover && FollowerAwareness.WasRecentlyThreatened(botOwner))
+            {
+                reason = "exposedThreat";
+                return false;
+            }
+
+            if (!HasReliableCrouchLane(botOwner, target))
+            {
+                reason = "blockedLane";
+                return false;
+            }
+
+            return true;
+        }
 
         public static bool HasReliableCrouchLane(BotOwner botOwner, Vector3 target)
         {

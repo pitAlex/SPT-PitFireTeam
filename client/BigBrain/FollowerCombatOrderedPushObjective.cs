@@ -9,6 +9,7 @@ namespace pitTeam.BigBrain
     internal sealed class FollowerCombatOrderedPushObjective : FollowerCombatObjectiveBase
     {
         private const string ReasonPrefix = "objectivePush";
+        private const string HealPendingReason = "objectivePush.healPending";
 
         private readonly FollowerCombatPush combatPush;
         private bool complete;
@@ -132,17 +133,33 @@ namespace pitTeam.BigBrain
         public override AICoreActionEndStruct ShallEndCurrentDecision(
             AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision)
         {
-            if (currentDecision.Action == BotLogicDecision.heal ||
-                currentDecision.Action == BotLogicDecision.healStimulators)
+            if (FollowerCombatCommon.IsMedicalDecision(currentDecision))
             {
                 return CombatCommon.ShallEndCurrentDecision(currentDecision);
             }
 
-            if (!TryGetOrderedTarget(BotOwner.Memory?.GoalEnemy, out _, out string rejectReason))
+            if (!TryGetOrderedTarget(
+                    BotOwner.Memory?.GoalEnemy,
+                    out EnemyInfo? orderedEnemy,
+                    out string rejectReason) ||
+                orderedEnemy == null)
             {
                 complete = true;
                 combatPush.ClearCommittedPush(rejectReason);
                 return new AICoreActionEndStruct(rejectReason, true);
+            }
+
+            if (currentDecision.Action == BotLogicDecision.holdPosition)
+            {
+                if (string.Equals(currentDecision.Reason, HealPendingReason, StringComparison.Ordinal))
+                {
+                    return EndHealPendingHold(orderedEnemy);
+                }
+
+                if (CombatCommon.IsCommittedHolderReason(currentDecision.Reason))
+                {
+                    return EndOrderedCommittedHold(currentDecision, orderedEnemy);
+                }
             }
 
             if (combatPush.IsPushCommittedDecision(currentDecision))
@@ -151,6 +168,53 @@ namespace pitTeam.BigBrain
             }
 
             return CombatCommon.ShallEndCurrentDecision(currentDecision);
+        }
+
+        private AICoreActionEndStruct EndHealPendingHold(EnemyInfo orderedEnemy)
+        {
+            if (!CombatCommon.HasActiveOrPendingHealWork())
+            {
+                return new AICoreActionEndStruct("orderedHealPendingCleared", true);
+            }
+
+            if (!CombatCommon.IsHealDecisionRetryBlocked)
+            {
+                return new AICoreActionEndStruct("orderedHealRetryReady", true);
+            }
+
+            if (FollowerImmediateFirePolicy.IsLocalSelfDefenseThreat(orderedEnemy))
+            {
+                return new AICoreActionEndStruct("orderedHealPendingImmediateThreat", true);
+            }
+
+            return FollowerCombatCommon.Continue();
+        }
+
+        private AICoreActionEndStruct EndOrderedCommittedHold(
+            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision,
+            EnemyInfo orderedEnemy)
+        {
+            if (CombatCommon.HasActiveOrPendingHealWork())
+            {
+                CombatCommon.ClearCommittedPosition("orderedRecoveryNeedHeal");
+                return new AICoreActionEndStruct("orderedRecoveryNeedHeal", true);
+            }
+
+            if (FollowerImmediateFirePolicy.IsLocalSelfDefenseThreat(orderedEnemy))
+            {
+                CombatCommon.ClearCommittedPosition("orderedRecoveryImmediateThreat");
+                return new AICoreActionEndStruct("orderedRecoveryImmediateThreat", true);
+            }
+
+            if (CombatCommon.HasCommittedPosition(
+                    out AICoreActionResultStruct<BotLogicDecision, GClass26> committedHold) &&
+                committedHold.Action == currentDecision.Action &&
+                string.Equals(committedHold.Reason, currentDecision.Reason, StringComparison.Ordinal))
+            {
+                return FollowerCombatCommon.Continue();
+            }
+
+            return new AICoreActionEndStruct("orderedCommittedHoldReleased", true);
         }
 
         private bool TryGetOrderedTarget(
@@ -233,17 +297,8 @@ namespace pitTeam.BigBrain
 
             if (CombatCommon.HasCommittedCover() && CombatCommon.IsBotInCommittedCover())
             {
-                CombatCommon.ArmCommittedArrivalHold("orderedPushRecovery");
-                if (CombatCommon.HasCommittedPosition(out decision))
-                {
-                    return true;
-                }
-
-                CombatCommon.HoldCoverForMaxDuration();
-                decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
-                    BotLogicDecision.holdPosition,
-                    "objectivePush.recoveryCoverHold");
-                return true;
+                CombatCommon.ArmCommittedRecoveryArrivalHold("orderedPushRecovery");
+                return CombatCommon.HasCommittedPosition(out decision);
             }
 
             bool requireShootLane = orderedEnemy.IsVisible && orderedEnemy.CanShoot;
@@ -252,9 +307,14 @@ namespace pitTeam.BigBrain
                     requireShootLane,
                     CombatDistanceConfiguration.Instance.GetBossCoverSearchRadius(),
                     out string coverReason,
-                    avoidBossFireLane: true))
+                    avoidBossFireLane: true,
+                    recoveryManeuver: true))
             {
-                decision = CombatCommon.CreateMoveToCommittedCoverDecision($"objectivePush.recovery.{coverReason}");
+                string orderedCoverReason = coverReason.StartsWith("recovery.", StringComparison.Ordinal)
+                    ? coverReason.Substring("recovery.".Length)
+                    : coverReason;
+                decision = CombatCommon.CreateMoveToCommittedCoverDecision(
+                    $"recovery.objectivePush.{orderedCoverReason}");
                 return true;
             }
 

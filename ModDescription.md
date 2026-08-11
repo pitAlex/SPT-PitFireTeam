@@ -184,6 +184,8 @@ Saved teammates and recruited allies share the basic follower system once they a
 
 Looting is currently command-driven. Teammates do not wander away to loot on their own: you choose the item, body, or container and give the order.
 
+**This functionality is still a work in progress. Abstain from commenting suggestions and things that you see missing!**
+
 **Giving an order:**
 
 - Look at a loose item and use **Loot This**. Any available follower can collect it if they can reach it and have somewhere suitable to put it.
@@ -552,7 +554,7 @@ In teammate loadout editing, if you happen to end up in a situation where you ca
 - Teammates might not heal their health all the way. It is a game issue, use the Heal key to force heal.
 - Teleporting teammates while they are interacting with doors or other objects can leave them in a bad state.
 - **The game has navigation problems that even SAIN is not able to fully resolve. If your bots get stuck, use teleportation. In other situations, their movement is in teleportation-like bursts. Be mindful of this and stay aware of their position or you will find yourself in a fight all alone or without all your squad as they got stuck somewhere.**
-- **Faction Hostilities** repairs missing enemy relationships but does not grant bots awareness of enemies they have not seen or heard.
+- **Faction Hostilities** repairs missing enemy relationships but does not grant bots awareness of enemies they have not seen or heard. If bots behave incorrectly toward the opposite PMC faction or other normally hostile factions, disable **Faction Hostilities** under **Raid Settings** and test again. This setting can conflict with other mods or settings that also attempt to repair or change faction relationships.
 - Teammates can sometimes pick up an enemy they never saw or heard. Use **Attention** to reset them. In some cases, they may keep reacquiring that enemy until the enemy is dead. This comes from the game's detection and memory logic, and broad workarounds can break normal enemy behavior.
 - SAIN can interfere with teleportation, teleporting the bot back to previous location. You may need to trigger teleportation multiple times for it to stick.
 - Teammates can occasionally have registration delay on enemies. This is buggy behavior within the game that I am not able to fix.

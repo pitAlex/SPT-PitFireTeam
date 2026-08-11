@@ -216,7 +216,8 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            return BotOwner.DoorOpener.UpdateDoorInteractionStatus() == DoorInteractionStatus.CanRun;
+            DoorInteractionStatus doorStatus = BotOwner.DoorOpener.UpdateDoorInteractionStatus();
+            return !IsDoorInteractionBlockingSprint(doorStatus);
         }
 
         private void NotMovingCheck(EnemyInfo goalEnemy)

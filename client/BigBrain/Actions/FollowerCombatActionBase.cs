@@ -100,8 +100,10 @@ namespace pitTeam.BigBrain.Actions
 
         protected void SetCombatSprint(bool sprint, bool withDebugCallback = false)
         {
-            if (sprint && BotOwner.Mover.Sprinting) return;
-            else if (!sprint && !BotOwner.Mover.Sprinting) return;
+            bool moverRequestedSprint = BotOwner.Mover.Sprinting;
+            bool playerSprintEngaged = IsActuallySprinting(BotOwner);
+            if (sprint && moverRequestedSprint && playerSprintEngaged) return;
+            else if (!sprint && !moverRequestedSprint && !playerSprintEngaged) return;
             if (sprint)
             {
                 BotOwner.SetPose(1f);
@@ -112,6 +114,56 @@ namespace pitTeam.BigBrain.Actions
             // drops current aiming target every tick, which can fight combat steering and turn
             // a run decision into a walk-looking movement state.
             BotOwner.Mover.Sprint(sprint, withDebugCallback);
+        }
+
+        internal static bool IsActuallySprinting(BotOwner? botOwner)
+        {
+            Player? player = botOwner?.GetPlayer ?? botOwner?.AIData?.Player;
+            if (player?.MovementContext != null)
+            {
+                return player.MovementContext.IsSprintEnabled;
+            }
+
+            return botOwner?.Mover?.Sprinting == true;
+        }
+
+        internal static bool IsDoorInteractionBlockingSprint(DoorInteractionStatus status)
+        {
+            int rawStatus = (int)status;
+            return status == DoorInteractionStatus.OpeningDoor ||
+                   (rawStatus != 0 && status != DoorInteractionStatus.CanRun);
+        }
+
+        internal static bool TryGetCurrentShotVector(
+            BotOwner? botOwner,
+            out Vector3 fireOrigin,
+            out Vector3 pointDirection)
+        {
+            Player? player = botOwner?.GetPlayer ?? botOwner?.AIData?.Player;
+            if (player?.HandsController is Player.FirearmController firearmController &&
+                firearmController.CurrentFireport != null)
+            {
+                fireOrigin = firearmController.CurrentFireport.position;
+                pointDirection = firearmController.CurrentFireport.Original.TransformDirection(player.LocalShotDirection);
+                firearmController.AdjustShotVectors(ref fireOrigin, ref pointDirection);
+                if (pointDirection.sqrMagnitude > 0.0001f)
+                {
+                    pointDirection.Normalize();
+                    return true;
+                }
+            }
+
+            fireOrigin = botOwner?.WeaponRoot != null
+                ? botOwner.WeaponRoot.position
+                : (botOwner?.Position ?? Vector3.zero) + Vector3.up * 1.2f;
+            pointDirection = player?.LookDirection ?? botOwner?.LookDirection ?? Vector3.zero;
+            if (pointDirection.sqrMagnitude <= 0.0001f)
+            {
+                return false;
+            }
+
+            pointDirection.Normalize();
+            return true;
         }
 
         protected CoverSearchType SetAttackCoverSearchType(CoverShootType shootType)

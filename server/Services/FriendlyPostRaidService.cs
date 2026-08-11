@@ -825,32 +825,36 @@ public class FriendlyPostRaidService(
         }
 
         Dictionary<string, string> deathEscapeText = languageService.GetStringMap(sessionId, "deathEscape");
+        string reportTemplate = GetLanguageValue(deathEscapeText, "Report");
+        string allLostTemplate = GetLanguageValue(deathEscapeText, "AllLost");
+        string allEscapedTemplate = GetLanguageValue(deathEscapeText, "AllEscaped");
         string madeItOutTemplate = GetLanguageValue(deathEscapeText, "MadeItOut");
         string lostTemplate = GetLanguageValue(deathEscapeText, "Lost");
         string extractRouteTemplate = GetLanguageValue(deathEscapeText, "ExtractRoute");
 
-        // Player-death escape reports are separate from the normal "team escaped with player"
-        // messages because the player did not extract with the squad. Put each result on its own
-        // line so mixed escaped/lost outcomes stay readable in post-raid mail.
+        bool hasEscaped = summary.EscapedNames.Count > 0;
+        bool hasLost = summary.LostNames.Count > 0;
         var parts = new List<string>();
-        if (summary.EscapedNames.Count > 0)
+        if (!hasEscaped)
         {
+            parts.Add(allLostTemplate);
+        }
+        else if (!hasLost)
+        {
+            parts.Add(allEscapedTemplate);
+        }
+        else
+        {
+            parts.Add(string.Format(lostTemplate, JoinNames(summary.LostNames)));
             parts.Add(string.Format(madeItOutTemplate, JoinNames(summary.EscapedNames)));
         }
 
-        if (summary.LostNames.Count > 0)
-        {
-            parts.Add(string.Format(lostTemplate, JoinNames(summary.LostNames)));
-        }
-
-        if (!string.IsNullOrWhiteSpace(summary.ExtractName))
+        if (hasEscaped && !string.IsNullOrWhiteSpace(summary.ExtractName))
         {
             parts.Add(string.Format(extractRouteTemplate, summary.ExtractName));
         }
 
-        string[] deathEscapeMessages = languageService.GetStringArray(sessionId, "deathEscapeMessages");
-        string messageTemplate = deathEscapeMessages.Length > 0 ? PickRandom(deathEscapeMessages) : "{0}";
-        string message = string.Format(messageTemplate, string.Join("\n", parts));
+        string message = string.Format(reportTemplate, string.Join("\n", parts));
 
         UserDialogInfo sender = GetDeliverySender();
         SendMessageDetails details = new()

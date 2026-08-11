@@ -19,12 +19,15 @@ namespace pitTeam.BigBrain.Actions
         private const float RegroupRunSameLevelTolerance = 1.75f;
         private const float RegroupRunSpacing = 2f;
         private const float RegroupRunClaimTtl = 2f;
+        private const float RegroupRunTargetArrivalDistance = 1f;
+        private const float RegroupRunArrivalRefreshInterval = 0.75f;
         private readonly GClass219 baseLogic;
         private GClass30? cachedData;
         private Vector3 cachedPoint;
         private Vector3 bossAnchor;
         private bool hasCachedPoint;
         private bool hasBossAnchor;
+        private float nextArrivalRefreshAt;
 
         public CombatRegroupRunAction(BotOwner botOwner) : base(botOwner)
         {
@@ -47,6 +50,7 @@ namespace pitTeam.BigBrain.Actions
             bossAnchor = Vector3.zero;
             hasCachedPoint = false;
             hasBossAnchor = false;
+            nextArrivalRefreshAt = 0f;
             base.Stop();
         }
 
@@ -90,6 +94,7 @@ namespace pitTeam.BigBrain.Actions
             bossAnchor = bossPosition;
             hasCachedPoint = true;
             hasBossAnchor = true;
+            nextArrivalRefreshAt = Time.time + RegroupRunArrivalRefreshInterval;
             cachedData = new GClass30(cachedPoint)
             {
                 Used = true
@@ -106,7 +111,34 @@ namespace pitTeam.BigBrain.Actions
             }
 
             float refreshDistance = CombatDistanceConfiguration.Instance.GetRegroupBossMoveRefreshDistance();
-            return (bossPosition - bossAnchor).sqrMagnitude > refreshDistance * refreshDistance;
+            if ((bossPosition - bossAnchor).sqrMagnitude > refreshDistance * refreshDistance)
+            {
+                return true;
+            }
+
+            // A spread point is only an intermediate bossward destination. The boss can change
+            // floors or move within the broad distance refresh threshold while this bot reaches
+            // the cached point. Replan from that exact arrival instead of standing there forever.
+            return Time.time >= nextArrivalRefreshAt && HasReachedCachedPoint();
+        }
+
+        private bool HasReachedCachedPoint()
+        {
+            if (!hasCachedPoint)
+            {
+                return false;
+            }
+
+            float arrivalDistanceSqr = RegroupRunTargetArrivalDistance * RegroupRunTargetArrivalDistance;
+            if ((BotOwner.Position - cachedPoint).sqrMagnitude <= arrivalDistanceSqr)
+            {
+                return true;
+            }
+
+            return BotOwner.GoToSomePointData?.HaveTarget() == true &&
+                   BotOwner.GoToSomePointData.IsCome() &&
+                   IsFinite(BotOwner.GoToSomePointData.Point) &&
+                   (BotOwner.GoToSomePointData.Point - cachedPoint).sqrMagnitude <= arrivalDistanceSqr;
         }
 
         private Vector3 GetBossRunTarget(Vector3 bossPosition)

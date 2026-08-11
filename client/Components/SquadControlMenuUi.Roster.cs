@@ -1194,35 +1194,47 @@ namespace pitTeam.Components
             }
         }
 
-        private void OpenProfile(string accountId)
+        private async void OpenProfile(string accountId)
         {
-            if (string.IsNullOrWhiteSpace(accountId) || ItemUiContext.Instance == null)
+            if (string.IsNullOrWhiteSpace(accountId))
             {
+                return;
+            }
+
+            if (ItemUiContext.Instance == null)
+            {
+                HandleProfileOpenFailure(accountId, null);
                 return;
             }
 
             try
             {
                 OtherPlayerProfileScreenPatch.PrepareReturnOverride(ReturnFromProfileToSquadControl);
-                Task<OtherPlayerProfileScreen.GClass3883> task = ItemUiContext.Instance.ShowPlayerProfileScreen(accountId, EItemViewType.OtherPlayerProfile);
-                task.ContinueWith(
-                    continuation =>
-                    {
-                        if (continuation.IsFaulted)
-                        {
-                            OtherPlayerProfileScreenPatch.ClearPendingReturnOverride();
-                            pitFireTeam.Log.LogError($"[UI] Failed to open profile for '{accountId}'.");
-                            pitFireTeam.Log.LogError(continuation.Exception);
-                        }
-                    },
-                    TaskContinuationOptions.OnlyOnFaulted);
+                OtherPlayerProfileScreen.GClass3883 screenController =
+                    await ItemUiContext.Instance.ShowPlayerProfileScreen(accountId, EItemViewType.OtherPlayerProfile);
+                if (screenController == null)
+                {
+                    HandleProfileOpenFailure(accountId, null);
+                }
             }
             catch (Exception ex)
             {
-                OtherPlayerProfileScreenPatch.ClearPendingReturnOverride();
-                pitFireTeam.Log.LogError($"[UI] Failed to start profile open for '{accountId}'.");
-                pitFireTeam.Log.LogError(ex);
+                HandleProfileOpenFailure(accountId, ex);
             }
+        }
+
+        private static void HandleProfileOpenFailure(string accountId, Exception exception)
+        {
+            OtherPlayerProfileScreenPatch.ClearPendingReturnOverride();
+            pitFireTeam.Log.LogError($"[UI] Failed to fetch teammate profile for '{accountId}'. The profile may be corrupt or the profile-view route may be unavailable.");
+            if (exception != null)
+            {
+                pitFireTeam.Log.LogError(exception);
+            }
+
+            NotificationManagerClass.DisplayWarningNotification(
+                GetSocialUiText("SquadControlProfileCorrupt"),
+                ENotificationDurationType.Default);
         }
 
         private void CreateScrollableRosterArea(RectTransform shellRect)

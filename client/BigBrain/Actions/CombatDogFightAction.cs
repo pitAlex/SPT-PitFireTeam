@@ -94,7 +94,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             UpdateSainLikeMovement(goalEnemy);
-            ApplyDogFightPose(goalEnemy);
+            ApplyDogFightPose();
             BotOwner.Sprint(false, true);
 
             if (goalEnemy == null || !hasConfirmedShot && !hasPointBlankContactShot && !hasRecentContactShot)
@@ -242,26 +242,11 @@ namespace pitTeam.BigBrain.Actions
             nextMoveUpdateTime = Time.time + MoveUpdateFallbackDelay;
         }
 
-        private void ApplyDogFightPose(EnemyInfo? goalEnemy)
+        private void ApplyDogFightPose()
         {
-            BotOwner.SetPose(CanUseDogFightCrouch(goalEnemy) ? 0.5f : 1f);
-        }
-
-        private bool CanUseDogFightCrouch(EnemyInfo? goalEnemy)
-        {
-            if (goalEnemy == null || !goalEnemy.IsVisible || !goalEnemy.CanShoot)
-            {
-                return false;
-            }
-
-            if (!BotOwner.LookSensor.EnoughDistToShoot(out _))
-            {
-                return false;
-            }
-
-            ShootPointClass shootPoint = BotOwner.CurrentEnemyTargetPosition(false) ??
-                                         new ShootPointClass(goalEnemy.GetBodyPartPosition(), 1f);
-            return FollowerShootPoseSafety.HasReliableCrouchLane(BotOwner, shootPoint.Point);
+            // Dogfight is inherently close contact. Keep a standing weapon/movement posture so the
+            // follower can strafe, back out, and return fire without settling into a static crouch.
+            BotOwner.SetPose(1f);
         }
 
         private bool TryMoveTowardEnemy(EnemyInfo goalEnemy)

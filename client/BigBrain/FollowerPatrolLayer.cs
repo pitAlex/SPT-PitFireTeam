@@ -82,7 +82,6 @@ namespace pitTeam.BigBrain
         private const float OutOfCombatTacticalDeviceInitialCooldown = 0.75f;
         private const float OutOfCombatTacticalDeviceCheckInterval = 3f;
         private const float HealNodeStartTimeout = 4f;
-        private const float HealActionStartRetryCooldown = 3f;
         private const float PatrolHealCoverSearchRadius = 60f;
         private const float PatrolHealCoverArriveDistance = 2f;
         private const string PatrolHealCoverActionReason = "runToHeal";
@@ -123,7 +122,6 @@ namespace pitTeam.BigBrain
         private float nextPatrolLauncherFallbackRecordAt = 0f;
         private float nextStowedTacticalDeviceCheckAt = 0f;
         private float nextHealWorkRefreshAt = 0f;
-        private float nextHealActionRetryAt = 0f;
         private bool stoppedForHealDecision = false;
         private bool healUseObserved = false;
         private CustomNavigationPoint? patrolHealCover;
@@ -239,7 +237,6 @@ namespace pitTeam.BigBrain
             isHealing = false;
             stoppedForHealDecision = false;
             patrolHealStartAnnounced = false;
-            nextHealActionRetryAt = 0f;
             healUseObserved = false;
             selectedAction = null;
             ResetPatrolHealCoverState();
@@ -254,7 +251,6 @@ namespace pitTeam.BigBrain
             isHealing = false;
             stoppedForHealDecision = false;
             patrolHealStartAnnounced = false;
-            nextHealActionRetryAt = 0f;
             healUseObserved = false;
             ResetPatrolHealCoverState();
             ResetReloadState();
@@ -322,10 +318,9 @@ namespace pitTeam.BigBrain
                 GetPatrolHealState(
                     out bool isUsingHeal,
                     out bool hasPendingHealWork,
-                    out bool hasRecoverableTopOffWork,
-                    out _);
+                    out bool hasRecoverableTopOffWork);
 
-                if (CanStartPatrolHealAction(isUsingHeal, hasPendingHealWork, hasRecoverableTopOffWork))
+                if (ShouldOwnPatrolHealAction(isUsingHeal, hasPendingHealWork, hasRecoverableTopOffWork))
                 {
                     if (!isUsingHeal && TryCreatePatrolHealCoverAction(out Action? coverAction))
                     {
@@ -402,14 +397,13 @@ namespace pitTeam.BigBrain
                     GetPatrolHealState(
                         out bool isUsingHeal,
                         out bool hasPendingHealWork,
-                        out bool hasRecoverableTopOffWork,
-                        out _);
+                        out bool hasRecoverableTopOffWork);
                     if (isHealCoverAction)
                     {
                         return IsPatrolHealCoverActionEnding(isUsingHeal || hasPendingHealWork || hasRecoverableTopOffWork);
                     }
 
-                    if (CanStartPatrolHealAction(isUsingHeal, hasPendingHealWork, hasRecoverableTopOffWork))
+                    if (ShouldOwnPatrolHealAction(isUsingHeal, hasPendingHealWork, hasRecoverableTopOffWork))
                     {
                         return true;
                     }
@@ -508,14 +502,10 @@ namespace pitTeam.BigBrain
             GetPatrolHealState(
                 out bool isUsingHeal,
                 out bool hasPendingHealWork,
-                out bool hasRecoverableTopOffWork,
-                out bool shouldKeepPostCombatFullHeal);
-            bool canStartHeal = CanStartVanillaHealNode() || Utils.FollowerMedical.CanStartFirstAidTopOff(BotOwner);
-
+                out bool hasRecoverableTopOffWork);
             float healTimeout = BotOwner.Medecine.SurgicalKit.Using ? 45f : 15f;
             if (isUsingHeal)
             {
-                nextHealActionRetryAt = 0f;
                 healNodeEnteredAt = Time.time;
                 if (!healUseObserved || healStartAt <= 0f)
                 {
@@ -549,11 +539,9 @@ namespace pitTeam.BigBrain
                 GetPatrolHealState(
                     out isUsingHeal,
                     out hasPendingHealWork,
-                    out hasRecoverableTopOffWork,
-                    out shouldKeepPostCombatFullHeal);
+                    out hasRecoverableTopOffWork);
                 if (isUsingHeal)
                 {
-                    nextHealActionRetryAt = 0f;
                     return false;
                 }
 
@@ -563,26 +551,14 @@ namespace pitTeam.BigBrain
                     return true;
                 }
 
-                canStartHeal = CanStartVanillaHealNode() || Utils.FollowerMedical.CanStartFirstAidTopOff(BotOwner);
-                if (!canStartHeal)
-                {
-                    if (Utils.FollowerMedical.IsPostCombatFullHealActive(BotOwner) &&
-                        !hasRecoverableTopOffWork &&
-                        !shouldKeepPostCombatFullHeal)
-                    {
-                        Utils.FollowerMedical.CompletePostCombatFullHeal(BotOwner);
-                        CompleteHealing();
-                        return true;
-                    }
-
-                    nextHealActionRetryAt = Time.time + HealActionStartRetryCooldown;
-                    CompleteHealing();
-                    return true;
-                }
-
-                nextHealActionRetryAt = Time.time + HealActionStartRetryCooldown;
-                CompleteHealing();
-                return true;
+                // Vanilla applies HEAL_DELAY_SEC after each med use. During that interval
+                // ShallStartUse()/Have2Do can be false even though another damaged part and a
+                // usable med are already known. Keep this HealAction alive and stationary; its
+                // GClass197 worker retries every update and will start the next use when the real
+                // medical cooldown expires. Follow must not own this gap.
+                healNodeEnteredAt = Time.time;
+                StopMovementForHealDecision();
+                return false;
             }
 
             if (!IsActive() && isHealAction)
@@ -596,19 +572,21 @@ namespace pitTeam.BigBrain
         private void GetPatrolHealState(
             out bool isUsingHeal,
             out bool hasPendingHealWork,
-            out bool hasRecoverableTopOffWork,
-            out bool shouldKeepPostCombatFullHeal)
+            out bool hasRecoverableTopOffWork)
         {
             bool isUsingFirstAid = BotOwner?.Medecine?.FirstAid?.Using == true;
             bool isUsingSurgery = BotOwner?.Medecine?.SurgicalKit?.Using == true;
             bool hasFirstAidWork = BotOwner?.Medecine?.FirstAid?.Have2Do == true;
             bool hasSurgeryWork = BotOwner?.Medecine?.SurgicalKit?.HaveWork == true;
+            bool hasDeferredFirstAidWork =
+                BotOwner?.Medecine?.FirstAid?.Damaged == true &&
+                BotOwner.Medecine.FirstAid.HaveSmth2Use;
 
             isUsingHeal = isUsingFirstAid || isUsingSurgery;
-            hasPendingHealWork = hasSurgeryWork || hasFirstAidWork;
+            hasPendingHealWork = hasSurgeryWork || hasFirstAidWork || hasDeferredFirstAidWork;
             hasRecoverableTopOffWork = Utils.FollowerMedical.HasRecoverableFirstAidDamage(BotOwner);
             bool hasKnownWork = isUsingHeal || hasPendingHealWork || hasRecoverableTopOffWork;
-            shouldKeepPostCombatFullHeal = Utils.FollowerMedical.ShouldKeepPostCombatFullHeal(
+            bool shouldKeepPostCombatFullHeal = Utils.FollowerMedical.ShouldKeepPostCombatFullHeal(
                 BotOwner,
                 hasKnownWork,
                 scanForWork: false);
@@ -659,7 +637,6 @@ namespace pitTeam.BigBrain
             isHealing = false;
             stoppedForHealDecision = false;
             patrolHealStartAnnounced = false;
-            nextHealActionRetryAt = 0f;
             healUseObserved = false;
             healStartAt = 0f;
             healSoftTimeoutAt = 0f;
@@ -833,44 +810,12 @@ namespace pitTeam.BigBrain
             }
         }
 
-        private bool CanStartPatrolHealAction(
+        private static bool ShouldOwnPatrolHealAction(
             bool isUsingHeal,
             bool hasPendingHealWork,
             bool hasRecoverableTopOffWork)
         {
-            if (isUsingHeal)
-            {
-                return true;
-            }
-
-            if (Time.time < nextHealActionRetryAt)
-            {
-                return false;
-            }
-
-            return (hasPendingHealWork && CanStartVanillaHealNode()) ||
-                   (hasRecoverableTopOffWork && Utils.FollowerMedical.CanStartFirstAidTopOff(BotOwner));
-        }
-
-        private bool CanStartVanillaHealNode()
-        {
-            try
-            {
-                if (BotOwner?.Medecine == null ||
-                    BotOwner.WeaponManager?.Grenades?.ThrowindNow == true ||
-                    BotOwner.Medecine.Using)
-                {
-                    return false;
-                }
-
-                return BotOwner.Medecine.FirstAid?.ShallStartUse() == true ||
-                       BotOwner.Medecine.SurgicalKit?.ShallStartUse() == true;
-            }
-            catch (Exception ex)
-            {
-                LogLayerException("CanStartVanillaHealNode", ex);
-                return false;
-            }
+            return isUsingHeal || hasPendingHealWork || hasRecoverableTopOffWork;
         }
 
         private void RefreshHealWorkForRetry()
@@ -1074,8 +1019,14 @@ namespace pitTeam.BigBrain
             return true;
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private void RecordPatrolLauncherFallback(bool switchRequested, string waitReason)
         {
+            if (!BattleRecorder.IsRecordingFor(BotOwner))
+            {
+                return;
+            }
+
             if (Time.time < nextPatrolLauncherFallbackRecordAt)
             {
                 return;

@@ -1470,7 +1470,9 @@ public class FriendlyTeammateService(
                     summary.LostNames.Add(displayName);
                 }
 
-                if (string.IsNullOrWhiteSpace(summary.ExtractName) && !string.IsNullOrWhiteSpace(entry.ExtractName))
+                if (entry.Escaped
+                    && string.IsNullOrWhiteSpace(summary.ExtractName)
+                    && !string.IsNullOrWhiteSpace(entry.ExtractName))
                 {
                     summary.ExtractName = entry.ExtractName;
                 }

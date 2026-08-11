@@ -33,13 +33,16 @@ namespace pitTeam.BigBrain.Actions
             ResetMoveToPointDiagnostics();
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private void ResetMoveToPointDiagnostics()
         {
+#if DEBUG
             moveLastProgressDistance = 0f;
             moveLastProgressAt = 0f;
             nextMoveProgressDiagnosticAt = 0f;
             lastMoveDiagnosticKey = string.Empty;
             nextMoveDiagnosticAt = 0f;
+#endif
         }
 
         private void EnsureCommandControl()
@@ -424,6 +427,7 @@ namespace pitTeam.BigBrain.Actions
             bool targetChanged = !moveCommandInitialized || (activeMoveTarget - target).sqrMagnitude > MoveToPointTargetChangeDistanceSqr;
             bool targetMissing = BotOwner.GoToSomePointData?.HaveTarget() != true;
             bool targetCompletedEarly = BotOwner.GoToSomePointData?.IsCome() == true && distance > MoveToPointArrivalDistance;
+            bool targetRefreshed = false;
             if (targetChanged || targetMissing || targetCompletedEarly)
             {
                 RecordMoveToPointDiagnostic(
@@ -444,6 +448,7 @@ namespace pitTeam.BigBrain.Actions
                 activeMoveTarget = target;
                 moveArrivalLookUntil = 0f;
                 nextHoldLookChangeAt = 0f;
+                targetRefreshed = true;
             }
 
             if (Time.time >= nextPathCheckAt)
@@ -468,6 +473,26 @@ namespace pitTeam.BigBrain.Actions
                     BotOwner.StopMove();
                     return;
                 }
+
+                // EFT keeps the point after its active mover path ends, so HaveTarget() alone is
+                // not a liveness signal. Re-arm the same point on this existing 0.5s validation
+                // cadence instead of waiting for BotGoToPointData's three-second retry.
+                if (!targetRefreshed && BotOwner.Mover?.HasPathAndNoComplete != true)
+                {
+                    RecordMoveToPointDiagnostic(
+                        "pathRecovered",
+                        target,
+                        distance,
+                        () => CreateMoveToPointDiagnostic(
+                            target,
+                            distance,
+                            new
+                            {
+                                pathStatus = path.status.ToString(),
+                                cornerCount = path.corners?.Length ?? 0
+                            }));
+                    BotOwner.GoToSomePointData.SetPoint(target);
+                }
             }
 
             // "There" should always be a walk move.
@@ -485,8 +510,10 @@ namespace pitTeam.BigBrain.Actions
             nextHoldLookChangeAt = 0f;
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private void TrackMoveToPointProgress(Vector3 target, float distance)
         {
+#if DEBUG
             if (!moveCommandInitialized || moveLastProgressAt <= 0f)
             {
                 moveLastProgressDistance = distance;
@@ -520,10 +547,13 @@ namespace pitTeam.BigBrain.Actions
                         lastProgressDistance = SanitizeFloat(moveLastProgressDistance),
                         noProgressSeconds = SanitizeFloat(Time.time - moveLastProgressAt)
                     }));
+#endif
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private void RecordMoveToPointDiagnostic(string reason, Vector3 target, float distance, Func<object?> detailsFactory)
         {
+#if DEBUG
             if (BotOwner == null || !BattleRecorder.IsRecordingFor(BotOwner))
             {
                 return;
@@ -538,6 +568,7 @@ namespace pitTeam.BigBrain.Actions
             lastMoveDiagnosticKey = key;
             nextMoveDiagnosticAt = Time.time + MoveToPointDiagnosticThrottleSeconds;
             BattleRecorder.RecordCommandDiagnostic(BotOwner, FollowerCommandType.MoveToPoint, "moveToPoint", reason, detailsFactory);
+#endif
         }
 
         private object CreateMoveToPointDiagnostic(Vector3 target, float distance, object? extra = null)

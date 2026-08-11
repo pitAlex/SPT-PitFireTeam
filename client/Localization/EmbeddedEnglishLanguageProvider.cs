@@ -327,6 +327,7 @@ namespace pitTeam.Localization
                     ["SquadControlRemoveFromGroup"] = "Remove from group",
                     ["SquadControlRemoveFromGroupConfirm"] = "Remove {0} from the current raid group?",
                     ["SquadControlViewProfile"] = "View profile",
+                    ["SquadControlProfileCorrupt"] = "This teammate profile is corrupt and cannot be fetched.",
                     ["SquadControlAutoJoinOn"] = "Auto join: On",
                     ["SquadControlAutoJoinOff"] = "Auto join: Off",
                     ["SquadControlAutoJoinTooltip"] = "Auto-join",
@@ -365,14 +366,12 @@ namespace pitTeam.Localization
                 teamEscaped = new[] { "Nice!\nWe managed to get out." },
                 teamSomeEscaped = new[] { "Well it's a shame about {0}, but at least the rest of us made it." },
                 friendlyEscaped = new[] { "Glad we made it.\nThanks for letting me tag along." },
-                deathEscapeMessages = new[]
-                {
-                    "Squad extraction report:\n{0}",
-                    "Post-raid squad report:\n{0}",
-                    "Your squad's final status:\n{0}",
-                },
+                deathEscapeMessages = new[] { "Post-raid squad report:\n{0}" },
                 deathEscape = new Dictionary<string, string>
                 {
+                    ["Report"] = "Post-raid squad report:\n{0}",
+                    ["AllLost"] = "All members did not make it.",
+                    ["AllEscaped"] = "All members managed to extract.",
                     ["MadeItOut"] = "Made it out: {0}",
                     ["Lost"] = "Lost: {0}",
                     ["ExtractRoute"] = "Extract route: {0}",

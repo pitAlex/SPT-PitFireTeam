@@ -22,6 +22,7 @@ namespace pitTeam.Modules
         }
 
         private bool isFactoryMode;
+        private bool isUrbanDetourMode;
 
         // Default map settings (Customs, Woods, Interchange, Reserve, etc.)
         private const float DefaultBossCoverSearchRadius = 30f;
@@ -65,10 +66,6 @@ namespace pitTeam.Modules
         private const float FactoryCloseThreatAutoAcquireDistance = 5f;
         private const float FactoryBulletHearDistanceSqr = 25f * 25f;
         private const float FactoryMarksmanRegroupMultiplier = 2f;
-        private const float FactoryUrbanDetourDirectDistance = 24f;
-        private const float FactoryUrbanDetourMaxPathDistance = 42f;
-        private const float FactoryUrbanDetourMaxExtraDistance = 16f;
-        private const float FactoryUrbanDetourMaxRatio = 2.2f;
         private const float FactoryRegroupBossMoveRefreshDistance = 8f;
 
 
@@ -80,6 +77,7 @@ namespace pitTeam.Modules
         public void UpdateForCurrentMap(string? mapName)
         {
             SetFactoryMode(UsesFactoryDistanceProfile(mapName));
+            isUrbanDetourMode = UsesUrbanDetourProfile(mapName);
         }
 
         public static bool UsesFactoryDistanceProfile(string? mapName)
@@ -89,6 +87,13 @@ namespace pitTeam.Modules
                     string.Equals(mapName, "Factory4_day", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(mapName, "Factory4_night", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(mapName, "laboratory", StringComparison.OrdinalIgnoreCase));
+        }
+
+        public static bool UsesUrbanDetourProfile(string? mapName)
+        {
+            return string.Equals(mapName, "TarkovStreets", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(mapName, "Sandbox", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(mapName, "Sandbox_high", StringComparison.OrdinalIgnoreCase);
         }
 
         // Boss and cover search radii
@@ -199,10 +204,11 @@ namespace pitTeam.Modules
 
         public bool IsUrbanDetourRegroup(float directDistance, float navDistance)
         {
-            return directDistance <= GetUrbanDetourDirectDistance() &&
-                   navDistance > GetUrbanDetourMaxPathDistance() &&
-                   navDistance > directDistance + GetUrbanDetourMaxExtraDistance() &&
-                   navDistance > directDistance * GetUrbanDetourMaxRatio();
+            return isUrbanDetourMode &&
+                   directDistance <= DefaultUrbanDetourDirectDistance &&
+                   navDistance > DefaultUrbanDetourMaxPathDistance &&
+                   navDistance > directDistance + DefaultUrbanDetourMaxExtraDistance &&
+                   navDistance > directDistance * DefaultUrbanDetourMaxRatio;
         }
 
         public float GetRegroupBossMoveRefreshDistance()
@@ -210,28 +216,8 @@ namespace pitTeam.Modules
             return isFactoryMode ? FactoryRegroupBossMoveRefreshDistance : DefaultRegroupBossMoveRefreshDistance;
         }
 
-        private float GetUrbanDetourDirectDistance()
-        {
-            return isFactoryMode ? FactoryUrbanDetourDirectDistance : DefaultUrbanDetourDirectDistance;
-        }
-
-        private float GetUrbanDetourMaxPathDistance()
-        {
-            return isFactoryMode ? FactoryUrbanDetourMaxPathDistance : DefaultUrbanDetourMaxPathDistance;
-        }
-
-        private float GetUrbanDetourMaxExtraDistance()
-        {
-            return isFactoryMode ? FactoryUrbanDetourMaxExtraDistance : DefaultUrbanDetourMaxExtraDistance;
-        }
-
-        private float GetUrbanDetourMaxRatio()
-        {
-            return isFactoryMode ? FactoryUrbanDetourMaxRatio : DefaultUrbanDetourMaxRatio;
-        }
-
-
-
         public bool IsFactoryMode => isFactoryMode;
+
+        public bool IsUrbanDetourMode => isUrbanDetourMode;
     }
 }

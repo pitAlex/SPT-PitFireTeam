@@ -174,7 +174,9 @@ namespace pitTeam.BigBrain
             AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision)
         {
             EnemyInfo? goalEnemy = BotOwner.Memory.GoalEnemy;
-            if (IsHealingDecision(currentDecision.Action))
+            // A generic action such as attackMoving can still be a medical retreat. Route by
+            // action + reason before applying regroup completion to the shared movement action.
+            if (FollowerCombatCommon.IsMedicalDecision(currentDecision))
             {
                 return CombatCommon.ShallEndCurrentDecision(currentDecision);
             }
@@ -275,13 +277,6 @@ namespace pitTeam.BigBrain
                 if (CombatCommon.TryGetDogFightDecision() != null)
                 {
                     return new AICoreActionEndStruct("regroupDogFight", true);
-                }
-
-                if (HasReachedCurrentTarget())
-                {
-                    ClearCurrentTarget();
-                    ClearCommittedRegroupMove();
-                    return new AICoreActionEndStruct("regroupReachedRunTarget", true);
                 }
 
                 if (ShouldReturnMarksmanToSupport(goalEnemy))
@@ -729,17 +724,19 @@ namespace pitTeam.BigBrain
 
         private bool HasReachedCurrentTarget()
         {
-            if (BotOwner.GoToSomePointData.IsCome())
-            {
-                return true;
-            }
-
             if (!hasTarget)
             {
                 return false;
             }
 
-            return (BotOwner.Position - currentTarget).sqrMagnitude <= 2f * 2f;
+            if ((BotOwner.Position - currentTarget).sqrMagnitude <= 2f * 2f)
+            {
+                return true;
+            }
+
+            return BotOwner.GoToSomePointData?.HaveTarget() == true &&
+                   BotOwner.GoToSomePointData.IsCome() &&
+                   (BotOwner.GoToSomePointData.Point - currentTarget).sqrMagnitude <= 1f;
         }
 
         private bool TryAcceptRegroupCover(CustomNavigationPoint? cover, Vector3 bossPosition, out Vector3 targetPosition)
@@ -906,11 +903,6 @@ namespace pitTeam.BigBrain
         {
             return string.Equals(reason, RegroupArrivedReason, System.StringComparison.Ordinal) ||
                    string.Equals(reason, RegroupUrbanDetourReason, System.StringComparison.Ordinal);
-        }
-
-        private static bool IsHealingDecision(BotLogicDecision decision)
-        {
-            return decision == BotLogicDecision.heal || decision == BotLogicDecision.healStimulators;
         }
 
         private bool HasActivePushOrder()

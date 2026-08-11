@@ -1,5 +1,6 @@
 using EFT;
 using HarmonyLib;
+using pitTeam.BigBrain;
 using pitTeam.Modules;
 using pitTeam.Utils;
 using SPT.Reflection.Patching;
@@ -24,12 +25,17 @@ namespace pitTeam.Patches
             BotOwner botOwner = __instance?.BotOwner_0;
             if (botOwner == null ||
                 !BossPlayers.IsFollower(botOwner) ||
+                !FollowerCombatLayer.IsFollowerCombatLayerActive(botOwner) ||
                 !__instance.CanShootSit)
             {
                 return;
             }
 
-            if (!FollowerShootPoseSafety.HasReliableCrouchLane(botOwner, target))
+            if (!FollowerShootPoseSafety.CanUseCombatCrouchFire(
+                    botOwner,
+                    target,
+                    out _,
+                    out _))
             {
                 __instance.CanShootSit = false;
             }

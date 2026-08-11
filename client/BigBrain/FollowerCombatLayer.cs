@@ -721,13 +721,7 @@ namespace pitTeam.BigBrain
 
         private static bool IsHealingDecision(AICoreActionResultStruct<BotLogicDecision, GClass26>? decision)
         {
-            if (!decision.HasValue)
-            {
-                return false;
-            }
-
-            return decision.Value.Action == BotLogicDecision.heal ||
-                   decision.Value.Action == BotLogicDecision.healStimulators;
+            return decision.HasValue && FollowerCombatCommon.IsMedicalDecision(decision.Value);
         }
 
         private void ClearFollowerCommandOnCombatTransition(string reason)

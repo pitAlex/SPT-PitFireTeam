@@ -16,10 +16,12 @@ namespace pitTeam.BigBrain.Actions
     internal sealed class CombatHoldPositionAction : FollowerCombatActionBase
     {
         private readonly GClass278 baseLogic;
+        private readonly FollowerCombatFireOverlay fireOverlay;
 
         public CombatHoldPositionAction(BotOwner botOwner) : base(botOwner)
         {
             baseLogic = new EnemyFacingHoldLogic(botOwner);
+            fireOverlay = new FollowerCombatFireOverlay(botOwner);
         }
 
         public override void Start()
@@ -30,8 +32,15 @@ namespace pitTeam.BigBrain.Actions
 
         public override void Update(CustomLayer.ActionData data)
         {
+            string? reason = GetReason(data) ?? BotOwner.Brain?.Agent?.LastResult().Reason;
+            bool recoveryNoCover = FollowerCombatDefault.IsRecoveryNoCoverReason(reason);
+            if (recoveryNoCover)
+            {
+                BotOwner.SetPose(1f);
+            }
+
             if (StopUnownedGrenadeLauncherFire(
-                    GetReason(data) ?? BotOwner.Brain?.Agent?.LastResult().Reason,
+                    reason,
                     BotOwner.Memory?.GoalEnemy,
                     blockWhenWaiting: false))
             {
@@ -40,8 +49,25 @@ namespace pitTeam.BigBrain.Actions
 
             baseLogic.UpdateNodeByBrain(GetData<GClass28>(data));
 
+            if (recoveryNoCover)
+            {
+                BotOwner.SetPose(1f);
+            }
+
             TryPreferMarksmanPrimaryAtRange(BotOwner.Memory?.GoalEnemy);
             FollowerCombatCommon.TryRaiseForStandingCoverShot(BotOwner, out _);
+            fireOverlay.Update(
+                BotOwner.Memory?.GoalEnemy,
+                reason,
+                allowThreatSuppression: recoveryNoCover || BotOwner.Memory?.IsUnderFire == true,
+                forceThreatLook: true,
+                out _);
+        }
+
+        public override void Stop()
+        {
+            fireOverlay.Stop();
+            base.Stop();
         }
     }
 

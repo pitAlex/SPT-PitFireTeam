@@ -542,7 +542,8 @@ Execution:
 - `QuickPanelPatch` keeps the custom phrase available and refreshes whether it can be shown.
 - `QuickMumbleStartViewBackpackPatch` and `PlayerPatch.PlayPhraseOrGesture` route the phrase to `TeammateBackpackInspection.TryOpenFromQuickInteraction(...)`.
 - Opens the target follower's live backpack through `GamePlayerOwner.ShowInventoryScreenLoot(...)`.
-- Marks the backpack tree searched/known only for this local inspection session, without permanently examining unknown templates for the player.
+- Marks the backpack tree searched/known for the local raid session, without permanently examining unknown templates for the player.
+- Persists raid-local searched/known state for item trees moved into the open backpack, so a nested container keeps its revealed contents if it is later moved back to the player.
 - Sets `BotFollowerPlayer.IsBackpackInspectionActive`, which makes follow/patrol logic hold the follower still while the backpack screen is open.
 - Closes the inspection if the player dies, the target becomes invalid, the follower starts healing/pickup work, or combat pressure appears (`HasKnownEnemy`, `Memory.HaveEnemy`, or `Memory.IsUnderFire`).
 

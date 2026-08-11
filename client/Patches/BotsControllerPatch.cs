@@ -1439,7 +1439,10 @@ namespace pitTeam.Patches
                         Props.FactoryMapSett();
                     }
 
-                    Modules.Logger.LogInfo($"[CombatDistances] map={locationId} factoryDistanceProfile={CombatDistanceConfiguration.Instance.IsFactoryMode}");
+                    Modules.Logger.LogInfo(
+                        $"[CombatDistances] map={locationId} " +
+                        $"factoryDistanceProfile={CombatDistanceConfiguration.Instance.IsFactoryMode} " +
+                        $"urbanDetourProfile={CombatDistanceConfiguration.Instance.IsUrbanDetourMode}");
 
                     Modules.Logger.LogInfo("Raid Started");
                     BattleRecorder.StartRaid(locationId);

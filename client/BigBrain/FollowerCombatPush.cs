@@ -24,9 +24,10 @@ namespace pitTeam.BigBrain
         private const string PushReasonPrefix = "push.";
         private const float RunToEnemyNonSprintGraceSeconds = 0.75f;
         private const float RunToEnemyNoSprintBlockSeconds = 3f;
-        private const float UrbanDetourPushCheckInterval = 0.75f;
-        private const float UrbanDetourRunToEnemyBlockSeconds = 3f;
+        private const float NoPushHoldSeconds = 1.25f;
+#if DEBUG
         private const float MemoryOnlyAutoPushBlockDiagnosticInterval = 1f;
+#endif
         private const int AutoPushMinMagazineAmmo = 10;
         private const int StandardAutoPushMagazineCapacity = 30;
         private const int PrecisionRifleAutoPushMagazineCapacity = 20;
@@ -40,8 +41,9 @@ namespace pitTeam.BigBrain
         private float committedPushActionableVisibleSince;
         private Vector3 stalledPushLastPosition;
         private float stalledPushSince;
-        private float nextUrbanDetourPushCheckAt;
+#if DEBUG
         private float nextMemoryOnlyAutoPushBlockLogAt;
+#endif
 
         public FollowerCombatPush(BotOwner botOwner, FollowerCombatCommon combatCommon)
         {
@@ -52,7 +54,6 @@ namespace pitTeam.BigBrain
         public void Reset()
         {
             ClearCommittedPush("reset");
-            nextUrbanDetourPushCheckAt = 0f;
         }
 
         public void HandleDecisionChanged(AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision)
@@ -335,7 +336,7 @@ namespace pitTeam.BigBrain
                             return approachDecision;
                         }
 
-                        return CreatePushDecision(BotLogicDecision.attackMoving);
+                        return CreatePushDecision(BotLogicDecision.goToEnemy);
                     }
 
                     if (distanceToEnemy == Utils.Enemy.EnemyDistance.VeryClose)
@@ -343,7 +344,7 @@ namespace pitTeam.BigBrain
                         return new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.dogFight, "pushDogFight");
                     }
 
-                    return CreatePushDecision(BotLogicDecision.attackMoving);
+                    return CreatePushDecision(BotLogicDecision.goToEnemy);
                 }
 
                 // Push wanted but unsafe/imperfect conditions.
@@ -360,7 +361,7 @@ namespace pitTeam.BigBrain
                     }
 
                     SetAttackTactic();
-                    return CreatePushDecision(BotLogicDecision.attackMoving);
+                    return CreatePushDecision(BotLogicDecision.goToEnemy);
                 }
 
                 if (distanceToEnemy <= Utils.Enemy.EnemyDistance.VeryClose)
@@ -458,7 +459,7 @@ namespace pitTeam.BigBrain
 
             if (goalEnemy.IsVisible)
             {
-                decision = CreatePushDecision(BotLogicDecision.attackMoving);
+                decision = CreatePushDecision(BotLogicDecision.goToEnemy);
                 return true;
             }
 
@@ -656,13 +657,24 @@ namespace pitTeam.BigBrain
                     $"{reasonPrefix}ShootFromPlace");
             }
 
+            combatCommon.HoldFor(NoPushHoldSeconds);
             return new AICoreActionResultStruct<BotLogicDecision, GClass26>(
                 BotLogicDecision.holdPosition,
                 $"{reasonPrefix}Hold");
         }
 
+        public static bool IsNoPushHoldReason(string? reason)
+        {
+            return string.Equals(reason, "memoryOnlyAutoPushHold", StringComparison.Ordinal) ||
+                   string.Equals(reason, "launcherSuppressHold", StringComparison.Ordinal) ||
+                   string.Equals(reason, "weaponThreatHold", StringComparison.Ordinal) ||
+                   string.Equals(reason, "lowAmmoHold", StringComparison.Ordinal);
+        }
+
+        [System.Diagnostics.Conditional("DEBUG")]
         private void RecordMemoryOnlyAutoPushBlocked(EnemyInfo goalEnemy, string reason)
         {
+#if DEBUG
             if (!BattleRecorder.IsRecordingFor(botOwner, requireRecordedCombat: true))
             {
                 return;
@@ -691,6 +703,7 @@ namespace pitTeam.BigBrain
                     targetCause = goalEnemy.GroupInfo?.Cause.ToString(),
                     targetDistance = goalEnemy.Distance
                 });
+#endif
         }
 
         private bool TryCreateMarksmanFightDecision(
@@ -804,12 +817,6 @@ namespace pitTeam.BigBrain
             }
 
             if (combatCommon.TryGetCommittedPushDecision(goalEnemy, out committedPush) &&
-                ShouldInterruptCommittedPushForUrbanDetour(goalEnemy, committedPush, out reason))
-            {
-                return true;
-            }
-
-            if (combatCommon.TryGetCommittedPushDecision(goalEnemy, out committedPush) &&
                 combatCommon.TryPreparePointBlankDogFightDecision(goalEnemy, "pushPointBlankContactDogFight"))
             {
                 reason = "pushPointBlankContact";
@@ -849,56 +856,6 @@ namespace pitTeam.BigBrain
             }
 
             return false;
-        }
-
-        private bool ShouldInterruptCommittedPushForUrbanDetour(
-            EnemyInfo goalEnemy,
-            AICoreActionResultStruct<BotLogicDecision, GClass26> committedPush,
-            out string reason)
-        {
-            reason = string.Empty;
-            if (!IsDetourSensitivePushMovement(committedPush.Action))
-            {
-                nextUrbanDetourPushCheckAt = 0f;
-                return false;
-            }
-
-            if (goalEnemy.IsVisible || goalEnemy.CanShoot)
-            {
-                nextUrbanDetourPushCheckAt = 0f;
-                return false;
-            }
-
-            if (Time.time < nextUrbanDetourPushCheckAt)
-            {
-                return false;
-            }
-
-            nextUrbanDetourPushCheckAt = Time.time + UrbanDetourPushCheckInterval;
-            if (botOwner.Mover?.TargetPoint is not Vector3 targetPoint)
-            {
-                return false;
-            }
-
-            if (!combatCommon.IsUrbanDetourMovementTarget(
-                    targetPoint,
-                    out _,
-                    out _))
-            {
-                return false;
-            }
-
-            combatCommon.BlockRunToEnemy(UrbanDetourRunToEnemyBlockSeconds);
-            reason = "pushUrbanDetour";
-            return true;
-        }
-
-        private static bool IsDetourSensitivePushMovement(BotLogicDecision action)
-        {
-            return action == BotLogicDecision.runToEnemy ||
-                   action == BotLogicDecision.goToEnemy ||
-                   action == BotLogicDecision.goToPoint ||
-                   action == BotLogicDecision.goToPointTactical;
         }
 
         private bool ShouldEndRunToEnemyBecauseNotSprinting()

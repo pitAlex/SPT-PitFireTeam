@@ -1644,19 +1644,50 @@ namespace pitTeam.Components
             BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(SetCombatMoveToPointTactical));
         }
 
-        public void SetTemporaryCombatAggressionOverride(float aggression)
+        public void SetTemporaryCombatAggressionOverride(
+            float aggression,
+            string source = nameof(SetTemporaryCombatAggressionOverride))
         {
+            bool previousActive = _temporaryCombatAggressionOverrideActive;
+            float previousAggression = _temporaryCombatAggressionOverride;
             ClearVanillaRequestState(null, nameof(SetTemporaryCombatAggressionOverride));
             _temporaryCombatAggressionOverride = Mathf.Clamp(aggression, 0f, 100f);
             _temporaryCombatAggressionOverrideActive = true;
             _temporaryCombatAggressionClearAfter = 0f;
+            BattleRecorder.RecordCombatAggressionOverride(
+                this,
+                "set",
+                source,
+                previousActive,
+                previousAggression,
+                _temporaryCombatAggressionOverrideActive,
+                _temporaryCombatAggressionOverride,
+                _temporaryCombatAggressionClearAfter);
         }
 
-        public void ClearTemporaryCombatAggressionOverride()
+        public void ClearTemporaryCombatAggressionOverride(
+            string source = nameof(ClearTemporaryCombatAggressionOverride))
         {
+            bool previousActive = _temporaryCombatAggressionOverrideActive;
+            float previousAggression = _temporaryCombatAggressionOverride;
+            float previousClearAfter = _temporaryCombatAggressionClearAfter;
             _temporaryCombatAggressionOverrideActive = false;
             _temporaryCombatAggressionOverride = 0f;
             _temporaryCombatAggressionClearAfter = 0f;
+            if (previousActive ||
+                !Mathf.Approximately(previousAggression, 0f) ||
+                previousClearAfter > 0f)
+            {
+                BattleRecorder.RecordCombatAggressionOverride(
+                    this,
+                    "clear",
+                    source,
+                    previousActive,
+                    previousAggression,
+                    _temporaryCombatAggressionOverrideActive,
+                    _temporaryCombatAggressionOverride,
+                    _temporaryCombatAggressionClearAfter);
+            }
         }
 
         public void ClearTemporaryCombatAggressionOverrideAfterCombatCooldown()
@@ -1690,7 +1721,7 @@ namespace pitTeam.Components
 
             if (_bot == null || _bot.IsDead || _bot.BotState != EBotState.Active)
             {
-                ClearTemporaryCombatAggressionOverride();
+                ClearTemporaryCombatAggressionOverride("combatCooldownBotInactive");
                 return;
             }
 
@@ -1700,7 +1731,7 @@ namespace pitTeam.Components
                 return;
             }
 
-            ClearTemporaryCombatAggressionOverride();
+            ClearTemporaryCombatAggressionOverride("combatCooldownElapsed");
         }
 
         public void CompleteComeCloser()
@@ -1889,6 +1920,13 @@ namespace pitTeam.Components
 
             _commandLookOverridePoint = point;
             _commandLookOverrideUntil = Time.time + duration;
+        }
+
+        public void ClearCommandLookOverride()
+        {
+            _commandLookPauseUntil = 0f;
+            _commandLookOverridePoint = Vector3.zero;
+            _commandLookOverrideUntil = 0f;
         }
 
         public bool TryGetCommandLookOverride(out Vector3 point)
@@ -2599,9 +2637,7 @@ namespace pitTeam.Components
             _resumeHoldAfterTakeLootCrouch = false;
             ResetPostLootMoveState();
             _committedLootCommand = FollowerCommandType.None;
-            _commandLookPauseUntil = 0f;
-            _commandLookOverridePoint = Vector3.zero;
-            _commandLookOverrideUntil = 0f;
+            ClearCommandLookOverride();
 
             BattleRecorder.RecordCommandCleared(this, previousCommand, previousTarget, previousUntilTime, reason);
         }

@@ -1330,7 +1330,7 @@ namespace pitTeam.Components
                     followerData?.SetCanPatrol(false);
                 }
                 followerData?.ClearCommand("Attention:Look");
-                followerData?.ClearTemporaryCombatAggressionOverride();
+                followerData?.ClearTemporaryCombatAggressionOverride("Attention");
                 followerData?.ClearOrderedPushTargetLock("Attention");
                 FollowerCombatTargetCommitments.ClearMission(follower, null, "Attention");
 
@@ -1565,11 +1565,11 @@ namespace pitTeam.Components
                 // Request-layer HoldPosition is intentionally blocked while combat/handoff signals
                 // are still active. Route gesture/Stop hold intent through the same temporary
                 // low-aggression path as the Hold Position phrase so combat remains the owner.
-                followerData.SetTemporaryCombatAggressionOverride(0f);
+                followerData.SetTemporaryCombatAggressionOverride(0f, source);
             }
             else
             {
-                followerData.ClearTemporaryCombatAggressionOverride();
+                followerData.ClearTemporaryCombatAggressionOverride($"{source}:outOfCombatHold");
                 followerData.SetHoldPosition(float.PositiveInfinity, crouch);
             }
 
@@ -1649,7 +1649,7 @@ namespace pitTeam.Components
                 else
                 {
                     followerData.ClearCommand("OnYourOwn:Patrol");
-                    followerData.ClearTemporaryCombatAggressionOverride();
+                    followerData.ClearTemporaryCombatAggressionOverride("OnYourOwn:Patrol");
                     followerData.SetCanPatrol(true);
                 }
                 follower.BotTalk.TrySay(EPhraseTrigger.Roger, false);
@@ -2297,7 +2297,7 @@ namespace pitTeam.Components
                 if (followerData == null) continue;
 
                 followerData.ClearVanillaRequestState(requesterPlayer, "ClearFollowerCommands");
-                followerData.ClearTemporaryCombatAggressionOverride();
+                followerData.ClearTemporaryCombatAggressionOverride("ClearFollowerCommands");
                 followerData.ClearCommand("ClearFollowerCommands");
                 followerData.SetCanPatrol(false);
             }
@@ -2833,12 +2833,14 @@ namespace pitTeam.Components
                     }
 
                     // Combat hold phrase is stored as a temporary aggression override, not as a movement command.
-                    followerData.SetTemporaryCombatAggressionOverride(overrideAggression.Value);
+                    followerData.SetTemporaryCombatAggressionOverride(
+                        overrideAggression.Value,
+                        "HoldPositionAggression");
                 }
                 else
                 {
                     // Gogogo clears the temporary override so combat logic reads the persisted tactic aggression again.
-                    followerData.ClearTemporaryCombatAggressionOverride();
+                    followerData.ClearTemporaryCombatAggressionOverride("HoldPositionAggression:gogogo");
                 }
 
                 follower.BotTalk.TrySay(response, false);
@@ -2877,7 +2879,7 @@ namespace pitTeam.Components
                     {
                         if (RollPickupFollowerPushAcceptance(follower, followerData, requester, goalEnemy))
                         {
-                            followerData.ClearTemporaryCombatAggressionOverride();
+                            followerData.ClearTemporaryCombatAggressionOverride("GoForwardPhrase:pickupPush");
                             followerData.SetPushEnemy(12f);
                             follower.BotTalk.TrySay(EPhraseTrigger.Going, false);
                             follower.Gesture.TryGestus(EInteraction.OkGesture, false);
@@ -2892,7 +2894,7 @@ namespace pitTeam.Components
                     }
 
                     // GoForward in combat is not a movement ping; it becomes PushEnemy for combat objective routing.
-                    followerData.ClearTemporaryCombatAggressionOverride();
+                    followerData.ClearTemporaryCombatAggressionOverride("GoForwardPhrase:push");
                     followerData.SetPushEnemy(12f);
                     if (followerData.CombatTactic != FollowerCombatTactic.Marksman)
                     {
@@ -3699,7 +3701,7 @@ namespace pitTeam.Components
                 }
 
                 followerData.SetNeedSniper(10f);
-                followerData.ClearTemporaryCombatAggressionOverride();
+                followerData.ClearTemporaryCombatAggressionOverride("NeedSniper");
                 follower.BotTalk.TrySay(EPhraseTrigger.Roger, false);
             }
         }
@@ -3915,6 +3917,7 @@ namespace pitTeam.Components
             return TryGetGoToCommandTarget(requester, maxGoToDistance, out commandTarget);
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private static void RecordCommandSourceDiagnostic(
             BotOwner follower,
             FollowerCommandType command,
@@ -3924,6 +3927,7 @@ namespace pitTeam.Components
             Vector3? commandTarget,
             bool combatCommand)
         {
+#if DEBUG
             if (follower == null || !BattleRecorder.IsRecordingFor(follower))
             {
                 return;
@@ -3935,6 +3939,7 @@ namespace pitTeam.Components
                 "commandSource",
                 reason,
                 () => CreateCommandSourceDiagnostic(follower, source, requester, commandTarget, combatCommand));
+#endif
         }
 
         private static object CreateCommandSourceDiagnostic(
