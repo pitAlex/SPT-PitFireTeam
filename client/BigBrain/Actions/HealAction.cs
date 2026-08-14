@@ -21,11 +21,13 @@ namespace pitTeam.BigBrain.Actions
         public override void Start()
         {
             base.Start();
+            FollowerRecovery.StopShooting(BotOwner);
             FollowerMedical.MarkPostCombatFullHealActionStarted(BotOwner);
         }
 
         public override void Update(CustomLayer.ActionData data)
         {
+            FollowerRecovery.StopShooting(BotOwner);
             if (BotOwner?.Medecine?.Using != true && Time.time >= nextMedicalRefreshAt)
             {
                 nextMedicalRefreshAt = Time.time + 0.5f;
@@ -33,6 +35,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             baseLogic.UpdateNodeByBrain(data);
+            FollowerRecovery.StopShooting(BotOwner);
 
             if (BotOwner?.Medecine?.Using != true)
             {

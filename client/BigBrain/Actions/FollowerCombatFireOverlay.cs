@@ -40,6 +40,7 @@ namespace pitTeam.BigBrain.Actions
 
         private readonly BotOwner botOwner;
         private readonly SharedAimState aimState;
+        private readonly FollowerEmergencyFireGate emergencyFireGate = new FollowerEmergencyFireGate();
         private string? lastRecordedState;
         private float nextRecordAt;
 
@@ -186,6 +187,19 @@ namespace pitTeam.BigBrain.Actions
             float aimAngle = Vector3.Angle(aimDirection, targetDirection);
             if (!aiming.IsReady || aimAngle > FireAlignmentAngle)
             {
+                if (!aiming.IsReady &&
+                    emergencyFireGate.TryFire(
+                        botOwner,
+                        goalEnemy,
+                        target,
+                        "fireOverlay",
+                        actionReason,
+                        suppression,
+                        out firing))
+                {
+                    return true;
+                }
+
                 Stop(
                     !aiming.IsReady ? "aimNotReady" : "aimNotAligned",
                     actionReason,
@@ -197,6 +211,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             bool alreadyShooting = shootData.Shooting;
+            emergencyFireGate.Reset();
             bool shootStarted = alreadyShooting || shootData.Shoot();
             firing = shootData.Shooting || shootStarted;
             Record(
@@ -213,6 +228,7 @@ namespace pitTeam.BigBrain.Actions
 
         public void Stop(string reason = "actionStop")
         {
+            emergencyFireGate.Reset();
             Stop(reason, null, null);
         }
 

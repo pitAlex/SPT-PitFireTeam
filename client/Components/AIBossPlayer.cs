@@ -90,10 +90,17 @@ namespace pitTeam.Components
         private readonly Dictionary<string, StableEnemyReportState> _stableEnemyReportByFollower =
             new Dictionary<string, StableEnemyReportState>(StringComparer.Ordinal);
         private const float StableEnemyReportSeconds = 0.75f;
-        private float _lastCombatSupportCueAt = -999f;
-        private float _lastBossShotAt = -999f;
-        private const float CombatSupportCueWindow = 4f;
-        private const float BossShotRecentWindow = 2.5f;
+        private const float PlayerEngagementWindowSeconds = 3f;
+        private const float PlayerEngagementReportIntervalSeconds = 0.75f;
+        private const float PlayerShotTargetScanIntervalSeconds = 0.15f;
+        private const float PlayerShotTargetMaxDistance = 300f;
+        private const float EnemyAimingRecentSeenSeconds = 2.5f;
+        private string _playerEngagementEnemyProfileId = string.Empty;
+        private string _playerEngagementSource = string.Empty;
+        private Vector3 _playerEngagementEnemyPosition;
+        private float _playerEngagementUntil = -999f;
+        private float _lastPlayerEngagementReportAt = -999f;
+        private float _nextPlayerShotTargetScanAt;
 
         public pitAIBossPlayer(Player player, BotsController botsController) : base(player)
         {
@@ -390,8 +397,6 @@ namespace pitTeam.Components
         {
             if (requester == null) return;
 
-            _lastCombatSupportCueAt = Time.time;
-
             List<Player> seenEnemies = new List<Player>();
             try
             {
@@ -567,42 +572,18 @@ namespace pitTeam.Components
 
         }
 
-        public void MarkBossShot()
+        public void MarkBossShot(Vector3 shotOrigin, Vector3 shotDirection)
         {
-            _lastBossShotAt = Time.time;
-        }
-
-        public bool HasRecentCombatSupportCue()
-        {
-            return Time.time - _lastCombatSupportCueAt <= CombatSupportCueWindow;
-        }
-
-        public bool WasShootingRecentlyForSupport()
-        {
-            return Time.time - _lastBossShotAt <= BossShotRecentWindow;
-        }
-
-        public bool TryGetSupportEnemy(out string enemyProfileId, out Vector3 enemyPosition)
-        {
-            enemyProfileId = string.Empty;
-            enemyPosition = Vector3.zero;
-
-            List<Player> visibleEnemies = GetBossVisibleEnemiesForContact(realPlayer);
-            if (pitFireTeam.IsSAINInstalled && (visibleEnemies == null || visibleEnemies.Count == 0))
+            if (Time.time < _nextPlayerShotTargetScanAt || shotDirection.sqrMagnitude < 0.001f)
             {
-                visibleEnemies = GetSainContactFallbackEnemies(realPlayer);
+                return;
             }
 
-            visibleEnemies = PrioritizeContactEnemies(realPlayer, visibleEnemies);
-            Player enemy = visibleEnemies != null ? visibleEnemies.FirstOrDefault() : null;
-            if (enemy == null)
+            _nextPlayerShotTargetScanAt = Time.time + PlayerShotTargetScanIntervalSeconds;
+            if (TryGetBossShotEngagementTarget(shotOrigin, shotDirection.normalized, out Player enemy))
             {
-                return false;
+                MarkPlayerEngagement(enemy, "bossShot");
             }
-
-            enemyProfileId = enemy.ProfileId ?? string.Empty;
-            enemyPosition = enemy.Position;
-            return !string.IsNullOrEmpty(enemyProfileId);
         }
 
         public bool IsPlayerEngaging(out string enemyProfileId, out Vector3 enemyPosition)
@@ -610,12 +591,244 @@ namespace pitTeam.Components
             enemyProfileId = string.Empty;
             enemyPosition = Vector3.zero;
 
-            if (TryGetSupportEnemy(out enemyProfileId, out enemyPosition))
+            if (Time.time > _playerEngagementUntil || string.IsNullOrEmpty(_playerEngagementEnemyProfileId))
             {
-                return true;
+                ClearPlayerEngagement();
+                return false;
             }
 
-            return HasRecentCombatSupportCue() || WasShootingRecentlyForSupport();
+            Player enemy = Singleton<GameWorld>.Instance?.GetAlivePlayerByProfileID(_playerEngagementEnemyProfileId);
+            if (enemy?.HealthController?.IsAlive != true)
+            {
+                ClearPlayerEngagement();
+                return false;
+            }
+
+            _playerEngagementEnemyPosition = enemy.Position;
+            enemyProfileId = _playerEngagementEnemyProfileId;
+            enemyPosition = _playerEngagementEnemyPosition;
+            return true;
+        }
+
+        internal void MarkPlayerEngagement(Player enemy, string source)
+        {
+            if (enemy?.HealthController?.IsAlive != true ||
+                string.IsNullOrEmpty(enemy.ProfileId) ||
+                enemy.ProfileId == realPlayer?.ProfileId)
+            {
+                return;
+            }
+
+            bool targetChanged = !string.Equals(
+                _playerEngagementEnemyProfileId,
+                enemy.ProfileId,
+                StringComparison.Ordinal);
+            _playerEngagementEnemyProfileId = enemy.ProfileId;
+            _playerEngagementSource = source ?? string.Empty;
+            _playerEngagementEnemyPosition = enemy.Position;
+            _playerEngagementUntil = Time.time + PlayerEngagementWindowSeconds;
+
+            if (!targetChanged && Time.time - _lastPlayerEngagementReportAt < PlayerEngagementReportIntervalSeconds)
+            {
+                return;
+            }
+
+            BotOwner reporter = Followers?.FirstOrDefault(IsFollowerEligibleForGroupEnemySync);
+            if (reporter == null || bossGroup == null)
+            {
+                return;
+            }
+
+            _lastPlayerEngagementReportAt = Time.time;
+            try
+            {
+                BotOwner enemyBot = enemy.AIData?.BotOwner;
+                if (enemyBot != null)
+                {
+                    AddEnemy(enemyBot);
+                }
+
+                bossGroup.AddEnemy(enemy, EBotEnemyCause.addPlayerToBoss);
+                // The player is reporting a fight, not granting the follower personal sight.
+                bossGroup.ReportAboutEnemy(enemy, EEnemyPartVisibleType.Sence, reporter);
+
+                foreach (BotOwner follower in Followers)
+                {
+                    if (!IsFollowerEligibleForGroupEnemySync(follower) ||
+                        FollowerEnemyEnforceSuppression.IsSuppressed(follower))
+                    {
+                        continue;
+                    }
+
+                    if (follower.Memory.GoalEnemy == null ||
+                        !follower.Memory.HaveEnemy ||
+                        follower.Memory.IsPeace)
+                    {
+                        RegisterContactEnemyForFollower(
+                            follower,
+                            enemy,
+                            prioritizeAsGoal: false,
+                            allowGoalPromotion: true);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Modules.Logger.LogError($"Failed to report player engagement source={source} enemy={enemy.ProfileId}");
+                Modules.Logger.LogError(ex);
+            }
+        }
+
+        private void ClearPlayerEngagement()
+        {
+            _playerEngagementEnemyProfileId = string.Empty;
+            _playerEngagementSource = string.Empty;
+            _playerEngagementEnemyPosition = Vector3.zero;
+            _playerEngagementUntil = -999f;
+        }
+
+        private bool TryGetBossShotEngagementTarget(
+            Vector3 shotOrigin,
+            Vector3 shotDirection,
+            out Player enemy)
+        {
+            enemy = null;
+            IEnumerable<IPlayer> allPlayers = _botsController?.BotSpawner?.AllPlayers;
+            if (allPlayers == null || realPlayer == null)
+            {
+                return false;
+            }
+
+            float bestScore = float.MaxValue;
+            foreach (IPlayer candidateRef in allPlayers)
+            {
+                Player candidate = candidateRef as Player;
+                if (candidate?.HealthController?.IsAlive != true ||
+                    !IsEligibleBossDirectedContactTarget(realPlayer, candidate))
+                {
+                    continue;
+                }
+
+                if (!TryScoreShotTarget(candidate, shotOrigin, shotDirection, out float score))
+                {
+                    continue;
+                }
+
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    enemy = candidate;
+                }
+            }
+
+            return enemy != null;
+        }
+
+        private static bool TryScoreShotTarget(
+            Player candidate,
+            Vector3 shotOrigin,
+            Vector3 shotDirection,
+            out float score)
+        {
+            score = float.MaxValue;
+            if (candidate?.MainParts == null)
+            {
+                return false;
+            }
+
+            bool found = false;
+            if (candidate.MainParts.TryGetValue(BodyPartType.head, out var headPart))
+            {
+                found |= TryScoreShotPoint(headPart.Position, shotOrigin, shotDirection, ref score);
+            }
+
+            if (candidate.MainParts.TryGetValue(BodyPartType.body, out var bodyPart))
+            {
+                found |= TryScoreShotPoint(bodyPart.Position, shotOrigin, shotDirection, ref score);
+            }
+
+            return found;
+        }
+
+        private static bool TryScoreShotPoint(
+            Vector3 target,
+            Vector3 shotOrigin,
+            Vector3 shotDirection,
+            ref float bestScore)
+        {
+            Vector3 toTarget = target - shotOrigin;
+            float alongRay = Vector3.Dot(toTarget, shotDirection);
+            if (alongRay <= 0f || alongRay > PlayerShotTargetMaxDistance)
+            {
+                return false;
+            }
+
+            float perpendicularDistance = (toTarget - shotDirection * alongRay).magnitude;
+            float allowedDistance = Mathf.Clamp(0.65f + alongRay * 0.012f, 0.8f, 2f);
+            if (perpendicularDistance > allowedDistance)
+            {
+                return false;
+            }
+
+            float score = perpendicularDistance * perpendicularDistance + alongRay * 0.0001f;
+            if (score < bestScore)
+            {
+                bestScore = score;
+            }
+
+            return true;
+        }
+
+        private bool TryGetEnemyAimingAtPlayer(out Player enemy)
+        {
+            enemy = null;
+            IEnumerable<IPlayer> allPlayers = _botsController?.BotSpawner?.AllPlayers;
+            if (allPlayers == null || realPlayer == null)
+            {
+                return false;
+            }
+
+            float bestScore = float.MaxValue;
+            foreach (IPlayer candidateRef in allPlayers)
+            {
+                Player candidate = candidateRef as Player;
+                BotOwner enemyBot = candidate?.AIData?.BotOwner;
+                EnemyInfo goalEnemy = enemyBot?.Memory?.GoalEnemy;
+                if (candidate?.HealthController?.IsAlive != true ||
+                    enemyBot == null ||
+                    enemyBot.IsDead ||
+                    enemyBot.BotState != EBotState.Active ||
+                    goalEnemy?.ProfileId != realPlayer.ProfileId ||
+                    !IsEligibleBossDirectedContactTarget(realPlayer, candidate))
+                {
+                    continue;
+                }
+
+                bool recentlySawPlayer = goalEnemy.PersonalLastSeenTime > 0f &&
+                                         Time.time - goalEnemy.PersonalLastSeenTime <= EnemyAimingRecentSeenSeconds;
+                if (!goalEnemy.IsVisible &&
+                    !goalEnemy.CanShoot &&
+                    enemyBot.ShootData?.Shooting != true &&
+                    !recentlySawPlayer)
+                {
+                    continue;
+                }
+
+                float score = (candidate.Position - realPlayer.Position).sqrMagnitude;
+                if (string.Equals(candidate.ProfileId, _playerEngagementEnemyProfileId, StringComparison.Ordinal))
+                {
+                    enemy = candidate;
+                    return true;
+                }
+
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    enemy = candidate;
+                }
+            }
+
+            return enemy != null;
         }
 
         private void RegisterContactEnemyForFollower(BotOwner follower, Player enemy, bool prioritizeAsGoal, bool allowGoalPromotion)
@@ -645,7 +858,7 @@ namespace pitTeam.Components
                 follower,
                 enemy,
                 EBotEnemyCause.checkAddTODO,
-                countSharedSeenAsPersonal: visibleForContact || prioritizeAsGoal);
+                countSharedSeenAsPersonal: visibleForContact);
             if (trackedEnemy != null)
             {
                 BotSettingsClass botSettings = GetOrCreateContactEnemyGroupInfo(follower, enemy, trackedEnemy);
@@ -664,7 +877,7 @@ namespace pitTeam.Components
                 trackedEnemy.SetVisible(visibleForContact);
                 trackedEnemy.PersonalLastPos = enemy.Position;
                 trackedEnemy.GroupInfo = botSettings;
-                Enemy.RepairPersonalMemory(trackedEnemy, enemy.Position, visibleForContact || prioritizeAsGoal);
+                Enemy.RepairPersonalMemory(trackedEnemy, enemy.Position, visibleForContact);
             }
 
             if (allowGoalPromotion && prioritizeAsGoal)
@@ -682,7 +895,7 @@ namespace pitTeam.Components
             {
                 trackedEnemy.PriorityIndex = 0;
                 trackedEnemy.SetVisible(visibleForContact);
-                Enemy.RepairPersonalMemory(trackedEnemy, enemy.Position, visibleForContact || prioritizeAsGoal);
+                Enemy.RepairPersonalMemory(trackedEnemy, enemy.Position, visibleForContact);
                 using (FollowerGoalEnemyTracker.Begin("AIBossPlayer.RegisterContactEnemyForFollower", goalPromotionReason))
                 {
                     follower.Memory.GoalEnemy = trackedEnemy;
@@ -4435,6 +4648,20 @@ namespace pitTeam.Components
             }
 
             _nextBossGroupStaticUpdateAt = Time.time + 0.5f;
+            bool preserveDirectPlayerEngagement =
+                Time.time <= _playerEngagementUntil &&
+                (string.Equals(_playerEngagementSource, "bossShot", StringComparison.Ordinal) ||
+                 string.Equals(_playerEngagementSource, "bossHit", StringComparison.Ordinal));
+            if (!preserveDirectPlayerEngagement &&
+                TryGetEnemyAimingAtPlayer(out Player playerAttacker))
+            {
+                MarkPlayerEngagement(playerAttacker, "enemyAimingAtBoss");
+            }
+            else if (Time.time > _playerEngagementUntil)
+            {
+                ClearPlayerEngagement();
+            }
+
             ReportEnemyToIdleFollowers();
             if (pitFireTeam.UseSainFollowerCombat)
             {
@@ -4647,20 +4874,11 @@ namespace pitTeam.Components
             {
                 _lastTimeHit = Time.time;
                 BotOwner enemyBot = arg1.Player.AIData.BotOwner;
-                try
+                _aiplayer.MarkPlayerEngagement(enemyBot.GetPlayer as Player, "bossHit");
+
+                foreach (BotOwner follower in _aiplayer.Followers)
                 {
-                    if (_aiplayer.bossGroup != null && _aiplayer.AddEnemy(enemyBot))
-                    {
-                        BotOwner followerBotOwner = _aiplayer.Followers.FirstOrDefault();
-                        _aiplayer.bossGroup.AddEnemy(enemyBot, EBotEnemyCause.addPlayerToBoss);
-                        if (followerBotOwner != null)
-                            _aiplayer.bossGroup.ReportAboutEnemy(enemyBot, EEnemyPartVisibleType.Sence, followerBotOwner);
-                    }
-                }
-                catch (Exception e)
-                {
-                    Modules.Logger.LogError("Failed to add Enemy to group");
-                    Modules.Logger.LogError(e);
+                    FollowerAwareness.RegisterBossRangedThreatWatch(follower, enemyBot);
                 }
             }
         }

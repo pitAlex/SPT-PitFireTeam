@@ -3,6 +3,7 @@ using pitTeam.Components;
 using pitTeam.Modules;
 using pitTeam.Utils;
 using System;
+using UnityEngine;
 
 namespace pitTeam.BigBrain
 {
@@ -10,10 +11,13 @@ namespace pitTeam.BigBrain
     {
         private const string ReasonPrefix = "objectivePush";
         private const string HealPendingReason = "objectivePush.healPending";
+        private const string PressureRecoveryReasonPrefix = "objectivePush.pressureRecovery";
+        private const float PressureRecoverySeconds = 3f;
 
         private readonly FollowerCombatPush combatPush;
         private bool complete;
         private string? targetProfileId;
+        private float pressureRecoveryUntil;
 
         public FollowerCombatOrderedPushObjective(BotOwner botOwner, FollowerCombatCommon combatCommon)
             : base(botOwner, combatCommon)
@@ -27,6 +31,7 @@ namespace pitTeam.BigBrain
         {
             complete = false;
             targetProfileId = null;
+            pressureRecoveryUntil = 0f;
             combatPush.Reset();
         }
 
@@ -49,6 +54,7 @@ namespace pitTeam.BigBrain
             AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision)
         {
             CombatCommon.HandleSharedDecisionChanged(nextDecision);
+            CombatCommon.HandleFollowerSuppressDecisionChanged(nextDecision);
             combatPush.HandleDecisionChanged(nextDecision);
         }
 
@@ -67,6 +73,7 @@ namespace pitTeam.BigBrain
             }
 
             BossPlayers.Instance?.GetFollower(BotOwner)?.RefreshOrderedPushTargetLock(orderedEnemy);
+            ExpirePressureRecoveryIfNeeded();
 
             if (CombatCommon.TryGetReloadRetreatDecision(
                     orderedEnemy,
@@ -85,6 +92,20 @@ namespace pitTeam.BigBrain
             if (inFightDecision != null)
             {
                 return inFightDecision.Value;
+            }
+
+            if (CombatCommon.TryGetCombatLongGunPreparationDecision(
+                    orderedEnemy,
+                    orderedPush: true,
+                    out AICoreActionResultStruct<BotLogicDecision, GClass26> longGunPreparation))
+            {
+                combatPush.ClearCommittedPush("orderedPushWeaponPreparation");
+                return longGunPreparation;
+            }
+
+            if (CombatCommon.HasInitialDecision)
+            {
+                return CombatCommon.ConsumeInitialDecision();
             }
 
             AICoreActionResultStruct<BotLogicDecision, GClass26>? healDecision = CombatCommon.TryGetNeedHealDecision();
@@ -151,6 +172,11 @@ namespace pitTeam.BigBrain
 
             if (currentDecision.Action == BotLogicDecision.holdPosition)
             {
+                if (FollowerCombatCommon.IsWeaponPreparationHoldReason(currentDecision.Reason))
+                {
+                    return CombatCommon.EndWeaponPreparationHold(currentDecision.Reason);
+                }
+
                 if (string.Equals(currentDecision.Reason, HealPendingReason, StringComparison.Ordinal))
                 {
                     return EndHealPendingHold(orderedEnemy);
@@ -162,9 +188,20 @@ namespace pitTeam.BigBrain
                 }
             }
 
+            if (IsPressureRecoveryReason(currentDecision.Reason))
+            {
+                return EndPressureRecovery(currentDecision, orderedEnemy);
+            }
+
             if (combatPush.IsPushCommittedDecision(currentDecision))
             {
-                return combatPush.EndCommittedPush(currentDecision);
+                AICoreActionEndStruct pushEnd = combatPush.EndCommittedPush(currentDecision);
+                if (pushEnd.Value && string.Equals(pushEnd.Reason, "pushUnderFire", StringComparison.Ordinal))
+                {
+                    ArmPressureRecovery(currentDecision);
+                }
+
+                return pushEnd;
             }
 
             return CombatCommon.ShallEndCurrentDecision(currentDecision);
@@ -271,12 +308,21 @@ namespace pitTeam.BigBrain
             out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
         {
             decision = default;
+            bool pressureRecoveryActive = IsPressureRecoveryActive;
             if (BotOwner.Memory.IsInCover)
             {
-                return false;
+                if (!pressureRecoveryActive)
+                {
+                    return false;
+                }
+
+                CombatCommon.HoldFor(Mathf.Max(0.1f, pressureRecoveryUntil - Time.time));
+                decision = Hold("pressureRecoverySettle");
+                return true;
             }
 
             bool pressured =
+                pressureRecoveryActive ||
                 BotOwner.Memory.IsUnderFire ||
                 FollowerCombatCommon.WasHitRecently(BotOwner, 1f) ||
                 FollowerAwareness.WasRecentlyDamaged(BotOwner);
@@ -287,7 +333,8 @@ namespace pitTeam.BigBrain
 
             if (FollowerImmediateFirePolicy.IsLocalSelfDefenseThreat(orderedEnemy))
             {
-                return false;
+                return pressureRecoveryActive &&
+                       TryCreatePressureRecoveryFallback(orderedEnemy, out decision);
             }
 
             if (CombatCommon.HasCommittedPosition(out decision))
@@ -318,6 +365,11 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
+            if (pressureRecoveryActive)
+            {
+                return TryCreatePressureRecoveryFallback(orderedEnemy, out decision);
+            }
+
             if (orderedEnemy.IsVisible && orderedEnemy.CanShoot)
             {
                 decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
@@ -327,6 +379,111 @@ namespace pitTeam.BigBrain
             }
 
             return false;
+        }
+
+        private bool TryCreatePressureRecoveryFallback(
+            EnemyInfo orderedEnemy,
+            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        {
+            if (CombatCommon.TryCreateSuppressDecision(
+                    orderedEnemy,
+                    PressureRecoveryReasonPrefix + "Suppress",
+                    out decision,
+                    allowObstructedSuppression: true))
+            {
+                return true;
+            }
+
+            CombatCommon.HoldFor(Mathf.Max(0.1f, pressureRecoveryUntil - Time.time));
+            decision = Hold("pressureRecoveryThreatHold");
+            return true;
+        }
+
+        private AICoreActionEndStruct EndPressureRecovery(
+            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision,
+            EnemyInfo orderedEnemy)
+        {
+            if (CombatCommon.HasImmediateExplosiveDanger())
+            {
+                return new AICoreActionEndStruct("orderedPressureExplosiveDanger", true);
+            }
+
+            if (CombatCommon.HasActiveOrPendingHealWork())
+            {
+                return new AICoreActionEndStruct("orderedPressureNeedHeal", true);
+            }
+
+            if ((orderedEnemy.IsVisible && orderedEnemy.CanShoot) ||
+                CombatCommon.IsDogFightActive())
+            {
+                return new AICoreActionEndStruct("orderedPressureFightAvailable", true);
+            }
+
+            if (currentDecision.Action == BotLogicDecision.suppressFire)
+            {
+                AICoreActionEndStruct suppressEnd = CombatCommon.EndSuppressFire(currentDecision.Reason);
+                if (suppressEnd.Value &&
+                    (string.Equals(suppressEnd.Reason, "enemyMissingOrDead", StringComparison.Ordinal) ||
+                     string.Equals(suppressEnd.Reason, "shootImmediately", StringComparison.Ordinal) ||
+                     string.Equals(suppressEnd.Reason, "dogFightStarted", StringComparison.Ordinal)))
+                {
+                    return suppressEnd;
+                }
+            }
+
+            if (IsPressureRecoveryActive)
+            {
+                return FollowerCombatCommon.Continue();
+            }
+
+            ClearPressureRecovery("elapsed");
+            return new AICoreActionEndStruct("orderedPressureRecoveryComplete", true);
+        }
+
+        private void ArmPressureRecovery(
+            AICoreActionResultStruct<BotLogicDecision, GClass26> interruptedDecision)
+        {
+            pressureRecoveryUntil = Mathf.Max(
+                pressureRecoveryUntil,
+                Time.time + PressureRecoverySeconds);
+            BattleRecorder.RecordCommitmentEvent(
+                BotOwner,
+                "orderedPushPressure",
+                "beginRecovery",
+                "pushUnderFire",
+                interruptedDecision,
+                untilTime: pressureRecoveryUntil);
+        }
+
+        private void ExpirePressureRecoveryIfNeeded()
+        {
+            if (pressureRecoveryUntil > 0f && Time.time >= pressureRecoveryUntil)
+            {
+                ClearPressureRecovery("elapsedBeforeDecision");
+            }
+        }
+
+        private void ClearPressureRecovery(string reason)
+        {
+            if (pressureRecoveryUntil <= 0f)
+            {
+                return;
+            }
+
+            BattleRecorder.RecordCommitmentEvent(
+                BotOwner,
+                "orderedPushPressure",
+                "clearRecovery",
+                reason);
+            pressureRecoveryUntil = 0f;
+        }
+
+        private bool IsPressureRecoveryActive =>
+            pressureRecoveryUntil > 0f && Time.time < pressureRecoveryUntil;
+
+        private static bool IsPressureRecoveryReason(string? reason)
+        {
+            return reason?.StartsWith(PressureRecoveryReasonPrefix, StringComparison.Ordinal) == true;
         }
 
         private static AICoreActionResultStruct<BotLogicDecision, GClass26> MarkOrderedPushDecision(

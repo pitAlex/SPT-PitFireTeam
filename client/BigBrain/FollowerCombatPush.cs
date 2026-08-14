@@ -150,10 +150,10 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEndStruct("pushRunNotSprinting", true);
             }
 
-            if (ShouldConvertStalledPushToSuppress(goalEnemy, currentDecision))
+            if (ShouldPrepareStalledPushFallback(goalEnemy, currentDecision, out string stalledReason))
             {
-                ClearCommittedPush("pushStalledSuppress");
-                return new AICoreActionEndStruct("pushStalledSuppress", true);
+                ClearCommittedPush(stalledReason);
+                return new AICoreActionEndStruct(stalledReason, true);
             }
 
             AICoreActionEndStruct endResult = currentDecision.Action switch
@@ -242,6 +242,11 @@ namespace pitTeam.BigBrain
             if (!pushOrdered && combatCommon.HasActiveGrenadeLauncherSuppressNearCurrentEnemy())
             {
                 return CreateNoPushDecision(goalEnemy, "launcherSuppress");
+            }
+
+            if (!pushOrdered && !combatCommon.HasPushReadyLongGun())
+            {
+                return CreateNoPushDecision(goalEnemy, "longGunAmmo");
             }
 
             if (!pushOrdered &&
@@ -881,10 +886,12 @@ namespace pitTeam.BigBrain
             return Time.time - runToEnemyNonSprintSince >= RunToEnemyNonSprintGraceSeconds;
         }
 
-        private bool ShouldConvertStalledPushToSuppress(
+        private bool ShouldPrepareStalledPushFallback(
             EnemyInfo goalEnemy,
-            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision)
+            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision,
+            out string reason)
         {
+            reason = string.Empty;
             if (currentDecision.Action != BotLogicDecision.runToEnemy &&
                 currentDecision.Action != BotLogicDecision.goToEnemy)
             {
@@ -922,11 +929,24 @@ namespace pitTeam.BigBrain
                     "autoSuppress.pushStalled",
                     out AICoreActionResultStruct<BotLogicDecision, GClass26> suppressDecision))
             {
-                return false;
+                bool ordered = IsOrderedPushReason(currentDecision.Reason);
+                string searchReason = ordered
+                    ? "push.ordered.stalledSearch"
+                    : "push.stalledSearch";
+                AICoreActionResultStruct<BotLogicDecision, GClass26> searchDecision =
+                    combatCommon.EnemyCoverSearch(
+                        searchReason,
+                        avoidBossFireLane: !ordered) ??
+                    combatCommon.EnemySimpleSearch(searchReason);
+                combatCommon.SetInitialDecision(searchDecision);
+                ResetStalledPushTracking();
+                reason = "pushStalledSearch";
+                return true;
             }
 
             combatCommon.SetInitialDecision(suppressDecision);
             ResetStalledPushTracking();
+            reason = "pushStalledSuppress";
             return true;
         }
 
@@ -951,14 +971,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            Vector3 look = botOwner.LookDirection;
-            look.y = 0f;
-            if (look.sqrMagnitude <= 0.01f)
-            {
-                return false;
-            }
-
-            return Vector3.Angle(look.normalized, toEnemy / distance) <= 35f;
+            return true;
         }
 
         private void ResetStalledPushTracking()

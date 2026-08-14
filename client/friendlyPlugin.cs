@@ -429,6 +429,7 @@ namespace pitTeam
             new FollowerWeaponSelectorManualUpdatePatch().Enable();
             new FollowerSupportNoAmmoMainSwitchPolicyPatch().Enable();
             new FollowerHoldLingerReloadSuppressPatch().Enable();
+            new FollowerShootDataSafetyPatch().Enable();
             new FollowerShootFromPlaceCrouchPatch().Enable();
             new FollowerGrenadeAvailabilityPatch().Enable();
             new FollowerGrenadeCooldownPatch().Enable();
@@ -444,6 +445,7 @@ namespace pitTeam
             new PlayerVoicePhraseAvailabilityReplacePatch().Enable();
             new PlayerKilledPatch().Enable();
             new PlayerDeadFallbackPatch().Enable();
+            new PlayerMakingShotPatch().Enable();
             new PlayerShotPatch().Enable();
             new AddTeammateBackButtonPatch().Enable();
             new AddTeammateSideSelectionStateClosePatch().Enable();

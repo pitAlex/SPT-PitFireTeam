@@ -11,6 +11,8 @@ namespace pitTeam.Utils
     {
         private const float ProtectedImpactMinCoverThickness = 0.75f;
         private const float BulletAwarenessOriginHeight = 1.2f;
+        private const float BossRangedThreatMinDistance = 60f;
+        private const float BossRangedThreatWatchDuration = 3f;
 
         private sealed class State
         {
@@ -22,6 +24,9 @@ namespace pitTeam.Utils
             public float LastSoundTime;
             public float LastGunshotTime;
             public float NextBulletReactionAt;
+            public float BossRangedThreatWatchUntil;
+            public string BossRangedThreatProfileId = string.Empty;
+            public Vector3 BossRangedThreatLookPoint;
             public readonly System.Collections.Generic.List<Vector3> ProcessedSoundZones = new();
         }
 
@@ -73,6 +78,93 @@ namespace pitTeam.Utils
 
             lookPoint = state.ThreatLookPoint;
             return lookPoint != Vector3.zero;
+        }
+
+        /// <summary>
+        /// Publishes a short, frozen bearing when a marksman-like attacker hits the player boss.
+        /// This is orientation evidence only: it does not make the attacker visible, repair personal
+        /// sight, promote a goal enemy, or authorize a shot.
+        /// </summary>
+        public static bool RegisterBossRangedThreatWatch(BotOwner follower, BotOwner attacker)
+        {
+            if (follower == null ||
+                follower.IsDead ||
+                follower.BotState != EBotState.Active ||
+                attacker == null ||
+                attacker.IsDead ||
+                attacker.BotState != EBotState.Active ||
+                string.IsNullOrEmpty(attacker.ProfileId))
+            {
+                return false;
+            }
+
+            Vector3 attackerPosition = attacker.Position;
+            Player attackerPlayer = attacker.GetPlayer ?? attacker.AIData?.Player;
+            if (attackerPlayer?.MainParts != null &&
+                attackerPlayer.MainParts.TryGetValue(BodyPartType.body, out var bodyPart) &&
+                bodyPart != null)
+            {
+                attackerPosition = bodyPart.Position;
+            }
+
+            float distanceSqr = (attackerPosition - follower.Position).sqrMagnitude;
+            bool roleMarksman = attacker.Profile?.Info?.Settings?.Role == WildSpawnType.marksman;
+            var weaponManager = attacker.WeaponManager;
+            var activeWeapon = weaponManager?.ShootController?.Item ?? weaponManager?.CurrentWeapon;
+            bool precisionWeapon = FollowerCombatCommon.IsPrecisionRifleWeapon(activeWeapon);
+            bool longRangeBossHit = distanceSqr >= BossRangedThreatMinDistance * BossRangedThreatMinDistance;
+            if (!roleMarksman && !precisionWeapon && !longRangeBossHit)
+            {
+                return false;
+            }
+
+            State state = GetState(follower);
+            if (state == null || attackerPosition == Vector3.zero)
+            {
+                return false;
+            }
+
+            state.BossRangedThreatWatchUntil = Time.time + BossRangedThreatWatchDuration;
+            state.BossRangedThreatProfileId = attacker.ProfileId;
+            state.BossRangedThreatLookPoint = attackerPosition;
+
+            string reason = roleMarksman
+                ? "roleMarksman"
+                : precisionWeapon
+                    ? "precisionWeapon"
+                    : "longRangeBossHit";
+            BattleRecorder.RecordCommitmentEvent(
+                follower,
+                "bossRangedThreatWatch",
+                "refresh",
+                reason,
+                target: attackerPosition,
+                untilTime: state.BossRangedThreatWatchUntil);
+            return true;
+        }
+
+        public static bool TryGetBossRangedThreatLookPoint(
+            BotOwner bot,
+            EnemyInfo enemy,
+            out Vector3 lookPoint)
+        {
+            lookPoint = Vector3.zero;
+            State state = GetState(bot);
+            if (state == null ||
+                enemy == null ||
+                enemy.IsVisible ||
+                state.BossRangedThreatWatchUntil <= Time.time ||
+                state.BossRangedThreatLookPoint == Vector3.zero ||
+                !string.Equals(
+                    enemy.ProfileId,
+                    state.BossRangedThreatProfileId,
+                    System.StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            lookPoint = state.BossRangedThreatLookPoint;
+            return true;
         }
 
         public static void ClearTransientState(BotOwner bot)

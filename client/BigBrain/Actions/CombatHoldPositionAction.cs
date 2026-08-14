@@ -139,6 +139,11 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
+            if (TryLookTowardBossRangedThreat())
+            {
+                return;
+            }
+
             if (TryLookTowardEnemy())
             {
                 return;
@@ -194,6 +199,21 @@ namespace pitTeam.BigBrain.Actions
             }
 
             if (!FollowerAwareness.TryGetRecentThreatLookPoint(BotOwner_0, out Vector3 threatLookPoint))
+            {
+                return false;
+            }
+
+            BotOwner_0.Steering.LookToPoint(threatLookPoint);
+            return true;
+        }
+
+        private bool TryLookTowardBossRangedThreat()
+        {
+            EnemyInfo? enemy = BotOwner_0?.Memory?.GoalEnemy ?? BotOwner_0?.Memory?.LastEnemy;
+            if (!FollowerAwareness.TryGetBossRangedThreatLookPoint(
+                    BotOwner_0,
+                    enemy,
+                    out Vector3 threatLookPoint))
             {
                 return false;
             }
@@ -652,6 +672,11 @@ namespace pitTeam.BigBrain.Actions
                 enemyPoint = enemy.CurrPosition;
             }
 
+            if (!IsUsableDirectionPoint(enemyPoint, BotOwner_0.Position))
+            {
+                return Vector3.zero;
+            }
+
             Vector3 lookPoint = enemyPoint + Vector3.up * 0.8f;
             if (!IsUsableDirectionPoint(lookPoint, BotOwner_0.Position))
             {
@@ -708,6 +733,13 @@ namespace pitTeam.BigBrain.Actions
             }
 
             if (float.IsInfinity(point.x) || float.IsInfinity(point.y) || float.IsInfinity(point.z))
+            {
+                return false;
+            }
+
+            // EFT uses Vector3.zero as an unavailable enemy-position sentinel. Comparing it only
+            // to the bot position makes world origin look valid on every normal map location.
+            if (point.sqrMagnitude <= 0.01f)
             {
                 return false;
             }

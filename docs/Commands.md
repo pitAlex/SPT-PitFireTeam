@@ -679,7 +679,7 @@ Core behavior:
 - Objective owns movement until complete or replaced.
 - Hot contact uses `attackMoving` toward bossward cover or fallback boss destination.
 - Cooled contact uses `goToPoint` through `CombatRegroupRunAction`.
-- Completion is based on boss nav distance and same-level tolerance.
+- Completion requires the conservative larger of direct and valid NavMesh distance to be inside the boss radius, plus same-level tolerance.
 - Push or suppress orders can end regroup and return to primary/suppression behavior.
 
 SAIN addon:

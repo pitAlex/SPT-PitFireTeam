@@ -23,6 +23,7 @@ namespace pitTeam.Modules
         private const float SainOpponentRetentionSeconds = 5f;
         private const float SainOpponentDecisionProbeSeconds = 0.1f;
         private const float SainOpponentDiscoveryProbeSeconds = 1f;
+        private const float FollowerWeaponActivityProbeSeconds = 0.1f;
         private const int FlushEventBatchSize = 64;
         private static readonly long FlushIntervalTicks = TimeSpan.FromSeconds(1).Ticks;
         private const BindingFlags SainMemberFlags =
@@ -132,8 +133,9 @@ namespace pitTeam.Modules
                     raidId = currentRaidId,
                     locationId = currentLocationId,
                     file = currentFilePath,
-                    schemaVersion = 4,
+                    schemaVersion = 5,
                     snapshotIntervalMs = GetSnapshotIntervalMs(),
+                    followerWeaponActivityProbeMs = Mathf.RoundToInt(FollowerWeaponActivityProbeSeconds * 1000f),
                     sainOpponentDecisionProbeMs = Mathf.RoundToInt(SainOpponentDecisionProbeSeconds * 1000f),
                     sainOpponentDiscoveryProbeMs = Mathf.RoundToInt(SainOpponentDiscoveryProbeSeconds * 1000f),
                     sainOpponentRetentionMs = Mathf.RoundToInt(SainOpponentRetentionSeconds * 1000f)
@@ -421,13 +423,20 @@ namespace pitTeam.Modules
             }
 
             RecorderFollowerState state = GetOrCreateState(bot);
+            // BigBrain can finish a queued GetNextAction after the layer has already released.
+            // That late callback must not resurrect the recorder's combat episode without a real
+            // combatStart. The layer's next activation will establish a fresh episode explicitly.
+            if (!state.InCombat)
+            {
+                return;
+            }
+
             int previousDecisionInstanceId = state.CurrentDecisionInstanceId;
             float previousDecisionSelectedTime = state.CurrentDecisionSelectedTime;
             bool sameAsPrevious = previousDecision.HasValue &&
                                   previousDecision.Value.Action == nextDecision.Action &&
                                   string.Equals(previousDecision.Value.Reason, nextDecision.Reason, StringComparison.Ordinal);
 
-            state.InCombat = true;
             state.LastCombatSeenTime = Time.time;
             state.CurrentDecisionInstanceId = ++state.DecisionInstanceSequence;
             state.CurrentDecisionSelectedTime = Time.time;
@@ -873,6 +882,29 @@ namespace pitTeam.Modules
             });
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
+        public static void RecordFollowerWeaponSafetyEvent(BotOwner bot, string reason)
+        {
+            if (!CanRecordBot(bot))
+            {
+                return;
+            }
+
+            RecorderFollowerState state = GetOrCreateState(bot);
+            if (Time.time < state.NextWeaponSafetyRecordTime)
+            {
+                return;
+            }
+
+            state.NextWeaponSafetyRecordTime = Time.time + 1f;
+            WriteEventInternal("followerWeaponSafety", bot, new
+            {
+                reason,
+                activity = CreateCombatActivitySnapshot(bot),
+                state = CreateRecorderStatePayload(state)
+            });
+        }
+
         private static void OnBotManualUpdate(BotOwner owner)
         {
             try
@@ -896,6 +928,7 @@ namespace pitTeam.Modules
 
                 RecorderFollowerState state = GetOrCreateState(owner);
                 bool layerActive = FollowerCombatLayer.IsFollowerCombatLayerActive(owner);
+                TryRecordFollowerWeaponActivity(owner, state, layerActive);
                 bool shouldSnapshot = state.InCombat || layerActive;
                 if (!shouldSnapshot)
                 {
@@ -914,6 +947,100 @@ namespace pitTeam.Modules
             {
                 StopAfterFatalRecorderFailure("Battle recorder update failure; recording stopped for this raid.", ex);
             }
+        }
+
+        private static void TryRecordFollowerWeaponActivity(
+            BotOwner owner,
+            RecorderFollowerState state,
+            bool layerActive)
+        {
+            if (Time.time < state.NextWeaponActivityProbeTime)
+            {
+                return;
+            }
+
+            state.NextWeaponActivityProbeTime = Time.time + FollowerWeaponActivityProbeSeconds;
+
+            BotWeaponManager? weaponManager = owner.WeaponManager;
+            ShootData? shootData = owner.ShootData;
+            Weapon? activeWeapon = weaponManager?.ShootController?.Item ?? weaponManager?.CurrentWeapon;
+            string? activeWeaponId = activeWeapon?.Id;
+            int loadedRounds = activeWeapon != null
+                ? FollowerCombatCommon.CountLoadedRounds(activeWeapon)
+                : -1;
+            bool shooting = shootData?.Shooting == true;
+            bool reloading = weaponManager?.Reload?.Reloading == true;
+            float lastTriggerPressedTime = shootData?.LastTriggerPressd ?? 0f;
+
+            if (!state.HasWeaponActivitySample)
+            {
+                state.HasWeaponActivitySample = true;
+                state.LastWeaponActivityShooting = shooting;
+                state.LastWeaponActivityReloading = reloading;
+                state.LastWeaponActivityTriggerPressedTime = lastTriggerPressedTime;
+                state.LastWeaponActivityWeaponId = activeWeaponId;
+                state.LastWeaponActivityLoadedRounds = loadedRounds;
+                return;
+            }
+
+            bool shootingChanged = shooting != state.LastWeaponActivityShooting;
+            bool reloadingChanged = reloading != state.LastWeaponActivityReloading;
+            bool triggerAdvanced = lastTriggerPressedTime > state.LastWeaponActivityTriggerPressedTime + 0.001f;
+            bool weaponChanged = !string.Equals(
+                activeWeaponId,
+                state.LastWeaponActivityWeaponId,
+                StringComparison.Ordinal);
+            bool loadedRoundsChanged = !weaponChanged &&
+                                       loadedRounds >= 0 &&
+                                       state.LastWeaponActivityLoadedRounds >= 0 &&
+                                       loadedRounds != state.LastWeaponActivityLoadedRounds;
+
+            if (shootingChanged || reloadingChanged || triggerAdvanced || weaponChanged || loadedRoundsChanged)
+            {
+                WriteEventInternal("followerWeaponActivity", owner, new
+                {
+                    scope = state.InCombat || layerActive ? "combat" : "outOfCombat",
+                    transitions = new
+                    {
+                        shootingChanged,
+                        reloadingChanged,
+                        triggerAdvanced,
+                        weaponChanged,
+                        loadedRoundsChanged
+                    },
+                    previous = new
+                    {
+                        shooting = state.LastWeaponActivityShooting,
+                        reloading = state.LastWeaponActivityReloading,
+                        lastTriggerPressedTime = state.LastWeaponActivityTriggerPressedTime > 0f
+                            ? SanitizeFloat(state.LastWeaponActivityTriggerPressedTime)
+                            : null,
+                        weaponId = state.LastWeaponActivityWeaponId,
+                        loadedRounds = state.LastWeaponActivityLoadedRounds >= 0
+                            ? (int?)state.LastWeaponActivityLoadedRounds
+                            : null
+                    },
+                    current = new
+                    {
+                        shooting,
+                        reloading,
+                        lastTriggerPressedTime = lastTriggerPressedTime > 0f
+                            ? SanitizeFloat(lastTriggerPressedTime)
+                            : null,
+                        weaponId = activeWeaponId,
+                        loadedRounds = loadedRounds >= 0 ? (int?)loadedRounds : null,
+                        weaponReady = weaponManager?.IsWeaponReady == true,
+                        haveBullets = weaponManager?.HaveBullets == true
+                    },
+                    state = CreateRecorderStatePayload(state)
+                });
+            }
+
+            state.LastWeaponActivityShooting = shooting;
+            state.LastWeaponActivityReloading = reloading;
+            state.LastWeaponActivityTriggerPressedTime = lastTriggerPressedTime;
+            state.LastWeaponActivityWeaponId = activeWeaponId;
+            state.LastWeaponActivityLoadedRounds = loadedRounds;
         }
 
         private static void TryRecordSainOpponent(BotOwner owner)
@@ -2717,6 +2844,14 @@ namespace pitTeam.Modules
             public int LastEndedDecisionInstanceId;
             public float LastDecisionEndTime;
             public string? LastDecisionEndReason;
+            public float NextWeaponActivityProbeTime;
+            public bool HasWeaponActivitySample;
+            public bool LastWeaponActivityShooting;
+            public bool LastWeaponActivityReloading;
+            public float LastWeaponActivityTriggerPressedTime;
+            public string? LastWeaponActivityWeaponId;
+            public int LastWeaponActivityLoadedRounds = -1;
+            public float NextWeaponSafetyRecordTime;
         }
 
         private sealed class RecorderSainOpponentState

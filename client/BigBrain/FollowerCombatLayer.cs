@@ -50,7 +50,7 @@ namespace pitTeam.BigBrain
 
         public override bool IsActive()
         {
-            if (pitFireTeam.UseSainFollowerCombat || BotOwner == null || combatLogic == null)
+            if (BotOwner == null || combatLogic == null)
             {
                 return false;
             }
@@ -66,6 +66,12 @@ namespace pitTeam.BigBrain
             }
 
             if (!BotOwner.BotFollower.HaveBoss || BotOwner.BotFollower.BossToFollow is not pitAIBossPlayer)
+            {
+                return false;
+            }
+
+            FollowerRecovery.CheckReloadTimeout(BotOwner);
+            if (pitFireTeam.UseSainFollowerCombat)
             {
                 return false;
             }
@@ -454,6 +460,7 @@ namespace pitTeam.BigBrain
 
         private void ReleaseActiveCombatLayerState(string reason)
         {
+            FollowerRecovery.StopShooting(BotOwner);
             if (MarkActive(false))
             {
                 BattleRecorder.RecordCombatLayerState(BotOwner, false, reason);
@@ -484,9 +491,14 @@ namespace pitTeam.BigBrain
 
         private bool HasCurrentLiveGoalEnemy()
         {
-            EnemyInfo? goalEnemy = BotOwner?.Memory?.GoalEnemy;
+            return HasLiveGoalEnemyForFire(BotOwner);
+        }
+
+        internal static bool HasLiveGoalEnemyForFire(BotOwner? botOwner)
+        {
+            EnemyInfo? goalEnemy = botOwner?.Memory?.GoalEnemy;
             return IsGoalEnemyAlive(goalEnemy) &&
-                   (BotOwner?.Memory?.HaveEnemy == true || goalEnemy!.IsVisible || goalEnemy.CanShoot);
+                   (botOwner?.Memory?.HaveEnemy == true || goalEnemy!.IsVisible || goalEnemy.CanShoot);
         }
 
         private bool ShouldTreatCombatAsActive()
@@ -789,7 +801,7 @@ namespace pitTeam.BigBrain
                 !followerData.TryPeekActiveCommand(out FollowerCommandType command, out _, out _) ||
                 command != FollowerCommandType.SuppressEnemy)
             {
-                return FollowerCombatCommon.IsAutoSuppressReason(currentDecision.Value.Reason);
+                return FollowerCombatCommon.IsAutonomousSuppressReason(currentDecision.Value.Reason);
             }
 
             return true;

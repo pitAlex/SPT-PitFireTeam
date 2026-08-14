@@ -200,14 +200,7 @@ namespace pitTeam.BigBrain.Actions
 
         protected void StopCombatShooting()
         {
-            ShootData? shootData = BotOwner?.ShootData;
-            shootData?.EndShoot();
-
-            var shootController = BotOwner?.WeaponManager?.ShootController;
-            if (shootController != null)
-            {
-                shootController.SetTriggerPressed(false);
-            }
+            FollowerRecovery.StopShooting(BotOwner);
         }
 
         protected void StopStationaryCombatMovement()
@@ -339,6 +332,13 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
+            if ((FollowerCombatPush.IsPushReason(reason) ||
+                 FollowerCombatPush.IsStartWeakEnemyPushReason(reason)) &&
+                FollowerCombatCommon.TrySwitchToPushReadyLongGun(BotOwner))
+            {
+                return;
+            }
+
             if (ShouldKeepAutomaticSecondaryForPush(reason))
             {
                 return;
@@ -362,6 +362,28 @@ namespace pitTeam.BigBrain.Actions
             }
 
             selector.TryChangeToMain();
+        }
+
+        protected bool HoldPushMovementUntilLongGunReady(string? reason)
+        {
+            if (!FollowerCombatPush.IsPushReason(reason) &&
+                !FollowerCombatPush.IsStartWeakEnemyPushReason(reason))
+            {
+                return false;
+            }
+
+            if (FollowerCombatCommon.IsPushReadyLongGunActive(BotOwner) &&
+                BotOwner.WeaponManager?.Selector?.IsChanging != true &&
+                BotOwner.WeaponManager?.IsWeaponReady != false)
+            {
+                return false;
+            }
+
+            FollowerCombatCommon.TrySwitchToPushReadyLongGun(BotOwner);
+            BotOwner.Mover?.Stop();
+            BotOwner.Mover?.Sprint(false, true);
+            StopCombatShooting();
+            return true;
         }
 
         protected void TryPreferMarksmanPrimaryAtRange(EnemyInfo? goalEnemy)

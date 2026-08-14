@@ -2275,7 +2275,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            float followerBossDistance = GetSafeRegroupDistance(navDistance, directDistance);
+            float followerBossDistance = FollowerCombatCommon.GetSafeRegroupDistance(navDistance, directDistance);
             float regroupTriggerDistance = CombatDistanceConfiguration.Instance.GetRegroupNeededDistanceMarksman(BotOwner);
             if (followerBossDistance <= regroupTriggerDistance)
             {
@@ -2378,7 +2378,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            float followerBossDistance = GetSafeRegroupDistance(navDistance, directDistance);
+            float followerBossDistance = FollowerCombatCommon.GetSafeRegroupDistance(navDistance, directDistance);
             return CombatCommon.IsAutonomousRegroupDistanceExtreme(
                 followerBossDistance,
                 CombatDistanceConfiguration.Instance.GetRegroupNeededDistanceMarksman(BotOwner));
@@ -2425,18 +2425,6 @@ namespace pitTeam.BigBrain
             }
 
             return false;
-        }
-
-        private static float GetSafeRegroupDistance(float navDistance, float directDistance)
-        {
-            bool navValid = !float.IsNaN(navDistance) && !float.IsInfinity(navDistance) && navDistance > 0.1f;
-            if (!navValid)
-            {
-                return directDistance;
-            }
-
-            // Use the conservative larger value so bad/short nav samples cannot mark far bots as "already regrouped".
-            return Mathf.Max(navDistance, directDistance);
         }
 
         private void ClearAggressiveRequests()

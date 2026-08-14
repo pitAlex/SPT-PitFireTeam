@@ -56,6 +56,11 @@ namespace pitTeam.BigBrain.Actions
             // range and pass the current decision reason into the wrapped node for suppress behavior.
             string? reason = GetReason(data);
             TryPreferPrimaryAtRange(goalEnemy, reason);
+            if (HoldPushMovementUntilLongGunReady(reason))
+            {
+                return;
+            }
+
             if (StopUnownedGrenadeLauncherFire(reason, goalEnemy))
             {
                 return;
@@ -132,6 +137,16 @@ namespace pitTeam.BigBrain.Actions
                 {
                     ForceRegroupCatchUpMovement();
                 }
+
+                // Retreat actions own look direction independently from path steering. EFT's
+                // movement update can overwrite steering after GoToPoint/cover pathing, which was
+                // turning the follower's back toward a close enemy on heal retreats. Re-assert the
+                // threat lane after movement has finished its update so forward/back/side path
+                // choices never change which way the weapon is facing.
+                if (forceThreatLookWhenShootable)
+                {
+                    TryMaintainThreatFacing(BotOwner_0.Memory?.GoalEnemy);
+                }
             }
 
             public override void AimingAndShoot(GClass26 data)
@@ -200,7 +215,8 @@ namespace pitTeam.BigBrain.Actions
 
             private void TryMaintainThreatFacing(EnemyInfo? goalEnemy)
             {
-                if (goalEnemy == null || !ShouldCorrectArrivalLook(goalEnemy))
+                if (goalEnemy == null ||
+                    (!forceThreatLookWhenShootable && !ShouldCorrectArrivalLook(goalEnemy)))
                 {
                     return;
                 }
@@ -214,7 +230,8 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
-                if (Vector3.Angle(BotOwner_0.LookDirection, lookDirection) < ArrivalThreatLookAngle)
+                if (!forceThreatLookWhenShootable &&
+                    Vector3.Angle(BotOwner_0.LookDirection, lookDirection) < ArrivalThreatLookAngle)
                 {
                     return;
                 }

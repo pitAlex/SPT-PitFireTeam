@@ -301,7 +301,7 @@ namespace pitTeam.Components
             _IsSquadMate = isSquad;
             CaptureInitialHolsterWeapon(finalAttempt: false);
 
-            settingModif = new BotLastBlindEffectModifierClass(1f, 1.4f, 1f, 0.9f, 1f, 1f, 1f, 1f, 1f);
+            settingModif = new BotLastBlindEffectModifierClass(1f, 1f, 1f, 0.9f, 1f, 1f, 1f, 1f, 1f);
 
             if (player.realPlayer.Side != EPlayerSide.Savage) NpcMessage.AddNpc(bot, isSquad);
 

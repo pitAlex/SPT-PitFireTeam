@@ -125,6 +125,9 @@ namespace pitTeam.BigBrain.Actions
         {
             if (BotOwner == null || !BotOwner.BotFollower.HaveBoss) return;
 
+            // Patrol never owns firearm use. Keep a delayed vanilla reload-cancel or stale combat
+            // trigger from producing bursts after Attention/combat release.
+            FollowerRecovery.StopShooting(BotOwner);
             BotOwner.DoorOpener.UpdateDoorInteractionStatus();
             followerData ??= BossPlayers.Instance?.GetFollower(BotOwner);
             if (followerData?.IsBackpackInspectionActive == true)

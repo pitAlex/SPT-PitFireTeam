@@ -661,7 +661,11 @@ namespace pitTeam.BigBrain
             }
 
             float navDistanceToBoss = Utils.Utils.GetNavDistance(BotOwner.Position, bossPosition);
-            return navDistanceToBoss <= GetRegroupCompleteDistance();
+            float directDistanceToBoss = Vector3.Distance(BotOwner.Position, bossPosition);
+            float regroupDistance = FollowerCombatCommon.GetSafeRegroupDistance(
+                navDistanceToBoss,
+                directDistanceToBoss);
+            return regroupDistance <= GetRegroupCompleteDistance();
         }
 
         private bool ShouldAvoidUrbanDetourRegroup(Vector3 bossPosition)

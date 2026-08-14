@@ -96,6 +96,7 @@ namespace pitTeam.BigBrain
         public static bool CanUseRecentContactSuppress(EnemyInfo goalEnemy)
         {
             return !goalEnemy.IsVisible &&
+                   goalEnemy.PersonalLastSeenTime > 0f &&
                    Time.time - goalEnemy.PersonalLastSeenTime <= RecentContactSuppressSeconds;
         }
 

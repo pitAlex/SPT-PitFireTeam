@@ -56,7 +56,7 @@ namespace pitTeam.Localization
                     "Distance followers keep from the player while following."),
                 regroupRadius = Entry(
                     "Regroup Radius",
-                    "Distance from the player at which followers automatically regroup during combat. Marksman followers use about 1.5x this radius."),
+                    "Distance from the player at which followers automatically regroup during combat.\nMarksman followers use about 1.5x this radius."),
                 goToDistance = Entry(
                     "Maximum 'Go To' Distance",
                     "Maximum distance followers will move when 'There' or 'GoForward' is issued."),
@@ -77,19 +77,19 @@ namespace pitTeam.Localization
                     "Maximum number of non-squad same-side bots you can pick up during a raid."),
                 recruitPickup = Entry(
                     "Recruit Pickup",
-                    "Allow picked-up followers that were successfully extracted with to send friend requests. This uses player-vs-bot level difference rules when deciding."),
+                    "Allow picked-up followers that were successfully extracted with to send friend requests.\nThis uses player-vs-bot level difference rules when deciding."),
                 teamEscape = Entry(
                     "Team Escape",
-                    "Allow surviving squadmates to attempt an escape after you die. Escaped teammates can return eligible follower loot and recoverable gear that would otherwise be lost."),
+                    "Allow surviving squadmates to attempt an escape after you die.\nEscaped teammates can return eligible follower loot and recoverable gear that would otherwise be lost."),
                 teamEscapeUseAnyExtract = Entry(
                     "Team Escape: Use Any Extraction Point",
-                    "Allow the squad escape simulation to choose any usable extraction point on the map. Disable this to restrict escape routes to extraction points assigned to the player."),
+                    "Allow the squad escape simulation to choose any usable extraction point on the map.\nDisable this to restrict escape routes to extraction points assigned to the player."),
                 lootMinimumPrice = Entry(
                     "Minimum Price",
-                    "Minimum rouble value for an item to be taken from a body or container. Set to 0 to disable the minimum."),
+                    "Minimum rouble value for an item to be taken from a body or container.\nSet to 0 to disable the minimum."),
                 lootMaximumPrice = Entry(
                     "Maximum Price",
-                    "Maximum rouble value for an item to be taken from a body or container. Set to 0 to disable the maximum."),
+                    "Maximum rouble value for an item to be taken from a body or container.\nSet to 0 to disable the maximum."),
                 lootFilterFood = Entry(
                     "Pickup Food",
                     "Allow food and drink items to be taken from bodies and containers."),
@@ -206,10 +206,10 @@ namespace pitTeam.Localization
                     "Show each teammate's current and maximum health in the Status Report."),
                 statusReportShowTactic = Entry(
                     "Status Report: Tactic (MD)",
-                    "Show each teammate's current combat tactic or temporary healing state in the Status Report."),
+                    "Show each teammate's current combat tactic in the Status Report."),
                 statusReportShowCombatStatus = Entry(
                     "Status Report: Combat Status",
-                    "Show whether each teammate is in combat or has detected an enemy in the Status Report."),
+                    "Show whether each teammate is healing, wants to heal, is in combat, or has detected an enemy in the Status Report."),
                 enemyContact = Entry(
                     "Enemy Contact Shortcut",
                     "Alternative shortcut key for the Contact quick phrase"),

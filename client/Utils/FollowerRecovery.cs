@@ -10,6 +10,7 @@ namespace pitTeam.Utils
         {
             if (bot == null || bot.IsDead || bot.BotState != EBotState.Active) return;
 
+            StopShooting(bot);
             bot.Mover.Pause = false;
             bot.PatrollingData?.Pause();
 
@@ -32,6 +33,44 @@ namespace pitTeam.Utils
             }
 
             baseBrain.CalcActionNextFrame();
+        }
+
+        public static void StopShooting(BotOwner? bot)
+        {
+            if (bot == null)
+            {
+                return;
+            }
+
+            bot.ShootData?.EndShoot();
+            bot.WeaponManager?.ShootController?.SetTriggerPressed(false);
+        }
+
+        public static void CheckReloadTimeout(BotOwner? bot)
+        {
+            BotReload? reload = bot?.WeaponManager?.Reload;
+            if (reload?.Reloading != true)
+            {
+                return;
+            }
+
+            float timeout = reload.ReloadType == BotReload.EReloadType.MagReload
+                ? BotReload.MAG_RELOAD_MAX_TIME
+                : BotReload.AMMO_RELOAD_MAX_TIME;
+            if (UnityEngine.Time.time - reload.ReloadStartTime <= timeout)
+            {
+                return;
+            }
+
+            // EFT owns the reload transaction and its safe timeout thresholds. Our custom layers
+            // must keep polling the same watchdog when a completion callback is lost. Vanilla only
+            // clears the first timed-out transaction on a reload object, so retain the same public
+            // flag fallback for a later lost callback instead of waiting forever.
+            reload.CheckReloadLongTime();
+            if (reload.Reloading)
+            {
+                reload.Reloading = false;
+            }
         }
 
     }

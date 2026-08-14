@@ -82,9 +82,11 @@ namespace pitTeam.BigBrain
         private const float OutOfCombatTacticalDeviceInitialCooldown = 0.75f;
         private const float OutOfCombatTacticalDeviceCheckInterval = 3f;
         private const float HealNodeStartTimeout = 4f;
+        private const float HealStartCheckInterval = 0.25f;
         private const float PatrolHealCoverSearchRadius = 60f;
         private const float PatrolHealCoverArriveDistance = 2f;
         private const string PatrolHealCoverActionReason = "runToHeal";
+        private const string PatrolHealWaitActionReason = "healCooldownWait";
 
         private static readonly EquipmentSlot[] ReloadSlotOrder =
         {
@@ -122,6 +124,7 @@ namespace pitTeam.BigBrain
         private float nextPatrolLauncherFallbackRecordAt = 0f;
         private float nextStowedTacticalDeviceCheckAt = 0f;
         private float nextHealWorkRefreshAt = 0f;
+        private float nextHealStartCheckAt = 0f;
         private bool stoppedForHealDecision = false;
         private bool healUseObserved = false;
         private CustomNavigationPoint? patrolHealCover;
@@ -153,10 +156,11 @@ namespace pitTeam.BigBrain
             }
 
             bool isHealAction = selectedAction?.Type == typeof(HealAction);
+            bool isHealWaitAction = selectedAction?.Type == typeof(PatrolHealWaitAction);
             bool isHealDecision = BotOwner.Brain.Agent?.LastResult().Action == BotLogicDecision.heal;
 
             // let bot finish healing
-            if (isHealAction || isHealDecision)
+            if (isHealAction || isHealDecision && !isHealWaitAction)
             {
                 return true;
             }
@@ -238,6 +242,7 @@ namespace pitTeam.BigBrain
             stoppedForHealDecision = false;
             patrolHealStartAnnounced = false;
             healUseObserved = false;
+            nextHealStartCheckAt = 0f;
             selectedAction = null;
             ResetPatrolHealCoverState();
             ResetReloadState();
@@ -252,6 +257,7 @@ namespace pitTeam.BigBrain
             stoppedForHealDecision = false;
             patrolHealStartAnnounced = false;
             healUseObserved = false;
+            nextHealStartCheckAt = 0f;
             ResetPatrolHealCoverState();
             ResetReloadState();
             ResetStowedTacticalDeviceState();
@@ -328,13 +334,17 @@ namespace pitTeam.BigBrain
                         return selectedAction;
                     }
 
+                    if (!CanStartPatrolHealAction(isUsingHeal, hasPendingHealWork, hasRecoverableTopOffWork))
+                    {
+                        BeginPatrolHealSequence(announce: false);
+                        nextHealStartCheckAt = Time.time + HealStartCheckInterval;
+                        selectedAction = new Action(typeof(PatrolHealWaitAction), PatrolHealWaitActionReason);
+                        return selectedAction;
+                    }
+
                     if (!isHealing)
                     {
-                        healStartAt = 0f;
-                        healUseObserved = false;
-                        healNodeEnteredAt = Time.time;
-                        AnnouncePatrolHealStartOnce();
-                        StopMovementForHealDecision();
+                        BeginPatrolHealSequence(announce: true);
                     }
 
                     isHealing = true;
@@ -378,8 +388,32 @@ namespace pitTeam.BigBrain
             try
             {
                 bool isHealAction = selectedAction?.Type == typeof(HealAction);
+                bool isHealWaitAction = selectedAction?.Type == typeof(PatrolHealWaitAction);
                 bool isHealCoverAction = selectedAction?.Type == typeof(CombatRunToCoverAction);
                 bool isHealDecision = BotOwner.Brain.Agent?.LastResult().Action == BotLogicDecision.heal;
+
+                if (isHealWaitAction)
+                {
+                    if (!IsActive())
+                    {
+                        return true;
+                    }
+
+                    if (TryCompletePostCombatFullHealRestore())
+                    {
+                        return true;
+                    }
+
+                    RefreshHealWorkIfNeeded();
+                    GetPatrolHealState(
+                        out bool isUsingHeal,
+                        out bool hasPendingHealWork,
+                        out bool hasRecoverableTopOffWork);
+                    return IsPatrolHealWaitActionEnding(
+                        isUsingHeal,
+                        hasPendingHealWork,
+                        hasRecoverableTopOffWork);
+                }
 
                 if (!isHealAction && !isHealDecision)
                 {
@@ -522,6 +556,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
+            bool completedMedicalUse = healUseObserved;
             healUseObserved = false;
             healStartAt = 0f;
 
@@ -529,6 +564,14 @@ namespace pitTeam.BigBrain
             // restore timer can keep running after movement resumes.
             if (!hasPendingHealWork && !hasRecoverableTopOffWork)
             {
+                CompleteHealing();
+                return true;
+            }
+
+            if (completedMedicalUse)
+            {
+                // Let the completed vanilla node end. The patrol layer will select a stationary
+                // medical-wait action until the next treatment clears EFT's heal cooldown.
                 CompleteHealing();
                 return true;
             }
@@ -551,14 +594,14 @@ namespace pitTeam.BigBrain
                     return true;
                 }
 
-                // Vanilla applies HEAL_DELAY_SEC after each med use. During that interval
-                // ShallStartUse()/Have2Do can be false even though another damaged part and a
-                // usable med are already known. Keep this HealAction alive and stationary; its
-                // GClass197 worker retries every update and will start the next use when the real
-                // medical cooldown expires. Follow must not own this gap.
-                healNodeEnteredAt = Time.time;
-                StopMovementForHealDecision();
-                return false;
+                if (CanStartPatrolHealAction(isUsingHeal, hasPendingHealWork, hasRecoverableTopOffWork))
+                {
+                    healNodeEnteredAt = Time.time;
+                    return false;
+                }
+
+                CompleteHealing();
+                return true;
             }
 
             if (!IsActive() && isHealAction)
@@ -609,6 +652,7 @@ namespace pitTeam.BigBrain
             healStartAt = 0f;
             healSoftTimeoutAt = 0f;
             healNodeEnteredAt = 0f;
+            nextHealStartCheckAt = 0f;
             ResetPatrolHealCoverStateIfSequenceComplete();
             // Normal patrol healing should finish/cancel medical state without restoring all raid HP.
             Utils.FollowerMedical.CompleteHealing(BotOwner);
@@ -623,6 +667,7 @@ namespace pitTeam.BigBrain
             healStartAt = 0f;
             healSoftTimeoutAt = 0f;
             healNodeEnteredAt = 0f;
+            nextHealStartCheckAt = 0f;
             ResetPatrolHealCoverStateIfSequenceComplete();
             Utils.FollowerMedical.AbortHealing(BotOwner, recoverDestroyedSurgeryParts: true);
         }
@@ -641,6 +686,7 @@ namespace pitTeam.BigBrain
             healStartAt = 0f;
             healSoftTimeoutAt = 0f;
             healNodeEnteredAt = 0f;
+            nextHealStartCheckAt = 0f;
             ResetPatrolHealCoverState();
             return true;
         }
@@ -816,6 +862,113 @@ namespace pitTeam.BigBrain
             bool hasRecoverableTopOffWork)
         {
             return isUsingHeal || hasPendingHealWork || hasRecoverableTopOffWork;
+        }
+
+        private bool CanStartPatrolHealAction(
+            bool isUsingHeal,
+            bool hasPendingHealWork,
+            bool hasRecoverableTopOffWork)
+        {
+            if (isUsingHeal)
+            {
+                return true;
+            }
+
+            return (hasPendingHealWork && CanStartVanillaHealNode()) ||
+                   (hasRecoverableTopOffWork && Utils.FollowerMedical.CanStartFirstAidTopOff(BotOwner));
+        }
+
+        private bool CanStartVanillaHealNode()
+        {
+            try
+            {
+                if (BotOwner?.Medecine == null ||
+                    BotOwner.WeaponManager?.Grenades?.ThrowindNow == true ||
+                    BotOwner.Medecine.Using)
+                {
+                    return false;
+                }
+
+                return BotOwner.Medecine.FirstAid?.ShallStartUse() == true ||
+                       BotOwner.Medecine.SurgicalKit?.ShallStartUse() == true;
+            }
+            catch (Exception ex)
+            {
+                LogLayerException("CanStartVanillaHealNode", ex);
+                return false;
+            }
+        }
+
+        private bool IsPatrolHealWaitActionEnding(
+            bool isUsingHeal,
+            bool hasPendingHealWork,
+            bool hasRecoverableTopOffWork)
+        {
+            if (healSoftTimeoutAt > 0f && Time.time >= healSoftTimeoutAt)
+            {
+                if (Utils.FollowerMedical.IsPostCombatFullHealActive(BotOwner))
+                {
+                    Utils.FollowerMedical.ForceHeal(BotOwner);
+                    Utils.FollowerMedical.CompletePostCombatFullHeal(BotOwner);
+                    CompleteHealing();
+                }
+                else
+                {
+                    AbortHealing();
+                }
+
+                return true;
+            }
+
+            if (!ShouldOwnPatrolHealAction(isUsingHeal, hasPendingHealWork, hasRecoverableTopOffWork))
+            {
+                CompleteHealing();
+                return true;
+            }
+
+            StopMovementForHealDecision();
+            if (Time.time < nextHealStartCheckAt)
+            {
+                return false;
+            }
+
+            nextHealStartCheckAt = Time.time + HealStartCheckInterval;
+            RefreshHealWorkIfNeeded();
+            GetPatrolHealState(
+                out isUsingHeal,
+                out hasPendingHealWork,
+                out hasRecoverableTopOffWork);
+
+            if (!ShouldOwnPatrolHealAction(isUsingHeal, hasPendingHealWork, hasRecoverableTopOffWork))
+            {
+                CompleteHealing();
+                return true;
+            }
+
+            return CanStartPatrolHealAction(isUsingHeal, hasPendingHealWork, hasRecoverableTopOffWork);
+        }
+
+        private void BeginPatrolHealSequence(bool announce)
+        {
+            if (!isHealing)
+            {
+                healStartAt = 0f;
+                healUseObserved = false;
+                healNodeEnteredAt = Time.time;
+            }
+
+            isHealing = true;
+            if (healSoftTimeoutAt <= 0f)
+            {
+                healSoftTimeoutAt = Time.time + 20f;
+            }
+
+            if (announce)
+            {
+                AnnouncePatrolHealStartOnce();
+            }
+
+            StopMovementForHealDecision();
         }
 
         private void RefreshHealWorkForRetry()
@@ -1067,6 +1220,7 @@ namespace pitTeam.BigBrain
         private void TryHandleOutOfCombatReloadInternal()
         {
             if (BotOwner?.WeaponManager == null) return;
+            Utils.FollowerRecovery.CheckReloadTimeout(BotOwner);
             if (Time.time < nextReloadCheckAt) return;
 
             var selector = BotOwner.WeaponManager.Selector;

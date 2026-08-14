@@ -41,6 +41,7 @@ namespace pitTeam.BigBrain.Actions
         private const float NavigationLookBadPathAngle = 75f;
         private const float NavigationLookPathExtraDistance = 15f;
         private const float NavigationLookPathDistanceRatio = 1.35f;
+        private const float SprintApproachStopDistance = 15f;
         private const float StaleLocalLookMinAge = 4f;
         private const float StaleLocalLookMaxDistance = 5f;
         private const float StaleLocalLookBackpedalAngle = 120f;
@@ -108,13 +109,19 @@ namespace pitTeam.BigBrain.Actions
 
             string? reason = GetReason(data);
             TryPreferPrimaryAtRange(goalEnemy, reason);
+            if (HoldPushMovementUntilLongGunReady(reason))
+            {
+                return;
+            }
+
             if (StopUnownedGrenadeLauncherFire(reason, goalEnemy))
             {
                 return;
             }
 
             RefreshEnemyLookLease(goalEnemy);
-            SetCombatSprint(shouldSprint);
+            bool sprintNow = ShouldSprintNow(goalEnemy);
+            SetCombatSprint(sprintNow);
 
             // Push destinations are sticky, but nav/pathing in EFT can stall around rocks, stairs,
             // and tight walls. Track progress every update cycle and refresh when the committed point
@@ -146,7 +153,7 @@ namespace pitTeam.BigBrain.Actions
             {
                 AimingAndShoot(data);
             }
-            else if (!hasPath || shouldSprint)
+            else if (!hasPath || sprintNow)
             {
                 LookTowardAdvance(goalEnemy);
             }
@@ -178,7 +185,7 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
-                if (!shouldSprint)
+                if (!sprintNow)
                 {
                     AimingAndShoot(data);
                 }
@@ -484,7 +491,9 @@ namespace pitTeam.BigBrain.Actions
                 return true;
             }
 
-            if (!BotOwner.MoveToEnemyData.ShallRecalWay(out _) &&
+            if (BotOwner.Mover.HasPathAndNoComplete &&
+                HasCommittedAdvancePoint() &&
+                !BotOwner.MoveToEnemyData.ShallRecalWay(out _) &&
                 Time.time - BotOwner.Mover.LastPathSetTime < 10f)
             {
                 return true;
@@ -526,6 +535,24 @@ namespace pitTeam.BigBrain.Actions
             }
 
             return false;
+        }
+
+        private bool ShouldSprintNow(EnemyInfo goalEnemy)
+        {
+            if (!shouldSprint || goalEnemy == null || goalEnemy.IsVisible || goalEnemy.CanShoot)
+            {
+                return false;
+            }
+
+            Vector3 enemyAnchor = FollowerCombatCommon.GetEnemyAnchor(goalEnemy);
+            if (!FollowerCombatCommon.IsFinite(enemyAnchor))
+            {
+                return false;
+            }
+
+            Vector3 toEnemy = enemyAnchor - BotOwner.Position;
+            toEnemy.y = 0f;
+            return toEnemy.sqrMagnitude > SprintApproachStopDistance * SprintApproachStopDistance;
         }
 
         private bool TryGoToPoint(Vector3 targetPoint, bool withAttack)

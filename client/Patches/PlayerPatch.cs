@@ -662,6 +662,36 @@ namespace pitTeam.Patches
         }
     }
 
+    /** Report the exact target line when the player fires during a fight. **/
+    internal sealed class PlayerMakingShotPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+        {
+            return AccessTools.Method(typeof(Player), nameof(Player.OnMakingShot));
+        }
+
+        [PatchPostfix]
+        private static void PatchPostfix(Player __instance)
+        {
+            pitAIBossPlayer? bossPlayer = BossPlayers.GetBoss(__instance.ProfileId);
+            if (bossPlayer == null)
+            {
+                return;
+            }
+
+            Vector3 shotOrigin = __instance.PlayerBones?.WeaponRoot?.position ??
+                                 (__instance.Position + Vector3.up * 1.2f);
+            Vector3 shotDirection = __instance.LookDirection;
+            if (__instance.HandsController is Player.FirearmController firearmController)
+            {
+                shotOrigin = firearmController.FireportPosition;
+                shotDirection = firearmController.WeaponDirection;
+            }
+
+            bossPlayer.MarkBossShot(shotOrigin, shotDirection);
+        }
+    }
+
     /** Have followers increase weapon skills when they shoot. **/
     internal class PlayerShotPatch : ModulePatch
     {

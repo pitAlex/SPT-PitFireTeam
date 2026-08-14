@@ -18,6 +18,7 @@ namespace pitTeam.BigBrain.Actions
         private const float SameSpotMaxDistanceSqr = 0.75f * 0.75f;
         private const float ProneFireProbeHeight = 0.35f;
         private readonly GClass276 baseLogic;
+        private readonly FollowerEmergencyFireGate emergencyFireGate = new FollowerEmergencyFireGate();
         private float aimAlignStartedAt;
         private float nextLauncherNormalFireRejectAt;
         private float nextLauncherNormalFireRecordAt;
@@ -43,6 +44,7 @@ namespace pitTeam.BigBrain.Actions
         public override void Stop()
         {
             StopCombatShooting();
+            emergencyFireGate.Reset();
             aimAlignStartedAt = 0f;
             base.Stop();
         }
@@ -144,6 +146,18 @@ namespace pitTeam.BigBrain.Actions
             }
 
             baseLogic.UpdateNodeByBrain(GetData<GClass28>(data));
+            if (shootPoint != null)
+            {
+                emergencyFireGate.TryFire(
+                    BotOwner,
+                    goalEnemy,
+                    shootPoint.Point,
+                    "shootFromPlace",
+                    reason,
+                    suppression: false,
+                    out _);
+            }
+
             EnforceSupportedFirePose(allowCrouch, allowProne);
         }
 

@@ -224,6 +224,16 @@ namespace pitTeam.Modules
                 return false;
             }
 
+            EnemyInfo? currentGoal = follower.Memory?.GoalEnemy;
+            if (FollowerCombatTargetCommitments.IsActiveTemporaryTarget(follower, currentGoal))
+            {
+                // A mission may temporarily yield to a close self-defence target. Retention is
+                // allowed to keep combat alive, but it must not replace that target during the
+                // short visibility-loss grace owned by FollowerCombatTargetCommitments.
+                restored = currentGoal;
+                return true;
+            }
+
             if (TryAdoptDifferentLiveVisibleGoal(follower, contact.EnemyProfileId, out EnemyInfo? adoptedInfo, out _))
             {
                 restored = adoptedInfo;

@@ -180,7 +180,12 @@ namespace pitTeam.BigBrain.Actions
             BotOwner.SetTargetMoveSpeed(1f);
             RefreshProgressState();
             NotMovingCheck(goalEnemy);
-            TryPreferPrimaryAtRange(goalEnemy, GetReason(data));
+            string? reason = GetReason(data);
+            TryPreferPrimaryAtRange(goalEnemy, reason);
+            if (HoldPushMovementUntilLongGunReady(reason))
+            {
+                return;
+            }
 
             BotOwner.SetPose(1f);
             SetCombatSprint(canRun);
@@ -556,7 +561,9 @@ namespace pitTeam.BigBrain.Actions
                 return true;
             }
 
-            if (!BotOwner.MoveToEnemyData.ShallRecalWay(out _) &&
+            if (BotOwner.Mover.HasPathAndNoComplete &&
+                HasCommittedRunPoint() &&
+                !BotOwner.MoveToEnemyData.ShallRecalWay(out _) &&
                 Time.time - BotOwner.Mover.LastPathSetTime < 10f)
             {
                 return true;

@@ -21,14 +21,20 @@ namespace pitTeam.BigBrain.Actions
         private const float SuppressPointCorrectionAngle = 25f;
         private const float LauncherSuppressFireMaxAimAngle = 12f;
         private const float WeaponSuppressFireMaxAimAngle = 18f;
+        private const float MovingSuppressLaneStableSeconds = 0.2f;
+        private const float MovingSuppressLaneTargetResetDistanceSqr = 4f;
 
         private readonly GClass281 baseLogic;
+        private readonly FollowerEmergencyFireGate emergencyFireGate = new FollowerEmergencyFireGate();
         private string? lastLauncherSuppressSafetyRejectReason;
         private float nextLauncherSuppressSafetyRejectAt;
         private float nextLauncherSuppressAimHoldRecordAt;
         private float nextLauncherSuppressShootRecordAt;
         private string? lastWeaponSuppressRecordState;
         private float nextWeaponSuppressRecordAt;
+        private bool movingSuppressLaneTracked;
+        private float movingSuppressLaneClearSince;
+        private Vector3 movingSuppressLaneTarget;
 
         public CombatSuppressFireAction(BotOwner botOwner) : base(botOwner)
         {
@@ -38,6 +44,8 @@ namespace pitTeam.BigBrain.Actions
         public override void Stop()
         {
             StopCombatShooting();
+            emergencyFireGate.Reset();
+            ResetMovingSuppressLane();
             base.Stop();
         }
 
@@ -76,6 +84,16 @@ namespace pitTeam.BigBrain.Actions
                 BotOwner.Steering.LookToPoint(target);
                 if (FollowerShotSafety.IsFriendlyInSuppressionLane(BotOwner, fireOrigin, target))
                 {
+                    StopCombatShooting();
+                    return;
+                }
+
+                // A fresh last-seen timestamp permits continuity through foliage, not through
+                // hard world geometry. Revalidate the execution lane because the target can move
+                // behind a vehicle or building after the decision selected suppression.
+                if (!CanSuppressFromCurrentPosition(fireOrigin, target))
+                {
+                    RecordWeaponSuppressState(reason, "recentContactLaneBlocked", target);
                     StopCombatShooting();
                     return;
                 }
@@ -151,7 +169,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (FollowerCombatCommon.IsAutoSuppressReason(reason) ||
+            if (FollowerCombatCommon.IsAutonomousSuppressReason(reason) ||
                 FollowerCombatCommon.IsRecoverySuppressReason(reason) ||
                 FollowerCombatSuppressionObjective.IsSuppressionObjectiveReason(reason) ||
                 FollowerCombatGrenadierObjective.IsGrenadierReason(reason))
@@ -297,9 +315,9 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
-                if (!CanSuppressFromCurrentPosition(fireOrigin, target.Value))
+                if (!TryHoldStableMovingSuppressLane(fireOrigin, target.Value, out string movingLaneGate))
                 {
-                    RecordWeaponSuppressState(reason, "movingLaneBlocked", target.Value);
+                    RecordWeaponSuppressState(reason, movingLaneGate, target.Value);
                     StopCombatShooting();
                     return;
                 }
@@ -336,6 +354,8 @@ namespace pitTeam.BigBrain.Actions
             {
                 BotOwner.StopMove();
             }
+
+            ResetMovingSuppressLane();
 
             if (ShouldHoldCloseThreatSuppressFire(target.Value))
             {
@@ -647,10 +667,24 @@ namespace pitTeam.BigBrain.Actions
 
             if (!aiming.IsReady || aimNotAligned)
             {
+                if (!aimNotAligned &&
+                    emergencyFireGate.TryFire(
+                        BotOwner,
+                        BotOwner.Memory?.GoalEnemy,
+                        suppressTarget,
+                        "suppressFire",
+                        BotOwner.Brain?.Agent?.LastResult().Reason,
+                        suppression: true,
+                        out _))
+                {
+                    return true;
+                }
+
                 StopCombatShooting();
                 return true;
             }
 
+            emergencyFireGate.Reset();
             return false;
         }
 
@@ -745,6 +779,42 @@ namespace pitTeam.BigBrain.Actions
             }
 
             return FollowerCombatCommon.IsSoftObstructedSuppressionLane(fireOrigin, target, BotOwner.LookSensor.Mask);
+        }
+
+        private bool TryHoldStableMovingSuppressLane(Vector3 fireOrigin, Vector3 target, out string gate)
+        {
+            gate = "movingLaneBlocked";
+            if (!CanSuppressFromCurrentPosition(fireOrigin, target))
+            {
+                ResetMovingSuppressLane();
+                return false;
+            }
+
+            if (!movingSuppressLaneTracked ||
+                (movingSuppressLaneTarget - target).sqrMagnitude > MovingSuppressLaneTargetResetDistanceSqr)
+            {
+                movingSuppressLaneTracked = true;
+                movingSuppressLaneTarget = target;
+                movingSuppressLaneClearSince = Time.time;
+                gate = "movingLaneStabilizing";
+                return false;
+            }
+
+            movingSuppressLaneTarget = target;
+            if (Time.time - movingSuppressLaneClearSince < MovingSuppressLaneStableSeconds)
+            {
+                gate = "movingLaneStabilizing";
+                return false;
+            }
+
+            return true;
+        }
+
+        private void ResetMovingSuppressLane()
+        {
+            movingSuppressLaneTracked = false;
+            movingSuppressLaneClearSince = 0f;
+            movingSuppressLaneTarget = Vector3.zero;
         }
 
         private bool CanLauncherSuppressFromCurrentOrStandingPosition(

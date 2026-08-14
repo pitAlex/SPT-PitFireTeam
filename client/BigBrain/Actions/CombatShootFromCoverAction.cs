@@ -16,6 +16,7 @@ namespace pitTeam.BigBrain.Actions
     internal sealed class CombatShootFromCoverAction : FollowerCombatActionBase
     {
         private readonly GClass277 baseLogic;
+        private readonly FollowerEmergencyFireGate emergencyFireGate = new FollowerEmergencyFireGate();
         private float aimAlignStartedAt;
         private bool? lastCrouchAllowed;
         private string? lastCrouchPolicyReason;
@@ -36,6 +37,7 @@ namespace pitTeam.BigBrain.Actions
         public override void Stop()
         {
             StopCombatShooting();
+            emergencyFireGate.Reset();
             aimAlignStartedAt = 0f;
             base.Stop();
         }
@@ -94,6 +96,20 @@ namespace pitTeam.BigBrain.Actions
                 }
 
                 baseLogic.UpdateNodeByBrain(GetData<GClass28>(data));
+
+                if (goalEnemy != null)
+                {
+                    ShootPointClass shootPoint = BotOwner.CurrentEnemyTargetPosition(false) ??
+                                                 new ShootPointClass(goalEnemy.GetBodyPartPosition(), 1f);
+                    emergencyFireGate.TryFire(
+                        BotOwner,
+                        goalEnemy,
+                        shootPoint.Point,
+                        "shootFromCover",
+                        GetReason(data),
+                        suppression: false,
+                        out _);
+                }
 
                 if (!allowCrouch)
                 {
