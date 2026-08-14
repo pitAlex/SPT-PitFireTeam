@@ -24,6 +24,14 @@
     "Name": "敌方人员标记",
     "Description": "说「报告状态」命令时标记出敌方人员的位置。关闭后敌方人员标记音效也会禁用。"
   },
+  "enemyKilledDisplayTime": {
+    "Name": "敌人击杀标记显示时间",
+    "Description": "按下「报告状态」按键后，敌人击杀骷髅标记的显示时长（秒）。"
+  },
+  "enemyKilledRetainTime": {
+    "Name": "敌人击杀位置保留时间",
+    "Description": "记住由玩家或队友击杀的敌人位置的时长（秒）。\n设为 0 可禁用敌人击杀标记。"
+  },
   "scanDistance": {
     "Name": "最大扫描距离",
     "Description": "说「接敌」时，队员可关注指出的可见敌方人员的最大距离。"

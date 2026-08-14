@@ -91,6 +91,7 @@ Behavior:
 - The outline color is configurable with a `#RRGGBB` value and defaults to green (`#00FF00`).
 - Name, distance, combat status, HP, and tactic (`MD`) can each be toggled under `My Squad > Settings > Base Settings`.
 - Disabling every text field while leaving the highlight enabled produces a highlight-only Status Report.
+- Enemy markers are grouped by enemy profile, so multiple followers reporting the same contact produce one marker. During the Status Report display, the active marker set follows each follower's current enemy selection: switching targets adds the newly selected enemy and removes an old contact once no follower targets it. Each new contact starts at the enemy's current position. A reliably visible enemy uses a steady `27x27` red reticle that follows the live position every frame; an enemy that is not reliably visible uses a vertically bobbing `30.6x30.6` yellow `!` fixed at its captured world position; and a killed enemy uses a steady `27x27` grey skull at its remembered death position. `Enemy Killed Display Time` controls the independent skull display, while `Enemy Killed Retain Time = 0` disables killed-enemy markers. The spatial location sound and spoken direction use the position captured when the report was triggered.
 - Nearby active followers without enemies play `FriendlyGesture`.
 - Does not create `FollowerCommandType` state.
 

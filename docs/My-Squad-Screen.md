@@ -302,8 +302,8 @@ Verified entry groups:
 - `Combat Settings`
     - `botGrenades`
     - `enemyMarker`
-    - `enemyMarkerAlertColor`
-    - `enemyMarkerVisibleColor`
+    - `enemyKilledDisplayTime`
+    - `enemyKilledRetainTime`
     - `statusSound`
     - `enemyRemember`
     - `scanDistance`

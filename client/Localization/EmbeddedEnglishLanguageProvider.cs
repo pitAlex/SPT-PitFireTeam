@@ -39,12 +39,12 @@ namespace pitTeam.Localization
                 enemyMarker = Entry(
                     "Enemy Marker",
                     "Show enemy position when reporting status. If disabled, the enemy marker sound will also be disabled"),
-                enemyMarkerAlertColor = Entry(
-                    "Enemy Marker: Alert Color",
-                    "Color of the enemy marker when the enemy is out of sight, in hexadecimal RGB format (#FFFF00)."),
-                enemyMarkerVisibleColor = Entry(
-                    "Enemy Marker: Visible Color",
-                    "Color of the enemy marker when the enemy is visible, in hexadecimal RGB format (#FF0000)."),
+                enemyKilledDisplayTime = Entry(
+                    "Enemy Killed Display Time",
+                    "Time in seconds to display killed-enemy skull markers after the Status Report key is pressed."),
+                enemyKilledRetainTime = Entry(
+                    "Enemy Killed Retain Time",
+                    "Time in seconds to remember the position of an enemy killed by the player or a follower.\nSet to 0 to disable killed-enemy markers."),
                 scanDistance = Entry(
                     "Maximum scan distance",
                     "Maximum distance to pick up any visible enemy that the player is signaling when issuing 'Contact' phrase"),

@@ -86,8 +86,8 @@ namespace pitTeam
 
         public Dictionary<string, string> statusSound { get; set; }
         public Dictionary<string, string> enemyMarker { get; set; }
-        public Dictionary<string, string> enemyMarkerAlertColor { get; set; }
-        public Dictionary<string, string> enemyMarkerVisibleColor { get; set; }
+        public Dictionary<string, string> enemyKilledDisplayTime { get; set; }
+        public Dictionary<string, string> enemyKilledRetainTime { get; set; }
         public Dictionary<string, string> scanDistance { get; set; }
         public Dictionary<string, string> enemyRemember { get; set; }
         public Dictionary<string, string> healthMultiplier { get; set; }
@@ -227,8 +227,8 @@ namespace pitTeam
 
         public static ConfigEntry<int> statusSound;
         public static ConfigEntry<bool> enemyMarker;
-        public static ConfigEntry<string> enemyMarkerAlertColor;
-        public static ConfigEntry<string> enemyMarkerVisibleColor;
+        public static ConfigEntry<int> enemyKilledDisplayTime;
+        public static ConfigEntry<int> enemyKilledRetainTime;
         public static ConfigEntry<bool> npcSendMessage;
         public static ConfigEntry<bool> pickupEnabled;
         public static ConfigEntry<bool> tieredPickup;
@@ -1015,9 +1015,72 @@ namespace pitTeam
 
             enemyMarker = Config.Bind("", "06 EnemyMarker", true, new ConfigDescription(optionsLang.enemyMarker["Description"], null, CreateConfigAttributes(-600, false, optionsLang.enemyMarker)));
 
-            enemyMarkerAlertColor = Config.Bind("", "06 EnemyMarkerAlertColor", Utils.EnemyMarkerColor.AlertDefaultHex, new ConfigDescription(optionsLang.enemyMarkerAlertColor["Description"], null, CreateConfigAttributes(-601, false, optionsLang.enemyMarkerAlertColor)));
+            ConfigDefinition legacyEnemyKilledMarkerDefinition =
+                new ConfigDefinition("", "06 EnemyKilledMarker");
+            ConfigDefinition enemyKilledDisplayTimeDefinition =
+                new ConfigDefinition("", "06 EnemyKilledDisplayTime");
+            ConfigDefinition enemyKilledRetainTimeDefinition =
+                new ConfigDefinition("", "06 EnemyKilledRetainTime");
+            ConfigDefinition legacyEnemyDownTimeDefinition =
+                new ConfigDefinition("", "18 EnemyDownStatusRetainTime");
+            int enemyKilledRetainTimeDefault = 15;
+            bool disableKilledMarkersFromLegacyToggle =
+                savedConfigValues.TryGetValue(
+                    legacyEnemyKilledMarkerDefinition,
+                    out string legacyEnemyKilledMarker) &&
+                bool.TryParse(legacyEnemyKilledMarker, out bool legacyEnemyKilledMarkerEnabled) &&
+                !legacyEnemyKilledMarkerEnabled;
+            bool hasEnemyKilledRetainTime =
+                savedConfigValues.ContainsKey(enemyKilledRetainTimeDefinition);
+            if (!hasEnemyKilledRetainTime)
+            {
+                string legacyRetainTime = null;
+                if (savedConfigValues.TryGetValue(
+                        enemyKilledDisplayTimeDefinition,
+                        out string interimEnemyKilledDisplayTime))
+                {
+                    // This key briefly represented retention before display and retention
+                    // became independent settings. Move its value to the retain-time key.
+                    legacyRetainTime = interimEnemyKilledDisplayTime;
+                    orphanedEntries?.Remove(enemyKilledDisplayTimeDefinition);
+                }
+                else
+                {
+                    savedConfigValues.TryGetValue(
+                        legacyEnemyDownTimeDefinition,
+                        out legacyRetainTime);
+                }
 
-            enemyMarkerVisibleColor = Config.Bind("", "06 EnemyMarkerVisibleColor", Utils.EnemyMarkerColor.VisibleDefaultHex, new ConfigDescription(optionsLang.enemyMarkerVisibleColor["Description"], null, CreateConfigAttributes(-602, false, optionsLang.enemyMarkerVisibleColor)));
+                if (int.TryParse(legacyRetainTime, out int parsedLegacyRetainTime))
+                {
+                    enemyKilledRetainTimeDefault = Mathf.Clamp(parsedLegacyRetainTime, 0, 120);
+                }
+            }
+
+            orphanedEntries?.Remove(legacyEnemyKilledMarkerDefinition);
+            orphanedEntries?.Remove(legacyEnemyDownTimeDefinition);
+            orphanedEntries?.Remove(new ConfigDefinition("", "06 EnemyMarkerAlertColor"));
+            orphanedEntries?.Remove(new ConfigDefinition("", "06 EnemyMarkerVisibleColor"));
+
+            enemyKilledDisplayTime = Config.Bind(
+                enemyKilledDisplayTimeDefinition,
+                10,
+                new ConfigDescription(
+                    optionsLang.enemyKilledDisplayTime["Description"],
+                    new AcceptableValueRange<int>(1, 120),
+                    CreateConfigAttributes(-601, false, optionsLang.enemyKilledDisplayTime)));
+
+            enemyKilledRetainTime = Config.Bind(
+                enemyKilledRetainTimeDefinition,
+                enemyKilledRetainTimeDefault,
+                new ConfigDescription(
+                    optionsLang.enemyKilledRetainTime["Description"],
+                    new AcceptableValueRange<int>(0, 120),
+                    CreateConfigAttributes(-602, false, optionsLang.enemyKilledRetainTime)));
+            if (disableKilledMarkersFromLegacyToggle)
+            {
+                enemyKilledRetainTime.Value = 0;
+            }
 
             pickupEnabled = Config.Bind("", "07 Pickup", true, new ConfigDescription(optionsLang.pickup["Description"], null, CreateConfigAttributes(-700, false, optionsLang.pickup)));
 

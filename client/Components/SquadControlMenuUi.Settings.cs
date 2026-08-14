@@ -361,8 +361,8 @@ namespace pitTeam.Components
                 pitFireTeam.botGrenades,
                 pitFireTeam.regroupRadius,
                 pitFireTeam.enemyMarker,
-                pitFireTeam.enemyMarkerAlertColor,
-                pitFireTeam.enemyMarkerVisibleColor,
+                pitFireTeam.enemyKilledDisplayTime,
+                pitFireTeam.enemyKilledRetainTime,
                 pitFireTeam.statusSound,
                 pitFireTeam.enemyRemember,
                 pitFireTeam.scanDistance,
@@ -1599,18 +1599,6 @@ namespace pitTeam.Components
                 return true;
             }
 
-            if (entry == pitFireTeam.enemyMarkerAlertColor)
-            {
-                defaultHex = EnemyMarkerColor.AlertDefaultHex;
-                return true;
-            }
-
-            if (entry == pitFireTeam.enemyMarkerVisibleColor)
-            {
-                defaultHex = EnemyMarkerColor.VisibleDefaultHex;
-                return true;
-            }
-
             defaultHex = string.Empty;
             return false;
         }
@@ -2669,8 +2657,8 @@ namespace pitTeam.Components
             if (entry == pitFireTeam.heatlhMultiplier) return language.healthMultiplier;
             if (entry == pitFireTeam.statusSound) return language.statusSound;
             if (entry == pitFireTeam.enemyMarker) return language.enemyMarker;
-            if (entry == pitFireTeam.enemyMarkerAlertColor) return language.enemyMarkerAlertColor;
-            if (entry == pitFireTeam.enemyMarkerVisibleColor) return language.enemyMarkerVisibleColor;
+            if (entry == pitFireTeam.enemyKilledDisplayTime) return language.enemyKilledDisplayTime;
+            if (entry == pitFireTeam.enemyKilledRetainTime) return language.enemyKilledRetainTime;
             if (entry == pitFireTeam.pickupEnabled) return language.pickup;
             if (entry == pitFireTeam.tieredPickup) return language.tieredPickup;
             if (entry == pitFireTeam.maximumPickup) return language.maximumPickup;

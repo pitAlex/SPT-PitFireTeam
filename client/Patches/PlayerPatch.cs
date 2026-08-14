@@ -245,6 +245,19 @@ namespace pitTeam.Patches
             return AccessTools.Method(typeof(Player), "OnBeenKilledByAggressor");
         }
 
+        [PatchPrefix]
+        private static void PatchPrefix(Player __instance, IPlayer aggressor)
+        {
+            try
+            {
+                global::pitTeam.Utils.PingTeamates.TryRememberEnemyDown(__instance, aggressor);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex);
+            }
+        }
+
         [PatchPostfix]
         private static void PatchPostfix(Player __instance, IPlayer aggressor, DamageInfoStruct damageInfo, EBodyPart bodyPart, EDamageType lethalDamageType)
         {
