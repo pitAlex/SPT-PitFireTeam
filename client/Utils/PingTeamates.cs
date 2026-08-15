@@ -824,8 +824,13 @@ namespace pitTeam.Utils
 
             List<Components.BotFollowerPlayer> followers =
                 BossPlayers.GetFollowersByBoss(localPlayer.ProfileId);
+            bool wasTrackedEnemy =
+                instance.enemyMarkersByProfileId.TryGetValue(
+                    victim.ProfileId,
+                    out EnemyMarkerContact trackedContact) &&
+                trackedContact.UntilTime > Time.time;
             if (!WasKilledByPlayerSquad(aggressor.ProfileId, localPlayer.ProfileId, followers) ||
-                !IsCurrentEnemyOfAnyFollower(victim.ProfileId, followers))
+                (!wasTrackedEnemy && !IsCurrentEnemyOfAnyFollower(victim.ProfileId, followers)))
             {
                 return;
             }
@@ -889,13 +894,24 @@ namespace pitTeam.Utils
             for (int i = 0; i < followers.Count; i++)
             {
                 BotOwner follower = followers[i]?.GetBot();
-                if (follower == null || follower.IsDead ||
-                    !TryGetCurrentGoalEnemy(follower, out EnemyInfo? goalEnemy))
+                if (follower == null || follower.IsDead)
                 {
                     continue;
                 }
 
-                if (string.Equals(goalEnemy.ProfileId, victimProfileId, StringComparison.Ordinal))
+                EnemyInfo? goalEnemy;
+                try
+                {
+                    // EFT may clear HaveEnemy during death processing before this hook runs.
+                    // The matching GoalEnemy can still identify the contact at that boundary.
+                    goalEnemy = follower.Memory?.GoalEnemy;
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (string.Equals(goalEnemy?.ProfileId, victimProfileId, StringComparison.Ordinal))
                 {
                     return true;
                 }
