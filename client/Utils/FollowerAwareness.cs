@@ -30,6 +30,8 @@ namespace pitTeam.Utils
             public float BossRangedThreatWatchUntil;
             public string BossRangedThreatProfileId = string.Empty;
             public Vector3 BossRangedThreatLookPoint;
+            public float TargetHandoffLookUntil;
+            public Vector3 TargetHandoffLookPoint;
             public readonly System.Collections.Generic.List<Vector3> ProcessedSoundZones = new();
         }
 
@@ -91,6 +93,54 @@ namespace pitTeam.Utils
 
             lookPoint = state.ThreatLookPoint;
             return lookPoint != Vector3.zero;
+        }
+
+        /// <summary>
+        /// Publishes an orientation-only point while combat scans the follower's own recent
+        /// personal contacts after GoalEnemy disappears. This does not grant sight, fire
+        /// permission, or enemy ownership; acquisition still requires direct sensor verification.
+        /// </summary>
+        public static void SetTargetHandoffLookPoint(BotOwner bot, Vector3 lookPoint, float untilTime)
+        {
+            State state = GetState(bot);
+            if (state == null ||
+                !FollowerCombatCommon.IsFinite(lookPoint) ||
+                lookPoint == Vector3.zero ||
+                untilTime <= Time.time)
+            {
+                return;
+            }
+
+            state.TargetHandoffLookPoint = lookPoint;
+            state.TargetHandoffLookUntil = untilTime;
+        }
+
+        public static bool TryGetTargetHandoffLookPoint(BotOwner bot, out Vector3 lookPoint)
+        {
+            lookPoint = Vector3.zero;
+            State state = GetState(bot);
+            if (state == null ||
+                state.TargetHandoffLookUntil <= Time.time ||
+                !FollowerCombatCommon.IsFinite(state.TargetHandoffLookPoint) ||
+                state.TargetHandoffLookPoint == Vector3.zero)
+            {
+                return false;
+            }
+
+            lookPoint = state.TargetHandoffLookPoint;
+            return true;
+        }
+
+        public static void ClearTargetHandoffLookPoint(BotOwner bot)
+        {
+            State state = GetState(bot);
+            if (state == null)
+            {
+                return;
+            }
+
+            state.TargetHandoffLookUntil = 0f;
+            state.TargetHandoffLookPoint = Vector3.zero;
         }
 
         /// <summary>

@@ -162,6 +162,12 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
+            if (FollowerAwareness.TryGetTargetHandoffLookPoint(BotOwner_0, out Vector3 handoffLookPoint))
+            {
+                BotOwner_0.Steering.LookToPoint(handoffLookPoint);
+                return;
+            }
+
             if (TryLookTowardCloseUnseenThreat())
             {
                 return;

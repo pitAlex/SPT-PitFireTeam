@@ -321,7 +321,7 @@ Execution:
 - Walks to the target.
 - Validates path periodically.
 - On arrival, stops and performs a short look-around before clearing the command.
-- If a command look override exists, it looks at that override instead of random scanning.
+- If a command look override exists, it looks at that override instead of random scanning. Normal out-of-combat movement uses a level forward bearing toward the NavMesh destination rather than staring at the ground point itself.
 
 Combat variant:
 

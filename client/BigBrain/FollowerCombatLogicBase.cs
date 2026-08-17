@@ -92,6 +92,13 @@ namespace pitTeam.BigBrain
             EnemyInfo? goalEnemy = BotOwner.Memory.GoalEnemy;
             if (goalEnemy == null)
             {
+                combatCommon.ClearDecisionTransition();
+                if (combatCommon.TryGetTargetHandoffScanDecision(
+                        out AICoreActionResultStruct<BotLogicDecision, GClass26> targetHandoffDecision))
+                {
+                    return targetHandoffDecision;
+                }
+
                 if (combatCommon.TryGetNoEnemyThreatCoverDecision(
                         out AICoreActionResultStruct<BotLogicDecision, GClass26> noEnemyThreatDecision))
                 {
@@ -101,6 +108,8 @@ namespace pitTeam.BigBrain
                 return new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.holdPosition, "nullEnemy");
             }
 
+            combatCommon.ClearTargetHandoffScan("goalEnemyAvailable");
+
             FollowerEnemyInfoCorrection.CorrectDistanceOnly(BotOwner, goalEnemy);
 
             try
@@ -108,7 +117,18 @@ namespace pitTeam.BigBrain
                 BotFollowerPlayer? followerData = BossPlayers.Instance?.GetFollower(BotOwner);
                 if (TryConsumeCombatGestureCommand(followerData, goalEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> commandDecision))
                 {
+                    combatCommon.ClearDecisionTransition();
                     return commandDecision;
+                }
+
+                // End conditions may release an action only after preparing its concrete successor.
+                // Consume that one-shot handoff before ordinary objective routing can select the old
+                // action again; target changes and explicit combat commands invalidate the handoff.
+                if (combatCommon.TryConsumePreparedDecisionTransition(
+                        goalEnemy,
+                        out AICoreActionResultStruct<BotLogicDecision, GClass26> transitionDecision))
+                {
+                    return transitionDecision;
                 }
 
                 RefreshObjective(goalEnemy);
@@ -171,6 +191,15 @@ namespace pitTeam.BigBrain
 
             BotFollowerPlayer? followerData = BossPlayers.Instance?.GetFollower(BotOwner);
             EnemyInfo? goalEnemy = BotOwner.Memory?.GoalEnemy;
+
+            // Target handoff is a shared transient hold, independent of whichever tactic/objective
+            // happened to own the killed target. Route its bounded scanner before tactic-specific
+            // cover-hold rules can interpret the null GoalEnemy as an immediate failure.
+            if (currentDecision.Action == BotLogicDecision.holdPosition &&
+                FollowerCombatCommon.IsTargetHandoffScanReason(currentDecision.Reason))
+            {
+                return combatCommon.EndBaseHoldPosition(currentDecision.Reason ?? string.Empty);
+            }
 
             // GoalEnemy can disappear between clustered contacts while incoming fire is still
             // concrete. This recovery is shared survival work, not ordered-objective completion,

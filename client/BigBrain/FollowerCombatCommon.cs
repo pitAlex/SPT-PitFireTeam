@@ -79,9 +79,20 @@ namespace pitTeam.BigBrain
         private const float BossFireLaneSoftPenalty = 24f;
         private const float FireSupportPathEnemyMinDistance = 12f;
         private const float DogFightOutOfRangeCooldownSeconds = 1.25f;
+        private const float DogFightOpeningCommitmentSeconds = 1f;
+        private const float DecisionTransitionMaxAgeSeconds = 2f;
+        private const float FailedDecisionTransitionRetrySeconds = 1f;
+        private const float TargetHandoffScanDurationSeconds = 0.4f;
+        private const float TargetHandoffProbeIntervalSeconds = 0.1f;
+        private const float TargetHandoffRecentPersonalContactSeconds = 3f;
+        private const float TargetHandoffFailedRetrySeconds = 1f;
+        private const int TargetHandoffMaxCandidates = 4;
+        private const int TargetHandoffMaxProbes = 4;
+        private const string TargetHandoffScanReason = "targetHandoffScan";
         private const float PointBlankRetreatBlockDistance = 8f;
         private const float PointBlankContactDogFightDistance = 3f;
         private const float PointBlankContactMaxAnchorDistance = 4.5f;
+        private const float PointBlankDogFightLostContactGraceSeconds = 0.75f;
         private const float CloseVisibleThreatBreakDistance = 18f;
         private const float CloseVisibleDogFightStartDistance = CloseVisibleThreatBreakDistance;
         private const float CloseVisibleDogFightEndDistance = CloseVisibleThreatBreakDistance;
@@ -296,9 +307,23 @@ namespace pitTeam.BigBrain
         private float pendingHaveCoverToShootSince;
         private float shootLaneUpgradeSince;
         private float dogFightBlockedUntil;
+        private float dogFightOpeningStartedAt;
+        private string? dogFightOpeningEnemyProfileId;
+        private bool dogFightOpeningRetreatDeferredRecorded;
+        private float pointBlankDogFightContactLostAt;
         private float runToEnemyBlockedUntil;
-        private AICoreActionResultStruct<BotLogicDecision, GClass26>? preparedDogFightInjuredSuppressRetreatDecision;
-        private string? preparedDogFightInjuredSuppressRetreatEnemyProfileId;
+        private PreparedCombatDecisionTransition? preparedDecisionTransition;
+        private DeferredCombatDecisionTransition? deferredDecisionTransition;
+        private readonly List<TargetHandoffCandidate> targetHandoffCandidates = new List<TargetHandoffCandidate>(TargetHandoffMaxCandidates);
+        private bool targetHandoffScanActive;
+        private float targetHandoffScanUntil;
+        private float nextTargetHandoffProbeAt;
+        private float targetHandoffRetryBlockedUntil;
+        private int targetHandoffCandidateIndex;
+        private int targetHandoffProbeCount;
+        private int targetHandoffStartDamageRevision;
+        private int targetHandoffScanSignature;
+        private int failedTargetHandoffSignature;
         private int coverEvaluationFrame = -1;
         private bool coverEvaluationAttempted;
         private bool coverEvaluationExhausted;
@@ -308,6 +333,65 @@ namespace pitTeam.BigBrain
         private int threatCoverPhysicsProbeFrame = -1;
         private int threatCoverPhysicsProbeCount;
         private bool lastAssignedRetreatCoverWasWeak;
+
+        private readonly struct PreparedCombatDecisionTransition
+        {
+            public PreparedCombatDecisionTransition(
+                AICoreActionResultStruct<BotLogicDecision, GClass26> sourceDecision,
+                string endReason,
+                string enemyProfileId,
+                float preparedAt,
+                AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision)
+            {
+                SourceDecision = sourceDecision;
+                EndReason = endReason;
+                EnemyProfileId = enemyProfileId;
+                PreparedAt = preparedAt;
+                NextDecision = nextDecision;
+            }
+
+            public AICoreActionResultStruct<BotLogicDecision, GClass26> SourceDecision { get; }
+            public string EndReason { get; }
+            public string EnemyProfileId { get; }
+            public float PreparedAt { get; }
+            public AICoreActionResultStruct<BotLogicDecision, GClass26> NextDecision { get; }
+        }
+
+        private readonly struct DeferredCombatDecisionTransition
+        {
+            public DeferredCombatDecisionTransition(
+                AICoreActionResultStruct<BotLogicDecision, GClass26> sourceDecision,
+                string endReason,
+                string enemyProfileId,
+                float retryAt)
+            {
+                SourceDecision = sourceDecision;
+                EndReason = endReason;
+                EnemyProfileId = enemyProfileId;
+                RetryAt = retryAt;
+            }
+
+            public AICoreActionResultStruct<BotLogicDecision, GClass26> SourceDecision { get; }
+            public string EndReason { get; }
+            public string EnemyProfileId { get; }
+            public float RetryAt { get; }
+        }
+
+        private readonly struct TargetHandoffCandidate
+        {
+            public TargetHandoffCandidate(string enemyProfileId, Vector3 lookPoint, float score, float lastSeenTime)
+            {
+                EnemyProfileId = enemyProfileId;
+                LookPoint = lookPoint;
+                Score = score;
+                LastSeenTime = lastSeenTime;
+            }
+
+            public string EnemyProfileId { get; }
+            public Vector3 LookPoint { get; }
+            public float Score { get; }
+            public float LastSeenTime { get; }
+        }
 
         private readonly struct CoverCommitIntent
         {
@@ -528,8 +612,13 @@ namespace pitTeam.BigBrain
             pendingHaveCoverToShootSince = 0f;
             shootLaneUpgradeSince = 0f;
             dogFightBlockedUntil = 0f;
+            ResetDogFightOpeningCommitment();
+            pointBlankDogFightContactLostAt = 0f;
             runToEnemyBlockedUntil = 0f;
-            ClearPreparedDogFightInjuredSuppressRetreat();
+            ClearDecisionTransition();
+            ClearTargetHandoffScan("combatReset");
+            targetHandoffRetryBlockedUntil = 0f;
+            failedTargetHandoffSignature = 0;
             coverEvaluationFrame = -1;
             coverEvaluationAttempted = false;
             coverEvaluationExhausted = false;
@@ -2613,6 +2702,343 @@ namespace pitTeam.BigBrain
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// After GoalEnemy disappears, briefly rechecks only living enemies for which this
+        /// follower has recent personal contact. The scan turns toward frozen personal
+        /// last-known positions; it never uses an unseen player's live position for steering.
+        /// </summary>
+        public bool TryGetTargetHandoffScanDecision(
+            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        {
+            decision = default;
+            if (HasActiveCombatGestureOrder())
+            {
+                ClearTargetHandoffScan("combatGestureOrder");
+                return false;
+            }
+
+            if (HasActiveCombatEnemy())
+            {
+                ClearTargetHandoffScan("goalEnemyRestored");
+                return false;
+            }
+
+            if (targetHandoffScanActive)
+            {
+                decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                    BotLogicDecision.holdPosition,
+                    TargetHandoffScanReason);
+                return true;
+            }
+
+            if (!TryBuildTargetHandoffCandidates(out int signature))
+            {
+                return false;
+            }
+
+            if (Time.time < targetHandoffRetryBlockedUntil &&
+                signature == failedTargetHandoffSignature)
+            {
+                targetHandoffCandidates.Clear();
+                return false;
+            }
+
+            targetHandoffScanActive = true;
+            targetHandoffScanUntil = Time.time + TargetHandoffScanDurationSeconds;
+            nextTargetHandoffProbeAt = Time.time + TargetHandoffProbeIntervalSeconds;
+            targetHandoffCandidateIndex = 0;
+            targetHandoffProbeCount = 0;
+            targetHandoffStartDamageRevision = FollowerAwareness.GetDamageRevision(botOwner);
+            targetHandoffScanSignature = signature;
+
+            decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                BotLogicDecision.holdPosition,
+                TargetHandoffScanReason);
+            BattleRecorder.RecordCommitmentEvent(
+                botOwner,
+                "targetHandoffScan",
+                "begin",
+                $"candidates:{targetHandoffCandidates.Count}",
+                decision,
+                targetHandoffCandidates[0].LookPoint,
+                untilTime: targetHandoffScanUntil);
+            SetCurrentTargetHandoffLookPoint();
+            return true;
+        }
+
+        public void ClearTargetHandoffScan(string reason)
+        {
+            FinishTargetHandoffScan(reason, blockUnchangedRetry: false);
+        }
+
+        private AICoreActionEndStruct EndTargetHandoffScan()
+        {
+            if (!targetHandoffScanActive)
+            {
+                FollowerAwareness.ClearTargetHandoffLookPoint(botOwner);
+                return new AICoreActionEndStruct("targetHandoffInactive", true);
+            }
+
+            if (HasActiveCombatEnemy())
+            {
+                FinishTargetHandoffScan("goalEnemyAcquired", blockUnchangedRetry: false);
+                return new AICoreActionEndStruct("targetHandoffAcquired", true);
+            }
+
+            if (FollowerAwareness.GetDamageRevision(botOwner) != targetHandoffStartDamageRevision)
+            {
+                FinishTargetHandoffScan("damagedDuringScan", blockUnchangedRetry: true);
+                return new AICoreActionEndStruct("targetHandoffDamaged", true);
+            }
+
+            if (Time.time >= nextTargetHandoffProbeAt &&
+                targetHandoffProbeCount < TargetHandoffMaxProbes &&
+                TryProbeCurrentTargetHandoffCandidate())
+            {
+                FinishTargetHandoffScan("directContactPromoted", blockUnchangedRetry: false);
+                return new AICoreActionEndStruct("targetHandoffPromoted", true);
+            }
+
+            if (Time.time >= targetHandoffScanUntil ||
+                targetHandoffProbeCount >= TargetHandoffMaxProbes)
+            {
+                FinishTargetHandoffScan("graceExpired", blockUnchangedRetry: true);
+                return new AICoreActionEndStruct("targetHandoffExpired", true);
+            }
+
+            return Continue();
+        }
+
+        private bool TryBuildTargetHandoffCandidates(out int signature)
+        {
+            signature = 17;
+            targetHandoffCandidates.Clear();
+            if (botOwner?.EnemiesController?.EnemyInfos == null)
+            {
+                return false;
+            }
+
+            foreach (var item in botOwner.EnemiesController.EnemyInfos)
+            {
+                EnemyInfo? enemyInfo = item.Value;
+                if (!IsTrackedEnemyAlive(enemyInfo) ||
+                    !Enemy.HasPersonalContactRecord(enemyInfo))
+                {
+                    continue;
+                }
+
+                string enemyProfileId = enemyInfo.ProfileId ?? item.Key?.ProfileId ?? string.Empty;
+                if (string.IsNullOrEmpty(enemyProfileId))
+                {
+                    continue;
+                }
+
+                float lastSeenTime = Mathf.Max(enemyInfo.PersonalSeenTime, enemyInfo.PersonalLastSeenTime);
+                bool directContact = Enemy.HasDirectPersonalContact(enemyInfo);
+                if (!directContact &&
+                    (lastSeenTime <= 0f || Time.time - lastSeenTime > TargetHandoffRecentPersonalContactSeconds))
+                {
+                    continue;
+                }
+
+                Vector3 personalLastPosition = enemyInfo.PersonalLastPos;
+                if (!IsFinite(personalLastPosition) || personalLastPosition.sqrMagnitude <= 0.01f)
+                {
+                    continue;
+                }
+
+                Vector3 lookPoint = personalLastPosition + Vector3.up * 0.8f;
+                Vector3 toLookPoint = lookPoint - botOwner.Position;
+                float distance = toLookPoint.magnitude;
+                float turnAngle = toLookPoint.sqrMagnitude > 0.01f
+                    ? Vector3.Angle(botOwner.LookDirection, toLookPoint.normalized)
+                    : 180f;
+                float age = lastSeenTime > 0f
+                    ? Mathf.Clamp(Time.time - lastSeenTime, 0f, TargetHandoffRecentPersonalContactSeconds)
+                    : TargetHandoffRecentPersonalContactSeconds;
+                float score =
+                    (enemyInfo.CanShoot ? 1000f : enemyInfo.IsVisible ? 850f : 0f) +
+                    (TargetHandoffRecentPersonalContactSeconds - age) * 100f -
+                    Mathf.Min(distance, 200f) * 0.5f -
+                    turnAngle * 0.5f;
+
+                InsertTargetHandoffCandidate(new TargetHandoffCandidate(
+                    enemyProfileId,
+                    lookPoint,
+                    score,
+                    lastSeenTime));
+            }
+
+            if (targetHandoffCandidates.Count == 0)
+            {
+                return false;
+            }
+
+            unchecked
+            {
+                foreach (TargetHandoffCandidate candidate in targetHandoffCandidates)
+                {
+                    signature = signature * 31 + candidate.EnemyProfileId.GetHashCode();
+                    signature = signature * 31 + Mathf.RoundToInt(candidate.LastSeenTime * 10f);
+                    signature = signature * 31 + Mathf.RoundToInt(candidate.LookPoint.x * 2f);
+                    signature = signature * 31 + Mathf.RoundToInt(candidate.LookPoint.z * 2f);
+                }
+            }
+
+            return true;
+        }
+
+        private void InsertTargetHandoffCandidate(TargetHandoffCandidate candidate)
+        {
+            int insertAt = 0;
+            while (insertAt < targetHandoffCandidates.Count &&
+                   targetHandoffCandidates[insertAt].Score >= candidate.Score)
+            {
+                insertAt++;
+            }
+
+            if (insertAt >= TargetHandoffMaxCandidates)
+            {
+                return;
+            }
+
+            targetHandoffCandidates.Insert(insertAt, candidate);
+            if (targetHandoffCandidates.Count > TargetHandoffMaxCandidates)
+            {
+                targetHandoffCandidates.RemoveAt(TargetHandoffMaxCandidates);
+            }
+        }
+
+        private bool TryProbeCurrentTargetHandoffCandidate()
+        {
+            if (targetHandoffCandidates.Count == 0)
+            {
+                targetHandoffProbeCount = TargetHandoffMaxProbes;
+                return false;
+            }
+
+            TargetHandoffCandidate candidate = targetHandoffCandidates[targetHandoffCandidateIndex];
+            bool promoted = false;
+            string result = "notTracked";
+            if (TryGetTrackedEnemy(candidate.EnemyProfileId, out EnemyInfo? enemyInfo))
+            {
+                if (!IsTrackedEnemyAlive(enemyInfo))
+                {
+                    result = "dead";
+                }
+                else if (FollowerEnemyInfoCorrection.RefreshDirectContactForAcquisition(botOwner, enemyInfo) &&
+                         Enemy.HasDirectPersonalContact(enemyInfo))
+                {
+                    promoted = TryPromoteTrackedEnemyAsGoal(candidate.EnemyProfileId);
+                    result = promoted ? "promoted" : "promotionRejected";
+                }
+                else
+                {
+                    result = "notDirect";
+                }
+            }
+
+            targetHandoffProbeCount++;
+            BattleRecorder.RecordCommitmentEvent(
+                botOwner,
+                "targetHandoffScan",
+                "probe",
+                $"{candidate.EnemyProfileId}:{result}",
+                target: candidate.LookPoint,
+                untilTime: targetHandoffScanUntil);
+            if (promoted)
+            {
+                return true;
+            }
+
+            targetHandoffCandidateIndex =
+                (targetHandoffCandidateIndex + 1) % targetHandoffCandidates.Count;
+            nextTargetHandoffProbeAt = Time.time + TargetHandoffProbeIntervalSeconds;
+            if (targetHandoffProbeCount < TargetHandoffMaxProbes)
+            {
+                SetCurrentTargetHandoffLookPoint();
+            }
+
+            return false;
+        }
+
+        private bool TryGetTrackedEnemy(string enemyProfileId, out EnemyInfo? enemyInfo)
+        {
+            enemyInfo = null;
+            if (botOwner?.EnemiesController?.EnemyInfos == null)
+            {
+                return false;
+            }
+
+            foreach (var item in botOwner.EnemiesController.EnemyInfos)
+            {
+                string trackedProfileId = item.Value?.ProfileId ?? item.Key?.ProfileId ?? string.Empty;
+                if (string.Equals(trackedProfileId, enemyProfileId, StringComparison.Ordinal))
+                {
+                    enemyInfo = item.Value;
+                    return enemyInfo != null;
+                }
+            }
+
+            return false;
+        }
+
+        private void SetCurrentTargetHandoffLookPoint()
+        {
+            if (!targetHandoffScanActive || targetHandoffCandidates.Count == 0)
+            {
+                return;
+            }
+
+            TargetHandoffCandidate candidate = targetHandoffCandidates[targetHandoffCandidateIndex];
+            FollowerAwareness.SetTargetHandoffLookPoint(
+                botOwner,
+                candidate.LookPoint,
+                targetHandoffScanUntil);
+            BattleRecorder.RecordCommitmentEvent(
+                botOwner,
+                "targetHandoffScan",
+                "look",
+                candidate.EnemyProfileId,
+                target: candidate.LookPoint,
+                untilTime: targetHandoffScanUntil);
+        }
+
+        private void FinishTargetHandoffScan(string reason, bool blockUnchangedRetry)
+        {
+            if (!targetHandoffScanActive)
+            {
+                return;
+            }
+
+            BattleRecorder.RecordCommitmentEvent(
+                botOwner,
+                "targetHandoffScan",
+                "end",
+                reason,
+                untilTime: targetHandoffScanUntil);
+            if (blockUnchangedRetry)
+            {
+                failedTargetHandoffSignature = targetHandoffScanSignature;
+                targetHandoffRetryBlockedUntil = Time.time + TargetHandoffFailedRetrySeconds;
+            }
+            else
+            {
+                failedTargetHandoffSignature = 0;
+                targetHandoffRetryBlockedUntil = 0f;
+            }
+
+            targetHandoffScanActive = false;
+            targetHandoffScanUntil = 0f;
+            nextTargetHandoffProbeAt = 0f;
+            targetHandoffCandidateIndex = 0;
+            targetHandoffProbeCount = 0;
+            targetHandoffStartDamageRevision = 0;
+            targetHandoffScanSignature = 0;
+            targetHandoffCandidates.Clear();
+            FollowerAwareness.ClearTargetHandoffLookPoint(botOwner);
         }
 
         private static bool IsTrackedEnemyAlive(EnemyInfo? enemyInfo)
@@ -8741,7 +9167,7 @@ namespace pitTeam.BigBrain
             EnemyInfo goalEnemy = botOwner.Memory.GoalEnemy;
             if (goalEnemy == null)
             {
-                ClearPreparedDogFightInjuredSuppressRetreat();
+                ClearDecisionTransition();
                 ClearDogFightState();
                 return null;
             }
@@ -8749,20 +9175,13 @@ namespace pitTeam.BigBrain
             if (ShouldSeekReloadRetreat(goalEnemy) &&
                 !ShouldPreserveLoadedWeaponFire(goalEnemy))
             {
-                ClearPreparedDogFightInjuredSuppressRetreat();
                 ClearDogFightState();
                 return null;
             }
 
             if (IsPointBlankContactWithoutHardSeparation(botOwner, goalEnemy))
             {
-                ClearPreparedDogFightInjuredSuppressRetreat();
-            }
-            else if (TryConsumePreparedDogFightInjuredSuppressRetreatDecision(
-                         goalEnemy,
-                         out AICoreActionResultStruct<BotLogicDecision, GClass26> preparedRetreat))
-            {
-                return preparedRetreat;
+                ClearDecisionTransition();
             }
 
             if (TryGetDogFightInjuredSuppressRetreatDecision(
@@ -8885,42 +9304,120 @@ namespace pitTeam.BigBrain
             return true;
         }
 
-        private bool TryConsumePreparedDogFightInjuredSuppressRetreatDecision(
-            EnemyInfo goalEnemy,
+        public bool TryConsumePreparedDecisionTransition(
+            EnemyInfo? goalEnemy,
             out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
         {
             decision = default;
-            if (!preparedDogFightInjuredSuppressRetreatDecision.HasValue)
+            if (!preparedDecisionTransition.HasValue)
             {
                 return false;
             }
 
-            if (!string.Equals(
-                    preparedDogFightInjuredSuppressRetreatEnemyProfileId,
-                    goalEnemy.ProfileId,
-                    StringComparison.Ordinal))
+            PreparedCombatDecisionTransition transition = preparedDecisionTransition.Value;
+            preparedDecisionTransition = null;
+            bool valid = HasActiveCombatEnemy(goalEnemy) &&
+                         string.Equals(transition.EnemyProfileId, goalEnemy!.ProfileId, StringComparison.Ordinal) &&
+                         Time.time - transition.PreparedAt <= DecisionTransitionMaxAgeSeconds;
+            if (!valid)
             {
-                ClearPreparedDogFightInjuredSuppressRetreat();
+                deferredDecisionTransition = null;
+                BattleRecorder.RecordCommitmentEvent(
+                    botOwner,
+                    "decisionTransition",
+                    "discard",
+                    DescribeDecisionTransition(transition.SourceDecision, transition.EndReason),
+                    transition.NextDecision);
                 return false;
             }
 
-            decision = preparedDogFightInjuredSuppressRetreatDecision.Value;
-            ClearPreparedDogFightInjuredSuppressRetreat();
+            deferredDecisionTransition = null;
+            decision = transition.NextDecision;
+            BattleRecorder.RecordCommitmentEvent(
+                botOwner,
+                "decisionTransition",
+                "consume",
+                DescribeDecisionTransition(transition.SourceDecision, transition.EndReason),
+                decision);
             return true;
         }
 
-        private void PrepareDogFightInjuredSuppressRetreat(
-            EnemyInfo goalEnemy,
-            AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        public void ClearDecisionTransition()
         {
-            preparedDogFightInjuredSuppressRetreatDecision = decision;
-            preparedDogFightInjuredSuppressRetreatEnemyProfileId = goalEnemy.ProfileId;
+            preparedDecisionTransition = null;
+            deferredDecisionTransition = null;
         }
 
-        private void ClearPreparedDogFightInjuredSuppressRetreat()
+        private void PrepareDecisionTransition(
+            AICoreActionResultStruct<BotLogicDecision, GClass26> sourceDecision,
+            string endReason,
+            EnemyInfo goalEnemy,
+            AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision)
         {
-            preparedDogFightInjuredSuppressRetreatDecision = null;
-            preparedDogFightInjuredSuppressRetreatEnemyProfileId = null;
+            preparedDecisionTransition = new PreparedCombatDecisionTransition(
+                sourceDecision,
+                endReason,
+                goalEnemy.ProfileId,
+                Time.time,
+                nextDecision);
+            deferredDecisionTransition = null;
+            BattleRecorder.RecordCommitmentEvent(
+                botOwner,
+                "decisionTransition",
+                "prepare",
+                DescribeDecisionTransition(sourceDecision, endReason),
+                nextDecision);
+        }
+
+        private bool CanAttemptDecisionTransition(
+            AICoreActionResultStruct<BotLogicDecision, GClass26> sourceDecision,
+            string endReason,
+            EnemyInfo goalEnemy)
+        {
+            if (!deferredDecisionTransition.HasValue)
+            {
+                return true;
+            }
+
+            DeferredCombatDecisionTransition deferred = deferredDecisionTransition.Value;
+            bool sameTransition = deferred.SourceDecision.Action == sourceDecision.Action &&
+                                  string.Equals(deferred.SourceDecision.Reason, sourceDecision.Reason, StringComparison.Ordinal) &&
+                                  string.Equals(deferred.EndReason, endReason, StringComparison.Ordinal) &&
+                                  string.Equals(deferred.EnemyProfileId, goalEnemy.ProfileId, StringComparison.Ordinal);
+            if (!sameTransition || Time.time >= deferred.RetryAt)
+            {
+                deferredDecisionTransition = null;
+                return true;
+            }
+
+            return false;
+        }
+
+        private void DeferDecisionTransition(
+            AICoreActionResultStruct<BotLogicDecision, GClass26> sourceDecision,
+            string endReason,
+            EnemyInfo goalEnemy)
+        {
+            float retryAt = Time.time + FailedDecisionTransitionRetrySeconds;
+            deferredDecisionTransition = new DeferredCombatDecisionTransition(
+                sourceDecision,
+                endReason,
+                goalEnemy.ProfileId,
+                retryAt);
+            BattleRecorder.RecordCommitmentEvent(
+                botOwner,
+                "decisionTransition",
+                "deferNoSuccessor",
+                DescribeDecisionTransition(sourceDecision, endReason),
+                sourceDecision,
+                untilTime: retryAt);
+        }
+
+        private static string DescribeDecisionTransition(
+            AICoreActionResultStruct<BotLogicDecision, GClass26> sourceDecision,
+            string endReason)
+        {
+            return $"{sourceDecision.Action}:{sourceDecision.Reason}->{endReason}";
         }
 
         private bool ShouldUseDogFightInjuredSuppressRetreat(EnemyInfo goalEnemy)
@@ -8948,6 +9445,31 @@ namespace pitTeam.BigBrain
                    botOwner.Memory.IsUnderFire ||
                    WasHitRecently(botOwner, 1.5f) ||
                    FollowerAwareness.WasRecentlyDamaged(botOwner);
+        }
+
+        private bool ShouldKeepDogFightOpeningCommitment(EnemyInfo goalEnemy)
+        {
+            if (dogFightOpeningStartedAt <= 0f ||
+                !string.Equals(dogFightOpeningEnemyProfileId, goalEnemy.ProfileId, StringComparison.Ordinal) ||
+                Time.time - dogFightOpeningStartedAt >= DogFightOpeningCommitmentSeconds ||
+                goalEnemy.Distance > CloseVisibleDogFightEndDistance ||
+                !ShouldPreserveLoadedWeaponFire(goalEnemy))
+            {
+                return false;
+            }
+
+            if (!dogFightOpeningRetreatDeferredRecorded)
+            {
+                dogFightOpeningRetreatDeferredRecorded = true;
+                BattleRecorder.RecordCommitmentEvent(
+                    botOwner,
+                    "dogFightOpening",
+                    "deferInjuredRetreat",
+                    "loadedCloseContact",
+                    untilTime: dogFightOpeningStartedAt + DogFightOpeningCommitmentSeconds);
+            }
+
+            return true;
         }
 
         private bool HasSafeDogFightInjuredSuppressLane(Vector3 suppressTarget)
@@ -9651,12 +10173,31 @@ namespace pitTeam.BigBrain
                 return;
             }
 
+            if (state == BotDogFightStatus.dogFight)
+            {
+                string? enemyProfileId = botOwner.Memory?.GoalEnemy?.ProfileId;
+                if (botOwner.DogFight.DogFightState != BotDogFightStatus.dogFight ||
+                    !string.Equals(dogFightOpeningEnemyProfileId, enemyProfileId, StringComparison.Ordinal))
+                {
+                    dogFightOpeningStartedAt = Time.time;
+                    dogFightOpeningEnemyProfileId = enemyProfileId;
+                    dogFightOpeningRetreatDeferredRecorded = false;
+                }
+            }
+            else
+            {
+                ResetDogFightOpeningCommitment();
+            }
+
             botOwner.DogFight.DogFightState = state;
             botOwner.DogFight.PursuitInProgress = false;
         }
 
         private void ClearDogFightState()
         {
+            ResetDogFightOpeningCommitment();
+            pointBlankDogFightContactLostAt = 0f;
+            deferredDecisionTransition = null;
             if (botOwner?.DogFight == null)
             {
                 return;
@@ -9664,6 +10205,13 @@ namespace pitTeam.BigBrain
 
             botOwner.DogFight.DogFightState = BotDogFightStatus.none;
             botOwner.DogFight.PursuitInProgress = false;
+        }
+
+        private void ResetDogFightOpeningCommitment()
+        {
+            dogFightOpeningStartedAt = 0f;
+            dogFightOpeningEnemyProfileId = null;
+            dogFightOpeningRetreatDeferredRecorded = false;
         }
 
         public AICoreActionResultStruct<BotLogicDecision, GClass26>? TryGetNeedHealDecision()
@@ -13258,7 +13806,7 @@ namespace pitTeam.BigBrain
         {
             return currentDecision.Action switch
             {
-                BotLogicDecision.dogFight => EndDogFight(),
+                BotLogicDecision.dogFight => EndDogFight(currentDecision),
                 BotLogicDecision.shootToSmoke => EndImmediately(),
                 BotLogicDecision.runToCover => EndRunToCover(currentDecision.Reason),
                 BotLogicDecision.attackMoving => EndAttackMoving(currentDecision.Reason),
@@ -13279,28 +13827,60 @@ namespace pitTeam.BigBrain
             };
         }
 
-        public AICoreActionEndStruct EndDogFight()
+        public AICoreActionEndStruct EndDogFight(
+            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision)
         {
             EnemyInfo? goalEnemy = botOwner.Memory.GoalEnemy;
             if (!HasActiveCombatEnemy(goalEnemy))
             {
+                ClearDecisionTransition();
                 ClearDogFightState();
                 return new AICoreActionEndStruct("enemyMissingOrDead", true);
             }
 
-            if (ShouldSeekReloadRetreat(goalEnemy))
+            const string reloadRetreatEndReason = "reloadRetreatNeeded";
+            if (ShouldSeekReloadRetreat(goalEnemy) &&
+                CanAttemptDecisionTransition(currentDecision, reloadRetreatEndReason, goalEnemy))
             {
-                ClearDogFightState();
-                return new AICoreActionEndStruct("reloadRetreatNeeded", true);
+                if (TryGetReloadRetreatDecision(
+                        goalEnemy,
+                        out AICoreActionResultStruct<BotLogicDecision, GClass26> reloadRetreatDecision))
+                {
+                    PrepareDecisionTransition(
+                        currentDecision,
+                        reloadRetreatEndReason,
+                        goalEnemy,
+                        reloadRetreatDecision);
+                    ClearDogFightState();
+                    return new AICoreActionEndStruct(reloadRetreatEndReason, true);
+                }
+
+                DeferDecisionTransition(currentDecision, reloadRetreatEndReason, goalEnemy);
             }
 
             if (goalEnemy != null &&
+                !ShouldKeepDogFightOpeningCommitment(goalEnemy) &&
                 TryGetDogFightInjuredSuppressRetreatDecision(
                     goalEnemy,
                     out AICoreActionResultStruct<BotLogicDecision, GClass26> injuredSuppressRetreat))
             {
-                PrepareDogFightInjuredSuppressRetreat(goalEnemy, injuredSuppressRetreat);
+                PrepareDecisionTransition(
+                    currentDecision,
+                    "dogFightInjuredSuppressRetreat",
+                    goalEnemy,
+                    injuredSuppressRetreat);
                 return new AICoreActionEndStruct("dogFightInjuredSuppressRetreat", true);
+            }
+
+            if (ShouldReleasePointBlankDogFight(currentDecision.Reason, goalEnemy))
+            {
+                BattleRecorder.RecordCommitmentEvent(
+                    botOwner,
+                    "pointBlankDogFight",
+                    "release",
+                    "pointBlankContactLost");
+                ClearDogFightState();
+                return new AICoreActionEndStruct("pointBlankContactLost", true);
             }
 
             if ((goalEnemy == null || goalEnemy.Distance > botOwner.Settings.FileSettings.Mind.DOG_FIGHT_OUT) &&
@@ -13691,6 +14271,48 @@ namespace pitTeam.BigBrain
             }
 
             return Continue();
+        }
+
+        private bool ShouldReleasePointBlankDogFight(string? reason, EnemyInfo? goalEnemy)
+        {
+            if (!IsPointBlankDogFightReason(reason))
+            {
+                pointBlankDogFightContactLostAt = 0f;
+                return false;
+            }
+
+            bool stillRequiresDogFight =
+                IsPointBlankContactWithoutHardSeparation(botOwner, goalEnemy) ||
+                HasFreshVisibleShootableContact(goalEnemy, CloseThreatRecentSeenSeconds) ||
+                IsEnemyActivelyThreateningMe(
+                    goalEnemy,
+                    CloseThreatDogFightDistance,
+                    CloseThreatRecentSeenSeconds);
+            if (stillRequiresDogFight)
+            {
+                pointBlankDogFightContactLostAt = 0f;
+                return false;
+            }
+
+            if (pointBlankDogFightContactLostAt <= 0f)
+            {
+                pointBlankDogFightContactLostAt = Time.time;
+                BattleRecorder.RecordCommitmentEvent(
+                    botOwner,
+                    "pointBlankDogFight",
+                    "lostContactGrace",
+                    reason,
+                    untilTime: pointBlankDogFightContactLostAt + PointBlankDogFightLostContactGraceSeconds);
+                return false;
+            }
+
+            return Time.time - pointBlankDogFightContactLostAt >= PointBlankDogFightLostContactGraceSeconds;
+        }
+
+        private static bool IsPointBlankDogFightReason(string? reason)
+        {
+            return string.Equals(reason, "pointBlankContactDogFight", StringComparison.Ordinal) ||
+                   string.Equals(reason, "pushPointBlankContactDogFight", StringComparison.Ordinal);
         }
 
         private AICoreActionEndStruct EndCommittedHealMovement(EnemyInfo? goalEnemy)
@@ -15405,11 +16027,26 @@ namespace pitTeam.BigBrain
                    FollowerCombatPush.IsPushReason(reason);
         }
 
+        public static bool IsTargetHandoffScanReason(string? reason)
+        {
+            return string.Equals(reason, TargetHandoffScanReason, StringComparison.Ordinal);
+        }
+
         public AICoreActionEndStruct EndBaseHoldPosition(string reason)
         {
             if (HasActiveCombatGestureOrder())
             {
+                if (string.Equals(reason, TargetHandoffScanReason, StringComparison.Ordinal))
+                {
+                    ClearTargetHandoffScan("combatGestureOrder");
+                }
+
                 return new AICoreActionEndStruct("combatGestureBreakHold", true);
+            }
+
+            if (string.Equals(reason, TargetHandoffScanReason, StringComparison.Ordinal))
+            {
+                return EndTargetHandoffScan();
             }
 
             if (IsReloadHoldReason(reason))

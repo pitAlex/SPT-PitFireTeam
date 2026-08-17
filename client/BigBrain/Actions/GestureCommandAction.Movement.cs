@@ -500,11 +500,11 @@ namespace pitTeam.BigBrain.Actions
 
             if (followerData?.TryGetCommandLookOverride(out Vector3 lookOverridePoint) == true)
             {
-                BotOwner.Steering.LookToPoint(lookOverridePoint);
+                LookTowardMovePointBearing(lookOverridePoint);
             }
             else
             {
-                BotOwner.Steering.LookToPathDestPoint();
+                LookTowardMovePointBearing(target);
             }
 
             nextHoldLookChangeAt = 0f;
@@ -702,8 +702,7 @@ namespace pitTeam.BigBrain.Actions
 
             if (followerData?.TryGetCommandLookOverride(out Vector3 holdLookOverridePoint) == true)
             {
-
-                BotOwner.Steering.LookToPoint(holdLookOverridePoint);
+                LookTowardMovePointBearing(holdLookOverridePoint);
 
                 holdLookPoint = Vector3.zero;
                 nextHoldLookChangeAt = 0f;
@@ -721,6 +720,19 @@ namespace pitTeam.BigBrain.Actions
             {
                 BotOwner.Steering.LookToPoint(holdLookPoint);
             }
+        }
+
+        private void LookTowardMovePointBearing(Vector3 point)
+        {
+            Vector3 planarDirection = point - BotOwner.Position;
+            planarDirection.y = 0f;
+            if (planarDirection.sqrMagnitude <= 0.001f)
+            {
+                BotOwner.Steering.LookToMovingDirection();
+                return;
+            }
+
+            BotOwner.Steering.LookToDirection(planarDirection.normalized);
         }
 
         private void HandleHoldPosition()

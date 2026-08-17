@@ -2849,7 +2849,14 @@ namespace pitTeam.Components
                 return;
             }
 
-            ApplyFollowerLookOverride(closestFollower, commandTarget);
+            // The command target is a ground/NavMesh point. It is correct for movement, but using
+            // it directly as an out-of-combat look target makes nearby followers stare at their
+            // feet. Keep combat tactical pointing exact; present normal movement as a level
+            // forward bearing toward the destination.
+            Vector3 commandLookTarget = combatCommand
+                ? commandTarget
+                : GetMoveToPointPresentationLookTarget(closestFollower, requester, commandTarget);
+            ApplyFollowerLookOverride(closestFollower, commandLookTarget);
 
             if (combatCommand)
             {
@@ -2961,6 +2968,42 @@ namespace pitTeam.Components
             }
 
             return requester.Transform.position + planarDirection.normalized * ContactLookDistance;
+        }
+
+        private static Vector3 GetMoveToPointPresentationLookTarget(
+            BotOwner follower,
+            IPlayer requester,
+            Vector3 commandTarget)
+        {
+            Vector3 planarDirection = commandTarget - follower.Position;
+            planarDirection.y = 0f;
+            if (planarDirection.sqrMagnitude <= 0.001f)
+            {
+                planarDirection = GetPlanarLookDirection(requester);
+            }
+
+            if (planarDirection.sqrMagnitude <= 0.001f)
+            {
+                planarDirection = follower.LookDirection;
+                planarDirection.y = 0f;
+            }
+
+            if (planarDirection.sqrMagnitude <= 0.001f)
+            {
+                planarDirection = follower.Transform?.forward ?? Vector3.forward;
+                planarDirection.y = 0f;
+            }
+
+            if (planarDirection.sqrMagnitude <= 0.001f)
+            {
+                planarDirection = Vector3.forward;
+            }
+
+            Vector3 lookOrigin = follower.WeaponRoot != null
+                ? follower.WeaponRoot.position
+                : follower.Position + Vector3.up * 1.2f;
+
+            return lookOrigin + planarDirection.normalized * ContactLookDistance;
         }
 
         private static Vector3 GetPlanarLookDirection(IPlayer requester)
