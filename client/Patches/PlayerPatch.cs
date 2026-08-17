@@ -420,14 +420,14 @@ namespace pitTeam.Patches
         internal static void TryRememberFriendlyPmcBeforePlayerDamage(DamageInfoStruct damageInfo, Player target)
         {
             IPlayer attacker = damageInfo.Player?.iPlayer;
-            if (!IsFriendlyPmcKillMessageContextEnabled() ||
-                attacker == null ||
+            if (attacker == null ||
                 !attacker.IsYourPlayer ||
                 target == null ||
                 !target.IsAI ||
                 target.Side != attacker.Side ||
                 !IsPmc(target.Side) ||
-                string.IsNullOrWhiteSpace(target.ProfileId))
+                string.IsNullOrWhiteSpace(target.ProfileId) ||
+                !IsFriendlyPmcKillMessageContextEnabled())
             {
                 return;
             }
@@ -439,14 +439,6 @@ namespace pitTeam.Patches
                 return;
             }
 
-            bool wasAlreadyEnemy =
-                targetGroup.IsEnemy(attacker) ||
-                targetBot.EnemiesController.IsEnemy(attacker) ||
-                string.Equals(
-                    targetBot.Memory?.GoalEnemy?.Person?.ProfileId,
-                    attacker.ProfileId,
-                    StringComparison.Ordinal);
-
             lock (RecordedKillMessageLock)
             {
                 // The first direct player hit is the relationship boundary. Later hits must not
@@ -455,6 +447,14 @@ namespace pitTeam.Patches
                 {
                     return;
                 }
+
+                bool wasAlreadyEnemy =
+                    targetGroup.IsEnemy(attacker) ||
+                    targetBot.EnemiesController.IsEnemy(attacker) ||
+                    string.Equals(
+                        targetBot.Memory?.GoalEnemy?.Person?.ProfileId,
+                        attacker.ProfileId,
+                        StringComparison.Ordinal);
 
                 if (!wasAlreadyEnemy)
                 {
