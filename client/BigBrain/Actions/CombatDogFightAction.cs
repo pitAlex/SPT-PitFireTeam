@@ -7,9 +7,9 @@ using UnityEngine.AI;
 namespace pitTeam.BigBrain.Actions
 {
     /// <summary>
-    /// Close-quarters fight action. It owns short lateral/backward movement, keeps the follower
-    /// crouched and unsprinted for weapon control, blocks friendly shot lanes, and forces threat
-    /// facing so dogfight movement does not expose the follower's back.
+    /// Close-quarters fight action. It owns short lateral/backward movement, preserves a settled
+    /// firing pose until movement is accepted, blocks friendly shot lanes, and forces threat facing
+    /// so dogfight movement does not expose the follower's back.
     /// </summary>
     internal sealed class CombatDogFightAction : FollowerCombatActionBase
     {
@@ -65,8 +65,8 @@ namespace pitTeam.BigBrain.Actions
         {
             EnemyInfo? goalEnemy = BotOwner.Memory?.GoalEnemy;
 
-            // Dogfight is about weapon control, not travel speed. Keep movement slow, update a
-            // short SAIN-like dodge destination, then force crouch/no-sprint before shooting.
+            // Dogfight is about weapon control, not travel speed. Keep movement slow and update a
+            // short SAIN-like dodge destination without giving up a settled firing pose first.
             BotOwner.Mover.SetTargetMoveSpeed(1f);
             bool unsafeCloseFacing = IsUnsafeCloseThreatFacing(goalEnemy);
             bool hasConfirmedShot = goalEnemy != null && goalEnemy.CanShoot && goalEnemy.IsVisible;
@@ -93,8 +93,23 @@ namespace pitTeam.BigBrain.Actions
                 MaintainThreatFacing(goalEnemy!, GetDogFightThreatLookPoint(goalEnemy!), allowHardTurn: true);
             }
 
-            UpdateSainLikeMovement(goalEnemy);
-            ApplyDogFightPose();
+            bool hasAcceptedMovement = UpdateSainLikeMovement(goalEnemy);
+            bool hasFireContact = hasConfirmedShot || hasPointBlankContactShot || hasRecentContactShot;
+
+            // Close retreat movement is dangerous if it turns the bot away from the attacker.
+            // A nearby door can also make EFT immediately cancel an otherwise accepted dodge.
+            // In either case, revoke the mobile posture and retry from the existing firing pose.
+            if (hasAcceptedMovement &&
+                ((hasFireContact && unsafeCloseFacing && IsUnsafeCloseThreatFacing(goalEnemy)) ||
+                 BotOwner.DoorOpener.DogFightHaveNearestDoor()))
+            {
+                BotOwner.Mover.Stop();
+                moveStatus = DogFightMoveStatus.None;
+                nextMoveUpdateTime = Time.time + MoveUpdateFallbackDelay;
+                hasAcceptedMovement = false;
+            }
+
+            ApplyDogFightPose(hasAcceptedMovement, goalEnemy);
             BotOwner.Sprint(false, true);
 
             if (goalEnemy == null || !hasConfirmedShot && !hasPointBlankContactShot && !hasRecentContactShot)
@@ -134,18 +149,6 @@ namespace pitTeam.BigBrain.Actions
                     ? recentContactTarget
                     : shootLogic.GetTarget() ?? GetDogFightThreatLookPoint(goalEnemy);
             MaintainThreatFacing(goalEnemy, shootPoint, allowHardTurn: true);
-
-            // Close retreat movement is dangerous if it turns the bot away from the attacker. Stop
-            // movement when the threat-facing guard still considers the angle unsafe.
-            if (unsafeCloseFacing && IsUnsafeCloseThreatFacing(goalEnemy))
-            {
-                BotOwner.Mover.Stop();
-            }
-
-            if (BotOwner.DoorOpener.DogFightHaveNearestDoor())
-            {
-                BotOwner.Mover.Stop();
-            }
 
             // Dogfight tends to happen inside the squad. Friendly lane safety is the hard stop before
             // either our fast-fire helper or the vanilla shoot node can press the trigger.
@@ -197,17 +200,12 @@ namespace pitTeam.BigBrain.Actions
             shootLogic.UpdateNodeByBrain(GetData<GClass27>(data));
         }
 
-        private void UpdateSainLikeMovement(EnemyInfo? goalEnemy)
+        private bool UpdateSainLikeMovement(EnemyInfo? goalEnemy)
         {
             if (goalEnemy == null)
             {
                 moveStatus = DogFightMoveStatus.None;
-                return;
-            }
-
-            if (BotOwner.GetPlayer?.MovementContext?.IsInPronePose == true)
-            {
-                BotOwner.SetPose(1f);
+                return false;
             }
 
             if (goalEnemy.IsVisible && moveStatus == DogFightMoveStatus.MovingToEnemy)
@@ -215,12 +213,12 @@ namespace pitTeam.BigBrain.Actions
                 moveStatus = DogFightMoveStatus.Shooting;
                 BotOwner.Mover.Stop();
                 nextMoveUpdateTime = Time.time + 0.25f * Random.Range(0.66f, 1.33f);
-                return;
+                return false;
             }
 
             if (nextMoveUpdateTime > Time.time)
             {
-                return;
+                return IsMovementAccepted();
             }
 
             if (TryBackUpFromEnemy(goalEnemy))
@@ -228,25 +226,38 @@ namespace pitTeam.BigBrain.Actions
                 moveStatus = DogFightMoveStatus.BackingUp;
                 float baseTime = goalEnemy.IsVisible ? 0.75f : 1f;
                 nextMoveUpdateTime = Time.time + baseTime * Random.Range(0.66f, 1.33f);
-                return;
+                return true;
             }
 
             if (TryMoveTowardEnemy(goalEnemy))
             {
                 moveStatus = DogFightMoveStatus.MovingToEnemy;
                 nextMoveUpdateTime = Time.time + Mathf.Clamp(0.25f * Random.Range(0.5f, 1.25f), MoveUpdateMinDelay, 0.66f);
-                return;
+                return true;
             }
 
             moveStatus = DogFightMoveStatus.None;
             nextMoveUpdateTime = Time.time + MoveUpdateFallbackDelay;
+            return false;
         }
 
-        private void ApplyDogFightPose()
+        private bool IsMovementAccepted()
         {
-            // Dogfight is inherently close contact. Keep a standing weapon/movement posture so the
-            // follower can strafe, back out, and return fire without settling into a static crouch.
-            BotOwner.SetPose(1f);
+            return moveStatus == DogFightMoveStatus.BackingUp ||
+                   moveStatus == DogFightMoveStatus.MovingToEnemy;
+        }
+
+        private void ApplyDogFightPose(bool hasAcceptedMovement, EnemyInfo? goalEnemy)
+        {
+            // Only point-blank dogfights preserve a useful settled pose while movement is
+            // unavailable. At ordinary dogfight ranges, retain the normal mobile standing posture.
+            bool preserveCloseSettledPose = !hasAcceptedMovement &&
+                                             goalEnemy != null &&
+                                             goalEnemy.Distance <= UnsafeCloseThreatDistance;
+            if (!preserveCloseSettledPose)
+            {
+                BotOwner.SetPose(1f);
+            }
         }
 
         private bool TryMoveTowardEnemy(EnemyInfo goalEnemy)

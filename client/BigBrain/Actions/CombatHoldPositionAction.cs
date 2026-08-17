@@ -15,6 +15,8 @@ namespace pitTeam.BigBrain.Actions
     /// </summary>
     internal sealed class CombatHoldPositionAction : FollowerCombatActionBase
     {
+        private const float UnsafeVanillaReloadDeferralSeconds = 0.25f;
+
         private readonly GClass278 baseLogic;
         private readonly FollowerCombatFireOverlay fireOverlay;
 
@@ -47,7 +49,13 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
+            DeferUnsafeVanillaHoldReload(reason);
             baseLogic.UpdateNodeByBrain(GetData<GClass28>(data));
+
+            // Vanilla hold nodes can lower pose after the decision-level crouch policy has already
+            // run. Reassert the shared close-threat rule before the hold fire overlay pulls the
+            // trigger so regroup/boss/cover holds cannot bypass the 50m standing contract.
+            EnforceCloseThreatStandingPose("holdPosition", reason);
 
             if (recoveryNoCover)
             {
@@ -62,6 +70,31 @@ namespace pitTeam.BigBrain.Actions
                 allowThreatSuppression: recoveryNoCover || BotOwner.Memory?.IsUnderFire == true,
                 forceThreatLook: true,
                 out _);
+        }
+
+        private void DeferUnsafeVanillaHoldReload(string? reason)
+        {
+            if (BotOwner.WeaponManager?.Reload?.Reloading == true ||
+                BotOwner.Memory?.IsInCover == true ||
+                FollowerCombatCommon.IsReloadHoldReason(reason) ||
+                FollowerCombatCommon.IsWeaponPreparationHoldReason(reason))
+            {
+                return;
+            }
+
+            bool exposedPressure = BotOwner.Memory?.IsUnderFire == true ||
+                                   FollowerAwareness.WasRecentlyHit(BotOwner);
+            if (!exposedPressure)
+            {
+                return;
+            }
+
+            // GClass278 otherwise starts its own below-half-magazine reload based only on stale
+            // real-sight time. Keep that hidden policy out of exposed pressure holds so the
+            // cover-first combat reload router remains the sole owner of unsafe reload starts.
+            baseLogic.Float_10 = Mathf.Max(
+                baseLogic.Float_10,
+                Time.time + UnsafeVanillaReloadDeferralSeconds);
         }
 
         public override void Stop()

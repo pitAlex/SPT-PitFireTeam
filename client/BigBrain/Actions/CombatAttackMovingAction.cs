@@ -1,6 +1,7 @@
 using DrakiaXYZ.BigBrain.Brains;
 using EFT;
 using pitTeam.Components;
+using pitTeam.Utils;
 using UnityEngine;
 
 namespace pitTeam.BigBrain.Actions
@@ -43,8 +44,14 @@ namespace pitTeam.BigBrain.Actions
 
         public override void Update(CustomLayer.ActionData data)
         {
+            string? reason = GetReason(data);
             EnemyInfo? goalEnemy = BotOwner.Memory?.GoalEnemy;
-            if (goalEnemy?.Person?.HealthController?.IsAlive != true)
+            bool hasLiveGoalEnemy = goalEnemy?.Person?.HealthController?.IsAlive == true;
+            bool hasNoEnemyThreatMove =
+                !hasLiveGoalEnemy &&
+                FollowerCombatCommon.IsNoEnemyThreatCoverReason(reason) &&
+                FollowerAwareness.TryGetRecentThreatLookPoint(BotOwner, out _);
+            if (!hasLiveGoalEnemy && !hasNoEnemyThreatMove)
             {
                 StopCombatShooting();
                 BotOwner.LookData.SetLookPointByHearing(null);
@@ -54,20 +61,23 @@ namespace pitTeam.BigBrain.Actions
 
             // Attack-moving can run for a while, so keep non-marksman followers on their primary at
             // range and pass the current decision reason into the wrapped node for suppress behavior.
-            string? reason = GetReason(data);
-            TryPreferPrimaryAtRange(goalEnemy, reason);
-            if (HoldPushMovementUntilLongGunReady(reason))
+            if (hasLiveGoalEnemy)
             {
-                return;
-            }
+                TryPreferPrimaryAtRange(goalEnemy!, reason);
+                if (HoldPushMovementUntilLongGunReady(reason))
+                {
+                    return;
+                }
 
-            if (StopUnownedGrenadeLauncherFire(reason, goalEnemy))
-            {
-                return;
+                if (StopUnownedGrenadeLauncherFire(reason, goalEnemy))
+                {
+                    return;
+                }
             }
 
             baseLogic.SetCurrentReason(reason);
             baseLogic.UpdateNodeByBrain(GetRawData(data));
+            EnforceCloseThreatStandingPose("attackMoving", reason, goalEnemy);
         }
 
         /// <summary>
@@ -126,7 +136,14 @@ namespace pitTeam.BigBrain.Actions
                     ForceRegroupCatchUpMovement();
                 }
 
-                base.UpdateNodeByBrain(data);
+                if (BotOwner_0.Memory?.GoalEnemy == null)
+                {
+                    UpdateWithoutGoalEnemy(data);
+                }
+                else
+                {
+                    base.UpdateNodeByBrain(data);
+                }
 
                 if (!autoCover)
                 {
@@ -147,6 +164,22 @@ namespace pitTeam.BigBrain.Actions
                 {
                     TryMaintainThreatFacing(BotOwner_0.Memory?.GoalEnemy);
                 }
+            }
+
+            private void UpdateWithoutGoalEnemy(GClass26 data)
+            {
+                // recovery.noEnemyThreatCover deliberately survives a temporary GoalEnemy gap so
+                // the follower can keep moving and suppressing toward concrete incoming-fire evidence.
+                // Vanilla GClass205 is not valid in that state: while in cover it dereferences
+                // Memory.GoalEnemy.EnemyLastPosition without a null check. Preserve the planner-owned
+                // movement and our recent-threat fire overlay, but skip that enemy-dependent update.
+                base.method_0(true);
+                BotOwner_0.SetTargetMoveSpeed(1f);
+                BotOwner_0.Sprint(false, true);
+                BotOwner_0.SetPose(1f);
+                BotOwner_0.Mover.SetPose(1f);
+                BotOwner_0.WeaponManager?.TryReloadWeaponOrUnderbarrelLauncher();
+                AimingAndShoot(data);
             }
 
             public override void AimingAndShoot(GClass26 data)

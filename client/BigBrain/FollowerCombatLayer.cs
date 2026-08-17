@@ -35,6 +35,7 @@ namespace pitTeam.BigBrain
         private bool lingerArmed;
         private float lingerHardUntil;
         private float medicalKeepActiveStartedAt;
+        private bool medicalKeepActiveTimedOut;
         private bool combatLogicResetForInactive;
 
         public FollowerCombatLayer(BotOwner botOwner, int priority) : base(botOwner, priority)
@@ -400,6 +401,7 @@ namespace pitTeam.BigBrain
         private void ClearMedicalKeepActive()
         {
             medicalKeepActiveStartedAt = 0f;
+            medicalKeepActiveTimedOut = false;
         }
 
         private bool IsLingerExpired()
@@ -526,6 +528,14 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
+            if (currentDecision.HasValue &&
+                IsMovementContinuationDecision(currentDecision.Value.Action) &&
+                FollowerCombatCommon.IsNoEnemyThreatCoverReason(currentDecision.Value.Reason) &&
+                FollowerAwareness.TryGetRecentThreatLookPoint(BotOwner, out _))
+            {
+                return true;
+            }
+
             EnemyInfo? goalEnemy = BotOwner?.Memory?.GoalEnemy;
             if (goalEnemy != null && IsGoalEnemyAlive(goalEnemy))
             {
@@ -550,8 +560,12 @@ namespace pitTeam.BigBrain
                 }
             }
 
-            return BotOwner?.Memory?.IsUnderFire == true &&
-                   Time.time - BotOwner.Memory.LastTimeHit <= 2f;
+            bool recentCombatThreat =
+                (hadCombatSinceActivation || currentDecision.HasValue) &&
+                FollowerAwareness.WasRecentlyHit(BotOwner);
+            return recentCombatThreat ||
+                   (BotOwner?.Memory?.IsUnderFire == true &&
+                    Time.time - BotOwner.Memory.LastTimeHit <= 2f);
         }
 
         private bool TryKeepActiveForOrderedPush()
@@ -713,6 +727,15 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
+            // A medical retention window is a one-shot handoff opportunity. If EFT leaves a
+            // stale Have2Do/HaveWork flag behind, do not immediately start another identical
+            // window and keep the combat layer alive forever. A real layer restart or the
+            // pending work clearing resets this latch.
+            if (medicalKeepActiveTimedOut)
+            {
+                return false;
+            }
+
             if (medicalKeepActiveStartedAt <= 0f)
             {
                 medicalKeepActiveStartedAt = Time.time;
@@ -724,7 +747,8 @@ namespace pitTeam.BigBrain
                 : PostCombatFirstAidKeepActiveSeconds;
             if (Time.time - medicalKeepActiveStartedAt > timeout)
             {
-                ClearMedicalKeepActive();
+                medicalKeepActiveStartedAt = 0f;
+                medicalKeepActiveTimedOut = true;
                 return false;
             }
 

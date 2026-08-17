@@ -929,7 +929,13 @@ namespace pitTeam.Modules
                 RecorderFollowerState state = GetOrCreateState(owner);
                 bool layerActive = FollowerCombatLayer.IsFollowerCombatLayerActive(owner);
                 TryRecordFollowerWeaponActivity(owner, state, layerActive);
-                bool shouldSnapshot = state.InCombat || layerActive;
+                BotFollowerPlayer? followerData = BossPlayers.Instance?.GetFollower(owner);
+                bool hasActiveCommand = followerData?.TryPeekActiveCommand(out _, out _, out _) == true;
+                bool postCombatFullHealActive = FollowerMedical.IsPostCombatFullHealActive(owner);
+                bool shouldSnapshot = state.InCombat ||
+                                      layerActive ||
+                                      postCombatFullHealActive ||
+                                      hasActiveCommand;
                 if (!shouldSnapshot)
                 {
                     return;
@@ -1628,7 +1634,15 @@ namespace pitTeam.Modules
                     firstAidUsing = bot.Medecine?.FirstAid?.Using == true,
                     surgeryPending = bot.Medecine?.SurgicalKit?.HaveWork == true,
                     surgeryUsing = bot.Medecine?.SurgicalKit?.Using == true,
+                    postCombatFullHealActive = FollowerMedical.IsPostCombatFullHealActive(bot),
                     healthStatus = bot.GetPlayer?.HealthStatus.ToString()
+                },
+                brain = new
+                {
+                    layer = bot.Brain?.BaseBrain?.CurLayerInfo?.Name(),
+                    node = bot.Brain?.Agent?.GetActiveNodeName(),
+                    lastAction = bot.Brain?.Agent?.LastResult().Action.ToString(),
+                    lastReason = bot.Brain?.Agent?.LastResult().Reason
                 },
                 dogFight = bot.DogFight?.DogFightState.ToString(),
                 weapon = CreateLightWeaponSnapshot(bot),
@@ -1774,9 +1788,17 @@ namespace pitTeam.Modules
                     id = (int?)null,
                     position = (object?)null,
                     distance = (float?)null,
-                    spotted = (bool?)null
+                    spotted = (bool?)null,
+                    coverType = (string?)null,
+                    coverLevel = (string?)null,
+                    defenceLevel = (float?)null,
+                    dangerCoeff = (int?)null,
+                    hideLevel = (int?)null,
+                    wallDirection = (object?)null
                 };
             }
+
+            CoverPointDefenceInfo? defenceInfo = cover.DefenceInfo;
 
             return new
             {
@@ -1784,7 +1806,15 @@ namespace pitTeam.Modules
                 id = (int?)cover.Id,
                 position = (object?)CreateVector(cover.Position),
                 distance = SanitizeFloat(Vector3.Distance(bot.Position, cover.Position)),
-                spotted = (bool?)cover.IsSpotted
+                spotted = (bool?)cover.IsSpotted,
+                coverType = cover.CoverType.ToString(),
+                coverLevel = cover.CoverLevel.ToString(),
+                defenceLevel = defenceInfo != null ? SanitizeFloat(defenceInfo.DefenceLevel) : null,
+                dangerCoeff = defenceInfo != null ? (int?)defenceInfo.DangerCoeff : null,
+                hideLevel = (int?)cover.HideLevel,
+                wallDirection = cover.ToWallVector.sqrMagnitude > 0.0001f
+                    ? (object?)CreateVector(cover.ToWallVector)
+                    : null
             };
         }
 

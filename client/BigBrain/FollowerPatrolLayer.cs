@@ -158,9 +158,12 @@ namespace pitTeam.BigBrain
             bool isHealAction = selectedAction?.Type == typeof(HealAction);
             bool isHealWaitAction = selectedAction?.Type == typeof(PatrolHealWaitAction);
             bool isHealDecision = BotOwner.Brain.Agent?.LastResult().Action == BotLogicDecision.heal;
+            bool isUsingMedical = Utils.FollowerMedical.IsUsingMedical(BotOwner);
 
-            // let bot finish healing
-            if (isHealAction || isHealDecision && !isHealWaitAction)
+            // Preserve an actual medical use, but do not let a stale Heal action/LastResult own
+            // patrol forever after EFT has stopped using the item. Once no medical use is active,
+            // normal enemy, command, and post-combat readiness checks must be allowed to run.
+            if (isUsingMedical && (isHealAction || isHealDecision && !isHealWaitAction))
             {
                 return true;
             }

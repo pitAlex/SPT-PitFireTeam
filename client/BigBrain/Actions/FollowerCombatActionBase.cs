@@ -34,9 +34,18 @@ namespace pitTeam.BigBrain.Actions
     internal abstract class FollowerCombatActionBase : CustomLogic
     {
         private float nextUnownedLauncherGuardRecordAt;
+        private bool closeThreatStandingRecorded;
+        private string? closeThreatStandingRecordReason;
 
         protected FollowerCombatActionBase(BotOwner botOwner) : base(botOwner)
         {
+        }
+
+        public override void Start()
+        {
+            closeThreatStandingRecorded = false;
+            closeThreatStandingRecordReason = null;
+            base.Start();
         }
 
         protected sealed class FallbackRunRestoreGate
@@ -201,6 +210,62 @@ namespace pitTeam.BigBrain.Actions
         protected void StopCombatShooting()
         {
             FollowerRecovery.StopShooting(BotOwner);
+        }
+
+        protected bool EnforceCloseThreatStandingPose(
+            string action,
+            string? actionReason = null,
+            EnemyInfo? goalEnemy = null)
+        {
+            goalEnemy ??= BotOwner?.Memory?.GoalEnemy;
+            if (!FollowerShootPoseSafety.ShouldForceStandingForCloseThreat(
+                    BotOwner,
+                    goalEnemy,
+                    out string policyReason,
+                    out float enemyDistance,
+                    out Vector3? target))
+            {
+                closeThreatStandingRecorded = false;
+                closeThreatStandingRecordReason = null;
+                return false;
+            }
+
+            bool lowTargetPose = BotOwner.Mover?.TargetPose < 0.85f;
+            bool prone = BotOwner.GetPlayer?.MovementContext?.IsInPronePose == true;
+            if (!lowTargetPose && !prone)
+            {
+                return true;
+            }
+
+            if (prone)
+            {
+                BotOwner.BotLay?.GetUp(false);
+            }
+
+            BotOwner.SetPose(1f);
+
+            string recordReason = string.IsNullOrEmpty(actionReason)
+                ? policyReason
+                : $"{policyReason}:{actionReason}";
+            if (!closeThreatStandingRecorded ||
+                !string.Equals(
+                    closeThreatStandingRecordReason,
+                    recordReason,
+                    System.StringComparison.Ordinal))
+            {
+                closeThreatStandingRecorded = true;
+                closeThreatStandingRecordReason = recordReason;
+                BattleRecorder.RecordCombatPosturePolicy(
+                    BotOwner,
+                    action,
+                    "crouch",
+                    false,
+                    recordReason,
+                    enemyDistance,
+                    target);
+            }
+
+            return true;
         }
 
         protected void StopStationaryCombatMovement()

@@ -23,7 +23,9 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
+            string? reason = GetReason(data);
             baseLogic.UpdateNodeByBrain(GetData<GClass27>(data));
+            EnforceCloseThreatStandingPose("shootToSmoke", reason);
         }
     }
 }

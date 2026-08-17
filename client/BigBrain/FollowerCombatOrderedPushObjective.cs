@@ -54,8 +54,20 @@ namespace pitTeam.BigBrain
             AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision)
         {
             CombatCommon.HandleSharedDecisionChanged(nextDecision);
+            CombatCommon.HandleCommittedCoverDecisionChanged(nextDecision);
             CombatCommon.HandleFollowerSuppressDecisionChanged(nextDecision);
             combatPush.HandleDecisionChanged(nextDecision);
+
+            if (CombatCommon.ShouldCommitMovementDecision(
+                    nextDecision,
+                    combatPush.IsPushCommittedDecision(nextDecision)))
+            {
+                CombatCommon.CommitMovement(nextDecision);
+            }
+            else if (!CombatCommon.IsSameCommittedMovement(nextDecision))
+            {
+                CombatCommon.ClearCommittedMovement();
+            }
         }
 
         public override void StartDecision()

@@ -59,12 +59,23 @@ namespace pitTeam.BigBrain.Actions
         {
             firing = false;
             bool hasLiveGoalEnemy = goalEnemy?.Person?.HealthController?.IsAlive == true;
-            if (!hasLiveGoalEnemy &&
-                (!allowThreatSuppression ||
-                 !FollowerAwareness.TryGetRecentThreatLookPoint(botOwner, out _)))
+            bool sourceKnownDead = false;
+            bool hasRecentFireThreat =
+                allowThreatSuppression &&
+                FollowerAwareness.TryGetRecentFireThreatLookPoint(
+                    botOwner,
+                    out _,
+                    out sourceKnownDead);
+            if (!hasLiveGoalEnemy && !hasRecentFireThreat)
             {
                 aimState.Reset();
-                return false;
+                string gate = sourceKnownDead
+                    ? "recentThreatSourceDead"
+                    : allowThreatSuppression
+                        ? "noCredibleSuppressTarget"
+                        : "suppressionDisabled";
+                Stop(gate, actionReason, null, targetReason: gate);
+                return true;
             }
 
             if (FollowerCombatActionBase.IsActuallySprinting(botOwner))
@@ -259,10 +270,21 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (FollowerAwareness.TryGetRecentThreatLookPoint(botOwner, out target) && IsFinite(target))
+            if (FollowerAwareness.TryGetRecentFireThreatLookPoint(
+                    botOwner,
+                    out target,
+                    out bool sourceKnownDead) &&
+                IsFinite(target))
             {
                 reason = "recentIncomingThreat";
                 return true;
+            }
+
+            if (sourceKnownDead && goalEnemy?.Person?.HealthController?.IsAlive != true)
+            {
+                target = Vector3.zero;
+                reason = "recentThreatSourceDead";
+                return false;
             }
 
             if (goalEnemy != null &&

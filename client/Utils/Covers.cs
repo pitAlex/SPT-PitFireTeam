@@ -14,6 +14,11 @@ namespace pitTeam.Utils
         private static float STATIC_DISTANCE = 150f;
         private static float SQUARE_SIZE = 15f;
         private const float CombatFriendSpacing = 1.5f;
+        private const float HardCoverThreatEyeHeight = 1.4f;
+        private const float HardCoverChestHeight = 1.05f;
+        private const float HardCoverHeadHeight = 1.55f;
+        private const float HardCoverHeadHalfWidth = 0.18f;
+        private const float HardCoverMaxBlockerDistance = 3f;
         public static int MAX_COVERS_IRT = 20;
 
         public static void ResetMaxCoversIritation()
@@ -436,6 +441,78 @@ namespace pitTeam.Utils
                        (point.y >= Math.Min(start.y, end.y) && point.y <= Math.Max(start.y, end.y)) &&
                        (point.z >= Math.Min(start.z, end.z) && point.z <= Math.Max(start.z, end.z));
         }
+
+        /// <summary>
+        /// SAIN-style hard-cover validation for an existing EFT cover point. Foliage cannot make
+        /// a hard result, and the first solid blocker must be close to the candidate rather than
+        /// somewhere else along the threat lane. Deterministic standing chest/head probes match
+        /// the close-combat posture the follower will actually use.
+        /// </summary>
+        public static bool IsHardCoverFromThreat(CustomNavigationPoint? cover, Vector3 threatPosition)
+        {
+            if (cover == null ||
+                cover.CoverType == CoverType.Foliage ||
+                !IsFinitePoint(cover.Position) ||
+                !IsFinitePoint(threatPosition))
+            {
+                return false;
+            }
+
+            return IsHardCoverFromThreat(cover.Position, threatPosition);
+        }
+
+        /// <summary>
+        /// Hard-cover validation for a NavMesh point that does not have an EFT cover-point wrapper.
+        /// The high-poly/terrain mask intentionally excludes foliage and grass.
+        /// </summary>
+        public static bool IsHardCoverFromThreat(Vector3 coverPosition, Vector3 threatPosition)
+        {
+            if (!IsFinitePoint(coverPosition) || !IsFinitePoint(threatPosition))
+            {
+                return false;
+            }
+
+            Vector3 threatEye = threatPosition + Vector3.up * HardCoverThreatEyeHeight;
+            Vector3 headCenter = coverPosition + Vector3.up * HardCoverHeadHeight;
+            Vector3 threatDirection = threatEye - headCenter;
+            threatDirection.y = 0f;
+            if (threatDirection.sqrMagnitude <= 0.01f)
+            {
+                return false;
+            }
+
+            Vector3 headSide = Vector3.Cross(Vector3.up, threatDirection.normalized) * HardCoverHeadHalfWidth;
+            return HasNearbyHardBlocker(coverPosition + Vector3.up * HardCoverChestHeight, threatEye) &&
+                   HasNearbyHardBlocker(headCenter - headSide, threatEye) &&
+                   HasNearbyHardBlocker(headCenter + headSide, threatEye);
+        }
+
+        private static bool HasNearbyHardBlocker(Vector3 origin, Vector3 target)
+        {
+            Vector3 direction = target - origin;
+            float distance = direction.magnitude;
+            if (distance <= 0.01f)
+            {
+                return false;
+            }
+
+            return Physics.Raycast(
+                       origin,
+                       direction / distance,
+                       out RaycastHit hit,
+                       distance,
+                       LayerMaskClass.HighPolyWithTerrainMask,
+                       QueryTriggerInteraction.Ignore) &&
+                   hit.distance <= HardCoverMaxBlockerDistance;
+        }
+
+        private static bool IsFinitePoint(Vector3 point)
+        {
+            return !float.IsNaN(point.x) && !float.IsInfinity(point.x) &&
+                   !float.IsNaN(point.y) && !float.IsInfinity(point.y) &&
+                   !float.IsNaN(point.z) && !float.IsInfinity(point.z);
+        }
+
         public static bool IsNavigablePoint(Vector3 botPosition, Vector3 point, float maxDistance, NavMeshPath existingMesh = null)
         {
             NavMeshPath navMeshPath = existingMesh != null ? existingMesh : new NavMeshPath();

@@ -19,6 +19,7 @@ namespace pitTeam.BigBrain.Actions
         public override void Update(CustomLayer.ActionData data)
         {
             baseLogic.UpdateNodeByBrain(GetData<GClass29>(data));
+            EnforceCloseThreatStandingPose("attackMovingFlank", GetReason(data));
         }
     }
 }

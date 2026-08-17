@@ -24,17 +24,19 @@ namespace pitTeam.BigBrain.Actions
 
         public override void Update(CustomLayer.ActionData data)
         {
-            if (TryStopForPointBlankContact())
+            string? reason = GetReason(data);
+            if (TryStopForPointBlankContact(reason))
             {
                 return;
             }
 
             baseLogic.UpdateNodeByBrain(GetRawData(data));
+            EnforceCloseThreatStandingPose("search", reason);
             EnsureSearchMove();
             LookSimple();
         }
 
-        private bool TryStopForPointBlankContact()
+        private bool TryStopForPointBlankContact(string? reason)
         {
             EnemyInfo? goalEnemy = BotOwner.Memory?.GoalEnemy;
             if (!FollowerCombatCommon.IsPointBlankContactWithoutHardSeparation(BotOwner, goalEnemy))
@@ -45,7 +47,8 @@ namespace pitTeam.BigBrain.Actions
             BotOwner.Mover.Stop();
             SetCombatSprint(false);
             BotOwner.SetTargetMoveSpeed(1f);
-            BotOwner.SetPose(0.75f);
+            EnforceCloseThreatStandingPose("search", reason, goalEnemy);
+            BotOwner.SetPose(1f);
             BotOwner.Steering.LookToPoint(goalEnemy!.GetBodyPartPosition());
             StopCombatShooting();
             return true;

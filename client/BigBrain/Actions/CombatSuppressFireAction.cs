@@ -59,6 +59,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             string? reason = ResolveSuppressReason(data);
+            EnforceCloseThreatStandingPose("suppressFire", reason, goalEnemy);
             if (StopUnownedGrenadeLauncherFire(reason, goalEnemy))
             {
                 return;
@@ -143,6 +144,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             baseLogic.UpdateNodeByBrain(GetData<GClass27>(data));
+            EnforceCloseThreatStandingPose("suppressFire", reason, goalEnemy);
         }
 
         private string? ResolveSuppressReason(CustomLayer.ActionData data)

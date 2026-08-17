@@ -34,6 +34,7 @@ namespace pitTeam.BigBrain
         private const int ShotgunAutoPushMinMagazineAmmo = 6;
         private const float ShotgunAutoPushMaxEnemyDistance = 20f;
         private const float CautiousPushRoleThreatMultiplier = 1.1f;
+        private const float CautiousPushEnemyClusterCount = 2f;
 
         private readonly BotOwner botOwner;
         private readonly FollowerCombatCommon combatCommon;
@@ -236,7 +237,7 @@ namespace pitTeam.BigBrain
                 Utils.Enemy.IsMemoryOnlyAcquisitionWithoutPersonalContact(goalEnemy))
             {
                 RecordMemoryOnlyAutoPushBlocked(goalEnemy, "engageEnemy");
-                return CreateNoPushDecision(goalEnemy, "memoryOnlyAutoPush");
+                return CreateMemoryOnlyAutoSearchDecision(goalEnemy);
             }
 
             if (!pushOrdered && combatCommon.HasActiveGrenadeLauncherSuppressNearCurrentEnemy())
@@ -618,7 +619,7 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
-            if (enemiesAtLocation >= (pushOrdered ? 3f : 2f))
+            if (enemiesAtLocation >= CautiousPushEnemyClusterCount)
             {
                 return true;
             }
@@ -644,6 +645,25 @@ namespace pitTeam.BigBrain
                     avoidBossFireLane: true);
 
             return TryCreateApproachCoverDecision(cover, out decision);
+        }
+
+        private AICoreActionResultStruct<BotLogicDecision, GClass26> CreateMemoryOnlyAutoSearchDecision(EnemyInfo goalEnemy)
+        {
+            // Memory-only contact is not authority for an assault push, but it is enough to
+            // investigate cautiously. This path cannot sprint or directly advance on the enemy.
+            AICoreActionResultStruct<BotLogicDecision, GClass26> searchDecision = combatCommon.EnemySearch(
+                "memoryOnlyAutoSearch",
+                pushOrdered: false,
+                cautious: true);
+            if (searchDecision.Action != BotLogicDecision.holdPosition ||
+                FollowerCombatRegroupObjective.IsRegroupActivationReason(searchDecision.Reason))
+            {
+                return searchDecision;
+            }
+
+            // A distant/blocked cautious search has no movement to perform. Retain the bounded
+            // no-cover hold so failed search selection cannot recreate the old per-frame churn.
+            return CreateNoPushDecision(goalEnemy, "memoryOnlyAutoPush");
         }
 
         private AICoreActionResultStruct<BotLogicDecision, GClass26> CreateNoPushDecision(EnemyInfo goalEnemy, string reasonPrefix)

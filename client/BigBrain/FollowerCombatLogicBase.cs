@@ -171,6 +171,35 @@ namespace pitTeam.BigBrain
 
             BotFollowerPlayer? followerData = BossPlayers.Instance?.GetFollower(BotOwner);
             EnemyInfo? goalEnemy = BotOwner.Memory?.GoalEnemy;
+
+            // GoalEnemy can disappear between clustered contacts while incoming fire is still
+            // concrete. This recovery is shared survival work, not ordered-objective completion,
+            // but a renewed push order must still be able to restart the ordered mission.
+            if (FollowerCombatCommon.IsNoEnemyThreatCoverReason(currentDecision.Reason))
+            {
+                if (goalEnemy != null &&
+                    ShouldConsumePushCommand(followerData, goalEnemy) &&
+                    CanInterruptForOrderedPushOrder(currentDecision))
+                {
+                    return new AICoreActionEndStruct("objectivePushOrder", true);
+                }
+
+                if (currentDecision.Action == BotLogicDecision.holdPosition &&
+                    !combatCommon.HasActiveCombatGestureOrder() &&
+                    combatCommon.IsCommittedHolderReason(currentDecision.Reason) &&
+                    combatCommon.HasCommittedPosition(
+                        out AICoreActionResultStruct<BotLogicDecision, GClass26> committedHold) &&
+                    committedHold.Action == currentDecision.Action &&
+                    string.Equals(committedHold.Reason, currentDecision.Reason, StringComparison.Ordinal))
+                {
+                    return FollowerCombatCommon.Continue();
+                }
+
+                return currentDecision.Action == BotLogicDecision.holdPosition
+                    ? combatCommon.EndBaseHoldPosition(currentDecision.Reason ?? string.Empty)
+                    : combatCommon.ShallEndCurrentDecision(currentDecision);
+            }
+
             if (combatCommon.TryRestoreMissionTargetIfReady("combatEndRestoreMission", out EnemyInfo? restoredMission))
             {
                 goalEnemy = restoredMission;

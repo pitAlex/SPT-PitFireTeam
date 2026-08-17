@@ -12,6 +12,62 @@ namespace pitTeam.Utils
         private const float VanillaCrouchProbeHeight = 0.6f;
         private const float CrouchWeaponProbeHeight = 0.95f;
         private const float MinCombatCrouchFireDistance = 50f;
+        private const float CloseThreatRecentContactSeconds = 2f;
+
+        public static bool ShouldForceStandingForCloseThreat(
+            BotOwner botOwner,
+            EnemyInfo? goalEnemy,
+            out string reason,
+            out float enemyDistance,
+            out Vector3? target)
+        {
+            reason = "noCloseThreat";
+            enemyDistance = goalEnemy?.Distance ?? 0f;
+            target = null;
+
+            if (botOwner == null || goalEnemy?.Person?.HealthController?.IsAlive != true)
+            {
+                return false;
+            }
+
+            if (enemyDistance <= 0f)
+            {
+                enemyDistance = Vector3.Distance(botOwner.Position, goalEnemy.CurrPosition);
+            }
+
+            if (enemyDistance >= MinCombatCrouchFireDistance)
+            {
+                reason = "enemyDistant";
+                return false;
+            }
+
+            target = GetCloseThreatTarget(goalEnemy);
+            if (goalEnemy.IsVisible || goalEnemy.CanShoot)
+            {
+                reason = goalEnemy.IsVisible ? "closeVisibleThreat" : "closeShootableThreat";
+                return true;
+            }
+
+            float lastPersonalContact = Mathf.Max(
+                goalEnemy.PersonalSeenTime,
+                goalEnemy.PersonalLastSeenTime);
+            if (lastPersonalContact > 0f &&
+                Time.time - lastPersonalContact <= CloseThreatRecentContactSeconds)
+            {
+                reason = "closeRecentContact";
+                return true;
+            }
+
+            if (botOwner.Memory?.IsUnderFire == true ||
+                FollowerAwareness.WasRecentlyHit(botOwner) ||
+                FollowerAwareness.WasRecentlyDamaged(botOwner))
+            {
+                reason = "closeIncomingPressure";
+                return true;
+            }
+
+            return false;
+        }
 
         public static bool CanUseCombatCrouchFire(
             BotOwner botOwner,
@@ -99,6 +155,21 @@ namespace pitTeam.Utils
             }
 
             return !Physics.Raycast(new Ray(origin, direction), distance, mask);
+        }
+
+        private static Vector3? GetCloseThreatTarget(EnemyInfo goalEnemy)
+        {
+            Vector3 target = goalEnemy.IsVisible
+                ? goalEnemy.GetBodyPartPosition()
+                : goalEnemy.EnemyLastPositionReal;
+            if (!IsFinite(target) || target.sqrMagnitude <= 0.01f)
+            {
+                target = goalEnemy.CurrPosition;
+            }
+
+            return IsFinite(target) && target.sqrMagnitude > 0.01f
+                ? target
+                : null;
         }
 
         private static bool IsFinite(Vector3 value)
