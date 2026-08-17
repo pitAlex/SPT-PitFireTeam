@@ -254,10 +254,12 @@ namespace pitTeam.BigBrain.Actions
                 // 1. finish delayed pickup-success moves
                 // 2. finish weapon-equip/vest-swap follow-ups
                 // 3. replenish or upgrade the equipped primary from tactical loose-ammo decisions
-                // 4. optionally equip or narrowly swap tactical vest protection
-                // 5. optionally equip an empty primary or add a usable support beside a working primary
-                // 6. promote a tracked backpack cargo weapon when newly found magazines complete it
-                // 7. otherwise move eligible filtered cargo into backpack/pockets
+                // 4. maintain the equipped secondary from unresolved source ammo
+                // 5. acquire reload-safe source magazines when that secondary uses detachable mags
+                // 6. optionally equip or narrowly swap tactical vest protection
+                // 7. optionally equip an empty primary or add a usable support beside a working primary
+                // 8. promote a tracked backpack cargo weapon when newly found magazines complete it
+                // 9. otherwise move eligible filtered cargo into backpack/pockets
                 if (TryStartPendingContainerLootMove(inventory))
                 {
                     return;
@@ -274,6 +276,21 @@ namespace pitTeam.BigBrain.Actions
                 }
 
                 if (TryStartContainerPrimaryTacticalAmmoMove(inventory, containerRoot, followerEquipment))
+                {
+                    return;
+                }
+
+                if (TryStartContainerSecondaryTacticalAmmoMove(inventory, containerRoot, followerEquipment))
+                {
+                    return;
+                }
+
+                if (TryStartContainerSecondaryLooseFeedAmmoMove(inventory, containerRoot, followerEquipment))
+                {
+                    return;
+                }
+
+                if (TryStartContainerSecondaryTacticalMagazineMove(inventory, containerRoot, followerEquipment))
                 {
                     return;
                 }
@@ -595,7 +612,6 @@ namespace pitTeam.BigBrain.Actions
 
             if (containerLootReportedMovesSucceeded > 0)
             {
-                BotOwner.BotTalk.TrySay(EPhraseTrigger.Ready, false);
                 ClearContainerLootState("TakeContainerLoot:done");
                 QueuePostLootPrimaryWeaponSelection(primaryWeaponToSelect, "containerLootComplete");
                 QueuePostLootSecondaryWeaponPromotion(secondaryWeaponToPromote, "containerLootSecondaryPromotion");

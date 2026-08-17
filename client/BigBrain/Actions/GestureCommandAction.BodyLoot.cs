@@ -314,10 +314,12 @@ namespace pitTeam.BigBrain.Actions
             // 1. secure the PMC dogtag before any equipment transaction can alter the action state
             // 2. finish any follow-up magazine move produced by easy weapon equip
             // 3. replenish or upgrade the equipped primary from tactical loose-ammo decisions
-            // 4. optionally equip or narrowly swap tactical vest protection
-            // 5. optionally equip an empty primary or add a usable support beside a working primary
-            // 6. promote a tracked backpack cargo weapon when newly found magazines complete it
-            // 7. otherwise loot eligible contents into backpack/pockets only
+            // 4. maintain the equipped secondary from unresolved source ammo
+            // 5. acquire reload-safe source magazines when that secondary uses detachable mags
+            // 6. optionally equip or narrowly swap tactical vest protection
+            // 7. optionally equip an empty primary or add a usable support beside a working primary
+            // 8. promote a tracked backpack cargo weapon when newly found magazines complete it
+            // 9. otherwise loot eligible contents into backpack/pockets only
             if (TryStartNonTeammatePmcDogtagMove(inventory, corpseEquipment, followerEquipment))
             {
                 return;
@@ -334,6 +336,21 @@ namespace pitTeam.BigBrain.Actions
             }
 
             if (TryStartBodyPrimaryTacticalAmmoMove(inventory, corpseEquipment, followerEquipment))
+            {
+                return;
+            }
+
+            if (TryStartBodySecondaryTacticalAmmoMove(inventory, corpseEquipment, followerEquipment))
+            {
+                return;
+            }
+
+            if (TryStartBodySecondaryLooseFeedAmmoMove(inventory, corpseEquipment, followerEquipment))
+            {
+                return;
+            }
+
+            if (TryStartBodySecondaryTacticalMagazineMove(inventory, corpseEquipment, followerEquipment))
             {
                 return;
             }
@@ -943,7 +960,6 @@ namespace pitTeam.BigBrain.Actions
 
             if (bodyLootReportedMovesSucceeded > 0)
             {
-                BotOwner.BotTalk.TrySay(EPhraseTrigger.Ready, false);
                 ClearBodyLootState("TakeBodyGear:done");
                 QueuePostLootPrimaryWeaponSelection(primaryWeaponToSelect, "bodyLootComplete");
                 QueuePostLootSecondaryWeaponPromotion(secondaryWeaponToPromote, "bodyLootSecondaryPromotion");

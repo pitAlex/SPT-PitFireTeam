@@ -13,7 +13,8 @@ namespace pitTeam.Modules
         internal static WeaponPrimaryReadinessSnapshot EvaluateActual(
             InventoryController inventory,
             Weapon weapon,
-            Func<AmmoItemClass, bool>? internalAmmoEligibility = null)
+            Func<AmmoItemClass, bool>? internalAmmoEligibility = null,
+            Func<MagazineItemClass, bool>? fastAccessMagazineEligibility = null)
         {
             if (FollowerWeaponLooseFeedReadiness.IsSupported(weapon))
             {
@@ -23,7 +24,7 @@ namespace pitTeam.Modules
                     internalAmmoEligibility);
             }
 
-            return EvaluateInventoryState(inventory, weapon, null);
+            return EvaluateInventoryState(inventory, weapon, null, fastAccessMagazineEligibility);
         }
 
         internal static WeaponPrimaryReadinessSnapshot EvaluatePlannedProjection(
@@ -31,7 +32,7 @@ namespace pitTeam.Modules
             Weapon weapon,
             IEnumerable<MagazineItemClass> projectedFastAccessMagazines)
         {
-            return EvaluateInventoryState(inventory, weapon, projectedFastAccessMagazines);
+            return EvaluateInventoryState(inventory, weapon, projectedFastAccessMagazines, null);
         }
 
         internal static bool HasInsertedMagazineReloadLandingSpace(
@@ -224,7 +225,8 @@ namespace pitTeam.Modules
         private static WeaponPrimaryReadinessSnapshot EvaluateInventoryState(
             InventoryController inventory,
             Weapon weapon,
-            IEnumerable<MagazineItemClass>? projectedFastAccessMagazines)
+            IEnumerable<MagazineItemClass>? projectedFastAccessMagazines,
+            Func<MagazineItemClass, bool>? fastAccessMagazineEligibility)
         {
             if (weapon == null)
             {
@@ -255,6 +257,12 @@ namespace pitTeam.Modules
                     inventory.GetReachableItemsOfTypeNonAlloc<MagazineItemClass>(reachableMagazines, null);
                     foreach (MagazineItemClass magazine in reachableMagazines.ToArray())
                     {
+                        if (fastAccessMagazineEligibility != null &&
+                            !fastAccessMagazineEligibility(magazine))
+                        {
+                            continue;
+                        }
+
                         TryAddCompatibleFastAccessMagazine(
                             weapon,
                             magazineSlot,
@@ -274,6 +282,12 @@ namespace pitTeam.Modules
             {
                 foreach (MagazineItemClass magazine in projectedFastAccessMagazines.ToArray())
                 {
+                    if (fastAccessMagazineEligibility != null &&
+                        !fastAccessMagazineEligibility(magazine))
+                    {
+                        continue;
+                    }
+
                     TryAddCompatibleFastAccessMagazine(
                         weapon,
                         magazineSlot,

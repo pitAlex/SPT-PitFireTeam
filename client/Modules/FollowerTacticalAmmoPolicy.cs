@@ -217,6 +217,18 @@ namespace pitTeam.Modules
                 combinedWeight);
         }
 
+        internal static bool CanUseSecureStorageOverride(
+            TacticalAmmoDecision decision,
+            bool alreadyCarriesSameTemplate)
+        {
+            // Secure storage removes the quantity/cargo-space objection, not the quality gate.
+            // Existing tactical accepts remain valid; otherwise only the same ammunition or an
+            // equal/stronger cartridge may bypass a stocked-ammunition rejection.
+            return decision.ShouldAcquire ||
+                   alreadyCarriesSameTemplate ||
+                   decision.CandidatePenetration >= decision.CurrentWeightedPenetration;
+        }
+
         internal static void RunDeterministicSelfTests()
         {
             TacticalAmmoScenario[] scenarios =
@@ -252,10 +264,33 @@ namespace pitTeam.Modules
                 }
             }
 
+            TacticalAmmoDecision stockedEqual = Evaluate(60, 35d, 35, 30, 60, true);
+            TacticalAmmoDecision stockedWorse = Evaluate(60, 35d, 25, 30, 60, true);
+            TacticalAmmoDecision criticalWorse = Evaluate(10, 45d, 20, 30, 60, true);
+            if (!CanUseSecureStorageOverride(stockedEqual, alreadyCarriesSameTemplate: false))
+            {
+                failures.Add("TA-SC-01: equal stocked ammunition should use secure capacity");
+            }
+
+            if (CanUseSecureStorageOverride(stockedWorse, alreadyCarriesSameTemplate: false))
+            {
+                failures.Add("TA-SC-02: worse stocked ammunition bypassed the quality gate");
+            }
+
+            if (!CanUseSecureStorageOverride(stockedWorse, alreadyCarriesSameTemplate: true))
+            {
+                failures.Add("TA-SC-03: an already-carried ammunition template should continue into secure storage");
+            }
+
+            if (!CanUseSecureStorageOverride(criticalWorse, alreadyCarriesSameTemplate: false))
+            {
+                failures.Add("TA-SC-04: critical shortage should retain its tactical acceptance");
+            }
+
             if (failures.Count == 0)
             {
                 Logger.LogInfo(
-                    $"[LootCommand][TacticalAmmo] Deterministic policy self-test passed ({scenarios.Length}/{scenarios.Length}).");
+                    $"[LootCommand][TacticalAmmo] Deterministic policy self-test passed ({scenarios.Length + 4}/{scenarios.Length + 4}).");
                 return;
             }
 

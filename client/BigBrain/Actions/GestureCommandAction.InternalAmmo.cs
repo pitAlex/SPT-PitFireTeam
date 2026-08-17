@@ -9,6 +9,181 @@ namespace pitTeam.BigBrain.Actions
 {
     internal partial class GestureCommandAction
     {
+        private bool TryStartBodySecondaryLooseFeedAmmoMove(
+            InventoryController inventory,
+            InventoryEquipment corpseEquipment,
+            InventoryEquipment followerEquipment)
+        {
+            if (!TryBuildSecondaryLooseFeedAmmoMove(
+                    inventory,
+                    followerEquipment,
+                    corpseEquipment,
+                    weapon => GetBodyWeaponLooseAmmoCandidates(corpseEquipment, weapon),
+                    bodyLootAttemptedItemIds,
+                    out BodyGearMove? move))
+            {
+                return false;
+            }
+
+            if (TryQueueBodyLootMoveAfterPickupSuccess(move))
+            {
+                return true;
+            }
+
+            StartBodyGearMove(inventory, move);
+            return true;
+        }
+
+        private bool TryStartContainerSecondaryLooseFeedAmmoMove(
+            InventoryController inventory,
+            SearchableItemItemClass containerRoot,
+            InventoryEquipment followerEquipment)
+        {
+            if (!TryBuildSecondaryLooseFeedAmmoMove(
+                    inventory,
+                    followerEquipment,
+                    containerRoot,
+                    weapon => GetContainerWeaponLooseAmmoCandidates(containerRoot, weapon),
+                    containerLootAttemptedItemIds,
+                    out BodyGearMove? move))
+            {
+                return false;
+            }
+
+            if (TryQueueContainerLootMoveAfterPickupSuccess(move))
+            {
+                return true;
+            }
+
+            StartContainerLootMove(inventory, move);
+            return true;
+        }
+
+        private bool TryBuildSecondaryLooseFeedAmmoMove(
+            InventoryController inventory,
+            InventoryEquipment followerEquipment,
+            Item sourceRoot,
+            Func<Weapon, IEnumerable<BodyGearCandidate>> sourceAmmoFactory,
+            HashSet<string> attemptedSourceItemIds,
+            out BodyGearMove? move)
+        {
+            move = null;
+            Weapon secondary = GetEligibleSecondaryAmmoMaintenanceWeapon(followerEquipment);
+            if (!pitFireTeam.IsLootGearSwappingEnabled() ||
+                inventory == null ||
+                sourceRoot == null ||
+                sourceAmmoFactory == null ||
+                secondary == null ||
+                !FollowerWeaponLooseFeedReadiness.IsSupported(secondary) ||
+                attemptedSourceItemIds.Contains(secondary.Id))
+            {
+                return false;
+            }
+
+            List<BodyGearCandidate> source = sourceAmmoFactory(secondary)
+                .Where(candidate =>
+                    candidate?.Item is AmmoItemClass ammo &&
+                    !string.IsNullOrEmpty(ammo.Id) &&
+                    !attemptedSourceItemIds.Contains(ammo.Id))
+                .GroupBy(candidate => candidate.Item.Id, StringComparer.Ordinal)
+                .Select(group => group.First())
+                .ToList();
+            if (source.Count == 0)
+            {
+                return false;
+            }
+
+            List<BodyGearCandidate> accepted = SelectWeaponLooseAmmoSupportCandidates(
+                followerEquipment,
+                secondary,
+                source,
+                BodyGearFollowUpDestination.InternalAmmoCarry,
+                "secondaryLooseFeedMaintenance");
+            if (accepted.Count == 0)
+            {
+                foreach (BodyGearCandidate candidate in source)
+                {
+                    MarkTacticalAmmoCandidateComplete(candidate, attemptedSourceItemIds, null);
+                }
+
+                return false;
+            }
+
+            List<AmmoItemClass> followerAmmo = GetFollowerWeaponLooseAmmoItems(
+                    followerEquipment,
+                    secondary,
+                    includeStrictCargo: false)
+                .ToList();
+            BodyGearCandidate? loadCandidate = null;
+            int loadCount = 0;
+            bool mayLoadSearchedAmmo = InteractableObjects.IsLootedWeapon(BotOwner, secondary) ||
+                                       pitFireTeam.IsFollowerLoadoutLootableMode();
+            if (mayLoadSearchedAmmo)
+            {
+                TrySelectInternalAmmoLoad(
+                    secondary,
+                    accepted,
+                    followerAmmo,
+                    out loadCandidate,
+                    out loadCount);
+            }
+
+            InternalAmmoPlan plan = PlanInternalAmmoCarry(
+                followerEquipment,
+                secondary,
+                accepted,
+                followerAmmo,
+                loadCandidate?.Item?.Id,
+                loadCount);
+            LogInternalAmmoPlan(secondary, plan, "secondaryLooseFeedMaintenance");
+
+            if (loadCandidate != null &&
+                loadCount > 0 &&
+                TryBuildInternalMagazineLoadMove(
+                    inventory,
+                    secondary,
+                    loadCandidate,
+                    loadCount,
+                    EPhraseTrigger.LootGeneric,
+                    out move,
+                    out _,
+                    reportAsLootNothing: false,
+                    announceStagingLoot: true))
+            {
+                // Replan from settled inventory after every load. Chamber-fed weapons consume
+                // one round per transaction, while internal magazines may consume part of a stack.
+                return true;
+            }
+
+            foreach (BodyGearCandidate candidate in plan.AcceptedSourceAmmo)
+            {
+                if (TryBuildInternalAmmoCarryMove(
+                        inventory,
+                        followerEquipment,
+                        candidate,
+                        out move,
+                        out string carryReason))
+                {
+                    attemptedSourceItemIds.Add(candidate.Item.Id);
+                    return true;
+                }
+
+                attemptedSourceItemIds.Add(candidate.Item.Id);
+                Modules.Logger.LogInfo(
+                    $"[LootCommand][LooseFeedReadiness] secondary carry rejected " +
+                    $"weapon={DescribeLootDebugItem(secondary)} ammo={DescribeLootDebugItem(candidate.Item)} " +
+                    $"reason={carryReason}");
+            }
+
+            // Tactical secondary ammunition must not fall through into ordinary filtered cargo.
+            foreach (BodyGearCandidate candidate in source)
+            {
+                MarkTacticalAmmoCandidateComplete(candidate, attemptedSourceItemIds, null);
+            }
+
+            return false;
+        }
+
         // This pipeline began with attached internal magazines. It now deliberately also owns
         // supported chamber-fed weapons because both use the same tactical contract: load from
         // loose rounds, carry only protected reserves, then classify from settled live state.
@@ -274,8 +449,7 @@ namespace pitTeam.BigBrain.Actions
                     continue;
                 }
 
-                if (!TrySimulateWeaponLooseAmmoPlacement(
-                        weapon,
+                if (!TrySimulateLooseAmmoPlacement(
                         ammo,
                         vestReloadReserves,
                         ref simulatedSecure,
@@ -353,13 +527,19 @@ namespace pitTeam.BigBrain.Actions
             loadCandidate = sourceAmmo?
                 .Where(candidate => candidate?.Item is AmmoItemClass ammo &&
                     FollowerWeaponLooseFeedReadiness.IsCompatibleLooseAmmo(weapon, ammo))
-                .OrderByDescending(candidate => ((AmmoItemClass)candidate.Item).StackObjectsCount)
+                .OrderByDescending(candidate => ((AmmoItemClass)candidate.Item).PenetrationPower)
+                .ThenByDescending(candidate => ((AmmoItemClass)candidate.Item).Damage)
+                .ThenByDescending(candidate => ((AmmoItemClass)candidate.Item).ArmorDamage)
+                .ThenByDescending(candidate => ((AmmoItemClass)candidate.Item).StackObjectsCount)
                 .FirstOrDefault();
             if (loadCandidate == null)
             {
                 AmmoItemClass carriedAmmo = followerAmmo?
                     .Where(ammo => FollowerWeaponLooseFeedReadiness.IsCompatibleLooseAmmo(weapon, ammo))
-                    .OrderByDescending(ammo => ammo.StackObjectsCount)
+                    .OrderByDescending(ammo => ammo.PenetrationPower)
+                    .ThenByDescending(ammo => ammo.Damage)
+                    .ThenByDescending(ammo => ammo.ArmorDamage)
+                    .ThenByDescending(ammo => ammo.StackObjectsCount)
                     .FirstOrDefault();
                 if (carriedAmmo != null)
                 {
@@ -388,7 +568,9 @@ namespace pitTeam.BigBrain.Actions
             int loadCount,
             EPhraseTrigger successPhrase,
             out BodyGearMove? move,
-            out string reason)
+            out string reason,
+            bool reportAsLootNothing = true,
+            bool announceStagingLoot = false)
         {
             move = null;
             reason = "invalidLoad";
@@ -449,12 +631,13 @@ namespace pitTeam.BigBrain.Actions
                 ammo,
                 loadResult.Value,
                 ammoCandidate.SourceName,
-                reportAsLootNothing: true,
+                reportAsLootNothing: reportAsLootNothing,
                 storeAsLoot: false,
                 successPhrase: successPhrase,
                 isStagingOperation: true,
                 stagingWeapon: weapon,
-                stagingWeaponLoadedRoundsBefore: loadedBefore);
+                stagingWeaponLoadedRoundsBefore: loadedBefore,
+                announceStagingLoot: announceStagingLoot);
             Modules.Logger.LogInfo(
                 $"[LootCommand][LooseFeedReadiness] load planned weapon={DescribeLootDebugItem(weapon)} " +
                 $"ammo={DescribeLootDebugItem(ammo)} count={plannedLoadCount} loadedBefore={loadedBefore}");

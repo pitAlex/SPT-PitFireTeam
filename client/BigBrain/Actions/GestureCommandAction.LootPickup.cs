@@ -269,6 +269,25 @@ namespace pitTeam.BigBrain.Actions
                     out failureReason);
             }
 
+            if (rootItem is MagazineItemClass commandedMagazine &&
+                pitFireTeam.IsLootGearSwappingEnabled() &&
+                TryResolveCommandedMagazineOwner(
+                    inventory.Inventory.Equipment,
+                    commandedMagazine,
+                    out _,
+                    out _))
+            {
+                // Compatible weapon magazines may never consume the landing space needed to
+                // eject an equipped magazine during reload. Failure here must not fall through
+                // to EFT's unrestricted placement search.
+                return TryBuildReloadSafeCommandedMagazinePickup(
+                    commandedMagazine,
+                    inventory,
+                    inventory.Inventory.Equipment,
+                    out operation,
+                    out failureReason);
+            }
+
             GStruct154<GInterface424> pickupResult = InteractionsHandlerClass.QuickFindAppropriatePlace(
                 rootItem,
                 inventory,
@@ -531,6 +550,7 @@ namespace pitTeam.BigBrain.Actions
             botPlayer?.UpdateInteractionCast();
             InteractableObjects.ClearStrictCargoTree(BotOwner, rootItem);
             InteractableObjects.RegisterLootedWeaponTree(BotOwner, rootItem);
+            RegisterCommandedLooseMagazineForEquippedWeapon(rootItem);
 
             Weapon? primaryWeaponToBind = null;
 
@@ -556,6 +576,153 @@ namespace pitTeam.BigBrain.Actions
             {
                 QueueLoosePickupPrimaryWeaponBinding(primaryWeaponToBind);
             }
+        }
+
+        private void RegisterCommandedLooseMagazineForEquippedWeapon(Item item)
+        {
+            if (!pitFireTeam.IsLootGearSwappingEnabled() ||
+                item is not MagazineItemClass magazine ||
+                magazine.Parent == null)
+            {
+                return;
+            }
+
+            InventoryEquipment equipment = BotOwner?.GetPlayer?.InventoryController?.Inventory?.Equipment;
+            Item vest = equipment?.GetSlot(EquipmentSlot.TacticalVest)?.ContainedItem;
+            Item pockets = equipment?.GetSlot(EquipmentSlot.Pockets)?.ContainedItem;
+            if (!IsItemInsideRoot(magazine, vest) && !IsItemInsideRoot(magazine, pockets))
+            {
+                // A commanded magazine that lands in the backpack remains cargo until a later
+                // command can prove a reload-safe fast-access move for it.
+                return;
+            }
+
+            if (!TryResolveCommandedMagazineOwner(equipment, magazine, out Weapon? weapon, out EquipmentSlot slot))
+            {
+                return;
+            }
+
+            InteractableObjects.RegisterLootedWeaponMagazine(BotOwner, weapon, magazine);
+            Modules.Logger.LogInfo(
+                $"[LootCommand][WeaponReload] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                $"weapon={DescribeLootDebugItem(weapon)} magazine={DescribeLootDebugItem(magazine)} " +
+                $"result=commandedMagazineAssigned slot={slot}");
+        }
+
+        private static bool TryResolveCommandedMagazineOwner(
+            InventoryEquipment equipment,
+            MagazineItemClass magazine,
+            out Weapon? weapon,
+            out EquipmentSlot slot)
+        {
+            weapon = null;
+            slot = EquipmentSlot.FirstPrimaryWeapon;
+            if (equipment == null || magazine == null)
+            {
+                return false;
+            }
+
+            foreach (EquipmentSlot candidateSlot in new[]
+                     {
+                         EquipmentSlot.FirstPrimaryWeapon,
+                         EquipmentSlot.SecondPrimaryWeapon
+                     })
+            {
+                Weapon candidateWeapon = equipment.GetSlot(candidateSlot)?.ContainedItem as Weapon;
+                if (candidateWeapon == null ||
+                    candidateWeapon.ReloadMode != Weapon.EReloadMode.ExternalMagazine ||
+                    !IsMagazineCompatibleWithWeapon(candidateWeapon, magazine) ||
+                    (magazine.Count > 0 &&
+                     !FollowerWeaponMagazineCompatibility.AreLoadedCartridgesCompatible(candidateWeapon, magazine)))
+                {
+                    continue;
+                }
+
+                // First primary deliberately wins when both equipped weapons accept the same mag.
+                weapon = candidateWeapon;
+                slot = candidateSlot;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryBuildReloadSafeCommandedMagazinePickup(
+            MagazineItemClass magazine,
+            InventoryController inventory,
+            InventoryEquipment equipment,
+            out GInterface424? operation,
+            out string failureReason)
+        {
+            operation = null;
+            failureReason = "noReloadSafeSpace";
+
+            SearchableItemItemClass simulatedVest = CloneSearchableContainer(
+                equipment?.GetSlot(EquipmentSlot.TacticalVest)?.ContainedItem);
+            SearchableItemItemClass simulatedPockets = CloneSearchableContainer(
+                equipment?.GetSlot(EquipmentSlot.Pockets)?.ContainedItem);
+            List<MagazineItemClass> reloadReserves = GetCommandedMagazineReloadReserve(equipment);
+
+            if (TrySimulateFastAccessAddWithReserves(
+                    simulatedVest,
+                    simulatedPockets,
+                    magazine,
+                    reloadReserves,
+                    out _,
+                    out _,
+                    out BodyGearFollowUpDestination destination))
+            {
+                ItemAddress? fastAccessAddress;
+                bool foundAddress = destination == BodyGearFollowUpDestination.OperationalVest
+                    ? TryFindOperationalMagazineVestAddress(equipment, magazine, out fastAccessAddress)
+                    : TryFindOperationalMagazinePocketsAddress(equipment, magazine, out fastAccessAddress);
+                if (foundAddress && TryBuildLootPickupMove(magazine, fastAccessAddress, inventory, out operation))
+                {
+                    failureReason = "ok";
+                    return true;
+                }
+            }
+
+            // A commanded magazine that would consume reload landing space remains useful cargo.
+            if (TryFindBackpackAddressForItem(equipment, magazine, out ItemAddress? backpackAddress) &&
+                TryBuildLootPickupMove(magazine, backpackAddress, inventory, out operation))
+            {
+                failureReason = "ok";
+                return true;
+            }
+
+            return false;
+        }
+
+        private static List<MagazineItemClass> GetCommandedMagazineReloadReserve(InventoryEquipment equipment)
+        {
+            List<MagazineItemClass> reserves = new List<MagazineItemClass>();
+            foreach (EquipmentSlot slot in new[]
+                     {
+                         EquipmentSlot.FirstPrimaryWeapon,
+                         EquipmentSlot.SecondPrimaryWeapon
+                     })
+            {
+                Weapon weapon = equipment?.GetSlot(slot)?.ContainedItem as Weapon;
+                if (weapon?.ReloadMode != Weapon.EReloadMode.ExternalMagazine)
+                {
+                    continue;
+                }
+
+                MagazineItemClass inserted = GetCurrentMagazineSafely(weapon);
+                if (inserted != null)
+                {
+                    reserves.Add(inserted);
+                }
+            }
+
+            // One shared landing opening is sufficient because weapon reloads are sequential.
+            return NormalizeReloadReserveItems(reserves)
+                .OrderByDescending(GetMagazineCellArea)
+                .ThenByDescending(GetMagazineLongestSide)
+                .ThenByDescending(magazine => magazine.MaxCount)
+                .Take(1)
+                .ToList();
         }
 
         private void QueueLoosePickupPrimaryWeaponBinding(Weapon weapon)

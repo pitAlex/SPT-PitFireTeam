@@ -267,7 +267,9 @@ namespace pitTeam.BigBrain.Actions
             InventoryEquipment followerEquipment,
             Weapon weapon,
             IEnumerable<BodyGearCandidate>? candidates,
-            bool allowEmptyCandidates = false)
+            bool allowEmptyCandidates = false,
+            Func<MagazineItemClass, bool>? existingFastAccessMagazineEligibility = null,
+            IEnumerable<MagazineItemClass>? alternateReloadReserveItems = null)
         {
             OperationalMagazinePlan plan = new OperationalMagazinePlan();
             if (inventory == null || followerEquipment == null || weapon == null || candidates == null)
@@ -283,6 +285,8 @@ namespace pitTeam.BigBrain.Actions
                 followerEquipment.GetSlot(EquipmentSlot.Pockets)?.ContainedItem);
             SearchableItemItemClass simulatedBackpack = CloneSearchableContainer(
                 followerEquipment.GetSlot(EquipmentSlot.Backpack)?.ContainedItem);
+            List<MagazineItemClass> alternateReloadReserves = NormalizeReloadReserveItems(
+                alternateReloadReserveItems);
             HashSet<string> consideredItemIds = new HashSet<string>(StringComparer.Ordinal);
             Modules.Logger.LogInfo(
                 $"[LootCommand][MagDebug] Plan start for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
@@ -326,6 +330,8 @@ namespace pitTeam.BigBrain.Actions
                     .Where(magazine =>
                         (allowEmptyCandidates || magazine.Count > 0) &&
                         magazine.MaxCount > 0 &&
+                        (existingFastAccessMagazineEligibility == null ||
+                         existingFastAccessMagazineEligibility(magazine)) &&
                         IsMagazineCompatibleWithWeapon(weapon, magazine) &&
                         (magazine.Count <= 0 ||
                          FollowerWeaponMagazineCompatibility.AreLoadedCartridgesCompatible(weapon, magazine)))
@@ -345,7 +351,10 @@ namespace pitTeam.BigBrain.Actions
                 {
                     // This magazine already occupies fast access. Only its matching landing slot
                     // must remain empty for a future reload.
-                    if (CanFitFastAccessReserve(simulatedVest, simulatedPockets, option.Magazine))
+                    if (CanFitFastAccessReserves(
+                            simulatedVest,
+                            simulatedPockets,
+                            BuildReloadReserveSet(option.Magazine, alternateReloadReserves)))
                     {
                         plan.ReloadReserveMagazine = option.Magazine;
                         break;
@@ -354,11 +363,11 @@ namespace pitTeam.BigBrain.Actions
                     continue;
                 }
 
-                if (!TrySimulateFastAccessAddWithReserve(
+                if (!TrySimulateFastAccessAddWithReserves(
                         simulatedVest,
                         simulatedPockets,
                         option.Magazine,
-                        option.Magazine,
+                        BuildReloadReserveSet(option.Magazine, alternateReloadReserves),
                         out SearchableItemItemClass? anchorVest,
                         out SearchableItemItemClass? anchorPockets,
                         out BodyGearFollowUpDestination anchorDestination))
@@ -401,11 +410,11 @@ namespace pitTeam.BigBrain.Actions
                 MagazineItemClass magazine = (MagazineItemClass)candidate.Item;
                 bool placedInFastAccess = false;
                 if (plan.ReloadReserveMagazine != null &&
-                    TrySimulateFastAccessAddWithReserve(
+                    TrySimulateFastAccessAddWithReserves(
                         simulatedVest,
                         simulatedPockets,
                         magazine,
-                        plan.ReloadReserveMagazine,
+                        BuildReloadReserveSet(plan.ReloadReserveMagazine, alternateReloadReserves),
                         out SearchableItemItemClass? nextVest,
                         out SearchableItemItemClass? nextPockets,
                         out BodyGearFollowUpDestination fastAccessDestination))
@@ -720,11 +729,11 @@ namespace pitTeam.BigBrain.Actions
             }
         }
 
-        private static bool TrySimulateFastAccessAddWithReserve(
+        private static bool TrySimulateFastAccessAddWithReserves(
             SearchableItemItemClass vest,
             SearchableItemItemClass pockets,
             Item item,
-            Item? reserveItem,
+            IEnumerable<MagazineItemClass> reserveItems,
             out SearchableItemItemClass? nextVest,
             out SearchableItemItemClass? nextPockets,
             out BodyGearFollowUpDestination destination)
@@ -735,7 +744,7 @@ namespace pitTeam.BigBrain.Actions
 
             if (vest != null &&
                 TrySimulateContainerAdd(vest, item, out SearchableItemItemClass? trialVest) &&
-                CanFitFastAccessReserve(trialVest, pockets, reserveItem))
+                CanFitFastAccessReserves(trialVest, pockets, reserveItems))
             {
                 nextVest = trialVest;
                 destination = BodyGearFollowUpDestination.OperationalVest;
@@ -744,7 +753,7 @@ namespace pitTeam.BigBrain.Actions
 
             if (pockets != null &&
                 TrySimulateContainerAdd(pockets, item, out SearchableItemItemClass? trialPockets) &&
-                CanFitFastAccessReserve(vest, trialPockets, reserveItem))
+                CanFitFastAccessReserves(vest, trialPockets, reserveItems))
             {
                 nextPockets = trialPockets;
                 destination = BodyGearFollowUpDestination.OperationalPockets;
@@ -754,18 +763,66 @@ namespace pitTeam.BigBrain.Actions
             return false;
         }
 
-        private static bool CanFitFastAccessReserve(
+        private static bool CanFitFastAccessReserves(
             SearchableItemItemClass vest,
             SearchableItemItemClass pockets,
-            Item? reserveItem)
+            IEnumerable<MagazineItemClass> reserveItems)
         {
-            if (reserveItem == null)
+            List<MagazineItemClass> reserves = NormalizeReloadReserveItems(reserveItems)
+                .OrderByDescending(GetMagazineCellArea)
+                .ThenByDescending(GetMagazineLongestSide)
+                .ToList();
+            return TryFitFastAccessReloadReserves(vest, pockets, reserves, 0);
+        }
+
+        private static bool TryFitFastAccessReloadReserves(
+            SearchableItemItemClass vest,
+            SearchableItemItemClass pockets,
+            IReadOnlyList<MagazineItemClass> reserves,
+            int index)
+        {
+            if (index >= reserves.Count)
             {
                 return true;
             }
 
-            return (vest != null && TrySimulateContainerAdd(vest, reserveItem, out _)) ||
-                   (pockets != null && TrySimulateContainerAdd(pockets, reserveItem, out _));
+            MagazineItemClass reserve = reserves[index];
+            if (vest != null &&
+                TrySimulateContainerAdd(vest, reserve, out SearchableItemItemClass? nextVest) &&
+                TryFitFastAccessReloadReserves(nextVest, pockets, reserves, index + 1))
+            {
+                return true;
+            }
+
+            return pockets != null &&
+                   TrySimulateContainerAdd(pockets, reserve, out SearchableItemItemClass? nextPockets) &&
+                   TryFitFastAccessReloadReserves(vest, nextPockets, reserves, index + 1);
+        }
+
+        private static List<MagazineItemClass> BuildReloadReserveSet(
+            MagazineItemClass reloadReserve,
+            IEnumerable<MagazineItemClass> alternateReloadReserves)
+        {
+            // The follower reloads only one weapon at a time. Preserve one shared opening sized
+            // for the largest relevant magazine instead of reserving simultaneous landing spaces.
+            return NormalizeReloadReserveItems(
+                new[] { reloadReserve }.Concat(
+                    alternateReloadReserves ?? Enumerable.Empty<MagazineItemClass>()))
+                .OrderByDescending(GetMagazineCellArea)
+                .ThenByDescending(GetMagazineLongestSide)
+                .ThenByDescending(magazine => magazine.MaxCount)
+                .Take(1)
+                .ToList();
+        }
+
+        private static List<MagazineItemClass> NormalizeReloadReserveItems(
+            IEnumerable<MagazineItemClass> items)
+        {
+            return items?
+                .Where(item => item != null && !string.IsNullOrEmpty(item.Id))
+                .GroupBy(item => item.Id, StringComparer.Ordinal)
+                .Select(group => group.First())
+                .ToList() ?? new List<MagazineItemClass>();
         }
 
         private bool HasOperationalMagazineReloadLandingSpace(

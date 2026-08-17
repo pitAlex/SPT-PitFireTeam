@@ -264,6 +264,9 @@ namespace pitTeam.Modules
 
         private static IEnumerable<EquipmentSlot> GetTrackedReturnSearchSlots()
         {
+            // Weapon-support ammunition can fall back to secure storage and remains an independent
+            // tracked return root when it is not consumed by a weapon or magazine.
+            yield return EquipmentSlot.SecuredContainer;
             yield return EquipmentSlot.TacticalVest;
             yield return EquipmentSlot.Backpack;
             yield return EquipmentSlot.Pockets;

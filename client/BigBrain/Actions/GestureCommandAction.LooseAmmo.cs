@@ -10,14 +10,8 @@ namespace pitTeam.BigBrain.Actions
     {
         private static readonly EquipmentSlot[] WeaponLooseAmmoDestinationOrder =
         {
-            EquipmentSlot.SecuredContainer,
-            EquipmentSlot.Pockets,
-            EquipmentSlot.Backpack,
-            EquipmentSlot.TacticalVest
-        };
-
-        private static readonly EquipmentSlot[] LauncherLooseAmmoDestinationOrder =
-        {
+            // Ammunition needs to remain usable in raid. The vest is first only when the
+            // reload reserve for the follower's active magazines still remains intact.
             EquipmentSlot.TacticalVest,
             EquipmentSlot.Pockets,
             EquipmentSlot.Backpack,
@@ -91,10 +85,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             HashSet<string> yieldedIds = new HashSet<string>(StringComparer.Ordinal);
-            EquipmentSlot[] destinationOrder = FollowerCombatCommon.IsGrenadeLauncherWeapon(weapon)
-                ? LauncherLooseAmmoDestinationOrder
-                : WeaponLooseAmmoDestinationOrder;
-            foreach (EquipmentSlot slot in destinationOrder)
+            foreach (EquipmentSlot slot in WeaponLooseAmmoDestinationOrder)
             {
                 Item root = followerEquipment.GetSlot(slot)?.ContainedItem;
                 foreach (AmmoItemClass ammo in SnapshotLootTreeItems(root).OfType<AmmoItemClass>())
@@ -170,11 +161,29 @@ namespace pitTeam.BigBrain.Actions
         private int ResolveWeaponTacticalAmmoReserveTarget(
             InventoryController inventory,
             Weapon weapon,
-            IEnumerable<AmmoItemClass> availableAmmo)
+            IEnumerable<AmmoItemClass> availableAmmo,
+            Func<MagazineItemClass, bool>? fastAccessMagazineEligibility = null)
         {
+            List<AmmoItemClass> available = availableAmmo?
+                .Where(ammo => ammo != null)
+                .ToList() ?? new List<AmmoItemClass>();
+            if (FollowerWeaponLooseAmmoSupport.IsShotgun(weapon))
+            {
+                // Shotgun feed capacities are often tiny compared with their 20-round loose
+                // stacks. Tactical stocking therefore follows the established three-stack rule
+                // instead of stopping at three internal-magazine capacity equivalents.
+                int shotgunStackCapacity = available
+                    .Select(ammo => Math.Max(1, ammo.StackMaxSize))
+                    .DefaultIfEmpty(20)
+                    .Max();
+                return shotgunStackCapacity * 3;
+            }
+
             WeaponPrimaryReadinessSnapshot readiness = FollowerWeaponPrimaryReadiness.EvaluateActual(
                 inventory,
-                weapon);
+                weapon,
+                internalAmmoEligibility: null,
+                fastAccessMagazineEligibility: fastAccessMagazineEligibility);
             if (readiness?.Threshold > 0)
             {
                 // Two magazine equivalents make a weapon combat-ready; tactical stocking is a
@@ -184,7 +193,10 @@ namespace pitTeam.BigBrain.Actions
 
             List<MagazineItemClass> availableMagazines = GetFastAccessMagazines(
                     inventory?.Inventory?.Equipment)
-                .Where(magazine => IsMagazineCompatibleWithWeapon(weapon, magazine))
+                .Where(magazine =>
+                    (fastAccessMagazineEligibility == null ||
+                     fastAccessMagazineEligibility(magazine)) &&
+                    IsMagazineCompatibleWithWeapon(weapon, magazine))
                 .ToList();
             MagazineItemClass insertedMagazine = GetCurrentMagazineSafely(weapon);
             if (insertedMagazine != null && IsMagazineCompatibleWithWeapon(weapon, insertedMagazine))
@@ -201,12 +213,11 @@ namespace pitTeam.BigBrain.Actions
                 return Math.Min(30, largestAvailableMagazine) * 2;
             }
 
-            int stackCapacity = availableAmmo?
-                .Where(ammo => ammo != null)
+            int stackCapacity = available
                 .Select(ammo => Math.Max(1, ammo.StackMaxSize))
                 .DefaultIfEmpty(1)
-                .Max() ?? 1;
-            return stackCapacity * (FollowerWeaponLooseAmmoSupport.IsShotgun(weapon) ? 3 : 2);
+                .Max();
+            return stackCapacity * 2;
         }
 
         private static BodyGearCandidate CreateWeaponLooseAmmoCandidate(
@@ -267,6 +278,8 @@ namespace pitTeam.BigBrain.Actions
                     group => group.Key,
                     group => group.Sum(candidate => Math.Max(0, candidate.Item.StackObjectsCount)),
                     StringComparer.Ordinal);
+            SearchableItemItemClass simulatedSecure = CloneSearchableContainer(
+                followerEquipment?.GetSlot(EquipmentSlot.SecuredContainer)?.ContainedItem);
 
             List<BodyGearCandidate> accepted = new List<BodyGearCandidate>();
             foreach (BodyGearCandidate candidate in source
@@ -281,12 +294,28 @@ namespace pitTeam.BigBrain.Actions
                     out int remainingRounds)
                     ? remainingRounds
                     : ammo.StackObjectsCount;
-                TacticalAmmoDecision decision = EvaluateTacticalAmmoCandidate(
+                TacticalAmmoDecision policyDecision = EvaluateTacticalAmmoCandidate(
                     ammo,
                     carried,
                     sourceRoundsOfType,
                     reserveTargetRounds,
                     allowUpgrade: true);
+                bool alreadyCarriesSameTemplate = carried.Any(existing =>
+                    string.Equals(
+                        existing.TemplateId.ToString(),
+                        ammo.TemplateId.ToString(),
+                        StringComparison.Ordinal));
+                bool fitsSecure = TrySimulateContainerAdd(
+                    simulatedSecure,
+                    ammo,
+                    out SearchableItemItemClass? nextSecure);
+                bool useSecureOverride = fitsSecure &&
+                    FollowerTacticalAmmoPolicy.CanUseSecureStorageOverride(
+                        policyDecision,
+                        alreadyCarriesSameTemplate);
+                TacticalAmmoDecision decision = !policyDecision.ShouldAcquire && useSecureOverride
+                    ? AcceptForSecureContainer(policyDecision)
+                    : policyDecision;
                 Modules.Logger.LogInfo(
                     $"[LootCommand][LooseAmmo] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
                     $"weapon={DescribeLootDebugItem(weapon)} evaluation={evaluation} ammo={DescribeLooseAmmo(ammo)} " +
@@ -294,6 +323,11 @@ namespace pitTeam.BigBrain.Actions
                 if (decision.ShouldAcquire)
                 {
                     accepted.Add(candidate.WithFollowUpDestination(destination));
+                    if (fitsSecure)
+                    {
+                        simulatedSecure = nextSecure;
+                    }
+
                     // Planning several source stacks is sequential. Count accepted rounds in the
                     // next decision so a large source cannot bypass the reserve/opportunity limit
                     // merely because its stacks have different item ids.
@@ -305,6 +339,23 @@ namespace pitTeam.BigBrain.Actions
             }
 
             return accepted;
+        }
+
+        private static TacticalAmmoDecision AcceptForSecureContainer(
+            TacticalAmmoDecision policyDecision)
+        {
+            return new TacticalAmmoDecision(
+                TacticalAmmoDecisionKind.Replenish,
+                "secureContainerCapacity",
+                policyDecision.CurrentRounds,
+                policyDecision.ReserveTargetRounds,
+                policyDecision.CurrentWeightedPenetration,
+                policyDecision.CandidatePenetration,
+                policyDecision.CandidateRounds,
+                policyDecision.NeedWeight,
+                policyDecision.PowerWeight,
+                policyDecision.OpportunityWeight,
+                policyDecision.CombinedWeight);
         }
 
         private BodyGearMove AppendWeaponLooseAmmoSupportFollowUps(
@@ -394,10 +445,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            EquipmentSlot[] destinationOrder = FollowerCombatCommon.IsGrenadeLauncherWeapon(weapon)
-                ? LauncherLooseAmmoDestinationOrder
-                : WeaponLooseAmmoDestinationOrder;
-            foreach (EquipmentSlot slot in destinationOrder)
+            foreach (EquipmentSlot slot in WeaponLooseAmmoDestinationOrder)
             {
                 if (slot == EquipmentSlot.TacticalVest &&
                     !CanPlaceAmmoInVestWithReloadReserve(followerEquipment, ammo))
@@ -432,8 +480,7 @@ namespace pitTeam.BigBrain.Actions
             return false;
         }
 
-        private bool TrySimulateWeaponLooseAmmoPlacement(
-            Weapon weapon,
+        private bool TrySimulateLooseAmmoPlacement(
             AmmoItemClass ammo,
             VestReloadReserveSet vestReloadReserves,
             ref SearchableItemItemClass? secure,
@@ -441,42 +488,13 @@ namespace pitTeam.BigBrain.Actions
             ref SearchableItemItemClass? backpack,
             ref SearchableItemItemClass? vest)
         {
-            if (FollowerCombatCommon.IsGrenadeLauncherWeapon(weapon))
+            // Keep the simulated order aligned with real moves. In particular, do not let a
+            // capacity check accept secure storage when the rounds could have remained ready for
+            // the active weapon in the vest.
+            if (TrySimulateContainerAdd(vest, ammo, out SearchableItemItemClass? nextVest) &&
+                CanFitVestReloadReserves(nextVest, vestReloadReserves))
             {
-                // Launcher rounds must remain reload-accessible whenever possible. Each simulated
-                // placement mutates its cloned container, so later one-round grenades naturally
-                // spill from vest to pockets to backpack before secure storage is considered.
-                if (TrySimulateContainerAdd(vest, ammo, out SearchableItemItemClass? nextLauncherVest) &&
-                    CanFitVestReloadReserves(nextLauncherVest, vestReloadReserves))
-                {
-                    vest = nextLauncherVest;
-                    return true;
-                }
-
-                if (TrySimulateContainerAdd(pockets, ammo, out SearchableItemItemClass? nextLauncherPockets))
-                {
-                    pockets = nextLauncherPockets;
-                    return true;
-                }
-
-                if (TrySimulateContainerAdd(backpack, ammo, out SearchableItemItemClass? nextLauncherBackpack))
-                {
-                    backpack = nextLauncherBackpack;
-                    return true;
-                }
-
-                if (TrySimulateContainerAdd(secure, ammo, out SearchableItemItemClass? nextLauncherSecure))
-                {
-                    secure = nextLauncherSecure;
-                    return true;
-                }
-
-                return false;
-            }
-
-            if (TrySimulateContainerAdd(secure, ammo, out SearchableItemItemClass? nextSecure))
-            {
-                secure = nextSecure;
+                vest = nextVest;
                 return true;
             }
 
@@ -492,10 +510,9 @@ namespace pitTeam.BigBrain.Actions
                 return true;
             }
 
-            if (TrySimulateContainerAdd(vest, ammo, out SearchableItemItemClass? nextVest) &&
-                CanFitVestReloadReserves(nextVest, vestReloadReserves))
+            if (TrySimulateContainerAdd(secure, ammo, out SearchableItemItemClass? nextSecure))
             {
-                vest = nextVest;
+                secure = nextSecure;
                 return true;
             }
 
