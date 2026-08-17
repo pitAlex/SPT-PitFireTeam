@@ -260,18 +260,15 @@ public class FriendlyPostRaidService(
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(request.MessageText))
-        {
-            return;
-        }
-
         Dictionary<string, KillMessageRecord> sessionRecords = KillMessageRecords.GetOrAdd(
             sessionId.ToString(),
             _ => new Dictionary<string, KillMessageRecord>(StringComparer.Ordinal));
 
         lock (sessionRecords)
         {
-            var record = new KillMessageRecord(kind, request.MessageText);
+            // An empty message is an intentional suppression record when Raid End Messages is off.
+            // Keep it so the end-of-raid hook can remove SPT's random PMC response without replacing it.
+            var record = new KillMessageRecord(kind, request.MessageText ?? string.Empty);
             sessionRecords[request.VictimProfileId] = record;
 
             if (!string.IsNullOrWhiteSpace(request.VictimAccountId))
@@ -421,7 +418,8 @@ public class FriendlyPostRaidService(
 
             RemoveRecentVanillaPmcResponse(sessionId, victim, recentMessageThreshold);
 
-            if (record.Kind == KillMessageKindTraitor || record.Kind == KillMessageKindJerk)
+            if ((record.Kind == KillMessageKindTraitor || record.Kind == KillMessageKindJerk) &&
+                !string.IsNullOrWhiteSpace(record.MessageText))
             {
                 SendVictimMessage(sessionId, victim, record.MessageText);
             }

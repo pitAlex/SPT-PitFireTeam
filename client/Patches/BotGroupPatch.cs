@@ -540,6 +540,22 @@ namespace pitTeam.Patches
                 new[] { typeof(DamageInfoStruct), typeof(Player) });
         }
 
+        [PatchPrefix]
+        [HarmonyPriority(Priority.First)]
+        private static void PatchPrefix(DamageInfoStruct damageInfo, Player target)
+        {
+            try
+            {
+                // Capture the relation before EFT's OnBeingHit handler adds the player as an enemy.
+                PlayerKilledPatch.TryRememberFriendlyPmcBeforePlayerDamage(damageInfo, target);
+            }
+            catch (Exception ex)
+            {
+                Modules.Logger.LogError("[RetaliationBridge] failed to capture pre-damage PMC relationship.");
+                Modules.Logger.LogError(ex);
+            }
+        }
+
         [PatchPostfix]
         private static void PatchPostfix(DamageInfoStruct damageInfo, Player target)
         {

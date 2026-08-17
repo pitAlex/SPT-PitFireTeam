@@ -153,6 +153,32 @@ primary:
 | S3-05 | Empty or partial double-/single-barrel secondary with compatible shells | One chamber transaction settles at a time; useful remainder is carried |
 | S3-06 | Simple/Restricted follower spawned with the secondary | Searched rounds may be carried but do not directly modify protected original equipment |
 
+## Deferred Secondary Verification
+
+The secondary implementation is sufficiently stable to begin holster work. The
+following combinations are not recorded as failed; they simply have not had a
+clean, named runtime verification in this ledger and should be revisited if
+secondary behavior regresses:
+
+- shared-ammunition contention: S1-02 and S1-03, where primary first refusal
+  must either consume the source or explicitly leave it for the secondary
+- shared-magazine ownership: S1-04 and S2-03, ensuring a compatible magazine
+  is never adopted by the wrong weapon merely because its shape matches
+- fully stocked / lower-quality ammunition rejection: S1-05 and S3-04
+- no-destination behavior: S1-06 and S2-04, where tactical ammo remains at
+  the source rather than consuming the reserved reload landing space
+- incompatible cartridges inside an otherwise compatible source magazine:
+  S2-05
+- exact fast-access overflow: S2-06, where one source magazine fits beside the
+  shared reload opening and later magazines remain at the source
+- explicit body/container parity records for S1-07 and S2-07
+- combat reload after secondary maintenance: S1-08
+
+These are verification debt, not a reason to expand secondary-slot policy
+before holster work. They remain bounded by the current contracts: primary
+first refusal, one shared reload landing space, registered magazine ownership,
+and no occupied-secondary replacement.
+
 ## Later Secondary Phases
 
 - S4: persistence, death, interruption, and failed-transaction hardening.

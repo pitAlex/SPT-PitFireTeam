@@ -234,6 +234,8 @@ namespace pitTeam.Patches
     {
         private const string KillMessageRoute = "/singleplayer/pitfireteam/postraid/kill-message";
         private static readonly HashSet<string> RecordedKillMessageVictims = new HashSet<string>(StringComparer.Ordinal);
+        private static readonly HashSet<string> PlayerDamagedPmcVictims = new HashSet<string>(StringComparer.Ordinal);
+        private static readonly HashSet<string> FriendlyBeforePlayerDamageVictims = new HashSet<string>(StringComparer.Ordinal);
         private static readonly HashSet<string> RecordedDeadSquadmates = new HashSet<string>(StringComparer.Ordinal);
         private static readonly object RecordedKillMessageLock = new object();
         private static readonly object RecordedDeadSquadmatesLock = new object();
@@ -415,6 +417,62 @@ namespace pitTeam.Patches
             }
         }
 
+        internal static void TryRememberFriendlyPmcBeforePlayerDamage(DamageInfoStruct damageInfo, Player target)
+        {
+            IPlayer attacker = damageInfo.Player?.iPlayer;
+            if (!IsFriendlyPmcKillMessageContextEnabled() ||
+                attacker == null ||
+                !attacker.IsYourPlayer ||
+                target == null ||
+                !target.IsAI ||
+                target.Side != attacker.Side ||
+                !IsPmc(target.Side) ||
+                string.IsNullOrWhiteSpace(target.ProfileId))
+            {
+                return;
+            }
+
+            BotOwner targetBot = target.AIData?.BotOwner;
+            BotsGroup targetGroup = targetBot?.BotsGroup;
+            if (targetBot == null || targetGroup == null || targetBot.EnemiesController == null)
+            {
+                return;
+            }
+
+            bool wasAlreadyEnemy =
+                targetGroup.IsEnemy(attacker) ||
+                targetBot.EnemiesController.IsEnemy(attacker) ||
+                string.Equals(
+                    targetBot.Memory?.GoalEnemy?.Person?.ProfileId,
+                    attacker.ProfileId,
+                    StringComparison.Ordinal);
+
+            lock (RecordedKillMessageLock)
+            {
+                // The first direct player hit is the relationship boundary. Later hits must not
+                // turn a bot that was already hostile into an eligible friendly-fire victim.
+                if (!PlayerDamagedPmcVictims.Add(target.ProfileId))
+                {
+                    return;
+                }
+
+                if (!wasAlreadyEnemy)
+                {
+                    FriendlyBeforePlayerDamageVictims.Add(target.ProfileId);
+                }
+            }
+        }
+
+        internal static void ResetKillMessageRaidState()
+        {
+            lock (RecordedKillMessageLock)
+            {
+                RecordedKillMessageVictims.Clear();
+                PlayerDamagedPmcVictims.Clear();
+                FriendlyBeforePlayerDamageVictims.Clear();
+            }
+        }
+
         private static void TryRecordPlayerKillMessage(Player victim, IPlayer aggressor)
         {
             try
@@ -430,8 +488,9 @@ namespace pitTeam.Patches
                     return;
                 }
 
-                string messageText = GetKillMessageText(messageKind);
-                if (string.IsNullOrWhiteSpace(messageText))
+                bool messagesEnabled = pitFireTeam.npcSendMessage?.Value == true;
+                string messageText = messagesEnabled ? GetKillMessageText(messageKind) : string.Empty;
+                if (messagesEnabled && string.IsNullOrWhiteSpace(messageText))
                 {
                     return;
                 }
@@ -480,21 +539,42 @@ namespace pitTeam.Patches
 
         private static string GetKillMessageKind(Player victim, IPlayer aggressor)
         {
+            if (!IsFriendlyPmcKillMessageContextEnabled() ||
+                !WasFriendlyBeforePlayerDamage(victim.ProfileId))
+            {
+                return string.Empty;
+            }
+
             BotFollowerPlayer follower = BossPlayers.GetFollowerByProfileId(victim.ProfileId);
             if (follower != null)
             {
                 return follower.IsSquadMate ? string.Empty : "traitor";
             }
 
-            bool friendlyPmcEnabled = pitFireTeam.pitFireTeamFLAG.Value && !pitFireTeam.badGuy.Value;
-            if (!friendlyPmcEnabled)
+            return IsPmc(victim.Side) && victim.Side == aggressor.Side ? "jerk" : string.Empty;
+        }
+
+        private static bool WasFriendlyBeforePlayerDamage(string victimProfileId)
+        {
+            if (string.IsNullOrWhiteSpace(victimProfileId))
             {
-                return string.Empty;
+                return false;
             }
 
-            bool victimIsPmc = victim.Side == EPlayerSide.Bear || victim.Side == EPlayerSide.Usec;
-            bool sameSide = victim.Side == aggressor.Side;
-            return victimIsPmc && sameSide ? "jerk" : string.Empty;
+            lock (RecordedKillMessageLock)
+            {
+                return FriendlyBeforePlayerDamageVictims.Contains(victimProfileId);
+            }
+        }
+
+        private static bool IsFriendlyPmcKillMessageContextEnabled()
+        {
+            return pitFireTeam.pitFireTeamFLAG?.Value == true && pitFireTeam.badGuy?.Value != true;
+        }
+
+        private static bool IsPmc(EPlayerSide side)
+        {
+            return side == EPlayerSide.Bear || side == EPlayerSide.Usec;
         }
 
         private static string GetKillMessageText(string messageKind)

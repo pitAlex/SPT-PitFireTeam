@@ -1420,6 +1420,7 @@ namespace pitTeam.Patches
             {
                 if (Controller == null)
                 {
+                    PlayerKilledPatch.ResetKillMessageRaidState();
                     new BossPlayers();
                     new InteractableObjects();
                     new NpcMessage();
