@@ -349,18 +349,21 @@ namespace pitTeam.Modules
                 return false;
             }
 
-            // The TakeLoot command owns a short asynchronous pickup flow: approach, pickup animation, then an
-            // inventory network transaction. Backpack inspection must not overlap that flow.
+            // Every commanded loot flow owns asynchronous movement, search, and inventory work.
+            // Backpack inspection must not overlap it, or the player can race the follower for
+            // the same inventory tree while it is being mutated.
             if (follower != null &&
                 follower.TryPeekActiveCommand(out FollowerCommandType command, out _, out _) &&
                 (command == FollowerCommandType.TakeLootItem ||
-                 command == FollowerCommandType.TakeBodyGear))
+                 command == FollowerCommandType.TakeBodyGear ||
+                 command == FollowerCommandType.TakeContainerLoot))
             {
                 return true;
             }
 
             if (InteractableObjects.IsTaker(bot) ||
-                InteractableObjects.IsBodyLootTaker(bot))
+                InteractableObjects.IsBodyLootTaker(bot) ||
+                InteractableObjects.IsContainerLootTaker(bot))
             {
                 return true;
             }
