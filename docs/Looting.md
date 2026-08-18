@@ -710,6 +710,7 @@ Assignment:
 - body/container commands only assign saved teammates spawned through the raid squad flow
 - non-teammate body/container assignment only picks followers with a complete NavMesh path of 22m or less
 - followers with active/pending loot commands are skipped so rapid commands split across followers
+- an assigned pickup/body/container looter is command-locked until cleanup; later boss commands skip that follower and select another eligible teammate
 - followers with no backpack/pocket free area are skipped for filtered body/container looting
 - explicitly ordering a completed corpse searches it again; autonomous `Go loot` skips completed corpses
 - an active body reservation still prevents a second follower from looting the same corpse

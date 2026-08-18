@@ -668,7 +668,7 @@ namespace pitTeam.BigBrain
 
         private AICoreActionResultStruct<BotLogicDecision, GClass26> CreateNoPushDecision(EnemyInfo goalEnemy, string reasonPrefix)
         {
-            if (botOwner.Memory.IsInCover && botOwner.Memory.CurCustomCoverPoint?.CanIShootToEnemy == true)
+            if (combatCommon.CanShootFromCurrentCover(out _))
             {
                 return new AICoreActionResultStruct<BotLogicDecision, GClass26>(
                     BotLogicDecision.shootFromCover,
@@ -693,6 +693,7 @@ namespace pitTeam.BigBrain
             return string.Equals(reason, "memoryOnlyAutoPushHold", StringComparison.Ordinal) ||
                    string.Equals(reason, "launcherSuppressHold", StringComparison.Ordinal) ||
                    string.Equals(reason, "weaponThreatHold", StringComparison.Ordinal) ||
+                   string.Equals(reason, "longGunAmmoHold", StringComparison.Ordinal) ||
                    string.Equals(reason, "lowAmmoHold", StringComparison.Ordinal);
         }
 

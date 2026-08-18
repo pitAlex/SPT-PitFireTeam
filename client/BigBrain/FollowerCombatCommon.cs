@@ -89,6 +89,10 @@ namespace pitTeam.BigBrain
         private const int TargetHandoffMaxCandidates = 4;
         private const int TargetHandoffMaxProbes = 4;
         private const string TargetHandoffScanReason = "targetHandoffScan";
+        private const float NoEnemyRecoverySecondaryThreatRecentSeconds = 4f;
+        private const float NoEnemyRecoverySecondaryThreatMinDistance = 12f;
+        private const float NoEnemyRecoverySecondaryThreatMinApproach = 2f;
+        private const int NoEnemyRecoverySecondaryThreatMaxCount = 4;
         private const float PointBlankRetreatBlockDistance = 8f;
         private const float PointBlankContactDogFightDistance = 3f;
         private const float PointBlankContactMaxAnchorDistance = 4.5f;
@@ -315,6 +319,7 @@ namespace pitTeam.BigBrain
         private PreparedCombatDecisionTransition? preparedDecisionTransition;
         private DeferredCombatDecisionTransition? deferredDecisionTransition;
         private readonly List<TargetHandoffCandidate> targetHandoffCandidates = new List<TargetHandoffCandidate>(TargetHandoffMaxCandidates);
+        private readonly List<Vector3> noEnemyRecoverySecondaryThreatPoints = new List<Vector3>(NoEnemyRecoverySecondaryThreatMaxCount);
         private bool targetHandoffScanActive;
         private float targetHandoffScanUntil;
         private float nextTargetHandoffProbeAt;
@@ -6667,14 +6672,28 @@ namespace pitTeam.BigBrain
                 threatDirection.Normalize();
             }
 
+            CollectNoEnemyRecoverySecondaryThreatPoints(hasThreatPoint ? threatPoint : Vector3.zero);
+
             CoverSearchType searchType = SetCoverTacticAndGetSearchType(
                 BotsGroup.BotCurrentTactic.Ambush,
                 CoverShootType.hide,
                 CoverSearchIntent.RunToCover);
 
+            bool rejectedSecondaryThreatCover = false;
             bool IsEligible(CustomNavigationPoint candidate)
             {
-                return IsCoverUsable(candidate, ignoreSpotted: true);
+                if (!IsCoverUsable(candidate, ignoreSpotted: true))
+                {
+                    return false;
+                }
+
+                if (!IsNoEnemyRecoveryCoverSafeFromSecondaryThreats(candidate.Position))
+                {
+                    rejectedSecondaryThreatCover = true;
+                    return false;
+                }
+
+                return true;
             }
 
             Vector3 bossPosition = GetBossPosition();
@@ -6782,6 +6801,10 @@ namespace pitTeam.BigBrain
             {
                 reason += ".crossFloorFallback";
             }
+            if (rejectedSecondaryThreatCover)
+            {
+                reason += ".secondaryThreatVeto";
+            }
 
             if (hasThreatPoint)
             {
@@ -6791,6 +6814,77 @@ namespace pitTeam.BigBrain
             CommitCover(cover, moveAction, reason);
             AssignCover(cover);
             decision = CreateCommittedCoverMoveDecision();
+            return true;
+        }
+
+        /// <summary>
+        /// Collects a bounded set of recent living group-memory contacts for recovery-cover safety.
+        /// These frozen positions can reject an unsafe destination, but never promote, aim at, or fire on an enemy.
+        /// </summary>
+        private void CollectNoEnemyRecoverySecondaryThreatPoints(Vector3 primaryThreatPoint)
+        {
+            noEnemyRecoverySecondaryThreatPoints.Clear();
+            if (botOwner.EnemiesController?.EnemyInfos == null)
+            {
+                return;
+            }
+
+            Vector3 botPosition = botOwner.Position;
+            foreach (EnemyInfo enemyInfo in botOwner.EnemiesController.EnemyInfos.Values)
+            {
+                if (!IsTrackedEnemyAlive(enemyInfo) ||
+                    !IsRecentTimestamp(enemyInfo.TimeLastSeen, NoEnemyRecoverySecondaryThreatRecentSeconds))
+                {
+                    continue;
+                }
+
+                Vector3 memoryPoint = enemyInfo.EnemyLastPosition;
+                if (!IsFinite(memoryPoint) ||
+                    memoryPoint.sqrMagnitude <= 0.01f ||
+                    !FollowerCombatRegroupObjective.IsSameBossLevel(botPosition, memoryPoint) ||
+                    (IsFinite(primaryThreatPoint) &&
+                     primaryThreatPoint.sqrMagnitude > 0.01f &&
+                     (memoryPoint - primaryThreatPoint).sqrMagnitude <= 2f * 2f))
+                {
+                    continue;
+                }
+
+                float distanceSqr = (memoryPoint - botPosition).sqrMagnitude;
+                int insertAt = 0;
+                while (insertAt < noEnemyRecoverySecondaryThreatPoints.Count &&
+                       (noEnemyRecoverySecondaryThreatPoints[insertAt] - botPosition).sqrMagnitude <= distanceSqr)
+                {
+                    insertAt++;
+                }
+
+                if (noEnemyRecoverySecondaryThreatPoints.Count >= NoEnemyRecoverySecondaryThreatMaxCount)
+                {
+                    if (insertAt >= NoEnemyRecoverySecondaryThreatMaxCount)
+                    {
+                        continue;
+                    }
+
+                    noEnemyRecoverySecondaryThreatPoints.RemoveAt(NoEnemyRecoverySecondaryThreatMaxCount - 1);
+                }
+
+                noEnemyRecoverySecondaryThreatPoints.Insert(insertAt, memoryPoint);
+            }
+        }
+
+        private bool IsNoEnemyRecoveryCoverSafeFromSecondaryThreats(Vector3 coverPosition)
+        {
+            Vector3 botPosition = botOwner.Position;
+            foreach (Vector3 threatPoint in noEnemyRecoverySecondaryThreatPoints)
+            {
+                float currentDistance = DistanceXZ(botPosition, threatPoint);
+                float coverDistance = DistanceXZ(coverPosition, threatPoint);
+                if (coverDistance < NoEnemyRecoverySecondaryThreatMinDistance &&
+                    coverDistance + NoEnemyRecoverySecondaryThreatMinApproach < currentDistance)
+                {
+                    return false;
+                }
+            }
+
             return true;
         }
 
@@ -7757,6 +7851,13 @@ namespace pitTeam.BigBrain
             float t = Mathf.Clamp01(Vector2.Dot(p - a, ab) / abLenSqr);
             Vector2 closest = a + ab * t;
             return Vector2.Distance(p, closest);
+        }
+
+        private static float DistanceXZ(Vector3 first, Vector3 second)
+        {
+            return Vector2.Distance(
+                new Vector2(first.x, first.z),
+                new Vector2(second.x, second.z));
         }
 
         private static float DistanceSegmentToSegmentXZ(Vector3 startA, Vector3 endA, Vector3 startB, Vector3 endB)
@@ -9916,6 +10017,23 @@ namespace pitTeam.BigBrain
 
             if (HasCommittedCover())
             {
+                if (IsBotInCommittedCover())
+                {
+                    if (!TryStartCombatReload())
+                    {
+                        DeferCombatReloadRetry();
+                        return false;
+                    }
+
+                    AssignCommittedCover();
+                    ExtendCommittedCover();
+                    HoldCoverForMaxDuration();
+                    decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                        BotLogicDecision.holdPosition,
+                        "reloadInCover");
+                    return true;
+                }
+
                 AssignCommittedCover();
                 decision = CreateCommittedCoverMoveDecision();
                 return true;

@@ -382,6 +382,8 @@ Combat variant:
 
 Loot and pickup selections enter `AIBossPlayer` through the player's `OnPhraseSay` event. Assignment diagnostics record the quick-menu action, live and stored targets, phrase arrival, follower eligibility, reservation, and final command state so a lost order can be located at its exact boundary.
 
+A follower with an assigned pickup, body-loot, or container-loot reservation is command-locked until that work finishes or is interrupted. New boss orders skip that follower, so proximity selection such as `There` can choose the next available teammate instead.
+
 Input:
 
 - `EPhraseTrigger.LootGeneric`

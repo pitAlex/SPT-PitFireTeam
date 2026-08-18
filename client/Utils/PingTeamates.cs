@@ -40,6 +40,7 @@ namespace pitTeam.Utils
         public string EnemyProfileId { get; }
         public Vector3 WorldPosition;
         public float UntilTime;
+        public float NextHiddenPositionRefreshTime;
         public bool HasCapturedPosition;
         public bool IsVisible;
         public bool IsDead;
@@ -117,6 +118,7 @@ namespace pitTeam.Utils
         private const float EnemyVisibleMarkerSizePixels = 30f;
         private const float EnemyActiveMarkerScale = 0.9f;
         private const float ReliableVisibleMaxAgeSeconds = 0.35f;
+        private const float HiddenEnemyMarkerRefreshSeconds = 5f;
         private const string EnemyVisibleTextureFileName = "enemy-visible.png";
         private const string EnemySeenTextureFileName = "enemy-seen.png";
         private const string EnemyDownTextureFileName = "enemy-down.png";
@@ -1049,10 +1051,17 @@ namespace pitTeam.Utils
 
                 if (TryResolveEnemyMarker(contact.EnemyProfileId, out EnemyMarkerResolution resolution))
                 {
-                    if (resolution.IsVisible || captureHiddenPosition || !contact.HasCapturedPosition)
+                    bool shouldRefreshPosition =
+                        resolution.IsVisible ||
+                        captureHiddenPosition ||
+                        !contact.HasCapturedPosition ||
+                        Time.time >= contact.NextHiddenPositionRefreshTime;
+                    if (shouldRefreshPosition)
                     {
                         contact.WorldPosition = resolution.WorldPosition;
                         contact.HasCapturedPosition = true;
+                        contact.NextHiddenPositionRefreshTime =
+                            Time.time + HiddenEnemyMarkerRefreshSeconds;
                     }
 
                     contact.IsVisible = resolution.IsVisible;

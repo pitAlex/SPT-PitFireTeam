@@ -454,6 +454,11 @@ namespace pitTeam.Components
                     continue;
                 }
 
+                if (IsFollowerLockedByLootCommand(follower))
+                {
+                    continue;
+                }
+
                 if (requireGestureVisibility && !CanReactToBossGesture(follower, requester))
                 {
                     followersSkippedVisibility++;
@@ -1520,6 +1525,27 @@ namespace pitTeam.Components
             return (follower.Position - requester.Position).sqrMagnitude <= maxDistance * maxDistance;
         }
 
+        private static bool IsFollowerLockedByLootCommand(BotOwner follower)
+        {
+            if (follower == null)
+            {
+                return false;
+            }
+
+            BotFollowerPlayer followerData = BossPlayers.Instance?.GetFollower(follower);
+            if (followerData?.IsLootOrPickupCommandActive() == true ||
+                followerData?.IsCommittedLootCommandActive() == true)
+            {
+                return true;
+            }
+
+            // Reservations begin when the order is assigned and remain through inventory cleanup.
+            // They close the small gap before the request action has begun its committed loot phase.
+            return InteractableObjects.IsTaker(follower) ||
+                   InteractableObjects.IsBodyLootTaker(follower) ||
+                   InteractableObjects.IsContainerLootTaker(follower);
+        }
+
         private void HandleAttentionCommand()
         {
             const float enforceBlockSeconds = 2f;
@@ -1536,6 +1562,7 @@ namespace pitTeam.Components
             {
                 if (follower == null || follower.IsDead || follower.BotState != EBotState.Active) continue;
                 if (!BossPlayers.IsFollower(follower)) continue;
+                if (IsFollowerLockedByLootCommand(follower)) continue;
 
                 BotFollowerPlayer? followerData = BossPlayers.Instance?.GetFollower(follower);
                 if (!IsCombatRegroupContext())
@@ -1678,6 +1705,7 @@ namespace pitTeam.Components
                     bool applied = false;
                     if (!lookedFollower.IsDead &&
                         lookedFollower.BotState == EBotState.Active &&
+                        !IsFollowerLockedByLootCommand(lookedFollower) &&
                         CanReactToBossGesture(lookedFollower, requesterPlayer, HoldGestureDistance))
                     {
                         BotFollowerPlayer lookedFollowerData = BossPlayers.Instance?.GetFollower(lookedFollower);
@@ -1697,6 +1725,7 @@ namespace pitTeam.Components
             foreach (BotOwner follower in Followers)
             {
                 if (follower == null || follower.IsDead || follower.BotState != EBotState.Active) continue;
+                if (IsFollowerLockedByLootCommand(follower)) continue;
                 if ((follower.Position - requester.Position).sqrMagnitude > HoldGestureDistance * HoldGestureDistance) continue;
                 if (!CanReactToBossGesture(follower, requester, HoldGestureDistance)) continue;
 
@@ -1720,6 +1749,7 @@ namespace pitTeam.Components
                     bool applied = false;
                     if (!lookedFollower.IsDead &&
                         lookedFollower.BotState == EBotState.Active &&
+                        !IsFollowerLockedByLootCommand(lookedFollower) &&
                         CanReactToBossPhrase(lookedFollower, requesterPlayer, StopPhraseDistance))
                     {
                         BotFollowerPlayer lookedFollowerData = BossPlayers.Instance?.GetFollower(lookedFollower);
@@ -1739,6 +1769,7 @@ namespace pitTeam.Components
             foreach (BotOwner follower in Followers)
             {
                 if (follower == null || follower.IsDead || follower.BotState != EBotState.Active) continue;
+                if (IsFollowerLockedByLootCommand(follower)) continue;
                 if (!CanReactToBossPhrase(follower, requester, StopPhraseDistance)) continue;
 
                 BotFollowerPlayer followerData = BossPlayers.Instance?.GetFollower(follower);
@@ -1800,6 +1831,7 @@ namespace pitTeam.Components
             foreach (BotOwner follower in Followers)
             {
                 if (follower == null || follower.IsDead || follower.BotState != EBotState.Active) continue;
+                if (IsFollowerLockedByLootCommand(follower)) continue;
                 BotFollowerPlayer followerData = BossPlayers.Instance?.GetFollower(follower);
                 if (followerData == null) continue;
                 if (!combatRegroupContext)
@@ -1850,6 +1882,7 @@ namespace pitTeam.Components
             foreach (BotOwner follower in Followers)
             {
                 if (follower == null || follower.IsDead || follower.BotState != EBotState.Active) continue;
+                if (IsFollowerLockedByLootCommand(follower)) continue;
 
                 BotFollowerPlayer followerData = BossPlayers.Instance?.GetFollower(follower);
                 if (followerData == null) continue;
@@ -1881,6 +1914,7 @@ namespace pitTeam.Components
             foreach (BotOwner follower in Followers)
             {
                 if (follower == null || follower.IsDead || follower.BotState != EBotState.Active) continue;
+                if (IsFollowerLockedByLootCommand(follower)) continue;
 
                 BotFollowerPlayer followerData = BossPlayers.Instance?.GetFollower(follower);
                 if (followerData == null) continue;
@@ -2460,6 +2494,11 @@ namespace pitTeam.Components
                     continue;
                 }
 
+                if (IsFollowerLockedByLootCommand(follower))
+                {
+                    continue;
+                }
+
                 BotFollowerPlayer followerData = BossPlayers.Instance?.GetFollower(follower);
                 if (followerData == null || followerData.IsLootOrPickupCommandActive())
                 {
@@ -2506,6 +2545,7 @@ namespace pitTeam.Components
             foreach (BotOwner follower in Followers)
             {
                 if (follower == null || follower.IsDead || follower.BotState != EBotState.Active) continue;
+                if (IsFollowerLockedByLootCommand(follower)) continue;
                 BotFollowerPlayer followerData = BossPlayers.Instance?.GetFollower(follower);
                 if (followerData == null) continue;
 
@@ -2752,6 +2792,10 @@ namespace pitTeam.Components
             {
                 return;
             }
+            if (IsFollowerLockedByLootCommand(lookedFollower))
+            {
+                return;
+            }
             if (!CanReactToBossGesture(lookedFollower, requesterPlayer, ComeWithMeMaxDistance))
             {
                 return;
@@ -2788,6 +2832,7 @@ namespace pitTeam.Components
             foreach (BotOwner follower in Followers)
             {
                 if (follower == null || follower.IsDead || follower.BotState != EBotState.Active) continue;
+                if (IsFollowerLockedByLootCommand(follower)) continue;
                 float sqrDist = (follower.Position - requesterPos).sqrMagnitude;
                 if (sqrDist > GestureCommandDistance * GestureCommandDistance) continue;
                 if (!CanReactToBossGesture(follower, requester)) continue;
@@ -2911,6 +2956,7 @@ namespace pitTeam.Components
             foreach (BotOwner follower in Followers)
             {
                 if (follower == null || follower.IsDead || follower.BotState != EBotState.Active) continue;
+                if (IsFollowerLockedByLootCommand(follower)) continue;
                 if (!CanReactToBossPhrase(follower, requester, PhraseCommandDistance)) continue;
 
                 ApplyFollowerLookOverride(follower, lookTarget, 1f, 2f);
@@ -3066,6 +3112,7 @@ namespace pitTeam.Components
             foreach (BotOwner follower in Followers)
             {
                 if (follower == null || follower.IsDead || follower.BotState != EBotState.Active) continue;
+                if (IsFollowerLockedByLootCommand(follower)) continue;
                 if (focusedFollower != null && follower != focusedFollower) continue;
 
                 BotFollowerPlayer followerData = BossPlayers.Instance?.GetFollower(follower);
@@ -3119,6 +3166,7 @@ namespace pitTeam.Components
             foreach (BotOwner follower in Followers)
             {
                 if (follower == null || follower.IsDead || follower.BotState != EBotState.Active) continue;
+                if (IsFollowerLockedByLootCommand(follower)) continue;
                 if (focusedFollower != null && follower != focusedFollower) continue;
 
                 BotFollowerPlayer followerData = BossPlayers.Instance?.GetFollower(follower);
@@ -3233,6 +3281,7 @@ namespace pitTeam.Components
             foreach (BotOwner follower in Followers)
             {
                 if (follower == null || follower.IsDead || follower.BotState != EBotState.Active) continue;
+                if (IsFollowerLockedByLootCommand(follower)) continue;
                 if (focusedFollower != null && follower != focusedFollower) continue;
 
                 BotFollowerPlayer followerData = BossPlayers.Instance?.GetFollower(follower);
@@ -3940,6 +3989,7 @@ namespace pitTeam.Components
             foreach (BotOwner follower in Followers)
             {
                 if (follower == null || follower.IsDead || follower.BotState != EBotState.Active) continue;
+                if (IsFollowerLockedByLootCommand(follower)) continue;
 
                 BotFollowerPlayer? followerData = BossPlayers.Instance?.GetFollower(follower);
                 if (followerData == null ||
@@ -3975,6 +4025,7 @@ namespace pitTeam.Components
             foreach (BotOwner follower in Followers)
             {
                 if (follower == null || follower.IsDead || follower.BotState != EBotState.Active) continue;
+                if (IsFollowerLockedByLootCommand(follower)) continue;
                 BossPlayers.Instance?.GetFollower(follower)?.RequestOrderedPushCancel("NeedHelp");
                 PrioritizeEnemy(follower, enemyBot);
             }
