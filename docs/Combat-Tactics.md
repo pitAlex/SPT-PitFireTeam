@@ -1,6 +1,6 @@
 # Combat Tactics Notes
 
-Last updated: 2026-08-11
+Last updated: 2026-08-18
 
 ## Scope
 
@@ -34,7 +34,8 @@ Acquisition and sharing sources:
 - `AIBossPlayer.RegisterContactEnemyForFollower(...)` is the boss-contact injection path. Contact/OverThere-style cues, NeedHelp fallback, and ordered launcher target resolution can report and create `EnemyInfo` records for followers, optionally promote one contact as the goal, and register retention with the command-priority flag.
 - `FollowerAwareness` is the reaction path. Direct hits and close incoming fire can create/promote the immediate hostile attacker when the current goal is missing, dead, stale/non-shootable, or clearly farther than the incoming threat. When no push mission is active this retarget clears retained contact once before installing the new goal, so a stale far contact cannot immediately restore over the immediate attacker. When a push mission is active, direct-hit interruption is registered as a temporary target instead of cancelling or replacing the mission.
 - Personal contact is separate from squad/shared memory. `EnemyInfo.HaveSeen` or group sense/real-memory may keep an enemy known, but repair and promotion paths must not treat that flag alone as the follower personally seeing the enemy. Personal seen timestamps are written only from direct visible/can-shoot contact. Explicit contact priority may promote and retain an unseen enemy, but it must not fabricate personal sight or activate recent-contact fire; memory-only setup/soft acquisitions cannot start proactive auto-push or marksman close-search by themselves.
-- `addPlayerToBoss` is treated as hostile relationship sharing, not contact proof. Unscoped vanilla/SAIN `GoalEnemy` setter attempts from that cause are blocked for followers until direct/personal contact exists; explicit boss-command, direct-hit, and group-attacker paths remain scoped reaction inputs.
+- `addPlayerToBoss` is treated as hostile relationship sharing, not contact proof. When the external SAIN plugin is absent, unscoped core/vanilla `GoalEnemy` setter attempts from that cause are blocked for followers until direct/personal contact exists; explicit boss-command, direct-hit, and group-attacker paths remain scoped reaction inputs. When SAIN is present, this acquisition guard yields to SAIN's vision job and enemy controller.
+- On the no-SAIN path, an awareness-gated unscoped `GoalEnemy` setter that occurs inside `EnemyInfo.CheckLookEnemy` is deferred. Vanilla can temporarily set `IsVisible`/`PersonalSeenTime` and synchronously calculate a goal before it finishes `VisibleType` and `PersonalLastSeenTime`; the normal post-look recalculation runs after follower visibility correction and may then acquire genuine contact. Memory-only goals also cannot qualify as stable follower reporters for sibling fan-out. Neither safeguard uses a distance or floor heuristic.
 
 `FollowerCombatTargetCommitments` owns mission-versus-temporary target arbitration:
 
@@ -536,17 +537,24 @@ Marksman behavior:
 
 - prefers firing positions and support cover
 - uses committed movement and arrival holds like default
-- uses prepared-break decisions so support/protection only breaks hold when the next action is valid
+- uses the shared recovery predicate, recovery-qualified cover selection, recovery movement/arrival contract, and bounded no-cover fight/suppress/hold retry instead of treating a firing position as survival cover
+- uses prepared-break decisions so support/protection, renewed pressure, and immediate fire only break hold when the concrete successor is retained for the next decision pass
 - ignores generic assault push behavior unless marksman policy asks for close support/search
-- can switch to automatic secondary for close-quarter fights
+- can use automatic-secondary close search only when the same loaded-ammo and penetration policy used by automatic push accepts that second primary; holster weapons do not qualify
+- close automatic-secondary preparation is transactional: a viable visible shot keeps the current weapon, while unseen close-search intent waits in a bounded enemy-facing hold until the selected primary is active and both selector and weapon manager report it ready
+- close automatic search uses a concrete cover-backed tactical destination at least `16m` from the enemy anchor; it does not fall back to the shared simple-search action that walks directly to the enemy position
 - does not run proactive automatic close-search while temporary boss `HoldPosition` aggression override is active
 - switches back to primary when returning to support/reposition marksman decisions, and when combat drops before patrol reload maintenance starts
 - supports team push/search through firing-position support, not blind rushing
+- consumes ordered suppression only for the boss-selected automatic-secondary fallback; ordinary generic Marksman suppression orders remain rejected
+- initializes autonomous `autoSuppress.sniper.*` through the shared bounded suppression lifecycle, including its protected opening, shot/timeout accounting, and restart guard
+- close visible contact can end committed cover travel only after a concrete stationary-fire successor is prepared; without one, movement remains committed and retries instead of ending in hope
+- the Rifleman-specific exposed `shootFromPlace` return-fire lease remains default-tactic policy; Marksman static fire still uses shared fire end conditions so ordinary long-range firing lanes are not converted into nearest-cover movement without battle-record evidence
 - hands boss-distance regroup to the shared regroup objective
 
-Marksman hold behavior scans periodically for:
+Marksman hold behavior periodically evaluates:
 
-- better shooting spot
+- a verified shooting-position refresh; a candidate that cannot be committed leaves the current hold running instead of ending/reselecting it
 - push support
 - boss-under-attack support
 - ally support
@@ -596,7 +604,7 @@ It is intended to compare observed behavior with code behavior:
 
 Use it to validate whether a bug is tactical routing, action execution, perception, or visual/player interpretation.
 
-Schema version 5 retains schema 4's opponent-side `sainOpponentDecision`, sampled `sainOpponentSnapshot`, and `combatAggressionOverride` records, and adds 10 Hz transition-only `followerWeaponActivity` records across combat and out-of-combat states. These record trigger, shooting, reload, active-weapon, and loaded-round changes without enabling full patrol snapshots. A throttled `followerWeaponSafety` event records rejected no-enemy shot requests. SAIN decisions are probed at their 10 Hz decision cadence while full snapshots retain the configured recorder interval; a low-frequency discovery probe also catches SAIN targeting the player before follower combat begins. The opponent record includes SAIN layer/action and combat/squad/self decisions, target contact, cover and active-path state, movement, aim/fire/suppression, health/medical state, and personality timing. It is intentionally relationship-gated: a SAIN bot is emitted only while it targets the player/follower, a recorded follower targets it, or for five seconds after that relationship disappears. This keeps the recorded timeline focused on the actual fight instead of writing snapshots for every SAIN bot in the raid.
+Schema version 6 retains schema 5's opponent-side `sainOpponentDecision`, sampled `sainOpponentSnapshot`, `combatAggressionOverride`, and 10 Hz transition-only `followerWeaponActivity` records. Follower combat/fire snapshots now include `combatActivity.aimPlan`: controller type, status, readiness, elapsed time, current planned duration, last base duration, remaining time, and normalized progress. This distinguishes a deliberately long aim plan from an elapsed timer that stalls or repeatedly resets. Weapon activity records still capture trigger, shooting, reload, active-weapon, and loaded-round changes without enabling full patrol snapshots. A throttled `followerWeaponSafety` event records rejected no-enemy shot requests. SAIN decisions are probed at their 10 Hz decision cadence while full snapshots retain the configured recorder interval; a low-frequency discovery probe also catches SAIN targeting the player before follower combat begins. The opponent record includes SAIN layer/action and combat/squad/self decisions, target contact, cover and active-path state, movement, aim/fire/suppression, health/medical state, and personality timing. It is intentionally relationship-gated: a SAIN bot is emitted only while it targets the player/follower, a recorded follower targets it, or for five seconds after that relationship disappears. This keeps the recorded timeline focused on the actual fight instead of writing snapshots for every SAIN bot in the raid.
 
 Enemy provenance fields record the `BotSettingsClass.Cause` stored in `EnemyInfo.GroupInfo`, a coarse cause category, and whether that cause normally needs an awareness gate. Treat this as acquisition provenance rather than final truth: the cause is usually the first group-add reason and later reports may update enemy memory without changing the cause. `contact` fields compare personal seen timestamps with group sense/real-visibility timestamps, and `geometry` fields record straight distance, planar distance, and vertical delta so wall/building separation can be distinguished from pure floor separation.
 

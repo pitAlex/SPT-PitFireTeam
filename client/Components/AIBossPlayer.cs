@@ -4861,6 +4861,15 @@ namespace pitTeam.Components
                 return false;
             }
 
+            // External SAIN owns its enemy controller. On the core/vanilla path, do not let a
+            // retained setup/group-memory goal become proof of contact for another follower.
+            if (!pitFireTeam.IsSAINInstalled &&
+                Enemy.IsMemoryOnlyAcquisitionWithoutPersonalContact(goalEnemy))
+            {
+                ClearStableEnemyReporter(follower);
+                return false;
+            }
+
             enemyPlayer = goalEnemy.Person as Player;
             if ((enemyPlayer == null || enemyPlayer.HealthController?.IsAlive != true) && !string.IsNullOrEmpty(goalEnemy.ProfileId))
             {

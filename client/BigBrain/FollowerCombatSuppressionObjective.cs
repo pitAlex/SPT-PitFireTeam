@@ -9,13 +9,18 @@ namespace pitTeam.BigBrain
         internal const string ReasonPrefix = "objectiveSuppress";
         private const string WeaponSwitchToPrimaryReason = "objectiveSuppress.weaponSwitchToPrimary";
         private const string AutomaticSecondarySwitchReason = "objectiveSuppress.autoSecondarySwitch";
+        private const string AutomaticSecondarySettleReason = "objectiveSuppress.autoSecondarySettle";
         private const float WeaponSwitchRetrySeconds = 0.25f;
+        private const float AutomaticSecondarySwitchTimeoutSeconds = 1.5f;
 
         private bool complete;
         private bool negativeSaid;
         private bool forceWeaponSuppress;
         private bool useAutomaticSecondarySuppress;
         private float weaponSwitchRetryUntil;
+        private bool automaticSecondarySwitchPending;
+        private float automaticSecondarySwitchUntil;
+        private float automaticSecondarySettleUntil;
 
         public FollowerCombatSuppressionObjective(BotOwner botOwner, FollowerCombatCommon combatCommon)
             : base(botOwner, combatCommon)
@@ -31,6 +36,9 @@ namespace pitTeam.BigBrain
             forceWeaponSuppress = false;
             useAutomaticSecondarySuppress = false;
             weaponSwitchRetryUntil = 0f;
+            automaticSecondarySwitchPending = false;
+            automaticSecondarySwitchUntil = 0f;
+            automaticSecondarySettleUntil = 0f;
         }
 
         public override void Activate()
@@ -85,9 +93,22 @@ namespace pitTeam.BigBrain
                 return healDecision.Value;
             }
 
-            if (TryGetAutomaticSecondarySwitchDecision(out AICoreActionResultStruct<BotLogicDecision, GClass26> switchDecision))
+            if (useAutomaticSecondarySuppress)
             {
-                return switchDecision;
+                if (!TryGetAutomaticSecondarySwitchDecision(
+                        out AICoreActionResultStruct<BotLogicDecision, GClass26> switchDecision,
+                        out bool automaticSecondaryReady))
+                {
+                    SayNegativeOnce();
+                    complete = true;
+                    ClearObjectiveCommitments();
+                    return Hold("automaticSecondaryUnavailable");
+                }
+
+                if (!automaticSecondaryReady)
+                {
+                    return switchDecision;
+                }
             }
 
             if (CombatCommon.TryCreateOrderedSuppressWeaponFallbackDecision(
@@ -147,8 +168,49 @@ namespace pitTeam.BigBrain
 
             if (currentDecision.Action == BotLogicDecision.holdPosition)
             {
-                if (string.Equals(currentDecision.Reason, WeaponSwitchToPrimaryReason, StringComparison.Ordinal) ||
-                    string.Equals(currentDecision.Reason, AutomaticSecondarySwitchReason, StringComparison.Ordinal))
+                if (string.Equals(currentDecision.Reason, AutomaticSecondarySwitchReason, StringComparison.Ordinal))
+                {
+                    if (CombatCommon.IsEligibleAutomaticSecondarySelectedAndReady())
+                    {
+                        automaticSecondarySwitchPending = false;
+                        automaticSecondarySwitchUntil = 0f;
+                        return new AICoreActionEndStruct("suppressionAutomaticSecondaryReady", true);
+                    }
+
+                    if (!automaticSecondarySwitchPending || Time.time >= automaticSecondarySwitchUntil)
+                    {
+                        SayNegativeOnce();
+                        complete = true;
+                        ClearObjectiveCommitments();
+                        return new AICoreActionEndStruct("suppressionAutomaticSecondaryFailed", true);
+                    }
+
+                    CombatCommon.HoldFor(Mathf.Max(0.05f, automaticSecondarySwitchUntil - Time.time));
+                    return default;
+                }
+
+                if (string.Equals(currentDecision.Reason, AutomaticSecondarySettleReason, StringComparison.Ordinal))
+                {
+                    if (CombatCommon.IsEligibleAutomaticSecondarySelectedAndReady() ||
+                        CombatCommon.IsWeaponSelectionSettledForAutomaticSecondaryRequest())
+                    {
+                        automaticSecondarySettleUntil = 0f;
+                        return new AICoreActionEndStruct("suppressionAutomaticSecondarySettled", true);
+                    }
+
+                    if (Time.time >= automaticSecondarySettleUntil)
+                    {
+                        SayNegativeOnce();
+                        complete = true;
+                        ClearObjectiveCommitments();
+                        return new AICoreActionEndStruct("suppressionAutomaticSecondarySettleFailed", true);
+                    }
+
+                    CombatCommon.HoldFor(Mathf.Max(0.05f, automaticSecondarySettleUntil - Time.time));
+                    return default;
+                }
+
+                if (string.Equals(currentDecision.Reason, WeaponSwitchToPrimaryReason, StringComparison.Ordinal))
                 {
                     if (Time.time >= weaponSwitchRetryUntil)
                     {
@@ -184,27 +246,57 @@ namespace pitTeam.BigBrain
         }
 
         private bool TryGetAutomaticSecondarySwitchDecision(
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision,
+            out bool ready)
         {
             decision = default;
-            if (!useAutomaticSecondarySuppress ||
-                CombatCommon.CanCurrentWeaponSuppress() ||
-                !CombatCommon.HasLoadedAutomaticSecondaryForPush())
+            ready = CombatCommon.IsEligibleAutomaticSecondarySelectedAndReady();
+            if (ready)
+            {
+                automaticSecondarySwitchPending = false;
+                automaticSecondarySwitchUntil = 0f;
+                automaticSecondarySettleUntil = 0f;
+                return true;
+            }
+
+            if (automaticSecondarySwitchPending)
+            {
+                if (Time.time >= automaticSecondarySwitchUntil)
+                {
+                    return false;
+                }
+
+                decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                    BotLogicDecision.holdPosition,
+                    AutomaticSecondarySwitchReason);
+                return true;
+            }
+
+            if (!CombatCommon.IsWeaponSelectionSettledForAutomaticSecondaryRequest())
+            {
+                if (automaticSecondarySettleUntil <= Time.time)
+                {
+                    automaticSecondarySettleUntil = Time.time + AutomaticSecondarySwitchTimeoutSeconds;
+                }
+
+                decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                    BotLogicDecision.holdPosition,
+                    AutomaticSecondarySettleReason);
+                return true;
+            }
+
+            automaticSecondarySettleUntil = 0f;
+
+            if (!CombatCommon.HasLoadedAutomaticSecondaryForPush() ||
+                !CombatCommon.TryRequestEligibleAutomaticSecondary())
             {
                 return false;
             }
 
-            if (!CombatCommon.TrySwitchToAutomaticSecondaryForPush(out bool changedToSecondary))
-            {
-                return false;
-            }
-
-            if (!changedToSecondary)
-            {
-                return false;
-            }
-
-            weaponSwitchRetryUntil = Time.time + WeaponSwitchRetrySeconds;
+            automaticSecondarySwitchPending = true;
+            automaticSecondarySwitchUntil = Time.time + AutomaticSecondarySwitchTimeoutSeconds;
+            automaticSecondarySettleUntil = 0f;
+            CombatCommon.HoldFor(0.25f);
             decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
                 BotLogicDecision.holdPosition,
                 AutomaticSecondarySwitchReason);

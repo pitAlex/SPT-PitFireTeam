@@ -73,14 +73,14 @@ namespace pitTeam.Patches
                 if (value != null)
                 {
                     string reason = FollowerGoalEnemyTracker.CurrentReason;
-                    if (ShouldBlockUnscopedMemoryOnlyGoal(botOwner, value, reason))
+                    if (ShouldBlockUnscopedMemoryOnlyGoal(botOwner, value, reason, out string? acquisitionBlockedReason))
                     {
                         FollowerGoalEnemyTracker.RecordSetter(
                             botOwner,
                             previous,
                             value,
                             allowed: false,
-                            blockedReason: "memoryOnlyGoalEnemyBlocked");
+                            blockedReason: acquisitionBlockedReason);
                         return false;
                     }
 
@@ -130,12 +130,38 @@ namespace pitTeam.Patches
             }
         }
 
-        private static bool ShouldBlockUnscopedMemoryOnlyGoal(BotOwner botOwner, EnemyInfo value, string reason)
+        private static bool ShouldBlockUnscopedMemoryOnlyGoal(
+            BotOwner botOwner,
+            EnemyInfo value,
+            string reason,
+            out string? blockedReason)
         {
-            return botOwner != null &&
-                   BossPlayers.IsFollower(botOwner) &&
-                   string.Equals(reason, "unscopedSetter", System.StringComparison.Ordinal) &&
-                   Enemy.IsMemoryOnlyAcquisitionWithoutPersonalContact(value);
+            blockedReason = null;
+            if (pitFireTeam.IsSAINInstalled ||
+                botOwner == null ||
+                !BossPlayers.IsFollower(botOwner) ||
+                !string.Equals(reason, "unscopedSetter", System.StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            // Vanilla SetVisible(true) recalculates GoalEnemy before CheckLookEnemy finishes
+            // writing VisibleType and PersonalLastSeenTime. Defer soft/setup acquisition until
+            // the normal post-look recalculation can use the completed, corrected sensor state.
+            if (FollowerEnemyInfoCorrection.IsInsideLookCheck &&
+                Enemy.RequiresAcquisitionAwarenessGate(value.GroupInfo?.Cause))
+            {
+                blockedReason = "lookCheckGoalEnemyDeferred";
+                return true;
+            }
+
+            if (!Enemy.IsMemoryOnlyAcquisitionWithoutPersonalContact(value))
+            {
+                return false;
+            }
+
+            blockedReason = "memoryOnlyGoalEnemyBlocked";
+            return true;
         }
     }
 }

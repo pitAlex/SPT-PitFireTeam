@@ -140,6 +140,11 @@ namespace pitTeam.BigBrain
         private const float ShootFromCoverLosFlickerGraceSeconds = 0.5f;
         private const float AutoSuppressMinSeconds = 0.75f;
         private const float AutoSuppressMaxSeconds = 3f;
+        internal const string RecoveryNoCoverFightReason = "recovery.noCoverFight";
+        internal const string RecoveryNoCoverSuppressReason = "recovery.noCoverSuppress";
+        internal const string RecoveryNoCoverThreatHoldReason = "recovery.noCoverThreatHold";
+        private const float RecoveryNoCoverCommitSeconds = 2.5f;
+        private const float RecoveryNoCoverPointBlankBreakDistance = 5f;
         private const float OrderedSuppressMinSeconds = 2f;
         private const float OrderedWeaponSuppressMaxSeconds = 2f;
         private const float CloseSuppressFoliageProbeRadius = 0.45f;
@@ -275,6 +280,10 @@ namespace pitTeam.BigBrain
         private float holdEndTime;
         private string? activeFollowerSuppressReason;
         private float activeFollowerSuppressStartedAt;
+        private string? activeRecoveryNoCoverReason;
+        private float recoveryNoCoverUntil;
+        private string recoveryNoCoverEnemyProfileId = string.Empty;
+        private int recoveryNoCoverDamageRevision;
         private int activeFollowerSuppressInitialRounds = -1;
         private bool activeFollowerSuppressShotDetected;
         private int activeLauncherSuppressInitialRounds = -1;
@@ -606,6 +615,10 @@ namespace pitTeam.BigBrain
             holdEndTime = 0f;
             activeFollowerSuppressReason = null;
             activeFollowerSuppressStartedAt = 0f;
+            activeRecoveryNoCoverReason = null;
+            recoveryNoCoverUntil = 0f;
+            recoveryNoCoverEnemyProfileId = string.Empty;
+            recoveryNoCoverDamageRevision = 0;
             ClearWeaponSuppressFireProfile();
             ClearLauncherSuppressFireProfile();
             HaveCoverToShoot = false;
@@ -3688,14 +3701,41 @@ namespace pitTeam.BigBrain
             if (HasCommittedCover())
             {
                 reason = GetCommittedCoverReason();
-                if (recoveryManeuver && !IsRecoveryManeuverReason(reason))
+                if (!recoveryManeuver)
                 {
-                    reason = CreateRecoveryManeuverReason(reason);
-                    committedCoverMoveReason = reason;
-                    committedCoverMoveAction = SelectRecoveryCoverMoveAction(goalEnemy, committedCoverPoint!);
+                    return true;
                 }
 
-                return true;
+                CustomNavigationPoint existingCover = committedCoverPoint!;
+                string existingBaseReason = GetCoverCommitBaseReason(reason);
+                if (TryValidateSelectedCombatCover(
+                        goalEnemy,
+                        existingCover,
+                        GetRecoveryValidationReason(existingBaseReason),
+                        recoveryManeuver: true,
+                        out BotLogicDecision recoveryMoveAction))
+                {
+                    if (IsRecoveryManeuverReason(reason))
+                    {
+                        return true;
+                    }
+
+                    // A firing-position commitment is not automatically a survival cover. Reuse it
+                    // only after it passes the same route, claim, and point-blank checks as a fresh
+                    // recovery candidate, then re-commit it with the recovery movement contract.
+                    ClearCommittedCover("requalifyForRecovery");
+                    CommitValidatedCombatCover(
+                        goalEnemy,
+                        existingCover,
+                        existingBaseReason,
+                        recoveryManeuver: true,
+                        recoveryMoveAction);
+                    reason = GetCommittedCoverReason();
+                    return true;
+                }
+
+                ClearCommittedCover("rejectExistingRecoveryCover");
+                nextCoverAcquireTime = 0f;
             }
 
             if (!CanAcquireCommittedCover())
@@ -3804,6 +3844,57 @@ namespace pitTeam.BigBrain
             }
 
             return TryCommitSelectedCombatCover(goalEnemy, cover, committedReason);
+        }
+
+        /// <summary>
+        /// Atomically replaces a marksman firing-cover commitment only when the already-scanned
+        /// candidate is a meaningful, shoot-capable upgrade. The current cover remains committed
+        /// when validation fails, avoiding an end-and-reselect gap.
+        /// </summary>
+        public bool TryReplaceCommittedFiringCover(
+            EnemyInfo goalEnemy,
+            CustomNavigationPoint? candidate,
+            string reason,
+            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision,
+            bool enforceMarksmanPositionPolicy = false)
+        {
+            decision = default;
+            CustomNavigationPoint? current = committedCoverPoint;
+            if (current == null ||
+                candidate == null ||
+                current.Id == candidate.Id ||
+                (enforceMarksmanPositionPolicy &&
+                 !IsMarksmanFiringPositionAllowed(goalEnemy, candidate.Position)))
+            {
+                return false;
+            }
+
+            bool candidateShootLaneStable = candidate.CanIShootToEnemy && HaveCoverToShoot;
+            if (!ShouldCommitRefreshedShootCover(
+                    current,
+                    candidate,
+                    GetBossPosition(),
+                    requireShootLane: true,
+                    candidateShootLaneStable) ||
+                !TryValidateSelectedCombatCover(
+                    goalEnemy,
+                    candidate,
+                    reason,
+                    recoveryManeuver: false,
+                    out BotLogicDecision moveAction))
+            {
+                return false;
+            }
+
+            ClearCommittedCover("replaceFiringCover");
+            CommitValidatedCombatCover(
+                goalEnemy,
+                candidate,
+                reason,
+                recoveryManeuver: false,
+                moveAction);
+            decision = CreateCommittedCoverMoveDecision();
+            return true;
         }
 
         public bool TryCommitMarksmanSupportCover(
@@ -6418,29 +6509,43 @@ namespace pitTeam.BigBrain
             string reason,
             bool recoveryManeuver = false)
         {
-            if (!IsCoverUsable(cover))
+            if (!TryValidateSelectedCombatCover(
+                    goalEnemy,
+                    cover,
+                    reason,
+                    recoveryManeuver,
+                    out BotLogicDecision moveAction))
             {
                 return false;
             }
 
-            if (recoveryManeuver && IsBlockedRecoveryCover(cover))
+            CommitValidatedCombatCover(goalEnemy, cover!, reason, recoveryManeuver, moveAction);
+            return true;
+        }
+
+        private bool TryValidateSelectedCombatCover(
+            EnemyInfo goalEnemy,
+            CustomNavigationPoint? cover,
+            string reason,
+            bool recoveryManeuver,
+            out BotLogicDecision moveAction)
+        {
+            moveAction = default;
+            if (!IsCoverUsable(cover) ||
+                (recoveryManeuver && IsBlockedRecoveryCover(cover)) ||
+                IsUnsafeFireSupportPath(goalEnemy, cover!, reason))
             {
                 return false;
             }
 
-            if (IsUnsafeFireSupportPath(goalEnemy, cover, reason))
-            {
-                return false;
-            }
-
-            if (recoveryManeuver && IsUnsafeRecoveryCoverPath(goalEnemy, cover))
+            if (recoveryManeuver && IsUnsafeRecoveryCoverPath(goalEnemy, cover!))
             {
                 BattleRecorder.RecordCommitmentEvent(
                     botOwner,
                     "recovery",
                     "rejectCover",
                     "unsafeThreatPath",
-                    target: cover.Position,
+                    target: cover!.Position,
                     coverId: cover.Id);
                 return false;
             }
@@ -6450,18 +6555,23 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
+            moveAction = recoveryManeuver
+                ? SelectRecoveryCoverMoveAction(goalEnemy, cover!)
+                : SelectCommittedCoverMoveAction(goalEnemy, cover);
+            return moveAction != (BotLogicDecision)CustomBotDecisions.attackRetreat ||
+                   !IsPointBlankVisibleShootableThreat(goalEnemy);
+        }
+
+        private void CommitValidatedCombatCover(
+            EnemyInfo goalEnemy,
+            CustomNavigationPoint cover,
+            string reason,
+            bool recoveryManeuver,
+            BotLogicDecision moveAction)
+        {
             if (recoveryManeuver)
             {
                 reason = CreateRecoveryManeuverReason(reason);
-            }
-
-            BotLogicDecision moveAction = recoveryManeuver
-                ? SelectRecoveryCoverMoveAction(goalEnemy, cover!)
-                : SelectCommittedCoverMoveAction(goalEnemy, cover);
-            if (moveAction == (BotLogicDecision)CustomBotDecisions.attackRetreat &&
-                IsPointBlankVisibleShootableThreat(goalEnemy))
-            {
-                return false;
             }
 
             if (moveAction == BotLogicDecision.runToCover)
@@ -6491,7 +6601,29 @@ namespace pitTeam.BigBrain
 
             CommitCover(cover, moveAction, reason);
             AssignCover(cover);
-            return true;
+        }
+
+        private static string GetRecoveryValidationReason(string reason)
+        {
+            const string RecoveryPrefix = "recovery.";
+            return reason.StartsWith(RecoveryPrefix, StringComparison.Ordinal)
+                ? reason.Substring(RecoveryPrefix.Length)
+                : reason;
+        }
+
+        private static string GetCoverCommitBaseReason(string reason)
+        {
+            string[] movementSuffixes = { ".run", ".suppress", ".retreat", ".walk" };
+            for (int i = 0; i < movementSuffixes.Length; i++)
+            {
+                string suffix = movementSuffixes[i];
+                if (reason.EndsWith(suffix, StringComparison.Ordinal))
+                {
+                    return reason.Substring(0, reason.Length - suffix.Length);
+                }
+            }
+
+            return reason;
         }
 
         /// <summary>
@@ -9447,6 +9579,21 @@ namespace pitTeam.BigBrain
         {
             preparedDecisionTransition = null;
             deferredDecisionTransition = null;
+        }
+
+        public bool TryPrepareDecisionTransition(
+            AICoreActionResultStruct<BotLogicDecision, GClass26> sourceDecision,
+            string endReason,
+            AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision)
+        {
+            EnemyInfo? goalEnemy = botOwner.Memory?.GoalEnemy;
+            if (!HasActiveCombatEnemy(goalEnemy))
+            {
+                return false;
+            }
+
+            PrepareDecisionTransition(sourceDecision, endReason, goalEnemy!, nextDecision);
+            return true;
         }
 
         private void PrepareDecisionTransition(
@@ -12567,28 +12714,162 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            Weapon? activeWeapon = botOwner.WeaponManager?.ShootController?.Item;
-            if (IsAutomaticWeapon(activeWeapon) &&
-                activeWeapon?.GetCurrentMagazine()?.Cartridges?.Count > 0)
+            if (TryGetSelectedLoadedAutomaticPrimary(out _))
             {
                 return true;
             }
 
-            var selector = botOwner.WeaponManager?.Selector;
+            BotWeaponSelector? selector = botOwner.WeaponManager?.Selector;
+            return selector?.CanChangeToSecondWeapons == true &&
+                   HasLoadedAutomaticSecondaryForPush();
+        }
+
+        /// <summary>
+        /// True only after a loaded automatic primary is both selected and active. A slot-change
+        /// request is not enough: movement that depends on the close-combat weapon must wait for
+        /// EFT's asynchronous selector callback and weapon-ready state.
+        /// </summary>
+        public bool IsAutomaticCloseCombatWeaponReady()
+        {
+            BotWeaponManager? weaponManager = botOwner?.WeaponManager;
+            BotWeaponSelector? selector = weaponManager?.Selector;
             if (selector == null ||
-                !selector.CanChangeToSecondWeapons ||
-                selector.SecondPrimaryWeaponItem == null)
+                selector.IsChanging ||
+                !selector.IsWeaponReady ||
+                weaponManager?.IsWeaponReady == false ||
+                !TryGetSelectedLoadedAutomaticPrimary(out Weapon? selectedWeapon))
             {
                 return false;
             }
 
-            Weapon? secondaryWeapon = selector.SecondPrimaryWeaponItem as Weapon;
-            if (!IsAutomaticWeapon(secondaryWeapon))
+            Weapon? activeWeapon = weaponManager?.ShootController?.Item ?? weaponManager?.CurrentWeapon;
+            return IsSameWeapon(activeWeapon, selectedWeapon);
+        }
+
+        /// <summary>
+        /// Requests the eligible automatic second primary. A true result means this caller owns
+        /// one accepted asynchronous switch request; already-selected but unready weapons are not
+        /// reported as a new request.
+        /// </summary>
+        public bool TryRequestAutomaticSecondaryForCloseCombat()
+        {
+            BotWeaponSelector? selector = botOwner?.WeaponManager?.Selector;
+            if (selector == null || !HasAutomaticCloseCombatWeaponAvailable())
             {
                 return false;
             }
 
-            return secondaryWeapon?.GetCurrentMagazine()?.Cartridges?.Count > 0;
+            if (TryGetSelectedLoadedAutomaticPrimary(out _))
+            {
+                return false;
+            }
+
+            if (selector.IsChanging)
+            {
+                return false;
+            }
+
+            return selector.CanChangeToSecondWeapons && selector.ChangeToSecond();
+        }
+
+        /// <summary>
+        /// Ordered marksman suppression is explicitly tied to the eligible automatic second
+        /// primary, not merely to any weapon capable of sustained fire.
+        /// </summary>
+        public bool IsEligibleAutomaticSecondarySelectedAndReady()
+        {
+            BotWeaponManager? weaponManager = botOwner?.WeaponManager;
+            BotWeaponSelector? selector = weaponManager?.Selector;
+            Weapon? firstPrimary = GetFirstPrimaryWeapon(botOwner);
+            Weapon? secondPrimary = GetSecondPrimaryWeapon(botOwner);
+            if (selector == null ||
+                selector.LastEquipmentSlot != EquipmentSlot.SecondPrimaryWeapon ||
+                selector.IsChanging ||
+                !selector.IsWeaponReady ||
+                weaponManager?.IsWeaponReady == false ||
+                !IsAutomaticSecondaryUsableForPush(firstPrimary, secondPrimary))
+            {
+                return false;
+            }
+
+            Weapon? activeWeapon = weaponManager?.ShootController?.Item ?? weaponManager?.CurrentWeapon;
+            return IsSameWeapon(activeWeapon, secondPrimary);
+        }
+
+        /// <summary>
+        /// True only when EFT's selector and weapon manager have finished any in-flight hands
+        /// transition. LastEquipmentSlot is not authoritative until this boundary is reached.
+        /// </summary>
+        public bool IsWeaponSelectionSettledForAutomaticSecondaryRequest()
+        {
+            BotWeaponManager? weaponManager = botOwner?.WeaponManager;
+            BotWeaponSelector? selector = weaponManager?.Selector;
+            return selector != null &&
+                   !selector.IsChanging &&
+                   selector.IsWeaponReady &&
+                   weaponManager != null &&
+                   weaponManager.IsWeaponReady;
+        }
+
+        /// <summary>
+        /// Issues one switch to the eligible automatic second primary used by an automatic-secondary
+        /// suppression order. This returns true only for a request accepted at a settled selector
+        /// boundary; callers own and wait on that one asynchronous request.
+        /// </summary>
+        public bool TryRequestEligibleAutomaticSecondary()
+        {
+            BotWeaponSelector? selector = botOwner?.WeaponManager?.Selector;
+            Weapon? firstPrimary = GetFirstPrimaryWeapon(botOwner);
+            Weapon? secondPrimary = GetSecondPrimaryWeapon(botOwner);
+            if (selector == null ||
+                !IsWeaponSelectionSettledForAutomaticSecondaryRequest() ||
+                !IsAutomaticSecondaryUsableForPush(firstPrimary, secondPrimary))
+            {
+                return false;
+            }
+
+            if (selector.LastEquipmentSlot == EquipmentSlot.SecondPrimaryWeapon)
+            {
+                return false;
+            }
+
+            if (!selector.CanChangeToSecondWeapons)
+            {
+                return false;
+            }
+
+            return selector.ChangeToSecond();
+        }
+
+        private bool TryGetSelectedLoadedAutomaticPrimary(out Weapon? weapon)
+        {
+            weapon = null;
+            BotWeaponSelector? selector = botOwner?.WeaponManager?.Selector;
+            if (selector == null)
+            {
+                return false;
+            }
+
+            if (selector.LastEquipmentSlot == EquipmentSlot.FirstPrimaryWeapon)
+            {
+                weapon = GetFirstPrimaryWeapon(botOwner);
+                return IsAutomaticWeapon(weapon) && CountLoadedRounds(weapon) > 0;
+            }
+
+            if (selector.LastEquipmentSlot != EquipmentSlot.SecondPrimaryWeapon)
+            {
+                return false;
+            }
+
+            Weapon? firstPrimary = GetFirstPrimaryWeapon(botOwner);
+            Weapon? secondPrimary = GetSecondPrimaryWeapon(botOwner);
+            if (!IsAutomaticSecondaryUsableForPush(firstPrimary, secondPrimary))
+            {
+                return false;
+            }
+
+            weapon = secondPrimary;
+            return true;
         }
 
         /// <summary>
@@ -15105,6 +15386,13 @@ namespace pitTeam.BigBrain
                    reason.StartsWith("recovery.noCoverSuppress", StringComparison.Ordinal);
         }
 
+        public static bool IsRecoveryNoCoverReason(string? reason)
+        {
+            return string.Equals(reason, RecoveryNoCoverFightReason, StringComparison.Ordinal) ||
+                   IsRecoverySuppressReason(reason) ||
+                   string.Equals(reason, RecoveryNoCoverThreatHoldReason, StringComparison.Ordinal);
+        }
+
         public static bool IsGrenadeLauncherSuppressReason(string? reason)
         {
             return IsFollowerSuppressReason(reason) &&
@@ -16139,6 +16427,7 @@ namespace pitTeam.BigBrain
                    string.Equals(reason, "escortNoSafeCover", StringComparison.Ordinal) ||
                    string.Equals(reason, "bossHoldOpen", StringComparison.Ordinal) ||
                    string.Equals(reason, "reloadNoCover", StringComparison.Ordinal) ||
+                   string.Equals(reason, RecoveryNoCoverThreatHoldReason, StringComparison.Ordinal) ||
                    FollowerCombatPush.IsNoPushHoldReason(reason) ||
                    reason.StartsWith("committedPositionHold", StringComparison.Ordinal) ||
                    reason.StartsWith("committedCoverHold", StringComparison.Ordinal) ||
@@ -16224,6 +16513,185 @@ namespace pitTeam.BigBrain
             }
 
             return Continue();
+        }
+
+        public bool TryGetCommittedRecoveryDecision(
+            EnemyInfo goalEnemy,
+            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision,
+            bool ignoreCommittedPosition = false)
+        {
+            decision = default;
+            if (!ignoreCommittedPosition && HasCommittedPosition(out decision))
+            {
+                return true;
+            }
+
+            bool reachedCommittedCover = HasCommittedCover() && IsBotInCommittedCover();
+
+            if (!TryCommitCombatCover(
+                    goalEnemy,
+                    requireShootLane: goalEnemy.IsVisible && goalEnemy.CanShoot,
+                    CombatDistanceConfiguration.Instance.GetBossCoverSearchRadius(),
+                    out _,
+                    recoveryManeuver: true))
+            {
+                return false;
+            }
+
+            // Proximity alone cannot promote an old firing position into recovery hold. The cover
+            // must first survive the same recovery validation/requalification used for a fresh
+            // candidate; a rejected old commitment is replaced above before this arrival check.
+            if (reachedCommittedCover && IsBotInCommittedCover())
+            {
+                ArmCommittedRecoveryArrivalHold(CommittedCoverReason ?? "retreatSafeCover");
+                return HasCommittedPosition(out decision);
+            }
+
+            decision = CreateCommittedCoverMoveDecision();
+            return true;
+        }
+
+        public AICoreActionResultStruct<BotLogicDecision, GClass26> CreateNoCoverRecoveryDecision(
+            EnemyInfo goalEnemy)
+        {
+            if (goalEnemy.IsVisible && goalEnemy.CanShoot)
+            {
+                return new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                    BotLogicDecision.shootFromPlace,
+                    RecoveryNoCoverFightReason);
+            }
+
+            if (TryCreateSuppressDecision(
+                    goalEnemy,
+                    RecoveryNoCoverSuppressReason,
+                    out AICoreActionResultStruct<BotLogicDecision, GClass26> suppressDecision,
+                    allowObstructedSuppression: true))
+            {
+                return suppressDecision;
+            }
+
+            return new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                BotLogicDecision.holdPosition,
+                RecoveryNoCoverThreatHoldReason);
+        }
+
+        public void UpdateRecoveryNoCoverCommitment(
+            AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision)
+        {
+            if (IsRecoveryNoCoverReason(nextDecision.Reason))
+            {
+                if (string.Equals(activeRecoveryNoCoverReason, nextDecision.Reason, StringComparison.Ordinal) &&
+                    recoveryNoCoverUntil > Time.time)
+                {
+                    return;
+                }
+
+                activeRecoveryNoCoverReason = nextDecision.Reason;
+                recoveryNoCoverUntil = Time.time + RecoveryNoCoverCommitSeconds;
+                recoveryNoCoverEnemyProfileId = botOwner.Memory?.GoalEnemy?.ProfileId ?? string.Empty;
+                recoveryNoCoverDamageRevision = FollowerAwareness.GetDamageRevision(botOwner);
+                BattleRecorder.RecordCommitmentEvent(
+                    botOwner,
+                    "recovery",
+                    "beginNoCover",
+                    nextDecision.Reason,
+                    nextDecision,
+                    untilTime: recoveryNoCoverUntil);
+                return;
+            }
+
+            if (activeRecoveryNoCoverReason == null)
+            {
+                return;
+            }
+
+            BattleRecorder.RecordCommitmentEvent(
+                botOwner,
+                "recovery",
+                "clearNoCover",
+                activeRecoveryNoCoverReason);
+            ClearRecoveryNoCoverCommitment();
+        }
+
+        public AICoreActionEndStruct EndRecoveryNoCoverThreatHold()
+        {
+            EnemyInfo? goalEnemy = botOwner.Memory.GoalEnemy;
+            if (!HasActiveCombatEnemy(goalEnemy))
+            {
+                return new AICoreActionEndStruct("recoveryEnemyMissingOrDead", true);
+            }
+
+            if (string.Equals(
+                    activeRecoveryNoCoverReason,
+                    RecoveryNoCoverThreatHoldReason,
+                    StringComparison.Ordinal))
+            {
+                string currentEnemyProfileId = goalEnemy!.ProfileId ?? string.Empty;
+                if (!string.Equals(
+                        currentEnemyProfileId,
+                        recoveryNoCoverEnemyProfileId,
+                        StringComparison.Ordinal))
+                {
+                    return InterruptRecoveryNoCoverCommitment("recoveryThreatChanged");
+                }
+
+                if (FollowerAwareness.GetDamageRevision(botOwner) != recoveryNoCoverDamageRevision)
+                {
+                    return InterruptRecoveryNoCoverCommitment("recoveryFreshDamage");
+                }
+            }
+
+            if (IsDogFightActive() ||
+                (goalEnemy!.IsVisible &&
+                 (goalEnemy.CanShoot || goalEnemy.Distance <= RecoveryNoCoverPointBlankBreakDistance)))
+            {
+                return new AICoreActionEndStruct("recoveryFightAvailable", true);
+            }
+
+            return Time.time >= recoveryNoCoverUntil
+                ? new AICoreActionEndStruct("recoveryCoverRetry", true)
+                : Continue();
+        }
+
+        public AICoreActionEndStruct EndRecoveryNoCoverSuppress(string reason)
+        {
+            AICoreActionEndStruct result = EndSuppressFire(reason);
+            if (result.Value &&
+                (string.Equals(result.Reason, "enemyMissingOrDead", StringComparison.Ordinal) ||
+                 string.Equals(result.Reason, "shootImmediately", StringComparison.Ordinal) ||
+                 string.Equals(result.Reason, "dogFightStarted", StringComparison.Ordinal) ||
+                 string.Equals(result.Reason, "pointBlankNonFoliageContact", StringComparison.Ordinal)))
+            {
+                return result;
+            }
+
+            return Time.time >= recoveryNoCoverUntil
+                ? new AICoreActionEndStruct("recoveryCoverRetry", true)
+                : Continue();
+        }
+
+        private AICoreActionEndStruct InterruptRecoveryNoCoverCommitment(string reason)
+        {
+            BattleRecorder.RecordCommitmentEvent(
+                botOwner,
+                "recovery",
+                "interruptNoCover",
+                reason);
+            ClearRecoveryNoCoverCommitment();
+            return new AICoreActionEndStruct(reason, true);
+        }
+
+        private void ClearRecoveryNoCoverCommitment()
+        {
+            activeRecoveryNoCoverReason = null;
+            recoveryNoCoverUntil = 0f;
+            recoveryNoCoverEnemyProfileId = string.Empty;
+            recoveryNoCoverDamageRevision = 0;
+        }
+
+        public void ResetRecoveryNoCoverCommitment()
+        {
+            ClearRecoveryNoCoverCommitment();
         }
 
         public bool HasRecoveryPressure(float recentHitSeconds = 1f)

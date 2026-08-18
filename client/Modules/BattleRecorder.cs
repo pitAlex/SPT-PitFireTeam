@@ -133,7 +133,7 @@ namespace pitTeam.Modules
                     raidId = currentRaidId,
                     locationId = currentLocationId,
                     file = currentFilePath,
-                    schemaVersion = 5,
+                    schemaVersion = 6,
                     snapshotIntervalMs = GetSnapshotIntervalMs(),
                     followerWeaponActivityProbeMs = Mathf.RoundToInt(FollowerWeaponActivityProbeSeconds * 1000f),
                     sainOpponentDecisionProbeMs = Mathf.RoundToInt(SainOpponentDecisionProbeSeconds * 1000f),
@@ -1732,9 +1732,68 @@ namespace pitTeam.Modules
                 aimingDistance = currentAiming != null
                     ? SanitizeFloat(currentAiming.LastDist2Target)
                     : null,
+                aimPlan = CreateAimPlanSnapshot(currentAiming),
                 reloading = weaponManager?.Reload?.Reloading == true,
                 weaponReady = weaponManager?.IsWeaponReady == true,
                 haveBullets = weaponManager?.HaveBullets == true
+            };
+        }
+
+        private static object? CreateAimPlanSnapshot(IBotAiming? currentAiming)
+        {
+            if (currentAiming is BotAimingClass standardAim)
+            {
+                return CreateAimPlanPayload(
+                    nameof(BotAimingClass),
+                    standardAim.Status,
+                    standardAim.IsReady,
+                    standardAim.Float_5,
+                    standardAim.Float_7,
+                    standardAim.LastAimTime);
+            }
+
+            if (currentAiming is GClass605 underbarrelAim)
+            {
+                return CreateAimPlanPayload(
+                    nameof(GClass605),
+                    underbarrelAim.Status,
+                    underbarrelAim.IsReady,
+                    underbarrelAim.Float_5,
+                    underbarrelAim.Float_7,
+                    underbarrelAim.LastAimTime);
+            }
+
+            return currentAiming != null
+                ? new
+                {
+                    controller = currentAiming.GetType().Name,
+                    ready = currentAiming.IsReady
+                }
+                : null;
+        }
+
+        private static object CreateAimPlanPayload(
+            string controller,
+            AimStatus status,
+            bool ready,
+            float elapsed,
+            float plannedDuration,
+            float baseDuration)
+        {
+            float safeElapsed = Mathf.Max(0f, elapsed);
+            float safePlannedDuration = Mathf.Max(0f, plannedDuration);
+            return new
+            {
+                controller,
+                status = status.ToString(),
+                ready,
+                elapsed = SanitizeFloat(safeElapsed),
+                plannedDuration = SanitizeFloat(safePlannedDuration),
+                baseDuration = SanitizeFloat(Mathf.Max(0f, baseDuration)),
+                remaining = SanitizeFloat(Mathf.Max(0f, safePlannedDuration - safeElapsed)),
+                progress = safePlannedDuration > 0.0001f
+                    ? SanitizeFloat(Mathf.Clamp01(safeElapsed / safePlannedDuration))
+                    : null
             };
         }
 

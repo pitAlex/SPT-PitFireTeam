@@ -13,11 +13,6 @@ namespace pitTeam.BigBrain
         private const float RecentSeenPressureSeconds = 2f;
         private const string BossHoldReason = "bossHold";
         private const string BossHoldOpenReason = "bossHoldOpen";
-        private const string RecoveryNoCoverFightReason = "recovery.noCoverFight";
-        private const string RecoveryNoCoverSuppressReason = "recovery.noCoverSuppress";
-        private const string RecoveryNoCoverThreatHoldReason = "recovery.noCoverThreatHold";
-        private const float RecoveryNoCoverCommitSeconds = 2.5f;
-        private const float RecoveryNoCoverPointBlankBreakDistance = 5f;
         private const float PushSearchHoldSeconds = 1.25f;
         private const float ShootCoverSettleSeconds = 2.5f;
         private const float CommittedHolderEngagementBreakSettleSeconds = 1f;
@@ -83,10 +78,6 @@ namespace pitTeam.BigBrain
         private bool shotgunAutomaticSecondaryLatched;
         private bool shotgunAutomaticSecondaryDisabledForFight;
         private bool ownsAutomaticSecondarySwitch;
-        private string? activeRecoveryNoCoverReason;
-        private float recoveryNoCoverUntil;
-        private string recoveryNoCoverEnemyProfileId = string.Empty;
-        private int recoveryNoCoverDamageRevision;
         private string exposedFireEnemyProfileId = string.Empty;
         private string exposedFireDecisionReason = string.Empty;
         private float exposedFireStartedAt;
@@ -147,10 +138,7 @@ namespace pitTeam.BigBrain
             preparedAdvanceDecision = null;
             preparedHoldPositionSupportDecision = null;
             holdReactionDamageRevision = FollowerAwareness.GetDamageRevision(botOwner);
-            activeRecoveryNoCoverReason = null;
-            recoveryNoCoverUntil = 0f;
-            recoveryNoCoverEnemyProfileId = string.Empty;
-            recoveryNoCoverDamageRevision = 0;
+            combatCommon.ResetRecoveryNoCoverCommitment();
             ResetExposedFireLease();
             if (!combatCommon.HasActiveCombatEnemy())
             {
@@ -178,7 +166,7 @@ namespace pitTeam.BigBrain
             combatCommon.HandleFollowerSuppressDecisionChanged(nextDecision);
             UpdateShootCoverSettleState(nextDecision);
             combatPush.HandleDecisionChanged(nextDecision);
-            UpdateRecoveryNoCoverCommitment(nextDecision);
+            combatCommon.UpdateRecoveryNoCoverCommitment(nextDecision);
             UpdateExposedFireLease(nextDecision);
 
             if (nextDecision.Action == BotLogicDecision.holdPosition &&
@@ -1137,8 +1125,8 @@ namespace pitTeam.BigBrain
                 case BotLogicDecision.shootFromCover:
                     return EndShootFromCover(currentDecision.Reason);
                 case BotLogicDecision.suppressFire:
-                    return IsRecoveryNoCoverReason(currentDecision.Reason)
-                        ? EndRecoveryNoCoverSuppress(currentDecision.Reason)
+                    return FollowerCombatCommon.IsRecoveryNoCoverReason(currentDecision.Reason)
+                        ? combatCommon.EndRecoveryNoCoverSuppress(currentDecision.Reason)
                         : combatCommon.EndSuppressFire(currentDecision.Reason);
                 default:
                     return combatCommon.ShallEndCurrentDecision(currentDecision);
@@ -1461,58 +1449,14 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            // Arrival holds are allowed to stabilize after reaching cover unless the holder's own
-            // break rules clear it for real pressure. Without this, recovery can re-emit runToCover
-            // on the same arrived point for several frames.
-            if (combatCommon.HasCommittedPosition(out decision))
+            if (combatCommon.TryGetCommittedRecoveryDecision(goalEnemy, out decision))
             {
                 return true;
             }
 
-            if (combatCommon.HasCommittedCover() && combatCommon.IsBotInCommittedCover())
-            {
-                combatCommon.ArmCommittedRecoveryArrivalHold(
-                    combatCommon.CommittedCoverReason ?? "retreatSafeCover");
-                return combatCommon.HasCommittedPosition(out decision);
-            }
-
-            // First try to convert recovery into an actual committed cover move rather than a one-frame panic.
-            if (TryCommitCombatCover(
-                    goalEnemy,
-                    requireShootLane: goalEnemy.IsVisible && goalEnemy.CanShoot,
-                    out _,
-                    recoveryManeuver: true))
-            {
-                // TryCommitCombatCover already stored the recovery-qualified reason and movement
-                // action. Reapplying its pre-qualified out reason here strips the recovery tag,
-                // so the arrival hold cannot recognize and absorb the same incoming pressure.
-                decision = combatCommon.CreateCommittedCoverMoveDecision();
-                return true;
-            }
-
-            // With no credible cover, keep facing and fighting the threat. This is deliberately a
-            // committed fallback rather than a one-frame hold: recovery will retry cover after a short
-            // interval without turning under-fire/no-cover into an end-and-reselect loop.
-            if (goalEnemy.IsVisible && goalEnemy.CanShoot)
-            {
-                decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
-                    BotLogicDecision.shootFromPlace,
-                    RecoveryNoCoverFightReason);
-                return true;
-            }
-
-            if (combatCommon.TryCreateSuppressDecision(
-                    goalEnemy,
-                    RecoveryNoCoverSuppressReason,
-                    out decision,
-                    allowObstructedSuppression: true))
-            {
-                return true;
-            }
-
-            decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
-                BotLogicDecision.holdPosition,
-                RecoveryNoCoverThreatHoldReason);
+            // With no credible cover, keep facing and fighting the threat. Common owns the bounded
+            // commitment so every tactic retries recovery without an end-and-reselect loop.
+            decision = combatCommon.CreateNoCoverRecoveryDecision(goalEnemy);
             return true;
         }
 
@@ -1554,130 +1498,6 @@ namespace pitTeam.BigBrain
             }
 
             return false;
-        }
-
-        private void UpdateRecoveryNoCoverCommitment(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision)
-        {
-            if (IsRecoveryNoCoverReason(nextDecision.Reason))
-            {
-                if (string.Equals(activeRecoveryNoCoverReason, nextDecision.Reason, StringComparison.Ordinal) &&
-                    recoveryNoCoverUntil > Time.time)
-                {
-                    return;
-                }
-
-                activeRecoveryNoCoverReason = nextDecision.Reason;
-                recoveryNoCoverUntil = Time.time + RecoveryNoCoverCommitSeconds;
-                recoveryNoCoverEnemyProfileId = botOwner.Memory?.GoalEnemy?.ProfileId ?? string.Empty;
-                recoveryNoCoverDamageRevision = FollowerAwareness.GetDamageRevision(botOwner);
-                BattleRecorder.RecordCommitmentEvent(
-                    botOwner,
-                    "recovery",
-                    "beginNoCover",
-                    nextDecision.Reason,
-                    nextDecision,
-                    untilTime: recoveryNoCoverUntil);
-                return;
-            }
-
-            if (activeRecoveryNoCoverReason == null)
-            {
-                return;
-            }
-
-            BattleRecorder.RecordCommitmentEvent(
-                botOwner,
-                "recovery",
-                "clearNoCover",
-                activeRecoveryNoCoverReason);
-            activeRecoveryNoCoverReason = null;
-            recoveryNoCoverUntil = 0f;
-            recoveryNoCoverEnemyProfileId = string.Empty;
-            recoveryNoCoverDamageRevision = 0;
-        }
-
-        private AICoreActionEndStruct EndRecoveryNoCoverThreatHold()
-        {
-            EnemyInfo? goalEnemy = botOwner.Memory.GoalEnemy;
-            if (!combatCommon.HasActiveCombatEnemy(goalEnemy))
-            {
-                return new AICoreActionEndStruct("recoveryEnemyMissingOrDead", true);
-            }
-
-            // Keep the original anti-churn commitment for unchanged pressure. Only evidence that
-            // arrived after this hold began may interrupt it for one fresh cover/fight selection.
-            if (string.Equals(
-                    activeRecoveryNoCoverReason,
-                    RecoveryNoCoverThreatHoldReason,
-                    StringComparison.Ordinal))
-            {
-                string currentEnemyProfileId = goalEnemy!.ProfileId ?? string.Empty;
-                if (!string.Equals(
-                        currentEnemyProfileId,
-                        recoveryNoCoverEnemyProfileId,
-                        StringComparison.Ordinal))
-                {
-                    return InterruptRecoveryNoCoverCommitment("recoveryThreatChanged");
-                }
-
-                if (FollowerAwareness.GetDamageRevision(botOwner) != recoveryNoCoverDamageRevision)
-                {
-                    return InterruptRecoveryNoCoverCommitment("recoveryFreshDamage");
-                }
-            }
-
-            if (combatCommon.IsDogFightActive() ||
-                (goalEnemy!.IsVisible &&
-                 (goalEnemy.CanShoot || goalEnemy.Distance <= RecoveryNoCoverPointBlankBreakDistance)))
-            {
-                return new AICoreActionEndStruct("recoveryFightAvailable", true);
-            }
-
-            return Time.time >= recoveryNoCoverUntil
-                ? new AICoreActionEndStruct("recoveryCoverRetry", true)
-                : FollowerCombatCommon.Continue();
-        }
-
-        private AICoreActionEndStruct InterruptRecoveryNoCoverCommitment(string reason)
-        {
-            BattleRecorder.RecordCommitmentEvent(
-                botOwner,
-                "recovery",
-                "interruptNoCover",
-                reason);
-            activeRecoveryNoCoverReason = null;
-            recoveryNoCoverUntil = 0f;
-            recoveryNoCoverEnemyProfileId = string.Empty;
-            recoveryNoCoverDamageRevision = 0;
-            return new AICoreActionEndStruct(reason, true);
-        }
-
-        private AICoreActionEndStruct EndRecoveryNoCoverSuppress(string reason)
-        {
-            AICoreActionEndStruct result = combatCommon.EndSuppressFire(reason);
-            if (result.Value &&
-                (string.Equals(result.Reason, "enemyMissingOrDead", StringComparison.Ordinal) ||
-                 string.Equals(result.Reason, "shootImmediately", StringComparison.Ordinal) ||
-                 string.Equals(result.Reason, "dogFightStarted", StringComparison.Ordinal)))
-            {
-                return result;
-            }
-
-            if (Time.time >= recoveryNoCoverUntil)
-            {
-                return new AICoreActionEndStruct("recoveryCoverRetry", true);
-            }
-
-            return FollowerCombatCommon.Continue();
-        }
-
-        internal static bool IsRecoveryNoCoverReason(string? reason)
-        {
-            return string.Equals(reason, RecoveryNoCoverFightReason, StringComparison.Ordinal) ||
-                   string.Equals(reason, RecoveryNoCoverSuppressReason, StringComparison.Ordinal) ||
-                   (reason?.StartsWith(RecoveryNoCoverSuppressReason, StringComparison.Ordinal) == true) ||
-                   string.Equals(reason, RecoveryNoCoverThreatHoldReason, StringComparison.Ordinal);
         }
 
         /// <summary>
@@ -2095,9 +1915,9 @@ namespace pitTeam.BigBrain
         {
             combatCommon.ValidateCommittedCover();
 
-            if (string.Equals(reason, RecoveryNoCoverThreatHoldReason, StringComparison.Ordinal))
+            if (string.Equals(reason, FollowerCombatCommon.RecoveryNoCoverThreatHoldReason, StringComparison.Ordinal))
             {
-                return EndRecoveryNoCoverThreatHold();
+                return combatCommon.EndRecoveryNoCoverThreatHold();
             }
 
             if (combatCommon.IsCommittedHolderReason(reason))
@@ -2396,7 +2216,7 @@ namespace pitTeam.BigBrain
             {
                 fightDecision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
                     BotLogicDecision.shootFromPlace,
-                    RecoveryNoCoverFightReason);
+                    FollowerCombatCommon.RecoveryNoCoverFightReason);
             }
 
             preparedCloseCoverFightDecision = fightDecision;
@@ -2440,7 +2260,7 @@ namespace pitTeam.BigBrain
             out AICoreActionEndStruct end)
         {
             end = FollowerCombatCommon.Continue();
-            if (IsRecoveryNoCoverReason(currentDecision.Reason) ||
+            if (FollowerCombatCommon.IsRecoveryNoCoverReason(currentDecision.Reason) ||
                 FollowerCombatCommon.IsGrenadeLauncherCombatReason(currentDecision.Reason))
             {
                 return false;

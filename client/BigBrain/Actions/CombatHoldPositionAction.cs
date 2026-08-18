@@ -35,7 +35,7 @@ namespace pitTeam.BigBrain.Actions
         public override void Update(CustomLayer.ActionData data)
         {
             string? reason = GetReason(data) ?? BotOwner.Brain?.Agent?.LastResult().Reason;
-            bool recoveryNoCover = FollowerCombatDefault.IsRecoveryNoCoverReason(reason);
+            bool recoveryNoCover = FollowerCombatCommon.IsRecoveryNoCoverReason(reason);
             if (recoveryNoCover)
             {
                 BotOwner.SetPose(1f);
