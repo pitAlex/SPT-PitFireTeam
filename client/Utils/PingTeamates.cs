@@ -824,15 +824,18 @@ namespace pitTeam.Utils
                 return;
             }
 
+            float now = Time.time;
             List<Components.BotFollowerPlayer> followers =
                 BossPlayers.GetFollowersByBoss(localPlayer.ProfileId);
-            bool wasTrackedEnemy =
+            bool wasTrackedLiveEnemy =
                 instance.enemyMarkersByProfileId.TryGetValue(
                     victim.ProfileId,
                     out EnemyMarkerContact trackedContact) &&
-                trackedContact.UntilTime > Time.time;
+                trackedContact.UntilTime > now &&
+                !trackedContact.IsDead &&
+                !trackedContact.IsRetainedDeath;
             if (!WasKilledByPlayerSquad(aggressor.ProfileId, localPlayer.ProfileId, followers) ||
-                (!wasTrackedEnemy && !IsCurrentEnemyOfAnyFollower(victim.ProfileId, followers)))
+                (!wasTrackedLiveEnemy && !IsCurrentEnemyOfAnyFollower(victim.ProfileId, followers)))
             {
                 return;
             }
@@ -855,12 +858,20 @@ namespace pitTeam.Utils
             }
 
             instance.retainedEnemyDownByProfileId[victim.ProfileId] =
-                new RetainedEnemyDownContact(deathPosition, Time.time);
+                new RetainedEnemyDownContact(deathPosition, now);
 
             // Promote the currently displayed contact immediately. Otherwise the follower can
             // clear GoalEnemy before Update(), causing synchronization to remove the marker until
             // the player requests another Status Report.
-            if (instance.IsEnemyKilledMarkerDisplayActive(Time.time))
+            if (wasTrackedLiveEnemy)
+            {
+                int displayTimeSeconds = pitFireTeam.enemyKilledDisplayTime?.Value ?? 10;
+                instance._enemyKilledMarkerUntil = Mathf.Max(
+                    instance._enemyKilledMarkerUntil,
+                    now + displayTimeSeconds);
+            }
+
+            if (instance.IsEnemyKilledMarkerDisplayActive(now))
             {
                 instance.AddRetainedEnemyDownContacts();
             }
