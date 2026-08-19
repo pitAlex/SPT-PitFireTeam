@@ -528,20 +528,30 @@ public class FriendlyTeammateService(
         {
             try
             {
-                if (crossedRealisticBoundary && RemoveSecureContainerTree(teammate))
-                {
-                    SaveDefaultEquipmentSnapshot(sessionId, teammate, overwrite: true, includeSecureContainer: true);
-                    SaveTeammate(sessionId, teammate);
-                    logger.Info($"Removed secure container from teammate '{teammate.Aid}' default loadout after Realistic boundary switch.");
-                }
+                bool teammateChanged = false;
 
                 if (shouldSelectDefault)
                 {
+                    RestoreDefaultEquipment(sessionId, teammate);
+
                     var settings = GetTeammateSettings(sessionId, teammate);
                     settings.SelectedLoadoutId = DefaultLoadoutId;
 
                     SaveTeammateSettings(sessionId, teammate, settings);
-                    logger.Info($"Selected existing Default loadout for teammate '{teammate.Aid}' after leaving Simple loadout management.");
+                    teammateChanged = true;
+                    logger.Info($"Restored and selected existing Default loadout for teammate '{teammate.Aid}' after leaving Simple loadout management.");
+                }
+
+                if (crossedRealisticBoundary && RemoveSecureContainerTree(teammate))
+                {
+                    SaveDefaultEquipmentSnapshot(sessionId, teammate, overwrite: true, includeSecureContainer: true);
+                    teammateChanged = true;
+                    logger.Info($"Removed secure container from teammate '{teammate.Aid}' default loadout after Realistic boundary switch.");
+                }
+
+                if (teammateChanged)
+                {
+                    SaveTeammate(sessionId, teammate);
                 }
             }
             catch (Exception ex)
