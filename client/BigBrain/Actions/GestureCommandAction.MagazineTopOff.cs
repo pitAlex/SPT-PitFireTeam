@@ -66,6 +66,7 @@ namespace pitTeam.BigBrain.Actions
             // at a time, then let the normal planner rebuild from the new live magazine counts.
             if (TryBuildMagazineDonorTopOffStagingMove(
                     inventory,
+                    followerEquipment,
                     sourceRoot,
                     weapon,
                     targets,
@@ -133,11 +134,12 @@ namespace pitTeam.BigBrain.Actions
                     transferCount);
                 if (target.IsInsertedMagazine)
                 {
-                    if (TryBuildInsertedMagazineTopOffChain(
-                            inventory,
-                            sourceRoot,
-                            weapon,
-                            target.Magazine,
+                        if (TryBuildInsertedMagazineTopOffChain(
+                                inventory,
+                                followerEquipment,
+                                sourceRoot,
+                                weapon,
+                                target.Magazine,
                             topOffCandidate,
                             out move,
                             out string insertedReason))
@@ -324,6 +326,7 @@ namespace pitTeam.BigBrain.Actions
 
         private bool TryBuildInsertedMagazineTopOffChain(
             InventoryController inventory,
+            InventoryEquipment followerEquipment,
             Item sourceRoot,
             Weapon weapon,
             MagazineItemClass magazine,
@@ -333,7 +336,11 @@ namespace pitTeam.BigBrain.Actions
         {
             move = null;
             reason = "stagingSpaceUnavailable";
-            if (!TryFindSourceMagazineStagingAddress(sourceRoot, magazine, out ItemAddress? stagingAddress))
+            if (!TryFindMagazineTopOffStagingAddress(
+                    followerEquipment,
+                    sourceRoot,
+                    magazine,
+                    out ItemAddress? stagingAddress))
             {
                 return false;
             }
@@ -380,6 +387,29 @@ namespace pitTeam.BigBrain.Actions
                 $"weapon={DescribeLootDebugItem(weapon)} target={DescribeLootDebugItem(magazine)} " +
                 $"stage=detach destination={DescribeLootAddress(stagingAddress)}");
             return true;
+        }
+
+        private static bool IsInsertedMagazineTopOffDetachMove(BodyGearMove move)
+        {
+            return move?.IsStagingOperation == true &&
+                   move.StagingMagazine != null &&
+                   move.SourceName?.EndsWith(".MagazineTopOffDetach", StringComparison.Ordinal) == true;
+        }
+
+        private static bool DidInsertedMagazineTopOffDetachSettle(BodyGearMove move)
+        {
+            return IsInsertedMagazineTopOffDetachMove(move) &&
+                   !IsMagazineInstalledInWeapon(move.StagingMagazine);
+        }
+
+        private static IEnumerable<Item> GetInsertedMagazineTopOffSupplyItems(BodyGearMove move)
+        {
+            return move?.FollowUpCandidates?
+                       .Where(candidate =>
+                           candidate?.FollowUpDestination == BodyGearFollowUpDestination.TopOffWeaponMagazine &&
+                           candidate.Item != null)
+                       .Select(candidate => candidate.Item) ??
+                   Enumerable.Empty<Item>();
         }
 
         private bool TryBuildMagazineTopOffMove(
@@ -528,13 +558,41 @@ namespace pitTeam.BigBrain.Actions
             return true;
         }
 
-        private static bool TryFindSourceMagazineStagingAddress(
+        private static bool TryFindMagazineTopOffStagingAddress(
+            InventoryEquipment followerEquipment,
             Item sourceRoot,
             MagazineItemClass magazine,
             out ItemAddress? address)
         {
             address = null;
-            if (sourceRoot == null || magazine == null)
+            if (magazine == null)
+            {
+                return false;
+            }
+
+            // The follower's reserved reload opening is the safest temporary home for an
+            // inserted magazine. World loot containers can report a successful reverse move
+            // without actually detaching the magazine, which would rebuild this plan forever.
+            if (TryFindDirectEquipmentContainerAddress(
+                    followerEquipment,
+                    EquipmentSlot.TacticalVest,
+                    magazine,
+                    out address) ||
+                TryFindDirectEquipmentContainerAddress(
+                    followerEquipment,
+                    EquipmentSlot.Pockets,
+                    magazine,
+                    out address) ||
+                TryFindDirectEquipmentContainerAddress(
+                    followerEquipment,
+                    EquipmentSlot.Backpack,
+                    magazine,
+                    out address))
+            {
+                return true;
+            }
+
+            if (sourceRoot == null || sourceRoot is LootContainerItemClass)
             {
                 return false;
             }

@@ -553,6 +553,7 @@ namespace pitTeam.BigBrain.Actions
             RegisterCommandedLooseMagazineForEquippedWeapon(rootItem);
 
             Weapon? primaryWeaponToBind = null;
+            EquipmentSlot? supportWeaponSlotToRegister = null;
 
             if (followerData?.IsSquadMate == true)
             {
@@ -569,9 +570,33 @@ namespace pitTeam.BigBrain.Actions
                 {
                     primaryWeaponToBind = weapon;
                 }
+                else
+                {
+                    Weapon slottedSecondary = BotOwner?.GetPlayer?.InventoryController?.Inventory?.Equipment
+                        ?.GetSlot(EquipmentSlot.SecondPrimaryWeapon)?.ContainedItem as Weapon;
+                    Weapon slottedHolster = BotOwner?.GetPlayer?.InventoryController?.Inventory?.Equipment
+                        ?.GetSlot(EquipmentSlot.Holster)?.ContainedItem as Weapon;
+                    if (IsSameLootItem(slottedSecondary, weapon))
+                    {
+                        supportWeaponSlotToRegister = EquipmentSlot.SecondPrimaryWeapon;
+                    }
+                    else if (IsSameLootItem(slottedHolster, weapon))
+                    {
+                        supportWeaponSlotToRegister = EquipmentSlot.Holster;
+                    }
+                }
             }
 
             ClearTakeLootState(reason);
+            if (supportWeaponSlotToRegister.HasValue && rootItem is Weapon supportWeapon)
+            {
+                FollowerLootedPrimaryWeaponBinding.RegisterSupport(
+                    BotOwner,
+                    supportWeapon,
+                    supportWeaponSlotToRegister.Value,
+                    "loosePickup");
+            }
+
             if (primaryWeaponToBind != null)
             {
                 QueueLoosePickupPrimaryWeaponBinding(primaryWeaponToBind);
@@ -625,7 +650,8 @@ namespace pitTeam.BigBrain.Actions
             foreach (EquipmentSlot candidateSlot in new[]
                      {
                          EquipmentSlot.FirstPrimaryWeapon,
-                         EquipmentSlot.SecondPrimaryWeapon
+                         EquipmentSlot.SecondPrimaryWeapon,
+                         EquipmentSlot.Holster
                      })
             {
                 Weapon candidateWeapon = equipment.GetSlot(candidateSlot)?.ContainedItem as Weapon;

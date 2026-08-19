@@ -491,14 +491,14 @@ namespace pitTeam.BigBrain.Actions
             // Keep the simulated order aligned with real moves. In particular, do not let a
             // capacity check accept secure storage when the rounds could have remained ready for
             // the active weapon in the vest.
-            if (TrySimulateContainerAdd(vest, ammo, out SearchableItemItemClass? nextVest) &&
+            if (TrySimulateFastAccessContainerAdd(vest, ammo, out SearchableItemItemClass? nextVest) &&
                 CanFitVestReloadReserves(nextVest, vestReloadReserves))
             {
                 vest = nextVest;
                 return true;
             }
 
-            if (TrySimulateContainerAdd(pockets, ammo, out SearchableItemItemClass? nextPockets))
+            if (TrySimulateFastAccessContainerAdd(pockets, ammo, out SearchableItemItemClass? nextPockets))
             {
                 pockets = nextPockets;
                 return true;

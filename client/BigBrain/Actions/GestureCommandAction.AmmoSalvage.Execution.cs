@@ -223,7 +223,7 @@ namespace pitTeam.BigBrain.Actions
             AmmoItemClass ammo)
         {
             SearchableItemItemClass vest = CloneEquipmentContainer(equipment, EquipmentSlot.TacticalVest);
-            if (!TrySimulateContainerAdd(vest, ammo, out SearchableItemItemClass? nextVest))
+            if (!TrySimulateFastAccessContainerAdd(vest, ammo, out SearchableItemItemClass? nextVest))
             {
                 return false;
             }
@@ -290,7 +290,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            foreach (StashGridClass grid in container.Grids)
+            foreach (StashGridClass grid in OrderFastAccessGridsByBestFit(container.Grids, item))
             {
                 if (grid != null &&
                     grid.TryFindLocationForItem(item, out ItemAddress candidateAddress) &&

@@ -230,7 +230,7 @@ namespace pitTeam.BigBrain.Actions
             destination = BodyGearFollowUpDestination.Default;
             // Unloaded rounds use the same carry policy as loose source ammo: preserve the
             // largest reload-safe vest space first, then fall back through slower storage.
-            if (TrySimulateContainerAdd(vest, ammoStack, out SearchableItemItemClass? nextVest) &&
+            if (TrySimulateFastAccessContainerAdd(vest, ammoStack, out SearchableItemItemClass? nextVest) &&
                 CanFitVestReloadReserves(nextVest, vestReloadReserves))
             {
                 vest = nextVest;
@@ -238,7 +238,7 @@ namespace pitTeam.BigBrain.Actions
                 return true;
             }
 
-            if (TrySimulateContainerAdd(pockets, ammoStack, out SearchableItemItemClass? nextPockets))
+            if (TrySimulateFastAccessContainerAdd(pockets, ammoStack, out SearchableItemItemClass? nextPockets))
             {
                 pockets = nextPockets;
                 destination = BodyGearFollowUpDestination.SalvagedAmmoPockets;
@@ -385,7 +385,7 @@ namespace pitTeam.BigBrain.Actions
             SearchableItemItemClass currentVest = vest;
             foreach (MagazineItemClass reserve in reserves)
             {
-                if (!TrySimulateContainerAdd(
+                if (!TrySimulateFastAccessContainerAdd(
                         currentVest,
                         reserve,
                         out SearchableItemItemClass? nextVest))

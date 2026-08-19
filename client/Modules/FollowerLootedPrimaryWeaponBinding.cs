@@ -282,7 +282,11 @@ namespace pitTeam.Modules
             RebindAndSelect(bot, weapon, context);
         }
 
-        internal static void RegisterSupport(BotOwner bot, Weapon weapon, string context)
+        internal static void RegisterSupport(
+            BotOwner bot,
+            Weapon weapon,
+            EquipmentSlot supportSlot,
+            string context)
         {
             try
             {
@@ -305,6 +309,7 @@ namespace pitTeam.Modules
                         weaponManager,
                         selector,
                         weapon,
+                        supportSlot,
                         context,
                         out string reason))
                 {
@@ -380,6 +385,7 @@ namespace pitTeam.Modules
                     weaponManager,
                     selector,
                     null,
+                    null,
                     context,
                     out _);
 
@@ -406,14 +412,32 @@ namespace pitTeam.Modules
             BotWeaponManager weaponManager,
             BotWeaponSelector selector,
             Weapon expectedSupportWeapon,
+            EquipmentSlot? expectedSupportSlot,
             string context,
             out string reason)
         {
             reason = string.Empty;
             Weapon primaryWeapon = bot.GetPlayer?.InventoryController?.Inventory?.Equipment
                 ?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem as Weapon;
+            EquipmentSlot supportSlot = expectedSupportSlot ?? selector.SupportWeapon;
+            if (supportSlot != EquipmentSlot.SecondPrimaryWeapon &&
+                supportSlot != EquipmentSlot.Holster)
+            {
+                reason = "supportSlotInvalid";
+                return false;
+            }
+
+            // SupportWeapon is vanilla's singular preferred fallback. When both support slots
+            // are populated it normally remains SecondPrimaryWeapon, but the explicitly supplied
+            // holster slot still needs its own reload/weapon record.
+            if (!expectedSupportSlot.HasValue && selector.SupportWeapon != supportSlot)
+            {
+                reason = "selectorSupportRoleMismatch";
+                return false;
+            }
+
             Weapon supportWeapon = bot.GetPlayer?.InventoryController?.Inventory?.Equipment
-                ?.GetSlot(EquipmentSlot.SecondPrimaryWeapon)?.ContainedItem as Weapon;
+                ?.GetSlot(supportSlot)?.ContainedItem as Weapon;
             if (primaryWeapon == null)
             {
                 reason = "primaryMissing";
@@ -422,13 +446,13 @@ namespace pitTeam.Modules
 
             if (supportWeapon == null)
             {
-                reason = "secondaryMissing";
+                reason = "supportMissing";
                 return false;
             }
 
             if (expectedSupportWeapon != null && !IsSameItem(expectedSupportWeapon, supportWeapon))
             {
-                reason = "secondarySlotMismatch";
+                reason = "supportSlotMismatch";
                 return false;
             }
 
@@ -440,14 +464,17 @@ namespace pitTeam.Modules
                 return false;
             }
 
-            if (!IsSameItem(selector.SecondPrimaryWeaponItem, supportWeapon))
+            Item cachedSupport = supportSlot == EquipmentSlot.Holster
+                ? selector.HolsterItem
+                : selector.SecondPrimaryWeaponItem;
+            if (!IsSameItem(cachedSupport, supportWeapon))
             {
-                reason = "selectorSecondaryCacheMismatch";
+                reason = "selectorSupportCacheMismatch";
                 return false;
             }
 
             if (weaponManager.Info.TryGetValue(
-                    EquipmentSlot.SecondPrimaryWeapon,
+                    supportSlot,
                     out BotWeaponInfo existingInfo) &&
                 IsSameItem(existingInfo?.weapon, supportWeapon))
             {
@@ -455,19 +482,19 @@ namespace pitTeam.Modules
                 return true;
             }
 
-            // Vanilla only treats second primary as a usable support role after first primary
-            // exists. The looted weapon may have occupied second primary earlier, when no main
-            // weapon existed, so create the missing per-slot reload/weapon state now.
+            // Vanilla caches support weapon state at spawn. A raid-acquired secondary or holster
+            // therefore needs a per-slot reload/weapon record after the physical move settles.
             BotWeaponInfo supportInfo = new BotWeaponInfo(
                 bot,
                 supportWeapon,
-                EquipmentSlot.SecondPrimaryWeapon,
+                supportSlot,
                 weaponManager.method_5);
-            weaponManager.Info[EquipmentSlot.SecondPrimaryWeapon] = supportInfo;
+            weaponManager.Info[supportSlot] = supportInfo;
             Logger.LogInfo(
                 $"[LootCommand][WeaponRegistration] follower='{bot.Profile?.Nickname ?? bot.ProfileId ?? "unknown"}' " +
                 $"support={supportWeapon.TemplateId} context={context} result=registered " +
-                $"supportSlot={selector.SupportWeapon} canChange={selector.CanChangeToSupportWeapons}");
+                $"supportSlot={supportSlot} selectorSupport={selector.SupportWeapon} " +
+                $"canChange={selector.CanChangeToSupportWeapons}");
             reason = "registered";
             return true;
         }

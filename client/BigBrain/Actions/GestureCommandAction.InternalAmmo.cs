@@ -9,17 +9,19 @@ namespace pitTeam.BigBrain.Actions
 {
     internal partial class GestureCommandAction
     {
-        private bool TryStartBodySecondaryLooseFeedAmmoMove(
+        private bool TryStartBodySupportLooseFeedAmmoMove(
             InventoryController inventory,
             InventoryEquipment corpseEquipment,
-            InventoryEquipment followerEquipment)
+            InventoryEquipment followerEquipment,
+            EquipmentSlot supportSlot)
         {
-            if (!TryBuildSecondaryLooseFeedAmmoMove(
+            if (!TryBuildSupportLooseFeedAmmoMove(
                     inventory,
                     followerEquipment,
                     corpseEquipment,
                     weapon => GetBodyWeaponLooseAmmoCandidates(corpseEquipment, weapon),
                     bodyLootAttemptedItemIds,
+                    supportSlot,
                     out BodyGearMove? move))
             {
                 return false;
@@ -34,17 +36,19 @@ namespace pitTeam.BigBrain.Actions
             return true;
         }
 
-        private bool TryStartContainerSecondaryLooseFeedAmmoMove(
+        private bool TryStartContainerSupportLooseFeedAmmoMove(
             InventoryController inventory,
             SearchableItemItemClass containerRoot,
-            InventoryEquipment followerEquipment)
+            InventoryEquipment followerEquipment,
+            EquipmentSlot supportSlot)
         {
-            if (!TryBuildSecondaryLooseFeedAmmoMove(
+            if (!TryBuildSupportLooseFeedAmmoMove(
                     inventory,
                     followerEquipment,
                     containerRoot,
                     weapon => GetContainerWeaponLooseAmmoCandidates(containerRoot, weapon),
                     containerLootAttemptedItemIds,
+                    supportSlot,
                     out BodyGearMove? move))
             {
                 return false;
@@ -59,28 +63,29 @@ namespace pitTeam.BigBrain.Actions
             return true;
         }
 
-        private bool TryBuildSecondaryLooseFeedAmmoMove(
+        private bool TryBuildSupportLooseFeedAmmoMove(
             InventoryController inventory,
             InventoryEquipment followerEquipment,
             Item sourceRoot,
             Func<Weapon, IEnumerable<BodyGearCandidate>> sourceAmmoFactory,
             HashSet<string> attemptedSourceItemIds,
+            EquipmentSlot supportSlot,
             out BodyGearMove? move)
         {
             move = null;
-            Weapon secondary = GetEligibleSecondaryAmmoMaintenanceWeapon(followerEquipment);
+            Weapon support = GetEligibleSupportAmmoMaintenanceWeapon(followerEquipment, supportSlot);
             if (!pitFireTeam.IsLootGearSwappingEnabled() ||
                 inventory == null ||
                 sourceRoot == null ||
                 sourceAmmoFactory == null ||
-                secondary == null ||
-                !FollowerWeaponLooseFeedReadiness.IsSupported(secondary) ||
-                attemptedSourceItemIds.Contains(secondary.Id))
+                support == null ||
+                !FollowerWeaponLooseFeedReadiness.IsSupported(support) ||
+                attemptedSourceItemIds.Contains(support.Id))
             {
                 return false;
             }
 
-            List<BodyGearCandidate> source = sourceAmmoFactory(secondary)
+            List<BodyGearCandidate> source = sourceAmmoFactory(support)
                 .Where(candidate =>
                     candidate?.Item is AmmoItemClass ammo &&
                     !string.IsNullOrEmpty(ammo.Id) &&
@@ -95,10 +100,10 @@ namespace pitTeam.BigBrain.Actions
 
             List<BodyGearCandidate> accepted = SelectWeaponLooseAmmoSupportCandidates(
                 followerEquipment,
-                secondary,
+                support,
                 source,
                 BodyGearFollowUpDestination.InternalAmmoCarry,
-                "secondaryLooseFeedMaintenance");
+                "supportLooseFeedMaintenance");
             if (accepted.Count == 0)
             {
                 foreach (BodyGearCandidate candidate in source)
@@ -111,17 +116,17 @@ namespace pitTeam.BigBrain.Actions
 
             List<AmmoItemClass> followerAmmo = GetFollowerWeaponLooseAmmoItems(
                     followerEquipment,
-                    secondary,
+                    support,
                     includeStrictCargo: false)
                 .ToList();
             BodyGearCandidate? loadCandidate = null;
             int loadCount = 0;
-            bool mayLoadSearchedAmmo = InteractableObjects.IsLootedWeapon(BotOwner, secondary) ||
+            bool mayLoadSearchedAmmo = InteractableObjects.IsLootedWeapon(BotOwner, support) ||
                                        pitFireTeam.IsFollowerLoadoutLootableMode();
             if (mayLoadSearchedAmmo)
             {
                 TrySelectInternalAmmoLoad(
-                    secondary,
+                    support,
                     accepted,
                     followerAmmo,
                     out loadCandidate,
@@ -130,18 +135,18 @@ namespace pitTeam.BigBrain.Actions
 
             InternalAmmoPlan plan = PlanInternalAmmoCarry(
                 followerEquipment,
-                secondary,
+                support,
                 accepted,
                 followerAmmo,
                 loadCandidate?.Item?.Id,
                 loadCount);
-            LogInternalAmmoPlan(secondary, plan, "secondaryLooseFeedMaintenance");
+            LogInternalAmmoPlan(support, plan, "supportLooseFeedMaintenance");
 
             if (loadCandidate != null &&
                 loadCount > 0 &&
                 TryBuildInternalMagazineLoadMove(
                     inventory,
-                    secondary,
+                    support,
                     loadCandidate,
                     loadCount,
                     EPhraseTrigger.LootGeneric,
@@ -170,12 +175,12 @@ namespace pitTeam.BigBrain.Actions
 
                 attemptedSourceItemIds.Add(candidate.Item.Id);
                 Modules.Logger.LogInfo(
-                    $"[LootCommand][LooseFeedReadiness] secondary carry rejected " +
-                    $"weapon={DescribeLootDebugItem(secondary)} ammo={DescribeLootDebugItem(candidate.Item)} " +
+                    $"[LootCommand][LooseFeedReadiness] support carry rejected " +
+                    $"weapon={DescribeLootDebugItem(support)} ammo={DescribeLootDebugItem(candidate.Item)} " +
                     $"reason={carryReason}");
             }
 
-            // Tactical secondary ammunition must not fall through into ordinary filtered cargo.
+            // Tactical support ammunition must not fall through into ordinary filtered cargo.
             foreach (BodyGearCandidate candidate in source)
             {
                 MarkTacticalAmmoCandidateComplete(candidate, attemptedSourceItemIds, null);
@@ -192,6 +197,7 @@ namespace pitTeam.BigBrain.Actions
             InventoryEquipment followerEquipment,
             BodyGearCandidate weaponCandidate,
             IEnumerable<BodyGearCandidate>? sourceAmmoCandidates,
+            EquipmentSlot supportSlot,
             out BodyGearMove? move,
             out bool handledByGearPolicy)
         {
@@ -206,10 +212,10 @@ namespace pitTeam.BigBrain.Actions
             bool primaryOccupied = followerEquipment
                 ?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)
                 ?.ContainedItem != null;
-            bool secondaryOccupied = followerEquipment
-                ?.GetSlot(EquipmentSlot.SecondPrimaryWeapon)
+            bool supportOccupied = followerEquipment
+                ?.GetSlot(supportSlot)
                 ?.ContainedItem != null;
-            if ((primaryOccupied && secondaryOccupied) ||
+            if ((primaryOccupied && supportOccupied) ||
                 (!primaryOccupied && !TryFindEquipmentSlotAddress(
                     followerEquipment,
                     EquipmentSlot.FirstPrimaryWeapon,
@@ -258,7 +264,7 @@ namespace pitTeam.BigBrain.Actions
 
             if (!primaryOccupied &&
                 !plan.Projected.PrimaryReady &&
-                secondaryOccupied &&
+                supportOccupied &&
                 !weaponCandidate.ForcePrimaryForLauncherPreference)
             {
                 handledByGearPolicy = false;
@@ -266,7 +272,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             BodyGearFollowUpDestination finalDestination = primaryOccupied
-                ? BodyGearFollowUpDestination.SecondaryWeaponEquip
+                ? BodyGearFollowUpDestination.SupportWeaponEquip
                 : BodyGearFollowUpDestination.EvaluateWeaponDestination;
             BodyGearCandidate finalCandidate = weaponCandidate.WithFollowUpDestination(finalDestination);
             EPhraseTrigger cue = !primaryOccupied &&
@@ -309,10 +315,11 @@ namespace pitTeam.BigBrain.Actions
             }
 
             return primaryOccupied
-                ? TryBuildOperationalSecondaryWeaponEquipMove(
+                ? TryBuildOperationalSupportWeaponEquipMove(
                     inventory,
                     followerEquipment,
                     weaponCandidate,
+                    supportSlot,
                     out move,
                     out _)
                 : TryBuildPostTransferWeaponDestinationMove(
@@ -768,16 +775,18 @@ namespace pitTeam.BigBrain.Actions
             return false;
         }
 
-        private bool TryBuildInternalOperationalSecondaryWeaponEquipMove(
+        private bool TryBuildInternalOperationalSupportWeaponEquipMove(
             InventoryController inventory,
             InventoryEquipment followerEquipment,
             BodyGearCandidate candidate,
+            EquipmentSlot supportSlot,
             out BodyGearMove? move,
             out string reason)
         {
             move = null;
             reason = "weaponMissing";
             if (candidate?.Item is not Weapon weapon ||
+                !IsWeaponEligibleForSupportSlot(weapon, supportSlot) ||
                 followerEquipment?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem is not Weapon)
             {
                 return false;
@@ -798,23 +807,23 @@ namespace pitTeam.BigBrain.Actions
 
             if (!TryFindEquipmentSlotAddress(
                     followerEquipment,
-                    EquipmentSlot.SecondPrimaryWeapon,
+                    supportSlot,
                     weapon,
-                    out ItemAddress? secondaryAddress) ||
+                    out ItemAddress? supportAddress) ||
                 !TryCreateBodyGearMove(
                     inventory,
                     candidate,
-                    secondaryAddress,
+                    supportAddress,
                     out move,
                     storeAsLoot: ShouldReturnGearSwapAsCargo(),
                     successPhrase: EPhraseTrigger.LootGeneric))
             {
-                reason = "secondaryUnavailable";
+                reason = "supportSlotUnavailable";
                 return false;
             }
 
             reason = "usableLooseFeedSupport";
-            LogInternalWeaponDestination(weapon, actual, "SecondPrimaryWeapon", reason);
+            LogInternalWeaponDestination(weapon, actual, supportSlot.ToString(), reason);
             return true;
         }
 

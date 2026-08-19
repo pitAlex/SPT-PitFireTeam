@@ -510,6 +510,7 @@ With `Allow Gear Swapping` enabled, loose ammunition on a searched body/containe
 - carried loose ammunition is preferred as the top-off supply; this includes the managed primary-ammo stacks injected into the secure container in every non-Realistic mode
 - `Immersive`/`Realistic` may use compatible searched-source ammunition after carried supply; `Simple`/`Restricted` do not merge searched rounds into protected spawned magazines and may only carry accepted source ammunition as returnable cargo
 - top-off only fills free capacity: it never unloads, replaces, or rearranges cartridges that are already inside a magazine
+- after existing magazines are topped off, compatible source magazines are assigned to reload-safe vest or pocket space before remaining loose ammunition is judged as surplus; an empty source magazine participates only when compatible loose ammunition is available to fill it
 - **need weight** is the compatible carried-round deficit against the weapon's two-magazine reserve target
 - **power weight** is source penetration versus the round-weighted penetration of all compatible rounds already carried, including loaded magazines, chambers, loose stacks, and strict cargo
 - below one ordinary magazine, critical need accepts any mechanically compatible source round
@@ -524,8 +525,13 @@ With `Allow Gear Swapping` enabled, loose ammunition on a searched body/containe
 
 An already-equipped detachable-magazine secondary receives ammunition maintenance only after the working primary has had first claim on the searched source:
 
+- when `SecondPrimaryWeapon` is empty, an executable shoulder-weapon package
+  receives the remaining fast-access space before holster maintenance begins
 - secondary maintenance requires `Allow Gear Swapping` but does not require `Pickup Weapons`, because it maintains an equipped weapon rather than acquiring another one
 - the secondary remains in `SecondPrimaryWeapon`, the primary remains selected, and this phase performs no promotion or replacement
+- maintenance tops off the magazine inserted in the equipped support weapon
+  before collecting compatible spare magazines or carrying remaining loose rounds
+- primary, secondary, and holster magazine maintenance all use that same order, preventing usable primary magazines from falling through into ordinary backpack cargo
 - a looted secondary may top off only fast-access magazines registered to that weapon's accepted package; compatibility alone cannot make it consume the primary's magazines
 - a non-looted secondary may use the follower's ordinary compatible fast-access magazines from the original loadout
 - carried compatible loose ammunition is used before searched ammunition
@@ -534,6 +540,8 @@ An already-equipped detachable-magazine secondary receives ammunition maintenanc
 - compatible loaded source magazines are then considered one at a time for tactical vest or pockets; magazine and loaded cartridges must both match the secondary
 - each accepted source magazine is registered to the secondary and the next move is rebuilt from settled inventory
 - source-magazine placement preserves one shared reload landing opening sized for the largest relevant magazine across the equipped long guns; overflow remains at the source and cannot fall through into ordinary cargo
+- fast-access placement prefers the smallest compatible vest grid, so 1x1 pistol
+  magazines and loose-ammo stacks use 1x1 cells before consuming larger grids
 - a direct `Loot This` magazine pickup is assigned primary-first to a compatible equipped long gun only when it lands in vest or pockets; backpack and View Backpack magazines remain cargo
 - internal-magazine and chamber-fed secondaries use the same primary-first source
   ownership, tactical-ammunition policy, real feed-loading transactions, and
@@ -542,7 +550,9 @@ An already-equipped detachable-magazine secondary receives ammunition maintenanc
 - shotguns continue acquiring useful loose shells until three full ammunition
   stacks are represented; their small tube or chamber capacity does not lower
   that tactical reserve target
-- holster maintenance remains a later phase
+- holster acquisition reuses the same support-package path even when a
+  second-primary weapon exists; when both support slots are occupied, all
+  secondary maintenance completes before holster ammunition is considered
 
 ### Internal-Magazine Weapon Readiness
 
@@ -578,7 +588,7 @@ Supported non-launcher `OnlyBarrel` weapons, including single-shot and double-ba
 Still deferred weapon-feed cases:
 
 - launcher-versus-launcher comparison and replacement, and any case requiring displacement of an occupied second-primary slot
-- holster-revolver gear decisions and cylinder transactions that cannot use the shared internal-magazine path
+- holster-revolver cylinder transactions that cannot use the shared internal-magazine path
 - equipped-primary donor-magazine consolidation remains separate from the acquired-weapon package path
 - keep each feed system separate from detachable-magazine handling and implement/test it as its own scenario
 
@@ -638,7 +648,8 @@ If primary replacement is later enabled, keep it narrow:
 - empty compatible slots are still preferred before replacing an equipped weapon
 - only `FirstPrimaryWeapon` may be displaced
 - `SecondPrimaryWeapon` is never displaced and is never used as a rotation slot
-- `Holster` is never displaced; pistols only equip into an empty holster
+- `Holster` is never displaced; a usable pistol may fill an empty holster when
+  primary is working, regardless of whether second primary is occupied
 - secondary, holster, and scabbard/knife may be used only as temporary hands state before rebinding primary
 - replacement must compare whole looted weapon tree value against the current primary weapon tree
 - compatible magazines belonging to the follower's secondary/support weapon must not be consumed by the new primary
@@ -727,6 +738,9 @@ Filtered body/container rules:
 - ordinary cargo price minimum and maximum apply to whole item trees
 - ordinary cargo category filters apply before price
 - missing-primary acquisition and implemented true swaps are controlled by `Allow Gear Swapping`; optional support/holster weapon additions additionally require `Pickup Weapons`
+- support acquisition shares one planner, but slot ownership remains explicit:
+  shoulder weapons use second primary and pistols may independently use an
+  empty holster after the shoulder package has had first claim on fast access
 
 Gear swapping phase 1 tests:
 
@@ -743,6 +757,12 @@ Gear swapping phase 1 tests:
 - an equipped primary with a critical shortage accepts weaker compatible ammunition; a small shortage can reject a large penetration downgrade; sufficient stock rejects equal/weaker ammunition
 - equipped-primary top-off works with `Pickup Weapons` disabled, uses carried loose supply before searched rounds, and never removes existing magazine cartridges
 - large compatible spare magazines that do not fit the vest/pocket grids while preserving reload landing space do not count as operational spares
+- a usable pistol package with working primary and empty holster uses the same
+  support magazine/readiness planner, then registers the
+  pistol in `BotWeaponManager.Info[Holster]`
+- an occupied second primary does not block holster acquisition; it remains
+  vanilla's preferred support role, and its ammunition is maintained before
+  the holstered weapon receives compatible source supplies
 - an under-threshold weapon uses empty secondary; with secondary occupied, only ordinary filtered cargo rules may move it into the backpack
 - with a working primary and `Pickup Weapons` disabled, an optional support weapon and its magazines/ammunition remain at the source
 - with a working primary and `Pickup Weapons` enabled, an accepted second-primary support weapon uses `LootGeneric` and does not take the current primary out of hand

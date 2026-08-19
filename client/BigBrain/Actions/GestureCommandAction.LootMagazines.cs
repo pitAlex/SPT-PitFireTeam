@@ -743,7 +743,7 @@ namespace pitTeam.BigBrain.Actions
             destination = BodyGearFollowUpDestination.Default;
 
             if (vest != null &&
-                TrySimulateContainerAdd(vest, item, out SearchableItemItemClass? trialVest) &&
+                TrySimulateFastAccessContainerAdd(vest, item, out SearchableItemItemClass? trialVest) &&
                 CanFitFastAccessReserves(trialVest, pockets, reserveItems))
             {
                 nextVest = trialVest;
@@ -752,7 +752,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             if (pockets != null &&
-                TrySimulateContainerAdd(pockets, item, out SearchableItemItemClass? trialPockets) &&
+                TrySimulateFastAccessContainerAdd(pockets, item, out SearchableItemItemClass? trialPockets) &&
                 CanFitFastAccessReserves(vest, trialPockets, reserveItems))
             {
                 nextPockets = trialPockets;
@@ -788,14 +788,14 @@ namespace pitTeam.BigBrain.Actions
 
             MagazineItemClass reserve = reserves[index];
             if (vest != null &&
-                TrySimulateContainerAdd(vest, reserve, out SearchableItemItemClass? nextVest) &&
+                TrySimulateFastAccessContainerAdd(vest, reserve, out SearchableItemItemClass? nextVest) &&
                 TryFitFastAccessReloadReserves(nextVest, pockets, reserves, index + 1))
             {
                 return true;
             }
 
             return pockets != null &&
-                   TrySimulateContainerAdd(pockets, reserve, out SearchableItemItemClass? nextPockets) &&
+                   TrySimulateFastAccessContainerAdd(pockets, reserve, out SearchableItemItemClass? nextPockets) &&
                    TryFitFastAccessReloadReserves(vest, nextPockets, reserves, index + 1);
         }
 
@@ -873,6 +873,53 @@ namespace pitTeam.BigBrain.Actions
 
             nextContainer = null;
             return false;
+        }
+
+        private static bool TrySimulateFastAccessContainerAdd(
+            SearchableItemItemClass container,
+            Item item,
+            out SearchableItemItemClass? nextContainer)
+        {
+            nextContainer = CloneSearchableContainer(container);
+            if (nextContainer?.Grids == null || item == null)
+            {
+                nextContainer = null;
+                return false;
+            }
+
+            foreach (StashGridClass grid in OrderFastAccessGridsByBestFit(nextContainer.Grids, item))
+            {
+                Item planningItem = ClonePlanningItem(item);
+                if (planningItem != null &&
+                    grid.AddAnywhere(planningItem, EErrorHandlingType.Ignore).Succeeded == true)
+                {
+                    return true;
+                }
+            }
+
+            nextContainer = null;
+            return false;
+        }
+
+        private static IEnumerable<StashGridClass> OrderFastAccessGridsByBestFit(
+            IEnumerable<StashGridClass> grids,
+            Item item)
+        {
+            int itemArea = 0;
+            try
+            {
+                XYCellSizeStruct size = item?.CalculateCellSize() ?? default;
+                itemArea = Math.Max(0, size.X * size.Y);
+            }
+            catch
+            {
+                // Stable grid order remains the fallback when a modded item cannot report size.
+            }
+
+            return (grids ?? Enumerable.Empty<StashGridClass>())
+                .Where(grid => grid != null)
+                .OrderBy(grid => Math.Max(0, grid.GridWidth * grid.GridHeight - itemArea))
+                .ThenBy(grid => grid.GridWidth * grid.GridHeight);
         }
 
         private bool TryGetOperationalMagazineCandidate(
@@ -983,9 +1030,22 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
+            HashSet<EFT.InventoryLogic.IContainer> visited = new HashSet<EFT.InventoryLogic.IContainer>();
+            foreach (StashGridClass grid in OrderFastAccessGridsByBestFit(searchable.Grids, magazine))
+            {
+                visited.Add(grid);
+                if (grid.TryFindLocationForItem(magazine, out ItemAddress candidateAddress) &&
+                    !object.Equals(magazine.Parent, candidateAddress))
+                {
+                    address = candidateAddress;
+                    return true;
+                }
+            }
+
             foreach (EFT.InventoryLogic.IContainer container in GetSearchableContainersRecursive(searchable))
             {
                 if (container != null &&
+                    visited.Add(container) &&
                     container.TryFindLocationForItem(magazine, out ItemAddress candidateAddress) &&
                     !object.Equals(magazine.Parent, candidateAddress))
                 {

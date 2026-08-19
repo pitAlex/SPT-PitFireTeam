@@ -10,6 +10,7 @@ namespace pitTeam.BigBrain.Actions
     {
         private bool TryBuildMagazineDonorTopOffStagingMove(
             InventoryController inventory,
+            InventoryEquipment followerEquipment,
             Item sourceRoot,
             Weapon weapon,
             IEnumerable<MagazineTopOffTarget> targets,
@@ -111,6 +112,7 @@ namespace pitTeam.BigBrain.Actions
                     {
                         if (!TryBuildInsertedMagazineTopOffChain(
                                 inventory,
+                                followerEquipment,
                                 sourceRoot,
                                 weapon,
                                 target.Magazine,

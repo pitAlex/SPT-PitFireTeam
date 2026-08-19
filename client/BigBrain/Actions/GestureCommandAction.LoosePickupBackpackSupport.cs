@@ -273,7 +273,11 @@ namespace pitTeam.BigBrain.Actions
                                    (move.StagingMagazine != null &&
                                     move.StagingMagazineRoundsBefore >= 0 &&
                                     move.StagingMagazine.Count > move.StagingMagazineRoundsBefore));
-            bool succeeded = result?.Succeed == true || stagingApplied;
+            bool failedTopOffDetach = IsInsertedMagazineTopOffDetachMove(move) &&
+                                      !DidInsertedMagazineTopOffDetachSettle(move);
+            bool succeeded = failedTopOffDetach
+                ? false
+                : result?.Succeed == true || stagingApplied;
             if (succeeded)
             {
                 InteractableObjects.ClearStrictCargoTree(BotOwner, move.Item);
@@ -289,9 +293,13 @@ namespace pitTeam.BigBrain.Actions
             else
             {
                 RememberLoosePickupBackpackSupportRejection(move?.Item);
+                foreach (Item supplyItem in GetInsertedMagazineTopOffSupplyItems(move))
+                {
+                    RememberLoosePickupBackpackSupportRejection(supplyItem);
+                }
             }
 
-            if (succeeded || move?.ContinueFollowUpsOnFailure == true)
+            if (succeeded || (move?.ContinueFollowUpsOnFailure == true && !failedTopOffDetach))
             {
                 foreach (BodyGearCandidate candidate in move?.FollowUpCandidates ??
                          Array.Empty<BodyGearCandidate>())

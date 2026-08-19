@@ -129,6 +129,7 @@ namespace pitTeam.BigBrain.Actions
         private const float LootSearchDelayMaxSeconds = 6.25f;
         private const float LootPickupSuccessLeadSeconds = 1.1f;
         private const float LootContainerOpenTimeoutSeconds = 3f;
+        private const float LootInventoryTransactionTimeoutSeconds = 5f;
 
         public GestureCommandAction(BotOwner botOwner) : base(botOwner) { }
 

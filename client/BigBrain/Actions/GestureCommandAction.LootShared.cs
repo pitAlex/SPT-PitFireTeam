@@ -299,5 +299,37 @@ namespace pitTeam.BigBrain.Actions
             }
         }
 
+        private bool TryFastForwardLootInventoryTransaction(
+            InventoryController inventory,
+            BodyGearMove move,
+            string context)
+        {
+            try
+            {
+                if (inventory is not Player.PlayerInventoryController playerInventory ||
+                    playerInventory.Player_0 == null)
+                {
+                    Modules.Logger.LogInfo(
+                        $"[LootCommand][TransactionRecovery] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                        $"context={context} result=unavailable source={move?.SourceName ?? "unknown"}");
+                    return false;
+                }
+
+                playerInventory.Player_0.FastForwardCurrentOperations();
+                Modules.Logger.LogInfo(
+                    $"[LootCommand][TransactionRecovery] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                    $"context={context} result=fastForwarded source={move?.SourceName ?? "unknown"} " +
+                    $"item={DescribeLootDebugItem(move?.Item)}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Modules.Logger.LogInfo(
+                    $"[LootCommand][TransactionRecovery] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                    $"context={context} result=failed source={move?.SourceName ?? "unknown"} reason={ex.Message}");
+                return false;
+            }
+        }
+
     }
 }

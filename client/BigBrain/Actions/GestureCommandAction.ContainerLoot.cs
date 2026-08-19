@@ -111,8 +111,36 @@ namespace pitTeam.BigBrain.Actions
 
             if (containerLootMoveInProgress)
             {
-                if (containerLootAttemptStartedAt > 0f && Time.time - containerLootAttemptStartedAt > 4f)
+                if (containerLootAttemptStartedAt > 0f &&
+                    Time.time - containerLootAttemptStartedAt > LootInventoryTransactionTimeoutSeconds)
                 {
+                    BodyGearMove timedOutMove = activeContainerLootMove;
+                    int timedOutGeneration = activeContainerLootMoveGeneration;
+                    if (timedOutMove?.TransactionRecoveryAttempted != true)
+                    {
+                        timedOutMove.TransactionRecoveryAttempted = true;
+                        containerLootAttemptStartedAt = Time.time;
+                        bool recoverySubmitted = TryFastForwardLootInventoryTransaction(
+                            BotOwner?.GetPlayer?.InventoryController,
+                            timedOutMove,
+                            "containerTimeout");
+
+                        // Active-weapon inventory operations can wait indefinitely for an EFT
+                        // hands transition. LootingBots resolves the same engine failure by fast
+                        // forwarding the player's current inventory operations, then awaiting the
+                        // original callback instead of issuing an overlapping transaction.
+                        // FastForwardCurrentOperations may invoke the callback synchronously and
+                        // then throw. The callback's cleared/generation-changed state is the
+                        // authoritative result; never abort a move that already completed.
+                        if (!containerLootMoveInProgress ||
+                            activeContainerLootMoveGeneration != timedOutGeneration ||
+                            !ReferenceEquals(activeContainerLootMove, timedOutMove) ||
+                            recoverySubmitted)
+                        {
+                            return;
+                        }
+                    }
+
                     Modules.Logger.LogInfo(
                         $"[LootCommand] Container move timed out for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
                         $"source={activeContainerLootMove?.SourceName ?? "unknown"} item={DescribeLootDebugItem(activeContainerLootMove?.Item)}");
@@ -253,13 +281,13 @@ namespace pitTeam.BigBrain.Actions
                 // Scenario order for containers:
                 // 1. finish delayed pickup-success moves
                 // 2. finish weapon-equip/vest-swap follow-ups
-                // 3. replenish or upgrade the equipped primary from tactical loose-ammo decisions
-                // 4. maintain the equipped secondary from unresolved source ammo
-                // 5. acquire reload-safe source magazines when that secondary uses detachable mags
+                // 3. maintain the primary's inserted/source magazines before carrying surplus ammo
+                // 4. fill an empty shoulder-support slot before optional holster maintenance can
+                //    spend the same fast-access space
+                // 5. maintain secondary magazines/ammo, then holster magazines/ammo, from unresolved loot
                 // 6. optionally equip or narrowly swap tactical vest protection
-                // 7. optionally equip an empty primary or add a usable support beside a working primary
-                // 8. promote a tracked backpack cargo weapon when newly found magazines complete it
-                // 9. otherwise move eligible filtered cargo into backpack/pockets
+                // 7. promote a tracked backpack cargo weapon when newly found magazines complete it
+                // 8. otherwise move eligible filtered cargo into backpack/pockets
                 if (TryStartPendingContainerLootMove(inventory))
                 {
                     return;
@@ -275,22 +303,106 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
-                if (TryStartContainerPrimaryTacticalAmmoMove(inventory, containerRoot, followerEquipment))
+                if (TryStartContainerPrimaryTacticalAmmoMove(
+                        inventory,
+                        containerRoot,
+                        followerEquipment,
+                        allowLooseAmmoCarry: false))
                 {
                     return;
                 }
 
-                if (TryStartContainerSecondaryTacticalAmmoMove(inventory, containerRoot, followerEquipment))
+                if (TryStartContainerPrimaryTacticalMagazineMove(inventory, containerRoot, followerEquipment))
                 {
                     return;
                 }
 
-                if (TryStartContainerSecondaryLooseFeedAmmoMove(inventory, containerRoot, followerEquipment))
+                if (TryStartContainerPrimaryTacticalAmmoMove(
+                        inventory,
+                        containerRoot,
+                        followerEquipment,
+                        allowLooseAmmoCarry: true))
                 {
                     return;
                 }
 
-                if (TryStartContainerSecondaryTacticalMagazineMove(inventory, containerRoot, followerEquipment))
+                if (TryStartEasyContainerWeaponEquipMove(inventory, containerRoot, followerEquipment))
+                {
+                    return;
+                }
+
+                if (TryStartContainerSupportTacticalAmmoMove(
+                        inventory,
+                        containerRoot,
+                        followerEquipment,
+                        EquipmentSlot.SecondPrimaryWeapon,
+                        allowLooseAmmoCarry: false))
+                {
+                    return;
+                }
+
+                if (TryStartContainerSupportTacticalMagazineMove(
+                        inventory,
+                        containerRoot,
+                        followerEquipment,
+                        EquipmentSlot.SecondPrimaryWeapon))
+                {
+                    return;
+                }
+
+                if (TryStartContainerSupportTacticalAmmoMove(
+                        inventory,
+                        containerRoot,
+                        followerEquipment,
+                        EquipmentSlot.SecondPrimaryWeapon,
+                        allowLooseAmmoCarry: true))
+                {
+                    return;
+                }
+
+                if (TryStartContainerSupportLooseFeedAmmoMove(
+                        inventory,
+                        containerRoot,
+                        followerEquipment,
+                        EquipmentSlot.SecondPrimaryWeapon))
+                {
+                    return;
+                }
+
+                if (TryStartContainerSupportTacticalAmmoMove(
+                        inventory,
+                        containerRoot,
+                        followerEquipment,
+                        EquipmentSlot.Holster,
+                        allowLooseAmmoCarry: false))
+                {
+                    return;
+                }
+
+                if (TryStartContainerSupportTacticalMagazineMove(
+                        inventory,
+                        containerRoot,
+                        followerEquipment,
+                        EquipmentSlot.Holster))
+                {
+                    return;
+                }
+
+                if (TryStartContainerSupportTacticalAmmoMove(
+                        inventory,
+                        containerRoot,
+                        followerEquipment,
+                        EquipmentSlot.Holster,
+                        allowLooseAmmoCarry: true))
+                {
+                    return;
+                }
+
+                if (TryStartContainerSupportLooseFeedAmmoMove(
+                        inventory,
+                        containerRoot,
+                        followerEquipment,
+                        EquipmentSlot.Holster))
                 {
                     return;
                 }
@@ -307,7 +419,7 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
-                if (TryStartEasyContainerWeaponEquipMove(inventory, containerRoot, followerEquipment))
+                if (TryStartEasyContainerHolsterWeaponEquipMove(inventory, containerRoot, followerEquipment))
                 {
                     return;
                 }
@@ -427,12 +539,14 @@ namespace pitTeam.BigBrain.Actions
             {
                 bool allowAlreadyAttempted =
                     candidate?.FollowUpDestination == BodyGearFollowUpDestination.PrimaryWeaponEquip ||
-                    candidate?.FollowUpDestination == BodyGearFollowUpDestination.SecondaryWeaponEquip ||
+                    candidate?.FollowUpDestination == BodyGearFollowUpDestination.SupportWeaponEquip ||
                     candidate?.FollowUpDestination == BodyGearFollowUpDestination.EvaluateWeaponDestination ||
                     candidate?.FollowUpDestination == BodyGearFollowUpDestination.EvaluateSecondaryWeaponPromotion ||
                     candidate?.FollowUpDestination == BodyGearFollowUpDestination.EvaluateCargoWeaponPromotion ||
                     candidate?.FollowUpDestination == BodyGearFollowUpDestination.BackpackCargo ||
-                    candidate?.FollowUpDestination == BodyGearFollowUpDestination.SalvageMagazineAmmo;
+                    candidate?.FollowUpDestination == BodyGearFollowUpDestination.SalvageMagazineAmmo ||
+                    candidate?.FollowUpDestination == BodyGearFollowUpDestination.TopOffWeaponMagazine ||
+                    candidate?.FollowUpDestination == BodyGearFollowUpDestination.RestoreMagazineToWeapon;
                 if (candidate?.Item != null &&
                     !string.IsNullOrEmpty(candidate.Item.Id) &&
                     (allowAlreadyAttempted || !containerLootAttemptedItemIds.Contains(candidate.Item.Id)))
@@ -480,10 +594,12 @@ namespace pitTeam.BigBrain.Actions
                                        (move.StagingMagazine != null &&
                                         move.StagingMagazineRoundsBefore >= 0 &&
                                         move.StagingMagazine.Count > move.StagingMagazineRoundsBefore));
-                bool moveSucceeded = result?.Succeed == true ||
-                                     stagingApplied ||
-                                     (!move.IsStagingOperation &&
-                                      IsLootNowInBotInventory(BotOwner?.GetPlayer, completedItem));
+                bool moveSucceeded = IsInsertedMagazineTopOffDetachMove(move)
+                    ? DidInsertedMagazineTopOffDetachSettle(move)
+                    : result?.Succeed == true ||
+                      stagingApplied ||
+                      (!move.IsStagingOperation &&
+                       IsLootNowInBotInventory(BotOwner?.GetPlayer, completedItem));
                 if (moveSucceeded)
                 {
                     bool countsAsLootMove = !move.IsStagingOperation || !move.ReportAsLootNothing;
@@ -548,7 +664,21 @@ namespace pitTeam.BigBrain.Actions
                                 FollowerLootedPrimaryWeaponBinding.RegisterSupport(
                                     BotOwner,
                                     completedItem as Weapon,
+                                    EquipmentSlot.SecondPrimaryWeapon,
                                     "containerLootMove");
+                            }
+                            else
+                            {
+                                Weapon slottedHolster = BotOwner?.GetPlayer?.InventoryController?.Inventory?.Equipment
+                                    ?.GetSlot(EquipmentSlot.Holster)?.ContainedItem as Weapon;
+                                if (IsSameLootItem(slottedHolster, completedItem))
+                                {
+                                    FollowerLootedPrimaryWeaponBinding.RegisterSupport(
+                                        BotOwner,
+                                        completedItem as Weapon,
+                                        EquipmentSlot.Holster,
+                                        "containerLootMove");
+                                }
                             }
                         }
 
@@ -561,14 +691,25 @@ namespace pitTeam.BigBrain.Actions
 
                 Modules.Logger.LogInfo(
                     $"[LootCommand] Container loot move failed for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': {move.SourceName}:{move.Item?.TemplateId ?? "unknown"}");
-                if (move.IsStagingOperation &&
+                bool failedTopOffDetach = IsInsertedMagazineTopOffDetachMove(move);
+                if (failedTopOffDetach)
+                {
+                    foreach (Item supplyItem in GetInsertedMagazineTopOffSupplyItems(move))
+                    {
+                        if (!string.IsNullOrEmpty(supplyItem.Id))
+                        {
+                            containerLootAttemptedItemIds.Add(supplyItem.Id);
+                        }
+                    }
+                }
+                else if (move.IsStagingOperation &&
                     move.TerminalOnStagingFailure &&
                     move.StagingWeapon != null)
                 {
                     containerLootAttemptedItemIds.Add(move.StagingWeapon.Id);
                 }
 
-                if (move.ContinueFollowUpsOnFailure)
+                if (move.ContinueFollowUpsOnFailure && !failedTopOffDetach)
                 {
                     EnqueueContainerGearSwapFollowUps(move);
                 }
@@ -662,6 +803,20 @@ namespace pitTeam.BigBrain.Actions
                 containerLootAttemptedItemIds.Count == 0)
             {
                 return;
+            }
+
+            if (containerLootMoveInProgress &&
+                reason?.StartsWith("CommandInterrupt:", StringComparison.Ordinal) == true &&
+                activeContainerLootMove != null)
+            {
+                // Combat owns the interruption, but EFT must still settle the inventory operation
+                // already submitted by looting. Otherwise the next loot order can inherit a
+                // permanently busy firearm/inventory transition.
+                activeContainerLootMove.TransactionRecoveryAttempted = true;
+                TryFastForwardLootInventoryTransaction(
+                    BotOwner?.GetPlayer?.InventoryController,
+                    activeContainerLootMove,
+                    "containerCombatInterrupt");
             }
 
             StopLootSearchSound();
@@ -812,6 +967,7 @@ namespace pitTeam.BigBrain.Actions
             public bool AnnounceStagingLoot { get; }
             public Weapon? ApprovedReloadWeapon { get; }
             public bool UseDirectAmmoLoadTransaction { get; }
+            public bool TransactionRecoveryAttempted { get; set; }
 
             public BodyGearMove WithFollowUps(
                 IReadOnlyList<BodyGearCandidate> followUpCandidates,
@@ -1010,7 +1166,7 @@ namespace pitTeam.BigBrain.Actions
             RestoreMagazineToWeapon,
             BackpackCargo,
             PrimaryWeaponEquip,
-            SecondaryWeaponEquip,
+            SupportWeaponEquip,
             EvaluateWeaponDestination,
             EvaluateSecondaryWeaponPromotion,
             EvaluateCargoWeaponPromotion,

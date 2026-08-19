@@ -182,5 +182,6 @@ and no occupied-secondary replacement.
 ## Later Secondary Phases
 
 - S4: persistence, death, interruption, and failed-transaction hardening.
-- Holster work receives its own phase after empty-secondary behavior is stable.
+- Holster phase 1 reuses the single-support planner when second primary is
+  empty; simultaneous secondary-plus-holster planning remains separate.
 - Occupied secondary replacement remains out of scope.

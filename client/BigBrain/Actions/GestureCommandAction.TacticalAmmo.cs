@@ -12,7 +12,8 @@ namespace pitTeam.BigBrain.Actions
         private bool TryStartBodyPrimaryTacticalAmmoMove(
             InventoryController inventory,
             InventoryEquipment corpseEquipment,
-            InventoryEquipment followerEquipment)
+            InventoryEquipment followerEquipment,
+            bool allowLooseAmmoCarry)
         {
             if (!TryBuildPrimaryTacticalAmmoMove(
                     inventory,
@@ -20,7 +21,8 @@ namespace pitTeam.BigBrain.Actions
                     corpseEquipment,
                     weapon => GetBodyWeaponLooseAmmoCandidates(corpseEquipment, weapon),
                     bodyLootAttemptedItemIds,
-                    out BodyGearMove? move))
+                    out BodyGearMove? move,
+                    allowLooseAmmoCarry))
             {
                 return false;
             }
@@ -34,18 +36,22 @@ namespace pitTeam.BigBrain.Actions
             return true;
         }
 
-        private bool TryStartBodySecondaryTacticalAmmoMove(
+        private bool TryStartBodySupportTacticalAmmoMove(
             InventoryController inventory,
             InventoryEquipment corpseEquipment,
-            InventoryEquipment followerEquipment)
+            InventoryEquipment followerEquipment,
+            EquipmentSlot supportSlot,
+            bool allowLooseAmmoCarry)
         {
-            if (!TryBuildSecondaryTacticalAmmoMove(
+            if (!TryBuildSupportTacticalAmmoMove(
                     inventory,
                     followerEquipment,
                     corpseEquipment,
                     weapon => GetBodyWeaponLooseAmmoCandidates(corpseEquipment, weapon),
                     bodyLootAttemptedItemIds,
-                    out BodyGearMove? move))
+                    supportSlot,
+                    out BodyGearMove? move,
+                    allowLooseAmmoCarry))
             {
                 return false;
             }
@@ -59,19 +65,25 @@ namespace pitTeam.BigBrain.Actions
             return true;
         }
 
-        private bool TryStartBodySecondaryTacticalMagazineMove(
+        private bool TryStartBodySupportTacticalMagazineMove(
             InventoryController inventory,
             InventoryEquipment corpseEquipment,
-            InventoryEquipment followerEquipment)
+            InventoryEquipment followerEquipment,
+            EquipmentSlot supportSlot)
         {
-            if (!TryBuildSecondaryTacticalMagazineMove(
+            if (!TryBuildEquippedTacticalMagazineMove(
                     inventory,
                     followerEquipment,
                     (root, weapon) => GetBodyOperationalMagazineCandidates(
                         (InventoryEquipment)root,
+                        weapon,
+                        includeEmptyForTopOff: true),
+                    (root, weapon) => GetBodyWeaponLooseAmmoCandidates(
+                        (InventoryEquipment)root,
                         weapon),
                     corpseEquipment,
                     bodyLootAttemptedItemIds,
+                    supportSlot,
                     out BodyGearMove? move,
                     out bool hadCompatibleMagazine))
             {
@@ -88,10 +100,23 @@ namespace pitTeam.BigBrain.Actions
             return true;
         }
 
+        private bool TryStartBodyPrimaryTacticalMagazineMove(
+            InventoryController inventory,
+            InventoryEquipment corpseEquipment,
+            InventoryEquipment followerEquipment)
+        {
+            return TryStartBodySupportTacticalMagazineMove(
+                inventory,
+                corpseEquipment,
+                followerEquipment,
+                EquipmentSlot.FirstPrimaryWeapon);
+        }
+
         private bool TryStartContainerPrimaryTacticalAmmoMove(
             InventoryController inventory,
             SearchableItemItemClass containerRoot,
-            InventoryEquipment followerEquipment)
+            InventoryEquipment followerEquipment,
+            bool allowLooseAmmoCarry)
         {
             if (!TryBuildPrimaryTacticalAmmoMove(
                     inventory,
@@ -99,7 +124,8 @@ namespace pitTeam.BigBrain.Actions
                     containerRoot,
                     weapon => GetContainerWeaponLooseAmmoCandidates(containerRoot, weapon),
                     containerLootAttemptedItemIds,
-                    out BodyGearMove? move))
+                    out BodyGearMove? move,
+                    allowLooseAmmoCarry))
             {
                 return false;
             }
@@ -113,18 +139,22 @@ namespace pitTeam.BigBrain.Actions
             return true;
         }
 
-        private bool TryStartContainerSecondaryTacticalAmmoMove(
+        private bool TryStartContainerSupportTacticalAmmoMove(
             InventoryController inventory,
             SearchableItemItemClass containerRoot,
-            InventoryEquipment followerEquipment)
+            InventoryEquipment followerEquipment,
+            EquipmentSlot supportSlot,
+            bool allowLooseAmmoCarry)
         {
-            if (!TryBuildSecondaryTacticalAmmoMove(
+            if (!TryBuildSupportTacticalAmmoMove(
                     inventory,
                     followerEquipment,
                     containerRoot,
                     weapon => GetContainerWeaponLooseAmmoCandidates(containerRoot, weapon),
                     containerLootAttemptedItemIds,
-                    out BodyGearMove? move))
+                    supportSlot,
+                    out BodyGearMove? move,
+                    allowLooseAmmoCarry))
             {
                 return false;
             }
@@ -138,19 +168,25 @@ namespace pitTeam.BigBrain.Actions
             return true;
         }
 
-        private bool TryStartContainerSecondaryTacticalMagazineMove(
+        private bool TryStartContainerSupportTacticalMagazineMove(
             InventoryController inventory,
             SearchableItemItemClass containerRoot,
-            InventoryEquipment followerEquipment)
+            InventoryEquipment followerEquipment,
+            EquipmentSlot supportSlot)
         {
-            if (!TryBuildSecondaryTacticalMagazineMove(
+            if (!TryBuildEquippedTacticalMagazineMove(
                     inventory,
                     followerEquipment,
                     (root, weapon) => GetContainerOperationalMagazineCandidates(
                         (SearchableItemItemClass)root,
+                        weapon,
+                        includeEmptyForTopOff: true),
+                    (root, weapon) => GetContainerWeaponLooseAmmoCandidates(
+                        (SearchableItemItemClass)root,
                         weapon),
                     containerRoot,
                     containerLootAttemptedItemIds,
+                    supportSlot,
                     out BodyGearMove? move,
                     out bool hadCompatibleMagazine))
             {
@@ -167,18 +203,31 @@ namespace pitTeam.BigBrain.Actions
             return true;
         }
 
+        private bool TryStartContainerPrimaryTacticalMagazineMove(
+            InventoryController inventory,
+            SearchableItemItemClass containerRoot,
+            InventoryEquipment followerEquipment)
+        {
+            return TryStartContainerSupportTacticalMagazineMove(
+                inventory,
+                containerRoot,
+                followerEquipment,
+                EquipmentSlot.FirstPrimaryWeapon);
+        }
+
         private bool TryBuildPrimaryTacticalAmmoMove(
             InventoryController inventory,
             InventoryEquipment followerEquipment,
             Item sourceRoot,
             Func<Weapon, IEnumerable<BodyGearCandidate>> sourceAmmoFactory,
             HashSet<string> attemptedSourceItemIds,
-            out BodyGearMove? move)
+            out BodyGearMove? move,
+            bool allowLooseAmmoCarry)
         {
             Weapon primary = followerEquipment
                 ?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)
                 ?.ContainedItem as Weapon;
-            Weapon deferredSecondary = GetEligibleSecondaryAmmoMaintenanceWeapon(followerEquipment);
+            Weapon deferredSupport = GetEligibleSupportAmmoMaintenanceWeapon(followerEquipment);
             return TryBuildEquippedTacticalAmmoMove(
                 inventory,
                 followerEquipment,
@@ -187,30 +236,36 @@ namespace pitTeam.BigBrain.Actions
                 attemptedSourceItemIds,
                 primary,
                 role: "primary",
-                deferredWeapon: deferredSecondary,
+                deferredWeapon: deferredSupport,
                 fastAccessMagazineEligibility: null,
                 carriedAmmoSupplyEligibility: null,
                 carriedCartridgeFactory: () => GetFollowerWeaponCartridgeItems(followerEquipment, primary),
                 allowSearchedSourceTopOff: pitFireTeam.IsFollowerLoadoutLootableMode(),
-                out move);
+                out move,
+                allowLooseAmmoCarry);
         }
 
-        private bool TryBuildSecondaryTacticalAmmoMove(
+        private bool TryBuildSupportTacticalAmmoMove(
             InventoryController inventory,
             InventoryEquipment followerEquipment,
             Item sourceRoot,
             Func<Weapon, IEnumerable<BodyGearCandidate>> sourceAmmoFactory,
             HashSet<string> attemptedSourceItemIds,
-            out BodyGearMove? move)
+            EquipmentSlot supportSlot,
+            out BodyGearMove? move,
+            bool allowLooseAmmoCarry)
         {
-            Weapon secondary = GetEligibleDetachableSecondaryWeapon(followerEquipment);
-            bool isLootedSecondary = InteractableObjects.IsLootedWeapon(BotOwner, secondary);
-            Func<MagazineItemClass, bool>? magazineEligibility = isLootedSecondary
+            Weapon support = GetEligibleDetachableWeaponForSlot(followerEquipment, supportSlot);
+            bool isLootedSupport = InteractableObjects.IsLootedWeapon(BotOwner, support);
+            Func<MagazineItemClass, bool>? magazineEligibility = isLootedSupport
                 ? magazine => InteractableObjects.IsApprovedLootedWeaponMagazine(
                     BotOwner,
-                    secondary,
+                    support,
                     magazine)
                 : null;
+            string role = supportSlot == EquipmentSlot.Holster
+                ? "holster"
+                : "secondary";
 
             return TryBuildEquippedTacticalAmmoMove(
                 inventory,
@@ -218,46 +273,50 @@ namespace pitTeam.BigBrain.Actions
                 sourceRoot,
                 sourceAmmoFactory,
                 attemptedSourceItemIds,
-                secondary,
-                role: "secondary",
+                support,
+                role,
                 deferredWeapon: null,
                 fastAccessMagazineEligibility: magazineEligibility,
-                carriedAmmoSupplyEligibility: ammo => IsSecondaryCarriedAmmoSupplyEligible(
+                carriedAmmoSupplyEligibility: ammo => IsSupportCarriedAmmoSupplyEligible(
                     ammo,
                     magazineEligibility),
-                carriedCartridgeFactory: () => GetSecondaryTacticalCartridgeItems(
+                carriedCartridgeFactory: () => GetSupportTacticalCartridgeItems(
                     followerEquipment,
-                    secondary,
+                    support,
                     magazineEligibility),
                 // Source rounds become part of tracked loot when they enter an approved looted
-                // secondary magazine, so Simple/Restricted do not touch protected spawn gear.
-                allowSearchedSourceTopOff: isLootedSecondary || pitFireTeam.IsFollowerLoadoutLootableMode(),
-                out move);
+                // support magazine, so Simple/Restricted do not touch protected spawn gear.
+                allowSearchedSourceTopOff: isLootedSupport || pitFireTeam.IsFollowerLoadoutLootableMode(),
+                out move,
+                allowLooseAmmoCarry);
         }
 
-        private bool TryBuildSecondaryTacticalMagazineMove(
+        private bool TryBuildEquippedTacticalMagazineMove(
             InventoryController inventory,
             InventoryEquipment followerEquipment,
             Func<Item, Weapon, IEnumerable<BodyGearCandidate>> sourceMagazineFactory,
+            Func<Item, Weapon, IEnumerable<BodyGearCandidate>> sourceAmmoFactory,
             Item sourceRoot,
             HashSet<string> attemptedSourceItemIds,
+            EquipmentSlot weaponSlot,
             out BodyGearMove? move,
             out bool hadCompatibleMagazine)
         {
             move = null;
             hadCompatibleMagazine = false;
-            Weapon secondary = GetEligibleDetachableSecondaryWeapon(followerEquipment);
+            Weapon weapon = GetEligibleDetachableWeaponForSlot(followerEquipment, weaponSlot);
             if (!pitFireTeam.IsLootGearSwappingEnabled() ||
                 inventory == null ||
                 followerEquipment == null ||
                 sourceMagazineFactory == null ||
+                sourceAmmoFactory == null ||
                 sourceRoot == null ||
-                secondary == null)
+                weapon == null)
             {
                 return false;
             }
 
-            List<BodyGearCandidate> candidates = sourceMagazineFactory(sourceRoot, secondary)
+            List<BodyGearCandidate> candidates = sourceMagazineFactory(sourceRoot, weapon)
                 .Where(candidate =>
                     candidate?.Item is MagazineItemClass magazine &&
                     !string.IsNullOrEmpty(magazine.Id) &&
@@ -271,26 +330,44 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            bool isLootedSecondary = InteractableObjects.IsLootedWeapon(BotOwner, secondary);
-            Func<MagazineItemClass, bool>? existingMagazineEligibility = isLootedSecondary
+            bool isLootedWeapon = InteractableObjects.IsLootedWeapon(BotOwner, weapon);
+            Func<MagazineItemClass, bool>? existingMagazineEligibility = isLootedWeapon
                 ? magazine => InteractableObjects.IsApprovedLootedWeaponMagazine(
                     BotOwner,
-                    secondary,
+                    weapon,
                     magazine)
                 : null;
-            MagazineItemClass primaryReloadReserve = GetPrimaryReloadReserveForSecondaryMagazinePlan(
+            List<MagazineItemClass> alternateReloadReserves = GetAlternateReloadReservesForSupportMagazinePlan(
                 inventory,
-                followerEquipment);
+                followerEquipment,
+                weapon);
+            List<AmmoItemClass> availableLooseAmmo = GetFollowerWeaponLooseAmmoItems(
+                    followerEquipment,
+                    weapon,
+                    includeStrictCargo: true)
+                .Concat(sourceAmmoFactory(sourceRoot, weapon)
+                    .Where(candidate =>
+                        candidate?.Item is AmmoItemClass ammo &&
+                        !string.IsNullOrEmpty(ammo.Id) &&
+                        !attemptedSourceItemIds.Contains(ammo.Id))
+                    .Select(candidate => candidate.Item)
+                    .OfType<AmmoItemClass>())
+                .GroupBy(ammo => ammo.Id, StringComparer.Ordinal)
+                .Select(group => group.First())
+                .ToList();
+            bool allowEmptyCandidates = candidates
+                .Select(candidate => candidate.Item as MagazineItemClass)
+                .Where(magazine => magazine?.Count <= 0)
+                .Any(magazine => availableLooseAmmo.Any(ammo =>
+                    CanTopOffMagazineWithAmmo(weapon, magazine, ammo)));
             OperationalMagazinePlan plan = PlanOperationalMagazineFollowUps(
                 inventory,
                 followerEquipment,
-                secondary,
+                weapon,
                 candidates,
-                allowEmptyCandidates: false,
+                allowEmptyCandidates,
                 existingFastAccessMagazineEligibility: existingMagazineEligibility,
-                alternateReloadReserveItems: primaryReloadReserve != null
-                    ? new[] { primaryReloadReserve }
-                    : Array.Empty<MagazineItemClass>());
+                alternateReloadReserveItems: alternateReloadReserves);
 
             foreach (BodyGearCandidate candidate in plan.FollowUps.Where(IsOperationalFastAccessFollowUp))
             {
@@ -299,21 +376,22 @@ namespace pitTeam.BigBrain.Actions
                         followerEquipment,
                         candidate,
                         out move,
-                        out string reason))
+                        out string reason,
+                        allowEmptyCandidates))
                 {
                     attemptedSourceItemIds.Add(candidate.Item.Id);
                     Modules.Logger.LogInfo(
-                        $"[LootCommand][SecondaryMagazine] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
-                        $"weapon={DescribeLootDebugItem(secondary)} magazine={DescribeLootDebugItem(candidate.Item)} " +
+                        $"[LootCommand][SupportMagazine] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                        $"weapon={DescribeLootDebugItem(weapon)} magazine={DescribeLootDebugItem(candidate.Item)} " +
                         $"result=moveRejected reason={reason}");
                     continue;
                 }
 
                 attemptedSourceItemIds.Add(candidate.Item.Id);
                 Modules.Logger.LogInfo(
-                    $"[LootCommand][SecondaryMagazine] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
-                    $"weapon={DescribeLootDebugItem(secondary)} magazine={DescribeLootDebugItem(candidate.Item)} " +
-                    $"destination={candidate.FollowUpDestination} primaryReserve={DescribeLootDebugItem(primaryReloadReserve)} " +
+                    $"[LootCommand][SupportMagazine] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                    $"weapon={DescribeLootDebugItem(weapon)} magazine={DescribeLootDebugItem(candidate.Item)} " +
+                    $"destination={candidate.FollowUpDestination} alternateReserves={DescribeReloadReserves(alternateReloadReserves)} " +
                     $"result=movePlanned");
                 return true;
             }
@@ -326,27 +404,60 @@ namespace pitTeam.BigBrain.Actions
             }
 
             Modules.Logger.LogInfo(
-                $"[LootCommand][SecondaryMagazine] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
-                $"weapon={DescribeLootDebugItem(secondary)} candidates={candidates.Count} " +
-                $"primaryReserve={DescribeLootDebugItem(primaryReloadReserve)} result=noReloadSafeFastAccessSpace");
+                $"[LootCommand][SupportMagazine] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                $"weapon={DescribeLootDebugItem(weapon)} candidates={candidates.Count} " +
+                $"alternateReserves={DescribeReloadReserves(alternateReloadReserves)} result=noReloadSafeFastAccessSpace");
             return false;
         }
 
-        private MagazineItemClass? GetPrimaryReloadReserveForSecondaryMagazinePlan(
+        private List<MagazineItemClass> GetAlternateReloadReservesForSupportMagazinePlan(
             InventoryController inventory,
-            InventoryEquipment followerEquipment)
+            InventoryEquipment followerEquipment,
+            Weapon plannedSupport)
         {
-            Weapon primary = followerEquipment
-                ?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)
-                ?.ContainedItem as Weapon;
-            if (primary == null || primary.ReloadMode != Weapon.EReloadMode.ExternalMagazine)
+            List<MagazineItemClass> reserves = new List<MagazineItemClass>();
+            foreach (EquipmentSlot slot in new[]
+                     {
+                         EquipmentSlot.FirstPrimaryWeapon,
+                         EquipmentSlot.SecondPrimaryWeapon,
+                         EquipmentSlot.Holster
+                     })
+            {
+                Weapon equipped = followerEquipment?.GetSlot(slot)?.ContainedItem as Weapon;
+                if (equipped == null || IsSameLootItem(equipped, plannedSupport))
+                {
+                    continue;
+                }
+
+                MagazineItemClass reserve = GetReloadReserveForEquippedWeapon(
+                    inventory,
+                    followerEquipment,
+                    equipped);
+                if (reserve != null)
+                {
+                    reserves.Add(reserve);
+                }
+            }
+
+            return reserves
+                .GroupBy(magazine => magazine.Id, StringComparer.Ordinal)
+                .Select(group => group.First())
+                .ToList();
+        }
+
+        private MagazineItemClass? GetReloadReserveForEquippedWeapon(
+            InventoryController inventory,
+            InventoryEquipment followerEquipment,
+            Weapon weapon)
+        {
+            if (weapon == null || weapon.ReloadMode != Weapon.EReloadMode.ExternalMagazine)
             {
                 return null;
             }
 
             WeaponPrimaryReadinessSnapshot readiness = FollowerWeaponPrimaryReadiness.EvaluateActual(
                 inventory,
-                primary);
+                weapon);
             if (readiness?.Threshold > 0 && readiness.InsertedContribution >= readiness.Threshold)
             {
                 // A high-capacity inserted magazine that satisfies readiness by itself needs no
@@ -354,7 +465,7 @@ namespace pitTeam.BigBrain.Actions
                 return null;
             }
 
-            MagazineItemClass inserted = GetCurrentMagazineSafely(primary);
+            MagazineItemClass inserted = GetCurrentMagazineSafely(weapon);
             if (inserted != null &&
                 FollowerWeaponPrimaryReadiness.HasMagazineReloadLandingSpace(
                     followerEquipment,
@@ -363,14 +474,14 @@ namespace pitTeam.BigBrain.Actions
                 return inserted;
             }
 
-            bool isLootedPrimary = InteractableObjects.IsLootedWeapon(BotOwner, primary);
+            bool isLootedWeapon = InteractableObjects.IsLootedWeapon(BotOwner, weapon);
             return GetFastAccessMagazines(followerEquipment)
                 .Where(magazine =>
                     magazine.Count > 0 &&
-                    (!isLootedPrimary ||
-                     InteractableObjects.IsApprovedLootedWeaponMagazine(BotOwner, primary, magazine)) &&
-                    IsMagazineCompatibleWithWeapon(primary, magazine) &&
-                    FollowerWeaponMagazineCompatibility.AreLoadedCartridgesCompatible(primary, magazine) &&
+                    (!isLootedWeapon ||
+                     InteractableObjects.IsApprovedLootedWeaponMagazine(BotOwner, weapon, magazine)) &&
+                    IsMagazineCompatibleWithWeapon(weapon, magazine) &&
+                    FollowerWeaponMagazineCompatibility.AreLoadedCartridgesCompatible(weapon, magazine) &&
                     FollowerWeaponPrimaryReadiness.HasMagazineReloadLandingSpace(
                         followerEquipment,
                         magazine))
@@ -378,6 +489,15 @@ namespace pitTeam.BigBrain.Actions
                 .ThenByDescending(GetMagazineLongestSide)
                 .ThenByDescending(magazine => magazine.MaxCount)
                 .FirstOrDefault();
+        }
+
+        private string DescribeReloadReserves(IEnumerable<MagazineItemClass> reserves)
+        {
+            List<string> descriptions = reserves?
+                .Where(magazine => magazine != null)
+                .Select(DescribeLootDebugItem)
+                .ToList() ?? new List<string>();
+            return descriptions.Count == 0 ? "none" : string.Join(" | ", descriptions);
         }
 
         private bool TryBuildEquippedTacticalAmmoMove(
@@ -393,7 +513,8 @@ namespace pitTeam.BigBrain.Actions
             Func<AmmoItemClass, bool>? carriedAmmoSupplyEligibility,
             Func<IEnumerable<AmmoItemClass>> carriedCartridgeFactory,
             bool allowSearchedSourceTopOff,
-            out BodyGearMove? move)
+            out BodyGearMove? move,
+            bool allowLooseAmmoCarry)
         {
             move = null;
             if (!pitFireTeam.IsLootGearSwappingEnabled() ||
@@ -424,6 +545,7 @@ namespace pitTeam.BigBrain.Actions
             if (TryBuildEquippedMagazineMaintenanceTopOffMove(
                     inventory,
                     followerEquipment,
+                    sourceRoot,
                     weapon,
                     source,
                     role,
@@ -518,6 +640,11 @@ namespace pitTeam.BigBrain.Actions
                 return true;
             }
 
+            if (!allowLooseAmmoCarry)
+            {
+                return false;
+            }
+
             MarkTacticalAmmoCandidateComplete(selected.Candidate, attemptedSourceItemIds, deferredWeapon);
             Modules.Logger.LogInfo(
                 $"[LootCommand][TacticalAmmo] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
@@ -526,62 +653,65 @@ namespace pitTeam.BigBrain.Actions
             return false;
         }
 
-        private static Weapon? GetEligibleDetachableSecondaryWeapon(
-            InventoryEquipment followerEquipment)
-        {
-            if (followerEquipment?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem is not Weapon)
-            {
-                return null;
-            }
-
-            Weapon secondary = followerEquipment
-                .GetSlot(EquipmentSlot.SecondPrimaryWeapon)
-                ?.ContainedItem as Weapon;
-            return secondary?.ReloadMode == Weapon.EReloadMode.ExternalMagazine
-                ? secondary
-                : null;
-        }
-
-        private static Weapon? GetEligibleSecondaryAmmoMaintenanceWeapon(
-            InventoryEquipment followerEquipment)
-        {
-            if (followerEquipment?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem is not Weapon)
-            {
-                return null;
-            }
-
-            Weapon secondary = followerEquipment
-                .GetSlot(EquipmentSlot.SecondPrimaryWeapon)
-                ?.ContainedItem as Weapon;
-            return secondary?.ReloadMode == Weapon.EReloadMode.ExternalMagazine ||
-                   FollowerWeaponLooseFeedReadiness.IsSupported(secondary)
-                ? secondary
-                : null;
-        }
-
-        private IEnumerable<AmmoItemClass> GetSecondaryTacticalCartridgeItems(
+        private static Weapon? GetEligibleDetachableWeaponForSlot(
             InventoryEquipment followerEquipment,
-            Weapon secondary,
+            EquipmentSlot weaponSlot)
+        {
+            if (followerEquipment?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem is not Weapon)
+            {
+                return null;
+            }
+
+            Weapon weapon = weaponSlot is EquipmentSlot.FirstPrimaryWeapon or
+                EquipmentSlot.SecondPrimaryWeapon or EquipmentSlot.Holster
+                ? followerEquipment.GetSlot(weaponSlot)?.ContainedItem as Weapon
+                : null;
+            return weapon?.ReloadMode == Weapon.EReloadMode.ExternalMagazine
+                ? weapon
+                : null;
+        }
+
+        private static Weapon? GetEligibleSupportAmmoMaintenanceWeapon(
+            InventoryEquipment followerEquipment,
+            EquipmentSlot? supportSlot = null)
+        {
+            if (followerEquipment?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem is not Weapon)
+            {
+                return null;
+            }
+
+            Weapon support = supportSlot.HasValue
+                ? followerEquipment.GetSlot(supportSlot.Value)?.ContainedItem as Weapon
+                : GetSingleSupportWeapon(followerEquipment);
+            return support?.ReloadMode == Weapon.EReloadMode.ExternalMagazine ||
+                   FollowerWeaponLooseFeedReadiness.IsSupported(support)
+                ? support
+                : null;
+        }
+
+        private IEnumerable<AmmoItemClass> GetSupportTacticalCartridgeItems(
+            InventoryEquipment followerEquipment,
+            Weapon support,
             Func<MagazineItemClass, bool>? magazineEligibility)
         {
             HashSet<string> yieldedIds = new HashSet<string>(StringComparer.Ordinal);
 
             // The inserted magazine and chamber belong to the support weapon itself.
-            foreach (AmmoItemClass ammo in SnapshotLootTreeItems(secondary).OfType<AmmoItemClass>())
+            foreach (AmmoItemClass ammo in SnapshotLootTreeItems(support).OfType<AmmoItemClass>())
             {
-                if (IsCompatibleUniqueAmmo(secondary, ammo, yieldedIds))
+                if (IsCompatibleUniqueAmmo(support, ammo, yieldedIds))
                 {
                     yield return ammo;
                 }
             }
 
-            // Reload-access supply is restricted to the magazines this secondary may actually use.
+            // Reload-access supply is restricted to the magazines this support weapon may use.
             foreach (MagazineItemClass magazine in GetFastAccessMagazines(followerEquipment)
                          .Where(magazine => magazineEligibility == null || magazineEligibility(magazine)))
             {
                 foreach (AmmoItemClass ammo in SnapshotLootTreeItems(magazine).OfType<AmmoItemClass>())
                 {
-                    if (IsCompatibleUniqueAmmo(secondary, ammo, yieldedIds))
+                    if (IsCompatibleUniqueAmmo(support, ammo, yieldedIds))
                     {
                         yield return ammo;
                     }
@@ -590,11 +720,11 @@ namespace pitTeam.BigBrain.Actions
 
             foreach (AmmoItemClass ammo in GetFollowerWeaponLooseAmmoItems(
                          followerEquipment,
-                         secondary,
+                         support,
                          includeStrictCargo: true))
             {
-                if (IsSecondaryCarriedAmmoSupplyEligible(ammo, magazineEligibility) &&
-                    IsCompatibleUniqueAmmo(secondary, ammo, yieldedIds))
+                if (IsSupportCarriedAmmoSupplyEligible(ammo, magazineEligibility) &&
+                    IsCompatibleUniqueAmmo(support, ammo, yieldedIds))
                 {
                     yield return ammo;
                 }
@@ -612,12 +742,12 @@ namespace pitTeam.BigBrain.Actions
                    FollowerWeaponLooseAmmoSupport.IsCartridgeCompatible(weapon, ammo);
         }
 
-        private static bool IsSecondaryCarriedAmmoSupplyEligible(
+        private static bool IsSupportCarriedAmmoSupplyEligible(
             AmmoItemClass ammo,
             Func<MagazineItemClass, bool>? magazineEligibility)
         {
             // Loose stacks are shared supply. Cartridges inside a magazine may be donated only
-            // when that magazine belongs to the secondary's permitted reload package.
+            // when that magazine belongs to the support weapon's permitted reload package.
             return !TryGetMagazineDonor(ammo, out MagazineItemClass? donor) ||
                    magazineEligibility == null ||
                    magazineEligibility(donor);
@@ -634,8 +764,8 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            // Primary owns first refusal. A compatible equipped secondary gets one chance to use
-            // a stack that primary left unresolved before ordinary filtered loot is suppressed.
+            // Primary owns first refusal. The one vanilla support weapon (secondary first,
+            // otherwise holster) gets one chance before ordinary filtered loot is suppressed.
             if (deferredWeapon != null &&
                 FollowerWeaponLooseAmmoSupport.IsCompatible(deferredWeapon, ammo))
             {
@@ -684,6 +814,7 @@ namespace pitTeam.BigBrain.Actions
         private bool TryBuildEquippedMagazineMaintenanceTopOffMove(
             InventoryController inventory,
             InventoryEquipment followerEquipment,
+            Item sourceRoot,
             Weapon weapon,
             IEnumerable<BodyGearCandidate> sourceCandidates,
             string role,
@@ -730,6 +861,45 @@ namespace pitTeam.BigBrain.Actions
 
             foreach (BodyGearCandidate supply in supplies)
             {
+                MagazineItemClass inserted = GetCurrentMagazineSafely(weapon);
+                if (inserted != null &&
+                    inserted.Count < inserted.MaxCount &&
+                    (fastAccessMagazineEligibility == null || fastAccessMagazineEligibility(inserted)) &&
+                    supply.Item is AmmoItemClass insertedAmmo &&
+                    CanTopOffMagazineWithAmmo(weapon, inserted, insertedAmmo))
+                {
+                    int transferCount = Math.Min(
+                        inserted.MaxCount - inserted.Count,
+                        insertedAmmo.StackObjectsCount);
+                    BodyGearCandidate topOffCandidate = supply.WithMagazineAmmoTransferContext(
+                        BodyGearFollowUpDestination.TopOffWeaponMagazine,
+                        weapon,
+                        inserted,
+                        transferCount);
+                    if (TryBuildInsertedMagazineTopOffChain(
+                            inventory,
+                            followerEquipment,
+                            sourceRoot,
+                            weapon,
+                            inserted,
+                            topOffCandidate,
+                            out move,
+                            out string insertedReason))
+                    {
+                        Modules.Logger.LogInfo(
+                            $"[LootCommand][TacticalAmmo] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                            $"role={role} weapon={DescribeLootDebugItem(weapon)} action=maintenanceTopOff " +
+                            $"target=inserted supply={(supply.ReportAsLootNothing ? "carried" : "searchedSource")} " +
+                            readiness.ToDiagnosticString());
+                        return true;
+                    }
+
+                    Modules.Logger.LogInfo(
+                        $"[LootCommand][TacticalAmmo] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                        $"role={role} weapon={DescribeLootDebugItem(weapon)} action=maintenanceTopOff " +
+                        $"target=inserted result=skip reason={insertedReason}");
+                }
+
                 if (!TryBuildEquippedCarriedMagazineLoadMove(
                         inventory,
                         followerEquipment,
