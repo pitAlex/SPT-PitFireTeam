@@ -303,7 +303,7 @@ Explicit command objectives sit above this tactic router in `FollowerCombatLogic
 
 Important policy:
 
-- Boss-distance regroup does not break active push/help/heal-style commitments.
+- Crossing the autonomous boss-distance threshold may end a passive `holdPosition`, but it does not end an active move-to-cover, push, search, shoot, suppression, retreat, heal, or other action. Those actions finish through their own end contracts; regroup is selected on the next decision pass. Ordered pushes remain distance-independent.
 - Autonomous boss-distance regroup defers briefly after recent personal contact so a follower can finish or stabilize a local fight before retreating to the boss.
 - Explicit regroup breaks ordered push; explicit push refreshes/restarts the ordered-push objective for the current target.
 - Explicit suppression is objective-owned and does not live as a Default-local router branch.
@@ -337,6 +337,8 @@ Committed push breaks for:
 Push enemy retention is refreshed during committed push so a contact/order push does not forget the enemy mid-route.
 
 Automatic unseen search rushes are also gated before activation: if the enemy anchor is far outside the boss regroup envelope, the bot should not sprint into a blind push just because a search route exists. Ordered pushes remain command-owned. Urban route protection is applied while selecting cover on Streets and Ground Zero: a candidate whose NavMesh route is a major detour compared with the direct route to that same candidate is rejected before commitment. It does not interrupt an already active push by comparing unrelated boss and movement-target distances. When unseen search is blocked while the follower is already inside the boss regroup envelope, default combat should hold the enemy lane instead of reactivating the regroup objective and immediately completing it again.
+
+Memory-only automatic search has a stricter target contract than ordinary personal-contact search. It commits a credible personal/shared last-known position rather than the hidden target's live `CurrPosition`, walks without delegating target mutation to vanilla search, and refreshes only when the same enemy receives a newer real group sighting at a meaningfully different position. Distant or positionless memory reports retain the bounded hold/regroup fallback instead of creating a blind route.
 
 ## Movement And Arrival Holds
 
@@ -508,6 +510,7 @@ Default situational behavior:
 - controlled `goToEnemy` sprint is re-evaluated against the live enemy anchor every update and drops to weapon-ready movement within `15m`, or immediately on visible/shootable contact, instead of carrying a far-route sprint commitment through the blind final approach
 - committed `attackMoving` ends on exact committed-point/cover proximity even when EFT delays `IsInCover`, then hands off to the normal arrival hold instead of remaining stationary in a completed movement action
 - combat reload holds are only emitted after a reload actually starts; active reloads retain the hold, while rejected/completed reloads use a three-second retry cooldown so visible contact cannot create start/end churn. Physical arrival within the existing committed-cover tolerance counts even while EFT's `IsInCover` flag is late, so reload retreat starts the reload instead of reissuing the already-completed cover run. If EFT left a Rifleman holding a pistol, combat first selects a usable first/second primary; when neither has push-ready loaded ammo, the selected long gun enters the same bounded reload hold before pressure can resume. No-push cover fire uses the same live visible/shootable cover-lane predicate as its action end condition, and the fallback `longGunAmmoHold` honors the bounded no-push hold window.
+- a verified standing shot from committed shooting cover uses the same raised-lane predicate for both `shootFromCover` selection and action completion. EFT's still-crouched `CanShoot` flag cannot make a valid raise-to-fire decision immediately end and restart.
 - patrol and medical actions enforce a released firearm trigger, and `ShootData.Shoot()` is rejected only when a follower has neither live core-combat ownership nor a living goal enemy; the optional SAIN follower-combat path remains exempt
 - core combat and patrol poll EFT's own 16-second magazine / 40-second loose-ammo reload watchdog so a lost reload callback cannot leave the follower permanently unable to fire
 - if too far from boss and not protected by push/help/heal, switch to regroup objective
@@ -549,6 +552,7 @@ Marksman behavior:
 - consumes ordered suppression only for the boss-selected automatic-secondary fallback; ordinary generic Marksman suppression orders remain rejected
 - initializes autonomous `autoSuppress.sniper.*` through the shared bounded suppression lifecycle, including its protected opening, shot/timeout accounting, and restart guard
 - close visible contact can end committed cover travel only after a concrete stationary-fire successor is prepared; without one, movement remains committed and retries instead of ending in hope
+- an expired marksman cover hold leaves only with an atomically committed different firing position. If no different candidate exists, the current cover remains held for another bounded retry instead of clearing and recommitting the same point; a simultaneous boss-distance break wins first and routes to regroup before fresh reposition selection
 - the Rifleman-specific exposed `shootFromPlace` return-fire lease remains default-tactic policy; Marksman static fire still uses shared fire end conditions so ordinary long-range firing lanes are not converted into nearest-cover movement without battle-record evidence
 - hands boss-distance regroup to the shared regroup objective
 

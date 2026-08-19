@@ -650,11 +650,11 @@ namespace pitTeam.BigBrain
         private AICoreActionResultStruct<BotLogicDecision, GClass26> CreateMemoryOnlyAutoSearchDecision(EnemyInfo goalEnemy)
         {
             // Memory-only contact is not authority for an assault push, but it is enough to
-            // investigate cautiously. This path cannot sprint or directly advance on the enemy.
-            AICoreActionResultStruct<BotLogicDecision, GClass26> searchDecision = combatCommon.EnemySearch(
-                "memoryOnlyAutoSearch",
-                pushOrdered: false,
-                cautious: true);
+            // investigate cautiously. The dedicated path commits a credible last-known point;
+            // it never reads the hidden enemy's live CurrPosition or delegates target refresh to
+            // vanilla search logic.
+            AICoreActionResultStruct<BotLogicDecision, GClass26> searchDecision =
+                combatCommon.CreateMemoryOnlyEnemySearchDecision(goalEnemy, "memoryOnlyAutoSearch");
             if (searchDecision.Action != BotLogicDecision.holdPosition ||
                 FollowerCombatRegroupObjective.IsRegroupActivationReason(searchDecision.Reason))
             {
@@ -664,6 +664,12 @@ namespace pitTeam.BigBrain
             // A distant/blocked cautious search has no movement to perform. Retain the bounded
             // no-cover hold so failed search selection cannot recreate the old per-frame churn.
             return CreateNoPushDecision(goalEnemy, "memoryOnlyAutoPush");
+        }
+
+        public static bool IsMemoryOnlyAutoSearchReason(string? reason)
+        {
+            return !string.IsNullOrEmpty(reason) &&
+                   reason.StartsWith("memoryOnlyAutoSearch", StringComparison.Ordinal);
         }
 
         private AICoreActionResultStruct<BotLogicDecision, GClass26> CreateNoPushDecision(EnemyInfo goalEnemy, string reasonPrefix)

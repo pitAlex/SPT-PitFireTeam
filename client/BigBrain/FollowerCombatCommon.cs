@@ -4374,34 +4374,6 @@ namespace pitTeam.BigBrain
             return true;
         }
 
-        public bool ShouldEndCurrentDecisionForBossObjective(
-            string reason,
-            EnemyInfo? goalEnemy,
-            bool shouldRegroupForBossDistance,
-            bool hasActivePushOrder = false,
-            bool hasImmediateShot = false,
-            bool allowMovingCommittedCoverBreak = false,
-            IEnumerable<string>? committedCoverReasons = null)
-        {
-            if (goalEnemy == null)
-            {
-                return false;
-            }
-
-            if (!IsBossHoldReason(reason) &&
-                !IsCommittedCoverReason(reason, committedCoverReasons ?? DefaultBossObjectiveCoverBreakReasons))
-            {
-                return false;
-            }
-
-            return ShouldBreakCommittedCoverForBossObjective(
-                goalEnemy,
-                shouldRegroupForBossDistance,
-                hasActivePushOrder,
-                hasImmediateShot,
-                allowMovingCommittedCoverBreak);
-        }
-
         public static bool IsBossDistanceProtectedCommitmentReason(string? reason)
         {
             if (string.IsNullOrEmpty(reason))
@@ -11894,8 +11866,13 @@ namespace pitTeam.BigBrain
         public AICoreActionResultStruct<BotLogicDecision, GClass26> EnemySimpleSearch(string reason = "enemySearch")
         {
             EnemyInfo? goalEnemy = botOwner.Memory.GoalEnemy;
+            return EnemySimpleSearchAt(GetEnemyAnchor(goalEnemy), reason);
+        }
 
-            Vector3 enemyAnchor = GetEnemyAnchor(goalEnemy);
+        private AICoreActionResultStruct<BotLogicDecision, GClass26> EnemySimpleSearchAt(
+            Vector3 enemyAnchor,
+            string reason)
+        {
             Vector3 searchPoint = enemyAnchor;
 
             if (NavMesh.SamplePosition(enemyAnchor, out NavMeshHit hit, 8f, -1))
@@ -11915,6 +11892,32 @@ namespace pitTeam.BigBrain
             botOwner.SearchData.Going = false;
             SetCoverTactic(BotsGroup.BotCurrentTactic.Attack);
             return new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.search, reason);
+        }
+
+        /// <summary>
+        /// Builds the cautious automatic-search response for a memory-only acquisition. Unlike the
+        /// generic search planner, this path must not use GoalEnemy.CurrPosition: EFT keeps that live
+        /// transform available even when the follower has never personally located the target.
+        /// </summary>
+        public AICoreActionResultStruct<BotLogicDecision, GClass26> CreateMemoryOnlyEnemySearchDecision(
+            EnemyInfo goalEnemy,
+            string reason)
+        {
+            if (!Utils.Enemy.TryGetReliableKnownPosition(botOwner, goalEnemy, out Vector3 knownPosition))
+            {
+                return CreateBlockedEnemySearchDecision($"{reason}.noKnownPosition");
+            }
+
+            float knownDistance = Vector3.Distance(botOwner.Position, knownPosition);
+            if (!IsUsableDistance(knownDistance) || knownDistance >= 55f)
+            {
+                return CreateBlockedEnemySearchDecision($"{reason}.farHold");
+            }
+
+            // Do not use EnemyCoverSearch here. Its shooting-cover evaluation intentionally reads
+            // the current enemy target and is therefore unsuitable for a memory-only contact.
+            string searchReason = knownDistance < 31f ? reason : $"{reason}.walk";
+            return EnemySimpleSearchAt(knownPosition, searchReason);
         }
 
         public AICoreActionResultStruct<BotLogicDecision, GClass26> EnemySearch(
@@ -16236,7 +16239,10 @@ namespace pitTeam.BigBrain
 
         public AICoreActionEndStruct EndShootFromCover()
         {
-            if (CanShootFromCurrentCover(out string cause))
+            // Selection accepts either the normal EFT cover cast or a verified standing lane from
+            // a shooting-cover commitment. End against that same contract so raising to fire cannot
+            // become a select/end loop while EFT's crouched CanShoot flag is still false.
+            if (CanShootFromCurrentCoverOrStandingIntent(out string cause))
             {
                 shootFromCoverGraceUntil = Time.time + ShootFromCoverLosFlickerGraceSeconds;
                 return Continue();

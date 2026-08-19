@@ -281,6 +281,14 @@ namespace pitTeam.BigBrain
                 return committed;
             }
 
+            // Regroup distance is a next-decision choice, never an active-action interrupt. Once a
+            // hold or movement has completed and no stronger local commitment remains, choose the
+            // regroup objective before inventing another firing-position route.
+            if (ShouldRegroupForBossDistance())
+            {
+                return Regroup(goalEnemy);
+            }
+
             if (TryGetRepositionDecision(goalEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> reposition))
             {
 
@@ -2110,17 +2118,28 @@ namespace pitTeam.BigBrain
                 return allySupportBreak;
             }
 
-            if (IsRepositionHoldExpired())
-            {
-                ClearCommittedCoverAndRepositionState();
-                return new AICoreActionEndStruct("sniperCoverHoldExpired", true);
-            }
-
             // Priority 3: when too far from boss, break hold so regroup objective can take over.
             if (ShouldBreakCommittedCoverForBossObjective(goalEnemy, allowLockedBreak: true))
             {
                 ClearCommittedCoverAndRepositionState();
                 return new AICoreActionEndStruct("sniperCoverHoldBossObjective", true);
+            }
+
+            if (IsRepositionHoldExpired())
+            {
+                // Expiry is permission to seek a different firing position, not permission to clear
+                // the current cover and immediately recommit it. End only with an atomically prepared
+                // replacement; otherwise retain this hold and retry after another bounded lifecycle.
+                if (TryGetRepositionHoldOpportunityDecision(goalEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> expiredReposition) &&
+                    TryPrepareBreakDecision(expiredReposition, false, true))
+                {
+                    return new AICoreActionEndStruct("sniperCoverHoldExpiredReposition", true);
+                }
+
+                repositionPhase.StartCooldown(RepositionCooldownSeconds);
+                repositionPhase.BeginHoldLifecycle(FireSupportSettleSeconds, RepositionHoldTimeoutSeconds);
+                CombatCommon.HoldCoverForMaxDuration();
+                return FollowerCombatCommon.Continue();
             }
 
             // Note: baseHoldPosition end-timeout uses EndBaseHoldPosition which respects EFT-level hold gates.

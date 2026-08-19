@@ -2408,8 +2408,8 @@ namespace pitTeam.BigBrain
         }
 
         /// <summary>
-        /// Sticky cover movement can otherwise keep feeding the same committed cover even after the
-        /// boss line changed enough to make regroup the real objective.
+        /// Cover movement remains owned by its movement end contract. Autonomous regroup distance
+        /// is evaluated only after the move finishes; it must not cancel an active route.
         /// </summary>
         private AICoreActionEndStruct EndCoverMoveOrAttackMoving(
             AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision)
@@ -2428,16 +2428,6 @@ namespace pitTeam.BigBrain
                 combatCommon.ClearCommittedCover();
                 ClearCoverIntent();
                 return new AICoreActionEndStruct("bossUnderAttackBreakCoverMove", true);
-            }
-
-            if (!isHealMove &&
-                !isRecoveryMove &&
-                ShouldEndCurrentDecisionForBossObjective(currentDecision.Reason, allowMovingCommittedCoverBreak: true))
-            {
-                combatCommon.ClearCommittedMovement();
-                combatCommon.ClearCommittedCover();
-                ClearCoverIntent();
-                return new AICoreActionEndStruct("bossObjectiveBreakCoverMove", true);
             }
 
             AICoreActionEndStruct result = combatCommon.ShallEndCurrentDecision(currentDecision);
@@ -2511,8 +2501,8 @@ namespace pitTeam.BigBrain
         }
 
         /// <summary>
-        /// Shooting from cover remains sticky while the shot is valid, so it needs the same regroup
-        /// objective escape hatch as coverHold/bossHold.
+        /// Shooting from cover remains sticky while its fire contract is valid. Autonomous regroup
+        /// distance is evaluated after firing ends and cannot interrupt the shot action itself.
         /// </summary>
         private AICoreActionEndStruct EndShootFromCover(string reason)
         {
@@ -2522,13 +2512,6 @@ namespace pitTeam.BigBrain
                 combatCommon.ClearCommittedCover();
                 ClearCoverIntent();
                 return new AICoreActionEndStruct("bossUnderAttackBreakShootCover", true);
-            }
-
-            if (goalEnemy != null && ShouldBreakCommittedCoverForBossObjective(goalEnemy))
-            {
-                combatCommon.ClearCommittedCover();
-                ClearCoverIntent();
-                return new AICoreActionEndStruct("bossObjectiveBreakShootCover", true);
             }
 
             return combatCommon.EndShootFromCover();
@@ -3085,18 +3068,6 @@ namespace pitTeam.BigBrain
             }
 
             return shouldBreak;
-        }
-
-        private bool ShouldEndCurrentDecisionForBossObjective(string reason, bool allowMovingCommittedCoverBreak = false)
-        {
-            EnemyInfo? goalEnemy = botOwner.Memory.GoalEnemy;
-            return combatCommon.ShouldEndCurrentDecisionForBossObjective(
-                reason,
-                goalEnemy,
-                ShouldRegroupForBossDistance(),
-                HasActivePushOrder(),
-                goalEnemy != null && goalEnemy.IsVisible && goalEnemy.CanShoot,
-                allowMovingCommittedCoverBreak);
         }
 
         private void UpdateShootCoverSettleState(AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision)
