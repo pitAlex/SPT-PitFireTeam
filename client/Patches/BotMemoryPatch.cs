@@ -69,10 +69,10 @@ namespace pitTeam.Patches
             {
                 BotOwner botOwner = AccessTools.Field(typeof(BotMemoryClass), "BotOwner_0").GetValue(__instance) as BotOwner;
                 EnemyInfo previous = __instance.GoalEnemy;
+                string reason = FollowerGoalEnemyTracker.CurrentReason;
 
                 if (value != null)
                 {
-                    string reason = FollowerGoalEnemyTracker.CurrentReason;
                     if (ShouldBlockUnscopedMemoryOnlyGoal(botOwner, value, reason, out string? acquisitionBlockedReason))
                     {
                         FollowerGoalEnemyTracker.RecordSetter(
@@ -115,12 +115,25 @@ namespace pitTeam.Patches
                 }
 
                 bool shouldBlockClear = FollowerContactEnemyRetention.ShouldBlockGoalEnemyClear(botOwner, previous);
+                string? clearBlockedReason = shouldBlockClear ? "retentionBlockedClear" : null;
+                if (!shouldBlockClear &&
+                    previous != null &&
+                    string.Equals(reason, "unscopedSetter", System.StringComparison.Ordinal) &&
+                    SainGoalEnemyBridge.TryGetRetainedSameGoalEnemy(
+                        botOwner,
+                        previous,
+                        out _))
+                {
+                    shouldBlockClear = true;
+                    clearBlockedReason = "sainRetainedSameTarget";
+                }
+
                 FollowerGoalEnemyTracker.RecordSetter(
                     botOwner,
                     previous,
                     null,
                     allowed: !shouldBlockClear,
-                    blockedReason: shouldBlockClear ? "retentionBlockedClear" : null);
+                    blockedReason: clearBlockedReason);
                 return !shouldBlockClear;
             }
             catch (System.Exception e)

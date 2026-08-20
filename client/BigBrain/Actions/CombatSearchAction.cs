@@ -46,7 +46,7 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            if (FollowerCombatPush.IsMemoryOnlyAutoSearchReason(reason))
+            if (FollowerCombatPush.IsMemoryOnlySearchReason(reason))
             {
                 UpdateMemoryOnlySearch(reason!);
                 return;

@@ -63,10 +63,8 @@ namespace pitTeam.BigBrain
 
         public override void Reset()
         {
-            ReleaseDestinationClaim();
-            currentTarget = Vector3.zero;
+            ClearCurrentTarget();
             bossSectorAnchor = Vector3.zero;
-            hasTarget = false;
             hasBossSectorAnchor = false;
             complete = false;
             committedRegroupAction = default;
@@ -86,7 +84,7 @@ namespace pitTeam.BigBrain
 
         public override void Deactivate()
         {
-            ReleaseDestinationClaim();
+            ClearCurrentTarget();
             ClearCommittedRegroupMove();
             complete = false;
         }
@@ -200,8 +198,13 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEndStruct("regroupArrivedSettled", true);
             }
 
-            if (HasReachedBoss(CombatCommon.GetBossPosition()))
+            // This is completion of the already-active regroup objective, not activation pressure
+            // interrupting an unrelated combat action. Any regroup-owned move may finish once the
+            // follower reaches the boss; ordinary tactic movement still keeps its own end contract.
+            if (IsRegroupReason(currentDecision.Reason) &&
+                HasReachedBoss(CombatCommon.GetBossPosition()))
             {
+                ClearCurrentTarget();
                 ClearCommittedRegroupMove();
                 if (arrivedSettleUntil <= 0f)
                 {
@@ -831,9 +834,31 @@ namespace pitTeam.BigBrain
 
         private void ClearCurrentTarget()
         {
+            ClearOwnedGoToPointTarget();
             ReleaseDestinationClaim();
             currentTarget = Vector3.zero;
             hasTarget = false;
+        }
+
+        private void ClearOwnedGoToPointTarget()
+        {
+            BotGoToPointData? pointData = BotOwner.GoToSomePointData;
+            if (!hasTarget ||
+                pointData == null ||
+                !pointData.HaveTarget() ||
+                !FollowerCombatCommon.IsFinite(pointData.Point) ||
+                (pointData.Point - currentTarget).sqrMagnitude > 1f)
+            {
+                return;
+            }
+
+            // Clear only the point still matching this objective's local target. If a successor
+            // has already installed another destination, leave that newer owner untouched.
+            pointData.Point = Vector3.zero;
+            pointData.PointhRefreshed = false;
+            pointData.DistToPoint = 0f;
+            pointData.LastPosibleRecalc = 0f;
+            pointData.LastRecalc = Vector3.zero;
         }
 
         private Vector3 GetFallbackBossDestination(Vector3 bossPosition)

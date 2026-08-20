@@ -13,6 +13,8 @@ namespace pitTeam.BigBrain
         private const string HealPendingReason = "objectivePush.healPending";
         private const string PressureRecoveryReasonPrefix = "objectivePush.pressureRecovery";
         private const float PressureRecoverySeconds = 3f;
+        private const float SainRetainedCloseSearchDistance = 15f;
+        private const float SainRetainedSearchHoldSeconds = 1.25f;
 
         private readonly FollowerCombatPush combatPush;
         private bool complete;
@@ -146,6 +148,18 @@ namespace pitTeam.BigBrain
                 return pressureHoldDecision;
             }
 
+            // With the external SAIN mod installed, EFT's mirror can retain only a memory-only
+            // target while SAIN still owns an exact last-known point. At close range, investigate
+            // that point instead of advancing against the hidden live transform. The objective and
+            // ordered kill target remain active throughout the bounded search/hold phase.
+            if (TryGetSainRetainedCloseSearchDecision(
+                    orderedEnemy,
+                    out AICoreActionResultStruct<BotLogicDecision, GClass26> retainedSearchDecision))
+            {
+                combatPush.ClearCommittedPush("orderedPushSainRetainedSearch");
+                return retainedSearchDecision;
+            }
+
             if (combatPush.TryGetCommittedPushDecision(
                     orderedEnemy,
                     out AICoreActionResultStruct<BotLogicDecision, GClass26> committedPush))
@@ -182,6 +196,14 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEndStruct(rejectReason, true);
             }
 
+            if (currentDecision.Action == BotLogicDecision.shootFromPlace &&
+                CombatCommon.TryPrepareExposedFireRecoveryBreak(
+                    currentDecision,
+                    out AICoreActionEndStruct recoveryBreak))
+            {
+                return recoveryBreak;
+            }
+
             if (currentDecision.Action == BotLogicDecision.holdPosition)
             {
                 if (FollowerCombatCommon.IsWeaponPreparationHoldReason(currentDecision.Reason))
@@ -205,6 +227,14 @@ namespace pitTeam.BigBrain
                 return EndPressureRecovery(currentDecision, orderedEnemy);
             }
 
+            if (TryPrepareSainRetainedSearchBreak(
+                    currentDecision,
+                    orderedEnemy,
+                    out AICoreActionEndStruct retainedSearchBreak))
+            {
+                return retainedSearchBreak;
+            }
+
             if (combatPush.IsPushCommittedDecision(currentDecision))
             {
                 AICoreActionEndStruct pushEnd = combatPush.EndCommittedPush(currentDecision);
@@ -217,6 +247,53 @@ namespace pitTeam.BigBrain
             }
 
             return CombatCommon.ShallEndCurrentDecision(currentDecision);
+        }
+
+        private bool TryGetSainRetainedCloseSearchDecision(
+            EnemyInfo orderedEnemy,
+            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        {
+            if (!CombatCommon.TryCreateSainRetainedCloseMemorySearchDecision(
+                    orderedEnemy,
+                    SainRetainedCloseSearchDistance,
+                    "push.ordered.memorySearch",
+                    out decision))
+            {
+                return false;
+            }
+
+            if (decision.Action == BotLogicDecision.holdPosition)
+            {
+                CombatCommon.HoldFor(SainRetainedSearchHoldSeconds);
+            }
+
+            return true;
+        }
+
+        private bool TryPrepareSainRetainedSearchBreak(
+            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision,
+            EnemyInfo orderedEnemy,
+            out AICoreActionEndStruct end)
+        {
+            end = FollowerCombatCommon.Continue();
+            if ((currentDecision.Action != BotLogicDecision.runToEnemy &&
+                 currentDecision.Action != BotLogicDecision.goToEnemy) ||
+                currentDecision.Reason?.StartsWith("push.ordered.", StringComparison.Ordinal) != true ||
+                !TryGetSainRetainedCloseSearchDecision(
+                    orderedEnemy,
+                    out AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision) ||
+                nextDecision.Action != BotLogicDecision.search ||
+                !CombatCommon.TryPrepareDecisionTransition(
+                    currentDecision,
+                    "orderedPushSainRetainedSearch",
+                    nextDecision))
+            {
+                return false;
+            }
+
+            combatPush.ClearCommittedPush("orderedPushSainRetainedSearch");
+            end = new AICoreActionEndStruct("orderedPushSainRetainedSearch", true);
+            return true;
         }
 
         private AICoreActionEndStruct EndHealPendingHold(EnemyInfo orderedEnemy)

@@ -37,10 +37,6 @@ namespace pitTeam.BigBrain
         private const float AutomaticSecondaryRecentSeenHoldSeconds = 2.25f;
         private const float HoldPositionLocalSupportMaxNavDistance = 28f;
         private const float HoldPositionLocalSupportRetryCooldownSeconds = 2f;
-        private const float ExposedFirePointBlankDistance = 8f;
-        private const float ExposedFireNoReturnLeaseSeconds = 0.55f;
-        private const float ExposedFireReturnedLeaseSeconds = 0.9f;
-        private const float ExposedFireRecoveryRetrySeconds = 0.35f;
 
         private enum CoverIntentKind
         {
@@ -78,12 +74,6 @@ namespace pitTeam.BigBrain
         private bool shotgunAutomaticSecondaryLatched;
         private bool shotgunAutomaticSecondaryDisabledForFight;
         private bool ownsAutomaticSecondarySwitch;
-        private string exposedFireEnemyProfileId = string.Empty;
-        private string exposedFireDecisionReason = string.Empty;
-        private float exposedFireStartedAt;
-        private float exposedFireInitialTriggerPressedAt;
-        private int exposedFireInitialDamageRevision;
-        private float exposedFireRecoveryRetryAt;
 
         private struct BossSupportRetrySignature
         {
@@ -139,7 +129,6 @@ namespace pitTeam.BigBrain
             preparedHoldPositionSupportDecision = null;
             holdReactionDamageRevision = FollowerAwareness.GetDamageRevision(botOwner);
             combatCommon.ResetRecoveryNoCoverCommitment();
-            ResetExposedFireLease();
             if (!combatCommon.HasActiveCombatEnemy())
             {
                 shotgunAutomaticSecondaryLatched = false;
@@ -167,7 +156,6 @@ namespace pitTeam.BigBrain
             UpdateShootCoverSettleState(nextDecision);
             combatPush.HandleDecisionChanged(nextDecision);
             combatCommon.UpdateRecoveryNoCoverCommitment(nextDecision);
-            UpdateExposedFireLease(nextDecision);
 
             if (nextDecision.Action == BotLogicDecision.holdPosition &&
                 IsCoverHoldReason(nextDecision.Reason))
@@ -378,9 +366,9 @@ namespace pitTeam.BigBrain
                 return preparedCloseCoverFight;
             }
 
-            // Exposed static fire and failed-cover holds only release after their end conditions
-            // prepare an actual recovery move. Consume that handoff before ordinary routing can
-            // recreate the prior decision.
+            // Failed-cover holds release only after their end conditions prepare an actual recovery
+            // move. Exposed static fire uses the shared transition channel and is consumed by the
+            // combat logic before this tactic router runs.
             if (TryGetPreparedRecoveryDecision(
                     out AICoreActionResultStruct<BotLogicDecision, GClass26> preparedRecovery))
             {
@@ -1081,7 +1069,9 @@ namespace pitTeam.BigBrain
             if (combatCommon.IsInFight(currentDecision.Action))
             {
                 if (currentDecision.Action == BotLogicDecision.shootFromPlace &&
-                    TryPrepareExposedFireRecoveryBreak(currentDecision, out AICoreActionEndStruct recoveryBreak))
+                    combatCommon.TryPrepareExposedFireRecoveryBreak(
+                        currentDecision,
+                        out AICoreActionEndStruct recoveryBreak))
                 {
                     return recoveryBreak;
                 }
@@ -2225,112 +2215,6 @@ namespace pitTeam.BigBrain
             combatCommon.ClearCommittedCover("recoveryExposedFightPrepared");
             ClearCoverIntent();
             end = new AICoreActionEndStruct("recoveryExposedFightPrepared", true);
-            return true;
-        }
-
-        private void UpdateExposedFireLease(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision)
-        {
-            if (nextDecision.Action != BotLogicDecision.shootFromPlace)
-            {
-                ResetExposedFireLease();
-                return;
-            }
-
-            exposedFireEnemyProfileId = botOwner.Memory?.GoalEnemy?.ProfileId ?? string.Empty;
-            exposedFireDecisionReason = nextDecision.Reason ?? string.Empty;
-            exposedFireStartedAt = Time.time;
-            exposedFireInitialTriggerPressedAt = botOwner.ShootData?.LastTriggerPressd ?? 0f;
-            exposedFireInitialDamageRevision = FollowerAwareness.GetDamageRevision(botOwner);
-            exposedFireRecoveryRetryAt = 0f;
-        }
-
-        private void ResetExposedFireLease()
-        {
-            exposedFireEnemyProfileId = string.Empty;
-            exposedFireDecisionReason = string.Empty;
-            exposedFireStartedAt = 0f;
-            exposedFireInitialTriggerPressedAt = 0f;
-            exposedFireInitialDamageRevision = 0;
-            exposedFireRecoveryRetryAt = 0f;
-        }
-
-        private bool TryPrepareExposedFireRecoveryBreak(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision,
-            out AICoreActionEndStruct end)
-        {
-            end = FollowerCombatCommon.Continue();
-            if (FollowerCombatCommon.IsRecoveryNoCoverReason(currentDecision.Reason) ||
-                FollowerCombatCommon.IsGrenadeLauncherCombatReason(currentDecision.Reason))
-            {
-                return false;
-            }
-
-            EnemyInfo? goalEnemy = botOwner.Memory?.GoalEnemy;
-            if (!combatCommon.HasActiveCombatEnemy(goalEnemy) ||
-                goalEnemy == null ||
-                botOwner.Memory.IsInCover ||
-                !goalEnemy.IsVisible ||
-                !goalEnemy.CanShoot ||
-                goalEnemy.Distance <= ExposedFirePointBlankDistance ||
-                !botOwner.IsEnemyLookingAtMe(goalEnemy))
-            {
-                return false;
-            }
-
-            string enemyProfileId = goalEnemy.ProfileId ?? string.Empty;
-            string decisionReason = currentDecision.Reason ?? string.Empty;
-            if (exposedFireStartedAt <= 0f ||
-                !string.Equals(exposedFireEnemyProfileId, enemyProfileId, StringComparison.Ordinal) ||
-                !string.Equals(exposedFireDecisionReason, decisionReason, StringComparison.Ordinal))
-            {
-                UpdateExposedFireLease(currentDecision);
-                return false;
-            }
-
-            bool freshDamage = FollowerAwareness.GetDamageRevision(botOwner) != exposedFireInitialDamageRevision;
-            float lastTriggerPressedAt = botOwner.ShootData?.LastTriggerPressd ?? 0f;
-            bool returnedFire = lastTriggerPressedAt > exposedFireInitialTriggerPressedAt + 0.001f;
-            float leaseSeconds = returnedFire
-                ? ExposedFireReturnedLeaseSeconds
-                : ExposedFireNoReturnLeaseSeconds;
-            if (!freshDamage && Time.time - exposedFireStartedAt < leaseSeconds)
-            {
-                return false;
-            }
-
-            if (Time.time < exposedFireRecoveryRetryAt)
-            {
-                return false;
-            }
-
-            // Cover selection can be comparatively expensive. A failed scan leaves the current fire
-            // action intact and retries at a bounded cadence instead of iterating every decision tick.
-            exposedFireRecoveryRetryAt = Time.time + ExposedFireRecoveryRetrySeconds;
-            if (!TryGetRecoverDecision(
-                    goalEnemy,
-                    out AICoreActionResultStruct<BotLogicDecision, GClass26> recoveryDecision,
-                    forceRecovery: true,
-                    allowPointBlankFightThrough: false) ||
-                !FollowerCombatCommon.IsMovementDecision(recoveryDecision))
-            {
-                return false;
-            }
-
-            preparedRecoveryDecision = recoveryDecision;
-            string breakReason = freshDamage
-                ? "exposedFireFreshDamageRecovery"
-                : returnedFire
-                    ? "exposedFireLeaseRecovery"
-                    : "exposedFireNoReturnRecovery";
-            BattleRecorder.RecordCommitmentEvent(
-                botOwner,
-                "exposedFire",
-                "prepareRecovery",
-                breakReason,
-                recoveryDecision,
-                untilTime: exposedFireStartedAt + leaseSeconds);
-            end = new AICoreActionEndStruct(breakReason, true);
             return true;
         }
 

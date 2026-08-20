@@ -784,9 +784,9 @@ Core behavior:
   - marksman holds
   - base combat hold
 - Heal-related relocation is protected and can defer the command until the command expires or movement finishes.
-- On consume, `FollowerCombatCommon.TryCreateBossCoverAttackMovingDecision(...)` finds boss-local cover using `CombatDistanceConfiguration.GetBossCoverSearchRadius()`.
+- On consume, `FollowerCombatCommon.TryCreateBossCoverAttackMovingDecision(...)` finds boss-local cover using `CombatDistanceConfiguration.GetBossCoverSearchRadius()`. A selected cover must bring the follower at least one meter closer to the boss than its current position; if no qualifying cover exists, the command uses the direct boss-approach fallback instead of moving sideways or away.
 - The decision is forced to `BotLogicDecision.attackMoving` because the action expects a cover point.
-- If no valid boss-local cover exists, the follower says `Negative` and plays `NoGesture`.
+- If neither a qualifying boss-local cover nor a valid direct boss-approach path exists, the follower says `Negative` and plays `NoGesture`.
 
 ### Combat There
 

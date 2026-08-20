@@ -82,6 +82,12 @@ namespace pitTeam.BigBrain
         private const float DogFightOpeningCommitmentSeconds = 1f;
         private const float DecisionTransitionMaxAgeSeconds = 2f;
         private const float FailedDecisionTransitionRetrySeconds = 1f;
+        private const float ExposedFirePointBlankDistance = 8f;
+        private const float ExposedFireNoReturnLeaseSeconds = 0.55f;
+        private const float ExposedFireReturnedLeaseSeconds = 0.9f;
+        private const float ExposedFireRecoveryRetrySeconds = 0.35f;
+        private const float MemoryOnlySearchArrivalDistanceSqr = 4f;
+        private const float MemoryOnlySearchRefreshDistanceSqr = 4f;
         private const float TargetHandoffScanDurationSeconds = 0.4f;
         private const float TargetHandoffProbeIntervalSeconds = 0.1f;
         private const float TargetHandoffRecentPersonalContactSeconds = 3f;
@@ -119,6 +125,8 @@ namespace pitTeam.BigBrain
         private const float ReloadRetreatAmmoRatio = 0.25f;
         private const int ReloadRetreatMinMagazineAmmo = 5;
         private const float CombatReloadRetryCooldownSeconds = 3f;
+        private const float CombatLongGunReloadRejectedCooldownSeconds = 30f;
+        private const float CombatLongGunReloadTransitionSeconds = 0.25f;
         private const int PushLongGunMinLoadedRounds = 10;
         private const int PushShotgunMinLoadedRounds = 6;
         private const int AutomaticSecondaryMaxPenetrationDeficit = 15;
@@ -134,6 +142,7 @@ namespace pitTeam.BigBrain
         private const float RetreatCommittedCoverHoldSeconds = 3.5f;
         private const float ShootCommittedCoverHoldSeconds = 2.5f;
         private const float BossCommittedCoverHoldSeconds = 3f;
+        private const float CombatComeBossCoverMinimumProgress = 1f;
         private const float DefaultCommittedPositionHoldSeconds = 1.25f;
         private const float HealingCommittedHoldSeconds = 12f;
         private const float DefaultFireWhileMovingPushVisibleBreakSeconds = 0.6f;
@@ -224,7 +233,11 @@ namespace pitTeam.BigBrain
         private float stimStartedAt;
         private float nextCombatHealWorkRefreshAt;
         private float combatReloadRetryAt;
+        private float combatLongGunReloadRetryAt;
+        private float combatLongGunSwitchRetryAt;
         private EquipmentSlot? pendingCombatLongGunReloadSlot;
+        private readonly Dictionary<EquipmentSlot, CombatLongGunReloadFailureState> combatLongGunReloadFailures =
+            new Dictionary<EquipmentSlot, CombatLongGunReloadFailureState>();
         private CustomNavigationPoint? committedHealCover;
         private Vector3 committedHealPoint;
         private bool hasCommittedHealPoint;
@@ -327,6 +340,16 @@ namespace pitTeam.BigBrain
         private float runToEnemyBlockedUntil;
         private PreparedCombatDecisionTransition? preparedDecisionTransition;
         private DeferredCombatDecisionTransition? deferredDecisionTransition;
+        private string exposedFireEnemyProfileId = string.Empty;
+        private string exposedFireDecisionReason = string.Empty;
+        private float exposedFireStartedAt;
+        private float exposedFireInitialTriggerPressedAt;
+        private int exposedFireInitialDamageRevision;
+        private float exposedFireRecoveryRetryAt;
+        private string completedMemorySearchEnemyProfileId = string.Empty;
+        private Vector3 completedMemorySearchPoint;
+        private float completedMemorySearchReportTime;
+        private bool hasCompletedMemorySearch;
         private readonly List<TargetHandoffCandidate> targetHandoffCandidates = new List<TargetHandoffCandidate>(TargetHandoffMaxCandidates);
         private readonly List<Vector3> noEnemyRecoverySecondaryThreatPoints = new List<Vector3>(NoEnemyRecoverySecondaryThreatMaxCount);
         private bool targetHandoffScanActive;
@@ -456,6 +479,27 @@ namespace pitTeam.BigBrain
             Safe,
             Tactical,
             Emergency
+        }
+
+        private enum PreparedLongGunReloadStartResult
+        {
+            Started,
+            Deferred,
+            Rejected
+        }
+
+        private readonly struct CombatLongGunReloadFailureState
+        {
+            public CombatLongGunReloadFailureState(string weaponId, int loadedRounds, float retryAt)
+            {
+                WeaponId = weaponId;
+                LoadedRounds = loadedRounds;
+                RetryAt = retryAt;
+            }
+
+            public string WeaponId { get; }
+            public int LoadedRounds { get; }
+            public float RetryAt { get; }
         }
 
         public enum AutoPushWeaponThreatPolicy
@@ -592,7 +636,10 @@ namespace pitTeam.BigBrain
             stimStartedAt = 0f;
             nextCombatHealWorkRefreshAt = 0f;
             combatReloadRetryAt = 0f;
+            combatLongGunReloadRetryAt = 0f;
+            combatLongGunSwitchRetryAt = 0f;
             pendingCombatLongGunReloadSlot = null;
+            combatLongGunReloadFailures.Clear();
             committedHealCover = null;
             committedHealPoint = Vector3.zero;
             hasCommittedHealPoint = false;
@@ -634,6 +681,8 @@ namespace pitTeam.BigBrain
             pointBlankDogFightContactLostAt = 0f;
             runToEnemyBlockedUntil = 0f;
             ClearDecisionTransition();
+            ResetExposedFireLease();
+            ClearCompletedMemorySearch();
             ClearTargetHandoffScan("combatReset");
             targetHandoffRetryBlockedUntil = 0f;
             failedTargetHandoffSignature = 0;
@@ -681,6 +730,7 @@ namespace pitTeam.BigBrain
 
         public void HandleSharedDecisionChanged(AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision)
         {
+            UpdateExposedFireLease(nextDecision);
             BotLogicDecision action = nextDecision.Action;
             if (action != BotLogicDecision.shootFromStationary &&
                 action != BotLogicDecision.debugStationary &&
@@ -2588,6 +2638,12 @@ namespace pitTeam.BigBrain
                    IsReasonOrSubreason(reason, "moveToHealPoint");
         }
 
+        private static bool IsMedicalCombatFallbackReason(string? reason)
+        {
+            return !string.IsNullOrEmpty(reason) &&
+                   reason.StartsWith("healRetreat", StringComparison.Ordinal);
+        }
+
         /// <summary>
         /// Classifies the decision's tactical intent, not only the BigBrain action that executes it.
         /// Generic movement actions can be medical retreat phases and must retain medical end routing.
@@ -2597,7 +2653,8 @@ namespace pitTeam.BigBrain
         {
             return decision.Action == BotLogicDecision.heal ||
                    decision.Action == BotLogicDecision.healStimulators ||
-                   IsMedicalRetreatMovementReason(decision.Reason);
+                   IsMedicalRetreatMovementReason(decision.Reason) ||
+                   IsMedicalCombatFallbackReason(decision.Reason);
         }
 
         public bool IsInFight(BotLogicDecision decision)
@@ -9568,6 +9625,119 @@ namespace pitTeam.BigBrain
             return true;
         }
 
+        public bool TryPrepareExposedFireRecoveryBreak(
+            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision,
+            out AICoreActionEndStruct end)
+        {
+            end = Continue();
+            if (currentDecision.Action != BotLogicDecision.shootFromPlace ||
+                IsRecoveryNoCoverReason(currentDecision.Reason) ||
+                IsGrenadeLauncherCombatReason(currentDecision.Reason))
+            {
+                return false;
+            }
+
+            EnemyInfo? goalEnemy = botOwner.Memory?.GoalEnemy;
+            if (!HasActiveCombatEnemy(goalEnemy) ||
+                goalEnemy == null ||
+                botOwner.Memory.IsInCover ||
+                !goalEnemy.IsVisible ||
+                !goalEnemy.CanShoot ||
+                goalEnemy.Distance <= ExposedFirePointBlankDistance)
+            {
+                return false;
+            }
+
+            string enemyProfileId = goalEnemy.ProfileId ?? string.Empty;
+            string decisionReason = currentDecision.Reason ?? string.Empty;
+            if (exposedFireStartedAt <= 0f ||
+                !string.Equals(exposedFireEnemyProfileId, enemyProfileId, StringComparison.Ordinal) ||
+                !string.Equals(exposedFireDecisionReason, decisionReason, StringComparison.Ordinal))
+            {
+                UpdateExposedFireLease(currentDecision);
+                return false;
+            }
+
+            bool freshDamage = FollowerAwareness.GetDamageRevision(botOwner) != exposedFireInitialDamageRevision;
+            if (!freshDamage && !botOwner.IsEnemyLookingAtMe(goalEnemy))
+            {
+                return false;
+            }
+
+            float lastTriggerPressedAt = botOwner.ShootData?.LastTriggerPressd ?? 0f;
+            bool returnedFire = lastTriggerPressedAt > exposedFireInitialTriggerPressedAt + 0.001f;
+            float leaseSeconds = returnedFire
+                ? ExposedFireReturnedLeaseSeconds
+                : ExposedFireNoReturnLeaseSeconds;
+            if (!freshDamage && Time.time - exposedFireStartedAt < leaseSeconds)
+            {
+                return false;
+            }
+
+            if (Time.time < exposedFireRecoveryRetryAt)
+            {
+                return false;
+            }
+
+            // A failed cover pass must preserve the current fire action. Retry at a bounded cadence
+            // and end only after the shared recovery contract has produced actual movement.
+            exposedFireRecoveryRetryAt = Time.time + ExposedFireRecoveryRetrySeconds;
+            if (!TryGetCommittedRecoveryDecision(
+                    goalEnemy,
+                    out AICoreActionResultStruct<BotLogicDecision, GClass26> recoveryDecision) ||
+                !IsMovementDecision(recoveryDecision))
+            {
+                return false;
+            }
+
+            string breakReason = freshDamage
+                ? "exposedFireFreshDamageRecovery"
+                : returnedFire
+                    ? "exposedFireLeaseRecovery"
+                    : "exposedFireNoReturnRecovery";
+            if (!TryPrepareDecisionTransition(currentDecision, breakReason, recoveryDecision))
+            {
+                return false;
+            }
+
+            BattleRecorder.RecordCommitmentEvent(
+                botOwner,
+                "exposedFire",
+                "prepareRecovery",
+                breakReason,
+                recoveryDecision,
+                untilTime: exposedFireStartedAt + leaseSeconds);
+            end = new AICoreActionEndStruct(breakReason, true);
+            return true;
+        }
+
+        private void UpdateExposedFireLease(
+            AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision)
+        {
+            if (nextDecision.Action != BotLogicDecision.shootFromPlace)
+            {
+                ResetExposedFireLease();
+                return;
+            }
+
+            exposedFireEnemyProfileId = botOwner.Memory?.GoalEnemy?.ProfileId ?? string.Empty;
+            exposedFireDecisionReason = nextDecision.Reason ?? string.Empty;
+            exposedFireStartedAt = Time.time;
+            exposedFireInitialTriggerPressedAt = botOwner.ShootData?.LastTriggerPressd ?? 0f;
+            exposedFireInitialDamageRevision = FollowerAwareness.GetDamageRevision(botOwner);
+            exposedFireRecoveryRetryAt = 0f;
+        }
+
+        private void ResetExposedFireLease()
+        {
+            exposedFireEnemyProfileId = string.Empty;
+            exposedFireDecisionReason = string.Empty;
+            exposedFireStartedAt = 0f;
+            exposedFireInitialTriggerPressedAt = 0f;
+            exposedFireInitialDamageRevision = 0;
+            exposedFireRecoveryRetryAt = 0f;
+        }
+
         private void PrepareDecisionTransition(
             AICoreActionResultStruct<BotLogicDecision, GClass26> sourceDecision,
             string endReason,
@@ -9824,22 +9994,38 @@ namespace pitTeam.BigBrain
 
                 if (HasPushReadyAmmo(pendingWeapon))
                 {
+                    ClearCombatLongGunReloadFailure(pendingSlot);
                     pendingCombatLongGunReloadSlot = null;
                     return false;
                 }
 
-                if (weaponManager.Reload?.Reloading == true || TryStartCombatReload())
+                PreparedLongGunReloadStartResult reloadStart = TryStartPreparedLongGunReload();
+                if (reloadStart == PreparedLongGunReloadStartResult.Started)
                 {
+                    ClearCombatLongGunReloadFailure(pendingSlot);
                     decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
                         BotLogicDecision.holdPosition,
                         "reloadLongGun");
                     return true;
                 }
 
-                // Keep the ordered objective stationary while EFT's weapon/reload controller is
-                // temporarily unavailable. The retry timer prevents selector/reload churn.
-                DeferCombatReloadRetry();
-                decision = CreateWeaponPreparationHold("weaponPrepareLongGun.reloadWait");
+                if (reloadStart == PreparedLongGunReloadStartResult.Deferred)
+                {
+                    // Hands/controller readiness can briefly lag after a slot change. Keep this
+                    // exact slot pending and retry after a bounded wait without selecting another
+                    // weapon or treating the transient state as missing ammunition.
+                    DeferCombatLongGunReloadRetry();
+                    decision = CreateWeaponPreparationHold("weaponPrepareLongGun.reloadWait");
+                    return true;
+                }
+
+                // A settled long gun which cannot produce a real reload is not a reason to call
+                // BotReload.TryReload(): vanilla turns that failure into a weapon-selection
+                // fallback. Block this exact weapon/ammo state, then let another long gun qualify.
+                BlockCombatLongGunReload(pendingSlot, pendingWeapon);
+                pendingCombatLongGunReloadSlot = null;
+                combatLongGunReloadRetryAt = Time.time + CombatLongGunReloadTransitionSeconds;
+                decision = CreateWeaponPreparationHold("weaponPrepareLongGun.reloadRejected");
                 return true;
             }
 
@@ -9876,6 +10062,7 @@ namespace pitTeam.BigBrain
                     return false;
                 }
 
+                combatLongGunReloadRetryAt = GetCombatLongGunReloadRetryAt();
                 decision = CreateWeaponPreparationHold("weaponPrepareLongGun.noneAvailable");
                 return true;
             }
@@ -9939,9 +10126,71 @@ namespace pitTeam.BigBrain
 
         public AICoreActionEndStruct EndWeaponPreparationHold(string? reason)
         {
-            BotWeaponSelector? selector = botOwner.WeaponManager?.Selector;
+            EnemyInfo? goalEnemy = botOwner.Memory?.GoalEnemy;
+            if (!HasActiveCombatEnemy(goalEnemy))
+            {
+                pendingCombatLongGunReloadSlot = null;
+                return new AICoreActionEndStruct("weaponPrepareLongGun.enemyMissing", true);
+            }
+
+            if (ShouldPreserveLoadedWeaponFire(goalEnemy))
+            {
+                pendingCombatLongGunReloadSlot = null;
+                return new AICoreActionEndStruct("weaponPrepareLongGun.loadedFire", true);
+            }
+
+            BotWeaponManager? weaponManager = botOwner.WeaponManager;
+            BotWeaponSelector? selector = weaponManager?.Selector;
+            if (weaponManager == null || selector == null)
+            {
+                pendingCombatLongGunReloadSlot = null;
+                return new AICoreActionEndStruct("weaponPrepareLongGun.weaponManagerMissing", true);
+            }
+
             if (selector?.IsChanging == true || selector?.IsWeaponReady == false ||
-                botOwner.WeaponManager?.IsWeaponReady == false)
+                weaponManager?.IsWeaponReady == false)
+            {
+                return Continue();
+            }
+
+            if (pendingCombatLongGunReloadSlot.HasValue)
+            {
+                EquipmentSlot pendingSlot = pendingCombatLongGunReloadSlot.Value;
+                Weapon? pendingWeapon = GetLongGunInSlot(botOwner, pendingSlot);
+                Weapon? activeWeapon = weaponManager?.ShootController?.Item ?? weaponManager?.CurrentWeapon;
+                if (pendingWeapon == null)
+                {
+                    pendingCombatLongGunReloadSlot = null;
+                }
+                else if (!IsSameWeapon(activeWeapon, pendingWeapon))
+                {
+                    if (selector != null && Time.time >= combatLongGunSwitchRetryAt)
+                    {
+                        selector.TryChangeToSlot(
+                            pendingSlot,
+                            pendingSlot == EquipmentSlot.FirstPrimaryWeapon);
+                        combatLongGunSwitchRetryAt = Time.time + CombatLongGunReloadTransitionSeconds;
+                    }
+
+                    return Continue();
+                }
+            }
+
+            bool retryBoundHold = string.Equals(
+                                      reason,
+                                      "weaponPrepareLongGun.reloadWait",
+                                      StringComparison.Ordinal) ||
+                                  string.Equals(
+                                      reason,
+                                      "weaponPrepareLongGun.reloadRejected",
+                                      StringComparison.Ordinal) ||
+                                  string.Equals(
+                                      reason,
+                                      "weaponPrepareLongGun.noneAvailable",
+                                      StringComparison.Ordinal);
+            if (retryBoundHold &&
+                !RefreshCombatLongGunReloadFailures() &&
+                Time.time < combatLongGunReloadRetryAt)
             {
                 return Continue();
             }
@@ -9999,7 +10248,7 @@ namespace pitTeam.BigBrain
             return false;
         }
 
-        private static bool TryGetReloadableCombatLongGun(
+        private bool TryGetReloadableCombatLongGun(
             BotOwner? owner,
             out Weapon? weapon,
             out EquipmentSlot slot)
@@ -10008,28 +10257,36 @@ namespace pitTeam.BigBrain
             Weapon? secondPrimary = GetSecondPrimaryWeapon(owner);
             Weapon? activeWeapon = owner?.WeaponManager?.ShootController?.Item ??
                                    owner?.WeaponManager?.CurrentWeapon;
-            if (IsSameWeapon(activeWeapon, firstPrimary) && !IsGrenadeLauncherWeapon(firstPrimary))
+            if (IsSameWeapon(activeWeapon, firstPrimary) &&
+                !IsGrenadeLauncherWeapon(firstPrimary) &&
+                !IsCombatLongGunReloadBlocked(EquipmentSlot.FirstPrimaryWeapon, firstPrimary))
             {
                 weapon = firstPrimary;
                 slot = EquipmentSlot.FirstPrimaryWeapon;
                 return true;
             }
 
-            if (IsSameWeapon(activeWeapon, secondPrimary) && !IsGrenadeLauncherWeapon(secondPrimary))
+            if (IsSameWeapon(activeWeapon, secondPrimary) &&
+                !IsGrenadeLauncherWeapon(secondPrimary) &&
+                !IsCombatLongGunReloadBlocked(EquipmentSlot.SecondPrimaryWeapon, secondPrimary))
             {
                 weapon = secondPrimary;
                 slot = EquipmentSlot.SecondPrimaryWeapon;
                 return true;
             }
 
-            if (firstPrimary != null && !IsGrenadeLauncherWeapon(firstPrimary))
+            if (firstPrimary != null &&
+                !IsGrenadeLauncherWeapon(firstPrimary) &&
+                !IsCombatLongGunReloadBlocked(EquipmentSlot.FirstPrimaryWeapon, firstPrimary))
             {
                 weapon = firstPrimary;
                 slot = EquipmentSlot.FirstPrimaryWeapon;
                 return true;
             }
 
-            if (secondPrimary != null && !IsGrenadeLauncherWeapon(secondPrimary))
+            if (secondPrimary != null &&
+                !IsGrenadeLauncherWeapon(secondPrimary) &&
+                !IsCombatLongGunReloadBlocked(EquipmentSlot.SecondPrimaryWeapon, secondPrimary))
             {
                 weapon = secondPrimary;
                 slot = EquipmentSlot.SecondPrimaryWeapon;
@@ -10082,6 +10339,85 @@ namespace pitTeam.BigBrain
             }
 
             return selector.TryChangeToSlot(slot, false);
+        }
+
+        private void BlockCombatLongGunReload(EquipmentSlot slot, Weapon weapon)
+        {
+            combatLongGunReloadFailures[slot] = new CombatLongGunReloadFailureState(
+                weapon.Id,
+                CountLoadedRounds(weapon),
+                Time.time + CombatLongGunReloadRejectedCooldownSeconds);
+        }
+
+        private void ClearCombatLongGunReloadFailure(EquipmentSlot slot)
+        {
+            combatLongGunReloadFailures.Remove(slot);
+        }
+
+        private bool IsCombatLongGunReloadBlocked(EquipmentSlot slot, Weapon? weapon)
+        {
+            if (weapon == null ||
+                !combatLongGunReloadFailures.TryGetValue(slot, out CombatLongGunReloadFailureState failure))
+            {
+                return false;
+            }
+
+            if (!string.Equals(failure.WeaponId, weapon.Id, StringComparison.Ordinal) ||
+                failure.LoadedRounds != CountLoadedRounds(weapon) ||
+                Time.time >= failure.RetryAt)
+            {
+                combatLongGunReloadFailures.Remove(slot);
+                return false;
+            }
+
+            return true;
+        }
+
+        private bool RefreshCombatLongGunReloadFailures()
+        {
+            bool changed = false;
+            changed |= RefreshCombatLongGunReloadFailure(
+                EquipmentSlot.FirstPrimaryWeapon,
+                GetFirstPrimaryWeapon(botOwner));
+            changed |= RefreshCombatLongGunReloadFailure(
+                EquipmentSlot.SecondPrimaryWeapon,
+                GetSecondPrimaryWeapon(botOwner));
+            return changed;
+        }
+
+        private bool RefreshCombatLongGunReloadFailure(EquipmentSlot slot, Weapon? weapon)
+        {
+            if (!combatLongGunReloadFailures.TryGetValue(slot, out CombatLongGunReloadFailureState failure))
+            {
+                return false;
+            }
+
+            if (weapon != null &&
+                string.Equals(failure.WeaponId, weapon.Id, StringComparison.Ordinal) &&
+                failure.LoadedRounds == CountLoadedRounds(weapon) &&
+                Time.time < failure.RetryAt)
+            {
+                return false;
+            }
+
+            combatLongGunReloadFailures.Remove(slot);
+            return true;
+        }
+
+        private float GetCombatLongGunReloadRetryAt()
+        {
+            float retryAt = float.MaxValue;
+            foreach (CombatLongGunReloadFailureState failure in combatLongGunReloadFailures.Values)
+            {
+                if (failure.RetryAt > Time.time && failure.RetryAt < retryAt)
+                {
+                    retryAt = failure.RetryAt;
+                }
+            }
+
+            return retryAt < float.MaxValue
+                ? retryAt
+                : Time.time + CombatReloadRetryCooldownSeconds;
         }
 
         public bool TryGetReloadRetreatDecision(
@@ -10317,6 +10653,39 @@ namespace pitTeam.BigBrain
             return reload.TryReload();
         }
 
+        private PreparedLongGunReloadStartResult TryStartPreparedLongGunReload()
+        {
+            BotWeaponManager? weaponManager = botOwner.WeaponManager;
+            BotReload? reload = weaponManager?.Reload;
+            if (weaponManager == null || reload == null)
+            {
+                return PreparedLongGunReloadStartResult.Deferred;
+            }
+
+            if (reload.Reloading)
+            {
+                return PreparedLongGunReloadStartResult.Started;
+            }
+
+            if (weaponManager.ShootController?.CanStartReload() != true)
+            {
+                return PreparedLongGunReloadStartResult.Deferred;
+            }
+
+            // TryReload() owns a fallback which selects another weapon when no reload resource is
+            // found. This combat transaction already owns a specific primary slot, so prove the
+            // reload first and invoke Reload() directly to keep a rejection from becoming a swap.
+            if (!reload.CanReload(false))
+            {
+                return PreparedLongGunReloadStartResult.Rejected;
+            }
+
+            reload.Reload();
+            return reload.Reloading
+                ? PreparedLongGunReloadStartResult.Started
+                : PreparedLongGunReloadStartResult.Deferred;
+        }
+
         public static bool IsReloadHoldReason(string? reason)
         {
             return string.Equals(reason, "reloadInCover", StringComparison.Ordinal) ||
@@ -10343,6 +10712,11 @@ namespace pitTeam.BigBrain
         private void DeferCombatReloadRetry()
         {
             combatReloadRetryAt = Time.time + CombatReloadRetryCooldownSeconds;
+        }
+
+        private void DeferCombatLongGunReloadRetry()
+        {
+            combatLongGunReloadRetryAt = Time.time + CombatReloadRetryCooldownSeconds;
         }
 
         public bool TryPrepareCloseVisibleDogFightDecision(EnemyInfo? goalEnemy, string reason)
@@ -11661,7 +12035,20 @@ namespace pitTeam.BigBrain
         /// </summary>
         public bool TryFindBossCover(EnemyInfo goalEnemy, Vector3 bossPosition, float searchRadius, out CustomNavigationPoint? cover)
         {
+            return TryFindBossCover(goalEnemy, bossPosition, searchRadius, null, out cover);
+        }
+
+        private bool TryFindBossCover(
+            EnemyInfo goalEnemy,
+            Vector3 bossPosition,
+            float searchRadius,
+            float? maxBossDistance,
+            out CustomNavigationPoint? cover)
+        {
             float searchRadiusSqr = searchRadius * searchRadius;
+            float maxBossDistanceSqr = maxBossDistance.HasValue
+                ? maxBossDistance.Value * maxBossDistance.Value
+                : float.PositiveInfinity;
             Vector3 enemyAnchor = GetEnemyAnchor(goalEnemy);
             CoverSearchType searchType = SetCoverTacticAndGetSearchType(
                 BotsGroup.BotCurrentTactic.Protect,
@@ -11680,7 +12067,8 @@ namespace pitTeam.BigBrain
                         return false;
                     }
 
-                    if ((point.Position - bossPosition).sqrMagnitude > searchRadiusSqr)
+                    float bossDistanceSqr = (point.Position - bossPosition).sqrMagnitude;
+                    if (bossDistanceSqr > searchRadiusSqr || bossDistanceSqr > maxBossDistanceSqr)
                     {
                         return false;
                     }
@@ -11903,21 +12291,144 @@ namespace pitTeam.BigBrain
             EnemyInfo goalEnemy,
             string reason)
         {
-            if (!Utils.Enemy.TryGetReliableKnownPosition(botOwner, goalEnemy, out Vector3 knownPosition))
+            if (Utils.Enemy.TryGetReliableKnownPosition(botOwner, goalEnemy, out Vector3 knownPosition))
             {
-                return CreateBlockedEnemySearchDecision($"{reason}.noKnownPosition");
+                float reportTime = goalEnemy.GroupInfo?.EnemyLastSeenTimeReal ?? 0f;
+                return CreateMemoryOnlyEnemySearchDecisionAt(
+                    goalEnemy,
+                    knownPosition,
+                    reportTime,
+                    reason,
+                    allowRegroupFallback: true);
+            }
+
+            // The external SAIN mod retains its own exact GoalEnemy and last-known position while
+            // EFT's mirrored EnemyInfo can temporarily have no usable position. Treat that point as
+            // search memory only: it does not create an enemy, sight, aim permission, or fire permission.
+            if (SainGoalEnemyBridge.TryGetRetainedSameGoalEnemy(botOwner, goalEnemy, out knownPosition))
+            {
+                return CreateMemoryOnlyEnemySearchDecisionAt(
+                    goalEnemy,
+                    knownPosition,
+                    Time.time,
+                    reason,
+                    allowRegroupFallback: true);
+            }
+
+            return CreateBlockedEnemySearchDecision($"{reason}.noKnownPosition");
+        }
+
+        public bool TryCreateSainRetainedCloseMemorySearchDecision(
+            EnemyInfo goalEnemy,
+            float maxDistance,
+            string reason,
+            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        {
+            decision = default;
+            if (goalEnemy == null ||
+                goalEnemy.IsVisible ||
+                goalEnemy.CanShoot ||
+                !Utils.Enemy.IsMemoryOnlyAcquisitionWithoutPersonalContact(goalEnemy) ||
+                !SainGoalEnemyBridge.TryGetRetainedSameGoalEnemy(
+                    botOwner,
+                    goalEnemy,
+                    out Vector3 knownPosition))
+            {
+                return false;
+            }
+
+            float distance = Vector3.Distance(botOwner.Position, knownPosition);
+            if (!IsUsableDistance(distance) || distance > maxDistance)
+            {
+                return false;
+            }
+
+            decision = CreateMemoryOnlyEnemySearchDecisionAt(
+                goalEnemy,
+                knownPosition,
+                Time.time,
+                reason,
+                allowRegroupFallback: false);
+            return true;
+        }
+
+        private AICoreActionResultStruct<BotLogicDecision, GClass26> CreateMemoryOnlyEnemySearchDecisionAt(
+            EnemyInfo goalEnemy,
+            Vector3 knownPosition,
+            float reportTime,
+            string reason,
+            bool allowRegroupFallback)
+        {
+            if (IsCompletedMemorySearchUnchanged(goalEnemy, knownPosition, reportTime))
+            {
+                return CreateBlockedEnemySearchDecision($"{reason}.completed", allowRegroupFallback);
+            }
+
+            Vector3 toKnownPosition = knownPosition - botOwner.Position;
+            if (toKnownPosition.y < botOwner.Settings.FileSettings.Move.Y_APPROXIMATION)
+            {
+                toKnownPosition.y = 0f;
+            }
+
+            if (toKnownPosition.sqrMagnitude < MemoryOnlySearchArrivalDistanceSqr)
+            {
+                MarkMemorySearchCompleted(goalEnemy, knownPosition, reportTime, reason);
+                return CreateBlockedEnemySearchDecision($"{reason}.completed", allowRegroupFallback);
             }
 
             float knownDistance = Vector3.Distance(botOwner.Position, knownPosition);
             if (!IsUsableDistance(knownDistance) || knownDistance >= 55f)
             {
-                return CreateBlockedEnemySearchDecision($"{reason}.farHold");
+                return CreateBlockedEnemySearchDecision($"{reason}.farHold", allowRegroupFallback);
             }
 
             // Do not use EnemyCoverSearch here. Its shooting-cover evaluation intentionally reads
             // the current enemy target and is therefore unsuitable for a memory-only contact.
             string searchReason = knownDistance < 31f ? reason : $"{reason}.walk";
             return EnemySimpleSearchAt(knownPosition, searchReason);
+        }
+
+        private bool IsCompletedMemorySearchUnchanged(
+            EnemyInfo goalEnemy,
+            Vector3 knownPosition,
+            float reportTime)
+        {
+            if (!hasCompletedMemorySearch ||
+                !string.Equals(completedMemorySearchEnemyProfileId, goalEnemy.ProfileId, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            bool hasNewerReport = reportTime > completedMemorySearchReportTime + 0.001f;
+            bool hasMateriallyMoved = (knownPosition - completedMemorySearchPoint).sqrMagnitude >=
+                                      MemoryOnlySearchRefreshDistanceSqr;
+            return !hasNewerReport || !hasMateriallyMoved;
+        }
+
+        private void MarkMemorySearchCompleted(
+            EnemyInfo goalEnemy,
+            Vector3 knownPosition,
+            float reportTime,
+            string reason)
+        {
+            completedMemorySearchEnemyProfileId = goalEnemy.ProfileId ?? string.Empty;
+            completedMemorySearchPoint = knownPosition;
+            completedMemorySearchReportTime = reportTime;
+            hasCompletedMemorySearch = true;
+            BattleRecorder.RecordCommitmentEvent(
+                botOwner,
+                "memorySearch",
+                "complete",
+                reason,
+                target: knownPosition);
+        }
+
+        private void ClearCompletedMemorySearch()
+        {
+            completedMemorySearchEnemyProfileId = string.Empty;
+            completedMemorySearchPoint = Vector3.zero;
+            completedMemorySearchReportTime = 0f;
+            hasCompletedMemorySearch = false;
         }
 
         public AICoreActionResultStruct<BotLogicDecision, GClass26> EnemySearch(
@@ -11984,9 +12495,11 @@ namespace pitTeam.BigBrain
             return CreateBlockedEnemySearchDecision($"{reason}.farHold");
         }
 
-        private AICoreActionResultStruct<BotLogicDecision, GClass26> CreateBlockedEnemySearchDecision(string reason)
+        private AICoreActionResultStruct<BotLogicDecision, GClass26> CreateBlockedEnemySearchDecision(
+            string reason,
+            bool allowRegroupFallback = true)
         {
-            if (IsWithinBossRegroupTriggerDistance())
+            if (!allowRegroupFallback || IsWithinBossRegroupTriggerDistance())
             {
                 return new AICoreActionResultStruct<BotLogicDecision, GClass26>(
                     BotLogicDecision.holdPosition,
@@ -12183,7 +12696,16 @@ namespace pitTeam.BigBrain
             ClearCommittedMovement();
 
             Vector3 bossPosition = GetBossPosition();
-            if (!TryFindBossCover(goalEnemy, bossPosition, searchRadius, out CustomNavigationPoint? bossCover) ||
+            float currentBossDistance = Vector3.Distance(botOwner.Position, bossPosition);
+            float maxComeCoverBossDistance = Mathf.Max(
+                0f,
+                currentBossDistance - CombatComeBossCoverMinimumProgress);
+            if (!TryFindBossCover(
+                    goalEnemy,
+                    bossPosition,
+                    searchRadius,
+                    maxComeCoverBossDistance,
+                    out CustomNavigationPoint? bossCover) ||
                 !IsCoverUsable(bossCover, true))
             {
                 if (!TryGetBossApproachFallbackPoint(bossPosition, out Vector3 fallbackPoint))

@@ -666,10 +666,11 @@ namespace pitTeam.BigBrain
             return CreateNoPushDecision(goalEnemy, "memoryOnlyAutoPush");
         }
 
-        public static bool IsMemoryOnlyAutoSearchReason(string? reason)
+        public static bool IsMemoryOnlySearchReason(string? reason)
         {
             return !string.IsNullOrEmpty(reason) &&
-                   reason.StartsWith("memoryOnlyAutoSearch", StringComparison.Ordinal);
+                   (reason.StartsWith("memoryOnlyAutoSearch", StringComparison.Ordinal) ||
+                    reason.StartsWith("push.ordered.memorySearch", StringComparison.Ordinal));
         }
 
         private AICoreActionResultStruct<BotLogicDecision, GClass26> CreateNoPushDecision(EnemyInfo goalEnemy, string reasonPrefix)

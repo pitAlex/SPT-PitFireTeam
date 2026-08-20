@@ -642,6 +642,7 @@ namespace pitTeam.BigBrain
                 return;
             }
 
+            DeactivateRegroupForObjectiveSwitch(followerData);
             followerData.ClearCommand("CombatObjective:ConsumePush");
             DeactivateGrenadierForObjectiveSwitch("switch.orderedPush");
             followerData.ActivateOrderedPushTargetLock(goalEnemy);
@@ -683,6 +684,7 @@ namespace pitTeam.BigBrain
                 return;
             }
 
+            DeactivateRegroupForObjectiveSwitch(followerData);
             Vector3 suppressTarget = Vector3.zero;
             bool suppressRequiresLauncher = false;
             bool suppressForceWeapon = false;
@@ -762,6 +764,7 @@ namespace pitTeam.BigBrain
                 return;
             }
 
+            DeactivateRegroupForObjectiveSwitch(followerData);
             followerData.ClearCommand("CombatObjective:ConsumeNeedSniper");
             DeactivateGrenadierForObjectiveSwitch("switch.needSniper");
             if (currentObjective != CombatObjectiveKind.NeedSniper)
@@ -777,6 +780,7 @@ namespace pitTeam.BigBrain
             string reason,
             CombatObjectiveKind? resumeObjective = null)
         {
+            DeactivateRegroupForObjectiveSwitch(BossPlayers.Instance?.GetFollower(BotOwner));
             grenadierObjective.Activate(ordered);
             grenadierResumeObjective = resumeObjective;
             currentObjective = CombatObjectiveKind.Grenadier;
@@ -791,6 +795,17 @@ namespace pitTeam.BigBrain
             }
 
             grenadierResumeObjective = null;
+        }
+
+        private void DeactivateRegroupForObjectiveSwitch(BotFollowerPlayer? followerData)
+        {
+            if (currentObjective != CombatObjectiveKind.Regroup)
+            {
+                return;
+            }
+
+            regroupObjective.Deactivate();
+            followerData?.SetCombatRegroupBossAnchor(false);
         }
 
         private bool TryActivateFirstPrimaryGrenadier(EnemyInfo goalEnemy)
