@@ -81,6 +81,8 @@ namespace pitTeam.Utils
 
         private float _statusReportUntil;
         private float _enemyKilledMarkerUntil;
+        private float _nextAutoCombatRosterRefreshTime;
+        private bool _autoCombatMarkerActive;
 
         private float nextUpdateTime;
 
@@ -128,6 +130,7 @@ namespace pitTeam.Utils
         private const float StatusReportNormalDistanceMeters = 12f;
         private const float FallbackHeadTopOffsetMeters = 0.18f;
         private const float AlwaysHighlightRosterRefreshSeconds = 1f;
+        private const float AutoCombatRosterRefreshSeconds = 1f;
         private bool locationPing = false;
         private float _nextAlwaysHighlightRosterUpdateTime;
         private bool _alwaysHighlightWasActive;
@@ -141,44 +144,19 @@ namespace pitTeam.Utils
             bool statusReportWasActive = _statusReportUntil > now;
             bool killedMarkerWasActive = IsEnemyKilledMarkerDisplayActive(now);
             _statusReportUntil = now + pitFireTeam.pingTime.Value;
-            _enemyKilledMarkerUntil = IsEnemyKilledMarkerEnabled()
-                ? now + (pitFireTeam.enemyKilledDisplayTime?.Value ?? 10)
+            int killedMarkerDisplaySeconds = GetEnemyKilledMarkerDisplaySeconds();
+            _enemyKilledMarkerUntil = killedMarkerDisplaySeconds > 0
+                ? now + killedMarkerDisplaySeconds
                 : 0f;
 
             locationPing = false;
 
             List<Components.BotFollowerPlayer> followers = BossPlayers.GetFollowersByBoss(player.realPlayer.ProfileId);
 
-            myPlayer = player.realPlayer;
-
-            botMap.Clear();
+            RefreshFollowerRoster(player.realPlayer, followers);
             if (!statusReportWasActive && !killedMarkerWasActive)
             {
                 ClearEnemyMarkerContacts();
-            }
-
-            foreach (Components.BotFollowerPlayer fl in followers)
-            {
-                BotOwner bot = fl?.GetBot();
-                if (bot == null || bot.IsDead)
-                {
-                    continue;
-                }
-
-                string profileId = bot.ProfileId;
-                if (string.IsNullOrEmpty(profileId))
-                {
-                    continue;
-                }
-
-                if (!botDataCache.TryGetValue(profileId, out BotData botData))
-                {
-                    botData = new BotData();
-                    botDataCache[profileId] = botData;
-                }
-
-                botData.SetData(bot);
-                botMap.Add(botData);
             }
 
             if (killedMarkerWasActive)
@@ -186,7 +164,7 @@ namespace pitTeam.Utils
                 ExtendDisplayedEnemyKilledMarkers();
             }
 
-            SynchronizeEnemyMarkerContacts();
+            SynchronizeEnemyMarkerContacts(IsAutomaticCombatMarkerEnabled());
             if (IsEnemyKilledMarkerDisplayActive(now))
             {
                 AddRetainedEnemyDownContacts();
@@ -319,12 +297,14 @@ namespace pitTeam.Utils
 
         public void Update()
         {
+            float now = Time.time;
             if (!IsEnemyKilledMarkerEnabled())
             {
                 _enemyKilledMarkerUntil = 0f;
                 retainedEnemyDownByProfileId.Clear();
             }
 
+            bool automaticCombatTrackingEnabled = IsAutomaticCombatMarkerEnabled();
             bool highlightEnabled = pitFireTeam.statusReportHighlight?.Value != false;
             bool alwaysHighlightActive =
                 highlightEnabled &&
@@ -346,11 +326,11 @@ namespace pitTeam.Utils
 
             if (!highlightRebuildPending &&
                 alwaysHighlightActive &&
-                (!_alwaysHighlightWasActive || Time.time >= _nextAlwaysHighlightRosterUpdateTime))
+                (!_alwaysHighlightWasActive || now >= _nextAlwaysHighlightRosterUpdateTime))
             {
                 _alwaysHighlightRosterReady = RefreshAlwaysHighlightRoster();
                 _nextAlwaysHighlightRosterUpdateTime =
-                    Time.time + AlwaysHighlightRosterRefreshSeconds;
+                    now + AlwaysHighlightRosterRefreshSeconds;
             }
             else if (!alwaysHighlightActive)
             {
@@ -359,10 +339,20 @@ namespace pitTeam.Utils
 
             _alwaysHighlightWasActive = alwaysHighlightActive;
 
+            if (automaticCombatTrackingEnabled && now >= _nextAutoCombatRosterRefreshTime)
+            {
+                RefreshCurrentFollowerRoster();
+                _nextAutoCombatRosterRefreshTime = now + AutoCombatRosterRefreshSeconds;
+            }
+            else if (!automaticCombatTrackingEnabled)
+            {
+                _nextAutoCombatRosterRefreshTime = 0f;
+            }
+
             if (botMap.Count > 0)
             {
-                _statusReportVisible = _statusReportUntil > Time.time;
-                if (!_statusReportVisible && !alwaysHighlightActive)
+                _statusReportVisible = _statusReportUntil > now;
+                if (!_statusReportVisible && !alwaysHighlightActive && !automaticCombatTrackingEnabled)
                 {
                     botMap.Clear();
                 }
@@ -372,21 +362,24 @@ namespace pitTeam.Utils
                 _statusReportVisible = false;
             }
 
-            bool killedMarkerDisplayActive = IsEnemyKilledMarkerDisplayActive(Time.time);
-            if (_statusReportVisible)
+            bool killedMarkerDisplayActive = IsEnemyKilledMarkerDisplayActive(now);
+            _autoCombatMarkerActive = false;
+            if (_statusReportVisible || automaticCombatTrackingEnabled)
             {
-                SynchronizeEnemyMarkerContacts();
+                bool hasCurrentEnemy = SynchronizeEnemyMarkerContacts(automaticCombatTrackingEnabled);
+                _autoCombatMarkerActive = automaticCombatTrackingEnabled && hasCurrentEnemy;
                 RefreshEnemyMarkerContacts(removeUnresolved: false, captureHiddenPosition: false);
             }
 
-            if (!_statusReportVisible && !killedMarkerDisplayActive)
+            bool liveEnemyMarkerDisplayActive = IsLiveEnemyMarkerDisplayActive();
+            if (!liveEnemyMarkerDisplayActive && !killedMarkerDisplayActive)
             {
                 ClearEnemyMarkerContacts();
             }
-            else if (!_statusReportVisible || !killedMarkerDisplayActive)
+            else if (!liveEnemyMarkerDisplayActive || !killedMarkerDisplayActive)
             {
                 PruneEnemyMarkerContacts(
-                    keepLiveContacts: _statusReportVisible,
+                    keepLiveContacts: liveEnemyMarkerDisplayActive,
                     keepRetainedDeaths: killedMarkerDisplayActive);
             }
 
@@ -412,6 +405,17 @@ namespace pitTeam.Utils
 
         private bool RefreshAlwaysHighlightRoster()
         {
+            if (!RefreshCurrentFollowerRoster())
+            {
+                return false;
+            }
+
+            _teammateHighlight.Show(botMap, myPlayer);
+            return true;
+        }
+
+        private bool RefreshCurrentFollowerRoster()
+        {
             Player localPlayer = GamePlayerOwner.MyPlayer;
             pitAIBossPlayer boss =
                 localPlayer != null
@@ -424,9 +428,27 @@ namespace pitTeam.Utils
                 return false;
             }
 
-            myPlayer = localPlayer;
             List<Components.BotFollowerPlayer> followers =
                 BossPlayers.GetFollowersByBoss(localPlayer.ProfileId);
+            return RefreshFollowerRoster(localPlayer, followers);
+        }
+
+        private bool RefreshFollowerRoster(
+            Player localPlayer,
+            List<Components.BotFollowerPlayer> followers)
+        {
+            botMap.Clear();
+            if (localPlayer == null)
+            {
+                return false;
+            }
+
+            myPlayer = localPlayer;
+            if (followers == null)
+            {
+                return true;
+            }
+
             for (int i = 0; i < followers.Count; i++)
             {
                 BotOwner bot = followers[i]?.GetBot();
@@ -439,24 +461,20 @@ namespace pitTeam.Utils
                 {
                     botData = new BotData();
                     botDataCache[bot.ProfileId] = botData;
-                    botData.SetData(bot);
-                }
-                else if (!ReferenceEquals(botData.Data, bot))
-                {
-                    botData.SetData(bot);
                 }
 
+                botData.SetData(bot);
                 botMap.Add(botData);
             }
 
-            _teammateHighlight.Show(botMap, myPlayer);
             return true;
         }
 
         void OnGUI()
         {
             bool killedMarkerDisplayActive = IsEnemyKilledMarkerDisplayActive(Time.time);
-            if (!_statusReportVisible && !killedMarkerDisplayActive) return;
+            bool liveEnemyMarkerDisplayActive = IsLiveEnemyMarkerDisplayActive();
+            if (!liveEnemyMarkerDisplayActive && !killedMarkerDisplayActive) return;
 
             if (guiStyle == null)
             {
@@ -473,7 +491,7 @@ namespace pitTeam.Utils
                 }
             }
 
-            if ((_statusReportVisible && pitFireTeam.enemyMarker.Value) ||
+            if ((liveEnemyMarkerDisplayActive && pitFireTeam.enemyMarker.Value) ||
                 killedMarkerDisplayActive)
             {
                 for (int i = 0; i < enemyMarkers.Count; i++)
@@ -715,7 +733,7 @@ namespace pitTeam.Utils
                     return;
                 }
             }
-            else if (!_statusReportVisible || pitFireTeam.enemyMarker?.Value == false)
+            else if (!IsLiveEnemyMarkerDisplayActive() || pitFireTeam.enemyMarker?.Value == false)
             {
                 return;
             }
@@ -764,11 +782,30 @@ namespace pitTeam.Utils
             enemyMarkers.Clear();
             enemyMarkersByProfileId.Clear();
             activeEnemyProfileIds.Clear();
+            _autoCombatMarkerActive = false;
+        }
+
+        private static bool IsAutomaticCombatMarkerEnabled()
+        {
+            return pitFireTeam.enemyMarker?.Value != false &&
+                   pitFireTeam.autoDisplayCombatStatus?.Value == true;
+        }
+
+        private bool IsLiveEnemyMarkerDisplayActive()
+        {
+            return _statusReportVisible || _autoCombatMarkerActive;
         }
 
         private static bool IsEnemyKilledMarkerEnabled()
         {
             return (pitFireTeam.enemyKilledRetainTime?.Value ?? 15) > 0;
+        }
+
+        private static int GetEnemyKilledMarkerDisplaySeconds()
+        {
+            int displayTimeSeconds = pitFireTeam.enemyKilledDisplayTime?.Value ?? 10;
+            int rememberTimeSeconds = pitFireTeam.enemyKilledRetainTime?.Value ?? 15;
+            return Mathf.Max(0, Mathf.Min(displayTimeSeconds, rememberTimeSeconds));
         }
 
         private bool IsEnemyKilledMarkerDisplayActive(float now)
@@ -860,12 +897,14 @@ namespace pitTeam.Utils
             instance.retainedEnemyDownByProfileId[victim.ProfileId] =
                 new RetainedEnemyDownContact(deathPosition, now);
 
-            // Promote the currently displayed contact immediately. Otherwise the follower can
-            // clear GoalEnemy before Update(), causing synchronization to remove the marker until
-            // the player requests another Status Report.
-            if (wasTrackedLiveEnemy)
+            // A displayed live contact always transitions immediately. The optional automatic
+            // killed-marker path also opens the display when no Status Report marker was active.
+            bool shouldOpenKilledMarkerDisplay =
+                wasTrackedLiveEnemy ||
+                pitFireTeam.autoDisplayKillMarker?.Value == true;
+            if (shouldOpenKilledMarkerDisplay)
             {
-                int displayTimeSeconds = pitFireTeam.enemyKilledDisplayTime?.Value ?? 10;
+                int displayTimeSeconds = GetEnemyKilledMarkerDisplaySeconds();
                 instance._enemyKilledMarkerUntil = Mathf.Max(
                     instance._enemyKilledMarkerUntil,
                     now + displayTimeSeconds);
@@ -961,7 +1000,8 @@ namespace pitTeam.Utils
                 }
 
                 contact.WorldPosition = retained.Value.WorldPosition;
-                contact.UntilTime = _enemyKilledMarkerUntil;
+                float rememberUntil = retained.Value.RecordedAt + retainTimeSeconds;
+                contact.UntilTime = Mathf.Min(_enemyKilledMarkerUntil, rememberUntil);
                 contact.HasCapturedPosition = true;
                 contact.IsVisible = false;
                 contact.IsRetainedDeath = true;
@@ -976,13 +1016,25 @@ namespace pitTeam.Utils
 
             for (int i = 0; i < expiredProfileIds.Count; i++)
             {
-                retainedEnemyDownByProfileId.Remove(expiredProfileIds[i]);
+                string profileId = expiredProfileIds[i];
+                retainedEnemyDownByProfileId.Remove(profileId);
+                if (enemyMarkersByProfileId.TryGetValue(
+                        profileId,
+                        out EnemyMarkerContact expiredContact) &&
+                    expiredContact.IsRetainedDeath)
+                {
+                    enemyMarkersByProfileId.Remove(profileId);
+                    enemyMarkers.Remove(expiredContact);
+                }
             }
         }
 
-        private void SynchronizeEnemyMarkerContacts()
+        private bool SynchronizeEnemyMarkerContacts(bool keepAliveForAutomaticCombat)
         {
             activeEnemyProfileIds.Clear();
+            float liveContactUntil = keepAliveForAutomaticCombat
+                ? float.MaxValue
+                : _statusReportUntil;
             for (int i = 0; i < botMap.Count; i++)
             {
                 BotOwner? follower = botMap[i]?.Data;
@@ -1001,14 +1053,14 @@ namespace pitTeam.Utils
                 {
                     if (!existingContact.IsRetainedDeath)
                     {
-                        existingContact.UntilTime = _statusReportUntil;
+                        existingContact.UntilTime = liveContactUntil;
                     }
 
                     continue;
                 }
 
                 EnemyMarkerContact contact =
-                    new EnemyMarkerContact(enemyProfileId, _statusReportUntil);
+                    new EnemyMarkerContact(enemyProfileId, liveContactUntil);
                 enemyMarkersByProfileId.Add(enemyProfileId, contact);
                 enemyMarkers.Add(contact);
             }
@@ -1024,6 +1076,8 @@ namespace pitTeam.Utils
                 enemyMarkers.RemoveAt(i);
                 enemyMarkersByProfileId.Remove(contact.EnemyProfileId);
             }
+
+            return activeEnemyProfileIds.Count > 0;
         }
 
         private EnemyMarkerContact? GetClosestReportedContact(Vector3 playerPosition)

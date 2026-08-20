@@ -86,6 +86,8 @@ namespace pitTeam
 
         public Dictionary<string, string> statusSound { get; set; }
         public Dictionary<string, string> enemyMarker { get; set; }
+        public Dictionary<string, string> autoDisplayCombatStatus { get; set; }
+        public Dictionary<string, string> autoDisplayKillMarker { get; set; }
         public Dictionary<string, string> enemyKilledDisplayTime { get; set; }
         public Dictionary<string, string> enemyKilledRetainTime { get; set; }
         public Dictionary<string, string> scanDistance { get; set; }
@@ -227,6 +229,8 @@ namespace pitTeam
 
         public static ConfigEntry<int> statusSound;
         public static ConfigEntry<bool> enemyMarker;
+        public static ConfigEntry<bool> autoDisplayCombatStatus;
+        public static ConfigEntry<bool> autoDisplayKillMarker;
         public static ConfigEntry<int> enemyKilledDisplayTime;
         public static ConfigEntry<int> enemyKilledRetainTime;
         public static ConfigEntry<bool> npcSendMessage;
@@ -1017,6 +1021,24 @@ namespace pitTeam
 
             enemyMarker = Config.Bind("", "06 EnemyMarker", true, new ConfigDescription(optionsLang.enemyMarker["Description"], null, CreateConfigAttributes(-600, false, optionsLang.enemyMarker)));
 
+            autoDisplayCombatStatus = Config.Bind(
+                "",
+                "06 AutoDisplayCombatStatus",
+                false,
+                new ConfigDescription(
+                    optionsLang.autoDisplayCombatStatus["Description"],
+                    null,
+                    CreateConfigAttributes(-601, false, optionsLang.autoDisplayCombatStatus)));
+
+            autoDisplayKillMarker = Config.Bind(
+                "",
+                "06 AutoDisplayKillMarker",
+                false,
+                new ConfigDescription(
+                    optionsLang.autoDisplayKillMarker["Description"],
+                    null,
+                    CreateConfigAttributes(-602, false, optionsLang.autoDisplayKillMarker)));
+
             ConfigDefinition legacyEnemyKilledMarkerDefinition =
                 new ConfigDefinition("", "06 EnemyKilledMarker");
             ConfigDefinition enemyKilledDisplayTimeDefinition =
@@ -1070,7 +1092,7 @@ namespace pitTeam
                 new ConfigDescription(
                     optionsLang.enemyKilledDisplayTime["Description"],
                     new AcceptableValueRange<int>(1, 120),
-                    CreateConfigAttributes(-601, false, optionsLang.enemyKilledDisplayTime)));
+                    CreateConfigAttributes(-603, false, optionsLang.enemyKilledDisplayTime)));
 
             enemyKilledRetainTime = Config.Bind(
                 enemyKilledRetainTimeDefinition,
@@ -1078,7 +1100,7 @@ namespace pitTeam
                 new ConfigDescription(
                     optionsLang.enemyKilledRetainTime["Description"],
                     new AcceptableValueRange<int>(0, 120),
-                    CreateConfigAttributes(-602, false, optionsLang.enemyKilledRetainTime)));
+                    CreateConfigAttributes(-604, false, optionsLang.enemyKilledRetainTime)));
             if (disableKilledMarkersFromLegacyToggle)
             {
                 enemyKilledRetainTime.Value = 0;

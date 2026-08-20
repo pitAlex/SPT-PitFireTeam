@@ -38,13 +38,19 @@ namespace pitTeam.Localization
                     "Volume of the ping sound for the enemy location marker during combat"),
                 enemyMarker = Entry(
                     "Enemy Marker",
-                    "Show enemy position when reporting status. If disabled, the enemy marker sound will also be disabled"),
+                    "Enable enemy position markers for Status Report and automatic combat display. If disabled, the enemy marker sound will also be disabled."),
+                autoDisplayCombatStatus = Entry(
+                    "Auto Display Enemy Marker",
+                    "Continuously show the current enemy marker while any follower remains in combat. Hidden contacts refresh every 5 seconds; visible contacts track in real time."),
+                autoDisplayKillMarker = Entry(
+                    "Auto Display Kill Marker",
+                    "Automatically show a killed-enemy skull when the player or a follower kills a tracked enemy. Disable to show retained kills only through Status Report."),
                 enemyKilledDisplayTime = Entry(
-                    "Enemy Killed Display Time",
-                    "Time in seconds to display killed-enemy skull markers after the Status Report key is pressed."),
+                    "Kill Display Time",
+                    "Time in seconds to display killed-enemy skull markers after Status Report or an automatic kill-marker trigger. The marker never displays longer than Kill Remember Time."),
                 enemyKilledRetainTime = Entry(
-                    "Enemy Killed Retain Time",
-                    "Time in seconds to remember the position of an enemy killed by the player or a follower.\nSet to 0 to disable killed-enemy markers."),
+                    "Kill Remember Time",
+                    "Time in seconds to remember the position of an enemy killed by the player or a follower. This is also the maximum time a kill marker can remain visible.\nSet to 0 to disable killed-enemy markers."),
                 scanDistance = Entry(
                     "Maximum scan distance",
                     "Maximum distance to pick up any visible enemy that the player is signaling when issuing 'Contact' phrase"),

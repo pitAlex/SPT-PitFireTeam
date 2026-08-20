@@ -361,6 +361,8 @@ namespace pitTeam.Components
                 pitFireTeam.botGrenades,
                 pitFireTeam.regroupRadius,
                 pitFireTeam.enemyMarker,
+                pitFireTeam.autoDisplayCombatStatus,
+                pitFireTeam.autoDisplayKillMarker,
                 pitFireTeam.enemyKilledDisplayTime,
                 pitFireTeam.enemyKilledRetainTime,
                 pitFireTeam.statusSound,
@@ -2657,6 +2659,8 @@ namespace pitTeam.Components
             if (entry == pitFireTeam.heatlhMultiplier) return language.healthMultiplier;
             if (entry == pitFireTeam.statusSound) return language.statusSound;
             if (entry == pitFireTeam.enemyMarker) return language.enemyMarker;
+            if (entry == pitFireTeam.autoDisplayCombatStatus) return language.autoDisplayCombatStatus;
+            if (entry == pitFireTeam.autoDisplayKillMarker) return language.autoDisplayKillMarker;
             if (entry == pitFireTeam.enemyKilledDisplayTime) return language.enemyKilledDisplayTime;
             if (entry == pitFireTeam.enemyKilledRetainTime) return language.enemyKilledRetainTime;
             if (entry == pitFireTeam.pickupEnabled) return language.pickup;
