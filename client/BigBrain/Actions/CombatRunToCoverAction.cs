@@ -427,26 +427,13 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            Vector3 lookPoint = goalEnemy.EnemyLastPositionReal;
-            if (!IsFinite(lookPoint))
+            if (CombatAttackMoveLook.TryGetReliableThreatLookPoint(
+                    BotOwner,
+                    goalEnemy,
+                    out Vector3 lookPoint))
             {
-                lookPoint = goalEnemy.CurrPosition;
+                BotOwner.Steering.LookToPoint(lookPoint);
             }
-
-            if (IsFinite(lookPoint))
-            {
-                BotOwner.Steering.LookToPoint(lookPoint + Vector3.up * 0.8f);
-            }
-        }
-
-        private static bool IsFinite(Vector3 value)
-        {
-            return !float.IsNaN(value.x) &&
-                   !float.IsNaN(value.y) &&
-                   !float.IsNaN(value.z) &&
-                   !float.IsInfinity(value.x) &&
-                   !float.IsInfinity(value.y) &&
-                   !float.IsInfinity(value.z);
         }
     }
 }

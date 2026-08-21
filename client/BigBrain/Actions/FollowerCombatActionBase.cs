@@ -154,6 +154,30 @@ namespace pitTeam.BigBrain.Actions
             out Vector3 fireOrigin,
             out Vector3 pointDirection)
         {
+            if (TryGetActualFirearmShotVector(botOwner, out fireOrigin, out pointDirection))
+            {
+                return true;
+            }
+
+            Player? player = botOwner?.GetPlayer ?? botOwner?.AIData?.Player;
+            fireOrigin = botOwner?.WeaponRoot != null
+                ? botOwner.WeaponRoot.position
+                : (botOwner?.Position ?? Vector3.zero) + Vector3.up * 1.2f;
+            pointDirection = player?.LookDirection ?? botOwner?.LookDirection ?? Vector3.zero;
+            if (pointDirection.sqrMagnitude <= 0.0001f)
+            {
+                return false;
+            }
+
+            pointDirection.Normalize();
+            return true;
+        }
+
+        internal static bool TryGetActualFirearmShotVector(
+            BotOwner? botOwner,
+            out Vector3 fireOrigin,
+            out Vector3 pointDirection)
+        {
             Player? player = botOwner?.GetPlayer ?? botOwner?.AIData?.Player;
             if (player?.HandsController is Player.FirearmController firearmController &&
                 firearmController.CurrentFireport != null)
@@ -168,17 +192,9 @@ namespace pitTeam.BigBrain.Actions
                 }
             }
 
-            fireOrigin = botOwner?.WeaponRoot != null
-                ? botOwner.WeaponRoot.position
-                : (botOwner?.Position ?? Vector3.zero) + Vector3.up * 1.2f;
-            pointDirection = player?.LookDirection ?? botOwner?.LookDirection ?? Vector3.zero;
-            if (pointDirection.sqrMagnitude <= 0.0001f)
-            {
-                return false;
-            }
-
-            pointDirection.Normalize();
-            return true;
+            fireOrigin = Vector3.zero;
+            pointDirection = Vector3.zero;
+            return false;
         }
 
         protected CoverSearchType SetAttackCoverSearchType(CoverShootType shootType)

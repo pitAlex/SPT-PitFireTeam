@@ -17,6 +17,7 @@ namespace pitTeam.BigBrain.Actions
         private const float MinEnemyDistanceForProne = 80f;
         private const float SameSpotMaxDistanceSqr = 0.75f * 0.75f;
         private const float ProneFireProbeHeight = 0.35f;
+        private const float LostVisualSuppressMaxAimAngle = 18f;
         private readonly GClass276 baseLogic;
         private readonly FollowerEmergencyFireGate emergencyFireGate = new FollowerEmergencyFireGate();
         private float aimAlignStartedAt;
@@ -369,6 +370,24 @@ namespace pitTeam.BigBrain.Actions
             BotOwner.StopMove();
             BotOwner.SetPose(1f);
             BotOwner.Steering.LookToPoint(target);
+
+            if (!TryGetActualFirearmShotVector(
+                    BotOwner,
+                    out Vector3 fireOrigin,
+                    out Vector3 shotDirection))
+            {
+                StopCombatShooting();
+                return true;
+            }
+
+            Vector3 targetDirection = target - fireOrigin;
+            if (targetDirection.sqrMagnitude <= 0.0001f ||
+                Vector3.Angle(shotDirection, targetDirection) > LostVisualSuppressMaxAimAngle)
+            {
+                StopCombatShooting();
+                return true;
+            }
+
             BotOwner.ShootData.Shoot();
             return true;
         }

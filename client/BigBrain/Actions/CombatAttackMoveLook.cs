@@ -1,4 +1,5 @@
 using EFT;
+using pitTeam.Utils;
 using UnityEngine;
 
 namespace pitTeam.BigBrain.Actions
@@ -20,7 +21,68 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            Vector3 lookPoint = GetThreatLookPoint(goalEnemy);
+            return TryLookPointFacing(botOwner, GetThreatLookPoint(goalEnemy), allowHardTurn);
+        }
+
+        /// <summary>
+        /// Resolves only follower-owned visual or remembered enemy positions. Unlike the close-threat
+        /// helper above, this must not fall through to the enemy's hidden live transform: ordinary
+        /// movement uses it when deciding whether threat-facing is safer than route-facing.
+        /// </summary>
+        public static bool TryGetReliableThreatLookPoint(
+            BotOwner botOwner,
+            EnemyInfo? goalEnemy,
+            out Vector3 lookPoint)
+        {
+            lookPoint = Vector3.zero;
+            if (botOwner == null || goalEnemy == null)
+            {
+                return false;
+            }
+
+            if (goalEnemy.IsVisible)
+            {
+                try
+                {
+                    Vector3 bodyPoint = goalEnemy.GetBodyPartPosition();
+                    if (FollowerCombatCommon.IsFinite(bodyPoint) &&
+                        bodyPoint.sqrMagnitude > 0.01f &&
+                        (bodyPoint - botOwner.Position).sqrMagnitude > 0.01f)
+                    {
+                        lookPoint = bodyPoint;
+                        return true;
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            if (!Enemy.TryGetReliableKnownPosition(botOwner, goalEnemy, out Vector3 knownPosition))
+            {
+                return false;
+            }
+
+            lookPoint = knownPosition + Vector3.up * 0.8f;
+            return FollowerCombatCommon.IsFinite(lookPoint) &&
+                   (lookPoint - botOwner.Position).sqrMagnitude > 0.01f;
+        }
+
+        public static bool TryLookReliableThreatFacing(
+            BotOwner botOwner,
+            EnemyInfo? goalEnemy,
+            bool allowHardTurn = false)
+        {
+            return TryGetReliableThreatLookPoint(botOwner, goalEnemy, out Vector3 lookPoint) &&
+                   TryLookPointFacing(botOwner, lookPoint, allowHardTurn);
+        }
+
+        private static bool TryLookPointFacing(BotOwner botOwner, Vector3 lookPoint, bool allowHardTurn)
+        {
+            if (!FollowerCombatCommon.IsFinite(lookPoint))
+            {
+                return false;
+            }
 
             Vector3 lookDirection = lookPoint - botOwner.Position;
             if (lookDirection.sqrMagnitude < 0.01f)

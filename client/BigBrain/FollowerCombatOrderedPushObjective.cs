@@ -167,14 +167,7 @@ namespace pitTeam.BigBrain
                 return committedPush;
             }
 
-            if (combatPush.TryCreateOrderedPushFiringPosition(
-                    orderedEnemy,
-                    out AICoreActionResultStruct<BotLogicDecision, GClass26> firingPositionDecision))
-            {
-                return firingPositionDecision;
-            }
-
-            return MarkOrderedPushDecision(combatPush.EngageEnemy(FollowerCombatPush.PushActivationSource.Ordered));
+            return combatPush.CreateOrderedPushDecision(orderedEnemy);
         }
 
         public override AICoreActionEndStruct ShallEndCurrentDecision(
@@ -579,25 +572,6 @@ namespace pitTeam.BigBrain
         private static bool IsPressureRecoveryReason(string? reason)
         {
             return reason?.StartsWith(PressureRecoveryReasonPrefix, StringComparison.Ordinal) == true;
-        }
-
-        private static AICoreActionResultStruct<BotLogicDecision, GClass26> MarkOrderedPushDecision(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
-        {
-            if (decision.Reason == null ||
-                decision.Reason.StartsWith("push.ordered", StringComparison.Ordinal))
-            {
-                return decision;
-            }
-
-            if (decision.Reason.StartsWith("push.", StringComparison.Ordinal))
-            {
-                return new AICoreActionResultStruct<BotLogicDecision, GClass26>(
-                    decision.Action,
-                    "push.ordered." + decision.Reason.Substring("push.".Length));
-            }
-
-            return decision;
         }
 
         private static AICoreActionResultStruct<BotLogicDecision, GClass26> Hold(string suffix)
