@@ -6699,6 +6699,37 @@ namespace pitTeam.BigBrain
             return true;
         }
 
+        /// <summary>
+        /// Commits an already-selected cover with a caller-owned movement policy. Candidate
+        /// validation remains shared; only the action used to reach the validated cover is
+        /// overridden. This is used when a tactic requires a specific movement contract.
+        /// </summary>
+        public bool TryCommitSelectedCombatCoverWithAction(
+            EnemyInfo goalEnemy,
+            CustomNavigationPoint? cover,
+            string reason,
+            BotLogicDecision moveAction)
+        {
+            if (!IsCoverAffinedDecision(moveAction) ||
+                !TryValidateSelectedCombatCover(
+                    goalEnemy,
+                    cover,
+                    reason,
+                    recoveryManeuver: false,
+                    out _))
+            {
+                return false;
+            }
+
+            CommitValidatedCombatCover(
+                goalEnemy,
+                cover!,
+                reason,
+                recoveryManeuver: false,
+                moveAction);
+            return true;
+        }
+
         private bool TryValidateSelectedCombatCover(
             EnemyInfo goalEnemy,
             CustomNavigationPoint? cover,
@@ -12450,6 +12481,80 @@ namespace pitTeam.BigBrain
         }
 
         /// <summary>
+        /// Selects a shoot-capable cover that materially advances toward the current enemy.
+        /// This is a shared cover primitive; ordered-push policy owns when and how often it is
+        /// called and which movement action is used after selection.
+        /// </summary>
+        public CustomNavigationPoint? FindForwardShootCover(
+            EnemyInfo goalEnemy,
+            string reason,
+            float maxNavDistance,
+            float minForwardProgress,
+            float minForwardDot)
+        {
+            if (!HasActiveCombatEnemy(goalEnemy) || maxNavDistance <= 0f)
+            {
+                return null;
+            }
+
+            Vector3 enemyAnchor = GetEnemyAnchor(goalEnemy);
+            Vector3 botPosition = botOwner.Position;
+            Vector3 forward = enemyAnchor - botPosition;
+            forward.y = 0f;
+            float currentEnemyDistance = forward.magnitude;
+            if (!IsFinite(enemyAnchor) || currentEnemyDistance <= minForwardProgress)
+            {
+                return null;
+            }
+
+            forward /= currentEnemyDistance;
+            ShootPointClass shootPoint = new ShootPointClass(enemyAnchor + Vector3.up * 1.1f, 1f);
+            LayerMask mask = botOwner.LookSensor.Mask;
+            CoverSearchType searchType = SetCoverTacticAndGetSearchType(
+                BotsGroup.BotCurrentTactic.Attack,
+                CoverShootType.shoot,
+                CoverSearchIntent.AttackMoving);
+
+            return SelectBestEvaluatedCover(
+                botPosition,
+                maxNavDistance,
+                searchType,
+                point =>
+                {
+                    if (!IsCoverUsable(point) || IsBlockedPushCover(point, goalEnemy, reason))
+                    {
+                        return false;
+                    }
+
+                    Vector3 advance = point.Position - botPosition;
+                    advance.y = 0f;
+                    float directDistance = advance.magnitude;
+                    if (directDistance <= minForwardProgress ||
+                        Vector3.Dot(advance / directDistance, forward) < minForwardDot)
+                    {
+                        return false;
+                    }
+
+                    float candidateEnemyDistance = DistanceXZ(point.Position, enemyAnchor);
+                    if (candidateEnemyDistance > currentEnemyDistance - minForwardProgress)
+                    {
+                        return false;
+                    }
+
+                    float navDistance = GetEvaluatedCoverNavDistance(point);
+                    if (!IsFinite(navDistance) || navDistance > maxNavDistance)
+                    {
+                        return false;
+                    }
+
+                    bool canShoot = Utils.Utils.CanShootToTarget(shootPoint, point, mask, false);
+                    point.CanIShootToEnemy = canShoot;
+                    return canShoot;
+                },
+                point => GetEvaluatedCoverNavDistance(point));
+        }
+
+        /// <summary>
         /// Picks the best available enemy anchor for blind pushes and cover searches.
         /// </summary>
         public static Vector3 GetEnemyAnchor(EnemyInfo goalEnemy)
@@ -14792,7 +14897,8 @@ namespace pitTeam.BigBrain
                    reason.StartsWith("shootCover", StringComparison.Ordinal) ||
                    reason.StartsWith("retreatShootCover", StringComparison.Ordinal) ||
                    reason.StartsWith("coverVisibleFire", StringComparison.Ordinal) ||
-                   reason.StartsWith("committedFire", StringComparison.Ordinal);
+                   reason.StartsWith("committedFire", StringComparison.Ordinal) ||
+                   reason.StartsWith("push.ordered.forwardShootCover", StringComparison.Ordinal);
         }
 
         public static bool CanShootFromCurrentCoverIfStanding(BotOwner botOwner, out string cause)

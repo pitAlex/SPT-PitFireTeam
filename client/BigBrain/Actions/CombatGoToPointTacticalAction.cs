@@ -97,7 +97,7 @@ namespace pitTeam.BigBrain.Actions
                 else if (goalEnemy != null && nextThreatLookTime < Time.time)
                 {
                     nextThreatLookTime = Time.time + GClass856.Random(ThreatLookIntervalMin, ThreatLookIntervalMax);
-                    BotOwner_0.Steering.LookToPoint(goalEnemy.EnemyLastPosition + new Vector3(0f, 0.6f, 0f));
+                    CombatAttackMoveLook.TryLookReliableThreatFacing(BotOwner_0, goalEnemy);
                 }
 
                 base.UpdateNodeByBrain(data);
@@ -181,13 +181,10 @@ namespace pitTeam.BigBrain.Actions
                     return false;
                 }
 
-                Vector3 enemyPos = enemy.CurrPosition;
-                if (!IsFinite(enemyPos))
-                {
-                    enemyPos = enemy.EnemyLastPositionReal;
-                }
-
-                if (!IsFinite(enemyPos))
+                if (!CombatAttackMoveLook.TryGetReliableThreatLookPoint(
+                        BotOwner_0,
+                        enemy,
+                        out Vector3 enemyPos))
                 {
                     return false;
                 }

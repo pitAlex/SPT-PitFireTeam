@@ -37,6 +37,7 @@ namespace pitTeam.BigBrain
         private float medicalKeepActiveStartedAt;
         private bool medicalKeepActiveTimedOut;
         private bool combatLogicResetForInactive;
+        private bool retainedLayerRearmPending;
 
         public FollowerCombatLayer(BotOwner botOwner, int priority) : base(botOwner, priority)
         {
@@ -85,7 +86,7 @@ namespace pitTeam.BigBrain
 
             if (lingerArmed && IsLingerExpired() && !HasCurrentLiveGoalEnemy() && !TryKeepActiveForOrderedPush())
             {
-                CompletePostCombatLinger("lingerExpired");
+                CompletePostCombatLinger("lingerExpired", allowRetainedLayerRearm: true);
                 return false;
             }
 
@@ -124,30 +125,37 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
-            CompletePostCombatLinger("lingerExpired");
+            CompletePostCombatLinger("lingerExpired", allowRetainedLayerRearm: true);
             return false;
         }
 
         public override void Start()
         {
             base.Start();
+            InitializeCombatLayerState("layerStart", "CombatLayer:Start");
+        }
+
+        private void InitializeCombatLayerState(string recorderReason, string transitionReason)
+        {
             currentDecision = null;
             lastDecision = null;
             hadCombatSinceActivation = false;
             combatLogicResetForInactive = false;
+            retainedLayerRearmPending = false;
             ClearLinger();
             ClearMedicalKeepActive();
+            Utils.FollowerMedical.CompletePostCombatFullHeal(BotOwner);
             MarkActive(true);
             BotFollowerPlayer? followerData = BossPlayers.Instance?.GetFollower(BotOwner);
             followerData?.CancelTemporaryCombatAggressionOverrideClearDelay();
             followerData?.BeginCombatIndependenceFromPatrol();
             BotOwner?.GetPlayer?.MovementContext?.SetPatrol(false);
-            ClearFollowerCommandOnCombatTransition("CombatLayer:Start");
+            ClearFollowerCommandOnCombatTransition(transitionReason);
             FollowerGrenadeRuntimeGate.EnforceDisabled(BotOwner);
             combatLogic = CreateCombatLogic(BotOwner, brainShortName);
             combatLogic?.Reset();
             combatLogic?.StartDecision();
-            BattleRecorder.RecordCombatLayerState(BotOwner, true, "layerStart");
+            BattleRecorder.RecordCombatLayerState(BotOwner, true, recorderReason);
         }
 
         public override void Stop()
@@ -163,6 +171,7 @@ namespace pitTeam.BigBrain
             lastDecision = null;
             hadCombatSinceActivation = false;
             combatLogicResetForInactive = false;
+            retainedLayerRearmPending = false;
             ClearLinger();
             ClearMedicalKeepActive();
             FollowerContactEnemyRetention.Clear(BotOwner);
@@ -174,6 +183,19 @@ namespace pitTeam.BigBrain
 
         public override Action GetNextAction()
         {
+            bool combatActive = ShouldTreatCombatAsActive();
+            if (combatActive &&
+                retainedLayerRearmPending &&
+                IsCurrentBigBrainLayer() &&
+                !IsFollowerCombatLayerActive(BotOwner))
+            {
+                // BigBrain can keep this layer physically selected after linger releases its
+                // active state. If a live enemy returns before Stop()/Start(), rebuild the same
+                // activation state that Start() would have established before selecting an action.
+                InitializeCombatLayerState("layerRetainedRearm", "CombatLayer:RetainedRearm");
+                hadCombatSinceActivation = true;
+            }
+
             lastDecision = currentDecision;
 
             if (combatLogic == null)
@@ -185,7 +207,6 @@ namespace pitTeam.BigBrain
             }
 
             AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision;
-            bool combatActive = ShouldTreatCombatAsActive();
             bool keepForMedical = !combatActive && ShouldKeepCombatLayerForMedicalWork();
             if (!combatActive && !keepForMedical)
             {
@@ -282,7 +303,7 @@ namespace pitTeam.BigBrain
                 bool expired = IsLingerExpired();
                 if (expired)
                 {
-                    CompletePostCombatLinger("lingerExpired");
+                    CompletePostCombatLinger("lingerExpired", allowRetainedLayerRearm: true);
                 }
 
                 return expired;
@@ -378,13 +399,14 @@ namespace pitTeam.BigBrain
             lingerArmed = false;
         }
 
-        private void CompletePostCombatLinger(string reason)
+        private void CompletePostCombatLinger(string reason, bool allowRetainedLayerRearm = false)
         {
             Utils.FollowerMedical.BeginPostCombatFullHeal(BotOwner);
             hadCombatSinceActivation = false;
             currentDecision = null;
             lastDecision = null;
             combatLogicResetForInactive = false;
+            retainedLayerRearmPending = allowRetainedLayerRearm;
             ClearLinger();
             BossPlayers.Instance?.GetFollower(BotOwner)?.ClearTemporaryCombatAggressionOverrideAfterCombatCooldown();
             ReleaseActiveCombatLayerState(reason);
@@ -419,6 +441,23 @@ namespace pitTeam.BigBrain
             return botOwner != null
                 && !string.IsNullOrEmpty(botOwner.ProfileId)
                 && ActiveFollowerCombatBots.Contains(botOwner.ProfileId);
+        }
+
+        private bool IsCurrentBigBrainLayer()
+        {
+            try
+            {
+                return string.Equals(
+                    BotOwner?.Brain?.BaseBrain?.CurLayerInfo?.Name(),
+                    GetName(),
+                    StringComparison.Ordinal);
+            }
+            catch (Exception ex)
+            {
+                Modules.Logger.LogError($"[FollowerCombatLayer] Failed to read current layer for {BotOwner?.Profile?.Nickname}");
+                Modules.Logger.LogError(ex);
+                return false;
+            }
         }
 
         internal static bool TryForceReleaseCoreFollowerCombatState(BotOwner? botOwner, string reason)
@@ -773,7 +812,7 @@ namespace pitTeam.BigBrain
                 return;
             }
 
-            if (reason == "CombatLayer:Start" &&
+            if ((reason == "CombatLayer:Start" || reason == "CombatLayer:RetainedRearm") &&
                 (IsCombatOwnedCommand(command) || command == FollowerCommandType.RegroupNearBoss))
             {
                 return;

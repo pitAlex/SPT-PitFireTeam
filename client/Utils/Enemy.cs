@@ -140,6 +140,7 @@ namespace pitTeam.Utils
 
             Vector3 personalLastPos = goalEnemy.PersonalLastPos;
             if (IsFinitePosition(personalLastPos) &&
+                personalLastPos.sqrMagnitude > 0.01f &&
                 (personalLastPos - bot.Position).sqrMagnitude > 0.01f)
             {
                 position = personalLastPos;

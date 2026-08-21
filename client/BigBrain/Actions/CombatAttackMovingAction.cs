@@ -194,9 +194,11 @@ namespace pitTeam.BigBrain.Actions
                 }
 
                 EnemyInfo? goalEnemy = BotOwner_0.Memory?.GoalEnemy;
-                if (!BotFollowerPlayer.TryApplyCommandLookOverride(BotOwner_0))
+                bool commandLookApplied = BotFollowerPlayer.TryApplyCommandLookOverride(BotOwner_0);
+                bool threatFacingMaintained = false;
+                if (!commandLookApplied)
                 {
-                    TryMaintainThreatFacing(goalEnemy);
+                    threatFacingMaintained = TryMaintainThreatFacing(goalEnemy);
                 }
 
                 bool unsafeCloseRetreat = TryStopUnsafeCloseThreatRetreat(goalEnemy);
@@ -220,10 +222,30 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
-                if (goalEnemy != null && nextThreatLookTime < Time.time)
+                if (commandLookApplied || threatFacingMaintained || goalEnemy == null)
                 {
-                    nextThreatLookTime = Time.time + GClass856.Random(2f, 3f);
-                    BotOwner_0.Steering.LookToPoint(goalEnemy.EnemyLastPosition + new Vector3(0f, 0.6f, 0f));
+                    return;
+                }
+
+                if (CombatAttackMoveLook.TryGetReliableThreatLookPoint(BotOwner_0, goalEnemy, out _))
+                {
+                    if (nextThreatLookTime < Time.time)
+                    {
+                        nextThreatLookTime = Time.time + GClass856.Random(2f, 3f);
+                        CombatAttackMoveLook.TryLookReliableThreatFacing(BotOwner_0, goalEnemy);
+                    }
+
+                    return;
+                }
+
+                // A memory-only push can retain a very old group-sense point after the enemy has
+                // moved away. Looking at that point when the route reaches it produces a downward or
+                // backwards snap. Without follower-owned threat position, face the active route.
+                nextThreatLookTime = 0f;
+                if (BotOwner_0.Mover.HasPathAndNoComplete)
+                {
+                    BotOwner_0.LookData.SetLookPointByHearing(null);
+                    BotOwner_0.Steering.LookToMovingDirection();
                 }
             }
 
@@ -247,12 +269,12 @@ namespace pitTeam.BigBrain.Actions
                 return true;
             }
 
-            private void TryMaintainThreatFacing(EnemyInfo? goalEnemy)
+            private bool TryMaintainThreatFacing(EnemyInfo? goalEnemy)
             {
                 if (goalEnemy == null ||
                     (!forceThreatLookWhenShootable && !ShouldCorrectArrivalLook(goalEnemy)))
                 {
-                    return;
+                    return false;
                 }
 
                 Vector3 threatPoint = goalEnemy.IsVisible
@@ -261,13 +283,13 @@ namespace pitTeam.BigBrain.Actions
                 Vector3 lookDirection = threatPoint - BotOwner_0.Position;
                 if (lookDirection.sqrMagnitude < 0.01f)
                 {
-                    return;
+                    return false;
                 }
 
                 if (!forceThreatLookWhenShootable &&
                     Vector3.Angle(BotOwner_0.LookDirection, lookDirection) < ArrivalThreatLookAngle)
                 {
-                    return;
+                    return true;
                 }
 
                 bool allowHardTurn =
@@ -275,7 +297,7 @@ namespace pitTeam.BigBrain.Actions
                     BotOwner_0.Memory.IsInCover ||
                     global::pitTeam.BigBrain.FollowerCombatRegroupObjective.IsRegroupReason(currentReason);
 
-                CombatAttackMoveLook.TryLookThreatFacing(BotOwner_0, goalEnemy, allowHardTurn);
+                return CombatAttackMoveLook.TryLookThreatFacing(BotOwner_0, goalEnemy, allowHardTurn);
             }
 
             private bool ShouldCorrectArrivalLook(EnemyInfo goalEnemy)

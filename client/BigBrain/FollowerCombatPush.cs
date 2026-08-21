@@ -25,6 +25,12 @@ namespace pitTeam.BigBrain
         private const float RunToEnemyNonSprintGraceSeconds = 0.75f;
         private const float RunToEnemyNoSprintBlockSeconds = 3f;
         private const float NoPushHoldSeconds = 1.25f;
+        private const string OrderedProvisionalAdvanceReason = "push.ordered.provisionalAdvance";
+        private const string OrderedForwardShootCoverReason = "push.ordered.forwardShootCover";
+        private const float OrderedForwardCoverScanInterval = 2f;
+        private const float OrderedForwardCoverMaxNavDistance = 30f;
+        private const float OrderedForwardCoverMinProgress = 2f;
+        private const float OrderedForwardCoverMinDot = 0.2f;
 #if DEBUG
         private const float MemoryOnlyAutoPushBlockDiagnosticInterval = 1f;
 #endif
@@ -42,6 +48,7 @@ namespace pitTeam.BigBrain
         private float committedPushActionableVisibleSince;
         private Vector3 stalledPushLastPosition;
         private float stalledPushSince;
+        private float nextOrderedForwardCoverScanAt;
 #if DEBUG
         private float nextMemoryOnlyAutoPushBlockLogAt;
 #endif
@@ -65,6 +72,10 @@ namespace pitTeam.BigBrain
             if (IsPushCommittedDecision(nextDecision))
             {
                 CommitPush(nextDecision);
+                if (IsOrderedProvisionalAdvance(nextDecision))
+                {
+                    nextOrderedForwardCoverScanAt = Time.time + OrderedForwardCoverScanInterval;
+                }
             }
             else if (combatCommon.IsCurrentGoalTemporaryEngagementTarget())
             {
@@ -135,6 +146,16 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEndStruct(interruptReason, true);
             }
 
+            if (TryPrepareOrderedClosePushTransition(currentDecision, goalEnemy, out AICoreActionEndStruct closeTransition))
+            {
+                return closeTransition;
+            }
+
+            if (TryPrepareOrderedForwardCoverTransition(currentDecision, goalEnemy, out AICoreActionEndStruct coverTransition))
+            {
+                return coverTransition;
+            }
+
             if (currentDecision.Action == BotLogicDecision.runToEnemy &&
                 !combatCommon.CanSprintForCombatMovement())
             {
@@ -151,7 +172,8 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEndStruct("pushRunNotSprinting", true);
             }
 
-            if (ShouldPrepareStalledPushFallback(goalEnemy, currentDecision, out string stalledReason))
+            if (!IsOrderedProvisionalAdvance(currentDecision) &&
+                ShouldPrepareStalledPushFallback(goalEnemy, currentDecision, out string stalledReason))
             {
                 ClearCommittedPush(stalledReason);
                 return new AICoreActionEndStruct(stalledReason, true);
@@ -186,6 +208,7 @@ namespace pitTeam.BigBrain
             committedPushActionableVisibleSince = 0f;
             stalledPushLastPosition = Vector3.zero;
             stalledPushSince = 0f;
+            nextOrderedForwardCoverScanAt = 0f;
         }
 
         public bool IsPushCommittedDecision(AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
@@ -476,7 +499,24 @@ namespace pitTeam.BigBrain
             return true;
         }
 
-        public bool TryCreateOrderedPushFiringPosition(
+        public AICoreActionResultStruct<BotLogicDecision, GClass26> CreateOrderedPushDecision(EnemyInfo goalEnemy)
+        {
+            if (ShouldUseOrderedForwardApproach(goalEnemy))
+            {
+                if (TryCreateOrderedForwardCoverDecision(
+                        goalEnemy,
+                        out AICoreActionResultStruct<BotLogicDecision, GClass26> forwardCoverDecision))
+                {
+                    return forwardCoverDecision;
+                }
+
+                return CreateOrderedProvisionalAdvanceDecision();
+            }
+
+            return MarkOrderedPushDecision(EngageEnemy(PushActivationSource.Ordered));
+        }
+
+        private bool TryCreateOrderedForwardCoverDecision(
             EnemyInfo goalEnemy,
             out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
         {
@@ -486,20 +526,141 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            Vector3 enemyPosition = FollowerCombatCommon.GetEnemyCurrentPosition(goalEnemy);
-            if (!FollowerCombatCommon.IsFinite(enemyPosition))
+            CustomNavigationPoint? cover = combatCommon.FindForwardShootCover(
+                goalEnemy,
+                OrderedForwardShootCoverReason,
+                OrderedForwardCoverMaxNavDistance,
+                OrderedForwardCoverMinProgress,
+                OrderedForwardCoverMinDot);
+            if (cover == null ||
+                !combatCommon.TryCommitSelectedCombatCoverWithAction(
+                    goalEnemy,
+                    cover,
+                    OrderedForwardShootCoverReason,
+                    BotLogicDecision.attackMoving))
             {
                 return false;
             }
 
-            return combatCommon.TryCreateFiringPositionDecisionAt(
-                goalEnemy,
-                enemyPosition,
-                $"{PushReasonPrefix}orderedFiringPosition",
-                out decision,
-                preferBackline: false,
-                enforceMarksmanPositionPolicy: false,
-                allowForwardPositions: true);
+            decision = combatCommon.CreateCommittedCoverMoveDecision();
+            return decision.Action == BotLogicDecision.attackMoving;
+        }
+
+        private AICoreActionResultStruct<BotLogicDecision, GClass26> CreateOrderedProvisionalAdvanceDecision()
+        {
+            return new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                BotLogicDecision.goToEnemy,
+                OrderedProvisionalAdvanceReason);
+        }
+
+        private bool TryPrepareOrderedClosePushTransition(
+            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision,
+            EnemyInfo goalEnemy,
+            out AICoreActionEndStruct end)
+        {
+            end = FollowerCombatCommon.Continue();
+            if (!IsOrderedForwardApproachDecision(currentDecision) ||
+                ShouldUseOrderedForwardApproach(goalEnemy))
+            {
+                return false;
+            }
+
+            AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision =
+                MarkOrderedPushDecision(EngageEnemy(PushActivationSource.Ordered));
+            if (!combatCommon.TryPrepareDecisionTransition(
+                    currentDecision,
+                    "orderedClosePushTakeover",
+                    nextDecision))
+            {
+                return false;
+            }
+
+            if (IsOrderedForwardCoverMove(currentDecision))
+            {
+                combatCommon.ClearCommittedCover("orderedClosePushTakeover");
+            }
+
+            ClearCommittedPush("orderedClosePushTakeover");
+            end = new AICoreActionEndStruct("orderedClosePushTakeover", true);
+            return true;
+        }
+
+        private bool TryPrepareOrderedForwardCoverTransition(
+            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision,
+            EnemyInfo goalEnemy,
+            out AICoreActionEndStruct end)
+        {
+            end = FollowerCombatCommon.Continue();
+            if (!IsOrderedProvisionalAdvance(currentDecision) ||
+                Time.time < nextOrderedForwardCoverScanAt)
+            {
+                return false;
+            }
+
+            nextOrderedForwardCoverScanAt = Time.time + OrderedForwardCoverScanInterval;
+            if (!TryCreateOrderedForwardCoverDecision(
+                    goalEnemy,
+                    out AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision))
+            {
+                return false;
+            }
+
+            if (!combatCommon.TryPrepareDecisionTransition(
+                    currentDecision,
+                    "orderedForwardCoverAvailable",
+                    nextDecision))
+            {
+                combatCommon.ClearCommittedCover("orderedForwardCoverTransitionRejected");
+                return false;
+            }
+
+            ClearCommittedPush("orderedForwardCoverAvailable");
+            end = new AICoreActionEndStruct("orderedForwardCoverAvailable", true);
+            return true;
+        }
+
+        private static bool IsOrderedProvisionalAdvance(
+            AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        {
+            return decision.Action == BotLogicDecision.goToEnemy &&
+                   string.Equals(decision.Reason, OrderedProvisionalAdvanceReason, StringComparison.Ordinal);
+        }
+
+        private static bool IsOrderedForwardCoverMove(
+            AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        {
+            return decision.Action == BotLogicDecision.attackMoving &&
+                   decision.Reason?.StartsWith(OrderedForwardShootCoverReason, StringComparison.Ordinal) == true;
+        }
+
+        private static bool IsOrderedForwardApproachDecision(
+            AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        {
+            return IsOrderedProvisionalAdvance(decision) || IsOrderedForwardCoverMove(decision);
+        }
+
+        private static bool ShouldUseOrderedForwardApproach(EnemyInfo goalEnemy)
+        {
+            return Utils.Enemy.Distance(goalEnemy) > Utils.Enemy.EnemyDistance.Close;
+        }
+
+        private static AICoreActionResultStruct<BotLogicDecision, GClass26> MarkOrderedPushDecision(
+            AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        {
+            if (decision.Reason == null ||
+                decision.Reason.StartsWith("push.ordered", StringComparison.Ordinal))
+            {
+                return decision;
+            }
+
+            if (decision.Reason.StartsWith("push.", StringComparison.Ordinal))
+            {
+                return new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                    decision.Action,
+                    "push.ordered." + decision.Reason.Substring("push.".Length));
+            }
+
+            return decision;
         }
 
 

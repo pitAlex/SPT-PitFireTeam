@@ -1766,8 +1766,8 @@ namespace pitTeam.BigBrain
         }
 
         /// <summary>
-        /// Ordered GoForward should commit to a concrete firing position against the enemy's
-        /// current body position before falling back to generic pressure/search behavior.
+        /// Ordered GoForward advances through forward shoot-capable cover. When none is currently
+        /// available, the committed provisional advance keeps scanning while it moves.
         /// </summary>
         private bool TryGetOrderedPushDecision(
             EnemyInfo goalEnemy,
@@ -1794,32 +1794,8 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            if (combatPush.TryCreateOrderedPushFiringPosition(goalEnemy, out decision))
-            {
-                return true;
-            }
-
-            decision = MarkOrderedPushDecision(combatPush.EngageEnemy(FollowerCombatPush.PushActivationSource.Ordered));
+            decision = combatPush.CreateOrderedPushDecision(goalEnemy);
             return true;
-        }
-
-        private static AICoreActionResultStruct<BotLogicDecision, GClass26> MarkOrderedPushDecision(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
-        {
-            if (decision.Reason == null ||
-                decision.Reason.StartsWith("push.ordered", StringComparison.Ordinal))
-            {
-                return decision;
-            }
-
-            if (decision.Reason.StartsWith("push.", StringComparison.Ordinal))
-            {
-                return new AICoreActionResultStruct<BotLogicDecision, GClass26>(
-                    decision.Action,
-                    "push.ordered." + decision.Reason.Substring("push.".Length));
-            }
-
-            return decision;
         }
 
         private bool TryGetAutonomousSuppressDecision(
