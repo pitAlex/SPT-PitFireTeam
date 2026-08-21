@@ -222,7 +222,7 @@ namespace pitTeam.Utils
                 }
                 else
                 {
-                    radioSound.PlayRadioSound();
+                    radioSound.PlayRadioBeep();
                 }
             }
 

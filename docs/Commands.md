@@ -93,6 +93,7 @@ Behavior:
 - Disabling every text field while leaving the highlight enabled produces a highlight-only Status Report.
 - Enemy markers are grouped by enemy profile, so multiple followers reporting the same contact produce one marker. During the Status Report display, the active marker set follows each follower's current enemy selection: switching targets adds the newly selected enemy and removes an old contact once no follower targets it. `Auto Display Enemy Marker` keeps this marker set active independently for the full live contact without automatically playing the report sound or voice line. Each new contact starts at the enemy's current position. A reliably visible enemy uses a steady `27x27` red reticle that follows the live position every frame; an enemy that is not reliably visible uses a vertically bobbing `30.6x30.6` yellow `!` whose position refreshes every five seconds; and a killed enemy uses a steady `27x27` grey skull at its remembered death position. `Auto Display Kill Marker` can open the independent skull display immediately, `Kill Display Time` requests its duration, and `Kill Remember Time` caps that duration and disables killed-enemy markers when set to `0`. The spatial location sound and spoken direction use the position captured when Status Report was triggered.
 - Nearby active followers without enemies play `FriendlyGesture`.
+- When no living teammate exists, Status Report plays `radiobeep.ogg` instead of the normal `radiochat.ogg` response.
 - Does not create `FollowerCommandType` state.
 
 ### Contact / Over There
