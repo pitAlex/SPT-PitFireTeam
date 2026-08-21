@@ -33,9 +33,13 @@ namespace pitTeam.BigBrain.Actions
     /// </summary>
     internal abstract class FollowerCombatActionBase : CustomLogic
     {
+        private const float DistantCombatMovementStandingDistance = 25f;
+
         private float nextUnownedLauncherGuardRecordAt;
         private bool closeThreatStandingRecorded;
         private string? closeThreatStandingRecordReason;
+        private bool distantMovementStandingRecorded;
+        private string? distantMovementStandingRecordReason;
 
         protected FollowerCombatActionBase(BotOwner botOwner) : base(botOwner)
         {
@@ -45,6 +49,8 @@ namespace pitTeam.BigBrain.Actions
         {
             closeThreatStandingRecorded = false;
             closeThreatStandingRecordReason = null;
+            distantMovementStandingRecorded = false;
+            distantMovementStandingRecordReason = null;
             base.Start();
         }
 
@@ -263,6 +269,78 @@ namespace pitTeam.BigBrain.Actions
                     recordReason,
                     enemyDistance,
                     target);
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Search travel and its short arrival settle should not become distant crouch-walking.
+        /// Callers explicitly prove that translation is expected; stationary cover/fire posture is
+        /// intentionally left to the existing pose and firing-lane policies.
+        /// </summary>
+        protected bool EnforceDistantCombatMovementStandingPose(
+            string action,
+            string? actionReason,
+            bool movementExpected,
+            EnemyInfo? goalEnemy = null)
+        {
+            goalEnemy ??= BotOwner?.Memory?.GoalEnemy;
+            float enemyDistance = goalEnemy?.Distance ?? 0f;
+            if (!movementExpected ||
+                goalEnemy?.Person?.HealthController?.IsAlive != true)
+            {
+                distantMovementStandingRecorded = false;
+                distantMovementStandingRecordReason = null;
+                return false;
+            }
+
+            if (enemyDistance <= 0f)
+            {
+                enemyDistance = Vector3.Distance(BotOwner.Position, goalEnemy.CurrPosition);
+            }
+
+            if (enemyDistance < DistantCombatMovementStandingDistance)
+            {
+                distantMovementStandingRecorded = false;
+                distantMovementStandingRecordReason = null;
+                return false;
+            }
+
+            bool lowTargetPose = BotOwner.Mover?.TargetPose < 0.85f;
+            bool prone = BotOwner.GetPlayer?.MovementContext?.IsInPronePose == true;
+            if (!lowTargetPose && !prone)
+            {
+                return true;
+            }
+
+            if (prone)
+            {
+                BotOwner.BotLay?.GetUp(false);
+            }
+
+            BotOwner.SetPose(1f);
+            BotOwner.Mover?.SetPose(1f);
+
+            string recordReason = string.IsNullOrEmpty(actionReason)
+                ? "distantMovement"
+                : $"distantMovement:{actionReason}";
+            if (!distantMovementStandingRecorded ||
+                !string.Equals(
+                    distantMovementStandingRecordReason,
+                    recordReason,
+                    System.StringComparison.Ordinal))
+            {
+                distantMovementStandingRecorded = true;
+                distantMovementStandingRecordReason = recordReason;
+                BattleRecorder.RecordCombatPosturePolicy(
+                    BotOwner,
+                    action,
+                    "crouchMove",
+                    false,
+                    recordReason,
+                    enemyDistance,
+                    FollowerCombatCommon.GetEnemyAnchor(goalEnemy));
             }
 
             return true;

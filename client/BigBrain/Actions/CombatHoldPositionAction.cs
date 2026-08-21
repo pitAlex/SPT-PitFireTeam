@@ -16,9 +16,11 @@ namespace pitTeam.BigBrain.Actions
     internal sealed class CombatHoldPositionAction : FollowerCombatActionBase
     {
         private const float UnsafeVanillaReloadDeferralSeconds = 0.25f;
+        private const float PushSearchArrivalStandingSettleSeconds = 0.75f;
 
         private readonly GClass278 baseLogic;
         private readonly FollowerCombatFireOverlay fireOverlay;
+        private float holdStartedAt;
 
         public CombatHoldPositionAction(BotOwner botOwner) : base(botOwner)
         {
@@ -29,6 +31,7 @@ namespace pitTeam.BigBrain.Actions
         public override void Start()
         {
             base.Start();
+            holdStartedAt = Time.time;
             StopStationaryCombatMovement();
         }
 
@@ -56,6 +59,11 @@ namespace pitTeam.BigBrain.Actions
             // run. Reassert the shared close-threat rule before the hold fire overlay pulls the
             // trigger so regroup/boss/cover holds cannot bypass the 50m standing contract.
             EnforceCloseThreatStandingPose("holdPosition", reason);
+            EnforceDistantCombatMovementStandingPose(
+                "holdPosition",
+                reason,
+                IsPushSearchArrivalHold(reason) &&
+                Time.time - holdStartedAt <= PushSearchArrivalStandingSettleSeconds);
 
             if (recoveryNoCover)
             {
@@ -70,6 +78,14 @@ namespace pitTeam.BigBrain.Actions
                 allowThreatSuppression: recoveryNoCover || BotOwner.Memory?.IsUnderFire == true,
                 forceThreatLook: true,
                 out _);
+        }
+
+        private static bool IsPushSearchArrivalHold(string? reason)
+        {
+            return !string.IsNullOrEmpty(reason) &&
+                   reason.StartsWith(
+                       "committedCoverHold.push.search",
+                       System.StringComparison.Ordinal);
         }
 
         private void DeferUnsafeVanillaHoldReload(string? reason)

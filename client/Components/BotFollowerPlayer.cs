@@ -131,6 +131,7 @@ namespace pitTeam.Components
         private Vector3 _commandTarget;
         private float _commandUntilTime;
         private int _moveToPointIssueSequence;
+        private int _pushEnemyIssueSequence;
         private bool _suppressEnemyRequiresLauncher;
         private bool _suppressEnemyForceWeapon;
         private bool _suppressEnemyUseAutomaticSecondary;
@@ -1518,6 +1519,11 @@ namespace pitTeam.Components
                 return;
             }
 
+            unchecked
+            {
+                _pushEnemyIssueSequence++;
+            }
+
             if (_activeCommand != FollowerCommandType.None && _activeCommand != FollowerCommandType.PushEnemy)
             {
                 ClearCommand($"SetPushEnemy:replace({_activeCommand})");
@@ -2064,6 +2070,8 @@ namespace pitTeam.Components
         }
 
         public int MoveToPointIssueSequence => _moveToPointIssueSequence;
+
+        public int PushEnemyIssueSequence => _pushEnemyIssueSequence;
 
         public bool SuppressEnemyRequiresLauncher =>
             _activeCommand == FollowerCommandType.SuppressEnemy && _suppressEnemyRequiresLauncher;

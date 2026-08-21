@@ -204,7 +204,17 @@ namespace pitTeam.BigBrain.Actions
                 target = CorrectCloseThreatSuppressPoint(target.Value);
             }
 
-            bool standingSuppress = IsStandingSuppressReason(reason);
+            CustomNavigationPoint suppressFrom = BotOwner.SuppressShoot?.PointToSuppressFrom;
+            bool standingSuppress = suppressFrom == null || IsStandingSuppressReason(reason);
+            if (suppressFrom == null)
+            {
+                // A suppression decision without an owned movement point is position-owned. Stop
+                // any path left by the previous action so a ".place"/standing suppress cannot walk
+                // several metres along stale movement while aiming and firing.
+                BotOwner.StopMove();
+                SetCombatSprint(false);
+            }
+
             if (launcherSuppress || standingSuppress)
             {
                 BotOwner.SetPose(1f);
@@ -276,7 +286,6 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            CustomNavigationPoint suppressFrom = BotOwner.SuppressShoot?.PointToSuppressFrom;
             if (launcherSuppress && !IsGrenadeLauncherSelectedForSuppress())
             {
                 HoldLauncherSuppressPosition(aimTarget, suppressFrom);
@@ -984,7 +993,7 @@ namespace pitTeam.BigBrain.Actions
             EnemyInfo goalEnemy = BotOwner.Memory?.GoalEnemy;
             if (goalEnemy == null ||
                 goalEnemy.Distance > CloseThreatSuppressCorrectionDistance ||
-                !BotOwner.IsEnemyLookingAtMe(goalEnemy))
+                !SainGoalEnemyBridge.IsEnemyLookingAtFollower(BotOwner, goalEnemy))
             {
                 return suppressPoint;
             }

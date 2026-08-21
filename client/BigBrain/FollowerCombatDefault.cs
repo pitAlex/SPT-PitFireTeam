@@ -2158,6 +2158,7 @@ namespace pitTeam.BigBrain
 
             if (!combatCommon.IsCommittedHolderTimerActive())
             {
+                combatCommon.BlockCommittedPushCoverForReplan(reason);
                 combatCommon.ClearCommittedPosition();
                 return new AICoreActionEndStruct("committedHoldExpired", true);
             }

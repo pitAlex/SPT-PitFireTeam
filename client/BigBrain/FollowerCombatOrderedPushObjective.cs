@@ -332,12 +332,18 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEndStruct("orderedRecoveryImmediateThreat", true);
             }
 
+            bool committedHoldTimerActive = CombatCommon.IsCommittedHolderTimerActive();
             if (CombatCommon.HasCommittedPosition(
                     out AICoreActionResultStruct<BotLogicDecision, GClass26> committedHold) &&
                 committedHold.Action == currentDecision.Action &&
                 string.Equals(committedHold.Reason, currentDecision.Reason, StringComparison.Ordinal))
             {
                 return FollowerCombatCommon.Continue();
+            }
+
+            if (!committedHoldTimerActive)
+            {
+                CombatCommon.BlockCommittedPushCoverForReplan(currentDecision.Reason);
             }
 
             return new AICoreActionEndStruct("orderedCommittedHoldReleased", true);

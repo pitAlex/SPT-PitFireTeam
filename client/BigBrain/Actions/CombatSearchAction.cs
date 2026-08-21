@@ -55,21 +55,28 @@ namespace pitTeam.BigBrain.Actions
             baseLogic.UpdateNodeByBrain(GetRawData(data));
             EnforceCloseThreatStandingPose("search", reason);
             EnsureSearchMove();
+            EnforceDistantCombatMovementStandingPose(
+                "search",
+                reason,
+                HasPendingSearchMovement());
             LookSimple();
         }
 
         private void UpdateMemoryOnlySearch(string reason)
         {
             EnemyInfo? goalEnemy = BotOwner.Memory?.GoalEnemy;
-            if (goalEnemy == null ||
-                (memorySearchInitialized &&
-                 !string.Equals(goalEnemy.ProfileId, memorySearchEnemyProfileId, System.StringComparison.Ordinal)))
+            if (goalEnemy == null)
             {
                 ClearSearchPointAndStop();
                 return;
             }
 
-            if (!memorySearchInitialized)
+            bool enemyChanged = memorySearchInitialized &&
+                                !string.Equals(
+                                    goalEnemy.ProfileId,
+                                    memorySearchEnemyProfileId,
+                                    System.StringComparison.Ordinal);
+            if (!memorySearchInitialized || enemyChanged)
             {
                 BotSearchPoint? selectedPoint = BotOwner.SearchData?.SearchPoint;
                 if (selectedPoint == null || !IsFinite(selectedPoint.Position))
@@ -85,7 +92,7 @@ namespace pitTeam.BigBrain.Actions
                 BattleRecorder.RecordCommitmentEvent(
                     BotOwner,
                     "memorySearch",
-                    "commit",
+                    enemyChanged ? "retarget" : "commit",
                     reason,
                     target: memorySearchPoint);
             }
@@ -113,6 +120,11 @@ namespace pitTeam.BigBrain.Actions
             StopCombatShooting();
             EnforceCloseThreatStandingPose("memorySearch", reason);
             EnsureSearchMove();
+            EnforceDistantCombatMovementStandingPose(
+                "memorySearch",
+                reason,
+                movementExpected: true,
+                goalEnemy: goalEnemy);
             LookSimple(memorySearchPoint);
         }
 
@@ -191,15 +203,45 @@ namespace pitTeam.BigBrain.Actions
                 toSearchPoint.y = 0f;
             }
 
-            if (toSearchPoint.sqrMagnitude < 4f || BotOwner.HasPathAndNotComplete)
+            if (toSearchPoint.sqrMagnitude < 4f)
             {
                 return;
             }
 
+            bool hasCorrectSearchRoute = BotOwner.HasPathAndNotComplete &&
+                                         BotOwner.Mover.TargetPoint.HasValue &&
+                                         (BotOwner.Mover.TargetPoint.Value - searchPoint.Position).sqrMagnitude <= 1f;
+            if (hasCorrectSearchRoute)
+            {
+                return;
+            }
+
+            if (BotOwner.HasPathAndNotComplete)
+            {
+                BotOwner.Mover.Stop();
+            }
+
             BotOwner.Mover.Sprint(false, true);
             BotOwner.SetTargetMoveSpeed(1f);
-            NavMeshPathStatus status = BotOwner.GoToPoint(searchPoint.Position, false, -1f, true, false, true, false, false);
+            NavMeshPathStatus status = BotOwner.GoToPoint(searchPoint.Position, false, -1f, true, false, true, false, true);
             BotOwner.SearchData.IsReachableLast = status == NavMeshPathStatus.PathComplete;
+        }
+
+        private bool HasPendingSearchMovement()
+        {
+            BotSearchPoint? searchPoint = BotOwner.SearchData?.SearchPoint;
+            if (searchPoint == null)
+            {
+                return false;
+            }
+
+            Vector3 toSearchPoint = searchPoint.Position - BotOwner.Position;
+            if (toSearchPoint.y < BotOwner.Settings.FileSettings.Move.Y_APPROXIMATION)
+            {
+                toSearchPoint.y = 0f;
+            }
+
+            return toSearchPoint.sqrMagnitude >= 4f;
         }
 
         public void LookSimple(Vector3? committedDestination = null)

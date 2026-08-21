@@ -508,7 +508,11 @@ namespace pitTeam.BigBrain
             out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
         {
             decision = default;
-            if (cover == null)
+            if (cover == null ||
+                combatCommon.IsBlockedPushCover(
+                    cover,
+                    botOwner.Memory?.GoalEnemy,
+                    "push.runToCover"))
             {
                 return false;
             }

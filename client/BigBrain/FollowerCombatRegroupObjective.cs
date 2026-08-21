@@ -27,6 +27,7 @@ namespace pitTeam.BigBrain
         private const float RegroupWithdrawStalledSeconds = 2f;
         internal const string RegroupReasonPrefix = "regroup.";
         private const string RegroupArrivedReason = "regroup.arrived";
+        private const string RegroupArrivalCoverReason = "regroup.arrivalCover";
         private const string RegroupUrbanDetourReason = "regroup.urbanDetour";
         private const string RegroupWithdrawBackwardReason = "regroup.withdraw.backward";
         private const string RegroupWithdrawForwardReason = "regroup.withdraw.forward";
@@ -46,6 +47,10 @@ namespace pitTeam.BigBrain
         private float lastWithdrawProgressTargetDistance;
         private float withdrawStallStartedAt;
         private float nextWithdrawProgressCheckAt;
+        private bool arrivalCoverResolved;
+        private bool arrivalCoverScanAttempted;
+        private Vector3 arrivalCoverSectorAnchor;
+        private bool hasArrivalCoverSectorAnchor;
 
         private enum RegroupBossDirection
         {
@@ -71,6 +76,10 @@ namespace pitTeam.BigBrain
             committedRegroupReason = null;
             arrivedSettleUntil = 0f;
             regroupActivatedAt = 0f;
+            arrivalCoverResolved = false;
+            arrivalCoverScanAttempted = false;
+            arrivalCoverSectorAnchor = Vector3.zero;
+            hasArrivalCoverSectorAnchor = false;
             ResetWithdrawProgressTracking();
         }
 
@@ -133,6 +142,15 @@ namespace pitTeam.BigBrain
             Vector3 bossPosition = CombatCommon.GetBossPosition();
             if (HasReachedBoss(bossPosition))
             {
+                if (TryGetArrivalCoverDecision(
+                        goalEnemy,
+                        bossPosition,
+                        out AICoreActionResultStruct<BotLogicDecision, GClass26> arrivalCoverDecision))
+                {
+                    CommitRegroupMove(arrivalCoverDecision);
+                    return arrivalCoverDecision;
+                }
+
                 return GetArrivedSettleDecision();
             }
 
@@ -188,6 +206,13 @@ namespace pitTeam.BigBrain
 
             if (IsRegroupSettleReason(currentDecision.Reason))
             {
+                if (TryInterruptArrivedSettleForCombatPressure(
+                        goalEnemy!,
+                        out AICoreActionEndStruct pressureInterrupt))
+                {
+                    return pressureInterrupt;
+                }
+
                 if (Time.time < arrivedSettleUntil)
                 {
                     return default;
@@ -202,6 +227,7 @@ namespace pitTeam.BigBrain
             // interrupting an unrelated combat action. Any regroup-owned move may finish once the
             // follower reaches the boss; ordinary tactic movement still keeps its own end contract.
             if (IsRegroupReason(currentDecision.Reason) &&
+                !IsArrivalCoverReason(currentDecision.Reason) &&
                 HasReachedBoss(CombatCommon.GetBossPosition()))
             {
                 ClearCurrentTarget();
@@ -228,7 +254,7 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEndStruct("regroupSuppressOverride", true);
             }
 
-            if (currentDecision.Reason != null && currentDecision.Reason.StartsWith("regroup.withdraw", System.StringComparison.Ordinal))
+            if (IsWithdrawReason(currentDecision.Reason) || IsArrivalCoverReason(currentDecision.Reason))
             {
                 if (CombatCommon.TryGetNeedHealDecision() != null)
                 {
@@ -242,21 +268,38 @@ namespace pitTeam.BigBrain
 
                 if (HasReachedCurrentTarget())
                 {
+                    bool arrivalCoverReached = IsArrivalCoverReason(currentDecision.Reason);
+                    if (arrivalCoverReached)
+                    {
+                        arrivalCoverResolved = true;
+                    }
+
                     ClearCurrentTarget();
                     ClearCommittedRegroupMove();
-                    return new AICoreActionEndStruct("regroupReachedWithdrawTarget", true);
+                    return new AICoreActionEndStruct(
+                        arrivalCoverReached ? "regroupArrivalCoverReached" : "regroupReachedWithdrawTarget",
+                        true);
                 }
 
                 if (TryGetStalledWithdrawEnd(CombatCommon.GetBossPosition(), out AICoreActionEndStruct stalledWithdrawEnd))
                 {
+                    bool arrivalCoverStalled = IsArrivalCoverReason(currentDecision.Reason);
+                    if (arrivalCoverStalled)
+                    {
+                        arrivalCoverResolved = true;
+                    }
+
                     ClearCurrentTarget();
                     ClearCommittedRegroupMove();
-                    if (stalledWithdrawEnd.Reason == "regroupWithdrawStalledNearBoss" && arrivedSettleUntil <= 0f)
+                    if ((arrivalCoverStalled || stalledWithdrawEnd.Reason == "regroupWithdrawStalledNearBoss") &&
+                        arrivedSettleUntil <= 0f)
                     {
                         arrivedSettleUntil = Time.time + RegroupArrivalSettleSeconds;
                     }
 
-                    return stalledWithdrawEnd;
+                    return arrivalCoverStalled
+                        ? new AICoreActionEndStruct("regroupArrivalCoverStalled", true)
+                        : stalledWithdrawEnd;
                 }
 
                 if (ShouldReturnMarksmanToSupport(goalEnemy))
@@ -294,6 +337,125 @@ namespace pitTeam.BigBrain
             }
 
             return CombatCommon.ShallEndCurrentDecision(currentDecision);
+        }
+
+        private bool TryGetArrivalCoverDecision(
+            EnemyInfo goalEnemy,
+            Vector3 bossPosition,
+            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        {
+            decision = default;
+            RefreshArrivalCoverScanForBossSector(bossPosition);
+            if (arrivalCoverResolved || BotOwner.Memory?.IsInCover == true)
+            {
+                return false;
+            }
+
+            if (IsArrivalCoverReason(committedRegroupReason) && hasTarget)
+            {
+                if (HasReachedCurrentTarget())
+                {
+                    arrivalCoverResolved = true;
+                    ClearCurrentTarget();
+                    ClearCommittedRegroupMove();
+                    return false;
+                }
+
+                BotOwner.GoToSomePointData.SetPoint(currentTarget);
+                decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                    committedRegroupAction,
+                    committedRegroupReason);
+                return true;
+            }
+
+            if (arrivalCoverScanAttempted)
+            {
+                return false;
+            }
+
+            arrivalCoverScanAttempted = true;
+            arrivalCoverSectorAnchor = bossPosition;
+            hasArrivalCoverSectorAnchor = true;
+
+            float coverRadius = GetRegroupCoverRadius();
+            if (!CombatCommon.TryFindBossCoverForRegroupArrival(
+                    goalEnemy,
+                    bossPosition,
+                    coverRadius,
+                    out CustomNavigationPoint? cover) ||
+                !TryAcceptRegroupCover(cover, bossPosition, out Vector3 targetPosition))
+            {
+                return false;
+            }
+
+            CombatCommon.AssignCover(cover);
+            if (HasReachedPosition(targetPosition))
+            {
+                arrivalCoverResolved = true;
+                return false;
+            }
+
+            currentTarget = targetPosition;
+            bossSectorAnchor = bossPosition;
+            hasTarget = true;
+            hasBossSectorAnchor = true;
+            UpsertDestinationClaim(currentTarget);
+            BotOwner.GoToSomePointData.SetPoint(currentTarget);
+            decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                BotLogicDecision.attackMoving,
+                RegroupArrivalCoverReason);
+            return true;
+        }
+
+        private void RefreshArrivalCoverScanForBossSector(Vector3 bossPosition)
+        {
+            // Do not invalidate a cover route while it is being executed. Once that route finishes,
+            // a materially moved boss may re-arm exactly one capped scan for the new arrival sector.
+            if (!hasArrivalCoverSectorAnchor ||
+                (IsArrivalCoverReason(committedRegroupReason) && hasTarget))
+            {
+                return;
+            }
+
+            float sectorRadius = CombatDistanceConfiguration.Instance.GetRegroupBossMoveRefreshDistance();
+            if ((bossPosition - arrivalCoverSectorAnchor).sqrMagnitude <= sectorRadius * sectorRadius)
+            {
+                return;
+            }
+
+            arrivalCoverSectorAnchor = bossPosition;
+            arrivalCoverResolved = false;
+            arrivalCoverScanAttempted = false;
+            arrivedSettleUntil = 0f;
+        }
+
+        private bool TryInterruptArrivedSettleForCombatPressure(
+            EnemyInfo goalEnemy,
+            out AICoreActionEndStruct end)
+        {
+            end = default;
+            bool immediateFireOpportunity = goalEnemy.IsVisible && goalEnemy.CanShoot;
+            bool exposedPressure =
+                BotOwner.Memory?.IsInCover != true &&
+                CombatCommon.HasRecoveryPressure(0.75f);
+            if (!immediateFireOpportunity && !exposedPressure)
+            {
+                return false;
+            }
+
+            // Completing the objective guarantees that the next decision comes from the active
+            // tactic's fire/recovery router. The follower is already inside the regroup envelope,
+            // so ordinary boss-distance selection cannot immediately recreate this settle.
+            complete = true;
+            arrivedSettleUntil = 0f;
+            ClearCurrentTarget();
+            ClearCommittedRegroupMove();
+            end = new AICoreActionEndStruct(
+                immediateFireOpportunity
+                    ? "regroupArrivedFireOpportunity"
+                    : "regroupArrivedPressureInterrupt",
+                true);
+            return true;
         }
 
         private AICoreActionResultStruct<BotLogicDecision, GClass26> GetArrivedSettleDecision(string reason = RegroupArrivedReason)
@@ -388,7 +550,7 @@ namespace pitTeam.BigBrain
             committedRegroupAction = decision.Action;
             committedRegroupReason = decision.Reason;
             arrivedSettleUntil = 0f;
-            if (IsWithdrawReason(decision.Reason))
+            if (IsWithdrawReason(decision.Reason) || IsArrivalCoverReason(decision.Reason))
             {
                 StartWithdrawProgressTracking();
             }
@@ -992,6 +1154,11 @@ namespace pitTeam.BigBrain
             return string.Equals(reason, RegroupWithdrawBackwardReason, System.StringComparison.Ordinal) ||
                    string.Equals(reason, RegroupWithdrawForwardReason, System.StringComparison.Ordinal) ||
                    string.Equals(reason, RegroupWithdrawSideReason, System.StringComparison.Ordinal);
+        }
+
+        private static bool IsArrivalCoverReason(string? reason)
+        {
+            return string.Equals(reason, RegroupArrivalCoverReason, System.StringComparison.Ordinal);
         }
 
         public static bool IsRegroupActivationReason(string? reason)

@@ -1057,6 +1057,11 @@ namespace pitTeam.Utils
             return false;
         }
 
+        public static bool HasActiveBleeding(Player player)
+        {
+            return TryGetActiveBleeding(player, out _);
+        }
+
         private static MedsItemClass FindBestBleedTreatment(BotFirstAidClass firstAid, EDamageEffectType bleedingType)
         {
             MedsItemClass best = null;

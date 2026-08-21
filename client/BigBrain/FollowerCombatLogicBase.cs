@@ -32,6 +32,7 @@ namespace pitTeam.BigBrain
         protected readonly FollowerCombatGrenadierObjective grenadierObjective;
         protected CombatObjectiveKind currentObjective = CombatObjectiveKind.Default;
         private CombatObjectiveKind? grenadierResumeObjective;
+        private int consumedPushEnemyIssueSequence;
 
         protected FollowerCombatLogicBase(BotOwner botOwner)
         {
@@ -82,6 +83,7 @@ namespace pitTeam.BigBrain
             grenadierObjective.Reset();
             currentObjective = CombatObjectiveKind.Default;
             grenadierResumeObjective = null;
+            consumedPushEnemyIssueSequence = 0;
         }
 
         public virtual AICoreActionResultStruct<BotLogicDecision, GClass26> GetDecision()
@@ -274,7 +276,7 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEndStruct("objectiveSuppressionOrder", true);
             }
 
-            if (currentObjective != CombatObjectiveKind.OrderedPush &&
+            if ((currentObjective != CombatObjectiveKind.OrderedPush || HasRenewedOrderedPushOrder(followerData)) &&
                 goalEnemy != null &&
                 ShouldConsumePushCommand(followerData, goalEnemy) &&
                 CanInterruptForOrderedPushOrder(currentDecision))
@@ -431,6 +433,14 @@ namespace pitTeam.BigBrain
 
             return !FollowerCombatCommon.IsMedicalDecision(currentDecision) &&
                    currentDecision.Action != BotLogicDecision.dogFight;
+        }
+
+        private bool HasRenewedOrderedPushOrder(BotFollowerPlayer? followerData)
+        {
+            return followerData != null &&
+                   followerData.TryPeekActiveCommand(out FollowerCommandType command, out _, out _) &&
+                   command == FollowerCommandType.PushEnemy &&
+                   followerData.PushEnemyIssueSequence != consumedPushEnemyIssueSequence;
         }
 
         private bool IsActiveGrenadierLauncherFire(
@@ -643,6 +653,7 @@ namespace pitTeam.BigBrain
             }
 
             DeactivateRegroupForObjectiveSwitch(followerData);
+            consumedPushEnemyIssueSequence = followerData.PushEnemyIssueSequence;
             followerData.ClearCommand("CombatObjective:ConsumePush");
             DeactivateGrenadierForObjectiveSwitch("switch.orderedPush");
             followerData.ActivateOrderedPushTargetLock(goalEnemy);

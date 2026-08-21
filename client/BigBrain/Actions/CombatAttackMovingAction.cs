@@ -1,6 +1,7 @@
 using DrakiaXYZ.BigBrain.Brains;
 using EFT;
 using pitTeam.Components;
+using pitTeam.Modules;
 using pitTeam.Utils;
 using UnityEngine;
 
@@ -315,7 +316,7 @@ namespace pitTeam.BigBrain.Actions
             {
                 return goalEnemy != null &&
                        goalEnemy.Distance <= maxDistance &&
-                       BotOwner_0.IsEnemyLookingAtMe(goalEnemy) &&
+                       SainGoalEnemyBridge.IsEnemyLookingAtFollower(BotOwner_0, goalEnemy) &&
                        (goalEnemy.IsVisible ||
                         Time.time - goalEnemy.PersonalSeenTime <= recentSeenWindow ||
                         Time.time - goalEnemy.PersonalLastSeenTime <= recentSeenWindow);
