@@ -150,8 +150,7 @@ namespace pitTeam.Patches
             out string? blockedReason)
         {
             blockedReason = null;
-            if (pitFireTeam.IsSAINInstalled ||
-                botOwner == null ||
+            if (botOwner == null ||
                 !BossPlayers.IsFollower(botOwner) ||
                 !string.Equals(reason, "unscopedSetter", System.StringComparison.Ordinal))
             {
@@ -161,7 +160,8 @@ namespace pitTeam.Patches
             // Vanilla SetVisible(true) recalculates GoalEnemy before CheckLookEnemy finishes
             // writing VisibleType and PersonalLastSeenTime. Defer soft/setup acquisition until
             // the normal post-look recalculation can use the completed, corrected sensor state.
-            if (FollowerEnemyInfoCorrection.IsInsideLookCheck &&
+            if (!pitFireTeam.IsSAINInstalled &&
+                FollowerEnemyInfoCorrection.IsInsideLookCheck &&
                 Enemy.RequiresAcquisitionAwarenessGate(value.GroupInfo?.Cause))
             {
                 blockedReason = "lookCheckGoalEnemyDeferred";
