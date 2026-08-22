@@ -204,7 +204,9 @@ The voice response also gives useful feedback. A weapon callout means a found we
 Looting settings are found under **My Squad → Settings**.
 
 - **Minimum Price** and **Maximum Price** control the value range for ordinary body and container loot.
-- **Pickup Food**, **Pickup Meds**, **Pickup Valuables**, **Pickup Weapons**, and **Pickup Gear** control the broad types of loot your teammates may take.
+- **Pickup Food**, **Pickup Meds**, and **Pickup Valuables** control food and drinks, medical supplies, barter items, keys, money, and other valuables.
+- **Pickup Weapons** controls guns, ammunition, magazines, weapon mods, and grenades.
+- **Pickup Gear** controls helmets, body armor, armored rigs, and tactical rigs.
 - Money is always accepted when **Pickup Valuables** is enabled, regardless of the price range.
 - Dogtags are always attempted on enemy USEC and BEAR bodies. A teammate may still report that he found nothing when the dogtag was the only item taken.
 
@@ -221,7 +223,8 @@ When **Pickup Gear** is enabled, a helmet, armor vest, armored rig, or tactical 
 - An under-supplied weapon may be kept on the left shoulder or in the backpack while the teammate waits for compatible magazines or ammunition. A later loot order can make that weapon ready.
 - Detachable magazines must fit in the tactical rig or pockets before the bot can rely on them. Magazines left in a backpack are cargo and are not used by the game's normal bot reload behavior. Leave enough suitable rig space if you want a found weapon to become dependable.
 - A teammate who already has a working primary may add a usable long gun to an empty secondary slot or a usable pistol to an empty holster when **Pickup Weapons** allows it. Looting never replaces an occupied secondary weapon or holster.
-- Later body and container searches maintain the working primary first, then may top off an equipped support weapon and collect compatible loaded magazines when safe rig or pocket space remains. The support weapon stays on the left shoulder, overflow remains behind, and compatible primary magazines are not reassigned to it.
+- Later body and container searches maintain the working primary first, followed by the second long gun and holstered pistol. Teammates can collect compatible loaded magazines and useful loose ammunition, top off eligible magazines, and feed internal-magazine or chamber-fed weapons.
+- The primary stays selected while support weapons remain in their existing slots. Ammo that is redundant or significantly worse can be left behind, fast-access pickups preserve reload space, and overflow magazines remain at the source.
 - Grenade launchers prefer the secondary slot when a conventional primary weapon is available.
 - Tactical-vest changes are currently limited to filling an empty slot or making a narrow protection upgrade in Immersive and Realistic. Broad armor and equipment optimization is planned for a later phase.
 
