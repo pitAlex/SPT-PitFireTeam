@@ -429,6 +429,7 @@ namespace pitTeam
             // bot misc patches
             new BotTalkTrySayPatch().Enable();
             new BotTalkSayPatch().Enable();
+            new PlayerSayFollowerTalkPatch().Enable();
             new FollowerWeaponTakenAfterDeathPatch().Enable();
             new FollowerWeaponSelectorManualUpdatePatch().Enable();
             new FollowerSupportNoAmmoMainSwitchPolicyPatch().Enable();
@@ -445,6 +446,7 @@ namespace pitTeam
             new HearingSensorPatch().Enable();
             new FootstepSoundPatch().Enable();
             new PlayerSayPatch().Enable();
+            new PlayerContactAudioFallbackPatch().Enable();
             new PlayerVoicePhraseAvailabilityInitPatch().Enable();
             new PlayerVoicePhraseAvailabilityReplacePatch().Enable();
             new PlayerKilledPatch().Enable();

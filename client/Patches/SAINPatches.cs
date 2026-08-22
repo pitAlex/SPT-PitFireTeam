@@ -32,6 +32,7 @@ namespace pitTeam.Patches
         private static Type? sainPlayerTalkPatch = null;
         private static Type? sainBotTalkPatch = null;
         private static Type? sainBotTalkManualUpdatePatch = null;
+        private static Type? sainBotTalkClassType = null;
         private static Type? sainPlayerComponentType = null;
         private static Type? sainMoverClass = null;
         private static Type? selfActionDecisionClassType = null;
@@ -87,6 +88,11 @@ namespace pitTeam.Patches
                 sainBotTalkManualUpdatePatch = Type.GetType("SAIN.Patches.Talk.BotTalkManualUpdatePatch, SAIN");
             }
 
+            if (sainBotTalkClassType == null)
+            {
+                sainBotTalkClassType = Type.GetType("SAIN.SAINComponent.Classes.Talk.SAINBotTalkClass, SAIN");
+            }
+
             if (sainPlayerComponentType == null)
             {
                 sainPlayerComponentType = Type.GetType("SAIN.Components.PlayerComponent, SAIN");
@@ -109,6 +115,7 @@ namespace pitTeam.Patches
             PatchFollowerReloadBlockIfAddonMissing(harmony);
             PatchFollowerWeaponSelectionGuard(harmony);
             PatchSainTalkPrefixesForFollowers(harmony);
+            PatchSainTalkGenerationForFollowers(harmony);
             PatchSainPlayerVoiceLineForFollowers(harmony);
             PatchFollowerCloseFoliageVision(harmony);
 
@@ -291,7 +298,48 @@ namespace pitTeam.Patches
             {
                 harmony.Patch(
                     playVoiceLine,
-                    prefix: new HarmonyMethod(typeof(SAINPatch).GetMethod(nameof(GuardSainPlayerVoiceLineForFollower), BindingFlags.NonPublic | BindingFlags.Static)));
+                    prefix: new HarmonyMethod(typeof(SAINPatch).GetMethod(nameof(UseVanillaTalkForFollower), BindingFlags.NonPublic | BindingFlags.Static)));
+            }
+            else
+            {
+                Modules.Logger.LogError("Failed to find SAIN PlayerComponent.PlayVoiceLine for follower vanilla-talk routing.");
+            }
+        }
+
+        private static void PatchSainTalkGenerationForFollowers(Harmony harmony)
+        {
+            if (sainBotTalkClassType == null)
+            {
+                Modules.Logger.LogError("Failed to find SAINBotTalkClass for follower vanilla-talk routing.");
+                return;
+            }
+
+            MethodInfo? manualUpdate = AccessTools.Method(sainBotTalkClassType, "ManualUpdate", Type.EmptyTypes);
+            MethodInfo? say = AccessTools.Method(
+                sainBotTalkClassType,
+                "Say",
+                new[] { typeof(EPhraseTrigger), typeof(ETagStatus?), typeof(bool), typeof(bool) });
+
+            if (manualUpdate != null)
+            {
+                harmony.Patch(
+                    manualUpdate,
+                    prefix: new HarmonyMethod(typeof(SAINPatch).GetMethod(nameof(DisableSainTalkUpdateForFollower), BindingFlags.NonPublic | BindingFlags.Static)));
+            }
+            else
+            {
+                Modules.Logger.LogError("Failed to find SAINBotTalkClass.ManualUpdate for follower vanilla-talk routing.");
+            }
+
+            if (say != null)
+            {
+                harmony.Patch(
+                    say,
+                    prefix: new HarmonyMethod(typeof(SAINPatch).GetMethod(nameof(DisableSainTalkSayForFollower), BindingFlags.NonPublic | BindingFlags.Static)));
+            }
+            else
+            {
+                Modules.Logger.LogError("Failed to find SAINBotTalkClass.Say for follower vanilla-talk routing.");
             }
         }
 
@@ -478,13 +526,8 @@ namespace pitTeam.Patches
         }
 
         [HarmonyPrefix]
-        private static bool GuardSainPlayerVoiceLineForFollower(object __instance, EPhraseTrigger phrase, ETagStatus mask, bool aggressive, ref bool __result)
+        private static bool UseVanillaTalkForFollower(object __instance, ref bool __result)
         {
-            if (!pitFireTeam.ShouldDisableSainForFollowers)
-            {
-                return true;
-            }
-
             try
             {
                 Player? player = sainPlayerComponentPlayerProperty?.GetValue(__instance) as Player;
@@ -494,36 +537,55 @@ namespace pitTeam.Patches
                     return true;
                 }
 
-                if (FollowerForcedPhraseGate.ShouldBlock(botOwner, phrase))
-                {
-                    __result = false;
-                    return false;
-                }
-
-                if (FollowerMutedCombatPhraseGate.ShouldBlock(botOwner, phrase))
-                {
-                    __result = false;
-                    return false;
-                }
-
-                if (FollowerContactPhraseGate.IsContactPhrase(phrase) && !FollowerContactPhraseGate.ShouldAllow(botOwner))
-                {
-                    __result = false;
-                    return false;
-                }
-
-                if (FollowerTalkFrequencyGate.ShouldBlockCombatTalk(botOwner, phrase))
-                {
-                    __result = false;
-                    return false;
-                }
+                // SAIN's vanilla-talk option is global. Emulate it only for pitFireTeam followers:
+                // its BotTalk patch prefixes are bypassed above so EFT/plugin speech remains active,
+                // while this SAIN-only output path is suppressed. The configured follower talk gate
+                // can therefore remain the single authority over vanilla combat trash talk.
+                __result = false;
+                return false;
             }
             catch
             {
                 return true;
             }
+        }
 
-            return true;
+        [HarmonyPrefix]
+        private static bool DisableSainTalkUpdateForFollower(object __instance)
+        {
+            try
+            {
+                return !IsSainTalkOwnerFollower(__instance);
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
+        [HarmonyPrefix]
+        private static bool DisableSainTalkSayForFollower(object __instance, ref bool __result)
+        {
+            try
+            {
+                if (!IsSainTalkOwnerFollower(__instance))
+                {
+                    return true;
+                }
+
+                __result = false;
+                return false;
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
+        private static bool IsSainTalkOwnerFollower(object instance)
+        {
+            BotOwner? botOwner = GetMemberValue(instance, "BotOwner") as BotOwner;
+            return botOwner != null && BossPlayers.IsFollower(botOwner);
         }
 
         [HarmonyPrefix]
