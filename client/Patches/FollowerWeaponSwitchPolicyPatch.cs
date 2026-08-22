@@ -145,12 +145,12 @@ namespace pitTeam.Patches
                 return false;
             }
 
-            if (!selector.CanChangeToSupportWeapons || !selector.IsWeaponReady)
+            if (!selector._canChangeToSupportWeapons || !selector.IsWeaponReady)
             {
                 return false;
             }
 
-            if (selector.LastEquipmentSlot != selector.SupportWeapon)
+            if (selector.LastEquipmentSlot != selector._supportWeapon)
             {
                 return false;
             }
@@ -171,18 +171,18 @@ namespace pitTeam.Patches
                 return;
             }
 
-            if (!selector.ErrorStuckLog &&
-                selector.StartChangeTime > 0f &&
-                Time.time - selector.StartChangeTime > 20f)
+            if (!selector._errorStuckLog &&
+                selector._startChangeTime > 0f &&
+                Time.time - selector._startChangeTime > 20f)
             {
-                selector.ErrorStuckLog = true;
+                selector._errorStuckLog = true;
             }
         }
 
         public static BotOwner GetSelectorBotOwner(BotWeaponSelector selector)
         {
             return selector != null
-                ? Traverse.Create(selector).Field("BotOwner_0").GetValue<BotOwner>()
+                ? Traverse.Create(selector).Field("_owner").GetValue<BotOwner>()
                 : null;
         }
 
@@ -238,13 +238,13 @@ namespace pitTeam.Patches
                 if (weaponManager != null && handsWeapon != null)
                 {
                     EquipmentSlot? slot = ResolveHandsWeaponSlot(botOwner, handsWeapon);
-                    if (slot.HasValue && !weaponManager.Info.ContainsKey(slot.Value))
+                    if (slot.HasValue && !weaponManager.info.ContainsKey(slot.Value))
                     {
-                        weaponManager.Info[slot.Value] = new BotWeaponInfo(
+                        weaponManager.info[slot.Value] = new BotWeaponInfo(
                             botOwner,
                             handsWeapon,
                             slot.Value,
-                            weaponManager.method_5);
+                            weaponManager.ChangeToMode);
                     }
                 }
             }
@@ -306,7 +306,7 @@ namespace pitTeam.Patches
                 return false;
             }
 
-            MagazineItemClass currentMagazine = currentWeapon.GetCurrentMagazine();
+            EFT.InventoryLogic.Magazine currentMagazine = currentWeapon.GetCurrentMagazine();
             if (currentMagazine == null || currentMagazine.MaxCount <= 0)
             {
                 return false;
@@ -381,20 +381,20 @@ namespace pitTeam.Patches
 
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(GClass461), "CanReload", new[]
+            return AccessTools.Method(typeof(BotReloadMagazine), "CanReload", new[]
             {
                 typeof(bool),
-                typeof(MagazineItemClass).MakeByRefType(),
-                typeof(List<AmmoItemClass>).MakeByRefType(),
+                typeof(EFT.InventoryLogic.Magazine).MakeByRefType(),
+                typeof(List<EFT.InventoryLogic.Ammo>).MakeByRefType(),
             });
         }
 
         [PatchPrefix]
-        private static void PatchPrefix(GClass461 __instance, out SwitchPolicyState __state)
+        private static void PatchPrefix(BotReloadMagazine __instance, out SwitchPolicyState __state)
         {
             __state = default;
 
-            BotOwner botOwner = Traverse.Create(__instance).Field("BotOwner_0").GetValue<BotOwner>();
+            BotOwner botOwner = Traverse.Create(__instance).Field("_owner").GetValue<BotOwner>();
             if (botOwner == null || !BossPlayers.IsFollower(botOwner))
             {
                 return;
@@ -420,14 +420,14 @@ namespace pitTeam.Patches
         }
 
         [PatchPostfix]
-        private static void PatchPostfix(GClass461 __instance, SwitchPolicyState __state)
+        private static void PatchPostfix(BotReloadMagazine __instance, SwitchPolicyState __state)
         {
             if (!__state.OverrodeSetting)
             {
                 return;
             }
 
-            BotOwner botOwner = Traverse.Create(__instance).Field("BotOwner_0").GetValue<BotOwner>();
+            BotOwner botOwner = Traverse.Create(__instance).Field("_owner").GetValue<BotOwner>();
             if (botOwner == null)
             {
                 return;
@@ -447,7 +447,7 @@ namespace pitTeam.Patches
         [PatchPrefix]
         private static bool PatchPrefix(BotReload __instance, ref bool __result)
         {
-            BotOwner botOwner = Traverse.Create(__instance).Field("BotOwner_0").GetValue<BotOwner>();
+            BotOwner botOwner = Traverse.Create(__instance).Field("_owner").GetValue<BotOwner>();
             if (botOwner == null || !BossPlayers.IsFollower(botOwner))
             {
                 return true;

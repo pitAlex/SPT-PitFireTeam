@@ -180,7 +180,12 @@ namespace pitTeam.BigBrain.Actions
             BotOwner.SetTargetMoveSpeed(1f);
             RefreshProgressState();
             NotMovingCheck(goalEnemy);
-            TryPreferPrimaryAtRange(goalEnemy, GetReason(data));
+            string? reason = GetReason(data);
+            TryPreferPrimaryAtRange(goalEnemy, reason);
+            if (HoldPushMovementUntilLongGunReady(reason))
+            {
+                return;
+            }
 
             BotOwner.SetPose(1f);
             SetCombatSprint(canRun);
@@ -216,7 +221,8 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            return BotOwner.DoorOpener.UpdateDoorInteractionStatus() == DoorInteractionStatus.CanRun;
+            DoorInteractionStatus doorStatus = BotOwner.DoorOpener.UpdateDoorInteractionStatus();
+            return !IsDoorInteractionBlockingSprint(doorStatus);
         }
 
         private void NotMovingCheck(EnemyInfo goalEnemy)
@@ -259,7 +265,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            ShootPointClass? shootPoint = BotOwner.CurrentEnemyTargetPosition(true);
+            ShootToPoint? shootPoint = BotOwner.CurrentEnemyTargetPosition(true);
             return shootPoint != null &&
                    Utils.Utils.CanShootToTarget(shootPoint, BotOwner.WeaponRoot.position, BotOwner.LookSensor.Mask, false);
         }
@@ -414,7 +420,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             committedLookMode = mode;
-            committedLookModeUntil = Time.time + GClass856.Random(LookCommitMinSeconds, LookCommitMaxSeconds);
+            committedLookModeUntil = Time.time + MyExtensions.Random(LookCommitMinSeconds, LookCommitMaxSeconds);
         }
 
         private bool TryStopUnsafeCloseKnownThreatAdvance(EnemyInfo goalEnemy)
@@ -549,13 +555,15 @@ namespace pitTeam.BigBrain.Actions
 
         private bool TryMoveToEnemyFallback(Vector3 targetPoint)
         {
-            if (BotOwner.MoveToEnemyData.method_0(targetPoint, out Vector3 currentTargetPos) &&
+            if (BotOwner.MoveToEnemyData.CanShootAtEndCurWay(targetPoint, out Vector3 currentTargetPos) &&
                 TryMoveToPoint(currentTargetPos))
             {
                 return true;
             }
 
-            if (!BotOwner.MoveToEnemyData.ShallRecalWay(out _) &&
+            if (BotOwner.Mover.HasPathAndNoComplete &&
+                HasCommittedRunPoint() &&
+                !BotOwner.MoveToEnemyData.ShallRecalWay(out _) &&
                 Time.time - BotOwner.Mover.LastPathSetTime < 10f)
             {
                 return true;
@@ -700,7 +708,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             baseDirection.Normalize();
-            ShootPointClass shootPoint = BotOwner.CurrentEnemyTargetPosition(true) ?? new ShootPointClass(goalEnemy.GetBodyPartPosition(), 1f);
+            ShootToPoint shootPoint = BotOwner.CurrentEnemyTargetPosition(true) ?? new ShootToPoint(goalEnemy.GetBodyPartPosition(), 1f);
 
             Vector3 fallbackPoint = Vector3.zero;
             bool hasFallbackPoint = false;
@@ -754,7 +762,7 @@ namespace pitTeam.BigBrain.Actions
                    Mathf.Abs(sampledPoint.y - enemyPosition.y) <= VerticalTolerance;
         }
 
-        private bool CanShootEnemyFromPoint(ShootPointClass shootPoint, Vector3 point)
+        private bool CanShootEnemyFromPoint(ShootToPoint shootPoint, Vector3 point)
         {
             if (shootPoint == null)
             {

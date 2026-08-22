@@ -11,7 +11,7 @@ namespace pitTeam.Components
 
         private void MakeAllyBossEnemy(BotOwner rival, Player enemy)
         {
-            BotSettingsClass groupInfo;
+            BotGroupEnemyInfo groupInfo;
             rival.BotsGroup.Enemies.TryGetValue(enemy, out groupInfo);
 
             if (groupInfo == null)
@@ -21,7 +21,7 @@ namespace pitTeam.Components
             }
             if (groupInfo == null)
             {
-                groupInfo = new BotSettingsClass(enemy, rival.BotsGroup, EBotEnemyCause.addPlayerToBoss);
+                groupInfo = new BotGroupEnemyInfo(enemy, rival.BotsGroup, EBotEnemyCause.addPlayerToBoss);
 
                 rival.Memory.AddEnemy(enemy, groupInfo, false);
             }

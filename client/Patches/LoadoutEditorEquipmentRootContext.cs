@@ -11,21 +11,21 @@ using System.Threading.Tasks;
 
 namespace pitTeam.Patches
 {
-    internal class LoadoutEditorEquipmentRootContext : GClass3450
+    internal class LoadoutEditorEquipmentRootContext : EFT.InventoryLogic.EmptyItemContext
     {
         public LoadoutEditorEquipmentRootContext(EItemViewType viewType)
             : base(viewType)
         {
         }
 
-        public override ItemContextAbstractClass CreateChild(Item item)
+        public override EFT.InventoryLogic.ItemContext CreateChild(Item item)
         {
             if (item == null)
             {
                 return this;
             }
 
-            return new GClass3453(item, this);
+            return new EFT.InventoryLogic.DefaultItemContext(item, this);
         }
     }
 
@@ -33,7 +33,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(Class308), nameof(Class308.RepairItemsByRepairKit));
+            return AccessTools.Method(typeof(EFT.EftClientBackendSession), nameof(EFT.EftClientBackendSession.RepairItemsByRepairKit));
         }
 
         [PatchPrefix]
@@ -64,11 +64,11 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(TraderClass), nameof(TraderClass.RepairItems));
+            return AccessTools.Method(typeof(EFT.Trading.Trader), nameof(EFT.Trading.Trader.RepairItems));
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(TraderClass __instance, RepairItem repairItem, ref Task<IResult> __result)
+        private static bool PatchPrefix(EFT.Trading.Trader __instance, RepairItem repairItem, ref Task<IResult> __result)
         {
             if (__instance == null
                 || repairItem == null)
@@ -101,13 +101,13 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(ContextInteractionsAbstractClass), nameof(ContextInteractionsAbstractClass.IsActive));
+            return AccessTools.Method(typeof(EFT.UI.BaseItemContextInteractions), nameof(EFT.UI.BaseItemContextInteractions.IsActive));
         }
 
         [PatchPostfix]
-        private static void PatchPostfix(ContextInteractionsAbstractClass __instance, EItemInfoButton button, ref bool __result)
+        private static void PatchPostfix(EFT.UI.BaseItemContextInteractions __instance, EItemInfoButton button, ref bool __result)
         {
-            Item item = __instance?.Item_0;
+            Item item = __instance?.Item;
             if (item == null
                 || OtherPlayerProfileScreenPatch.LoadoutEditorOverlayRoot == null
                 || !OtherPlayerProfileScreenPatch.IsLoadoutEditorEquipmentItem(item))
@@ -135,13 +135,13 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(ContextInteractionsAbstractClass), nameof(ContextInteractionsAbstractClass.IsActive));
+            return AccessTools.Method(typeof(EFT.UI.BaseItemContextInteractions), nameof(EFT.UI.BaseItemContextInteractions.IsActive));
         }
 
         [PatchPostfix]
-        private static void PatchPostfix(ContextInteractionsAbstractClass __instance, EItemInfoButton button, ref bool __result)
+        private static void PatchPostfix(EFT.UI.BaseItemContextInteractions __instance, EItemInfoButton button, ref bool __result)
         {
-            Item item = __instance?.Item_0;
+            Item item = __instance?.Item;
             if (item == null || OtherPlayerProfileScreenPatch.LoadoutEditorOverlayRoot == null)
             {
                 return;
@@ -165,13 +165,13 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(ContextInteractionsAbstractClass), nameof(ContextInteractionsAbstractClass.ExecuteInteractionInternal));
+            return AccessTools.Method(typeof(EFT.UI.BaseItemContextInteractions), nameof(EFT.UI.BaseItemContextInteractions.ExecuteInteractionInternal));
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(ContextInteractionsAbstractClass __instance, EItemInfoButton interaction)
+        private static bool PatchPrefix(EFT.UI.BaseItemContextInteractions __instance, EItemInfoButton interaction)
         {
-            Item item = __instance?.Item_0;
+            Item item = __instance?.Item;
             if (item == null || OtherPlayerProfileScreenPatch.LoadoutEditorOverlayRoot == null)
             {
                 return true;
@@ -179,7 +179,7 @@ namespace pitTeam.Patches
 
             if (interaction == EItemInfoButton.Open && OtherPlayerProfileScreenPatch.ShouldBlockLoadoutEditorContainerOpen(item))
             {
-                __instance.Action_6?.Invoke();
+                __instance._onCloseAction?.Invoke();
                 LoadoutEditorLockUi.ShowLockedContainerNotification();
                 return false;
             }
@@ -187,7 +187,7 @@ namespace pitTeam.Patches
             if (OtherPlayerProfileScreenPatch.IsLoadoutEditorPinLockInteraction(interaction)
                 && OtherPlayerProfileScreenPatch.IsLoadoutEditorStashItem(item))
             {
-                __instance.Action_6?.Invoke();
+                __instance._onCloseAction?.Invoke();
                 return false;
             }
 
@@ -219,7 +219,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(InteractionsHandlerClass), nameof(InteractionsHandlerClass.CanModifyItem));
+            return AccessTools.Method(typeof(EFT.InventoryLogic.ItemManipulator), nameof(EFT.InventoryLogic.ItemManipulator.CanModifyItem));
         }
 
         [PatchPrefix]
@@ -230,7 +230,7 @@ namespace pitTeam.Patches
                 return true;
             }
 
-            error = new InteractionsHandlerClass.GClass1606(lockedItem ?? item);
+            error = new EFT.InventoryLogic.ItemManipulator.ItemManuallyLockedError(lockedItem ?? item);
             __result = false;
             return false;
         }
@@ -240,7 +240,15 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(InteractionsHandlerClass), "smethod_24");
+            return AccessTools.Method(
+                typeof(EFT.InventoryLogic.ItemManipulator),
+                nameof(EFT.InventoryLogic.ItemManipulator.CanTransferTo),
+                new[]
+                {
+                    typeof(ItemAddress),
+                    typeof(ItemController),
+                    typeof(Error).MakeByRefType()
+                });
         }
 
         [PatchPrefix]
@@ -251,7 +259,7 @@ namespace pitTeam.Patches
                 return true;
             }
 
-            error = new InteractionsHandlerClass.GClass1606(lockedItem);
+            error = new EFT.InventoryLogic.ItemManipulator.ItemManuallyLockedError(lockedItem);
             __result = false;
             return false;
         }
@@ -261,7 +269,7 @@ namespace pitTeam.Patches
     {
         public static void ShowLockedContainerNotification()
         {
-            NotificationManagerClass.DisplayWarningNotification("Container is locked".Localized(null), ENotificationDurationType.Default);
+            EFT.Communications.NotificationManager.DisplayWarningNotification("Container is locked".Localized(null), ENotificationDurationType.Default);
         }
     }
 }

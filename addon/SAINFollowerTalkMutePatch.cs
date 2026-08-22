@@ -26,7 +26,7 @@ namespace pitTeam.SAINAddon
         private static readonly Dictionary<string, float> NextLogAtByKey = new Dictionary<string, float>(64, StringComparer.Ordinal);
         private static readonly FieldInfo? EnemyKnownPlacesEnemyField =
             AccessTools.Field(typeof(EnemyKnownPlaces), "Enemy");
-        private static readonly Type? PlayerComponentType = Type.GetType("SAIN.Components.PlayerComponent, SAIN");
+        private static readonly Type? PlayerComponentType = Type.GetType("SAIN.Components.PlayerComponentSpace.PlayerComponent, SAIN");
         private static readonly PropertyInfo? PlayerComponentPlayerProperty = PlayerComponentType?.GetProperty("Player");
 
         public static void Apply(Harmony harmony)

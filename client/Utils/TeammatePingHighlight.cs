@@ -491,7 +491,7 @@ namespace pitTeam.Utils
                 return;
             }
 
-            Camera nextCamera = CameraClass.Instance?.Camera ?? Camera.main;
+            Camera nextCamera = EFT.CameraControl.CameraManager.Instance?.Camera ?? Camera.main;
             if (_mainCamera == nextCamera)
             {
                 return;

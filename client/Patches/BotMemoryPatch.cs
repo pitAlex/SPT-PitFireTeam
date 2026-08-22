@@ -6,6 +6,7 @@ using System.Reflection;
 
 using pitTeam.Modules;
 using pitTeam.Utils;
+using pitTeam.BigBrain;
 
 namespace pitTeam.Patches
 {
@@ -16,14 +17,14 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(BotMemoryClass), "method_8");
+            return AccessTools.Method(typeof(EFT.BotMemory), nameof(EFT.BotMemory.GetHit));
         }
         [PatchPrefix]
-        private static void PatchPrefix(BotMemoryClass __instance, DamageInfoStruct damageInfo)
+        private static void PatchPrefix(EFT.BotMemory __instance, EFT.Ballistics.DamageInfo damageInfo)
         {
             try
             {
-                var botOwner_0 = AccessTools.Field(typeof(BotMemoryClass), "BotOwner_0").GetValue(__instance) as BotOwner;
+                var botOwner_0 = AccessTools.Field(typeof(EFT.BotMemory), "_owner").GetValue(__instance) as BotOwner;
 
                 if (damageInfo.Player == null) return;
 
@@ -58,28 +59,28 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.PropertySetter(typeof(BotMemoryClass), nameof(BotMemoryClass.GoalEnemy));
+            return AccessTools.PropertySetter(typeof(EFT.BotMemory), nameof(EFT.BotMemory.GoalEnemy));
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(BotMemoryClass __instance, EnemyInfo value)
+        private static bool PatchPrefix(EFT.BotMemory __instance, EnemyInfo value)
         {
             try
             {
-                BotOwner botOwner = AccessTools.Field(typeof(BotMemoryClass), "BotOwner_0").GetValue(__instance) as BotOwner;
+                BotOwner botOwner = AccessTools.Field(typeof(EFT.BotMemory), "_owner").GetValue(__instance) as BotOwner;
                 EnemyInfo previous = __instance.GoalEnemy;
+                string reason = FollowerGoalEnemyTracker.CurrentReason;
 
                 if (value != null)
                 {
-                    string reason = FollowerGoalEnemyTracker.CurrentReason;
-                    if (ShouldBlockUnscopedMemoryOnlyGoal(botOwner, value, reason))
+                    if (ShouldBlockUnscopedMemoryOnlyGoal(botOwner, value, reason, out string? acquisitionBlockedReason))
                     {
                         FollowerGoalEnemyTracker.RecordSetter(
                             botOwner,
                             previous,
                             value,
                             allowed: false,
-                            blockedReason: "memoryOnlyGoalEnemyBlocked");
+                            blockedReason: acquisitionBlockedReason);
                         return false;
                     }
 
@@ -114,12 +115,25 @@ namespace pitTeam.Patches
                 }
 
                 bool shouldBlockClear = FollowerContactEnemyRetention.ShouldBlockGoalEnemyClear(botOwner, previous);
+                string? clearBlockedReason = shouldBlockClear ? "retentionBlockedClear" : null;
+                if (!shouldBlockClear &&
+                    previous != null &&
+                    string.Equals(reason, "unscopedSetter", System.StringComparison.Ordinal) &&
+                    SainGoalEnemyBridge.TryGetRetainedSameGoalEnemy(
+                        botOwner,
+                        previous,
+                        out _))
+                {
+                    shouldBlockClear = true;
+                    clearBlockedReason = "sainRetainedSameTarget";
+                }
+
                 FollowerGoalEnemyTracker.RecordSetter(
                     botOwner,
                     previous,
                     null,
                     allowed: !shouldBlockClear,
-                    blockedReason: shouldBlockClear ? "retentionBlockedClear" : null);
+                    blockedReason: clearBlockedReason);
                 return !shouldBlockClear;
             }
             catch (System.Exception e)
@@ -129,12 +143,38 @@ namespace pitTeam.Patches
             }
         }
 
-        private static bool ShouldBlockUnscopedMemoryOnlyGoal(BotOwner botOwner, EnemyInfo value, string reason)
+        private static bool ShouldBlockUnscopedMemoryOnlyGoal(
+            BotOwner botOwner,
+            EnemyInfo value,
+            string reason,
+            out string? blockedReason)
         {
-            return botOwner != null &&
-                   BossPlayers.IsFollower(botOwner) &&
-                   string.Equals(reason, "unscopedSetter", System.StringComparison.Ordinal) &&
-                   Enemy.IsMemoryOnlyAcquisitionWithoutPersonalContact(value);
+            blockedReason = null;
+            if (botOwner == null ||
+                !BossPlayers.IsFollower(botOwner) ||
+                !string.Equals(reason, "unscopedSetter", System.StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            // Vanilla SetVisible(true) recalculates GoalEnemy before CheckLookEnemy finishes
+            // writing VisibleType and PersonalLastSeenTime. Defer soft/setup acquisition until
+            // the normal post-look recalculation can use the completed, corrected sensor state.
+            if (!pitFireTeam.IsSAINInstalled &&
+                FollowerEnemyInfoCorrection.IsInsideLookCheck &&
+                Enemy.RequiresAcquisitionAwarenessGate(value.GroupInfo?.Cause))
+            {
+                blockedReason = "lookCheckGoalEnemyDeferred";
+                return true;
+            }
+
+            if (!Enemy.IsMemoryOnlyAcquisitionWithoutPersonalContact(value))
+            {
+                return false;
+            }
+
+            blockedReason = "memoryOnlyGoalEnemyBlocked";
+            return true;
         }
     }
 }

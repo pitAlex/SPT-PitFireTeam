@@ -49,7 +49,7 @@ namespace pitTeam.Modules
                     StringComparer.Ordinal);
 
                 string ownerId = player.Profile?.AccountId ?? player.ProfileId;
-                FlatItemsDataClass[] equipmentItems = SerializeEquipment(
+                JsonType.FlatItem[] equipmentItems = SerializeEquipment(
                     player.InventoryController?.Inventory?.Equipment);
                 List<RecoverableGearCandidate> candidates = GetRecoverableTopLevelGear(
                         player,
@@ -104,7 +104,7 @@ namespace pitTeam.Modules
         public static bool TryGetFallenSquadmateSnapshot(
             string aid,
             string profileId,
-            out FlatItemsDataClass[] equipmentItems,
+            out JsonType.FlatItem[] equipmentItems,
             out string[] trackedItemIds)
         {
             equipmentItems = null;
@@ -546,7 +546,7 @@ namespace pitTeam.Modules
                 yield break;
             }
 
-            foreach (StashGridClass grid in compound.Grids)
+            foreach (EFT.InventoryLogic.Grid grid in compound.Grids)
             {
                 if (grid?.Items == null)
                 {
@@ -572,7 +572,7 @@ namespace pitTeam.Modules
                 return;
             }
 
-            foreach (StashGridClass grid in compound.Grids)
+            foreach (EFT.InventoryLogic.Grid grid in compound.Grids)
             {
                 grid?.RemoveAll();
             }
@@ -586,7 +586,7 @@ namespace pitTeam.Modules
                 return;
             }
 
-            foreach (StashGridClass grid in compound.Grids)
+            foreach (EFT.InventoryLogic.Grid grid in compound.Grids)
             {
                 if (grid?.Items == null)
                 {
@@ -667,7 +667,7 @@ namespace pitTeam.Modules
 
         private static bool IsBackpackItem(Item item)
         {
-            return item is BackpackItemClass;
+            return item is EFT.InventoryLogic.Backpack;
         }
 
         private static bool IsNear(Vector3 a, Vector3 b, float maxDistance)

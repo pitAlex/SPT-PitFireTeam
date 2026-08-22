@@ -10,11 +10,11 @@ namespace pitTeam.BigBrain.Actions
     /// </summary>
     internal sealed class CombatSuppressGrenadeAction : FollowerCombatActionBase
     {
-        private readonly GClass195 baseLogic;
+        private readonly GrenadeSuppressNode baseLogic;
 
         public CombatSuppressGrenadeAction(BotOwner botOwner) : base(botOwner)
         {
-            baseLogic = new GClass195(botOwner);
+            baseLogic = new GrenadeSuppressNode(botOwner);
         }
 
         public override void Update(CustomLayer.ActionData data)

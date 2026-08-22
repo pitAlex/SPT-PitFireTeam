@@ -1,40 +1,40 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
-  <Import Project="..\..\SERVER-4.08\Build.props" />
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>pitFireTeam.Server</AssemblyName>
     <RootNamespace>pitTeam.Server</RootNamespace>
-    <Version>0.9.0</Version>
+    <Version>0.10.0</Version>
     <OutputType>Library</OutputType>
-    <SptReferenceConfiguration Condition="'$(SptReferenceConfiguration)' == ''">Debug</SptReferenceConfiguration>
+    <SptRuntimeRoot Condition="'$(SptRuntimeRoot)' == ''">/home/mariag/Games/escape-from-tarkov/drive_c/SPT_4.1.x/SPT_Runtime</SptRuntimeRoot>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="SPTarkov.Common">
-      <HintPath>..\..\SERVER-4.08\Libraries\SPTarkov.Common\bin\$(SptReferenceConfiguration)\net9.0\SPTarkov.Common.dll</HintPath>
+      <HintPath>$(SptRuntimeRoot)/SPTarkov.Common.dll</HintPath>
+      <Private>false</Private>
     </Reference>
     <Reference Include="SPTarkov.DI">
-      <HintPath>..\..\SERVER-4.08\Libraries\SPTarkov.DI\bin\$(SptReferenceConfiguration)\net9.0\SPTarkov.DI.dll</HintPath>
+      <HintPath>$(SptRuntimeRoot)/SPTarkov.DI.dll</HintPath>
+      <Private>false</Private>
     </Reference>
     <Reference Include="SPTarkov.Server.Core">
-      <HintPath>..\..\SERVER-4.08\Libraries\SPTarkov.Server.Core\bin\$(SptReferenceConfiguration)\net9.0\SPTarkov.Server.Core.dll</HintPath>
+      <HintPath>$(SptRuntimeRoot)/SPTarkov.Server.Core.dll</HintPath>
+      <Private>false</Private>
     </Reference>
-  </ItemGroup>
-  <ItemGroup>
-    <PackageReference Include="SemanticVersioning" Version="3.0.0" />
+    <Reference Include="SemanticVersioning">
+      <HintPath>$(SptRuntimeRoot)/SemanticVersioning.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Resources\" />
   </ItemGroup>
-  <Target Name="CopyToServer" AfterTargets="PostBuildEvent">
-    <ItemGroup>
-      <OutputDll Include="$(ProjectDir)$(OutDir)$(TargetName).dll" />
-      <Resources Include="$(ProjectDir)Resources\**\*.*" />
-    </ItemGroup>
-    <Copy SourceFiles="@(OutputDll)" DestinationFolder="F:\Projects\SPT-Tarkov\SERVER-4.08\SPTarkov.Server\bin\$(Configuration)\net9.0\user\mods\pitFireTeam-ServerMod" />
-    <Copy
-      SourceFiles="@(Resources)"
-      DestinationFolder="F:\Projects\SPT-Tarkov\SERVER-4.08\SPTarkov.Server\bin\$(Configuration)\net9.0\user\mods\pitFireTeam-ServerMod\Resources\%(RecursiveDir)"
-      SkipUnchangedFiles="true"
+  <Target Name="ValidateSptReferences" BeforeTargets="ResolveReferences">
+    <Error
+      Condition="!Exists('$(SptRuntimeRoot)/SPTarkov.Server.Core.dll')"
+      Text="SPT 4.1 runtime references were not found at '$(SptRuntimeRoot)'. Set SptRuntimeRoot to the SPT_Runtime directory."
     />
   </Target>
 </Project>

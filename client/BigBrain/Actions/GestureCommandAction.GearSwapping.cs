@@ -135,7 +135,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             Item vest = corpseEquipment.GetSlot(EquipmentSlot.TacticalVest)?.ContainedItem;
-            if (vest is not VestItemClass || string.IsNullOrEmpty(vest.Id))
+            if (vest is not EFT.InventoryLogic.Vest || string.IsNullOrEmpty(vest.Id))
             {
                 return false;
             }
@@ -189,7 +189,7 @@ namespace pitTeam.BigBrain.Actions
 
         private bool TryStartEasyContainerWeaponEquipMove(
             InventoryController inventory,
-            SearchableItemItemClass containerRoot,
+            EFT.InventoryLogic.SearchableItem containerRoot,
             InventoryEquipment followerEquipment,
             bool requirePrimaryCue = false)
         {
@@ -319,7 +319,7 @@ namespace pitTeam.BigBrain.Actions
 
         private bool TryStartContainerSecondaryWeaponPromotionMove(
             InventoryController inventory,
-            SearchableItemItemClass containerRoot,
+            EFT.InventoryLogic.SearchableItem containerRoot,
             InventoryEquipment followerEquipment)
         {
             if (!TryBuildSecondaryWeaponPromotionChain(
@@ -442,9 +442,9 @@ namespace pitTeam.BigBrain.Actions
             List<BodyGearCandidate> fastAccessCandidates = magazinePlan.FollowUps
                 .Where(IsOperationalFastAccessFollowUp)
                 .ToList();
-            List<MagazineItemClass> projectedFastAccessMagazines = fastAccessCandidates
+            List<EFT.InventoryLogic.Magazine> projectedFastAccessMagazines = fastAccessCandidates
                 .Select(candidate => candidate.Item)
-                .OfType<MagazineItemClass>()
+                .OfType<EFT.InventoryLogic.Magazine>()
                 .ToList();
             WeaponPrimaryReadinessSnapshot projected = FollowerWeaponPrimaryReadiness.EvaluatePlannedProjection(
                 inventory,
@@ -554,7 +554,7 @@ namespace pitTeam.BigBrain.Actions
 
         private bool TryStartContainerBackpackCargoWeaponPromotionMove(
             InventoryController inventory,
-            SearchableItemItemClass containerRoot,
+            EFT.InventoryLogic.SearchableItem containerRoot,
             InventoryEquipment followerEquipment)
         {
             if (!TryBuildBackpackCargoWeaponPromotionChain(
@@ -672,9 +672,9 @@ namespace pitTeam.BigBrain.Actions
                 List<BodyGearCandidate> fastAccessCandidates = magazinePlan.FollowUps
                     .Where(IsOperationalFastAccessFollowUp)
                     .ToList();
-                List<MagazineItemClass> projectedFastAccessMagazines = fastAccessCandidates
+                List<EFT.InventoryLogic.Magazine> projectedFastAccessMagazines = fastAccessCandidates
                     .Select(candidate => candidate.Item)
-                    .OfType<MagazineItemClass>()
+                    .OfType<EFT.InventoryLogic.Magazine>()
                     .ToList();
                 WeaponPrimaryReadinessSnapshot projected = FollowerWeaponPrimaryReadiness.EvaluatePlannedProjection(
                     inventory,
@@ -777,7 +777,7 @@ namespace pitTeam.BigBrain.Actions
 
         private bool TryStartEasyContainerTacticalVestMove(
             InventoryController inventory,
-            SearchableItemItemClass containerRoot,
+            EFT.InventoryLogic.SearchableItem containerRoot,
             InventoryEquipment followerEquipment)
         {
             if (!pitFireTeam.IsLootGearSwappingEnabled())
@@ -828,25 +828,44 @@ namespace pitTeam.BigBrain.Actions
         {
             if (weapon == null ||
                 weapon.GetItemComponent<KnifeComponent>() != null ||
-                weapon is PistolItemClass)
+                weapon is EFT.InventoryLogic.Pistol)
             {
                 return false;
             }
 
             // EFT uses WeapClass to distinguish holster revolvers from shoulder-fired
             // revolver mechanisms such as the MTs shotgun, launchers, and custom rifles.
-            return weapon is not RevolverItemClass ||
+            return weapon is not EFT.InventoryLogic.Revolver ||
                    !string.Equals(weapon.WeapClass, "pistol", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool IsHolsterWeapon(Weapon weapon)
         {
-            return weapon is PistolItemClass ||
-                   (weapon is RevolverItemClass &&
+            return weapon is EFT.InventoryLogic.Pistol ||
+                   (weapon is EFT.InventoryLogic.Revolver &&
                     string.Equals(weapon.WeapClass, "pistol", StringComparison.OrdinalIgnoreCase));
         }
 
-        private static IEnumerable<BodyGearCandidate> GetBodyWeaponEquipCandidates(InventoryEquipment corpseEquipment)
+        private static EquipmentSlot GetSupportEquipmentSlot(Weapon weapon)
+        {
+            return IsHolsterWeapon(weapon)
+                ? EquipmentSlot.Holster
+                : EquipmentSlot.SecondPrimaryWeapon;
+        }
+
+        private static bool IsWeaponEligibleForSupportSlot(Weapon weapon, EquipmentSlot supportSlot)
+        {
+            return supportSlot switch
+            {
+                EquipmentSlot.SecondPrimaryWeapon => IsShoulderWeaponCandidate(weapon),
+                EquipmentSlot.Holster => IsHolsterWeapon(weapon),
+                _ => false
+            };
+        }
+
+        private static IEnumerable<BodyGearCandidate> GetBodyWeaponEquipCandidates(
+            InventoryEquipment corpseEquipment,
+            Func<Weapon, bool>? weaponEligibility = null)
         {
             if (corpseEquipment == null)
             {
@@ -858,7 +877,14 @@ namespace pitTeam.BigBrain.Actions
             foreach (EquipmentSlot slot in BodyGearWeaponSlotOrder)
             {
                 Item item = corpseEquipment.GetSlot(slot)?.ContainedItem;
-                if (TryCreateWeaponEquipCandidate(item, slot, slot.ToString(), 2, yieldedItemIds, out BodyGearCandidate? candidate))
+                if (TryCreateWeaponEquipCandidate(
+                        item,
+                        slot,
+                        slot.ToString(),
+                        2,
+                        yieldedItemIds,
+                        weaponEligibility,
+                        out BodyGearCandidate? candidate))
                 {
                     yield return candidate;
                 }
@@ -872,21 +898,25 @@ namespace pitTeam.BigBrain.Actions
                              corpseEquipment.GetSlot(slot)?.ContainedItem,
                              $"{slot}.WeaponEquip",
                              1,
-                             yieldedItemIds))
+                             yieldedItemIds,
+                             weaponEligibility))
                 {
                     yield return candidate;
                 }
             }
         }
 
-        private static IEnumerable<BodyGearCandidate> GetContainerWeaponEquipCandidates(SearchableItemItemClass containerRoot)
+        private static IEnumerable<BodyGearCandidate> GetContainerWeaponEquipCandidates(
+            EFT.InventoryLogic.SearchableItem containerRoot,
+            Func<Weapon, bool>? weaponEligibility = null)
         {
             HashSet<string> yieldedItemIds = new HashSet<string>(StringComparer.Ordinal);
             foreach (BodyGearCandidate candidate in GetWeaponEquipCandidatesFromRoot(
                          containerRoot,
                          "Container.WeaponEquip",
                          1,
-                         yieldedItemIds))
+                         yieldedItemIds,
+                         weaponEligibility))
             {
                 yield return candidate;
             }
@@ -896,14 +926,22 @@ namespace pitTeam.BigBrain.Actions
             Item root,
             string sourceName,
             int sourceTier,
-            HashSet<string> yieldedItemIds)
+            HashSet<string> yieldedItemIds,
+            Func<Weapon, bool>? weaponEligibility = null)
         {
             if (root == null)
             {
                 yield break;
             }
 
-            if (TryCreateWeaponEquipCandidate(root, null, sourceName, sourceTier, yieldedItemIds, out BodyGearCandidate? rootCandidate))
+            if (TryCreateWeaponEquipCandidate(
+                    root,
+                    null,
+                    sourceName,
+                    sourceTier,
+                    yieldedItemIds,
+                    weaponEligibility,
+                    out BodyGearCandidate? rootCandidate))
             {
                 yield return rootCandidate;
             }
@@ -915,7 +953,14 @@ namespace pitTeam.BigBrain.Actions
                     continue;
                 }
 
-                if (TryCreateWeaponEquipCandidate(item, null, sourceName, sourceTier, yieldedItemIds, out BodyGearCandidate? candidate))
+                if (TryCreateWeaponEquipCandidate(
+                        item,
+                        null,
+                        sourceName,
+                        sourceTier,
+                        yieldedItemIds,
+                        weaponEligibility,
+                        out BodyGearCandidate? candidate))
                 {
                     yield return candidate;
                 }
@@ -928,6 +973,7 @@ namespace pitTeam.BigBrain.Actions
             string sourceName,
             int sourceTier,
             HashSet<string> yieldedItemIds,
+            Func<Weapon, bool>? weaponEligibility,
             out BodyGearCandidate? candidate)
         {
             candidate = null;
@@ -937,7 +983,9 @@ namespace pitTeam.BigBrain.Actions
             }
 
             BodyGearCandidate possibleCandidate = new BodyGearCandidate(item, sourceSlot, sourceName, sourceTier);
-            if (!IsEasyWeaponEquipCandidate(possibleCandidate) || !yieldedItemIds.Add(item.Id))
+            if (item is not Weapon weapon ||
+                !(weaponEligibility?.Invoke(weapon) ?? IsEasyWeaponEquipCandidate(possibleCandidate)) ||
+                !yieldedItemIds.Add(item.Id))
             {
                 return false;
             }
@@ -948,7 +996,7 @@ namespace pitTeam.BigBrain.Actions
 
         private static bool IsTacticalVestEquipCandidate(BodyGearCandidate candidate)
         {
-            return candidate?.Item is VestItemClass;
+            return candidate?.Item is EFT.InventoryLogic.Vest;
         }
 
         private static BodyGearCandidate CreateGearSwapCandidate(BodyGearCandidate candidate)
@@ -978,7 +1026,7 @@ namespace pitTeam.BigBrain.Actions
         {
             move = null;
             if (!pitFireTeam.IsLootGearSwappingEnabled() ||
-                candidate?.Item is not VestItemClass foundVest)
+                candidate?.Item is not EFT.InventoryLogic.Vest foundVest)
             {
                 return false;
             }
@@ -1056,7 +1104,7 @@ namespace pitTeam.BigBrain.Actions
 
         private static bool HasOperationalTacticalVestContents(Item vest)
         {
-            return GetDirectLootChildren(vest).Any(item => item is not ArmorPlateItemClass);
+            return GetDirectLootChildren(vest).Any(item => item is not EFT.InventoryLogic.ArmorPlate);
         }
 
         private static bool TryGetTacticalVestProtectionScore(Item vest, out float score)
@@ -1140,6 +1188,7 @@ namespace pitTeam.BigBrain.Actions
                     followerEquipment,
                     candidate,
                     operationalAmmoCandidates,
+                    EquipmentSlot.SecondPrimaryWeapon,
                     out move,
                     out handledByGearPolicy);
             }
@@ -1152,11 +1201,12 @@ namespace pitTeam.BigBrain.Actions
             // fast access with the inserted-magazine landing reserve still intact.
             if (primaryOccupied)
             {
-                if (TryBuildWorkingPrimarySecondaryWeaponEquipChain(
+                if (TryBuildWorkingPrimarySupportWeaponEquipChain(
                         inventory,
                         followerEquipment,
                         candidate,
                         operationalMagazineCandidates,
+                        EquipmentSlot.SecondPrimaryWeapon,
                         out move,
                         out OperationalMagazinePlan? secondaryMagazinePlan))
                 {
@@ -1314,7 +1364,7 @@ namespace pitTeam.BigBrain.Actions
 
         private bool TryStartPreferredContainerPrimaryWeaponMove(
             InventoryController inventory,
-            SearchableItemItemClass containerRoot,
+            EFT.InventoryLogic.SearchableItem containerRoot,
             InventoryEquipment followerEquipment)
         {
             if (containerLootSuccessSpoken ||
@@ -1341,11 +1391,12 @@ namespace pitTeam.BigBrain.Actions
                    (move.IsStagingOperation || move.SuccessPhrase == EPhraseTrigger.LootWeapon);
         }
 
-        private bool TryBuildWorkingPrimarySecondaryWeaponEquipChain(
+        private bool TryBuildWorkingPrimarySupportWeaponEquipChain(
             InventoryController inventory,
             InventoryEquipment followerEquipment,
             BodyGearCandidate candidate,
             IEnumerable<BodyGearCandidate>? operationalMagazineCandidates,
+            EquipmentSlot supportSlot,
             out BodyGearMove? move,
             out OperationalMagazinePlan? acceptedMagazinePlan)
         {
@@ -1353,24 +1404,31 @@ namespace pitTeam.BigBrain.Actions
             acceptedMagazinePlan = null;
             if (candidate?.Item is not Weapon weapon ||
                 followerEquipment?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem is not Weapon ||
-                followerEquipment.GetSlot(EquipmentSlot.SecondPrimaryWeapon)?.ContainedItem != null ||
+                !IsWeaponEligibleForSupportSlot(weapon, supportSlot) ||
+                followerEquipment.GetSlot(supportSlot)?.ContainedItem != null ||
                 !HasInsertedMagazine(weapon))
             {
                 return false;
             }
 
+            List<EFT.InventoryLogic.Magazine> alternateReloadReserves =
+                GetAlternateReloadReservesForSupportMagazinePlan(
+                    inventory,
+                    followerEquipment,
+                    weapon);
             OperationalMagazinePlan magazinePlan = PlanOperationalMagazineFollowUps(
                 inventory,
                 followerEquipment,
                 weapon,
-                operationalMagazineCandidates);
+                operationalMagazineCandidates,
+                alternateReloadReserveItems: alternateReloadReserves);
             acceptedMagazinePlan = magazinePlan;
             List<BodyGearCandidate> fastAccessCandidates = magazinePlan.FollowUps
                 .Where(IsOperationalFastAccessFollowUp)
                 .ToList();
-            List<MagazineItemClass> projectedFastAccessMagazines = fastAccessCandidates
+            List<EFT.InventoryLogic.Magazine> projectedFastAccessMagazines = fastAccessCandidates
                 .Select(followUp => followUp.Item)
-                .OfType<MagazineItemClass>()
+                .OfType<EFT.InventoryLogic.Magazine>()
                 .ToList();
             WeaponPrimaryReadinessSnapshot projected = FollowerWeaponPrimaryReadiness.EvaluatePlannedProjection(
                 inventory,
@@ -1384,8 +1442,9 @@ namespace pitTeam.BigBrain.Actions
                                    projected.FastAccessMagazineRounds.Any(rounds => rounds > 0);
             Modules.Logger.LogInfo(
                 $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
-                $"weapon={DescribeLootDebugItem(weapon)} evaluation=workingPrimarySecondaryProjection " +
-                $"plannedFastAccess={fastAccessCandidates.Count} usable={projectedUsable} {projected.ToDiagnosticString()}");
+                $"weapon={DescribeLootDebugItem(weapon)} evaluation=workingPrimarySupportProjection " +
+                $"plannedFastAccess={fastAccessCandidates.Count} usable={projectedUsable} " +
+                $"alternateReserves={DescribeReloadReserves(alternateReloadReserves)} {projected.ToDiagnosticString()}");
             if (!projectedUsable)
             {
                 return false;
@@ -1402,7 +1461,7 @@ namespace pitTeam.BigBrain.Actions
                         out string firstMagazineReason))
                 {
                     Modules.Logger.LogInfo(
-                        $"[LootCommand][MagDebug] Secondary-equip first move rejected for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                        $"[LootCommand][MagDebug] Support-equip first move rejected for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
                         $"weapon={DescribeLootDebugItem(weapon)} mag={DescribeLootDebugItem(firstMagazineCandidate.Item)} " +
                         $"reason={firstMagazineReason}");
                     continue;
@@ -1419,25 +1478,26 @@ namespace pitTeam.BigBrain.Actions
 
                 // Overflow magazines remain loaded at the source. Ammo salvage is reserved for a
                 // weapon that settles into FirstPrimaryWeapon, never this support-only branch.
-                followUps.Add(candidate.WithFollowUpDestination(BodyGearFollowUpDestination.SecondaryWeaponEquip));
+                followUps.Add(candidate.WithFollowUpDestination(BodyGearFollowUpDestination.SupportWeaponEquip));
                 move = firstMagazineMove.WithFollowUps(
                     followUps,
                     EPhraseTrigger.LootGeneric,
                     continueOnFailure: true);
                 Modules.Logger.LogInfo(
                     $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
-                    $"weapon={DescribeLootDebugItem(weapon)} evaluation=workingPrimarySecondaryChainBuilt " +
+                    $"weapon={DescribeLootDebugItem(weapon)} evaluation=workingPrimarySupportChainBuilt " +
                     $"firstMag={DescribeLootDebugItem(firstMagazineCandidate.Item)} " +
-                    $"remainingFastAccessMags={fastAccessCandidates.Count - 1} destination=SecondPrimaryWeapon");
+                    $"remainingFastAccessMags={fastAccessCandidates.Count - 1} destination={supportSlot}");
                 return true;
             }
 
             // No source move is needed when the inserted magazine or the follower's existing fast
             // access already makes the support weapon usable.
-            if (!TryBuildOperationalSecondaryWeaponEquipMove(
+            if (!TryBuildOperationalSupportWeaponEquipMove(
                     inventory,
                     followerEquipment,
                     candidate,
+                    supportSlot,
                     out move,
                     out _))
             {
@@ -1484,16 +1544,16 @@ namespace pitTeam.BigBrain.Actions
             // weapon and do not borrow manually supplied follower cargo for this first insertion.
             List<BodyGearCandidate> loadCandidates = sourceMagazinePlan?.CompatibleLoadedCandidates
                 .Where(candidate =>
-                    candidate?.Item is MagazineItemClass &&
+                    candidate?.Item is EFT.InventoryLogic.Magazine &&
                     (allowFollowerInventoryMagazine ||
                      !IsLootNowInBotInventory(BotOwner?.GetPlayer, candidate.Item)))
-                .OrderByDescending(candidate => ((MagazineItemClass)candidate.Item).Count)
-                .ThenByDescending(candidate => ((MagazineItemClass)candidate.Item).MaxCount)
+                .OrderByDescending(candidate => ((EFT.InventoryLogic.Magazine)candidate.Item).Count)
+                .ThenByDescending(candidate => ((EFT.InventoryLogic.Magazine)candidate.Item).MaxCount)
                 .ToList() ?? new List<BodyGearCandidate>();
 
             foreach (BodyGearCandidate loadCandidate in loadCandidates)
             {
-                MagazineItemClass magazineToLoad = loadCandidate.Item as MagazineItemClass;
+                EFT.InventoryLogic.Magazine magazineToLoad = loadCandidate.Item as EFT.InventoryLogic.Magazine;
                 if (magazineToLoad == null)
                 {
                     continue;
@@ -1558,10 +1618,10 @@ namespace pitTeam.BigBrain.Actions
                 followerEquipment,
                 weapon,
                 sourceMagazineCandidates.Concat(backpackMagazineCandidates));
-            List<MagazineItemClass> projectedFastAccessMagazines = combinedPlan.FollowUps
+            List<EFT.InventoryLogic.Magazine> projectedFastAccessMagazines = combinedPlan.FollowUps
                 .Where(IsOperationalFastAccessFollowUp)
                 .Select(candidate => candidate.Item)
-                .OfType<MagazineItemClass>()
+                .OfType<EFT.InventoryLogic.Magazine>()
                 .ToList();
             WeaponPrimaryReadinessSnapshot projected = FollowerWeaponPrimaryReadiness.EvaluatePlannedProjection(
                 inventory,
@@ -1597,9 +1657,9 @@ namespace pitTeam.BigBrain.Actions
                 .Where(followUp => followUp.FollowUpDestination == BodyGearFollowUpDestination.BackpackCargo)
                 .ToList();
 
-            List<MagazineItemClass> projectedFastAccessMagazines = fastAccessCandidates
+            List<EFT.InventoryLogic.Magazine> projectedFastAccessMagazines = fastAccessCandidates
                 .Select(followUp => followUp.Item)
-                .OfType<MagazineItemClass>()
+                .OfType<EFT.InventoryLogic.Magazine>()
                 .ToList();
             WeaponPrimaryReadinessSnapshot projected = FollowerWeaponPrimaryReadiness.EvaluatePlannedProjection(
                 inventory,
@@ -1703,7 +1763,7 @@ namespace pitTeam.BigBrain.Actions
         {
             move = null;
             Item backpack = followerEquipment?.GetSlot(EquipmentSlot.Backpack)?.ContainedItem;
-            SearchableItemItemClass simulatedBackpack = CloneSearchableContainer(backpack);
+            EFT.InventoryLogic.SearchableItem simulatedBackpack = CloneSearchableContainer(backpack);
             if (simulatedBackpack == null)
             {
                 return TryBuildPotentialWeaponOnlyCargoFallback(
@@ -1729,7 +1789,7 @@ namespace pitTeam.BigBrain.Actions
                 if (!TrySimulateContainerAdd(
                         simulatedBackpack,
                         cargoMagazine.Item,
-                        out SearchableItemItemClass? nextBackpack))
+                        out EFT.InventoryLogic.SearchableItem? nextBackpack))
                 {
                     return TryBuildPotentialWeaponOnlyCargoFallback(
                         inventory,
@@ -1889,17 +1949,18 @@ namespace pitTeam.BigBrain.Actions
             Weapon weapon,
             OperationalMagazinePlan magazinePlan)
         {
-            List<MagazineItemClass> plannedFastAccessMagazines = magazinePlan?.FollowUps
+            List<EFT.InventoryLogic.Magazine> plannedFastAccessMagazines = magazinePlan?.FollowUps
                 .Where(IsOperationalFastAccessFollowUp)
                 .Select(candidate => candidate.Item)
-                .OfType<MagazineItemClass>()
-                .ToList() ?? new List<MagazineItemClass>();
+                .OfType<EFT.InventoryLogic.Magazine>()
+                .ToList() ?? new List<EFT.InventoryLogic.Magazine>();
             return FollowerWeaponPrimaryReadiness.EvaluatePlannedProjection(
                 inventory,
                 weapon,
                 plannedFastAccessMagazines);
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private void LogPrimaryReadinessShadow(
             InventoryController inventory,
             Weapon weapon,
@@ -1910,11 +1971,11 @@ namespace pitTeam.BigBrain.Actions
                 $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
                 $"weapon={DescribeLootDebugItem(weapon)} evaluation=actual {actual.ToDiagnosticString()}");
 
-            List<MagazineItemClass> plannedFastAccessMagazines = magazinePlan?.FollowUps
+            List<EFT.InventoryLogic.Magazine> plannedFastAccessMagazines = magazinePlan?.FollowUps
                 .Where(IsOperationalFastAccessFollowUp)
                 .Select(candidate => candidate.Item)
-                .OfType<MagazineItemClass>()
-                .ToList() ?? new List<MagazineItemClass>();
+                .OfType<EFT.InventoryLogic.Magazine>()
+                .ToList() ?? new List<EFT.InventoryLogic.Magazine>();
             WeaponPrimaryReadinessSnapshot planned = FollowerWeaponPrimaryReadiness.EvaluatePlannedProjection(
                 inventory,
                 weapon,
@@ -2030,6 +2091,7 @@ namespace pitTeam.BigBrain.Actions
             return false;
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private void LogPostTransferWeaponDestination(
             Weapon weapon,
             WeaponPrimaryReadinessSnapshot actual,
@@ -2200,16 +2262,18 @@ namespace pitTeam.BigBrain.Actions
             return false;
         }
 
-        private bool TryBuildOperationalSecondaryWeaponEquipMove(
+        private bool TryBuildOperationalSupportWeaponEquipMove(
             InventoryController inventory,
             InventoryEquipment followerEquipment,
             BodyGearCandidate candidate,
+            EquipmentSlot supportSlot,
             out BodyGearMove? move,
             out string reason)
         {
             move = null;
             reason = "weaponMissing";
-            if (candidate?.Item is not Weapon weapon || !IsEasyWeaponEquipCandidate(candidate))
+            if (candidate?.Item is not Weapon weapon ||
+                !IsWeaponEligibleForSupportSlot(weapon, supportSlot))
             {
                 return false;
             }
@@ -2222,10 +2286,11 @@ namespace pitTeam.BigBrain.Actions
 
             if (FollowerWeaponLooseFeedReadiness.IsSupported(weapon))
             {
-                return TryBuildInternalOperationalSecondaryWeaponEquipMove(
+                return TryBuildInternalOperationalSupportWeaponEquipMove(
                     inventory,
                     followerEquipment,
                     candidate,
+                    supportSlot,
                     out move,
                     out reason);
             }
@@ -2251,18 +2316,18 @@ namespace pitTeam.BigBrain.Actions
 
             if (!TryFindEquipmentSlotAddress(
                     followerEquipment,
-                    EquipmentSlot.SecondPrimaryWeapon,
+                    supportSlot,
                     weapon,
-                    out ItemAddress? secondaryAddress))
+                    out ItemAddress? supportAddress))
             {
-                reason = "secondaryUnavailable";
+                reason = "supportSlotUnavailable";
                 return false;
             }
 
             if (!TryCreateBodyGearMove(
                     inventory,
                     candidate,
-                    secondaryAddress,
+                    supportAddress,
                     out move,
                     storeAsLoot: ShouldReturnGearSwapAsCargo(),
                     successPhrase: EPhraseTrigger.LootGeneric))
@@ -2274,8 +2339,8 @@ namespace pitTeam.BigBrain.Actions
             reason = "usableSupport";
             Modules.Logger.LogInfo(
                 $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
-                $"weapon={DescribeLootDebugItem(weapon)} evaluation=secondaryEquip " +
-                $"destination=SecondPrimaryWeapon decisionReason={reason} {actual.ToDiagnosticString()}");
+                $"weapon={DescribeLootDebugItem(weapon)} evaluation=supportEquip " +
+                $"destination={supportSlot} decisionReason={reason} {actual.ToDiagnosticString()}");
             return true;
         }
 
@@ -2457,7 +2522,7 @@ namespace pitTeam.BigBrain.Actions
                     return true;
                 }
 
-                if (candidate?.Item is VestItemClass)
+                if (candidate?.Item is EFT.InventoryLogic.Vest)
                 {
                     if (!TryBuildTacticalVestEquipIntoEmptySlot(inventory, followerEquipment, candidate, out BodyGearMove? vestMove))
                     {
@@ -2470,24 +2535,26 @@ namespace pitTeam.BigBrain.Actions
                     return true;
                 }
 
-                if (candidate?.FollowUpDestination == BodyGearFollowUpDestination.SecondaryWeaponEquip)
+                if (candidate?.FollowUpDestination == BodyGearFollowUpDestination.SupportWeaponEquip)
                 {
-                    if (!TryBuildOperationalSecondaryWeaponEquipMove(
+                    EquipmentSlot supportSlot = GetSupportEquipmentSlot(candidate.Item as Weapon);
+                    if (!TryBuildOperationalSupportWeaponEquipMove(
                             inventory,
                             followerEquipment,
                             candidate,
-                            out BodyGearMove? secondaryMove,
-                            out string secondaryReason))
+                            supportSlot,
+                            out BodyGearMove? supportMove,
+                            out string supportReason))
                     {
                         bodyLootHadEligibleButNoSpace = true;
                         Modules.Logger.LogInfo(
-                            $"[LootCommand] Body secondary equip follow-up rejected for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
-                            $"reason={secondaryReason} item={DescribeLootDebugItem(candidate?.Item)}");
+                            $"[LootCommand] Body support equip follow-up rejected for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                            $"reason={supportReason} item={DescribeLootDebugItem(candidate?.Item)}");
                         continue;
                     }
 
                     bodyLootAttemptedItemIds.Add(candidate.Item.Id);
-                    StartBodyGearMove(inventory, secondaryMove);
+                    StartBodyGearMove(inventory, supportMove);
                     return true;
                 }
 
@@ -2751,7 +2818,7 @@ namespace pitTeam.BigBrain.Actions
                     return true;
                 }
 
-                if (candidate?.Item is VestItemClass)
+                if (candidate?.Item is EFT.InventoryLogic.Vest)
                 {
                     if (!TryBuildTacticalVestEquipIntoEmptySlot(inventory, followerEquipment, candidate, out BodyGearMove? vestMove))
                     {
@@ -2764,24 +2831,26 @@ namespace pitTeam.BigBrain.Actions
                     return true;
                 }
 
-                if (candidate?.FollowUpDestination == BodyGearFollowUpDestination.SecondaryWeaponEquip)
+                if (candidate?.FollowUpDestination == BodyGearFollowUpDestination.SupportWeaponEquip)
                 {
-                    if (!TryBuildOperationalSecondaryWeaponEquipMove(
+                    EquipmentSlot supportSlot = GetSupportEquipmentSlot(candidate.Item as Weapon);
+                    if (!TryBuildOperationalSupportWeaponEquipMove(
                             inventory,
                             followerEquipment,
                             candidate,
-                            out BodyGearMove? secondaryMove,
-                            out string secondaryReason))
+                            supportSlot,
+                            out BodyGearMove? supportMove,
+                            out string supportReason))
                     {
                         containerLootHadEligibleButNoSpace = true;
                         Modules.Logger.LogInfo(
-                            $"[LootCommand] Container secondary equip follow-up rejected for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
-                            $"reason={secondaryReason} item={DescribeLootDebugItem(candidate?.Item)}");
+                            $"[LootCommand] Container support equip follow-up rejected for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                            $"reason={supportReason} item={DescribeLootDebugItem(candidate?.Item)}");
                         continue;
                     }
 
                     containerLootAttemptedItemIds.Add(candidate.Item.Id);
-                    StartContainerLootMove(inventory, secondaryMove);
+                    StartContainerLootMove(inventory, supportMove);
                     return true;
                 }
 
@@ -2946,7 +3015,8 @@ namespace pitTeam.BigBrain.Actions
             InventoryEquipment followerEquipment,
             BodyGearCandidate candidate,
             out BodyGearMove? move,
-            out string reason)
+            out string reason,
+            bool allowEmptyCandidate = false)
         {
             move = null;
             Modules.Logger.LogInfo(
@@ -2954,7 +3024,11 @@ namespace pitTeam.BigBrain.Actions
                 $"source={candidate?.SourceName ?? "unknown"} dest={candidate?.FollowUpDestination.ToString() ?? "unknown"} " +
                 $"item={DescribeLootDebugItem(candidate?.Item)}");
 
-            if (!TryGetOperationalMagazineCandidate(candidate, out MagazineItemClass? magazine, out string validationReason))
+            if (!TryGetOperationalMagazineCandidate(
+                    candidate,
+                    out EFT.InventoryLogic.Magazine? magazine,
+                    out string validationReason,
+                    allowEmptyCandidate))
             {
                 reason = validationReason;
                 Modules.Logger.LogInfo(
@@ -2982,7 +3056,8 @@ namespace pitTeam.BigBrain.Actions
                     followerEquipment,
                     candidate,
                     out move,
-                    out string fastAccessReason))
+                    out string fastAccessReason,
+                    allowEmptyCandidate))
             {
                 reason = "ok";
                 Modules.Logger.LogInfo(
@@ -3000,6 +3075,7 @@ namespace pitTeam.BigBrain.Actions
             return false;
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private void LogOperationalMagazinePlan(Weapon weapon, OperationalMagazinePlan plan)
         {
             if (plan == null)

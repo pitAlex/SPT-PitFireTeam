@@ -6,7 +6,7 @@ namespace pitTeam.Modules
 {
     internal static class FollowerWeaponLooseAmmoSupport
     {
-        internal static bool IsCompatible(Weapon weapon, AmmoItemClass ammo)
+        internal static bool IsCompatible(Weapon weapon, EFT.InventoryLogic.Ammo ammo)
         {
             if (weapon == null ||
                 ammo == null ||
@@ -20,7 +20,7 @@ namespace pitTeam.Modules
             return IsCartridgeCompatible(weapon, ammo);
         }
 
-        internal static bool IsCartridgeCompatible(Weapon weapon, AmmoItemClass ammo)
+        internal static bool IsCartridgeCompatible(Weapon weapon, EFT.InventoryLogic.Ammo ammo)
         {
             if (weapon == null ||
                 ammo == null ||
@@ -50,7 +50,7 @@ namespace pitTeam.Modules
             }
         }
 
-        internal static bool IsSameCaliber(AmmoItemClass left, AmmoItemClass right)
+        internal static bool IsSameCaliber(EFT.InventoryLogic.Ammo left, EFT.InventoryLogic.Ammo right)
         {
             return left != null &&
                    right != null &&
@@ -60,7 +60,7 @@ namespace pitTeam.Modules
                        StringComparison.OrdinalIgnoreCase);
         }
 
-        internal static bool IsMorePowerful(AmmoItemClass candidate, AmmoItemClass baseline)
+        internal static bool IsMorePowerful(EFT.InventoryLogic.Ammo candidate, EFT.InventoryLogic.Ammo baseline)
         {
             if (!IsSameCaliber(candidate, baseline))
             {
@@ -70,7 +70,7 @@ namespace pitTeam.Modules
             return ComparePower(candidate, baseline) > 0;
         }
 
-        internal static int ComparePower(AmmoItemClass left, AmmoItemClass right)
+        internal static int ComparePower(EFT.InventoryLogic.Ammo left, EFT.InventoryLogic.Ammo right)
         {
             if (left == null || right == null)
             {
@@ -111,7 +111,7 @@ namespace pitTeam.Modules
             try
             {
                 return ammo.GetAllParentItems(false)
-                    .Any(parent => parent is Weapon || parent is MagazineItemClass);
+                    .Any(parent => parent is Weapon || parent is EFT.InventoryLogic.Magazine);
             }
             catch
             {

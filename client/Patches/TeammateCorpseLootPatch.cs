@@ -83,17 +83,17 @@ namespace pitTeam.Patches
             return IsInsideTeammateCorpseEquipment(item) || IsInsideTeammateCorpseEquipment(address);
         }
 
-        public static bool ShouldTreatItemKnown(GClass2235 controller, Item item)
+        public static bool ShouldTreatItemKnown(EFT.PlayerSearchController controller, Item item)
         {
             return IsLocalSearchController(controller) && IsInsideTeammateCorpseEquipment(item);
         }
 
-        public static bool ShouldTreatSearchableSearched(GClass2235 controller, SearchableItemItemClass item)
+        public static bool ShouldTreatSearchableSearched(EFT.PlayerSearchController controller, EFT.InventoryLogic.SearchableItem item)
         {
             return IsLocalSearchController(controller) && IsInsideTeammateCorpseEquipment(item);
         }
 
-        public static bool ShouldTreatSearchableContentsKnown(GClass2235 controller, SearchableItemItemClass item)
+        public static bool ShouldTreatSearchableContentsKnown(EFT.PlayerSearchController controller, EFT.InventoryLogic.SearchableItem item)
         {
             return IsLocalSearchController(controller) && IsInsideTeammateCorpseEquipment(item);
         }
@@ -106,9 +106,9 @@ namespace pitTeam.Patches
             }
 
             MarkItemKnown(searchController, item);
-            if (item is SearchableItemItemClass searchable)
+            if (item is EFT.InventoryLogic.SearchableItem searchable)
             {
-                searchController.SetItemAsSearched<SearchableItemItemClass>(searchable);
+                searchController.SetItemAsSearched<EFT.InventoryLogic.SearchableItem>(searchable);
             }
 
             if (item is not CompoundItem)
@@ -205,7 +205,7 @@ namespace pitTeam.Patches
             return false;
         }
 
-        private static bool IsLocalSearchController(GClass2235 controller)
+        private static bool IsLocalSearchController(EFT.PlayerSearchController controller)
         {
             return controller != null &&
                    ReferenceEquals(GamePlayerOwner.MyPlayer?.SearchController, controller);

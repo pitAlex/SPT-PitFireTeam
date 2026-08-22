@@ -41,7 +41,7 @@ namespace pitTeam.Patches
         internal static readonly UnityAction BackExitAction = () =>
         {
             SquadSideSelectionFlow.Deactivate("side-selection-back");
-            CurrentScreenSingletonClass.Instance.TryReturnToRootScreen().HandleExceptions();
+            EFT.UI.Screens.EftScreenManager.Instance.TryReturnToRootScreen().HandleExceptions();
         };
 
         // Serialized fields to hide via reflection (elements not covered by named containers below)
@@ -79,7 +79,7 @@ namespace pitTeam.Patches
             return AccessTools.Method(
                 typeof(MatchMakerSideSelectionScreen),
                 "Show",
-                new System.Type[] { typeof(MatchMakerSideSelectionScreen.GClass3919) });
+                new System.Type[] { typeof(MatchMakerSideSelectionScreen.RaidSideSelectionScreenController) });
         }
 
         [PatchPrefix]
@@ -245,7 +245,7 @@ namespace pitTeam.Patches
             AnimatedToggleCanvasGroupField?.SetValue(tab, canvasGroup);
 
             UISpawnableToggle spawnableToggle = tab.SpawnableToggle;
-            spawnableToggle.method_1(overlayToggleGroup);
+            spawnableToggle.Init(overlayToggleGroup);
 
             if (SpawnableToggleHeaderLabelField?.GetValue(spawnableToggle) is TextMeshProUGUI headerLabel)
             {
@@ -443,7 +443,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(MainMenuControllerClass), "method_44");
+            return AccessTools.Method(typeof(EFT.MainMenuShowOperation), "method_44");
         }
 
         [PatchPrefix]
@@ -552,23 +552,18 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            foreach (MethodInfo method in AccessTools.GetDeclaredMethods(typeof(PlayerModelView)))
-            {
-                if (!string.Equals(method.Name, "Show"))
+            return AccessTools.Method(
+                typeof(PlayerModelView),
+                nameof(PlayerModelView.Show),
+                new[]
                 {
-                    continue;
-                }
-
-                ParameterInfo[] parameters = method.GetParameters();
-                if (parameters.Length == 6
-                    && parameters[0].ParameterType.Name == "LastPlayerStateClass"
-                    && parameters[1].ParameterType.Name == "InventoryController")
-                {
-                    return method;
-                }
-            }
-
-            return null;
+                    typeof(EFT.PlayerVisualRepresentation),
+                    typeof(EFT.InventoryLogic.InventoryController),
+                    typeof(Action),
+                    typeof(float),
+                    typeof(Vector3?),
+                    typeof(bool)
+                });
         }
 
         [PatchPrefix]
@@ -589,7 +584,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.DeclaredMethod(typeof(CurrentScreenSingletonClass).BaseType, "TryReturnToRootScreen");
+            return AccessTools.DeclaredMethod(typeof(EFT.UI.Screens.EftScreenManager).BaseType, "TryReturnToRootScreen");
         }
 
         [PatchPrefix]

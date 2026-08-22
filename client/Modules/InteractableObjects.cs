@@ -264,6 +264,9 @@ namespace pitTeam.Modules
 
         private static IEnumerable<EquipmentSlot> GetTrackedReturnSearchSlots()
         {
+            // Weapon-support ammunition can fall back to secure storage and remains an independent
+            // tracked return root when it is not consumed by a weapon or magazine.
+            yield return EquipmentSlot.SecuredContainer;
             yield return EquipmentSlot.TacticalVest;
             yield return EquipmentSlot.Backpack;
             yield return EquipmentSlot.Pockets;
@@ -512,7 +515,7 @@ namespace pitTeam.Modules
                     DetachReturnRoot(root);
                 }
 
-                FlatItemsDataClass[] flatItems = Singleton<ItemFactoryClass>.Instance.TreeToFlatItems(rootItems);
+                JsonType.FlatItem[] flatItems = Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(rootItems);
                 if (flatItems == null || !flatItems.Any())
                 {
                     return false;
@@ -698,7 +701,7 @@ namespace pitTeam.Modules
                             continue;
                         }
 
-                        FlatItemsDataClass[] equipmentItems = Singleton<ItemFactoryClass>.Instance.TreeToFlatItems(
+                        JsonType.FlatItem[] equipmentItems = Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(
                             new Item[] { bot.GetPlayer.InventoryController.Inventory.Equipment });
                         if (equipmentItems == null || equipmentItems.Length == 0)
                         {
@@ -769,7 +772,7 @@ namespace pitTeam.Modules
 
             float current = 0f;
             float maximum = 0f;
-            foreach (EBodyPart part in GClass3058.RealBodyParts)
+            foreach (EBodyPart part in EFT.HealthSystem.HealthHelper.RealBodyParts)
             {
                 try
                 {
@@ -1800,7 +1803,7 @@ namespace pitTeam.Modules
 
             foreach (Weapon weapon in GetWeaponTreeItems(item))
             {
-                MagazineItemClass magazine;
+                EFT.InventoryLogic.Magazine magazine;
                 try
                 {
                     magazine = weapon.GetCurrentMagazine();
@@ -1851,7 +1854,7 @@ namespace pitTeam.Modules
                 // The inserted magazine arrives as part of the weapon tree. Preserve that
                 // relationship after EFT ejects it during a later reload so it remains an
                 // approved magazine for this looted weapon, not an arbitrary spawned spare.
-                MagazineItemClass insertedMagazine = null;
+                EFT.InventoryLogic.Magazine insertedMagazine = null;
                 try
                 {
                     insertedMagazine = weapon.GetCurrentMagazine();
@@ -1868,7 +1871,7 @@ namespace pitTeam.Modules
         public static void RegisterLootedWeaponMagazine(
             BotOwner bot,
             Weapon weapon,
-            MagazineItemClass magazine)
+            EFT.InventoryLogic.Magazine magazine)
         {
             if (Instance?._lootedWeaponMagazineIds == null ||
                 bot == null ||
@@ -1906,7 +1909,7 @@ namespace pitTeam.Modules
         public static bool IsApprovedLootedWeaponMagazine(
             BotOwner bot,
             Weapon weapon,
-            MagazineItemClass magazine)
+            EFT.InventoryLogic.Magazine magazine)
         {
             if (Instance?._lootedWeaponMagazineIds == null ||
                 bot == null ||
@@ -2319,7 +2322,7 @@ namespace pitTeam.Modules
                     sphereRadius,
                     hits,
                     sphereDistance,
-                    LayerMaskClass.PlayerMask
+                    LayersMaskController.PlayerMask
                 );
 
             // get all enemies the boss might have seen
@@ -2392,12 +2395,12 @@ namespace pitTeam.Modules
                             Vector3 firePos = player.PlayerBones.WeaponRoot.position;
                             // - we check if any part of the enemy is visible to the player
                             if (
-                                Utils.Utils.CanShootToTarget(new ShootPointClass(headPart.Position, 1), firePos, LayerMaskClass.HighPolyWithTerrainMask, false) ||
-                                Utils.Utils.CanShootToTarget(new ShootPointClass(bodyPart.Position, 1), firePos, LayerMaskClass.HighPolyWithTerrainMask, false) ||
-                                Utils.Utils.CanShootToTarget(new ShootPointClass(leftArmPart.Position, 1), firePos, LayerMaskClass.HighPolyWithTerrainMask, false) ||
-                                Utils.Utils.CanShootToTarget(new ShootPointClass(rightArmPart.Position, 1), firePos, LayerMaskClass.HighPolyWithTerrainMask, false) ||
-                                Utils.Utils.CanShootToTarget(new ShootPointClass(leftLegPart.Position, 1), firePos, LayerMaskClass.HighPolyWithTerrainMask, false) ||
-                                Utils.Utils.CanShootToTarget(new ShootPointClass(rightLegPart.Position, 1), firePos, LayerMaskClass.HighPolyWithTerrainMask, false)
+                                Utils.Utils.CanShootToTarget(new ShootToPoint(headPart.Position, 1), firePos, LayersMaskController.HighPolyWithTerrainMask, false) ||
+                                Utils.Utils.CanShootToTarget(new ShootToPoint(bodyPart.Position, 1), firePos, LayersMaskController.HighPolyWithTerrainMask, false) ||
+                                Utils.Utils.CanShootToTarget(new ShootToPoint(leftArmPart.Position, 1), firePos, LayersMaskController.HighPolyWithTerrainMask, false) ||
+                                Utils.Utils.CanShootToTarget(new ShootToPoint(rightArmPart.Position, 1), firePos, LayersMaskController.HighPolyWithTerrainMask, false) ||
+                                Utils.Utils.CanShootToTarget(new ShootToPoint(leftLegPart.Position, 1), firePos, LayersMaskController.HighPolyWithTerrainMask, false) ||
+                                Utils.Utils.CanShootToTarget(new ShootToPoint(rightLegPart.Position, 1), firePos, LayersMaskController.HighPolyWithTerrainMask, false)
                             )
                             {
                                 Instance._enemiesSeen.Add(enemy);

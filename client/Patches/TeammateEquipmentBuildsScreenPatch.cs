@@ -24,7 +24,7 @@ using System.Threading.Tasks;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
-using ResultProfile = GClass1416;
+using ResultProfile = EFT.OtherPlayerProfile;
 
 namespace pitTeam.Patches
 {
@@ -32,7 +32,7 @@ namespace pitTeam.Patches
     {
         private static readonly FieldInfo ButtonRawTextField = AccessTools.Field(typeof(DefaultUIButton), "_rawText");
         private static readonly FieldInfo BuildListWeightField = AccessTools.Field(typeof(EquipmentBuildListView), "_weight");
-        private static readonly FieldInfo ScreenSelectedBuildField = AccessTools.Field(typeof(EquipmentBuildsScreen), "gclass3953_0");
+        private static readonly FieldInfo ScreenSelectedBuildField = AccessTools.Field(typeof(EquipmentBuildsScreen), "_currentBuild");
         private static readonly FieldInfo ScreenWeightField = AccessTools.Field(typeof(EquipmentBuildsScreen), "_weight");
         private static readonly FieldInfo EditBuildOnlyAvailableToggleField = AccessTools.Field(typeof(EditBuildScreen), "_onlyAvailableToggle");
         private const string BuyKitRoute = "/singleplayer/pitfireteam/teammate/profile/buy-kit";
@@ -54,12 +54,12 @@ namespace pitTeam.Patches
         private const int RagfairWeaponOfferPageSize = 50;
         private const double DiscountComparisonTolerance = 0.000001;
         private static bool DisableKitLoadoutDiscountPricing = false;
-        private static bool EnableKitLoadoutPricingDiagnostics = true;
+        private static bool EnableKitLoadoutPricingDiagnostics => pitFireTeam.IsDebugBuild;
 
         private static string _accountId;
         private static ResultProfile _profile;
-        private static ISession _session;
-        private static GClass3387 _backendInventoryController;
+        private static EFT.IEftSession _session;
+        private static EFT.InventoryLogic.BackEndInventoryController _backendInventoryController;
         private static EquipmentBuildsScreen _activeScreen;
         private static Action _profileBackOverrideAction;
         private static bool _openingFromProfile;
@@ -119,18 +119,18 @@ namespace pitTeam.Patches
             notFoundItems = Array.Empty<Item>();
         }
 
-        public static void Open(ResultProfile profile, ISession session, InventoryController inventoryController)
+        public static void Open(ResultProfile profile, EFT.IEftSession session, InventoryController inventoryController)
         {
             if (profile == null || session == null || inventoryController == null)
             {
-                NotificationManagerClass.DisplayWarningNotification(GetSocialUiText("KitLoadoutsOpenFailed"), ENotificationDurationType.Default);
+                EFT.Communications.NotificationManager.DisplayWarningNotification(GetSocialUiText("KitLoadoutsOpenFailed"), ENotificationDurationType.Default);
                 pitFireTeam.Log.LogWarning("[UI] Buy loadout screen aborted: missing teammate profile, session, or inventory controller.");
                 return;
             }
 
-            if (!TryResolveBackendController(session, inventoryController, out GClass3387 backendController))
+            if (!TryResolveBackendController(session, inventoryController, out EFT.InventoryLogic.BackEndInventoryController backendController))
             {
-                NotificationManagerClass.DisplayWarningNotification(GetSocialUiText("KitLoadoutsOpenFailed"), ENotificationDurationType.Default);
+                EFT.Communications.NotificationManager.DisplayWarningNotification(GetSocialUiText("KitLoadoutsOpenFailed"), ENotificationDurationType.Default);
                 pitFireTeam.Log.LogWarning($"[UI] Buy loadout screen aborted: expected backend inventory controller, got '{inventoryController.GetType().Name}'.");
                 return;
             }
@@ -156,12 +156,12 @@ namespace pitTeam.Patches
             RequestMarketPrices(session, forceRefresh: false);
 
             IHealthController healthController = OtherPlayerProfileScreenPatch.CreateProfileHealthController(session.Profile?.Health);
-            new EquipmentBuildsScreen.GClass3870(session, backendController, healthController, backendController.Inventory.Equipment)
+            new EquipmentBuildsScreen.EquipmentBuildsScreenController(session, backendController, healthController, backendController.Inventory.Equipment)
                 .ShowScreen(EScreenState.Queued);
 
             if (EnableKitLoadoutPricingDiagnostics)
             {
-                pitFireTeam.Log.LogInfo($"[UI] Opening teammate equipment builds screen for '{profile.AccountId}'. Kit pricing diagnostics phase='{_buildPricingLogPhase}', marketPricesLoaded={_marketPrices != null}.");
+                Modules.Logger.LogInfo($"[UI] Opening teammate equipment builds screen for '{profile.AccountId}'. Kit pricing diagnostics phase='{_buildPricingLogPhase}', marketPricesLoaded={_marketPrices != null}.");
             }
         }
 
@@ -177,7 +177,7 @@ namespace pitTeam.Patches
             return true;
         }
 
-        public static bool TryBuildTeammateVisual(EquipmentBuildsScreen screen, LastPlayerStateClass currentVisual, out LastPlayerStateClass teammateVisual)
+        public static bool TryBuildTeammateVisual(EquipmentBuildsScreen screen, EFT.PlayerVisualRepresentation currentVisual, out EFT.PlayerVisualRepresentation teammateVisual)
         {
             teammateVisual = null;
             if (!IsActive || screen == null || _profile == null || currentVisual == null)
@@ -185,9 +185,9 @@ namespace pitTeam.Patches
                 return false;
             }
 
-            teammateVisual = new LastPlayerStateClass(new GClass1410
+            teammateVisual = new EFT.PlayerVisualRepresentation(new JsonType.PlayerInfo
             {
-                Level = InfoClass.GetLevel(_profile.Info.Experience),
+                Level = EFT.ProfileInfo.GetLevel(_profile.Info.Experience),
                 MemberCategory = _profile.Info.MemberCategory,
                 Nickname = _profile.Info.Nickname,
                 PrestigeLevel = _profile.Info.PrestigeLevel,
@@ -223,7 +223,7 @@ namespace pitTeam.Patches
             ApplySelectedBuildPrice(screen);
         }
 
-        public static void ApplyBuildListRow(EquipmentBuildListView view, GClass3749<GClass3953> buildWrapper)
+        public static void ApplyBuildListRow(EquipmentBuildListView view, EFT.UI.BuildWrapper<EFT.UI.Builds.EquipmentBuild> buildWrapper)
         {
             if (view == null)
             {
@@ -263,7 +263,7 @@ namespace pitTeam.Patches
 
             if (!TryCreateBuyQuote(out EquipmentBuildBuyQuote quote))
             {
-                NotificationManagerClass.DisplayWarningNotification(GetSocialUiText("KitLoadoutPriceFailed"), ENotificationDurationType.Default);
+                EFT.Communications.NotificationManager.DisplayWarningNotification(GetSocialUiText("KitLoadoutPriceFailed"), ENotificationDurationType.Default);
                 return true;
             }
 
@@ -287,9 +287,9 @@ namespace pitTeam.Patches
             ClearReturnState();
         }
 
-        private static bool TryResolveBackendController(ISession session, InventoryController inventoryController, out GClass3387 backendController)
+        private static bool TryResolveBackendController(EFT.IEftSession session, InventoryController inventoryController, out EFT.InventoryLogic.BackEndInventoryController backendController)
         {
-            backendController = inventoryController as GClass3387;
+            backendController = inventoryController as EFT.InventoryLogic.BackEndInventoryController;
             if (backendController != null)
             {
                 _backendInventoryController = backendController;
@@ -451,7 +451,7 @@ namespace pitTeam.Patches
 
             if (_screenChromeState.EquipButton != null)
             {
-                _screenChromeState.EquipButton.method_1(
+                _screenChromeState.EquipButton.SetText(
                     _screenChromeState.EquipButtonText ?? "EQUIP",
                     _screenChromeState.EquipButtonFontSize,
                     _screenChromeState.EquipButtonRawText);
@@ -511,7 +511,7 @@ namespace pitTeam.Patches
             };
         }
 
-        private static void RememberBuildListRow(EquipmentBuildListView view, GClass3953 build)
+        private static void RememberBuildListRow(EquipmentBuildListView view, EFT.UI.Builds.EquipmentBuild build)
         {
             if (view == null)
             {
@@ -640,7 +640,7 @@ namespace pitTeam.Patches
             clonedToggle.onValueChanged.AddListener(isOn =>
             {
                 _excludeExistingItems = isOn;
-                pitFireTeam.Log.LogInfo($"[UI] Teammate buy exclude existing items changed: {isOn}");
+                Modules.Logger.LogInfo($"[UI] Teammate buy exclude existing items changed: {isOn}");
                 ApplyActionButtonText(screen);
             });
 
@@ -650,7 +650,7 @@ namespace pitTeam.Patches
         private static bool TryCreateBuyQuote(out EquipmentBuildBuyQuote quote)
         {
             quote = null;
-            GClass3953 selectedBuild = ScreenSelectedBuildField?.GetValue(_activeScreen) as GClass3953;
+            EFT.UI.Builds.EquipmentBuild selectedBuild = ScreenSelectedBuildField?.GetValue(_activeScreen) as EFT.UI.Builds.EquipmentBuild;
             if (selectedBuild?.Equipment == null)
             {
                 return false;
@@ -712,7 +712,7 @@ namespace pitTeam.Patches
                     continue;
                 }
 
-                if (GClass3130.TryGetCurrencyType(new MongoID?(item.TemplateId), out ECurrencyType currencyType)
+                if (EFT.InventoryLogic.CurrencyUtil.TryGetCurrencyType(new MongoID?(item.TemplateId), out ECurrencyType currencyType)
                     && currencyType == ECurrencyType.RUB
                     && !IsLockedForStashUse(item))
                 {
@@ -833,7 +833,7 @@ namespace pitTeam.Patches
 
             closeButton.onClick.AddListener(() =>
             {
-                pitFireTeam.Log.LogInfo("[UI] Teammate equipment build buy confirmation closed.");
+                Modules.Logger.LogInfo("[UI] Teammate equipment build buy confirmation closed.");
                 CloseBuyConfirmOverlay();
             });
 
@@ -885,7 +885,7 @@ namespace pitTeam.Patches
             }
 
             _buyConfirmOverlay = overlayRoot;
-            pitFireTeam.Log.LogInfo($"[UI] Teammate equipment build buy confirmation opened: build='{quote.BuildName}', price={quote.FinalPrice}, excludeExistingItems={quote.ExcludeExistingItems}, stashItemsUsed={quote.UsedStashItems.Count}, missingTemplates={quote.MissingTemplateCounts.Count}.");
+            Modules.Logger.LogInfo($"[UI] Teammate equipment build buy confirmation opened: build='{quote.BuildName}', price={quote.FinalPrice}, excludeExistingItems={quote.ExcludeExistingItems}, stashItemsUsed={quote.UsedStashItems.Count}, missingTemplates={quote.MissingTemplateCounts.Count}.");
         }
 
         private static void CreateInteractiveBuyQuoteBody(
@@ -1233,8 +1233,8 @@ namespace pitTeam.Patches
 
             try
             {
-                Item item = Singleton<ItemFactoryClass>.Instance.CreateItem(MongoID.Generate(true), templateId, null);
-                GClass929 icon = ItemViewFactory.LoadItemIcon(item, 1, false);
+                Item item = Singleton<EFT.ItemFactory>.Instance.CreateItem(MongoID.Generate(true), templateId, null);
+                ItemIcon icon = ItemViewFactory.LoadItemIcon(item, 1, false);
                 if (IsOverlayIconRequestActive(image, iconGeneration) && icon?.Sprite != null)
                 {
                     image.sprite = icon.Sprite;
@@ -1454,7 +1454,7 @@ namespace pitTeam.Patches
             }
 
             _buyConfirmOverlay = overlayRoot;
-            pitFireTeam.Log.LogInfo($"[UI] Teammate equipment build purchase blocked by resources: build='{quote?.BuildName}', price={quote?.FinalPrice ?? 0}, availableRoubles={GetAvailableStashRoubles()}, excludeExistingItems={quote?.ExcludeExistingItems ?? false}.");
+            Modules.Logger.LogInfo($"[UI] Teammate equipment build purchase blocked by resources: build='{quote?.BuildName}', price={quote?.FinalPrice ?? 0}, availableRoubles={GetAvailableStashRoubles()}, excludeExistingItems={quote?.ExcludeExistingItems ?? false}.");
         }
 
         private static void ConfirmBuyQuote(EquipmentBuildBuyQuote quote)
@@ -1473,14 +1473,14 @@ namespace pitTeam.Patches
         {
             if (quote?.Build?.Equipment == null || string.IsNullOrWhiteSpace(_accountId))
             {
-                NotificationManagerClass.DisplayWarningNotification(GetSocialUiText("KitLoadoutPurchaseFailed"), ENotificationDurationType.Default);
+                EFT.Communications.NotificationManager.DisplayWarningNotification(GetSocialUiText("KitLoadoutPurchaseFailed"), ENotificationDurationType.Default);
                 return;
             }
 
             SetBuyScreenBusy(true);
             try
             {
-                FlatItemsDataClass[] serializedEquipment = Singleton<ItemFactoryClass>.Instance.TreeToFlatItems(new Item[] { quote.Build.Equipment });
+                JsonType.FlatItem[] serializedEquipment = Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(new Item[] { quote.Build.Equipment });
                 if (serializedEquipment == null || serializedEquipment.Length == 0)
                 {
                     throw new InvalidOperationException("Selected teammate kit equipment was unavailable for purchase.");
@@ -1509,7 +1509,7 @@ namespace pitTeam.Patches
                     _session?.RagFair,
                     response?.data?.playerStashItems);
 
-                pitFireTeam.Log.LogInfo($"[UI] Teammate equipment build {GetQuoteActionButtonText(quote)} completed: build='{quote.BuildName}', price={quote.FinalPrice}, useItemsInStash={quote.ExcludeExistingItems}.");
+                Modules.Logger.LogInfo($"[UI] Teammate equipment build {GetQuoteActionButtonText(quote)} completed: build='{quote.BuildName}', price={quote.FinalPrice}, useItemsInStash={quote.ExcludeExistingItems}.");
 
                 // The server has already saved the teammate's new Default gear here, so the
                 // roster portrait can be regenerated from the updated profile when My Squad
@@ -1523,7 +1523,7 @@ namespace pitTeam.Patches
             {
                 pitFireTeam.Log.LogError("[UI] Failed to purchase teammate equipment build.");
                 pitFireTeam.Log.LogError(ex);
-                NotificationManagerClass.DisplayWarningNotification(ex.Message ?? GetSocialUiText("KitLoadoutPurchaseFailed"), ENotificationDurationType.Default);
+                EFT.Communications.NotificationManager.DisplayWarningNotification(ex.Message ?? GetSocialUiText("KitLoadoutPurchaseFailed"), ENotificationDurationType.Default);
             }
             finally
             {
@@ -1952,7 +1952,7 @@ namespace pitTeam.Patches
                 return;
             }
 
-            GClass3953 selectedBuild = ScreenSelectedBuildField?.GetValue(screen) as GClass3953;
+            EFT.UI.Builds.EquipmentBuild selectedBuild = ScreenSelectedBuildField?.GetValue(screen) as EFT.UI.Builds.EquipmentBuild;
             HealthParameterPanel weightPanel = ScreenWeightField?.GetValue(screen) as HealthParameterPanel;
             if (selectedBuild == null || weightPanel == null)
             {
@@ -1970,12 +1970,12 @@ namespace pitTeam.Patches
             weightPanel.SetWarningColor(false, false);
         }
 
-        private static void ApplyBuildListPrice(EquipmentBuildListView view, GClass3749<GClass3953> buildWrapper)
+        private static void ApplyBuildListPrice(EquipmentBuildListView view, EFT.UI.BuildWrapper<EFT.UI.Builds.EquipmentBuild> buildWrapper)
         {
             ApplyBuildListPrice(view, buildWrapper?.Build);
         }
 
-        private static void ApplyBuildListPrice(EquipmentBuildListView view, GClass3953 build)
+        private static void ApplyBuildListPrice(EquipmentBuildListView view, EFT.UI.Builds.EquipmentBuild build)
         {
             HealthParameterPanel weightPanel = BuildListWeightField?.GetValue(view) as HealthParameterPanel;
             if (weightPanel == null || build == null)
@@ -2020,7 +2020,8 @@ namespace pitTeam.Patches
             return Mathf.Max(0, Convert.ToInt32(Math.Floor(total)));
         }
 
-        private static void LogBuildPriceDiagnosticsOnce(GClass3953 build, KitLoadoutPricingContext pricingContext, int finalPrice, string source)
+        [System.Diagnostics.Conditional("DEBUG")]
+        private static void LogBuildPriceDiagnosticsOnce(EFT.UI.Builds.EquipmentBuild build, KitLoadoutPricingContext pricingContext, int finalPrice, string source)
         {
             if (!EnableKitLoadoutPricingDiagnostics || build?.Equipment == null || pricingContext == null)
             {
@@ -2038,11 +2039,11 @@ namespace pitTeam.Patches
                 .Where(item => !IsIgnoredKitRequirementItem(item))
                 .ToList();
             double rawTotal = items.Sum(item => Math.Max(0.0, CalculateSingleItemMarketRoublePrice(item)));
-            pitFireTeam.Log.LogInfo($"[UI][KitPrice] phase={_buildPricingLogPhase} source={source} build='{buildName}' items={items.Count} rawTotal={Math.Floor(rawTotal)} finalTotal={finalPrice} marketPricesLoaded={_marketPrices != null}");
+            Modules.Logger.LogInfo($"[UI][KitPrice] phase={_buildPricingLogPhase} source={source} build='{buildName}' items={items.Count} rawTotal={Math.Floor(rawTotal)} finalTotal={finalPrice} marketPricesLoaded={_marketPrices != null}");
 
             foreach (string line in pricingContext.Diagnostics)
             {
-                pitFireTeam.Log.LogInfo($"[UI][KitPrice] build='{buildName}' {line}");
+                Modules.Logger.LogInfo($"[UI][KitPrice] build='{buildName}' {line}");
             }
 
             foreach (Item item in items)
@@ -2053,12 +2054,12 @@ namespace pitTeam.Patches
                     : rawPrice;
                 string rule = entry?.Rule ?? "full value";
                 string slotLabel = GetEquipmentSlotLabel(build.Equipment, item);
-                pitFireTeam.Log.LogInfo(
+                Modules.Logger.LogInfo(
                     $"[UI][KitPrice] build='{buildName}' slot={slotLabel} item='{GetItemDisplayName(item)}' tpl={item.TemplateId} raw={Math.Floor(rawPrice)} final={Math.Floor(finalItemPrice)} rule={rule}");
             }
         }
 
-        private static string CreateBuildPricingLogKey(GClass3953 build)
+        private static string CreateBuildPricingLogKey(EFT.UI.Builds.EquipmentBuild build)
         {
             if (build?.Equipment == null)
             {
@@ -2175,7 +2176,7 @@ namespace pitTeam.Patches
             int requiredUnits = requirements.Sum(requirement => requirement.RequiredCount);
             int usedUnits = usedItems.Sum(item => item.Count);
             int purchasedUnits = purchasedItems.Sum(item => item.Count);
-            pitFireTeam.Log.LogInfo($"[UI] Teammate kit stash-use quote scanned {requirements.Count} template(s), {requiredUnits} required item unit(s), {usedUnits} stash-matched unit(s), {purchasedUnits} purchase unit(s), finalPrice={finalPrice}.");
+            Modules.Logger.LogInfo($"[UI] Teammate kit stash-use quote scanned {requirements.Count} template(s), {requiredUnits} required item unit(s), {usedUnits} stash-matched unit(s), {purchasedUnits} purchase unit(s), finalPrice={finalPrice}.");
             return new StashOnlyExclusionPlan
             {
                 FinalPrice = finalPrice,
@@ -2249,13 +2250,13 @@ namespace pitTeam.Patches
             // children are real kit requirements, but the roots themselves are not
             // purchasable gear and should not appear in the teammate kit quote.
             //
-            // BuiltInInsertsItemClass is also skipped: EFT exposes these as child
+            // EFT.InventoryLogic.BuiltInInserts is also skipped: EFT exposes these as child
             // items for armor/helmet stats, but they are integral materials, not
             // player-buyable or swappable kit parts.
             return item == null
                 || item is InventoryEquipment
-                || item is PocketsItemClass
-                || item is BuiltInInsertsItemClass;
+                || item is EFT.InventoryLogic.Pockets
+                || item is EFT.InventoryLogic.BuiltInInserts;
         }
 
         private static List<FriendlyTeammateBuyKitUsedItem> CreateSafeExactStashSelections(
@@ -2466,14 +2467,14 @@ namespace pitTeam.Patches
                 return 0.0;
             }
 
-            double price = FleaTaxCalculatorAbstractClass.CalculateBuyoutBasePriceForSingleItem(
+            double price = EFT.Trading.PriceCalculator.CalculateBuyoutBasePriceForSingleItem(
                 item,
                 0,
                 BuildMarketPriceSource,
                 true);
 
             return price > 0.0
-                ? FleaTaxCalculatorAbstractClass.ApplyCustomPriceIfNeeded(item, price)
+                ? EFT.Trading.PriceCalculator.ApplyCustomPriceIfNeeded(item, price)
                 : 0.0;
         }
 
@@ -2619,7 +2620,7 @@ namespace pitTeam.Patches
 
         private static bool HasKitHelmet(InventoryEquipment equipment)
         {
-            return equipment?.GetSlot(EquipmentSlot.Headwear)?.ContainedItem is HeadwearItemClass;
+            return equipment?.GetSlot(EquipmentSlot.Headwear)?.ContainedItem is EFT.InventoryLogic.Headwear;
         }
 
         private static bool IsArmoredTacticalVest(Item item)
@@ -2688,7 +2689,7 @@ namespace pitTeam.Patches
                     return false;
                 }
 
-                List<GClass3125> armorSlots = armorHolder.ArmorSlots.Where(slot => slot != null).ToList();
+                List<ArmorSlot> armorSlots = armorHolder.ArmorSlots.Where(slot => slot != null).ToList();
                 totalSlots = armorSlots.Count;
                 if (totalSlots <= 0)
                 {
@@ -2745,7 +2746,7 @@ namespace pitTeam.Patches
                 return items;
             }
 
-            foreach (GClass3125 armorSlot in armorHolder.ArmorSlots)
+            foreach (ArmorSlot armorSlot in armorHolder.ArmorSlots)
             {
                 if (armorSlot?.ContainedItem == null)
                 {
@@ -2795,8 +2796,8 @@ namespace pitTeam.Patches
             }
 
             Slot magazineSlot = GetWeaponMagazineSlot(weapon);
-            MagazineItemClass currentMagazine = weapon.GetCurrentMagazine();
-            foreach (MagazineItemClass magazine in allItems.OfType<MagazineItemClass>())
+            EFT.InventoryLogic.Magazine currentMagazine = weapon.GetCurrentMagazine();
+            foreach (EFT.InventoryLogic.Magazine magazine in allItems.OfType<EFT.InventoryLogic.Magazine>())
             {
                 if (magazine == null || IsInsideItemTree(magazine, weapon))
                 {
@@ -2836,7 +2837,7 @@ namespace pitTeam.Patches
                 return false;
             }
 
-            foreach (AmmoItemClass ammo in allItems.OfType<AmmoItemClass>())
+            foreach (EFT.InventoryLogic.Ammo ammo in allItems.OfType<EFT.InventoryLogic.Ammo>())
             {
                 if (ammo == null
                     || ammo.StackObjectsCount <= 0
@@ -2854,7 +2855,7 @@ namespace pitTeam.Patches
             return false;
         }
 
-        private static bool IsAmmoCompatibleWithWeapon(Weapon weapon, AmmoItemClass ammo)
+        private static bool IsAmmoCompatibleWithWeapon(Weapon weapon, EFT.InventoryLogic.Ammo ammo)
         {
             if (weapon == null || ammo == null)
             {
@@ -2874,7 +2875,7 @@ namespace pitTeam.Patches
                     }
                 }
 
-                MagazineItemClass currentMagazine = weapon.GetCurrentMagazine();
+                EFT.InventoryLogic.Magazine currentMagazine = weapon.GetCurrentMagazine();
                 return currentMagazine?.Cartridges?.Filters?.CheckItemFilter(ammo) == true;
             }
             catch
@@ -2991,18 +2992,18 @@ namespace pitTeam.Patches
                 {
                     if (plan?.HasMatch == true)
                     {
-                        pitFireTeam.Log.LogInfo($"[UI][KitPrice][Ragfair] weaponTpl={weaponTemplateId} result=match adjustedPrice={Math.Floor(plan.TotalPrice)} coverage={FormatPercent(plan.TargetCoverage)} offer={plan.SourceDescription}");
+                        Modules.Logger.LogInfo($"[UI][KitPrice][Ragfair] weaponTpl={weaponTemplateId} result=match adjustedPrice={Math.Floor(plan.TotalPrice)} coverage={FormatPercent(plan.TargetCoverage)} offer={plan.SourceDescription}");
                     }
                     else
                     {
                         double targetRawPrice = CalculateItemsRawPrice(targetPriceableItems);
-                        pitFireTeam.Log.LogInfo($"[UI][KitPrice][Ragfair] weaponTpl={weaponTemplateId} result=noMatch targetItems={targetPriceableItems?.Count ?? 0} targetRaw={Math.Floor(targetRawPrice)}");
+                        Modules.Logger.LogInfo($"[UI][KitPrice][Ragfair] weaponTpl={weaponTemplateId} result=noMatch targetItems={targetPriceableItems?.Count ?? 0} targetRaw={Math.Floor(targetRawPrice)}");
                     }
                 }
             }
             catch (Exception ex)
             {
-                pitFireTeam.Log.LogDebug($"[UI] Ragfair weapon offer pricing failed for '{weaponTemplateId}': {ex.Message}");
+                Modules.Logger.LogInfo($"[UI] Ragfair weapon offer pricing failed for '{weaponTemplateId}': {ex.Message}");
                 RagfairWeaponOfferPricingPlanCache[cacheKey] = RagfairWeaponOfferPricingPlan.NoMatch;
             }
             finally
@@ -3063,7 +3064,7 @@ namespace pitTeam.Patches
             {
                 if (EnableKitLoadoutPricingDiagnostics)
                 {
-                    pitFireTeam.Log.LogInfo($"[UI][KitPrice][Ragfair] weaponTpl={weaponTemplateId} handbookId={handbookId} result=emptyOrFailed succeed={result.Succeed} offers={result.Value?.offers?.Length ?? 0}");
+                    Modules.Logger.LogInfo($"[UI][KitPrice][Ragfair] weaponTpl={weaponTemplateId} handbookId={handbookId} result=emptyOrFailed succeed={result.Succeed} offers={result.Value?.offers?.Length ?? 0}");
                 }
 
                 return RagfairWeaponOfferPricingPlan.NoMatch;
@@ -3175,7 +3176,7 @@ namespace pitTeam.Patches
 
             if (bestPlan == null && EnableKitLoadoutPricingDiagnostics)
             {
-                pitFireTeam.Log.LogInfo($"[UI][KitPrice][Ragfair] weaponTpl={weaponTemplateId} handbookId={handbookId} conditionFrom={conditionFrom} offers={result.Value.offers.Length} targetRaw={Math.Floor(targetRawPrice)} result=noUsableOffer rejectedEligibility={rejectedEligibility} rejectedPrice={rejectedPrice} rejectedCondition={rejectedCondition} rejectedEmptyTree={rejectedEmptyTree} rejectedOverlap={rejectedOverlap} rejectedCoverage={rejectedCoverage} rejectedRaw={rejectedRaw}");
+                Modules.Logger.LogInfo($"[UI][KitPrice][Ragfair] weaponTpl={weaponTemplateId} handbookId={handbookId} conditionFrom={conditionFrom} offers={result.Value.offers.Length} targetRaw={Math.Floor(targetRawPrice)} result=noUsableOffer rejectedEligibility={rejectedEligibility} rejectedPrice={rejectedPrice} rejectedCondition={rejectedCondition} rejectedEmptyTree={rejectedEmptyTree} rejectedOverlap={rejectedOverlap} rejectedCoverage={rejectedCoverage} rejectedRaw={rejectedRaw}");
             }
 
             return bestPlan ?? RagfairWeaponOfferPricingPlan.NoMatch;
@@ -3220,14 +3221,14 @@ namespace pitTeam.Patches
 
         private static string ResolveRagfairHandbookIdForItem(string templateId)
         {
-            if (string.IsNullOrWhiteSpace(templateId) || !Singleton<HandbookClass>.Instantiated)
+            if (string.IsNullOrWhiteSpace(templateId) || !Singleton<EFT.HandBook.Handbook>.Instantiated)
             {
                 return templateId ?? string.Empty;
             }
 
             try
             {
-                EntityNodeClass node = Singleton<HandbookClass>.Instance[templateId];
+                EFT.HandBook.HandbookNode node = Singleton<EFT.HandBook.Handbook>.Instance[templateId];
                 return !string.IsNullOrWhiteSpace(node?.Data?.Id) ? node.Data.Id : templateId;
             }
             catch
@@ -3246,8 +3247,8 @@ namespace pitTeam.Patches
 
             IExchangeRequirement requirement = offer.Requirements[0];
             if (requirement == null
-                || !string.Equals(requirement.TemplateId, GClass3130.ROUBLE_ID.ToString(), StringComparison.Ordinal)
-                    && !string.Equals(requirement.TemplateId, GClass3130.ROUBLE_STACK_ID.ToString(), StringComparison.Ordinal))
+                || !string.Equals(requirement.TemplateId, EFT.InventoryLogic.CurrencyUtil.ROUBLE_ID.ToString(), StringComparison.Ordinal)
+                    && !string.Equals(requirement.TemplateId, EFT.InventoryLogic.CurrencyUtil.ROUBLE_STACK_ID.ToString(), StringComparison.Ordinal))
             {
                 return false;
             }
@@ -3267,7 +3268,7 @@ namespace pitTeam.Patches
             foreach (Item item in CollectDeepItemTree(weapon))
             {
                 if (IsIgnoredKitRequirementItem(item)
-                    || item is AmmoItemClass
+                    || item is EFT.InventoryLogic.Ammo
                     || string.IsNullOrWhiteSpace(item?.Id))
                 {
                     continue;
@@ -3392,9 +3393,9 @@ namespace pitTeam.Patches
                 TraderWeaponOfferPricingPlan bestPlan = null;
                 double bestSavings = 0.0;
                 double bestCoverage = 0.0;
-                foreach (TraderClass trader in _session.Traders)
+                foreach (EFT.Trading.Trader trader in _session.Traders)
                 {
-                    TraderAssortmentControllerClass assortment = trader?.CurrentAssortment;
+                    EFT.Trading.Assortment assortment = trader?.CurrentAssortment;
                     Item rootItem = assortment?.TraderController?.RootItem;
                     if (!IsTraderUsableForExactKitOffer(trader, assortment) || rootItem == null)
                     {
@@ -3465,7 +3466,7 @@ namespace pitTeam.Patches
             }
             catch (Exception ex)
             {
-                pitFireTeam.Log.LogDebug($"[UI] Exact trader weapon offer pricing failed for '{targetWeapon.Id}': {ex.Message}");
+                Modules.Logger.LogInfo($"[UI] Exact trader weapon offer pricing failed for '{targetWeapon.Id}': {ex.Message}");
                 pricingPlan = TraderWeaponOfferPricingPlan.NoMatch;
                 TraderWeaponOfferPricingPlanCache[cacheKey] = pricingPlan;
                 return false;
@@ -3475,7 +3476,7 @@ namespace pitTeam.Patches
             return pricingPlan.MatchedTemplateCounts != null;
         }
 
-        private static bool IsTraderUsableForExactKitOffer(TraderClass trader, TraderAssortmentControllerClass assortment)
+        private static bool IsTraderUsableForExactKitOffer(EFT.Trading.Trader trader, EFT.Trading.Assortment assortment)
         {
             return trader?.Info != null
                 && trader.Info.Unlocked
@@ -3483,7 +3484,7 @@ namespace pitTeam.Patches
                 && !trader.AssortmentLoading;
         }
 
-        private static bool IsTraderOfferAvailable(TraderClass trader, TraderAssortmentControllerClass assortment, Item item)
+        private static bool IsTraderOfferAvailable(EFT.Trading.Trader trader, EFT.Trading.Assortment assortment, Item item)
         {
             if (trader?.Info == null || assortment == null || item == null)
             {
@@ -3529,7 +3530,7 @@ namespace pitTeam.Patches
             foreach (Item item in CollectDeepItemTree(weapon))
             {
                 if (IsIgnoredKitRequirementItem(item)
-                    || item is AmmoItemClass
+                    || item is EFT.InventoryLogic.Ammo
                     || string.IsNullOrWhiteSpace(item?.TemplateId))
                 {
                     continue;
@@ -3717,7 +3718,7 @@ namespace pitTeam.Patches
                 return false;
             }
 
-            foreach (GClass2335 requisite in variant)
+            foreach (EFT.BarterTemplate requisite in variant)
             {
                 if (requisite == null || string.IsNullOrWhiteSpace(requisite._tpl) || requisite.count <= 0.0)
                 {
@@ -3743,8 +3744,8 @@ namespace pitTeam.Patches
                 return 0.0;
             }
 
-            if (string.Equals(templateId, GClass3130.ROUBLE_ID.ToString(), StringComparison.Ordinal)
-                || string.Equals(templateId, GClass3130.ROUBLE_STACK_ID.ToString(), StringComparison.Ordinal))
+            if (string.Equals(templateId, EFT.InventoryLogic.CurrencyUtil.ROUBLE_ID.ToString(), StringComparison.Ordinal)
+                || string.Equals(templateId, EFT.InventoryLogic.CurrencyUtil.ROUBLE_STACK_ID.ToString(), StringComparison.Ordinal))
             {
                 return 1.0;
             }
@@ -3843,7 +3844,7 @@ namespace pitTeam.Patches
             return !string.IsNullOrWhiteSpace(shortName) ? shortName : item.TemplateId;
         }
 
-        private static void RequestMarketPrices(ISession session, bool forceRefresh)
+        private static void RequestMarketPrices(EFT.IEftSession session, bool forceRefresh)
         {
             if (session == null || _marketPricesRequestInFlight)
             {
@@ -3887,15 +3888,15 @@ namespace pitTeam.Patches
 
         private static void UpdateHandbookPrices(Dictionary<string, float> prices)
         {
-            if (prices == null || !Singleton<HandbookClass>.Instantiated)
+            if (prices == null || !Singleton<EFT.HandBook.Handbook>.Instantiated)
             {
                 return;
             }
 
-            HandbookClass handbook = Singleton<HandbookClass>.Instance;
+            EFT.HandBook.Handbook handbook = Singleton<EFT.HandBook.Handbook>.Instance;
             foreach (KeyValuePair<string, float> pair in prices)
             {
-                EntityNodeClass node = handbook[pair.Key];
+                EFT.HandBook.HandbookNode node = handbook[pair.Key];
                 if (node != null)
                 {
                     node.Data.Price = pair.Value;
@@ -4132,7 +4133,7 @@ namespace pitTeam.Patches
 
         private sealed class EquipmentBuildBuyQuote
         {
-            public GClass3953 Build;
+            public EFT.UI.Builds.EquipmentBuild Build;
             public string BuildName;
             public int FullKitPrice;
             public int MissingOnlyPrice;
@@ -4150,7 +4151,7 @@ namespace pitTeam.Patches
         private sealed class FriendlyTeammateBuyKitRequest
         {
             public string aid { get; set; }
-            public FlatItemsDataClass[] items { get; set; }
+            public JsonType.FlatItem[] items { get; set; }
             public int price { get; set; }
             public bool useItemsInStash { get; set; }
             public FriendlyTeammateBuyKitUsedItem[] usedItems { get; set; }
@@ -4158,7 +4159,7 @@ namespace pitTeam.Patches
 
         private sealed class FriendlyTeammateBuyKitResponse
         {
-            public FlatItemsDataClass[] playerStashItems { get; set; }
+            public JsonType.FlatItem[] playerStashItems { get; set; }
         }
 
         private sealed class FriendlyTeammateBuyKitUsedItem
@@ -4221,7 +4222,8 @@ namespace pitTeam.Patches
         private sealed class KitLoadoutPricingContext
         {
             private readonly Dictionary<string, KitLoadoutPricingEntry> _itemPriceOverrides = new Dictionary<string, KitLoadoutPricingEntry>(StringComparer.Ordinal);
-            public readonly List<string> Diagnostics = new List<string>();
+            private List<string> diagnostics;
+            public List<string> Diagnostics => diagnostics ??= new List<string>();
 
             public void SetItemPriceOverride(Item item, double price, string rule)
             {
@@ -4257,6 +4259,7 @@ namespace pitTeam.Patches
                     && _itemPriceOverrides.TryGetValue(item.Id, out entry);
             }
 
+            [System.Diagnostics.Conditional("DEBUG")]
             public void AddDiagnostic(string line)
             {
                 if (!string.IsNullOrWhiteSpace(line))
@@ -4292,7 +4295,7 @@ namespace pitTeam.Patches
         private sealed class BuildRowState
         {
             public EquipmentBuildListView View;
-            public GClass3953 Build;
+            public EFT.UI.Builds.EquipmentBuild Build;
             public Transform DeleteHolder;
             public bool? DeleteHolderActive;
             public Image WeightIcon;
@@ -4312,9 +4315,9 @@ namespace pitTeam.Patches
                     return marketPrice;
                 }
 
-                if (Singleton<HandbookClass>.Instantiated)
+                if (Singleton<EFT.HandBook.Handbook>.Instantiated)
                 {
-                    return Singleton<HandbookClass>.Instance.GetBasePrice(itemId);
+                    return Singleton<EFT.HandBook.Handbook>.Instance.GetBasePrice(itemId);
                 }
 
                 return 0.0;
@@ -4326,7 +4329,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(EquipmentBuildsScreen), "Show", new[] { typeof(EquipmentBuildsScreen.GClass3870) });
+            return AccessTools.Method(typeof(EquipmentBuildsScreen), "Show", new[] { typeof(EquipmentBuildsScreen.EquipmentBuildsScreenController) });
         }
 
         [PatchPostfix]
@@ -4340,13 +4343,13 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(EquipmentBuildsScreen), "method_12");
+            return AccessTools.Method(typeof(EquipmentBuildsScreen), nameof(EquipmentBuildsScreen.GetVisualEquipmentState));
         }
 
         [PatchPostfix]
-        private static void PatchPostfix(EquipmentBuildsScreen __instance, ref LastPlayerStateClass __result)
+        private static void PatchPostfix(EquipmentBuildsScreen __instance, ref EFT.PlayerVisualRepresentation __result)
         {
-            if (TeammateEquipmentBuildsScreenFlow.TryBuildTeammateVisual(__instance, __result, out LastPlayerStateClass teammateVisual))
+            if (TeammateEquipmentBuildsScreenFlow.TryBuildTeammateVisual(__instance, __result, out EFT.PlayerVisualRepresentation teammateVisual))
             {
                 __result = teammateVisual;
             }
@@ -4357,7 +4360,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(EquipmentBuildsScreen), "method_9");
+            return AccessTools.Method(typeof(EquipmentBuildsScreen), nameof(EquipmentBuildsScreen.SelectBuildHandler));
         }
 
         [PatchPostfix]
@@ -4371,7 +4374,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(EquipmentBuildsScreen), "method_10");
+            return AccessTools.Method(typeof(EquipmentBuildsScreen), nameof(EquipmentBuildsScreen.UpdatePreview));
         }
 
         [PatchPrefix]
@@ -4385,7 +4388,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(EquipmentBuildsScreen), "method_22");
+            return AccessTools.Method(typeof(EquipmentBuildsScreen), nameof(EquipmentBuildsScreen.CG_Awake));
         }
 
         [PatchPrefix]
@@ -4399,7 +4402,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(EquipmentBuildsScreen), "method_23");
+            return AccessTools.Method(typeof(EquipmentBuildsScreen), nameof(EquipmentBuildsScreen.CG_Awake1));
         }
 
         [PatchPrefix]
@@ -4447,7 +4450,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(EquipmentBuildsScreen), "method_15");
+            return AccessTools.Method(typeof(EquipmentBuildsScreen), nameof(EquipmentBuildsScreen.EquipBuild));
         }
 
         [PatchPrefix]
@@ -4461,7 +4464,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(ContextInteractionsAbstractClass), nameof(ContextInteractionsAbstractClass.IsActive));
+            return AccessTools.Method(typeof(EFT.UI.BaseItemContextInteractions), nameof(EFT.UI.BaseItemContextInteractions.IsActive));
         }
 
         [PatchPostfix]
@@ -4478,7 +4481,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(ItemSpecificationPanel), "method_4");
+            return AccessTools.Method(typeof(ItemSpecificationPanel), nameof(ItemSpecificationPanel.InitInteractionButtonsPanel));
         }
 
         [PatchPostfix]
@@ -4495,11 +4498,11 @@ namespace pitTeam.Patches
             return AccessTools.Method(
                 typeof(EquipmentBuildListView),
                 "Show",
-                new[] { typeof(GClass3749<GClass3953>), typeof(ValueTuple<float, float, float>?) });
+                new[] { typeof(EFT.UI.BuildWrapper<EFT.UI.Builds.EquipmentBuild>), typeof(ValueTuple<float, float, float>?) });
         }
 
         [PatchPostfix]
-        private static void PatchPostfix(EquipmentBuildListView __instance, GClass3749<GClass3953> buildWrapper)
+        private static void PatchPostfix(EquipmentBuildListView __instance, EFT.UI.BuildWrapper<EFT.UI.Builds.EquipmentBuild> buildWrapper)
         {
             TeammateEquipmentBuildsScreenFlow.ApplyBuildListRow(__instance, buildWrapper);
         }

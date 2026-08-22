@@ -19,9 +19,9 @@ using System.Reflection;
 using System.Threading.Tasks;
 using TMPro;
 using UnityEngine;
-using playerGroup = System.Collections.Generic.List<GroupPlayerViewModelClass>;
-using OtherProfileResult = GClass2213;
-using ResultProfile = GClass1416;
+using playerGroup = System.Collections.Generic.List<EFT.UI.Matchmaker.RaidPlayer>;
+using OtherProfileResult = EFT.OtherPlayerProfileDescriptor;
+using ResultProfile = EFT.OtherPlayerProfile;
 
 namespace pitTeam.Patches
 {
@@ -30,7 +30,7 @@ namespace pitTeam.Patches
         private static readonly TimeSpan SyntheticRaidStartErrorWindow = TimeSpan.FromSeconds(30);
         private static DateTime _lastSyntheticRaidStartUtc = DateTime.MinValue;
 
-        private static readonly MethodInfo LocalRaidStartMethod = AccessTools.Method(typeof(TarkovApplication), "method_41", new Type[]
+        private static readonly MethodInfo LocalRaidStartMethod = AccessTools.Method(typeof(TarkovApplication), nameof(TarkovApplication.LocalGameMatching), new Type[]
         {
             typeof(TimeAndWeatherSettings),
             typeof(bool)
@@ -58,7 +58,7 @@ namespace pitTeam.Patches
             raidSettings.RaidMode = ERaidMode.Local;
             raidSettings.IsPveOffline = true;
             _lastSyntheticRaidStartUtc = DateTime.UtcNow;
-            pitFireTeam.Log.LogInfo($"[Raid] Forced local teammate raid at {reason}. groupPlayers={MainMenuControllerPatch.GroupPlayers.Count}");
+            Modules.Logger.LogInfo($"[Raid] Forced local teammate raid at {reason}. groupPlayers={MainMenuControllerPatch.GroupPlayers.Count}");
             return true;
         }
 
@@ -132,15 +132,15 @@ namespace pitTeam.Patches
 
     internal static class SyntheticTeammateVisualHealth
     {
-        public static void Ensure(GroupPlayerViewModelClass teammate, Profile.ProfileHealthClass referenceHealth)
+        public static void Ensure(EFT.UI.Matchmaker.RaidPlayer teammate, Profile.HealthInfo referenceHealth)
         {
             if (teammate == null || referenceHealth == null)
             {
                 return;
             }
 
-            Profile.ProfileHealthClass sourceHealth = teammate.PlayerVisualRepresentation?.Info?.Health ?? teammate.Info?.Health;
-            Profile.ProfileHealthClass normalizedHealth = Normalize(sourceHealth, referenceHealth);
+            Profile.HealthInfo sourceHealth = teammate.PlayerVisualRepresentation?.Info?.Health ?? teammate.Info?.Health;
+            Profile.HealthInfo normalizedHealth = Normalize(sourceHealth, referenceHealth);
 
             if (teammate.PlayerVisualRepresentation?.Info != null)
             {
@@ -149,11 +149,11 @@ namespace pitTeam.Patches
 
             if (teammate.Info != null)
             {
-                teammate.Info.Health = normalizedHealth.Clone();
+                teammate.Info.Health = CloneHealth(normalizedHealth);
             }
         }
 
-        public static Profile.ProfileHealthClass Normalize(Profile.ProfileHealthClass sourceHealth, Profile.ProfileHealthClass referenceHealth)
+        public static Profile.HealthInfo Normalize(Profile.HealthInfo sourceHealth, Profile.HealthInfo referenceHealth)
         {
             if (referenceHealth == null)
             {
@@ -162,10 +162,10 @@ namespace pitTeam.Patches
 
             if (sourceHealth == null)
             {
-                return referenceHealth.Clone();
+                return CloneHealth(referenceHealth);
             }
 
-            Profile.ProfileHealthClass normalizedHealth = referenceHealth.Clone();
+            Profile.HealthInfo normalizedHealth = CloneHealth(referenceHealth);
 
             normalizedHealth.Energy = CloneValueInfo(sourceHealth.Energy) ?? normalizedHealth.Energy;
             normalizedHealth.Hydration = CloneValueInfo(sourceHealth.Hydration) ?? normalizedHealth.Hydration;
@@ -175,9 +175,9 @@ namespace pitTeam.Patches
 
             if (sourceHealth.BodyParts != null)
             {
-                foreach (KeyValuePair<EBodyPart, Profile.ProfileHealthClass.ProfileBodyPartHealthClass> bodyPart in sourceHealth.BodyParts)
+                foreach (KeyValuePair<EBodyPart, Profile.HealthInfo.BodyPartInfo> bodyPart in sourceHealth.BodyParts)
                 {
-                    Profile.ProfileHealthClass.ProfileBodyPartHealthClass clonedBodyPart = CloneBodyPart(bodyPart.Value);
+                    Profile.HealthInfo.BodyPartInfo clonedBodyPart = CloneBodyPart(bodyPart.Value);
                     if (clonedBodyPart != null)
                     {
                         normalizedHealth.BodyParts[bodyPart.Key] = clonedBodyPart;
@@ -188,14 +188,46 @@ namespace pitTeam.Patches
             return normalizedHealth;
         }
 
-        private static Profile.ProfileHealthClass.ValueInfo CloneValueInfo(Profile.ProfileHealthClass.ValueInfo source)
+        public static Profile.HealthInfo CloneHealth(Profile.HealthInfo source)
         {
             if (source == null)
             {
                 return null;
             }
 
-            return new Profile.ProfileHealthClass.ValueInfo
+            Profile.HealthInfo clone = new Profile.HealthInfo
+            {
+                Energy = CloneValueInfo(source.Energy) ?? new Profile.HealthInfo.ValueInfo(),
+                Hydration = CloneValueInfo(source.Hydration) ?? new Profile.HealthInfo.ValueInfo(),
+                Temperature = CloneValueInfo(source.Temperature) ?? new Profile.HealthInfo.ValueInfo(),
+                Poison = CloneValueInfo(source.Poison) ?? new Profile.HealthInfo.ValueInfo(),
+                UpdateTime = source.UpdateTime,
+                BodyParts = new Dictionary<EBodyPart, Profile.HealthInfo.BodyPartInfo>()
+            };
+
+            if (source.BodyParts != null)
+            {
+                foreach (KeyValuePair<EBodyPart, Profile.HealthInfo.BodyPartInfo> bodyPart in source.BodyParts)
+                {
+                    Profile.HealthInfo.BodyPartInfo clonedBodyPart = CloneBodyPart(bodyPart.Value);
+                    if (clonedBodyPart != null)
+                    {
+                        clone.BodyParts[bodyPart.Key] = clonedBodyPart;
+                    }
+                }
+            }
+
+            return clone;
+        }
+
+        private static Profile.HealthInfo.ValueInfo CloneValueInfo(Profile.HealthInfo.ValueInfo source)
+        {
+            if (source == null)
+            {
+                return null;
+            }
+
+            return new Profile.HealthInfo.ValueInfo
             {
                 Current = source.Current,
                 Minimum = source.Minimum,
@@ -205,17 +237,17 @@ namespace pitTeam.Patches
             };
         }
 
-        private static Profile.ProfileHealthClass.ProfileBodyPartHealthClass CloneBodyPart(Profile.ProfileHealthClass.ProfileBodyPartHealthClass source)
+        private static Profile.HealthInfo.BodyPartInfo CloneBodyPart(Profile.HealthInfo.BodyPartInfo source)
         {
             if (source == null)
             {
                 return null;
             }
 
-            Profile.ProfileHealthClass.ProfileBodyPartHealthClass bodyPart = new Profile.ProfileHealthClass.ProfileBodyPartHealthClass
+            Profile.HealthInfo.BodyPartInfo bodyPart = new Profile.HealthInfo.BodyPartInfo
             {
-                Health = CloneValueInfo(source.Health) ?? new Profile.ProfileHealthClass.ValueInfo(),
-                Effects = new Dictionary<string, Profile.ProfileHealthClass.GClass2206>()
+                Health = CloneValueInfo(source.Health) ?? new Profile.HealthInfo.ValueInfo(),
+                Effects = new Dictionary<string, Profile.HealthInfo.EffectInfo>()
             };
 
             if (source.Effects == null)
@@ -223,14 +255,14 @@ namespace pitTeam.Patches
                 return bodyPart;
             }
 
-            foreach (KeyValuePair<string, Profile.ProfileHealthClass.GClass2206> effect in source.Effects)
+            foreach (KeyValuePair<string, Profile.HealthInfo.EffectInfo> effect in source.Effects)
             {
                 if (string.IsNullOrWhiteSpace(effect.Key) || effect.Value == null)
                 {
                     continue;
                 }
 
-                bodyPart.Effects[effect.Key] = new Profile.ProfileHealthClass.GClass2206
+                bodyPart.Effects[effect.Key] = new Profile.HealthInfo.EffectInfo
                 {
                     Time = effect.Value.Time
                 };
@@ -245,7 +277,7 @@ namespace pitTeam.Patches
         private const string AutoJoinRoute = "/singleplayer/autoteam";
         private const string ProfileRoute = "/singleplayer/pitfireteam/teammate/profile";
 
-        public static void EnsureLoaded(MatchmakerPlayerControllerClass controller)
+        public static void EnsureLoaded(EFT.UI.Matchmaker.MatchmakerPlayersController controller)
         {
             if (controller?.CurrentPlayer?.Info == null)
             {
@@ -255,7 +287,7 @@ namespace pitTeam.Patches
             bool addedSyntheticTeammate = false;
             foreach (string accountId in LoadAutoJoinAccountIds())
             {
-                GroupPlayerViewModelClass teammate = BuildGroupPlayer(accountId, controller.CurrentPlayer);
+                EFT.UI.Matchmaker.RaidPlayer teammate = BuildGroupPlayer(accountId, controller.CurrentPlayer);
                 if (teammate == null)
                 {
                     continue;
@@ -277,7 +309,7 @@ namespace pitTeam.Patches
             }
         }
 
-        public static void RefreshLoadedTeammateVisuals(MatchmakerPlayerControllerClass controller)
+        public static void RefreshLoadedTeammateVisuals(EFT.UI.Matchmaker.MatchmakerPlayersController controller)
         {
             if (controller?.CurrentPlayer?.Info == null || MainMenuControllerPatch.GroupPlayers == null || MainMenuControllerPatch.GroupPlayers.Count == 0)
             {
@@ -286,7 +318,7 @@ namespace pitTeam.Patches
 
             string currentPlayerAccountId = controller.CurrentPlayer.AccountId;
             List<string> accountIds = new List<string>();
-            foreach (GroupPlayerViewModelClass player in MainMenuControllerPatch.GroupPlayers)
+            foreach (EFT.UI.Matchmaker.RaidPlayer player in MainMenuControllerPatch.GroupPlayers)
             {
                 string accountId = player?.AccountId;
                 if (string.IsNullOrWhiteSpace(accountId)
@@ -301,13 +333,13 @@ namespace pitTeam.Patches
 
             foreach (string accountId in accountIds)
             {
-                GroupPlayerViewModelClass refreshed = BuildGroupPlayer(accountId, controller.CurrentPlayer);
+                EFT.UI.Matchmaker.RaidPlayer refreshed = BuildGroupPlayer(accountId, controller.CurrentPlayer);
                 if (refreshed == null)
                 {
                     continue;
                 }
 
-                // GroupPlayerViewModelClass carries a full visual snapshot. If the player edits a teammate's
+                // EFT.UI.Matchmaker.RaidPlayer carries a full visual snapshot. If the player edits a teammate's
                 // loadout after inviting them, the cached matchmaker entry must be replaced before previews render.
                 ReplaceOrAddPlayer(MainMenuControllerPatch.GroupPlayers, refreshed);
 
@@ -318,7 +350,7 @@ namespace pitTeam.Patches
             }
         }
 
-        private static void ReplaceOrAddPlayer(IList<GroupPlayerViewModelClass> players, GroupPlayerViewModelClass teammate)
+        private static void ReplaceOrAddPlayer(IList<EFT.UI.Matchmaker.RaidPlayer> players, EFT.UI.Matchmaker.RaidPlayer teammate)
         {
             if (players == null || teammate == null || string.IsNullOrWhiteSpace(teammate.AccountId))
             {
@@ -344,7 +376,7 @@ namespace pitTeam.Patches
             players.Add(teammate);
         }
 
-        private static void EnsureLocalGroupOwner(MatchmakerPlayerControllerClass controller)
+        private static void EnsureLocalGroupOwner(EFT.UI.Matchmaker.MatchmakerPlayersController controller)
         {
             if (controller?.CurrentPlayer == null || controller.GroupPlayers == null || controller.Group == null)
             {
@@ -358,7 +390,7 @@ namespace pitTeam.Patches
 
             controller.CurrentPlayer.IsLeader = true;
             controller.Group.UpdateOwner(controller.CurrentPlayer);
-            GClass3752.RequestGlobalRedraw();
+            EFT.UI.BaseContextInteractions.RequestGlobalRedraw();
         }
 
         private static IReadOnlyList<string> LoadAutoJoinAccountIds()
@@ -388,7 +420,7 @@ namespace pitTeam.Patches
             }
         }
 
-        private static GroupPlayerViewModelClass BuildGroupPlayer(string accountId, GroupPlayerViewModelClass currentPlayer)
+        private static EFT.UI.Matchmaker.RaidPlayer BuildGroupPlayer(string accountId, EFT.UI.Matchmaker.RaidPlayer currentPlayer)
         {
             if (string.IsNullOrWhiteSpace(accountId) || currentPlayer?.Info == null)
             {
@@ -414,17 +446,17 @@ namespace pitTeam.Patches
                 }
 
                 ResultProfile profile = new ResultProfile(profileResult);
-                LastPlayerStateClass playerVisualization = profile.PlayerVisualRepresentation;
+                EFT.PlayerVisualRepresentation playerVisualization = profile.PlayerVisualRepresentation;
                 if (playerVisualization?.Info == null)
                 {
                     return null;
                 }
 
-                Profile.ProfileHealthClass normalizedHealth =
+                Profile.HealthInfo normalizedHealth =
                     SyntheticTeammateVisualHealth.Normalize(playerVisualization.Info.Health, currentPlayer.Info.Health);
                 playerVisualization.Info.Health = normalizedHealth;
 
-                GClass1410 previewInfo = new GClass1410
+                JsonType.PlayerInfo previewInfo = new JsonType.PlayerInfo
                 {
                     Level = playerVisualization.Info.Level,
                     PrestigeLevel = playerVisualization.Info.PrestigeLevel,
@@ -436,16 +468,16 @@ namespace pitTeam.Patches
                     SavageNickname = currentPlayer.Info.Nickname,
                     GameVersion = currentPlayer.Info.GameVersion,
                     HasCoopExtension = currentPlayer.Info.HasCoopExtension,
-                    Health = normalizedHealth.Clone()
+                    Health = SyntheticTeammateVisualHealth.CloneHealth(normalizedHealth)
                 };
                 playerVisualization.Info.MemberCategory = EMemberCategory.Unheard;
                 playerVisualization.Info.SelectedMemberCategory = EMemberCategory.Unheard;
 
-                return new GroupPlayerViewModelClass(new GroupPlayerDataClass
+                return new EFT.UI.Matchmaker.RaidPlayer(new EFT.GroupPlayer
                 {
                     AccountId = accountId,
                     Id = accountId,
-                    Info = new GClass1410
+                    Info = new JsonType.PlayerInfo
                     {
                         Level = previewInfo.Level,
                         PrestigeLevel = previewInfo.PrestigeLevel,
@@ -479,7 +511,7 @@ namespace pitTeam.Patches
         }
 
         [PatchPostfix]
-        private static void PatchPostfix(MatchMakerPlayerPreview __instance, GroupPlayerViewModelClass player)
+        private static void PatchPostfix(MatchMakerPlayerPreview __instance, EFT.UI.Matchmaker.RaidPlayer player)
         {
             try
             {
@@ -523,10 +555,10 @@ namespace pitTeam.Patches
         }
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(Class308), "SendRaidSettings");
+            return AccessTools.Method(typeof(EFT.EftClientBackendSession), "SendRaidSettings");
         }
         [PatchPostfix]
-        private static void PatchPostfix(Class308 __instance, RaidSettings settings)
+        private static void PatchPostfix(EFT.EftClientBackendSession __instance, RaidSettings settings)
         {
             bool badGuy = pitFireTeam.badGuy.Value;
 
@@ -732,11 +764,11 @@ namespace pitTeam.Patches
 
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(MainMenuControllerClass), "method_49");
+            return AccessTools.Method(typeof(EFT.MainMenuShowOperation), "method_49");
         }
 
         [PatchPrefix]
-        private static void PatchPrefix(MainMenuControllerClass __instance)
+        private static void PatchPrefix(EFT.MainMenuShowOperation __instance)
         {
         }
     }
@@ -751,11 +783,11 @@ namespace pitTeam.Patches
 
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(GClass3926<RaidSettings>), "method_39");
+            return AccessTools.Method(typeof(EFT.UI.Matchmaker.BaseMatchmakerController<RaidSettings>), nameof(EFT.UI.Matchmaker.BaseMatchmakerController<RaidSettings>.AddPlayerToGroup));
         }
 
         [PatchPostfix]
-        private static void PatchPostfix(MatchmakerPlayerControllerClass __instance, GroupPlayerViewModelClass player)
+        private static void PatchPostfix(EFT.UI.Matchmaker.MatchmakerPlayersController __instance, EFT.UI.Matchmaker.RaidPlayer player)
         {
             NormalizeTeammateIconCategory(player);
             EnsureTeammateVisualHealth(__instance, player);
@@ -767,7 +799,7 @@ namespace pitTeam.Patches
             }
         }
 
-        private static void NormalizeTeammateIconCategory(GroupPlayerViewModelClass player)
+        private static void NormalizeTeammateIconCategory(EFT.UI.Matchmaker.RaidPlayer player)
         {
             if (player == null || string.IsNullOrWhiteSpace(player.AccountId))
             {
@@ -793,7 +825,7 @@ namespace pitTeam.Patches
             }
         }
 
-        private static void EnsureTeammateVisualHealth(MatchmakerPlayerControllerClass controller, GroupPlayerViewModelClass player)
+        private static void EnsureTeammateVisualHealth(EFT.UI.Matchmaker.MatchmakerPlayersController controller, EFT.UI.Matchmaker.RaidPlayer player)
         {
             if (controller?.CurrentPlayer?.Info?.Health == null || player?.PlayerVisualRepresentation?.Info == null)
             {
@@ -857,11 +889,11 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(GClass3926<RaidSettings>), "method_21");
+            return AccessTools.Method(typeof(EFT.UI.Matchmaker.BaseMatchmakerController<RaidSettings>), nameof(EFT.UI.Matchmaker.BaseMatchmakerController<RaidSettings>.RemoveGroup));
         }
 
         [PatchPrefix]
-        private static void PatchPrefix(MatchmakerPlayerControllerClass __instance, bool revertSettings = true)
+        private static void PatchPrefix(EFT.UI.Matchmaker.MatchmakerPlayersController __instance, bool revertSettings = true)
         {
             MainMenuControllerPatch.GroupPlayers.Clear();
         }
@@ -875,18 +907,18 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(MainMenuControllerClass), "method_52");
+            return AccessTools.Method(typeof(EFT.MainMenuShowOperation), "method_52");
         }
 
         [PatchPrefix]
-        private static void PatchPrefix(MainMenuControllerClass __instance)
+        private static void PatchPrefix(EFT.MainMenuShowOperation __instance)
         {
             if (Modules.SquadSideSelectionFlow.SquadModeActive)
             {
                 Modules.SquadSideSelectionFlow.Deactivate("play-ready-screen");
             }
 
-            RaidSettings raidSettings = __instance.RaidSettings_0;
+            RaidSettings raidSettings = __instance.raidSettings_0;
             if (raidSettings == null || MainMenuControllerPatch.GroupPlayers.Count < 1)
             {
                 return;
@@ -902,28 +934,13 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(GClass3926<RaidSettings>), "MatchingAbort");
+            return AccessTools.Method(typeof(EFT.UI.Matchmaker.BaseMatchmakerController<RaidSettings>), "MatchingAbort");
         }
 
         [PatchPrefix]
-        private static void PatchPrefix(MatchmakerPlayerControllerClass __instance)
+        private static void PatchPrefix(EFT.UI.Matchmaker.MatchmakerPlayersController __instance)
         {
             MainMenuControllerPatch.GroupPlayers.Clear();
-        }
-    }
-    /**
-     * When leaving the match accept screen, ensure the original group is back in sync with the raid group
-     */
-    internal class MatchmakerPlayerControllerClassLeavePatch : ModulePatch
-    {
-        protected override MethodBase GetTargetMethod()
-        {
-            return AccessTools.Method(typeof(MatchMakerAcceptScreen), "method_25");
-        }
-
-        [PatchPrefix]
-        private static void PatchPrefix(MatchMakerAcceptScreen __instance)
-        {
         }
     }
     /**
@@ -933,13 +950,13 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(ContextInteractionsClass), "method_21");
+            return AccessTools.Method(typeof(EFT.UI.Matchmaker.RaidGroupContextInteractions), nameof(EFT.UI.Matchmaker.RaidGroupContextInteractions.RemovePlayer));
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(ContextInteractionsClass __instance)
+        private static bool PatchPrefix(EFT.UI.Matchmaker.RaidGroupContextInteractions __instance)
         {
-            string id = __instance.GroupPlayerDataClass.AccountId;
+            string id = __instance._selectedPlayer.AccountId;
             if (string.IsNullOrWhiteSpace(id))
             {
                 return true;
@@ -954,7 +971,7 @@ namespace pitTeam.Patches
             TeammateAutoJoinRuntime.MarkSuppressed(id);
             MainMenuControllerPatch.GroupPlayers.RemoveFirst(x => x?.AccountId == id);
 
-            IMatchmakerPlayersController controller = __instance.IMatchmakerPlayersController;
+            EFT.UI.Matchmaker.IMatchmakerController controller = __instance._matchmakerPlayersController;
             if (controller?.GroupPlayers == null || controller.GroupPlayers.All(player => player?.AccountId != id))
             {
                 return true;
@@ -966,7 +983,7 @@ namespace pitTeam.Patches
                 controller.Group?.RemoveOwner();
             }
 
-            GClass3752.RequestGlobalRedraw();
+            EFT.UI.BaseContextInteractions.RequestGlobalRedraw();
             return false;
         }
     }
@@ -978,24 +995,24 @@ namespace pitTeam.Patches
         {
             return AccessTools.Method(typeof(MatchmakerTimeHasCome), "Show", new Type[]
             {
-                typeof(ISession),
+                typeof(EFT.IEftSession),
                 typeof(RaidSettings),
-                typeof(MatchmakerPlayerControllerClass)
+                typeof(EFT.UI.Matchmaker.MatchmakerPlayersController)
             });
         }
         [PatchPrefix]
-        private static void PatchPrefix(MatchmakerTimeHasCome __instance, ISession session, RaidSettings raidSettings, MatchmakerPlayerControllerClass matchmaker)
+        private static void PatchPrefix(MatchmakerTimeHasCome __instance, EFT.IEftSession session, RaidSettings raidSettings, EFT.UI.Matchmaker.MatchmakerPlayersController matchmaker)
         {
             if (!raidSettings.IsPmc) MainMenuControllerPatch.GroupPlayers.Clear();
             SyntheticTeammateAutoJoinLoader.RefreshLoadedTeammateVisuals(matchmaker);
 
-            if (matchmaker?.GroupPlayers?.List_0 == null)
+            if (matchmaker?.GroupPlayers?.List == null)
             {
                 return;
             }
 
-            List<GroupPlayerViewModelClass> raidGroup = matchmaker.GroupPlayers.List_0;
-            GroupPlayerViewModelClass currentPlayer = matchmaker.CurrentPlayer;
+            List<EFT.UI.Matchmaker.RaidPlayer> raidGroup = matchmaker.GroupPlayers.List;
+            EFT.UI.Matchmaker.RaidPlayer currentPlayer = matchmaker.CurrentPlayer;
             if (currentPlayer != null)
             {
                 int currentIndex = raidGroup.FindIndex(x => x?.AccountId == currentPlayer.AccountId);
@@ -1010,7 +1027,7 @@ namespace pitTeam.Patches
                 }
             }
 
-            Profile.ProfileHealthClass currentHealth = matchmaker.CurrentPlayer?.Info?.Health;
+            Profile.HealthInfo currentHealth = matchmaker.CurrentPlayer?.Info?.Health;
 
             try
             {
@@ -1083,11 +1100,11 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(PartyInfoPanel), "method_3");
+            return AccessTools.Method(typeof(PartyInfoPanel), nameof(PartyInfoPanel.CG_method_3));
         }
 
         [PatchPrefix]
-        private static void PatchPrefix(PartyInfoPanel __instance, GroupPlayerViewModelClass raidPlayer)
+        private static void PatchPrefix(PartyInfoPanel __instance, EFT.UI.Matchmaker.RaidPlayer raidPlayer)
         {
             try
             {
@@ -1096,8 +1113,8 @@ namespace pitTeam.Patches
                     return;
                 }
 
-                Profile currentProfile = AccessTools.Field(typeof(PartyInfoPanel), "profile_0").GetValue(__instance) as Profile;
-                Profile.ProfileHealthClass referenceHealth = currentProfile?.Health;
+                Profile currentProfile = AccessTools.Field(typeof(PartyInfoPanel), "_profile").GetValue(__instance) as Profile;
+                Profile.HealthInfo referenceHealth = currentProfile?.Health;
                 if (referenceHealth == null)
                 {
                     return;
@@ -1117,16 +1134,16 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(MatchMakerAcceptScreen), "Show", new Type[] { typeof(ISession), typeof(RaidSettings), typeof(RaidSettings) });
+            return AccessTools.Method(typeof(MatchMakerAcceptScreen), "Show", new Type[] { typeof(EFT.IEftSession), typeof(RaidSettings), typeof(RaidSettings) });
 
         }
 
         [PatchPrefix]
-        private static void PatchPrefix(MatchMakerAcceptScreen __instance, ISession session, RaidSettings raidSettings, RaidSettings offlineRaidSettings)
+        private static void PatchPrefix(MatchMakerAcceptScreen __instance, EFT.IEftSession session, RaidSettings raidSettings, RaidSettings offlineRaidSettings)
         {
             try
             {
-                MatchmakerPlayerControllerClass controller = AccessTools.Field(typeof(MatchMakerAcceptScreen), "MatchmakerPlayersController").GetValue(__instance) as MatchmakerPlayerControllerClass;
+                EFT.UI.Matchmaker.MatchmakerPlayersController controller = AccessTools.Field(typeof(MatchMakerAcceptScreen), "MatchmakerPlayersController")?.GetValue(__instance) as EFT.UI.Matchmaker.MatchmakerPlayersController;
                 SyntheticTeammateAutoJoinLoader.EnsureLoaded(controller);
                 SyntheticTeammateAutoJoinLoader.RefreshLoadedTeammateVisuals(controller);
 
@@ -1159,7 +1176,7 @@ namespace pitTeam.Patches
                         }
 
                         controller.GroupPlayers.Add(teammate);
-                        pitFireTeam.Log.LogInfo($"[UI] Added teammate {teammate.AccountId} to controller before preview population");
+                        Modules.Logger.LogInfo($"[UI] Added teammate {teammate.AccountId} to controller before preview population");
                     }
                 }
             }
@@ -1171,16 +1188,16 @@ namespace pitTeam.Patches
         }
 
         [PatchPostfix]
-        private static void PatchPostfix(MatchMakerAcceptScreen __instance, ISession session, RaidSettings raidSettings, RaidSettings offlineRaidSettings)
+        private static void PatchPostfix(MatchMakerAcceptScreen __instance, EFT.IEftSession session, RaidSettings raidSettings, RaidSettings offlineRaidSettings)
         {
             try
             {
                 // Teammates are injected into controller via Prefix.
                 // Now rebuild the preview group to use updated controller.GroupPlayers
-                MatchmakerPlayerControllerClass controller = AccessTools.Field(typeof(MatchMakerAcceptScreen), "MatchmakerPlayersController").GetValue(__instance) as MatchmakerPlayerControllerClass;
+                EFT.UI.Matchmaker.MatchmakerPlayersController controller = AccessTools.Field(typeof(MatchMakerAcceptScreen), "MatchmakerPlayersController")?.GetValue(__instance) as EFT.UI.Matchmaker.MatchmakerPlayersController;
                 MatchMakerGroupPreview groupPreview = AccessTools.Field(typeof(MatchMakerAcceptScreen), "_groupPreview").GetValue(__instance) as MatchMakerGroupPreview;
-                RaidSettings raidSettings_0 = AccessTools.Field(typeof(MatchMakerAcceptScreen), "raidSettings_0").GetValue(__instance) as RaidSettings;
-                string string_2 = AccessTools.Field(typeof(MatchMakerAcceptScreen), "string_2").GetValue(__instance) as string;
+                RaidSettings raidSettings_0 = AccessTools.Field(typeof(MatchMakerAcceptScreen), "_raidSettings").GetValue(__instance) as RaidSettings;
+                string string_2 = AccessTools.Field(typeof(MatchMakerAcceptScreen), "_currentProfileAid").GetValue(__instance) as string;
 
                 if (controller == null || groupPreview == null || raidSettings_0 == null)
                 {
@@ -1188,9 +1205,9 @@ namespace pitTeam.Patches
                 }
 
                 // Rebuild the entire group preview with updated controller.GroupPlayers
-                groupPreview.Show(string_2, controller, raidSettings_0, new Func<GroupPlayerViewModelClass, bool, bool, ContextInteractionsClass>(controller.GetContextInteractions));
+                groupPreview.Show(string_2, controller, raidSettings_0, new Func<EFT.UI.Matchmaker.RaidPlayer, bool, bool, EFT.UI.Matchmaker.RaidGroupContextInteractions>(controller.GetContextInteractions));
 
-                pitFireTeam.Log.LogInfo($"[UI] Rebuilt group preview with {controller.GroupPlayers.Count} players");
+                Modules.Logger.LogInfo($"[UI] Rebuilt group preview with {controller.GroupPlayers.Count} players");
             }
             catch (Exception ex)
             {
@@ -1200,25 +1217,11 @@ namespace pitTeam.Patches
         }
     }
 
-    internal class TarkovApplicationLocalRaidGatePatch : ModulePatch
-    {
-        protected override MethodBase GetTargetMethod()
-        {
-            return AccessTools.Method(typeof(TarkovApplication), "method_37");
-        }
-
-        [PatchPrefix]
-        private static void PatchPrefix(TarkovApplication __instance)
-        {
-            SyntheticTeammateRaidGuard.TryForceLocalRaid(__instance, "TarkovApplication.method_37");
-        }
-    }
-
     internal class TarkovApplicationOnlineFallbackPatch : ModulePatch
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(TarkovApplication), "method_42", new Type[]
+            return AccessTools.Method(typeof(TarkovApplication), nameof(TarkovApplication.NetworkGameMatching), new Type[]
             {
                 typeof(string),
                 typeof(EMatchingType)
@@ -1242,7 +1245,13 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(SpawnSystemClass), "SelectSpawnPoint");
+            InterfaceMapping interfaceMap = typeof(EFT.Game.Spawning.SpawnSystem)
+                .GetInterfaceMap(typeof(ISpawnSystem));
+            MethodInfo interfaceMethod = AccessTools.Method(
+                typeof(ISpawnSystem),
+                nameof(ISpawnSystem.SelectSpawnPoint));
+            int methodIndex = Array.IndexOf(interfaceMap.InterfaceMethods, interfaceMethod);
+            return methodIndex >= 0 ? interfaceMap.TargetMethods[methodIndex] : null;
         }
         [PatchPrefix]
         private static void PatchPrefix(ref ESpawnCategory category, EPlayerSide side, string groupId, string teamId, IPlayer person, string infiltration, string profileId)
@@ -1252,7 +1261,7 @@ namespace pitTeam.Patches
             if (!string.IsNullOrEmpty(profileId))
             {
                 int transitCount;
-                if (TransitControllerAbstractClass.IsTransit(profileId, out transitCount))
+                if (EFT.TransitController.IsTransit(profileId, out transitCount))
                 {
                     return;
                 }

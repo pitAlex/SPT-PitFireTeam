@@ -28,14 +28,14 @@ namespace pitTeam.BigBrain
         }
 
         public abstract void DecisionChanged(
-            AICoreActionResultStruct<BotLogicDecision, GClass26>? prevDecision,
-            AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision);
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? prevDecision,
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> nextDecision);
 
         public abstract void StartDecision();
 
-        public abstract AICoreActionResultStruct<BotLogicDecision, GClass26> GetDecision(EnemyInfo goalEnemy);
+        public abstract AICoreActionResult<BotLogicDecision, CoreActionResultParams> GetDecision(EnemyInfo goalEnemy);
 
-        public abstract AICoreActionEndStruct ShallEndCurrentDecision(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision);
+        public abstract AICoreActionEnd ShallEndCurrentDecision(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision);
     }
 }

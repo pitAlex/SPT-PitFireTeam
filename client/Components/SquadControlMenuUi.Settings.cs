@@ -98,7 +98,7 @@ namespace pitTeam.Components
 
         private static string GetPluginVersionText()
         {
-            Version version = Assembly.GetExecutingAssembly().GetName().Version;
+            System.Version version = Assembly.GetExecutingAssembly().GetName().Version;
             if (version == null)
             {
                 return "UNKNOWN";
@@ -361,8 +361,10 @@ namespace pitTeam.Components
                 pitFireTeam.botGrenades,
                 pitFireTeam.regroupRadius,
                 pitFireTeam.enemyMarker,
-                pitFireTeam.enemyMarkerAlertColor,
-                pitFireTeam.enemyMarkerVisibleColor,
+                pitFireTeam.autoDisplayCombatStatus,
+                pitFireTeam.autoDisplayKillMarker,
+                pitFireTeam.enemyKilledDisplayTime,
+                pitFireTeam.enemyKilledRetainTime,
                 pitFireTeam.statusSound,
                 pitFireTeam.enemyRemember,
                 pitFireTeam.scanDistance,
@@ -1028,7 +1030,7 @@ namespace pitTeam.Components
             AnimatedToggleCanvasGroupField?.SetValue(toggle, canvasGroup);
 
             ToggleGroup group = EnsureLoadoutManagementToggleGroup();
-            toggle.SpawnableToggle.method_1(group);
+            toggle.SpawnableToggle.Init(group);
 
             foreach (TextMeshProUGUI text in toggle.GetComponentsInChildren<TextMeshProUGUI>(true))
             {
@@ -1047,12 +1049,12 @@ namespace pitTeam.Components
                 {
                     toggle.SpawnedObject.OnMouseDown += () =>
                     {
-                        pitFireTeam.Log.LogInfo($"[UI] Loadout management toggle clicked: {mode}");
+                        Modules.Logger.LogInfo($"[UI] Loadout management toggle clicked: {mode}");
                         RequestLoadoutManagementModeChange(mode);
                     };
                     toggle.SpawnedObject.onValueChanged.AddListener(isOn =>
                     {
-                        pitFireTeam.Log.LogInfo($"[UI] Loadout management toggle value changed: {mode}={isOn}");
+                        Modules.Logger.LogInfo($"[UI] Loadout management toggle value changed: {mode}={isOn}");
                     });
                 }
             }
@@ -1082,7 +1084,7 @@ namespace pitTeam.Components
             {
                 hoverController.OnClick = _ =>
                 {
-                    pitFireTeam.Log.LogInfo($"[UI] Loadout management toggle clicked: {mode}");
+                    Modules.Logger.LogInfo($"[UI] Loadout management toggle clicked: {mode}");
                     RequestLoadoutManagementModeChange(mode);
                 };
             }
@@ -1156,11 +1158,11 @@ namespace pitTeam.Components
             LoadoutManagementMode previousMode = pitFireTeam.loadoutManagementMode.Value;
             if (previousMode == mode)
             {
-                pitFireTeam.Log.LogInfo($"[UI] Loadout management mode '{mode}' is already selected.");
+                Modules.Logger.LogInfo($"[UI] Loadout management mode '{mode}' is already selected.");
                 return;
             }
 
-            pitFireTeam.Log.LogInfo($"[UI] Loadout management mode change requested: {previousMode} -> {mode}");
+            Modules.Logger.LogInfo($"[UI] Loadout management mode change requested: {previousMode} -> {mode}");
             if (previousMode == LoadoutManagementMode.Simple && mode != LoadoutManagementMode.Simple)
             {
                 ShowLoadoutManagementConfirmOverlay(mode);
@@ -1223,7 +1225,7 @@ namespace pitTeam.Components
                 yield break;
             }
 
-            pitFireTeam.Log.LogInfo("[UI] Refreshing roster portraits after loadout management mode switch.");
+            Modules.Logger.LogInfo("[UI] Refreshing roster portraits after loadout management mode switch.");
             RebuildRosterTiles();
         }
 
@@ -1341,7 +1343,7 @@ namespace pitTeam.Components
             confirmButton.OnClick.AddListener(() => ApplyLoadoutManagementModeChange(mode));
 
             loadoutManagementConfirmOverlay = overlayRoot;
-            pitFireTeam.Log.LogInfo($"[UI] Loadout management confirmation overlay opened for mode: {mode}");
+            Modules.Logger.LogInfo($"[UI] Loadout management confirmation overlay opened for mode: {mode}");
         }
 
         private void CloseLoadoutManagementConfirmOverlay(bool rebuild = false)
@@ -1596,18 +1598,6 @@ namespace pitTeam.Components
             if (entry == pitFireTeam.statusReportLowHealthColor)
             {
                 defaultHex = StatusReportHighlightColor.LowHealthDefaultHex;
-                return true;
-            }
-
-            if (entry == pitFireTeam.enemyMarkerAlertColor)
-            {
-                defaultHex = EnemyMarkerColor.AlertDefaultHex;
-                return true;
-            }
-
-            if (entry == pitFireTeam.enemyMarkerVisibleColor)
-            {
-                defaultHex = EnemyMarkerColor.VisibleDefaultHex;
                 return true;
             }
 
@@ -2669,8 +2659,10 @@ namespace pitTeam.Components
             if (entry == pitFireTeam.heatlhMultiplier) return language.healthMultiplier;
             if (entry == pitFireTeam.statusSound) return language.statusSound;
             if (entry == pitFireTeam.enemyMarker) return language.enemyMarker;
-            if (entry == pitFireTeam.enemyMarkerAlertColor) return language.enemyMarkerAlertColor;
-            if (entry == pitFireTeam.enemyMarkerVisibleColor) return language.enemyMarkerVisibleColor;
+            if (entry == pitFireTeam.autoDisplayCombatStatus) return language.autoDisplayCombatStatus;
+            if (entry == pitFireTeam.autoDisplayKillMarker) return language.autoDisplayKillMarker;
+            if (entry == pitFireTeam.enemyKilledDisplayTime) return language.enemyKilledDisplayTime;
+            if (entry == pitFireTeam.enemyKilledRetainTime) return language.enemyKilledRetainTime;
             if (entry == pitFireTeam.pickupEnabled) return language.pickup;
             if (entry == pitFireTeam.tieredPickup) return language.tieredPickup;
             if (entry == pitFireTeam.maximumPickup) return language.maximumPickup;

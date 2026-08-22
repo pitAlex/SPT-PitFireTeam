@@ -9,11 +9,11 @@ namespace pitTeam.BigBrain.Actions
     /// </summary>
     internal class EatDrinkAction : CustomLogic
     {
-        private readonly GClass261 baseLogic;
+        private readonly EatDrinkNode baseLogic;
 
         public EatDrinkAction(BotOwner botOwner) : base(botOwner)
         {
-            baseLogic = new GClass261(botOwner);
+            baseLogic = new EatDrinkNode(botOwner);
         }
 
         public override void Update(CustomLayer.ActionData data)

@@ -19,15 +19,15 @@ namespace pitTeam.Patches
         [PatchPrefix]
         private static bool PatchPrefix(BotNightVisionData __instance)
         {
-            if (__instance?.BotOwner_0 == null || !BossPlayers.IsFollower(__instance.BotOwner_0))
+            if (__instance?._owner == null || !BossPlayers.IsFollower(__instance._owner))
             {
                 return true;
             }
 
             try
             {
-                __instance.SlotHeadwear = __instance.BotOwner_0.GetPlayer?.InventoryController?.Inventory?.Equipment?.GetSlot(EquipmentSlot.Headwear);
-                if (__instance.SlotHeadwear?.ContainedItem is not CompoundItem headwear)
+                __instance._slotHeadwear = __instance._owner.GetPlayer?.InventoryController?.Inventory?.Equipment?.GetSlot(EquipmentSlot.Headwear);
+                if (__instance._slotHeadwear?.ContainedItem is not CompoundItem headwear)
                 {
                     return false;
                 }
@@ -41,10 +41,10 @@ namespace pitTeam.Patches
                 __instance.HaveNightVision = true;
                 __instance.NightVisionItem = nightVision;
                 __instance.TradableItem = nightVision.Item;
-                __instance.NightVisionAtPocket = false;
-                __instance.StopTryingMove = false;
-                __instance.NextTimeCheck = Time.time + 10f;
-                __instance.method_0();
+                __instance._nightVisionAtPocket = false;
+                __instance._stopTryingMove = false;
+                __instance._nextTimeCheck = Time.time + 10f;
+                __instance.CheckWhatIWant();
             }
             catch (Exception ex)
             {
@@ -60,13 +60,13 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(BotNightVisionData), "method_1");
+            return AccessTools.Method(typeof(BotNightVisionData), nameof(BotNightVisionData.MoveToHeadPocket));
         }
 
         [PatchPrefix]
         private static bool PatchPrefix(BotNightVisionData __instance)
         {
-            if (__instance?.BotOwner_0 == null || !BossPlayers.IsFollower(__instance.BotOwner_0))
+            if (__instance?._owner == null || !BossPlayers.IsFollower(__instance._owner))
             {
                 return true;
             }
@@ -80,8 +80,8 @@ namespace pitTeam.Patches
                 }
 
                 __instance.UsingNow = false;
-                __instance.NightVisionAtPocket = false;
-                __instance.StopTryingMove = false;
+                __instance._nightVisionAtPocket = false;
+                __instance._stopTryingMove = false;
             }
             catch (Exception ex)
             {
@@ -97,13 +97,13 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(BotNightVisionData), "method_5");
+            return AccessTools.Method(typeof(BotNightVisionData), nameof(BotNightVisionData.MoveToHeadAndToggleOn));
         }
 
         [PatchPrefix]
         private static bool PatchPrefix(BotNightVisionData __instance)
         {
-            if (__instance?.BotOwner_0 == null || !BossPlayers.IsFollower(__instance.BotOwner_0))
+            if (__instance?._owner == null || !BossPlayers.IsFollower(__instance._owner))
             {
                 return true;
             }
@@ -117,8 +117,8 @@ namespace pitTeam.Patches
                 }
 
                 __instance.UsingNow = true;
-                __instance.NightVisionAtPocket = false;
-                __instance.StopTryingMove = false;
+                __instance._nightVisionAtPocket = false;
+                __instance._stopTryingMove = false;
             }
             catch (Exception ex)
             {

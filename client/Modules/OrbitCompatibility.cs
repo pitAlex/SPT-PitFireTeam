@@ -461,7 +461,7 @@ namespace pitTeam.Modules
                 }
                 if (botCollider != null)
                 {
-                    EFTPhysicsClass.IgnoreCollision(botCollider, door.Collider, false);
+                    PhysicsExtensions.IgnoreCollision(botCollider, door.Collider, false);
                 }
             }
         }

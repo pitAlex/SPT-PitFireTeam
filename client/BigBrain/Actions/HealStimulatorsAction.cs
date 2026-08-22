@@ -1,5 +1,6 @@
 using DrakiaXYZ.BigBrain.Brains;
 using EFT;
+using pitTeam.Utils;
 
 namespace pitTeam.BigBrain.Actions
 {
@@ -9,16 +10,24 @@ namespace pitTeam.BigBrain.Actions
     /// </summary>
     internal class HealStimulatorsAction : CustomLogic
     {
-        private readonly GClass283 baseLogic;
+        private readonly StimulatorsNode baseLogic;
 
         public HealStimulatorsAction(BotOwner botOwner) : base(botOwner)
         {
-            baseLogic = new GClass283(botOwner);
+            baseLogic = new StimulatorsNode(botOwner);
+        }
+
+        public override void Start()
+        {
+            base.Start();
+            FollowerRecovery.StopShooting(BotOwner);
         }
 
         public override void Update(CustomLayer.ActionData data)
         {
+            FollowerRecovery.StopShooting(BotOwner);
             baseLogic.UpdateNodeByBrain(data);
+            FollowerRecovery.StopShooting(BotOwner);
         }
     }
 }

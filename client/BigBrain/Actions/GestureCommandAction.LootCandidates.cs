@@ -39,7 +39,7 @@ namespace pitTeam.BigBrain.Actions
             {
                 Item root = corpseEquipment.GetSlot(slot)?.ContainedItem;
                 if (root is not CompoundItem compound ||
-                    (slot != EquipmentSlot.Pockets && root is SearchableItemItemClass))
+                    (slot != EquipmentSlot.Pockets && root is EFT.InventoryLogic.SearchableItem))
                 {
                     continue;
                 }
@@ -48,7 +48,7 @@ namespace pitTeam.BigBrain.Actions
                 compound.GetAllAssembledItems(contents);
 
                 foreach (Item item in contents
-                             .Where(item => item != null && item != root && item is not SearchableItemItemClass)
+                             .Where(item => item != null && item != root && item is not EFT.InventoryLogic.SearchableItem)
                              .OrderByDescending(GetBodyGearContentPriority)
                              .ThenByDescending(GetItemArea)
                              .ThenByDescending(item => item.Template?.CreditsPrice ?? 0))
@@ -181,7 +181,7 @@ namespace pitTeam.BigBrain.Actions
                     continue;
                 }
 
-                if (item is BuiltInInsertsItemClass)
+                if (item is EFT.InventoryLogic.BuiltInInserts)
                 {
                     continue;
                 }
@@ -236,7 +236,7 @@ namespace pitTeam.BigBrain.Actions
             // Fallback children are only reached on a later planning pass when the root stayed put.
             yield return new BodyGearCandidate(wearable, sourceSlot, sourceName, sourceTier);
 
-            if (wearable is VestItemClass)
+            if (wearable is EFT.InventoryLogic.Vest)
             {
                 foreach (BodyGearCandidate candidate in GetStorageLootCandidates(
                              wearable,
@@ -249,9 +249,9 @@ namespace pitTeam.BigBrain.Actions
                 yield break;
             }
 
-            if (wearable is ArmorItemClass)
+            if (wearable is EFT.InventoryLogic.Armor)
             {
-                foreach (ArmorPlateItemClass plate in GetDirectLootChildren(wearable).OfType<ArmorPlateItemClass>())
+                foreach (EFT.InventoryLogic.ArmorPlate plate in GetDirectLootChildren(wearable).OfType<EFT.InventoryLogic.ArmorPlate>())
                 {
                     yield return new BodyGearCandidate(
                         plate,
@@ -285,7 +285,7 @@ namespace pitTeam.BigBrain.Actions
 
         private static bool ShouldSearchContentsInsteadOfMovingRoot(Item item)
         {
-            return item is SearchableItemItemClass && item is not Weapon;
+            return item is EFT.InventoryLogic.SearchableItem && item is not Weapon;
         }
 
         private bool CanTryFilteredLootCandidate(
@@ -314,7 +314,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (item is ArmorPlateItemClass && !IsEligibleInstalledArmorPlate(item))
+            if (item is EFT.InventoryLogic.ArmorPlate && !IsEligibleInstalledArmorPlate(item))
             {
                 if (markRejectedAttempt)
                 {
@@ -324,7 +324,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (candidate.SkipMagazine && item is MagazineItemClass)
+            if (candidate.SkipMagazine && item is EFT.InventoryLogic.Magazine)
             {
                 if (markRejectedAttempt)
                 {
@@ -361,9 +361,9 @@ namespace pitTeam.BigBrain.Actions
 
         private static bool IsEligibleInstalledArmorPlate(Item item)
         {
-            if (item is not ArmorPlateItemClass ||
+            if (item is not EFT.InventoryLogic.ArmorPlate ||
                 item.CurrentAddress?.Container is not Slot slot ||
-                (slot.ParentItem is not ArmorItemClass && slot.ParentItem is not VestItemClass) ||
+                (slot.ParentItem is not EFT.InventoryLogic.Armor && slot.ParentItem is not EFT.InventoryLogic.Vest) ||
                 !item.TryGetItemComponent<RepairableComponent>(out RepairableComponent repairable))
             {
                 return false;

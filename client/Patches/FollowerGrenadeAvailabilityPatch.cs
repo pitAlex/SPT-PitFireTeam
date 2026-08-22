@@ -18,7 +18,7 @@ namespace pitTeam.Patches
         [HarmonyAfter(new[] { "me.sol.sain" })]
         private static void PatchPostfix(BotGrenadeController __instance, ref bool __result)
         {
-            BotOwner bot = __instance?.BotOwner_0;
+            BotOwner bot = __instance?._owner;
             if (bot == null || !BossPlayers.IsFollower(bot))
             {
                 return;
@@ -26,7 +26,7 @@ namespace pitTeam.Patches
 
             if (FollowerGrenadeRuntimeGate.IsThrowAllowed(bot))
             {
-                __result = __instance.Grenade != null;
+            __result = __instance.grenade != null;
                 return;
             }
 

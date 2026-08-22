@@ -63,7 +63,8 @@ When multiple approaches are possible, prefer:
 
 # pitFireTeam: Current Implementation Summary
 
-**Last updated:** 2026-04-28  
+**Last updated:** 2026-08-18
+
 **Scope:** Runtime behavior across `pitFireTeam/client`, `pitFireTeam/addon`, and `pitFireTeam/server`.  
 **SAIN Addon is optional and runtime-gated**
 
@@ -359,6 +360,9 @@ Implementation guidance:
 
 - prefers shoot-capable firing positions and sticky support/reposition holds.
 - still must honor the same arrival -> hold -> break contract.
+- uses shared recovery-qualified cover movement, arrival stabilization, and bounded no-cover recovery commitments rather than firing-position selection for survival movement.
+- close automatic search waits for an eligible selected primary to become active and weapon-ready, then uses a cover-backed destination that stays at least 16 meters from the enemy anchor.
+- hold and committed-cover movement breaks must retain a concrete fire/recovery successor; a failed opportunity keeps the current commitment instead of ending in hope.
 - sticky cover/cooldown behavior must not block valid regroup break conditions once no higher-priority fire/support action exists.
 
 `Regroup` objective:
@@ -383,8 +387,9 @@ Cross-tactic rule:
     11. committed cover continuation and passive hold fallback
 - `FollowerCombatSniper` is separate from default PMC combat logic:
     - `FollowerCombatSniperObjective` owns the marksman decision stack
-    - marksman ignores explicit push/suppression/grenade orders that should not make a sniper rush
-    - close-quarter marksman handling can switch to a full-auto secondary and avoids forcing `runToEnemy` back to primary
+    - marksman ignores explicit push/grenade and generic suppression orders that should make a sniper rush; the only suppression-order exception is the boss-selected automatic-secondary fallback objective
+    - close-quarter marksman handling preserves immediate fire with the current weapon, otherwise waits for an eligible full-auto secondary to be active and ready before close-search movement, and avoids forcing `runToEnemy` back to primary
+    - autonomous marksman suppression uses the shared bounded follower-suppression lifecycle
     - marksman repositioning prefers shoot-capable cover/firing-position movement and hands boss-distance regroup to the shared regroup objective
 - `FollowerCombatRegroupObjective` is a separate combat decision stack:
     - objective is "reach the boss / bossward cover" and it does not re-enter default push/hold logic while active

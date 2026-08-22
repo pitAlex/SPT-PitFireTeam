@@ -9,11 +9,11 @@ namespace pitTeam.BigBrain.Actions
     /// </summary>
     internal class GestureAction : CustomLogic
     {
-        private readonly GClass263 baseLogic;
+        private readonly GestureNode baseLogic;
 
         public GestureAction(BotOwner botOwner) : base(botOwner)
         {
-            baseLogic = new GClass263(botOwner);
+            baseLogic = new GestureNode(botOwner);
         }
 
         public override void Update(CustomLayer.ActionData data)

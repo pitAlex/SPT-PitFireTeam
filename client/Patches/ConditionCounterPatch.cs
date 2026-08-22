@@ -15,11 +15,19 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(ConditionCounterManager), "smethod_0");
+            return AccessTools.Method(
+                typeof(ConditionCounterManager),
+                nameof(ConditionCounterManager.Test),
+                new[]
+                {
+                    typeof(int),
+                    typeof(EFT.Quests.TaskConditionCounter),
+                    typeof(EFT.Quests.ConditionCheck[])
+                });
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(ConditionCounterManager __instance, int valueToAdd, TaskConditionCounterClass counter, GStruct458[] checks)
+        private static bool PatchPrefix(int valueToAdd, EFT.Quests.TaskConditionCounter counter, EFT.Quests.ConditionCheck[] checks)
         {
             try
             {

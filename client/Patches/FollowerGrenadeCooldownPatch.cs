@@ -12,7 +12,7 @@ namespace pitTeam.Patches
 {
     internal class FollowerGrenadeCooldownPatch : ModulePatch
     {
-        private static readonly FieldInfo BotOwnerField = AccessTools.Field(typeof(BotGrenadeController), "BotOwner_0");
+        private static readonly FieldInfo BotOwnerField = AccessTools.Field(typeof(BotGrenadeController), "_owner");
 
         protected override MethodBase GetTargetMethod()
         {
@@ -68,15 +68,15 @@ namespace pitTeam.Patches
 
     internal class FollowerGrenadeThrowFinishPatch : ModulePatch
     {
-        private static readonly FieldInfo BotOwnerField = AccessTools.Field(typeof(BotGrenadeController), "BotOwner_0");
+        private static readonly FieldInfo BotOwnerField = AccessTools.Field(typeof(BotGrenadeController), "_owner");
 
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(BotGrenadeController), "method_6", new[] { typeof(ThrowWeapItemClass) });
+            return AccessTools.Method(typeof(BotGrenadeController), nameof(BotGrenadeController.EndAll), new[] { typeof(EFT.InventoryLogic.ThrowWeap) });
         }
 
         [PatchPostfix]
-        private static void PatchPostfix(BotGrenadeController __instance, ThrowWeapItemClass grenade)
+        private static void PatchPostfix(BotGrenadeController __instance, EFT.InventoryLogic.ThrowWeap grenade)
         {
             BotOwner bot = BotOwnerField?.GetValue(__instance) as BotOwner;
             if (bot == null || !BossPlayers.IsFollower(bot))
@@ -92,15 +92,15 @@ namespace pitTeam.Patches
 
     internal class FollowerGrenadeReleasePatch : ModulePatch
     {
-        private static readonly FieldInfo BotOwnerField = AccessTools.Field(typeof(BotGrenadeController), "BotOwner_0");
+        private static readonly FieldInfo BotOwnerField = AccessTools.Field(typeof(BotGrenadeController), "_owner");
 
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(BotGrenadeController), "method_11");
+            return AccessTools.Method(typeof(BotGrenadeController), nameof(BotGrenadeController.CG_method_11));
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(BotGrenadeController __instance, Result<IHandsThrowController> throwResult)
+        private static bool PatchPrefix(BotGrenadeController __instance, Result<EFT.IGrenadeController> throwResult)
         {
             BotOwner bot = BotOwnerField?.GetValue(__instance) as BotOwner;
             if (bot == null || !BossPlayers.IsFollower(bot))
@@ -122,7 +122,7 @@ namespace pitTeam.Patches
                         "releaseBlocked",
                         trajectoryRejectReason,
                         target: __instance.AIGreanageThrowData?.Target);
-                    __instance.method_6(null);
+                    __instance.EndAll(null);
                     return false;
                 }
 
@@ -140,7 +140,7 @@ namespace pitTeam.Patches
                         "releaseBlocked",
                         $"friendlyImpact:{impactRejectReason}",
                         target: target.Value);
-                    __instance.method_6(null);
+                    __instance.EndAll(null);
                     return false;
                 }
 

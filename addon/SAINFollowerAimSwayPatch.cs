@@ -52,12 +52,12 @@ namespace pitTeam.SAINAddon
 
         private static bool HasVisibleAimTarget(BotOwner botOwner, BotComponent botComponent)
         {
-            if (botOwner.AimingManager?.CurrentAiming is not BotAimingClass aimClass)
+            if (botOwner.AimingManager?.CurrentAiming is not BotAimingData aimClass)
             {
                 return false;
             }
 
-            if (aimClass.AimStatus_0 == AimStatus.NoTarget)
+            if (aimClass.Status == AimStatus.NoTarget)
             {
                 return false;
             }

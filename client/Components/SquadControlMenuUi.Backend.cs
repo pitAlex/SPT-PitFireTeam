@@ -44,11 +44,11 @@ namespace pitTeam.Components
             {
                 string message = $"Cannot add {entry.Nickname} to the raid group without a proper kit.";
                 AddTeammateCreationFlow.ShowToast(message);
-                pitFireTeam.Log.LogInfo($"[UI] Blocked group invite for teammate '{entry.AccountId}': missing primary or pistol weapon.");
+                Modules.Logger.LogInfo($"[UI] Blocked group invite for teammate '{entry.AccountId}': missing primary or pistol weapon.");
                 return;
             }
 
-            if (!TryGetMatchmakerController(out MatchmakerPlayerControllerClass controller) || controller == null)
+            if (!TryGetMatchmakerController(out EFT.UI.Matchmaker.MatchmakerPlayersController controller) || controller == null)
             {
                 pitFireTeam.Log.LogWarning($"[UI] Could not invite teammate '{entry.AccountId}': matchmaker controller unavailable.");
                 return;
@@ -101,7 +101,7 @@ namespace pitTeam.Components
                 return;
             }
 
-            if (!TryGetMatchmakerController(out MatchmakerPlayerControllerClass controller) || controller == null)
+            if (!TryGetMatchmakerController(out EFT.UI.Matchmaker.MatchmakerPlayersController controller) || controller == null)
             {
                 pitFireTeam.Log.LogWarning($"[UI] Could not remove teammate '{entry.AccountId}' from the group: matchmaker controller unavailable.");
                 return;
@@ -154,7 +154,7 @@ namespace pitTeam.Components
 
             while (Time.realtimeSinceStartup < deadline)
             {
-                if (TryGetMatchmakerController(out MatchmakerPlayerControllerClass controller) && controller != null)
+                if (TryGetMatchmakerController(out EFT.UI.Matchmaker.MatchmakerPlayersController controller) && controller != null)
                 {
                     if (controller.IsInGroup(accountId))
                     {
@@ -207,7 +207,7 @@ namespace pitTeam.Components
 
             while (Time.realtimeSinceStartup < deadline)
             {
-                if (TryGetMatchmakerController(out MatchmakerPlayerControllerClass controller) && controller != null)
+                if (TryGetMatchmakerController(out EFT.UI.Matchmaker.MatchmakerPlayersController controller) && controller != null)
                 {
                     if (!controller.IsInGroup(accountId))
                     {
@@ -234,7 +234,7 @@ namespace pitTeam.Components
         }
 
         private bool TryShowStockRemovePlayerConfirmation(
-            MatchmakerPlayerControllerClass controller,
+            EFT.UI.Matchmaker.MatchmakerPlayersController controller,
             string accountId,
             string nickname)
         {
@@ -243,7 +243,7 @@ namespace pitTeam.Components
                 return false;
             }
 
-            GroupPlayerDataClass groupPlayer = controller.GroupPlayers?
+            EFT.GroupPlayer groupPlayer = controller.GroupPlayers?
                 .FirstOrDefault(player => player?.AccountId == accountId);
             if (groupPlayer == null)
             {
@@ -251,7 +251,7 @@ namespace pitTeam.Components
                 return false;
             }
 
-            ContextInteractionsClass contextInteractions = controller.GetContextInteractions(groupPlayer, true, true);
+            EFT.UI.Matchmaker.RaidGroupContextInteractions contextInteractions = controller.GetContextInteractions(groupPlayer, true, true);
             if (contextInteractions == null)
             {
                 pitFireTeam.Log.LogWarning($"[UI] Could not build stock context interactions for teammate '{accountId}'.");
@@ -283,19 +283,19 @@ namespace pitTeam.Components
         }
 
         private void BeginConfirmedGroupRemoval(
-            ContextInteractionsClass contextInteractions,
+            EFT.UI.Matchmaker.RaidGroupContextInteractions contextInteractions,
             string accountId,
             string nickname)
         {
-            if (contextInteractions?.GroupPlayerDataClass == null ||
-                !string.Equals(contextInteractions.GroupPlayerDataClass.AccountId, accountId, StringComparison.Ordinal))
+            if (contextInteractions?._selectedPlayer == null ||
+                !string.Equals(contextInteractions._selectedPlayer.AccountId, accountId, StringComparison.Ordinal))
             {
                 CompleteGroupRemovalRequest(accountId);
                 ShowGroupRemovalFailure(nickname);
                 return;
             }
 
-            if (!TryGetMatchmakerController(out MatchmakerPlayerControllerClass controller) ||
+            if (!TryGetMatchmakerController(out EFT.UI.Matchmaker.MatchmakerPlayersController controller) ||
                 controller == null ||
                 !controller.IsInGroup(accountId))
             {
@@ -306,7 +306,7 @@ namespace pitTeam.Components
 
             try
             {
-                contextInteractions.method_21();
+                contextInteractions.RemovePlayer();
             }
             catch (Exception ex)
             {
@@ -476,7 +476,7 @@ namespace pitTeam.Components
             }
         }
 
-        private bool TryGetMatchmakerController(out MatchmakerPlayerControllerClass controller)
+        private bool TryGetMatchmakerController(out EFT.UI.Matchmaker.MatchmakerPlayersController controller)
         {
             controller = null;
 
@@ -492,7 +492,7 @@ namespace pitTeam.Components
                     return false;
                 }
 
-                controller = pitFireTeam.application.MatchmakerPlayerControllerClass;
+                controller = pitFireTeam.application.Matchmaker;
                 return controller != null;
             }
             catch
@@ -506,7 +506,7 @@ namespace pitTeam.Components
         {
             try
             {
-                if (!TryGetMatchmakerController(out MatchmakerPlayerControllerClass controller) || controller == null)
+                if (!TryGetMatchmakerController(out EFT.UI.Matchmaker.MatchmakerPlayersController controller) || controller == null)
                 {
                     DetachGroupBadgeEventLogging();
                     return;
@@ -581,7 +581,7 @@ namespace pitTeam.Components
                     return false;
                 }
 
-                if (!TryGetMatchmakerController(out MatchmakerPlayerControllerClass controller) || controller?.GroupPlayers == null)
+                if (!TryGetMatchmakerController(out EFT.UI.Matchmaker.MatchmakerPlayersController controller) || controller?.GroupPlayers == null)
                 {
                     return false;
                 }
@@ -655,7 +655,7 @@ namespace pitTeam.Components
 
             try
             {
-                if (!TryGetMatchmakerController(out MatchmakerPlayerControllerClass controller) || controller == null)
+                if (!TryGetMatchmakerController(out EFT.UI.Matchmaker.MatchmakerPlayersController controller) || controller == null)
                 {
                     return false;
                 }

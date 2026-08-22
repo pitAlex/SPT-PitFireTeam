@@ -4,7 +4,7 @@ using HarmonyLib;
 using SPT.Reflection.Patching;
 using System.Reflection;
 
-using EventInfo = BotEventHandler.GClass692;
+using EventInfo = GlobalEventDispatcher.PhraseDelegateInfo;
 
 namespace pitTeam.Patches
 {
@@ -31,13 +31,13 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(BotReceiver), "method_3");
+            return AccessTools.Method(typeof(BotReceiver), nameof(BotReceiver.OnHardAimDelegate));
         }
 
         [PatchPrefix]
         private static bool PatchPrefix(BotReceiver __instance, IPlayer player, bool status)
         {
-            BotOwner botOwner = __instance?.BotOwner_0;
+            BotOwner botOwner = __instance?._owner;
             return botOwner == null || !BossPlayers.IsFollower(botOwner);
         }
     }
@@ -46,13 +46,13 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(BotReceiver), "method_4");
+            return AccessTools.Method(typeof(BotReceiver), nameof(BotReceiver.OnQETilt));
         }
 
         [PatchPrefix]
         private static bool PatchPrefix(BotReceiver __instance, IPlayer player)
         {
-            BotOwner botOwner = __instance?.BotOwner_0;
+            BotOwner botOwner = __instance?._owner;
             return botOwner == null || !BossPlayers.IsFollower(botOwner);
         }
     }
@@ -61,13 +61,13 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(BotReceiver), "method_0");
+            return AccessTools.Method(typeof(BotReceiver), nameof(BotReceiver.OnPhraseSay));
         }
 
         [PatchPrefix]
         private static bool PatchPrefix(BotReceiver __instance, EventInfo info)
         {
-            BotOwner botOwner = __instance?.BotOwner_0;
+            BotOwner botOwner = __instance?._owner;
             if (botOwner == null || !BossPlayers.IsFollower(botOwner))
             {
                 return true;
@@ -86,13 +86,13 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(BotReceiver), "method_6");
+            return AccessTools.Method(typeof(BotReceiver), nameof(BotReceiver.OnGestusShow));
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(BotReceiver __instance, GClass532 data)
+        private static bool PatchPrefix(BotReceiver __instance, BotReceiverGestus data)
         {
-            BotOwner botOwner = __instance?.BotOwner_0;
+            BotOwner botOwner = __instance?._owner;
             if (botOwner == null || !BossPlayers.IsFollower(botOwner))
             {
                 return true;

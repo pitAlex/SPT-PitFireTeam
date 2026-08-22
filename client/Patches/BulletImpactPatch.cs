@@ -33,7 +33,7 @@ namespace pitTeam.Patches
         }
 
         [PatchPostfix]
-        public static void PatchPostfix(EffectsCommutator __instance, EftBulletClass info, ShotInfoClass playerHitInfo)
+        public static void PatchPostfix(EffectsCommutator __instance, EFT.Ballistics.Shot info, EFT.PlayerHitInfo playerHitInfo)
         {
             if (info == null) return;
             bool processed = __instance.IsHitPointAlreadyProcessed(info.HitPoint);

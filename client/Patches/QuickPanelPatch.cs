@@ -37,7 +37,7 @@ namespace pitTeam.Patches
 
             foreach (EPhraseTrigger phrase in BlockedPhrases)
             {
-                panel.method_7(phrase, false);
+                panel.SetPhraseActive(phrase, false);
             }
         }
     }
@@ -45,12 +45,12 @@ namespace pitTeam.Patches
     internal class QuickPanelPatch : ModulePatch
     {
         private static readonly EPhraseTrigger ViewBackpackPhrase = (EPhraseTrigger)CustomPhrases.ViewBackpack;
-        private static readonly FieldInfo QuickPanelAvailablePhrasesField = AccessTools.Field(typeof(GesturesQuickPanel), "hashSet_0");
-        private static readonly FieldInfo QuickPanelPlayerField = AccessTools.Field(typeof(GesturesQuickPanel), "player_0");
+        private static readonly FieldInfo QuickPanelAvailablePhrasesField = AccessTools.Field(typeof(GesturesQuickPanel), "_availablePhrases");
+        private static readonly FieldInfo QuickPanelPlayerField = AccessTools.Field(typeof(GesturesQuickPanel), "_player");
 
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(GesturesQuickPanel), "method_1");
+            return AccessTools.Method(typeof(GesturesQuickPanel), nameof(GesturesQuickPanel.OnPossibleInteractionChangedHandler));
         }
         /** Patch QuickGesturesPanel to disable the "Cooperative" phrase if bot is a follower **/
         [PatchPrefix]
@@ -67,7 +67,7 @@ namespace pitTeam.Patches
                     // original
                     LootItem? lootItem = player.InteractableObject as LootItem;
                     bool flag = lootItem != null && lootItem.ItemOwner.RootItem.GetItemComponent<KeyComponent>() != null;
-                    bool flag2 = lootItem != null && lootItem.ItemOwner.RootItem is MoneyItemClass;
+                    bool flag2 = lootItem != null && lootItem.ItemOwner.RootItem is EFT.InventoryLogic.Money;
                     bool flag3 = lootItem != null && (lootItem.ItemOwner.RootItem is Weapon || lootItem.ItemOwner.RootItem.GetItemComponent<KnifeComponent>() != null);
                     Corpse? corpse = player.InteractableObject as Corpse;
                     LootableContainer? lootContainer = player.InteractableObject as LootableContainer;
@@ -85,14 +85,14 @@ namespace pitTeam.Patches
                     InteractableObjects.SetCurLootContainerTarget(canLootContainer ? lootContainer : null);
 
                     // original - loot command
-                    __instance.method_7(EPhraseTrigger.LootKey, flag);
-                    __instance.method_7(EPhraseTrigger.LootMoney, flag2);
-                    __instance.method_7(EPhraseTrigger.LootWeapon, flag3);
-                    __instance.method_7(EPhraseTrigger.LootGeneric, corpse == null && lootContainer == null && lootItem != null && !flag && !flag2 && !flag3);
+                    __instance.SetPhraseActive(EPhraseTrigger.LootKey, flag);
+                    __instance.SetPhraseActive(EPhraseTrigger.LootMoney, flag2);
+                    __instance.SetPhraseActive(EPhraseTrigger.LootWeapon, flag3);
+                    __instance.SetPhraseActive(EPhraseTrigger.LootGeneric, corpse == null && lootContainer == null && lootItem != null && !flag && !flag2 && !flag3);
                     // Body phrases are routed to a follower body-gear recovery command, not vanilla bot corpse work.
-                    __instance.method_7(EPhraseTrigger.LootBody, corpse != null);
-                    __instance.method_7(EPhraseTrigger.CheckHim, corpse != null);
-                    __instance.method_7(EPhraseTrigger.LootContainer, canLootContainer);
+                    __instance.SetPhraseActive(EPhraseTrigger.LootBody, corpse != null);
+                    __instance.SetPhraseActive(EPhraseTrigger.CheckHim, corpse != null);
+                    __instance.SetPhraseActive(EPhraseTrigger.LootContainer, canLootContainer);
                 }
                 catch (Exception e)
                 {
@@ -109,7 +109,7 @@ namespace pitTeam.Patches
                     {
                         InteractableObjects.SetCurDoor(door);
                     }
-                    __instance.method_7(EPhraseTrigger.OpenDoor, canOpen);
+                    __instance.SetPhraseActive(EPhraseTrigger.OpenDoor, canOpen);
                 }
                 catch (Exception e)
                 {
@@ -118,14 +118,14 @@ namespace pitTeam.Patches
                 }
 
                 // original
-                __instance.method_7(EPhraseTrigger.LockedDoor, door != null && (door.DoorState == EDoorState.Locked || door.DoorState == EDoorState.Shut));
+                __instance.SetPhraseActive(EPhraseTrigger.LockedDoor, door != null && (door.DoorState == EDoorState.Locked || door.DoorState == EDoorState.Shut));
 
                 // Show cooperation for any alive non-follower AI target.
                 try
                 {
                     if (!pitFireTeam.pickupEnabled.Value)
                     {
-                        __instance.method_7(EPhraseTrigger.Cooperation, false);
+                        __instance.SetPhraseActive(EPhraseTrigger.Cooperation, false);
                         return false;
                     }
 
@@ -134,18 +134,18 @@ namespace pitTeam.Patches
                         BotOwner targetBot = player.InteractablePlayer.AIData?.BotOwner;
                         if (targetBot == null || BossPlayers.IsFollower(targetBot) || player.InteractablePlayer.Side != player.Side)
                         {
-                            __instance.method_7(EPhraseTrigger.Cooperation, false);
+                            __instance.SetPhraseActive(EPhraseTrigger.Cooperation, false);
 
                             return false;
                         }
                         else
                         {
-                            __instance.method_7(EPhraseTrigger.Cooperation, true);
+                            __instance.SetPhraseActive(EPhraseTrigger.Cooperation, true);
                         }
                     }
                     else
                     {
-                        __instance.method_7(EPhraseTrigger.Cooperation, false);
+                        __instance.SetPhraseActive(EPhraseTrigger.Cooperation, false);
                     }
                 }
                 catch (Exception e)
@@ -174,7 +174,7 @@ namespace pitTeam.Patches
         private static void RefreshViewBackpackQuickCommand(GesturesQuickPanel panel, Player player)
         {
             EnsureViewBackpackQuickCommand(panel);
-            panel.method_7(ViewBackpackPhrase, TeammateBackpackInspection.CanShowQuickInteraction(player));
+            panel.SetPhraseActive(ViewBackpackPhrase, TeammateBackpackInspection.CanShowQuickInteraction(player));
         }
     }
 
@@ -182,7 +182,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(GesturesQuickPanel), "method_7");
+            return AccessTools.Method(typeof(GesturesQuickPanel), nameof(GesturesQuickPanel.SetPhraseActive));
         }
 
         [PatchPrefix]
@@ -201,7 +201,7 @@ namespace pitTeam.Patches
 
     internal class QuickPanelUpdateBackpackInteractionPatch : ModulePatch
     {
-        private static readonly FieldInfo QuickPanelPlayerField = AccessTools.Field(typeof(GesturesQuickPanel), "player_0");
+        private static readonly FieldInfo QuickPanelPlayerField = AccessTools.Field(typeof(GesturesQuickPanel), "_player");
 
         protected override MethodBase GetTargetMethod()
         {
@@ -223,7 +223,7 @@ namespace pitTeam.Patches
             QuickPanelHurtPhraseFilter.RemoveBlockedCommands(__instance);
 
             EPhraseTrigger viewBackpackPhrase = (EPhraseTrigger)CustomPhrases.ViewBackpack;
-            HashSet<EPhraseTrigger> availablePhrases = AccessTools.Field(typeof(GesturesQuickPanel), "hashSet_0").GetValue(__instance) as HashSet<EPhraseTrigger>;
+            HashSet<EPhraseTrigger> availablePhrases = AccessTools.Field(typeof(GesturesQuickPanel), "_availablePhrases").GetValue(__instance) as HashSet<EPhraseTrigger>;
             availablePhrases?.Add(viewBackpackPhrase);
 
             if (!GesturesQuickPanel.PhrasePriorities.ContainsKey(viewBackpackPhrase))
@@ -231,7 +231,7 @@ namespace pitTeam.Patches
                 GesturesQuickPanel.PhrasePriorities.Add(viewBackpackPhrase, 84);
             }
 
-            __instance.method_7(viewBackpackPhrase, TeammateBackpackInspection.CanShowQuickInteraction(player));
+            __instance.SetPhraseActive(viewBackpackPhrase, TeammateBackpackInspection.CanShowQuickInteraction(player));
         }
     }
 }

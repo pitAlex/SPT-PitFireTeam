@@ -275,7 +275,7 @@ namespace pitTeam.Modules
 
             if (!string.IsNullOrEmpty(neutral.GroupId))
             {
-                group.EnemyPlayerGroups?.Remove(neutral.GroupId);
+                group._enemyPlayerGroups?.Remove(neutral.GroupId);
             }
 
             if (group.Neutrals?.ContainsKey(neutral) != true)

@@ -17,9 +17,9 @@ namespace pitTeam.Patches
         private static readonly Dictionary<Type, Func<object, BotOwner>> BotOwnerGetters = new Dictionary<Type, Func<object, BotOwner>>();
 
         public static void ForceEndActiveLayer(
-            AICoreLayerClass<BotLogicDecision> layer,
+            AICoreLayer<BotLogicDecision> layer,
             BotOwner botOwner,
-            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision,
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision,
             string reason)
         {
             if (layer == null || botOwner == null)
@@ -28,10 +28,10 @@ namespace pitTeam.Patches
             }
 
             EndStatefulNonCombatAction(botOwner, currentDecision);
-            layer.Action_0?.Invoke(new AICoreActionEndStruct(reason, true));
+            layer._onEndCurDecision?.Invoke(new AICoreActionEnd(reason, true));
         }
 
-        public static bool ShouldSuppressLayerUse(AICoreLayerClass<BotLogicDecision> layer)
+        public static bool ShouldSuppressLayerUse(AICoreLayer<BotLogicDecision> layer)
         {
             if (layer == null)
             {
@@ -41,7 +41,7 @@ namespace pitTeam.Patches
             return !IsCombatLayer(layer) && HasHostileBossOrFollowerEnemy(GetBotOwner(layer));
         }
 
-        public static bool HasUsableCombatLayer(List<AICoreLayerClass<BotLogicDecision>> activeLayerList)
+        public static bool HasUsableCombatLayer(List<AICoreLayer<BotLogicDecision>> activeLayerList)
         {
             if (activeLayerList == null)
             {
@@ -50,7 +50,7 @@ namespace pitTeam.Patches
 
             for (int i = 0; i < activeLayerList.Count; i++)
             {
-                AICoreLayerClass<BotLogicDecision> layer = activeLayerList[i];
+                AICoreLayer<BotLogicDecision> layer = activeLayerList[i];
                 if (layer == null || !IsCombatLayer(layer))
                 {
                     continue;
@@ -84,7 +84,7 @@ namespace pitTeam.Patches
                 return false;
             }
 
-            BotMemoryClass memory = botOwner.Memory;
+            EFT.BotMemory memory = botOwner.Memory;
             if (memory == null || (!memory.HaveEnemy && memory.IsPeace && !memory.IsUnderFire))
             {
                 return false;
@@ -161,7 +161,7 @@ namespace pitTeam.Patches
                    BossPlayers.IsFollowerProfileId(player.ProfileId);
         }
 
-        private static bool IsCombatLayer(AICoreLayerClass<BotLogicDecision> layer)
+        private static bool IsCombatLayer(AICoreLayer<BotLogicDecision> layer)
         {
             string name = SafeName(layer);
             Type type = layer?.GetType();
@@ -175,7 +175,7 @@ namespace pitTeam.Patches
                     name.IndexOf("Squad", StringComparison.OrdinalIgnoreCase) >= 0);
         }
 
-        private static void EndStatefulNonCombatAction(BotOwner botOwner, AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision)
+        private static void EndStatefulNonCombatAction(BotOwner botOwner, AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
         {
             if (botOwner == null)
             {
@@ -213,7 +213,7 @@ namespace pitTeam.Patches
             }
         }
 
-        public static string SafeName(AICoreLayerClass<BotLogicDecision> layer)
+        public static string SafeName(AICoreLayer<BotLogicDecision> layer)
         {
             try
             {
@@ -234,14 +234,14 @@ namespace pitTeam.Patches
 
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(AICoreStrategyAbstractClass<BotLogicDecision>), "Update");
+            return AccessTools.Method(typeof(AICoreStrategy<BotLogicDecision>), "Update");
         }
 
         [PatchPrefix]
         [HarmonyPriority(Priority.First)]
         private static void PatchPrefix(
             object __instance,
-            AICoreActionResultStruct<BotLogicDecision, GClass26> prevResult,
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> prevResult,
             ref FilterState __state)
         {
             try
@@ -257,8 +257,8 @@ namespace pitTeam.Patches
                     return;
                 }
 
-                List<AICoreLayerClass<BotLogicDecision>> activeLayerList =
-                    _activeLayerListField.GetValue(__instance) as List<AICoreLayerClass<BotLogicDecision>>;
+                List<AICoreLayer<BotLogicDecision>> activeLayerList =
+                    _activeLayerListField.GetValue(__instance) as List<AICoreLayer<BotLogicDecision>>;
                 if (activeLayerList == null || activeLayerList.Count == 0)
                 {
                     return;
@@ -277,15 +277,15 @@ namespace pitTeam.Patches
                     return;
                 }
 
-                // AICoreStrategyAbstractClass.Update selects the first active layer from List_0.
+                // AICoreStrategy.Update selects the first active layer from List_0.
                 // For this single update, hide peaceful layers so an already-hostile bot can fall
                 // through to SAIN/vanilla combat. The finalizer restores the list immediately after.
-                AICoreLayerClass<BotLogicDecision> activeLayer =
-                    _activeLayerProperty?.GetValue(__instance, null) as AICoreLayerClass<BotLogicDecision>;
+                AICoreLayer<BotLogicDecision> activeLayer =
+                    _activeLayerProperty?.GetValue(__instance, null) as AICoreLayer<BotLogicDecision>;
                 FilterState state = null;
                 for (int i = activeLayerList.Count - 1; i >= 0; i--)
                 {
-                    AICoreLayerClass<BotLogicDecision> layer = activeLayerList[i];
+                    AICoreLayer<BotLogicDecision> layer = activeLayerList[i];
                     if (layer == null || !HostilePeacefulLayerInterrupt.ShouldSuppressLayerUse(layer))
                     {
                         continue;
@@ -339,12 +339,12 @@ namespace pitTeam.Patches
             {
                 if (_activeLayerListField == null)
                 {
-                    _activeLayerListField = AccessTools.Field(type, "List_0");
+                    _activeLayerListField = AccessTools.Field(type, "_activeLayers");
                     if (_activeLayerListField == null)
                     {
                         foreach (FieldInfo field in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
                         {
-                            if (field.FieldType == typeof(List<AICoreLayerClass<BotLogicDecision>>))
+                            if (field.FieldType == typeof(List<AICoreLayer<BotLogicDecision>>))
                             {
                                 _activeLayerListField = field;
                                 break;
@@ -357,7 +357,7 @@ namespace pitTeam.Patches
                 {
                     foreach (PropertyInfo property in type.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
                     {
-                        if (property.PropertyType == typeof(AICoreLayerClass<BotLogicDecision>))
+                        if (property.PropertyType == typeof(AICoreLayer<BotLogicDecision>))
                         {
                             _activeLayerProperty = property;
                             break;
@@ -372,7 +372,7 @@ namespace pitTeam.Patches
             }
         }
 
-        private static BotOwner GetAnyBotOwner(List<AICoreLayerClass<BotLogicDecision>> activeLayerList)
+        private static BotOwner GetAnyBotOwner(List<AICoreLayer<BotLogicDecision>> activeLayerList)
         {
             for (int i = 0; i < activeLayerList.Count; i++)
             {
@@ -388,9 +388,9 @@ namespace pitTeam.Patches
 
         private sealed class FilterState
         {
-            private readonly List<AICoreLayerClass<BotLogicDecision>> _list;
+            private readonly List<AICoreLayer<BotLogicDecision>> _list;
 
-            public FilterState(List<AICoreLayerClass<BotLogicDecision>> list)
+            public FilterState(List<AICoreLayer<BotLogicDecision>> list)
             {
                 _list = list;
             }
@@ -413,14 +413,14 @@ namespace pitTeam.Patches
 
         private readonly struct RemovedLayer
         {
-            public RemovedLayer(int index, AICoreLayerClass<BotLogicDecision> layer)
+            public RemovedLayer(int index, AICoreLayer<BotLogicDecision> layer)
             {
                 Index = index;
                 Layer = layer;
             }
 
             public int Index { get; }
-            public AICoreLayerClass<BotLogicDecision> Layer { get; }
+            public AICoreLayer<BotLogicDecision> Layer { get; }
         }
     }
 
@@ -434,7 +434,7 @@ namespace pitTeam.Patches
 
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(AICoreStrategyAbstractClass<BotLogicDecision>), "Update");
+            return AccessTools.Method(typeof(AICoreStrategy<BotLogicDecision>), "Update");
         }
 
         [PatchPrefix]
@@ -447,8 +447,8 @@ namespace pitTeam.Patches
                 Resolve(__instance.GetType());
                 if (_activeLayerListField == null) return;
 
-                List<AICoreLayerClass<BotLogicDecision>> activeLayerList =
-                    _activeLayerListField.GetValue(__instance) as List<AICoreLayerClass<BotLogicDecision>>;
+                List<AICoreLayer<BotLogicDecision>> activeLayerList =
+                    _activeLayerListField.GetValue(__instance) as List<AICoreLayer<BotLogicDecision>>;
                 if (activeLayerList == null || activeLayerList.Count == 0) return;
 
                 BotOwner botOwner = GetBotOwner(activeLayerList);
@@ -457,7 +457,7 @@ namespace pitTeam.Patches
                 bool removed = false;
                 for (int i = activeLayerList.Count - 1; i >= 0; i--)
                 {
-                    AICoreLayerClass<BotLogicDecision> layer = activeLayerList[i];
+                    AICoreLayer<BotLogicDecision> layer = activeLayerList[i];
                     if (layer == null) continue;
                     if (!IsVanillaLootPatrol(layer)) continue;
                     activeLayerList.RemoveAt(i);
@@ -467,8 +467,8 @@ namespace pitTeam.Patches
                 if (!removed || _activeLayerProperty == null || !_activeLayerProperty.CanRead || !_activeLayerProperty.CanWrite)
                     return;
 
-                AICoreLayerClass<BotLogicDecision> activeLayer =
-                    _activeLayerProperty.GetValue(__instance, null) as AICoreLayerClass<BotLogicDecision>;
+                AICoreLayer<BotLogicDecision> activeLayer =
+                    _activeLayerProperty.GetValue(__instance, null) as AICoreLayer<BotLogicDecision>;
                 if (activeLayer != null && IsVanillaLootPatrol(activeLayer))
                 {
                     _activeLayerProperty.SetValue(__instance, null, null);
@@ -489,12 +489,12 @@ namespace pitTeam.Patches
             Type type = strategyType;
             while (type != null && _activeLayerListField == null)
             {
-                _activeLayerListField = AccessTools.Field(type, "List_0");
+                _activeLayerListField = AccessTools.Field(type, "_activeLayers");
                 if (_activeLayerListField == null)
                 {
                     foreach (FieldInfo field in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
                     {
-                        if (field.FieldType == typeof(List<AICoreLayerClass<BotLogicDecision>>))
+                        if (field.FieldType == typeof(List<AICoreLayer<BotLogicDecision>>))
                         {
                             _activeLayerListField = field;
                             break;
@@ -504,7 +504,7 @@ namespace pitTeam.Patches
 
                 foreach (PropertyInfo property in type.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
                 {
-                    if (property.PropertyType == typeof(AICoreLayerClass<BotLogicDecision>))
+                    if (property.PropertyType == typeof(AICoreLayer<BotLogicDecision>))
                     {
                         _activeLayerProperty = property;
                         break;
@@ -514,10 +514,10 @@ namespace pitTeam.Patches
                 type = type.BaseType;
             }
 
-            _layerBotOwnerGetter = BuildBotOwnerGetter(typeof(AICoreLayerClass<BotLogicDecision>));
+            _layerBotOwnerGetter = BuildBotOwnerGetter(typeof(AICoreLayer<BotLogicDecision>));
         }
 
-        private static BotOwner GetBotOwner(List<AICoreLayerClass<BotLogicDecision>> activeLayerList)
+        private static BotOwner GetBotOwner(List<AICoreLayer<BotLogicDecision>> activeLayerList)
         {
             if (_layerBotOwnerGetter == null) return null;
 
@@ -531,10 +531,10 @@ namespace pitTeam.Patches
             return null;
         }
 
-        private static bool IsVanillaLootPatrol(AICoreLayerClass<BotLogicDecision> layer)
+        private static bool IsVanillaLootPatrol(AICoreLayer<BotLogicDecision> layer)
         {
             if (layer == null) return false;
-            if (layer.GetType() == typeof(GClass117)) return true;
+            if (layer.GetType() == typeof(LootPatrolLayer)) return true;
 
             string name = string.Empty;
             try
@@ -594,11 +594,11 @@ namespace pitTeam.Patches
 
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(GClass117), "GetDecision");
+            return AccessTools.Method(typeof(LootPatrolLayer), "GetDecision");
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(GClass117 __instance, ref AICoreActionResultStruct<BotLogicDecision, GClass26> __result)
+        private static bool PatchPrefix(LootPatrolLayer __instance, ref AICoreActionResult<BotLogicDecision, CoreActionResultParams> __result)
         {
             try
             {
@@ -617,8 +617,8 @@ namespace pitTeam.Patches
 
                 if (!IsConfirmedFollower(botOwner)) return true;
 
-                __result = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
-                    BaseLogicLayerAbstractClass.HoldOrCover(botOwner),
+                __result = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
+                    BaseLogicLayerSimple.HoldOrCover(botOwner),
                     "pitFireTeam_skipLootPatrol");
                 return false;
             }
@@ -632,9 +632,9 @@ namespace pitTeam.Patches
 
         [PatchFinalizer]
         private static Exception PatchFinalizer(
-            GClass117 __instance,
+            LootPatrolLayer __instance,
             Exception __exception,
-            ref AICoreActionResultStruct<BotLogicDecision, GClass26> __result)
+            ref AICoreActionResult<BotLogicDecision, CoreActionResultParams> __result)
         {
             if (__exception == null) return null;
 
@@ -647,13 +647,13 @@ namespace pitTeam.Patches
                 }
 
                 botOwner = _botOwnerGetter?.Invoke(__instance);
-                __result = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
-                    botOwner != null ? BaseLogicLayerAbstractClass.HoldOrCover(botOwner) : default,
+                __result = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
+                    botOwner != null ? BaseLogicLayerSimple.HoldOrCover(botOwner) : default,
                     "pitFireTeam_lootPatrol_exception_guard");
             }
             catch
             {
-                __result = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                __result = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                     default,
                     "pitFireTeam_lootPatrol_exception_guard_failed");
             }
@@ -685,11 +685,11 @@ namespace pitTeam.Patches
 
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(Class99), "ShallUseNow");
+            return AccessTools.Method(typeof(AdvAssaultTargetLayer), "ShallUseNow");
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(Class99 __instance, ref bool __result)
+        private static bool PatchPrefix(AdvAssaultTargetLayer __instance, ref bool __result)
         {
             if (__instance == null) return true;
 

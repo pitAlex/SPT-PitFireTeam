@@ -101,11 +101,13 @@ namespace pitTeam.BigBrain.Actions
         private float doorTimeoutAt;
         private FollowerCommandType lastCommand = FollowerCommandType.None;
         private int lastMoveToPointIssueSequence = -1;
+#if DEBUG
         private float moveLastProgressDistance;
         private float moveLastProgressAt;
         private float nextMoveProgressDiagnosticAt;
         private string lastMoveDiagnosticKey = string.Empty;
         private float nextMoveDiagnosticAt;
+#endif
         private const float RegroupArriveNavDistance = 4f;
         private const float RegroupRunDistance = 10f;
         private const float SameLevelTolerance = 1.75f;
@@ -116,15 +118,18 @@ namespace pitTeam.BigBrain.Actions
         private const float MoveToPointArrivalDistance = 1.5f;
         private const float MoveToPointForcedArrivalDistance = 0.75f;
         private const float MoveToPointTargetChangeDistanceSqr = 0.25f;
+#if DEBUG
         private const float MoveToPointProgressEpsilon = 0.25f;
         private const float MoveToPointNoProgressSeconds = 1.5f;
         private const float MoveToPointDiagnosticThrottleSeconds = 1f;
+#endif
         private const float LootSearchDelayBaseSeconds = 1.50f;
         private const float LootSearchDelayPerSqrtCellSeconds = 1f;
         private const float LootSearchDelayMinSeconds = 1.75f;
         private const float LootSearchDelayMaxSeconds = 6.25f;
         private const float LootPickupSuccessLeadSeconds = 1.1f;
         private const float LootContainerOpenTimeoutSeconds = 3f;
+        private const float LootInventoryTransactionTimeoutSeconds = 5f;
 
         public GestureCommandAction(BotOwner botOwner) : base(botOwner) { }
 

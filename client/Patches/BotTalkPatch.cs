@@ -232,35 +232,62 @@ namespace pitTeam.Patches
         [PatchPrefix]
         private static bool PatchPrefix(BotTalk __instance, ref EPhraseTrigger type, ETagStatus? additionaMask, bool withGroupDelay)
         {
-            type = FollowerReloadPhraseRemap.Remap(__instance.BotOwner_0, type);
-            if (FollowerForcedPhraseGate.ShouldBlock(__instance.BotOwner_0, type))
+            type = FollowerReloadPhraseRemap.Remap(__instance._owner, type);
+            if (FollowerForcedPhraseGate.ShouldBlock(__instance._owner, type))
             {
                 return false;
             }
 
-            if (FollowerMutedCombatPhraseGate.ShouldBlock(__instance.BotOwner_0, type))
+            if (FollowerMutedCombatPhraseGate.ShouldBlock(__instance._owner, type))
             {
                 return false;
             }
 
             if (__instance.IsSilenced) return false;
 
-            if (FollowerContactPhraseGate.IsContactPhrase(type) && BossPlayers.IsFollower(__instance.BotOwner_0))
+            if (FollowerContactPhraseGate.IsContactPhrase(type) && BossPlayers.IsFollower(__instance._owner))
             {
-                if (!FollowerContactPhraseGate.ShouldAllow(__instance.BotOwner_0))
+                if (!FollowerContactPhraseGate.ShouldAllow(__instance._owner))
                 {
                     return false;
                 }
             }
 
-            if (FollowerTalkFrequencyGate.ShouldBlockCombatTalk(__instance.BotOwner_0, type))
-            {
-                return false;
-            }
-
             return true;
         }
     }
+
+    // Gate actual EFT speech output after BotTalk has started its normal cooldown. Gating the raw
+    // TrySay request lets rapidly repeated AI requests reroll a low percentage until one succeeds,
+    // which makes values such as 10% sound far more frequent than configured.
+    internal class PlayerSayFollowerTalkPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+        {
+            Type[] parameterTypes = new Type[]
+            {
+                typeof(EPhraseTrigger),
+                typeof(bool),
+                typeof(float),
+                typeof(ETagStatus),
+                typeof(int),
+                typeof(bool)
+            };
+            return AccessTools.Method(typeof(Player), nameof(Player.Say), parameterTypes);
+        }
+
+        [PatchPrefix]
+        private static bool PatchPrefix(Player __instance, EPhraseTrigger phrase)
+        {
+            if (__instance == null || !__instance.IsAI)
+            {
+                return true;
+            }
+
+            return !FollowerTalkFrequencyGate.ShouldBlockCombatTalk(__instance.AIData?.BotOwner, phrase);
+        }
+    }
+
     // patch for preventing bots from talking if silenced command is active
     internal class BotTalkSayPatch : ModulePatch
     {
@@ -272,22 +299,22 @@ namespace pitTeam.Patches
         [PatchPrefix]
         private static bool PatchPrefix(BotTalk __instance, ref EPhraseTrigger type, bool sayImmediately = false, ETagStatus? additionalMask = null)
         {
-            type = FollowerReloadPhraseRemap.Remap(__instance.BotOwner_0, type);
-            if (FollowerForcedPhraseGate.ShouldBlock(__instance.BotOwner_0, type))
+            type = FollowerReloadPhraseRemap.Remap(__instance._owner, type);
+            if (FollowerForcedPhraseGate.ShouldBlock(__instance._owner, type))
             {
                 return false;
             }
 
-            if (FollowerMutedCombatPhraseGate.ShouldBlock(__instance.BotOwner_0, type))
+            if (FollowerMutedCombatPhraseGate.ShouldBlock(__instance._owner, type))
             {
                 return false;
             }
 
             if (__instance.IsSilenced) return false;
 
-            if (FollowerContactPhraseGate.IsContactPhrase(type) && BossPlayers.IsFollower(__instance.BotOwner_0))
+            if (FollowerContactPhraseGate.IsContactPhrase(type) && BossPlayers.IsFollower(__instance._owner))
             {
-                if (!FollowerContactPhraseGate.ShouldAllow(__instance.BotOwner_0))
+                if (!FollowerContactPhraseGate.ShouldAllow(__instance._owner))
                 {
                     return false;
                 }

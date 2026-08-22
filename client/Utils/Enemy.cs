@@ -14,11 +14,13 @@ namespace pitTeam.Utils
         {
             public float EnemyCount;
             public Vector3 CachedPosition;
+            public float EvaluatedAt;
 
-            public CachedEnemyInfo(float enemyCount, Vector3 cachedPosition)
+            public CachedEnemyInfo(float enemyCount, Vector3 cachedPosition, float evaluatedAt)
             {
                 EnemyCount = enemyCount;
                 CachedPosition = cachedPosition;
+                EvaluatedAt = evaluatedAt;
             }
         }
 
@@ -32,10 +34,11 @@ namespace pitTeam.Utils
 
         private const float StableVisiblePromoteSeconds = 0.12f;
         private const float StableVisibleDecaySeconds = 0.22f;
+        private const float EnemyLocationCacheSeconds = 0.35f;
 
         private static ConcurrentDictionary<(Vector3, string), CachedEnemyInfo> enemyLocationCache = new ConcurrentDictionary<(Vector3, string), CachedEnemyInfo>();
         private static ConcurrentDictionary<(string botId, string enemyId), VisibilityState> visibilityCache = new ConcurrentDictionary<(string botId, string enemyId), VisibilityState>();
-        private static ConcurrentBag<string> enemies = new ConcurrentBag<string>();
+        private static ConcurrentDictionary<string, byte> trackedEnemies = new ConcurrentDictionary<string, byte>();
 
         public enum EnemyDistance
         {
@@ -137,6 +140,7 @@ namespace pitTeam.Utils
 
             Vector3 personalLastPos = goalEnemy.PersonalLastPos;
             if (IsFinitePosition(personalLastPos) &&
+                personalLastPos.sqrMagnitude > 0.01f &&
                 (personalLastPos - bot.Position).sqrMagnitude > 0.01f)
             {
                 position = personalLastPos;
@@ -214,16 +218,25 @@ namespace pitTeam.Utils
 
         public static float GetEnemiesAtLocation(BotOwner bot, EnemyInfo enemy, Vector3 position, float radius = 17f)
         {
+            int nearbyGroupMembers = 1;
             try
             {
-                // Ensure enemy is tracked
+                if (bot == null || enemy == null || string.IsNullOrEmpty(enemy.ProfileId))
+                {
+                    return nearbyGroupMembers;
+                }
+
                 string enemyId = enemy.ProfileId;
-                if (!enemies.Contains(enemyId))
+                nearbyGroupMembers = CountNearbyLivingGroupMembers(enemy, position, radius);
+
+                // Register cleanup exactly once for this enemy. The previous bag check never added
+                // the id and therefore attached another death callback on every uncached call.
+                if (enemy.Person != null && trackedEnemies.TryAdd(enemyId, 0))
                 {
                     enemy.Person.OnIPlayerDeadOrUnspawn += (IPlayer pl) =>
                     {
                         ClearEnemyLocations(enemyId);
-                        enemies = new ConcurrentBag<string>(enemies.Where(x => x != enemyId));
+                        trackedEnemies.TryRemove(enemyId, out _);
                     };
                 }
 
@@ -238,17 +251,21 @@ namespace pitTeam.Utils
                 // Check cache first
                 if (enemyLocationCache.TryGetValue(cacheKeyWithId, out CachedEnemyInfo cachedInfo))
                 {
-                    return cachedInfo.EnemyCount;
+                    float cacheAge = Time.time - cachedInfo.EvaluatedAt;
+                    if (cacheAge >= 0f && cacheAge <= EnemyLocationCacheSeconds)
+                    {
+                        return Mathf.Max(cachedInfo.EnemyCount, nearbyGroupMembers);
+                    }
                 }
 
                 // Find enemies in range
                 Collider[] hits = new Collider[20]; // Pre-allocated array to prevent memory allocation
-                int numHits = Physics.OverlapSphereNonAlloc(position, radius, hits, LayerMaskClass.PlayerMask);
+                int numHits = Physics.OverlapSphereNonAlloc(position, radius, hits, LayersMaskController.PlayerMask);
 
                 if (numHits == 0)
                 {
-                    enemyLocationCache[cacheKeyWithId] = new CachedEnemyInfo(0f, cacheKey);
-                    return 0;
+                    enemyLocationCache[cacheKeyWithId] = new CachedEnemyInfo(0f, cacheKey, Time.time);
+                    return nearbyGroupMembers;
                 }
 
                 int nr = 0;
@@ -256,7 +273,7 @@ namespace pitTeam.Utils
 
                 for (int i = 0; i < numHits; i++)
                 {
-                    Player pl = bot.ShootData.method_4(hits[i]);
+                    Player pl = bot.ShootData.GetPlayerByCollider(hits[i]);
                     if (pl == null || !pl.HealthController.IsAlive || processedEnemies.Contains(pl.ProfileId))
                         continue;
 
@@ -274,16 +291,57 @@ namespace pitTeam.Utils
                 }
 
                 // Store in cache
-                enemyLocationCache[cacheKeyWithId] = new CachedEnemyInfo(nr, cacheKey);
+                enemyLocationCache[cacheKeyWithId] = new CachedEnemyInfo(nr, cacheKey, Time.time);
 
-                return nr;
+                // Group membership is used only as a cautious threat-count floor. It does not add
+                // unseen teammates to the follower's enemy controller or grant visibility/fire.
+                return Mathf.Max(nr, nearbyGroupMembers);
             }
             catch (Exception ex)
             {
                 Modules.Logger.LogError("GetEnemiesAtLocation Error");
                 Modules.Logger.LogError(ex);
+                return Mathf.Max(1, nearbyGroupMembers);
+            }
+        }
+
+        private static int CountNearbyLivingGroupMembers(EnemyInfo enemy, Vector3 position, float radius)
+        {
+            BotOwner? enemyOwner = enemy.Person?.AIData?.BotOwner;
+            BotsGroup? enemyGroup = enemyOwner?.BotsGroup;
+            if (enemyGroup == null || enemyGroup.MembersCount <= 0)
+            {
                 return 1;
             }
+
+            float radiusSqr = radius * radius;
+            int nearbyMembers = 0;
+            int memberCount = enemyGroup.MembersCount;
+            for (int i = 0; i < memberCount; i++)
+            {
+                // Groups can shrink as a teammate dies or despawns. Stop safely if EFT mutates
+                // the list between the count snapshot and this main-thread evaluation.
+                if (i >= enemyGroup.MembersCount)
+                {
+                    break;
+                }
+
+                BotOwner member = enemyGroup.Member(i);
+                if (member == null ||
+                    member.IsDead ||
+                    member.BotState != EBotState.Active ||
+                    member.GetPlayer?.HealthController?.IsAlive != true ||
+                    (member.Position - position).sqrMagnitude > radiusSqr)
+                {
+                    continue;
+                }
+
+                nearbyMembers++;
+            }
+
+            // The queried living target itself is always one threat even during a transient group
+            // mutation where EFT has not yet inserted it into Members.
+            return Mathf.Max(1, nearbyMembers);
         }
 
 
@@ -318,7 +376,7 @@ namespace pitTeam.Utils
                 }
             }
 
-            BotSettingsClass groupInfo;
+            BotGroupEnemyInfo groupInfo;
             bot.BotsGroup.Enemies.TryGetValue(enemy, out groupInfo);
 
             if (groupInfo == null)
@@ -337,7 +395,7 @@ namespace pitTeam.Utils
 
             if (groupInfo == null)
             {
-                groupInfo = new BotSettingsClass(enemy, bot.BotsGroup, cause);
+                groupInfo = new BotGroupEnemyInfo(enemy, bot.BotsGroup, cause);
 
                 bot.Memory.AddEnemy(enemy, groupInfo, false);
             }
@@ -543,7 +601,7 @@ namespace pitTeam.Utils
         {
             enemyLocationCache.Clear();
             visibilityCache.Clear();
-            enemies = new ConcurrentBag<string>();
+            trackedEnemies.Clear();
         }
 
         public static bool IsClosestEnemy(BotOwner botOwner_0)

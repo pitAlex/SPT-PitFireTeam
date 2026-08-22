@@ -26,8 +26,8 @@ namespace pitTeam.BigBrain
         }
 
         public override void DecisionChanged(
-            AICoreActionResultStruct<BotLogicDecision, GClass26>? prevDecision,
-            AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision)
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? prevDecision,
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> nextDecision)
         {
             decisionDefault.DecisionChanged(prevDecision, nextDecision);
         }
@@ -37,13 +37,13 @@ namespace pitTeam.BigBrain
             decisionDefault.PrepareStartDecision();
         }
 
-        public override AICoreActionResultStruct<BotLogicDecision, GClass26> GetDecision(EnemyInfo goalEnemy)
+        public override AICoreActionResult<BotLogicDecision, CoreActionResultParams> GetDecision(EnemyInfo goalEnemy)
         {
             return decisionDefault.GetDecision(goalEnemy);
         }
 
-        public override AICoreActionEndStruct ShallEndCurrentDecision(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision)
+        public override AICoreActionEnd ShallEndCurrentDecision(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
         {
             return decisionDefault.ShallEndCurrentDecision(currentDecision);
         }

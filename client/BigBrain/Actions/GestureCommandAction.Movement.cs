@@ -33,13 +33,16 @@ namespace pitTeam.BigBrain.Actions
             ResetMoveToPointDiagnostics();
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private void ResetMoveToPointDiagnostics()
         {
+#if DEBUG
             moveLastProgressDistance = 0f;
             moveLastProgressAt = 0f;
             nextMoveProgressDiagnosticAt = 0f;
             lastMoveDiagnosticKey = string.Empty;
             nextMoveDiagnosticAt = 0f;
+#endif
         }
 
         private void EnsureCommandControl()
@@ -424,6 +427,7 @@ namespace pitTeam.BigBrain.Actions
             bool targetChanged = !moveCommandInitialized || (activeMoveTarget - target).sqrMagnitude > MoveToPointTargetChangeDistanceSqr;
             bool targetMissing = BotOwner.GoToSomePointData?.HaveTarget() != true;
             bool targetCompletedEarly = BotOwner.GoToSomePointData?.IsCome() == true && distance > MoveToPointArrivalDistance;
+            bool targetRefreshed = false;
             if (targetChanged || targetMissing || targetCompletedEarly)
             {
                 RecordMoveToPointDiagnostic(
@@ -444,6 +448,7 @@ namespace pitTeam.BigBrain.Actions
                 activeMoveTarget = target;
                 moveArrivalLookUntil = 0f;
                 nextHoldLookChangeAt = 0f;
+                targetRefreshed = true;
             }
 
             if (Time.time >= nextPathCheckAt)
@@ -468,6 +473,26 @@ namespace pitTeam.BigBrain.Actions
                     BotOwner.StopMove();
                     return;
                 }
+
+                // EFT keeps the point after its active mover path ends, so HaveTarget() alone is
+                // not a liveness signal. Re-arm the same point on this existing 0.5s validation
+                // cadence instead of waiting for BotGoToPointData's three-second retry.
+                if (!targetRefreshed && BotOwner.Mover?.HasPathAndNoComplete != true)
+                {
+                    RecordMoveToPointDiagnostic(
+                        "pathRecovered",
+                        target,
+                        distance,
+                        () => CreateMoveToPointDiagnostic(
+                            target,
+                            distance,
+                            new
+                            {
+                                pathStatus = path.status.ToString(),
+                                cornerCount = path.corners?.Length ?? 0
+                            }));
+                    BotOwner.GoToSomePointData.SetPoint(target);
+                }
             }
 
             // "There" should always be a walk move.
@@ -475,18 +500,20 @@ namespace pitTeam.BigBrain.Actions
 
             if (followerData?.TryGetCommandLookOverride(out Vector3 lookOverridePoint) == true)
             {
-                BotOwner.Steering.LookToPoint(lookOverridePoint);
+                LookTowardMovePointBearing(lookOverridePoint);
             }
             else
             {
-                BotOwner.Steering.LookToPathDestPoint();
+                LookTowardMovePointBearing(target);
             }
 
             nextHoldLookChangeAt = 0f;
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private void TrackMoveToPointProgress(Vector3 target, float distance)
         {
+#if DEBUG
             if (!moveCommandInitialized || moveLastProgressAt <= 0f)
             {
                 moveLastProgressDistance = distance;
@@ -520,10 +547,13 @@ namespace pitTeam.BigBrain.Actions
                         lastProgressDistance = SanitizeFloat(moveLastProgressDistance),
                         noProgressSeconds = SanitizeFloat(Time.time - moveLastProgressAt)
                     }));
+#endif
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private void RecordMoveToPointDiagnostic(string reason, Vector3 target, float distance, Func<object?> detailsFactory)
         {
+#if DEBUG
             if (BotOwner == null || !BattleRecorder.IsRecordingFor(BotOwner))
             {
                 return;
@@ -538,6 +568,7 @@ namespace pitTeam.BigBrain.Actions
             lastMoveDiagnosticKey = key;
             nextMoveDiagnosticAt = Time.time + MoveToPointDiagnosticThrottleSeconds;
             BattleRecorder.RecordCommandDiagnostic(BotOwner, FollowerCommandType.MoveToPoint, "moveToPoint", reason, detailsFactory);
+#endif
         }
 
         private object CreateMoveToPointDiagnostic(Vector3 target, float distance, object? extra = null)
@@ -567,7 +598,7 @@ namespace pitTeam.BigBrain.Actions
                     reachedTarget = BotOwner.GoToSomePointData?.IsCome() == true,
                     targetPose = SanitizeFloat(BotOwner.Mover?.TargetPose ?? 0f),
                     poseLevel = SanitizeFloat(BotOwner.GetPlayer?.MovementContext?.PoseLevel ?? 0f),
-                    isInPatrol = BotOwner.GetPlayer?.MovementContext?.IsInPatrol == true,
+                    isInPatrol = BotOwner.GetPlayer?.MovementContext?._isInPatrol == true,
                     blockFirearms = BotOwner.GetPlayer?.MovementContext?.BlockFirearms == true
                 },
                 weaponPosture = CreateWeaponPostureDiagnostic(),
@@ -606,7 +637,7 @@ namespace pitTeam.BigBrain.Actions
                 currentSlot = selector?.LastEquipmentSlot.ToString(),
                 reloading = BotOwner.WeaponManager?.Reload?.Reloading == true,
                 canShootByState = BotOwner.ShootData?.CanShootByState == true,
-                aimingType = BotOwner.AimingManager?.Current.ToString(),
+                aimingType = BotOwner.AimingManager?._current.ToString(),
                 currentAimingReady = currentAiming?.IsReady == true,
                 currentAimingHardAim = currentAiming?.HardAim == true,
                 currentAimingDistance = currentAiming != null ? SanitizeFloat(currentAiming.LastDist2Target) : null
@@ -671,8 +702,7 @@ namespace pitTeam.BigBrain.Actions
 
             if (followerData?.TryGetCommandLookOverride(out Vector3 holdLookOverridePoint) == true)
             {
-
-                BotOwner.Steering.LookToPoint(holdLookOverridePoint);
+                LookTowardMovePointBearing(holdLookOverridePoint);
 
                 holdLookPoint = Vector3.zero;
                 nextHoldLookChangeAt = 0f;
@@ -690,6 +720,19 @@ namespace pitTeam.BigBrain.Actions
             {
                 BotOwner.Steering.LookToPoint(holdLookPoint);
             }
+        }
+
+        private void LookTowardMovePointBearing(Vector3 point)
+        {
+            Vector3 planarDirection = point - BotOwner.Position;
+            planarDirection.y = 0f;
+            if (planarDirection.sqrMagnitude <= 0.001f)
+            {
+                BotOwner.Steering.LookToMovingDirection();
+                return;
+            }
+
+            BotOwner.Steering.LookToDirection(planarDirection.normalized);
         }
 
         private void HandleHoldPosition()

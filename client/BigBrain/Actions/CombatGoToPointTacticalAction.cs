@@ -35,7 +35,7 @@ namespace pitTeam.BigBrain.Actions
                 BotOwner.SetPose(1f);
             }
 
-            baseLogic.UpdateNodeByBrain(GetData<GClass30>(data));
+            baseLogic.UpdateNodeByBrain(GetData<CoreActionResultGoToPoint>(data));
         }
 
         private bool ShouldStopForImmediateFire(EnemyInfo? goalEnemy)
@@ -50,7 +50,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            ShootPointClass? shootPoint = BotOwner.CurrentEnemyTargetPosition(true);
+            ShootToPoint? shootPoint = BotOwner.CurrentEnemyTargetPosition(true);
             return shootPoint != null &&
                    Utils.Utils.CanShootToTarget(shootPoint, BotOwner.WeaponRoot.position, BotOwner.LookSensor.Mask, false);
         }
@@ -67,7 +67,7 @@ namespace pitTeam.BigBrain.Actions
         /// Follower-owned wrapper around the vanilla tactical movement node. It keeps the route
         /// vanilla-compatible while overriding aim behavior when the enemy is visible or recently lost.
         /// </summary>
-        private sealed class FollowerGoToPointTacticalNode : GClass239
+        private sealed class FollowerGoToPointTacticalNode : GoToPointTacticalNode
         {
             private const float CornerAheadDotThreshold = 0.05f;
             private const float CornerPathProximityMeters = 2.5f;
@@ -87,17 +87,17 @@ namespace pitTeam.BigBrain.Actions
                 currentReason = reason;
             }
 
-            public override void UpdateNodeByBrain(GClass26 data)
+            public override void UpdateNodeByBrain(CoreActionResultParams data)
             {
-                EnemyInfo? goalEnemy = BotOwner_0.Memory?.GoalEnemy;
+                EnemyInfo? goalEnemy = _owner.Memory?.GoalEnemy;
                 if (goalEnemy != null && goalEnemy.CanShoot && goalEnemy.IsVisible)
                 {
-                    BotOwner_0.BotAttackManager.UpdateNextTick();
+                    _owner.BotAttackManager.UpdateNextTick();
                 }
                 else if (goalEnemy != null && nextThreatLookTime < Time.time)
                 {
-                    nextThreatLookTime = Time.time + GClass856.Random(ThreatLookIntervalMin, ThreatLookIntervalMax);
-                    BotOwner_0.Steering.LookToPoint(goalEnemy.EnemyLastPosition + new Vector3(0f, 0.6f, 0f));
+                    nextThreatLookTime = Time.time + MyExtensions.Random(ThreatLookIntervalMin, ThreatLookIntervalMax);
+                    CombatAttackMoveLook.TryLookReliableThreatFacing(_owner, goalEnemy);
                 }
 
                 base.UpdateNodeByBrain(data);
@@ -107,17 +107,17 @@ namespace pitTeam.BigBrain.Actions
             {
 
                 Vector3 destination = MainTargetPosition;
-                Vector3 botPosition = BotOwner_0.GetPlayer.Transform.position;
-                Vector3 lookOrigin = BotOwner_0.WeaponRoot != null
-                    ? BotOwner_0.WeaponRoot.position
+                Vector3 botPosition = _owner.GetPlayer.Transform.position;
+                Vector3 lookOrigin = _owner.WeaponRoot != null
+                    ? _owner.WeaponRoot.position
                     : botPosition;
-                Vector3 currentCorner = BotOwner_0.Mover.CurrentCornerPoint;
+                Vector3 currentCorner = _owner.Mover.CurrentCornerPoint;
                 Vector3 destinationLook = destination - lookOrigin;
                 bool hasThreatLook = TryGetThreatLookDirection(lookOrigin, out Vector3 threatLook);
                 if (IsCloseSearchReason(currentReason) && hasThreatLook)
                 {
-                    BotObserveDataClass.SetVectorToLook(threatLook);
-                    BotObserveDataClass.Update();
+                    _botObserveData.SetVectorToLook(threatLook);
+                    _botObserveData.Update();
                     return;
                 }
 
@@ -126,19 +126,19 @@ namespace pitTeam.BigBrain.Actions
                     Vector3 cornerLook = currentCorner - lookOrigin;
                     if (hasThreatLook && !IsCornerLookAlignedWithThreat(cornerLook, threatLook))
                     {
-                        BotObserveDataClass.SetVectorToLook(threatLook);
+                        _botObserveData.SetVectorToLook(threatLook);
                     }
                     else
                     {
-                        BotObserveDataClass.SetVectorToLook(cornerLook);
+                        _botObserveData.SetVectorToLook(cornerLook);
                     }
                 }
                 else
                 {
-                    BotObserveDataClass.SetVectorToLook(hasThreatLook ? threatLook : destinationLook);
+                    _botObserveData.SetVectorToLook(hasThreatLook ? threatLook : destinationLook);
                 }
 
-                BotObserveDataClass.Update();
+                _botObserveData.Update();
             }
 
             private static bool ShouldUseCornerLook(Vector3 corner, Vector3 origin, Vector3 destination)
@@ -175,19 +175,16 @@ namespace pitTeam.BigBrain.Actions
             {
                 threatLook = Vector3.zero;
 
-                EnemyInfo? enemy = BotOwner_0.Memory?.GoalEnemy;
+                EnemyInfo? enemy = _owner.Memory?.GoalEnemy;
                 if (enemy == null)
                 {
                     return false;
                 }
 
-                Vector3 enemyPos = enemy.CurrPosition;
-                if (!IsFinite(enemyPos))
-                {
-                    enemyPos = enemy.EnemyLastPositionReal;
-                }
-
-                if (!IsFinite(enemyPos))
+                if (!CombatAttackMoveLook.TryGetReliableThreatLookPoint(
+                        _owner,
+                        enemy,
+                        out Vector3 enemyPos))
                 {
                     return false;
                 }

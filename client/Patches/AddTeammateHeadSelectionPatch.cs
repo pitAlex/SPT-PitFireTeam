@@ -31,20 +31,20 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(NicknameField), "method_2");
+            return AccessTools.Method(typeof(NicknameField), nameof(NicknameField.NicknameSubmitedHandler));
         }
 
         [PatchPrefix]
         private static bool PatchPrefix(NicknameField __instance, string nickname)
         {
-            bool isTeammateCreationFlow = AddTeammateCreationFlow.IsActiveForController(CurrentScreenSingletonClass.Instance.CurrentScreenController);
+            bool isTeammateCreationFlow = AddTeammateCreationFlow.IsActiveForController(EFT.UI.Screens.EftScreenManager.Instance.CurrentScreenController);
             bool isRenameOverlayField = ReferenceEquals(__instance, OtherPlayerProfileScreenPatch.RenameOverlayField);
             if (!isTeammateCreationFlow && !isRenameOverlayField)
             {
                 return true;
             }
 
-            __instance.method_3(nickname);
+            __instance.ValidateEnteredString(nickname);
             if (isTeammateCreationFlow)
             {
                 AddTeammateCreationFlow.RefreshSubmitButton();
@@ -58,13 +58,13 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(HeadSelectionState), "method_10");
+            return AccessTools.Method(typeof(HeadSelectionState), nameof(HeadSelectionState.NicknameValueChangeHandler));
         }
 
         [PatchPostfix]
         private static void PatchPostfix()
         {
-            if (!AddTeammateCreationFlow.IsActiveForController(CurrentScreenSingletonClass.Instance.CurrentScreenController))
+            if (!AddTeammateCreationFlow.IsActiveForController(EFT.UI.Screens.EftScreenManager.Instance.CurrentScreenController))
             {
                 return;
             }
@@ -77,37 +77,37 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(HeadSelectionState), "method_1");
+            return AccessTools.Method(typeof(HeadSelectionState), nameof(HeadSelectionState.PrepareSelectors));
         }
 
         [PatchPrefix]
         private static bool PatchPrefix(HeadSelectionState __instance)
         {
-            if (!AddTeammateCreationFlow.IsActiveForController(CurrentScreenSingletonClass.Instance.CurrentScreenController))
+            if (!AddTeammateCreationFlow.IsActiveForController(EFT.UI.Screens.EftScreenManager.Instance.CurrentScreenController))
             {
                 return true;
             }
 
-            CustomizationSolverClass solver = Singleton<CustomizationSolverClass>.Instance;
+            EFT.CustomizationSolver solver = Singleton<EFT.CustomizationSolver>.Instance;
             if (solver == null || __instance == null)
             {
                 return true;
             }
 
-            __instance.HeadTemplates = CollectAllHeads(solver);
-            __instance.VoiceTemplates = CollectAllVoices(solver);
-            __instance.Voices.Clear();
-            __instance.method_3();
-            __instance.method_4();
+            __instance._headTemplates = CollectAllHeads(solver);
+            __instance._voiceTemplates = CollectAllVoices(solver);
+            __instance._voices.Clear();
+            __instance.PrepareFaceSelector();
+            __instance.PrepareVoiceSelector();
             return false;
         }
 
-        private static List<KeyValuePair<MongoID, GClass3678>> CollectAllHeads(CustomizationSolverClass solver)
+        private static List<KeyValuePair<MongoID, EFT.Customization.CustomizationHead>> CollectAllHeads(EFT.CustomizationSolver solver)
         {
-            Dictionary<MongoID, GClass3678> heads = new Dictionary<MongoID, GClass3678>();
+            Dictionary<MongoID, EFT.Customization.CustomizationHead> heads = new Dictionary<MongoID, EFT.Customization.CustomizationHead>();
             foreach (EPlayerSide side in new[] { EPlayerSide.Bear, EPlayerSide.Usec, EPlayerSide.Savage })
             {
-                foreach (GClass3678 head in solver.GetAvailableHeads(side))
+                foreach (EFT.Customization.CustomizationHead head in solver.GetAvailableHeads(side))
                 {
                     if (head != null && !heads.ContainsKey(head.Id))
                     {
@@ -118,16 +118,16 @@ namespace pitTeam.Patches
 
             return heads
                 .OrderBy(entry => entry.Value?.NameLocalizationKey.Localized(null) ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-                .Select(entry => new KeyValuePair<MongoID, GClass3678>(entry.Key, entry.Value))
+                .Select(entry => new KeyValuePair<MongoID, EFT.Customization.CustomizationHead>(entry.Key, entry.Value))
                 .ToList();
         }
 
-        private static List<KeyValuePair<MongoID, GClass3681>> CollectAllVoices(CustomizationSolverClass solver)
+        private static List<KeyValuePair<MongoID, EFT.Customization.CustomizationPlayerVoice>> CollectAllVoices(EFT.CustomizationSolver solver)
         {
-            Dictionary<MongoID, GClass3681> voices = new Dictionary<MongoID, GClass3681>();
+            Dictionary<MongoID, EFT.Customization.CustomizationPlayerVoice> voices = new Dictionary<MongoID, EFT.Customization.CustomizationPlayerVoice>();
             foreach (EPlayerSide side in new[] { EPlayerSide.Bear, EPlayerSide.Usec, EPlayerSide.Savage })
             {
-                foreach (GClass3681 voice in solver.GetAvailableVoices(side))
+                foreach (EFT.Customization.CustomizationPlayerVoice voice in solver.GetAvailableVoices(side))
                 {
                     if (voice != null && !voices.ContainsKey(voice.Id))
                     {
@@ -138,7 +138,7 @@ namespace pitTeam.Patches
 
             return voices
                 .OrderBy(entry => entry.Value?.NameLocalizationKey.Localized(null) ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-                .Select(entry => new KeyValuePair<MongoID, GClass3681>(entry.Key, entry.Value))
+                .Select(entry => new KeyValuePair<MongoID, EFT.Customization.CustomizationPlayerVoice>(entry.Key, entry.Value))
                 .ToList();
         }
     }
@@ -147,13 +147,13 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(EftAccountSideSelectionScreen).BaseType, "method_7");
+            return AccessTools.Method(typeof(EftAccountSideSelectionScreen).BaseType, "NextButtonPressedHandler");
         }
 
         [PatchPrefix]
         private static bool PatchPrefix(object __instance)
         {
-            if (!AddTeammateCreationFlow.IsActiveForController(CurrentScreenSingletonClass.Instance.CurrentScreenController))
+            if (!AddTeammateCreationFlow.IsActiveForController(EFT.UI.Screens.EftScreenManager.Instance.CurrentScreenController))
             {
                 return true;
             }
@@ -173,7 +173,7 @@ namespace pitTeam.Patches
         [PatchPostfix]
         private static void PatchPostfix(NicknameField __instance)
         {
-            if (!AddTeammateCreationFlow.IsActiveForController(CurrentScreenSingletonClass.Instance.CurrentScreenController))
+            if (!AddTeammateCreationFlow.IsActiveForController(EFT.UI.Screens.EftScreenManager.Instance.CurrentScreenController))
             {
                 return;
             }
@@ -188,13 +188,13 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(NicknameField), "method_6");
+            return AccessTools.Method(typeof(NicknameField), nameof(NicknameField.ShowNicknameError));
         }
 
         [PatchPostfix]
         private static void PatchPostfix(NicknameField __instance, ENicknameError error, bool isFromBackend = false)
         {
-            bool isTeammateCreationFlow = AddTeammateCreationFlow.IsActiveForController(CurrentScreenSingletonClass.Instance.CurrentScreenController);
+            bool isTeammateCreationFlow = AddTeammateCreationFlow.IsActiveForController(EFT.UI.Screens.EftScreenManager.Instance.CurrentScreenController);
             bool isRenameOverlayField = ReferenceEquals(__instance, OtherPlayerProfileScreenPatch.RenameOverlayField);
             if ((!isTeammateCreationFlow && !isRenameOverlayField) || isFromBackend)
             {

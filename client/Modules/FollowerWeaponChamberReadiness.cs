@@ -29,8 +29,8 @@ namespace pitTeam.Modules
                 // free chamber for a multi-barrel weapon. Weapon.Apply delegates loose ammo to
                 // those chamber slots in both cases. Launchers retain their specialized hands path.
                 return weapon?.ReloadMode == Weapon.EReloadMode.OnlyBarrel &&
-                       weapon is not GrenadeLauncherItemClass &&
-                       weapon is not RocketLauncherItemClass &&
+                       weapon is not EFT.InventoryLogic.GrenadeLauncher &&
+                       weapon is not EFT.InventoryLogic.RocketLauncher &&
                        weapon.Chambers?.Length > 0;
             }
             catch
@@ -42,9 +42,9 @@ namespace pitTeam.Modules
         internal static WeaponPrimaryReadinessSnapshot EvaluateActual(
             InventoryController inventory,
             Weapon weapon,
-            Func<AmmoItemClass, bool>? reserveEligibility = null)
+            Func<EFT.InventoryLogic.Ammo, bool>? reserveEligibility = null)
         {
-            List<AmmoItemClass> reserves = GetCompatibleLooseAmmo(
+            List<EFT.InventoryLogic.Ammo> reserves = GetCompatibleLooseAmmo(
                     inventory,
                     weapon,
                     reserveEligibility)
@@ -60,7 +60,7 @@ namespace pitTeam.Modules
             return EvaluateWeaponState(weapon, projectedReserveStacks, loadedRoundsOverride);
         }
 
-        internal static bool IsCompatibleLooseAmmo(Weapon weapon, AmmoItemClass ammo)
+        internal static bool IsCompatibleLooseAmmo(Weapon weapon, EFT.InventoryLogic.Ammo ammo)
         {
             if (!IsSupportedChamberWeapon(weapon) ||
                 !FollowerWeaponLooseAmmoSupport.IsCompatible(weapon, ammo))
@@ -143,7 +143,7 @@ namespace pitTeam.Modules
 
             if (failures.Count == 0)
             {
-                pitFireTeam.Log.LogInfo(
+                Logger.LogInfo(
                     $"[LootCommand][ChamberReadiness] Deterministic formula self-test passed ({scenarios.Length}/{scenarios.Length}).");
                 return;
             }
@@ -224,10 +224,10 @@ namespace pitTeam.Modules
                 feedKind: "chamberFed");
         }
 
-        private static IEnumerable<AmmoItemClass> GetCompatibleLooseAmmo(
+        private static IEnumerable<EFT.InventoryLogic.Ammo> GetCompatibleLooseAmmo(
             InventoryController inventory,
             Weapon weapon,
-            Func<AmmoItemClass, bool>? reserveEligibility)
+            Func<EFT.InventoryLogic.Ammo, bool>? reserveEligibility)
         {
             InventoryEquipment equipment = inventory?.Inventory?.Equipment;
             if (equipment == null || !IsSupportedChamberWeapon(weapon))
@@ -254,7 +254,7 @@ namespace pitTeam.Modules
                     continue;
                 }
 
-                foreach (AmmoItemClass ammo in snapshot.OfType<AmmoItemClass>())
+                foreach (EFT.InventoryLogic.Ammo ammo in snapshot.OfType<EFT.InventoryLogic.Ammo>())
                 {
                     if (string.IsNullOrEmpty(ammo.Id) ||
                         !yieldedIds.Add(ammo.Id) ||
@@ -286,7 +286,7 @@ namespace pitTeam.Modules
                 Slot[] chambers = weapon.Chambers;
                 capacity = chambers.Length;
                 loadedRounds = chambers.Count(chamber =>
-                    chamber?.ContainedItem is AmmoItemClass ammo && !ammo.IsUsed);
+                    chamber?.ContainedItem is EFT.InventoryLogic.Ammo ammo && !ammo.IsUsed);
                 return capacity > 0;
             }
             catch

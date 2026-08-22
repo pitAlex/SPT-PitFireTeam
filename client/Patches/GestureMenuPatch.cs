@@ -11,8 +11,8 @@ using UI.BattleUI.Gestures;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
-using GestureAction = EFT.UI.Gestures.GestureBaseItem.GStruct449;
-using GestureMenuItem = EFT.UI.Gestures.GesturesMenu.Class3396;
+using GestureAction = EFT.UI.Gestures.GestureBaseItem.PointerClick;
+using GestureMenuItem = EFT.UI.Gestures.GesturesMenu.CG_CreatePhraseGroup;
 
 namespace pitTeam.Patches
 {
@@ -75,8 +75,8 @@ namespace pitTeam.Patches
         [PatchPostfix]
         private static void PatchPostfix(GesturesMenu __instance)
         {
-            var list_0 = (List<GesturesAudioItem>)AccessTools.Field(typeof(GesturesMenu), "list_1").GetValue(__instance);
-            var list_1 = (List<GestureBaseItem>)AccessTools.Field(typeof(GesturesMenu), "list_2").GetValue(__instance);
+            var list_0 = (List<GesturesAudioItem>)AccessTools.Field(typeof(GesturesMenu), "_audioItems").GetValue(__instance);
+            var list_1 = (List<GestureBaseItem>)AccessTools.Field(typeof(GesturesMenu), "_allItems").GetValue(__instance);
 
             if (!pitFireTeam.hideUnsupportedCommands.Value) list_0.ForEach(item =>
             {
@@ -204,7 +204,7 @@ namespace pitTeam.Patches
 
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(GesturesMenu), "method_5");
+            return AccessTools.Method(typeof(GesturesMenu), nameof(GesturesMenu.InitGestures));
         }
 
         [PatchPostfix]
@@ -214,7 +214,7 @@ namespace pitTeam.Patches
             GesturesMenuItem gestureItemTemplate = (GesturesMenuItem)AccessTools.Field(typeof(GesturesMenu), "_gestureItemTemplate").GetValue(__instance);
             BaseTransformSolver gestureContainer = (BaseTransformSolver)AccessTools.Field(typeof(GesturesMenu), "_gestureContainer").GetValue(__instance);
             List<GesturesMenuItem> gestureItems = (List<GesturesMenuItem>)AccessTools.Field(typeof(GesturesMenu), "_gestureItems").GetValue(__instance);
-            List<GestureBaseItem> list_2 = (List<GestureBaseItem>)AccessTools.Field(typeof(GesturesMenu), "list_2").GetValue(__instance);
+            List<GestureBaseItem> list_2 = (List<GestureBaseItem>)AccessTools.Field(typeof(GesturesMenu), "_allItems").GetValue(__instance);
 
             GesturesMenuItem gesturesMenuItem = global::UnityEngine.Object.Instantiate<GesturesMenuItem>(gestureItemTemplate, gestureContainer.transform);
             gestureContainer.SetChild(gesturesMenuItem.transform);
@@ -230,7 +230,7 @@ namespace pitTeam.Patches
             gesturesMenuItem.gameObject.SetActive(true);
             gestureItems.Add(gesturesMenuItem);
             list_2.Add(gesturesMenuItem);
-            gesturesMenuItem.OnPointerClicked.Subscribe(new Action<GestureBaseItem.GStruct449>(__instance.method_7));
+            gesturesMenuItem.OnPointerClicked.Subscribe(new Action<GestureBaseItem.PointerClick>(__instance.CG_CreateGesture));
         }
 
         private static Sprite LoadOverThereSprite()
@@ -283,7 +283,7 @@ namespace pitTeam.Patches
         private static void PatchPostfix(GesturesMenu __instance)
         {
             GestureMenuUnsupportedCommandVisibility.Track(__instance);
-            var hashSet_1 = (HashSet<EPhraseTrigger>)AccessTools.Field(typeof(GesturesMenu), "hashSet_1").GetValue(__instance);
+            var hashSet_1 = (HashSet<EPhraseTrigger>)AccessTools.Field(typeof(GesturesMenu), "_availablePhrases").GetValue(__instance);
             hashSet_1.Add((EPhraseTrigger)CustomPhrases.TeamStatus);
             hashSet_1.Add((EPhraseTrigger)CustomPhrases.ViewBackpack);
         }
@@ -291,8 +291,8 @@ namespace pitTeam.Patches
 
     internal static class GestureMenuUnsupportedCommandVisibility
     {
-        private static readonly FieldInfo AudioGroupsField = AccessTools.Field(typeof(GesturesMenu), "list_1");
-        private static readonly FieldInfo AllItemsField = AccessTools.Field(typeof(GesturesMenu), "list_2");
+        private static readonly FieldInfo AudioGroupsField = AccessTools.Field(typeof(GesturesMenu), "_audioItems");
+        private static readonly FieldInfo AllItemsField = AccessTools.Field(typeof(GesturesMenu), "_allItems");
         private static readonly List<WeakReference<GesturesMenu>> TrackedMenus = new List<WeakReference<GesturesMenu>>();
 
         public static void Track(GesturesMenu menu)
@@ -393,13 +393,13 @@ namespace pitTeam.Patches
 
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(GesturesQuickPanel), "method_8");
+            return AccessTools.Method(typeof(GesturesQuickPanel), nameof(GesturesQuickPanel.UpdateQuickPanelLabel));
         }
 
         [PatchPostfix]
         private static void PatchPostfix(GesturesQuickPanel __instance)
         {
-            if (__instance.EPhraseTrigger_0 != (EPhraseTrigger)CustomPhrases.ViewBackpack)
+            if (__instance.PrioritizedCommand != (EPhraseTrigger)CustomPhrases.ViewBackpack)
             {
                 return;
             }
@@ -441,7 +441,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(GClass3937), nameof(GClass3937.IsPlayerGesture), new[] { typeof(int) });
+            return AccessTools.Method(typeof(EFT.UI.Gestures.GestureCommands), nameof(EFT.UI.Gestures.GestureCommands.IsPlayerGesture), new[] { typeof(int) });
         }
 
         [PatchPrefix]
@@ -461,7 +461,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(GClass3937), nameof(GClass3937.IsPlayerGesture), new[] { typeof(EInteraction) });
+            return AccessTools.Method(typeof(EFT.UI.Gestures.GestureCommands), nameof(EFT.UI.Gestures.GestureCommands.IsPlayerGesture), new[] { typeof(EInteraction) });
         }
 
         [PatchPrefix]
@@ -481,7 +481,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(GClass3937), nameof(GClass3937.GetCommandName), new[] { typeof(int) });
+            return AccessTools.Method(typeof(EFT.UI.Gestures.GestureCommands), nameof(EFT.UI.Gestures.GestureCommands.GetCommandName), new[] { typeof(int) });
         }
 
         [PatchPrefix]

@@ -82,10 +82,11 @@ namespace pitTeam.BigBrain
         private const float OutOfCombatTacticalDeviceInitialCooldown = 0.75f;
         private const float OutOfCombatTacticalDeviceCheckInterval = 3f;
         private const float HealNodeStartTimeout = 4f;
-        private const float HealActionStartRetryCooldown = 3f;
+        private const float HealStartCheckInterval = 0.25f;
         private const float PatrolHealCoverSearchRadius = 60f;
         private const float PatrolHealCoverArriveDistance = 2f;
         private const string PatrolHealCoverActionReason = "runToHeal";
+        private const string PatrolHealWaitActionReason = "healCooldownWait";
 
         private static readonly EquipmentSlot[] ReloadSlotOrder =
         {
@@ -123,7 +124,7 @@ namespace pitTeam.BigBrain
         private float nextPatrolLauncherFallbackRecordAt = 0f;
         private float nextStowedTacticalDeviceCheckAt = 0f;
         private float nextHealWorkRefreshAt = 0f;
-        private float nextHealActionRetryAt = 0f;
+        private float nextHealStartCheckAt = 0f;
         private bool stoppedForHealDecision = false;
         private bool healUseObserved = false;
         private CustomNavigationPoint? patrolHealCover;
@@ -155,10 +156,14 @@ namespace pitTeam.BigBrain
             }
 
             bool isHealAction = selectedAction?.Type == typeof(HealAction);
+            bool isHealWaitAction = selectedAction?.Type == typeof(PatrolHealWaitAction);
             bool isHealDecision = BotOwner.Brain.Agent?.LastResult().Action == BotLogicDecision.heal;
+            bool isUsingMedical = Utils.FollowerMedical.IsUsingMedical(BotOwner);
 
-            // let bot finish healing
-            if (isHealAction || isHealDecision)
+            // Preserve an actual medical use, but do not let a stale Heal action/LastResult own
+            // patrol forever after EFT has stopped using the item. Once no medical use is active,
+            // normal enemy, command, and post-combat readiness checks must be allowed to run.
+            if (isUsingMedical && (isHealAction || isHealDecision && !isHealWaitAction))
             {
                 return true;
             }
@@ -239,8 +244,8 @@ namespace pitTeam.BigBrain
             isHealing = false;
             stoppedForHealDecision = false;
             patrolHealStartAnnounced = false;
-            nextHealActionRetryAt = 0f;
             healUseObserved = false;
+            nextHealStartCheckAt = 0f;
             selectedAction = null;
             ResetPatrolHealCoverState();
             ResetReloadState();
@@ -254,8 +259,8 @@ namespace pitTeam.BigBrain
             isHealing = false;
             stoppedForHealDecision = false;
             patrolHealStartAnnounced = false;
-            nextHealActionRetryAt = 0f;
             healUseObserved = false;
+            nextHealStartCheckAt = 0f;
             ResetPatrolHealCoverState();
             ResetReloadState();
             ResetStowedTacticalDeviceState();
@@ -282,7 +287,7 @@ namespace pitTeam.BigBrain
             Utils.FollowerRecovery.SoftReset(BotOwner);
 
             BotLogicDecision logicDecision = BotOwner.Brain.Agent.LastResult().Action;
-            if (BotOwner.Brain.Agent.Dictionary_0.TryGetValue(logicDecision, out var logicInstance))
+            if (BotOwner.Brain.Agent._nodesDictionary.TryGetValue(logicDecision, out var logicInstance))
             {
                 logicInstance.Dispose();
             }
@@ -322,10 +327,9 @@ namespace pitTeam.BigBrain
                 GetPatrolHealState(
                     out bool isUsingHeal,
                     out bool hasPendingHealWork,
-                    out bool hasRecoverableTopOffWork,
-                    out _);
+                    out bool hasRecoverableTopOffWork);
 
-                if (CanStartPatrolHealAction(isUsingHeal, hasPendingHealWork, hasRecoverableTopOffWork))
+                if (ShouldOwnPatrolHealAction(isUsingHeal, hasPendingHealWork, hasRecoverableTopOffWork))
                 {
                     if (!isUsingHeal && TryCreatePatrolHealCoverAction(out Action? coverAction))
                     {
@@ -333,13 +337,17 @@ namespace pitTeam.BigBrain
                         return selectedAction;
                     }
 
+                    if (!CanStartPatrolHealAction(isUsingHeal, hasPendingHealWork, hasRecoverableTopOffWork))
+                    {
+                        BeginPatrolHealSequence(announce: false);
+                        nextHealStartCheckAt = Time.time + HealStartCheckInterval;
+                        selectedAction = new Action(typeof(PatrolHealWaitAction), PatrolHealWaitActionReason);
+                        return selectedAction;
+                    }
+
                     if (!isHealing)
                     {
-                        healStartAt = 0f;
-                        healUseObserved = false;
-                        healNodeEnteredAt = Time.time;
-                        AnnouncePatrolHealStartOnce();
-                        StopMovementForHealDecision();
+                        BeginPatrolHealSequence(announce: true);
                     }
 
                     isHealing = true;
@@ -383,8 +391,32 @@ namespace pitTeam.BigBrain
             try
             {
                 bool isHealAction = selectedAction?.Type == typeof(HealAction);
+                bool isHealWaitAction = selectedAction?.Type == typeof(PatrolHealWaitAction);
                 bool isHealCoverAction = selectedAction?.Type == typeof(CombatRunToCoverAction);
                 bool isHealDecision = BotOwner.Brain.Agent?.LastResult().Action == BotLogicDecision.heal;
+
+                if (isHealWaitAction)
+                {
+                    if (!IsActive())
+                    {
+                        return true;
+                    }
+
+                    if (TryCompletePostCombatFullHealRestore())
+                    {
+                        return true;
+                    }
+
+                    RefreshHealWorkIfNeeded();
+                    GetPatrolHealState(
+                        out bool isUsingHeal,
+                        out bool hasPendingHealWork,
+                        out bool hasRecoverableTopOffWork);
+                    return IsPatrolHealWaitActionEnding(
+                        isUsingHeal,
+                        hasPendingHealWork,
+                        hasRecoverableTopOffWork);
+                }
 
                 if (!isHealAction && !isHealDecision)
                 {
@@ -402,14 +434,13 @@ namespace pitTeam.BigBrain
                     GetPatrolHealState(
                         out bool isUsingHeal,
                         out bool hasPendingHealWork,
-                        out bool hasRecoverableTopOffWork,
-                        out _);
+                        out bool hasRecoverableTopOffWork);
                     if (isHealCoverAction)
                     {
                         return IsPatrolHealCoverActionEnding(isUsingHeal || hasPendingHealWork || hasRecoverableTopOffWork);
                     }
 
-                    if (CanStartPatrolHealAction(isUsingHeal, hasPendingHealWork, hasRecoverableTopOffWork))
+                    if (ShouldOwnPatrolHealAction(isUsingHeal, hasPendingHealWork, hasRecoverableTopOffWork))
                     {
                         return true;
                     }
@@ -450,7 +481,7 @@ namespace pitTeam.BigBrain
             }
 
             bool hasHealRelevantDamage = BotOwner.GetPlayer.HealthStatus != ETagStatus.Healthy;
-            foreach (EBodyPart part in GClass3058.RealBodyParts)
+            foreach (EBodyPart part in EFT.HealthSystem.HealthHelper.RealBodyParts)
             {
                 if (!BotOwner.GetPlayer.ActiveHealthController.IsBodyPartDestroyed(part))
                 {
@@ -508,14 +539,10 @@ namespace pitTeam.BigBrain
             GetPatrolHealState(
                 out bool isUsingHeal,
                 out bool hasPendingHealWork,
-                out bool hasRecoverableTopOffWork,
-                out bool shouldKeepPostCombatFullHeal);
-            bool canStartHeal = CanStartVanillaHealNode() || Utils.FollowerMedical.CanStartFirstAidTopOff(BotOwner);
-
+                out bool hasRecoverableTopOffWork);
             float healTimeout = BotOwner.Medecine.SurgicalKit.Using ? 45f : 15f;
             if (isUsingHeal)
             {
-                nextHealActionRetryAt = 0f;
                 healNodeEnteredAt = Time.time;
                 if (!healUseObserved || healStartAt <= 0f)
                 {
@@ -532,6 +559,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
+            bool completedMedicalUse = healUseObserved;
             healUseObserved = false;
             healStartAt = 0f;
 
@@ -543,17 +571,23 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
+            if (completedMedicalUse)
+            {
+                // Let the completed vanilla node end. The patrol layer will select a stationary
+                // medical-wait action until the next treatment clears EFT's heal cooldown.
+                CompleteHealing();
+                return true;
+            }
+
             if (healNodeEnteredAt > 0f && healNodeEnteredAt + HealNodeStartTimeout < Time.time)
             {
                 RefreshHealWorkForRetry();
                 GetPatrolHealState(
                     out isUsingHeal,
                     out hasPendingHealWork,
-                    out hasRecoverableTopOffWork,
-                    out shouldKeepPostCombatFullHeal);
+                    out hasRecoverableTopOffWork);
                 if (isUsingHeal)
                 {
-                    nextHealActionRetryAt = 0f;
                     return false;
                 }
 
@@ -563,24 +597,12 @@ namespace pitTeam.BigBrain
                     return true;
                 }
 
-                canStartHeal = CanStartVanillaHealNode() || Utils.FollowerMedical.CanStartFirstAidTopOff(BotOwner);
-                if (!canStartHeal)
+                if (CanStartPatrolHealAction(isUsingHeal, hasPendingHealWork, hasRecoverableTopOffWork))
                 {
-                    if (Utils.FollowerMedical.IsPostCombatFullHealActive(BotOwner) &&
-                        !hasRecoverableTopOffWork &&
-                        !shouldKeepPostCombatFullHeal)
-                    {
-                        Utils.FollowerMedical.CompletePostCombatFullHeal(BotOwner);
-                        CompleteHealing();
-                        return true;
-                    }
-
-                    nextHealActionRetryAt = Time.time + HealActionStartRetryCooldown;
-                    CompleteHealing();
-                    return true;
+                    healNodeEnteredAt = Time.time;
+                    return false;
                 }
 
-                nextHealActionRetryAt = Time.time + HealActionStartRetryCooldown;
                 CompleteHealing();
                 return true;
             }
@@ -596,19 +618,21 @@ namespace pitTeam.BigBrain
         private void GetPatrolHealState(
             out bool isUsingHeal,
             out bool hasPendingHealWork,
-            out bool hasRecoverableTopOffWork,
-            out bool shouldKeepPostCombatFullHeal)
+            out bool hasRecoverableTopOffWork)
         {
             bool isUsingFirstAid = BotOwner?.Medecine?.FirstAid?.Using == true;
             bool isUsingSurgery = BotOwner?.Medecine?.SurgicalKit?.Using == true;
             bool hasFirstAidWork = BotOwner?.Medecine?.FirstAid?.Have2Do == true;
             bool hasSurgeryWork = BotOwner?.Medecine?.SurgicalKit?.HaveWork == true;
+            bool hasDeferredFirstAidWork =
+                BotOwner?.Medecine?.FirstAid?.Damaged == true &&
+                BotOwner.Medecine.FirstAid.HaveSmth2Use;
 
             isUsingHeal = isUsingFirstAid || isUsingSurgery;
-            hasPendingHealWork = hasSurgeryWork || hasFirstAidWork;
+            hasPendingHealWork = hasSurgeryWork || hasFirstAidWork || hasDeferredFirstAidWork;
             hasRecoverableTopOffWork = Utils.FollowerMedical.HasRecoverableFirstAidDamage(BotOwner);
             bool hasKnownWork = isUsingHeal || hasPendingHealWork || hasRecoverableTopOffWork;
-            shouldKeepPostCombatFullHeal = Utils.FollowerMedical.ShouldKeepPostCombatFullHeal(
+            bool shouldKeepPostCombatFullHeal = Utils.FollowerMedical.ShouldKeepPostCombatFullHeal(
                 BotOwner,
                 hasKnownWork,
                 scanForWork: false);
@@ -631,6 +655,7 @@ namespace pitTeam.BigBrain
             healStartAt = 0f;
             healSoftTimeoutAt = 0f;
             healNodeEnteredAt = 0f;
+            nextHealStartCheckAt = 0f;
             ResetPatrolHealCoverStateIfSequenceComplete();
             // Normal patrol healing should finish/cancel medical state without restoring all raid HP.
             Utils.FollowerMedical.CompleteHealing(BotOwner);
@@ -645,6 +670,7 @@ namespace pitTeam.BigBrain
             healStartAt = 0f;
             healSoftTimeoutAt = 0f;
             healNodeEnteredAt = 0f;
+            nextHealStartCheckAt = 0f;
             ResetPatrolHealCoverStateIfSequenceComplete();
             Utils.FollowerMedical.AbortHealing(BotOwner, recoverDestroyedSurgeryParts: true);
         }
@@ -659,11 +685,11 @@ namespace pitTeam.BigBrain
             isHealing = false;
             stoppedForHealDecision = false;
             patrolHealStartAnnounced = false;
-            nextHealActionRetryAt = 0f;
             healUseObserved = false;
             healStartAt = 0f;
             healSoftTimeoutAt = 0f;
             healNodeEnteredAt = 0f;
+            nextHealStartCheckAt = 0f;
             ResetPatrolHealCoverState();
             return true;
         }
@@ -833,6 +859,14 @@ namespace pitTeam.BigBrain
             }
         }
 
+        private static bool ShouldOwnPatrolHealAction(
+            bool isUsingHeal,
+            bool hasPendingHealWork,
+            bool hasRecoverableTopOffWork)
+        {
+            return isUsingHeal || hasPendingHealWork || hasRecoverableTopOffWork;
+        }
+
         private bool CanStartPatrolHealAction(
             bool isUsingHeal,
             bool hasPendingHealWork,
@@ -841,11 +875,6 @@ namespace pitTeam.BigBrain
             if (isUsingHeal)
             {
                 return true;
-            }
-
-            if (Time.time < nextHealActionRetryAt)
-            {
-                return false;
             }
 
             return (hasPendingHealWork && CanStartVanillaHealNode()) ||
@@ -871,6 +900,78 @@ namespace pitTeam.BigBrain
                 LogLayerException("CanStartVanillaHealNode", ex);
                 return false;
             }
+        }
+
+        private bool IsPatrolHealWaitActionEnding(
+            bool isUsingHeal,
+            bool hasPendingHealWork,
+            bool hasRecoverableTopOffWork)
+        {
+            if (healSoftTimeoutAt > 0f && Time.time >= healSoftTimeoutAt)
+            {
+                if (Utils.FollowerMedical.IsPostCombatFullHealActive(BotOwner))
+                {
+                    Utils.FollowerMedical.ForceHeal(BotOwner);
+                    Utils.FollowerMedical.CompletePostCombatFullHeal(BotOwner);
+                    CompleteHealing();
+                }
+                else
+                {
+                    AbortHealing();
+                }
+
+                return true;
+            }
+
+            if (!ShouldOwnPatrolHealAction(isUsingHeal, hasPendingHealWork, hasRecoverableTopOffWork))
+            {
+                CompleteHealing();
+                return true;
+            }
+
+            StopMovementForHealDecision();
+            if (Time.time < nextHealStartCheckAt)
+            {
+                return false;
+            }
+
+            nextHealStartCheckAt = Time.time + HealStartCheckInterval;
+            RefreshHealWorkIfNeeded();
+            GetPatrolHealState(
+                out isUsingHeal,
+                out hasPendingHealWork,
+                out hasRecoverableTopOffWork);
+
+            if (!ShouldOwnPatrolHealAction(isUsingHeal, hasPendingHealWork, hasRecoverableTopOffWork))
+            {
+                CompleteHealing();
+                return true;
+            }
+
+            return CanStartPatrolHealAction(isUsingHeal, hasPendingHealWork, hasRecoverableTopOffWork);
+        }
+
+        private void BeginPatrolHealSequence(bool announce)
+        {
+            if (!isHealing)
+            {
+                healStartAt = 0f;
+                healUseObserved = false;
+                healNodeEnteredAt = Time.time;
+            }
+
+            isHealing = true;
+            if (healSoftTimeoutAt <= 0f)
+            {
+                healSoftTimeoutAt = Time.time + 20f;
+            }
+
+            if (announce)
+            {
+                AnnouncePatrolHealStartOnce();
+            }
+
+            StopMovementForHealDecision();
         }
 
         private void RefreshHealWorkForRetry()
@@ -1074,8 +1175,14 @@ namespace pitTeam.BigBrain
             return true;
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private void RecordPatrolLauncherFallback(bool switchRequested, string waitReason)
         {
+            if (!BattleRecorder.IsRecordingFor(BotOwner))
+            {
+                return;
+            }
+
             if (Time.time < nextPatrolLauncherFallbackRecordAt)
             {
                 return;
@@ -1116,6 +1223,7 @@ namespace pitTeam.BigBrain
         private void TryHandleOutOfCombatReloadInternal()
         {
             if (BotOwner?.WeaponManager == null) return;
+            Utils.FollowerRecovery.CheckReloadTimeout(BotOwner);
             if (Time.time < nextReloadCheckAt) return;
 
             var selector = BotOwner.WeaponManager.Selector;
@@ -1272,7 +1380,7 @@ namespace pitTeam.BigBrain
                 return FollowerOutOfCombatReloadPolicy.CanTopOffWeapon(BotOwner, currentWeapon);
             }
 
-            MagazineItemClass? currentMagazine = currentWeapon.GetCurrentMagazine();
+            EFT.InventoryLogic.Magazine? currentMagazine = currentWeapon.GetCurrentMagazine();
             int maxBulletCount = currentMagazine?.MaxCount ?? currentWeapon.GetMaxMagazineCount();
             if (maxBulletCount <= 0)
             {
@@ -1328,7 +1436,7 @@ namespace pitTeam.BigBrain
                 return BotOwner.WeaponManager.Reload.TryReload();
             }
 
-            MagazineItemClass? bestMagazine = BotOwner.WeaponManager.Reload.GetMagazineForReload(currentWeapon);
+            EFT.InventoryLogic.Magazine? bestMagazine = BotOwner.WeaponManager.Reload.GetMagazineForReload(currentWeapon);
             if (bestMagazine == null || bestMagazine.Count <= currentWeapon.GetCurrentMagazineCount())
             {
                 return false;
@@ -1759,7 +1867,7 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
-            MagazineItemClass? currentMagazine = weapon.GetCurrentMagazine();
+            EFT.InventoryLogic.Magazine? currentMagazine = weapon.GetCurrentMagazine();
             int currentCount = GetCurrentLoadedCount(weapon);
             int maxCount = GetCurrentCapacity(weapon, currentMagazine);
             if (maxCount <= 0 || currentCount >= maxCount)
@@ -1790,9 +1898,9 @@ namespace pitTeam.BigBrain
 
             bool lootedWeapon = InteractableObjects.IsLootedWeapon(botOwner, weapon);
             int currentCount = weapon.GetCurrentMagazineCount();
-            List<MagazineItemClass> magazines = new List<MagazineItemClass>();
-            botOwner.GetPlayer.InventoryController.GetReachableItemsOfTypeNonAlloc<MagazineItemClass>(magazines, null);
-            foreach (MagazineItemClass magazine in magazines)
+            List<EFT.InventoryLogic.Magazine> magazines = new List<EFT.InventoryLogic.Magazine>();
+            botOwner.GetPlayer.InventoryController.GetReachableItemsOfTypeNonAlloc<EFT.InventoryLogic.Magazine>(magazines, null);
+            foreach (EFT.InventoryLogic.Magazine magazine in magazines)
             {
                 if (magazine == null ||
                     IsInstalledInWeaponTree(magazine) ||
@@ -1803,7 +1911,7 @@ namespace pitTeam.BigBrain
                     continue;
                 }
 
-                if (InteractionsHandlerClass.CheckMoveIgnoringTargetItem(
+                if (EFT.InventoryLogic.ItemManipulator.CheckMoveIgnoringTargetItem(
                         magazine,
                         magazineSlot,
                         botOwner.GetPlayer.InventoryController).Succeeded)
@@ -1835,7 +1943,7 @@ namespace pitTeam.BigBrain
                     continue;
                 }
 
-                MagazineItemClass? currentMagazine = weapon.GetCurrentMagazine();
+                EFT.InventoryLogic.Magazine? currentMagazine = weapon.GetCurrentMagazine();
                 if (currentMagazine != null && currentMagazine.Count < currentMagazine.MaxCount)
                 {
                     filledAny |= TryFillMagazineWithLooseAmmo(botOwner, currentMagazine);
@@ -1847,7 +1955,7 @@ namespace pitTeam.BigBrain
             return filledAny;
         }
 
-        private static bool HasCompatibleLooseAmmo(BotOwner botOwner, Weapon weapon, MagazineItemClass? currentMagazine)
+        private static bool HasCompatibleLooseAmmo(BotOwner botOwner, Weapon weapon, EFT.InventoryLogic.Magazine? currentMagazine)
         {
             if (botOwner?.GetPlayer?.InventoryController == null || weapon == null)
             {
@@ -1862,9 +1970,9 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            List<AmmoItemClass> ammos = new List<AmmoItemClass>();
-            botOwner.GetPlayer.InventoryController.GetAcceptableItemsNonAlloc<AmmoItemClass>(
-                BotReload.AvailableEquipmentSlots,
+            List<EFT.InventoryLogic.Ammo> ammos = new List<EFT.InventoryLogic.Ammo>();
+            botOwner.GetPlayer.InventoryController.GetAcceptableItemsNonAlloc<EFT.InventoryLogic.Ammo>(
+                BotReload._availableEquipmentSlots,
                 ammos,
                 ammo =>
                     ammo != null &&
@@ -1891,19 +1999,19 @@ namespace pitTeam.BigBrain
             }
 
             bool filledAny = false;
-            List<MagazineItemClass> magazines = new List<MagazineItemClass>();
-            botOwner.GetPlayer.InventoryController.GetReachableItemsOfTypeNonAlloc<MagazineItemClass>(
+            List<EFT.InventoryLogic.Magazine> magazines = new List<EFT.InventoryLogic.Magazine>();
+            botOwner.GetPlayer.InventoryController.GetReachableItemsOfTypeNonAlloc<EFT.InventoryLogic.Magazine>(
                 magazines,
                 magazine =>
                     magazine != null &&
                     !IsInstalledInWeaponTree(magazine) &&
                     magazine.Count < magazine.MaxCount &&
-                    InteractionsHandlerClass.CheckMoveIgnoringTargetItem(
+                    EFT.InventoryLogic.ItemManipulator.CheckMoveIgnoringTargetItem(
                         magazine,
                         magazineSlot,
                         botOwner.GetPlayer.InventoryController).Succeeded);
 
-            foreach (MagazineItemClass magazine in magazines)
+            foreach (EFT.InventoryLogic.Magazine magazine in magazines)
             {
                 // Partial fills are intentional: a 10-round stack should turn a 0/11 pistol mag into 10/11.
                 filledAny |= TryFillMagazineWithLooseAmmo(botOwner, magazine);
@@ -1912,7 +2020,7 @@ namespace pitTeam.BigBrain
             return filledAny;
         }
 
-        private static bool TryFillMagazineWithLooseAmmo(BotOwner botOwner, MagazineItemClass magazine)
+        private static bool TryFillMagazineWithLooseAmmo(BotOwner botOwner, EFT.InventoryLogic.Magazine magazine)
         {
             if (botOwner?.GetPlayer?.InventoryController == null ||
                 magazine?.Cartridges?.Filters == null ||
@@ -1922,9 +2030,9 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            List<AmmoItemClass> ammos = new List<AmmoItemClass>();
-            botOwner.GetPlayer.InventoryController.GetAcceptableItemsNonAlloc<AmmoItemClass>(
-                BotReload.AvailableEquipmentSlots,
+            List<EFT.InventoryLogic.Ammo> ammos = new List<EFT.InventoryLogic.Ammo>();
+            botOwner.GetPlayer.InventoryController.GetAcceptableItemsNonAlloc<EFT.InventoryLogic.Ammo>(
+                BotReload._availableEquipmentSlots,
                 ammos,
                 ammo =>
                     ammo != null &&
@@ -1933,8 +2041,8 @@ namespace pitTeam.BigBrain
                     ammo.CheckAction(null).Succeeded,
                 null);
 
-            AmmoItemClass? bestAmmo = null;
-            foreach (AmmoItemClass ammo in ammos)
+            EFT.InventoryLogic.Ammo? bestAmmo = null;
+            foreach (EFT.InventoryLogic.Ammo ammo in ammos)
             {
                 if (bestAmmo == null || ammo.StackObjectsCount > bestAmmo.StackObjectsCount)
                 {
@@ -1996,7 +2104,7 @@ namespace pitTeam.BigBrain
             return weapon.GetCurrentMagazineCount();
         }
 
-        private static int GetCurrentCapacity(Weapon weapon, MagazineItemClass? currentMagazine)
+        private static int GetCurrentCapacity(Weapon weapon, EFT.InventoryLogic.Magazine? currentMagazine)
         {
             if (weapon.ReloadMode == Weapon.EReloadMode.OnlyBarrel && weapon.Chambers != null)
             {

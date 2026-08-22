@@ -25,18 +25,18 @@ namespace pitTeam.Patches
 {
     internal class SocialNetworkClassPatch : ModulePatch
     {
-        private static SocialNetworkClass? socialNetworkClass;
-        private static IChatInteractions? iChatInteractions;
-        private static readonly MethodInfo RefreshFriendsCallbackMethod = AccessTools.Method(typeof(SocialNetworkClass), "method_13");
-        private static readonly MethodInfo RefreshInputRequestsCallbackMethod = AccessTools.Method(typeof(SocialNetworkClass), "method_14");
-        private static readonly MethodInfo RefreshOutputRequestsCallbackMethod = AccessTools.Method(typeof(SocialNetworkClass), "method_15");
+        private static EFT.SocialNetwork? socialNetworkClass;
+        private static EFT.ISocial? iChatInteractions;
+        private static readonly MethodInfo RefreshFriendsCallbackMethod = AccessTools.Method(typeof(EFT.SocialNetwork), "CG_method_13");
+        private static readonly MethodInfo RefreshInputRequestsCallbackMethod = AccessTools.Method(typeof(EFT.SocialNetwork), "CG_method_14");
+        private static readonly MethodInfo RefreshOutputRequestsCallbackMethod = AccessTools.Method(typeof(EFT.SocialNetwork), "CG_method_15");
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(SocialNetworkClass), "method_1");
+            return AccessTools.Method(typeof(EFT.SocialNetwork), "method_1");
         }
 
         [PatchPostfix]
-        private static void PatchPostfix(SocialNetworkClass __instance, IChatInteractions session, InventoryController inventoryController, string matchingVersion)
+        private static void PatchPostfix(EFT.SocialNetwork __instance, EFT.ISocial session, InventoryController inventoryController, string matchingVersion)
         {
             socialNetworkClass = __instance;
             iChatInteractions = session;
@@ -49,17 +49,17 @@ namespace pitTeam.Patches
             if (socialNetworkClass != null && iChatInteractions != null && (force || delay < Time.time))
             {
                 delay = Time.time + (force ? 0.25f : 2f);
-                iChatInteractions.GetFriendsList(new Callback<GClass1055>(result =>
+                iChatInteractions.GetFriendsList(new Callback<ChatShared.ChatContacts>(result =>
                 {
                     RefreshFriendsCallbackMethod?.Invoke(socialNetworkClass, new object[] { result });
                 }));
 
-                iChatInteractions.GetInputFriendsRequests(new Callback<GClass1056[]>(result =>
+                iChatInteractions.GetInputFriendsRequests(new Callback<ChatShared.FriendsInvitation[]>(result =>
                 {
                     RefreshInputRequestsCallbackMethod?.Invoke(socialNetworkClass, new object[] { result });
                 }));
 
-                iChatInteractions.GetOutputFriendsRequests(new Callback<GClass1056[]>(result =>
+                iChatInteractions.GetOutputFriendsRequests(new Callback<ChatShared.FriendsInvitation[]>(result =>
                 {
                     RefreshOutputRequestsCallbackMethod?.Invoke(socialNetworkClass, new object[] { result });
                 }));
@@ -119,7 +119,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            Type acceptCallbackType = typeof(SocialNetworkClass).GetNestedType("Class1613", BindingFlags.Public | BindingFlags.NonPublic);
+            Type acceptCallbackType = typeof(EFT.SocialNetwork).GetNestedType("CG_AcceptFriendRequest", BindingFlags.Public | BindingFlags.NonPublic);
             return AccessTools.Method(acceptCallbackType, "method_1");
         }
 
@@ -134,7 +134,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(SocialNetworkClass), nameof(SocialNetworkClass.AcceptAllFriendRequests));
+            return AccessTools.Method(typeof(EFT.SocialNetwork), nameof(EFT.SocialNetwork.AcceptAllFriendRequests));
         }
 
         [PatchPostfix]
@@ -165,18 +165,18 @@ namespace pitTeam.Patches
 
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(GClass3785), nameof(GClass3785.IsActive));
+            return AccessTools.Method(typeof(EFT.UI.Chat.ChatMemberContextInteractions), nameof(EFT.UI.Chat.ChatMemberContextInteractions.IsActive));
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(GClass3785 __instance, EFriendInteractionButton button, ref bool __result)
+        private static bool PatchPrefix(EFT.UI.Chat.ChatMemberContextInteractions __instance, EFriendInteractionButton button, ref bool __result)
         {
             if (button == EFriendInteractionButton.WatchProfile)
             {
                 return true;
             }
 
-            UpdatableChatMember? member = __instance?.UpdatableChatMember_0;
+            UpdatableChatMember? member = __instance?._selectedMember;
             if (member == null)
             {
                 return true;
@@ -249,13 +249,13 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(GClass3785), "method_15");
+            return AccessTools.Method(typeof(EFT.UI.Chat.ChatMemberContextInteractions), nameof(EFT.UI.Chat.ChatMemberContextInteractions.WatchPlayerProfile));
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(GClass3785 __instance)
+        private static bool PatchPrefix(EFT.UI.Chat.ChatMemberContextInteractions __instance)
         {
-            UpdatableChatMember? profileMember = __instance?.Gclass1070_0?.Profile;
+            UpdatableChatMember? profileMember = __instance?._invitation?.From;
             if (profileMember == null)
             {
                 return true;
@@ -267,7 +267,7 @@ namespace pitTeam.Patches
                 return true;
             }
 
-            string currentAccountId = __instance.UpdatableChatMember_0?.AccountId;
+            string currentAccountId = __instance._selectedMember?.AccountId;
             if (!string.IsNullOrWhiteSpace(currentAccountId) && currentAccountId != "0")
             {
                 return true;
@@ -297,12 +297,12 @@ namespace pitTeam.Patches
         }
 
         [PatchPrefix]
-        private static void PatchPrefix(ref GClass1628<UpdatableChatMember> friendsList)
+        private static void PatchPrefix(ref Diz.Binding.BindableList<UpdatableChatMember> friendsList)
         {
             friendsList = BuildInviteableFriendsList(friendsList);
         }
 
-        private static GClass1628<UpdatableChatMember> BuildInviteableFriendsList(GClass1628<UpdatableChatMember> source)
+        private static Diz.Binding.BindableList<UpdatableChatMember> BuildInviteableFriendsList(Diz.Binding.BindableList<UpdatableChatMember> source)
         {
             List<UpdatableChatMember> filtered = new List<UpdatableChatMember>();
             HashSet<string> seenAccountIds = new HashSet<string>(StringComparer.Ordinal);
@@ -348,7 +348,7 @@ namespace pitTeam.Patches
                 filtered.Add(teammateMember);
             }
 
-            return new GClass1628<UpdatableChatMember>(filtered);
+            return new Diz.Binding.BindableList<UpdatableChatMember>(filtered);
         }
 
         private static Dictionary<string, TeammateInviteEntry> LoadTeammateInviteEntries()
@@ -465,19 +465,19 @@ namespace pitTeam.Patches
 
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(ContextInteractionsClass), nameof(ContextInteractionsClass.IsActive));
+            return AccessTools.Method(typeof(EFT.UI.Matchmaker.RaidGroupContextInteractions), nameof(EFT.UI.Matchmaker.RaidGroupContextInteractions.IsActive));
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(ContextInteractionsClass __instance, ERaidPlayerButton button, ref bool __result)
+        private static bool PatchPrefix(EFT.UI.Matchmaker.RaidGroupContextInteractions __instance, ERaidPlayerButton button, ref bool __result)
         {
             if (button == ERaidPlayerButton.RemovePlayer)
             {
                 return true;
             }
 
-            GroupPlayerDataClass groupMember = __instance?.GroupPlayerDataClass;
-            IMatchmakerPlayersController controller = __instance?.IMatchmakerPlayersController;
+            EFT.GroupPlayer groupMember = __instance?._selectedPlayer;
+            EFT.UI.Matchmaker.IMatchmakerController controller = __instance?._matchmakerPlayersController;
             if (groupMember == null || controller == null || string.IsNullOrWhiteSpace(groupMember.AccountId))
             {
                 return true;
@@ -551,11 +551,11 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(QuestClass), "SetStatus");
+            return AccessTools.Method(typeof(EFT.Quests.Quest), "SetStatus");
         }
 
         [PatchPostfix]
-        private static void PatchPostfix(QuestClass __instance)
+        private static void PatchPostfix(EFT.Quests.Quest __instance)
         {
             if (__instance.QuestStatus == EQuestStatus.Success)
             {

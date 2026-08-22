@@ -10,11 +10,11 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(AICoreAgentClass<BotLogicDecision>), "Update");
+            return AccessTools.Method(typeof(AICoreAgent<BotLogicDecision>), "Update");
         }
 
         [PatchFinalizer]
-        private static Exception PatchFinalizer(Exception __exception, AICoreAgentClass<BotLogicDecision> __instance)
+        private static Exception PatchFinalizer(Exception __exception, AICoreAgent<BotLogicDecision> __instance)
         {
             if (__exception != null)
             {

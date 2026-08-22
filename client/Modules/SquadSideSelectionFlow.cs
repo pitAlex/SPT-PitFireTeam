@@ -15,10 +15,10 @@ namespace pitTeam.Modules
     internal static class SquadSideSelectionFlow
     {
         private static readonly FieldInfo AppMenuControllerField =
-            AccessTools.Field(typeof(TarkovApplication), "mainMenuControllerClass");
+            AccessTools.Field(typeof(TarkovApplication), "_menuOperation");
 
         private static readonly MethodInfo OpenSideSelectionMethod =
-            AccessTools.Method(typeof(MainMenuControllerClass), "method_44");
+            AccessTools.Method(typeof(EFT.MainMenuShowOperation), "method_44");
 
         private const string AlphaLabelPath = "Preloader UI/BottomPanel/Content/UpperPart/AlphaLabel";
 
@@ -45,7 +45,7 @@ namespace pitTeam.Modules
 
             if (AppMenuControllerField == null || OpenSideSelectionMethod == null)
             {
-                pitFireTeam.Log.LogWarning("[SquadFlow] MainMenuControllerClass reflection not available — cannot open side selection screen.");
+                pitFireTeam.Log.LogWarning("[SquadFlow] EFT.MainMenuShowOperation reflection not available — cannot open side selection screen.");
                 return;
             }
 
@@ -59,7 +59,7 @@ namespace pitTeam.Modules
             object menuController = AppMenuControllerField.GetValue(app);
             if (menuController == null)
             {
-                pitFireTeam.Log.LogWarning("[SquadFlow] MainMenuControllerClass instance is null.");
+                pitFireTeam.Log.LogWarning("[SquadFlow] EFT.MainMenuShowOperation instance is null.");
                 return;
             }
 
@@ -102,7 +102,7 @@ namespace pitTeam.Modules
 
             if (!string.IsNullOrWhiteSpace(reason))
             {
-                pitFireTeam.Log.LogInfo($"[SquadFlow] Squad side-selection mode disabled: {reason}");
+                Logger.LogInfo($"[SquadFlow] Squad side-selection mode disabled: {reason}");
             }
         }
 
@@ -196,7 +196,7 @@ namespace pitTeam.Modules
         {
             openingGroupAccountIds.Clear();
 
-            MatchmakerPlayerControllerClass controller = app?.MatchmakerPlayerControllerClass;
+            EFT.UI.Matchmaker.MatchmakerPlayersController controller = app?.Matchmaker;
             if (controller?.GroupPlayers == null)
             {
                 return;

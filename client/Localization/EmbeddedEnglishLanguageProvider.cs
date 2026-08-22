@@ -38,13 +38,19 @@ namespace pitTeam.Localization
                     "Volume of the ping sound for the enemy location marker during combat"),
                 enemyMarker = Entry(
                     "Enemy Marker",
-                    "Show enemy position when reporting status. If disabled, the enemy marker sound will also be disabled"),
-                enemyMarkerAlertColor = Entry(
-                    "Enemy Marker: Alert Color",
-                    "Color of the enemy marker when the enemy is out of sight, in hexadecimal RGB format (#FFFF00)."),
-                enemyMarkerVisibleColor = Entry(
-                    "Enemy Marker: Visible Color",
-                    "Color of the enemy marker when the enemy is visible, in hexadecimal RGB format (#FF0000)."),
+                    "Enable enemy position markers for Status Report and automatic combat display. If disabled, the enemy marker sound will also be disabled."),
+                autoDisplayCombatStatus = Entry(
+                    "Auto Display Enemy Marker",
+                    "Continuously show the current enemy marker while any follower remains in combat. Hidden contacts refresh every 5 seconds; visible contacts track in real time."),
+                autoDisplayKillMarker = Entry(
+                    "Auto Display Kill Marker",
+                    "Automatically show a killed-enemy skull when the player or a follower kills a tracked enemy. Disable to show retained kills only through Status Report."),
+                enemyKilledDisplayTime = Entry(
+                    "Kill Display Time",
+                    "Time in seconds to display killed-enemy skull markers after Status Report or an automatic kill-marker trigger. The marker never displays longer than Kill Remember Time."),
+                enemyKilledRetainTime = Entry(
+                    "Kill Remember Time",
+                    "Time in seconds to remember the position of an enemy killed by the player or a follower. This is also the maximum time a kill marker can remain visible.\nSet to 0 to disable killed-enemy markers."),
                 scanDistance = Entry(
                     "Maximum scan distance",
                     "Maximum distance to pick up any visible enemy that the player is signaling when issuing 'Contact' phrase"),
@@ -56,7 +62,7 @@ namespace pitTeam.Localization
                     "Distance followers keep from the player while following."),
                 regroupRadius = Entry(
                     "Regroup Radius",
-                    "Distance from the player at which followers automatically regroup during combat. Marksman followers use about 1.5x this radius."),
+                    "Distance from the player at which followers automatically regroup during combat.\nMarksman followers use about 1.5x this radius."),
                 goToDistance = Entry(
                     "Maximum 'Go To' Distance",
                     "Maximum distance followers will move when 'There' or 'GoForward' is issued."),
@@ -77,19 +83,19 @@ namespace pitTeam.Localization
                     "Maximum number of non-squad same-side bots you can pick up during a raid."),
                 recruitPickup = Entry(
                     "Recruit Pickup",
-                    "Allow picked-up followers that were successfully extracted with to send friend requests. This uses player-vs-bot level difference rules when deciding."),
+                    "Allow picked-up followers that were successfully extracted with to send friend requests.\nThis uses player-vs-bot level difference rules when deciding."),
                 teamEscape = Entry(
                     "Team Escape",
-                    "Allow surviving squadmates to attempt an escape after you die. Escaped teammates can return eligible follower loot and recoverable gear that would otherwise be lost."),
+                    "Allow surviving squadmates to attempt an escape after you die.\nEscaped teammates can return eligible follower loot and recoverable gear that would otherwise be lost."),
                 teamEscapeUseAnyExtract = Entry(
                     "Team Escape: Use Any Extraction Point",
-                    "Allow the squad escape simulation to choose any usable extraction point on the map. Disable this to restrict escape routes to extraction points assigned to the player."),
+                    "Allow the squad escape simulation to choose any usable extraction point on the map.\nDisable this to restrict escape routes to extraction points assigned to the player."),
                 lootMinimumPrice = Entry(
                     "Minimum Price",
-                    "Minimum rouble value for an item to be taken from a body or container. Set to 0 to disable the minimum."),
+                    "Minimum rouble value for an item to be taken from a body or container.\nSet to 0 to disable the minimum."),
                 lootMaximumPrice = Entry(
                     "Maximum Price",
-                    "Maximum rouble value for an item to be taken from a body or container. Set to 0 to disable the maximum."),
+                    "Maximum rouble value for an item to be taken from a body or container.\nSet to 0 to disable the maximum."),
                 lootFilterFood = Entry(
                     "Pickup Food",
                     "Allow food and drink items to be taken from bodies and containers."),
@@ -206,10 +212,10 @@ namespace pitTeam.Localization
                     "Show each teammate's current and maximum health in the Status Report."),
                 statusReportShowTactic = Entry(
                     "Status Report: Tactic (MD)",
-                    "Show each teammate's current combat tactic or temporary healing state in the Status Report."),
+                    "Show each teammate's current combat tactic in the Status Report."),
                 statusReportShowCombatStatus = Entry(
                     "Status Report: Combat Status",
-                    "Show whether each teammate is in combat or has detected an enemy in the Status Report."),
+                    "Show whether each teammate is healing, wants to heal, is in combat, or has detected an enemy in the Status Report."),
                 enemyContact = Entry(
                     "Enemy Contact Shortcut",
                     "Alternative shortcut key for the Contact quick phrase"),
@@ -327,6 +333,7 @@ namespace pitTeam.Localization
                     ["SquadControlRemoveFromGroup"] = "Remove from group",
                     ["SquadControlRemoveFromGroupConfirm"] = "Remove {0} from the current raid group?",
                     ["SquadControlViewProfile"] = "View profile",
+                    ["SquadControlProfileCorrupt"] = "This teammate profile is corrupt and cannot be fetched.",
                     ["SquadControlAutoJoinOn"] = "Auto join: On",
                     ["SquadControlAutoJoinOff"] = "Auto join: Off",
                     ["SquadControlAutoJoinTooltip"] = "Auto-join",
@@ -365,14 +372,12 @@ namespace pitTeam.Localization
                 teamEscaped = new[] { "Nice!\nWe managed to get out." },
                 teamSomeEscaped = new[] { "Well it's a shame about {0}, but at least the rest of us made it." },
                 friendlyEscaped = new[] { "Glad we made it.\nThanks for letting me tag along." },
-                deathEscapeMessages = new[]
-                {
-                    "Squad extraction report:\n{0}",
-                    "Post-raid squad report:\n{0}",
-                    "Your squad's final status:\n{0}",
-                },
+                deathEscapeMessages = new[] { "Post-raid squad report:\n{0}" },
                 deathEscape = new Dictionary<string, string>
                 {
+                    ["Report"] = "Post-raid squad report:\n{0}",
+                    ["AllLost"] = "All members did not make it.",
+                    ["AllEscaped"] = "All members managed to extract.",
                     ["MadeItOut"] = "Made it out: {0}",
                     ["Lost"] = "Lost: {0}",
                     ["ExtractRoute"] = "Extract route: {0}",

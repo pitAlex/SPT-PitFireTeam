@@ -1,6 +1,7 @@
 using DrakiaXYZ.BigBrain.Brains;
 using EFT;
 using pitTeam.Components;
+using pitTeam.Modules;
 using pitTeam.Utils;
 using UnityEngine;
 
@@ -14,14 +15,21 @@ namespace pitTeam.BigBrain.Actions
     internal class CombatAttackMovingAction : FollowerCombatActionBase
     {
         private readonly FollowerAttackMovingLogic baseLogic;
+        private readonly FollowerCombatFireOverlay fireOverlay;
 
         protected CombatAttackMovingAction(
             BotOwner botOwner,
             bool withSuppress,
-            bool autoCover = true,
+            bool autoCover = false,
             bool forceThreatLookWhenShootable = false) : base(botOwner)
         {
-            baseLogic = new FollowerAttackMovingLogic(botOwner, withSuppress, autoCover, forceThreatLookWhenShootable);
+            fireOverlay = new FollowerCombatFireOverlay(botOwner);
+            baseLogic = new FollowerAttackMovingLogic(
+                botOwner,
+                fireOverlay,
+                withSuppress,
+                autoCover,
+                forceThreatLookWhenShootable);
         }
 
         public CombatAttackMovingAction(BotOwner botOwner) : this(botOwner, withSuppress: false)
@@ -30,14 +38,21 @@ namespace pitTeam.BigBrain.Actions
 
         public override void Stop()
         {
+            fireOverlay.Stop();
             StopCombatShooting();
             base.Stop();
         }
 
         public override void Update(CustomLayer.ActionData data)
         {
+            string? reason = GetReason(data);
             EnemyInfo? goalEnemy = BotOwner.Memory?.GoalEnemy;
-            if (goalEnemy?.Person?.HealthController?.IsAlive != true)
+            bool hasLiveGoalEnemy = goalEnemy?.Person?.HealthController?.IsAlive == true;
+            bool hasNoEnemyThreatMove =
+                !hasLiveGoalEnemy &&
+                FollowerCombatCommon.IsNoEnemyThreatCoverReason(reason) &&
+                FollowerAwareness.TryGetRecentThreatLookPoint(BotOwner, out _);
+            if (!hasLiveGoalEnemy && !hasNoEnemyThreatMove)
             {
                 StopCombatShooting();
                 BotOwner.LookData.SetLookPointByHearing(null);
@@ -47,28 +62,35 @@ namespace pitTeam.BigBrain.Actions
 
             // Attack-moving can run for a while, so keep non-marksman followers on their primary at
             // range and pass the current decision reason into the wrapped node for suppress behavior.
-            string? reason = GetReason(data);
-            TryPreferPrimaryAtRange(goalEnemy, reason);
-            if (StopUnownedGrenadeLauncherFire(reason, goalEnemy))
+            if (hasLiveGoalEnemy)
             {
-                return;
+                TryPreferPrimaryAtRange(goalEnemy!, reason);
+                if (HoldPushMovementUntilLongGunReady(reason))
+                {
+                    return;
+                }
+
+                if (StopUnownedGrenadeLauncherFire(reason, goalEnemy))
+                {
+                    return;
+                }
             }
 
             baseLogic.SetCurrentReason(reason);
             baseLogic.UpdateNodeByBrain(GetRawData(data));
+            EnforceCloseThreatStandingPose("attackMoving", reason, goalEnemy);
         }
 
         /// <summary>
-        /// Wrapper around EFT's attack-moving node. Movement and cover handling stay vanilla-owned,
-        /// while follower code controls when to look at the threat, when to suppress a recent point,
-        /// and when to stop a dangerous close retreat from turning the bot's back.
+        /// Wrapper around EFT's attack-moving node. The follower planner owns the movement
+        /// destination; this wrapper keeps vanilla aiming/reload behavior while preventing its
+        /// periodic cover search from replacing that destination.
         /// </summary>
-        private sealed class FollowerAttackMovingLogic : GClass205
+        private sealed class FollowerAttackMovingLogic : AttackMoving
         {
             private const float ArrivalThreatLookAngle = 95f;
             private const float NearCoverDistance = 2f;
             private const float RecentThreatLookSeconds = 2.5f;
-            private const float LostVisualSuppressSeconds = 2f;
             private const float UnsafeCloseThreatDistance = 8f;
             private const float UnsafeCloseThreatLookAngle = 70f;
             private const float RegroupCatchUpDestinationDistance = 25f;
@@ -76,17 +98,18 @@ namespace pitTeam.BigBrain.Actions
             private readonly bool autoCover;
             private readonly bool forceThreatLookWhenShootable;
             private readonly bool withSuppress;
+            private readonly FollowerCombatFireOverlay fireOverlay;
             private string? currentReason;
-            private float nextSuppressToggleTime;
-            private bool suppressBurstActive;
             private float nextThreatLookTime;
 
             public FollowerAttackMovingLogic(
                 BotOwner botOwner,
+                FollowerCombatFireOverlay fireOverlay,
                 bool withSuppress,
                 bool autoCover,
                 bool forceThreatLookWhenShootable) : base(botOwner)
             {
+                this.fireOverlay = fireOverlay;
                 this.withSuppress = withSuppress;
                 this.autoCover = autoCover;
                 this.forceThreatLookWhenShootable = forceThreatLookWhenShootable;
@@ -97,11 +120,15 @@ namespace pitTeam.BigBrain.Actions
                 currentReason = reason;
             }
 
-            public override void UpdateNodeByBrain(GClass26 data)
+            public override void UpdateNodeByBrain(CoreActionResultParams data)
             {
-                if (!autoCover && BotOwner_0.Memory?.CurCustomCoverPoint != null)
+                if (!autoCover)
                 {
-                    ForceCurrentCoverDestination();
+                    // AttackMoving asks BotAttackManager for another cover every two seconds. The
+                    // combat planner already selected this action's destination, so keep the
+                    // vanilla timer deferred and execute the assigned cover/point exactly.
+                    _nextCoverCheck = Time.time + 2f;
+                    ForcePlannerDestination();
                 }
 
                 bool regroupCatchUp = ShouldUseRegroupCatchUp();
@@ -110,53 +137,83 @@ namespace pitTeam.BigBrain.Actions
                     ForceRegroupCatchUpMovement();
                 }
 
-                base.UpdateNodeByBrain(data);
+                if (_owner.Memory?.GoalEnemy == null)
+                {
+                    UpdateWithoutGoalEnemy(data);
+                }
+                else
+                {
+                    base.UpdateNodeByBrain(data);
+                }
+
+                if (!autoCover)
+                {
+                    ForcePlannerDestination();
+                }
 
                 if (regroupCatchUp)
                 {
                     ForceRegroupCatchUpMovement();
                 }
+
+                // Retreat actions own look direction independently from path steering. EFT's
+                // movement update can overwrite steering after GoToPoint/cover pathing, which was
+                // turning the follower's back toward a close enemy on heal retreats. Re-assert the
+                // threat lane after movement has finished its update so forward/back/side path
+                // choices never change which way the weapon is facing.
+                if (forceThreatLookWhenShootable)
+                {
+                    TryMaintainThreatFacing(_owner.Memory?.GoalEnemy);
+                }
             }
 
-            public override void AimingAndShoot(GClass26 data)
+            private void UpdateWithoutGoalEnemy(CoreActionResultParams data)
+            {
+                // recovery.noEnemyThreatCover deliberately survives a temporary GoalEnemy gap so
+                // the follower can keep moving and suppressing toward concrete incoming-fire evidence.
+                // Vanilla AttackMoving is not valid in that state: while in cover it dereferences
+                // Memory.GoalEnemy.EnemyLastPosition without a null check. Preserve the planner-owned
+                // movement and our recent-threat fire overlay, but skip that enemy-dependent update.
+                DoorOpen(true);
+                _owner.SetTargetMoveSpeed(1f);
+                _owner.Sprint(false, true);
+                _owner.SetPose(1f);
+                _owner.Mover.SetPose(1f);
+                _owner.WeaponManager?.TryReloadWeaponOrUnderbarrelLauncher();
+                AimingAndShoot(data);
+            }
+
+            public override void AimingAndShoot(CoreActionResultParams data)
             {
                 if (ShouldUseRegroupCatchUp())
                 {
                     StopShooting();
-                    BotOwner_0.LookData.SetLookPointByHearing(null);
-                    BotOwner_0.Steering.LookToMovingDirection();
+                    _owner.LookData.SetLookPointByHearing(null);
+                    _owner.Steering.LookToMovingDirection();
                     return;
                 }
 
-                if (nextSuppressToggleTime < Time.time)
+                EnemyInfo? goalEnemy = _owner.Memory?.GoalEnemy;
+                bool commandLookApplied = BotFollowerPlayer.TryApplyCommandLookOverride(_owner);
+                bool threatFacingMaintained = false;
+                if (!commandLookApplied)
                 {
-                    nextSuppressToggleTime = Time.time + GClass856.Random(2f, 4f);
-                    suppressBurstActive = !suppressBurstActive;
-                }
-
-                EnemyInfo? goalEnemy = BotOwner_0.Memory?.GoalEnemy;
-                if (!BotFollowerPlayer.TryApplyCommandLookOverride(BotOwner_0))
-                {
-                    TryMaintainThreatFacing(goalEnemy);
+                    threatFacingMaintained = TryMaintainThreatFacing(goalEnemy);
                 }
 
                 bool unsafeCloseRetreat = TryStopUnsafeCloseThreatRetreat(goalEnemy);
-                Vector3 threatPoint;
-                bool shouldShoot = TryGetSafeShootOrSuppressTarget(goalEnemy, out threatPoint);
-                if (shouldShoot)
+                bool allowThreatSuppression =
+                    withSuppress ||
+                    global::pitTeam.BigBrain.FollowerCombatCommon.IsReasonOrSubreason(
+                        currentReason,
+                        "moveToHealPoint");
+                if (fireOverlay.Update(
+                        goalEnemy,
+                        currentReason,
+                        allowThreatSuppression,
+                        forceThreatLook: forceThreatLookWhenShootable || allowThreatSuppression,
+                        out _))
                 {
-                    if (forceThreatLookWhenShootable && goalEnemy != null)
-                    {
-                        BotOwner_0.Steering.LookToPoint(threatPoint);
-                    }
-
-                    if (IsCurrentAimLaneUnsafe(threatPoint))
-                    {
-                        StopShooting();
-                        return;
-                    }
-
-                    Gclass178_0.UpdateNodeByBrain(data as GClass27);
                     return;
                 }
 
@@ -165,59 +222,31 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
-                if (goalEnemy != null && nextThreatLookTime < Time.time)
+                if (commandLookApplied || threatFacingMaintained || goalEnemy == null)
                 {
-                    nextThreatLookTime = Time.time + GClass856.Random(2f, 3f);
-                    BotOwner_0.Steering.LookToPoint(goalEnemy.EnemyLastPosition + new Vector3(0f, 0.6f, 0f));
-                }
-            }
-
-            private bool TryGetSafeShootOrSuppressTarget(EnemyInfo? goalEnemy, out Vector3 target)
-            {
-                target = default;
-                if (goalEnemy?.Person?.HealthController?.IsAlive != true)
-                {
-                    return false;
+                    return;
                 }
 
-                bool visibleShot = goalEnemy.CanShoot && goalEnemy.IsVisible;
-                bool lostVisualSuppress =
-                    withSuppress &&
-                    suppressBurstActive &&
-                    !goalEnemy.IsVisible &&
-                    Time.time - goalEnemy.PersonalLastSeenTime <= LostVisualSuppressSeconds;
-
-                if (!visibleShot && !lostVisualSuppress)
+                if (CombatAttackMoveLook.TryGetReliableThreatLookPoint(_owner, goalEnemy, out _))
                 {
-                    return false;
+                    if (nextThreatLookTime < Time.time)
+                    {
+                        nextThreatLookTime = Time.time + MyExtensions.Random(2f, 3f);
+                        CombatAttackMoveLook.TryLookReliableThreatFacing(_owner, goalEnemy);
+                    }
+
+                    return;
                 }
 
-                target = visibleShot
-                    ? goalEnemy.GetBodyPartPosition()
-                    : goalEnemy.EnemyLastPositionReal + Vector3.up * 0.6f;
-
-                Vector3 fireOrigin = BotOwner_0.WeaponRoot != null
-                    ? BotOwner_0.WeaponRoot.position
-                    : BotOwner_0.Position + Vector3.up * 1.2f;
-                return !FollowerShotSafety.IsFriendlyInShotLane(BotOwner_0, fireOrigin, target);
-            }
-
-            private bool IsCurrentAimLaneUnsafe(Vector3 target)
-            {
-                Vector3 aimDirection = BotOwner_0.LookDirection;
-                if (aimDirection.sqrMagnitude <= 0.0001f && BotOwner_0.Transform != null)
+                // A memory-only push can retain a very old group-sense point after the enemy has
+                // moved away. Looking at that point when the route reaches it produces a downward or
+                // backwards snap. Without follower-owned threat position, face the active route.
+                nextThreatLookTime = 0f;
+                if (_owner.Mover.HasPathAndNoComplete)
                 {
-                    aimDirection = BotOwner_0.Transform.forward;
+                    _owner.LookData.SetLookPointByHearing(null);
+                    _owner.Steering.LookToMovingDirection();
                 }
-
-                Vector3 fireOrigin = BotOwner_0.WeaponRoot != null
-                    ? BotOwner_0.WeaponRoot.position
-                    : BotOwner_0.Position + Vector3.up * 1.2f;
-                return FollowerShotSafety.IsFriendlyInAimLane(
-                    BotOwner_0,
-                    fireOrigin,
-                    aimDirection,
-                    Vector3.Distance(fireOrigin, target));
             }
 
             private bool TryStopUnsafeCloseThreatRetreat(EnemyInfo? goalEnemy)
@@ -229,44 +258,46 @@ namespace pitTeam.BigBrain.Actions
                     return false;
                 }
 
-                CombatAttackMoveLook.TryLookThreatFacing(BotOwner_0, goalEnemy, allowHardTurn: true);
-                if (CombatAttackMoveLook.GetThreatLookAngle(BotOwner_0, goalEnemy) <= UnsafeCloseThreatLookAngle)
+                CombatAttackMoveLook.TryLookThreatFacing(_owner, goalEnemy, allowHardTurn: true);
+                if (CombatAttackMoveLook.GetThreatLookAngle(_owner, goalEnemy) <= UnsafeCloseThreatLookAngle)
                 {
                     return false;
                 }
 
-                BotOwner_0.Mover.Stop();
-                BotOwner_0.Sprint(false, true);
+                _owner.Mover.Stop();
+                _owner.Sprint(false, true);
                 return true;
             }
 
-            private void TryMaintainThreatFacing(EnemyInfo? goalEnemy)
+            private bool TryMaintainThreatFacing(EnemyInfo? goalEnemy)
             {
-                if (goalEnemy == null || !ShouldCorrectArrivalLook(goalEnemy))
+                if (goalEnemy == null ||
+                    (!forceThreatLookWhenShootable && !ShouldCorrectArrivalLook(goalEnemy)))
                 {
-                    return;
+                    return false;
                 }
 
                 Vector3 threatPoint = goalEnemy.IsVisible
                     ? goalEnemy.GetBodyPartPosition()
                     : goalEnemy.EnemyLastPositionReal + Vector3.up * 0.6f;
-                Vector3 lookDirection = threatPoint - BotOwner_0.Position;
+                Vector3 lookDirection = threatPoint - _owner.Position;
                 if (lookDirection.sqrMagnitude < 0.01f)
                 {
-                    return;
+                    return false;
                 }
 
-                if (Vector3.Angle(BotOwner_0.LookDirection, lookDirection) < ArrivalThreatLookAngle)
+                if (!forceThreatLookWhenShootable &&
+                    Vector3.Angle(_owner.LookDirection, lookDirection) < ArrivalThreatLookAngle)
                 {
-                    return;
+                    return true;
                 }
 
                 bool allowHardTurn =
                     forceThreatLookWhenShootable ||
-                    BotOwner_0.Memory.IsInCover ||
+                    _owner.Memory.IsInCover ||
                     global::pitTeam.BigBrain.FollowerCombatRegroupObjective.IsRegroupReason(currentReason);
 
-                CombatAttackMoveLook.TryLookThreatFacing(BotOwner_0, goalEnemy, allowHardTurn);
+                return CombatAttackMoveLook.TryLookThreatFacing(_owner, goalEnemy, allowHardTurn);
             }
 
             private bool ShouldCorrectArrivalLook(EnemyInfo goalEnemy)
@@ -282,32 +313,32 @@ namespace pitTeam.BigBrain.Actions
                     return false;
                 }
 
-                if (BotOwner_0.Memory.IsInCover)
+                if (_owner.Memory.IsInCover)
                 {
                     return true;
                 }
 
                 if (global::pitTeam.BigBrain.FollowerCombatRegroupObjective.IsRegroupReason(currentReason) &&
-                    BotOwner_0.GoToSomePointData != null &&
-                    BotOwner_0.GoToSomePointData.IsCome())
+                    _owner.GoToSomePointData != null &&
+                    _owner.GoToSomePointData.IsCome())
                 {
                     return true;
                 }
 
-                CustomNavigationPoint? cover = BotOwner_0.Memory?.CurCustomCoverPoint;
+                CustomNavigationPoint? cover = _owner.Memory?.CurCustomCoverPoint;
                 if (cover == null)
                 {
                     return false;
                 }
 
-                return (BotOwner_0.Position - cover.Position).sqrMagnitude <= NearCoverDistance * NearCoverDistance;
+                return (_owner.Position - cover.Position).sqrMagnitude <= NearCoverDistance * NearCoverDistance;
             }
 
             private bool IsCloseActiveThreat(EnemyInfo goalEnemy, float maxDistance, float recentSeenWindow)
             {
                 return goalEnemy != null &&
                        goalEnemy.Distance <= maxDistance &&
-                       BotOwner_0.IsEnemyLookingAtMe(goalEnemy) &&
+                       SainGoalEnemyBridge.IsEnemyLookingAtFollower(_owner, goalEnemy) &&
                        (goalEnemy.IsVisible ||
                         Time.time - goalEnemy.PersonalSeenTime <= recentSeenWindow ||
                         Time.time - goalEnemy.PersonalLastSeenTime <= recentSeenWindow);
@@ -315,46 +346,93 @@ namespace pitTeam.BigBrain.Actions
 
             private void ForceCurrentCoverDestination()
             {
-                CustomNavigationPoint cover = BotOwner_0.Memory.CurCustomCoverPoint;
-                bool withShoot = BotOwner_0.Tactic.IsCurTactic(BotsGroup.BotCurrentTactic.Attack) ||
-                                 BotOwner_0.Tactic.IsCurTactic(BotsGroup.BotCurrentTactic.Protect);
+                CustomNavigationPoint cover = _owner.Memory.CurCustomCoverPoint;
+                bool withShoot = _owner.Tactic.IsCurTactic(BotsGroup.BotCurrentTactic.Attack) ||
+                                 _owner.Tactic.IsCurTactic(BotsGroup.BotCurrentTactic.Protect);
 
-                BotOwner_0.SetTargetMoveSpeed(1f);
-                BotOwner_0.Sprint(false, true);
-                BotOwner_0.SetPose(1f);
-                BotOwner_0.Memory.SetCoverPoints(cover, string.Empty);
-                BotOwner_0.GoToPoint(cover);
+                _owner.SetTargetMoveSpeed(1f);
+                _owner.Sprint(false, true);
+                _owner.SetPose(1f);
+                _owner.Memory.SetCoverPoints(cover, string.Empty);
+                if (!_owner.HasPathAndNotComplete ||
+                    !_owner.Mover.TargetPoint.HasValue ||
+                    (_owner.Mover.TargetPoint.Value - cover.Position).sqrMagnitude > 1f)
+                {
+                    _owner.GoToPoint(cover);
+                }
 
                 if (!cover.CanIShootToEnemy && withShoot)
                 {
-                    BotOwner_0.BotAttackManager.UpdateNextTick();
+                    _owner.BotAttackManager.UpdateNextTick();
                 }
+            }
+
+            private void ForcePlannerDestination()
+            {
+                bool explicitPointOwned =
+                    global::pitTeam.BigBrain.FollowerCombatRegroupObjective.IsRegroupReason(currentReason) ||
+                    global::pitTeam.BigBrain.FollowerCombatCommon.IsReasonOrSubreason(currentReason, "moveToHealPoint");
+                if (explicitPointOwned &&
+                    TryForceExplicitPointDestination())
+                {
+                    return;
+                }
+
+                if (_owner.Memory?.CurCustomCoverPoint != null)
+                {
+                    ForceCurrentCoverDestination();
+                    return;
+                }
+
+                TryForceExplicitPointDestination();
+            }
+
+            private bool TryForceExplicitPointDestination()
+            {
+                if (_owner.GoToSomePointData?.HaveTarget() != true)
+                {
+                    return false;
+                }
+
+                Vector3 target = _owner.GoToSomePointData.Point;
+                if (_owner.HasPathAndNotComplete &&
+                    _owner.Mover.TargetPoint.HasValue &&
+                    (_owner.Mover.TargetPoint.Value - target).sqrMagnitude <= 1f)
+                {
+                    return true;
+                }
+
+                _owner.SetTargetMoveSpeed(1f);
+                _owner.Sprint(false, true);
+                _owner.SetPose(1f);
+                _owner.GoToPoint(target, true, -1f, false, false);
+                return true;
             }
 
             private bool ShouldUseRegroupCatchUp()
             {
                 if (!global::pitTeam.BigBrain.FollowerCombatRegroupObjective.IsRegroupReason(currentReason) ||
-                    BotOwner_0.GoToSomePointData?.HaveTarget() != true)
+                    _owner.GoToSomePointData?.HaveTarget() != true)
                 {
                     return false;
                 }
 
-                Vector3 target = BotOwner_0.GoToSomePointData.Point;
-                return (BotOwner_0.Position - target).sqrMagnitude >
+                Vector3 target = _owner.GoToSomePointData.Point;
+                return (_owner.Position - target).sqrMagnitude >
                        RegroupCatchUpDestinationDistance * RegroupCatchUpDestinationDistance;
             }
 
             private void ForceRegroupCatchUpMovement()
             {
-                BotOwner_0.SetPose(1f);
-                BotOwner_0.SetTargetMoveSpeed(1f);
-                BotOwner_0.Mover.Sprint(true, false);
+                _owner.SetPose(1f);
+                _owner.SetTargetMoveSpeed(1f);
+                _owner.Mover.Sprint(true, false);
             }
 
             private void StopShooting()
             {
-                BotOwner_0.ShootData?.EndShoot();
-                BotOwner_0.WeaponManager?.ShootController?.SetTriggerPressed(false);
+                _owner.ShootData?.EndShoot();
+                _owner.WeaponManager?.ShootController?.SetTriggerPressed(false);
             }
         }
     }

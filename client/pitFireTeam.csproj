@@ -4,7 +4,7 @@
         <OutputType>Library</OutputType>
         <RootNamespace>pitTeam</RootNamespace>
         <AssemblyName>pitFireTeam</AssemblyName>
-        <Version>0.9.0</Version>
+        <Version>0.10.0</Version>
         <LangVersion>latest</LangVersion>
         <Nullable>enable</Nullable>
         <NoWarn>$(NoWarn);CS0618;CS0649;CS8600;CS8601;CS8602;CS8604;CS8618;CS8620;CS8625</NoWarn>
@@ -17,58 +17,58 @@
             <HintPath>libs\0Harmony.dll</HintPath>
         </Reference>
         <Reference Include="Assembly-CSharp, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-            <HintPath>libs\Assembly-CSharp.dll</HintPath>
+            <HintPath>libs4.1\Assembly-CSharp.dll</HintPath>
         </Reference>
         <Reference Include="ConfigurationManager">
             <HintPath>libs\ConfigurationManager.dll</HintPath>
         </Reference>
         <Reference Include="ItemTemplate.Types, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-            <HintPath>libs\ItemTemplate.Types.dll</HintPath>
+            <HintPath>libs4.1\ItemTemplate.Types.dll</HintPath>
         </Reference>
         <Reference Include="spt-common">
-            <HintPath>libs\spt-common.dll</HintPath>
+            <HintPath>libs4.1\spt-common.dll</HintPath>
         </Reference>
         <Reference Include="spt-custom">
-            <HintPath>libs\spt-custom.dll</HintPath>
+            <HintPath>libs4.1\spt-custom.dll</HintPath>
         </Reference>
         <Reference Include="spt-prepatch">
-            <HintPath>libs\spt-prepatch.dll</HintPath>
+            <HintPath>libs4.1\spt-prepatch.dll</HintPath>
         </Reference>
         <Reference Include="BepInEx">
-            <HintPath>libs\BepInEx.dll</HintPath>
+            <HintPath>libs4.1\BepInEx.dll</HintPath>
         </Reference>
         <Reference Include="bsg.console.core">
-            <HintPath>libs\bsg.console.core.dll</HintPath>
+            <HintPath>libs4.1\bsg.console.core.dll</HintPath>
         </Reference>
         <Reference Include="Comfort">
-            <HintPath>libs\Comfort.dll</HintPath>
+            <HintPath>libs4.1\Comfort.dll</HintPath>
         </Reference>
         <Reference Include="Comfort.Unity">
-            <HintPath>libs\Comfort.Unity.dll</HintPath>
+            <HintPath>libs4.1\Comfort.Unity.dll</HintPath>
         </Reference>
         <Reference Include="CommonExtensions">
-            <HintPath>libs\CommonExtensions.dll</HintPath>
+            <HintPath>libs4.1\CommonExtensions.dll</HintPath>
         </Reference>
         <Reference Include="DissonanceVoip, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-            <HintPath>libs\DissonanceVoip.dll</HintPath>
+            <HintPath>libs4.1\DissonanceVoip.dll</HintPath>
         </Reference>
         <Reference Include="DrakiaXYZ-BigBrain">
-            <HintPath>libs\DrakiaXYZ-BigBrain.dll</HintPath>
+            <HintPath>libs4.1\DrakiaXYZ-BigBrain.dll</HintPath>
         </Reference>
         <Reference Include="ItemComponent.Types">
-            <HintPath>libs\ItemComponent.Types.dll</HintPath>
+            <HintPath>libs4.1\ItemComponent.Types.dll</HintPath>
         </Reference>
         <Reference Include="Newtonsoft.Json">
-            <HintPath>libs\Newtonsoft.Json.dll</HintPath>
+            <HintPath>libs4.1\Newtonsoft.Json.dll</HintPath>
         </Reference>
         <Reference Include="Sirenix.Serialization">
-            <HintPath>libs\Sirenix.Serialization.dll</HintPath>
+            <HintPath>libs4.1\Sirenix.Serialization.dll</HintPath>
         </Reference>
         <Reference Include="spt-reflection">
-            <HintPath>libs\spt-reflection.dll</HintPath>
+            <HintPath>libs4.1\spt-reflection.dll</HintPath>
         </Reference>
         <Reference Include="spt-singleplayer">
-            <HintPath>libs\spt-singleplayer.dll</HintPath>
+            <HintPath>libs4.1\spt-singleplayer.dll</HintPath>
         </Reference>
 
         <Reference Include="System" />
@@ -140,6 +140,8 @@
     </ItemGroup>
 
     <ItemGroup>
+        <None Remove="libs\**\*" />
+        <None Remove="libs4.1\**\*" />
         <None Include=".editorconfig" />
     </ItemGroup>
 

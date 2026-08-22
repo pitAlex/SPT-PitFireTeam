@@ -184,13 +184,13 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            List<MagazineItemClass> magazines = GetOperationalMagazineItems(
+            List<EFT.InventoryLogic.Magazine> magazines = GetOperationalMagazineItems(
                     backpack,
                     weapon,
                     "LoosePickup.Backpack.WeaponSupportMagazine",
                     includeEmptyForTopOff: true)
                 .ToList();
-            List<AmmoItemClass> looseAmmo = GetWeaponLooseAmmoItems(backpack, weapon).ToList();
+            List<EFT.InventoryLogic.Ammo> looseAmmo = GetWeaponLooseAmmoItems(backpack, weapon).ToList();
             foreach (Item item in magazines.Cast<Item>().Concat(looseAmmo))
             {
                 InteractableObjects.ClearStrictCargoTree(BotOwner, item);
@@ -273,11 +273,15 @@ namespace pitTeam.BigBrain.Actions
                                    (move.StagingMagazine != null &&
                                     move.StagingMagazineRoundsBefore >= 0 &&
                                     move.StagingMagazine.Count > move.StagingMagazineRoundsBefore));
-            bool succeeded = result?.Succeed == true || stagingApplied;
+            bool failedTopOffDetach = IsInsertedMagazineTopOffDetachMove(move) &&
+                                      !DidInsertedMagazineTopOffDetachSettle(move);
+            bool succeeded = failedTopOffDetach
+                ? false
+                : result?.Succeed == true || stagingApplied;
             if (succeeded)
             {
                 InteractableObjects.ClearStrictCargoTree(BotOwner, move.Item);
-                if (move.Item is MagazineItemClass magazine &&
+                if (move.Item is EFT.InventoryLogic.Magazine magazine &&
                     move.ApprovedReloadWeapon != null)
                 {
                     InteractableObjects.RegisterLootedWeaponMagazine(
@@ -289,9 +293,13 @@ namespace pitTeam.BigBrain.Actions
             else
             {
                 RememberLoosePickupBackpackSupportRejection(move?.Item);
+                foreach (Item supplyItem in GetInsertedMagazineTopOffSupplyItems(move))
+                {
+                    RememberLoosePickupBackpackSupportRejection(supplyItem);
+                }
             }
 
-            if (succeeded || move?.ContinueFollowUpsOnFailure == true)
+            if (succeeded || (move?.ContinueFollowUpsOnFailure == true && !failedTopOffDetach))
             {
                 foreach (BodyGearCandidate candidate in move?.FollowUpCandidates ??
                          Array.Empty<BodyGearCandidate>())

@@ -23,13 +23,15 @@ namespace pitTeam.Modules
         private static GamePlayerOwner? _owner;
         private static BotOwner? _targetBot;
         private static BotFollowerPlayer? _targetFollower;
-        private static SearchableItemItemClass? _targetBackpack;
+        private static EFT.InventoryLogic.SearchableItem? _targetBackpack;
+        private static IItemOwner? _targetBackpackOwner;
         private static HashSet<string>? _initialBackpackItemIds;
         private static HashSet<string>? _initialTrackedItemIds;
         private static Dictionary<string, HashSet<string>>? _initialTrackedItemTreeIds;
         private static float _openedAtTime;
         private static bool _closeRequested;
         private static bool _ending;
+        private static bool _recordingKnownState;
 
         public static void Update(GamePlayerOwner owner)
         {
@@ -47,14 +49,14 @@ namespace pitTeam.Modules
             {
                 if (_closeRequested)
                 {
-                    if (!CurrentScreenSingletonClass.Instance.CheckCurrentScreen(EEftScreenType.Inventory))
+                    if (!EFT.UI.Screens.EftScreenManager.Instance.CheckCurrentScreen(EEftScreenType.Inventory))
                     {
                         EndInspection("InterruptClosed", true);
                         return;
                     }
                 }
 
-                if (!CurrentScreenSingletonClass.Instance.CheckCurrentScreen(EEftScreenType.Inventory))
+                if (!EFT.UI.Screens.EftScreenManager.Instance.CheckCurrentScreen(EEftScreenType.Inventory))
                 {
                     if (!_closeRequested && Time.time - _openedAtTime < 1f)
                     {
@@ -136,7 +138,7 @@ namespace pitTeam.Modules
         {
             try
             {
-                if (!TryGetInspectableBackpack(owner, out BotOwner liveBot, out BotFollowerPlayer follower, out SearchableItemItemClass backpack) ||
+                if (!TryGetInspectableBackpack(owner, out BotOwner liveBot, out BotFollowerPlayer follower, out EFT.InventoryLogic.SearchableItem backpack) ||
                     liveBot != targetBot)
                 {
                     return;
@@ -151,6 +153,8 @@ namespace pitTeam.Modules
                 _targetBot = liveBot;
                 _targetFollower = follower;
                 _targetBackpack = backpack;
+                _targetBackpackOwner = backpack.Owner;
+                _targetBackpackOwner.AddItemEvent += HandleBackpackItemAdded;
                 _initialBackpackItemIds = SnapshotAllItemIds(backpack);
                 _initialTrackedItemIds = SnapshotTrackedItemIdsInBackpack(liveBot, _initialBackpackItemIds);
                 _initialTrackedItemTreeIds = SnapshotTrackedItemTreesInBackpack(backpack, _initialTrackedItemIds);
@@ -177,7 +181,7 @@ namespace pitTeam.Modules
             GamePlayerOwner owner,
             out BotOwner targetBot,
             out BotFollowerPlayer follower,
-            out SearchableItemItemClass backpack)
+            out EFT.InventoryLogic.SearchableItem backpack)
         {
             return TryGetInspectableBackpack(owner?.Player, out targetBot, out follower, out backpack);
         }
@@ -186,7 +190,7 @@ namespace pitTeam.Modules
             Player player,
             out BotOwner targetBot,
             out BotFollowerPlayer follower,
-            out SearchableItemItemClass backpack)
+            out EFT.InventoryLogic.SearchableItem backpack)
         {
             targetBot = null;
             follower = null;
@@ -345,32 +349,35 @@ namespace pitTeam.Modules
                 return false;
             }
 
-            // The TakeLoot command owns a short asynchronous pickup flow: approach, pickup animation, then an
-            // inventory network transaction. Backpack inspection must not overlap that flow.
+            // Every commanded loot flow owns asynchronous movement, search, and inventory work.
+            // Backpack inspection must not overlap it, or the player can race the follower for
+            // the same inventory tree while it is being mutated.
             if (follower != null &&
                 follower.TryPeekActiveCommand(out FollowerCommandType command, out _, out _) &&
                 (command == FollowerCommandType.TakeLootItem ||
-                 command == FollowerCommandType.TakeBodyGear))
+                 command == FollowerCommandType.TakeBodyGear ||
+                 command == FollowerCommandType.TakeContainerLoot))
             {
                 return true;
             }
 
             if (InteractableObjects.IsTaker(bot) ||
-                InteractableObjects.IsBodyLootTaker(bot))
+                InteractableObjects.IsBodyLootTaker(bot) ||
+                InteractableObjects.IsContainerLootTaker(bot))
             {
                 return true;
             }
 
-            return bot.GetPlayer?.CurrentManagedState is PickupStateClass;
+            return bot.GetPlayer?.CurrentManagedState is EFT.PickUpState;
         }
 
-        private static SearchableItemItemClass? GetBackpack(BotOwner bot)
+        private static EFT.InventoryLogic.SearchableItem? GetBackpack(BotOwner bot)
         {
             try
             {
                 return bot?.GetPlayer?.InventoryController?.Inventory?.Equipment?
                     .GetSlot(EquipmentSlot.Backpack)
-                    .ContainedItem as SearchableItemItemClass;
+                    .ContainedItem as EFT.InventoryLogic.SearchableItem;
             }
             catch
             {
@@ -378,32 +385,76 @@ namespace pitTeam.Modules
             }
         }
 
-        private static void MarkBackpackVisible(IPlayerSearchController searchController, SearchableItemItemClass backpack)
+        private static void MarkBackpackVisible(IPlayerSearchController searchController, EFT.InventoryLogic.SearchableItem backpack)
         {
             if (searchController == null || backpack == null)
             {
                 return;
             }
 
-            if (!searchController.IsItemKnown(backpack))
-            {
-                searchController.SetItemAsKnown(backpack, false);
-            }
-
             // Stock search does two separate things: marks searchable containers as searched and marks contained
             // item instances as known at their current addresses. We reproduce that completed state immediately.
-            searchController.SetItemAsSearched<SearchableItemItemClass>(backpack);
-            foreach (Item item in backpack.GetAllItems())
-            {
-                if (!searchController.IsItemKnown(item))
-                {
-                    searchController.SetItemAsKnown(item, false);
-                }
+            MarkItemTreeVisible(searchController, backpack);
+        }
 
-                if (item is SearchableItemItemClass searchable)
+        private static void HandleBackpackItemAdded(EFT.InventoryLogic.AddItemEventArgs args)
+        {
+            if (args?.Status != CommandStatus.Succeed ||
+                args.Item == null ||
+                _owner?.Player?.SearchController == null ||
+                !IsItemInsideActiveBackpack(args.Item))
+            {
+                return;
+            }
+
+            try
+            {
+                // The temporary View Backpack visibility overrides make newly-added items appear known, which
+                // prevents EFT's normal add-result handler from recording their actual current addresses. Record
+                // the completed search state after a successful add so a nested container stays visible if the
+                // player later moves it back out of the teammate backpack.
+                MarkItemTreeVisible(_owner.Player.SearchController, args.Item);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[TeammateBackpack] Failed to preserve searched state for an added item tree");
+                Logger.LogError(ex);
+            }
+        }
+
+        private static void MarkItemTreeVisible(IPlayerSearchController searchController, Item rootItem)
+        {
+            if (searchController == null || rootItem == null)
+            {
+                return;
+            }
+
+            bool wasRecordingKnownState = _recordingKnownState;
+            _recordingKnownState = true;
+            try
+            {
+                MarkItemVisible(searchController, rootItem);
+                foreach (Item item in rootItem.GetAllItems())
                 {
-                    searchController.SetItemAsSearched<SearchableItemItemClass>(searchable);
+                    MarkItemVisible(searchController, item);
                 }
+            }
+            finally
+            {
+                _recordingKnownState = wasRecordingKnownState;
+            }
+        }
+
+        private static void MarkItemVisible(IPlayerSearchController searchController, Item item)
+        {
+            if (!searchController.IsItemKnown(item))
+            {
+                searchController.SetItemAsKnown(item, false);
+            }
+
+            if (item is EFT.InventoryLogic.SearchableItem searchable)
+            {
+                searchController.SetItemAsSearched<EFT.InventoryLogic.SearchableItem>(searchable);
             }
         }
 
@@ -424,7 +475,14 @@ namespace pitTeam.Modules
 
         public static bool ShouldTreatObservedItemKnown(Item item, ItemAddress address)
         {
-            // PlayerSearchControllerClass is address-sensitive. If EFT asks whether an item will be known at
+            if (_recordingKnownState)
+            {
+                // Let MarkItemTreeVisible query the real search-controller state instead of this inspection-only
+                // override, otherwise the real address entry would never be recorded.
+                return false;
+            }
+
+            // EFT.ActiveSearchController is address-sensitive. If EFT asks whether an item will be known at
             // a specific destination address, do not answer from the item's current teammate-backpack address;
             // stock add logic needs that false result so it can mark the item known at the new player address.
             return address != null ? IsAddressInsideActiveBackpack(address) : IsItemInsideActiveBackpack(item);
@@ -512,7 +570,7 @@ namespace pitTeam.Modules
 
             try
             {
-                if (CurrentScreenSingletonClass.Instance.CheckCurrentScreen(EEftScreenType.Inventory))
+                if (EFT.UI.Screens.EftScreenManager.Instance.CheckCurrentScreen(EEftScreenType.Inventory))
                 {
                     _owner?.CloseInventoryIfOpen();
                     return;
@@ -547,6 +605,8 @@ namespace pitTeam.Modules
             }
             finally
             {
+                UnsubscribeBackpackOwner();
+
                 // Promotion stays paused until provenance has been recorded. Always release the
                 // follower even if EFT inventory traversal failed during close bookkeeping.
                 if (clearInspectionFlag)
@@ -558,12 +618,31 @@ namespace pitTeam.Modules
                 _targetBot = null;
                 _targetFollower = null;
                 _targetBackpack = null;
+                _targetBackpackOwner = null;
                 _initialBackpackItemIds = null;
                 _initialTrackedItemIds = null;
                 _initialTrackedItemTreeIds = null;
                 _openedAtTime = 0f;
                 _closeRequested = false;
                 _ending = false;
+            }
+        }
+
+        private static void UnsubscribeBackpackOwner()
+        {
+            if (_targetBackpackOwner == null)
+            {
+                return;
+            }
+
+            try
+            {
+                _targetBackpackOwner.AddItemEvent -= HandleBackpackItemAdded;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[TeammateBackpack] Failed to unsubscribe backpack inventory events");
+                Logger.LogError(ex);
             }
         }
 
@@ -644,7 +723,7 @@ namespace pitTeam.Modules
             }
         }
 
-        private static HashSet<string> SnapshotAllItemIds(SearchableItemItemClass backpack)
+        private static HashSet<string> SnapshotAllItemIds(EFT.InventoryLogic.SearchableItem backpack)
         {
             HashSet<string> ids = new HashSet<string>(StringComparer.Ordinal);
             foreach (Item item in backpack.GetAllItems())
@@ -676,7 +755,7 @@ namespace pitTeam.Modules
         }
 
         private static Dictionary<string, HashSet<string>> SnapshotTrackedItemTreesInBackpack(
-            SearchableItemItemClass backpack,
+            EFT.InventoryLogic.SearchableItem backpack,
             HashSet<string> trackedItemIds)
         {
             Dictionary<string, HashSet<string>> trees = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
@@ -725,7 +804,7 @@ namespace pitTeam.Modules
             return ids;
         }
 
-        private static bool HasNewAncestorInBackpack(Item item, SearchableItemItemClass backpack, HashSet<string> initialItemIds)
+        private static bool HasNewAncestorInBackpack(Item item, EFT.InventoryLogic.SearchableItem backpack, HashSet<string> initialItemIds)
         {
             try
             {

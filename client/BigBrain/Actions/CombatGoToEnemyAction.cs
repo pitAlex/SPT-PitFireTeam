@@ -41,6 +41,7 @@ namespace pitTeam.BigBrain.Actions
         private const float NavigationLookBadPathAngle = 75f;
         private const float NavigationLookPathExtraDistance = 15f;
         private const float NavigationLookPathDistanceRatio = 1.35f;
+        private const float SprintApproachStopDistance = 15f;
         private const float StaleLocalLookMinAge = 4f;
         private const float StaleLocalLookMaxDistance = 5f;
         private const float StaleLocalLookBackpedalAngle = 120f;
@@ -49,7 +50,7 @@ namespace pitTeam.BigBrain.Actions
         private const int LargeMagazineLowAmmoThreshold = 20;
         private const int PistolLargeMagazineLowAmmoThreshold = 10;
 
-        private readonly GClass183 shootLogic;
+        private readonly AimingToGoalTarget shootLogic;
         private bool shouldSprint;
         private float nextMoveRefreshTime;
         private Vector3 committedAdvancePoint;
@@ -71,7 +72,7 @@ namespace pitTeam.BigBrain.Actions
 
         public CombatGoToEnemyAction(BotOwner botOwner) : base(botOwner)
         {
-            shootLogic = new GClass183(botOwner);
+            shootLogic = new AimingToGoalTarget(botOwner);
         }
 
         public override void Start()
@@ -108,13 +109,19 @@ namespace pitTeam.BigBrain.Actions
 
             string? reason = GetReason(data);
             TryPreferPrimaryAtRange(goalEnemy, reason);
+            if (HoldPushMovementUntilLongGunReady(reason))
+            {
+                return;
+            }
+
             if (StopUnownedGrenadeLauncherFire(reason, goalEnemy))
             {
                 return;
             }
 
             RefreshEnemyLookLease(goalEnemy);
-            SetCombatSprint(shouldSprint);
+            bool sprintNow = ShouldSprintNow(goalEnemy);
+            SetCombatSprint(sprintNow);
 
             // Push destinations are sticky, but nav/pathing in EFT can stall around rocks, stairs,
             // and tight walls. Track progress every update cycle and refresh when the committed point
@@ -146,7 +153,7 @@ namespace pitTeam.BigBrain.Actions
             {
                 AimingAndShoot(data);
             }
-            else if (!hasPath || shouldSprint)
+            else if (!hasPath || sprintNow)
             {
                 LookTowardAdvance(goalEnemy);
             }
@@ -178,7 +185,7 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
-                if (!shouldSprint)
+                if (!sprintNow)
                 {
                     AimingAndShoot(data);
                 }
@@ -240,7 +247,7 @@ namespace pitTeam.BigBrain.Actions
                 ? (BotOwner.Transform.position + enemyPos) / 2f
                 : enemyPos;
 
-            ShootPointClass shootPoint = BotOwner.CurrentEnemyTargetPosition(true);
+            ShootToPoint shootPoint = BotOwner.CurrentEnemyTargetPosition(true);
             CoverSearchType searchType = SetAttackCoverSearchType(CoverShootType.shoot);
             CustomNavigationPoint point = Covers.GetClosestCoverPoint(BotOwner, centerPos, 50f, cover =>
             {
@@ -271,7 +278,7 @@ namespace pitTeam.BigBrain.Actions
 
             if (goalEnemy.CanShoot && goalEnemy.IsVisible)
             {
-                shootLogic.UpdateNodeByBrain(GetData<GClass27>(data));
+                shootLogic.UpdateNodeByBrain(GetData<AimingResultParams>(data));
                 return;
             }
 
@@ -473,18 +480,20 @@ namespace pitTeam.BigBrain.Actions
                 ? BotOwner.WeaponRoot.position + Vector3.up * 0.1f
                 : BotOwner.Position + Vector3.up * 1.4f;
 
-            return Physics.Raycast(origin, lookDirection.normalized, WallFacingProbeDistance, LayerMaskClass.HighPolyWithTerrainMask);
+            return Physics.Raycast(origin, lookDirection.normalized, WallFacingProbeDistance, LayersMaskController.HighPolyWithTerrainMask);
         }
 
         private bool TryMoveToEnemy(Vector3 targetPoint)
         {
-            if (BotOwner.MoveToEnemyData.method_0(targetPoint, out Vector3 currentTargetPos) &&
+            if (BotOwner.MoveToEnemyData.CanShootAtEndCurWay(targetPoint, out Vector3 currentTargetPos) &&
                 TryGoToPoint(currentTargetPos, true))
             {
                 return true;
             }
 
-            if (!BotOwner.MoveToEnemyData.ShallRecalWay(out _) &&
+            if (BotOwner.Mover.HasPathAndNoComplete &&
+                HasCommittedAdvancePoint() &&
+                !BotOwner.MoveToEnemyData.ShallRecalWay(out _) &&
                 Time.time - BotOwner.Mover.LastPathSetTime < 10f)
             {
                 return true;
@@ -526,6 +535,24 @@ namespace pitTeam.BigBrain.Actions
             }
 
             return false;
+        }
+
+        private bool ShouldSprintNow(EnemyInfo goalEnemy)
+        {
+            if (!shouldSprint || goalEnemy == null || goalEnemy.IsVisible || goalEnemy.CanShoot)
+            {
+                return false;
+            }
+
+            Vector3 enemyAnchor = FollowerCombatCommon.GetEnemyAnchor(goalEnemy);
+            if (!FollowerCombatCommon.IsFinite(enemyAnchor))
+            {
+                return false;
+            }
+
+            Vector3 toEnemy = enemyAnchor - BotOwner.Position;
+            toEnemy.y = 0f;
+            return toEnemy.sqrMagnitude > SprintApproachStopDistance * SprintApproachStopDistance;
         }
 
         private bool TryGoToPoint(Vector3 targetPoint, bool withAttack)
@@ -717,7 +744,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             committedLookMode = mode;
-            committedLookModeUntil = Time.time + GClass856.Random(LookCommitMinSeconds, LookCommitMaxSeconds);
+            committedLookModeUntil = Time.time + MyExtensions.Random(LookCommitMinSeconds, LookCommitMaxSeconds);
         }
 
         private bool TryGetAdvanceLookPoint(out Vector3 point)
@@ -840,7 +867,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             Weapon currentWeapon = BotOwner.WeaponManager.CurrentWeapon;
-            MagazineItemClass currentMagazine = currentWeapon?.GetCurrentMagazine();
+            EFT.InventoryLogic.Magazine currentMagazine = currentWeapon?.GetCurrentMagazine();
             if (currentWeapon == null || currentMagazine == null)
             {
                 return false;

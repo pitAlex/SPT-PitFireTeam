@@ -6,6 +6,7 @@ using EFT.HealthSystem;
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using UnityEngine;
 
@@ -20,32 +21,49 @@ namespace pitTeam.Utils
         {
             LastUpdate = Time.time;
             Data = botData;
-            // Cached BotData instances are reused across pings; reset marker state so stale zones don't suppress triangles.
-            EnemyPos = null;
-            EnemyZone = null;
-            EnemyMarkerUntil = 0f;
-            EnemyProfileId = null;
-        }
-
-        public void SetEnemyMarker(Vector3 enemyPosition, float untilTime, string? enemyProfileId)
-        {
-            EnemyZone = PingTeamates.GetEnemyMarkerZone(enemyPosition);
-            EnemyPos = enemyPosition + (Vector3.up * 1.6f);
-            EnemyMarkerUntil = untilTime;
-            EnemyProfileId = enemyProfileId;
         }
 
         public float LastUpdate;
         public BotOwner Data;
         public GUIContent GuiContent;
         public Rect GuiRect;
+    }
 
+    internal sealed class EnemyMarkerContact
+    {
+        public EnemyMarkerContact(string enemyProfileId, float untilTime)
+        {
+            EnemyProfileId = enemyProfileId;
+            UntilTime = untilTime;
+        }
+
+        public string EnemyProfileId { get; }
+        public Vector3 WorldPosition;
+        public float UntilTime;
+        public float NextHiddenPositionRefreshTime;
+        public bool HasCapturedPosition;
+        public bool IsVisible;
+        public bool IsDead;
+        public bool IsRetainedDeath;
+        public BotOwner? ReportingFollower;
         public Rect MarkRect;
 
-        public Vector3? EnemyPos = null;
-        public Vector3? EnemyZone = null;
-        public float EnemyMarkerUntil;
-        public string? EnemyProfileId;
+        public void SetDead(bool isDead)
+        {
+            IsDead = isDead;
+        }
+    }
+
+    internal sealed class RetainedEnemyDownContact
+    {
+        public RetainedEnemyDownContact(Vector3 worldPosition, float recordedAt)
+        {
+            WorldPosition = worldPosition;
+            RecordedAt = recordedAt;
+        }
+
+        public Vector3 WorldPosition { get; }
+        public float RecordedAt { get; }
     }
 
     internal class PingTeamates : MonoBehaviour, IDisposable
@@ -53,13 +71,26 @@ namespace pitTeam.Utils
 
         public List<BotData> botMap = new List<BotData>();
         private readonly Dictionary<string, BotData> botDataCache = new Dictionary<string, BotData>(StringComparer.Ordinal);
+        private readonly Dictionary<string, EnemyMarkerContact> enemyMarkersByProfileId =
+            new Dictionary<string, EnemyMarkerContact>(StringComparer.Ordinal);
+        private readonly List<EnemyMarkerContact> enemyMarkers = new List<EnemyMarkerContact>();
+        private readonly HashSet<string> activeEnemyProfileIds =
+            new HashSet<string>(StringComparer.Ordinal);
+        private readonly Dictionary<string, RetainedEnemyDownContact> retainedEnemyDownByProfileId =
+            new Dictionary<string, RetainedEnemyDownContact>(StringComparer.Ordinal);
 
-        private float lasttime = 0f;
+        private float _statusReportUntil;
+        private float _enemyKilledMarkerUntil;
+        private float _nextAutoCombatRosterRefreshTime;
+        private bool _autoCombatMarkerActive;
 
         private float nextUpdateTime;
 
         private GUIStyle guiStyle;
-        private GUIStyle makerGuiStyle;
+        private Texture2D? _enemyVisibleTexture;
+        private Texture2D? _enemySeenTexture;
+        private Texture2D? _enemyDownTexture;
+        private bool _enemyMarkerTextureLoadAttempted;
 
         private float screenScale = 1.0f;
         private float fovFactor = 1f;
@@ -77,23 +108,30 @@ namespace pitTeam.Utils
 
         Player myPlayer;
 
-        private bool guiUpdate = false;
+        private bool _statusReportVisible;
 
         public static PingTeamates Instance = null;
 
         private static RadioSound radioSound;
         private const float MaxSpatialPingDistance = 40f;
-        private const float DirectionCalloutCooldownSeconds = 15f;
+        private const float MaxEnemyMarkerWorldCoordinate = 100000f;
+        private const float EnemyMarkerHeightOffset = 1.6f;
+        private const float EnemySeenMarkerSizePixels = 34f;
+        private const float EnemyVisibleMarkerSizePixels = 30f;
+        private const float EnemyActiveMarkerScale = 0.9f;
+        private const float ReliableVisibleMaxAgeSeconds = 0.35f;
+        private const float HiddenEnemyMarkerRefreshSeconds = 5f;
+        private const string EnemyVisibleTextureFileName = "enemy-visible.png";
+        private const string EnemySeenTextureFileName = "enemy-seen.png";
+        private const string EnemyDownTextureFileName = "enemy-down.png";
         private const float StatusReportHeadGapPixels = 10f;
         private const float StatusReportCloseHeadGapPixels = 20f;
         private const float StatusReportCloseDistanceMeters = 6f;
         private const float StatusReportNormalDistanceMeters = 12f;
         private const float FallbackHeadTopOffsetMeters = 0.18f;
         private const float AlwaysHighlightRosterRefreshSeconds = 1f;
-        private static readonly Color DeadEnemyMarkerColor = new Color(0.55f, 0.55f, 0.55f, 0.45f);
-
+        private const float AutoCombatRosterRefreshSeconds = 1f;
         private bool locationPing = false;
-        private float _nextDirectionCalloutTime = 0f;
         private float _nextAlwaysHighlightRosterUpdateTime;
         private bool _alwaysHighlightWasActive;
         private bool _alwaysHighlightRosterReady;
@@ -102,77 +140,60 @@ namespace pitTeam.Utils
 
         public void Ping(pitAIBossPlayer player)
         {
-            if (lasttime > Time.time) return;
-
-            lasttime = Time.time + pitFireTeam.pingTime.Value;
+            float now = Time.time;
+            bool statusReportWasActive = _statusReportUntil > now;
+            bool killedMarkerWasActive = IsEnemyKilledMarkerDisplayActive(now);
+            _statusReportUntil = now + pitFireTeam.pingTime.Value;
+            int killedMarkerDisplaySeconds = GetEnemyKilledMarkerDisplaySeconds();
+            _enemyKilledMarkerUntil = killedMarkerDisplaySeconds > 0
+                ? now + killedMarkerDisplaySeconds
+                : 0f;
 
             locationPing = false;
 
             List<Components.BotFollowerPlayer> followers = BossPlayers.GetFollowersByBoss(player.realPlayer.ProfileId);
 
-            myPlayer = player.realPlayer;
-
-            botMap.Clear();
-
-            BotOwner closestEnemySpeaker = null;
-            Vector3 closestEnemyPosition = Vector3.zero;
-            float closestEnemySpeakerSqr = float.MaxValue;
-
-            foreach (Components.BotFollowerPlayer fl in followers)
+            RefreshFollowerRoster(player.realPlayer, followers);
+            if (!statusReportWasActive && !killedMarkerWasActive)
             {
-                BotOwner bot = fl?.GetBot();
-                if (bot == null || bot.IsDead)
-                {
-                    continue;
-                }
-
-                string profileId = bot.ProfileId;
-                if (string.IsNullOrEmpty(profileId))
-                {
-                    continue;
-                }
-
-                if (!botDataCache.TryGetValue(profileId, out BotData botData))
-                {
-                    botData = new BotData();
-                    botDataCache[profileId] = botData;
-                }
-
-                botData.SetData(bot);
-                botMap.Add(botData);
-
-                if (!bot.Memory.HaveEnemy)
-                {
-                    continue;
-                }
-
-                if (!TryGetGoalEnemyPosition(bot, out Vector3 enemyPosition, out string? enemyProfileId))
-                {
-                    continue;
-                }
-
-                botData.SetEnemyMarker(enemyPosition, lasttime, enemyProfileId);
-
-                float enemySpeakerSqr = (bot.Position - player.Position).sqrMagnitude;
-                if (enemySpeakerSqr < closestEnemySpeakerSqr)
-                {
-                    closestEnemySpeaker = bot;
-                    closestEnemyPosition = enemyPosition;
-                    closestEnemySpeakerSqr = enemySpeakerSqr;
-                }
-
-                locationPing = true;
+                ClearEnemyMarkerContacts();
             }
+
+            if (killedMarkerWasActive)
+            {
+                ExtendDisplayedEnemyKilledMarkers();
+            }
+
+            SynchronizeEnemyMarkerContacts(IsAutomaticCombatMarkerEnabled());
+            if (IsEnemyKilledMarkerDisplayActive(now))
+            {
+                AddRetainedEnemyDownContacts();
+            }
+            RefreshEnemyMarkerContacts(removeUnresolved: true, captureHiddenPosition: true);
+            EnemyMarkerContact? closestReportedContact = GetClosestReportedContact(player.Position);
+            BotOwner? closestEnemySpeaker = closestReportedContact?.ReportingFollower;
+            Vector3 closestReportedEnemyPosition = closestReportedContact?.WorldPosition ?? Vector3.zero;
+            locationPing = closestReportedContact != null;
 
             if (pitFireTeam.statusReportHighlight?.Value != false)
             {
                 if (pitFireTeam.statusReportAlwaysHighlight?.Value == true)
                 {
-                    // Match a manual Off/On cycle: clear the command buffer and cached
-                    // renderers now, then let EFT settle LOD visibility for one frame
-                    // before collecting the live teammate renderers again.
-                    _teammateHighlight.Reset();
-                    _highlightRebuildAfterFrame = Time.frameCount + 1;
+                    if (statusReportWasActive)
+                    {
+                        // Repeated reports extend the existing outline without a blank frame.
+                        _highlightRebuildAfterFrame = -1;
+                        _teammateHighlight.Show(botMap, myPlayer);
+                        _alwaysHighlightRosterReady = true;
+                    }
+                    else
+                    {
+                        // Match a manual Off/On cycle: clear the command buffer and cached
+                        // renderers now, then let EFT settle LOD visibility for one frame
+                        // before collecting the live teammate renderers again.
+                        _teammateHighlight.Reset();
+                        _highlightRebuildAfterFrame = Time.frameCount + 1;
+                    }
                 }
                 else
                 {
@@ -182,14 +203,13 @@ namespace pitTeam.Utils
 
             if (radioSound != null && locationPing)
             {
-                Vector3 position = GetLimitedPosition(player.Position, closestEnemyPosition, MaxSpatialPingDistance);
+                Vector3 position = GetLimitedPosition(player.Position, closestReportedEnemyPosition, MaxSpatialPingDistance);
                 radioSound.PlayLocationSound(position);
             }
 
-            if (closestEnemySpeaker != null && Time.time >= _nextDirectionCalloutTime)
+            if (closestEnemySpeaker != null)
             {
-                TrySpeakBossRelativeEnemyDirection(closestEnemySpeaker, player.realPlayer, closestEnemyPosition);
-                _nextDirectionCalloutTime = Time.time + DirectionCalloutCooldownSeconds;
+                TrySpeakBossRelativeEnemyDirection(closestEnemySpeaker, player.realPlayer, closestReportedEnemyPosition);
             }
 
             if (radioSound != null && !locationPing)
@@ -202,7 +222,7 @@ namespace pitTeam.Utils
                 }
                 else
                 {
-                    radioSound.PlayRadioSound();
+                    radioSound.PlayRadioBeep();
                 }
             }
 
@@ -267,6 +287,9 @@ namespace pitTeam.Utils
             _teammateHighlight.Dispose();
             botMap.Clear();
             botDataCache.Clear();
+            ClearEnemyMarkerContacts();
+            retainedEnemyDownByProfileId.Clear();
+            DestroyEnemyMarkerTextures();
             Destroy(this);
             Destroy(radioSound);
             radioSound = null;
@@ -274,6 +297,14 @@ namespace pitTeam.Utils
 
         public void Update()
         {
+            float now = Time.time;
+            if (!IsEnemyKilledMarkerEnabled())
+            {
+                _enemyKilledMarkerUntil = 0f;
+                retainedEnemyDownByProfileId.Clear();
+            }
+
+            bool automaticCombatTrackingEnabled = IsAutomaticCombatMarkerEnabled();
             bool highlightEnabled = pitFireTeam.statusReportHighlight?.Value != false;
             bool alwaysHighlightActive =
                 highlightEnabled &&
@@ -295,11 +326,11 @@ namespace pitTeam.Utils
 
             if (!highlightRebuildPending &&
                 alwaysHighlightActive &&
-                (!_alwaysHighlightWasActive || Time.time >= _nextAlwaysHighlightRosterUpdateTime))
+                (!_alwaysHighlightWasActive || now >= _nextAlwaysHighlightRosterUpdateTime))
             {
                 _alwaysHighlightRosterReady = RefreshAlwaysHighlightRoster();
                 _nextAlwaysHighlightRosterUpdateTime =
-                    Time.time + AlwaysHighlightRosterRefreshSeconds;
+                    now + AlwaysHighlightRosterRefreshSeconds;
             }
             else if (!alwaysHighlightActive)
             {
@@ -308,23 +339,54 @@ namespace pitTeam.Utils
 
             _alwaysHighlightWasActive = alwaysHighlightActive;
 
+            if (automaticCombatTrackingEnabled && now >= _nextAutoCombatRosterRefreshTime)
+            {
+                RefreshCurrentFollowerRoster();
+                _nextAutoCombatRosterRefreshTime = now + AutoCombatRosterRefreshSeconds;
+            }
+            else if (!automaticCombatTrackingEnabled)
+            {
+                _nextAutoCombatRosterRefreshTime = 0f;
+            }
+
             if (botMap.Count > 0)
             {
-                guiUpdate = lasttime > Time.time;
-                if (!guiUpdate && !alwaysHighlightActive)
+                _statusReportVisible = _statusReportUntil > now;
+                if (!_statusReportVisible && !alwaysHighlightActive && !automaticCombatTrackingEnabled)
                 {
                     botMap.Clear();
                 }
             }
             else
             {
-                guiUpdate = false;
+                _statusReportVisible = false;
+            }
+
+            bool killedMarkerDisplayActive = IsEnemyKilledMarkerDisplayActive(now);
+            _autoCombatMarkerActive = false;
+            if (_statusReportVisible || automaticCombatTrackingEnabled)
+            {
+                bool hasCurrentEnemy = SynchronizeEnemyMarkerContacts(automaticCombatTrackingEnabled);
+                _autoCombatMarkerActive = automaticCombatTrackingEnabled && hasCurrentEnemy;
+                RefreshEnemyMarkerContacts(removeUnresolved: false, captureHiddenPosition: false);
+            }
+
+            bool liveEnemyMarkerDisplayActive = IsLiveEnemyMarkerDisplayActive();
+            if (!liveEnemyMarkerDisplayActive && !killedMarkerDisplayActive)
+            {
+                ClearEnemyMarkerContacts();
+            }
+            else if (!liveEnemyMarkerDisplayActive || !killedMarkerDisplayActive)
+            {
+                PruneEnemyMarkerContacts(
+                    keepLiveContacts: liveEnemyMarkerDisplayActive,
+                    keepRetainedDeaths: killedMarkerDisplayActive);
             }
 
             _teammateHighlight.Render(
                 !highlightRebuildPending &&
                 highlightEnabled &&
-                (guiUpdate || (alwaysHighlightActive && _alwaysHighlightRosterReady)));
+                (_statusReportVisible || (alwaysHighlightActive && _alwaysHighlightRosterReady)));
 
 
             if (Time.time < nextUpdateTime)
@@ -333,15 +395,26 @@ namespace pitTeam.Utils
             }
             nextUpdateTime = Time.time + 1.0f;
 
-            if (CameraClass.Instance.SSAA != null && CameraClass.Instance.SSAA.isActiveAndEnabled)
+            if (EFT.CameraControl.CameraManager.Instance.SSAA != null && EFT.CameraControl.CameraManager.Instance.SSAA.isActiveAndEnabled)
             {
-                int outputWidth = CameraClass.Instance.SSAA.GetOutputWidth();
-                float inputWidth = CameraClass.Instance.SSAA.GetInputWidth();
+                int outputWidth = EFT.CameraControl.CameraManager.Instance.SSAA.GetOutputWidth();
+                float inputWidth = EFT.CameraControl.CameraManager.Instance.SSAA.GetInputWidth();
                 screenScale = outputWidth / inputWidth;
             }
         }
 
         private bool RefreshAlwaysHighlightRoster()
+        {
+            if (!RefreshCurrentFollowerRoster())
+            {
+                return false;
+            }
+
+            _teammateHighlight.Show(botMap, myPlayer);
+            return true;
+        }
+
+        private bool RefreshCurrentFollowerRoster()
         {
             Player localPlayer = GamePlayerOwner.MyPlayer;
             pitAIBossPlayer boss =
@@ -355,9 +428,27 @@ namespace pitTeam.Utils
                 return false;
             }
 
-            myPlayer = localPlayer;
             List<Components.BotFollowerPlayer> followers =
                 BossPlayers.GetFollowersByBoss(localPlayer.ProfileId);
+            return RefreshFollowerRoster(localPlayer, followers);
+        }
+
+        private bool RefreshFollowerRoster(
+            Player localPlayer,
+            List<Components.BotFollowerPlayer> followers)
+        {
+            botMap.Clear();
+            if (localPlayer == null)
+            {
+                return false;
+            }
+
+            myPlayer = localPlayer;
+            if (followers == null)
+            {
+                return true;
+            }
+
             for (int i = 0; i < followers.Count; i++)
             {
                 BotOwner bot = followers[i]?.GetBot();
@@ -370,24 +461,20 @@ namespace pitTeam.Utils
                 {
                     botData = new BotData();
                     botDataCache[bot.ProfileId] = botData;
-                    botData.SetData(bot);
-                }
-                else if (!ReferenceEquals(botData.Data, bot))
-                {
-                    botData.SetData(bot);
                 }
 
+                botData.SetData(bot);
                 botMap.Add(botData);
             }
 
-            _teammateHighlight.Show(botMap, myPlayer);
             return true;
         }
 
         void OnGUI()
         {
-
-            if (!guiUpdate) return;
+            bool killedMarkerDisplayActive = IsEnemyKilledMarkerDisplayActive(Time.time);
+            bool liveEnemyMarkerDisplayActive = IsLiveEnemyMarkerDisplayActive();
+            if (!liveEnemyMarkerDisplayActive && !killedMarkerDisplayActive) return;
 
             if (guiStyle == null)
             {
@@ -396,32 +483,27 @@ namespace pitTeam.Utils
 
             guiStyle.normal.textColor = StatusReportHighlightColor.GetConfiguredTextColor();
 
-            if (makerGuiStyle == null)
-            {
-                CreateMarkerGuiStyle();
-            }
-
-
-            if (botMap != null)
+            if (_statusReportVisible && botMap != null)
             {
                 for (int i = 0; i < botMap.Count; i++)
                 {
                     DrawBotGUI(botMap[i]);
                 }
+            }
 
-                if (pitFireTeam.enemyMarker.Value)
+            if ((liveEnemyMarkerDisplayActive && pitFireTeam.enemyMarker.Value) ||
+                killedMarkerDisplayActive)
+            {
+                for (int i = 0; i < enemyMarkers.Count; i++)
                 {
-                    for (int i = 0; i < botMap.Count; i++)
-                    {
-                        DrawEnemyMarkerGUI(botMap[i]);
-                    }
+                    DrawEnemyMarkerGUI(enemyMarkers[i]);
                 }
             }
         }
 
         private void DrawBotGUI(BotData bt)
         {
-            if (!guiUpdate) return;
+            if (!_statusReportVisible) return;
 
             if (bt == null || bt.Data == null || !bt.Data.HealthController.IsAlive) return;
 
@@ -472,33 +554,47 @@ namespace pitTeam.Utils
                         stringBuilder.Append("m");
                     }
 
-                    if (showCombatStatus && bt.Data.Memory.HaveEnemy)
+                    if (showCombatStatus)
                     {
-                        string combatStatus;
-                        EnemyInfo goalEnemy = bt.Data.Memory.GoalEnemy;
-                        if (goalEnemy != null)
+                        string? combatStatus = null;
+                        if (IsFollowerCurrentlyHealing(bt.Data))
                         {
-                            float lastSeenAgo = Time.time - goalEnemy.PersonalLastSeenTime;
-                            if (IsEnemyReliablyVisibleForMarker(bt.Data, goalEnemy) || lastSeenAgo < 5f)
+                            combatStatus = pitFireTeam.GetBotStatusText("Heal");
+                        }
+                        else if (DoesFollowerWantToHeal(bt.Data))
+                        {
+                            combatStatus = pitFireTeam.GetBotStatusText("WantToHeal");
+                        }
+                        else if (bt.Data.Memory.HaveEnemy)
+                        {
+                            EnemyInfo goalEnemy = bt.Data.Memory.GoalEnemy;
+                            if (goalEnemy != null)
                             {
-                                combatStatus = pitFireTeam.GetBotStatusText("Engaged");
+                                float lastSeenAgo = Time.time - goalEnemy.PersonalLastSeenTime;
+                                if (IsEnemyReliablyVisibleForMarker(bt.Data, goalEnemy) || lastSeenAgo < 5f)
+                                {
+                                    combatStatus = pitFireTeam.GetBotStatusText("Engaged");
+                                }
+                                else
+                                {
+                                    combatStatus = pitFireTeam.GetBotStatusText("Alerted");
+                                }
                             }
                             else
                             {
                                 combatStatus = pitFireTeam.GetBotStatusText("Alerted");
                             }
                         }
-                        else
-                        {
-                            combatStatus = pitFireTeam.GetBotStatusText("Alerted");
-                        }
 
-                        if (stringBuilder.Length > 0)
+                        if (combatStatus != null)
                         {
-                            stringBuilder.Append(": ");
-                        }
+                            if (stringBuilder.Length > 0)
+                            {
+                                stringBuilder.Append(": ");
+                            }
 
-                        stringBuilder.Append(combatStatus);
+                            stringBuilder.Append(combatStatus);
+                        }
                     }
 
                     bool detailStarted = false;
@@ -545,33 +641,20 @@ namespace pitTeam.Utils
                         BotFollowerPlayer followerData = BossPlayers.Instance?.GetFollower(bt.Data);
                         if (showTactic)
                         {
-                            if (IsFollowerCurrentlyHealing(bt.Data))
+                            string tactic = pitFireTeam.GetTacticOptionText(0);
+                            if (followerData != null)
+                            {
+                                tactic = followerData.CombatTactic switch
+                                {
+                                    FollowerCombatTactic.Marksman => pitFireTeam.GetSocialUiText("ProfileTacticMarksman"),
+                                    FollowerCombatTactic.Protector => pitFireTeam.GetSocialUiText("ProfileTacticProtector"),
+                                    _ => pitFireTeam.GetTacticOptionText(0),
+                                };
+                            }
+                            if (tactic != null)
                             {
                                 AppendStatusReportDetailSeparator(stringBuilder, ref detailStarted);
-                                stringBuilder.Append(pitFireTeam.GetBotStatusText("Heal"));
-                            }
-                            else if (DoesFollowerWantToHeal(bt.Data))
-                            {
-                                AppendStatusReportDetailSeparator(stringBuilder, ref detailStarted);
-                                stringBuilder.Append(pitFireTeam.GetBotStatusText("WantToHeal"));
-                            }
-                            else
-                            {
-                                string tactic = pitFireTeam.GetTacticOptionText(0);
-                                if (followerData != null)
-                                {
-                                    tactic = followerData.CombatTactic switch
-                                    {
-                                        FollowerCombatTactic.Marksman => pitFireTeam.GetSocialUiText("ProfileTacticMarksman"),
-                                        FollowerCombatTactic.Protector => pitFireTeam.GetSocialUiText("ProfileTacticProtector"),
-                                        _ => pitFireTeam.GetTacticOptionText(0),
-                                    };
-                                }
-                                if (tactic != null)
-                                {
-                                    AppendStatusReportDetailSeparator(stringBuilder, ref detailStarted);
-                                    stringBuilder.Append($"MD: {tactic}");
-                                }
+                                stringBuilder.Append($"MD: {tactic}");
                             }
                         }
 
@@ -636,91 +719,598 @@ namespace pitTeam.Utils
             detailStarted = true;
         }
 
-        private void DrawEnemyMarkerGUI(BotData bt)
+        private void DrawEnemyMarkerGUI(EnemyMarkerContact contact)
         {
-            if (!guiUpdate) return;
-
-            if (bt == null || bt.Data == null || !bt.Data.HealthController.IsAlive) return;
-
-            bool hasLiveEnemy = bt.Data.Memory?.HaveEnemy == true && bt.Data.Memory.GoalEnemy != null;
-            if (hasLiveEnemy)
-            {
-                Vector3? enemyPosition;
-
-                // I have seen the game throwing error when getting enemy position
-                try
-                {
-                    enemyPosition = bt.Data.Memory.GoalEnemy.CurrPosition;
-                }
-                catch
-                {
-
-                    return;
-                }
-
-                Vector3 targetSpot = GetEnemyMarkerZone(enemyPosition.Value);
-
-                if (targetSpot != bt.EnemyZone || !bt.EnemyPos.HasValue)
-                {
-                    bt.SetEnemyMarker(enemyPosition.Value, lasttime, bt.Data.Memory.GoalEnemy.ProfileId);
-                }
-            }
-
-            if (!bt.EnemyPos.HasValue || Time.time > bt.EnemyMarkerUntil)
+            if (contact == null || Time.time > contact.UntilTime)
             {
                 return;
             }
 
-            Vector3 targetZone = bt.EnemyZone ?? GetEnemyMarkerZone(bt.EnemyPos.Value);
-            Color marker = GetEnemyMarkerColor(bt, hasLiveEnemy, out bool isVisibleMarker);
-
-            foreach (var item in botMap)
+            if (contact.IsDead)
             {
-                if (item == bt)
-                {
-                    break;
-                }
-
-                if (item.EnemyPos.HasValue && item.EnemyZone.HasValue && item.EnemyZone == targetZone && !isVisibleMarker)
+                if (!IsEnemyKilledMarkerDisplayActive(Time.time))
                 {
                     return;
                 }
             }
-
-            if (bt.MarkRect == null)
-            {
-                bt.MarkRect = new Rect();
-            }
-
-            Vector3 screenPos;
-
-            // take optics into consideration when triggering enemy location report
-            if (
-                CameraClass.Instance.OpticCameraManager.CurrentOpticSight != null &&
-                CameraClass.Instance.OpticCameraManager.Camera != null
-            )
+            else if (!IsLiveEnemyMarkerDisplayActive() || pitFireTeam.enemyMarker?.Value == false)
             {
                 return;
-
-            }
-            else
-            {
-                screenPos = Camera.main.WorldToScreenPoint(bt.EnemyPos.Value);
             }
 
-            if (screenPos.z > 0)
+            // Keep the established behavior of hiding world markers while an optic camera is active.
+            if (EFT.CameraControl.CameraManager.Instance?.OpticCameraManager?.CurrentOpticSight != null &&
+                EFT.CameraControl.CameraManager.Instance.OpticCameraManager.Camera != null)
             {
-                DrawEnemyMarker(bt, screenPos, marker);
+                return;
+            }
+
+            Camera mainCamera = Camera.main;
+            if (mainCamera == null || !IsPlausibleEnemyMarkerPosition(contact.WorldPosition))
+            {
+                return;
+            }
+
+            Vector3 screenPos = mainCamera.WorldToScreenPoint(
+                contact.WorldPosition + (Vector3.up * EnemyMarkerHeightOffset));
+            if (screenPos.z <= 0f)
+            {
+                return;
+            }
+
+            if (!EnsureEnemyMarkerTextures())
+            {
+                return;
+            }
+
+            Texture2D? markerTexture = contact.IsDead
+                ? _enemyDownTexture
+                : contact.IsVisible
+                    ? _enemyVisibleTexture
+                    : _enemySeenTexture;
+            if (markerTexture == null)
+            {
+                return;
+            }
+
+            bool animateVertically = ReferenceEquals(markerTexture, _enemySeenTexture);
+            DrawEnemyMarker(contact, screenPos, markerTexture, animateVertically);
+        }
+
+        private void ClearEnemyMarkerContacts()
+        {
+            enemyMarkers.Clear();
+            enemyMarkersByProfileId.Clear();
+            activeEnemyProfileIds.Clear();
+            _autoCombatMarkerActive = false;
+        }
+
+        private static bool IsAutomaticCombatMarkerEnabled()
+        {
+            return pitFireTeam.enemyMarker?.Value != false &&
+                   pitFireTeam.autoDisplayCombatStatus?.Value == true;
+        }
+
+        private bool IsLiveEnemyMarkerDisplayActive()
+        {
+            return _statusReportVisible || _autoCombatMarkerActive;
+        }
+
+        private static bool IsEnemyKilledMarkerEnabled()
+        {
+            return (pitFireTeam.enemyKilledRetainTime?.Value ?? 15) > 0;
+        }
+
+        private static int GetEnemyKilledMarkerDisplaySeconds()
+        {
+            int displayTimeSeconds = pitFireTeam.enemyKilledDisplayTime?.Value ?? 10;
+            int rememberTimeSeconds = pitFireTeam.enemyKilledRetainTime?.Value ?? 15;
+            return Mathf.Max(0, Mathf.Min(displayTimeSeconds, rememberTimeSeconds));
+        }
+
+        private bool IsEnemyKilledMarkerDisplayActive(float now)
+        {
+            return IsEnemyKilledMarkerEnabled() &&
+                   _enemyKilledMarkerUntil > now;
+        }
+
+        private void ExtendDisplayedEnemyKilledMarkers()
+        {
+            for (int i = 0; i < enemyMarkers.Count; i++)
+            {
+                EnemyMarkerContact contact = enemyMarkers[i];
+                if (contact.IsDead)
+                {
+                    contact.UntilTime = _enemyKilledMarkerUntil;
+                }
             }
         }
 
-        public static Vector3 GetEnemyMarkerZone(Vector3 enemyPosition)
+        private void PruneEnemyMarkerContacts(
+            bool keepLiveContacts,
+            bool keepRetainedDeaths)
         {
-            return new Vector3(
-                Mathf.Floor(enemyPosition.x / 25f) * 25f,
-                Mathf.Floor(enemyPosition.y / 25f) * 25f,
-                Mathf.Floor(enemyPosition.z / 25f) * 25f
-            );
+            for (int i = enemyMarkers.Count - 1; i >= 0; i--)
+            {
+                EnemyMarkerContact contact = enemyMarkers[i];
+                bool isKilledContact = contact.IsDead || contact.IsRetainedDeath;
+                if ((isKilledContact && keepRetainedDeaths) ||
+                    (!isKilledContact && keepLiveContacts))
+                {
+                    continue;
+                }
+
+                enemyMarkers.RemoveAt(i);
+                enemyMarkersByProfileId.Remove(contact.EnemyProfileId);
+            }
+        }
+
+        public static void TryRememberEnemyDown(Player victim, IPlayer aggressor)
+        {
+            PingTeamates instance = Instance;
+            Player localPlayer = GamePlayerOwner.MyPlayer;
+            if (instance == null || victim == null || aggressor == null || localPlayer == null ||
+                string.IsNullOrEmpty(victim.ProfileId) || string.IsNullOrEmpty(aggressor.ProfileId))
+            {
+                return;
+            }
+
+            int retainTimeSeconds = pitFireTeam.enemyKilledRetainTime?.Value ?? 15;
+            if (retainTimeSeconds <= 0)
+            {
+                return;
+            }
+
+            float now = Time.time;
+            List<Components.BotFollowerPlayer> followers =
+                BossPlayers.GetFollowersByBoss(localPlayer.ProfileId);
+            bool wasTrackedLiveEnemy =
+                instance.enemyMarkersByProfileId.TryGetValue(
+                    victim.ProfileId,
+                    out EnemyMarkerContact trackedContact) &&
+                trackedContact.UntilTime > now &&
+                !trackedContact.IsDead &&
+                !trackedContact.IsRetainedDeath;
+            if (!WasKilledByPlayerSquad(aggressor.ProfileId, localPlayer.ProfileId, followers) ||
+                (!wasTrackedLiveEnemy && !IsCurrentEnemyOfAnyFollower(victim.ProfileId, followers)))
+            {
+                return;
+            }
+
+            Vector3 deathPosition;
+            try
+            {
+                deathPosition = victim.Transform != null
+                    ? victim.Transform.position
+                    : victim.Position;
+            }
+            catch
+            {
+                return;
+            }
+
+            if (!IsPlausibleEnemyMarkerPosition(deathPosition))
+            {
+                return;
+            }
+
+            instance.retainedEnemyDownByProfileId[victim.ProfileId] =
+                new RetainedEnemyDownContact(deathPosition, now);
+
+            // A displayed live contact always transitions immediately. The optional automatic
+            // killed-marker path also opens the display when no Status Report marker was active.
+            bool shouldOpenKilledMarkerDisplay =
+                wasTrackedLiveEnemy ||
+                pitFireTeam.autoDisplayKillMarker?.Value == true;
+            if (shouldOpenKilledMarkerDisplay)
+            {
+                int displayTimeSeconds = GetEnemyKilledMarkerDisplaySeconds();
+                instance._enemyKilledMarkerUntil = Mathf.Max(
+                    instance._enemyKilledMarkerUntil,
+                    now + displayTimeSeconds);
+            }
+
+            if (instance.IsEnemyKilledMarkerDisplayActive(now))
+            {
+                instance.AddRetainedEnemyDownContacts();
+            }
+        }
+
+        private static bool WasKilledByPlayerSquad(
+            string aggressorProfileId,
+            string localPlayerProfileId,
+            List<Components.BotFollowerPlayer> followers)
+        {
+            if (string.Equals(aggressorProfileId, localPlayerProfileId, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            for (int i = 0; i < followers.Count; i++)
+            {
+                BotOwner follower = followers[i]?.GetBot();
+                if (follower != null &&
+                    string.Equals(follower.ProfileId, aggressorProfileId, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsCurrentEnemyOfAnyFollower(
+            string victimProfileId,
+            List<Components.BotFollowerPlayer> followers)
+        {
+            for (int i = 0; i < followers.Count; i++)
+            {
+                BotOwner follower = followers[i]?.GetBot();
+                if (follower == null || follower.IsDead)
+                {
+                    continue;
+                }
+
+                EnemyInfo? goalEnemy;
+                try
+                {
+                    // EFT may clear HaveEnemy during death processing before this hook runs.
+                    // The matching GoalEnemy can still identify the contact at that boundary.
+                    goalEnemy = follower.Memory?.GoalEnemy;
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (string.Equals(goalEnemy?.ProfileId, victimProfileId, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void AddRetainedEnemyDownContacts()
+        {
+            int retainTimeSeconds = pitFireTeam.enemyKilledRetainTime?.Value ?? 15;
+            if (retainTimeSeconds <= 0)
+            {
+                retainedEnemyDownByProfileId.Clear();
+                return;
+            }
+
+            List<string>? expiredProfileIds = null;
+            foreach (KeyValuePair<string, RetainedEnemyDownContact> retained in retainedEnemyDownByProfileId)
+            {
+                float age = Time.time - retained.Value.RecordedAt;
+                if (!IsFinite(age) || age < 0f || age > retainTimeSeconds)
+                {
+                    expiredProfileIds ??= new List<string>();
+                    expiredProfileIds.Add(retained.Key);
+                    continue;
+                }
+
+                if (!enemyMarkersByProfileId.TryGetValue(retained.Key, out EnemyMarkerContact contact))
+                {
+                    contact = new EnemyMarkerContact(retained.Key, _enemyKilledMarkerUntil);
+                    enemyMarkersByProfileId.Add(retained.Key, contact);
+                    enemyMarkers.Add(contact);
+                }
+
+                contact.WorldPosition = retained.Value.WorldPosition;
+                float rememberUntil = retained.Value.RecordedAt + retainTimeSeconds;
+                contact.UntilTime = Mathf.Min(_enemyKilledMarkerUntil, rememberUntil);
+                contact.HasCapturedPosition = true;
+                contact.IsVisible = false;
+                contact.IsRetainedDeath = true;
+                contact.ReportingFollower = null;
+                contact.SetDead(true);
+            }
+
+            if (expiredProfileIds == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < expiredProfileIds.Count; i++)
+            {
+                string profileId = expiredProfileIds[i];
+                retainedEnemyDownByProfileId.Remove(profileId);
+                if (enemyMarkersByProfileId.TryGetValue(
+                        profileId,
+                        out EnemyMarkerContact expiredContact) &&
+                    expiredContact.IsRetainedDeath)
+                {
+                    enemyMarkersByProfileId.Remove(profileId);
+                    enemyMarkers.Remove(expiredContact);
+                }
+            }
+        }
+
+        private bool SynchronizeEnemyMarkerContacts(bool keepAliveForAutomaticCombat)
+        {
+            activeEnemyProfileIds.Clear();
+            float liveContactUntil = keepAliveForAutomaticCombat
+                ? float.MaxValue
+                : _statusReportUntil;
+            for (int i = 0; i < botMap.Count; i++)
+            {
+                BotOwner? follower = botMap[i]?.Data;
+                if (follower == null || follower.IsDead ||
+                    !TryGetCurrentGoalEnemy(follower, out EnemyInfo? goalEnemy) ||
+                    string.IsNullOrEmpty(goalEnemy.ProfileId))
+                {
+                    continue;
+                }
+
+                string enemyProfileId = goalEnemy.ProfileId;
+                activeEnemyProfileIds.Add(enemyProfileId);
+                if (enemyMarkersByProfileId.TryGetValue(
+                        enemyProfileId,
+                        out EnemyMarkerContact existingContact))
+                {
+                    if (!existingContact.IsRetainedDeath)
+                    {
+                        existingContact.UntilTime = liveContactUntil;
+                    }
+
+                    continue;
+                }
+
+                EnemyMarkerContact contact =
+                    new EnemyMarkerContact(enemyProfileId, liveContactUntil);
+                enemyMarkersByProfileId.Add(enemyProfileId, contact);
+                enemyMarkers.Add(contact);
+            }
+
+            for (int i = enemyMarkers.Count - 1; i >= 0; i--)
+            {
+                EnemyMarkerContact contact = enemyMarkers[i];
+                if (contact.IsRetainedDeath || activeEnemyProfileIds.Contains(contact.EnemyProfileId))
+                {
+                    continue;
+                }
+
+                enemyMarkers.RemoveAt(i);
+                enemyMarkersByProfileId.Remove(contact.EnemyProfileId);
+            }
+
+            return activeEnemyProfileIds.Count > 0;
+        }
+
+        private EnemyMarkerContact? GetClosestReportedContact(Vector3 playerPosition)
+        {
+            EnemyMarkerContact? closest = null;
+            float closestSqr = float.MaxValue;
+            for (int i = 0; i < enemyMarkers.Count; i++)
+            {
+                EnemyMarkerContact contact = enemyMarkers[i];
+                BotOwner? reporter = contact.ReportingFollower;
+                if (reporter == null || reporter.IsDead)
+                {
+                    continue;
+                }
+
+                float distanceSqr = (reporter.Position - playerPosition).sqrMagnitude;
+                if (distanceSqr < closestSqr)
+                {
+                    closest = contact;
+                    closestSqr = distanceSqr;
+                }
+            }
+
+            return closest;
+        }
+
+        private void RefreshEnemyMarkerContacts(bool removeUnresolved, bool captureHiddenPosition)
+        {
+            for (int i = enemyMarkers.Count - 1; i >= 0; i--)
+            {
+                EnemyMarkerContact contact = enemyMarkers[i];
+                if (contact.IsRetainedDeath)
+                {
+                    continue;
+                }
+
+                if (TryResolveEnemyMarker(contact.EnemyProfileId, out EnemyMarkerResolution resolution))
+                {
+                    bool shouldRefreshPosition =
+                        resolution.IsVisible ||
+                        captureHiddenPosition ||
+                        !contact.HasCapturedPosition ||
+                        Time.time >= contact.NextHiddenPositionRefreshTime;
+                    if (shouldRefreshPosition)
+                    {
+                        contact.WorldPosition = resolution.WorldPosition;
+                        contact.HasCapturedPosition = true;
+                        contact.NextHiddenPositionRefreshTime =
+                            Time.time + HiddenEnemyMarkerRefreshSeconds;
+                    }
+
+                    contact.IsVisible = resolution.IsVisible;
+                    contact.SetDead(resolution.IsDead);
+                    contact.ReportingFollower = resolution.ReportingFollower;
+                    continue;
+                }
+
+                contact.IsVisible = false;
+                contact.ReportingFollower = null;
+                contact.SetDead(
+                    Singleton<GameWorld>.Instance?.GetAlivePlayerByProfileID(contact.EnemyProfileId) == null);
+                if (!removeUnresolved)
+                {
+                    continue;
+                }
+
+                enemyMarkers.RemoveAt(i);
+                enemyMarkersByProfileId.Remove(contact.EnemyProfileId);
+            }
+        }
+
+        private bool TryResolveEnemyMarker(
+            string enemyProfileId,
+            out EnemyMarkerResolution resolution)
+        {
+            resolution = default;
+            if (string.IsNullOrEmpty(enemyProfileId))
+            {
+                return false;
+            }
+
+            Player? liveEnemy = Singleton<GameWorld>.Instance?.GetAlivePlayerByProfileID(enemyProfileId);
+            bool lifeStateKnown = liveEnemy?.HealthController != null;
+            bool enemyAlive = liveEnemy?.HealthController?.IsAlive == true;
+
+            BotOwner? visibleReporter = null;
+            Vector3 visiblePosition = Vector3.zero;
+            float visibleReporterDistanceSqr = float.MaxValue;
+
+            BotOwner? fallbackReporter = null;
+            Vector3 fallbackPosition = Vector3.zero;
+            float fallbackReporterDistanceSqr = float.MaxValue;
+
+            for (int i = 0; i < botMap.Count; i++)
+            {
+                BotOwner? follower = botMap[i]?.Data;
+                if (follower == null || follower.IsDead ||
+                    !TryGetCurrentGoalEnemy(follower, out EnemyInfo? goalEnemy) ||
+                    !string.Equals(goalEnemy.ProfileId, enemyProfileId, StringComparison.Ordinal) ||
+                    !TryGetEnemyCurrentPosition(goalEnemy, liveEnemy, out Vector3 currentEnemyPosition))
+                {
+                    continue;
+                }
+
+                if (goalEnemy.Person?.HealthController != null)
+                {
+                    lifeStateKnown = true;
+                    enemyAlive |= goalEnemy.Person.HealthController.IsAlive;
+                }
+
+                float reporterDistanceSqr = myPlayer != null
+                    ? (follower.Position - myPlayer.Position).sqrMagnitude
+                    : 0f;
+
+                if (IsEnemyReliablyVisibleForMarker(follower, goalEnemy))
+                {
+                    if (visibleReporter == null || reporterDistanceSqr < visibleReporterDistanceSqr)
+                    {
+                        visibleReporter = follower;
+                        visiblePosition = currentEnemyPosition;
+                        visibleReporterDistanceSqr = reporterDistanceSqr;
+                    }
+
+                    continue;
+                }
+
+                if (fallbackReporter == null || reporterDistanceSqr < fallbackReporterDistanceSqr)
+                {
+                    fallbackReporter = follower;
+                    fallbackPosition = currentEnemyPosition;
+                    fallbackReporterDistanceSqr = reporterDistanceSqr;
+                }
+            }
+
+            bool isDead = lifeStateKnown && !enemyAlive;
+            if (visibleReporter != null)
+            {
+                resolution = new EnemyMarkerResolution(
+                    visiblePosition,
+                    isVisible: true,
+                    isDead,
+                    visibleReporter);
+                return true;
+            }
+
+            if (fallbackReporter != null)
+            {
+                resolution = new EnemyMarkerResolution(
+                    fallbackPosition,
+                    isVisible: false,
+                    isDead,
+                    fallbackReporter);
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryGetCurrentGoalEnemy(BotOwner bot, out EnemyInfo? goalEnemy)
+        {
+            goalEnemy = null;
+            if (bot?.Memory?.HaveEnemy != true)
+            {
+                return false;
+            }
+
+            try
+            {
+                goalEnemy = bot.Memory.GoalEnemy;
+                return goalEnemy != null;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TryGetEnemyCurrentPosition(
+            EnemyInfo goalEnemy,
+            Player? liveEnemy,
+            out Vector3 currentEnemyPosition)
+        {
+            currentEnemyPosition = Vector3.zero;
+            try
+            {
+                currentEnemyPosition = liveEnemy?.Transform != null
+                    ? liveEnemy.Transform.position
+                    : goalEnemy.CurrPosition;
+            }
+            catch
+            {
+                return false;
+            }
+
+            return IsPlausibleEnemyMarkerPosition(currentEnemyPosition);
+        }
+
+        private static bool IsPlausibleEnemyMarkerPosition(Vector3 position)
+        {
+            return IsFinite(position) &&
+                   Mathf.Abs(position.x) <= MaxEnemyMarkerWorldCoordinate &&
+                   Mathf.Abs(position.y) <= MaxEnemyMarkerWorldCoordinate &&
+                   Mathf.Abs(position.z) <= MaxEnemyMarkerWorldCoordinate;
+        }
+
+        private static bool IsFinite(Vector3 value)
+        {
+            return IsFinite(value.x) && IsFinite(value.y) && IsFinite(value.z);
+        }
+
+        private static bool IsFinite(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value);
+        }
+
+        private readonly struct EnemyMarkerResolution
+        {
+            public EnemyMarkerResolution(
+                Vector3 worldPosition,
+                bool isVisible,
+                bool isDead,
+                BotOwner reportingFollower)
+            {
+                WorldPosition = worldPosition;
+                IsVisible = isVisible;
+                IsDead = isDead;
+                ReportingFollower = reportingFollower;
+            }
+
+            public Vector3 WorldPosition { get; }
+            public bool IsVisible { get; }
+            public bool IsDead { get; }
+            public BotOwner ReportingFollower { get; }
         }
 
         private void CreateGuiStyle()
@@ -739,18 +1329,131 @@ namespace pitTeam.Utils
 
         }
 
-        private void CreateMarkerGuiStyle()
+        private bool EnsureEnemyMarkerTextures()
         {
-            makerGuiStyle = new GUIStyle(GUI.skin.box);
-            makerGuiStyle.alignment = TextAnchor.MiddleCenter;
-            makerGuiStyle.margin = new RectOffset(0, 0, 0, 0);
-            makerGuiStyle.fontStyle = FontStyle.Bold;
-            makerGuiStyle.fontSize = 20;
-            makerGuiStyle.richText = true;
-            makerGuiStyle.border = new RectOffset(0, 0, 0, 0);
-            makerGuiStyle.normal.background = MakeTexture(new Color(0, 0, 0, 0));
+            if (_enemyVisibleTexture != null &&
+                _enemySeenTexture != null &&
+                _enemyDownTexture != null)
+            {
+                return true;
+            }
 
-            makerGuiStyle.normal.textColor = Color.white;
+            if (_enemyMarkerTextureLoadAttempted)
+            {
+                return false;
+            }
+
+            _enemyMarkerTextureLoadAttempted = true;
+            _enemyVisibleTexture = LoadEnemyMarkerTexture(
+                EnemyVisibleTextureFileName,
+                "pitFireTeam_EnemyVisibleMarker");
+            _enemySeenTexture = LoadEnemyMarkerTexture(
+                EnemySeenTextureFileName,
+                "pitFireTeam_EnemySeenMarker");
+            _enemyDownTexture = LoadEnemyMarkerTexture(
+                EnemyDownTextureFileName,
+                "pitFireTeam_EnemyDownMarker");
+
+            if (_enemyVisibleTexture != null &&
+                _enemySeenTexture != null &&
+                _enemyDownTexture != null)
+            {
+                return true;
+            }
+
+            DestroyEnemyMarkerTextures();
+            return false;
+        }
+
+        private static Texture2D? LoadEnemyMarkerTexture(
+            string fileName,
+            string textureName)
+        {
+            string? texturePath = FindEnemyMarkerTexturePath(fileName);
+            if (string.IsNullOrEmpty(texturePath))
+            {
+                pitFireTeam.Log.LogError($"[StatusReport] Enemy-marker texture was not found: {fileName}");
+                return null;
+            }
+
+            byte[] fileData;
+            try
+            {
+                fileData = File.ReadAllBytes(texturePath);
+            }
+            catch (Exception ex)
+            {
+                pitFireTeam.Log.LogError(
+                    $"[StatusReport] Failed to read enemy-marker texture '{texturePath}': {ex.Message}");
+                return null;
+            }
+
+            Texture2D texture = new Texture2D(2, 2, TextureFormat.ARGB32, false);
+            if (!texture.LoadImage(fileData))
+            {
+                Destroy(texture);
+                pitFireTeam.Log.LogError($"[StatusReport] Failed to decode enemy-marker texture: {texturePath}");
+                return null;
+            }
+
+            texture.Apply(false, true);
+            texture.name = textureName;
+            texture.filterMode = FilterMode.Bilinear;
+            texture.wrapMode = TextureWrapMode.Clamp;
+            return texture;
+        }
+
+        private static string? FindEnemyMarkerTexturePath(string fileName)
+        {
+            string pluginDirectory =
+                Path.GetDirectoryName(typeof(PingTeamates).Assembly.Location) ?? string.Empty;
+            string[] candidates =
+            {
+                Path.Combine(pluginDirectory, fileName),
+                Path.Combine(pluginDirectory, "resources", fileName),
+                Path.Combine(
+                    Directory.GetParent(pluginDirectory)?.FullName ?? pluginDirectory,
+                    "resources",
+                    fileName),
+                Path.Combine(
+                    Environment.CurrentDirectory,
+                    "BepInEx",
+                    "plugins",
+                    "pitFireTeam",
+                    "resources",
+                    fileName)
+            };
+
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                if (File.Exists(candidates[i]))
+                {
+                    return candidates[i];
+                }
+            }
+
+            return null;
+        }
+
+        private void DestroyEnemyMarkerTextures()
+        {
+            if (_enemyVisibleTexture != null)
+            {
+                Destroy(_enemyVisibleTexture);
+                _enemyVisibleTexture = null;
+            }
+
+            if (_enemySeenTexture != null)
+            {
+                Destroy(_enemySeenTexture);
+                _enemySeenTexture = null;
+            }
+
+            if (_enemyDownTexture != null)
+            {
+                Destroy(_enemyDownTexture);
+                _enemyDownTexture = null;
+            }
         }
 
         private Texture2D MakeTexture(Color color)
@@ -761,100 +1464,40 @@ namespace pitTeam.Utils
             return texture;
         }
 
-        private Texture2D CreateTriangleTexture(Color color)
+        private void DrawEnemyMarker(
+            EnemyMarkerContact contact,
+            Vector3 markerPos,
+            Texture2D texture,
+            bool animateVertically)
         {
-            int width = 30;
-            int height = 30;
-            Texture2D texture = new Texture2D(width, height);
+            float markerHeight = contact.IsDead
+                ? EnemyVisibleMarkerSizePixels * EnemyActiveMarkerScale
+                : contact.IsVisible
+                    ? EnemyVisibleMarkerSizePixels * EnemyActiveMarkerScale
+                    : EnemySeenMarkerSizePixels * EnemyActiveMarkerScale;
+            float markerWidth = markerHeight;
+            float animationOffset = animateVertically
+                ? Mathf.Sin(Time.time * 5f) * 5f
+                : 0f;
 
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    if (y <= height / 2 && x >= (height / 2 - y) && x <= (height / 2 + y))
-                    {
-                        texture.SetPixel(x, y, color);
-                    }
-                    else
-                    {
-                        texture.SetPixel(x, y, Color.clear);
-                    }
-                }
-            }
+            contact.MarkRect.x =
+                (markerPos.x * screenScale / fovFactor) - (markerWidth / 2f);
+            contact.MarkRect.y =
+                Screen.height -
+                ((markerPos.y * screenScale / fovFactor) + markerHeight) +
+                animationOffset;
+            contact.MarkRect.size = new Vector2(markerWidth, markerHeight);
 
-            texture.Apply();
-            return texture;
-        }
-
-        private void DrawEnemyMarker(BotData bt, Vector3 markerPos, Color cl)
-        {
-            float animationOffset = Mathf.Sin(Time.time * 5f) * 5f;
-
-            float size = 30f;
-
-            bt.MarkRect.x = (markerPos.x * screenScale / fovFactor) - (size / 2);
-            bt.MarkRect.y = Screen.height - ((markerPos.y * screenScale / fovFactor) + size) + animationOffset;
-            bt.MarkRect.size = new Vector2(size, size);
-
-            GUI.Box(bt.MarkRect, CreateTriangleTexture(cl), makerGuiStyle);
-        }
-
-        private static bool TryGetGoalEnemyPosition(BotOwner bot, out Vector3 enemyPosition, out string? enemyProfileId)
-        {
-            enemyPosition = Vector3.zero;
-            enemyProfileId = null;
-            if (bot?.Memory == null || !bot.Memory.HaveEnemy)
-            {
-                return false;
-            }
-
+            Color previousGuiColor = GUI.color;
             try
             {
-                EnemyInfo goalEnemy = bot.Memory.GoalEnemy;
-                if (goalEnemy == null)
-                {
-                    return false;
-                }
-
-                enemyPosition = goalEnemy.CurrPosition;
-                enemyProfileId = goalEnemy.ProfileId;
-                return true;
+                GUI.color = Color.white;
+                GUI.DrawTexture(contact.MarkRect, texture, ScaleMode.ScaleToFit, true);
             }
-            catch
+            finally
             {
-                return false;
+                GUI.color = previousGuiColor;
             }
-        }
-
-        private static Color GetEnemyMarkerColor(BotData bt, bool hasLiveEnemy, out bool isVisibleMarker)
-        {
-            isVisibleMarker = false;
-            EnemyInfo? goalEnemy = bt.Data?.Memory?.GoalEnemy;
-            if (IsMarkedEnemyDead(bt, goalEnemy))
-            {
-                return DeadEnemyMarkerColor;
-            }
-
-            isVisibleMarker = hasLiveEnemy && IsEnemyReliablyVisibleForMarker(bt.Data, goalEnemy);
-            return isVisibleMarker
-                ? EnemyMarkerColor.GetVisibleColor()
-                : EnemyMarkerColor.GetAlertColor();
-        }
-
-        private static bool IsMarkedEnemyDead(BotData bt, EnemyInfo? goalEnemy)
-        {
-            if (goalEnemy?.Person?.HealthController != null)
-            {
-                return !goalEnemy.Person.HealthController.IsAlive;
-            }
-
-            if (string.IsNullOrEmpty(bt?.EnemyProfileId))
-            {
-                return false;
-            }
-
-            Player? alivePlayer = Singleton<GameWorld>.Instance?.GetAlivePlayerByProfileID(bt.EnemyProfileId);
-            return alivePlayer == null;
         }
 
         private static bool IsEnemyReliablyVisibleForMarker(BotOwner bot, EnemyInfo goalEnemy)
@@ -870,7 +1513,10 @@ namespace pitTeam.Utils
             }
 
             // UI red should mean "actively visible now", not stale memory visibility.
-            if (Time.time - goalEnemy.PersonalLastSeenTime > 0.35f)
+            float lastSeenAge = Time.time - goalEnemy.PersonalLastSeenTime;
+            if (!IsFinite(lastSeenAge) ||
+                lastSeenAge < 0f ||
+                lastSeenAge > ReliableVisibleMaxAgeSeconds)
             {
                 return false;
             }
@@ -880,7 +1526,7 @@ namespace pitTeam.Utils
                 return false;
             }
 
-            ShootPointClass? shootPoint = bot.CurrentEnemyTargetPosition(true);
+            ShootToPoint? shootPoint = bot.CurrentEnemyTargetPosition(true);
             if (shootPoint == null)
             {
                 return false;

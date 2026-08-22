@@ -32,6 +32,7 @@ namespace pitTeam.BigBrain
         protected readonly FollowerCombatGrenadierObjective grenadierObjective;
         protected CombatObjectiveKind currentObjective = CombatObjectiveKind.Default;
         private CombatObjectiveKind? grenadierResumeObjective;
+        private int consumedPushEnemyIssueSequence;
 
         protected FollowerCombatLogicBase(BotOwner botOwner)
         {
@@ -53,16 +54,17 @@ namespace pitTeam.BigBrain
 
         public bool HasImmediateExplosiveDanger() => combatCommon.HasImmediateExplosiveDanger();
 
-        public AICoreActionResultStruct<BotLogicDecision, GClass26> GetMedicalDecision()
+        public AICoreActionResult<BotLogicDecision, CoreActionResultParams> GetMedicalDecision()
         {
+            combatCommon.BeginCoverEvaluationCycle();
             combatCommon.RepairGoalEnemyMemory();
-            AICoreActionResultStruct<BotLogicDecision, GClass26>? healDecision = combatCommon.TryGetNeedHealDecision();
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? healDecision = combatCommon.TryGetNeedHealDecision();
             if (healDecision != null)
             {
                 return healDecision.Value;
             }
 
-            return new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.holdPosition, "medicalHold");
+            return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.holdPosition, "medicalHold");
         }
 
         public virtual void Reset()
@@ -81,32 +83,54 @@ namespace pitTeam.BigBrain
             grenadierObjective.Reset();
             currentObjective = CombatObjectiveKind.Default;
             grenadierResumeObjective = null;
+            consumedPushEnemyIssueSequence = 0;
         }
 
-        public virtual AICoreActionResultStruct<BotLogicDecision, GClass26> GetDecision()
+        public virtual AICoreActionResult<BotLogicDecision, CoreActionResultParams> GetDecision()
         {
+            combatCommon.BeginCoverEvaluationCycle();
             combatCommon.RepairGoalEnemyMemory();
             combatCommon.TryRestoreMissionTargetIfReady("combatDecisionRestoreMission", out _);
             EnemyInfo? goalEnemy = BotOwner.Memory.GoalEnemy;
             if (goalEnemy == null)
             {
+                combatCommon.ClearDecisionTransition();
+                if (combatCommon.TryGetTargetHandoffScanDecision(
+                        out AICoreActionResult<BotLogicDecision, CoreActionResultParams> targetHandoffDecision))
+                {
+                    return targetHandoffDecision;
+                }
+
                 if (combatCommon.TryGetNoEnemyThreatCoverDecision(
-                        out AICoreActionResultStruct<BotLogicDecision, GClass26> noEnemyThreatDecision))
+                        out AICoreActionResult<BotLogicDecision, CoreActionResultParams> noEnemyThreatDecision))
                 {
                     return noEnemyThreatDecision;
                 }
 
-                return new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.holdPosition, "nullEnemy");
+                return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.holdPosition, "nullEnemy");
             }
+
+            combatCommon.ClearTargetHandoffScan("goalEnemyAvailable");
 
             FollowerEnemyInfoCorrection.CorrectDistanceOnly(BotOwner, goalEnemy);
 
             try
             {
                 BotFollowerPlayer? followerData = BossPlayers.Instance?.GetFollower(BotOwner);
-                if (TryConsumeCombatGestureCommand(followerData, goalEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> commandDecision))
+                if (TryConsumeCombatGestureCommand(followerData, goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> commandDecision))
                 {
+                    combatCommon.ClearDecisionTransition();
                     return commandDecision;
+                }
+
+                // End conditions may release an action only after preparing its concrete successor.
+                // Consume that one-shot handoff before ordinary objective routing can select the old
+                // action again; target changes and explicit combat commands invalidate the handoff.
+                if (combatCommon.TryConsumePreparedDecisionTransition(
+                        goalEnemy,
+                        out AICoreActionResult<BotLogicDecision, CoreActionResultParams> transitionDecision))
+                {
+                    return transitionDecision;
                 }
 
                 RefreshObjective(goalEnemy);
@@ -117,19 +141,19 @@ namespace pitTeam.BigBrain
 
                 if (currentObjective != CombatObjectiveKind.Grenadier &&
                     combatCommon.TryCreatePendingLauncherPrimaryFallbackDecision(
-                        out AICoreActionResultStruct<BotLogicDecision, GClass26> fallbackDecision))
+                        out AICoreActionResult<BotLogicDecision, CoreActionResultParams> fallbackDecision))
                 {
                     return fallbackDecision;
                 }
 
                 if (currentObjective != CombatObjectiveKind.Grenadier &&
                     combatCommon.TryCreatePendingFirstPrimaryLauncherHolsterFallbackDecision(
-                        out AICoreActionResultStruct<BotLogicDecision, GClass26> holsterFallbackDecision))
+                        out AICoreActionResult<BotLogicDecision, CoreActionResultParams> holsterFallbackDecision))
                 {
                     return holsterFallbackDecision;
                 }
 
-                AICoreActionResultStruct<BotLogicDecision, GClass26> decision = GetCurrentObjective().GetDecision(goalEnemy);
+                AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision = GetCurrentObjective().GetDecision(goalEnemy);
                 // Default combat can request an objective switch without leaking a fake action to the layer.
                 // When that happens, activate regroup immediately and return regroup's first real decision.
                 if (currentObjective != CombatObjectiveKind.Regroup &&
@@ -154,20 +178,59 @@ namespace pitTeam.BigBrain
                 {
                     Logger.LogError(ex);
                     errorLogged = true;
-                    return new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.holdPosition, "errorLogged");
+                    return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.holdPosition, "errorLogged");
                 }
 
-                return new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.holdPosition, "errorLogged2");
+                return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.holdPosition, "errorLogged2");
             }
         }
 
-        public virtual AICoreActionEndStruct ShallEndCurrentDecision(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision)
+        public virtual AICoreActionEnd ShallEndCurrentDecision(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
         {
+            combatCommon.BeginCoverEvaluationCycle();
             combatCommon.TryApplyPendingLauncherPrimaryFallback(currentDecision);
 
             BotFollowerPlayer? followerData = BossPlayers.Instance?.GetFollower(BotOwner);
             EnemyInfo? goalEnemy = BotOwner.Memory?.GoalEnemy;
+
+            // Target handoff is a shared transient hold, independent of whichever tactic/objective
+            // happened to own the killed target. Route its bounded scanner before tactic-specific
+            // cover-hold rules can interpret the null GoalEnemy as an immediate failure.
+            if (currentDecision.Action == BotLogicDecision.holdPosition &&
+                FollowerCombatCommon.IsTargetHandoffScanReason(currentDecision.Reason))
+            {
+                return combatCommon.EndBaseHoldPosition(currentDecision.Reason ?? string.Empty);
+            }
+
+            // GoalEnemy can disappear between clustered contacts while incoming fire is still
+            // concrete. This recovery is shared survival work, not ordered-objective completion,
+            // but a renewed push order must still be able to restart the ordered mission.
+            if (FollowerCombatCommon.IsNoEnemyThreatCoverReason(currentDecision.Reason))
+            {
+                if (goalEnemy != null &&
+                    ShouldConsumePushCommand(followerData, goalEnemy) &&
+                    CanInterruptForOrderedPushOrder(currentDecision))
+                {
+                    return new AICoreActionEnd("objectivePushOrder", true);
+                }
+
+                if (currentDecision.Action == BotLogicDecision.holdPosition &&
+                    !combatCommon.HasActiveCombatGestureOrder() &&
+                    combatCommon.IsCommittedHolderReason(currentDecision.Reason) &&
+                    combatCommon.HasCommittedPosition(
+                        out AICoreActionResult<BotLogicDecision, CoreActionResultParams> committedHold) &&
+                    committedHold.Action == currentDecision.Action &&
+                    string.Equals(committedHold.Reason, currentDecision.Reason, StringComparison.Ordinal))
+                {
+                    return FollowerCombatCommon.Continue();
+                }
+
+                return currentDecision.Action == BotLogicDecision.holdPosition
+                    ? combatCommon.EndBaseHoldPosition(currentDecision.Reason ?? string.Empty)
+                    : combatCommon.ShallEndCurrentDecision(currentDecision);
+            }
+
             if (combatCommon.TryRestoreMissionTargetIfReady("combatEndRestoreMission", out EnemyInfo? restoredMission))
             {
                 goalEnemy = restoredMission;
@@ -177,14 +240,14 @@ namespace pitTeam.BigBrain
             if (currentObjective == CombatObjectiveKind.OrderedPush &&
                 followerData?.HasOrderedPushCancelRequest == true)
             {
-                return new AICoreActionEndStruct("orderedPushCancelRequested", true);
+                return new AICoreActionEnd("orderedPushCancelRequested", true);
             }
 
             if (goalEnemy != null &&
                 HasActiveCombatGestureOrder(followerData) &&
                 CanInterruptForCombatGestureOrder(currentDecision))
             {
-                return new AICoreActionEndStruct("combatGestureBreakMovement", true);
+                return new AICoreActionEnd("combatGestureBreakMovement", true);
             }
 
             if (currentObjective != CombatObjectiveKind.Suppression &&
@@ -210,15 +273,15 @@ namespace pitTeam.BigBrain
                     return GetCurrentObjective().ShallEndCurrentDecision(currentDecision);
                 }
 
-                return new AICoreActionEndStruct("objectiveSuppressionOrder", true);
+                return new AICoreActionEnd("objectiveSuppressionOrder", true);
             }
 
-            if (currentObjective != CombatObjectiveKind.OrderedPush &&
+            if ((currentObjective != CombatObjectiveKind.OrderedPush || HasRenewedOrderedPushOrder(followerData)) &&
                 goalEnemy != null &&
                 ShouldConsumePushCommand(followerData, goalEnemy) &&
                 CanInterruptForOrderedPushOrder(currentDecision))
             {
-                return new AICoreActionEndStruct("objectivePushOrder", true);
+                return new AICoreActionEnd("objectivePushOrder", true);
             }
 
             if (currentObjective != CombatObjectiveKind.NeedSniper &&
@@ -233,13 +296,13 @@ namespace pitTeam.BigBrain
                     return FollowerCombatCommon.Continue();
                 }
 
-                return new AICoreActionEndStruct("objectiveNeedSniperOrder", true);
+                return new AICoreActionEnd("objectiveNeedSniperOrder", true);
             }
 
             if (ShouldConsumeRegroupCommand(followerData) &&
                 CanInterruptForRegroupOrder(currentDecision))
             {
-                return new AICoreActionEndStruct("objectiveRegroupOrder", true);
+                return new AICoreActionEnd("objectiveRegroupOrder", true);
             }
 
             // Objective ownership is stateful, not encoded in the action reason. Regroup may emit
@@ -248,8 +311,8 @@ namespace pitTeam.BigBrain
         }
 
         public virtual void DecisionChanged(
-            AICoreActionResultStruct<BotLogicDecision, GClass26>? prevDecision,
-            AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision)
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? prevDecision,
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> nextDecision)
         {
             // Same ownership rule as end logic: the active objective owns even shared-reason actions.
             GetCurrentObjective().DecisionChanged(prevDecision, nextDecision);
@@ -341,18 +404,16 @@ namespace pitTeam.BigBrain
         }
 
         protected virtual bool CanInterruptForSuppressionOrder(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision)
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
         {
             return !combatCommon.IsInFight(currentDecision.Action) &&
-                   currentDecision.Action != BotLogicDecision.heal &&
-                   currentDecision.Action != BotLogicDecision.healStimulators;
+                   !FollowerCombatCommon.IsMedicalDecision(currentDecision);
         }
 
         protected virtual bool CanInterruptForRegroupOrder(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision)
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
         {
-            if (currentDecision.Action == BotLogicDecision.heal ||
-                currentDecision.Action == BotLogicDecision.healStimulators ||
+            if (FollowerCombatCommon.IsMedicalDecision(currentDecision) ||
                 currentDecision.Action == BotLogicDecision.dogFight)
             {
                 return false;
@@ -363,20 +424,27 @@ namespace pitTeam.BigBrain
         }
 
         protected virtual bool CanInterruptForOrderedPushOrder(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision)
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
         {
             if (IsActiveGrenadierLauncherFire(currentDecision))
             {
                 return false;
             }
 
-            return currentDecision.Action != BotLogicDecision.heal &&
-                   currentDecision.Action != BotLogicDecision.healStimulators &&
+            return !FollowerCombatCommon.IsMedicalDecision(currentDecision) &&
                    currentDecision.Action != BotLogicDecision.dogFight;
         }
 
+        private bool HasRenewedOrderedPushOrder(BotFollowerPlayer? followerData)
+        {
+            return followerData != null &&
+                   followerData.TryPeekActiveCommand(out FollowerCommandType command, out _, out _) &&
+                   command == FollowerCommandType.PushEnemy &&
+                   followerData.PushEnemyIssueSequence != consumedPushEnemyIssueSequence;
+        }
+
         private bool IsActiveGrenadierLauncherFire(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision)
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
         {
             return currentObjective == CombatObjectiveKind.Grenadier &&
                    currentDecision.Action == BotLogicDecision.shootFromPlace &&
@@ -437,7 +505,7 @@ namespace pitTeam.BigBrain
         private bool TryConsumeCombatGestureCommand(
             BotFollowerPlayer? followerData,
             EnemyInfo goalEnemy,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             if (followerData == null ||
@@ -487,7 +555,7 @@ namespace pitTeam.BigBrain
         }
 
         private bool CanInterruptForCombatGestureOrder(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision)
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
         {
             if (!FollowerCombatCommon.IsMovementDecision(currentDecision))
             {
@@ -584,6 +652,8 @@ namespace pitTeam.BigBrain
                 return;
             }
 
+            DeactivateRegroupForObjectiveSwitch(followerData);
+            consumedPushEnemyIssueSequence = followerData.PushEnemyIssueSequence;
             followerData.ClearCommand("CombatObjective:ConsumePush");
             DeactivateGrenadierForObjectiveSwitch("switch.orderedPush");
             followerData.ActivateOrderedPushTargetLock(goalEnemy);
@@ -625,6 +695,7 @@ namespace pitTeam.BigBrain
                 return;
             }
 
+            DeactivateRegroupForObjectiveSwitch(followerData);
             Vector3 suppressTarget = Vector3.zero;
             bool suppressRequiresLauncher = false;
             bool suppressForceWeapon = false;
@@ -704,6 +775,7 @@ namespace pitTeam.BigBrain
                 return;
             }
 
+            DeactivateRegroupForObjectiveSwitch(followerData);
             followerData.ClearCommand("CombatObjective:ConsumeNeedSniper");
             DeactivateGrenadierForObjectiveSwitch("switch.needSniper");
             if (currentObjective != CombatObjectiveKind.NeedSniper)
@@ -719,6 +791,7 @@ namespace pitTeam.BigBrain
             string reason,
             CombatObjectiveKind? resumeObjective = null)
         {
+            DeactivateRegroupForObjectiveSwitch(BossPlayers.Instance?.GetFollower(BotOwner));
             grenadierObjective.Activate(ordered);
             grenadierResumeObjective = resumeObjective;
             currentObjective = CombatObjectiveKind.Grenadier;
@@ -733,6 +806,17 @@ namespace pitTeam.BigBrain
             }
 
             grenadierResumeObjective = null;
+        }
+
+        private void DeactivateRegroupForObjectiveSwitch(BotFollowerPlayer? followerData)
+        {
+            if (currentObjective != CombatObjectiveKind.Regroup)
+            {
+                return;
+            }
+
+            regroupObjective.Deactivate();
+            followerData?.SetCombatRegroupBossAnchor(false);
         }
 
         private bool TryActivateFirstPrimaryGrenadier(EnemyInfo goalEnemy)

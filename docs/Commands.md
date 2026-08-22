@@ -91,7 +91,9 @@ Behavior:
 - The outline color is configurable with a `#RRGGBB` value and defaults to green (`#00FF00`).
 - Name, distance, combat status, HP, and tactic (`MD`) can each be toggled under `My Squad > Settings > Base Settings`.
 - Disabling every text field while leaving the highlight enabled produces a highlight-only Status Report.
+- Enemy markers are grouped by enemy profile, so multiple followers reporting the same contact produce one marker. During the Status Report display, the active marker set follows each follower's current enemy selection: switching targets adds the newly selected enemy and removes an old contact once no follower targets it. `Auto Display Enemy Marker` keeps this marker set active independently for the full live contact without automatically playing the report sound or voice line. Each new contact starts at the enemy's current position. A reliably visible enemy uses a steady `27x27` red reticle that follows the live position every frame; an enemy that is not reliably visible uses a vertically bobbing `30.6x30.6` yellow `!` whose position refreshes every five seconds; and a killed enemy uses a steady `27x27` grey skull at its remembered death position. `Auto Display Kill Marker` can open the independent skull display immediately, `Kill Display Time` requests its duration, and `Kill Remember Time` caps that duration and disables killed-enemy markers when set to `0`. The spatial location sound and spoken direction use the position captured when Status Report was triggered.
 - Nearby active followers without enemies play `FriendlyGesture`.
+- When no living teammate exists, Status Report plays `radiobeep.ogg` instead of the normal `radiochat.ogg` response.
 - Does not create `FollowerCommandType` state.
 
 ### Contact / Over There
@@ -320,7 +322,7 @@ Execution:
 - Walks to the target.
 - Validates path periodically.
 - On arrival, stops and performs a short look-around before clearing the command.
-- If a command look override exists, it looks at that override instead of random scanning.
+- If a command look override exists, it looks at that override instead of random scanning. Normal out-of-combat movement uses a level forward bearing toward the NavMesh destination rather than staring at the ground point itself.
 
 Combat variant:
 
@@ -380,6 +382,8 @@ Combat variant:
 ### Loot Phrases
 
 Loot and pickup selections enter `AIBossPlayer` through the player's `OnPhraseSay` event. Assignment diagnostics record the quick-menu action, live and stored targets, phrase arrival, follower eligibility, reservation, and final command state so a lost order can be located at its exact boundary.
+
+A follower with an assigned pickup, body-loot, or container-loot reservation is command-locked until that work finishes or is interrupted. New boss orders skip that follower, so proximity selection such as `There` can choose the next available teammate instead.
 
 Input:
 
@@ -466,7 +470,10 @@ Execution:
     - tactical vests are eligible for gear handling only when `Allow Gear Swapping` is active: an empty tactical vest slot may be filled directly in any mode; occupied vest replacement is only allowed in Immersive/Realistic, and only when the found vest is a protection upgrade, the old vest has no non-plate contents, and the old vest can be moved as a whole tree into the backpack first
     - category filters from `Looting Settings` are checked before price for ordinary cargo: `Pickup Food`, `Pickup Meds`, `Pickup Valuables`, `Pickup Weapons`, and `Pickup Gear`; corpse dogtags, missing-primary acquisition, and implemented true swaps bypass these category filters, but optional second-primary/holster weapon additions require `Pickup Weapons`
     - compatible loaded magazines moved as support for an accepted weapon equip bypass the normal loot filters entirely; they must be loaded, safe to take, and able to fit in tactical vest or pockets with the shared reload reserve preserved; overflow stays at the source
-    - with `Allow Gear Swapping` active, an equipped detachable-magazine primary may top off empty or partial compatible vest/pocket magazines independently of `Pickup Weapons`; carried loose ammunition is used first, and Immersive/Realistic may use searched-source rounds after carried supply; top-off never unloads or replaces existing cartridges
+    - with `Allow Gear Swapping` active, equipped detachable-magazine weapons may top off empty or partial compatible vest/pocket magazines independently of `Pickup Weapons`; the primary is maintained first, then an equipped secondary may use unresolved ammunition without changing slots or hands
+    - a looted secondary may top off only magazines registered to its accepted weapon package, so shared magazine compatibility cannot make it consume the primary weapon's magazines; carried loose ammunition is used first, and searched-source rounds follow the loadout ownership rules
+    - an equipped secondary may also take compatible loaded source magazines into tactical vest or pockets; loaded cartridges must match the weapon, every successful move registers the magazine to the secondary, and combined primary/secondary reload landing space is preserved
+    - compatible secondary magazines that cannot pass the reload-safe fast-access plan remain at the body instead of becoming ordinary backpack cargo
     - ordinary cargo item price is compared once against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound; money ignores these price bounds when `Pickup Valuables` is enabled
     - non-weapon successful moves only target the follower's backpack and pockets, never the follower's rig
 - Stores successful cargo moves through `InteractableObjects.StoreItem(...)` for squadmates. Additive equipped gear moves are also stored in `Simple` and `Restricted`; Immersive/Realistic equipped gear can persist as the teammate's kit instead.
@@ -509,7 +516,9 @@ Execution:
 - With `Pickup Gear` enabled, helmets, armor, armored rigs, and tactical rigs found in a container are tried as complete cargo trees first. If armor or a rig stays at the source, its eligible contents are reconsidered individually; installed plates additionally require at least 50 percent durability, while loose plates remain excluded.
 - Moves non-weapon candidates only into the follower's backpack and pockets, never the follower's rig.
 - Normal cargo weapons are priced and moved as whole weapon trees. With `Allow Gear Swapping` active, a long gun can equip into an empty first-primary slot without min/max price or `Pickup Weapons` when its loaded state and compatible fast-access magazines satisfy readiness. A working-primary follower may add a registered second-primary support weapon only when `Pickup Weapons` is enabled and second primary is empty. For an empty magazine slot, the most-loaded compatible body/container magazine is inserted first as a staging transaction, then the same live loaded-weapon planner decides its destination. Once a primary or Pickup-Weapons-authorized support plan is accepted, compatible loaded source magazines bypass normal loot filters only while they fit reload-safe fast access.
-- Equipped-primary magazine top-off follows the same body-loot rule: `Allow Gear Swapping`, not `Pickup Weapons`, owns the operation; carried loose ammunition is preferred, searched loose ammunition may be used in Immersive/Realistic, and no loaded cartridge is removed or replaced.
+- Equipped-weapon magazine top-off follows the same body-loot rule: `Allow Gear Swapping`, not `Pickup Weapons`, owns the operation; the primary is maintained first, then an equipped secondary may use unresolved ammunition without changing slots or hands.
+- A looted secondary may top off only magazines registered to its accepted weapon package. Carried loose ammunition is preferred; searched rounds may fill tracked looted magazines in every mode, while protected original magazines accept searched rounds only in Immersive/Realistic. No loaded cartridge is removed or replaced.
+- An equipped secondary may take compatible loaded container magazines into tactical vest or pockets after loose-ammo maintenance. Every move is recalculated from settled inventory, preserves primary and secondary reload landing space, and registers the moved magazine to the secondary; overflow remains in the container.
 - When a later search supplies compatible ammunition for a tracked secondary or backpack weapon candidate, acquired inserted/source magazines are topped off first, operational magazine placement and readiness are then recalculated, and only the remaining accepted loose rounds enter the normal protected ammo-storage order.
 - Successful empty-primary weapon equip rebuilds the follower weapon-manager primary info and requests a main-hand switch so combat can use the new weapon.
 - Once first and second primary are occupied, later long guns are ordinary filtered cargo and do not automatically take compatible magazines. An occupied holster applies the same rule to later pistols. With `Pickup Weapons` enabled, other eligible weapons may still use an empty compatible slot before backpack/pocket fallback.
@@ -542,7 +551,8 @@ Execution:
 - `QuickPanelPatch` keeps the custom phrase available and refreshes whether it can be shown.
 - `QuickMumbleStartViewBackpackPatch` and `PlayerPatch.PlayPhraseOrGesture` route the phrase to `TeammateBackpackInspection.TryOpenFromQuickInteraction(...)`.
 - Opens the target follower's live backpack through `GamePlayerOwner.ShowInventoryScreenLoot(...)`.
-- Marks the backpack tree searched/known only for this local inspection session, without permanently examining unknown templates for the player.
+- Marks the backpack tree searched/known for the local raid session, without permanently examining unknown templates for the player.
+- Persists raid-local searched/known state for item trees moved into the open backpack, so a nested container keeps its revealed contents if it is later moved back to the player.
 - Sets `BotFollowerPlayer.IsBackpackInspectionActive`, which makes follow/patrol logic hold the follower still while the backpack screen is open.
 - Closes the inspection if the player dies, the target becomes invalid, the follower starts healing/pickup work, or combat pressure appears (`HasKnownEnemy`, `Memory.HaveEnemy`, or `Memory.IsUnderFire`).
 
@@ -677,7 +687,7 @@ Core behavior:
 - Objective owns movement until complete or replaced.
 - Hot contact uses `attackMoving` toward bossward cover or fallback boss destination.
 - Cooled contact uses `goToPoint` through `CombatRegroupRunAction`.
-- Completion is based on boss nav distance and same-level tolerance.
+- Completion requires the conservative larger of direct and valid NavMesh distance to be inside the boss radius, plus same-level tolerance.
 - Push or suppress orders can end regroup and return to primary/suppression behavior.
 
 SAIN addon:
@@ -775,9 +785,9 @@ Core behavior:
   - marksman holds
   - base combat hold
 - Heal-related relocation is protected and can defer the command until the command expires or movement finishes.
-- On consume, `FollowerCombatCommon.TryCreateBossCoverAttackMovingDecision(...)` finds boss-local cover using `CombatDistanceConfiguration.GetBossCoverSearchRadius()`.
+- On consume, `FollowerCombatCommon.TryCreateBossCoverAttackMovingDecision(...)` finds boss-local cover using `CombatDistanceConfiguration.GetBossCoverSearchRadius()`. A selected cover must bring the follower at least one meter closer to the boss than its current position; if no qualifying cover exists, the command uses the direct boss-approach fallback instead of moving sideways or away.
 - The decision is forced to `BotLogicDecision.attackMoving` because the action expects a cover point.
-- If no valid boss-local cover exists, the follower says `Negative` and plays `NoGesture`.
+- If neither a qualifying boss-local cover nor a valid direct boss-approach path exists, the follower says `Negative` and plays `NoGesture`.
 
 ### Combat There
 

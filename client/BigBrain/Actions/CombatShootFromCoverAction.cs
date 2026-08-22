@@ -1,5 +1,8 @@
 using DrakiaXYZ.BigBrain.Brains;
 using EFT;
+using pitTeam.Modules;
+using pitTeam.Utils;
+using UnityEngine;
 
 namespace pitTeam.BigBrain.Actions
 {
@@ -12,17 +15,29 @@ namespace pitTeam.BigBrain.Actions
     /// </summary>
     internal sealed class CombatShootFromCoverAction : FollowerCombatActionBase
     {
-        private readonly GClass277 baseLogic;
+        private readonly ShootFromCover baseLogic;
+        private readonly FollowerEmergencyFireGate emergencyFireGate = new FollowerEmergencyFireGate();
         private float aimAlignStartedAt;
+        private bool? lastCrouchAllowed;
+        private string? lastCrouchPolicyReason;
 
         public CombatShootFromCoverAction(BotOwner botOwner) : base(botOwner)
         {
-            baseLogic = new GClass277(botOwner);
+            baseLogic = new ShootFromCover(botOwner);
+        }
+
+        public override void Start()
+        {
+            base.Start();
+            BotOwner.SetPose(1f);
+            lastCrouchAllowed = null;
+            lastCrouchPolicyReason = null;
         }
 
         public override void Stop()
         {
             StopCombatShooting();
+            emergencyFireGate.Reset();
             aimAlignStartedAt = 0f;
             base.Stop();
         }
@@ -39,6 +54,21 @@ namespace pitTeam.BigBrain.Actions
             try
             {
                 EnemyInfo? goalEnemy = BotOwner.Memory?.GoalEnemy;
+                bool allowCrouch = EvaluateCrouchPolicy(
+                    goalEnemy,
+                    out string crouchPolicyReason,
+                    out float crouchEnemyDistance,
+                    out Vector3? crouchTarget);
+                if (!allowCrouch)
+                {
+                    BotOwner.SetPose(1f);
+                }
+
+                RecordCrouchPolicyIfChanged(
+                    allowCrouch,
+                    crouchPolicyReason,
+                    crouchEnemyDistance,
+                    crouchTarget);
                 if (StopUnownedGrenadeLauncherFire(GetReason(data), goalEnemy))
                 {
                     return;
@@ -65,7 +95,26 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
-                baseLogic.UpdateNodeByBrain(GetData<GClass28>(data));
+                baseLogic.UpdateNodeByBrain(GetData<ShootHoldResultParams>(data));
+
+                if (goalEnemy != null)
+                {
+                    ShootToPoint shootPoint = BotOwner.CurrentEnemyTargetPosition(false) ??
+                                                 new ShootToPoint(goalEnemy.GetBodyPartPosition(), 1f);
+                    emergencyFireGate.TryFire(
+                        BotOwner,
+                        goalEnemy,
+                        shootPoint.Point,
+                        "shootFromCover",
+                        GetReason(data),
+                        suppression: false,
+                        out _);
+                }
+
+                if (!allowCrouch)
+                {
+                    BotOwner.SetPose(1f);
+                }
 
                 // The cover node may change pose internally during its update. Re-run the standing
                 // lane correction afterward so the final pose still matches the usable firing lane.
@@ -79,6 +128,60 @@ namespace pitTeam.BigBrain.Actions
                 BotOwner.Settings.FileSettings.Grenade.CAN_THROW_FROM_ANY_PLACE = oldCanThrowFromAnyPlace;
                 BotOwner.Settings.FileSettings.Grenade.CAN_THROW_STRAIGHT_CONTACT = oldCanThrowStraightContact;
             }
+        }
+
+        private bool EvaluateCrouchPolicy(
+            EnemyInfo? goalEnemy,
+            out string reason,
+            out float enemyDistance,
+            out Vector3? target)
+        {
+            reason = "enemyTargetMissing";
+            enemyDistance = goalEnemy?.Distance ?? 0f;
+            target = null;
+            if (goalEnemy == null)
+            {
+                return false;
+            }
+
+            ShootToPoint shootPoint = BotOwner.CurrentEnemyTargetPosition(false) ??
+                                         new ShootToPoint(goalEnemy.GetBodyPartPosition(), 1f);
+            target = shootPoint.Point;
+            return FollowerShootPoseSafety.CanUseCombatCrouchFire(
+                BotOwner,
+                shootPoint.Point,
+                out reason,
+                out enemyDistance);
+        }
+
+        [System.Diagnostics.Conditional("DEBUG")]
+        private void RecordCrouchPolicyIfChanged(
+            bool allowed,
+            string reason,
+            float enemyDistance,
+            Vector3? target)
+        {
+            if (!BattleRecorder.IsRecordingFor(BotOwner, requireRecordedCombat: true))
+            {
+                return;
+            }
+
+            if (lastCrouchAllowed == allowed &&
+                string.Equals(lastCrouchPolicyReason, reason, System.StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            lastCrouchAllowed = allowed;
+            lastCrouchPolicyReason = reason;
+            BattleRecorder.RecordCombatPosturePolicy(
+                BotOwner,
+                "shootFromCover",
+                "crouch",
+                allowed,
+                reason,
+                enemyDistance,
+                target);
         }
     }
 }

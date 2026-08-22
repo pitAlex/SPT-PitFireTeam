@@ -6,6 +6,7 @@ using SAIN.Components;
 using SAIN.Extensions;
 using SAIN.Layers;
 using SAIN.Models.Enums;
+using SAIN.Preset.Shared.Enums;
 using SAIN.SAINComponent.Classes.Decision;
 using System.Collections.Generic;
 using UnityEngine;

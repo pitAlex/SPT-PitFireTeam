@@ -1,6 +1,9 @@
 using pitTeam.Server.Models;
+using SPTarkov.Common.Models.Logging;
 using SPTarkov.DI.Annotations;
-using SPTarkov.Server.Core.Helpers;
+using SPTarkov.Server.Core.Helpers.Items;
+using SPTarkov.Server.Core.Helpers.Profile;
+using SPTarkov.Server.Core.Helpers.Server;
 using SPTarkov.Server.Core.Models.Eft.Common;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Common.Tables;
@@ -10,7 +13,7 @@ using SPTarkov.Server.Core.Models.Enums;
 using SPTarkov.Server.Core.Models.Spt.Dialog;
 using SPTarkov.Server.Core.Models.Utils;
 using SPTarkov.Server.Core.Servers;
-using SPTarkov.Server.Core.Services;
+using SPTarkov.Server.Core.Services.Commerce;
 using SPTarkov.Server.Core.Utils;
 using System.Collections.Concurrent;
 
@@ -244,7 +247,7 @@ public class FriendlyPostRaidService(
             }
         }
 
-        notificationSendHelper.SendMessageToPlayer(sessionId, sender, message, MessageType.UserMessage);
+        _ = notificationSendHelper.SendMessageToPlayerAsync(sessionId, sender, message, MessageType.UserMessage);
     }
 
     public void RecordKillMessage(MongoId sessionId, FriendlyPostRaidKillMessageRequest request)
@@ -260,18 +263,15 @@ public class FriendlyPostRaidService(
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(request.MessageText))
-        {
-            return;
-        }
-
         Dictionary<string, KillMessageRecord> sessionRecords = KillMessageRecords.GetOrAdd(
             sessionId.ToString(),
             _ => new Dictionary<string, KillMessageRecord>(StringComparer.Ordinal));
 
         lock (sessionRecords)
         {
-            var record = new KillMessageRecord(kind, request.MessageText);
+            // An empty message is an intentional suppression record when Raid End Messages is off.
+            // Keep it so the end-of-raid hook can remove SPT's random PMC response without replacing it.
+            var record = new KillMessageRecord(kind, request.MessageText ?? string.Empty);
             sessionRecords[request.VictimProfileId] = record;
 
             if (!string.IsNullOrWhiteSpace(request.VictimAccountId))
@@ -421,7 +421,8 @@ public class FriendlyPostRaidService(
 
             RemoveRecentVanillaPmcResponse(sessionId, victim, recentMessageThreshold);
 
-            if (record.Kind == KillMessageKindTraitor || record.Kind == KillMessageKindJerk)
+            if ((record.Kind == KillMessageKindTraitor || record.Kind == KillMessageKindJerk) &&
+                !string.IsNullOrWhiteSpace(record.MessageText))
             {
                 SendVictimMessage(sessionId, victim, record.MessageText);
             }
@@ -825,32 +826,36 @@ public class FriendlyPostRaidService(
         }
 
         Dictionary<string, string> deathEscapeText = languageService.GetStringMap(sessionId, "deathEscape");
+        string reportTemplate = GetLanguageValue(deathEscapeText, "Report");
+        string allLostTemplate = GetLanguageValue(deathEscapeText, "AllLost");
+        string allEscapedTemplate = GetLanguageValue(deathEscapeText, "AllEscaped");
         string madeItOutTemplate = GetLanguageValue(deathEscapeText, "MadeItOut");
         string lostTemplate = GetLanguageValue(deathEscapeText, "Lost");
         string extractRouteTemplate = GetLanguageValue(deathEscapeText, "ExtractRoute");
 
-        // Player-death escape reports are separate from the normal "team escaped with player"
-        // messages because the player did not extract with the squad. Put each result on its own
-        // line so mixed escaped/lost outcomes stay readable in post-raid mail.
+        bool hasEscaped = summary.EscapedNames.Count > 0;
+        bool hasLost = summary.LostNames.Count > 0;
         var parts = new List<string>();
-        if (summary.EscapedNames.Count > 0)
+        if (!hasEscaped)
         {
+            parts.Add(allLostTemplate);
+        }
+        else if (!hasLost)
+        {
+            parts.Add(allEscapedTemplate);
+        }
+        else
+        {
+            parts.Add(string.Format(lostTemplate, JoinNames(summary.LostNames)));
             parts.Add(string.Format(madeItOutTemplate, JoinNames(summary.EscapedNames)));
         }
 
-        if (summary.LostNames.Count > 0)
-        {
-            parts.Add(string.Format(lostTemplate, JoinNames(summary.LostNames)));
-        }
-
-        if (!string.IsNullOrWhiteSpace(summary.ExtractName))
+        if (hasEscaped && !string.IsNullOrWhiteSpace(summary.ExtractName))
         {
             parts.Add(string.Format(extractRouteTemplate, summary.ExtractName));
         }
 
-        string[] deathEscapeMessages = languageService.GetStringArray(sessionId, "deathEscapeMessages");
-        string messageTemplate = deathEscapeMessages.Length > 0 ? PickRandom(deathEscapeMessages) : "{0}";
-        string message = string.Format(messageTemplate, string.Join("\n", parts));
+        string message = string.Format(reportTemplate, string.Join("\n", parts));
 
         UserDialogInfo sender = GetDeliverySender();
         SendMessageDetails details = new()
@@ -939,7 +944,7 @@ public class FriendlyPostRaidService(
             return;
         }
 
-        notificationSendHelper.SendMessageToPlayer(sessionId, ToSenderInfo(victim), message, MessageType.UserMessage);
+        _ = notificationSendHelper.SendMessageToPlayerAsync(sessionId, ToSenderInfo(victim), message, MessageType.UserMessage);
     }
 
     private static UserDialogInfo ToSenderInfo(Victim victim)

@@ -13,7 +13,7 @@ namespace pitTeam.BigBrain
         private const float RecentSeenPressureSeconds = 2f;
         private const string BossHoldReason = "bossHold";
         private const string BossHoldOpenReason = "bossHoldOpen";
-        private const string RecoveryCoverHoldReason = "recoveryCoverHold";
+        private const float PushSearchHoldSeconds = 1.25f;
         private const float ShootCoverSettleSeconds = 2.5f;
         private const float CommittedHolderEngagementBreakSettleSeconds = 1f;
         private const string ShootCoverHoldReason = "shootCoverHold";
@@ -22,6 +22,11 @@ namespace pitTeam.BigBrain
         private const float SupportIntentMaxHoldSeconds = 8f;
         private const float ProtectIntentMaxHoldSeconds = 8f;
         private const float IntentRetryCooldownSeconds = 3f;
+        private const float BossSupportForcedRetrySeconds = 9f;
+        private const float BossSupportGeometryMoveDistance = 4f;
+        private const float BossSupportBearingDotThreshold = 0.9659258f;
+        private const float BossSupportGeometryCheckIntervalSeconds = 0.5f;
+        private const float HoldReactionRetryCooldownSeconds = 3f;
         private const float SupportBreakRetryCooldownSeconds = 1f;
         private const float VisibleAlignedFireMaxDistance = 35f;
         private const float VisibleAlignedFireMaxAngle = 12f;
@@ -49,14 +54,46 @@ namespace pitTeam.BigBrain
         private CoverIntentKind activeCoverIntent;
         private float supportIntentRetryUntil;
         private float protectIntentRetryUntil;
+        private float protectIntentForcedRetryUntil;
+        private float nextBossSupportGeometryCheckAt;
+        private bool bossSupportBreakPending;
+        private bool hasFailedBossSupportSignature;
+        private BossSupportRetrySignature failedBossSupportSignature;
         private float autoSuppressRetryUntil;
         private float holdPositionSupportRetryUntil;
-        private AICoreActionResultStruct<BotLogicDecision, GClass26>? preparedAllySupportDecision;
-        private AICoreActionResultStruct<BotLogicDecision, GClass26>? preparedAdvanceDecision;
-        private AICoreActionResultStruct<BotLogicDecision, GClass26>? preparedHoldPositionSupportDecision;
+        private float holdReactionRetryUntil;
+        private float nextHoldReactionGeometryCheckAt;
+        private bool hasFailedHoldReactionSignature;
+        private HoldReactionRetrySignature failedHoldReactionSignature;
+        private AICoreActionResult<BotLogicDecision, CoreActionResultParams>? preparedAllySupportDecision;
+        private AICoreActionResult<BotLogicDecision, CoreActionResultParams>? preparedCloseCoverFightDecision;
+        private AICoreActionResult<BotLogicDecision, CoreActionResultParams>? preparedRecoveryDecision;
+        private AICoreActionResult<BotLogicDecision, CoreActionResultParams>? preparedAdvanceDecision;
+        private AICoreActionResult<BotLogicDecision, CoreActionResultParams>? preparedHoldPositionSupportDecision;
+        private int holdReactionDamageRevision;
         private bool shotgunAutomaticSecondaryLatched;
         private bool shotgunAutomaticSecondaryDisabledForFight;
         private bool ownsAutomaticSecondarySwitch;
+
+        private struct BossSupportRetrySignature
+        {
+            public string AttackerProfileId;
+            public Vector3 FollowerPosition;
+            public Vector3 BossPosition;
+            public Vector3 AttackerPosition;
+            public bool AttackerVisible;
+            public bool AttackerCanShoot;
+        }
+
+        private struct HoldReactionRetrySignature
+        {
+            public string EnemyProfileId;
+            public Vector3 FollowerPosition;
+            public Vector3 EnemyPosition;
+            public bool EnemyVisible;
+            public bool EnemyCanShoot;
+            public bool UnderFire;
+        }
 
         public FollowerCombatDefault(BotOwner botOwner, FollowerCombatCommon combatCommon)
         {
@@ -76,15 +113,22 @@ namespace pitTeam.BigBrain
             combatCommon.ClearCommittedMovement();
             shootCoverSettlePhase.Reset();
             ClearCoverIntent();
+            bossSupportBreakPending = false;
             if (!combatCommon.HasActiveCombatEnemy())
             {
                 autoSuppressRetryUntil = 0f;
+                ClearBossSupportRetryState();
             }
 
             holdPositionSupportRetryUntil = 0f;
+            ClearHoldReactionRetryState();
             preparedAllySupportDecision = null;
+            preparedCloseCoverFightDecision = null;
+            preparedRecoveryDecision = null;
             preparedAdvanceDecision = null;
             preparedHoldPositionSupportDecision = null;
+            holdReactionDamageRevision = FollowerAwareness.GetDamageRevision(botOwner);
+            combatCommon.ResetRecoveryNoCoverCommitment();
             if (!combatCommon.HasActiveCombatEnemy())
             {
                 shotgunAutomaticSecondaryLatched = false;
@@ -101,15 +145,29 @@ namespace pitTeam.BigBrain
         /// Updates local commitment state after the BigBrain decision changes.
         /// </summary>
         public void DecisionChanged(
-            AICoreActionResultStruct<BotLogicDecision, GClass26>? prevDecision,
-            AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision)
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? prevDecision,
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> nextDecision)
         {
+            ResolvePendingBossSupportBreak(nextDecision);
             ApplyRiflemanWeaponPolicy(nextDecision);
             combatCommon.HandleSharedDecisionChanged(nextDecision);
             combatCommon.HandleCommittedCoverDecisionChanged(nextDecision);
             combatCommon.HandleFollowerSuppressDecisionChanged(nextDecision);
             UpdateShootCoverSettleState(nextDecision);
             combatPush.HandleDecisionChanged(nextDecision);
+            combatCommon.UpdateRecoveryNoCoverCommitment(nextDecision);
+
+            if (nextDecision.Action == BotLogicDecision.holdPosition &&
+                IsCoverHoldReason(nextDecision.Reason))
+            {
+                holdReactionDamageRevision = FollowerAwareness.GetDamageRevision(botOwner);
+            }
+
+            if (nextDecision.Action == BotLogicDecision.holdPosition &&
+                FollowerCombatPush.IsPushReason(nextDecision.Reason))
+            {
+                combatCommon.HoldFor(PushSearchHoldSeconds);
+            }
 
             if (combatCommon.ShouldCommitMovementDecision(nextDecision, combatPush.IsPushCommittedDecision(nextDecision)))
             {
@@ -136,8 +194,15 @@ namespace pitTeam.BigBrain
             }
         }
 
-        private void ApplyRiflemanWeaponPolicy(AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision)
+        private void ApplyRiflemanWeaponPolicy(AICoreActionResult<BotLogicDecision, CoreActionResultParams> nextDecision)
         {
+            if ((FollowerCombatPush.IsPushReason(nextDecision.Reason) ||
+                 FollowerCombatPush.IsStartWeakEnemyPushReason(nextDecision.Reason)) &&
+                combatCommon.TrySwitchToPushReadyLongGun())
+            {
+                return;
+            }
+
             if (TryApplyShotgunDistanceWeaponPolicy())
             {
                 return;
@@ -283,7 +348,7 @@ namespace pitTeam.BigBrain
         /// Main default-combat router. Keep urgent fighting and medical work explicit, then honor
         /// destination/hold commitments before considering support, protection, or fresh pressure.
         /// </summary>
-        public AICoreActionResultStruct<BotLogicDecision, GClass26> GetDecision(EnemyInfo goalEnemy)
+        public AICoreActionResult<BotLogicDecision, CoreActionResultParams> GetDecision(EnemyInfo goalEnemy)
         {
             combatCommon.RefreshShootCover();
 
@@ -292,18 +357,45 @@ namespace pitTeam.BigBrain
             // held briefly, and then re-evaluated instead of churned every tick.
             combatCommon.ValidateCommittedCover();
 
-            if (combatCommon.TryGetReloadRetreatDecision(goalEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> reloadRetreatDecision))
+            // A close visible contact may end a committed cover run only after its end condition
+            // prepares a concrete fire/dogfight replacement. Consume that handoff before low-ammo
+            // reload routing can select the same cover run again.
+            if (TryGetPreparedCloseCoverFightDecision(
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> preparedCloseCoverFight))
+            {
+                return preparedCloseCoverFight;
+            }
+
+            // Failed-cover holds release only after their end conditions prepare an actual recovery
+            // move. Exposed static fire uses the shared transition channel and is consumed by the
+            // combat logic before this tactic router runs.
+            if (TryGetPreparedRecoveryDecision(
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> preparedRecovery))
+            {
+                return preparedRecovery;
+            }
+
+            if (combatCommon.TryGetReloadRetreatDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> reloadRetreatDecision))
             {
                 combatCommon.ClearInitialDecision();
                 return reloadRetreatDecision;
             }
 
-            if (TryGetImmediateFightDecision(out AICoreActionResultStruct<BotLogicDecision, GClass26> fightDecision))
+            if (TryGetImmediateFightDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> fightDecision))
             {
                 return fightDecision;
             }
 
-            if (combatCommon.TryGetCommittedGrenadeDecision(out AICoreActionResultStruct<BotLogicDecision, GClass26> committedGrenade))
+            if (combatCommon.TryGetCombatLongGunPreparationDecision(
+                    goalEnemy,
+                    orderedPush: false,
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> longGunPreparation))
+            {
+                combatCommon.ClearInitialDecision();
+                return longGunPreparation;
+            }
+
+            if (combatCommon.TryGetCommittedGrenadeDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> committedGrenade))
             {
                 return committedGrenade;
             }
@@ -313,44 +405,44 @@ namespace pitTeam.BigBrain
                 return combatCommon.ConsumeInitialDecision();
             }
 
-            if (TryGetHealDecision(out AICoreActionResultStruct<BotLogicDecision, GClass26> healDecision))
+            if (TryGetHealDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> healDecision))
             {
                 return healDecision;
             }
 
             if (!ShouldPrioritizeRecoveryBeforeSupport(goalEnemy) &&
-                TryGetAllySupportDecision(out AICoreActionResultStruct<BotLogicDecision, GClass26> earlyAllySupportDecision))
+                TryGetAllySupportDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> earlyAllySupportDecision))
             {
                 return earlyAllySupportDecision;
             }
 
             // When exposed, under fire, or hurt, switch to recovery behavior before honoring
             // normal commitments or support routing.
-            if (TryGetRecoverDecision(goalEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> recoverDecision))
+            if (TryGetRecoverDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> recoverDecision))
             {
                 return recoverDecision;
             }
 
-            if (TryGetBossDistanceRegroupDecision(out AICoreActionResultStruct<BotLogicDecision, GClass26> bossDistanceDecision))
+            if (TryGetBossDistanceRegroupDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> bossDistanceDecision))
             {
                 return bossDistanceDecision;
             }
 
-            if (TryGetPreparedAdvanceDecision(out AICoreActionResultStruct<BotLogicDecision, GClass26> preparedAdvance))
+            if (TryGetPreparedAdvanceDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> preparedAdvance))
             {
                 return preparedAdvance;
             }
 
             // Arrival holders block re-planning after the bot reaches a cover/position. Their end
             // conditions still break for direct contact, under-fire pressure, or settled support needs.
-            if (combatCommon.HasCommittedPosition(out AICoreActionResultStruct<BotLogicDecision, GClass26> committedPosition))
+            if (combatCommon.HasCommittedPosition(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> committedPosition))
             {
                 return committedPosition;
             }
 
             // Once a push has been chosen, keep returning that same push action until a hard interrupt
             // or the action end logic says the push phase is over.
-            if (combatPush.TryGetCommittedPushDecision(goalEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> committedPush))
+            if (combatPush.TryGetCommittedPushDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> committedPush))
             {
                 return committedPush;
             }
@@ -361,75 +453,75 @@ namespace pitTeam.BigBrain
                     goalEnemy,
                     HasExplicitRegroupOrder(),
                     HasActivePushOrder(),
-                    out AICoreActionResultStruct<BotLogicDecision, GClass26> committedMovement))
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> committedMovement))
             {
                 return committedMovement;
             }
 
             // If a cover point was already committed earlier, keep following through on it before
             // inventing a new plan.
-            if (TryGetCommittedCoverDecision(goalEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> committedCoverDecision))
+            if (TryGetCommittedCoverDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> committedCoverDecision))
             {
                 return committedCoverDecision;
             }
 
-            if (TryGetBossDistanceRegroupDecision(out AICoreActionResultStruct<BotLogicDecision, GClass26> bossDistanceAfterCommitment))
+            if (TryGetBossDistanceRegroupDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> bossDistanceAfterCommitment))
             {
                 return bossDistanceAfterCommitment;
             }
 
-            if (TryGetOrderedPushDecision(goalEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> orderedPushDecision))
+            if (TryGetOrderedPushDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> orderedPushDecision))
             {
                 return orderedPushDecision;
             }
 
             // Very low aggression followers should treat bossward regroup as their primary objective
             // unless the enemy is already close enough that local engagement is unavoidable.
-            if (TryGetLowAggressionRegroupDecision(goalEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> lowAggressionRegroup))
+            if (TryGetLowAggressionRegroupDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> lowAggressionRegroup))
             {
                 return lowAggressionRegroup;
             }
 
             // Combat HoldPosition means "do not advance on the enemy", not "freeze in the open".
             // If the boss line is stable, allow a small behind/lateral firing-position move.
-            if (TryGetHoldPositionLocalSupportDecision(goalEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> holdSupportDecision))
+            if (TryGetHoldPositionLocalSupportDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> holdSupportDecision))
             {
                 return holdSupportDecision;
             }
 
             // If the boss was just hit and this follower is not already committed to a stronger
             // personal fight, bias toward protecting the boss and adopting the boss's attacker.
-            if (TryGetBossUnderAttackDecision(goalEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> protectBossDecision))
+            if (TryGetBossUnderAttackDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> protectBossDecision))
             {
                 return protectBossDecision;
             }
 
             // While passively holding in cover, scan for a credible ally support opportunity before
             // defaulting into generic push/search or idle holding behavior.
-            if (TryGetAllySupportDecision(out AICoreActionResultStruct<BotLogicDecision, GClass26> allySupportDecision))
+            if (TryGetAllySupportDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> allySupportDecision))
             {
                 return allySupportDecision;
             }
 
-            if (combatCommon.TryActivateFollowerGrenade(goalEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> grenadeDecision))
+            if (combatCommon.TryActivateFollowerGrenade(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> grenadeDecision))
             {
                 return grenadeDecision;
             }
 
-            if (TryGetAutonomousSuppressDecision(goalEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> autoSuppressDecision))
+            if (TryGetAutonomousSuppressDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> autoSuppressDecision))
             {
                 return autoSuppressDecision;
             }
 
             // Resolve visible-but-not-immediate contact: take a firing cover or hand off to pressure.
-            if (TryGetVisibleDecision(goalEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> visibleDecision))
+            if (TryGetVisibleDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> visibleDecision))
             {
                 return visibleDecision;
             }
 
             // If pushing is justified after the safety checks above, ask the engage helper to choose
             // how to pressure the enemy or search forward.
-            if (TryGetAdvanceDecision(goalEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> advanceDecision))
+            if (TryGetAdvanceDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> advanceDecision))
             {
                 return advanceDecision;
             }
@@ -437,31 +529,31 @@ namespace pitTeam.BigBrain
             if (botOwner.Memory.IsInCover)
             {
                 combatCommon.HoldCoverForMaxDuration();
-                return new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.holdPosition, "coverHold");
+                return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.holdPosition, "coverHold");
             }
 
             if (goalEnemy.IsVisible && goalEnemy.CanShoot)
             {
-                return new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.shootFromPlace, "fallbackShoot");
+                return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.shootFromPlace, "fallbackShoot");
             }
 
             if (ShouldBlockPassiveBossHold(goalEnemy))
             {
-                return new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                     BotLogicDecision.suppressFire,
                     "postHitNoPassiveHold");
             }
 
             combatCommon.HoldCoverForMaxDuration();
             string holdReason = botOwner.Memory.IsInCover ? BossHoldReason : BossHoldOpenReason;
-            return new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.holdPosition, holdReason);
+            return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.holdPosition, holdReason);
         }
 
-        private bool TryGetImmediateFightDecision(out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        private bool TryGetImmediateFightDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
 
-            AICoreActionResultStruct<BotLogicDecision, GClass26>? dogFightDecision = combatCommon.TryGetDogFightDecision();
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? dogFightDecision = combatCommon.TryGetDogFightDecision();
             if (dogFightDecision != null)
             {
                 combatCommon.ClearInitialDecision();
@@ -472,7 +564,7 @@ namespace pitTeam.BigBrain
             EnemyInfo? goalEnemy = botOwner.Memory.GoalEnemy;
             if (!ShouldDeferExposedImmediateFireForRecovery(goalEnemy))
             {
-                AICoreActionResultStruct<BotLogicDecision, GClass26>? inFightDecision = combatCommon.InFightLogic();
+                AICoreActionResult<BotLogicDecision, CoreActionResultParams>? inFightDecision = combatCommon.InFightLogic();
                 if (inFightDecision != null)
                 {
                     combatCommon.ClearInitialDecision();
@@ -486,9 +578,7 @@ namespace pitTeam.BigBrain
 
         private bool ShouldPrioritizeRecoveryBeforeSupport(EnemyInfo goalEnemy)
         {
-            return botOwner.Memory.IsUnderFire ||
-                   FollowerCombatCommon.WasHitRecently(botOwner, 1f) ||
-                   FollowerAwareness.WasRecentlyDamaged(botOwner) ||
+            return combatCommon.HasRecoveryPressure(1f) ||
                    combatCommon.IsFollowerCriticallyWounded() ||
                    combatCommon.HasUrgentHealWork() ||
                    combatCommon.IsEnemyActivelyThreateningMe(goalEnemy, HardRecoveryCloseThreatDistance, 0.75f);
@@ -518,10 +608,10 @@ namespace pitTeam.BigBrain
                    Enemy.Distance(goalEnemy) > Enemy.EnemyDistance.VeryClose;
         }
 
-        private bool TryGetHealDecision(out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        private bool TryGetHealDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
-            AICoreActionResultStruct<BotLogicDecision, GClass26>? healDecision = combatCommon.TryGetNeedHealDecision();
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? healDecision = combatCommon.TryGetNeedHealDecision();
             if (healDecision == null)
             {
                 return false;
@@ -532,7 +622,7 @@ namespace pitTeam.BigBrain
             return true;
         }
 
-        private bool TryGetBossDistanceRegroupDecision(out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        private bool TryGetBossDistanceRegroupDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             if (ShouldDeferBossDistanceRegroupForCommitment())
@@ -569,7 +659,7 @@ namespace pitTeam.BigBrain
                    FollowerCombatCommon.IsBossDistanceProtectedCommitmentReason(combatCommon.CommittedCoverReason);
         }
 
-        private bool TryGetAllySupportDecision(out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        private bool TryGetAllySupportDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             if (preparedAllySupportDecision.HasValue)
@@ -583,7 +673,7 @@ namespace pitTeam.BigBrain
         }
 
         private bool TryBuildAndCommitAllySupportDecision(
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision,
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision,
             bool retryOnFailure)
         {
             decision = default;
@@ -598,7 +688,7 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
-            AICoreActionResultStruct<BotLogicDecision, GClass26>? allySupportDecision =
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? allySupportDecision =
                 combatCommon.TryGetAllyEngagementSupportDecision();
             if (allySupportDecision == null)
             {
@@ -615,7 +705,7 @@ namespace pitTeam.BigBrain
             return true;
         }
 
-        private bool TryBuildAndCommitPushSupportDecision(out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        private bool TryBuildAndCommitPushSupportDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             // Rifleman helper path: consume another follower's active autonomous push event and
@@ -640,13 +730,13 @@ namespace pitTeam.BigBrain
                 // Best support is doing nothing fancy: stay in cover and shoot if this position
                 // already contributes to the pusher's fight.
                 combatCommon.ExtendCommittedCover();
-                decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                     BotLogicDecision.shootFromCover,
                     "allyPushSupport.currentCover");
                 return true;
             }
 
-            AICoreActionResultStruct<BotLogicDecision, GClass26>? immediate =
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? immediate =
                 combatCommon.TryGetImmediateShootDecision("allyPushSupport.immediateShoot");
             if (immediate != null)
             {
@@ -695,11 +785,11 @@ namespace pitTeam.BigBrain
         private bool TryPrepareAllySupportBreak(
             string reason,
             bool clearCommittedPosition,
-            out AICoreActionEndStruct end)
+            out AICoreActionEnd end)
         {
             end = FollowerCombatCommon.Continue();
             if (!TryBuildAndCommitAllySupportDecision(
-                    out AICoreActionResultStruct<BotLogicDecision, GClass26> supportDecision,
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> supportDecision,
                     true))
             {
                 return false;
@@ -711,15 +801,21 @@ namespace pitTeam.BigBrain
             }
 
             preparedAllySupportDecision = supportDecision;
-            end = new AICoreActionEndStruct(reason, true);
+            end = new AICoreActionEnd(reason, true);
             return true;
         }
 
-        private bool TryGetPreparedAdvanceDecision(out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        private bool TryGetPreparedAdvanceDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             if (!preparedAdvanceDecision.HasValue)
             {
+                return false;
+            }
+
+            if (combatCommon.HasActiveOrPendingHealWork())
+            {
+                preparedAdvanceDecision = null;
                 return false;
             }
 
@@ -731,22 +827,160 @@ namespace pitTeam.BigBrain
         private bool TryPrepareAdvanceBreak(
             EnemyInfo goalEnemy,
             string reason,
-            out AICoreActionEndStruct end)
+            out AICoreActionEnd end)
         {
             end = FollowerCombatCommon.Continue();
-            if (!TryGetAdvanceDecision(goalEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> advanceDecision))
+            if (IsHoldReactionRetrySuppressed(goalEnemy))
             {
                 return false;
             }
 
+            if (!TryGetAdvanceDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> advanceDecision) ||
+                advanceDecision.Action == BotLogicDecision.holdPosition)
+            {
+                ArmHoldReactionRetry(goalEnemy, "advanceNoAction");
+                return false;
+            }
+
+            ClearHoldReactionRetryState();
             preparedAdvanceDecision = advanceDecision;
-            end = new AICoreActionEndStruct(reason, true);
+            end = new AICoreActionEnd(reason, true);
             return true;
+        }
+
+        private bool TryGetPreparedCloseCoverFightDecision(
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
+        {
+            decision = default;
+            if (!preparedCloseCoverFightDecision.HasValue)
+            {
+                return false;
+            }
+
+            if (!combatCommon.HasActiveCombatEnemy())
+            {
+                preparedCloseCoverFightDecision = null;
+                return false;
+            }
+
+            decision = preparedCloseCoverFightDecision.Value;
+            preparedCloseCoverFightDecision = null;
+            return true;
+        }
+
+        private bool TryGetPreparedRecoveryDecision(
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
+        {
+            decision = default;
+            if (!preparedRecoveryDecision.HasValue)
+            {
+                return false;
+            }
+
+            if (!combatCommon.HasActiveCombatEnemy())
+            {
+                preparedRecoveryDecision = null;
+                return false;
+            }
+
+            decision = preparedRecoveryDecision.Value;
+            preparedRecoveryDecision = null;
+            return true;
+        }
+
+        private bool TryPrepareVisibleHoldBreak(
+            EnemyInfo goalEnemy,
+            out AICoreActionEnd end)
+        {
+            end = FollowerCombatCommon.Continue();
+            if (IsHoldReactionRetrySuppressed(goalEnemy))
+            {
+                return false;
+            }
+
+            if (!TryGetVisibleDecision(
+                    goalEnemy,
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> visibleDecision) ||
+                visibleDecision.Action == BotLogicDecision.holdPosition)
+            {
+                ArmHoldReactionRetry(goalEnemy, "visibleNoAction");
+                return false;
+            }
+
+            ClearHoldReactionRetryState();
+            preparedAdvanceDecision = visibleDecision;
+            end = new AICoreActionEnd("visibleEnemyBreakHold", true);
+            return true;
+        }
+
+        private bool TryPrepareRecentHitHoldBreak(
+            EnemyInfo goalEnemy,
+            out AICoreActionEnd end)
+        {
+            end = FollowerCombatCommon.Continue();
+            int damageRevision = FollowerAwareness.GetDamageRevision(botOwner);
+            bool freshDamage = damageRevision != holdReactionDamageRevision;
+            if (freshDamage)
+            {
+                holdReactionDamageRevision = damageRevision;
+                // Actual new damage is meaningful evidence even when the previous cover/action
+                // scan was deferred. Let it trigger one immediate bounded reevaluation.
+                ClearHoldReactionRetryState();
+            }
+
+            if (IsHoldReactionRetrySuppressed(goalEnemy))
+            {
+                return false;
+            }
+
+            // A hit is only allowed to end a covered hold after a real fight handoff exists.
+            // Otherwise the normal router selects the same coverHold again while the three-second
+            // damage-awareness flag remains set, producing a start/end loop without changing tactics.
+            if (TryGetImmediateFightDecision(
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> fightDecision) &&
+                fightDecision.Action != BotLogicDecision.holdPosition)
+            {
+                ClearHoldReactionRetryState();
+                preparedAdvanceDecision = fightDecision;
+                end = new AICoreActionEnd("hitBreakHold", true);
+                return true;
+            }
+
+            // A coverHold reason is not proof that the follower remains physically protected.
+            // If a real hit arrives after EFT drops IsInCover, prepare a concrete recovery move
+            // before ending. Merely ending here recreates the same coverHold every decision tick.
+            if (!botOwner.Memory.IsInCover &&
+                TryGetRecoverDecision(
+                    goalEnemy,
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> recoveryDecision,
+                    forceRecovery: true,
+                    allowPointBlankFightThrough: true) &&
+                FollowerCombatCommon.IsMovementDecision(recoveryDecision))
+            {
+                ClearHoldReactionRetryState();
+                preparedRecoveryDecision = recoveryDecision;
+                string breakReason = freshDamage
+                    ? "freshDamageOutOfCoverRecovery"
+                    : "hitOutOfCoverRecoveryRetry";
+                BattleRecorder.RecordCommitmentEvent(
+                    botOwner,
+                    "holdSelfPreservation",
+                    "prepareRecovery",
+                    breakReason,
+                    recoveryDecision);
+                end = new AICoreActionEnd(breakReason, true);
+                return true;
+            }
+
+            ArmHoldReactionRetry(
+                goalEnemy,
+                freshDamage ? "hitNoRecoveryMove" : "hitRetryNoRecoveryMove");
+            return false;
         }
 
         private bool TryGetHoldPositionLocalSupportDecision(
             EnemyInfo goalEnemy,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             if (preparedHoldPositionSupportDecision.HasValue)
@@ -762,24 +996,24 @@ namespace pitTeam.BigBrain
         private bool TryPrepareHoldPositionLocalSupportBreak(
             EnemyInfo goalEnemy,
             string reason,
-            out AICoreActionEndStruct end)
+            out AICoreActionEnd end)
         {
             end = FollowerCombatCommon.Continue();
             if (!TryBuildHoldPositionLocalSupportDecision(
                     goalEnemy,
-                    out AICoreActionResultStruct<BotLogicDecision, GClass26> supportDecision))
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> supportDecision))
             {
                 return false;
             }
 
             preparedHoldPositionSupportDecision = supportDecision;
-            end = new AICoreActionEndStruct(reason, true);
+            end = new AICoreActionEnd(reason, true);
             return true;
         }
 
         private bool TryBuildHoldPositionLocalSupportDecision(
             EnemyInfo goalEnemy,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             if (!combatCommon.IsTemporaryHoldPositionAggressionActive() ||
@@ -821,13 +1055,27 @@ namespace pitTeam.BigBrain
         /// <summary>
         /// Keeps decision end conditions local to the simplified combat state machine.
         /// </summary>
-        public AICoreActionEndStruct ShallEndCurrentDecision(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision)
+        public AICoreActionEnd ShallEndCurrentDecision(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
         {
+            if (FollowerCombatCommon.IsRecoveryManeuverReason(currentDecision.Reason) &&
+                FollowerCombatCommon.IsMovementDecision(currentDecision))
+            {
+                return EndCoverMoveOrAttackMoving(currentDecision);
+            }
+
             // Fight actions should not be interrupted by regroup/support routing, but they still
             // need their own end checks so stale visible-fire decisions release when LOS is gone.
             if (combatCommon.IsInFight(currentDecision.Action))
             {
+                if (currentDecision.Action == BotLogicDecision.shootFromPlace &&
+                    combatCommon.TryPrepareExposedFireRecoveryBreak(
+                        currentDecision,
+                        out AICoreActionEnd recoveryBreak))
+                {
+                    return recoveryBreak;
+                }
+
                 return combatCommon.ShallEndCurrentDecision(currentDecision);
             }
 
@@ -841,7 +1089,13 @@ namespace pitTeam.BigBrain
                 combatCommon.ClearCommittedPosition();
 
                 ClearCoverIntent();
-                return new AICoreActionEndStruct("defaultExplicitRegroup", true);
+                return new AICoreActionEnd("defaultExplicitRegroup", true);
+            }
+
+            if (currentDecision.Action == BotLogicDecision.holdPosition &&
+                FollowerCombatPush.IsPushReason(currentDecision.Reason))
+            {
+                return EndPushSearchHold(currentDecision.Reason);
             }
 
             if (FollowerCombatPush.IsPushReason(currentDecision.Reason) ||
@@ -861,7 +1115,9 @@ namespace pitTeam.BigBrain
                 case BotLogicDecision.shootFromCover:
                     return EndShootFromCover(currentDecision.Reason);
                 case BotLogicDecision.suppressFire:
-                    return combatCommon.EndSuppressFire(currentDecision.Reason);
+                    return FollowerCombatCommon.IsRecoveryNoCoverReason(currentDecision.Reason)
+                        ? combatCommon.EndRecoveryNoCoverSuppress(currentDecision.Reason)
+                        : combatCommon.EndSuppressFire(currentDecision.Reason);
                 default:
                     return combatCommon.ShallEndCurrentDecision(currentDecision);
             }
@@ -872,7 +1128,7 @@ namespace pitTeam.BigBrain
         /// </summary>
         private bool TryGetVisibleDecision(
             EnemyInfo goalEnemy,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             if (!goalEnemy.IsVisible)
@@ -895,7 +1151,7 @@ namespace pitTeam.BigBrain
                 // Very-close visible enemies skip cover logic and collapse into point-blank combat.
                 if (Enemy.Distance(goalEnemy) <= Enemy.EnemyDistance.VeryClose)
                 {
-                    decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.dogFight, "visibleDogFight");
+                    decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.dogFight, "visibleDogFight");
                     return true;
                 }
 
@@ -905,7 +1161,7 @@ namespace pitTeam.BigBrain
                 {
                     if (!botOwner.Memory.IsInCover)
                     {
-                        decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.shootFromPlace, "visibleImmediateShoot");
+                        decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.shootFromPlace, "visibleImmediateShoot");
                         return true;
                     }
 
@@ -944,7 +1200,7 @@ namespace pitTeam.BigBrain
                 // Otherwise an exposed bot with corrected visible, shootable contact stands and fires.
                 if (goalEnemy.CanShoot)
                 {
-                    decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.shootFromPlace, "visibleShoot");
+                    decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.shootFromPlace, "visibleShoot");
                     return true;
                 }
 
@@ -957,7 +1213,7 @@ namespace pitTeam.BigBrain
             // that creates a lane before considering forward pressure.
             if (!botOwner.Memory.IsInCover && ShouldForceVisibleAlignedFire(goalEnemy))
             {
-                decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.shootFromPlace, "visibleAlignedShoot");
+                decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.shootFromPlace, "visibleAlignedShoot");
                 return true;
             }
 
@@ -970,7 +1226,8 @@ namespace pitTeam.BigBrain
 
             // If no immediate firing position exists, aggressive followers are allowed to close distance
             // while the enemy is still visible.
-            if (combatCommon.ShouldAdvance(goalEnemy) &&
+            if (!combatCommon.HasActiveOrPendingHealWork() &&
+                combatCommon.ShouldAdvance(goalEnemy) &&
                 goalEnemy.Distance <= CombatDistanceConfiguration.Instance.GetVisiblePushDistance())
             {
                 // Once local logic decides a visible enemy should be pushed, hand off to the old-plugin
@@ -988,17 +1245,18 @@ namespace pitTeam.BigBrain
         private bool TryGetCoveredVisibleFireOrAdvanceDecision(
             EnemyInfo goalEnemy,
             string coverFireReason,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             if (combatCommon.CanShootFromCurrentCoverOrStandingIntent(out _))
             {
                 combatCommon.ExtendCommittedCover();
-                decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.shootFromCover, coverFireReason);
+                decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.shootFromCover, coverFireReason);
                 return true;
             }
 
-            if (!combatCommon.ShouldAdvance(goalEnemy))
+            if (combatCommon.HasActiveOrPendingHealWork() ||
+                !combatCommon.ShouldAdvance(goalEnemy))
             {
                 return false;
             }
@@ -1014,7 +1272,7 @@ namespace pitTeam.BigBrain
         /// </summary>
         private bool TryGetCommittedCoverDecision(
             EnemyInfo goalEnemy,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             // No committed cover means this branch has nothing to manage, so let the rest of the
@@ -1068,7 +1326,7 @@ namespace pitTeam.BigBrain
                 if (shootCoverSettlePhase.IsHolding)
                 {
                     combatCommon.HoldFor(ShootCoverSettleSeconds);
-                    decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.holdPosition, ShootCoverHoldReason);
+                    decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.holdPosition, ShootCoverHoldReason);
                     return true;
                 }
 
@@ -1122,7 +1380,7 @@ namespace pitTeam.BigBrain
 
                 // Otherwise remain in the committed cover and wait for the next actionable event.
                 combatCommon.HoldCoverForMaxDuration();
-                decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.holdPosition, "coverHold");
+                decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.holdPosition, "coverHold");
                 return true;
             }
 
@@ -1138,7 +1396,9 @@ namespace pitTeam.BigBrain
         /// </summary>
         private bool TryGetRecoverDecision(
             EnemyInfo goalEnemy,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision,
+            bool forceRecovery = false,
+            bool allowPointBlankFightThrough = true)
         {
             decision = default;
             // Recovery only matters while exposed. If the bot is already in cover, let the normal
@@ -1149,9 +1409,8 @@ namespace pitTeam.BigBrain
             }
 
             bool needCover =
-                botOwner.Memory.IsUnderFire ||
-                FollowerCombatCommon.WasHitRecently(botOwner, 1f) ||
-                FollowerAwareness.WasRecentlyDamaged(botOwner) ||
+                forceRecovery ||
+                combatCommon.HasRecoveryPressure(1f) ||
                 combatCommon.IsFollowerCriticallyWounded() ||
                 combatCommon.IsEnemyActivelyThreateningMe(goalEnemy, 18f, 0.75f);
 
@@ -1170,7 +1429,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            if (ShouldFightThroughPointBlankRecovery(goalEnemy))
+            if (allowPointBlankFightThrough && ShouldFightThroughPointBlankRecovery(goalEnemy))
             {
                 if (TryCreatePointBlankRecoveryPressure(goalEnemy, out decision))
                 {
@@ -1180,45 +1439,15 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            // Arrival holds are allowed to stabilize after reaching cover unless the holder's own
-            // break rules clear it for real pressure. Without this, recovery can re-emit runToCover
-            // on the same arrived point for several frames.
-            if (combatCommon.HasCommittedPosition(out decision))
+            if (combatCommon.TryGetCommittedRecoveryDecision(goalEnemy, out decision))
             {
                 return true;
             }
 
-            if (combatCommon.HasCommittedCover() && combatCommon.IsBotInCommittedCover())
-            {
-                combatCommon.ArmCommittedArrivalHold(combatCommon.CommittedCoverReason ?? "retreatSafeCover");
-                if (combatCommon.HasCommittedPosition(out decision))
-                {
-                    return true;
-                }
-
-                combatCommon.HoldCoverForMaxDuration();
-                decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
-                    BotLogicDecision.holdPosition,
-                    RecoveryCoverHoldReason);
-                return true;
-            }
-
-            // First try to convert recovery into an actual committed cover move rather than a one-frame panic.
-            if (TryCommitCombatCover(goalEnemy, requireShootLane: goalEnemy.IsVisible && goalEnemy.CanShoot, out string coverReason))
-            {
-                decision = combatCommon.CreateMoveToCommittedCoverDecision(coverReason);
-                return true;
-            }
-
-            // If no cover exists but the enemy is still actively visible and dangerous, suppress from place
-            // instead of idling.
-            if (goalEnemy.IsVisible && goalEnemy.CanShoot)
-            {
-                decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.suppressFire, "underFireNoCover");
-                return true;
-            }
-
-            return false;
+            // With no credible cover, keep facing and fighting the threat. Common owns the bounded
+            // commitment so every tactic retries recovery without an end-and-reselect loop.
+            decision = combatCommon.CreateNoCoverRecoveryDecision(goalEnemy);
+            return true;
         }
 
         private bool ShouldFightThroughPointBlankRecovery(EnemyInfo goalEnemy)
@@ -1236,12 +1465,12 @@ namespace pitTeam.BigBrain
 
         private bool TryCreatePointBlankRecoveryPressure(
             EnemyInfo goalEnemy,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             if (goalEnemy.IsVisible && goalEnemy.CanShoot)
             {
-                decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                     BotLogicDecision.shootFromPlace,
                     "pointBlankRecoveryShoot");
                 return true;
@@ -1252,7 +1481,7 @@ namespace pitTeam.BigBrain
             // reselecting that move every frame creates churn instead of useful pressure.
             if (FollowerImmediateFirePolicy.CanUseRecentContactSuppress(goalEnemy))
             {
-                decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                     BotLogicDecision.suppressFire,
                     "pointBlankRecoveryRecentSuppress");
                 return true;
@@ -1267,9 +1496,14 @@ namespace pitTeam.BigBrain
         /// </summary>
         private bool TryGetAdvanceDecision(
             EnemyInfo goalEnemy,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
+            if (combatCommon.HasActiveOrPendingHealWork())
+            {
+                return false;
+            }
+
             bool pushOrdered = combatCommon.ShouldAdvance(goalEnemy);
             if (!pushOrdered)
             {
@@ -1291,7 +1525,7 @@ namespace pitTeam.BigBrain
         /// local survival branches run earlier and still win before this objective trigger.
         /// </summary>
         private bool TryGetBossCombatObjectiveDecision(
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
 
@@ -1374,7 +1608,7 @@ namespace pitTeam.BigBrain
         /// </summary>
         private bool TryGetLowAggressionRegroupDecision(
             EnemyInfo goalEnemy,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
 
@@ -1400,7 +1634,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+            decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                 BotLogicDecision.standBy,
                 FollowerCombatRegroupObjective.ActivateRegroupReason);
             return true;
@@ -1413,7 +1647,7 @@ namespace pitTeam.BigBrain
         /// </summary>
         private bool TryGetBossUnderAttackDecision(
             EnemyInfo goalEnemy,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             if (FollowerCombatAnchor.IsCombatIndependent(botOwner))
@@ -1475,9 +1709,10 @@ namespace pitTeam.BigBrain
 
             if (prioritizedEnemy.CanShoot)
             {
-                decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                     BotLogicDecision.shootFromPlace,
                     "protectBossFire");
+                MarkBossSupportDecisionPrepared();
                 return true;
             }
 
@@ -1487,6 +1722,7 @@ namespace pitTeam.BigBrain
                     out decision,
                     allowSoftObstructedSuppression: true))
             {
+                MarkBossSupportDecisionPrepared();
                 return true;
             }
 
@@ -1500,12 +1736,14 @@ namespace pitTeam.BigBrain
             {
                 CommitCoverIntent(CoverIntentKind.ProtectBoss);
                 decision = combatCommon.CreateMoveToCommittedCoverDecision(nearbyCoverReason);
+                MarkBossSupportDecisionPrepared();
                 return true;
             }
 
             if (ShouldRegroupForBossDistance())
             {
                 decision = combatCommon.CreateRegroupObjectiveDecision();
+                MarkBossSupportDecisionPrepared();
                 return true;
             }
 
@@ -1520,6 +1758,7 @@ namespace pitTeam.BigBrain
             {
                 CommitCoverIntent(CoverIntentKind.ProtectBoss);
                 decision = combatCommon.CreateMoveToCommittedCoverDecision(wideCoverReason);
+                MarkBossSupportDecisionPrepared();
                 return true;
             }
 
@@ -1527,12 +1766,12 @@ namespace pitTeam.BigBrain
         }
 
         /// <summary>
-        /// Ordered GoForward should commit to a concrete firing position against the enemy's
-        /// current body position before falling back to generic pressure/search behavior.
+        /// Ordered GoForward advances through forward shoot-capable cover. When none is currently
+        /// available, the committed provisional advance keeps scanning while it moves.
         /// </summary>
         private bool TryGetOrderedPushDecision(
             EnemyInfo goalEnemy,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
 
@@ -1550,37 +1789,18 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            if (combatPush.TryCreateOrderedPushFiringPosition(goalEnemy, out decision))
+            if (combatCommon.HasActiveOrPendingHealWork())
             {
-                return true;
+                return false;
             }
 
-            decision = MarkOrderedPushDecision(combatPush.EngageEnemy(FollowerCombatPush.PushActivationSource.Ordered));
+            decision = combatPush.CreateOrderedPushDecision(goalEnemy);
             return true;
-        }
-
-        private static AICoreActionResultStruct<BotLogicDecision, GClass26> MarkOrderedPushDecision(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
-        {
-            if (decision.Reason == null ||
-                decision.Reason.StartsWith("push.ordered", StringComparison.Ordinal))
-            {
-                return decision;
-            }
-
-            if (decision.Reason.StartsWith("push.", StringComparison.Ordinal))
-            {
-                return new AICoreActionResultStruct<BotLogicDecision, GClass26>(
-                    decision.Action,
-                    "push.ordered." + decision.Reason.Substring("push.".Length));
-            }
-
-            return decision;
         }
 
         private bool TryGetAutonomousSuppressDecision(
             EnemyInfo goalEnemy,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             if (Time.time < autoSuppressRetryUntil)
@@ -1590,6 +1810,14 @@ namespace pitTeam.BigBrain
 
             autoSuppressRetryUntil = Time.time + AutoSuppressRetryCooldownSeconds;
             if (!combatCommon.HasActiveCombatEnemy(goalEnemy))
+            {
+                return false;
+            }
+
+            // Shared/priority contact can keep an enemy known, but it is not fire authorization.
+            // Wait for personal contact before autonomous suppression; explicit suppression orders
+            // remain objective-owned and may intentionally use a reported target.
+            if (Utils.Enemy.IsMemoryOnlyAcquisitionWithoutPersonalContact(goalEnemy))
             {
                 return false;
             }
@@ -1634,22 +1862,29 @@ namespace pitTeam.BigBrain
             EnemyInfo goalEnemy,
             bool requireShootLane,
             out string reason,
-            bool avoidBossFireLane = false)
+            bool avoidBossFireLane = false,
+            bool recoveryManeuver = false)
         {
             return combatCommon.TryCommitCombatCover(
                 goalEnemy,
                 requireShootLane,
                 CombatDistanceConfiguration.Instance.GetBossCoverSearchRadius(),
                 out reason,
-                avoidBossFireLane);
+                avoidBossFireLane,
+                recoveryManeuver);
         }
 
         /// <summary>
         /// Ends passive hold when the bot leaves committed cover or should transition back into action.
         /// </summary>
-        private AICoreActionEndStruct EndHoldPosition(string reason)
+        private AICoreActionEnd EndHoldPosition(string reason)
         {
             combatCommon.ValidateCommittedCover();
+
+            if (string.Equals(reason, FollowerCombatCommon.RecoveryNoCoverThreatHoldReason, StringComparison.Ordinal))
+            {
+                return combatCommon.EndRecoveryNoCoverThreatHold();
+            }
 
             if (combatCommon.IsCommittedHolderReason(reason))
             {
@@ -1660,7 +1895,17 @@ namespace pitTeam.BigBrain
             {
                 combatCommon.ClearCommittedCover();
                 ClearCoverIntent();
-                return new AICoreActionEndStruct("combatGestureBreakHold", true);
+                return new AICoreActionEnd("combatGestureBreakHold", true);
+            }
+
+            if (FollowerCombatCommon.IsReloadHoldReason(reason))
+            {
+                return combatCommon.EndReloadHold(reason);
+            }
+
+            if (FollowerCombatCommon.IsWeaponPreparationHoldReason(reason))
+            {
+                return combatCommon.EndWeaponPreparationHold(reason);
             }
 
             if (string.Equals(reason, ShootCoverHoldReason, StringComparison.Ordinal))
@@ -1672,27 +1917,30 @@ namespace pitTeam.BigBrain
             bool isHoldingInCover = isCoverHoldReason ||
                                     botOwner.Memory.IsInCover ||
                                     combatCommon.IsBotInCommittedCover();
+            bool isRecoveryHold = FollowerCombatCommon.IsRecoveryManeuverReason(reason);
             EnemyInfo? goalEnemy = botOwner.Memory.GoalEnemy;
 
             if (isHoldingInCover)
             {
                 if (HasActivePushOrder())
                 {
-                    return new AICoreActionEndStruct("orderedPushBreakHold", true);
+                    return new AICoreActionEnd("orderedPushBreakHold", true);
                 }
 
                 if (string.Equals(reason, "coverHold", StringComparison.Ordinal) &&
                     combatCommon.HasCommittedCover() &&
                     !combatCommon.IsBotInCommittedCover())
                 {
-                    return new AICoreActionEndStruct("leftCommittedCover", true);
+                    return new AICoreActionEnd("leftCommittedCover", true);
                 }
 
-                if (goalEnemy != null && ShouldBreakForBossUnderAttack(goalEnemy))
+                if (!isRecoveryHold &&
+                    goalEnemy != null &&
+                    ShouldBreakForBossUnderAttack(goalEnemy))
                 {
                     combatCommon.ClearCommittedCover();
 
-                    return new AICoreActionEndStruct(
+                    return new AICoreActionEnd(
                         IsBossHoldReason(reason)
                             ? "bossUnderAttackBreakBossHold"
                             : "bossUnderAttackBreakCoverHold",
@@ -1703,44 +1951,74 @@ namespace pitTeam.BigBrain
                     (FollowerCombatCommon.WasHitRecently(botOwner, 0.75f) ||
                      FollowerAwareness.WasRecentlyDamaged(botOwner)))
                 {
-                    combatCommon.ClearCommittedCover();
-                    return new AICoreActionEndStruct("hitBreakHold", true);
+                    if (isRecoveryHold)
+                    {
+                        combatCommon.HoldCoverForMaxDuration();
+                        return FollowerCombatCommon.Continue();
+                    }
+
+                    if (TryPrepareRecentHitHoldBreak(goalEnemy, out AICoreActionEnd hitBreak))
+                    {
+                        return hitBreak;
+                    }
+
+                    combatCommon.HoldCoverForMaxDuration();
+                    return FollowerCombatCommon.Continue();
                 }
 
-                if (goalEnemy != null && ShouldBreakCommittedCoverForBossObjective(goalEnemy))
+                if (!isRecoveryHold &&
+                    goalEnemy != null &&
+                    ShouldBreakCommittedCoverForBossObjective(goalEnemy))
                 {
                     combatCommon.ClearCommittedCover();
 
-                    return new AICoreActionEndStruct(
+                    return new AICoreActionEnd(
                         IsBossHoldReason(reason)
                             ? "bossObjectiveBreakBossHold"
                             : "bossObjectiveBreakCoverHold",
                         true);
                 }
 
-                if (goalEnemy != null &&
+                if (!isRecoveryHold &&
+                    goalEnemy != null &&
                     TryPrepareAllySupportBreak(
                         "allyEngagementBreakHold",
                         false,
-                        out AICoreActionEndStruct allySupportBreak))
+                        out AICoreActionEnd allySupportBreak))
                 {
                     return allySupportBreak;
                 }
 
-                if (!string.Equals(reason, RecoveryCoverHoldReason, StringComparison.Ordinal) &&
-                    goalEnemy != null &&
-                    !goalEnemy.IsVisible &&
-                    TryPrepareAdvanceBreak(
-                        goalEnemy,
-                        "advanceFromCover",
-                        out AICoreActionEndStruct advanceBreak))
+                if (!isRecoveryHold && goalEnemy != null && !goalEnemy.IsVisible)
                 {
-                    return advanceBreak;
+                    if (TryPrepareAdvanceBreak(
+                            goalEnemy,
+                            "advanceFromCover",
+                            out AICoreActionEnd advanceBreak))
+                    {
+                        return advanceBreak;
+                    }
+
+                    // No usable advance was produced. Stay in the current hold while the retry
+                    // signature is unchanged instead of ending/reselecting the same no-op hundreds
+                    // of times. A meaningful geometry/contact change releases this early.
+                    if (IsHoldReactionRetrySuppressed(goalEnemy))
+                    {
+                        return FollowerCombatCommon.Continue();
+                    }
                 }
 
                 if (goalEnemy != null && goalEnemy.IsVisible)
                 {
-                    return new AICoreActionEndStruct("visibleEnemyBreakHold", true);
+                    if (TryPrepareVisibleHoldBreak(goalEnemy, out AICoreActionEnd visibleBreak))
+                    {
+                        return visibleBreak;
+                    }
+
+                    if (IsHoldReactionRetrySuppressed(goalEnemy))
+                    {
+                        return FollowerCombatCommon.Continue();
+                    }
                 }
             }
             else if (goalEnemy != null &&
@@ -1748,7 +2026,7 @@ namespace pitTeam.BigBrain
                      TryPrepareHoldPositionLocalSupportBreak(
                          goalEnemy,
                          "holdPositionLocalSupportBreak",
-                         out AICoreActionEndStruct holdSupportBreak))
+                         out AICoreActionEnd holdSupportBreak))
             {
                 return holdSupportBreak;
             }
@@ -1756,51 +2034,85 @@ namespace pitTeam.BigBrain
             return combatCommon.EndBaseHoldPosition(reason);
         }
 
-        private AICoreActionEndStruct EndCommittedHolder(string reason)
+        private AICoreActionEnd EndPushSearchHold(string reason)
+        {
+            if (combatCommon.HasActiveOrPendingHealWork())
+            {
+                return new AICoreActionEnd("pushNeedHeal", true);
+            }
+
+            return combatCommon.EndBaseHoldPosition(reason);
+        }
+
+        private AICoreActionEnd EndCommittedHolder(string reason)
         {
             EnemyInfo? goalEnemy = botOwner.Memory.GoalEnemy;
+            bool isRecoveryHold = FollowerCombatCommon.IsRecoveryManeuverReason(reason);
             if (combatCommon.HasActiveCombatGestureOrder())
             {
                 combatCommon.ClearCommittedPosition();
                 combatCommon.ClearCommittedCover();
                 ClearCoverIntent();
-                return new AICoreActionEndStruct("combatGestureBreakCommittedHold", true);
+                return new AICoreActionEnd("combatGestureBreakCommittedHold", true);
             }
 
             if (HasActivePushOrder())
             {
                 combatCommon.ClearCommittedPosition();
-                return new AICoreActionEndStruct("orderedPushBreakCommittedHold", true);
+                return new AICoreActionEnd("orderedPushBreakCommittedHold", true);
             }
 
             if (botOwner.Memory.IsUnderFire ||
                 FollowerCombatCommon.WasHitRecently(botOwner, 0.75f) ||
                 FollowerAwareness.WasRecentlyDamaged(botOwner))
             {
+                if (isRecoveryHold && botOwner.Memory.IsInCover)
+                {
+                    combatCommon.HoldCoverForMaxDuration();
+                    return FollowerCombatCommon.Continue();
+                }
+
+                if (isRecoveryHold &&
+                    TryPrepareExposedRecoveryHoldFight(goalEnemy, out AICoreActionEnd recoveryFightBreak))
+                {
+                    return recoveryFightBreak;
+                }
+
+                if (isRecoveryHold && combatCommon.IsBotInCommittedCover())
+                {
+                    // Proximity is enough to complete movement, but it is not proof that the point
+                    // protects the follower. Keep only the short settle grace unless a concrete
+                    // exposed-fight handoff can be prepared above.
+                    combatCommon.HoldCoverForMaxDuration();
+                    return FollowerCombatCommon.Continue();
+                }
+
                 combatCommon.ClearCommittedPosition();
                 combatCommon.ClearCommittedCover();
                 ClearCoverIntent();
-                return new AICoreActionEndStruct("underFireBreakCommittedHold", true);
+                return new AICoreActionEnd("underFireBreakCommittedHold", true);
             }
 
             bool canBreakForEngagement = combatCommon.HasCommittedHolderSettled(CommittedHolderEngagementBreakSettleSeconds);
 
             if (canBreakForEngagement &&
+                !isRecoveryHold &&
                 goalEnemy != null &&
                 ShouldBreakForBossUnderAttack(goalEnemy))
             {
                 combatCommon.ClearCommittedPosition();
                 combatCommon.ClearCommittedCover();
                 ClearCoverIntent();
-                return new AICoreActionEndStruct("bossUnderAttackBreakCommittedHold", true);
+                return new AICoreActionEnd("bossUnderAttackBreakCommittedHold", true);
             }
 
             if (canBreakForEngagement &&
+                !isRecoveryHold &&
                 goalEnemy != null &&
                 TryPrepareAllySupportBreak(
                     "allyEngagementBreakCommittedHold",
                     true,
-                    out AICoreActionEndStruct allySupportBreak))
+                    out AICoreActionEnd allySupportBreak))
             {
                 return allySupportBreak;
             }
@@ -1808,7 +2120,7 @@ namespace pitTeam.BigBrain
             if (goalEnemy != null && IsCommittedHoldEnemyContact(goalEnemy))
             {
                 combatCommon.ClearCommittedPosition();
-                return new AICoreActionEndStruct("enemyContactBreakCommittedHold", true);
+                return new AICoreActionEnd("enemyContactBreakCommittedHold", true);
             }
 
             if (!FollowerCombatCommon.IsBossDistanceProtectedCommitmentReason(reason) &&
@@ -1817,16 +2129,70 @@ namespace pitTeam.BigBrain
                 combatCommon.ClearCommittedPosition();
                 combatCommon.ClearCommittedCover();
                 ClearCoverIntent();
-                return new AICoreActionEndStruct("bossDistanceBreakCommittedHold", true);
+                return new AICoreActionEnd("bossDistanceBreakCommittedHold", true);
             }
 
             if (!combatCommon.IsCommittedHolderTimerActive())
             {
+                combatCommon.BlockCommittedPushCoverForReplan(reason);
                 combatCommon.ClearCommittedPosition();
-                return new AICoreActionEndStruct("committedHoldExpired", true);
+                return new AICoreActionEnd("committedHoldExpired", true);
             }
 
             return FollowerCombatCommon.Continue();
+        }
+
+        private bool TryPrepareExposedRecoveryHoldFight(
+            EnemyInfo? goalEnemy,
+            out AICoreActionEnd end)
+        {
+            end = FollowerCombatCommon.Continue();
+            if (goalEnemy == null ||
+                !goalEnemy.IsVisible ||
+                !goalEnemy.CanShoot ||
+                botOwner.Memory.IsInCover ||
+                !combatCommon.HasCommittedHolderSettled(CommittedHolderEngagementBreakSettleSeconds) ||
+                !FollowerCombatCommon.WasHitRecently(botOwner, 0.75f))
+            {
+                return false;
+            }
+
+            BotWeaponManager? weaponManager = botOwner.WeaponManager;
+            if (weaponManager == null ||
+                weaponManager.Reload?.Reloading == true ||
+                weaponManager.Selector?.IsChanging == true ||
+                !weaponManager.IsWeaponReady ||
+                !weaponManager.HaveBullets)
+            {
+                return false;
+            }
+
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> fightDecision;
+            if (Enemy.Distance(goalEnemy) <= Enemy.EnemyDistance.VeryClose)
+            {
+                AICoreActionResult<BotLogicDecision, CoreActionResultParams>? dogFightDecision =
+                    combatCommon.TryGetDogFightDecision();
+                if (!dogFightDecision.HasValue)
+                {
+                    return false;
+                }
+
+                fightDecision = dogFightDecision.Value;
+            }
+            else
+            {
+                fightDecision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
+                    BotLogicDecision.shootFromPlace,
+                    FollowerCombatCommon.RecoveryNoCoverFightReason);
+            }
+
+            preparedCloseCoverFightDecision = fightDecision;
+            combatCommon.BlockCommittedRecoveryCover("arrivalStillExposedUnderFire");
+            combatCommon.ClearCommittedPosition("recoveryExposedFightPrepared");
+            combatCommon.ClearCommittedCover("recoveryExposedFightPrepared");
+            ClearCoverIntent();
+            end = new AICoreActionEnd("recoveryExposedFightPrepared", true);
+            return true;
         }
 
         private bool IsCommittedHoldEnemyContact(EnemyInfo goalEnemy)
@@ -1851,7 +2217,7 @@ namespace pitTeam.BigBrain
                    IsBossHoldReason(reason);
         }
 
-        private AICoreActionEndStruct EndShootCoverHoldPosition()
+        private AICoreActionEnd EndShootCoverHoldPosition()
         {
             combatCommon.ValidateCommittedCover();
 
@@ -1859,7 +2225,7 @@ namespace pitTeam.BigBrain
             {
                 shootCoverSettlePhase.Clear();
                 ClearCoverIntent();
-                return new AICoreActionEndStruct("leftCommittedCover", true);
+                return new AICoreActionEnd("leftCommittedCover", true);
             }
 
             if (HasActivePushOrder())
@@ -1867,14 +2233,22 @@ namespace pitTeam.BigBrain
                 shootCoverSettlePhase.Clear();
                 combatCommon.ClearCommittedCover();
                 ClearCoverIntent();
-                return new AICoreActionEndStruct("orderedPushBreakShootCoverHold", true);
+                return new AICoreActionEnd("orderedPushBreakShootCoverHold", true);
             }
 
             EnemyInfo? goalEnemy = botOwner.Memory.GoalEnemy;
             if (goalEnemy != null && goalEnemy.IsVisible)
             {
-                shootCoverSettlePhase.Clear();
-                return new AICoreActionEndStruct("visibleEnemyBreakShootCoverHold", true);
+                if (TryPrepareVisibleHoldBreak(goalEnemy, out AICoreActionEnd visibleBreak))
+                {
+                    shootCoverSettlePhase.Clear();
+                    return new AICoreActionEnd("visibleEnemyBreakShootCoverHold", visibleBreak.Value);
+                }
+
+                if (IsHoldReactionRetrySuppressed(goalEnemy))
+                {
+                    return FollowerCombatCommon.Continue();
+                }
             }
 
             if (botOwner.Memory.IsUnderFire || FollowerCombatCommon.WasHitRecently(botOwner, 0.75f))
@@ -1882,10 +2256,10 @@ namespace pitTeam.BigBrain
                 shootCoverSettlePhase.Clear();
                 combatCommon.ClearCommittedCover();
                 ClearCoverIntent();
-                return new AICoreActionEndStruct("underFireBreakShootCoverHold", true);
+                return new AICoreActionEnd("underFireBreakShootCoverHold", true);
             }
 
-            AICoreActionEndStruct baseEnd = combatCommon.EndBaseHoldPosition(ShootCoverHoldReason);
+            AICoreActionEnd baseEnd = combatCommon.EndBaseHoldPosition(ShootCoverHoldReason);
             if (baseEnd.Value)
             {
                 shootCoverSettlePhase.Clear();
@@ -1895,34 +2269,54 @@ namespace pitTeam.BigBrain
         }
 
         /// <summary>
-        /// Sticky cover movement can otherwise keep feeding the same committed cover even after the
-        /// boss line changed enough to make regroup the real objective.
+        /// Cover movement remains owned by its movement end contract. Autonomous regroup distance
+        /// is evaluated only after the move finishes; it must not cancel an active route.
         /// </summary>
-        private AICoreActionEndStruct EndCoverMoveOrAttackMoving(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision)
+        private AICoreActionEnd EndCoverMoveOrAttackMoving(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
         {
-            bool isHealMove =
-                FollowerCombatCommon.IsReasonOrSubreason(currentDecision.Reason, "runToHeal") ||
-                FollowerCombatCommon.IsReasonOrSubreason(currentDecision.Reason, "moveToHeal");
+            bool isHealMove = FollowerCombatCommon.IsMedicalRetreatMovementReason(currentDecision.Reason);
+            bool isRecoveryMove = FollowerCombatCommon.IsRecoveryManeuverReason(currentDecision.Reason);
+            bool isBossSupportMove = IsBossSupportDecision(currentDecision);
             EnemyInfo? goalEnemy = botOwner.Memory.GoalEnemy;
-            if (!isHealMove && goalEnemy != null && ShouldBreakForBossUnderAttack(goalEnemy))
-            {
-                combatCommon.ClearCommittedMovement();
-                combatCommon.ClearCommittedCover();
-                ClearCoverIntent();
-                return new AICoreActionEndStruct("bossUnderAttackBreakCoverMove", true);
-            }
-
             if (!isHealMove &&
-                ShouldEndCurrentDecisionForBossObjective(currentDecision.Reason, allowMovingCommittedCoverBreak: true))
+                !isRecoveryMove &&
+                !isBossSupportMove &&
+                goalEnemy != null &&
+                ShouldBreakForBossUnderAttack(goalEnemy))
             {
                 combatCommon.ClearCommittedMovement();
                 combatCommon.ClearCommittedCover();
                 ClearCoverIntent();
-                return new AICoreActionEndStruct("bossObjectiveBreakCoverMove", true);
+                return new AICoreActionEnd("bossUnderAttackBreakCoverMove", true);
             }
 
-            AICoreActionEndStruct result = combatCommon.ShallEndCurrentDecision(currentDecision);
+            AICoreActionEnd result = combatCommon.ShallEndCurrentDecision(currentDecision);
+            if (result.Value &&
+                string.Equals(result.Reason, "visibleCloseFireBreakCoverMove", StringComparison.Ordinal))
+            {
+                // Ending first and hoping the normal router chooses combat lets low-ammo reload
+                // routing reuse this same committed cover. That creates an end/reselect loop while
+                // the follower keeps sprinting and cannot fire. End only with a real close-fight
+                // handoff ready; otherwise preserve the current run and retry on a later update.
+                if (!TryPrepareCloseCoverFightHandoff(goalEnemy))
+                {
+                    return FollowerCombatCommon.Continue();
+                }
+
+                combatCommon.ClearCommittedMovement();
+                combatCommon.ClearCommittedCover();
+                ClearCoverIntent();
+                return result;
+            }
+
+            if (isRecoveryMove &&
+                result.Value &&
+                ShouldContinueCommittedRecoveryMove(goalEnemy, result.Reason))
+            {
+                return FollowerCombatCommon.Continue();
+            }
+
             if (result.Value)
             {
                 combatCommon.ClearCommittedMovement();
@@ -1931,25 +2325,54 @@ namespace pitTeam.BigBrain
             return result;
         }
 
+        private bool TryPrepareCloseCoverFightHandoff(EnemyInfo? goalEnemy)
+        {
+            if (goalEnemy == null || !goalEnemy.IsVisible || !goalEnemy.CanShoot)
+            {
+                return false;
+            }
+
+            if (!TryGetImmediateFightDecision(
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> fightDecision) ||
+                (fightDecision.Action != BotLogicDecision.dogFight &&
+                 !combatCommon.IsInFight(fightDecision.Action)))
+            {
+                return false;
+            }
+
+            preparedCloseCoverFightDecision = fightDecision;
+            return true;
+        }
+
+        private bool ShouldContinueCommittedRecoveryMove(EnemyInfo? goalEnemy, string? endReason)
+        {
+            if (!combatCommon.HasCommittedCover() || combatCommon.IsBotInCommittedCover())
+            {
+                return false;
+            }
+
+            if (goalEnemy != null && Enemy.Distance(goalEnemy) <= Enemy.EnemyDistance.VeryClose)
+            {
+                return false;
+            }
+
+            return string.Equals(endReason, "visibleCloseFireBreakCoverMove", StringComparison.Ordinal) ||
+                   string.Equals(endReason, "stableImmediateFire", StringComparison.Ordinal) ||
+                   string.Equals(endReason, "stationary", StringComparison.Ordinal);
+        }
+
         /// <summary>
-        /// Shooting from cover remains sticky while the shot is valid, so it needs the same regroup
-        /// objective escape hatch as coverHold/bossHold.
+        /// Shooting from cover remains sticky while its fire contract is valid. Autonomous regroup
+        /// distance is evaluated after firing ends and cannot interrupt the shot action itself.
         /// </summary>
-        private AICoreActionEndStruct EndShootFromCover(string reason)
+        private AICoreActionEnd EndShootFromCover(string reason)
         {
             EnemyInfo? goalEnemy = botOwner.Memory.GoalEnemy;
             if (goalEnemy != null && ShouldBreakForBossUnderAttack(goalEnemy))
             {
                 combatCommon.ClearCommittedCover();
                 ClearCoverIntent();
-                return new AICoreActionEndStruct("bossUnderAttackBreakShootCover", true);
-            }
-
-            if (goalEnemy != null && ShouldBreakCommittedCoverForBossObjective(goalEnemy))
-            {
-                combatCommon.ClearCommittedCover();
-                ClearCoverIntent();
-                return new AICoreActionEndStruct("bossObjectiveBreakShootCover", true);
+                return new AICoreActionEnd("bossUnderAttackBreakShootCover", true);
             }
 
             return combatCommon.EndShootFromCover();
@@ -2032,9 +2455,347 @@ namespace pitTeam.BigBrain
             return intent switch
             {
                 CoverIntentKind.Support => Time.time < supportIntentRetryUntil,
-                CoverIntentKind.ProtectBoss => Time.time < protectIntentRetryUntil,
+                CoverIntentKind.ProtectBoss => IsBossSupportRetrySuppressed(),
                 _ => false,
             };
+        }
+
+        private void ResolvePendingBossSupportBreak(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> nextDecision)
+        {
+            if (!bossSupportBreakPending)
+            {
+                return;
+            }
+
+            if (IsBossSupportDecision(nextDecision))
+            {
+                MarkBossSupportDecisionPrepared();
+                return;
+            }
+
+            bossSupportBreakPending = false;
+            protectIntentRetryUntil = Mathf.Max(
+                protectIntentRetryUntil,
+                Time.time + IntentRetryCooldownSeconds);
+            protectIntentForcedRetryUntil = Mathf.Max(
+                protectIntentForcedRetryUntil,
+                Time.time + BossSupportForcedRetrySeconds);
+            nextBossSupportGeometryCheckAt = protectIntentRetryUntil;
+            hasFailedBossSupportSignature = TryCaptureBossSupportRetrySignature(
+                out failedBossSupportSignature);
+
+            BattleRecorder.RecordCommitmentEvent(
+                botOwner,
+                "bossSupportRetry",
+                "deferAfterMiss",
+                nextDecision.Reason,
+                nextDecision,
+                target: hasFailedBossSupportSignature
+                    ? failedBossSupportSignature.AttackerPosition
+                    : null,
+                untilTime: protectIntentRetryUntil);
+        }
+
+        private void MarkBossSupportDecisionPrepared()
+        {
+            bool hadRetryState = bossSupportBreakPending ||
+                                 hasFailedBossSupportSignature ||
+                                 Time.time < protectIntentRetryUntil;
+            if (hadRetryState)
+            {
+                BattleRecorder.RecordCommitmentEvent(
+                    botOwner,
+                    "bossSupportRetry",
+                    "clearPrepared",
+                    "bossSupportDecisionPrepared");
+            }
+
+            ClearBossSupportRetryState();
+        }
+
+        private bool IsBossSupportRetrySuppressed()
+        {
+            if (Time.time < protectIntentRetryUntil)
+            {
+                return true;
+            }
+
+            if (!hasFailedBossSupportSignature)
+            {
+                return false;
+            }
+
+            if (Time.time >= protectIntentForcedRetryUntil)
+            {
+                BattleRecorder.RecordCommitmentEvent(
+                    botOwner,
+                    "bossSupportRetry",
+                    "retryForced",
+                    failedBossSupportSignature.AttackerProfileId,
+                    target: failedBossSupportSignature.AttackerPosition);
+                ClearBossSupportRetryState();
+                return false;
+            }
+
+            if (Time.time < nextBossSupportGeometryCheckAt)
+            {
+                return true;
+            }
+
+            nextBossSupportGeometryCheckAt = Time.time + BossSupportGeometryCheckIntervalSeconds;
+
+            if (!TryCaptureBossSupportRetrySignature(out BossSupportRetrySignature currentSignature))
+            {
+                ClearBossSupportRetryState();
+                return false;
+            }
+
+            if (HasBossSupportGeometryChanged(failedBossSupportSignature, currentSignature))
+            {
+                BattleRecorder.RecordCommitmentEvent(
+                    botOwner,
+                    "bossSupportRetry",
+                    "retryGeometryChanged",
+                    currentSignature.AttackerProfileId,
+                    target: currentSignature.AttackerPosition);
+                ClearBossSupportRetryState();
+                return false;
+            }
+
+            return true;
+        }
+
+        private bool TryCaptureBossSupportRetrySignature(out BossSupportRetrySignature signature)
+        {
+            signature = default;
+            if (botOwner.BotFollower?.BossToFollow is not pitAIBossPlayer boss)
+            {
+                return false;
+            }
+
+            BotOwner? bossEnemy = boss.ClosestEnemy();
+            if (bossEnemy?.GetPlayer?.HealthController?.IsAlive != true ||
+                string.IsNullOrEmpty(bossEnemy.ProfileId))
+            {
+                return false;
+            }
+
+            EnemyInfo? attackerInfo = botOwner.Memory?.GoalEnemy;
+            if (!string.Equals(attackerInfo?.ProfileId, bossEnemy.ProfileId, StringComparison.Ordinal))
+            {
+                attackerInfo = null;
+                if (botOwner.EnemiesController?.EnemyInfos != null)
+                {
+                    foreach (EnemyInfo candidate in botOwner.EnemiesController.EnemyInfos.Values)
+                    {
+                        if (string.Equals(candidate?.ProfileId, bossEnemy.ProfileId, StringComparison.Ordinal))
+                        {
+                            attackerInfo = candidate;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            Vector3 bossPosition = combatCommon.GetRealBossPosition();
+            if (!FollowerCombatCommon.IsFinite(botOwner.Position) ||
+                !FollowerCombatCommon.IsFinite(bossPosition) ||
+                !FollowerCombatCommon.IsFinite(bossEnemy.Position))
+            {
+                return false;
+            }
+
+            signature = new BossSupportRetrySignature
+            {
+                AttackerProfileId = bossEnemy.ProfileId,
+                FollowerPosition = botOwner.Position,
+                BossPosition = bossPosition,
+                AttackerPosition = bossEnemy.Position,
+                AttackerVisible = attackerInfo?.IsVisible == true,
+                AttackerCanShoot = attackerInfo?.CanShoot == true,
+            };
+            return true;
+        }
+
+        private static bool HasBossSupportGeometryChanged(
+            BossSupportRetrySignature previous,
+            BossSupportRetrySignature current)
+        {
+            if (!string.Equals(previous.AttackerProfileId, current.AttackerProfileId, StringComparison.Ordinal) ||
+                previous.AttackerVisible != current.AttackerVisible ||
+                previous.AttackerCanShoot != current.AttackerCanShoot)
+            {
+                return true;
+            }
+
+            float moveDistanceSqr = BossSupportGeometryMoveDistance * BossSupportGeometryMoveDistance;
+            if ((previous.FollowerPosition - current.FollowerPosition).sqrMagnitude >= moveDistanceSqr ||
+                (previous.BossPosition - current.BossPosition).sqrMagnitude >= moveDistanceSqr ||
+                (previous.AttackerPosition - current.AttackerPosition).sqrMagnitude >= moveDistanceSqr)
+            {
+                return true;
+            }
+
+            return HasPlanarBearingChanged(
+                       previous.FollowerPosition,
+                       previous.AttackerPosition,
+                       current.FollowerPosition,
+                       current.AttackerPosition) ||
+                   HasPlanarBearingChanged(
+                       previous.BossPosition,
+                       previous.AttackerPosition,
+                       current.BossPosition,
+                       current.AttackerPosition);
+        }
+
+        private static bool HasPlanarBearingChanged(
+            Vector3 previousOrigin,
+            Vector3 previousTarget,
+            Vector3 currentOrigin,
+            Vector3 currentTarget)
+        {
+            Vector3 previousDirection = previousTarget - previousOrigin;
+            Vector3 currentDirection = currentTarget - currentOrigin;
+            previousDirection.y = 0f;
+            currentDirection.y = 0f;
+            if (previousDirection.sqrMagnitude <= 0.01f || currentDirection.sqrMagnitude <= 0.01f)
+            {
+                return false;
+            }
+
+            return Vector3.Dot(previousDirection.normalized, currentDirection.normalized) <
+                   BossSupportBearingDotThreshold;
+        }
+
+        private static bool IsBossSupportDecision(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
+        {
+            return decision.Reason?.StartsWith("protectBoss", StringComparison.Ordinal) == true ||
+                   FollowerCombatRegroupObjective.IsRegroupActivationReason(decision.Reason);
+        }
+
+        private void ClearBossSupportRetryState()
+        {
+            bossSupportBreakPending = false;
+            protectIntentRetryUntil = 0f;
+            protectIntentForcedRetryUntil = 0f;
+            nextBossSupportGeometryCheckAt = 0f;
+            hasFailedBossSupportSignature = false;
+            failedBossSupportSignature = default;
+        }
+
+        private void ArmHoldReactionRetry(EnemyInfo goalEnemy, string reason)
+        {
+            holdReactionRetryUntil = Time.time + HoldReactionRetryCooldownSeconds;
+            nextHoldReactionGeometryCheckAt = Time.time + BossSupportGeometryCheckIntervalSeconds;
+            hasFailedHoldReactionSignature = TryCaptureHoldReactionRetrySignature(
+                goalEnemy,
+                out failedHoldReactionSignature);
+
+            BattleRecorder.RecordCommitmentEvent(
+                botOwner,
+                "holdReactionRetry",
+                "deferAfterMiss",
+                reason,
+                target: hasFailedHoldReactionSignature
+                    ? failedHoldReactionSignature.EnemyPosition
+                    : null,
+                untilTime: holdReactionRetryUntil);
+        }
+
+        private bool IsHoldReactionRetrySuppressed(EnemyInfo goalEnemy)
+        {
+            if (!hasFailedHoldReactionSignature)
+            {
+                return Time.time < holdReactionRetryUntil;
+            }
+
+            if (Time.time >= holdReactionRetryUntil)
+            {
+                ClearHoldReactionRetryState();
+                return false;
+            }
+
+            if (Time.time < nextHoldReactionGeometryCheckAt)
+            {
+                return true;
+            }
+
+            nextHoldReactionGeometryCheckAt = Time.time + BossSupportGeometryCheckIntervalSeconds;
+            if (!TryCaptureHoldReactionRetrySignature(goalEnemy, out HoldReactionRetrySignature current) ||
+                HasHoldReactionGeometryChanged(failedHoldReactionSignature, current))
+            {
+                BattleRecorder.RecordCommitmentEvent(
+                    botOwner,
+                    "holdReactionRetry",
+                    "retryGeometryChanged",
+                    goalEnemy.ProfileId,
+                    target: current.EnemyPosition);
+                ClearHoldReactionRetryState();
+                return false;
+            }
+
+            return true;
+        }
+
+        private bool TryCaptureHoldReactionRetrySignature(
+            EnemyInfo? goalEnemy,
+            out HoldReactionRetrySignature signature)
+        {
+            signature = default;
+            if (!combatCommon.HasActiveCombatEnemy(goalEnemy))
+            {
+                return false;
+            }
+
+            Vector3 enemyPosition = FollowerCombatCommon.GetEnemyCurrentPosition(goalEnemy!);
+            if (!FollowerCombatCommon.IsFinite(botOwner.Position) ||
+                !FollowerCombatCommon.IsFinite(enemyPosition))
+            {
+                return false;
+            }
+
+            signature = new HoldReactionRetrySignature
+            {
+                EnemyProfileId = goalEnemy!.ProfileId ?? string.Empty,
+                FollowerPosition = botOwner.Position,
+                EnemyPosition = enemyPosition,
+                EnemyVisible = goalEnemy.IsVisible,
+                EnemyCanShoot = goalEnemy.CanShoot,
+                UnderFire = botOwner.Memory?.IsUnderFire == true,
+            };
+            return true;
+        }
+
+        private static bool HasHoldReactionGeometryChanged(
+            HoldReactionRetrySignature previous,
+            HoldReactionRetrySignature current)
+        {
+            if (!string.Equals(previous.EnemyProfileId, current.EnemyProfileId, StringComparison.Ordinal) ||
+                previous.EnemyVisible != current.EnemyVisible ||
+                previous.EnemyCanShoot != current.EnemyCanShoot ||
+                previous.UnderFire != current.UnderFire)
+            {
+                return true;
+            }
+
+            float moveDistanceSqr = BossSupportGeometryMoveDistance * BossSupportGeometryMoveDistance;
+            return (previous.FollowerPosition - current.FollowerPosition).sqrMagnitude >= moveDistanceSqr ||
+                   (previous.EnemyPosition - current.EnemyPosition).sqrMagnitude >= moveDistanceSqr ||
+                   HasPlanarBearingChanged(
+                       previous.FollowerPosition,
+                       previous.EnemyPosition,
+                       current.FollowerPosition,
+                       current.EnemyPosition);
+        }
+
+        private void ClearHoldReactionRetryState()
+        {
+            holdReactionRetryUntil = 0f;
+            nextHoldReactionGeometryCheckAt = 0f;
+            hasFailedHoldReactionSignature = false;
+            failedHoldReactionSignature = default;
         }
 
         private bool ShouldReleaseCoverIntentForOpportunity(EnemyInfo goalEnemy)
@@ -2053,7 +2814,7 @@ namespace pitTeam.BigBrain
 
         private bool TryGetCoverIntentRepositionDecision(
             EnemyInfo goalEnemy,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             if (!CanScanCoverIntent())
@@ -2111,7 +2872,7 @@ namespace pitTeam.BigBrain
             return false;
         }
 
-        private bool IsDecisionCompatibleWithCoverIntent(AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision)
+        private bool IsDecisionCompatibleWithCoverIntent(AICoreActionResult<BotLogicDecision, CoreActionResultParams> nextDecision)
         {
             if (activeCoverIntent == CoverIntentKind.None)
             {
@@ -2125,14 +2886,14 @@ namespace pitTeam.BigBrain
                    nextDecision.Action == BotLogicDecision.shootFromCover;
         }
 
-        private bool IsDecisionCompatibleWithPreparedAdvance(AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision)
+        private bool IsDecisionCompatibleWithPreparedAdvance(AICoreActionResult<BotLogicDecision, CoreActionResultParams> nextDecision)
         {
             return !preparedAdvanceDecision.HasValue ||
                    (preparedAdvanceDecision.Value.Action == nextDecision.Action &&
                     string.Equals(preparedAdvanceDecision.Value.Reason, nextDecision.Reason, StringComparison.Ordinal));
         }
 
-        private bool IsDecisionCompatibleWithPreparedHoldPositionSupport(AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision)
+        private bool IsDecisionCompatibleWithPreparedHoldPositionSupport(AICoreActionResult<BotLogicDecision, CoreActionResultParams> nextDecision)
         {
             return !preparedHoldPositionSupportDecision.HasValue ||
                    (preparedHoldPositionSupportDecision.Value.Action == nextDecision.Action &&
@@ -2156,22 +2917,21 @@ namespace pitTeam.BigBrain
 
         private bool ShouldBreakForBossUnderAttack(EnemyInfo goalEnemy)
         {
-            return combatCommon.ShouldBreakForBossUnderAttack(goalEnemy, HasActivePushOrder());
+            if (IsBossSupportRetrySuppressed())
+            {
+                return false;
+            }
+
+            bool shouldBreak = combatCommon.ShouldBreakForBossUnderAttack(goalEnemy, HasActivePushOrder());
+            if (shouldBreak)
+            {
+                bossSupportBreakPending = true;
+            }
+
+            return shouldBreak;
         }
 
-        private bool ShouldEndCurrentDecisionForBossObjective(string reason, bool allowMovingCommittedCoverBreak = false)
-        {
-            EnemyInfo? goalEnemy = botOwner.Memory.GoalEnemy;
-            return combatCommon.ShouldEndCurrentDecisionForBossObjective(
-                reason,
-                goalEnemy,
-                ShouldRegroupForBossDistance(),
-                HasActivePushOrder(),
-                goalEnemy != null && goalEnemy.IsVisible && goalEnemy.CanShoot,
-                allowMovingCommittedCoverBreak);
-        }
-
-        private void UpdateShootCoverSettleState(AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision)
+        private void UpdateShootCoverSettleState(AICoreActionResult<BotLogicDecision, CoreActionResultParams> nextDecision)
         {
             if (IsShootCoverMoveDecision(nextDecision))
             {
@@ -2185,7 +2945,7 @@ namespace pitTeam.BigBrain
             }
         }
 
-        private static bool IsShootCoverMoveDecision(AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        private static bool IsShootCoverMoveDecision(AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             return IsShootCoverReason(decision.Reason) &&
                    (decision.Action == BotLogicDecision.runToCover ||
@@ -2225,7 +2985,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            float followerBossDistance = GetSafeRegroupDistance(navDistance, directDistance);
+            float followerBossDistance = FollowerCombatCommon.GetSafeRegroupDistance(navDistance, directDistance);
             float regroupTriggerDistance = CombatDistanceConfiguration.Instance.GetBossRegroupTriggerDistance(botOwner);
             float protectionWillingness = combatCommon.GetBossProtectionWillingness01();
             regroupTriggerDistance *= Mathf.Lerp(
@@ -2251,18 +3011,6 @@ namespace pitTeam.BigBrain
         private static bool IsUrbanDetourRegroup(float directDistance, float navDistance)
         {
             return CombatDistanceConfiguration.Instance.IsUrbanDetourRegroup(directDistance, navDistance);
-        }
-
-        private static float GetSafeRegroupDistance(float navDistance, float directDistance)
-        {
-            bool navValid = !float.IsNaN(navDistance) && !float.IsInfinity(navDistance) && navDistance > 0.1f;
-            if (!navValid)
-            {
-                return directDistance;
-            }
-
-            // Use the conservative larger value so bad/short nav samples cannot mark far bots as "already regrouped".
-            return Mathf.Max(navDistance, directDistance);
         }
 
         /// <summary>

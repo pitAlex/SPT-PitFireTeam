@@ -86,8 +86,10 @@ namespace pitTeam
 
         public Dictionary<string, string> statusSound { get; set; }
         public Dictionary<string, string> enemyMarker { get; set; }
-        public Dictionary<string, string> enemyMarkerAlertColor { get; set; }
-        public Dictionary<string, string> enemyMarkerVisibleColor { get; set; }
+        public Dictionary<string, string> autoDisplayCombatStatus { get; set; }
+        public Dictionary<string, string> autoDisplayKillMarker { get; set; }
+        public Dictionary<string, string> enemyKilledDisplayTime { get; set; }
+        public Dictionary<string, string> enemyKilledRetainTime { get; set; }
         public Dictionary<string, string> scanDistance { get; set; }
         public Dictionary<string, string> enemyRemember { get; set; }
         public Dictionary<string, string> healthMultiplier { get; set; }
@@ -199,7 +201,7 @@ namespace pitTeam
         public string Message { get; set; }
     }
 
-    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "0.9.0")]
+    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "0.10.0")]
     [BepInDependency("xyz.drakia.bigbrain")]
     public class pitFireTeam : BaseUnityPlugin
     {
@@ -227,8 +229,10 @@ namespace pitTeam
 
         public static ConfigEntry<int> statusSound;
         public static ConfigEntry<bool> enemyMarker;
-        public static ConfigEntry<string> enemyMarkerAlertColor;
-        public static ConfigEntry<string> enemyMarkerVisibleColor;
+        public static ConfigEntry<bool> autoDisplayCombatStatus;
+        public static ConfigEntry<bool> autoDisplayKillMarker;
+        public static ConfigEntry<int> enemyKilledDisplayTime;
+        public static ConfigEntry<int> enemyKilledRetainTime;
         public static ConfigEntry<bool> npcSendMessage;
         public static ConfigEntry<bool> pickupEnabled;
         public static ConfigEntry<bool> tieredPickup;
@@ -425,10 +429,12 @@ namespace pitTeam
             // bot misc patches
             new BotTalkTrySayPatch().Enable();
             new BotTalkSayPatch().Enable();
+            new PlayerSayFollowerTalkPatch().Enable();
             new FollowerWeaponTakenAfterDeathPatch().Enable();
             new FollowerWeaponSelectorManualUpdatePatch().Enable();
             new FollowerSupportNoAmmoMainSwitchPolicyPatch().Enable();
             new FollowerHoldLingerReloadSuppressPatch().Enable();
+            new FollowerShootDataSafetyPatch().Enable();
             new FollowerShootFromPlaceCrouchPatch().Enable();
             new FollowerGrenadeAvailabilityPatch().Enable();
             new FollowerGrenadeCooldownPatch().Enable();
@@ -440,10 +446,12 @@ namespace pitTeam
             new HearingSensorPatch().Enable();
             new FootstepSoundPatch().Enable();
             new PlayerSayPatch().Enable();
+            new PlayerContactAudioFallbackPatch().Enable();
             new PlayerVoicePhraseAvailabilityInitPatch().Enable();
             new PlayerVoicePhraseAvailabilityReplacePatch().Enable();
             new PlayerKilledPatch().Enable();
             new PlayerDeadFallbackPatch().Enable();
+            new PlayerMakingShotPatch().Enable();
             new PlayerShotPatch().Enable();
             new AddTeammateBackButtonPatch().Enable();
             new AddTeammateSideSelectionStateClosePatch().Enable();
@@ -477,7 +485,6 @@ namespace pitTeam
             new RaidStartPatch().Enable();
             new MainMenuControllerPatch().Enable();
             new MainMenuControllerReadyScreenGatePatch().Enable();
-            new TarkovApplicationLocalRaidGatePatch().Enable();
             new TarkovApplicationOnlineFallbackPatch().Enable();
             // Compatibility guard: hideout/trader-scene cleanup can null-ref while
             // the teammate flow forces the raid into local mode. Keep this narrow
@@ -486,7 +493,6 @@ namespace pitTeam
             new MatchmakerPlayerControllerClassAddMemberPatch().Enable();
             new MatchmakerPlayerControllerClassDisbandGroupPatch().Enable();
             new MatchmakerPlayerControllerClassAbortPatch().Enable();
-            new MatchmakerPlayerControllerClassLeavePatch().Enable();
             new MatchMakerAcceptScreenPatch().Enable();
             new MatchMakerPlayerPreviewFollowerUiPatch().Enable();
             new ContextInteractionsPlayerRemovePatch().Enable();
@@ -928,9 +934,9 @@ namespace pitTeam
         {
             try
             {
-                if (Singleton<SharedGameSettingsClass>.Instantiated)
+                if (Singleton<EFT.Settings.SettingsManager>.Instantiated)
                 {
-                    string gameLanguage = Singleton<SharedGameSettingsClass>.Instance?.Game?.Settings?.Language?.Value;
+                    string gameLanguage = Singleton<EFT.Settings.SettingsManager>.Instance?.Game?.Settings?.Language?.Value;
                     if (!string.IsNullOrWhiteSpace(gameLanguage))
                     {
                         return NormalizeLanguageCode(gameLanguage);
@@ -1015,9 +1021,90 @@ namespace pitTeam
 
             enemyMarker = Config.Bind("", "06 EnemyMarker", true, new ConfigDescription(optionsLang.enemyMarker["Description"], null, CreateConfigAttributes(-600, false, optionsLang.enemyMarker)));
 
-            enemyMarkerAlertColor = Config.Bind("", "06 EnemyMarkerAlertColor", Utils.EnemyMarkerColor.AlertDefaultHex, new ConfigDescription(optionsLang.enemyMarkerAlertColor["Description"], null, CreateConfigAttributes(-601, false, optionsLang.enemyMarkerAlertColor)));
+            autoDisplayCombatStatus = Config.Bind(
+                "",
+                "06 AutoDisplayCombatStatus",
+                false,
+                new ConfigDescription(
+                    optionsLang.autoDisplayCombatStatus["Description"],
+                    null,
+                    CreateConfigAttributes(-601, false, optionsLang.autoDisplayCombatStatus)));
 
-            enemyMarkerVisibleColor = Config.Bind("", "06 EnemyMarkerVisibleColor", Utils.EnemyMarkerColor.VisibleDefaultHex, new ConfigDescription(optionsLang.enemyMarkerVisibleColor["Description"], null, CreateConfigAttributes(-602, false, optionsLang.enemyMarkerVisibleColor)));
+            autoDisplayKillMarker = Config.Bind(
+                "",
+                "06 AutoDisplayKillMarker",
+                false,
+                new ConfigDescription(
+                    optionsLang.autoDisplayKillMarker["Description"],
+                    null,
+                    CreateConfigAttributes(-602, false, optionsLang.autoDisplayKillMarker)));
+
+            ConfigDefinition legacyEnemyKilledMarkerDefinition =
+                new ConfigDefinition("", "06 EnemyKilledMarker");
+            ConfigDefinition enemyKilledDisplayTimeDefinition =
+                new ConfigDefinition("", "06 EnemyKilledDisplayTime");
+            ConfigDefinition enemyKilledRetainTimeDefinition =
+                new ConfigDefinition("", "06 EnemyKilledRetainTime");
+            ConfigDefinition legacyEnemyDownTimeDefinition =
+                new ConfigDefinition("", "18 EnemyDownStatusRetainTime");
+            int enemyKilledRetainTimeDefault = 15;
+            bool disableKilledMarkersFromLegacyToggle =
+                savedConfigValues.TryGetValue(
+                    legacyEnemyKilledMarkerDefinition,
+                    out string legacyEnemyKilledMarker) &&
+                bool.TryParse(legacyEnemyKilledMarker, out bool legacyEnemyKilledMarkerEnabled) &&
+                !legacyEnemyKilledMarkerEnabled;
+            bool hasEnemyKilledRetainTime =
+                savedConfigValues.ContainsKey(enemyKilledRetainTimeDefinition);
+            if (!hasEnemyKilledRetainTime)
+            {
+                string legacyRetainTime = null;
+                if (savedConfigValues.TryGetValue(
+                        enemyKilledDisplayTimeDefinition,
+                        out string interimEnemyKilledDisplayTime))
+                {
+                    // This key briefly represented retention before display and retention
+                    // became independent settings. Move its value to the retain-time key.
+                    legacyRetainTime = interimEnemyKilledDisplayTime;
+                    orphanedEntries?.Remove(enemyKilledDisplayTimeDefinition);
+                }
+                else
+                {
+                    savedConfigValues.TryGetValue(
+                        legacyEnemyDownTimeDefinition,
+                        out legacyRetainTime);
+                }
+
+                if (int.TryParse(legacyRetainTime, out int parsedLegacyRetainTime))
+                {
+                    enemyKilledRetainTimeDefault = Mathf.Clamp(parsedLegacyRetainTime, 0, 120);
+                }
+            }
+
+            orphanedEntries?.Remove(legacyEnemyKilledMarkerDefinition);
+            orphanedEntries?.Remove(legacyEnemyDownTimeDefinition);
+            orphanedEntries?.Remove(new ConfigDefinition("", "06 EnemyMarkerAlertColor"));
+            orphanedEntries?.Remove(new ConfigDefinition("", "06 EnemyMarkerVisibleColor"));
+
+            enemyKilledDisplayTime = Config.Bind(
+                enemyKilledDisplayTimeDefinition,
+                10,
+                new ConfigDescription(
+                    optionsLang.enemyKilledDisplayTime["Description"],
+                    new AcceptableValueRange<int>(1, 120),
+                    CreateConfigAttributes(-603, false, optionsLang.enemyKilledDisplayTime)));
+
+            enemyKilledRetainTime = Config.Bind(
+                enemyKilledRetainTimeDefinition,
+                enemyKilledRetainTimeDefault,
+                new ConfigDescription(
+                    optionsLang.enemyKilledRetainTime["Description"],
+                    new AcceptableValueRange<int>(0, 120),
+                    CreateConfigAttributes(-604, false, optionsLang.enemyKilledRetainTime)));
+            if (disableKilledMarkersFromLegacyToggle)
+            {
+                enemyKilledRetainTime.Value = 0;
+            }
 
             pickupEnabled = Config.Bind("", "07 Pickup", true, new ConfigDescription(optionsLang.pickup["Description"], null, CreateConfigAttributes(-700, false, optionsLang.pickup)));
 
@@ -1601,7 +1688,7 @@ namespace pitTeam
                 : player.Transform.forward;
 
             Vector3 rawTarget;
-            if (Physics.Raycast(rayOrigin, rayDirection, out RaycastHit hit, maxRayDistance, LayerMaskClass.HighPolyWithTerrainMask))
+            if (Physics.Raycast(rayOrigin, rayDirection, out RaycastHit hit, maxRayDistance, LayersMaskController.HighPolyWithTerrainMask))
             {
                 rawTarget = hit.point;
             }
@@ -1683,7 +1770,7 @@ namespace pitTeam
                     if (boss != null)
                     {
                         if (pingKey.Value.IsUp())
-                            boss.PhraseSaid(new BotEventHandler.GClass692
+                            boss.PhraseSaid(new GlobalEventDispatcher.PhraseDelegateInfo
                             {
                                 phrase = (EPhraseTrigger)CustomPhrases.TeamStatus,
                                 PlayerRequester = boss.realPlayer

@@ -154,12 +154,12 @@ namespace pitTeam.Modules
 
         private static Profile CreateProfileSnapshot(BotOwner bot)
         {
-            CompleteProfileDescriptorClass descriptor = new CompleteProfileDescriptorClass(bot.Profile, GClass2240.Instance);
+            EFT.ProfileDescriptor descriptor = new EFT.ProfileDescriptor(bot.Profile, EFT.FullySearchedSearchController.Instance);
 
             Inventory liveInventory = bot.GetPlayer?.InventoryController?.Inventory;
             if (liveInventory != null)
             {
-                descriptor.Inventory = new EFTInventoryClass(liveInventory, GClass2240.Instance);
+                descriptor.Inventory = new EFT.InventoryDescriptor(liveInventory, EFT.FullySearchedSearchController.Instance);
             }
 
             if (bot.GetPlayer?.ActiveHealthController != null)
@@ -167,7 +167,7 @@ namespace pitTeam.Modules
                 try
                 {
                     descriptor.Health = bot.GetPlayer.ActiveHealthController.Store(
-                        Singleton<BackendConfigSettingsClass>.Instance.transitSettings,
+                        Singleton<EFT.GlobalConfiguration>.Instance.transitSettings,
                         null);
                 }
                 catch
@@ -178,7 +178,7 @@ namespace pitTeam.Modules
 
             if (bot.GetPlayer?.Skills != null)
             {
-                descriptor.Skills = new SkillsDescriptorClass(bot.GetPlayer.Skills);
+                descriptor.Skills = new EFT.SkillsDescriptor(bot.GetPlayer.Skills);
             }
 
             Profile profile = new Profile(descriptor);
@@ -278,7 +278,7 @@ namespace pitTeam.Modules
 
         private static bool NormalizeWeaponOverheat(Weapon weapon)
         {
-            Weapon.WeaponMalfunctionStateClass malfState = weapon?.MalfState;
+            Weapon.MalfunctionState malfState = weapon?.MalfState;
             if (malfState == null)
             {
                 return false;

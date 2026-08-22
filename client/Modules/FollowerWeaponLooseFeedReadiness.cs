@@ -16,7 +16,7 @@ namespace pitTeam.Modules
                    FollowerWeaponChamberReadiness.IsSupportedChamberWeapon(weapon);
         }
 
-        internal static bool IsCompatibleLooseAmmo(Weapon weapon, AmmoItemClass ammo)
+        internal static bool IsCompatibleLooseAmmo(Weapon weapon, EFT.InventoryLogic.Ammo ammo)
         {
             if (FollowerWeaponInternalReadiness.IsInternalMagazineWeapon(weapon))
             {
@@ -29,7 +29,7 @@ namespace pitTeam.Modules
         internal static WeaponPrimaryReadinessSnapshot EvaluateActual(
             InventoryController inventory,
             Weapon weapon,
-            Func<AmmoItemClass, bool>? reserveEligibility = null)
+            Func<EFT.InventoryLogic.Ammo, bool>? reserveEligibility = null)
         {
             if (FollowerWeaponInternalReadiness.IsInternalMagazineWeapon(weapon))
             {

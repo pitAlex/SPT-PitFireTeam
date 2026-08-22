@@ -12,10 +12,14 @@ namespace pitTeam.BigBrain
     internal sealed class FollowerRequestLayer : CustomLayer
     {
         private const bool EnableRequestLayerDebug = false;
+#if DEBUG
         private const float RequestLayerDiagnosticThrottleSeconds = 1f;
+#endif
         private BotFollowerPlayer? followerData;
+#if DEBUG
         private string lastDiagnosticKey = string.Empty;
         private float nextDiagnosticAt;
+#endif
 
         public FollowerRequestLayer(BotOwner botOwner, int priority) : base(botOwner, priority)
         {
@@ -158,8 +162,10 @@ namespace pitTeam.BigBrain
                    command == FollowerCommandType.ComeCloser;
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private void RecordRequestLayerDiagnostic(FollowerCommandType command, string reason, Func<object?> detailsFactory)
         {
+#if DEBUG
             if (command == FollowerCommandType.None || BotOwner == null || !BattleRecorder.IsRecordingFor(BotOwner))
             {
                 return;
@@ -174,6 +180,7 @@ namespace pitTeam.BigBrain
             lastDiagnosticKey = key;
             nextDiagnosticAt = Time.time + RequestLayerDiagnosticThrottleSeconds;
             BattleRecorder.RecordCommandDiagnostic(BotOwner, command, "requestLayer", reason, detailsFactory);
+#endif
         }
 
         private object CreateRequestLayerDiagnostic(

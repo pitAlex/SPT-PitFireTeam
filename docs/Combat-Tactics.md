@@ -1,6 +1,6 @@
 # Combat Tactics Notes
 
-Last updated: 2026-07-16
+Last updated: 2026-08-20
 
 ## Scope
 
@@ -33,8 +33,9 @@ Acquisition and sharing sources:
 - `FollowerCalcGoalEnemyAcquire.HandleCalcGoal(...)` is the idle/sibling sync path. It runs from the core `BotCalcGoal.CalcGoalForBot()` postfix for followers that are not attention-suppressed and do not already have an enemy. When one follower sees a valid forward candidate, it promotes that enemy for itself, then tries to create and promote the same enemy for sibling followers that have no current/live goal enemy. This path registers non-prioritized retention after promotion, but `FollowerContactEnemyRetention` does not perform the squad fan-out itself.
 - `AIBossPlayer.RegisterContactEnemyForFollower(...)` is the boss-contact injection path. Contact/OverThere-style cues, NeedHelp fallback, and ordered launcher target resolution can report and create `EnemyInfo` records for followers, optionally promote one contact as the goal, and register retention with the command-priority flag.
 - `FollowerAwareness` is the reaction path. Direct hits and close incoming fire can create/promote the immediate hostile attacker when the current goal is missing, dead, stale/non-shootable, or clearly farther than the incoming threat. When no push mission is active this retarget clears retained contact once before installing the new goal, so a stale far contact cannot immediately restore over the immediate attacker. When a push mission is active, direct-hit interruption is registered as a temporary target instead of cancelling or replacing the mission.
-- Personal contact is separate from squad/shared memory. `EnemyInfo.HaveSeen` or group sense/real-memory may keep an enemy known, but repair and promotion paths must not treat that flag alone as the follower personally seeing the enemy. Personal seen timestamps are written from direct visible/can-shoot contact or explicit contact priority, and memory-only setup/soft acquisitions cannot start proactive auto-push or marksman close-search by themselves.
-- `addPlayerToBoss` is treated as hostile relationship sharing, not contact proof. Unscoped vanilla/SAIN `GoalEnemy` setter attempts from that cause are blocked for followers until direct/personal contact exists; explicit boss-command, direct-hit, and group-attacker paths remain scoped reaction inputs.
+- Personal contact is separate from squad/shared memory. `EnemyInfo.HaveSeen` or group sense/real-memory may keep an enemy known, but repair and promotion paths must not treat that flag alone as the follower personally seeing the enemy. Personal seen timestamps are written only from direct visible/can-shoot contact. Explicit contact priority may promote and retain an unseen enemy, but it must not fabricate personal sight or activate recent-contact fire; memory-only setup/soft acquisitions cannot start proactive auto-push or marksman close-search by themselves.
+- `addPlayerToBoss` is treated as hostile relationship sharing, not contact proof. When the external SAIN plugin is absent, unscoped core/vanilla `GoalEnemy` setter attempts from that cause are blocked for followers until direct/personal contact exists; explicit boss-command, direct-hit, and group-attacker paths remain scoped reaction inputs. When SAIN is present, this acquisition guard yields to SAIN's vision job and enemy controller.
+- On the no-SAIN path, an awareness-gated unscoped `GoalEnemy` setter that occurs inside `EnemyInfo.CheckLookEnemy` is deferred. Vanilla can temporarily set `IsVisible`/`PersonalSeenTime` and synchronously calculate a goal before it finishes `VisibleType` and `PersonalLastSeenTime`; the normal post-look recalculation runs after follower visibility correction and may then acquire genuine contact. Memory-only goals also cannot qualify as stable follower reporters for sibling fan-out. Neither safeguard uses a distance or floor heuristic.
 
 `FollowerCombatTargetCommitments` owns mission-versus-temporary target arbitration:
 
@@ -63,6 +64,7 @@ Current consumers:
 - Ordered/explicit retarget paths use `ClearAndAllowNextGoalClear(...)` before installing a new goal so the old retained contact cannot bounce the follower back.
 - The SAIN addon reads retained contact from core and syncs it into `SAINEnemyController` through `SAINFollowerRuntimeBridge.TrySyncFollowerEnemyState(...)`; this is a bridge use, not SAIN owning core target selection.
 - When SAIN is installed without the addon, the core SAIN patches can block SAIN enemy-clear behavior while a core retained contact is active.
+- When SAIN is installed and core combat owns the follower, an unscoped vanilla `GoalEnemy` clear is checked against SAIN's independently retained `EnemyController.GoalEnemy` before EFT mutates the mirror or resets aim. The clear is blocked only when SAIN still owns the exact same `EnemyInfo`, marks it known with a last-known position, and the player remains alive; a null, invalid, different, or explicitly cleared SAIN target follows the normal combat-end or target-change path. That exact SAIN last-known point may also supply the missing anchor for core memory-only search and the close ordered-search phase. It remains position memory only: it cannot create/acquire a target, fabricate personal sight, or authorize aiming/firing, and the bridge never scans SAIN's known-enemy list.
 
 Implementation rule:
 
@@ -130,17 +132,19 @@ Rifleman/default behavior:
 - The command is consumed into a durable ordered-push objective.
 - The objective latches the current combat enemy as the ordered kill target and registers it as a target mission. It keeps pursuing until that target dies, becomes unrecoverable, or an explicit new combat order cancels/replaces the mission.
 - Ordered push runs as full ordered pressure rather than a timed aggression pulse; medical, reload, and immediate survival actions can interrupt the current action, but they do not clear the ordered target. Active or pending medical work blocks new push phases until heal logic starts or the medical work clears.
+- Incoming fire interrupts an advancing ordered-push phase once and arms a three-second objective-owned recovery window. During that window the follower keeps the ordered kill target but commits to recovery cover, suppression, or threat-facing hold instead of ending and recreating the same push every frame; once stable, the same ordered push resumes.
 - Boss-under-attack/help retargets do not cancel ordered push. If another enemy becomes a valid temporary target, such as a direct-hit interruption, close visible threat, or visible shootable engagement opportunity, the follower can handle that immediate fight and then resume the ordered target.
 - Explicit new boss orders cancel ordered push. Combat `CoverMe` and `NeedHelp` request ordered-push cancellation before applying their own boss-protection/support behavior; regroup, suppression, and Need Sniper interrupt through their normal objective handoff.
 - Ordered push first tries to build a committed firing-position move using the enemy's current body position.
 - When an ordered firing-position move reaches a reachable pressure point, the ordered-push objective honors the shared arrival hold before selecting another point. This lets the follower hold, face, and fight from the best reached pressure point instead of reselecting tiny adjacent firing points every tick against an unreachable or marksman-style target.
 - If no firing position exists, it falls back to `FollowerCombatPush.EngageEnemy(true, ...)`.
+- A physical cluster of two or more enemies makes both automatic and ordered rifleman pushes cautious. The ordered kill mission remains active, but the approach first attempts cover/firing-position movement instead of treating a two-enemy room as a direct single-target rush.
 - The selected push is committed as `push.*`, so the bot should finish the chosen push phase unless interrupted by real danger, enemy loss, enemy change, or another explicit command.
 - Ordered push refreshes enemy retention during the committed push so it should not forget the enemy mid-route.
-- If the enemy becomes visible/shootable during direct movement, the push can convert into immediate fire or short suppression rather than churn into unrelated movement.
+- If the enemy becomes visible/shootable during direct movement, the push can convert into immediate fire or short suppression rather than churn into unrelated movement. Direct and fire-while-moving push phases require a short push-local stable-contact lease before breaking; raw single-frame visibility/can-shoot does not end the advance without that fire handoff, while an already-active point-blank dogfight remains immediate. Global visibility truth is not smoothed.
 - Riflemen with a shotgun first primary can latch a loaded automatic second primary for mid-or-farther fights; once latched it stays through the fight to avoid distance-bucket weapon churn, unless the automatic secondary runs dry with no reload ammo, at which point the fight is locked back to first primary.
 - Automatic-secondary switching is penetration-guarded against the first primary's current ammo: the secondary ammo may trail by up to 15 penetration, matching EFT's armor-resistance penetration window, so small gaps like 35 vs 40 still allow rate of fire to compensate while gaps like 20 vs 40 stay on the primary.
-- Rifleman weapon switching is owned by combat decisions only: if EFT automatically swaps to a support weapon, such as pistol fallback instead of reload, follower combat should not force an immediate primary swap back unless this tactic explicitly made the secondary switch first.
+- Rifleman weapon switching is owned by combat decisions. A push requires at least `10` loaded rounds in a first/second primary, or `6` in a shotgun; automatic push is rejected without that long-gun readiness. Ordered push keeps its kill mission but holds while a first/second primary is selected and reloaded instead of advancing with the holster weapon. Outside an immediate local fight, a pistol fallback also triggers the same primary selection/reload recovery so the bot cannot remain in a low-ammo pistol dead zone while a long gun is available. This preparation is slot-owned: its wait ends only after the intended primary is actually active, and a settled reload rejection blocks that exact weapon/loaded-round state for 30 seconds instead of repeatedly reclaiming it from EFT's fallback weapon choice. Another carried long gun may still qualify immediately; changed loaded ammo clears the rejection early.
 - Follower reload speech remaps vanilla `NeedAmmo` calls made during an active `BotReload` transaction to `OnWeaponReload`; genuine `NeedAmmo` calls outside an active reload remain unchanged.
 - Riflemen with a usable grenade or rocket launcher in either primary slot can use it through the grenadier objective. The objective owns launcher selection, range, ballistic-arc validation, impact safety, and optional movement to a firing point; once those checks pass, it returns the ordinary `shootFromPlace` weapon action. The action feeds the low-arc aim point into EFT's normal aim-and-trigger worker, preserving normal cadence and repeated fire without using the one-shot `SuppressShoot` controller.
 - A launcher in `FirstPrimaryWeapon` is a real combat primary. Its validated normal-fire attempt may continue for up to two seconds against the last personally seen impact point while EFT finishes aiming, but impact, friendly, distance, and ballistic-arc safety are revalidated throughout. If the launcher is empty, cooling down, lacks a safe opportunity, or combat must hand off to dogfight/healing/retreat, the follower switches to a loaded holster weapon instead of waiting with the launcher raised.
@@ -199,6 +203,8 @@ Autonomous suppression remains separate:
 
 - Default can still choose `autoSuppress.*` as a normal tactical branch.
 - Autonomous suppression is shorter and more conservative than ordered suppression.
+- Autonomous suppression requires a personal contact record. An explicitly prioritized or shared-memory enemy may remain the combat goal, but cannot authorize autonomous fire until the follower personally acquires it; explicit suppression orders remain objective-owned and separate.
+- When suppression selects a future suppress-from point, weapon fire during the approach requires the current direct/soft-obstructed lane to remain continuously valid for `0.2s`. A blocked or flickering lane resets that lease, so the follower moves first instead of snapping off shots through intermittent hard geometry.
 - Point-blank suppression is not allowed to continue just because visibility/shootability is flickering. If the target is within point-blank contact range and there is no confirmed foliage obstruction near the lane, follower suppression clears instead of blind-firing around hard geometry.
 - Ordered/objective suppression can be interrupted after its protected opening burst when the follower needs healing or reload-retreat. The order should create pressure, not pin the follower in place while hurt or empty.
 
@@ -298,7 +304,7 @@ Explicit command objectives sit above this tactic router in `FollowerCombatLogic
 
 Important policy:
 
-- Boss-distance regroup does not break active push/help/heal-style commitments.
+- Crossing the autonomous boss-distance threshold may end a passive `holdPosition`, but it does not end an active move-to-cover, push, search, shoot, suppression, retreat, heal, or other action. Those actions finish through their own end contracts; regroup is selected on the next decision pass. Once the regroup objective is already active, reaching its boss-distance completion envelope ends any regroup-owned movement and enters the arrival settle phase. Leaving regroup clears only the `GoToSomePointData` destination still matching that objective's local target, so a later objective cannot inherit a stale bossward point. Ordered pushes remain distance-independent.
 - Autonomous boss-distance regroup defers briefly after recent personal contact so a follower can finish or stabilize a local fight before retreating to the boss.
 - Explicit regroup breaks ordered push; explicit push refreshes/restarts the ordered-push objective for the current target.
 - Explicit suppression is objective-owned and does not live as a Default-local router branch.
@@ -318,6 +324,8 @@ Default and marksman can ask push code for a pressure plan, but they still keep 
 - Auto-push registers the first committed push target as an `AutoPush` mission. Temporary threats can pause the push and take `GoalEnemy`, but they do not overwrite that mission; when the temporary target clears, the original push target is restored if still alive.
 - Against marksman enemies, push does not manufacture a fake hold if no valid firing-position push exists. It returns no push decision and lets the tactic continue routing.
 - Ordered push is allowed to reach a pressure/firing point and hold it briefly through the shared committed-position hold, so unreachable marksman-style contacts become "fight from here and rescan" instead of repeated adjacent point selection.
+- A push cover that produces no mover path for `1.25s`, makes no progress for the ordinary stall window, or has already completed its arrival hold is temporarily excluded for that same enemy geometry. The exclusion is an ID lookup during the existing cover pass, is bounded to eight covers for ten seconds, and releases early when the target changes or its anchor moves at least four meters. Recovery/heal cover selection does not consume this push-only exclusion.
+- Boss-leashed bounded search does not emit another cover movement when the selected shooting cover is already inside the shared three-meter arrival-hold envelope. It records that cover as completed for the unchanged push geometry and proceeds to the bounded tactical search step instead of cycling `runToCover -> committedCoverHold -> runToCover` on the same point.
 
 Committed push breaks for:
 
@@ -331,7 +339,9 @@ Committed push breaks for:
 
 Push enemy retention is refreshed during committed push so a contact/order push does not forget the enemy mid-route.
 
-Automatic unseen search rushes are also gated before activation: if the enemy anchor is far outside the boss regroup envelope, the bot should not sprint into a blind push just because a search route exists. Ordered pushes remain command-owned, but active push movement can still be interrupted if the actual NavMesh route turns into a large urban detour while the enemy is not visible or shootable. When unseen search is blocked while the follower is already inside the boss regroup envelope, default combat should hold the enemy lane instead of reactivating the regroup objective and immediately completing it again.
+Automatic unseen search rushes are also gated before activation: if the enemy anchor is far outside the boss regroup envelope, the bot should not sprint into a blind push just because a search route exists. Ordered pushes remain command-owned. Urban route protection is applied while selecting cover on Streets and Ground Zero: a candidate whose NavMesh route is a major detour compared with the direct route to that same candidate is rejected before commitment. It does not interrupt an already active push by comparing unrelated boss and movement-target distances. When direct unseen search is boss-leash blocked while the follower remains inside the regroup envelope, default combat selects a shoot-capable cover within the leash or a bounded tactical step toward the enemy; only a follower already outside the regroup trigger activates regroup.
+
+Memory-only automatic search has a stricter target contract than ordinary personal-contact search. It commits a credible personal/shared last-known position rather than the hidden target's live `CurrPosition`, walks without delegating target mutation to vanilla search, and refreshes only when the same enemy receives a newer real group sighting at a meaningfully different position. When SAIN is installed, the exact same retained, known, living SAIN goal may supply a missing EFT last-known point; this fallback is identity-gated and cannot grant vision or fire permission. Distant or positionless memory reports retain the bounded hold/regroup fallback instead of creating a blind route.
 
 ## Movement And Arrival Holds
 
@@ -352,9 +362,13 @@ Movement breaks for:
 - under fire or recent hit
 - visible shootable contact
 - close visible contact
-- boss-under-attack when the movement is not protected by active push/help policy
+- boss-under-attack when the movement is not itself the selected `protectBoss*` response and is not protected by active push/help policy
 - arrival at the destination
 - sprint impossibility for `runToEnemy`
+
+The synthetic `moveToHealPoint.attackRetreat` escape is the pressure exception: normal visibility, incoming fire, and recent damage keep the committed point active while the retreat action continuously owns threat-facing independently of forward/backward/side path steering. Its moving-fire overlay takes safe direct shots or tightly gated recent-contact suppression. Explosive danger and true point-blank contact can still force an immediate survival handoff.
+
+Recent incoming-fire suppression records the player source when EFT provides one. A temporary `GoalEnemy` or visibility gap does not interrupt fire while that source remains alive, but a known source dying or despawning immediately invalidates fire permission and releases the trigger. The recovery movement may still finish from the remaining threat evidence; source life gates shooting, not the committed escape route. Unknown-source evidence retains only its existing short timeout.
 
 When a movement action reaches cover or a point, common end logic arms a committed holder. The holder returns `holdPosition` for a short think window so the bot does not immediately reselect the same cover or churn into another travel action.
 
@@ -380,16 +394,29 @@ Cover lifecycle:
 1. Select a candidate cover.
 2. Commit that cover.
 3. Move to the committed cover.
-4. Detect arrival using EFT cover state, committed-cover proximity, or go-to-point arrival.
+4. Detect arrival using EFT cover state, committed-cover proximity, or a go-to-point arrival that still matches the exact committed destination. A stale `GoToSomePointData.IsCome()` or merely assigned cover id cannot complete another cover-bound action.
 5. Arm an arrival hold.
 6. During hold, scan for immediate fire, damage pressure, suppression direction, support, protection, and regroup.
 7. Keep holding if nothing stronger wins.
+
+Cover selection is planner-owned and performance-bounded:
+
+- `Covers.GetCoverPoints(...)` supplies one broad local candidate pool for a follower's combat evaluation frame.
+- `FollowerCombatCommon` reuses that pool across later decision branches, including an empty result, instead of enumerating EFT cover again in the same frame.
+- Navigation distance is memoized per candidate for the frame; intent-specific selectors rank the retained candidates for shooting, advance, retreat/heal, support, or bossward movement.
+- Threat-relative safe-cover selectors test hard geometry first with deterministic standing chest and head rays against EFT's high-poly/terrain mask. Foliage never counts as hard cover, and the blocking geometry must be within 3m of the candidate so a distant wall elsewhere on the threat lane cannot validate an exposed point.
+- Hard-cover results are cached for one second while the threat and cover stay in the same local area, and each follower may run at most eight new collision probes in one frame. If no hard candidate survives, ordinary recovery/boss movement may reuse a weak candidate from the same pool; it does not enumerate cover again.
+- Medical cover is the strict exception: a heal retreat may commit only hard threat-relative cover. It falls through to the existing hidden-point or no-safe-retreat handling instead of treating foliage or another weak point as safe enough to heal.
+- On Streets and Ground Zero only, the same cached navigation distance rejects a cover candidate when reaching that cover would require a major building-scale detour relative to the direct distance to that cover.
+- `GetClosestCoverPoint(...)` remains a convenience API outside this combat evaluation path; core combat does not use it as its final tactical selector.
+- Cover-affined actions execute the committed cover or explicit point. `attackMoving` must not run its own vanilla `TryPointGetting` search and overwrite the planner's destination.
 
 Cover intent matters:
 
 - Shooting cover can stand up if a standing-height shot lane exists.
 - Safe/retreat cover should not force standing fire unless a real lane is verified.
 - Cover move actions should not keep running after proximity/arrival says the destination was reached.
+- Weak retreat fallback is tagged as `retreatWeakCover` (and no-enemy fallback as `recovery.noEnemyThreatCover.weak`). Battle snapshots include the selected EFT cover type, cover level, defence level, danger coefficient, hide level, and wall direction so weak selections can be verified from the recorder.
 
 ## Grenades
 
@@ -428,8 +455,18 @@ Current behavior:
 - The explicit force-heal hotkey restores body-part health and clears active light/heavy bleeding effects.
 - First-aid refresh corrects vanilla med selection for active bleeding: if the selected med advertises bleed treatment but lacks enough remaining resource for the bleed-removal cost, followers prefer another usable med instead of looping the depleted one.
 - Out of combat, patrol healing looks for a nearby cover point once before starting `HealAction`, then uses the same sprinting `runToHeal` cover action as combat healing. If no valid cover is found within 60m, healing can fall back to the current position. The cover search result is kept for the whole post-combat recovery sequence, including multiple first-aid/surgery actions, so patrol does not re-search or move to a different cover between med uses. Followers say `StartHeal` once per patrol heal sequence: when they start moving to found cover, or when they start healing if no cover movement is available.
+- Between out-of-combat med uses, patrol treats `FirstAid.Damaged + HaveSmth2Use`, pending surgery, and recoverable top-off work as predicted future healing even while vanilla's `HEAL_DELAY_SEC` makes `Have2Do`/`ShallStartUse()` temporarily false. A completed `HealAction` ends normally, then a stationary `PatrolHealWaitAction` owns the cooldown until a fresh heal node can actually start; `FollowAction` only resumes after no treatable medical work remains. If the post-combat sequence cannot restart or finish within its bounded recovery window, the existing force-heal path clears the stuck medical state instead of holding patrol forever.
+- A combat `healIdleTimedOut` result preserves its retry cooldown after enemy loss instead of immediately selecting the same inactive heal node again. Post-enemy combat-layer medical retention is also one-shot per activation: a stale EFT `Have2Do`/`HaveWork` flag cannot restart the retention window after its timeout.
+- Patrol preserves ownership only while a medical item is actually in use. A stale `HealAction` or BigBrain `heal` result with no active medical use must pass through normal enemy, command, and post-combat readiness checks so it cannot block combat or squad commands indefinitely.
+- During an ordered push, pending medical work that is temporarily retry-blocked keeps one stable hold decision until the retry becomes available. It can still break immediately for a point-blank self-defense threat instead of ending and recreating the same hold every frame.
+- Ordered-push arrival holds use the same committed-position lifecycle for tactical firing points and recovery cover. They remain stable until their exact commitment expires or a real medical/immediate-threat interrupt is ready, rather than falling through the generic unsupported-action end path.
 - Post-combat full recovery uses vanilla first-aid/surgery plus the manual first-aid top-off path during a bounded recovery window. The first actual patrol `HealAction.Start()` starts a 12 second timer; during that window top-off can keep starting med animations for damaged limbs. Once the timer elapses, patrol stops starting new top-off actions, waits until medical use has ended and the main weapon is selected and ready, force-restores health through the same path as the explicit force-heal hotkey, clears the post-combat flag, and resumes movement.
-- When retreating to heal but sprint/mobility is poor, recent contact can choose visible fire or suppression instead of walking with no pressure.
+- Debug battle snapshots continue outside combat only while post-combat full healing or an active follower command is present. These bounded snapshots include the live BigBrain layer/node/last result and the post-combat full-heal flag, allowing medical handoff and command starvation to be diagnosed without enabling continuous out-of-combat recording.
+- If post-combat linger releases the core combat-active marker but BigBrain retains the same physical layer through the handoff, a valid enemy returning before `Stop()` / `Start()` must make `GetNextAction()` rearm the shared combat activation state before selecting its decision. This cancels the premature post-combat heal sequence, restores combat/patrol ownership, resets and starts fresh combat logic, and records a matching new combat episode instead of fighting while reported out of combat.
+- When retreating to heal but sprint/mobility is poor, recent contact can choose visible fire or suppression instead of walking with no pressure. Medical suppression uses the same shared recent-contact eligibility window as the suppress action and its end conditions.
+- A synthetic heal hide point uses one committed `moveToHealPoint.attackRetreat` action. The follower keeps moving to that exact point under ordinary visibility/fire pressure, keeps its weapon/threat facing locked after every path-steering update, and uses the shared moving-fire overlay for safe direct shots or recent-contact suppression; it does not end and recreate a plain `goToPoint` every time the enemy becomes shootable.
+- Objective end routing classifies medical decisions from both `Action` and `Reason`. Generic movement actions with `runToHeal`, `moveToHeal`, or `moveToHealPoint` reasons and threat-facing `healRetreat*` fire/suppression fallbacks remain medical work and must reach their shared end checks before regroup, push, or combat-release logic can end them.
+- Heal-cover arrival is distance/cover-id validated; a stale `GoToSomePointData.IsCome()` from an older destination cannot start `healInCover`. Active healing is cancelled when a visible enemy has a shootable lane, or when incoming-fire pressure catches the follower outside real cover.
 
 Heal-cover exception: arriving at heal cover hands off to healing instead of normal cover hold.
 
@@ -453,17 +490,45 @@ Rifleman aggression:
 
 Default situational behavior:
 
-- under damage pressure, prefer recovery or suppressive retreat over exposed standing fire
+- under damage/incoming-fire pressure, use one shared recovery predicate before both support selection and hold termination, then commit to one recovery maneuver before support, protection, regroup, or autonomous push can redirect the bot: sprint to credible cover within `12m` only when its route is screened from the enemy, otherwise move to the exact committed cover while facing and suppressing the threat; reject routes that cut through close enemy space or advance through an exposed fire lane
+- sprint movement treats EFT's transient door status `0` as pending rather than as a closed-door veto, and only reports sprint engaged from the player's real movement context; if sprint never physically engages, recovery hands off to threat-facing moving fire
+- moving/hold fire smooths the live enemy target across action changes and validates alignment against EFT's adjusted firearm fire-port vector rather than the perpendicular `WeaponRoot.forward` transform axis
+- recovery movement ignores `bossUnderAttack` and boss-distance breaks until it reaches cover, becomes invalid/stalled, or a point-blank fight forces local self-defense; normal committed retreat movement recognizes physical/path arrival even when EFT's `IsInCover` flag is late
+- recovery cover movement preserves its `recovery.*` commitment reason through arrival, so continuing threat awareness and a delayed/flickering EFT `IsInCover` flag cannot release the arrival hold and reselect the same already-reached cover
+- if no credible cover exists, stand and fight a visible shootable enemy, otherwise suppress or threat-face in place for a `2.5s` commitment before retrying cover instead of ending and reselecting every frame
+- exposed Rifleman `shootFromPlace`, including ordered-push fire, uses one shared narrow return-fire lease against a visible, shootable enemy beyond `8m`: a follower that has not returned fire gets `0.55s`, one that has fired gets `0.9s`, and actual new damage can trigger recovery immediately even when EFT's enemy-looking flag is false. Without fresh damage, the enemy-looking requirement remains. The static-fire action ends only after a target-validated concrete recovery movement is prepared; being in cover, point-blank contact, grenade-launcher fire, or a failed cover scan preserves the current fire action.
+- a threat-facing no-cover hold preserves that anti-churn commitment while pressure is unchanged, but a different active enemy or actual new hit after the hold began interrupts it once for fresh cover/fight selection; if that scan still finds nothing, the next hold captures the new evidence baseline and remains committed instead of repeatedly reacting to persistent under-fire/recent-damage flags
+- if vanilla clears `GoalEnemy` between clustered contacts while recent incoming-fire awareness remains, keep the core combat layer active, select hidden lateral/backward cover from the existing per-frame candidate pool, and use committed `attackMovingWithSuppress`; do not fall into crouched post-combat linger in the open. The same candidate pass also rejects a destination that would move materially closer than `12m` to one of at most four living same-floor enemies sensed by the group in the last four seconds. Those frozen memory positions are safety vetoes only: they never promote a target, grant sight, aim, or authorize fire.
+- a memory-only contact cannot create an autonomous push mission or direct `runToEnemy` / `goToEnemy` advance, but it can use cautious cover/simple-search movement to investigate the reported position. Reaching that point records the enemy/report/position transaction; the same completed report cannot recreate search until both a newer report and a materially changed position arrive. If search cannot produce movement, it uses the bounded stable no-cover hold contract instead of ending as `notInCover` every frame
+- low-threat and cautious-push cluster checks combine a short-lived physical overlap count with the target bot's living `BotsGroup` members inside the same proximity radius. Group membership supplies only a threat-count floor: it does not register unseen teammates as follower enemies, grant visibility, or permit shooting. This prevents an initially empty cached overlap from treating one member of a nearby squad as isolated.
 - if visible and shootable, shoot immediately using the corrected follower `EnemyInfo` senses
 - if visible but not shootable, prefer firing cover or pressure movement
-- dogfight ownership follows vanilla-style exit rules: do not end dogfight just because visibility/shootability flickers. The action clears stale movement on entry, then stays responsible for facing the threat, stopping unsafe fire, and micro-repositioning until the enemy is gone, out of dogfight range, or reload/cover-after-leave rules end it. While dogfight is active, movement may step forward, backward, or sideways, but look/aim stays locked to the live fight target body/current position, falling back to the last known point only if live target data is unavailable. At point-blank range, if normal `CanShoot` flickers off but the muzzle has no hard obstruction to the live target chest, dogfight can use a direct close-contact shot after aim alignment and friendly-lane safety pass. In the close visible dogfight window, recent personal contact can also use a short SAIN-like continuity shot toward the last known/contact chest point when the enemy flickers out of `IsVisible`/`CanShoot`, but only if the weapon lane has no hard obstruction and friendly-lane safety passes. Dogfight does not force crouch blindly; it only uses the half pose when the crouch lane is verified, otherwise standing is the safe default.
+- dogfight ownership follows vanilla-style exit rules: do not end dogfight just because visibility/shootability flickers. The action clears stale movement on entry, then stays responsible for facing the threat, stopping unsafe fire, and micro-repositioning until the enemy is gone, out of dogfight range, or reload/cover-after-leave rules end it. A newly entered dogfight has a one-second opening commitment while the same living close enemy remains directly shootable or eligible for the existing geometry-verified loaded-weapon continuity fire; fresh damage cannot immediately replace that viable return-fire window with injured suppression-retreat. Dogfight reload-retreat and injured suppression-retreat endings use the shared one-shot transition context: the end condition records its source action/reason, end reason, target, and concrete successor, and the next decision pass consumes that successor before ordinary objective routing. If low-ammo reload-retreat cannot produce a real reload/cover action because usable loaded fire should continue or reload setup is not ready, dogfight does not end for that reason and the same transition is not retried for one second. The special `pointBlankContactDogFight` / `pushPointBlankContactDogFight` entries additionally revalidate the contact that justified them: after neither hard-separated point-blank contact nor another live/recent close dogfight condition remains for `0.75s`, they release with `pointBlankContactLost` so the owning default or ordered-push objective can resume instead of backing away until the generic dogfight-out radius. An injured suppression-retreat may end dogfight only after the opening commitment has elapsed and its suppression target, safety lane, optional cover, and suppress controller have all initialized; that prepared decision is consumed by the next selection. Point-blank contact blocks this retreat handoff so injury cannot turn a live muzzle-range fight into per-frame dogfight/suppression churn. While dogfight is active, movement may step forward, backward, or sideways, but look/aim stays locked to the live fight target body/current position, falling back to the last known point only if live target data is unavailable. At point-blank range, if normal `CanShoot` flickers off but the muzzle has no hard obstruction to the live target chest, dogfight can use a direct close-contact shot after aim alignment and friendly-lane safety pass. In the close visible dogfight window, recent personal contact can also use a short SAIN-like continuity shot toward the last known/contact chest point when the enemy flickers out of `IsVisible`/`CanShoot`, but only if the weapon lane has no hard obstruction and friendly-lane safety passes. Dogfight normally uses standing posture for mobile strafe/back-out movement; within 8 meters, if no movement path is accepted or an accepted dodge is immediately cancelled, it preserves the incoming settled pose while firing and retries movement instead of standing exposed in place.
+- when a committed run-to-cover temporarily loses `GoalEnemy`, recent incoming-fire direction keeps the walking fallback combat-facing and permits safety-gated suppression. If sprint becomes physically available again under pressure, the action retries it at a bounded one-second cadence instead of waiting for combat pressure to disappear.
 - heal-cover movement is sticky against non-visible recent-hit pressure; it only breaks for immediate fire on a true point-blank visible shootable threat.
 - if heal-cover movement reaches its committed cover but EFT has not yet marked the bot in cover and the bot is still under fire, keep the `runToHeal` action alive instead of ending/reselecting it every tick. Existing stall handling can still reject the cover if it remains ineffective.
 - if enemy is unseen but recent enough, push/search can continue using retained enemy memory
+- automatic unseen search applies the boss leash to the follower's selected destination rather than to the enemy anchor: when a direct `runToEnemy` would exceed the leash, an in-range follower first commits a shoot-capable boss-local cover and otherwise searches toward one bounded step inside the leash. Only a follower already outside the actual regroup trigger activates regroup; ordered push remains unrestricted. The old `push.search.blocked` recurring hold is not a valid tactical outcome.
+- ordered push uses forward cover-to-cover planning only outside the existing `Close` enemy band (`31m`): candidate cover must lie in the forward sector, reduce enemy distance, have a complete route no longer than `30m`, and provide a geometric firing lane. If no such cover exists, the follower uses committed `push.ordered.provisionalAdvance` `goToEnemy` movement and rescans every `2s`; finding a new forward shooting cover prepares a one-shot `attackMoving` transition before ending the advance, so the selected cover survives the action handoff. Crossing into `Close` transactionally ends either approach action and restores the normal ordered-push planner, including its cautious fire, close movement, dogfight, cover, and stalled suppression/search choices. Ordered push does not use the generic synthetic firing-position/arrival-hold loop during the outer approach.
+- moving push look control uses the enemy body only for direct sight and otherwise requires a follower-owned reliable known position. When neither exists, `attackMoving` faces its active route and tactical movement keeps its destination/corner look instead of aiming at a stale group-sense point, hidden live transform, or zero/world-origin position. A valid threat point remains preferred so this fallback does not weaken threat-facing retreat or moving fire.
+- completed, unusable, or too-distant memory-only reports retain their separate bounded think-window contract instead of ending and recreating the same stale investigation every frame; pending medical work prevents automatic or ordered push phases from reopening until healing/recovery can take ownership
+- a close unseen `runToEnemy` / `goToEnemy` push that makes no progress transitions once into safe suppression when a valid lane exists, otherwise into a committed tactical/simple search around the last-known enemy position; movement fallback cannot claim success during its path-reuse grace unless a matching active path still exists
+- with SAIN installed, a close ordered advance against a memory-only exact retained target uses SAIN's last-known point for one committed search/hold phase instead of repeatedly advancing against the hidden live transform; the ordered kill objective remains active and resumes immediately for real contact or changed retained position
+- ordered-push stall suppression uses the same bounded autonomous-suppression lifecycle as the default tactic, so a blocked standing lane exits after its protected opening window and the fallback cannot pin the follower in place indefinitely
+- controlled `goToEnemy` sprint is re-evaluated against the live enemy anchor every update and drops to weapon-ready movement within `15m`, or immediately on visible/shootable contact, instead of carrying a far-route sprint commitment through the blind final approach
+- committed `attackMoving` ends on exact committed-point/cover proximity even when EFT delays `IsInCover`, then hands off to the normal arrival hold instead of remaining stationary in a completed movement action
+- survival/reload-retreat holds are only emitted after a reload actually starts; active reloads retain the hold, while transient rejected/completed reloads use a three-second retry cooldown so visible contact cannot create start/end churn. Physical arrival within the existing committed-cover tolerance counts even while EFT's `IsInCover` flag is late, so reload retreat starts the reload instead of reissuing the already-completed cover run. If EFT left a Rifleman holding a pistol, combat first selects a usable first/second primary; when neither has push-ready loaded ammo, long-gun preparation waits for the intended slot and proves a reload before starting it. A settled no-reload result never calls vanilla's `TryReload()` weapon-fallback path: that weapon/ammo state is skipped for 30 seconds, or until its loaded rounds change, and an ordered push uses one bounded no-long-gun hold rather than a switch/reload loop. Live loaded fire and enemy loss still break the preparation hold immediately. No-push cover fire uses the same live visible/shootable cover-lane predicate as its action end condition, and the fallback `longGunAmmoHold` honors the bounded no-push hold window.
+- a verified standing shot from committed shooting cover uses the same raised-lane predicate for both `shootFromCover` selection and action completion. EFT's still-crouched `CanShoot` flag cannot make a valid raise-to-fire decision immediately end and restart.
+- patrol and medical actions enforce a released firearm trigger, and `ShootData.Shoot()` is rejected only when a follower has neither live core-combat ownership nor a living goal enemy; the optional SAIN follower-combat path remains exempt
+- core combat and patrol poll EFT's own 16-second magazine / 40-second loose-ammo reload watchdog so a lost reload callback cannot leave the follower permanently unable to fire
 - if too far from boss and not protected by push/help/heal, switch to regroup objective
-- if boss is attacked, prepare protection/support before breaking passive holds
-- if ally is engaged, prepare support before breaking passive holds
-- shoot-from-place wraps vanilla crouch/prone behavior because EFT may choose a lower stance whenever it is technically allowed, even when the lower muzzle lane is blocked and a standing lane is clear. Followers veto crouch through `FollowerShootFromPlaceCrouchPatch` unless both crouch-height probes have a reliable lane, actively stand back up if already crouched while only the standing lane is safe, only allow prone at long range with a verified low firing lane, and force standing again before/after the vanilla node if prone would leave them vulnerable or unable to shoot.
+- if boss is attacked, end the passive action once and run normal protection selection; when no protection decision is produced, wait three seconds before another break, retry early only after meaningful follower/boss/attacker movement, bearing, attacker identity, or visibility changes, and force a fresh attempt after nine seconds even when geometry stays static
+- boss-protection weapon suppression (`protectBossSuppress*`) is follower-owned autonomous suppression, so it uses the same bounded protected burst and timeout lifecycle instead of falling through the vanilla unseen-enemy end rule
+- passive `coverHold` / `bossHold*` / no-push holds only end after the router has prepared a different actionable reaction. A recent hit first prepares an immediate fight handoff. If EFT no longer reports the follower in cover and no fight handoff exists, it must prepare a concrete recovery movement before ending; a failed recovery scan retains the hold under the same three-second/geometry retry instead of recreating `coverHold`. Failed visible or advance scans follow that same bounded retry, and cached per-frame cover evaluation prevents duplicate candidate passes.
+- when a killed or cleared `GoalEnemy` leaves a short target-handoff gap, core combat may hold for at most `0.4s` and scan up to four living enemies from the follower's own recent personal-contact records. It turns only toward frozen `PersonalLastPos` bearings, probes one candidate every `0.1s`, and promotes only after the existing direct-contact verifier confirms current vision. New damage interrupts the scan; an unchanged failed set is blocked for one second before another scan, and memory-only/group contacts are never eligible.
+- close visible followers under active incoming/damage pressure use a narrow emergency fire gate when EFT's aim direction is aligned but `IBotAiming.IsReady` remains false for `0.75s`. Weapon readiness, cadence, direct/suppression lane, and both friendly-fire gates still apply; only the stuck readiness boolean is bypassed through `ShootData.Shoot()`.
+- if ally is engaged, prepare support before breaking passive holds; a support firing point must have a complete NavMesh path and share the follower's or boss's current floor, and a point that makes no progress for four seconds is excluded briefly so deterministic scoring cannot select it again immediately
+- the shared combat-posture policy rejects crouch below `50m` for a living visible/shootable threat, fresh personal contact, or incoming damage pressure. It reasserts standing after vanilla hold, regroup-arrival, recovery, search, suppression, smoke-fire, flank, and attack-moving updates so their firing overlays cannot bypass the rule. Search translation also stays standing while the enemy is at least `25m` away, and the first `0.75s` of a push-search arrival hold preserves that standing pose so deceleration cannot appear as crouch-walking. This movement-only rule does not remove distant stationary crouched fire. Crouch fire is only eligible at `50m+`, with a living visible shootable enemy, no current/recent damage pressure, a stable distant firing situation (cover or no recent incoming threat), and both crouch-height lanes clear. Shoot-from-place and shoot-from-cover retain their lane-aware distant crouch checks; prone remains limited to `80m+` and inherits the same stable distant-fire gate. The point-blank dogfight no-path exception remains separate: within `8m`, it may preserve an already-settled covered firing pose only until a real dodge path is accepted.
 
 ## Marksman Combat Behavior
 
@@ -483,17 +548,25 @@ Marksman behavior:
 
 - prefers firing positions and support cover
 - uses committed movement and arrival holds like default
-- uses prepared-break decisions so support/protection only breaks hold when the next action is valid
+- uses the shared recovery predicate, recovery-qualified cover selection, recovery movement/arrival contract, and bounded no-cover fight/suppress/hold retry instead of treating a firing position as survival cover
+- uses prepared-break decisions so support/protection, renewed pressure, and immediate fire only break hold when the concrete successor is retained for the next decision pass
 - ignores generic assault push behavior unless marksman policy asks for close support/search
-- can switch to automatic secondary for close-quarter fights
+- can use automatic-secondary close search only when the same loaded-ammo and penetration policy used by automatic push accepts that second primary; holster weapons do not qualify
+- close automatic-secondary preparation is transactional: a viable visible shot keeps the current weapon, while unseen close-search intent waits in a bounded enemy-facing hold until the selected primary is active and both selector and weapon manager report it ready
+- close automatic search uses a concrete cover-backed tactical destination at least `16m` from the enemy anchor; it does not fall back to the shared simple-search action that walks directly to the enemy position
 - does not run proactive automatic close-search while temporary boss `HoldPosition` aggression override is active
 - switches back to primary when returning to support/reposition marksman decisions, and when combat drops before patrol reload maintenance starts
 - supports team push/search through firing-position support, not blind rushing
+- consumes ordered suppression only for the boss-selected automatic-secondary fallback; ordinary generic Marksman suppression orders remain rejected
+- initializes autonomous `autoSuppress.sniper.*` through the shared bounded suppression lifecycle, including its protected opening, shot/timeout accounting, and restart guard
+- close visible contact can end committed cover travel only after a concrete stationary-fire successor is prepared; without one, movement remains committed and retries instead of ending in hope
+- an expired marksman cover hold leaves only with an atomically committed different firing position. If no different candidate exists, the current cover remains held for another bounded retry instead of clearing and recommitting the same point; a simultaneous boss-distance break wins first and routes to regroup before fresh reposition selection
+- the Rifleman-specific exposed `shootFromPlace` return-fire lease remains default-tactic policy; Marksman static fire still uses shared fire end conditions so ordinary long-range firing lanes are not converted into nearest-cover movement without battle-record evidence
 - hands boss-distance regroup to the shared regroup objective
 
-Marksman hold behavior scans periodically for:
+Marksman hold behavior periodically evaluates:
 
-- better shooting spot
+- a verified shooting-position refresh; a candidate that cannot be committed leaves the current hold running instead of ending/reselecting it
 - push support
 - boss-under-attack support
 - ally support
@@ -508,12 +581,18 @@ Regroup behavior:
 
 - explicit combat regroup activates the regroup objective
 - explicit push can leave regroup and activate the ordered-push objective
-- autonomous boss-distance regroup waits through a short recent-fight grace window when the follower still has fresh personal enemy contact, recent hit/damage pressure, visible contact, or shootable contact
+- autonomous boss-distance regroup waits through a short recent-fight grace window when the follower still has fresh personal enemy contact, recent follower fire, recent hit/damage pressure, visible contact, or shootable contact; the follower-fire signal survives a same-fight `GoalEnemy` change
 - extreme separation bypasses that grace so a follower who is very far out of bounds still rejoins
 - hot contact regroup stays combat-active and moves bossward using withdraw-style movement
 - cooled contact regroup runs directly toward boss / sampled boss position
 - regroup may use bossward cover, but reaching that cover is only an intermediate step
-- regroup completion is based on reaching the boss/bossward objective
+- entering the boss-distance arrival envelope does not immediately create `regroup.arrived`; an exposed follower performs one capped cover acquisition centered on the boss, then commits `regroup.arrivalCover` to the best valid threat-aware result. This terminal scan is independent of the ordinary follower-centered per-frame candidate pool, so dense maps cannot omit nearby boss-local cover merely because that shared pool filled with points around the follower
+- an arrival scan is capped once per materially distinct boss sector, not once for the entire objective: reaching or exhausting a cover in one sector does not prevent one fresh scan after the boss moves beyond the normal regroup-sector refresh distance, while repeated decisions inside the same sector remain scan-free
+- the arrival-cover commitment survives temporary medical/dogfight interruptions and is not ended merely because movement remains inside the regroup radius
+- `regroup.arrived` is used only when the follower is already in cover, has physically reached the selected arrival cover, no valid boss-local cover was found, or the one committed arrival-cover move stalled; its short settle ends immediately for a visible shootable enemy or exposed incoming-fire/recent-hit pressure so the primary tactic can produce the concrete fire/recovery successor
+- regroup completion is based on reaching the boss/bossward objective and resolving that single arrival-cover attempt
+- cooled `regroup.run` ignores `GoToSomePointData.IsCome()` from an older route and remains owned until the boss-distance arrival check succeeds; objective-owned withdraw targets only accept `IsCome()` when the active point still matches their exact target
+- the run action refreshes its own sampled bossward point after exact arrival, at a bounded cadence, so a boss who changes floors or moves inside the broad anchor-refresh threshold cannot leave the follower standing at a completed intermediate point
 
 Regroup movement also has its own short commitment so the bot does not recalculate bossward movement every tick.
 
@@ -534,14 +613,22 @@ It is intended to compare observed behavior with code behavior:
 - grenades
 - health/healing state
 - churn and bad transition clusters
+- recovery cover commitments/no-cover retry windows and distance-aware `posturePolicy` allow/veto events
+- bounded target-handoff scan begin/look/probe/end events, including direct-contact promotion or failed grace expiry
+- relevant hostile SAIN bot state while it is fighting the player/followers, plus a short post-contact tail
+- source-tagged temporary combat-aggression override set/clear transitions
 
 Use it to validate whether a bug is tactical routing, action execution, perception, or visual/player interpretation.
+
+Schema version 6 retains schema 5's opponent-side `sainOpponentDecision`, sampled `sainOpponentSnapshot`, `combatAggressionOverride`, and 10 Hz transition-only `followerWeaponActivity` records. Follower combat/fire snapshots now include `combatActivity.aimPlan`: controller type, status, readiness, elapsed time, current planned duration, last base duration, remaining time, and normalized progress. This distinguishes a deliberately long aim plan from an elapsed timer that stalls or repeatedly resets. Weapon activity records still capture trigger, shooting, reload, active-weapon, and loaded-round changes without enabling full patrol snapshots. A throttled `followerWeaponSafety` event records rejected no-enemy shot requests. SAIN decisions are probed at their 10 Hz decision cadence while full snapshots retain the configured recorder interval; a low-frequency discovery probe also catches SAIN targeting the player before follower combat begins. The opponent record includes SAIN layer/action and combat/squad/self decisions, target contact, cover and active-path state, movement, aim/fire/suppression, health/medical state, and personality timing. It is intentionally relationship-gated: a SAIN bot is emitted only while it targets the player/follower, a recorded follower targets it, or for five seconds after that relationship disappears. This keeps the recorded timeline focused on the actual fight instead of writing snapshots for every SAIN bot in the raid.
 
 Enemy provenance fields record the `BotSettingsClass.Cause` stored in `EnemyInfo.GroupInfo`, a coarse cause category, and whether that cause normally needs an awareness gate. Treat this as acquisition provenance rather than final truth: the cause is usually the first group-add reason and later reports may update enemy memory without changing the cause. `contact` fields compare personal seen timestamps with group sense/real-visibility timestamps, and `geometry` fields record straight distance, planar distance, and vertical delta so wall/building separation can be distinguished from pure floor separation.
 
 Enemy visibility fields in snapshots include the corrected follower-facing `EnemyInfo` values plus validation context. Follower `isVisible`, `canShoot`, and `distance` are normalized after `EnemyInfo.CheckLookEnemy`; combat read paths also refresh distance/direction from the live enemy transform so stale retained enemies do not carry `float.MaxValue` distances into decisions. Stale `isVisible` / `canShoot` flags are cleared if their personal seen timestamps are not fresh, which prevents old room-to-room contacts from re-entering close visible dogfight. `isVisible` means direct follower-visible contact rather than sense/green-sense memory, and `canShoot` means a verified fire lane from the follower. `visibleType` is recorded for context, and `reliableShootLane` is a diagnostic hard-lane check for comparing corrected senses against the stricter head/body fire policy.
 
 Sense correction owns general `EnemyInfo` truth. Keep extra checks only when they validate action-local constraints the corrected senses do not express: friendly fire lanes, crouch/prone weapon height, current aim-lane safety, soft foliage/grass suppression lanes, and short recent-contact continuity. Do not add new decision-level "is the visible/canShoot flag really true?" gates unless the correction layer cannot represent that condition.
+
+Recent-contact suppression revalidates its physical firing lane at execution time. It may continue through an explicitly verified soft foliage/grass obstruction, but hard world geometry such as vehicles, walls, and buildings blocks the trigger even while the personal last-seen window is fresh.
 
 Performance boundary: correction is a hot path because it runs after follower `EnemyInfo.CheckLookEnemy`. It only performs line probes for plausible visibility candidates: close contacts where foliage matters, raw visible/shootable contacts, raw direct-visible contacts, or contacts that were directly visible on the previous tick. Distant non-visible enemies are demoted using corrected distance without additional raycasts.
 
@@ -565,3 +652,100 @@ Keep these boundaries stable:
 - Do not let `Enemy.IsVisible()` alone break push instantly; use stable visible plus shootable/contact gates.
 - Prefer small, explicit interrupt reasons so battle records can explain churn.
 - Keep comments focused on why a branch exists, not what the next line literally does.
+
+### Recorder Finding: External SAIN Ambush Response And Open-Terrain Gaps
+
+Status: this subsection preserves recorder-grounded findings, the five narrow repairs implemented from them, and the remaining broader ambush/self-preservation invariants. Here, **SAIN** means the external `me.sol.sain` plugin, not the pitFireTeam SAIN addon.
+
+Evidence sources:
+
+- `20260820-033223-RezervBase.jsonl`: the first external-SAIN enemy demonstrated the desired ambush response.
+- `20260820-042506-RezervBase.jsonl`: a long outdoor Reserve fight exposed the corresponding gaps in follower self-preservation and several independent lifecycle defects. The record is large because PMCs, Gluhar's group, and later scavs converged on the fight; event volume by itself is not a bug.
+
+The five repairs were implemented and build-validated in this order:
+
+1. Ordered memory search now replaces a stale/nonmatching mover route with its actual committed point, and every newly issued Push has an issue sequence so a renewed order restarts an already-active Ordered Push objective after the normal medical/dogfight/launcher interrupt guards allow it.
+2. A running memory search now adopts a changed `GoalEnemy` and the planner's new valid search point in place. It does not clear the new point merely because BigBrain retained the same action/reason and therefore skipped `Start()`.
+3. A follower suppression decision without an owned suppress-from point explicitly stops inherited movement and sprint. Suppression that owns a movement point retains its moving-fire behavior.
+4. First-aid-only work is deferred only while all narrow conditions hold: the follower remains `Healthy`, has no bleed/destroyed part/surgery/active treatment, is missing at most 25 recoverable HP, and has a living enemy within 35 meters that was personally seen and applied pressure within 0.75 seconds.
+5. With external SAIN installed, follower pressure checks read SAIN's `EnemyLookingAtMe` from its exact current enemy object, matched by profile and `EnemyInfo` identity and cached for 0.1 seconds. Without SAIN, the vanilla method remains authoritative. This value is tactical pressure only and never becomes visibility, `CanShoot`, aim, or trigger authorization.
+
+Complete and validate each earlier item before using a later item to explain or alter the same recorder sequence. This prevents the broader pressure work from hiding the three confirmed action-lifecycle defects.
+
+#### Observed External-SAIN Ambush Response
+
+The useful behavior is pressure-sensitive rather than a blanket retreat:
+
+- When pressured by aimed fire or near misses but still mobile, the SAIN enemy seeks cover. It can run decisively or maintain suppression while retreating.
+- When rounds are actually landing, stagger or movement interference can make escape worse. In that state it is more likely to return fire from place to regain pressure before attempting movement again.
+- The practical choice is therefore between a screened escape and a committed counter-fire response. It is not simply "under fire means run" or "visible enemy means stand and shoot."
+- Reloading while escaping was also observed. Do not add a separate follower reload implementation from this observation alone: vanilla weapon selection/reload may already own the correct switch, and source plus recorder evidence must establish the missing boundary first.
+
+The closest existing follower actions are:
+
+- `runToCover` for a decisive escape when the route is credible and sprint remains viable;
+- `attackMovingWithSuppress` or `attackRetreat` for threat-facing movement with safe suppression;
+- `attackMoving` for controlled movement when firing is not currently safe or possible;
+- `shootFromPlace` only when close contact, actual hits, mobility loss, or the lack of a concrete safe successor makes moving immediately worse.
+
+Every firing form remains subject to `FollowerShotSafety` and the normal friendly/world lane gates.
+
+#### Rifleman Mismatch And Implemented Signal Repair
+
+`FollowerCombatDefault.GetDecision()` gives immediate visible fighting priority over general recovery. Its narrow exposed-fire deferral mainly reacts to fresh damage, urgent medical state, critical condition, or a verified enemy-looking signal. The broader SAIN-style choice between screened escape and committed counter-fire remains future tactical work.
+
+The previous signal was definitely broken with external SAIN: SAIN patches vanilla `BotOwner.IsEnemyLookingAtMe` to return false globally and maintains its own `Enemy.EnemyLookingAtMe` status instead. Core follower combat now reads that exact SAIN status through `SainGoalEnemyBridge`. This repairs the existing exposed-fire lease, close active-threat checks, attack-moving pressure check, suppress-point correction, and recorder field without granting sight or fire permission. It does not yet interpret the opponent's current SAIN action/trigger state as a broader incoming-fire signal.
+
+Required tactical invariant:
+
+1. If incoming pressure is credible and movement is still viable, prefer a concrete screened cover/path successor.
+2. If sprint is unsafe or unavailable, prefer threat-facing suppressive retreat when the firing lane is safe.
+3. If actual hits or movement impairment make escape worse, preserve counter-fire long enough to regain pressure before reconsidering movement.
+4. Never end the current fire/hold action merely in hope that the next decision will find cover. Prepare and validate the successor first; a failed scan keeps the current fight and retries after a bounded delay.
+5. Preserve correct existing responses such as a valid `attackRetreat`; do not introduce a global "always retreat when shot" rule.
+
+#### Reserve Evidence For The Mismatch
+
+The following `20260820-042506-RezervBase.jsonl` windows should be retained as regression references:
+
+- At `t=148.828`, Nails selected `shootFromPlace|ShootImmediately` at about 35 m from weak foliage without meaningful hard cover. The SAIN opponent was in `StandAndShootAction`, targeting and firing at Nails, but the follower-side mirror did not report that the enemy was looking at him. Nails remained exposed and lost 74.8 HP at `t=149.776`.
+- At `t=565.758`, a SAIN Gluhar guard had Nails as its current visible/shootable target and was firing. Nails stopped an unfinished aim/fire overlay at `t=565.841`, chose `runToHeal`, and lost 67.1 HP only 0.027 seconds later.
+- At `t=581.917`, the same opponent was still firing. A momentary `CanShoot` loss ended `ShootImmediately` at `t=582.089`; Nails selected `runToHeal` and lost another 68.1 HP at `t=582.129`. The later action-level fallback to threat-facing movement and its blocked-lane refusal to fire were reasonable; the unsafe part was the perception-sensitive medical handoff.
+- At `t=596.760-597.090`, the SAIN opponent still saw, could shoot, and fired at Nails while Nails' mirrored `EnemyInfo` remained invisible and unshootable. The resulting damage does not by itself prove a bad cover choice; it proves a perception asymmetry that tactical pressure handling must tolerate.
+- At `t=670.729`, Nails correctly chose `attackRetreat`, stayed threat-facing, acquired aim, and fired. Gluhar landed the first hit. This is a sound response and must remain valid even though the exchange was unfavorable.
+- Around `t=1024.024`, another SAIN enemy could see and fire while Nails' mirror remained invisible/unshootable. `attackRetreat` correctly withheld fire because its lane/weapon state was blocked. Do not convert opponent pressure into follower fire permission.
+
+Nails was highly effective once contact and a firing lane stabilized: the record contains 213 trigger advances, at least 155 confirmed loaded-round decreases, and roughly 441 aggregate HP loss survived through healing. The target of this work is open-terrain self-preservation and transition timing, not a broad reduction of his combat capability.
+
+#### Optional-SAIN Pressure Bridge Boundary
+
+Core and external-SAIN runtime paths must remain separate:
+
+- Without the SAIN plugin, pressure must come from verified core signals such as `Memory.IsUnderFire`, recent hit/damage state, and existing threat state.
+- With the SAIN plugin installed, the implemented compatibility bridge reads `EnemyLookingAtMe` only from the follower's exact SAIN `GoalEnemy`. A future extension may additionally read opponent current-target/firing state, but only as a **pressure-only** signal when identity is equally strict.
+- That bridge must not create or promote an enemy, write personal sight timestamps, set `IsVisible`/`CanShoot`, authorize aim/trigger, or bypass physical/friendly shot safety. Existing SAIN retained-target/last-known-position integration remains identity and memory support, not sight permission.
+- The current looking signal is cached for 0.1 seconds, below SAIN's own 0.25-second status update interval, and expires immediately on exact-target mismatch. Any broader firing-pressure extension needs its own bounded debounce/expiry contract.
+
+Any implementation must be validated twice: once against vanilla opponents with external SAIN absent, and once with external SAIN installed. Preserve the group-fighting behavior established in Labs while testing open terrain, interrupted medical handoffs, actual-hit versus near-miss pressure, missing/blocked cover, and perception asymmetry.
+
+#### Confirmed Independent Defects In The Same Reserve Record
+
+These are concrete lifecycle bugs found during the same analysis. They should not be folded into the ambush-pressure policy:
+
+- **Fixed — memory-search retarget churn:** at `t=632.235`, `GoalEnemy` changed while `memoryOnlyAutoSearch.walk` was active. `CombatSearchAction` cleared its old target state, but BigBrain retained the same action/reason and did not call `Start()` again. This produced 155 end/reselect cycles under 0.05 seconds through `t=634.726`. The action now retargets in place to the new valid planner point.
+- **Fixed — standing suppression inherits movement:** at `t=511.837`, the decision changed from search to `recovery.noCoverSuppress.place`, but the no-point suppression path did not explicitly cancel the previous mover route. Nails continued roughly 5 m while supposedly suppressing from place and took damage. No-point suppression now cancels inherited movement; movement-owning suppression is unchanged.
+- **Fixed — ordered-push memory-search stall:** the push at `t=946.098` selected `search|push.ordered.memorySearch` and committed a search point about 13.6 m away, yet Nails remained stationary for about 53.5 seconds. The mover retained a stale target only 0.357 m away and considered it reached. Reissuing Push at `t=991.324` did not restart the already-active Ordered Push objective. A subsequent There command immediately created a path and moved, proving that the bot and NavMesh were not generally stuck. Search movement now verifies its live mover target against the committed point and force-installs the right route, while a renewed Push sequence explicitly replans the objective.
+- **Fixed — tiny-injury medical handoff:** at `t=581.917-582.129`, a small first-aid-only hit plus a momentary `CanShoot` loss selected `runToHeal` while a recently seen close opponent was still firing. Only the narrow low-damage/Healthy/first-aid-only case is deferred; serious or active medical work remains unchanged.
+
+Short `enemyMissingOrDead` repeats around recovery suppression also occurred, but they were bounded and are not the principal failure in this record. Keep them observable rather than broadening the above fixes around them.
+
+### Future: Per-Follower Shooting Performance
+
+- Add persistent `Reaction` and `Accuracy` values per teammate, exposed as 0-100 profile sliders alongside tactic and aggression. Existing teammates must migrate to defaults that preserve current behavior.
+- These values govern shooting execution only. Combat tactics must not read them when deciding whether to take cover, retreat, suppress, push, regroup, support, or heal. A poor shooter should still make the same tactically sound decisions, but acquire the shot more slowly and shoot less accurately.
+- `Reaction` should map confirmed-contact-to-fire readiness: gain-sight timing, initial aim time, and target-handoff delay. It must not silently change vision/hearing range, enemy memory, aggression, or the combat decision cadence.
+- `Accuracy` should centrally map precision convergence, scattering, recoil/burst control, and body-part preference. Avoid independent hard-coded accuracy changes at individual actions or tactics.
+- Build the runtime mapping around the current hard baseline and overrides in `BotFollowerPlayer.SetFollowerSettings`, rather than having each tactic alter EFT shooting settings.
+- Treat external SAIN as a separate execution boundary. With the addon disabled, SAIN's `GetSAIN`-gated patches can still replace aim-time, fire-rate, vision-speed, and body-part calculations even though `SAINLayersActive` is false. Per-follower values therefore need an authoritative final modifier or a narrow compatibility bridge so the selected SAIN preset cannot silently erase them.
+- When implemented, the battle recorder should capture the configured and effective reaction/accuracy values plus the timing chain from valid contact to aim-ready to first trigger. This allows tactical quality to be evaluated independently from marksmanship.
+- Validate with otherwise identical followers at low and high shooting skill: their tactical decision/reason sequence should remain comparable, while their aim latency, dispersion, hit rate, and burst control differ.

@@ -16,6 +16,7 @@ namespace pitTeam.Modules
 
         private AudioClip radioClip;
         private AudioClip locationClip;
+        private AudioClip radioBeepClip;
 
         public async void Enable()
         {
@@ -23,6 +24,7 @@ namespace pitTeam.Modules
             List<AudioClip> sounds = await GetSound();
             radioClip = sounds[0];
             locationClip = sounds[1];
+            radioBeepClip = sounds[2];
         }
 
         private async Task<List<AudioClip>> GetSound()
@@ -30,6 +32,7 @@ namespace pitTeam.Modules
             List<AudioClip> audioClips = new List<AudioClip>();
             audioClips.Add(await LoadAudioClip("file://" + ResolveSoundPath("radiochat.ogg")));
             audioClips.Add(await LoadAudioClip("file://" + ResolveSoundPath("locationping.ogg")));
+            audioClips.Add(await LoadAudioClip("file://" + ResolveSoundPath("radiobeep.ogg")));
 
             return audioClips;
         }
@@ -60,19 +63,19 @@ namespace pitTeam.Modules
             }
         }
 
-        public async void PlayRadioSound()
+        public async void PlayRadioBeep()
         {
             try
             {
-                float level = (pitFireTeam.pingRadioVolume.Value / 100f) * 0.5f;
+                float level = (pitFireTeam.pingRadioVolume.Value / 100f) * 0.3f;
                 // Lazy load when async Enable() has not completed yet.
-                if (radioClip == null || radioClip.length == 0)
+                if (radioBeepClip == null || radioBeepClip.length == 0)
                 {
-                    radioClip = await LoadAudioClip("file://" + ResolveSoundPath("radiochat.ogg"));
+                    radioBeepClip = await LoadAudioClip("file://" + ResolveSoundPath("radiobeep.ogg"));
                 }
 
-                if (radioClip == null) return;
-                Singleton<GUISounds>.Instance.PlaySound(radioClip, false, true, level);
+                if (radioBeepClip == null) return;
+                Singleton<GUISounds>.Instance.PlaySound(radioBeepClip, false, true, level);
             }
             catch (System.Exception e)
             {

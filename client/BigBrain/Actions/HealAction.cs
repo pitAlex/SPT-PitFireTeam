@@ -11,21 +11,23 @@ namespace pitTeam.BigBrain.Actions
     /// </summary>
     internal class HealAction : CustomLogic
     {
-        private GClass197 baseLogic;
+        private HealNode baseLogic;
         private float nextMedicalRefreshAt;
         public HealAction(BotOwner botOwner) : base(botOwner)
         {
-            baseLogic = new GClass197(botOwner);
+            baseLogic = new HealNode(botOwner);
         }
 
         public override void Start()
         {
             base.Start();
+            FollowerRecovery.StopShooting(BotOwner);
             FollowerMedical.MarkPostCombatFullHealActionStarted(BotOwner);
         }
 
         public override void Update(CustomLayer.ActionData data)
         {
+            FollowerRecovery.StopShooting(BotOwner);
             if (BotOwner?.Medecine?.Using != true && Time.time >= nextMedicalRefreshAt)
             {
                 nextMedicalRefreshAt = Time.time + 0.5f;
@@ -33,6 +35,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             baseLogic.UpdateNodeByBrain(data);
+            FollowerRecovery.StopShooting(BotOwner);
 
             if (BotOwner?.Medecine?.Using != true)
             {

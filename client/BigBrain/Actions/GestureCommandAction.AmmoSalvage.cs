@@ -32,7 +32,7 @@ namespace pitTeam.BigBrain.Actions
             HashSet<string> addedMagazineIds = new HashSet<string>(StringComparer.Ordinal);
             foreach (BodyGearCandidate candidate in compatibleMagazineCandidates)
             {
-                if (candidate?.Item is not MagazineItemClass magazine ||
+                if (candidate?.Item is not EFT.InventoryLogic.Magazine magazine ||
                     string.IsNullOrEmpty(magazine.Id) ||
                     magazine.Count <= 0 ||
                     IsLootNowInBotInventory(BotOwner?.GetPlayer, magazine) ||
@@ -186,9 +186,9 @@ namespace pitTeam.BigBrain.Actions
             ammoSalvageReplacementItemIds[sourceId] = targetId;
         }
 
-        private AmmoItemClass? ResolveAmmoSalvageTargetStack(
+        private EFT.InventoryLogic.Ammo? ResolveAmmoSalvageTargetStack(
             InventoryController inventory,
-            AmmoItemClass plannedTarget)
+            EFT.InventoryLogic.Ammo plannedTarget)
         {
             if (inventory == null || plannedTarget == null || string.IsNullOrEmpty(plannedTarget.Id))
             {
@@ -205,7 +205,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             return inventory.TryFindItem(targetId, out Item liveItem)
-                ? liveItem as AmmoItemClass
+                ? liveItem as EFT.InventoryLogic.Ammo
                 : null;
         }
 

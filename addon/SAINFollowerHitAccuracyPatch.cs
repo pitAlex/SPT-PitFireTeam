@@ -1,4 +1,5 @@
 using EFT;
+using EFT.Ballistics;
 using HarmonyLib;
 using pitTeam.Modules;
 using System;
@@ -19,7 +20,7 @@ namespace pitTeam.SAINAddon
                 return;
             }
 
-            MethodInfo? target = AccessTools.Method(aimHitEffectType, "GetHit", new[] { typeof(DamageInfoStruct) });
+            MethodInfo? target = AccessTools.Method(aimHitEffectType, "GetHit", new[] { typeof(DamageInfo) });
             if (target == null)
             {
                 Modules.Logger.LogError("[Init] Failed to find AimHitEffectClass.GetHit for follower hit-accuracy patch.");

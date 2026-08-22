@@ -9,11 +9,11 @@ namespace pitTeam.BigBrain.Actions
     /// </summary>
     internal class FriendlyTiltAction : CustomLogic
     {
-        private readonly GClass262 baseLogic;
+        private readonly FriendlyTiltNode baseLogic;
 
         public FriendlyTiltAction(BotOwner botOwner) : base(botOwner)
         {
-            baseLogic = new GClass262(botOwner);
+            baseLogic = new FriendlyTiltNode(botOwner);
         }
 
         public override void Update(CustomLayer.ActionData data)

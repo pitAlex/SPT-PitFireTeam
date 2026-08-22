@@ -16,8 +16,8 @@ using System.Reflection;
 using System.Threading.Tasks;
 using UnityEngine;
 
-using GestureData = GClass532;
-using EventInfo = BotEventHandler.GClass692;
+using GestureData = BotReceiverGestus;
+using EventInfo = GlobalEventDispatcher.PhraseDelegateInfo;
 
 namespace pitTeam.Patches
 {
@@ -69,14 +69,14 @@ namespace pitTeam.Patches
     internal class AIDataContructPatch : ModulePatch
     {
 
-        public static Dictionary<string, PlayerAIDataClass> playerAIData = new Dictionary<string, PlayerAIDataClass>();
+        public static Dictionary<string, AIData> playerAIData = new Dictionary<string, AIData>();
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Constructor(typeof(PlayerAIDataClass), new Type[] { typeof(BotOwner), typeof(Player) });
+            return AccessTools.Constructor(typeof(AIData), new Type[] { typeof(BotOwner), typeof(Player) });
         }
         // overwrite AIData to make it use our pitAIBossPlayer
         [PatchPostfix]
-        private static void PatchPostfix(PlayerAIDataClass __instance, BotOwner owner, Player player)
+        private static void PatchPostfix(AIData __instance, BotOwner owner, Player player)
         {
             if (owner == null && player != null)
             {
@@ -90,7 +90,7 @@ namespace pitTeam.Patches
                         // replace AIBossPlayer with ours
                         if (boss != null)
                         {
-                            var field = AccessTools.Field(typeof(PlayerAIDataClass), "AibossPlayer_0");
+                            var field = AccessTools.Field(typeof(AIData), "_aIBossPlayer");
                             field.SetValue(__instance, boss);
                             Logger.LogInfo("Replaced AIBossPlayer in AIData with ours");
                         }
@@ -129,7 +129,7 @@ namespace pitTeam.Patches
             }
 
             pitAIBossPlayer? boss = BossPlayers.GetBoss(__instance.Player.ProfileId);
-            bool isGesture = GClass3937.IsPlayerGesture(actionId);
+            bool isGesture = EFT.UI.Gestures.GestureCommands.IsPlayerGesture(actionId);
             EPhraseTrigger phrase = (EPhraseTrigger)actionId;
 
             if (!isGesture && IsLootCommandPhrase(phrase))
@@ -217,8 +217,8 @@ namespace pitTeam.Patches
         private static bool PatchPrefix(GamePlayerOwner __instance)
         {
             EPhraseTrigger viewBackpackPhrase = (EPhraseTrigger)CustomPhrases.ViewBackpack;
-            GInterface472 battleUi = BattleUiControllerField.GetValue(__instance) as GInterface472;
-            if (battleUi?.GesturesQuickPanel?.EPhraseTrigger_0 != viewBackpackPhrase)
+            EFT.UI.IBattleUIScreenController battleUi = BattleUiControllerField.GetValue(__instance) as EFT.UI.IBattleUIScreenController;
+            if (battleUi?.GesturesQuickPanel?.PrioritizedCommand != viewBackpackPhrase)
             {
                 return true;
             }
@@ -234,6 +234,8 @@ namespace pitTeam.Patches
     {
         private const string KillMessageRoute = "/singleplayer/pitfireteam/postraid/kill-message";
         private static readonly HashSet<string> RecordedKillMessageVictims = new HashSet<string>(StringComparer.Ordinal);
+        private static readonly HashSet<string> PlayerDamagedPmcVictims = new HashSet<string>(StringComparer.Ordinal);
+        private static readonly HashSet<string> FriendlyBeforePlayerDamageVictims = new HashSet<string>(StringComparer.Ordinal);
         private static readonly HashSet<string> RecordedDeadSquadmates = new HashSet<string>(StringComparer.Ordinal);
         private static readonly object RecordedKillMessageLock = new object();
         private static readonly object RecordedDeadSquadmatesLock = new object();
@@ -245,8 +247,21 @@ namespace pitTeam.Patches
             return AccessTools.Method(typeof(Player), "OnBeenKilledByAggressor");
         }
 
+        [PatchPrefix]
+        private static void PatchPrefix(Player __instance, IPlayer aggressor)
+        {
+            try
+            {
+                global::pitTeam.Utils.PingTeamates.TryRememberEnemyDown(__instance, aggressor);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex);
+            }
+        }
+
         [PatchPostfix]
-        private static void PatchPostfix(Player __instance, IPlayer aggressor, DamageInfoStruct damageInfo, EBodyPart bodyPart, EDamageType lethalDamageType)
+        private static void PatchPostfix(Player __instance, IPlayer aggressor, EFT.Ballistics.DamageInfo damageInfo, EBodyPart bodyPart, EDamageType lethalDamageType)
         {
             try
             {
@@ -273,8 +288,8 @@ namespace pitTeam.Patches
                 TryCreditFollowerKillQuestProgress(__instance, followerPlayer, follower, damageInfo, bodyPart);
 
                 EPlayerSide killedPlayerSide = __instance.Side;
-                SessionCountersClass sessionCounters = followerPlayer.Profile.EftStats.SessionCounters;
-                var experienceSettings = Singleton<BackendConfigSettingsClass>.Instance.Experience;
+                EFT.Counters.CountersCollection sessionCounters = followerPlayer.Profile.EftStats.SessionCounters;
+                var experienceSettings = Singleton<EFT.GlobalConfiguration>.Instance.Experience;
 
                 float headshotMultiplier = 0f;
                 if (bodyPart == EBodyPart.Head)
@@ -309,25 +324,25 @@ namespace pitTeam.Patches
                         break;
                 }
 
-                int killCount = sessionCounters.GetInt(SessionCounterTypesAbstractClass.Kills);
-                sessionCounters.AddInt(1, SessionCounterTypesAbstractClass.Kills);
+                int killCount = sessionCounters.GetInt(EFT.Counters.PredefinedCounters.Kills);
+                sessionCounters.AddInt(1, EFT.Counters.PredefinedCounters.Kills);
                 float streakMultiplier = (float)experienceSettings.Kill.GetKillingBonusPercent(killCount) / 100f;
                 int bodyPartBonus = (int)(baseKillExperience * headshotMultiplier);
                 int streakBonus = (int)(baseKillExperience * streakMultiplier);
 
                 if (baseKillExperience > 0)
                 {
-                    sessionCounters.AddInt(baseKillExperience, SessionCounterTypesAbstractClass.ExpKillBase);
+                    sessionCounters.AddInt(baseKillExperience, EFT.Counters.PredefinedCounters.ExpKillBase);
                 }
 
                 if (bodyPartBonus > 0)
                 {
-                    sessionCounters.AddInt(bodyPartBonus, SessionCounterTypesAbstractClass.ExpKillBodyPartBonus);
+                    sessionCounters.AddInt(bodyPartBonus, EFT.Counters.PredefinedCounters.ExpKillBodyPartBonus);
                 }
 
                 if (streakBonus > 0)
                 {
-                    sessionCounters.AddInt(streakBonus, SessionCounterTypesAbstractClass.ExpKillStreakBonus);
+                    sessionCounters.AddInt(streakBonus, EFT.Counters.PredefinedCounters.ExpKillStreakBonus);
                 }
             }
             catch (Exception ex)
@@ -402,6 +417,62 @@ namespace pitTeam.Patches
             }
         }
 
+        internal static void TryRememberFriendlyPmcBeforePlayerDamage(EFT.Ballistics.DamageInfo damageInfo, Player target)
+        {
+            IPlayer attacker = damageInfo.Player?.iPlayer;
+            if (attacker == null ||
+                !attacker.IsYourPlayer ||
+                target == null ||
+                !target.IsAI ||
+                target.Side != attacker.Side ||
+                !IsPmc(target.Side) ||
+                string.IsNullOrWhiteSpace(target.ProfileId) ||
+                !IsFriendlyPmcKillMessageContextEnabled())
+            {
+                return;
+            }
+
+            BotOwner targetBot = target.AIData?.BotOwner;
+            BotsGroup targetGroup = targetBot?.BotsGroup;
+            if (targetBot == null || targetGroup == null || targetBot.EnemiesController == null)
+            {
+                return;
+            }
+
+            lock (RecordedKillMessageLock)
+            {
+                // The first direct player hit is the relationship boundary. Later hits must not
+                // turn a bot that was already hostile into an eligible friendly-fire victim.
+                if (!PlayerDamagedPmcVictims.Add(target.ProfileId))
+                {
+                    return;
+                }
+
+                bool wasAlreadyEnemy =
+                    targetGroup.IsEnemy(attacker) ||
+                    targetBot.EnemiesController.IsEnemy(attacker) ||
+                    string.Equals(
+                        targetBot.Memory?.GoalEnemy?.Person?.ProfileId,
+                        attacker.ProfileId,
+                        StringComparison.Ordinal);
+
+                if (!wasAlreadyEnemy)
+                {
+                    FriendlyBeforePlayerDamageVictims.Add(target.ProfileId);
+                }
+            }
+        }
+
+        internal static void ResetKillMessageRaidState()
+        {
+            lock (RecordedKillMessageLock)
+            {
+                RecordedKillMessageVictims.Clear();
+                PlayerDamagedPmcVictims.Clear();
+                FriendlyBeforePlayerDamageVictims.Clear();
+            }
+        }
+
         private static void TryRecordPlayerKillMessage(Player victim, IPlayer aggressor)
         {
             try
@@ -417,8 +488,9 @@ namespace pitTeam.Patches
                     return;
                 }
 
-                string messageText = GetKillMessageText(messageKind);
-                if (string.IsNullOrWhiteSpace(messageText))
+                bool messagesEnabled = pitFireTeam.npcSendMessage?.Value == true;
+                string messageText = messagesEnabled ? GetKillMessageText(messageKind) : string.Empty;
+                if (messagesEnabled && string.IsNullOrWhiteSpace(messageText))
                 {
                     return;
                 }
@@ -467,21 +539,42 @@ namespace pitTeam.Patches
 
         private static string GetKillMessageKind(Player victim, IPlayer aggressor)
         {
+            if (!IsFriendlyPmcKillMessageContextEnabled() ||
+                !WasFriendlyBeforePlayerDamage(victim.ProfileId))
+            {
+                return string.Empty;
+            }
+
             BotFollowerPlayer follower = BossPlayers.GetFollowerByProfileId(victim.ProfileId);
             if (follower != null)
             {
                 return follower.IsSquadMate ? string.Empty : "traitor";
             }
 
-            bool friendlyPmcEnabled = pitFireTeam.pitFireTeamFLAG.Value && !pitFireTeam.badGuy.Value;
-            if (!friendlyPmcEnabled)
+            return IsPmc(victim.Side) && victim.Side == aggressor.Side ? "jerk" : string.Empty;
+        }
+
+        private static bool WasFriendlyBeforePlayerDamage(string victimProfileId)
+        {
+            if (string.IsNullOrWhiteSpace(victimProfileId))
             {
-                return string.Empty;
+                return false;
             }
 
-            bool victimIsPmc = victim.Side == EPlayerSide.Bear || victim.Side == EPlayerSide.Usec;
-            bool sameSide = victim.Side == aggressor.Side;
-            return victimIsPmc && sameSide ? "jerk" : string.Empty;
+            lock (RecordedKillMessageLock)
+            {
+                return FriendlyBeforePlayerDamageVictims.Contains(victimProfileId);
+            }
+        }
+
+        private static bool IsFriendlyPmcKillMessageContextEnabled()
+        {
+            return pitFireTeam.pitFireTeamFLAG?.Value == true && pitFireTeam.badGuy?.Value != true;
+        }
+
+        private static bool IsPmc(EPlayerSide side)
+        {
+            return side == EPlayerSide.Bear || side == EPlayerSide.Usec;
         }
 
         private static string GetKillMessageText(string messageKind)
@@ -502,11 +595,11 @@ namespace pitTeam.Patches
             Player victim,
             Player followerPlayer,
             BotFollowerPlayer follower,
-            DamageInfoStruct damageInfo,
+            EFT.Ballistics.DamageInfo damageInfo,
             EBodyPart bodyPart)
         {
             pitAIBossPlayer boss = follower.GetBoss();
-            if (boss?.realPlayer?.AbstractQuestControllerClass == null)
+            if (boss?.realPlayer?.QuestController == null)
             {
                 return;
             }
@@ -522,7 +615,7 @@ namespace pitTeam.Patches
                 return;
             }
 
-            AbstractQuestControllerClass questController = boss.realPlayer.AbstractQuestControllerClass;
+            EFT.Quests.QuestController questController = boss.realPlayer.QuestController;
             Profile originalProfile = null;
 
             try
@@ -612,7 +705,7 @@ namespace pitTeam.Patches
             }
 
             _questControllerProfileFieldPrepared = true;
-            _questControllerProfileField = typeof(AbstractQuestControllerClass).GetField("Profile", BindingFlags.Public | BindingFlags.Instance);
+            _questControllerProfileField = typeof(EFT.Quests.QuestController).GetField("Profile", BindingFlags.Public | BindingFlags.Instance);
             if (_questControllerProfileField == null)
             {
                 return null;
@@ -649,6 +742,36 @@ namespace pitTeam.Patches
         }
     }
 
+    /** Report the exact target line when the player fires during a fight. **/
+    internal sealed class PlayerMakingShotPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+        {
+            return AccessTools.Method(typeof(Player), nameof(Player.OnMakingShot));
+        }
+
+        [PatchPostfix]
+        private static void PatchPostfix(Player __instance)
+        {
+            pitAIBossPlayer? bossPlayer = BossPlayers.GetBoss(__instance.ProfileId);
+            if (bossPlayer == null)
+            {
+                return;
+            }
+
+            Vector3 shotOrigin = __instance.PlayerBones?.WeaponRoot?.position ??
+                                 (__instance.Position + Vector3.up * 1.2f);
+            Vector3 shotDirection = __instance.LookDirection;
+            if (__instance.HandsController is Player.FirearmController firearmController)
+            {
+                shotOrigin = firearmController.FireportPosition;
+                shotDirection = firearmController.WeaponDirection;
+            }
+
+            bossPlayer.MarkBossShot(shotOrigin, shotDirection);
+        }
+    }
+
     /** Have followers increase weapon skills when they shoot. **/
     internal class PlayerShotPatch : ModulePatch
     {
@@ -669,7 +792,7 @@ namespace pitTeam.Patches
                     continue;
                 }
 
-                if (weapon is not ThrowWeapItemClass)
+                if (weapon is not EFT.InventoryLogic.ThrowWeap)
                 {
                     __instance.Skills.WeaponShotAction.Complete(weapon, 1f);
                 }

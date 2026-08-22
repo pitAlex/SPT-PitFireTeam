@@ -13,13 +13,13 @@ namespace pitTeam.Patches
         protected override MethodBase GetTargetMethod()
         {
             Type targetType = typeof(EftAccountSideSelectionScreen).BaseType;
-            return AccessTools.Method(targetType, "method_9");
+            return AccessTools.Method(targetType, "BackButtonPressedHandler");
         }
 
         [PatchPrefix]
         private static bool PatchPrefix(object __instance)
         {
-            if (!AddTeammateCreationFlow.IsActiveForController(CurrentScreenSingletonClass.Instance.CurrentScreenController))
+            if (!AddTeammateCreationFlow.IsActiveForController(EFT.UI.Screens.EftScreenManager.Instance.CurrentScreenController))
             {
                 return true;
             }
@@ -44,8 +44,8 @@ namespace pitTeam.Patches
                 return true;
             }
 
-            __instance.Bool_0 = false;
-            __instance.CompositeDisposableClass.Dispose();
+            __instance._stateReady = false;
+            __instance._compositeDisposable.Dispose();
             if (__instance._stateCanvasGroup != null)
             {
                 __instance._stateCanvasGroup.alpha = 0f;

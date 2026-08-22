@@ -184,6 +184,8 @@ Saved teammates and recruited allies share the basic follower system once they a
 
 Looting is currently command-driven. Teammates do not wander away to loot on their own: you choose the item, body, or container and give the order.
 
+**This functionality is still a work in progress. Abstain from commenting suggestions and things that you see missing!**
+
 **Giving an order:**
 
 - Look at a loose item and use **Loot This**. Any available follower can collect it if they can reach it and have somewhere suitable to put it.
@@ -202,7 +204,9 @@ The voice response also gives useful feedback. A weapon callout means a found we
 Looting settings are found under **My Squad → Settings**.
 
 - **Minimum Price** and **Maximum Price** control the value range for ordinary body and container loot.
-- **Pickup Food**, **Pickup Meds**, **Pickup Valuables**, **Pickup Weapons**, and **Pickup Gear** control the broad types of loot your teammates may take.
+- **Pickup Food**, **Pickup Meds**, and **Pickup Valuables** control food and drinks, medical supplies, barter items, keys, money, and other valuables.
+- **Pickup Weapons** controls guns, ammunition, magazines, weapon mods, and grenades.
+- **Pickup Gear** controls helmets, body armor, armored rigs, and tactical rigs.
 - Money is always accepted when **Pickup Valuables** is enabled, regardless of the price range.
 - Dogtags are always attempted on enemy USEC and BEAR bodies. A teammate may still report that he found nothing when the dogtag was the only item taken.
 
@@ -218,7 +222,9 @@ When **Pickup Gear** is enabled, a helmet, armor vest, armored rig, or tactical 
 - A usable weapon becomes the active primary on the right shoulder. The weapon-specific voice response tells you that the teammate intends to fight with it.
 - An under-supplied weapon may be kept on the left shoulder or in the backpack while the teammate waits for compatible magazines or ammunition. A later loot order can make that weapon ready.
 - Detachable magazines must fit in the tactical rig or pockets before the bot can rely on them. Magazines left in a backpack are cargo and are not used by the game's normal bot reload behavior. Leave enough suitable rig space if you want a found weapon to become dependable.
-- A teammate who already has a working primary may add a usable support weapon only when the secondary slot is empty and **Pickup Weapons** allows it. Looting never replaces an occupied secondary weapon or holster.
+- A teammate who already has a working primary may add a usable long gun to an empty secondary slot or a usable pistol to an empty holster when **Pickup Weapons** allows it. Looting never replaces an occupied secondary weapon or holster.
+- Later body and container searches maintain the working primary first, followed by the second long gun and holstered pistol. Teammates can collect compatible loaded magazines and useful loose ammunition, top off eligible magazines, and feed internal-magazine or chamber-fed weapons.
+- The primary stays selected while support weapons remain in their existing slots. Ammo that is redundant or significantly worse can be left behind, fast-access pickups preserve reload space, and overflow magazines remain at the source.
 - Grenade launchers prefer the secondary slot when a conventional primary weapon is available.
 - Tactical-vest changes are currently limited to filling an empty slot or making a narrow protection upgrade in Immersive and Realistic. Broad armor and equipment optimization is planned for a later phase.
 
@@ -552,7 +558,7 @@ In teammate loadout editing, if you happen to end up in a situation where you ca
 - Teammates might not heal their health all the way. It is a game issue, use the Heal key to force heal.
 - Teleporting teammates while they are interacting with doors or other objects can leave them in a bad state.
 - **The game has navigation problems that even SAIN is not able to fully resolve. If your bots get stuck, use teleportation. In other situations, their movement is in teleportation-like bursts. Be mindful of this and stay aware of their position or you will find yourself in a fight all alone or without all your squad as they got stuck somewhere.**
-- **Faction Hostilities** repairs missing enemy relationships but does not grant bots awareness of enemies they have not seen or heard.
+- **Faction Hostilities** repairs missing enemy relationships but does not grant bots awareness of enemies they have not seen or heard. If bots behave incorrectly toward the opposite PMC faction or other normally hostile factions, disable **Faction Hostilities** under **Raid Settings** and test again. This setting can conflict with other mods or settings that also attempt to repair or change faction relationships.
 - Teammates can sometimes pick up an enemy they never saw or heard. Use **Attention** to reset them. In some cases, they may keep reacquiring that enemy until the enemy is dead. This comes from the game's detection and memory logic, and broad workarounds can break normal enemy behavior.
 - SAIN can interfere with teleportation, teleporting the bot back to previous location. You may need to trigger teleportation multiple times for it to stick.
 - Teammates can occasionally have registration delay on enemies. This is buggy behavior within the game that I am not able to fix.

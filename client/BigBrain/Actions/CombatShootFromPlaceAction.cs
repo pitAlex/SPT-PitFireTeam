@@ -17,28 +17,35 @@ namespace pitTeam.BigBrain.Actions
         private const float MinEnemyDistanceForProne = 80f;
         private const float SameSpotMaxDistanceSqr = 0.75f * 0.75f;
         private const float ProneFireProbeHeight = 0.35f;
-        private const float StandingFireProbeHeight = 1.45f;
-        private readonly GClass276 baseLogic;
+        private const float LostVisualSuppressMaxAimAngle = 18f;
+        private readonly ShootFromPlace baseLogic;
+        private readonly FollowerEmergencyFireGate emergencyFireGate = new FollowerEmergencyFireGate();
         private float aimAlignStartedAt;
         private float nextLauncherNormalFireRejectAt;
         private float nextLauncherNormalFireRecordAt;
         private Vector3 startPosition;
+        private bool? lastCrouchAllowed;
+        private string? lastCrouchPolicyReason;
 
         public CombatShootFromPlaceAction(BotOwner botOwner) : base(botOwner)
         {
-            baseLogic = new GClass276(botOwner);
+            baseLogic = new ShootFromPlace(botOwner);
         }
 
         public override void Start()
         {
             base.Start();
             StopStationaryCombatMovement();
+            BotOwner.SetPose(1f);
             startPosition = BotOwner.Position;
+            lastCrouchAllowed = null;
+            lastCrouchPolicyReason = null;
         }
 
         public override void Stop()
         {
             StopCombatShooting();
+            emergencyFireGate.Reset();
             aimAlignStartedAt = 0f;
             base.Stop();
         }
@@ -46,11 +53,27 @@ namespace pitTeam.BigBrain.Actions
         public override void Update(CustomLayer.ActionData data)
         {
             EnemyInfo? goalEnemy = BotOwner.Memory?.GoalEnemy;
+            ShootToPoint? shootPoint = goalEnemy != null ? GetShootFromPlacePoint(goalEnemy) : null;
+            string crouchPolicyReason = "enemyTargetMissing";
+            float crouchEnemyDistance = goalEnemy?.Distance ?? 0f;
+            bool allowCrouch = shootPoint != null &&
+                               FollowerShootPoseSafety.CanUseCombatCrouchFire(
+                                   BotOwner,
+                                   shootPoint.Point,
+                                   out crouchPolicyReason,
+                                   out crouchEnemyDistance);
+
+            RecordCrouchPolicyIfChanged(
+                allowCrouch,
+                crouchPolicyReason,
+                crouchEnemyDistance,
+                shootPoint?.Point);
 
             // First decide which fire poses are physically usable from this exact spot. The vanilla
             // node may crouch or prone by itself, but followers should not stay in a pose that has
             // no real shot lane, especially when cover/vegetation blocks the lower weapon origin.
-            bool allowProne = goalEnemy != null &&
+            bool allowProne = allowCrouch &&
+                              goalEnemy != null &&
                               goalEnemy.Distance >= MinEnemyDistanceForProne &&
                               CanUseFirePose(goalEnemy, ProneFireProbeHeight);
             baseLogic.CanLay = allowProne;
@@ -87,15 +110,7 @@ namespace pitTeam.BigBrain.Actions
                     if (!canContinueCommittedPrimaryShot)
                     {
                         StopCombatShooting();
-                        if (Time.time >= nextLauncherNormalFireRejectAt)
-                        {
-                            nextLauncherNormalFireRejectAt = Time.time + 2f;
-                            BattleRecorder.RecordGrenadeEvent(
-                                BotOwner,
-                                "launcherNormalFireHold",
-                                $"{reason}:{launcherRejectReason}",
-                                goalEnemy: goalEnemy);
-                        }
+                        RecordLauncherNormalFireHold(reason, launcherRejectReason, goalEnemy);
 
                         return;
                     }
@@ -131,8 +146,20 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            baseLogic.UpdateNodeByBrain(GetData<GClass28>(data));
-            EnforceSupportedFirePose(goalEnemy, allowProne);
+            baseLogic.UpdateNodeByBrain(GetData<ShootHoldResultParams>(data));
+            if (shootPoint != null)
+            {
+                emergencyFireGate.TryFire(
+                    BotOwner,
+                    goalEnemy,
+                    shootPoint.Point,
+                    "shootFromPlace",
+                    reason,
+                    suppression: false,
+                    out _);
+            }
+
+            EnforceSupportedFirePose(allowCrouch, allowProne);
         }
 
         /// <summary>
@@ -161,43 +188,77 @@ namespace pitTeam.BigBrain.Actions
                 impactTarget);
 
             BotOwner.Steering.LookToPoint(aimPoint);
-            baseLogic.Gclass178_0.UpdateNodeByBrain(new GClass27(aimPoint));
+            baseLogic._aiming.UpdateNodeByBrain(new AimingResultParams(aimPoint));
 
-            if (Time.time >= nextLauncherNormalFireRecordAt)
+            RecordLauncherNormalFire(
+                reason,
+                goalEnemy,
+                impactTarget,
+                aimPoint,
+                usingFirstPrimaryVisualGrace);
+        }
+
+        [System.Diagnostics.Conditional("DEBUG")]
+        private void RecordLauncherNormalFireHold(string reason, string rejectReason, EnemyInfo? goalEnemy)
+        {
+            if (!BattleRecorder.IsRecordingFor(BotOwner, requireRecordedCombat: true) ||
+                Time.time < nextLauncherNormalFireRejectAt)
             {
-                nextLauncherNormalFireRecordAt = Time.time + 1f;
-                BattleRecorder.RecordGrenadeEvent(
-                    BotOwner,
-                    "launcherNormalFire",
-                    $"{reason}:canShoot={goalEnemy?.CanShoot == true}" +
-                    $":visible={goalEnemy?.IsVisible == true}" +
-                    $":visualGrace={usingFirstPrimaryVisualGrace}" +
-                    $":aimReady={BotOwner.AimingManager?.CurrentAiming?.IsReady == true}" +
-                    $":weaponReady={BotOwner.WeaponManager?.IsWeaponReady == true}" +
-                    $":stateReady={BotOwner.ShootData?.CanShootByState == true}" +
-                    $":shooting={BotOwner.ShootData?.Shooting == true}" +
-                    $":loaded={FollowerCombatCommon.CountLoadedRounds(FollowerCombatCommon.GetActiveOrEquippedGrenadeLauncher(BotOwner))}" +
-                    $":aimRaise={aimPoint.y - impactTarget.y:0.00}",
-                    goalEnemy: goalEnemy,
-                    target: impactTarget,
-                    suppressFrom: aimPoint);
+                return;
             }
+
+            nextLauncherNormalFireRejectAt = Time.time + 2f;
+            BattleRecorder.RecordGrenadeEvent(
+                BotOwner,
+                "launcherNormalFireHold",
+                $"{reason}:{rejectReason}",
+                goalEnemy: goalEnemy);
+        }
+
+        [System.Diagnostics.Conditional("DEBUG")]
+        private void RecordLauncherNormalFire(
+            string reason,
+            EnemyInfo? goalEnemy,
+            Vector3 impactTarget,
+            Vector3 aimPoint,
+            bool usingFirstPrimaryVisualGrace)
+        {
+            if (!BattleRecorder.IsRecordingFor(BotOwner, requireRecordedCombat: true) ||
+                Time.time < nextLauncherNormalFireRecordAt)
+            {
+                return;
+            }
+
+            nextLauncherNormalFireRecordAt = Time.time + 1f;
+            BattleRecorder.RecordGrenadeEvent(
+                BotOwner,
+                "launcherNormalFire",
+                $"{reason}:canShoot={goalEnemy?.CanShoot == true}" +
+                $":visible={goalEnemy?.IsVisible == true}" +
+                $":visualGrace={usingFirstPrimaryVisualGrace}" +
+                $":aimReady={BotOwner.AimingManager?.CurrentAiming?.IsReady == true}" +
+                $":weaponReady={BotOwner.WeaponManager?.IsWeaponReady == true}" +
+                $":stateReady={BotOwner.ShootData?.CanShootByState == true}" +
+                $":shooting={BotOwner.ShootData?.Shooting == true}" +
+                $":loaded={FollowerCombatCommon.CountLoadedRounds(FollowerCombatCommon.GetActiveOrEquippedGrenadeLauncher(BotOwner))}" +
+                $":aimRaise={aimPoint.y - impactTarget.y:0.00}",
+                goalEnemy: goalEnemy,
+                target: impactTarget,
+                suppressFrom: aimPoint);
         }
 
         /// <summary>
         /// Keep the final pose consistent with the lane probes after vanilla has updated. This is a
         /// cleanup pass because the underlying EFT node can still request crouch/prone internally.
         /// </summary>
-        private void EnforceSupportedFirePose(EnemyInfo? goalEnemy, bool allowProne)
+        private void EnforceSupportedFirePose(bool allowCrouch, bool allowProne)
         {
             if (!allowProne && BotOwner.GetPlayer?.MovementContext?.IsInPronePose == true)
             {
                 BotOwner.BotLay.GetUp(false);
             }
 
-            if (BotOwner.Mover.TargetPose < 1f &&
-                !CanUseCrouchFirePose(goalEnemy) &&
-                CanUseStandingFirePose(goalEnemy))
+            if (BotOwner.Mover.TargetPose < 1f && !allowCrouch)
             {
                 BotOwner.SetPose(1f);
             }
@@ -215,30 +276,38 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            ShootPointClass shootPoint = GetShootFromPlacePoint(goalEnemy!);
+            ShootToPoint shootPoint = GetShootFromPlacePoint(goalEnemy!);
             return FollowerShootPoseSafety.HasReliablePoseLane(BotOwner, shootPoint.Point, probeHeight);
         }
 
-        private bool CanUseCrouchFirePose(EnemyInfo? goalEnemy)
+        [System.Diagnostics.Conditional("DEBUG")]
+        private void RecordCrouchPolicyIfChanged(
+            bool allowed,
+            string reason,
+            float enemyDistance,
+            Vector3? target)
         {
-            if (!CanEvaluateFirePose(goalEnemy, requireShootable: false))
+            if (!BattleRecorder.IsRecordingFor(BotOwner, requireRecordedCombat: true))
             {
-                return false;
+                return;
             }
 
-            ShootPointClass shootPoint = GetShootFromPlacePoint(goalEnemy!);
-            return FollowerShootPoseSafety.HasReliableCrouchLane(BotOwner, shootPoint.Point);
-        }
-
-        private bool CanUseStandingFirePose(EnemyInfo? goalEnemy)
-        {
-            if (!CanEvaluateFirePose(goalEnemy, requireShootable: false))
+            if (lastCrouchAllowed == allowed &&
+                string.Equals(lastCrouchPolicyReason, reason, System.StringComparison.Ordinal))
             {
-                return false;
+                return;
             }
 
-            ShootPointClass shootPoint = GetShootFromPlacePoint(goalEnemy!);
-            return FollowerShootPoseSafety.HasReliablePoseLane(BotOwner, shootPoint.Point, StandingFireProbeHeight);
+            lastCrouchAllowed = allowed;
+            lastCrouchPolicyReason = reason;
+            BattleRecorder.RecordCombatPosturePolicy(
+                BotOwner,
+                "shootFromPlace",
+                "crouch",
+                allowed,
+                reason,
+                enemyDistance,
+                target);
         }
 
         private bool CanEvaluateFirePose(EnemyInfo? goalEnemy, bool requireShootable)
@@ -258,10 +327,10 @@ namespace pitTeam.BigBrain.Actions
             return true;
         }
 
-        private ShootPointClass GetShootFromPlacePoint(EnemyInfo goalEnemy)
+        private ShootToPoint GetShootFromPlacePoint(EnemyInfo goalEnemy)
         {
             return BotOwner.CurrentEnemyTargetPosition(false) ??
-                   new ShootPointClass(goalEnemy.GetBodyPartPosition(), 1f);
+                   new ShootToPoint(goalEnemy.GetBodyPartPosition(), 1f);
         }
 
         /// <summary>
@@ -301,6 +370,24 @@ namespace pitTeam.BigBrain.Actions
             BotOwner.StopMove();
             BotOwner.SetPose(1f);
             BotOwner.Steering.LookToPoint(target);
+
+            if (!TryGetActualFirearmShotVector(
+                    BotOwner,
+                    out Vector3 fireOrigin,
+                    out Vector3 shotDirection))
+            {
+                StopCombatShooting();
+                return true;
+            }
+
+            Vector3 targetDirection = target - fireOrigin;
+            if (targetDirection.sqrMagnitude <= 0.0001f ||
+                Vector3.Angle(shotDirection, targetDirection) > LostVisualSuppressMaxAimAngle)
+            {
+                StopCombatShooting();
+                return true;
+            }
+
             BotOwner.ShootData.Shoot();
             return true;
         }

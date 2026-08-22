@@ -45,7 +45,7 @@ namespace pitTeam.BigBrain.Actions
 
         private static int GetSearchableGridCellCount(Item? item)
         {
-            if (item is not SearchableItemItemClass searchable || searchable.Grids == null)
+            if (item is not EFT.InventoryLogic.SearchableItem searchable || searchable.Grids == null)
             {
                 return 0;
             }
@@ -53,7 +53,7 @@ namespace pitTeam.BigBrain.Actions
             int cells = GetDirectGridCellCount(searchable);
             foreach (Item child in searchable.GetAllItems())
             {
-                if (child != null && child != searchable && child is SearchableItemItemClass nested)
+                if (child != null && child != searchable && child is EFT.InventoryLogic.SearchableItem nested)
                 {
                     cells += GetDirectGridCellCount(nested);
                 }
@@ -62,7 +62,7 @@ namespace pitTeam.BigBrain.Actions
             return cells;
         }
 
-        private static int GetDirectGridCellCount(SearchableItemItemClass searchable)
+        private static int GetDirectGridCellCount(EFT.InventoryLogic.SearchableItem searchable)
         {
             if (searchable?.Grids == null)
             {
@@ -70,7 +70,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             int cells = 0;
-            foreach (StashGridClass grid in searchable.Grids)
+            foreach (EFT.InventoryLogic.Grid grid in searchable.Grids)
             {
                 if (grid != null)
                 {
@@ -90,7 +90,7 @@ namespace pitTeam.BigBrain.Actions
 
             foreach (EquipmentSlot slot in new[] { EquipmentSlot.Backpack, EquipmentSlot.TacticalVest, EquipmentSlot.Pockets })
             {
-                SearchableItemItemClass searchable = corpseEquipment.GetSlot(slot)?.ContainedItem as SearchableItemItemClass;
+                EFT.InventoryLogic.SearchableItem searchable = corpseEquipment.GetSlot(slot)?.ContainedItem as EFT.InventoryLogic.SearchableItem;
                 if (searchable != null && !string.IsNullOrWhiteSpace(searchable.SearchSound))
                 {
                     return searchable;
@@ -106,7 +106,7 @@ namespace pitTeam.BigBrain.Actions
 
             try
             {
-                if (soundSource is not SearchableItemItemClass searchable ||
+                if (soundSource is not EFT.InventoryLogic.SearchableItem searchable ||
                     string.IsNullOrWhiteSpace(searchable.SearchSound) ||
                     !Singleton<GUISounds>.Instantiated)
                 {
@@ -184,7 +184,7 @@ namespace pitTeam.BigBrain.Actions
             {
                 if (Singleton<GUISounds>.Instantiated)
                 {
-                    GClass3517.PlayInstantSearchSound();
+                    EFT.InventoryLogic.Operations.NetworkSearchContentOperation.PlayInstantSearchSound();
                 }
             }
             catch
@@ -206,7 +206,7 @@ namespace pitTeam.BigBrain.Actions
 
         private void TryMarkContainerLootSearchedForBoss()
         {
-            SearchableItemItemClass? containerRoot = activeLootContainer?.ItemOwner?.Items?.FirstOrDefault() as SearchableItemItemClass;
+            EFT.InventoryLogic.SearchableItem? containerRoot = activeLootContainer?.ItemOwner?.Items?.FirstOrDefault() as EFT.InventoryLogic.SearchableItem;
             if (containerRoot == null)
             {
                 return;
@@ -241,7 +241,7 @@ namespace pitTeam.BigBrain.Actions
         {
             try
             {
-                if (CurrentScreenSingletonClass.Instance.CurrentScreenController is InventoryScreen.GClass3871 inventoryScreen &&
+                if (EFT.UI.Screens.EftScreenManager.Instance.CurrentScreenController is InventoryScreen.InventoryScreenController inventoryScreen &&
                     inventoryScreen.LootItem != null &&
                     IsSameLootTree(inventoryScreen.LootItem, rootItem))
                 {

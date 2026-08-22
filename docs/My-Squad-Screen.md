@@ -302,8 +302,8 @@ Verified entry groups:
 - `Combat Settings`
     - `botGrenades`
     - `enemyMarker`
-    - `enemyMarkerAlertColor`
-    - `enemyMarkerVisibleColor`
+    - `enemyKilledDisplayTime`
+    - `enemyKilledRetainTime`
     - `statusSound`
     - `enemyRemember`
     - `scanDistance`
@@ -463,6 +463,8 @@ Roster profile open calls:
 
 Before opening, the code sets a pending back override. When the profile screen closes, that override re-opens `My Squad`, so the user returns to the roster rather than being dropped somewhere else in menu history.
 
+If EFT cannot fetch the teammate profile and returns no profile-screen controller, the pending back override is cleared and a localized corruption/fetch warning is shown instead of failing silently.
+
 ### Teammate gating
 
 The profile patch only activates when:
@@ -481,6 +483,7 @@ For teammate profiles the patch:
 - hides stock report actions
 - clears the stock right-side profile content blocks
 - reuses the stock clothing panel for suit selection
+- combines unlocked BEAR, USEC, and Savage clothing while keeping each suite id unique, so cross-faction availability does not duplicate dropdown entries
 - injects a cloned second clothing-style row for loadout + tactic in `Simple`
 - replaces the loadout dropdown side with `EDIT LOADOUT` in `Restricted`, `Immersive`, and `Realistic`, leaving the tactic dropdown intact
 - injects an aggression slider row below that

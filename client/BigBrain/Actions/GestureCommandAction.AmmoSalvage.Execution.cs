@@ -17,8 +17,8 @@ namespace pitTeam.BigBrain.Actions
         {
             move = null;
             reason = "invalidTransfer";
-            if (candidate?.Item is not AmmoItemClass ammo ||
-                candidate.AmmoSalvageMagazine is not MagazineItemClass magazine ||
+            if (candidate?.Item is not EFT.InventoryLogic.Ammo ammo ||
+                candidate.AmmoSalvageMagazine is not EFT.InventoryLogic.Magazine magazine ||
                 candidate.AmmoSalvageWeapon is not Weapon weapon ||
                 ammo.StackObjectsCount <= 0 ||
                 !IsItemInsideRoot(ammo, magazine))
@@ -83,8 +83,8 @@ namespace pitTeam.BigBrain.Actions
         private bool TryBuildAmmoStackSeedMove(
             InventoryController inventory,
             BodyGearCandidate candidate,
-            AmmoItemClass source,
-            MagazineItemClass magazine,
+            EFT.InventoryLogic.Ammo source,
+            EFT.InventoryLogic.Magazine magazine,
             ItemAddress destinationAddress,
             out BodyGearMove? move,
             out string reason)
@@ -99,7 +99,7 @@ namespace pitTeam.BigBrain.Actions
 
             // Vanilla unloading creates or selects a loose stack and transfers one cartridge at a
             // time. Seed one round through the same ammo API, then fill that stack in a follow-up.
-            GStruct154<GInterface433> seedResult = AmmoItemClass.ApplyToAddress(
+            Diz.LanguageExtensions.OperationResult<EFT.InventoryLogic.ISyncOperationResult> seedResult = EFT.InventoryLogic.Ammo.ApplyToAddress(
                 source,
                 destinationAddress,
                 1,
@@ -111,13 +111,13 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (seedResult.Value is not GInterface424 operation)
+            if (seedResult.Value is not EFT.InventoryLogic.IItemOperationResult operation)
             {
                 reason = "seedOperationUnsupported";
                 return false;
             }
 
-            AmmoItemClass seedTarget = operation.ResultItem as AmmoItemClass;
+            EFT.InventoryLogic.Ammo seedTarget = operation.ResultItem as EFT.InventoryLogic.Ammo;
             if (seedTarget == null)
             {
                 reason = "seedResultMissing";
@@ -160,14 +160,14 @@ namespace pitTeam.BigBrain.Actions
         private bool TryBuildAmmoStackConsolidationMove(
             InventoryController inventory,
             BodyGearCandidate candidate,
-            AmmoItemClass source,
-            MagazineItemClass magazine,
+            EFT.InventoryLogic.Ammo source,
+            EFT.InventoryLogic.Magazine magazine,
             out BodyGearMove? move,
             out string reason)
         {
             move = null;
             reason = "invalidStackTransfer";
-            AmmoItemClass target = ResolveAmmoSalvageTargetStack(
+            EFT.InventoryLogic.Ammo target = ResolveAmmoSalvageTargetStack(
                 inventory,
                 candidate.AmmoSalvageTargetStack);
             int transferCount = candidate.AmmoSalvageTransferCount;
@@ -182,7 +182,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            GStruct154<GInterface433> transferResult = AmmoItemClass.ApplyToAmmo(
+            Diz.LanguageExtensions.OperationResult<EFT.InventoryLogic.ISyncOperationResult> transferResult = EFT.InventoryLogic.Ammo.ApplyToAmmo(
                 source,
                 target,
                 transferCount,
@@ -194,7 +194,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (transferResult.Value is not GInterface424 operation)
+            if (transferResult.Value is not EFT.InventoryLogic.IItemOperationResult operation)
             {
                 reason = "ammoTransferOperationUnsupported";
                 return false;
@@ -220,10 +220,10 @@ namespace pitTeam.BigBrain.Actions
 
         private bool CanPlaceAmmoInVestWithReloadReserve(
             InventoryEquipment equipment,
-            AmmoItemClass ammo)
+            EFT.InventoryLogic.Ammo ammo)
         {
-            SearchableItemItemClass vest = CloneEquipmentContainer(equipment, EquipmentSlot.TacticalVest);
-            if (!TrySimulateContainerAdd(vest, ammo, out SearchableItemItemClass? nextVest))
+            EFT.InventoryLogic.SearchableItem vest = CloneEquipmentContainer(equipment, EquipmentSlot.TacticalVest);
+            if (!TrySimulateFastAccessContainerAdd(vest, ammo, out EFT.InventoryLogic.SearchableItem? nextVest))
             {
                 return false;
             }
@@ -244,9 +244,9 @@ namespace pitTeam.BigBrain.Actions
                     // EFT's own LoadMagazine path converts ApplyWithoutRestrictions directly and
                     // submits it without the generic CanExecute gate. Cartridge StackSlot sources
                     // require that same path when consolidating one magazine into another.
-                    BaseInventoryOperationClass operation =
+                    EFT.InventoryLogic.Operations.AbstractOperation operation =
                         inventory.ConvertOperationResultToOperation(move.Operation);
-                    inventory.vmethod_1(operation, callback);
+                    inventory.Execute(operation, callback);
                 }
                 catch (Exception ex)
                 {
@@ -262,7 +262,7 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            if (move.Operation is not GInterface433 ammoOperation)
+            if (move.Operation is not EFT.InventoryLogic.ISyncOperationResult ammoOperation)
             {
                 callback.Fail("Ammo salvage operation does not implement the EFT ammo contract");
                 return;
@@ -271,9 +271,9 @@ namespace pitTeam.BigBrain.Actions
             // EFT's magazine-unload path intentionally bypasses the generic RunNetworkTransaction
             // CanExecute gate. Internal cartridge StackSlot items fail that generic item-move check,
             // so vanilla wraps the ammo result and submits the converted ammo operation directly.
-            BaseInventoryOperationClass networkOperation = inventory.ConvertOperationResultToOperation(
-                new GClass3420(ammoOperation));
-            inventory.vmethod_1(networkOperation, callback);
+            EFT.InventoryLogic.Operations.AbstractOperation networkOperation = inventory.ConvertOperationResultToOperation(
+                new EFT.InventoryLogic.UnloadMagOperationResult(ammoOperation));
+            inventory.Execute(networkOperation, callback);
         }
 
         private static bool TryFindDirectEquipmentContainerAddress(
@@ -283,14 +283,14 @@ namespace pitTeam.BigBrain.Actions
             out ItemAddress? address)
         {
             address = null;
-            if (equipment?.GetSlot(slot)?.ContainedItem is not SearchableItemItemClass container ||
+            if (equipment?.GetSlot(slot)?.ContainedItem is not EFT.InventoryLogic.SearchableItem container ||
                 container.Grids == null ||
                 item == null)
             {
                 return false;
             }
 
-            foreach (StashGridClass grid in container.Grids)
+            foreach (EFT.InventoryLogic.Grid grid in OrderFastAccessGridsByBestFit(container.Grids, item))
             {
                 if (grid != null &&
                     grid.TryFindLocationForItem(item, out ItemAddress candidateAddress) &&

@@ -594,7 +594,7 @@ namespace pitTeam.Modules
                 new Ray(fromHead.Position, direction),
                 out RaycastHit _,
                 distance,
-                LayerMaskClass.HighPolyWithTerrainMask);
+                LayersMaskController.HighPolyWithTerrainMask);
         }
     }
 }

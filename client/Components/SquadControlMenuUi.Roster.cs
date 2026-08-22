@@ -641,8 +641,8 @@ namespace pitTeam.Components
 
             try
             {
-                IChatInteractions chatInteractions = ItemUiContext.Instance?.Session;
-                SocialNetworkClass socialNetwork = chatInteractions?.SocialNetwork;
+                EFT.ISocial chatInteractions = ItemUiContext.Instance?.Session;
+                EFT.SocialNetwork socialNetwork = chatInteractions?.SocialNetwork;
                 if (socialNetwork?.FriendsList == null)
                 {
                     pitFireTeam.Log.LogError("[UI] Failed to delete teammate: social network is unavailable.");
@@ -1184,7 +1184,7 @@ namespace pitTeam.Components
 
             try
             {
-                GClass1416 profile = new GClass1416(profileTask.Result.Value);
+                EFT.OtherPlayerProfile profile = new EFT.OtherPlayerProfile(profileTask.Result.Value);
                 iconImage.SetPresetIcon(profile.Customization, profile.Equipment);
             }
             catch (Exception ex)
@@ -1194,35 +1194,47 @@ namespace pitTeam.Components
             }
         }
 
-        private void OpenProfile(string accountId)
+        private async void OpenProfile(string accountId)
         {
-            if (string.IsNullOrWhiteSpace(accountId) || ItemUiContext.Instance == null)
+            if (string.IsNullOrWhiteSpace(accountId))
             {
+                return;
+            }
+
+            if (ItemUiContext.Instance == null)
+            {
+                HandleProfileOpenFailure(accountId, null);
                 return;
             }
 
             try
             {
                 OtherPlayerProfileScreenPatch.PrepareReturnOverride(ReturnFromProfileToSquadControl);
-                Task<OtherPlayerProfileScreen.GClass3883> task = ItemUiContext.Instance.ShowPlayerProfileScreen(accountId, EItemViewType.OtherPlayerProfile);
-                task.ContinueWith(
-                    continuation =>
-                    {
-                        if (continuation.IsFaulted)
-                        {
-                            OtherPlayerProfileScreenPatch.ClearPendingReturnOverride();
-                            pitFireTeam.Log.LogError($"[UI] Failed to open profile for '{accountId}'.");
-                            pitFireTeam.Log.LogError(continuation.Exception);
-                        }
-                    },
-                    TaskContinuationOptions.OnlyOnFaulted);
+                OtherPlayerProfileScreen.OtherPlayerProfileScreenController screenController =
+                    await ItemUiContext.Instance.ShowPlayerProfileScreen(accountId, EItemViewType.OtherPlayerProfile);
+                if (screenController == null)
+                {
+                    HandleProfileOpenFailure(accountId, null);
+                }
             }
             catch (Exception ex)
             {
-                OtherPlayerProfileScreenPatch.ClearPendingReturnOverride();
-                pitFireTeam.Log.LogError($"[UI] Failed to start profile open for '{accountId}'.");
-                pitFireTeam.Log.LogError(ex);
+                HandleProfileOpenFailure(accountId, ex);
             }
+        }
+
+        private static void HandleProfileOpenFailure(string accountId, Exception exception)
+        {
+            OtherPlayerProfileScreenPatch.ClearPendingReturnOverride();
+            pitFireTeam.Log.LogError($"[UI] Failed to fetch teammate profile for '{accountId}'. The profile may be corrupt or the profile-view route may be unavailable.");
+            if (exception != null)
+            {
+                pitFireTeam.Log.LogError(exception);
+            }
+
+            EFT.Communications.NotificationManager.DisplayWarningNotification(
+                GetSocialUiText("SquadControlProfileCorrupt"),
+                ENotificationDurationType.Default);
         }
 
         private void CreateScrollableRosterArea(RectTransform shellRect)
@@ -1406,12 +1418,12 @@ namespace pitTeam.Components
         {
             Canvas canvas = reference != null ? reference.GetComponentInParent<Canvas>() : null;
             CanvasScaler scaler = canvas != null ? canvas.GetComponent<CanvasScaler>() : null;
-            if (scaler == null || scaler.scaleFactor <= 0.001f || GClass3825.Float_0 <= 0.001f)
+            if (scaler == null || scaler.scaleFactor <= 0.001f || EFT.UI.UICanvasScalerController._scaleFactor <= 0.001f)
             {
                 return 1f;
             }
 
-            return Mathf.Clamp(GClass3825.Float_0 / scaler.scaleFactor, 0.5f, 2f);
+            return Mathf.Clamp(EFT.UI.UICanvasScalerController._scaleFactor / scaler.scaleFactor, 0.5f, 2f);
         }
 
         // Sequential portrait load queue — one SetPresetIcon per entry, processed in order.

@@ -15,33 +15,108 @@ namespace pitTeam.BigBrain.Actions
     /// </summary>
     internal sealed class CombatHoldPositionAction : FollowerCombatActionBase
     {
-        private readonly GClass278 baseLogic;
+        private const float UnsafeVanillaReloadDeferralSeconds = 0.25f;
+        private const float PushSearchArrivalStandingSettleSeconds = 0.75f;
+
+        private readonly HoldPosition baseLogic;
+        private readonly FollowerCombatFireOverlay fireOverlay;
+        private float holdStartedAt;
 
         public CombatHoldPositionAction(BotOwner botOwner) : base(botOwner)
         {
             baseLogic = new EnemyFacingHoldLogic(botOwner);
+            fireOverlay = new FollowerCombatFireOverlay(botOwner);
         }
 
         public override void Start()
         {
             base.Start();
+            holdStartedAt = Time.time;
             StopStationaryCombatMovement();
         }
 
         public override void Update(CustomLayer.ActionData data)
         {
+            string? reason = GetReason(data) ?? BotOwner.Brain?.Agent?.LastResult().Reason;
+            bool recoveryNoCover = FollowerCombatCommon.IsRecoveryNoCoverReason(reason);
+            if (recoveryNoCover)
+            {
+                BotOwner.SetPose(1f);
+            }
+
             if (StopUnownedGrenadeLauncherFire(
-                    GetReason(data) ?? BotOwner.Brain?.Agent?.LastResult().Reason,
+                    reason,
                     BotOwner.Memory?.GoalEnemy,
                     blockWhenWaiting: false))
             {
                 return;
             }
 
-            baseLogic.UpdateNodeByBrain(GetData<GClass28>(data));
+            DeferUnsafeVanillaHoldReload(reason);
+            baseLogic.UpdateNodeByBrain(GetData<ShootHoldResultParams>(data));
+
+            // Vanilla hold nodes can lower pose after the decision-level crouch policy has already
+            // run. Reassert the shared close-threat rule before the hold fire overlay pulls the
+            // trigger so regroup/boss/cover holds cannot bypass the 50m standing contract.
+            EnforceCloseThreatStandingPose("holdPosition", reason);
+            EnforceDistantCombatMovementStandingPose(
+                "holdPosition",
+                reason,
+                IsPushSearchArrivalHold(reason) &&
+                Time.time - holdStartedAt <= PushSearchArrivalStandingSettleSeconds);
+
+            if (recoveryNoCover)
+            {
+                BotOwner.SetPose(1f);
+            }
 
             TryPreferMarksmanPrimaryAtRange(BotOwner.Memory?.GoalEnemy);
             FollowerCombatCommon.TryRaiseForStandingCoverShot(BotOwner, out _);
+            fireOverlay.Update(
+                BotOwner.Memory?.GoalEnemy,
+                reason,
+                allowThreatSuppression: recoveryNoCover || BotOwner.Memory?.IsUnderFire == true,
+                forceThreatLook: true,
+                out _);
+        }
+
+        private static bool IsPushSearchArrivalHold(string? reason)
+        {
+            return !string.IsNullOrEmpty(reason) &&
+                   reason.StartsWith(
+                       "committedCoverHold.push.search",
+                       System.StringComparison.Ordinal);
+        }
+
+        private void DeferUnsafeVanillaHoldReload(string? reason)
+        {
+            if (BotOwner.WeaponManager?.Reload?.Reloading == true ||
+                BotOwner.Memory?.IsInCover == true ||
+                FollowerCombatCommon.IsReloadHoldReason(reason) ||
+                FollowerCombatCommon.IsWeaponPreparationHoldReason(reason))
+            {
+                return;
+            }
+
+            bool exposedPressure = BotOwner.Memory?.IsUnderFire == true ||
+                                   FollowerAwareness.WasRecentlyHit(BotOwner);
+            if (!exposedPressure)
+            {
+                return;
+            }
+
+            // HoldPosition otherwise starts its own below-half-magazine reload based only on stale
+            // real-sight time. Keep that hidden policy out of exposed pressure holds so the
+            // cover-first combat reload router remains the sole owner of unsafe reload starts.
+            baseLogic._nextCheckReload = Mathf.Max(
+                baseLogic._nextCheckReload,
+                Time.time + UnsafeVanillaReloadDeferralSeconds);
+        }
+
+        public override void Stop()
+        {
+            fireOverlay.Stop();
+            base.Stop();
         }
     }
 
@@ -49,7 +124,7 @@ namespace pitTeam.BigBrain.Actions
     /// Hold-position look controller. Vanilla hold logic is retained, but follower code decides
     /// what the bot should watch so a hold does not turn into passive staring away from the fight.
     /// </summary>
-    internal sealed class EnemyFacingHoldLogic : GClass278
+    internal sealed class EnemyFacingHoldLogic : HoldPosition
     {
         private const float SignificantCornerSwitchAngle = 20f;
         private const float CornerSwitchLockDuration = 0.45f;
@@ -98,8 +173,14 @@ namespace pitTeam.BigBrain.Actions
 
         public override void Look()
         {
-            if (BotFollowerPlayer.TryApplyCommandLookOverride(BotOwner_0))
+            if (BotFollowerPlayer.TryApplyCommandLookOverride(_owner))
             {
+                return;
+            }
+
+            if (FollowerAwareness.TryGetTargetHandoffLookPoint(_owner, out Vector3 handoffLookPoint))
+            {
+                _owner.Steering.LookToPoint(handoffLookPoint);
                 return;
             }
 
@@ -113,66 +194,86 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
+            if (TryLookTowardBossRangedThreat())
+            {
+                return;
+            }
+
             if (TryLookTowardEnemy())
             {
                 return;
             }
 
-            if (FollowerAwareness.TryGetRecentThreatLookPoint(BotOwner_0, out Vector3 threatLookPoint))
+            if (FollowerAwareness.TryGetRecentThreatLookPoint(_owner, out Vector3 threatLookPoint))
             {
-                BotOwner_0.Steering.LookToPoint(threatLookPoint);
+                _owner.Steering.LookToPoint(threatLookPoint);
                 return;
             }
 
             if (TryGetClosestAllyLookPoint(out Vector3 allyLookPoint))
             {
-                BotOwner_0.Steering.LookToPoint(allyLookPoint);
+                _owner.Steering.LookToPoint(allyLookPoint);
                 return;
             }
 
-            BotOwner_0.LookData.SetLookPointByHearing(null);
+            _owner.LookData.SetLookPointByHearing(null);
         }
 
         private bool TryLookTowardCloseUnseenThreat()
         {
-            EnemyInfo? goalEnemy = BotOwner_0?.Memory?.GoalEnemy;
+            EnemyInfo? goalEnemy = _owner?.Memory?.GoalEnemy;
             if (goalEnemy?.IsVisible == true && goalEnemy.CanShoot)
             {
                 return false;
             }
 
             if (!FollowerAwareness.TryGetRecentCloseThreatLookPoint(
-                    BotOwner_0,
+                    _owner,
                     CombatDistanceConfiguration.Instance.GetTooCloseDistance(),
                     out Vector3 threatLookPoint))
             {
                 return false;
             }
 
-            BotOwner_0.Steering.LookToPoint(threatLookPoint);
+            _owner.Steering.LookToPoint(threatLookPoint);
             return true;
         }
 
         private bool TryLookTowardSuppressionThreat()
         {
-            EnemyInfo? goalEnemy = BotOwner_0?.Memory?.GoalEnemy;
+            EnemyInfo? goalEnemy = _owner?.Memory?.GoalEnemy;
             if (goalEnemy?.IsVisible == true && goalEnemy.CanShoot)
             {
                 return false;
             }
 
-            if (BotOwner_0?.Memory?.IsInCover != true ||
-                BotOwner_0.Memory.IsUnderFire != true)
+            if (_owner?.Memory?.IsInCover != true ||
+                _owner.Memory.IsUnderFire != true)
             {
                 return false;
             }
 
-            if (!FollowerAwareness.TryGetRecentThreatLookPoint(BotOwner_0, out Vector3 threatLookPoint))
+            if (!FollowerAwareness.TryGetRecentThreatLookPoint(_owner, out Vector3 threatLookPoint))
             {
                 return false;
             }
 
-            BotOwner_0.Steering.LookToPoint(threatLookPoint);
+            _owner.Steering.LookToPoint(threatLookPoint);
+            return true;
+        }
+
+        private bool TryLookTowardBossRangedThreat()
+        {
+            EnemyInfo? enemy = _owner?.Memory?.GoalEnemy ?? _owner?.Memory?.LastEnemy;
+            if (!FollowerAwareness.TryGetBossRangedThreatLookPoint(
+                    _owner,
+                    enemy,
+                    out Vector3 threatLookPoint))
+            {
+                return false;
+            }
+
+            _owner.Steering.LookToPoint(threatLookPoint);
             return true;
         }
 
@@ -180,7 +281,7 @@ namespace pitTeam.BigBrain.Actions
         {
             lookPoint = Vector3.zero;
 
-            BotsGroup group = BotOwner_0?.BotsGroup;
+            BotsGroup group = _owner?.BotsGroup;
             if (group == null)
             {
                 return false;
@@ -190,7 +291,10 @@ namespace pitTeam.BigBrain.Actions
             bool found = false;
 
             // Required order: check own group members first.
-            TryCollectClosestAllyFromEnumerable(group.Members as IEnumerable, ref found, ref bestDistanceSqr, ref lookPoint);
+            for (int i = 0; i < group.MembersCount; i++)
+            {
+                TryUpdateClosestAlly(group.Member(i), ref found, ref bestDistanceSqr, ref lookPoint);
+            }
 
             // Then check allied groups/entries.
             if (!found)
@@ -236,13 +340,13 @@ namespace pitTeam.BigBrain.Actions
             ref float bestDistanceSqr,
             ref Vector3 lookPoint)
         {
-            if (ally == null || ally == BotOwner_0 || ally.IsDead)
+            if (ally == null || ally == _owner || ally.IsDead)
             {
                 return;
             }
 
             Vector3 targetPoint = ally.Position;
-            float distanceSqr = (targetPoint - BotOwner_0.Position).sqrMagnitude;
+            float distanceSqr = (targetPoint - _owner.Position).sqrMagnitude;
             if (distanceSqr >= bestDistanceSqr)
             {
                 return;
@@ -255,7 +359,7 @@ namespace pitTeam.BigBrain.Actions
 
         private bool TryLookTowardEnemy()
         {
-            EnemyInfo enemy = BotOwner_0.Memory.GoalEnemy ?? BotOwner_0.Memory.LastEnemy;
+            EnemyInfo enemy = _owner.Memory.GoalEnemy ?? _owner.Memory.LastEnemy;
             if (enemy == null)
             {
                 ClearCurrentLook();
@@ -350,7 +454,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            CustomNavigationPoint coverPoint = BotOwner_0.Memory.CurCustomCoverPoint;
+            CustomNavigationPoint coverPoint = _owner.Memory.CurCustomCoverPoint;
             if (coverPoint == null || coverPoint.Id != currentCoverPointId)
             {
                 return false;
@@ -428,7 +532,7 @@ namespace pitTeam.BigBrain.Actions
             }
             else
             {
-                sideDirection = GClass855.Rotate90(coverPoint.ToWallVector, side > 0 ? GClass855.SideTurn.left : GClass855.SideTurn.right);
+                sideDirection = global::Utils.Rotate90(coverPoint.ToWallVector, side > 0 ? global::Utils.SideTurn.left : global::Utils.SideTurn.right);
             }
 
             sideDirection.y = 0f;
@@ -437,7 +541,7 @@ namespace pitTeam.BigBrain.Actions
                 return -1f;
             }
 
-            sideDirection = GClass855.NormalizeFastSelf(sideDirection);
+            sideDirection = global::Utils.NormalizeFastSelf(sideDirection);
             return Vector3.Dot(sideDirection, enemyDirection);
         }
 
@@ -459,7 +563,7 @@ namespace pitTeam.BigBrain.Actions
                 return true;
             }
 
-            CustomNavigationPoint coverPoint = BotOwner_0.Memory.CurCustomCoverPoint;
+            CustomNavigationPoint coverPoint = _owner.Memory.CurCustomCoverPoint;
             if (coverPoint != null && hasReliableEnemyLookPoint)
             {
                 Vector3 cornerTargetPoint = hasReliableEnemyLookPoint ? enemyLookPoint : fallbackEnemyDirectionPoint;
@@ -495,8 +599,8 @@ namespace pitTeam.BigBrain.Actions
                        Vector3.Angle(coverPoint.RightBorderLight, enemyDirection);
             }
 
-            Vector3 leftDirection = GClass855.Rotate90(coverPoint.ToWallVector, GClass855.SideTurn.left);
-            Vector3 rightDirection = GClass855.Rotate90(coverPoint.ToWallVector, GClass855.SideTurn.right);
+            Vector3 leftDirection = global::Utils.Rotate90(coverPoint.ToWallVector, global::Utils.SideTurn.left);
+            Vector3 rightDirection = global::Utils.Rotate90(coverPoint.ToWallVector, global::Utils.SideTurn.right);
             return Vector3.Dot(leftDirection, enemyDirection) >= Vector3.Dot(rightDirection, enemyDirection);
         }
 
@@ -560,20 +664,20 @@ namespace pitTeam.BigBrain.Actions
         {
             if (currentLookMode == LookTargetMode.Corner)
             {
-                CustomNavigationPoint coverPoint = BotOwner_0.Memory.CurCustomCoverPoint;
+                CustomNavigationPoint coverPoint = _owner.Memory.CurCustomCoverPoint;
                 if (coverPoint != null && coverPoint.Id == currentCoverPointId && IsCornerUsable(coverPoint, currentCornerSide))
                 {
                     if (currentEnemy != null && TryGetEnemyDirection(currentEnemy, coverPoint, out Vector3 enemyDirection))
                     {
                         if (GetCornerSideScore(coverPoint, enemyDirection, currentCornerSide) < MinCornerAlignmentScore)
                         {
-                            BotOwner_0.Steering.LookToPoint(GetEnemyLookPoint(currentEnemy));
+                            _owner.Steering.LookToPoint(GetEnemyLookPoint(currentEnemy));
                             return;
                         }
 
                         if (!CanUseCornerLook(coverPoint, GetEnemyLookPoint(currentEnemy), currentCornerSide))
                         {
-                            BotOwner_0.Steering.LookToPoint(GetEnemyLookPoint(currentEnemy));
+                            _owner.Steering.LookToPoint(GetEnemyLookPoint(currentEnemy));
                             return;
                         }
                     }
@@ -583,14 +687,14 @@ namespace pitTeam.BigBrain.Actions
                         currentCornerLookDirection = GetCornerLookDirection(coverPoint, currentCornerSide);
                     }
 
-                    BotOwner_0.Steering.LookToDirection(currentCornerLookDirection);
+                    _owner.Steering.LookToDirection(currentCornerLookDirection);
                     return;
                 }
             }
 
             if (currentLookMode == LookTargetMode.Point)
             {
-                BotOwner_0.Steering.LookToPoint(currentLookPoint);
+                _owner.Steering.LookToPoint(currentLookPoint);
             }
         }
 
@@ -621,13 +725,18 @@ namespace pitTeam.BigBrain.Actions
             }
 
             Vector3 enemyPoint = enemy.EnemyLastPositionReal;
-            if (!IsUsableDirectionPoint(enemyPoint, BotOwner_0.Position))
+            if (!IsUsableDirectionPoint(enemyPoint, _owner.Position))
             {
                 enemyPoint = enemy.CurrPosition;
             }
 
+            if (!IsUsableDirectionPoint(enemyPoint, _owner.Position))
+            {
+                return Vector3.zero;
+            }
+
             Vector3 lookPoint = enemyPoint + Vector3.up * 0.8f;
-            if (!IsUsableDirectionPoint(lookPoint, BotOwner_0.Position))
+            if (!IsUsableDirectionPoint(lookPoint, _owner.Position))
             {
                 return Vector3.zero;
             }
@@ -642,7 +751,7 @@ namespace pitTeam.BigBrain.Actions
             enemyDirection.y = 0f;
             if (enemyDirection.sqrMagnitude <= 0.001f)
             {
-                enemyDirection = enemyLookPoint - BotOwner_0.Position;
+                enemyDirection = enemyLookPoint - _owner.Position;
                 enemyDirection.y = 0f;
             }
 
@@ -651,7 +760,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            enemyDirection = GClass855.NormalizeFastSelf(enemyDirection);
+            enemyDirection = global::Utils.NormalizeFastSelf(enemyDirection);
             return true;
         }
 
@@ -661,7 +770,7 @@ namespace pitTeam.BigBrain.Actions
             enemyDirection.y = 0f;
             if (enemyDirection.sqrMagnitude <= 0.001f)
             {
-                enemyDirection = enemyLookPoint - BotOwner_0.Position;
+                enemyDirection = enemyLookPoint - _owner.Position;
                 enemyDirection.y = 0f;
             }
 
@@ -670,7 +779,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            enemyDirection = GClass855.NormalizeFastSelf(enemyDirection);
+            enemyDirection = global::Utils.NormalizeFastSelf(enemyDirection);
             return true;
         }
 
@@ -682,6 +791,13 @@ namespace pitTeam.BigBrain.Actions
             }
 
             if (float.IsInfinity(point.x) || float.IsInfinity(point.y) || float.IsInfinity(point.z))
+            {
+                return false;
+            }
+
+            // EFT uses Vector3.zero as an unavailable enemy-position sentinel. Comparing it only
+            // to the bot position makes world origin look valid on every normal map location.
+            if (point.sqrMagnitude <= 0.01f)
             {
                 return false;
             }
@@ -705,23 +821,23 @@ namespace pitTeam.BigBrain.Actions
         {
             sector = EnemyLookSector.None;
 
-            Vector3 direction = enemyLookPoint - BotOwner_0.Position;
+            Vector3 direction = enemyLookPoint - _owner.Position;
             direction.y = 0f;
             if (direction.sqrMagnitude <= 0.001f)
             {
                 return false;
             }
 
-            direction = GClass855.NormalizeFastSelf(direction);
+            direction = global::Utils.NormalizeFastSelf(direction);
 
-            Vector3 forward = BotOwner_0.Transform.forward;
+            Vector3 forward = _owner.Transform.forward;
             forward.y = 0f;
             if (forward.sqrMagnitude <= 0.001f)
             {
                 return false;
             }
 
-            forward = GClass855.NormalizeFastSelf(forward);
+            forward = global::Utils.NormalizeFastSelf(forward);
             Vector3 right = new Vector3(forward.z, 0f, -forward.x);
             float angle = Mathf.Atan2(Vector3.Dot(direction, right), Vector3.Dot(direction, forward)) * Mathf.Rad2Deg;
             if (angle < 0f)
@@ -729,7 +845,7 @@ namespace pitTeam.BigBrain.Actions
                 angle += 360f;
             }
 
-            if (Enemy.Distance(BotOwner_0.Memory.GoalEnemy) <= Enemy.EnemyDistance.VeryClose)
+            if (Enemy.Distance(_owner.Memory.GoalEnemy) <= Enemy.EnemyDistance.VeryClose)
             {
                 sector = angle switch
                 {
@@ -759,7 +875,7 @@ namespace pitTeam.BigBrain.Actions
 
         private bool WouldLookTowardPointHitWall(Vector3 lookPoint)
         {
-            Vector3 origin = BotOwner_0.MyHead != null ? BotOwner_0.MyHead.position : BotOwner_0.Position + Vector3.up * 1.4f;
+            Vector3 origin = _owner.MyHead != null ? _owner.MyHead.position : _owner.Position + Vector3.up * 1.4f;
             Vector3 direction = lookPoint - origin;
             direction.y = 0f;
             if (direction.sqrMagnitude <= 0.001f)
@@ -767,8 +883,8 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            direction = GClass855.NormalizeFastSelf(direction);
-            return Physics.Raycast(new Ray(origin, direction), WallFacingProbeDistance, LayerMaskClass.HighPolyWithTerrainMask);
+            direction = global::Utils.NormalizeFastSelf(direction);
+            return Physics.Raycast(new Ray(origin, direction), WallFacingProbeDistance, LayersMaskController.HighPolyWithTerrainMask);
         }
 
         private bool CanUseCornerLook(CustomNavigationPoint coverPoint, Vector3 enemyLookPoint, int side)
@@ -778,7 +894,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            Vector3 botPosition = BotOwner_0.Position;
+            Vector3 botPosition = _owner.Position;
             Vector3 botToCorner = coverPoint.Position - botPosition;
             botToCorner.y = 0f;
             if (botToCorner.sqrMagnitude > MaxCornerLookDistance * MaxCornerLookDistance)
@@ -823,18 +939,18 @@ namespace pitTeam.BigBrain.Actions
 
         private Vector3 GetCornerLookDirection(CustomNavigationPoint coverPoint, int side)
         {
-            Vector3 lookDirection = BotOwner_0.LookData.RotateWallBySide(coverPoint, side);
+            Vector3 lookDirection = _owner.LookData.RotateWallBySide(coverPoint, side);
             lookDirection.y = 0f;
             if (lookDirection.sqrMagnitude > 0.001f)
             {
-                return GClass855.NormalizeFastSelf(lookDirection);
+                return global::Utils.NormalizeFastSelf(lookDirection);
             }
 
             Vector3 fallbackDirection = side > 0 ? coverPoint.LeftBorderLight : coverPoint.RightBorderLight;
             fallbackDirection.y = 0f;
             if (fallbackDirection.sqrMagnitude > 0.001f)
             {
-                return GClass855.NormalizeFastSelf(fallbackDirection);
+                return global::Utils.NormalizeFastSelf(fallbackDirection);
             }
 
             return Vector3.zero;

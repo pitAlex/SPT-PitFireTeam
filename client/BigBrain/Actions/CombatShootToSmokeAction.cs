@@ -9,11 +9,11 @@ namespace pitTeam.BigBrain.Actions
     /// </summary>
     internal sealed class CombatShootToSmokeAction : FollowerCombatActionBase
     {
-        private readonly GClass185 baseLogic;
+        private readonly AimingToSmoke baseLogic;
 
         public CombatShootToSmokeAction(BotOwner botOwner) : base(botOwner)
         {
-            baseLogic = new GClass185(botOwner);
+            baseLogic = new AimingToSmoke(botOwner);
         }
 
         public override void Update(CustomLayer.ActionData data)
@@ -23,7 +23,9 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            baseLogic.UpdateNodeByBrain(GetData<GClass27>(data));
+            string? reason = GetReason(data);
+            baseLogic.UpdateNodeByBrain(GetData<AimingResultParams>(data));
+            EnforceCloseThreatStandingPose("shootToSmoke", reason);
         }
     }
 }

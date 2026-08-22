@@ -291,7 +291,7 @@ namespace pitTeam.Utils
                 return true;
             }
 
-            AIGreanageThrowData currentOriginThrow = GClass577.CanThrowGrenade2(
+            AIGreanageThrowData currentOriginThrow = AIGrenadeHelper.CanThrowGrenade2(
                 origin,
                 target,
                 grenades,
@@ -353,7 +353,7 @@ namespace pitTeam.Utils
                     direction.normalized,
                     out RaycastHit hit,
                     castDistance,
-                    LayerMaskClass.HighPolyWithTerrainMask,
+                    LayersMaskController.HighPolyWithTerrainMask,
                     QueryTriggerInteraction.Ignore))
             {
                 string hitName = hit.collider?.gameObject?.name ?? "geometry";
@@ -380,7 +380,7 @@ namespace pitTeam.Utils
 
             float mass = grenades.Mass > 0.01f ? grenades.Mass : 0.5f;
             Vector3 force = direction.normalized * (throwData.Force * mass);
-            Vector3 dangerPoint = GClass577.FindDangerPoint(origin, force, mass);
+            Vector3 dangerPoint = AIGrenadeHelper.FindDangerPoint(origin, force, mass);
             if (!IsFinite(dangerPoint))
             {
                 return false;

@@ -193,8 +193,8 @@ namespace pitTeam.Modules
                 return;
             }
 
-            GStruct154<GClass3411> moveResult =
-                InteractionsHandlerClass.Move(weapon, primaryAddress, inventory, true);
+            Diz.LanguageExtensions.OperationResult<EFT.InventoryLogic.MoveResult> moveResult =
+                EFT.InventoryLogic.ItemManipulator.Move(weapon, primaryAddress, inventory, true);
             if (moveResult.Failed ||
                 moveResult.Value.ItemsDestroyRequired ||
                 !inventory.CanExecute(moveResult.Value))
@@ -251,6 +251,7 @@ namespace pitTeam.Modules
             }
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private static void LogPostLootPromotionStopped(
             BotOwner bot,
             Weapon weapon,
@@ -281,7 +282,11 @@ namespace pitTeam.Modules
             RebindAndSelect(bot, weapon, context);
         }
 
-        internal static void RegisterSupport(BotOwner bot, Weapon weapon, string context)
+        internal static void RegisterSupport(
+            BotOwner bot,
+            Weapon weapon,
+            EquipmentSlot supportSlot,
+            string context)
         {
             try
             {
@@ -304,6 +309,7 @@ namespace pitTeam.Modules
                         weaponManager,
                         selector,
                         weapon,
+                        supportSlot,
                         context,
                         out string reason))
                 {
@@ -366,30 +372,31 @@ namespace pitTeam.Modules
                     return false;
                 }
 
-                selector.MainWeapon = EquipmentSlot.FirstPrimaryWeapon;
+                selector._mainWeapon = EquipmentSlot.FirstPrimaryWeapon;
                 BotWeaponInfo mainInfo = new BotWeaponInfo(
                     bot,
                     weapon,
                     EquipmentSlot.FirstPrimaryWeapon,
-                    weaponManager.method_5);
-                weaponManager.Info[EquipmentSlot.FirstPrimaryWeapon] = mainInfo;
+                    weaponManager.ChangeToMode);
+                weaponManager.info[EquipmentSlot.FirstPrimaryWeapon] = mainInfo;
 
                 TryRegisterTrackedSupportWeapon(
                     bot,
                     weaponManager,
                     selector,
                     null,
+                    null,
                     context,
                     out _);
 
-                if (weaponManager.CurrentWeaponInfo == null ||
+                if (weaponManager._currentWeaponInfo == null ||
                     selector.LastEquipmentSlot == EquipmentSlot.FirstPrimaryWeapon)
                 {
-                    weaponManager.CurrentWeaponInfo = mainInfo;
+                    weaponManager._currentWeaponInfo = mainInfo;
                 }
 
                 selector.IsWeaponReady = true;
-                selector.NextChangeTime = 0f;
+                selector._nextChangeTime = 0f;
                 reason = "ok";
                 return true;
             }
@@ -405,14 +412,32 @@ namespace pitTeam.Modules
             BotWeaponManager weaponManager,
             BotWeaponSelector selector,
             Weapon expectedSupportWeapon,
+            EquipmentSlot? expectedSupportSlot,
             string context,
             out string reason)
         {
             reason = string.Empty;
             Weapon primaryWeapon = bot.GetPlayer?.InventoryController?.Inventory?.Equipment
                 ?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem as Weapon;
+            EquipmentSlot supportSlot = expectedSupportSlot ?? selector._supportWeapon;
+            if (supportSlot != EquipmentSlot.SecondPrimaryWeapon &&
+                supportSlot != EquipmentSlot.Holster)
+            {
+                reason = "supportSlotInvalid";
+                return false;
+            }
+
+            // SupportWeapon is vanilla's singular preferred fallback. When both support slots
+            // are populated it normally remains SecondPrimaryWeapon, but the explicitly supplied
+            // holster slot still needs its own reload/weapon record.
+            if (!expectedSupportSlot.HasValue && selector._supportWeapon != supportSlot)
+            {
+                reason = "selectorSupportRoleMismatch";
+                return false;
+            }
+
             Weapon supportWeapon = bot.GetPlayer?.InventoryController?.Inventory?.Equipment
-                ?.GetSlot(EquipmentSlot.SecondPrimaryWeapon)?.ContainedItem as Weapon;
+                ?.GetSlot(supportSlot)?.ContainedItem as Weapon;
             if (primaryWeapon == null)
             {
                 reason = "primaryMissing";
@@ -421,13 +446,13 @@ namespace pitTeam.Modules
 
             if (supportWeapon == null)
             {
-                reason = "secondaryMissing";
+                reason = "supportMissing";
                 return false;
             }
 
             if (expectedSupportWeapon != null && !IsSameItem(expectedSupportWeapon, supportWeapon))
             {
-                reason = "secondarySlotMismatch";
+                reason = "supportSlotMismatch";
                 return false;
             }
 
@@ -439,14 +464,17 @@ namespace pitTeam.Modules
                 return false;
             }
 
-            if (!IsSameItem(selector.SecondPrimaryWeaponItem, supportWeapon))
+            Item cachedSupport = supportSlot == EquipmentSlot.Holster
+                ? selector._holsterItem
+                : selector.SecondPrimaryWeaponItem;
+            if (!IsSameItem(cachedSupport, supportWeapon))
             {
-                reason = "selectorSecondaryCacheMismatch";
+                reason = "selectorSupportCacheMismatch";
                 return false;
             }
 
-            if (weaponManager.Info.TryGetValue(
-                    EquipmentSlot.SecondPrimaryWeapon,
+            if (weaponManager.info.TryGetValue(
+                    supportSlot,
                     out BotWeaponInfo existingInfo) &&
                 IsSameItem(existingInfo?.weapon, supportWeapon))
             {
@@ -454,19 +482,19 @@ namespace pitTeam.Modules
                 return true;
             }
 
-            // Vanilla only treats second primary as a usable support role after first primary
-            // exists. The looted weapon may have occupied second primary earlier, when no main
-            // weapon existed, so create the missing per-slot reload/weapon state now.
+            // Vanilla caches support weapon state at spawn. A raid-acquired secondary or holster
+            // therefore needs a per-slot reload/weapon record after the physical move settles.
             BotWeaponInfo supportInfo = new BotWeaponInfo(
                 bot,
                 supportWeapon,
-                EquipmentSlot.SecondPrimaryWeapon,
-                weaponManager.method_5);
-            weaponManager.Info[EquipmentSlot.SecondPrimaryWeapon] = supportInfo;
+                supportSlot,
+                weaponManager.ChangeToMode);
+            weaponManager.info[supportSlot] = supportInfo;
             Logger.LogInfo(
                 $"[LootCommand][WeaponRegistration] follower='{bot.Profile?.Nickname ?? bot.ProfileId ?? "unknown"}' " +
                 $"support={supportWeapon.TemplateId} context={context} result=registered " +
-                $"supportSlot={selector.SupportWeapon} canChange={selector.CanChangeToSupportWeapons}");
+                $"supportSlot={supportSlot} selectorSupport={selector._supportWeapon} " +
+                $"canChange={selector._canChangeToSupportWeapons}");
             reason = "registered";
             return true;
         }
@@ -680,6 +708,7 @@ namespace pitTeam.Modules
             }
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private static void LogFinalFailure(
             BotOwner bot,
             Weapon weapon,
@@ -701,6 +730,7 @@ namespace pitTeam.Modules
                 $"{weapon?.TemplateId ?? "unknown"} reason={reason}");
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private static void LogAbortedSwitch(
             BotOwner bot,
             Weapon weapon,

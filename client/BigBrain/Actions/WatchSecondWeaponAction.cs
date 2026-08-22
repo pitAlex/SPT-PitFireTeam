@@ -9,11 +9,11 @@ namespace pitTeam.BigBrain.Actions
     /// </summary>
     internal class WatchSecondWeaponAction : CustomLogic
     {
-        private readonly GClass271 baseLogic;
+        private readonly WatchSecondWeaponNode baseLogic;
 
         public WatchSecondWeaponAction(BotOwner botOwner) : base(botOwner)
         {
-            baseLogic = new GClass271(botOwner);
+            baseLogic = new WatchSecondWeaponNode(botOwner);
         }
 
         public override void Update(CustomLayer.ActionData data)

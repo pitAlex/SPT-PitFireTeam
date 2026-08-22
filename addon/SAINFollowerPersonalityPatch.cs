@@ -2,10 +2,11 @@ using EFT;
 using HarmonyLib;
 using pitTeam.Components;
 using pitTeam.Modules;
-using SAIN.Models.Preset.Personalities;
+using SAIN;
+using SAIN.Preset.Shared.Models.Preset.Personalities;
 using SAIN.Preset;
 using SAIN.Preset.BotSettings;
-using SAIN.Preset.BotSettings.SAINSettings;
+using SAIN.Preset.Shared.BotSettings.SAINSettings;
 using System;
 using System.Collections;
 using System.Reflection;
@@ -218,8 +219,10 @@ namespace pitTeam.SAINAddon
             object? profile = GetInstanceMemberValue(info, "Profile");
             if (profile == null) return;
 
-            float modifier = SAINBotSettingsClass.DefaultDifficultyModifier.TryGetValue(WildSpawnType.followerBigPipe, out float baseModifier)
-                ? baseModifier
+            float modifier = SAINPlugin.LoadedPreset?.BotSettings?.SAINSettings?.TryGetValue(
+                WildSpawnType.followerBigPipe,
+                out SAINSettingsGroupClass settingsGroup) == true
+                ? settingsGroup.DifficultyModifier
                 : 1f;
 
             switch (difficulty)
@@ -265,21 +268,18 @@ namespace pitTeam.SAINAddon
             object? botOwnerObject = GetInstanceMemberValue(info, "BotOwner");
             if (botOwnerObject is not BotOwner botOwner) return;
 
-            object? eftFileSettings = botOwner.Settings?.FileSettings;
-            if (eftFileSettings == null) return;
+            Type? extensionsType = AccessTools.TypeByName("SAIN.Extensions.SainSettingsExtensions");
+            MethodInfo? setConfigValues = AccessTools.Method(
+                extensionsType,
+                "SetConfigValues",
+                new[] { typeof(SAINSettingsClass), typeof(BotOwner) });
+            if (setConfigValues == null)
+            {
+                Modules.Logger.LogError("[SAIN] SetConfigValues extension was not found; follower template was not applied to EFT settings.");
+                return;
+            }
 
-            settings.Aiming.Apply((BotSettingsComponents)eftFileSettings);
-            settings.Boss.Apply((BotSettingsComponents)eftFileSettings);
-            settings.Change.Apply((BotSettingsComponents)eftFileSettings);
-            settings.Grenade.Apply((BotSettingsComponents)eftFileSettings);
-            settings.Hearing.Apply((BotSettingsComponents)eftFileSettings);
-            settings.Lay.Apply((BotSettingsComponents)eftFileSettings);
-            settings.Look.Apply((BotSettingsComponents)eftFileSettings);
-            settings.Mind.Apply((BotSettingsComponents)eftFileSettings);
-            settings.Move.Apply((BotSettingsComponents)eftFileSettings);
-            settings.Patrol.Apply((BotSettingsComponents)eftFileSettings);
-            settings.Scattering.Apply((BotSettingsComponents)eftFileSettings);
-            settings.Shoot.Apply((BotSettingsComponents)eftFileSettings);
+            setConfigValues.Invoke(null, new object[] { settings, botOwner });
         }
 
         private static object? DeepCloneObject(object? source)

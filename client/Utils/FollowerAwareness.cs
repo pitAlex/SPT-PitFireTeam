@@ -1,6 +1,7 @@
 using Comfort.Common;
 using EFT;
 using UnityEngine;
+using pitTeam.BigBrain;
 using pitTeam.Components;
 using pitTeam.Modules;
 
@@ -10,17 +11,27 @@ namespace pitTeam.Utils
     {
         private const float ProtectedImpactMinCoverThickness = 0.75f;
         private const float BulletAwarenessOriginHeight = 1.2f;
+        private const float BossRangedThreatMinDistance = 60f;
+        private const float BossRangedThreatWatchDuration = 3f;
 
         private sealed class State
         {
             public float DamagedUntil;
+            public int DamageRevision;
             public float ThreatenedUntil;
             public bool HasThreatLookPoint;
             public Vector3 ThreatLookPoint;
             public float ThreatSourceDistance = float.MaxValue;
+            public bool HasThreatSource;
+            public Player? ThreatSource;
             public float LastSoundTime;
             public float LastGunshotTime;
             public float NextBulletReactionAt;
+            public float BossRangedThreatWatchUntil;
+            public string BossRangedThreatProfileId = string.Empty;
+            public Vector3 BossRangedThreatLookPoint;
+            public float TargetHandoffLookUntil;
+            public Vector3 TargetHandoffLookPoint;
             public readonly System.Collections.Generic.List<Vector3> ProcessedSoundZones = new();
         }
 
@@ -35,6 +46,16 @@ namespace pitTeam.Utils
         {
             var state = GetState(bot);
             return state != null && state.DamagedUntil > Time.time;
+        }
+
+        /// <summary>
+        /// Returns an edge-triggered counter that advances only when this follower takes actual damage.
+        /// Persistent recent-damage and under-fire windows must not be treated as new hit evidence.
+        /// </summary>
+        public static int GetDamageRevision(BotOwner bot)
+        {
+            var state = GetState(bot);
+            return state?.DamageRevision ?? 0;
         }
 
         public static bool WasRecentlyThreatened(BotOwner bot)
@@ -74,6 +95,174 @@ namespace pitTeam.Utils
             return lookPoint != Vector3.zero;
         }
 
+        /// <summary>
+        /// Publishes an orientation-only point while combat scans the follower's own recent
+        /// personal contacts after GoalEnemy disappears. This does not grant sight, fire
+        /// permission, or enemy ownership; acquisition still requires direct sensor verification.
+        /// </summary>
+        public static void SetTargetHandoffLookPoint(BotOwner bot, Vector3 lookPoint, float untilTime)
+        {
+            State state = GetState(bot);
+            if (state == null ||
+                !FollowerCombatCommon.IsFinite(lookPoint) ||
+                lookPoint == Vector3.zero ||
+                untilTime <= Time.time)
+            {
+                return;
+            }
+
+            state.TargetHandoffLookPoint = lookPoint;
+            state.TargetHandoffLookUntil = untilTime;
+        }
+
+        public static bool TryGetTargetHandoffLookPoint(BotOwner bot, out Vector3 lookPoint)
+        {
+            lookPoint = Vector3.zero;
+            State state = GetState(bot);
+            if (state == null ||
+                state.TargetHandoffLookUntil <= Time.time ||
+                !FollowerCombatCommon.IsFinite(state.TargetHandoffLookPoint) ||
+                state.TargetHandoffLookPoint == Vector3.zero)
+            {
+                return false;
+            }
+
+            lookPoint = state.TargetHandoffLookPoint;
+            return true;
+        }
+
+        public static void ClearTargetHandoffLookPoint(BotOwner bot)
+        {
+            State state = GetState(bot);
+            if (state == null)
+            {
+                return;
+            }
+
+            state.TargetHandoffLookUntil = 0f;
+            state.TargetHandoffLookPoint = Vector3.zero;
+        }
+
+        /// <summary>
+        /// Returns recent incoming-fire evidence that is still safe to use as a blind fire target.
+        /// A known source remains valid through GoalEnemy/visibility flicker, but death or despawn
+        /// invalidates fire permission immediately. Unknown-source evidence keeps its short timeout.
+        /// </summary>
+        public static bool TryGetRecentFireThreatLookPoint(
+            BotOwner bot,
+            out Vector3 lookPoint,
+            out bool sourceKnownDead)
+        {
+            sourceKnownDead = false;
+            if (!TryGetRecentThreatLookPoint(bot, out lookPoint))
+            {
+                return false;
+            }
+
+            State state = GetState(bot);
+            if (state == null || !state.HasThreatSource)
+            {
+                return true;
+            }
+
+            Player? source = state.ThreatSource;
+            if (source?.HealthController?.IsAlive == true)
+            {
+                return true;
+            }
+
+            sourceKnownDead = true;
+            lookPoint = Vector3.zero;
+            return false;
+        }
+
+        /// <summary>
+        /// Publishes a short, frozen bearing when a marksman-like attacker hits the player boss.
+        /// This is orientation evidence only: it does not make the attacker visible, repair personal
+        /// sight, promote a goal enemy, or authorize a shot.
+        /// </summary>
+        public static bool RegisterBossRangedThreatWatch(BotOwner follower, BotOwner attacker)
+        {
+            if (follower == null ||
+                follower.IsDead ||
+                follower.BotState != EBotState.Active ||
+                attacker == null ||
+                attacker.IsDead ||
+                attacker.BotState != EBotState.Active ||
+                string.IsNullOrEmpty(attacker.ProfileId))
+            {
+                return false;
+            }
+
+            Vector3 attackerPosition = attacker.Position;
+            Player attackerPlayer = attacker.GetPlayer ?? attacker.AIData?.Player;
+            if (attackerPlayer?.MainParts != null &&
+                attackerPlayer.MainParts.TryGetValue(BodyPartType.body, out var bodyPart) &&
+                bodyPart != null)
+            {
+                attackerPosition = bodyPart.Position;
+            }
+
+            float distanceSqr = (attackerPosition - follower.Position).sqrMagnitude;
+            bool roleMarksman = attacker.Profile?.Info?.Settings?.Role == WildSpawnType.marksman;
+            var weaponManager = attacker.WeaponManager;
+            var activeWeapon = weaponManager?.ShootController?.Item ?? weaponManager?.CurrentWeapon;
+            bool precisionWeapon = FollowerCombatCommon.IsPrecisionRifleWeapon(activeWeapon);
+            bool longRangeBossHit = distanceSqr >= BossRangedThreatMinDistance * BossRangedThreatMinDistance;
+            if (!roleMarksman && !precisionWeapon && !longRangeBossHit)
+            {
+                return false;
+            }
+
+            State state = GetState(follower);
+            if (state == null || attackerPosition == Vector3.zero)
+            {
+                return false;
+            }
+
+            state.BossRangedThreatWatchUntil = Time.time + BossRangedThreatWatchDuration;
+            state.BossRangedThreatProfileId = attacker.ProfileId;
+            state.BossRangedThreatLookPoint = attackerPosition;
+
+            string reason = roleMarksman
+                ? "roleMarksman"
+                : precisionWeapon
+                    ? "precisionWeapon"
+                    : "longRangeBossHit";
+            BattleRecorder.RecordCommitmentEvent(
+                follower,
+                "bossRangedThreatWatch",
+                "refresh",
+                reason,
+                target: attackerPosition,
+                untilTime: state.BossRangedThreatWatchUntil);
+            return true;
+        }
+
+        public static bool TryGetBossRangedThreatLookPoint(
+            BotOwner bot,
+            EnemyInfo enemy,
+            out Vector3 lookPoint)
+        {
+            lookPoint = Vector3.zero;
+            State state = GetState(bot);
+            if (state == null ||
+                enemy == null ||
+                enemy.IsVisible ||
+                state.BossRangedThreatWatchUntil <= Time.time ||
+                state.BossRangedThreatLookPoint == Vector3.zero ||
+                !string.Equals(
+                    enemy.ProfileId,
+                    state.BossRangedThreatProfileId,
+                    System.StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            lookPoint = state.BossRangedThreatLookPoint;
+            return true;
+        }
+
         public static void ClearTransientState(BotOwner bot)
         {
             if (string.IsNullOrEmpty(bot?.ProfileId))
@@ -84,7 +273,7 @@ namespace pitTeam.Utils
             States.Remove(bot.ProfileId);
         }
 
-        public static void FollowerHit(BotOwner bot, DamageInfoStruct damageInfo)
+        public static void FollowerHit(BotOwner bot, EFT.Ballistics.DamageInfo damageInfo)
         {
             if (bot == null || bot.IsDead || bot.BotState != EBotState.Active)
             {
@@ -97,7 +286,7 @@ namespace pitTeam.Utils
 
             Vector3 lookPoint = Vector3.zero;
             string shooterId = damageInfo.Player?.iPlayer?.ProfileId;
-            Player shooter = !string.IsNullOrEmpty(shooterId)
+            Player? shooter = !string.IsNullOrEmpty(shooterId)
                 ? Singleton<GameWorld>.Instance?.GetAlivePlayerByProfileID(shooterId)
                 : null;
 
@@ -128,21 +317,25 @@ namespace pitTeam.Utils
 
             if (lookPoint != Vector3.zero)
             {
-                RegisterThreatLookPoint(bot, lookPoint, 3f);
+                RegisterThreatLookPoint(bot, lookPoint, 3f, threatSource: shooter);
                 RegisterDamage(bot, 3f);
             }
             else
             {
+                RegisterDamage(bot, 3f);
                 var state = GetState(bot);
                 if (state != null)
                 {
-                    state.DamagedUntil = Time.time + 3f;
                     state.ThreatenedUntil = Time.time + 3f;
                 }
             }
         }
 
-        public static bool FakeShot(BotOwner bot, Vector3 lookPoint, float sourceDistance = float.MaxValue)
+        public static bool FakeShot(
+            BotOwner bot,
+            Vector3 lookPoint,
+            float sourceDistance = float.MaxValue,
+            Player? threatSource = null)
         {
             if (bot == null || bot.IsDead || bot.BotState != EBotState.Active) return false;
             if (FollowerEnemyEnforceSuppression.IsSuppressed(bot)) return false;
@@ -159,7 +352,7 @@ namespace pitTeam.Utils
                 lookPoint = botPos + targetDirection.normalized * 5f;
             }
 
-            RegisterThreatLookPoint(bot, lookPoint, 3f, sourceDistance);
+            RegisterThreatLookPoint(bot, lookPoint, 3f, sourceDistance, threatSource);
             bot.Steering.LookToPoint(lookPoint, CalcTurnSpeed(bot.LookDirection, targetDirection));
             return true;
         }
@@ -183,7 +376,7 @@ namespace pitTeam.Utils
 
                 if (distance <= CombatDistanceConfiguration.Instance.GetSoundHeardDistance())
                 {
-                    FakeShot(bot, lookPoint2, distance);
+                    FakeShot(bot, lookPoint2, distance, enemy);
                     if (CanBotShootEnemy(bot, enemy))
                     {
                         bool acquired = TryAutoAcquireCloseThreat(bot, enemy, distance);
@@ -197,7 +390,7 @@ namespace pitTeam.Utils
                 }
                 else if (CanBotShootEnemy(bot, enemy))
                 {
-                    FakeShot(bot, lookPoint2, distance);
+                    FakeShot(bot, lookPoint2, distance, enemy);
                     if (hostileToBossGroup)
                     {
                         TryAcquireVisibleHostileOfBossGroup(bot, enemy);
@@ -234,7 +427,7 @@ namespace pitTeam.Utils
 
             if (distance <= CombatDistanceConfiguration.Instance.GetTooCloseDistance())
             {
-                FakeShot(bot, lookPoint, distance);
+                FakeShot(bot, lookPoint, distance, enemy);
                 if (CanBotShootEnemy(bot, enemy))
                 {
                     TryAutoAcquireCloseThreat(bot, enemy, distance);
@@ -243,11 +436,11 @@ namespace pitTeam.Utils
             else
             {
                 state.LastSoundTime = Time.time;
-                FakeShot(bot, lookPoint, distance);
+                FakeShot(bot, lookPoint, distance, enemy);
             }
         }
 
-        public static void BulletFelt(BotOwner bot, EftBulletClass bullet, Vector3? impactPoint = null)
+        public static void BulletFelt(BotOwner bot, EFT.Ballistics.Shot bullet, Vector3? impactPoint = null)
         {
             if (bot == null || bullet == null || bot.IsDead || bot.BotState != EBotState.Active) return;
             if (FollowerEnemyEnforceSuppression.IsSuppressed(bot)) return;
@@ -299,7 +492,7 @@ namespace pitTeam.Utils
             random.y = 0f;
             random = random.normalized * dispersion;
             Vector3 estimatedShooterPos = shooter.Transform.position + random;
-            RegisterThreatLookPoint(bot, estimatedShooterPos, 3f);
+            RegisterThreatLookPoint(bot, estimatedShooterPos, 3f, threatSource: shooter);
 
             bool acquired = TryAutoAcquireCloseThreat(bot, shooter, Mathf.Sqrt(distanceSqr));
             if (acquired)
@@ -311,14 +504,15 @@ namespace pitTeam.Utils
             {
                 return;
             }
-            FakeShot(bot, estimatedShooterPos);
+            FakeShot(bot, estimatedShooterPos, threatSource: shooter);
         }
 
         private static void RegisterThreatLookPoint(
             BotOwner bot,
             Vector3 lookPoint,
             float duration,
-            float sourceDistance = float.MaxValue)
+            float sourceDistance = float.MaxValue,
+            Player? threatSource = null)
         {
             var state = GetState(bot);
             if (state == null)
@@ -330,6 +524,8 @@ namespace pitTeam.Utils
             state.ThreatLookPoint = lookPoint;
             state.HasThreatLookPoint = true;
             state.ThreatSourceDistance = sourceDistance;
+            state.HasThreatSource = threatSource != null;
+            state.ThreatSource = threatSource;
         }
 
         private static void RegisterDamage(BotOwner bot, float duration)
@@ -341,6 +537,7 @@ namespace pitTeam.Utils
             }
 
             state.DamagedUntil = Time.time + duration;
+            state.DamageRevision++;
         }
 
         private static bool IsImpactProtectedByHardCover(BotOwner bot, Vector3 impact)
@@ -353,7 +550,7 @@ namespace pitTeam.Utils
                 return false;
             }
 
-            if (!Physics.Linecast(origin, impact, out RaycastHit hit, LayerMaskClass.HighPolyWithTerrainMask))
+            if (!Physics.Linecast(origin, impact, out RaycastHit hit, LayersMaskController.HighPolyWithTerrainMask))
             {
                 return false;
             }
@@ -614,7 +811,7 @@ namespace pitTeam.Utils
                 if (enemy.MainParts.TryGetValue(BodyPartType.head, out var enemyHead) && enemyHead != null)
                 {
                     if (Utils.CanShootToTarget(
-                        new ShootPointClass(enemyHead.Position, 1f),
+                        new ShootToPoint(enemyHead.Position, 1f),
                         firePos,
                         bot.LookSensor.Mask
                     ))
@@ -626,7 +823,7 @@ namespace pitTeam.Utils
                 if (enemy.MainParts.TryGetValue(BodyPartType.body, out var enemyBody) && enemyBody != null)
                 {
                     return Utils.CanShootToTarget(
-                        new ShootPointClass(enemyBody.Position, 1f),
+                        new ShootToPoint(enemyBody.Position, 1f),
                         firePos,
                         bot.LookSensor.Mask
                     );

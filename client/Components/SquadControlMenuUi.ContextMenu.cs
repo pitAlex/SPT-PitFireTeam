@@ -241,7 +241,7 @@ namespace pitTeam.Components
                 return;
             }
 
-            container.method_1(
+            container.CreateContextButton(
                 key,
                 label,
                 template,

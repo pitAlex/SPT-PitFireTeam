@@ -1,6 +1,8 @@
 using DrakiaXYZ.BigBrain.Brains;
 using EFT;
 using pitTeam.Components;
+using pitTeam.Modules;
+using pitTeam.Utils;
 using UnityEngine;
 
 namespace pitTeam.BigBrain.Actions
@@ -14,22 +16,30 @@ namespace pitTeam.BigBrain.Actions
         private enum MovementMode
         {
             Run,
-            Walk
+            ThreatFacingFire
         }
 
         private const float PathRefreshInterval = 1.5f;
         private const float ArrivalDistance = 0.75f;
-        private readonly CombatAttackMovingAction walkFallback;
+        private const float SprintEngageGraceSeconds = 0.35f;
+        private const float PressureRunRetrySeconds = 1f;
+        private readonly CombatAttackRetreatAction walkFallback;
+        private readonly FollowerCombatFireOverlay recentThreatFireOverlay;
         private readonly FallbackRunRestoreGate restoreRunGate = new FallbackRunRestoreGate();
         private MovementMode movementMode;
         private CustomNavigationPoint? targetCover;
         private float nextPathRefreshTime;
+        private float sprintRequestedAt;
         private bool targetPointAssigned;
         private bool combatWalkFallbackStarted;
+        private float nextPressureRunRetryAt;
+        private string? currentReason;
+        private string? lastRecordedMovementState;
 
         public CombatRunToCoverAction(BotOwner botOwner) : base(botOwner)
         {
-            walkFallback = new CombatAttackMovingAction(botOwner);
+            walkFallback = new CombatAttackRetreatAction(botOwner);
+            recentThreatFireOverlay = new FollowerCombatFireOverlay(botOwner);
         }
 
         public override void Start()
@@ -42,18 +52,19 @@ namespace pitTeam.BigBrain.Actions
 
         public override void Update(CustomLayer.ActionData data)
         {
+            currentReason = GetReason(data);
             TryPreferMarksmanPrimaryAtRange(BotOwner.Memory?.GoalEnemy);
 
-            bool canRun = CanActuallyRun();
-            if (movementMode == MovementMode.Walk)
+            bool canRun = TryCanActuallyRun(out string runGate);
+            if (movementMode == MovementMode.ThreatFacingFire)
             {
-                UpdateWalkFallback(data, canRun);
+                UpdateWalkFallback(data, canRun, runGate);
                 return;
             }
 
             if (!canRun)
             {
-                SwitchToWalkFallback(data);
+                SwitchToWalkFallback(data, runGate);
                 return;
             }
 
@@ -62,7 +73,7 @@ namespace pitTeam.BigBrain.Actions
 
         public override void Stop()
         {
-            if (movementMode == MovementMode.Walk)
+            if (movementMode == MovementMode.ThreatFacingFire)
             {
                 if (combatWalkFallbackStarted)
                 {
@@ -77,6 +88,7 @@ namespace pitTeam.BigBrain.Actions
                 StopRunMode();
             }
 
+            recentThreatFireOverlay.Stop();
             base.Stop();
         }
 
@@ -84,39 +96,49 @@ namespace pitTeam.BigBrain.Actions
         {
             targetCover = null;
             nextPathRefreshTime = 0f;
+            sprintRequestedAt = 0f;
             targetPointAssigned = false;
             combatWalkFallbackStarted = false;
+            nextPressureRunRetryAt = 0f;
         }
 
         private void StopRunMode()
         {
             targetCover = null;
+            sprintRequestedAt = 0f;
             targetPointAssigned = false;
             SetCombatSprint(false);
+            StopCombatShooting();
         }
 
-        private void SwitchToWalkFallback(CustomLayer.ActionData data)
+        private void SwitchToWalkFallback(CustomLayer.ActionData data, string gate)
         {
+            CustomNavigationPoint? fallbackCover = null;
             if (EnsureTargetCover())
             {
+                fallbackCover = targetCover;
                 BotOwner.Memory.SetCoverPoints(targetCover);
             }
 
             StopRunMode();
-            movementMode = MovementMode.Walk;
+            targetCover = fallbackCover;
+            movementMode = MovementMode.ThreatFacingFire;
             restoreRunGate.Reset();
+            nextPressureRunRetryAt = Time.time + PressureRunRetrySeconds;
+            RecordMovementState("threatFacingFire", gate);
             if (HasLiveGoalEnemy())
             {
+                recentThreatFireOverlay.Stop("liveEnemyRetreatFallback");
                 combatWalkFallbackStarted = true;
                 walkFallback.Start();
                 walkFallback.Update(data);
                 return;
             }
 
-            UpdateOutOfCombatWalkFallback();
+            UpdateRecentThreatWalkFallback();
         }
 
-        private void UpdateWalkFallback(CustomLayer.ActionData data, bool canRun)
+        private void UpdateWalkFallback(CustomLayer.ActionData data, bool canRun, string runGate)
         {
             if (EnsureTargetCover())
             {
@@ -125,6 +147,7 @@ namespace pitTeam.BigBrain.Actions
 
             if (HasLiveGoalEnemy())
             {
+                recentThreatFireOverlay.Stop("liveEnemyRetreatFallback");
                 if (!combatWalkFallbackStarted)
                 {
                     combatWalkFallbackStarted = true;
@@ -141,7 +164,18 @@ namespace pitTeam.BigBrain.Actions
                     combatWalkFallbackStarted = false;
                 }
 
-                UpdateOutOfCombatWalkFallback();
+                UpdateRecentThreatWalkFallback();
+            }
+
+            if (IsUnderActivePressure())
+            {
+                restoreRunGate.Reset();
+                if (canRun && Time.time >= nextPressureRunRetryAt)
+                {
+                    RestoreRunMode(data, $"pressureRetry:{runGate}");
+                }
+
+                return;
             }
 
             if (!restoreRunGate.ShouldRestoreToRun(canRun, BotOwner.Memory?.GoalEnemy))
@@ -149,16 +183,7 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            if (combatWalkFallbackStarted)
-            {
-                walkFallback.Stop();
-                combatWalkFallbackStarted = false;
-            }
-
-            movementMode = MovementMode.Run;
-            restoreRunGate.Reset();
-            StartRunMode();
-            UpdateRun(data);
+            RestoreRunMode(data, $"restored:{runGate}");
         }
 
         private void UpdateRun(CustomLayer.ActionData data)
@@ -195,15 +220,36 @@ namespace pitTeam.BigBrain.Actions
             if (BotOwner.Mover.IsComeTo(ArrivalDistance, true, targetCover))
             {
                 SetCombatSprint(false);
+                StopCombatShooting();
                 BotOwner.Memory.ComeToPoint();
                 LookTowardThreatOnArrival();
+                RecordMovementState("arrived", "coverReached");
                 return;
             }
 
+            StopCombatShooting();
             SetCombatSprint(true);
+            if (IsActuallySprinting(BotOwner))
+            {
+                sprintRequestedAt = 0f;
+                RecordMovementState("run", "sprintEngaged");
+                return;
+            }
+
+            if (sprintRequestedAt <= 0f)
+            {
+                sprintRequestedAt = Time.time;
+                RecordMovementState("run", "sprintRequested");
+                return;
+            }
+
+            if (Time.time - sprintRequestedAt >= SprintEngageGraceSeconds)
+            {
+                SwitchToWalkFallback(data, "sprintDidNotEngage");
+            }
         }
 
-        private void UpdateOutOfCombatWalkFallback()
+        private void UpdateRecentThreatWalkFallback()
         {
             if (!EnsureTargetCover())
             {
@@ -219,7 +265,13 @@ namespace pitTeam.BigBrain.Actions
             BotOwner.DoorOpener.UpdateDoorInteractionStatus();
             BotOwner.SetPose(1f);
             BotOwner.SetTargetMoveSpeed(1f);
-            if (!BotFollowerPlayer.TryApplyCommandLookOverride(BotOwner))
+            bool fireOverlayOwnsLook = recentThreatFireOverlay.Update(
+                null,
+                currentReason,
+                allowThreatSuppression: true,
+                forceThreatLook: true,
+                out _);
+            if (!BotFollowerPlayer.TryApplyCommandLookOverride(BotOwner) && !fireOverlayOwnsLook)
             {
                 BotOwner.Steering.LookToMovingDirection();
             }
@@ -235,24 +287,74 @@ namespace pitTeam.BigBrain.Actions
             BotOwner.GoToSomePointData.UpdateToGo(false, 1f, 1f);
         }
 
-        private bool CanActuallyRun()
+        private void RestoreRunMode(CustomLayer.ActionData data, string gate)
         {
-            if (!BotOwner.CanSprintPlayer || BotOwner.Mover?.NoSprint == true)
+            if (combatWalkFallbackStarted)
             {
+                walkFallback.Stop();
+                combatWalkFallbackStarted = false;
+            }
+
+            recentThreatFireOverlay.Stop("restoreRun");
+            movementMode = MovementMode.Run;
+            restoreRunGate.Reset();
+            StartRunMode();
+            RecordMovementState("run", gate);
+            UpdateRun(data);
+        }
+
+        private bool TryCanActuallyRun(out string gate)
+        {
+            if (!BotOwner.CanSprintPlayer)
+            {
+                gate = "canSprintPlayerFalse";
+                return false;
+            }
+
+            if (BotOwner.Mover == null)
+            {
+                gate = "moverMissing";
+                return false;
+            }
+
+            if (BotOwner.Mover.NoSprint)
+            {
+                gate = "moverNoSprint";
                 return false;
             }
 
             Player? player = BotOwner.GetPlayer ?? BotOwner.AIData?.Player;
+            if (player?.MovementContext?.CanSprint == false)
+            {
+                gate = "movementCannotSprint";
+                return false;
+            }
+
+            if (player?.MovementContext?.CanWalk == false)
+            {
+                gate = "movementCannotWalk";
+                return false;
+            }
+
             if (player?.HealthController != null &&
                 (player.HealthController.IsBodyPartBroken(EBodyPart.RightLeg) ||
                  player.HealthController.IsBodyPartDestroyed(EBodyPart.RightLeg) ||
                  player.HealthController.IsBodyPartBroken(EBodyPart.LeftLeg) ||
                  player.HealthController.IsBodyPartDestroyed(EBodyPart.LeftLeg)))
             {
+                gate = "legInjury";
                 return false;
             }
 
-            return BotOwner.DoorOpener.UpdateDoorInteractionStatus() == DoorInteractionStatus.CanRun;
+            DoorInteractionStatus doorStatus = BotOwner.DoorOpener.UpdateDoorInteractionStatus();
+            if (IsDoorInteractionBlockingSprint(doorStatus))
+            {
+                gate = $"door:{doorStatus}";
+                return false;
+            }
+
+            gate = (int)doorStatus == 0 ? "canRun:doorStatusPending" : "canRun";
+            return true;
         }
 
         private bool EnsureTargetCover()
@@ -270,6 +372,37 @@ namespace pitTeam.BigBrain.Actions
         private bool HasLiveGoalEnemy()
         {
             return BotOwner.Memory?.GoalEnemy?.Person?.HealthController?.IsAlive == true;
+        }
+
+        private bool IsUnderActivePressure()
+        {
+            return BotOwner.Memory?.IsUnderFire == true ||
+                   FollowerCombatCommon.WasHitRecently(BotOwner, 1.5f) ||
+                   FollowerAwareness.WasRecentlyHit(BotOwner);
+        }
+
+        [System.Diagnostics.Conditional("DEBUG")]
+        private void RecordMovementState(string mode, string gate)
+        {
+            if (!BattleRecorder.IsRecordingFor(BotOwner, requireRecordedCombat: true))
+            {
+                return;
+            }
+
+            string state = $"{mode}:{gate}";
+            if (string.Equals(lastRecordedMovementState, state, System.StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            lastRecordedMovementState = state;
+            BattleRecorder.RecordCombatMovementEvent(
+                BotOwner,
+                "runToCover",
+                currentReason,
+                mode,
+                gate,
+                targetCover?.Position);
         }
 
         private void StopRun()
@@ -294,26 +427,13 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            Vector3 lookPoint = goalEnemy.EnemyLastPositionReal;
-            if (!IsFinite(lookPoint))
+            if (CombatAttackMoveLook.TryGetReliableThreatLookPoint(
+                    BotOwner,
+                    goalEnemy,
+                    out Vector3 lookPoint))
             {
-                lookPoint = goalEnemy.CurrPosition;
+                BotOwner.Steering.LookToPoint(lookPoint);
             }
-
-            if (IsFinite(lookPoint))
-            {
-                BotOwner.Steering.LookToPoint(lookPoint + Vector3.up * 0.8f);
-            }
-        }
-
-        private static bool IsFinite(Vector3 value)
-        {
-            return !float.IsNaN(value.x) &&
-                   !float.IsNaN(value.y) &&
-                   !float.IsNaN(value.z) &&
-                   !float.IsInfinity(value.x) &&
-                   !float.IsInfinity(value.y) &&
-                   !float.IsInfinity(value.z);
         }
     }
 }

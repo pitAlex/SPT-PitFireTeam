@@ -168,7 +168,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            TraderControllerClass? itemOwner = lootItem.ItemOwner;
+            EFT.InventoryLogic.ItemController? itemOwner = lootItem.ItemOwner;
             rootItem = itemOwner?.RootItem;
             if (rootItem == null)
             {
@@ -211,7 +211,7 @@ namespace pitTeam.BigBrain.Actions
                 if (!TryBuildLootPickupOperation(
                         rootItem,
                         inventory,
-                        out GInterface424? pickupOperation,
+                        out EFT.InventoryLogic.IItemOperationResult? pickupOperation,
                         out string pickupFailureReason))
                 {
                     BotOwner.BotTalk.TrySay(EPhraseTrigger.Negative, false);
@@ -245,7 +245,7 @@ namespace pitTeam.BigBrain.Actions
         private bool TryBuildLootPickupOperation(
             Item rootItem,
             InventoryController inventory,
-            out GInterface424? operation,
+            out EFT.InventoryLogic.IItemOperationResult? operation,
             out string failureReason)
         {
             operation = null;
@@ -269,11 +269,30 @@ namespace pitTeam.BigBrain.Actions
                     out failureReason);
             }
 
-            GStruct154<GInterface424> pickupResult = InteractionsHandlerClass.QuickFindAppropriatePlace(
+            if (rootItem is EFT.InventoryLogic.Magazine commandedMagazine &&
+                pitFireTeam.IsLootGearSwappingEnabled() &&
+                TryResolveCommandedMagazineOwner(
+                    inventory.Inventory.Equipment,
+                    commandedMagazine,
+                    out _,
+                    out _))
+            {
+                // Compatible weapon magazines may never consume the landing space needed to
+                // eject an equipped magazine during reload. Failure here must not fall through
+                // to EFT's unrestricted placement search.
+                return TryBuildReloadSafeCommandedMagazinePickup(
+                    commandedMagazine,
+                    inventory,
+                    inventory.Inventory.Equipment,
+                    out operation,
+                    out failureReason);
+            }
+
+            Diz.LanguageExtensions.OperationResult<EFT.InventoryLogic.IItemOperationResult> pickupResult = EFT.InventoryLogic.ItemManipulator.QuickFindAppropriatePlace(
                 rootItem,
                 inventory,
-                inventory.Inventory.Equipment.ToEnumerable<InventoryEquipment>(),
-                InteractionsHandlerClass.EMoveItemOrder.PickUp,
+                new[] { inventory.Inventory.Equipment },
+                EFT.InventoryLogic.ItemManipulator.EMoveItemOrder.PickUp,
                 true);
             if (!pickupResult.Succeeded)
             {
@@ -294,7 +313,7 @@ namespace pitTeam.BigBrain.Actions
             Weapon weapon,
             InventoryController inventory,
             InventoryEquipment equipment,
-            out GInterface424? operation,
+            out EFT.InventoryLogic.IItemOperationResult? operation,
             out string failureReason)
         {
             operation = null;
@@ -383,7 +402,7 @@ namespace pitTeam.BigBrain.Actions
             InventoryController inventory,
             InventoryEquipment equipment,
             EquipmentSlot destination,
-            out GInterface424? operation)
+            out EFT.InventoryLogic.IItemOperationResult? operation)
         {
             operation = null;
             return TryFindEquipmentSlotAddress(equipment, destination, weapon, out ItemAddress? address) &&
@@ -394,10 +413,10 @@ namespace pitTeam.BigBrain.Actions
             Item item,
             ItemAddress address,
             InventoryController inventory,
-            out GInterface424? operation)
+            out EFT.InventoryLogic.IItemOperationResult? operation)
         {
             operation = null;
-            GStruct154<GClass3411> moveResult = InteractionsHandlerClass.Move(item, address, inventory, true);
+            Diz.LanguageExtensions.OperationResult<EFT.InventoryLogic.MoveResult> moveResult = EFT.InventoryLogic.ItemManipulator.Move(item, address, inventory, true);
             if (moveResult.Failed ||
                 moveResult.Value.ItemsDestroyRequired ||
                 !inventory.CanExecute(moveResult.Value))
@@ -433,6 +452,7 @@ namespace pitTeam.BigBrain.Actions
             return Math.Max(1, (usableBasis + 1) / 2);
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
         private void LogLooseWeaponPickupDestination(
             Weapon weapon,
             WeaponPrimaryReadinessSnapshot readiness,
@@ -445,7 +465,7 @@ namespace pitTeam.BigBrain.Actions
                 $"decisionReason={reason} {readiness?.ToDiagnosticString() ?? "readinessMissing"}");
         }
 
-        private void ExecuteLootPickupTransaction(LootItem lootItem, Item rootItem, InventoryController inventory, GInterface424 pickupAction)
+        private void ExecuteLootPickupTransaction(LootItem lootItem, Item rootItem, InventoryController inventory, EFT.InventoryLogic.IItemOperationResult pickupAction)
         {
             try
             {
@@ -463,7 +483,7 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
-                if (pickupAction is GInterface427 moveAction)
+                if (pickupAction is EFT.InventoryLogic.IPossibleDestroyResult moveAction)
                 {
                     ItemAddress currentAddress = rootItem.CurrentAddress;
                     if (currentAddress == null || !moveAction.From.Equals(currentAddress))
@@ -530,8 +550,10 @@ namespace pitTeam.BigBrain.Actions
             botPlayer?.UpdateInteractionCast();
             InteractableObjects.ClearStrictCargoTree(BotOwner, rootItem);
             InteractableObjects.RegisterLootedWeaponTree(BotOwner, rootItem);
+            RegisterCommandedLooseMagazineForEquippedWeapon(rootItem);
 
             Weapon? primaryWeaponToBind = null;
+            EquipmentSlot? supportWeaponSlotToRegister = null;
 
             if (followerData?.IsSquadMate == true)
             {
@@ -548,13 +570,185 @@ namespace pitTeam.BigBrain.Actions
                 {
                     primaryWeaponToBind = weapon;
                 }
+                else
+                {
+                    Weapon slottedSecondary = BotOwner?.GetPlayer?.InventoryController?.Inventory?.Equipment
+                        ?.GetSlot(EquipmentSlot.SecondPrimaryWeapon)?.ContainedItem as Weapon;
+                    Weapon slottedHolster = BotOwner?.GetPlayer?.InventoryController?.Inventory?.Equipment
+                        ?.GetSlot(EquipmentSlot.Holster)?.ContainedItem as Weapon;
+                    if (IsSameLootItem(slottedSecondary, weapon))
+                    {
+                        supportWeaponSlotToRegister = EquipmentSlot.SecondPrimaryWeapon;
+                    }
+                    else if (IsSameLootItem(slottedHolster, weapon))
+                    {
+                        supportWeaponSlotToRegister = EquipmentSlot.Holster;
+                    }
+                }
             }
 
             ClearTakeLootState(reason);
+            if (supportWeaponSlotToRegister.HasValue && rootItem is Weapon supportWeapon)
+            {
+                FollowerLootedPrimaryWeaponBinding.RegisterSupport(
+                    BotOwner,
+                    supportWeapon,
+                    supportWeaponSlotToRegister.Value,
+                    "loosePickup");
+            }
+
             if (primaryWeaponToBind != null)
             {
                 QueueLoosePickupPrimaryWeaponBinding(primaryWeaponToBind);
             }
+        }
+
+        private void RegisterCommandedLooseMagazineForEquippedWeapon(Item item)
+        {
+            if (!pitFireTeam.IsLootGearSwappingEnabled() ||
+                item is not EFT.InventoryLogic.Magazine magazine ||
+                magazine.Parent == null)
+            {
+                return;
+            }
+
+            InventoryEquipment equipment = BotOwner?.GetPlayer?.InventoryController?.Inventory?.Equipment;
+            Item vest = equipment?.GetSlot(EquipmentSlot.TacticalVest)?.ContainedItem;
+            Item pockets = equipment?.GetSlot(EquipmentSlot.Pockets)?.ContainedItem;
+            if (!IsItemInsideRoot(magazine, vest) && !IsItemInsideRoot(magazine, pockets))
+            {
+                // A commanded magazine that lands in the backpack remains cargo until a later
+                // command can prove a reload-safe fast-access move for it.
+                return;
+            }
+
+            if (!TryResolveCommandedMagazineOwner(equipment, magazine, out Weapon? weapon, out EquipmentSlot slot))
+            {
+                return;
+            }
+
+            InteractableObjects.RegisterLootedWeaponMagazine(BotOwner, weapon, magazine);
+            Modules.Logger.LogInfo(
+                $"[LootCommand][WeaponReload] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
+                $"weapon={DescribeLootDebugItem(weapon)} magazine={DescribeLootDebugItem(magazine)} " +
+                $"result=commandedMagazineAssigned slot={slot}");
+        }
+
+        private static bool TryResolveCommandedMagazineOwner(
+            InventoryEquipment equipment,
+            EFT.InventoryLogic.Magazine magazine,
+            out Weapon? weapon,
+            out EquipmentSlot slot)
+        {
+            weapon = null;
+            slot = EquipmentSlot.FirstPrimaryWeapon;
+            if (equipment == null || magazine == null)
+            {
+                return false;
+            }
+
+            foreach (EquipmentSlot candidateSlot in new[]
+                     {
+                         EquipmentSlot.FirstPrimaryWeapon,
+                         EquipmentSlot.SecondPrimaryWeapon,
+                         EquipmentSlot.Holster
+                     })
+            {
+                Weapon candidateWeapon = equipment.GetSlot(candidateSlot)?.ContainedItem as Weapon;
+                if (candidateWeapon == null ||
+                    candidateWeapon.ReloadMode != Weapon.EReloadMode.ExternalMagazine ||
+                    !IsMagazineCompatibleWithWeapon(candidateWeapon, magazine) ||
+                    (magazine.Count > 0 &&
+                     !FollowerWeaponMagazineCompatibility.AreLoadedCartridgesCompatible(candidateWeapon, magazine)))
+                {
+                    continue;
+                }
+
+                // First primary deliberately wins when both equipped weapons accept the same mag.
+                weapon = candidateWeapon;
+                slot = candidateSlot;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryBuildReloadSafeCommandedMagazinePickup(
+            EFT.InventoryLogic.Magazine magazine,
+            InventoryController inventory,
+            InventoryEquipment equipment,
+            out EFT.InventoryLogic.IItemOperationResult? operation,
+            out string failureReason)
+        {
+            operation = null;
+            failureReason = "noReloadSafeSpace";
+
+            EFT.InventoryLogic.SearchableItem simulatedVest = CloneSearchableContainer(
+                equipment?.GetSlot(EquipmentSlot.TacticalVest)?.ContainedItem);
+            EFT.InventoryLogic.SearchableItem simulatedPockets = CloneSearchableContainer(
+                equipment?.GetSlot(EquipmentSlot.Pockets)?.ContainedItem);
+            List<EFT.InventoryLogic.Magazine> reloadReserves = GetCommandedMagazineReloadReserve(equipment);
+
+            if (TrySimulateFastAccessAddWithReserves(
+                    simulatedVest,
+                    simulatedPockets,
+                    magazine,
+                    reloadReserves,
+                    out _,
+                    out _,
+                    out BodyGearFollowUpDestination destination))
+            {
+                ItemAddress? fastAccessAddress;
+                bool foundAddress = destination == BodyGearFollowUpDestination.OperationalVest
+                    ? TryFindOperationalMagazineVestAddress(equipment, magazine, out fastAccessAddress)
+                    : TryFindOperationalMagazinePocketsAddress(equipment, magazine, out fastAccessAddress);
+                if (foundAddress && TryBuildLootPickupMove(magazine, fastAccessAddress, inventory, out operation))
+                {
+                    failureReason = "ok";
+                    return true;
+                }
+            }
+
+            // A commanded magazine that would consume reload landing space remains useful cargo.
+            if (TryFindBackpackAddressForItem(equipment, magazine, out ItemAddress? backpackAddress) &&
+                TryBuildLootPickupMove(magazine, backpackAddress, inventory, out operation))
+            {
+                failureReason = "ok";
+                return true;
+            }
+
+            return false;
+        }
+
+        private static List<EFT.InventoryLogic.Magazine> GetCommandedMagazineReloadReserve(InventoryEquipment equipment)
+        {
+            List<EFT.InventoryLogic.Magazine> reserves = new List<EFT.InventoryLogic.Magazine>();
+            foreach (EquipmentSlot slot in new[]
+                     {
+                         EquipmentSlot.FirstPrimaryWeapon,
+                         EquipmentSlot.SecondPrimaryWeapon
+                     })
+            {
+                Weapon weapon = equipment?.GetSlot(slot)?.ContainedItem as Weapon;
+                if (weapon?.ReloadMode != Weapon.EReloadMode.ExternalMagazine)
+                {
+                    continue;
+                }
+
+                EFT.InventoryLogic.Magazine inserted = GetCurrentMagazineSafely(weapon);
+                if (inserted != null)
+                {
+                    reserves.Add(inserted);
+                }
+            }
+
+            // One shared landing opening is sufficient because weapon reloads are sequential.
+            return NormalizeReloadReserveItems(reserves)
+                .OrderByDescending(GetMagazineCellArea)
+                .ThenByDescending(GetMagazineLongestSide)
+                .ThenByDescending(magazine => magazine.MaxCount)
+                .Take(1)
+                .ToList();
         }
 
         private void QueueLoosePickupPrimaryWeaponBinding(Weapon weapon)
@@ -602,14 +796,14 @@ namespace pitTeam.BigBrain.Actions
                 // current tree, which prevents loose mags/mods appearing as floating world parts.
                 item.ChildrenChanged.Invoke(item);
 
-                PlayerBody.EquipmentSlotClass? slotView = BotOwner?.GetPlayer?.PlayerBody?.GetSlotViewByItem(item);
+                PlayerBody.SlotView? slotView = BotOwner?.GetPlayer?.PlayerBody?.GetSlotViewByItem(item);
                 if (slotView == null)
                 {
                     return;
                 }
 
-                slotView.method_3();
-                slotView.method_0();
+                slotView.DestroyCurrentModel();
+                slotView.LoadItem();
             }
             catch (Exception ex)
             {
@@ -735,7 +929,7 @@ namespace pitTeam.BigBrain.Actions
                 lootPickupReadyAt <= 0f &&
                 lootPickupAttemptStartedAt <= 0f &&
                 activeLootItem == null &&
-                BotOwner?.GetPlayer?.CurrentManagedState is not PickupStateClass)
+                BotOwner?.GetPlayer?.CurrentManagedState is not EFT.PickUpState)
             {
                 return;
             }

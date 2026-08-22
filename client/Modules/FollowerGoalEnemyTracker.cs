@@ -17,6 +17,7 @@ namespace pitTeam.Modules
 
         public static string CurrentReason => currentContext?.Reason ?? "unscopedSetter";
 
+        [System.Diagnostics.Conditional("DEBUG")]
         public static void RecordSetter(
             BotOwner? botOwner,
             EnemyInfo? previous,
@@ -24,7 +25,7 @@ namespace pitTeam.Modules
             bool allowed,
             string? blockedReason = null)
         {
-            if (botOwner == null || pitFireTeam.battleRecorderEnabled?.Value != true)
+            if (!BattleRecorder.IsRecordingFor(botOwner))
             {
                 return;
             }

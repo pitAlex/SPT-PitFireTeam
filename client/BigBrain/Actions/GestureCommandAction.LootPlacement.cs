@@ -41,37 +41,37 @@ namespace pitTeam.BigBrain.Actions
                 yield break;
             }
 
-            if (item is ArmorItemClass)
+            if (item is EFT.InventoryLogic.Armor)
             {
                 yield return EquipmentSlot.ArmorVest;
                 yield break;
             }
 
-            if (item is VestItemClass)
+            if (item is EFT.InventoryLogic.Vest)
             {
                 yield return EquipmentSlot.TacticalVest;
                 yield break;
             }
 
-            if (item is HeadwearItemClass)
+            if (item is EFT.InventoryLogic.Headwear)
             {
                 yield return EquipmentSlot.Headwear;
                 yield break;
             }
 
-            if (item is HeadphonesItemClass)
+            if (item is EFT.InventoryLogic.Headphones)
             {
                 yield return EquipmentSlot.Earpiece;
                 yield break;
             }
 
-            if (item is FaceCoverItemClass)
+            if (item is EFT.InventoryLogic.FaceCover)
             {
                 yield return EquipmentSlot.FaceCover;
                 yield break;
             }
 
-            if (item is VisorsItemClass)
+            if (item is EFT.InventoryLogic.Visors)
             {
                 yield return EquipmentSlot.Eyewear;
                 yield break;
@@ -91,7 +91,7 @@ namespace pitTeam.BigBrain.Actions
             foreach (EquipmentSlot slot in BodyGearCarrySlotOrder)
             {
                 Item root = equipment.GetSlot(slot)?.ContainedItem;
-                if (root is not SearchableItemItemClass searchable)
+                if (root is not EFT.InventoryLogic.SearchableItem searchable)
                 {
                     continue;
                 }
@@ -115,7 +115,7 @@ namespace pitTeam.BigBrain.Actions
             foreach (EquipmentSlot slot in FilteredLootCarrySlotOrder)
             {
                 Item root = equipment.GetSlot(slot)?.ContainedItem;
-                if (root is not SearchableItemItemClass searchable)
+                if (root is not EFT.InventoryLogic.SearchableItem searchable)
                 {
                     continue;
                 }
@@ -137,7 +137,7 @@ namespace pitTeam.BigBrain.Actions
         {
             address = null;
             Item backpack = equipment?.GetSlot(EquipmentSlot.Backpack)?.ContainedItem;
-            if (backpack is not SearchableItemItemClass searchable)
+            if (backpack is not EFT.InventoryLogic.SearchableItem searchable)
             {
                 return false;
             }
@@ -156,7 +156,7 @@ namespace pitTeam.BigBrain.Actions
             return false;
         }
 
-        private static IEnumerable<EFT.InventoryLogic.IContainer> GetSearchableContainersRecursive(SearchableItemItemClass item)
+        private static IEnumerable<EFT.InventoryLogic.IContainer> GetSearchableContainersRecursive(EFT.InventoryLogic.SearchableItem item)
         {
             foreach (EFT.InventoryLogic.IContainer container in item.Containers ?? Enumerable.Empty<EFT.InventoryLogic.IContainer>())
             {
@@ -165,7 +165,7 @@ namespace pitTeam.BigBrain.Actions
 
             foreach (Item child in SnapshotLootTreeItems(item))
             {
-                if (child != null && child != item && child is SearchableItemItemClass nested)
+                if (child != null && child != item && child is EFT.InventoryLogic.SearchableItem nested)
                 {
                     foreach (EFT.InventoryLogic.IContainer container in GetSearchableContainersRecursive(nested))
                     {

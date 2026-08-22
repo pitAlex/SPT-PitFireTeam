@@ -12,13 +12,13 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(ExUsecBrainClass), "method_17");
+            return AccessTools.Method(typeof(ExUsecLayersStrategy), nameof(ExUsecLayersStrategy.OnSomeBodyBeingHit));
 
         }
         [PatchPrefix]
-        private static bool PatchPrefix(ExUsecBrainClass __instance, DamageInfoStruct damageinfo, Player victim)
+        private static bool PatchPrefix(ExUsecLayersStrategy __instance, EFT.Ballistics.DamageInfo damageinfo, Player victim)
         {
-            IPlayerOwner player = damageinfo.Player;
+            EFT.IObserverToPlayerBridge player = damageinfo.Player;
             // this is original condition + does player have knight quest
             if (
                 player != null && victim != null && victim.Profile.Side == EPlayerSide.Usec &&

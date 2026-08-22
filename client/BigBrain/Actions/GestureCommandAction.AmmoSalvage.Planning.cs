@@ -17,7 +17,7 @@ namespace pitTeam.BigBrain.Actions
             reason = "invalidMarker";
             if (followerEquipment == null ||
                 marker?.FollowUpDestination != BodyGearFollowUpDestination.SalvageMagazineAmmo ||
-                marker.Item is not MagazineItemClass magazine ||
+                marker.Item is not EFT.InventoryLogic.Magazine magazine ||
                 marker.AmmoSalvageWeapon is not Weapon weapon)
             {
                 return false;
@@ -45,8 +45,8 @@ namespace pitTeam.BigBrain.Actions
 
             // StackSlot can only remove its last item. Plan in vanilla unload order and consolidate
             // separated runs of the same ammo type into the output stack already moved earlier.
-            List<AmmoItemClass> ammoStacks = magazine.Cartridges.Items
-                .OfType<AmmoItemClass>()
+            List<EFT.InventoryLogic.Ammo> ammoStacks = magazine.Cartridges.Items
+                .OfType<EFT.InventoryLogic.Ammo>()
                 .Where(ammo => ammo != null && ammo.StackObjectsCount > 0)
                 .Reverse()
                 .ToList();
@@ -56,16 +56,16 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            SearchableItemItemClass simulatedSecure = CloneEquipmentContainer(
+            EFT.InventoryLogic.SearchableItem simulatedSecure = CloneEquipmentContainer(
                 followerEquipment,
                 EquipmentSlot.SecuredContainer);
-            SearchableItemItemClass simulatedPockets = CloneEquipmentContainer(
+            EFT.InventoryLogic.SearchableItem simulatedPockets = CloneEquipmentContainer(
                 followerEquipment,
                 EquipmentSlot.Pockets);
-            SearchableItemItemClass simulatedBackpack = CloneEquipmentContainer(
+            EFT.InventoryLogic.SearchableItem simulatedBackpack = CloneEquipmentContainer(
                 followerEquipment,
                 EquipmentSlot.Backpack);
-            SearchableItemItemClass simulatedVest = CloneEquipmentContainer(
+            EFT.InventoryLogic.SearchableItem simulatedVest = CloneEquipmentContainer(
                 followerEquipment,
                 EquipmentSlot.TacticalVest);
             VestReloadReserveSet vestReloadReserves = FindVestReloadReserves(
@@ -77,7 +77,7 @@ namespace pitTeam.BigBrain.Actions
             Dictionary<string, List<AmmoSalvageOutputStack>> outputStacksByAmmo =
                 new Dictionary<string, List<AmmoSalvageOutputStack>>(StringComparer.Ordinal);
 
-            foreach (AmmoItemClass ammoStack in ammoStacks)
+            foreach (EFT.InventoryLogic.Ammo ammoStack in ammoStacks)
             {
                 string ammoKey = GetAmmoSalvageStackKey(ammoStack);
                 if (!outputStacksByAmmo.TryGetValue(ammoKey, out List<AmmoSalvageOutputStack> outputStacks))
@@ -182,11 +182,11 @@ namespace pitTeam.BigBrain.Actions
 
         private static BodyGearCandidate CreateAmmoSalvageTransferCandidate(
             BodyGearCandidate marker,
-            AmmoItemClass ammo,
+            EFT.InventoryLogic.Ammo ammo,
             Weapon weapon,
-            MagazineItemClass magazine,
+            EFT.InventoryLogic.Magazine magazine,
             BodyGearFollowUpDestination destination,
-            AmmoItemClass? targetStack = null,
+            EFT.InventoryLogic.Ammo? targetStack = null,
             int transferCount = 0)
         {
             return new BodyGearCandidate(
@@ -206,12 +206,12 @@ namespace pitTeam.BigBrain.Actions
                     transferCount);
         }
 
-        private static string GetAmmoSalvageStackKey(AmmoItemClass ammo)
+        private static string GetAmmoSalvageStackKey(EFT.InventoryLogic.Ammo ammo)
         {
             return $"{ammo?.TemplateId ?? "unknown"}:{ammo?.IsUsed == true}";
         }
 
-        private static SearchableItemItemClass? CloneEquipmentContainer(
+        private static EFT.InventoryLogic.SearchableItem? CloneEquipmentContainer(
             InventoryEquipment equipment,
             EquipmentSlot slot)
         {
@@ -219,41 +219,43 @@ namespace pitTeam.BigBrain.Actions
         }
 
         private static bool TryPlanAmmoStackDestination(
-            AmmoItemClass ammoStack,
+            EFT.InventoryLogic.Ammo ammoStack,
             VestReloadReserveSet vestReloadReserves,
-            ref SearchableItemItemClass? secure,
-            ref SearchableItemItemClass? pockets,
-            ref SearchableItemItemClass? backpack,
-            ref SearchableItemItemClass? vest,
+            ref EFT.InventoryLogic.SearchableItem? secure,
+            ref EFT.InventoryLogic.SearchableItem? pockets,
+            ref EFT.InventoryLogic.SearchableItem? backpack,
+            ref EFT.InventoryLogic.SearchableItem? vest,
             out BodyGearFollowUpDestination destination)
         {
             destination = BodyGearFollowUpDestination.Default;
-            if (TrySimulateContainerAdd(secure, ammoStack, out SearchableItemItemClass? nextSecure))
+            // Unloaded rounds use the same carry policy as loose source ammo: preserve the
+            // largest reload-safe vest space first, then fall back through slower storage.
+            if (TrySimulateFastAccessContainerAdd(vest, ammoStack, out EFT.InventoryLogic.SearchableItem? nextVest) &&
+                CanFitVestReloadReserves(nextVest, vestReloadReserves))
             {
-                secure = nextSecure;
-                destination = BodyGearFollowUpDestination.SalvagedAmmoSecuredContainer;
+                vest = nextVest;
+                destination = BodyGearFollowUpDestination.SalvagedAmmoVest;
                 return true;
             }
 
-            if (TrySimulateContainerAdd(pockets, ammoStack, out SearchableItemItemClass? nextPockets))
+            if (TrySimulateFastAccessContainerAdd(pockets, ammoStack, out EFT.InventoryLogic.SearchableItem? nextPockets))
             {
                 pockets = nextPockets;
                 destination = BodyGearFollowUpDestination.SalvagedAmmoPockets;
                 return true;
             }
 
-            if (TrySimulateContainerAdd(backpack, ammoStack, out SearchableItemItemClass? nextBackpack))
+            if (TrySimulateContainerAdd(backpack, ammoStack, out EFT.InventoryLogic.SearchableItem? nextBackpack))
             {
                 backpack = nextBackpack;
                 destination = BodyGearFollowUpDestination.SalvagedAmmoBackpack;
                 return true;
             }
 
-            if (TrySimulateContainerAdd(vest, ammoStack, out SearchableItemItemClass? nextVest) &&
-                CanFitVestReloadReserves(nextVest, vestReloadReserves))
+            if (TrySimulateContainerAdd(secure, ammoStack, out EFT.InventoryLogic.SearchableItem? nextSecure))
             {
-                vest = nextVest;
-                destination = BodyGearFollowUpDestination.SalvagedAmmoVest;
+                secure = nextSecure;
+                destination = BodyGearFollowUpDestination.SalvagedAmmoSecuredContainer;
                 return true;
             }
 
@@ -262,35 +264,35 @@ namespace pitTeam.BigBrain.Actions
 
         private VestReloadReserveSet FindVestReloadReserves(
             InventoryEquipment equipment,
-            SearchableItemItemClass? vest)
+            EFT.InventoryLogic.SearchableItem? vest)
         {
             if (equipment == null || vest == null)
             {
                 return new VestReloadReserveSet(null, null);
             }
 
-            List<MagazineItemClass> fastAccessMagazines = GetFastAccessMagazines(equipment);
+            List<EFT.InventoryLogic.Magazine> fastAccessMagazines = GetFastAccessMagazines(equipment);
             List<Weapon> longGuns = LongGunSlotsForAmmoReserve
                 .Select(slot => equipment.GetSlot(slot)?.ContainedItem as Weapon)
                 .OfType<Weapon>()
                 .ToList();
-            List<MagazineItemClass> longGunCandidates = longGuns
+            List<EFT.InventoryLogic.Magazine> longGunCandidates = longGuns
                 .Select(GetCurrentMagazineSafely)
-                .OfType<MagazineItemClass>()
+                .OfType<EFT.InventoryLogic.Magazine>()
                 .ToList();
             longGunCandidates.AddRange(fastAccessMagazines.Where(magazine =>
                 longGuns.Any(weapon => IsMagazineCompatibleWithWeapon(weapon, magazine))));
 
-            MagazineItemClass longGunReserve = SelectLargestVestCompatibleMagazine(
+            EFT.InventoryLogic.Magazine longGunReserve = SelectLargestVestCompatibleMagazine(
                 vest,
                 longGunCandidates);
 
-            MagazineItemClass initialHolsterReserve = null;
+            EFT.InventoryLogic.Magazine initialHolsterReserve = null;
             Weapon holsterWeapon = equipment.GetSlot(EquipmentSlot.Holster)?.ContainedItem as Weapon;
             if (holsterWeapon != null && followerData?.IsInitialHolsterWeapon(holsterWeapon) == true)
             {
-                List<MagazineItemClass> holsterCandidates = new List<MagazineItemClass>();
-                MagazineItemClass insertedHolsterMagazine = GetCurrentMagazineSafely(holsterWeapon);
+                List<EFT.InventoryLogic.Magazine> holsterCandidates = new List<EFT.InventoryLogic.Magazine>();
+                EFT.InventoryLogic.Magazine insertedHolsterMagazine = GetCurrentMagazineSafely(holsterWeapon);
                 if (insertedHolsterMagazine != null)
                 {
                     holsterCandidates.Add(insertedHolsterMagazine);
@@ -306,15 +308,15 @@ namespace pitTeam.BigBrain.Actions
             return new VestReloadReserveSet(longGunReserve, initialHolsterReserve);
         }
 
-        private static List<MagazineItemClass> GetFastAccessMagazines(InventoryEquipment equipment)
+        private static List<EFT.InventoryLogic.Magazine> GetFastAccessMagazines(InventoryEquipment equipment)
         {
-            List<MagazineItemClass> magazines = new List<MagazineItemClass>();
+            List<EFT.InventoryLogic.Magazine> magazines = new List<EFT.InventoryLogic.Magazine>();
             foreach (EquipmentSlot slot in new[] { EquipmentSlot.TacticalVest, EquipmentSlot.Pockets })
             {
                 Item root = equipment?.GetSlot(slot)?.ContainedItem;
                 if (root != null)
                 {
-                    magazines.AddRange(SnapshotLootTreeItems(root).OfType<MagazineItemClass>());
+                    magazines.AddRange(SnapshotLootTreeItems(root).OfType<EFT.InventoryLogic.Magazine>());
                 }
             }
 
@@ -328,7 +330,7 @@ namespace pitTeam.BigBrain.Actions
                 .ToList();
         }
 
-        private static MagazineItemClass? GetCurrentMagazineSafely(Weapon weapon)
+        private static EFT.InventoryLogic.Magazine? GetCurrentMagazineSafely(Weapon weapon)
         {
             try
             {
@@ -340,9 +342,9 @@ namespace pitTeam.BigBrain.Actions
             }
         }
 
-        private static MagazineItemClass? SelectLargestVestCompatibleMagazine(
-            SearchableItemItemClass vest,
-            IEnumerable<MagazineItemClass> candidates)
+        private static EFT.InventoryLogic.Magazine? SelectLargestVestCompatibleMagazine(
+            EFT.InventoryLogic.SearchableItem vest,
+            IEnumerable<EFT.InventoryLogic.Magazine> candidates)
         {
             return candidates
                 .Where(candidate =>
@@ -358,10 +360,10 @@ namespace pitTeam.BigBrain.Actions
         }
 
         private static bool CanFitVestReloadReserves(
-            SearchableItemItemClass vest,
+            EFT.InventoryLogic.SearchableItem vest,
             VestReloadReserveSet reserves)
         {
-            List<MagazineItemClass> orderedReserves = reserves.Magazines
+            List<EFT.InventoryLogic.Magazine> orderedReserves = reserves.Magazines
                 .OrderByDescending(GetMagazineCellArea)
                 .ThenByDescending(GetMagazineLongestSide)
                 .ToList();
@@ -377,16 +379,16 @@ namespace pitTeam.BigBrain.Actions
         }
 
         private static bool CanFitVestReloadReserveOrder(
-            SearchableItemItemClass vest,
-            IEnumerable<MagazineItemClass> reserves)
+            EFT.InventoryLogic.SearchableItem vest,
+            IEnumerable<EFT.InventoryLogic.Magazine> reserves)
         {
-            SearchableItemItemClass currentVest = vest;
-            foreach (MagazineItemClass reserve in reserves)
+            EFT.InventoryLogic.SearchableItem currentVest = vest;
+            foreach (EFT.InventoryLogic.Magazine reserve in reserves)
             {
-                if (!TrySimulateContainerAdd(
+                if (!TrySimulateFastAccessContainerAdd(
                         currentVest,
                         reserve,
-                        out SearchableItemItemClass? nextVest))
+                        out EFT.InventoryLogic.SearchableItem? nextVest))
                 {
                     return false;
                 }
@@ -398,15 +400,15 @@ namespace pitTeam.BigBrain.Actions
         }
 
         private static bool CanStructurallyFitInVest(
-            SearchableItemItemClass vest,
-            MagazineItemClass magazine)
+            EFT.InventoryLogic.SearchableItem vest,
+            EFT.InventoryLogic.Magazine magazine)
         {
             if (vest?.Grids == null || magazine == null)
             {
                 return false;
             }
 
-            XYCellSizeStruct size;
+            IntVec2 size;
             try
             {
                 size = magazine.CalculateCellSize();
@@ -416,7 +418,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            foreach (StashGridClass grid in vest.Grids)
+            foreach (EFT.InventoryLogic.Grid grid in vest.Grids)
             {
                 if (grid == null)
                 {
@@ -451,11 +453,11 @@ namespace pitTeam.BigBrain.Actions
             return false;
         }
 
-        private static int GetMagazineCellArea(MagazineItemClass magazine)
+        private static int GetMagazineCellArea(EFT.InventoryLogic.Magazine magazine)
         {
             try
             {
-                XYCellSizeStruct size = magazine.CalculateCellSize();
+                IntVec2 size = magazine.CalculateCellSize();
                 return size.X * size.Y;
             }
             catch
@@ -464,11 +466,11 @@ namespace pitTeam.BigBrain.Actions
             }
         }
 
-        private static int GetMagazineLongestSide(MagazineItemClass magazine)
+        private static int GetMagazineLongestSide(EFT.InventoryLogic.Magazine magazine)
         {
             try
             {
-                XYCellSizeStruct size = magazine.CalculateCellSize();
+                IntVec2 size = magazine.CalculateCellSize();
                 return Math.Max(size.X, size.Y);
             }
             catch
@@ -494,17 +496,17 @@ namespace pitTeam.BigBrain.Actions
         private sealed class VestReloadReserveSet
         {
             public VestReloadReserveSet(
-                MagazineItemClass? longGunMagazine,
-                MagazineItemClass? initialHolsterMagazine)
+                EFT.InventoryLogic.Magazine? longGunMagazine,
+                EFT.InventoryLogic.Magazine? initialHolsterMagazine)
             {
                 LongGunMagazine = longGunMagazine;
                 InitialHolsterMagazine = initialHolsterMagazine;
             }
 
-            public MagazineItemClass? LongGunMagazine { get; }
-            public MagazineItemClass? InitialHolsterMagazine { get; }
+            public EFT.InventoryLogic.Magazine? LongGunMagazine { get; }
+            public EFT.InventoryLogic.Magazine? InitialHolsterMagazine { get; }
 
-            public IEnumerable<MagazineItemClass> Magazines
+            public IEnumerable<EFT.InventoryLogic.Magazine> Magazines
             {
                 get
                 {
@@ -525,14 +527,14 @@ namespace pitTeam.BigBrain.Actions
 
         private sealed class AmmoSalvageOutputStack
         {
-            public AmmoSalvageOutputStack(AmmoItemClass target, int count, int maxCount)
+            public AmmoSalvageOutputStack(EFT.InventoryLogic.Ammo target, int count, int maxCount)
             {
                 Target = target;
                 Count = count;
                 MaxCount = maxCount;
             }
 
-            public AmmoItemClass Target { get; }
+            public EFT.InventoryLogic.Ammo Target { get; }
             public int Count { get; set; }
             public int MaxCount { get; }
         }

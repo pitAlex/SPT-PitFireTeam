@@ -18,16 +18,16 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
-using BotCreator = BotCreatorClass;
-using IProfileData = BotProfileDataClass;
-using ProfileEndPoint = ProfileEndpointFactoryAbstractClass;
-using ProfileEndPointHelper = GClass1392;
-using ProfileResult = CompleteProfileDescriptorClass;
-using spawnPosition = GClass682;
+using BotCreator = BotCreatorClient;
+using IProfileData = GetProfileDataParams;
+using ProfileEndPoint = EFT.ClientBackendSession;
+using ProfileEndPointHelper = JsonType.BackendUrls;
+using ProfileResult = EFT.ProfileDescriptor;
+using spawnPosition = PositionNote;
 
 namespace pitTeam.Patches
 {
-    internal class CancelToken : GInterface22
+    internal class CancelToken : ITokenGetter
     {
         CancellationTokenSource cancelSource;
         public CancelToken()
@@ -55,15 +55,15 @@ namespace pitTeam.Patches
         public static List<pitAIBossPlayer> spawnedPlayers = new List<pitAIBossPlayer>();
 
         public static Dictionary<string, Task<Dictionary<string, Profile>>> followerCreationTask;
-        public static Dictionary<string, Task<BotCreationDataClass>> alliesCreationTask;
-        public static Dictionary<WildSpawnType, Task<BotCreationDataClass>> bossCreationTask;
+        public static Dictionary<string, Task<BotCreationData>> alliesCreationTask;
+        public static Dictionary<WildSpawnType, Task<BotCreationData>> bossCreationTask;
 
         public BotsControllerPatch()
         {
             if (Instance == null) Instance = this;
             followerCreationTask = new Dictionary<string, Task<Dictionary<string, Profile>>>();
-            alliesCreationTask = new Dictionary<string, Task<BotCreationDataClass>>();
-            bossCreationTask = new Dictionary<WildSpawnType, Task<BotCreationDataClass>>();
+            alliesCreationTask = new Dictionary<string, Task<BotCreationData>>();
+            bossCreationTask = new Dictionary<WildSpawnType, Task<BotCreationData>>();
         }
 
         private static List<BotDetails> DeserializeFollowerDetails(string json)
@@ -106,8 +106,8 @@ namespace pitTeam.Patches
             var botGame = botSpawnerClass.BotGame;
 
             var spawnGroups = botSpawnerClass.Groups;
-            var deadBodiesController = botSpawnerClass.DeadBodiesController;
-            var allPlayers = botSpawnerClass.AllPlayers;
+            var deadBodiesController = botSpawnerClass._deadBodiesController;
+            var allPlayers = botSpawnerClass._allPlayers;
 
             bool _freeForAll = true;
 
@@ -195,7 +195,7 @@ namespace pitTeam.Patches
 
 
 
-                foreach (BotOwner item2 in botSpawnerClass.method_5(bt))
+                foreach (BotOwner item2 in botSpawnerClass.GetBotEnemiesList(bt))
                 {
                     if (!Utils.Props.friendlyBotTypes.Contains(item2.Profile.Info.Settings.Role))
                         list.Add(item2);
@@ -223,7 +223,7 @@ namespace pitTeam.Patches
             }
             else
             {
-                foreach (BotOwner item2 in botSpawnerClass.method_5(bt))
+                foreach (BotOwner item2 in botSpawnerClass.GetBotEnemiesList(bt))
                 {
                     list.Add(item2);
                 }
@@ -337,37 +337,32 @@ namespace pitTeam.Patches
             CancelToken token,
             string logPrefix)
         {
-            BotCreationDataClass generationData = BotCreationDataClass.CreateWithoutProfile(profileData);
+            BotCreationData generationData = BotCreationData.CreateWithoutProfile(profileData);
 
-            object profileCreator = AccessTools.Field(typeof(BotCreator), "Ginterface21_0")?.GetValue(botCreator);
-            BotsPresets presets = profileCreator as BotsPresets;
-            IBackEndSession session = null;
-            if (presets?.ISession != null)
-            {
-                session = presets.ISession as IBackEndSession;
-            }
+            BotProfileClient presets = botCreator?._creatorProfile as BotProfileClient;
+            EFT.IClientSession session = presets?._backEndSession as EFT.IClientSession;
 
             if (session != null)
             {
                 int requestCount = multiPickPmc ? 4 : 1;
-                List<WaveInfoClass> waves = profileData.PrepareToLoadBackend(requestCount)?.ToList() ?? new List<WaveInfoClass>();
+                List<EFT.CountTypeBotWave> waves = profileData.PrepareToLoadBackend(requestCount)?.ToList() ?? new List<EFT.CountTypeBotWave>();
                 if (waves.Count > 0 && presets != null)
                 {
-                    List<WaveInfoClass> delayed;
-                    waves = presets.method_3(waves, out delayed);
+                    List<EFT.CountTypeBotWave> delayed;
+                    waves = presets.OptimizeBotWaves(waves, out delayed);
                 }
 
                 Profile[] loadedProfiles = await session.LoadBots(waves);
                 Profile loadedProfile = PickBestDebugSpawnProfile(loadedProfiles, expectedSide, expectedRole, logPrefix);
                 if (loadedProfile != null)
                 {
-                    await Singleton<PoolManagerClass>.Instance.LoadBundlesAndCreatePools(
-                        PoolManagerClass.PoolsCategory.Raid,
-                        PoolManagerClass.AssemblyType.Local,
+                    await Singleton<EFT.ObjectsFactory>.Instance.LoadBundlesAndCreatePools(
+                        EFT.ObjectsFactory.PoolsCategory.Raid,
+                        EFT.ObjectsFactory.AssemblyType.Local,
                         loadedProfile.GetAllPrefabPaths(false).ToArray<ResourceKey>(),
-                        JobPriorityClass.General,
+                        Diz.Jobs.JobYieldPriority.General,
                         null,
-                        PoolManagerClass.DefaultCancellationToken
+                        EFT.ObjectsFactory.DefaultCancellationToken
                     );
 
                     generationData.AddProfile(loadedProfile);
@@ -402,14 +397,18 @@ namespace pitTeam.Patches
             customization["Health"] = pitFireTeam.heatlhMultiplier.Value;
             customization["English"] = pitFireTeam.englishBear.Value;
 
-            var botPresets = AccessTools.Field(typeof(BotCreator), "Ginterface21_0").GetValue(botCreator) as BotsPresets;
-            var profileEndpoint = AccessTools.Field(typeof(BotsPresets), "ISession").GetValue(botPresets) as ProfileEndPoint;
-            var gclass1200_0 = AccessTools.Field(typeof(ProfileEndPoint), "Gclass1392_0").GetValue(profileEndpoint) as ProfileEndPointHelper;
+            var botPresets = botCreator?._creatorProfile as BotProfileClient;
+            var profileEndpoint = botPresets?._backEndSession as ProfileEndPoint;
+            if (profileEndpoint == null)
+            {
+                Modules.Logger.LogError("Failed to fetch member profile: client backend session is unavailable");
+                return null;
+            }
 
 
-            List<WaveInfoClass> limit = GClass378.OptimizeBotWaves(data.PrepareToLoadBackend(1).ToList(), out var list3);
+            List<EFT.CountTypeBotWave> limit = BossSanitar.OptimizeBotWaves(data.PrepareToLoadBackend(1).ToList(), out var list3);
 
-            // call backend - follow ProfileEndpointFactoryAbstractClass.LoadBots
+            // call backend - follow EFT.ClientBackendSession.LoadBots
             ProfileResult[] result;
 
             string scavId = null;
@@ -422,17 +421,17 @@ namespace pitTeam.Patches
 
             try
             {
-                result = await profileEndpoint.method_3<ProfileResult[]>(new LegacyParamsStruct
+                result = await profileEndpoint.Send<ProfileResult[]>(new SendRequest
                 {
-                    Url = gclass1200_0.Main + "/client/game/bot/followergenerate",
+                    Url = profileEndpoint._backendUrls.Main + "/client/game/bot/followergenerate",
                     Params = new Dictionary<string, object>
                     {
-                        { "Info",  new Class19<List<WaveInfoClass>>(limit) },
+                        { "Info",  new BotGenerateRequestParams<List<EFT.CountTypeBotWave>>(limit) },
                         { "MemberId", aid },
                         { "ScavId", scavId},
                         { "Custom", customization }
                     },
-                    Retries = new byte?(LegacyParamsStruct.DefaultRetries)
+                    Retries = new byte?(SendRequest.DefaultRetries)
                 });
 
                 Modules.Logger.LogInfo("Follower Profile data received from backend");
@@ -444,7 +443,7 @@ namespace pitTeam.Patches
                 return null;
             }
 
-            Profile profile = result.Select(new Func<ProfileResult, Profile>(ProfileEndpointFactoryAbstractClass.Class1550.class1550_0.method_10)).ToList<Profile>().Random();
+            Profile profile = result.Select(descriptor => new Profile(descriptor)).ToList().PickRandom();
             // process backend result
             await LoadFollowerProfileBundles(profile);
 
@@ -455,13 +454,13 @@ namespace pitTeam.Patches
 
         private static Task LoadFollowerProfileBundles(Profile profile)
         {
-            return Singleton<PoolManagerClass>.Instance.LoadBundlesAndCreatePools(
-                PoolManagerClass.PoolsCategory.Raid,
-                PoolManagerClass.AssemblyType.Local,
+            return Singleton<EFT.ObjectsFactory>.Instance.LoadBundlesAndCreatePools(
+                EFT.ObjectsFactory.PoolsCategory.Raid,
+                EFT.ObjectsFactory.AssemblyType.Local,
                 profile.GetAllPrefabPaths(false).ToArray<ResourceKey>(),
-                JobPriorityClass.General,
+                Diz.Jobs.JobYieldPriority.General,
                 null,
-                PoolManagerClass.DefaultCancellationToken);
+                EFT.ObjectsFactory.DefaultCancellationToken);
         }
         /** 
          * Task for creating Follower Profiles along with applying custom equipment (if specified) to them 
@@ -471,7 +470,7 @@ namespace pitTeam.Patches
             ConcurrentDictionary<string, Profile> profiles = new ConcurrentDictionary<string, Profile>();
 
             var botSpawnerClass = Controller.BotSpawner;
-            var botCreator = botSpawnerClass.BotCreator as BotCreator;
+            var botCreator = botSpawnerClass._botCreator as BotCreator;
 
             EPlayerSide side = player.realPlayer.Side;
             Vector3 position = player.Position;
@@ -549,7 +548,7 @@ namespace pitTeam.Patches
             return followerCreationTask[player.realPlayer.ProfileId];
         }
 
-        public Task<BotCreationDataClass> PreFetchBossProfiles(pitAIBossPlayer player, WildSpawnType? type = null)
+        public Task<BotCreationData> PreFetchBossProfiles(pitAIBossPlayer player, WildSpawnType? type = null)
         {
             if (Controller == null) return null;
 
@@ -557,7 +556,7 @@ namespace pitTeam.Patches
 
             var botSpawnerClass = Controller.BotSpawner;
 
-            BotCreator botCreator = botSpawnerClass.BotCreator as BotCreator;
+            BotCreator botCreator = botSpawnerClass._botCreator as BotCreator;
 
             WildSpawnType[] bosses = new WildSpawnType[] { WildSpawnType.bossKnight, WildSpawnType.followerBigPipe, WildSpawnType.followerBirdEye };
 
@@ -567,7 +566,7 @@ namespace pitTeam.Patches
             if (type.HasValue)
             {
                 IProfileData botData = new IProfileData(side, type.Value, BotDifficulty.normal, 5f, @params);
-                BotCreationDataClass botCreation = BotCreationDataClass.CreateWithoutProfile(botData);
+                BotCreationData botCreation = BotCreationData.CreateWithoutProfile(botData);
 
                 return FetchMemberProfile(null, player.realPlayer.Profile, botCreator, side, type.Value, @params).ContinueWith(t =>
                 {
@@ -580,7 +579,7 @@ namespace pitTeam.Patches
             foreach (var boss in bosses)
             {
                 IProfileData botData = new IProfileData(side, boss, BotDifficulty.normal, 0f, @params);
-                BotCreationDataClass botCreation = BotCreationDataClass.CreateWithoutProfile(botData);
+                BotCreationData botCreation = BotCreationData.CreateWithoutProfile(botData);
 
                 bossCreationTask[boss] = FetchMemberProfile(null, player.realPlayer.Profile, botCreator, side, boss, @params).ContinueWith(t =>
                 {
@@ -593,7 +592,7 @@ namespace pitTeam.Patches
 
         }
 
-        private Task<BotCreationDataClass> GetBossProfile(pitAIBossPlayer player, WildSpawnType boss)
+        private Task<BotCreationData> GetBossProfile(pitAIBossPlayer player, WildSpawnType boss)
         {
             if (bossCreationTask.ContainsKey(boss))
             {
@@ -608,7 +607,7 @@ namespace pitTeam.Patches
             if (Controller == null) return;
 
             var botSpawnerClass = Controller.BotSpawner;
-            BotCreator botCreator = botSpawnerClass.BotCreator as BotCreator;
+            BotCreator botCreator = botSpawnerClass._botCreator as BotCreator;
 
             int memberCount = Utils.SpawnHelper.spawnMemberIdsScav.Count > 0 ? Utils.SpawnHelper.spawnMemberIdsScav.Count : Utils.SpawnHelper.ScavSquadSize;
 
@@ -618,7 +617,7 @@ namespace pitTeam.Patches
 
             IProfileData data = new IProfileData(EPlayerSide.Savage, WildSpawnType.assault, BotDifficulty.hard, 5f, @params);
 
-            BotCreationDataClass botCreation = BotCreationDataClass.CreateWithoutProfile(data);
+            BotCreationData botCreation = BotCreationData.CreateWithoutProfile(data);
 
             List<Task<Profile>> tasks = new List<Task<Profile>>();
 
@@ -649,7 +648,7 @@ namespace pitTeam.Patches
             });
         }
 
-        public Task<BotCreationDataClass> GetScavProfiles(pitAIBossPlayer player)
+        public Task<BotCreationData> GetScavProfiles(pitAIBossPlayer player)
         {
             if (alliesCreationTask.ContainsKey(player.realPlayer.ProfileId))
             {
@@ -676,7 +675,7 @@ namespace pitTeam.Patches
                 CancelToken token = cancelToken != null ? cancelToken : new CancelToken();
 
                 BotSpawner botSpawnerClass = Controller.BotSpawner;
-                BotCreator botCreator = botSpawnerClass.BotCreator as BotCreator;
+                BotCreator botCreator = botSpawnerClass._botCreator as BotCreator;
 
                 Vector3 position = player.Position;
                 EPlayerSide side = player.Player().Side;
@@ -690,7 +689,7 @@ namespace pitTeam.Patches
                 IProfileData botData = new IProfileData(side, boss, BotDifficulty.hard, 0f, @params);
                 List<IProfileData> bossFollowers = new List<IProfileData> { };
 
-                BotCreationDataClass bossAlly = null;
+                BotCreationData bossAlly = null;
 
                 foreach (var type in Utils.Props.BossFollowersType)
                 {
@@ -834,7 +833,7 @@ namespace pitTeam.Patches
                                         if (me.Boss.BossLogic != null)
                                             me.Boss.BossLogic.Dispose();
 
-                                        me.Boss.BossLogic = new GClass440(me, me.Boss);
+                                        me.Boss.BossLogic = new BossKnight(me, me.Boss);
                                         me.Boss.NeedProtection = false;
                                     }
 
@@ -846,7 +845,7 @@ namespace pitTeam.Patches
                                 {
                                     if (player.Followers.Count > 0)
                                     {
-                                        player.Followers.Random().BotTalk.TrySay(EPhraseTrigger.MumblePhrase);
+                                        player.Followers.PickRandom().BotTalk.TrySay(EPhraseTrigger.MumblePhrase);
                                     }
                                 }, 1500);
                             }
@@ -866,7 +865,7 @@ namespace pitTeam.Patches
                             owner.GetPlayer.Profile.Info.Side = side;
                         }
 
-                        botSpawnerClass.method_11(owner, bossAlly, new Action<BotOwner>((BotOwner follower) =>
+                        botSpawnerClass.ActivateBotCallback(owner, bossAlly, new Action<BotOwner>((BotOwner follower) =>
                         {
                             Modules.Logger.LogInfo("Ally " + follower.Profile.Nickname + " spawned");
 
@@ -904,7 +903,7 @@ namespace pitTeam.Patches
             CancelToken token = new CancelToken();
 
             BotSpawner botSpawnerClass = Controller.BotSpawner;
-            BotCreator botCreator = botSpawnerClass.BotCreator as BotCreator;
+            BotCreator botCreator = botSpawnerClass._botCreator as BotCreator;
 
             EPlayerSide side = player.Player().Side;
             Vector3 position = player.Position;
@@ -933,7 +932,7 @@ namespace pitTeam.Patches
             int memberCount = 0;
 
 
-            BotCreationDataClass botsData;
+            BotCreationData botsData;
 
             // remember what tactic this bot is associated with as the tactic will be set after spawn
             Dictionary<string, string> profileTactic = new Dictionary<string, string>();
@@ -950,7 +949,7 @@ namespace pitTeam.Patches
                     if (fenceStanding < 3)
                         profileTactic[profile.Id] = tactis[5];
                     else
-                        profileTactic[profile.Id] = tactis.Random();
+                        profileTactic[profile.Id] = tactis.PickRandom();
                 });
                 memberCount = botsData.Profiles.Count;
             }
@@ -994,7 +993,7 @@ namespace pitTeam.Patches
                 }
 
 
-                botsData = await BotCreationDataClass.Create(data, botCreator, 0, botSpawnerClass);
+                botsData = await BotCreationData.Create(data, botCreator, 0, botSpawnerClass);
 
                 followerCreationTask.Remove(player.realPlayer.ProfileId);
 
@@ -1101,7 +1100,7 @@ namespace pitTeam.Patches
                         owner.GetPlayer.Profile.Info.Side = side;
                     }
 
-                    botSpawnerClass.method_11(owner, botsData, new Action<BotOwner>((BotOwner follower) =>
+                    botSpawnerClass.ActivateBotCallback(owner, botsData, new Action<BotOwner>((BotOwner follower) =>
                     {
                         Modules.Logger.LogInfo("Follower " + follower.Profile.Nickname + " spawned");
 
@@ -1111,8 +1110,8 @@ namespace pitTeam.Patches
 
                 Modules.Logger.LogInfo("Trying to spawn " + profile.Nickname + " follower");
 
-                int _inSpawnProcess = botSpawnerClass.InSpawnProcess;
-                botSpawnerClass.InSpawnProcess = _inSpawnProcess + 1;
+                int _inSpawnProcess = botSpawnerClass._inSpawnProcess;
+                botSpawnerClass._inSpawnProcess = _inSpawnProcess + 1;
 
                 // activate the bot
                 BossPlayers.ShallBeFollower(profile.ProfileId);
@@ -1146,7 +1145,7 @@ namespace pitTeam.Patches
 
             CancelToken token = new CancelToken();
             BotSpawner botSpawnerClass = Controller.BotSpawner;
-            BotCreator botCreator = botSpawnerClass.BotCreator as BotCreator;
+            BotCreator botCreator = botSpawnerClass._botCreator as BotCreator;
             if (botCreator == null)
             {
                 onFailure?.Invoke("bot creator is null");
@@ -1174,7 +1173,7 @@ namespace pitTeam.Patches
             };
 
             IProfileData data = new IProfileData(spawnSide, role, BotDifficulty.hard, spawnSide == EPlayerSide.Savage ? 5f : 0f, spawnParams);
-            BotCreationDataClass botsData = BotCreationDataClass.CreateWithoutProfile(data);
+            BotCreationData botsData = BotCreationData.CreateWithoutProfile(data);
             Profile profile = null;
 
             try
@@ -1259,11 +1258,11 @@ namespace pitTeam.Patches
                     owner.GetPlayer.Profile.Info.Side = spawnSide;
                 }
 
-                botSpawnerClass.method_11(owner, botsData, _ => { }, shallBeGroup, stopWatch);
+                botSpawnerClass.ActivateBotCallback(owner, botsData, _ => { }, shallBeGroup, stopWatch);
             };
 
 
-            botSpawnerClass.InSpawnProcess++;
+            botSpawnerClass._inSpawnProcess++;
             bool activated = false;
             try
             {
@@ -1281,13 +1280,13 @@ namespace pitTeam.Patches
             catch
             {
                 // Keep old behavior of bubbling exception to caller while preserving spawn counter consistency.
-                botSpawnerClass.InSpawnProcess = Mathf.Max(0, botSpawnerClass.InSpawnProcess - 1);
+                botSpawnerClass._inSpawnProcess = Mathf.Max(0, botSpawnerClass._inSpawnProcess - 1);
                 throw;
             }
 
             if (!activated)
             {
-                botSpawnerClass.InSpawnProcess = Mathf.Max(0, botSpawnerClass.InSpawnProcess - 1);
+                botSpawnerClass._inSpawnProcess = Mathf.Max(0, botSpawnerClass._inSpawnProcess - 1);
                 onFailure?.Invoke("bot activation failed");
                 return false;
             }
@@ -1305,7 +1304,7 @@ namespace pitTeam.Patches
 
             CancelToken token = new CancelToken();
             BotSpawner botSpawnerClass = Controller.BotSpawner;
-            BotCreator botCreator = botSpawnerClass.BotCreator as BotCreator;
+            BotCreator botCreator = botSpawnerClass._botCreator as BotCreator;
             if (botCreator == null)
             {
                 onFailure?.Invoke("bot creator is null");
@@ -1328,7 +1327,7 @@ namespace pitTeam.Patches
 
             BotSpawnParams spawnParams = new BotSpawnParams();
             IProfileData data = new IProfileData(EPlayerSide.Savage, WildSpawnType.assault, BotDifficulty.normal, 0f, spawnParams);
-            BotCreationDataClass botsData = BotCreationDataClass.CreateWithoutProfile(data);
+            BotCreationData botsData = BotCreationData.CreateWithoutProfile(data);
             Profile profile = null;
 
             try
@@ -1370,14 +1369,14 @@ namespace pitTeam.Patches
                     owner.GetPlayer.Profile.Info.Side = EPlayerSide.Savage;
                 }
 
-                botSpawnerClass.method_11(owner, botsData, spawned =>
+                botSpawnerClass.ActivateBotCallback(owner, botsData, spawned =>
                 {
                     Modules.Logger.LogInfo(
                         $"SpawnDebugScav spawned {spawned.Profile?.Nickname ?? "scav"} at {position}");
                 }, false, stopWatch);
             };
 
-            botSpawnerClass.InSpawnProcess++;
+            botSpawnerClass._inSpawnProcess++;
             bool activated = false;
             try
             {
@@ -1394,13 +1393,13 @@ namespace pitTeam.Patches
             }
             catch
             {
-                botSpawnerClass.InSpawnProcess = Mathf.Max(0, botSpawnerClass.InSpawnProcess - 1);
+                botSpawnerClass._inSpawnProcess = Mathf.Max(0, botSpawnerClass._inSpawnProcess - 1);
                 throw;
             }
 
             if (!activated)
             {
-                botSpawnerClass.InSpawnProcess = Mathf.Max(0, botSpawnerClass.InSpawnProcess - 1);
+                botSpawnerClass._inSpawnProcess = Mathf.Max(0, botSpawnerClass._inSpawnProcess - 1);
                 onFailure?.Invoke("bot activation failed");
                 return false;
             }
@@ -1420,6 +1419,7 @@ namespace pitTeam.Patches
             {
                 if (Controller == null)
                 {
+                    PlayerKilledPatch.ResetKillMessageRaidState();
                     new BossPlayers();
                     new InteractableObjects();
                     new NpcMessage();
@@ -1439,7 +1439,10 @@ namespace pitTeam.Patches
                         Props.FactoryMapSett();
                     }
 
-                    Modules.Logger.LogInfo($"[CombatDistances] map={locationId} factoryDistanceProfile={CombatDistanceConfiguration.Instance.IsFactoryMode}");
+                    Modules.Logger.LogInfo(
+                        $"[CombatDistances] map={locationId} " +
+                        $"factoryDistanceProfile={CombatDistanceConfiguration.Instance.IsFactoryMode} " +
+                        $"urbanDetourProfile={CombatDistanceConfiguration.Instance.IsUrbanDetourMode}");
 
                     Modules.Logger.LogInfo("Raid Started");
                     BattleRecorder.StartRaid(locationId);
@@ -1826,7 +1829,7 @@ namespace pitTeam.Patches
         {
             try
             {
-                var dictionary_2 = AccessTools.Field(typeof(LocalGame), "dictionary_2").GetValue(__instance) as Dictionary<string, Player>;
+                var dictionary_2 = AccessTools.Field(typeof(LocalGame), "_bots").GetValue(__instance) as Dictionary<string, Player>;
                 if (dictionary_2 != null)
                 {
                     List<string> keysToRemove = new List<string>();
