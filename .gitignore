@@ -60,3 +60,4 @@ types
 /TASKS.md
 *.csproj.lscache
 /video/
+/client/libs4.1/
