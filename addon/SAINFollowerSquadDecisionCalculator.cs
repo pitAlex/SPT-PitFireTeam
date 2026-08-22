@@ -3,6 +3,7 @@ using pitTeam.Components;
 using pitTeam.Modules;
 using SAIN.Components;
 using SAIN.Models.Enums;
+using SAIN.Preset.Shared.Enums;
 using SAIN.SAINComponent.Classes.EnemyClasses;
 using UnityEngine;
 
@@ -23,9 +24,9 @@ namespace pitTeam.SAINAddon
         private const float PushSuppressedEnemyMaxPathDistanceSprint = 100f;
         private const float PushSuppressedEnemyLowAmmoRatio = 0.5f;
 
-        public static bool TryGetDecision(BotOwner owner, BotComponent bot, out SAIN.ESquadDecision decision)
+        public static bool TryGetDecision(BotOwner owner, BotComponent bot, out ESquadDecision decision)
         {
-            decision = SAIN.ESquadDecision.None;
+            decision = ESquadDecision.None;
             if (owner == null || bot == null || owner.IsDead || !BossPlayers.IsFollower(owner))
             {
                 return false;
@@ -39,13 +40,13 @@ namespace pitTeam.SAINAddon
             Enemy myEnemy = bot.GoalEnemy;
             if (ShallPushSuppressedEnemy(bot, myEnemy))
             {
-                decision = SAIN.ESquadDecision.PushSuppressedEnemy;
+                decision = ESquadDecision.PushSuppressedEnemy;
                 return true;
             }
 
             if (ShallGroupSearch(bot, owner, boss))
             {
-                decision = SAIN.ESquadDecision.GroupSearch;
+                decision = ESquadDecision.GroupSearch;
                 return true;
             }
 
@@ -61,13 +62,13 @@ namespace pitTeam.SAINAddon
                 {
                     if (ShallSuppressEnemy(bot, member))
                     {
-                        decision = SAIN.ESquadDecision.Suppress;
+                        decision = ESquadDecision.Suppress;
                         return true;
                     }
 
                     if (ShallHelp(bot, member))
                     {
-                        decision = SAIN.ESquadDecision.Help;
+                        decision = ESquadDecision.Help;
                         return true;
                     }
                 }
@@ -75,13 +76,13 @@ namespace pitTeam.SAINAddon
 
             if (ShallSearch(bot, myEnemy))
             {
-                decision = SAIN.ESquadDecision.Search;
+                decision = ESquadDecision.Search;
                 return true;
             }
 
             if (ShallRegroup(owner, bot, boss, myEnemy))
             {
-                decision = SAIN.ESquadDecision.Regroup;
+                decision = ESquadDecision.Regroup;
                 return true;
             }
 
@@ -177,14 +178,14 @@ namespace pitTeam.SAINAddon
                 return false;
             }
 
-            if (member.Decision.CurrentCombatDecision != SAIN.ECombatDecision.Retreat)
+            if (member.Decision.CurrentCombatDecision != ECombatDecision.Retreat)
             {
                 return false;
             }
 
             float memberDistance = (member.Transform.Position - bot.BotOwner.Position).magnitude;
             float ammo = bot.Decision.SelfActionDecisions.AmmoRatio;
-            if (bot.Decision.CurrentSquadDecision == SAIN.ESquadDecision.Suppress)
+            if (bot.Decision.CurrentSquadDecision == ESquadDecision.Suppress)
             {
                 return memberDistance <= SuppressFriendlyDistEnd && ammo >= 0.1f;
             }
@@ -210,7 +211,7 @@ namespace pitTeam.SAINAddon
 
             foreach (BotComponent member in EnumerateFollowerMembers(owner, boss))
             {
-                if (member.Decision.CurrentCombatDecision == SAIN.ECombatDecision.Search && DoesMemberShareEnemy(bot, member))
+                if (member.Decision.CurrentCombatDecision == ECombatDecision.Search && DoesMemberShareEnemy(bot, member))
                 {
                     return SAINFollowerRuntimeBridge.TryLockSearchPartyLeader(boss, enemyProfileId, owner.ProfileId);
                 }
@@ -241,7 +242,7 @@ namespace pitTeam.SAINAddon
             float distance = member.GoalEnemy.Path.PathLength;
             bool visible = member.GoalEnemy.IsVisible;
 
-            if (bot.Decision.CurrentSquadDecision == SAIN.ESquadDecision.Help && member.GoalEnemy.Seen)
+            if (bot.Decision.CurrentSquadDecision == ESquadDecision.Help && member.GoalEnemy.Seen)
             {
                 return distance < EndHelpFriendDist && member.GoalEnemy.TimeSinceSeen < EndHelpFriendsEnemySeenRecentTime;
             }

@@ -395,10 +395,10 @@ namespace pitTeam.Utils
             }
             nextUpdateTime = Time.time + 1.0f;
 
-            if (CameraClass.Instance.SSAA != null && CameraClass.Instance.SSAA.isActiveAndEnabled)
+            if (EFT.CameraControl.CameraManager.Instance.SSAA != null && EFT.CameraControl.CameraManager.Instance.SSAA.isActiveAndEnabled)
             {
-                int outputWidth = CameraClass.Instance.SSAA.GetOutputWidth();
-                float inputWidth = CameraClass.Instance.SSAA.GetInputWidth();
+                int outputWidth = EFT.CameraControl.CameraManager.Instance.SSAA.GetOutputWidth();
+                float inputWidth = EFT.CameraControl.CameraManager.Instance.SSAA.GetInputWidth();
                 screenScale = outputWidth / inputWidth;
             }
         }
@@ -739,8 +739,8 @@ namespace pitTeam.Utils
             }
 
             // Keep the established behavior of hiding world markers while an optic camera is active.
-            if (CameraClass.Instance?.OpticCameraManager?.CurrentOpticSight != null &&
-                CameraClass.Instance.OpticCameraManager.Camera != null)
+            if (EFT.CameraControl.CameraManager.Instance?.OpticCameraManager?.CurrentOpticSight != null &&
+                EFT.CameraControl.CameraManager.Instance.OpticCameraManager.Camera != null)
             {
                 return;
             }
@@ -1526,7 +1526,7 @@ namespace pitTeam.Utils
                 return false;
             }
 
-            ShootPointClass? shootPoint = bot.CurrentEnemyTargetPosition(true);
+            ShootToPoint? shootPoint = bot.CurrentEnemyTargetPosition(true);
             if (shootPoint == null)
             {
                 return false;

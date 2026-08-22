@@ -418,7 +418,7 @@ namespace pitTeam.Patches
             const float sphereRadius = 0.4f;
             RaycastHit[] hits = new RaycastHit[10];
             Ray ray = requesterPlayer.InteractionRay;
-            int hitCount = Physics.SphereCastNonAlloc(ray, sphereRadius, hits, distance, LayerMaskClass.PlayerMask);
+            int hitCount = Physics.SphereCastNonAlloc(ray, sphereRadius, hits, distance, LayersMaskController.PlayerMask);
             if (hitCount <= 0) return false;
 
             for (int i = 0; i < hitCount; i++)

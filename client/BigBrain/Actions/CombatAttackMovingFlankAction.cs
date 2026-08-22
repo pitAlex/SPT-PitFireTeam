@@ -9,16 +9,16 @@ namespace pitTeam.BigBrain.Actions
     /// </summary>
     internal sealed class CombatAttackMovingFlankAction : FollowerCombatActionBase
     {
-        private readonly GClass209 baseLogic;
+        private readonly AttackMovingFlank baseLogic;
 
         public CombatAttackMovingFlankAction(BotOwner botOwner) : base(botOwner)
         {
-            baseLogic = new GClass209(botOwner);
+            baseLogic = new AttackMovingFlank(botOwner);
         }
 
         public override void Update(CustomLayer.ActionData data)
         {
-            baseLogic.UpdateNodeByBrain(GetData<GClass29>(data));
+            baseLogic.UpdateNodeByBrain(GetData<CoreActionResultParamsFlankMove>(data));
             EnforceCloseThreatStandingPose("attackMovingFlank", GetReason(data));
         }
     }

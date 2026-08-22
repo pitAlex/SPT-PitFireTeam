@@ -9,11 +9,11 @@ namespace pitTeam.BigBrain.Actions
     /// </summary>
     internal class PeaceHardAimAction : CustomLogic
     {
-        private readonly GClass267 baseLogic;
+        private readonly PeaceHardAimNode baseLogic;
 
         public PeaceHardAimAction(BotOwner botOwner) : base(botOwner)
         {
-            baseLogic = new GClass267(botOwner);
+            baseLogic = new PeaceHardAimNode(botOwner);
         }
 
         public override void Update(CustomLayer.ActionData data)

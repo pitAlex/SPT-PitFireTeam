@@ -23,7 +23,7 @@ namespace pitTeam.Patches
                 return false;
             }
 
-            BotOwner botOwner = Traverse.Create(__instance).Field("BotOwner_0").GetValue<BotOwner>();
+            BotOwner botOwner = Traverse.Create(__instance).Field("_owner").GetValue<BotOwner>();
             if (botOwner == null)
             {
                 return false;
@@ -59,10 +59,10 @@ namespace pitTeam.Patches
                     return false;
                 }
 
-                return __instance.FollowerAIBase != null;
+                return __instance.followerAIBase != null;
             }
 
-            if (__instance.FollowerPlayerBase == null)
+            if (__instance.followerPlayerBase == null)
             {
                 Player bossPlayer = boss.Player() as Player;
                 if (bossPlayer == null)
@@ -74,7 +74,7 @@ namespace pitTeam.Patches
                 __instance.InitPlayer(bossPlayer);
             }
 
-            return __instance.FollowerPlayerBase != null;
+            return __instance.followerPlayerBase != null;
         }
 
         private static bool CanReadBossMoveSpeed(IBossToFollow boss)
@@ -130,11 +130,11 @@ namespace pitTeam.Patches
 
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(GClass48), "ShallUseNow");
+            return AccessTools.Method(typeof(AvoidDangerLayer), "ShallUseNow");
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(GClass48 __instance, ref bool __result)
+        private static bool PatchPrefix(AvoidDangerLayer __instance, ref bool __result)
         {
             if (__instance == null)
             {
@@ -166,7 +166,7 @@ namespace pitTeam.Patches
         }
 
         [PatchFinalizer]
-        private static Exception PatchFinalizer(GClass48 __instance, Exception __exception, ref bool __result)
+        private static Exception PatchFinalizer(AvoidDangerLayer __instance, Exception __exception, ref bool __result)
         {
             if (__exception == null)
             {

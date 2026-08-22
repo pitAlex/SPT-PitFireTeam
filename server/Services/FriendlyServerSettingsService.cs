@@ -1,20 +1,19 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using pitTeam.Server.Models;
+using SPTarkov.Common.Models.Logging;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.Models.Enums;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Spt.Config;
-using SPTarkov.Server.Core.Models.Utils;
-using SPTarkov.Server.Core.Servers;
 
 namespace pitTeam.Server.Services;
 
-#pragma warning disable CS0618 // ConfigServer is the stable config access path in the current SPT 4.08 target.
 [Injectable]
 public class FriendlyServerSettingsService(
     ISptLogger<FriendlyServerSettingsService> logger,
-    ConfigServer configServer
+    LostOnDeathConfig lostOnDeathConfig,
+    PmcConfig pmcConfig
 )
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -58,8 +57,7 @@ public class FriendlyServerSettingsService(
 
     public FriendlyLostOnDeathSettingsResponse GetLostOnDeathSettings()
     {
-        LostOnDeathConfig config = configServer.GetConfig<LostOnDeathConfig>();
-        LostEquipment equipment = config.Equipment;
+        LostEquipment equipment = lostOnDeathConfig.Equipment;
         bool playerGearProtectedByRaidStatusOverride = IsPlayerGearProtectedBySvmRaidStatusOverride();
 
         return new FriendlyLostOnDeathSettingsResponse
@@ -198,7 +196,6 @@ public class FriendlyServerSettingsService(
     {
         try
         {
-            PmcConfig pmcConfig = configServer.GetConfig<PmcConfig>();
             pmcConfig.ForceArmband.Enabled = settings.PmcArmbands;
 
             if (settings.PmcArmbands)
@@ -226,4 +223,3 @@ public class FriendlyServerSettingsService(
             "settings.json");
     }
 }
-#pragma warning restore CS0618

@@ -9,11 +9,11 @@ namespace pitTeam.BigBrain.Actions
     /// </summary>
     internal class PeacefulAction : CustomLogic
     {
-        private readonly GClass266 baseLogic;
+        private readonly PeacefulNode baseLogic;
 
         public PeacefulAction(BotOwner botOwner) : base(botOwner)
         {
-            baseLogic = new GClass266(botOwner);
+            baseLogic = new PeacefulNode(botOwner);
         }
 
         public override void Update(CustomLayer.ActionData data)

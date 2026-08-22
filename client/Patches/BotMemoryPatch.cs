@@ -17,14 +17,14 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(BotMemoryClass), "method_8");
+            return AccessTools.Method(typeof(EFT.BotMemory), nameof(EFT.BotMemory.GetHit));
         }
         [PatchPrefix]
-        private static void PatchPrefix(BotMemoryClass __instance, DamageInfoStruct damageInfo)
+        private static void PatchPrefix(EFT.BotMemory __instance, EFT.Ballistics.DamageInfo damageInfo)
         {
             try
             {
-                var botOwner_0 = AccessTools.Field(typeof(BotMemoryClass), "BotOwner_0").GetValue(__instance) as BotOwner;
+                var botOwner_0 = AccessTools.Field(typeof(EFT.BotMemory), "_owner").GetValue(__instance) as BotOwner;
 
                 if (damageInfo.Player == null) return;
 
@@ -59,15 +59,15 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.PropertySetter(typeof(BotMemoryClass), nameof(BotMemoryClass.GoalEnemy));
+            return AccessTools.PropertySetter(typeof(EFT.BotMemory), nameof(EFT.BotMemory.GoalEnemy));
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(BotMemoryClass __instance, EnemyInfo value)
+        private static bool PatchPrefix(EFT.BotMemory __instance, EnemyInfo value)
         {
             try
             {
-                BotOwner botOwner = AccessTools.Field(typeof(BotMemoryClass), "BotOwner_0").GetValue(__instance) as BotOwner;
+                BotOwner botOwner = AccessTools.Field(typeof(EFT.BotMemory), "_owner").GetValue(__instance) as BotOwner;
                 EnemyInfo previous = __instance.GoalEnemy;
                 string reason = FollowerGoalEnemyTracker.CurrentReason;
 

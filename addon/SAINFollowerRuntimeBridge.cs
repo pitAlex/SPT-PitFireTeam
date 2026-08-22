@@ -7,6 +7,7 @@ using pitTeam.Modules;
 using SAIN;
 using SAIN.Components;
 using SAIN.Models.Enums;
+using SAIN.Preset.Shared.Enums;
 using SAIN.SAINComponent.Classes.EnemyClasses;
 using UnityEngine;
 using HarmonyLib;

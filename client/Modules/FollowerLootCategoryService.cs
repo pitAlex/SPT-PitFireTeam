@@ -28,12 +28,12 @@ namespace pitTeam.Modules
 
         private static FollowerLootCategory Classify(Item item)
         {
-            if (item is FoodDrinkItemClass)
+            if (item is EFT.InventoryLogic.FoodDrink)
             {
                 return FollowerLootCategory.Food;
             }
 
-            if (item is MedsItemClass)
+            if (item is EFT.InventoryLogic.Meds)
             {
                 return FollowerLootCategory.Meds;
             }
@@ -53,26 +53,26 @@ namespace pitTeam.Modules
 
         public static bool IsWholeWearableTree(Item item)
         {
-            return item is ArmorItemClass ||
-                   item is VestItemClass ||
-                   item is HeadwearItemClass;
+            return item is EFT.InventoryLogic.Armor ||
+                   item is EFT.InventoryLogic.Vest ||
+                   item is EFT.InventoryLogic.Headwear;
         }
 
         private static bool IsWearableGear(Item item)
         {
             return IsWholeWearableTree(item) ||
-                   item is ArmorPlateItemClass ||
-                   item is ArmoredEquipmentItemClass;
+                   item is EFT.InventoryLogic.ArmorPlate ||
+                   item is EFT.InventoryLogic.ArmoredEquipment;
         }
 
         private static bool IsWeaponLoot(Item item)
         {
             return item is Weapon ||
-                   item is IWeapon ||
+                   item is EFT.InventoryLogic.IWeapon ||
                    item is EFT.InventoryLogic.Mod ||
-                   item is AmmoItemClass ||
-                   item is MagazineItemClass ||
-                   item is ThrowWeapItemClass;
+                   item is EFT.InventoryLogic.Ammo ||
+                   item is EFT.InventoryLogic.Magazine ||
+                   item is EFT.InventoryLogic.ThrowWeap;
         }
 
         private enum FollowerLootCategory

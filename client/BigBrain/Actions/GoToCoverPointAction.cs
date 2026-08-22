@@ -9,9 +9,9 @@ namespace pitTeam.BigBrain.Actions
     /// </summary>
     internal class GoToCoverPointAction : CustomLogic
     {
-        private readonly GClass212 baseLogic;
+        private readonly GoToCoverPoint baseLogic;
         private CustomNavigationPoint? lastPoint;
-        private GClass31? cachedCoverData;
+        private MoveToCoverActionResultData? cachedCoverData;
 
         /// <summary>
         /// Payload for non-combat cover movement. Carries the exact cover destination chosen by the
@@ -29,7 +29,7 @@ namespace pitTeam.BigBrain.Actions
 
         public GoToCoverPointAction(BotOwner botOwner) : base(botOwner)
         {
-            baseLogic = new GClass212(botOwner);
+            baseLogic = new GoToCoverPoint(botOwner);
         }
 
         public override void Start()
@@ -49,7 +49,7 @@ namespace pitTeam.BigBrain.Actions
             if (!ReferenceEquals(point, lastPoint))
             {
                 lastPoint = point;
-                cachedCoverData = point != null ? new GClass31(point) : null;
+                cachedCoverData = point != null ? new MoveToCoverActionResultData(point) : null;
             }
 
             baseLogic.UpdateNodeByBrain(cachedCoverData);

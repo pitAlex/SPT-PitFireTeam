@@ -99,8 +99,8 @@ namespace pitTeam.BigBrain
         }
 
         public override void DecisionChanged(
-            AICoreActionResultStruct<BotLogicDecision, GClass26>? prevDecision,
-            AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision)
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? prevDecision,
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> nextDecision)
         {
             if (IsRegroupReason(nextDecision.Reason))
             {
@@ -117,22 +117,22 @@ namespace pitTeam.BigBrain
         {
         }
 
-        public override AICoreActionResultStruct<BotLogicDecision, GClass26> GetDecision(EnemyInfo goalEnemy)
+        public override AICoreActionResult<BotLogicDecision, CoreActionResultParams> GetDecision(EnemyInfo goalEnemy)
         {
             // Regroup owns the movement objective, but survival work still preempts the current regroup
             // phase. The objective itself remains regroup until it completes or is explicitly replaced.
-            if (TryGetMedicalInterrupt(goalEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> medicalDecision))
+            if (TryGetMedicalInterrupt(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> medicalDecision))
             {
                 return medicalDecision;
             }
 
-            AICoreActionResultStruct<BotLogicDecision, GClass26>? dogFight = CombatCommon.TryGetDogFightDecision();
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? dogFight = CombatCommon.TryGetDogFightDecision();
             if (dogFight != null)
             {
                 return dogFight.Value;
             }
 
-            AICoreActionResultStruct<BotLogicDecision, GClass26>? healDecision = CombatCommon.TryGetNeedHealDecision();
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? healDecision = CombatCommon.TryGetNeedHealDecision();
             if (healDecision != null)
             {
                 return healDecision.Value;
@@ -145,7 +145,7 @@ namespace pitTeam.BigBrain
                 if (TryGetArrivalCoverDecision(
                         goalEnemy,
                         bossPosition,
-                        out AICoreActionResultStruct<BotLogicDecision, GClass26> arrivalCoverDecision))
+                        out AICoreActionResult<BotLogicDecision, CoreActionResultParams> arrivalCoverDecision))
                 {
                     CommitRegroupMove(arrivalCoverDecision);
                     return arrivalCoverDecision;
@@ -159,7 +159,7 @@ namespace pitTeam.BigBrain
                 return GetArrivedSettleDecision(RegroupUrbanDetourReason);
             }
 
-            if (TryGetCommittedRegroupMove(goalEnemy, bossPosition, out AICoreActionResultStruct<BotLogicDecision, GClass26> committedMove))
+            if (TryGetCommittedRegroupMove(goalEnemy, bossPosition, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> committedMove))
             {
                 return committedMove;
             }
@@ -174,20 +174,20 @@ namespace pitTeam.BigBrain
             // dropping threat orientation.
             if (hotContact)
             {
-                if (TryGetRegroupCombatMove(goalEnemy, bossPosition, bossDirection, out AICoreActionResultStruct<BotLogicDecision, GClass26> combatMove))
+                if (TryGetRegroupCombatMove(goalEnemy, bossPosition, bossDirection, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> combatMove))
                 {
                     CommitRegroupMove(combatMove);
                     return combatMove;
                 }
             }
 
-            AICoreActionResultStruct<BotLogicDecision, GClass26> runDecision = GetRegroupRunDecision(bossPosition);
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> runDecision = GetRegroupRunDecision(bossPosition);
             CommitRegroupMove(runDecision);
             return runDecision;
         }
 
-        public override AICoreActionEndStruct ShallEndCurrentDecision(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision)
+        public override AICoreActionEnd ShallEndCurrentDecision(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
         {
             EnemyInfo? goalEnemy = BotOwner.Memory.GoalEnemy;
             // A generic action such as attackMoving can still be a medical retreat. Route by
@@ -201,14 +201,14 @@ namespace pitTeam.BigBrain
             {
                 complete = true;
                 ClearCommittedRegroupMove();
-                return new AICoreActionEndStruct("regroupEnemyMissing", true);
+                return new AICoreActionEnd("regroupEnemyMissing", true);
             }
 
             if (IsRegroupSettleReason(currentDecision.Reason))
             {
                 if (TryInterruptArrivedSettleForCombatPressure(
                         goalEnemy!,
-                        out AICoreActionEndStruct pressureInterrupt))
+                        out AICoreActionEnd pressureInterrupt))
                 {
                     return pressureInterrupt;
                 }
@@ -220,7 +220,7 @@ namespace pitTeam.BigBrain
 
                 complete = true;
                 ClearCommittedRegroupMove();
-                return new AICoreActionEndStruct("regroupArrivedSettled", true);
+                return new AICoreActionEnd("regroupArrivedSettled", true);
             }
 
             // This is completion of the already-active regroup objective, not activation pressure
@@ -237,33 +237,33 @@ namespace pitTeam.BigBrain
                     arrivedSettleUntil = Time.time + RegroupArrivalSettleSeconds;
                 }
 
-                return new AICoreActionEndStruct("regroupReachedBossSettle", true);
+                return new AICoreActionEnd("regroupReachedBossSettle", true);
             }
 
             if (HasActivePushOrder())
             {
                 complete = true;
                 ClearCommittedRegroupMove();
-                return new AICoreActionEndStruct("regroupPushOverride", true);
+                return new AICoreActionEnd("regroupPushOverride", true);
             }
 
             if (HasActiveSuppressOrder())
             {
                 complete = true;
                 ClearCommittedRegroupMove();
-                return new AICoreActionEndStruct("regroupSuppressOverride", true);
+                return new AICoreActionEnd("regroupSuppressOverride", true);
             }
 
             if (IsWithdrawReason(currentDecision.Reason) || IsArrivalCoverReason(currentDecision.Reason))
             {
                 if (CombatCommon.TryGetNeedHealDecision() != null)
                 {
-                    return new AICoreActionEndStruct("regroupNeedHeal", true);
+                    return new AICoreActionEnd("regroupNeedHeal", true);
                 }
 
                 if (CombatCommon.TryGetDogFightDecision() != null)
                 {
-                    return new AICoreActionEndStruct("regroupDogFight", true);
+                    return new AICoreActionEnd("regroupDogFight", true);
                 }
 
                 if (HasReachedCurrentTarget())
@@ -276,12 +276,12 @@ namespace pitTeam.BigBrain
 
                     ClearCurrentTarget();
                     ClearCommittedRegroupMove();
-                    return new AICoreActionEndStruct(
+                    return new AICoreActionEnd(
                         arrivalCoverReached ? "regroupArrivalCoverReached" : "regroupReachedWithdrawTarget",
                         true);
                 }
 
-                if (TryGetStalledWithdrawEnd(CombatCommon.GetBossPosition(), out AICoreActionEndStruct stalledWithdrawEnd))
+                if (TryGetStalledWithdrawEnd(CombatCommon.GetBossPosition(), out AICoreActionEnd stalledWithdrawEnd))
                 {
                     bool arrivalCoverStalled = IsArrivalCoverReason(currentDecision.Reason);
                     if (arrivalCoverStalled)
@@ -298,7 +298,7 @@ namespace pitTeam.BigBrain
                     }
 
                     return arrivalCoverStalled
-                        ? new AICoreActionEndStruct("regroupArrivalCoverStalled", true)
+                        ? new AICoreActionEnd("regroupArrivalCoverStalled", true)
                         : stalledWithdrawEnd;
                 }
 
@@ -307,7 +307,7 @@ namespace pitTeam.BigBrain
                     complete = true;
                     ClearCurrentTarget();
                     ClearCommittedRegroupMove();
-                    return new AICoreActionEndStruct("regroupMarksmanSupportOpportunity", true);
+                    return new AICoreActionEnd("regroupMarksmanSupportOpportunity", true);
                 }
 
                 return default;
@@ -317,12 +317,12 @@ namespace pitTeam.BigBrain
             {
                 if (CombatCommon.TryGetNeedHealDecision() != null)
                 {
-                    return new AICoreActionEndStruct("regroupNeedHeal", true);
+                    return new AICoreActionEnd("regroupNeedHeal", true);
                 }
 
                 if (CombatCommon.TryGetDogFightDecision() != null)
                 {
-                    return new AICoreActionEndStruct("regroupDogFight", true);
+                    return new AICoreActionEnd("regroupDogFight", true);
                 }
 
                 if (ShouldReturnMarksmanToSupport(goalEnemy))
@@ -330,7 +330,7 @@ namespace pitTeam.BigBrain
                     complete = true;
                     ClearCurrentTarget();
                     ClearCommittedRegroupMove();
-                    return new AICoreActionEndStruct("regroupMarksmanSupportOpportunity", true);
+                    return new AICoreActionEnd("regroupMarksmanSupportOpportunity", true);
                 }
 
                 return default;
@@ -342,7 +342,7 @@ namespace pitTeam.BigBrain
         private bool TryGetArrivalCoverDecision(
             EnemyInfo goalEnemy,
             Vector3 bossPosition,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             RefreshArrivalCoverScanForBossSector(bossPosition);
@@ -362,7 +362,7 @@ namespace pitTeam.BigBrain
                 }
 
                 BotOwner.GoToSomePointData.SetPoint(currentTarget);
-                decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                     committedRegroupAction,
                     committedRegroupReason);
                 return true;
@@ -401,7 +401,7 @@ namespace pitTeam.BigBrain
             hasBossSectorAnchor = true;
             UpsertDestinationClaim(currentTarget);
             BotOwner.GoToSomePointData.SetPoint(currentTarget);
-            decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+            decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                 BotLogicDecision.attackMoving,
                 RegroupArrivalCoverReason);
             return true;
@@ -431,7 +431,7 @@ namespace pitTeam.BigBrain
 
         private bool TryInterruptArrivedSettleForCombatPressure(
             EnemyInfo goalEnemy,
-            out AICoreActionEndStruct end)
+            out AICoreActionEnd end)
         {
             end = default;
             bool immediateFireOpportunity = goalEnemy.IsVisible && goalEnemy.CanShoot;
@@ -450,7 +450,7 @@ namespace pitTeam.BigBrain
             arrivedSettleUntil = 0f;
             ClearCurrentTarget();
             ClearCommittedRegroupMove();
-            end = new AICoreActionEndStruct(
+            end = new AICoreActionEnd(
                 immediateFireOpportunity
                     ? "regroupArrivedFireOpportunity"
                     : "regroupArrivedPressureInterrupt",
@@ -458,7 +458,7 @@ namespace pitTeam.BigBrain
             return true;
         }
 
-        private AICoreActionResultStruct<BotLogicDecision, GClass26> GetArrivedSettleDecision(string reason = RegroupArrivedReason)
+        private AICoreActionResult<BotLogicDecision, CoreActionResultParams> GetArrivedSettleDecision(string reason = RegroupArrivedReason)
         {
             ClearCurrentTarget();
             ClearCommittedRegroupMove();
@@ -468,13 +468,13 @@ namespace pitTeam.BigBrain
             }
 
             CombatCommon.HoldFor(Mathf.Max(0.1f, arrivedSettleUntil - Time.time));
-            return new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.holdPosition, reason);
+            return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.holdPosition, reason);
         }
 
         private bool TryGetCommittedRegroupMove(
             EnemyInfo goalEnemy,
             Vector3 bossPosition,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             if (committedRegroupAction == default || string.IsNullOrEmpty(committedRegroupReason))
@@ -503,7 +503,7 @@ namespace pitTeam.BigBrain
                 BotOwner.GoToSomePointData.SetPoint(currentTarget);
             }
 
-            decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(committedRegroupAction, committedRegroupReason);
+            decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(committedRegroupAction, committedRegroupReason);
             return true;
         }
 
@@ -540,7 +540,7 @@ namespace pitTeam.BigBrain
             }
         }
 
-        private void CommitRegroupMove(AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        private void CommitRegroupMove(AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             if (!IsRegroupReason(decision.Reason) || decision.Action == BotLogicDecision.holdPosition)
             {
@@ -585,7 +585,7 @@ namespace pitTeam.BigBrain
             nextWithdrawProgressCheckAt = 0f;
         }
 
-        private bool TryGetStalledWithdrawEnd(Vector3 bossPosition, out AICoreActionEndStruct end)
+        private bool TryGetStalledWithdrawEnd(Vector3 bossPosition, out AICoreActionEnd end)
         {
             end = default;
             if (Time.time < nextWithdrawProgressCheckAt)
@@ -624,17 +624,17 @@ namespace pitTeam.BigBrain
             string reason = IsWithinHotRegroupSettleEnvelope(bossPosition)
                 ? "regroupWithdrawStalledNearBoss"
                 : "regroupWithdrawStalledRepath";
-            end = new AICoreActionEndStruct(reason, true);
+            end = new AICoreActionEnd(reason, true);
             return true;
         }
 
         private bool TryGetMedicalInterrupt(
             EnemyInfo goalEnemy,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             // Reuse the shared heal decision tree, but let regroup remain the owning objective.
-            AICoreActionResultStruct<BotLogicDecision, GClass26>? healDecision = CombatCommon.TryGetNeedHealDecision();
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? healDecision = CombatCommon.TryGetNeedHealDecision();
             if (healDecision == null)
             {
                 return false;
@@ -648,7 +648,7 @@ namespace pitTeam.BigBrain
             EnemyInfo goalEnemy,
             Vector3 bossPosition,
             RegroupBossDirection bossDirection,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
 
@@ -662,7 +662,7 @@ namespace pitTeam.BigBrain
                 hasBossSectorAnchor = true;
                 UpsertDestinationClaim(targetPosition);
                 BotOwner.GoToSomePointData.SetPoint(targetPosition);
-                decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                     BotLogicDecision.attackMoving,
                     GetWithdrawReason(bossDirection));
                 return true;
@@ -674,13 +674,13 @@ namespace pitTeam.BigBrain
             hasBossSectorAnchor = true;
             UpsertDestinationClaim(currentTarget);
             BotOwner.GoToSomePointData.SetPoint(currentTarget);
-            decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+            decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                 BotLogicDecision.attackMoving,
                 GetWithdrawReason(bossDirection));
             return true;
         }
 
-        private AICoreActionResultStruct<BotLogicDecision, GClass26> GetRegroupRunDecision(Vector3 bossPosition)
+        private AICoreActionResult<BotLogicDecision, CoreActionResultParams> GetRegroupRunDecision(Vector3 bossPosition)
         {
             // Once contact cools off, regroup becomes a pure "close back to boss" objective.
             // Do not select the destination here. CombatRegroupRunAction owns one cached run
@@ -695,7 +695,7 @@ namespace pitTeam.BigBrain
             ReleaseDestinationClaim();
             currentTarget = Vector3.zero;
             hasTarget = false;
-            return new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.goToPoint, "regroup.run");
+            return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.goToPoint, "regroup.run");
         }
 
         private bool TryAssignRegroupCover(EnemyInfo goalEnemy, Vector3 bossPosition, RegroupBossDirection bossDirection, out Vector3 targetPosition)
@@ -1017,10 +1017,10 @@ namespace pitTeam.BigBrain
             // Clear only the point still matching this objective's local target. If a successor
             // has already installed another destination, leave that newer owner untouched.
             pointData.Point = Vector3.zero;
-            pointData.PointhRefreshed = false;
-            pointData.DistToPoint = 0f;
-            pointData.LastPosibleRecalc = 0f;
-            pointData.LastRecalc = Vector3.zero;
+            pointData._pointhRefreshed = false;
+            pointData._distToPoint = 0f;
+            pointData._lastPosibleRecalc = 0f;
+            pointData._lastRecalc = Vector3.zero;
         }
 
         private Vector3 GetFallbackBossDestination(Vector3 bossPosition)

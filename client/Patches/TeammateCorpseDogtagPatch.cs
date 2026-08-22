@@ -42,7 +42,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(TraderControllerClass), nameof(TraderControllerClass.CanMoveDogtag));
+            return AccessTools.Method(typeof(EFT.InventoryLogic.ItemController), nameof(EFT.InventoryLogic.ItemController.CanMoveDogtag));
         }
 
         [PatchPrefix]
@@ -63,20 +63,20 @@ namespace pitTeam.Patches
         protected override MethodBase GetTargetMethod()
         {
             return AccessTools.Method(
-                typeof(InteractionsHandlerClass),
-                nameof(InteractionsHandlerClass.Remove),
-                new[] { typeof(Item), typeof(TraderControllerClass), typeof(bool) });
+                typeof(EFT.InventoryLogic.ItemManipulator),
+                nameof(EFT.InventoryLogic.ItemManipulator.Remove),
+                new[] { typeof(Item), typeof(EFT.InventoryLogic.ItemController), typeof(bool) });
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(Item item, bool simulate, ref GStruct154<GClass3410> __result)
+        private static bool PatchPrefix(Item item, bool simulate, ref Diz.LanguageExtensions.OperationResult<EFT.InventoryLogic.RemoveResult> __result)
         {
             if (!simulate || !TeammateCorpseDogtagGuard.IsTeammateCorpseDogtag(item))
             {
                 return true;
             }
 
-            __result = new InteractionsHandlerClass.GClass1606(item);
+            __result = new EFT.InventoryLogic.ItemManipulator.ItemManuallyLockedError(item);
             return false;
         }
     }

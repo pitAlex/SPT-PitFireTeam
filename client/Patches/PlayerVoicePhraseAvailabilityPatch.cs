@@ -19,7 +19,7 @@ namespace pitTeam.Patches
         private static readonly Dictionary<EPhraseTrigger, TagBank> PlaceholderBanks = new Dictionary<EPhraseTrigger, TagBank>();
         private static readonly HashSet<string> LoggedVoicePatches = new HashSet<string>();
 
-        public static void EnsureCommandPhrases(PhraseSpeakerClass speaker, EPlayerSide side, string playerVoice)
+        public static void EnsureCommandPhrases(EFT.BaseSpeaker speaker, EPlayerSide side, string playerVoice)
         {
             if (speaker == null || !speaker.OnDemandOnly)
             {
@@ -85,13 +85,13 @@ namespace pitTeam.Patches
         protected override MethodBase GetTargetMethod()
         {
             return AccessTools.Method(
-                typeof(PhraseSpeakerClass),
-                nameof(PhraseSpeakerClass.Init),
+                typeof(EFT.BaseSpeaker),
+                nameof(EFT.BaseSpeaker.Init),
                 new[] { typeof(EPlayerSide), typeof(int), typeof(string), typeof(bool) });
         }
 
         [PatchPostfix]
-        private static void PatchPostfix(PhraseSpeakerClass __instance, EPlayerSide side, string playerVoice)
+        private static void PatchPostfix(EFT.BaseSpeaker __instance, EPlayerSide side, string playerVoice)
         {
             PlayerVoicePhraseAvailability.EnsureCommandPhrases(__instance, side, playerVoice);
         }
@@ -102,13 +102,13 @@ namespace pitTeam.Patches
         protected override MethodBase GetTargetMethod()
         {
             return AccessTools.Method(
-                typeof(PhraseSpeakerClass),
-                nameof(PhraseSpeakerClass.ReplaceVoice),
+                typeof(EFT.BaseSpeaker),
+                nameof(EFT.BaseSpeaker.ReplaceVoice),
                 new[] { typeof(EPlayerSide), typeof(string) });
         }
 
         [PatchPostfix]
-        private static void PatchPostfix(PhraseSpeakerClass __instance, EPlayerSide side, string playerVoice)
+        private static void PatchPostfix(EFT.BaseSpeaker __instance, EPlayerSide side, string playerVoice)
         {
             PlayerVoicePhraseAvailability.EnsureCommandPhrases(__instance, side, playerVoice);
         }

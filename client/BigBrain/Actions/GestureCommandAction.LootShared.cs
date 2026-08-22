@@ -183,9 +183,9 @@ namespace pitTeam.BigBrain.Actions
                 searchController.SetItemAsKnown(item, false);
             }
 
-            if (item is SearchableItemItemClass searchable)
+            if (item is EFT.InventoryLogic.SearchableItem searchable)
             {
-                searchController.SetItemAsSearched<SearchableItemItemClass>(searchable);
+                searchController.SetItemAsSearched<EFT.InventoryLogic.SearchableItem>(searchable);
             }
 
             if (item is not CompoundItem)
@@ -206,12 +206,12 @@ namespace pitTeam.BigBrain.Actions
                 return 100;
             }
 
-            if (item is ArmorItemClass || item is VestItemClass)
+            if (item is EFT.InventoryLogic.Armor || item is EFT.InventoryLogic.Vest)
             {
                 return 90;
             }
 
-            if (item is HeadwearItemClass || item is HeadphonesItemClass || item is FaceCoverItemClass || item is VisorsItemClass)
+            if (item is EFT.InventoryLogic.Headwear || item is EFT.InventoryLogic.Headphones || item is EFT.InventoryLogic.FaceCover || item is EFT.InventoryLogic.Visors)
             {
                 return 80;
             }
@@ -227,7 +227,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             if (item.IsSpecialSlotOnly ||
-                item is ArmBandItemClass ||
+                item is EFT.InventoryLogic.ArmBand ||
                 item.GetItemComponent<KnifeComponent>() != null)
             {
                 return false;
@@ -278,7 +278,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (slot.ParentItem?.Owner is GClass3384 equipmentOwner)
+            if (slot.ParentItem?.Owner is EFT.InventoryLogic.PersonItemController equipmentOwner)
             {
                 return component.Template.Side.CheckSide(equipmentOwner.Side);
             }
@@ -290,7 +290,7 @@ namespace pitTeam.BigBrain.Actions
         {
             try
             {
-                XYCellSizeStruct size = item.CalculateCellSize();
+                IntVec2 size = item.CalculateCellSize();
                 return Mathf.Max(1, size.X) * Mathf.Max(1, size.Y);
             }
             catch
@@ -307,7 +307,7 @@ namespace pitTeam.BigBrain.Actions
             try
             {
                 if (inventory is not Player.PlayerInventoryController playerInventory ||
-                    playerInventory.Player_0 == null)
+                    playerInventory.Player == null)
                 {
                     Modules.Logger.LogInfo(
                         $"[LootCommand][TransactionRecovery] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
@@ -315,7 +315,7 @@ namespace pitTeam.BigBrain.Actions
                     return false;
                 }
 
-                playerInventory.Player_0.FastForwardCurrentOperations();
+                playerInventory.Player.FastForwardCurrentOperations();
                 Modules.Logger.LogInfo(
                     $"[LootCommand][TransactionRecovery] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
                     $"context={context} result=fastForwarded source={move?.SourceName ?? "unknown"} " +

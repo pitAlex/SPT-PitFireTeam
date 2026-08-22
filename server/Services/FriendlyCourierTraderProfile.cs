@@ -110,7 +110,12 @@ internal static class FriendlyCourierTraderProfile
                 LoyalLevelItems = [],
             },
             Dialogue = [],
-            QuestAssort = [],
+            QuestAssort = new Dictionary<string, Dictionary<MongoId, MongoId>>
+            {
+                ["started"] = [],
+                ["success"] = [],
+                ["fail"] = [],
+            },
             Suits = [],
             Services = [],
         };

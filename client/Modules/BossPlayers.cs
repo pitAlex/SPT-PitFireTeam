@@ -538,7 +538,7 @@ namespace pitTeam.Modules
 
                 float movementWeight = GetFollowerMovementWeightKg(player);
                 float overweight = CalculatePlayerStyleSkillOverweight(player);
-                if (overweight <= 0f || !Singleton<BackendConfigSettingsClass>.Instantiated)
+                if (overweight <= 0f || !Singleton<EFT.GlobalConfiguration>.Instantiated)
                 {
                     Modules.Logger.LogInfo(
                         $"[Progress] Follower movement skill for '{player.Profile?.Nickname ?? bot.ProfileId}': " +
@@ -547,7 +547,7 @@ namespace pitTeam.Modules
                 }
 
                 result.SuppressEnduranceProgress = true;
-                BackendConfigSettingsClass.GlobalSkillsSettings settings = Singleton<BackendConfigSettingsClass>.Instance.SkillsSettings;
+                EFT.GlobalConfiguration.GlobalSkillsSettings settings = Singleton<EFT.GlobalConfiguration>.Instance.SkillsSettings;
                 float runDistance = GetPedometerDistance(player, EPlayerState.Run);
                 float sprintDistance = GetPedometerDistance(player, EPlayerState.Sprint);
                 float movementGain = runDistance * UnityEngine.Mathf.Lerp(settings.Strength.MovementActionMin, settings.Strength.MovementActionMax, overweight);
@@ -575,17 +575,17 @@ namespace pitTeam.Modules
 
         private static float CalculatePlayerStyleSkillOverweight(Player player)
         {
-            if (player == null || !Singleton<BackendConfigSettingsClass>.Instantiated)
+            if (player == null || !Singleton<EFT.GlobalConfiguration>.Instantiated)
             {
                 Modules.Logger.LogInfo(
-                    $"[ProgressDebug] Overweight unavailable: playerNull={player == null} backendConfigInstantiated={Singleton<BackendConfigSettingsClass>.Instantiated}.");
+                    $"[ProgressDebug] Overweight unavailable: playerNull={player == null} backendConfigInstantiated={Singleton<EFT.GlobalConfiguration>.Instantiated}.");
                 return 0f;
             }
 
             float totalWeight = GetFollowerMovementWeightKg(player);
             float inventoryWeight = GetInventoryWeightKg(player);
             float equipmentTreeWeight = GetItemTotalWeight(player.InventoryController?.Inventory?.Equipment);
-            BackendConfigSettingsClass.GClass1736 stamina = Singleton<BackendConfigSettingsClass>.Instance.Stamina;
+            EFT.GlobalConfiguration.StaminaParameters stamina = Singleton<EFT.GlobalConfiguration>.Instance.Stamina;
             float skillRelative = player.Skills?.CarryingWeightRelativeModifier ?? 1f;
             float healthRelative = player.HealthController?.CarryingWeightRelativeModifier ?? 1f;
             float healthAbsolute = player.HealthController?.CarryingWeightAbsoluteModifier ?? 0f;
@@ -824,7 +824,7 @@ namespace pitTeam.Modules
 
         private static float GetPedometerDistance(Player player, EPlayerState state)
         {
-            float[] distances = player?.Pedometer?.Float_1;
+            float[] distances = player?.Pedometer?._distances;
             int index = (int)state;
             if (distances == null || index < 0 || index >= distances.Length)
             {
@@ -843,7 +843,7 @@ namespace pitTeam.Modules
 
             try
             {
-                CompleteProfileDescriptorClass descriptor = new CompleteProfileDescriptorClass(profile, GClass2240.Instance);
+                EFT.ProfileDescriptor descriptor = new EFT.ProfileDescriptor(profile, EFT.FullySearchedSearchController.Instance);
                 return descriptor.ToJson(converters);
             }
             catch (Exception ex)

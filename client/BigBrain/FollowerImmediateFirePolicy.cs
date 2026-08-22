@@ -57,9 +57,9 @@ namespace pitTeam.BigBrain
             // turning into an exposed standing-fire decision.
             if (distance <= 12f)
             {
-                ShootPointClass? shootPoint = botOwner.CurrentEnemyTargetPosition(true);
+                ShootToPoint? shootPoint = botOwner.CurrentEnemyTargetPosition(true);
                 return shootPoint != null &&
-                       Utils.Utils.CanShootToTarget(shootPoint, fireOrigin, LayerMaskClass.HighPolyWithTerrainMask, false);
+                       Utils.Utils.CanShootToTarget(shootPoint, fireOrigin, LayersMaskController.HighPolyWithTerrainMask, false);
             }
 
             return false;
@@ -82,9 +82,9 @@ namespace pitTeam.BigBrain
             }
 
             return Utils.Utils.CanShootToTarget(
-                new ShootPointClass(target, 1f),
+                new ShootToPoint(target, 1f),
                 GetFireOrigin(botOwner),
-                LayerMaskClass.HighPolyWithTerrainMask,
+                LayersMaskController.HighPolyWithTerrainMask,
                 false);
         }
 
@@ -110,9 +110,9 @@ namespace pitTeam.BigBrain
             return enemy.MainParts.TryGetValue(partType, out EnemyPart part) &&
                    part != null &&
                    Utils.Utils.CanShootToTarget(
-                       new ShootPointClass(part.Position, 1f),
+                       new ShootToPoint(part.Position, 1f),
                        fireOrigin,
-                       LayerMaskClass.HighPolyWithTerrainMask,
+                       LayersMaskController.HighPolyWithTerrainMask,
                        false);
         }
 

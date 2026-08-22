@@ -3,6 +3,7 @@ using EFT;
 using pitTeam.Components;
 using pitTeam.Modules;
 using SAIN.Layers;
+using SAIN.Models.Enums;
 using SAIN.SAINComponent.Classes.EnemyClasses;
 using UnityEngine;
 using UnityEngine.AI;
@@ -101,7 +102,7 @@ namespace pitTeam.SAINAddon
             }
 
             if (moveDistance > 20f * 20f &&
-                Bot.Mover.RunToPoint(movePosition.Value, false, -1, SAIN.SAINComponent.Classes.Mover.ESprintUrgency.Middle, true))
+                Bot.Mover.RunToPoint(movePosition.Value, false, -1, ESprintUrgency.Middle, true))
             {
                 nextUpdateTime = 2f;
                 return;

@@ -27,11 +27,11 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(GClass2234), nameof(GClass2234.TryFindChangedContainer));
+            return AccessTools.Method(typeof(EFT.SearchController), nameof(EFT.SearchController.TryFindChangedContainer));
         }
 
         [PatchPostfix]
-        private static void PatchPostfix(ItemAddress address, ref GClass1802 changedContainer, ref bool __result)
+        private static void PatchPostfix(ItemAddress address, ref EFT.ItemInfo changedContainer, ref bool __result)
         {
             // Stock transfer validation rejects moves into or out of a parent searchable container that is not
             // searched. Teammate backpacks and fallen teammate corpse equipment are presented as already-searched.
@@ -51,7 +51,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(GClass2234), nameof(GClass2234.GetObserverItemState));
+            return AccessTools.Method(typeof(EFT.SearchController), nameof(EFT.SearchController.GetObserverItemState));
         }
 
         [PatchPostfix]
@@ -97,11 +97,11 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(PlayerSearchControllerClass), nameof(PlayerSearchControllerClass.IsItemKnown));
+            return AccessTools.Method(typeof(EFT.ActiveSearchController), nameof(EFT.ActiveSearchController.IsItemKnown));
         }
 
         [PatchPostfix]
-        private static void PatchPostfix(PlayerSearchControllerClass __instance, Item item, ItemAddress itemAddress, ref bool __result)
+        private static void PatchPostfix(EFT.ActiveSearchController __instance, Item item, ItemAddress itemAddress, ref bool __result)
         {
             if (__result ||
                 (!TeammateBackpackInspection.ShouldTreatObservedItemKnown(item, itemAddress) &&
@@ -118,11 +118,11 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(GClass2235), nameof(GClass2235.IsSearched));
+            return AccessTools.Method(typeof(EFT.PlayerSearchController), nameof(EFT.PlayerSearchController.IsSearched));
         }
 
         [PatchPostfix]
-        private static void PatchPostfix(GClass2235 __instance, SearchableItemItemClass item, ref bool __result)
+        private static void PatchPostfix(EFT.PlayerSearchController __instance, EFT.InventoryLogic.SearchableItem item, ref bool __result)
         {
             if (__result ||
                 (!TeammateBackpackInspection.IsActiveBackpack(item) &&
@@ -139,11 +139,11 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(GClass2235), nameof(GClass2235.ContainsUnknownItems));
+            return AccessTools.Method(typeof(EFT.PlayerSearchController), nameof(EFT.PlayerSearchController.ContainsUnknownItems));
         }
 
         [PatchPostfix]
-        private static void PatchPostfix(GClass2235 __instance, SearchableItemItemClass item, ref bool __result)
+        private static void PatchPostfix(EFT.PlayerSearchController __instance, EFT.InventoryLogic.SearchableItem item, ref bool __result)
         {
             if (!__result ||
                 (!TeammateBackpackInspection.IsActiveBackpack(item) &&

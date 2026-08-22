@@ -18,9 +18,9 @@ namespace pitTeam.BigBrain.Actions
             out BodyGearMove? move)
         {
             move = null;
-            List<MagazineItemClass> donors = refillPlan?.CompatibleLoadedCandidates
+            List<EFT.InventoryLogic.Magazine> donors = refillPlan?.CompatibleLoadedCandidates
                 .Select(candidate => candidate.Item)
-                .OfType<MagazineItemClass>()
+                .OfType<EFT.InventoryLogic.Magazine>()
                 .Where(magazine =>
                     magazine.Count > 0 &&
                     !IsMagazineInstalledInWeapon(magazine) &&
@@ -30,7 +30,7 @@ namespace pitTeam.BigBrain.Actions
                 // full magazines and leaves as few partials as possible.
                 .OrderBy(magazine => magazine.Count)
                 .ThenBy(magazine => magazine.Id, StringComparer.Ordinal)
-                .ToList() ?? new List<MagazineItemClass>();
+                .ToList() ?? new List<EFT.InventoryLogic.Magazine>();
             if (donors.Count == 0)
             {
                 return false;
@@ -57,13 +57,13 @@ namespace pitTeam.BigBrain.Actions
                     continue;
                 }
 
-                foreach (MagazineItemClass donor in donors)
+                foreach (EFT.InventoryLogic.Magazine donor in donors)
                 {
                     if (IsSameLootItem(target.Magazine, donor) ||
                         (!target.IsInsertedMagazine &&
                          acceptedFastAccessIds.Contains(donor.Id) &&
                          donor.Count > target.Magazine.Count) ||
-                        donor.Cartridges.Last is not AmmoItemClass donorAmmo ||
+                        donor.Cartridges.Last is not EFT.InventoryLogic.Ammo donorAmmo ||
                         donorAmmo.StackObjectsCount <= 0 ||
                         !CanTopOffMagazineWithAmmo(weapon, target.Magazine, donorAmmo))
                     {

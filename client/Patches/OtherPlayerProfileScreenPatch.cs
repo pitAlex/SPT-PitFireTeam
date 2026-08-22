@@ -27,9 +27,9 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using UnityEngine.Events;
-using dropDownItem = GClass3682;
-using OtherProfileResult = GClass2213;
-using ResultProfile = GClass1416;
+using dropDownItem = EFT.Customization.CustomizationSuite;
+using OtherProfileResult = EFT.OtherPlayerProfileDescriptor;
+using ResultProfile = EFT.OtherPlayerProfile;
 
 namespace pitTeam.Patches
 {
@@ -171,11 +171,11 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.PropertyGetter(typeof(GClass3672), "NameLocalizationKey");
+            return AccessTools.PropertyGetter(typeof(EFT.Customization.BaseCustomizationItem), "NameLocalizationKey");
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(GClass3672 __instance, ref string __result)
+        private static bool PatchPrefix(EFT.Customization.BaseCustomizationItem __instance, ref string __result)
         {
             if (OtherPlayerProfileScreenPatch.CustomDropdownIds.Contains(__instance.Id))
             {
@@ -191,33 +191,33 @@ namespace pitTeam.Patches
     {
         private sealed class ProfileSkillsHealthController : IHealthController
         {
-            private readonly Profile.ProfileHealthClass _health;
-            private readonly GClass2182 _snapshot;
+            private readonly Profile.HealthInfo _health;
+            private readonly EFT.HealthInfoAdapter _snapshot;
 
-            public ProfileSkillsHealthController(Profile.ProfileHealthClass health)
+            public ProfileSkillsHealthController(Profile.HealthInfo health)
             {
                 _health = health ?? throw new ArgumentNullException(nameof(health));
-                _snapshot = new GClass2182(health);
+                _snapshot = new EFT.HealthInfoAdapter(health);
             }
 
-            public event Action<IEffect> EffectAddedEvent { add { } remove { } }
-            public event Action<IEffect> EffectStartedEvent { add { } remove { } }
-            public event Action<IEffect> EffectUpdatedEvent { add { } remove { } }
-            public event Action<IEffect> EffectResidualEvent { add { } remove { } }
-            public event Action<IEffect> EffectRemovedEvent { add { } remove { } }
-            public event Action<IEffect> EffectStatusUpdateEvent { add { } remove { } }
-            public event Action<EBodyPart, float, DamageInfoStruct> ApplyDamageEvent { add { } remove { } }
-            public event Action<EBodyPart, float, DamageInfoStruct> HealthChangedEvent { add { } remove { } }
+            public event Action<EFT.HealthSystem.IHealthEffect> EffectAddedEvent { add { } remove { } }
+            public event Action<EFT.HealthSystem.IHealthEffect> EffectStartedEvent { add { } remove { } }
+            public event Action<EFT.HealthSystem.IHealthEffect> EffectUpdatedEvent { add { } remove { } }
+            public event Action<EFT.HealthSystem.IHealthEffect> EffectResidualEvent { add { } remove { } }
+            public event Action<EFT.HealthSystem.IHealthEffect> EffectRemovedEvent { add { } remove { } }
+            public event Action<EFT.HealthSystem.IHealthEffect> EffectStatusUpdateEvent { add { } remove { } }
+            public event Action<EBodyPart, float, EFT.Ballistics.DamageInfo> ApplyDamageEvent { add { } remove { } }
+            public event Action<EBodyPart, float, EFT.Ballistics.DamageInfo> HealthChangedEvent { add { } remove { } }
             public event Action<float> EnergyChangedEvent { add { } remove { } }
             public event Action<float> HydrationChangedEvent { add { } remove { } }
             public event Action<float> TemperatureChangedEvent { add { } remove { } }
             public event Action<EBodyPart, EDamageType> BodyPartDestroyedEvent { add { } remove { } }
             public event Action<EBodyPart, ValueStruct> BodyPartRestoredEvent { add { } remove { } }
             public event Action<EDamageType> DiedEvent { add { } remove { } }
-            public event Action<IEffect> HealerDoneEvent { add { } remove { } }
+            public event Action<EFT.HealthSystem.IHealthEffect> HealerDoneEvent { add { } remove { } }
             public event Action<Vector3, float, float> BurnEyesEvent { add { } remove { } }
-            public event Action<IPlayerBuff> StimulatorBuffEvent { add { } remove { } }
-            public event Action<IPlayerBuff> StimulatorBuffActivationEvent { add { } remove { } }
+            public event Action<EFT.HealthSystem.IStimulatorBuff> StimulatorBuffEvent { add { } remove { } }
+            public event Action<EFT.HealthSystem.IStimulatorBuff> StimulatorBuffActivationEvent { add { } remove { } }
 
             public float FallSafeHeight { set { } }
             public bool IsAlive => GetBodyPartHealth(EBodyPart.Common).Current > 0f;
@@ -248,17 +248,17 @@ namespace pitTeam.Patches
             public void SetOverEncumbered(bool encumbered) { }
             public void AddFatigue() { }
             public void AddImmunityNotificationEffect() { }
-            public TEffect FindExistingEffect<TEffect>(EBodyPart bodyPart = EBodyPart.Common) where TEffect : IEffect => default;
-            public TEffect FindActiveEffect<TEffect>(EBodyPart bodyPart = EBodyPart.Common) where TEffect : IEffect => default;
-            public IEnumerable<TEffect> FindActiveEffects<TEffect>(EBodyPart bodyPart = EBodyPart.Common) where TEffect : IEffect => Enumerable.Empty<TEffect>();
-            public IEnumerable<IEffect> GetAllActiveEffects(EBodyPart bodyPart = EBodyPart.Common) => Enumerable.Empty<IEffect>();
-            public IEnumerable<IEffect> GetAllEffects(EBodyPart bodyPart = EBodyPart.Common) => Enumerable.Empty<IEffect>();
-            public IEnumerable<IEffect> GetAllResidualEffects(EBodyPart bodyPart = EBodyPart.Common) => Enumerable.Empty<IEffect>();
-            public GStruct382<EBodyPart> BodyPartsPriority(Item item, bool continuousHealEnabled) => default;
+            public TEffect FindExistingEffect<TEffect>(EBodyPart bodyPart = EBodyPart.Common) where TEffect : EFT.HealthSystem.IHealthEffect => default;
+            public TEffect FindActiveEffect<TEffect>(EBodyPart bodyPart = EBodyPart.Common) where TEffect : EFT.HealthSystem.IHealthEffect => default;
+            public IEnumerable<TEffect> FindActiveEffects<TEffect>(EBodyPart bodyPart = EBodyPart.Common) where TEffect : EFT.HealthSystem.IHealthEffect => Enumerable.Empty<TEffect>();
+            public IEnumerable<EFT.HealthSystem.IHealthEffect> GetAllActiveEffects(EBodyPart bodyPart = EBodyPart.Common) => Enumerable.Empty<EFT.HealthSystem.IHealthEffect>();
+            public IEnumerable<EFT.HealthSystem.IHealthEffect> GetAllEffects(EBodyPart bodyPart = EBodyPart.Common) => Enumerable.Empty<EFT.HealthSystem.IHealthEffect>();
+            public IEnumerable<EFT.HealthSystem.IHealthEffect> GetAllResidualEffects(EBodyPart bodyPart = EBodyPart.Common) => Enumerable.Empty<EFT.HealthSystem.IHealthEffect>();
+            public EFT.NetworkPackets.OneAndList<EBodyPart> BodyPartsPriority(Item item, bool continuousHealEnabled) => default;
             public bool IsItemForHealing(Item item) => false;
             public IResult HasPartsToApply(Item item) => null;
             public bool CanApplyItem(Item item, EBodyPart bodyPart) => false;
-            public bool ApplyItem(Item item, GStruct382<EBodyPart> bodyPart, float? amount = null) => false;
+            public bool ApplyItem(Item item, EFT.NetworkPackets.OneAndList<EBodyPart> bodyPart, float? amount = null) => false;
             public bool ApplyItem(Item item, EBodyPart bodyPart, float? amount = null) => false;
             public void CancelApplyingItem() { }
             public void ManualUpdate(float deltaTime) { }
@@ -273,7 +273,7 @@ namespace pitTeam.Patches
                     return _snapshot.GetBodyPartHealth(bodyPart, rounded);
                 }
 
-                if (_health.BodyParts != null && _health.BodyParts.TryGetValue(bodyPart, out Profile.ProfileHealthClass.ProfileBodyPartHealthClass part) && part?.Health != null)
+                if (_health.BodyParts != null && _health.BodyParts.TryGetValue(bodyPart, out Profile.HealthInfo.BodyPartInfo part) && part?.Health != null)
                 {
                     return new ValueStruct
                     {
@@ -305,7 +305,7 @@ namespace pitTeam.Patches
         private static readonly FieldInfo NicknameFieldUsedSymbolsField = AccessTools.Field(typeof(NicknameField), "_usedSymbolsCount");
         private static readonly FieldInfo BackButtonField = AccessTools.Field(typeof(OtherPlayerProfileScreen), "_backButton");
         private static readonly FieldInfo HideoutButtonField = AccessTools.Field(typeof(OtherPlayerProfileScreen), "_hideoutButton");
-        private static readonly MethodInfo HideoutButtonHandlerMethod = AccessTools.Method(typeof(OtherPlayerProfileScreen), "method_11");
+        private static readonly MethodInfo HideoutButtonHandlerMethod = AccessTools.Method(typeof(OtherPlayerProfileScreen), nameof(OtherPlayerProfileScreen.LoadHideout));
         private static readonly FieldInfo SettingsScreenGameTabField = AccessTools.Field(typeof(SettingsScreen), "_gameSettingsScreen");
         private static readonly FieldInfo GameSettingsSliderTemplateField = AccessTools.Field(typeof(GameSettingsTab), "_fov");
         private static readonly FieldInfo NumberSliderValueInputField = AccessTools.Field(typeof(NumberSlider), "_valueInput");
@@ -319,7 +319,7 @@ namespace pitTeam.Patches
         private static readonly FieldInfo NonWeaponItemsGridLayoutGroupField = AccessTools.Field(typeof(OtherPlayerProfileScreen), "_nonWeaponItemsGridLayoutGroup");
         private static readonly FieldInfo SkillsScreenListTabField = AccessTools.Field(typeof(SkillsScreen), "_listTab");
         private static readonly FieldInfo SkillsScreenThumbsTabField = AccessTools.Field(typeof(SkillsScreen), "_thumbsTab");
-        private static readonly FieldInfo SkillsScreenTabsControllerField = AccessTools.Field(typeof(SkillsScreen), "gclass3808_0");
+        private static readonly FieldInfo SkillsScreenTabsControllerField = AccessTools.Field(typeof(SkillsScreen), "_skillViewTabGroup");
         private static readonly MethodInfo SkillsScreenShowMethod = AccessTools.Method(typeof(SkillsScreen), "Show");
         private static readonly FieldInfo SkillsAndMasteringSkillsScreenField = AccessTools.Field(typeof(SkillsAndMasteringScreen), "_skillsScreen");
         private static readonly FieldInfo InventorySkillsAndMasteringScreenField = AccessTools.Field(typeof(InventoryScreen), "_skillsAndMasteringScreen");
@@ -337,8 +337,8 @@ namespace pitTeam.Patches
         private static readonly FieldInfo ComplexStashPanelComplexPanelField = AccessTools.Field(typeof(ComplexStashPanel), "_complexPanel");
         private static readonly FieldInfo ComplexStashPanelContainerNamePanelField = AccessTools.Field(typeof(ComplexStashPanel), "_containerNamePanel");
         private static readonly FieldInfo ContainersPanelSlotViewsContainerField = AccessTools.Field(typeof(ContainersPanel), "_slotViewsContainer");
-        private static readonly FieldInfo ContainersPanelDictionaryField = AccessTools.Field(typeof(ContainersPanel), "dictionary_0");
-        private static readonly FieldInfo ContainersPanelDogtagSlotViewField = AccessTools.Field(typeof(ContainersPanel), "slotView_0");
+        private static readonly FieldInfo ContainersPanelDictionaryField = AccessTools.Field(typeof(ContainersPanel), "_slotViews");
+        private static readonly FieldInfo ContainersPanelDogtagSlotViewField = AccessTools.Field(typeof(ContainersPanel), "_dogtagSlotView");
         private static readonly string PluginDirectory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? string.Empty;
         private static readonly string GearIconPath = Path.Combine(PluginDirectory, "gear.png");
         private static readonly string BrainIconPath = Path.Combine(PluginDirectory, "brain.png");
@@ -378,8 +378,8 @@ namespace pitTeam.Patches
         public static ResultProfile ViewedProfile { get; set; }
         public static OtherPlayerProfileScreen ActiveProfileScreen { get; set; }
         public static InventoryController ActiveProfileInventoryController { get; set; }
-        public static GClass3388 ActiveProfileBackendInventoryController { get; set; }
-        public static ISession ActiveProfileSession { get; set; }
+        public static EFT.InventoryLogic.OfflineInventoryController ActiveProfileBackendInventoryController { get; set; }
+        public static EFT.IEftSession ActiveProfileSession { get; set; }
         public static InventoryPlayerModelWithStatsWindow ActiveProfilePlayerModelWindow { get; set; }
         public static Transform LoadoutSelector { get; set; }
         public static Transform AggressionSelector { get; set; }
@@ -391,9 +391,9 @@ namespace pitTeam.Patches
         public static ComplexStashPanel LoadoutEditorEquipmentPanel { get; set; }
         public static Profile LoadoutEditorProfile { get; set; }
         public static InventoryController LoadoutEditorInventoryController { get; set; }
-        public static ItemContextAbstractClass LoadoutEditorEquipmentContext { get; set; }
-        public static FlatItemsDataClass[] LoadoutEditorInitialEquipmentItems { get; set; }
-        public static FlatItemsDataClass[] LoadoutEditorInitialStashItems { get; set; }
+        public static EFT.InventoryLogic.ItemContext LoadoutEditorEquipmentContext { get; set; }
+        public static JsonType.FlatItem[] LoadoutEditorInitialEquipmentItems { get; set; }
+        public static JsonType.FlatItem[] LoadoutEditorInitialStashItems { get; set; }
         private static Dictionary<string, EItemPinLockState> LoadoutEditorOriginalPinLockStates { get; } =
             new Dictionary<string, EItemPinLockState>(StringComparer.OrdinalIgnoreCase);
         private static Dictionary<string, Item> LoadoutEditorEquipmentItemsById { get; } =
@@ -428,14 +428,14 @@ namespace pitTeam.Patches
         internal static Action ActiveBackOverrideAction { get; set; }
         private static bool TaskBarDisabledForReturnOverride { get; set; }
 
-        internal static bool IsLoadoutEditorEquipmentContext(ItemContextAbstractClass context)
+        internal static bool IsLoadoutEditorEquipmentContext(EFT.InventoryLogic.ItemContext context)
         {
             if (context == null || LoadoutEditorEquipmentContext == null)
             {
                 return false;
             }
 
-            ItemContextAbstractClass current = context;
+            EFT.InventoryLogic.ItemContext current = context;
             while (current != null)
             {
                 if (ReferenceEquals(current, LoadoutEditorEquipmentContext))
@@ -443,7 +443,7 @@ namespace pitTeam.Patches
                     return true;
                 }
 
-                current = current.ItemContextAbstractClass;
+                current = current.Source;
             }
 
             return false;
@@ -789,7 +789,7 @@ namespace pitTeam.Patches
 
                 yield return current;
 
-                if (current is GClass3248 collection)
+                if (current is EFT.InventoryLogic.ContainerCollection collection)
                 {
                     foreach (Item item in collection.GetAllItemsFromCollection())
                     {
@@ -814,7 +814,7 @@ namespace pitTeam.Patches
                     continue;
                 }
 
-                foreach (GClass3125 armorSlot in armorHolder.ArmorSlots)
+                foreach (ArmorSlot armorSlot in armorHolder.ArmorSlots)
                 {
                     if (armorSlot?.ContainedItem != null)
                     {
@@ -892,11 +892,11 @@ namespace pitTeam.Patches
             return AccessTools.Method(
                 typeof(OtherPlayerProfileScreen),
                 "Show",
-                new Type[] { typeof(ResultProfile), typeof(InventoryController), typeof(EItemViewType), typeof(ISession) });
+                new Type[] { typeof(ResultProfile), typeof(InventoryController), typeof(EItemViewType), typeof(EFT.IEftSession) });
         }
 
         [PatchPostfix]
-        private static void PatchPostfix(OtherPlayerProfileScreen __instance, ResultProfile profile, InventoryController inventoryController, EItemViewType viewType, ISession session)
+        private static void PatchPostfix(OtherPlayerProfileScreen __instance, ResultProfile profile, InventoryController inventoryController, EItemViewType viewType, EFT.IEftSession session)
         {
             ConfigureBackOverride(__instance);
             ApplyProfileScaleCompensation(__instance);
@@ -957,7 +957,7 @@ namespace pitTeam.Patches
             clothingPanel.gameObject.SetActive(true);
             DisplayClothingOptions(profile.PlayerVisualRepresentation, playerModelWindow, inventoryController, clothingSelectionPanel);
 
-            AddViewListClass ui = UiField?.GetValue(__instance) as AddViewListClass;
+            EFT.UI.UIParent ui = UiField?.GetValue(__instance) as EFT.UI.UIParent;
             if (ui == null)
             {
                 return;
@@ -1555,9 +1555,9 @@ namespace pitTeam.Patches
             EditLoadoutButton = button;
         }
 
-        internal static IHealthController CreateProfileHealthController(Profile.ProfileHealthClass health)
+        internal static IHealthController CreateProfileHealthController(Profile.HealthInfo health)
         {
-            return new ProfileSkillsHealthController(health ?? new Profile.ProfileHealthClass());
+            return new ProfileSkillsHealthController(health ?? new Profile.HealthInfo());
         }
 
         private static Vector2 GetProfileControlRowOffset(RectTransform reference, int rowOffset)
@@ -1598,12 +1598,12 @@ namespace pitTeam.Patches
         {
             Canvas canvas = reference != null ? reference.GetComponentInParent<Canvas>() : null;
             CanvasScaler scaler = canvas != null ? canvas.GetComponent<CanvasScaler>() : null;
-            if (scaler == null || scaler.scaleFactor <= 0.001f || GClass3825.Float_0 <= 0.001f)
+            if (scaler == null || scaler.scaleFactor <= 0.001f || EFT.UI.UICanvasScalerController._scaleFactor <= 0.001f)
             {
                 return 1f;
             }
 
-            return Mathf.Clamp(GClass3825.Float_0 / scaler.scaleFactor, 0.5f, 2f);
+            return Mathf.Clamp(EFT.UI.UICanvasScalerController._scaleFactor / scaler.scaleFactor, 0.5f, 2f);
         }
 
         private static void ConfigureBackOverride(OtherPlayerProfileScreen screen)

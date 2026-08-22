@@ -413,8 +413,8 @@ namespace pitTeam.Modules
         [System.Diagnostics.Conditional("DEBUG")]
         public static void RecordDecisionSelected(
             BotOwner bot,
-            AICoreActionResultStruct<BotLogicDecision, GClass26>? previousDecision,
-            AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision,
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? previousDecision,
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> nextDecision,
             string? objectiveName)
         {
             if (!CanRecordBot(bot))
@@ -483,8 +483,8 @@ namespace pitTeam.Modules
         [System.Diagnostics.Conditional("DEBUG")]
         public static void RecordDecisionEnd(
             BotOwner bot,
-            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision,
-            AICoreActionEndStruct endResult,
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision,
+            AICoreActionEnd endResult,
             string? objectiveName)
         {
             if (!CanRecordBot(bot))
@@ -742,7 +742,7 @@ namespace pitTeam.Modules
             string commitment,
             string action,
             string? reason,
-            AICoreActionResultStruct<BotLogicDecision, GClass26>? decision = null,
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? decision = null,
             Vector3? target = null,
             int? coverId = null,
             bool? preferCover = null,
@@ -1678,7 +1678,7 @@ namespace pitTeam.Modules
             return snapshot;
         }
 
-        private static object CreateDecisionPayload(AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        private static object CreateDecisionPayload(AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             return new
             {
@@ -1724,7 +1724,7 @@ namespace pitTeam.Modules
                     ? SanitizeFloat(Time.time - shootData.LastTriggerPressd)
                     : null,
                 nextTriggerAllowedIn = shootData != null
-                    ? SanitizeFloat(Mathf.Max(0f, shootData.NextFingerDownCan - Time.time))
+                    ? SanitizeFloat(Mathf.Max(0f, shootData.nextFingerDownCan - Time.time))
                     : null,
                 isAiming = shootController?.IsAiming == true,
                 aimingReady = currentAiming?.IsReady == true,
@@ -1741,25 +1741,25 @@ namespace pitTeam.Modules
 
         private static object? CreateAimPlanSnapshot(IBotAiming? currentAiming)
         {
-            if (currentAiming is BotAimingClass standardAim)
+            if (currentAiming is BotAimingData standardAim)
             {
                 return CreateAimPlanPayload(
-                    nameof(BotAimingClass),
+                    nameof(BotAimingData),
                     standardAim.Status,
                     standardAim.IsReady,
-                    standardAim.Float_5,
-                    standardAim.Float_7,
+                    standardAim._curBetterAimTime,
+                    standardAim._endAimTime,
                     standardAim.LastAimTime);
             }
 
-            if (currentAiming is GClass605 underbarrelAim)
+            if (currentAiming is UnderbarrelLauncherBotAiming underbarrelAim)
             {
                 return CreateAimPlanPayload(
-                    nameof(GClass605),
+                    nameof(UnderbarrelLauncherBotAiming),
                     underbarrelAim.Status,
                     underbarrelAim.IsReady,
-                    underbarrelAim.Float_5,
-                    underbarrelAim.Float_7,
+                    underbarrelAim._curBetterAimTime,
+                    underbarrelAim._endAimTime,
                     underbarrelAim.LastAimTime);
             }
 
@@ -1937,7 +1937,7 @@ namespace pitTeam.Modules
             Vector3 position = player?.Transform != null
                 ? player.Transform.position
                 : goalEnemy.EnemyLastPositionReal;
-            BotSettingsClass? groupInfo = TryGetGroupInfo(bot, goalEnemy, player);
+            BotGroupEnemyInfo? groupInfo = TryGetGroupInfo(bot, goalEnemy, player);
 
             return new
             {
@@ -1962,7 +1962,7 @@ namespace pitTeam.Modules
         private static object CreateGrenadeContext(BotOwner bot, EnemyInfo? goalEnemy)
         {
             BotGrenadeController? grenades = bot.WeaponManager?.Grenades;
-            ThrowWeapItemClass? selectedGrenade = grenades?.Grenade;
+            EFT.InventoryLogic.ThrowWeap? selectedGrenade = grenades?.grenade;
             BotRequest? request = bot.BotRequestController?.CurRequest;
             float now = Time.time;
 
@@ -2132,7 +2132,7 @@ namespace pitTeam.Modules
             Vector3 position = goalEnemy.Person?.Transform != null
                 ? goalEnemy.Person.Transform.position
                 : goalEnemy.EnemyLastPositionReal;
-            BotSettingsClass? groupInfo = TryGetGroupInfo(bot, goalEnemy, goalEnemy.Person);
+            BotGroupEnemyInfo? groupInfo = TryGetGroupInfo(bot, goalEnemy, goalEnemy.Person);
 
             Vector3 toEnemyDirection = NormalizePlanar(position - botPosition);
             bool hasEnemyDirection = toEnemyDirection.sqrMagnitude > 0.0001f;
@@ -2183,7 +2183,7 @@ namespace pitTeam.Modules
             }
         }
 
-        private static BotSettingsClass? TryGetGroupInfo(BotOwner bot, EnemyInfo? enemyInfo, IPlayer? player)
+        private static BotGroupEnemyInfo? TryGetGroupInfo(BotOwner bot, EnemyInfo? enemyInfo, IPlayer? player)
         {
             if (enemyInfo?.GroupInfo != null)
             {
@@ -2194,7 +2194,7 @@ namespace pitTeam.Modules
             {
                 if (player != null &&
                     bot.BotsGroup?.Enemies != null &&
-                    bot.BotsGroup.Enemies.TryGetValue(player, out BotSettingsClass groupInfo))
+                    bot.BotsGroup.Enemies.TryGetValue(player, out BotGroupEnemyInfo groupInfo))
                 {
                     return groupInfo;
                 }
@@ -2206,7 +2206,7 @@ namespace pitTeam.Modules
             return null;
         }
 
-        private static object? CreateEnemyProvenanceContext(BotSettingsClass? groupInfo)
+        private static object? CreateEnemyProvenanceContext(BotGroupEnemyInfo? groupInfo)
         {
             if (groupInfo == null)
             {
@@ -2222,7 +2222,7 @@ namespace pitTeam.Modules
             };
         }
 
-        private static object? CreateEnemyContactContext(EnemyInfo? enemyInfo, BotSettingsClass? groupInfo)
+        private static object? CreateEnemyContactContext(EnemyInfo? enemyInfo, BotGroupEnemyInfo? groupInfo)
         {
             if (enemyInfo == null && groupInfo == null)
             {

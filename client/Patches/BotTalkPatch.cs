@@ -232,28 +232,28 @@ namespace pitTeam.Patches
         [PatchPrefix]
         private static bool PatchPrefix(BotTalk __instance, ref EPhraseTrigger type, ETagStatus? additionaMask, bool withGroupDelay)
         {
-            type = FollowerReloadPhraseRemap.Remap(__instance.BotOwner_0, type);
-            if (FollowerForcedPhraseGate.ShouldBlock(__instance.BotOwner_0, type))
+            type = FollowerReloadPhraseRemap.Remap(__instance._owner, type);
+            if (FollowerForcedPhraseGate.ShouldBlock(__instance._owner, type))
             {
                 return false;
             }
 
-            if (FollowerMutedCombatPhraseGate.ShouldBlock(__instance.BotOwner_0, type))
+            if (FollowerMutedCombatPhraseGate.ShouldBlock(__instance._owner, type))
             {
                 return false;
             }
 
             if (__instance.IsSilenced) return false;
 
-            if (FollowerContactPhraseGate.IsContactPhrase(type) && BossPlayers.IsFollower(__instance.BotOwner_0))
+            if (FollowerContactPhraseGate.IsContactPhrase(type) && BossPlayers.IsFollower(__instance._owner))
             {
-                if (!FollowerContactPhraseGate.ShouldAllow(__instance.BotOwner_0))
+                if (!FollowerContactPhraseGate.ShouldAllow(__instance._owner))
                 {
                     return false;
                 }
             }
 
-            if (FollowerTalkFrequencyGate.ShouldBlockCombatTalk(__instance.BotOwner_0, type))
+            if (FollowerTalkFrequencyGate.ShouldBlockCombatTalk(__instance._owner, type))
             {
                 return false;
             }
@@ -272,22 +272,22 @@ namespace pitTeam.Patches
         [PatchPrefix]
         private static bool PatchPrefix(BotTalk __instance, ref EPhraseTrigger type, bool sayImmediately = false, ETagStatus? additionalMask = null)
         {
-            type = FollowerReloadPhraseRemap.Remap(__instance.BotOwner_0, type);
-            if (FollowerForcedPhraseGate.ShouldBlock(__instance.BotOwner_0, type))
+            type = FollowerReloadPhraseRemap.Remap(__instance._owner, type);
+            if (FollowerForcedPhraseGate.ShouldBlock(__instance._owner, type))
             {
                 return false;
             }
 
-            if (FollowerMutedCombatPhraseGate.ShouldBlock(__instance.BotOwner_0, type))
+            if (FollowerMutedCombatPhraseGate.ShouldBlock(__instance._owner, type))
             {
                 return false;
             }
 
             if (__instance.IsSilenced) return false;
 
-            if (FollowerContactPhraseGate.IsContactPhrase(type) && BossPlayers.IsFollower(__instance.BotOwner_0))
+            if (FollowerContactPhraseGate.IsContactPhrase(type) && BossPlayers.IsFollower(__instance._owner))
             {
-                if (!FollowerContactPhraseGate.ShouldAllow(__instance.BotOwner_0))
+                if (!FollowerContactPhraseGate.ShouldAllow(__instance._owner))
                 {
                     return false;
                 }

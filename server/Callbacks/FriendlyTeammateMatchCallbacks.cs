@@ -1,12 +1,12 @@
 using pitTeam.Server.Models;
 using pitTeam.Server.Services;
 using SPTarkov.DI.Annotations;
-using SPTarkov.Server.Core.Helpers;
+using SPTarkov.Server.Core.Helpers.Server;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Common;
 using SPTarkov.Server.Core.Models.Eft.Match;
 using SPTarkov.Server.Core.Models.Eft.Ws;
-using SPTarkov.Server.Core.Services;
+using SPTarkov.Server.Core.Services.Commerce;
 using SPTarkov.Server.Core.Utils;
 
 namespace pitTeam.Server.Callbacks;
@@ -34,13 +34,13 @@ public class FriendlyTeammateMatchCallbacks(
                 {
                     await Task.Delay(1000);
 
-                    notificationSendHelper.SendMessage(
+                    await notificationSendHelper.SendMessageAsync(
                         sessionId,
-                        new WsGroupMatchInviteDecline
+                        new FriendlyGroupMatchInviteDecline
                         {
                             EventType = NotificationEventType.groupMatchInviteDecline,
                             EventIdentifier = new MongoId(),
-                            Aid = teammate.Aid,
+                            Aid = teammate.Aid?.ToString(),
                             Nickname = teammate.Info?.Nickname ?? teammate.Aid?.ToString(),
                         }
                     );
@@ -59,20 +59,17 @@ public class FriendlyTeammateMatchCallbacks(
             await Task.Delay(1000);
             var acceptedTeammate = teammate!;
 
-            notificationSendHelper.SendMessage(
+            await notificationSendHelper.SendMessageAsync(
                 sessionId,
-                new WsGroupMatchInviteAccept
+                new FriendlyGroupMatchInviteAccept
                 {
                     EventType = NotificationEventType.groupMatchInviteAccept,
                     EventIdentifier = new MongoId(),
                     Id = acceptedTeammate.Id,
-                    Aid = acceptedTeammate.Aid,
+                    Aid = acceptedTeammate.Aid?.ToString(),
                     Info = acceptedTeammate.Info,
                     VisualRepresentation = acceptedTeammate.VisualRepresentation,
-                    IsLeader = false,
                     IsReady = true,
-                    Region = acceptedTeammate.Region,
-                    LookingGroup = false,
                 }
             );
         });

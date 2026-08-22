@@ -15,7 +15,7 @@ namespace pitTeam.BigBrain.Actions
     /// </summary>
     internal sealed class CombatShootFromCoverAction : FollowerCombatActionBase
     {
-        private readonly GClass277 baseLogic;
+        private readonly ShootFromCover baseLogic;
         private readonly FollowerEmergencyFireGate emergencyFireGate = new FollowerEmergencyFireGate();
         private float aimAlignStartedAt;
         private bool? lastCrouchAllowed;
@@ -23,7 +23,7 @@ namespace pitTeam.BigBrain.Actions
 
         public CombatShootFromCoverAction(BotOwner botOwner) : base(botOwner)
         {
-            baseLogic = new GClass277(botOwner);
+            baseLogic = new ShootFromCover(botOwner);
         }
 
         public override void Start()
@@ -95,12 +95,12 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
-                baseLogic.UpdateNodeByBrain(GetData<GClass28>(data));
+                baseLogic.UpdateNodeByBrain(GetData<ShootHoldResultParams>(data));
 
                 if (goalEnemy != null)
                 {
-                    ShootPointClass shootPoint = BotOwner.CurrentEnemyTargetPosition(false) ??
-                                                 new ShootPointClass(goalEnemy.GetBodyPartPosition(), 1f);
+                    ShootToPoint shootPoint = BotOwner.CurrentEnemyTargetPosition(false) ??
+                                                 new ShootToPoint(goalEnemy.GetBodyPartPosition(), 1f);
                     emergencyFireGate.TryFire(
                         BotOwner,
                         goalEnemy,
@@ -144,8 +144,8 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            ShootPointClass shootPoint = BotOwner.CurrentEnemyTargetPosition(false) ??
-                                         new ShootPointClass(goalEnemy.GetBodyPartPosition(), 1f);
+            ShootToPoint shootPoint = BotOwner.CurrentEnemyTargetPosition(false) ??
+                                         new ShootToPoint(goalEnemy.GetBodyPartPosition(), 1f);
             target = shootPoint.Point;
             return FollowerShootPoseSafety.CanUseCombatCrouchFire(
                 BotOwner,

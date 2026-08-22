@@ -109,7 +109,7 @@ namespace pitTeam.Utils
             return (pitAIBossPlayer)botOwner.BotFollower.BossToFollow;
         }
         /** Recreation of javascript SetTimeout **/
-        public static GClass641.IBotTimer SetTimeout(Action func, int timer, bool isLopped = false)
+        public static TimerManager.ITimer SetTimeout(Action func, int timer, bool isLopped = false)
         {
             var timeout = StaticManager.Instance.TimerManager.MakeTimer(TimeSpan.FromMilliseconds(timer), isLopped);
             timeout.OnTimer += () =>
@@ -129,7 +129,7 @@ namespace pitTeam.Utils
             return timeout;
         }
         /** Shortcut to EFT method of doign MakeTimer in relation to bot activity **/
-        public static GClass641.IBotTimer SetBotTimer(Action func, float seconds)
+        public static TimerManager.ITimer SetBotTimer(Action func, float seconds)
         {
             var Timer = StaticManager.Instance.TimerManager.MakeTimer(TimeSpan.FromSeconds(seconds), false);
 
@@ -241,7 +241,7 @@ namespace pitTeam.Utils
         {
             return Math.Min(baseValue + (increment * level), maxValue);
         }
-        /** Optimized version of GClass369.IsDangerPositionFarEnough **/
+        /** Optimized version of AIUtility.IsDangerPositionFarEnough **/
         public static bool IsDangerPositionFarEnough(Vector3 positionToCheck, IEnumerable<Vector3> positionsIMustCare, float minSDistToEnemy)
         {
             foreach (var pos in positionsIMustCare)
@@ -255,7 +255,7 @@ namespace pitTeam.Utils
         }
 
         /** Optimized version of GClass344.CanShootToTarget **/
-        public static bool CanShootToTarget(ShootPointClass shootToPoint, Vector3 firePos, LayerMask mask, bool doubleSide = false)
+        public static bool CanShootToTarget(ShootToPoint shootToPoint, Vector3 firePos, LayerMask mask, bool doubleSide = false)
         {
             if (shootToPoint == null) return false;
 
@@ -283,7 +283,7 @@ namespace pitTeam.Utils
         }
 
         private static bool CanShootToTargetFromOrigin(
-            ShootPointClass shootToPoint,
+            ShootToPoint shootToPoint,
             Vector3 firePos,
             LayerMask mask,
             RaycastHit[] hits,
@@ -311,10 +311,10 @@ namespace pitTeam.Utils
                 firePos + Vector3.up * GroundLikeOriginCheckHeight,
                 Vector3.down,
                 GroundLikeOriginCheckDistance + GroundLikeOriginCheckHeight,
-                LayerMaskClass.HighPolyWithTerrainMask);
+                LayersMaskController.HighPolyWithTerrainMask);
         }
 
-        public static bool CanShootToTarget(ShootPointClass shootToPoint, CustomNavigationPoint point, LayerMask mask, bool doubleSide = false)
+        public static bool CanShootToTarget(ShootToPoint shootToPoint, CustomNavigationPoint point, LayerMask mask, bool doubleSide = false)
         {
             bool flag = CanShootToTarget(shootToPoint, point.FirePosition, mask, doubleSide);
             point.CanIShootToEnemy = flag;
@@ -323,7 +323,7 @@ namespace pitTeam.Utils
 
         public static bool CanHide(Vector3 posToHide, Vector3 wallVector, IEnumerable<Vector3> positionsIMustCare, float minSDistToEnemy, bool useRaycast, bool useAng = true)
         {
-            return GClass394.CanIHide(posToHide, wallVector, positionsIMustCare, minSDistToEnemy, useRaycast, useAng);
+            return PointsSearchHelper.CanIHide(posToHide, wallVector, positionsIMustCare, minSDistToEnemy, useRaycast, useAng);
         }
 
         public static float Random(float a, float b)

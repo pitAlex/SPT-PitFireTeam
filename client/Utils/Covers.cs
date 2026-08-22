@@ -67,7 +67,7 @@ namespace pitTeam.Utils
             Vector3 centerPosition = (pointA + pointB) / 2f;
             float searchRadius = Math.Min((pointA - pointB).magnitude, STATIC_DISTANCE);
 
-            ShootPointClass shootPointClass = botOwner.CurrentEnemyTargetPosition(true);
+            ShootToPoint shootPointClass = botOwner.CurrentEnemyTargetPosition(true);
             List<CustomNavigationPoint> areaCovers = GetVanillaBackedCandidates(botOwner, centerPosition, searchRadius, shootPointClass, centerPosition, "ClosestCoverPointBetween", null, searchTypeOverride);
             List<Vector3> friendsPositions = GetFriendsPositions(botOwner, boss);
 
@@ -115,7 +115,7 @@ namespace pitTeam.Utils
 
             targetDirection.Normalize();
 
-            ShootPointClass shootPoint = botOwner.CurrentEnemyTargetPosition(true);
+            ShootToPoint shootPoint = botOwner.CurrentEnemyTargetPosition(true);
             List<CustomNavigationPoint> areaCovers = GetVanillaBackedCandidates(botOwner, originPosition, searchRadius, shootPoint, targetPosition, "ClosestCoverTowardPoint", null, searchTypeOverride);
             List<Vector3> friendsPositions = GetFriendsPositions(botOwner, boss);
 
@@ -188,7 +188,7 @@ namespace pitTeam.Utils
 
             if (points.Count > 0)
             {
-                point = points.Random();
+                point = points.PickRandom();
 
             }
 
@@ -322,7 +322,7 @@ namespace pitTeam.Utils
             BotOwner botOwner,
             Vector3 centerPosition,
             float searchRadius,
-            ShootPointClass? shootPoint,
+            ShootToPoint? shootPoint,
             Vector3? pointToBeClose,
             string label,
             int? maxCandidates = null,
@@ -406,7 +406,7 @@ namespace pitTeam.Utils
             BotOwner botOwner,
             Vector3 centerPosition,
             float searchRadius,
-            ShootPointClass? shootPoint,
+            ShootToPoint? shootPoint,
             Vector3? pointToBeClose,
             string label,
             int? maxIterations = null,
@@ -425,7 +425,7 @@ namespace pitTeam.Utils
                 botOwner.Covers.ClosestFriendCoverPoint(),
                 pointToBeClose,
                 ECheckSHootHide.shootAndHide,
-                new CoverSearchDefenceDataClass(botOwner.Settings.FileSettings.Cover.MIN_DEFENCE_LEVEL),
+                new CoverSearchDefenceData(botOwner.Settings.FileSettings.Cover.MIN_DEFENCE_LEVEL),
                 PointsArrayType.byShootType,
                 false,
                 null,
@@ -501,7 +501,7 @@ namespace pitTeam.Utils
                        direction / distance,
                        out RaycastHit hit,
                        distance,
-                       LayerMaskClass.HighPolyWithTerrainMask,
+                       LayersMaskController.HighPolyWithTerrainMask,
                        QueryTriggerInteraction.Ignore) &&
                    hit.distance <= HardCoverMaxBlockerDistance;
         }
@@ -579,7 +579,7 @@ namespace pitTeam.Utils
                 bool canShoot = false;
                 foreach (var target in shootTarget)
                 {
-                    ShootPointClass shootPoint = new ShootPointClass(target, 1f);
+                    ShootToPoint shootPoint = new ShootToPoint(target, 1f);
 
                     if ((navMeshHit.position - shootPoint.Point).sqrMagnitude >= _weaponShootDistMaxSqr)
                     {
@@ -738,7 +738,7 @@ namespace pitTeam.Utils
         public static CustomNavigationPoint FindPointForAssault(BotOwner botOwner)
         {
 
-            ShootPointClass shootPointClass = botOwner.CurrentEnemyTargetPosition(true);
+            ShootToPoint shootPointClass = botOwner.CurrentEnemyTargetPosition(true);
             CoverShootType coverShootType = CoverShootType.shoot;
             if (shootPointClass == null)
             {
@@ -747,7 +747,7 @@ namespace pitTeam.Utils
             PointsArrayType pointsArrayType = PointsArrayType.both;
             float num = 1600f;
             int num2 = 20;
-            CoverSearchData coverSearchData = new CoverSearchData((botOwner.Position + botOwner.Memory.GoalEnemy.CurrPosition) * 0.5f, botOwner.CoverSearchInfo, coverShootType, num, 0f, CoverSearchType.distToToCenter, shootPointClass, null, new Vector3?(botOwner.Position), ECheckSHootHide.shootAndHide, new CoverSearchDefenceDataClass(0f), PointsArrayType.covers, false, null, new int?(num2), "Default");
+            CoverSearchData coverSearchData = new CoverSearchData((botOwner.Position + botOwner.Memory.GoalEnemy.CurrPosition) * 0.5f, botOwner.CoverSearchInfo, coverShootType, num, 0f, CoverSearchType.distToToCenter, shootPointClass, null, new Vector3?(botOwner.Position), ECheckSHootHide.shootAndHide, new CoverSearchDefenceData(0f), PointsArrayType.covers, false, null, new int?(num2), "Default");
             coverSearchData.UseSelfFindPoint = false;
             coverSearchData.ArrayType = pointsArrayType;
             coverSearchData.UseLineCastToCover = true;

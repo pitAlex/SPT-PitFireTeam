@@ -184,13 +184,13 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            List<MagazineItemClass> magazines = GetOperationalMagazineItems(
+            List<EFT.InventoryLogic.Magazine> magazines = GetOperationalMagazineItems(
                     backpack,
                     weapon,
                     "LoosePickup.Backpack.WeaponSupportMagazine",
                     includeEmptyForTopOff: true)
                 .ToList();
-            List<AmmoItemClass> looseAmmo = GetWeaponLooseAmmoItems(backpack, weapon).ToList();
+            List<EFT.InventoryLogic.Ammo> looseAmmo = GetWeaponLooseAmmoItems(backpack, weapon).ToList();
             foreach (Item item in magazines.Cast<Item>().Concat(looseAmmo))
             {
                 InteractableObjects.ClearStrictCargoTree(BotOwner, item);
@@ -281,7 +281,7 @@ namespace pitTeam.BigBrain.Actions
             if (succeeded)
             {
                 InteractableObjects.ClearStrictCargoTree(BotOwner, move.Item);
-                if (move.Item is MagazineItemClass magazine &&
+                if (move.Item is EFT.InventoryLogic.Magazine magazine &&
                     move.ApprovedReloadWeapon != null)
                 {
                     InteractableObjects.RegisterLootedWeaponMagazine(

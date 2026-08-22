@@ -2,6 +2,7 @@ using Comfort.Common;
 using EFT;
 using EFT.Interactive;
 using EFT.InventoryLogic;
+using EFT.Game.Spawning;
 using pitTeam.Components;
 using pitTeam.Modules;
 using HarmonyLib;
@@ -20,7 +21,7 @@ namespace pitTeam.Patches
 
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(TransitPoint), "method_6");
+            return AccessTools.Method(typeof(TransitPoint), nameof(TransitPoint.SeparateGroupPlayers));
         }
 
         [PatchPostfix]
@@ -71,11 +72,11 @@ namespace pitTeam.Patches
                             Profile transitProfile = FollowerTransitStateCache.TryCapture(bot, protectedEquipmentIds, trackedReturnItemIds, out Profile capturedProfile)
                                 ? capturedProfile
                                 : bot.Profile;
-                            InfoClass info = transitProfile.Info;
+                            EFT.ProfileInfo info = transitProfile.Info;
 
                             bool isBoss = Utils.Props.BossFollowersType.Contains(transitProfile.Info.Settings.Role);
 
-                            LastPlayerStateClass playerVisualization = new LastPlayerStateClass(new GClass1410
+                            EFT.PlayerVisualRepresentation playerVisualization = new EFT.PlayerVisualRepresentation(new JsonType.PlayerInfo
                             {
                                 Level = isBoss ? 60 : info.Level,
                                 MemberCategory = isBoss ? EMemberCategory.Sherpa : ((info.Side != EPlayerSide.Savage) ? info.SelectedMemberCategory : EMemberCategory.Default),
@@ -85,11 +86,11 @@ namespace pitTeam.Patches
                                 Health = transitProfile.Health
                             }, transitProfile.Customization, transitProfile.Inventory.Equipment);
 
-                            MainMenuControllerPatch.TransitPlayers.Add(new GroupPlayerViewModelClass(new GroupPlayerDataClass
+                            MainMenuControllerPatch.TransitPlayers.Add(new EFT.UI.Matchmaker.RaidPlayer(new EFT.GroupPlayer
                             {
                                 AccountId = bot.AccountId,
                                 Id = transitProfile.Id,
-                                Info = new GClass1410
+                                Info = new JsonType.PlayerInfo
                                 {
                                     Level = isBoss ? 60 : info.Level,
                                     PrestigeLevel = info.PrestigeLevel,
@@ -123,7 +124,7 @@ namespace pitTeam.Patches
 
         private static bool IsLabyrinthTransit(TransitPoint transitPoint)
         {
-            LocationSettingsClass.Location.TransitParameters parameters = transitPoint?.parameters;
+            JsonType.LocationSettings.Location.TransitParameters parameters = transitPoint?.parameters;
             if (parameters == null) return false;
 
             return string.Equals(parameters.target, LabyrinthLocationId, StringComparison.OrdinalIgnoreCase) ||

@@ -20,7 +20,6 @@ namespace pitTeam.Patches
         private static Type? SAINEnableClass = null;
         private static Type? combatSoloLayerType = null;
         private static Type? combatSquadLayerType = null;
-        private static Type? peacefulLayerType = null;
         private static Type? avoidThreatLayerType = null;
         private static Type? extractLayerType = null;
         private static Type? flashBangedLayerType = null;
@@ -42,10 +41,10 @@ namespace pitTeam.Patches
         private static FieldInfo? sainVisionRaycastColliderTypesField = null;
         private static FieldInfo? sainVisionRaycastCastPointsField = null;
         private const float FollowerCloseFoliageMaskDistance = 10f;
-        private static readonly QueryParameters sainDefaultLosParams = new QueryParameters(LayerMaskClass.HighPolyWithTerrainNoGrassMask);
-        private static readonly QueryParameters sainDefaultVisionParams = new QueryParameters(LayerMaskClass.AI);
-        private static readonly QueryParameters sainDefaultShootParams = new QueryParameters(LayerMaskClass.HighPolyWithTerrainMaskAI);
-        private static readonly QueryParameters sainCloseFollowerParams = new QueryParameters(LayerMaskClass.HighPolyWithTerrainMask);
+        private static readonly QueryParameters sainDefaultLosParams = new QueryParameters(LayersMaskController.HighPolyWithTerrainNoGrassMask);
+        private static readonly QueryParameters sainDefaultVisionParams = new QueryParameters(LayersMaskController.AI);
+        private static readonly QueryParameters sainDefaultShootParams = new QueryParameters(LayersMaskController.HighPolyWithTerrainMaskAI);
+        private static readonly QueryParameters sainCloseFollowerParams = new QueryParameters(LayersMaskController.HighPolyWithTerrainMask);
         public static void PatchSAINIfInstalled(Harmony harmony)
         {
             if (!pitFireTeam.IsSAINInstalled) return;
@@ -206,17 +205,15 @@ namespace pitTeam.Patches
         {
             combatSoloLayerType ??= Type.GetType("SAIN.Layers.Combat.Solo.CombatSoloLayer, SAIN");
             combatSquadLayerType ??= Type.GetType("SAIN.Layers.Combat.Squad.CombatSquadLayer, SAIN");
-            peacefulLayerType ??= Type.GetType("SAIN.Layers.Peace.PeacefulLayer, SAIN");
             avoidThreatLayerType ??= Type.GetType("SAIN.Layers.SAINAvoidThreatLayer, SAIN");
             extractLayerType ??= Type.GetType("SAIN.Layers.ExtractLayer, SAIN");
-            flashBangedLayerType ??= Type.GetType("SAIN.Layers.Peace.FlashBangedLayer, SAIN");
+            flashBangedLayerType ??= Type.GetType("SAIN.Layers.Flashed.SAINFlashedLayer, SAIN");
             debugLayerType ??= Type.GetType("SAIN.Layers.Combat.Run.DebugLayer, SAIN");
 
             var disablePrefix = new HarmonyMethod(typeof(SAINPatch).GetMethod(nameof(DisableSainLayerForFollowersWithoutAddon), BindingFlags.NonPublic | BindingFlags.Static));
 
             PatchLayerIsActive(harmony, combatSoloLayerType, disablePrefix);
             PatchLayerIsActive(harmony, combatSquadLayerType, disablePrefix);
-            PatchLayerIsActive(harmony, peacefulLayerType, disablePrefix);
             PatchLayerIsActive(harmony, avoidThreatLayerType, disablePrefix);
             PatchLayerIsActive(harmony, extractLayerType, disablePrefix);
             PatchLayerIsActive(harmony, flashBangedLayerType, disablePrefix);
@@ -311,7 +308,7 @@ namespace pitTeam.Patches
                 }
                 else if (__args[0] is BotTalk botTalk)
                 {
-                    botOwner = botTalk.BotOwner_0;
+                    botOwner = botTalk._owner;
                 }
 
                 if (botOwner == null || !BossPlayers.IsFollower(botOwner))
@@ -344,8 +341,7 @@ namespace pitTeam.Patches
         private static bool CreateFollowerAwareSainVisionRaycastCommands(
             object __instance,
             NativeArray<RaycastCommand> raycastCommands,
-            int enemyCount,
-            int partCount)
+            int enemyCount)
         {
             try
             {
@@ -390,7 +386,7 @@ namespace pitTeam.Patches
                     }
 
                     bool follower = botOwner != null && BossPlayers.IsFollower(botOwner);
-                    for (int j = 0; j < partCount; j++)
+                    for (int j = 0; j < parts.Length; j++)
                     {
                         object? part = parts.GetValue(j);
                         MethodInfo? getRaycast = part != null ? AccessTools.Method(part.GetType(), "GetRaycast") : null;
@@ -418,7 +414,7 @@ namespace pitTeam.Patches
                         Vector3 weaponVec = castPoint - weaponFirePort;
                         float weaponMag = weaponVec.magnitude;
                         Vector3 weaponDir = weaponMag > 1e-6f ? weaponVec / weaponMag : Vector3.forward;
-                        float weaponDist = Mathf.Max(eyeMag, minDist);
+                        float weaponDist = Mathf.Max(weaponMag, minDist);
 
                         bool closeFollowerCheck = follower && eyeMag <= FollowerCloseFoliageMaskDistance;
                         QueryParameters losParams = closeFollowerCheck ? sainCloseFollowerParams : sainDefaultLosParams;
@@ -615,7 +611,7 @@ namespace pitTeam.Patches
                 }
 
                 MovementContext movementContext = botOwner.GetPlayer?.MovementContext;
-                if (movementContext == null || !movementContext.IsInPatrol)
+                if (movementContext == null || !movementContext._isInPatrol)
                 {
                     return;
                 }

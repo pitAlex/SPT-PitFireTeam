@@ -33,12 +33,12 @@ namespace pitTeam.Modules
                     return;
                 }
 
-                if (!Singleton<ClientApplication<ISession>>.Instantiated)
+                if (!Singleton<ClientApplication<EFT.IEftSession>>.Instantiated)
                 {
                     return;
                 }
 
-                ISession session = Singleton<ClientApplication<ISession>>.Instance?.GetClientBackEndSession();
+                EFT.IEftSession session = Singleton<ClientApplication<EFT.IEftSession>>.Instance?.GetClientBackEndSession();
                 if (session == null)
                 {
                     return;
@@ -143,8 +143,8 @@ namespace pitTeam.Modules
         {
             return item == null ||
                    item is InventoryEquipment ||
-                   item is PocketsItemClass ||
-                   item is BuiltInInsertsItemClass ||
+                   item is EFT.InventoryLogic.Pockets ||
+                   item is EFT.InventoryLogic.BuiltInInserts ||
                    string.IsNullOrWhiteSpace(item.TemplateId);
         }
 
@@ -155,7 +155,7 @@ namespace pitTeam.Modules
                 return false;
             }
 
-            if (item is MoneyItemClass)
+            if (item is EFT.InventoryLogic.Money)
             {
                 return true;
             }
@@ -163,7 +163,7 @@ namespace pitTeam.Modules
             try
             {
                 return !string.IsNullOrWhiteSpace(item.TemplateId) &&
-                       GClass3130.IsCurrencyId(new MongoID(item.TemplateId));
+                       EFT.InventoryLogic.CurrencyUtil.IsCurrencyId(new MongoID(item.TemplateId));
             }
             catch
             {
@@ -190,8 +190,8 @@ namespace pitTeam.Modules
                 return 0.0;
             }
 
-            if (string.Equals(templateId, GClass3130.ROUBLE_ID.ToString(), StringComparison.Ordinal) ||
-                string.Equals(templateId, GClass3130.ROUBLE_STACK_ID.ToString(), StringComparison.Ordinal))
+            if (string.Equals(templateId, EFT.InventoryLogic.CurrencyUtil.ROUBLE_ID.ToString(), StringComparison.Ordinal) ||
+                string.Equals(templateId, EFT.InventoryLogic.CurrencyUtil.ROUBLE_STACK_ID.ToString(), StringComparison.Ordinal))
             {
                 return 1.0;
             }
@@ -205,9 +205,9 @@ namespace pitTeam.Modules
 
             try
             {
-                if (Singleton<HandbookClass>.Instantiated)
+                if (Singleton<EFT.HandBook.Handbook>.Instantiated)
                 {
-                    return Singleton<HandbookClass>.Instance.GetBasePrice(new MongoID(templateId));
+                    return Singleton<EFT.HandBook.Handbook>.Instance.GetBasePrice(new MongoID(templateId));
                 }
             }
             catch
@@ -220,7 +220,7 @@ namespace pitTeam.Modules
 
         private static int GetFreeArea(Item item)
         {
-            if (item is not SearchableItemItemClass searchable || searchable.Grids == null)
+            if (item is not EFT.InventoryLogic.SearchableItem searchable || searchable.Grids == null)
             {
                 return 0;
             }
@@ -228,7 +228,7 @@ namespace pitTeam.Modules
             int freeArea = GetDirectGridFreeArea(searchable);
             foreach (Item child in searchable.GetAllItems())
             {
-                if (child != null && child != searchable && child is SearchableItemItemClass nested)
+                if (child != null && child != searchable && child is EFT.InventoryLogic.SearchableItem nested)
                 {
                     freeArea += GetDirectGridFreeArea(nested);
                 }
@@ -237,7 +237,7 @@ namespace pitTeam.Modules
             return freeArea;
         }
 
-        private static int GetDirectGridFreeArea(SearchableItemItemClass searchable)
+        private static int GetDirectGridFreeArea(EFT.InventoryLogic.SearchableItem searchable)
         {
             if (searchable?.Grids == null)
             {
@@ -245,7 +245,7 @@ namespace pitTeam.Modules
             }
 
             int freeArea = 0;
-            foreach (StashGridClass grid in searchable.Grids)
+            foreach (EFT.InventoryLogic.Grid grid in searchable.Grids)
             {
                 if (grid == null)
                 {
@@ -273,7 +273,7 @@ namespace pitTeam.Modules
 
             try
             {
-                XYCellSizeStruct size = item.CalculateCellSize();
+                IntVec2 size = item.CalculateCellSize();
                 return Mathf.Max(1, size.X) * Mathf.Max(1, size.Y);
             }
             catch

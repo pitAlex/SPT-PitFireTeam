@@ -10,11 +10,11 @@ namespace pitTeam.BigBrain.Actions
     /// </summary>
     internal sealed class CombatGoToPointAction : FollowerCombatActionBase
     {
-        private readonly GClass219 baseLogic;
+        private readonly GoToSomePoint baseLogic;
 
         public CombatGoToPointAction(BotOwner botOwner) : base(botOwner)
         {
-            baseLogic = new GClass219(botOwner);
+            baseLogic = new GoToSomePoint(botOwner);
         }
 
         public override void Update(CustomLayer.ActionData data)
@@ -31,7 +31,7 @@ namespace pitTeam.BigBrain.Actions
                 BotOwner.SetPose(1f);
             }
 
-            baseLogic.UpdateNodeByBrain(GetData<GClass30>(data));
+            baseLogic.UpdateNodeByBrain(GetData<CoreActionResultGoToPoint>(data));
         }
 
         private static bool ShouldRunToPoint(CustomLayer.ActionData data)

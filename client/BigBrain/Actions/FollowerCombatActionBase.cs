@@ -16,9 +16,9 @@ namespace pitTeam.BigBrain.Actions
     {
         public BotLogicDecision Decision { get; }
         public string Reason { get; }
-        public GClass26? Data { get; }
+        public CoreActionResultParams? Data { get; }
 
-        public FollowerCombatActionData(BotLogicDecision decision, string reason, GClass26? data)
+        public FollowerCombatActionData(BotLogicDecision decision, string reason, CoreActionResultParams? data)
         {
             Decision = decision;
             Reason = reason;
@@ -205,16 +205,16 @@ namespace pitTeam.BigBrain.Actions
 
         protected void SetCombatCoverTactic(BotsGroup.BotCurrentTactic tactic)
         {
-            if (BotOwner.Tactic.ShallReturnToAttack && tactic != BotsGroup.BotCurrentTactic.Ambush)
+            if (BotOwner.Tactic._shallReturnToAttack && tactic != BotsGroup.BotCurrentTactic.Ambush)
             {
-                BotOwner.Tactic.ShallReturnToAttack = false;
-                BotOwner.Tactic.ReturnToAttackTime = 0f;
+                BotOwner.Tactic._shallReturnToAttack = false;
+                BotOwner.Tactic._returnToAttackTime = 0f;
             }
 
             BotOwner.Tactic.SetTactic(tactic);
         }
 
-        protected static GClass26? GetRawData(CustomLayer.ActionData data)
+        protected static CoreActionResultParams? GetRawData(CustomLayer.ActionData data)
         {
             return (data as FollowerCombatActionData)?.Data;
         }
@@ -224,7 +224,7 @@ namespace pitTeam.BigBrain.Actions
             return (data as FollowerCombatActionData)?.Reason;
         }
 
-        protected static TData? GetData<TData>(CustomLayer.ActionData data) where TData : GClass26
+        protected static TData? GetData<TData>(CustomLayer.ActionData data) where TData : CoreActionResultParams
         {
             return GetRawData(data) as TData;
         }
@@ -445,7 +445,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            ShootPointClass? shootPoint = BotOwner.CurrentEnemyTargetPosition(false);
+            ShootToPoint? shootPoint = BotOwner.CurrentEnemyTargetPosition(false);
             Vector3 target = shootPoint?.Point ?? goalEnemy.GetBodyPartPosition();
             return StopIfFriendlyInCurrentFireLane(target);
         }
@@ -579,7 +579,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (selector.LastEquipmentSlot != selector.SupportWeapon)
+            if (selector.LastEquipmentSlot != selector._supportWeapon)
             {
                 return false;
             }
@@ -693,7 +693,7 @@ namespace pitTeam.BigBrain.Actions
 
         private Vector3 GetEnemyShootLookPoint(EnemyInfo goalEnemy)
         {
-            ShootPointClass? shootPoint = BotOwner.CurrentEnemyTargetPosition(false);
+            ShootToPoint? shootPoint = BotOwner.CurrentEnemyTargetPosition(false);
             if (shootPoint != null)
             {
                 return shootPoint.Point;

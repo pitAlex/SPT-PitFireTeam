@@ -21,7 +21,7 @@ namespace pitTeam.Patches
         {
             try
             {
-                if (__instance?.BotOwner_0 == null || !BossPlayers.IsFollower(__instance.BotOwner_0))
+                if (__instance?._owner == null || !BossPlayers.IsFollower(__instance._owner))
                 {
                     return true;
                 }
@@ -34,16 +34,16 @@ namespace pitTeam.Patches
                 if (__instance.NoSprint)
                 {
                     __instance.Sprinting = false;
-                    __instance.Player.EnableSprint(false);
+                    __instance._player.EnableSprint(false);
                     return false;
                 }
 
                 __instance.Sprinting = val;
                 if (val)
                 {
-                    __instance.BotOwner_0.SetTargetMoveSpeed(1f);
+                    __instance._owner.SetTargetMoveSpeed(1f);
                 }
-                __instance.Player.EnableSprint(val);
+                __instance._player.EnableSprint(val);
                 return false;
             }
             catch (System.Exception ex)
@@ -62,12 +62,12 @@ namespace pitTeam.Patches
 
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(SprintStateClass), "ManualAnimatorMoveUpdate");
+            return AccessTools.Method(typeof(EFT.SprintPlayerState), "ManualAnimatorMoveUpdate");
         }
 
         [PatchPrefix]
         [HarmonyPriority(Priority.First)]
-        private static void PatchPrefix(SprintStateClass __instance, float deltaTime)
+        private static void PatchPrefix(EFT.SprintPlayerState __instance, float deltaTime)
         {
             try
             {

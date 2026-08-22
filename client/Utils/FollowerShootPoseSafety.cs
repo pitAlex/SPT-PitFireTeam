@@ -134,7 +134,7 @@ namespace pitTeam.Utils
             Vector3 origin = botOwner.Position + Vector3.up * probeHeight;
             LayerMask mask = botOwner.LookSensor != null
                 ? botOwner.LookSensor.Mask
-                : LayerMaskClass.HighPolyWithTerrainMask;
+                : LayersMaskController.HighPolyWithTerrainMask;
 
             if (!HasExactClearLine(origin, target, mask))
             {

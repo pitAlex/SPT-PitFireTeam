@@ -25,9 +25,9 @@ namespace pitTeam.Modules
     {
         private const float MinimumReturnLoaderDurationSeconds = 0.1f;
 
-        private static readonly Type SideSelectionScreenType = typeof(AccountSideSelectionScreen<EftAccountSideSelectionScreen.GClass3905, EEftScreenType>);
-        private static readonly System.Reflection.MethodInfo AdvanceStateMethod = AccessTools.Method(SideSelectionScreenType, "method_3");
-        private static readonly System.Reflection.FieldInfo CurrentStateIndexField = AccessTools.Field(SideSelectionScreenType, "int_0");
+        private static readonly Type SideSelectionScreenType = typeof(AccountSideSelectionScreen<EftAccountSideSelectionScreen.EftAccountSideSelectionScreenController, EEftScreenType>);
+        private static readonly System.Reflection.MethodInfo AdvanceStateMethod = AccessTools.Method(SideSelectionScreenType, "ShowAnotherState");
+        private static readonly System.Reflection.FieldInfo CurrentStateIndexField = AccessTools.Field(SideSelectionScreenType, "_currentSelectedStateIndex");
         private static readonly System.Reflection.FieldInfo SideSelectionStateField = AccessTools.Field(SideSelectionScreenType, "_sideSelectionState");
         private static readonly System.Reflection.FieldInfo DescriptionCanvasGroupField = AccessTools.Field(typeof(SideSelectionState), "_descriptionCanvasGroup");
         private static readonly System.Reflection.FieldInfo SelectSideNodesField = AccessTools.Field(typeof(SideSelectionState), "_selectSideNodes");
@@ -37,7 +37,7 @@ namespace pitTeam.Modules
         private static readonly System.Reflection.FieldInfo NextButtonField = AccessTools.Field(SideSelectionScreenType, "_nextButton");
         private static readonly System.Reflection.FieldInfo NicknameInputField = AccessTools.Field(typeof(NicknameField), "_inputField");
         private static JsonConverter[] defaultJsonConverters;
-        private static EftAccountSideSelectionScreen.GClass3905 activeController;
+        private static EftAccountSideSelectionScreen.EftAccountSideSelectionScreenController activeController;
         private static Coroutine advanceCoroutine;
         private static Coroutine returnCoroutine;
         private static Coroutine submitCoroutine;
@@ -78,7 +78,7 @@ namespace pitTeam.Modules
             {
                 if (pitFireTeam.Instance == null)
                 {
-                    CurrentScreenSingletonClass.Instance.TryReturnToRootScreen().HandleExceptions();
+                    EFT.UI.Screens.EftScreenManager.Instance.TryReturnToRootScreen().HandleExceptions();
                     InvokePendingReturnAction();
                     return;
                 }
@@ -95,7 +95,7 @@ namespace pitTeam.Modules
 
             if (pitFireTeam.Instance == null)
             {
-                CurrentScreenSingletonClass.Instance.TryReturnToRootScreen().HandleExceptions();
+                EFT.UI.Screens.EftScreenManager.Instance.TryReturnToRootScreen().HandleExceptions();
                 InvokePendingReturnAction();
                 return;
             }
@@ -138,30 +138,30 @@ namespace pitTeam.Modules
             }
 
             HeadSelectionState headSelectionState = HeadSelectionStateField?.GetValue(screen) as HeadSelectionState;
-            if (headSelectionState == null || headSelectionState.ProfileData == null)
+            if (headSelectionState == null || headSelectionState._profileData == null)
             {
                 return false;
             }
 
             string nickname = GetNicknameText(headSelectionState);
             ENicknameError error = headSelectionState._nicknameField != null
-                ? headSelectionState._nicknameField.method_5(nickname)
+                ? headSelectionState._nicknameField.ValidationError(nickname)
                 : ENicknameError.InvalidNickname;
 
             if (error != ENicknameError.ValidNickname)
             {
-                headSelectionState._nicknameField?.method_6(error, false);
+                headSelectionState._nicknameField?.ShowNicknameError(error, false);
                 ConfigureHeadSelectionUi(screen);
                 return false;
             }
 
-            headSelectionState.ProfileData.Nickname = nickname;
+            headSelectionState._profileData.Nickname = nickname;
 
             FriendlyTeammateCreateRequest payload = new FriendlyTeammateCreateRequest
             {
-                nickname = headSelectionState.ProfileData.Nickname,
-                voice = headSelectionState.ProfileData.VoiceId,
-                head = headSelectionState.ProfileData.HeadId
+                nickname = headSelectionState._profileData.Nickname,
+                voice = headSelectionState._profileData.VoiceId,
+                head = headSelectionState._profileData.HeadId
             };
 
             string json = JsonConvert.SerializeObject(payload);
@@ -184,7 +184,7 @@ namespace pitTeam.Modules
             try
             {
                 TarkovApplication app = ResolveApplication();
-                ISession session = app?.Session;
+                EFT.IEftSession session = app?.Session;
                 if (session == null)
                 {
                     ShowToast(GetLocalizedSocialUi("AddTeammateOpenFailed"));
@@ -206,21 +206,21 @@ namespace pitTeam.Modules
                 }
 
                 await EnsureDefaultProfilesLoaded();
-                if (GClass2305.Profile_0 == null || GClass2305.Profile_1 == null)
+                if (EFT.CreateProfileOperation._bearProfile == null || EFT.CreateProfileOperation._usecProfile == null)
                 {
                     ShowToast(GetLocalizedSocialUi("AddTeammateOpenFailed"));
                     pitFireTeam.Log.LogError("[UI] Could not start add teammate flow: default preview profiles are missing.");
                     return;
                 }
 
-                GClass2305.GClass2307 profileData = new GClass2305.GClass2307
+                EFT.CreateProfileOperation.PreliminaryProfileData profileData = new EFT.CreateProfileOperation.PreliminaryProfileData
                 {
                     Side = playerSide
                 };
 
-                var controller = new EftAccountSideSelectionScreen.GClass3905(
-                    GClass2305.Profile_0,
-                    GClass2305.Profile_1,
+                var controller = new EftAccountSideSelectionScreen.EftAccountSideSelectionScreenController(
+                    EFT.CreateProfileOperation._bearProfile,
+                    EFT.CreateProfileOperation._usecProfile,
                     profileData,
                     session.SessionMode,
                     false,
@@ -248,14 +248,14 @@ namespace pitTeam.Modules
 
         private static async Task EnsureDefaultProfilesLoaded()
         {
-            if (GClass2305.Profile_0 == null)
+            if (EFT.CreateProfileOperation._bearProfile == null)
             {
-                GClass2305.Profile_0 = await GClass2305.smethod_0("DefaultBearProfile");
+                EFT.CreateProfileOperation._bearProfile = await EFT.CreateProfileOperation.LoadProfile("DefaultBearProfile");
             }
 
-            if (GClass2305.Profile_1 == null)
+            if (EFT.CreateProfileOperation._usecProfile == null)
             {
-                GClass2305.Profile_1 = await GClass2305.smethod_0("DefaultUsecProfile");
+                EFT.CreateProfileOperation._usecProfile = await EFT.CreateProfileOperation.LoadProfile("DefaultUsecProfile");
             }
         }
 
@@ -380,9 +380,9 @@ namespace pitTeam.Modules
             {
             }
 
-            if (pitFireTeam.application == null && Singleton<ClientApplication<ISession>>.Instantiated)
+            if (pitFireTeam.application == null && Singleton<ClientApplication<EFT.IEftSession>>.Instantiated)
             {
-                pitFireTeam.application = Singleton<ClientApplication<ISession>>.Instance as TarkovApplication;
+                pitFireTeam.application = Singleton<ClientApplication<EFT.IEftSession>>.Instance as TarkovApplication;
             }
 
             return pitFireTeam.application;
@@ -390,7 +390,7 @@ namespace pitTeam.Modules
 
         internal static void ShowToast(string message)
         {
-            NotificationManagerClass.DisplayMessageNotification(
+            EFT.Communications.NotificationManager.DisplayMessageNotification(
                 message,
                 ENotificationDurationType.Default,
                 ENotificationIconType.Default,
@@ -409,7 +409,7 @@ namespace pitTeam.Modules
                 : null;
 
             preloaderUi?.SetLoaderStatus(true);
-            Task<bool> returnTask = CurrentScreenSingletonClass.Instance.TryReturnToRootScreen();
+            Task<bool> returnTask = EFT.UI.Screens.EftScreenManager.Instance.TryReturnToRootScreen();
             float elapsed = 0f;
 
             while (!returnTask.IsCompleted || elapsed < MinimumReturnLoaderDurationSeconds)
@@ -438,10 +438,10 @@ namespace pitTeam.Modules
 
         private static IEnumerator ReturnToPendingScreen()
         {
-            EftAccountSideSelectionScreen.GClass3905 controllerToClose = activeController;
+            EftAccountSideSelectionScreen.EftAccountSideSelectionScreenController controllerToClose = activeController;
             Task<bool> returnTask = controllerToClose != null
                 ? controllerToClose.CloseSelf(true)
-                : CurrentScreenSingletonClass.Instance.TryReturnToRootScreen();
+                : EFT.UI.Screens.EftScreenManager.Instance.TryReturnToRootScreen();
 
             while (!returnTask.IsCompleted)
             {
@@ -526,7 +526,7 @@ namespace pitTeam.Modules
                 nextButton.gameObject.SetActive(true);
                 nextButton.SetRawText(GetLocalizedSocialUi("AddTeammateConfirm"), nextButton.HeaderSize);
                 bool nicknameValid = headSelectionState._nicknameField != null &&
-                    headSelectionState._nicknameField.method_5(GetNicknameText(headSelectionState)) == ENicknameError.ValidNickname;
+                    headSelectionState._nicknameField.ValidationError(GetNicknameText(headSelectionState)) == ENicknameError.ValidNickname;
                 nextButton.Interactable = !submitInProgress && nicknameValid;
 
                 WireFlowButtons(screen, nextButton);
@@ -545,9 +545,9 @@ namespace pitTeam.Modules
                 return;
             }
 
-            if (headSelectionState.ProfileData != null)
+            if (headSelectionState._profileData != null)
             {
-                headSelectionState.ProfileData.Nickname = string.Empty;
+                headSelectionState._profileData.Nickname = string.Empty;
             }
 
             TMP_InputField inputField = headSelectionState._nicknameField != null
@@ -563,7 +563,7 @@ namespace pitTeam.Modules
                 inputField.ActivateInputField();
             }
 
-            headSelectionState._nicknameField?.method_6(ENicknameError.ValidNickname, false);
+            headSelectionState._nicknameField?.ShowNicknameError(ENicknameError.ValidNickname, false);
             nicknamePrepared = true;
         }
 
@@ -575,7 +575,7 @@ namespace pitTeam.Modules
             }
 
             TMP_InputField inputField = NicknameInputField?.GetValue(headSelectionState._nicknameField) as TMP_InputField;
-            return inputField?.text ?? headSelectionState.ProfileData?.Nickname ?? string.Empty;
+            return inputField?.text ?? headSelectionState._profileData?.Nickname ?? string.Empty;
         }
 
         private static void WireFlowButtons(EftAccountSideSelectionScreen screen, DefaultUIButton nextButton)

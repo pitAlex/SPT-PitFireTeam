@@ -64,7 +64,7 @@ namespace pitTeam.BigBrain
             ClearCommittedPush("reset");
         }
 
-        public void HandleDecisionChanged(AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision)
+        public void HandleDecisionChanged(AICoreActionResult<BotLogicDecision, CoreActionResultParams> nextDecision)
         {
             // Push is intentionally latched by reason, not by caller. Default can use it as
             // assault pressure while marksman can use the same commit mechanics for support
@@ -94,7 +94,7 @@ namespace pitTeam.BigBrain
 
         public bool TryGetCommittedPushDecision(
             EnemyInfo goalEnemy,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             if (!HasCommittedPush())
@@ -116,12 +116,12 @@ namespace pitTeam.BigBrain
             return combatCommon.TryGetCommittedPushDecision(goalEnemy, out decision);
         }
 
-        public AICoreActionEndStruct EndCommittedPush(AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision)
+        public AICoreActionEnd EndCommittedPush(AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
         {
             EnemyInfo? goalEnemy = botOwner.Memory.GoalEnemy;
             if (combatCommon.IsCommittedPushPausedByTemporaryTarget(goalEnemy))
             {
-                return new AICoreActionEndStruct("pushTemporaryTarget", true);
+                return new AICoreActionEnd("pushTemporaryTarget", true);
             }
 
             if (!combatCommon.HasActiveCombatEnemy(goalEnemy) &&
@@ -129,13 +129,13 @@ namespace pitTeam.BigBrain
                 !combatCommon.TryRestoreCommittedPushEnemy(out goalEnemy))
             {
                 ClearCommittedPush("pushEnemyMissingOrDead");
-                return new AICoreActionEndStruct("pushEnemyMissingOrDead", true);
+                return new AICoreActionEnd("pushEnemyMissingOrDead", true);
             }
 
             if (goalEnemy == null)
             {
                 ClearCommittedPush("pushEnemyMissingOrDead");
-                return new AICoreActionEndStruct("pushEnemyMissingOrDead", true);
+                return new AICoreActionEnd("pushEnemyMissingOrDead", true);
             }
 
             combatCommon.RefreshCommittedPushEnemyRetention();
@@ -143,15 +143,15 @@ namespace pitTeam.BigBrain
             if (ShouldInterruptCommittedPush(goalEnemy, out string interruptReason))
             {
                 ClearCommittedPush(interruptReason);
-                return new AICoreActionEndStruct(interruptReason, true);
+                return new AICoreActionEnd(interruptReason, true);
             }
 
-            if (TryPrepareOrderedClosePushTransition(currentDecision, goalEnemy, out AICoreActionEndStruct closeTransition))
+            if (TryPrepareOrderedClosePushTransition(currentDecision, goalEnemy, out AICoreActionEnd closeTransition))
             {
                 return closeTransition;
             }
 
-            if (TryPrepareOrderedForwardCoverTransition(currentDecision, goalEnemy, out AICoreActionEndStruct coverTransition))
+            if (TryPrepareOrderedForwardCoverTransition(currentDecision, goalEnemy, out AICoreActionEnd coverTransition))
             {
                 return coverTransition;
             }
@@ -161,7 +161,7 @@ namespace pitTeam.BigBrain
             {
                 combatCommon.BlockRunToEnemy(RunToEnemyNoSprintBlockSeconds);
                 ClearCommittedPush("pushRunCannotSprint");
-                return new AICoreActionEndStruct("pushRunCannotSprint", true);
+                return new AICoreActionEnd("pushRunCannotSprint", true);
             }
 
             if (currentDecision.Action == BotLogicDecision.runToEnemy &&
@@ -169,17 +169,17 @@ namespace pitTeam.BigBrain
             {
                 combatCommon.BlockRunToEnemy(RunToEnemyNoSprintBlockSeconds);
                 ClearCommittedPush("pushRunNotSprinting");
-                return new AICoreActionEndStruct("pushRunNotSprinting", true);
+                return new AICoreActionEnd("pushRunNotSprinting", true);
             }
 
             if (!IsOrderedProvisionalAdvance(currentDecision) &&
                 ShouldPrepareStalledPushFallback(goalEnemy, currentDecision, out string stalledReason))
             {
                 ClearCommittedPush(stalledReason);
-                return new AICoreActionEndStruct(stalledReason, true);
+                return new AICoreActionEnd(stalledReason, true);
             }
 
-            AICoreActionEndStruct endResult = currentDecision.Action switch
+            AICoreActionEnd endResult = currentDecision.Action switch
             {
                 BotLogicDecision.runToEnemy => combatCommon.EndBaseGoToEnemy(),
                 BotLogicDecision.goToEnemy => combatCommon.EndBaseGoToEnemy(),
@@ -211,7 +211,7 @@ namespace pitTeam.BigBrain
             nextOrderedForwardCoverScanAt = 0f;
         }
 
-        public bool IsPushCommittedDecision(AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        public bool IsPushCommittedDecision(AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             if (!IsPushReason(decision.Reason))
             {
@@ -245,14 +245,14 @@ namespace pitTeam.BigBrain
         /// Ported from old plugin EngageEnemy intent: decide push movement style after the
         /// caller has already chosen automatic or ordered push activation.
         /// </summary>
-        public AICoreActionResultStruct<BotLogicDecision, GClass26> EngageEnemy(
+        public AICoreActionResult<BotLogicDecision, CoreActionResultParams> EngageEnemy(
             PushActivationSource source,
             bool enemyLowThreat = false)
         {
             EnemyInfo? goalEnemy = botOwner.Memory.GoalEnemy;
             if (goalEnemy == null)
             {
-                return new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.holdPosition, "engageNoEnemy");
+                return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.holdPosition, "engageNoEnemy");
             }
 
             bool pushOrdered = source == PushActivationSource.Ordered;
@@ -275,7 +275,7 @@ namespace pitTeam.BigBrain
 
             if (!pushOrdered &&
                 IsEnemyMarksman(goalEnemy) &&
-                TryCreateMarksmanFightDecision(goalEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> marksmanFight))
+                TryCreateMarksmanFightDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> marksmanFight))
             {
                 return marksmanFight;
             }
@@ -291,7 +291,7 @@ namespace pitTeam.BigBrain
             if (!pushOrdered &&
                 combatCommon.ShouldBlockProactiveAutoPushForWeaponThreat(goalEnemy))
             {
-                if (TryCreateLowAmmoCoveredPush(goalEnemy, distanceToEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> weaponThreatDecision))
+                if (TryCreateLowAmmoCoveredPush(goalEnemy, distanceToEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> weaponThreatDecision))
                 {
                     return weaponThreatDecision;
                 }
@@ -303,7 +303,7 @@ namespace pitTeam.BigBrain
                 ShouldRestrictAutoPushForWeapon(out bool allowCloseShotgunPush) &&
                 !CanUseCloseShotgunAutoPush(goalEnemy, allowCloseShotgunPush))
             {
-                if (TryCreateLowAmmoCoveredPush(goalEnemy, distanceToEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> lowAmmoDecision))
+                if (TryCreateLowAmmoCoveredPush(goalEnemy, distanceToEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> lowAmmoDecision))
                 {
                     return lowAmmoDecision;
                 }
@@ -315,7 +315,7 @@ namespace pitTeam.BigBrain
             if (pushOrdered || source == PushActivationSource.Automatic || botOwner.Memory.AttackImmediately)
             {
                 if (cautiousPush &&
-                    TryCreateCautiousPushDecision(goalEnemy, distanceToEnemy, pushOrdered, out AICoreActionResultStruct<BotLogicDecision, GClass26> cautiousDecision))
+                    TryCreateCautiousPushDecision(goalEnemy, distanceToEnemy, pushOrdered, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> cautiousDecision))
                 {
                     return cautiousDecision;
                 }
@@ -360,7 +360,7 @@ namespace pitTeam.BigBrain
                         CustomNavigationPoint? approachPoint = combatCommon.GetApproachableCover(
                             true,
                             avoidBossFireLane: !pushOrdered);
-                        if (TryCreateApproachCoverDecision(approachPoint, out AICoreActionResultStruct<BotLogicDecision, GClass26> approachDecision))
+                        if (TryCreateApproachCoverDecision(approachPoint, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> approachDecision))
                         {
                             return approachDecision;
                         }
@@ -370,7 +370,7 @@ namespace pitTeam.BigBrain
 
                     if (distanceToEnemy == Utils.Enemy.EnemyDistance.VeryClose)
                     {
-                        return new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.dogFight, "pushDogFight");
+                        return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.dogFight, "pushDogFight");
                     }
 
                     return CreatePushDecision(BotLogicDecision.goToEnemy);
@@ -381,12 +381,12 @@ namespace pitTeam.BigBrain
                 {
                     if (botOwner.Memory.IsInCover && botOwner.Memory.CurCustomCoverPoint?.CanIShootToEnemy == true)
                     {
-                        return new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.shootFromCover, "pushShootFromCover");
+                        return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.shootFromCover, "pushShootFromCover");
                     }
 
                     if (distanceToEnemy <= Utils.Enemy.EnemyDistance.VeryClose)
                     {
-                        return new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.dogFight, "pushDogFight");
+                        return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.dogFight, "pushDogFight");
                     }
 
                     SetAttackTactic();
@@ -401,7 +401,7 @@ namespace pitTeam.BigBrain
                 CustomNavigationPoint? blindApproach = combatCommon.GetApproachableCover(
                     distanceToEnemy > Utils.Enemy.EnemyDistance.Mid,
                     avoidBossFireLane: !pushOrdered);
-                if (TryCreateApproachCoverDecision(blindApproach, out AICoreActionResultStruct<BotLogicDecision, GClass26> blindApproachDecision))
+                if (TryCreateApproachCoverDecision(blindApproach, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> blindApproachDecision))
                 {
                     return blindApproachDecision;
                 }
@@ -412,17 +412,17 @@ namespace pitTeam.BigBrain
             // Old plugin "intimidation" fallback: maintain pressure from cover or hold lane.
             if (botOwner.Memory.IsInCover && botOwner.Memory.CurCustomCoverPoint?.CanIShootToEnemy == true)
             {
-                return new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.shootFromCover, "pressureShootFromCover");
+                return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.shootFromCover, "pressureShootFromCover");
             }
 
             if (distanceToEnemy <= Utils.Enemy.EnemyDistance.VeryClose)
             {
-                return new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.dogFight, "pressureDogFight");
+                return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.dogFight, "pressureDogFight");
             }
 
             if (!enemyVisible && Time.time - goalEnemy.PersonalLastSeenTime < UnityEngine.Random.Range(2f, 3f))
             {
-                return new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.holdPosition, "pressureHold");
+                return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.holdPosition, "pressureHold");
             }
 
             if (distanceToEnemy >= Utils.Enemy.EnemyDistance.Mid)
@@ -434,7 +434,7 @@ namespace pitTeam.BigBrain
                     centerPosition,
                     radius,
                     avoidBossFireLane: true);
-                if (TryCreateApproachCoverDecision(shootCover, out AICoreActionResultStruct<BotLogicDecision, GClass26> shootCoverDecision))
+                if (TryCreateApproachCoverDecision(shootCover, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> shootCoverDecision))
                 {
                     return shootCoverDecision;
                 }
@@ -449,7 +449,7 @@ namespace pitTeam.BigBrain
             EnemyInfo goalEnemy,
             Utils.Enemy.EnemyDistance distanceToEnemy,
             bool pushOrdered,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
 
@@ -457,7 +457,7 @@ namespace pitTeam.BigBrain
             {
                 if (botOwner.Memory.IsInCover && botOwner.Memory.CurCustomCoverPoint?.CanIShootToEnemy == true)
                 {
-                    decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                    decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                         BotLogicDecision.shootFromCover,
                         pushOrdered ? "push.ordered.cautiousShootFromCover" : "push.cautiousShootFromCover");
                     return true;
@@ -465,7 +465,7 @@ namespace pitTeam.BigBrain
 
                 if (goalEnemy.CanShoot)
                 {
-                    decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                    decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                         BotLogicDecision.shootFromPlace,
                         pushOrdered ? "push.ordered.cautiousShootFromPlace" : "push.cautiousShootFromPlace");
                     return true;
@@ -499,13 +499,13 @@ namespace pitTeam.BigBrain
             return true;
         }
 
-        public AICoreActionResultStruct<BotLogicDecision, GClass26> CreateOrderedPushDecision(EnemyInfo goalEnemy)
+        public AICoreActionResult<BotLogicDecision, CoreActionResultParams> CreateOrderedPushDecision(EnemyInfo goalEnemy)
         {
             if (ShouldUseOrderedForwardApproach(goalEnemy))
             {
                 if (TryCreateOrderedForwardCoverDecision(
                         goalEnemy,
-                        out AICoreActionResultStruct<BotLogicDecision, GClass26> forwardCoverDecision))
+                        out AICoreActionResult<BotLogicDecision, CoreActionResultParams> forwardCoverDecision))
                 {
                     return forwardCoverDecision;
                 }
@@ -518,7 +518,7 @@ namespace pitTeam.BigBrain
 
         private bool TryCreateOrderedForwardCoverDecision(
             EnemyInfo goalEnemy,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             if (!combatCommon.HasActiveCombatEnemy(goalEnemy))
@@ -546,17 +546,17 @@ namespace pitTeam.BigBrain
             return decision.Action == BotLogicDecision.attackMoving;
         }
 
-        private AICoreActionResultStruct<BotLogicDecision, GClass26> CreateOrderedProvisionalAdvanceDecision()
+        private AICoreActionResult<BotLogicDecision, CoreActionResultParams> CreateOrderedProvisionalAdvanceDecision()
         {
-            return new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+            return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                 BotLogicDecision.goToEnemy,
                 OrderedProvisionalAdvanceReason);
         }
 
         private bool TryPrepareOrderedClosePushTransition(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision,
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision,
             EnemyInfo goalEnemy,
-            out AICoreActionEndStruct end)
+            out AICoreActionEnd end)
         {
             end = FollowerCombatCommon.Continue();
             if (!IsOrderedForwardApproachDecision(currentDecision) ||
@@ -565,7 +565,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision =
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> nextDecision =
                 MarkOrderedPushDecision(EngageEnemy(PushActivationSource.Ordered));
             if (!combatCommon.TryPrepareDecisionTransition(
                     currentDecision,
@@ -581,14 +581,14 @@ namespace pitTeam.BigBrain
             }
 
             ClearCommittedPush("orderedClosePushTakeover");
-            end = new AICoreActionEndStruct("orderedClosePushTakeover", true);
+            end = new AICoreActionEnd("orderedClosePushTakeover", true);
             return true;
         }
 
         private bool TryPrepareOrderedForwardCoverTransition(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision,
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision,
             EnemyInfo goalEnemy,
-            out AICoreActionEndStruct end)
+            out AICoreActionEnd end)
         {
             end = FollowerCombatCommon.Continue();
             if (!IsOrderedProvisionalAdvance(currentDecision) ||
@@ -600,7 +600,7 @@ namespace pitTeam.BigBrain
             nextOrderedForwardCoverScanAt = Time.time + OrderedForwardCoverScanInterval;
             if (!TryCreateOrderedForwardCoverDecision(
                     goalEnemy,
-                    out AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision))
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> nextDecision))
             {
                 return false;
             }
@@ -615,26 +615,26 @@ namespace pitTeam.BigBrain
             }
 
             ClearCommittedPush("orderedForwardCoverAvailable");
-            end = new AICoreActionEndStruct("orderedForwardCoverAvailable", true);
+            end = new AICoreActionEnd("orderedForwardCoverAvailable", true);
             return true;
         }
 
         private static bool IsOrderedProvisionalAdvance(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             return decision.Action == BotLogicDecision.goToEnemy &&
                    string.Equals(decision.Reason, OrderedProvisionalAdvanceReason, StringComparison.Ordinal);
         }
 
         private static bool IsOrderedForwardCoverMove(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             return decision.Action == BotLogicDecision.attackMoving &&
                    decision.Reason?.StartsWith(OrderedForwardShootCoverReason, StringComparison.Ordinal) == true;
         }
 
         private static bool IsOrderedForwardApproachDecision(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             return IsOrderedProvisionalAdvance(decision) || IsOrderedForwardCoverMove(decision);
         }
@@ -644,8 +644,8 @@ namespace pitTeam.BigBrain
             return Utils.Enemy.Distance(goalEnemy) > Utils.Enemy.EnemyDistance.Close;
         }
 
-        private static AICoreActionResultStruct<BotLogicDecision, GClass26> MarkOrderedPushDecision(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        private static AICoreActionResult<BotLogicDecision, CoreActionResultParams> MarkOrderedPushDecision(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             if (decision.Reason == null ||
                 decision.Reason.StartsWith("push.ordered", StringComparison.Ordinal))
@@ -655,7 +655,7 @@ namespace pitTeam.BigBrain
 
             if (decision.Reason.StartsWith("push.", StringComparison.Ordinal))
             {
-                return new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                     decision.Action,
                     "push.ordered." + decision.Reason.Substring("push.".Length));
             }
@@ -666,7 +666,7 @@ namespace pitTeam.BigBrain
 
         private bool TryCreateApproachCoverDecision(
             CustomNavigationPoint? cover,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             if (cover == null ||
@@ -705,7 +705,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            MagazineItemClass? magazine = activeWeapon.GetCurrentMagazine();
+            EFT.InventoryLogic.Magazine? magazine = activeWeapon.GetCurrentMagazine();
             int? magazineCount = magazine?.Cartridges?.Count;
             if (!magazineCount.HasValue)
             {
@@ -725,7 +725,7 @@ namespace pitTeam.BigBrain
             return true;
         }
 
-        private bool IsLowCapacityAutoPushWeapon(Weapon activeWeapon, MagazineItemClass? magazine)
+        private bool IsLowCapacityAutoPushWeapon(Weapon activeWeapon, EFT.InventoryLogic.Magazine? magazine)
         {
             int magazineCapacity = magazine?.MaxCount ?? activeWeapon.GetMaxMagazineCount();
             if (magazineCapacity <= 0 || magazineCapacity >= StandardAutoPushMagazineCapacity)
@@ -795,7 +795,7 @@ namespace pitTeam.BigBrain
         private bool TryCreateLowAmmoCoveredPush(
             EnemyInfo goalEnemy,
             Utils.Enemy.EnemyDistance distanceToEnemy,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             if (distanceToEnemy < Utils.Enemy.EnemyDistance.Mid)
@@ -812,13 +812,13 @@ namespace pitTeam.BigBrain
             return TryCreateApproachCoverDecision(cover, out decision);
         }
 
-        private AICoreActionResultStruct<BotLogicDecision, GClass26> CreateMemoryOnlyAutoSearchDecision(EnemyInfo goalEnemy)
+        private AICoreActionResult<BotLogicDecision, CoreActionResultParams> CreateMemoryOnlyAutoSearchDecision(EnemyInfo goalEnemy)
         {
             // Memory-only contact is not authority for an assault push, but it is enough to
             // investigate cautiously. The dedicated path commits a credible last-known point;
             // it never reads the hidden enemy's live CurrPosition or delegates target refresh to
             // vanilla search logic.
-            AICoreActionResultStruct<BotLogicDecision, GClass26> searchDecision =
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> searchDecision =
                 combatCommon.CreateMemoryOnlyEnemySearchDecision(goalEnemy, "memoryOnlyAutoSearch");
             if (searchDecision.Action != BotLogicDecision.holdPosition ||
                 FollowerCombatRegroupObjective.IsRegroupActivationReason(searchDecision.Reason))
@@ -838,24 +838,24 @@ namespace pitTeam.BigBrain
                     reason.StartsWith("push.ordered.memorySearch", StringComparison.Ordinal));
         }
 
-        private AICoreActionResultStruct<BotLogicDecision, GClass26> CreateNoPushDecision(EnemyInfo goalEnemy, string reasonPrefix)
+        private AICoreActionResult<BotLogicDecision, CoreActionResultParams> CreateNoPushDecision(EnemyInfo goalEnemy, string reasonPrefix)
         {
             if (combatCommon.CanShootFromCurrentCover(out _))
             {
-                return new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                     BotLogicDecision.shootFromCover,
                     $"{reasonPrefix}ShootFromCover");
             }
 
             if (goalEnemy.IsVisible && goalEnemy.CanShoot)
             {
-                return new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                     BotLogicDecision.shootFromPlace,
                     $"{reasonPrefix}ShootFromPlace");
             }
 
             combatCommon.HoldFor(NoPushHoldSeconds);
-            return new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+            return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                 BotLogicDecision.holdPosition,
                 $"{reasonPrefix}Hold");
         }
@@ -906,13 +906,13 @@ namespace pitTeam.BigBrain
 
         private bool TryCreateMarksmanFightDecision(
             EnemyInfo goalEnemy,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
 
             if (combatCommon.CanShootFromCurrentCoverOrStandingIntent(out _))
             {
-                decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                     BotLogicDecision.shootFromCover,
                     "push.marksmanShootFromCover");
                 return true;
@@ -936,7 +936,7 @@ namespace pitTeam.BigBrain
 
             if (goalEnemy.CanShoot)
             {
-                decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                     BotLogicDecision.shootFromPlace,
                     "push.marksmanShootFromPlace");
                 return true;
@@ -945,7 +945,7 @@ namespace pitTeam.BigBrain
             return false;
         }
 
-        private static AICoreActionResultStruct<BotLogicDecision, GClass26> CreatePushDecision(BotLogicDecision action)
+        private static AICoreActionResult<BotLogicDecision, CoreActionResultParams> CreatePushDecision(BotLogicDecision action)
         {
             string suffix = action switch
             {
@@ -958,10 +958,10 @@ namespace pitTeam.BigBrain
                 _ => action.ToString(),
             };
 
-            return new AICoreActionResultStruct<BotLogicDecision, GClass26>(action, $"{PushReasonPrefix}{suffix}");
+            return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(action, $"{PushReasonPrefix}{suffix}");
         }
 
-        private void CommitPush(AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        private void CommitPush(AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             // The pusher commits locally first, then may publish a squad push event. The event is
             // only a support trigger for other followers; it is not required for this bot's push.
@@ -1006,7 +1006,7 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
-            if (combatCommon.TryGetCommittedPushDecision(goalEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> committedPush) &&
+            if (combatCommon.TryGetCommittedPushDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> committedPush) &&
                 IsStartWeakEnemyPushReason(committedPush.Reason) &&
                 combatCommon.ShouldBlockWeakEnemyRushForBossDistance(goalEnemy))
             {
@@ -1081,7 +1081,7 @@ namespace pitTeam.BigBrain
 
         private bool ShouldPrepareStalledPushFallback(
             EnemyInfo goalEnemy,
-            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision,
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision,
             out string reason)
         {
             reason = string.Empty;
@@ -1120,13 +1120,13 @@ namespace pitTeam.BigBrain
             if (!combatCommon.TryCreateSoftObstructedSuppressDecision(
                     goalEnemy,
                     "autoSuppress.pushStalled",
-                    out AICoreActionResultStruct<BotLogicDecision, GClass26> suppressDecision))
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> suppressDecision))
             {
                 bool ordered = IsOrderedPushReason(currentDecision.Reason);
                 string searchReason = ordered
                     ? "push.ordered.stalledSearch"
                     : "push.stalledSearch";
-                AICoreActionResultStruct<BotLogicDecision, GClass26> searchDecision =
+                AICoreActionResult<BotLogicDecision, CoreActionResultParams> searchDecision =
                     combatCommon.EnemyCoverSearch(
                         searchReason,
                         avoidBossFireLane: !ordered) ??
@@ -1182,7 +1182,7 @@ namespace pitTeam.BigBrain
 
             if (goalEnemy.IsVisible && goalEnemy.CanShoot)
             {
-                combatCommon.SetInitialDecision(new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                combatCommon.SetInitialDecision(new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                     BotLogicDecision.shootFromPlace,
                     "pushVisibleShoot"));
                 return;
@@ -1191,13 +1191,13 @@ namespace pitTeam.BigBrain
             if (combatCommon.TryCreateSuppressDecision(
                     goalEnemy,
                     "autoSuppress.pushVisible",
-                    out AICoreActionResultStruct<BotLogicDecision, GClass26> suppressDecision))
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> suppressDecision))
             {
                 combatCommon.SetInitialDecision(suppressDecision);
             }
         }
 
-        private void TryEmitPushEvent(AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        private void TryEmitPushEvent(AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             if (botOwner.BotFollower?.BossToFollow is not pitAIBossPlayer boss)
             {
@@ -1284,10 +1284,10 @@ namespace pitTeam.BigBrain
 
         private void SetAttackTactic()
         {
-            if (botOwner.Tactic.ShallReturnToAttack)
+            if (botOwner.Tactic._shallReturnToAttack)
             {
-                botOwner.Tactic.ShallReturnToAttack = false;
-                botOwner.Tactic.ReturnToAttackTime = 0f;
+                botOwner.Tactic._shallReturnToAttack = false;
+                botOwner.Tactic._returnToAttackTime = 0f;
             }
 
             botOwner.Tactic.SetTactic(BotsGroup.BotCurrentTactic.Attack);

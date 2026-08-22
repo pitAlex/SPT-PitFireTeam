@@ -16,8 +16,8 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UI;
-using OtherProfileResult = GClass2213;
-using ResultProfile = GClass1416;
+using OtherProfileResult = EFT.OtherPlayerProfileDescriptor;
+using ResultProfile = EFT.OtherPlayerProfile;
 
 namespace pitTeam.Patches
 {
@@ -366,10 +366,10 @@ namespace pitTeam.Patches
                     ? baseProfile.Inventory.Stash.CloneItemWithSameId()
                     : baseProfile.Inventory.Stash.CloneItem(null);
 
-                EFTInventoryClass inventoryDescriptor = new EFTInventoryClass(baseProfile.Inventory, GClass2240.Instance)
+                EFT.InventoryDescriptor inventoryDescriptor = new EFT.InventoryDescriptor(baseProfile.Inventory, EFT.FullySearchedSearchController.Instance)
                 {
-                    Equipment = EFTItemSerializerClass.SerializeItem(editorEquipment, null),
-                    Stash = EFTItemSerializerClass.SerializeItem(editorStash, null)
+                    Equipment = EFT.ItemBinarySerializer.SerializeItem(editorEquipment, null),
+                    Stash = EFT.ItemBinarySerializer.SerializeItem(editorStash, null)
                 };
 
                 baseProfile.Inventory = inventoryDescriptor.ToInventory();
@@ -444,15 +444,15 @@ namespace pitTeam.Patches
             try
             {
                 SimpleStashPanel stashTemplate = ResolveLoadoutEditorStashTemplate();
-                StashItemClass fakeStash = editorProfile?.Inventory?.Stash;
+                EFT.InventoryLogic.Stash fakeStash = editorProfile?.Inventory?.Stash;
                 if (stashTemplate == null || fakeStash == null)
                 {
                     throw new InvalidOperationException($"stashTemplate={(stashTemplate != null)}, fakeStash={(fakeStash != null)}");
                 }
 
-                ItemContextAbstractClass stashContext = new GClass3459(
+                EFT.InventoryLogic.ItemContext stashContext = new EFT.InventoryLogic.AreaStashItemContext(
                     fakeStash,
-                    GClass3459.EItemType.Inventory,
+                    EFT.InventoryLogic.AreaStashItemContext.EItemType.Inventory,
                     editorInventoryController.Inventory.FavoriteItemsStorage,
                     false);
 
@@ -504,7 +504,7 @@ namespace pitTeam.Patches
                     throw new InvalidOperationException($"equipmentTemplate={(equipmentTemplate != null)}, equipmentView={(equipmentView != null)}, followerController={(editorInventoryController != null)}");
                 }
 
-                ItemContextAbstractClass equipmentContext = new LoadoutEditorEquipmentRootContext(EItemViewType.InventoryDuringMatching);
+                EFT.InventoryLogic.ItemContext equipmentContext = new LoadoutEditorEquipmentRootContext(EItemViewType.InventoryDuringMatching);
                 LoadoutEditorEquipmentContext = equipmentContext;
 
                 ComplexStashPanel equipmentPanelRoot = GameObject.Instantiate(equipmentTemplate, rightSection, false);
@@ -566,12 +566,12 @@ namespace pitTeam.Patches
 
         private static void ShowLoadoutEditorEquipmentPanel(
             ComplexStashPanel panelRoot,
-            ItemContextAbstractClass equipmentContext,
+            EFT.InventoryLogic.ItemContext equipmentContext,
             InventoryEquipment equipmentView,
             InventoryController followerInventoryController,
             string followerName,
             SkillManager skills,
-            InsuranceCompanyClass insurance,
+            EFT.UI.Insurance.InsuranceCompany insurance,
             ItemUiContext itemUiContext)
         {
             if (panelRoot == null || equipmentView == null || followerInventoryController == null)
@@ -932,8 +932,8 @@ namespace pitTeam.Patches
         {
             try
             {
-                GClass3752.RequestGlobalClose();
-                ItemUiContext.Instance?.method_11();
+                EFT.UI.BaseContextInteractions.RequestGlobalClose();
+                ItemUiContext.Instance?.CloseAllWindows();
             }
             catch (Exception ex)
             {
@@ -996,7 +996,7 @@ namespace pitTeam.Patches
             {
                 pitFireTeam.Log.LogError("[UI] Failed to commit teammate loadout editor changes.");
                 pitFireTeam.Log.LogError(ex);
-                NotificationManagerClass.DisplayWarningNotification(
+                EFT.Communications.NotificationManager.DisplayWarningNotification(
                     ex.Message ?? GetSocialUiText("LoadoutEditorSaveFailed"),
                     ENotificationDurationType.Default);
             }
@@ -1008,7 +1008,7 @@ namespace pitTeam.Patches
                 || LoadoutEditorProfile?.Inventory?.Equipment == null
                 || ItemUiContext.Instance == null)
             {
-                NotificationManagerClass.DisplayWarningNotification(
+                EFT.Communications.NotificationManager.DisplayWarningNotification(
                     GetSocialUiText("LoadoutEditorSaveFailed"),
                     ENotificationDurationType.Default);
                 return;
@@ -1022,7 +1022,7 @@ namespace pitTeam.Patches
 
             if (ActiveProfileSession?.EquipmentBuildsStorage == null)
             {
-                NotificationManagerClass.DisplayWarningNotification(
+                EFT.Communications.NotificationManager.DisplayWarningNotification(
                     GetSocialUiText("LoadoutEditorSaveFailed"),
                     ENotificationDurationType.Default);
                 return;
@@ -1032,7 +1032,7 @@ namespace pitTeam.Patches
                 ? ActiveProfileSession.EquipmentBuildsStorage.LastEquippedPresetName
                 : LoadoutEditorSourceLoadoutName;
 
-            GClass3838 nameDialog = ItemUiContext.Instance.ShowEditBuildNameWindow(
+            EFT.UI.Builds.EditBuildNameWindowContext nameDialog = ItemUiContext.Instance.ShowEditBuildNameWindow(
                 initialName ?? string.Empty,
                 "EquipmentBuild/SetNameWindowCaption".Localized(null),
                 "EquipmentBuild/SetNameWindowPlaceholder".Localized(null));
@@ -1053,14 +1053,14 @@ namespace pitTeam.Patches
 
                     if (string.IsNullOrWhiteSpace(enteredName))
                     {
-                        NotificationManagerClass.DisplayWarningNotification(GetSocialUiText("NameCannotBeEmpty"), ENotificationDurationType.Default);
+                        EFT.Communications.NotificationManager.DisplayWarningNotification(GetSocialUiText("NameCannotBeEmpty"), ENotificationDurationType.Default);
                         continue;
                     }
 
                     enteredName = enteredName.Trim();
-                    EquipmentBuildsStorageClass buildsStorage = ActiveProfileSession.EquipmentBuildsStorage;
-                    GClass3953 originalBuild = TryGetCustomBuildById(LoadoutEditorSourceLoadoutId);
-                    GClass3953 existingBuildByName = buildsStorage.FindCustomBuildByName(enteredName);
+                    EFT.UI.Builds.EquipmentBuildsStorage buildsStorage = ActiveProfileSession.EquipmentBuildsStorage;
+                    EFT.UI.Builds.EquipmentBuild originalBuild = TryGetCustomBuildById(LoadoutEditorSourceLoadoutId);
+                    EFT.UI.Builds.EquipmentBuild existingBuildByName = buildsStorage.FindCustomBuildByName(enteredName);
                     MongoID targetBuildId;
 
                     if (existingBuildByName != null
@@ -1083,7 +1083,7 @@ namespace pitTeam.Patches
                         targetBuildId = new MongoID(ActiveProfileSession.Profile);
                     }
 
-                    GClass3953 editedBuild = new GClass3953(
+                    EFT.UI.Builds.EquipmentBuild editedBuild = new EFT.UI.Builds.EquipmentBuild(
                         targetBuildId,
                         enteredName,
                         CreateSanitizedLoadoutEditorSaveEquipment(),
@@ -1092,14 +1092,14 @@ namespace pitTeam.Patches
                     var saveResult = await buildsStorage.SaveBuild(editedBuild);
                     if (saveResult.Failed)
                     {
-                        NotificationManagerClass.DisplayWarningNotification(saveResult.Error ?? GetSocialUiText("SaveEquipmentPresetFailed"), ENotificationDurationType.Default);
+                        EFT.Communications.NotificationManager.DisplayWarningNotification(saveResult.Error ?? GetSocialUiText("SaveEquipmentPresetFailed"), ENotificationDurationType.Default);
                         continue;
                     }
 
                     await PersistTeammateLoadoutSelectionAsync(profile.AccountId, editedBuild.Id);
                     ActiveTeammateLoadoutId = editedBuild.Id;
                     ActiveTeammateLoadoutName = editedBuild.Name;
-                    NotificationManagerClass.DisplayMessageNotification(
+                    EFT.Communications.NotificationManager.DisplayMessageNotification(
                         string.Format("EquipmentBuilds/PresetSaved".Localized(null), editedBuild.Name),
                         ENotificationDurationType.Default,
                         ENotificationIconType.Default,
@@ -1129,14 +1129,14 @@ namespace pitTeam.Patches
 
             try
             {
-                FlatItemsDataClass[] serializedEquipment = Singleton<ItemFactoryClass>.Instance.TreeToFlatItems(
+                JsonType.FlatItem[] serializedEquipment = Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(
                     new Item[] { CreateSanitizedLoadoutEditorSaveEquipment() });
                 if (serializedEquipment == null || serializedEquipment.Length == 0)
                 {
                     throw new InvalidOperationException("Loadout editor default equipment was unavailable for save.");
                 }
 
-                FlatItemsDataClass[] serializedPlayerStash = null;
+                JsonType.FlatItem[] serializedPlayerStash = null;
                 if (realItemCommit)
                 {
                     // The editor is a staged inventory. Sending both sides lets the server commit the final
@@ -1214,7 +1214,7 @@ namespace pitTeam.Patches
             }
         }
 
-        internal static void ApplyServerSavedPlayerStash(FlatItemsDataClass[] savedStashItems)
+        internal static void ApplyServerSavedPlayerStash(JsonType.FlatItem[] savedStashItems)
         {
             ApplyServerSavedPlayerStash(
                 ActiveProfileSession?.Profile,
@@ -1228,8 +1228,8 @@ namespace pitTeam.Patches
         internal static void ApplyServerSavedPlayerStash(
             Profile activeProfile,
             InventoryController activeInventoryController,
-            RagFairClass ragFair,
-            FlatItemsDataClass[] savedStashItems)
+            EFT.UI.Ragfair.RagFair ragFair,
+            JsonType.FlatItem[] savedStashItems)
         {
             if (savedStashItems == null || savedStashItems.Length == 0)
             {
@@ -1241,18 +1241,18 @@ namespace pitTeam.Patches
                 throw new InvalidOperationException("Active player profile was unavailable for live stash refresh.");
             }
 
-            FlatItemsDataClass[] liveStashItems = Singleton<ItemFactoryClass>.Instance.TreeToFlatItems(
+            JsonType.FlatItem[] liveStashItems = Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(
                 new Item[] { activeProfile.Inventory.Stash });
             if (liveStashItems == null || liveStashItems.Length == 0)
             {
                 throw new InvalidOperationException("Active player stash was unavailable for live refresh.");
             }
 
-            if (activeInventoryController is GClass3388 profileInventoryController)
+            if (activeInventoryController is EFT.InventoryLogic.OfflineInventoryController profileInventoryController)
             {
                 try
                 {
-                    GClass2337 delta = BuildPlayerStashRefreshDelta(liveStashItems, savedStashItems);
+                    EFT.StashChangesResponse delta = BuildPlayerStashRefreshDelta(liveStashItems, savedStashItems);
                     int newCount = delta.@new?.Length ?? 0;
                     int changeCount = delta.change?.Length ?? 0;
                     int delCount = delta.del?.Length ?? 0;
@@ -1262,12 +1262,12 @@ namespace pitTeam.Patches
                         return;
                     }
 
-                    var updater = new GClass2331(
+                    var updater = new EFT.ProfileUpdatesHandler(
                         activeProfile,
                         profileInventoryController,
                         null,
                         ragFair);
-                    updater.UpdateProfile(new ProfileChangesPocoClass { Stash = delta });
+                    ((EFT.IProfileUpdatesHandler)updater).UpdateProfile(new EFT.ProfileChanges { Stash = delta });
                     if (!PlayerStashMatchesSavedSnapshot(activeProfile, savedStashItems))
                     {
                         throw CreateLiveStashRefreshException(
@@ -1293,9 +1293,9 @@ namespace pitTeam.Patches
         private static void ApplyServerSavedPlayerStashSnapshot(
             Profile activeProfile,
             InventoryController activeInventoryController,
-            FlatItemsDataClass[] savedStashItems)
+            JsonType.FlatItem[] savedStashItems)
         {
-            ItemFactoryClass.GStruct181 tree = Singleton<ItemFactoryClass>.Instance.FlatItemsToTree(savedStashItems, false, null);
+            EFT.ItemFactory.FlatItemsToResultTree tree = Singleton<EFT.ItemFactory>.Instance.FlatItemsToTree(savedStashItems, false, null);
             if (tree.DeserializationErrors != null && tree.DeserializationErrors.Count > 0)
             {
                 throw CreateLiveStashRefreshException(
@@ -1303,7 +1303,7 @@ namespace pitTeam.Patches
             }
 
             string stashRootId = savedStashItems[0]._id.ToString();
-            if (!tree.Items.TryGetValue(stashRootId, out Item savedRoot) || !(savedRoot is StashItemClass savedStash))
+            if (!tree.Items.TryGetValue(stashRootId, out Item savedRoot) || !(savedRoot is EFT.InventoryLogic.Stash savedStash))
             {
                 throw new InvalidOperationException("Server-saved player stash root was unavailable for live refresh.");
             }
@@ -1324,9 +1324,9 @@ namespace pitTeam.Patches
                     "Server-saved player stash could not be attached to the active inventory controller.");
             }
 
-            if (Singleton<HideoutClass>.Instantiated)
+            if (Singleton<EFT.Hideout.HideoutRepresentation>.Instantiated)
             {
-                Singleton<HideoutClass>.Instance.method_24();
+                Singleton<EFT.Hideout.HideoutRepresentation>.Instance.method_24();
             }
 
             foreach (Item item in EnumerateLoadoutEditorItemTree(savedStash))
@@ -1337,9 +1337,9 @@ namespace pitTeam.Patches
             Modules.Logger.LogInfo("[UI] Applied live player stash refresh from server-saved snapshot.");
         }
 
-        private static void RememberActiveBackendInventoryController(ISession session, InventoryController inventoryController)
+        private static void RememberActiveBackendInventoryController(EFT.IEftSession session, InventoryController inventoryController)
         {
-            if (inventoryController is GClass3388 backendController
+            if (inventoryController is EFT.InventoryLogic.OfflineInventoryController backendController
                 && session?.Profile != null
                 && ReferenceEquals(backendController.Profile, session.Profile))
             {
@@ -1351,7 +1351,7 @@ namespace pitTeam.Patches
             Profile activeProfile,
             InventoryController preferredController)
         {
-            if (preferredController is GClass3388)
+            if (preferredController is EFT.InventoryLogic.OfflineInventoryController)
             {
                 return preferredController;
             }
@@ -1560,14 +1560,14 @@ namespace pitTeam.Patches
             try
             {
                 bool realItemCommit = IsRealDefaultLoadoutEditorCommit();
-                FlatItemsDataClass[] serializedEquipment = Singleton<ItemFactoryClass>.Instance.TreeToFlatItems(
+                JsonType.FlatItem[] serializedEquipment = Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(
                     new Item[] { CreateSanitizedLoadoutEditorSaveEquipment() });
                 if (serializedEquipment == null || serializedEquipment.Length == 0)
                 {
                     return new FailedResult("Loadout editor default equipment was unavailable for save.", 0);
                 }
 
-                FlatItemsDataClass[] serializedPlayerStash = realItemCommit
+                JsonType.FlatItem[] serializedPlayerStash = realItemCommit
                     ? CreateLoadoutEditorSaveStashItems()
                     : null;
 
@@ -1671,8 +1671,8 @@ namespace pitTeam.Patches
         }
 
         private static bool TryApplyPlayerStashDelta(
-            FlatItemsDataClass[] newItems,
-            FlatItemsDataClass[] changedItems,
+            JsonType.FlatItem[] newItems,
+            JsonType.FlatItem[] changedItems,
             string[] deletedItemIds,
             string reason)
         {
@@ -1681,9 +1681,9 @@ namespace pitTeam.Patches
                 return false;
             }
 
-            newItems ??= Array.Empty<FlatItemsDataClass>();
-            changedItems ??= Array.Empty<FlatItemsDataClass>();
-            FlatItemsDataClass[] deletedItems = CreateDeletedFlatItems(deletedItemIds);
+            newItems ??= Array.Empty<JsonType.FlatItem>();
+            changedItems ??= Array.Empty<JsonType.FlatItem>();
+            JsonType.FlatItem[] deletedItems = CreateDeletedFlatItems(deletedItemIds);
             if (newItems.Length == 0 && changedItems.Length == 0 && deletedItems.Length == 0)
             {
                 return true;
@@ -1693,21 +1693,21 @@ namespace pitTeam.Patches
             InventoryController inventoryController = ResolveActiveProfileInventoryControllerForBackendUpdate(
                 activeProfile,
                 ActiveProfileInventoryController);
-            if (activeProfile == null || !(inventoryController is GClass3388 profileInventoryController))
+            if (activeProfile == null || !(inventoryController is EFT.InventoryLogic.OfflineInventoryController profileInventoryController))
             {
                 return false;
             }
 
             try
             {
-                var updater = new GClass2331(
+                var updater = new EFT.ProfileUpdatesHandler(
                     activeProfile,
                     profileInventoryController,
                     null,
                     ActiveProfileSession?.RagFair);
-                updater.UpdateProfile(new ProfileChangesPocoClass
+                ((EFT.IProfileUpdatesHandler)updater).UpdateProfile(new EFT.ProfileChanges
                 {
-                    Stash = new GClass2337
+                    Stash = new EFT.StashChangesResponse
                     {
                         @new = newItems,
                         change = changedItems,
@@ -1725,14 +1725,14 @@ namespace pitTeam.Patches
             }
         }
 
-        private static FlatItemsDataClass[] CreateDeletedFlatItems(IEnumerable<string> itemIds)
+        private static JsonType.FlatItem[] CreateDeletedFlatItems(IEnumerable<string> itemIds)
         {
             if (itemIds == null)
             {
-                return Array.Empty<FlatItemsDataClass>();
+                return Array.Empty<JsonType.FlatItem>();
             }
 
-            List<FlatItemsDataClass> deletedItems = new List<FlatItemsDataClass>();
+            List<JsonType.FlatItem> deletedItems = new List<JsonType.FlatItem>();
             foreach (string itemId in itemIds)
             {
                 if (string.IsNullOrWhiteSpace(itemId))
@@ -1742,7 +1742,7 @@ namespace pitTeam.Patches
 
                 try
                 {
-                    deletedItems.Add(new FlatItemsDataClass { _id = new MongoID(itemId) });
+                    deletedItems.Add(new JsonType.FlatItem { _id = new MongoID(itemId) });
                 }
                 catch (Exception ex)
                 {
@@ -1760,8 +1760,8 @@ namespace pitTeam.Patches
                 return;
             }
 
-            FlatItemsDataClass[] newItems = response.playerNewStashItems ?? Array.Empty<FlatItemsDataClass>();
-            FlatItemsDataClass[] changedItems = response.playerChangedStashItems ?? Array.Empty<FlatItemsDataClass>();
+            JsonType.FlatItem[] newItems = response.playerNewStashItems ?? Array.Empty<JsonType.FlatItem>();
+            JsonType.FlatItem[] changedItems = response.playerChangedStashItems ?? Array.Empty<JsonType.FlatItem>();
             string[] deletedItemIds = response.playerDeletedStashItemIds ?? Array.Empty<string>();
             if (newItems.Length > 0)
             {
@@ -1779,7 +1779,7 @@ namespace pitTeam.Patches
 
             try
             {
-                foreach (FlatItemsDataClass changedItem in changedItems)
+                foreach (JsonType.FlatItem changedItem in changedItems)
                 {
                     string changedId = changedItem?._id.ToString();
                     if (string.IsNullOrWhiteSpace(changedId)
@@ -1803,7 +1803,7 @@ namespace pitTeam.Patches
                         continue;
                     }
 
-                    var removeResult = InteractionsHandlerClass.DiscardWithoutRestrictions(editorItem, LoadoutEditorInventoryController);
+                    var removeResult = EFT.InventoryLogic.ItemManipulator.DiscardWithoutRestrictions(editorItem, LoadoutEditorInventoryController);
                     if (removeResult.Succeeded)
                     {
                         removeResult.Value.RaiseEvents(LoadoutEditorInventoryController, CommandStatus.Begin);
@@ -1828,7 +1828,7 @@ namespace pitTeam.Patches
             }
         }
 
-        private static void ApplyServerSavedLoadoutEditorStash(FlatItemsDataClass[] savedStashItems)
+        private static void ApplyServerSavedLoadoutEditorStash(JsonType.FlatItem[] savedStashItems)
         {
             if (savedStashItems == null
                 || savedStashItems.Length == 0
@@ -1840,10 +1840,10 @@ namespace pitTeam.Patches
 
             try
             {
-                FlatItemsDataClass[] editorStashItems = RemoveLoadoutEditorEquipmentItemsFromSavedStash(savedStashItems);
-                ItemFactoryClass.GStruct181 tree = Singleton<ItemFactoryClass>.Instance.FlatItemsToTree(editorStashItems, false, null);
+                JsonType.FlatItem[] editorStashItems = RemoveLoadoutEditorEquipmentItemsFromSavedStash(savedStashItems);
+                EFT.ItemFactory.FlatItemsToResultTree tree = Singleton<EFT.ItemFactory>.Instance.FlatItemsToTree(editorStashItems, false, null);
                 string stashRootId = editorStashItems[0]._id.ToString();
-                if (!tree.Items.TryGetValue(stashRootId, out Item savedRoot) || !(savedRoot is StashItemClass savedStash))
+                if (!tree.Items.TryGetValue(stashRootId, out Item savedRoot) || !(savedRoot is EFT.InventoryLogic.Stash savedStash))
                 {
                     throw new InvalidOperationException("Server-saved player stash root was unavailable for loadout editor refresh.");
                 }
@@ -1861,7 +1861,7 @@ namespace pitTeam.Patches
             }
         }
 
-        private static FlatItemsDataClass[] RemoveLoadoutEditorEquipmentItemsFromSavedStash(FlatItemsDataClass[] savedStashItems)
+        private static JsonType.FlatItem[] RemoveLoadoutEditorEquipmentItemsFromSavedStash(JsonType.FlatItem[] savedStashItems)
         {
             InventoryEquipment equipment = LoadoutEditorProfile?.Inventory?.Equipment;
             if (equipment == null || savedStashItems == null || savedStashItems.Length == 0)
@@ -1895,13 +1895,13 @@ namespace pitTeam.Patches
                     continue;
                 }
 
-                RepairKitsItemClass activeRepairKit = ActiveProfileSession?.Profile?.Inventory?
+                EFT.InventoryLogic.RepairKit activeRepairKit = ActiveProfileSession?.Profile?.Inventory?
                     .GetPlayerItems()
-                    .OfType<RepairKitsItemClass>()
+                    .OfType<EFT.InventoryLogic.RepairKit>()
                     .FirstOrDefault(item => string.Equals(item.Id, repairKitInfo.Id, StringComparison.Ordinal));
-                RepairKitsItemClass editorRepairKit = LoadoutEditorProfile.Inventory
+                EFT.InventoryLogic.RepairKit editorRepairKit = LoadoutEditorProfile.Inventory
                     .GetPlayerItems()
-                    .OfType<RepairKitsItemClass>()
+                    .OfType<EFT.InventoryLogic.RepairKit>()
                     .FirstOrDefault(item => string.Equals(item.Id, repairKitInfo.Id, StringComparison.Ordinal));
                 if (editorRepairKit == null)
                 {
@@ -1922,10 +1922,10 @@ namespace pitTeam.Patches
 
         // Builds the same shape of item delta the stock backend item-event route returns. Parent/slot/location
         // changes are expressed as delete + add because EFT's "change" path only updates the upd block.
-        private static GClass2337 BuildPlayerStashRefreshDelta(FlatItemsDataClass[] currentItems, FlatItemsDataClass[] savedItems)
+        private static EFT.StashChangesResponse BuildPlayerStashRefreshDelta(JsonType.FlatItem[] currentItems, JsonType.FlatItem[] savedItems)
         {
-            Dictionary<string, FlatItemsDataClass> currentById = ToFlatItemDictionary(currentItems);
-            Dictionary<string, FlatItemsDataClass> savedById = ToFlatItemDictionary(savedItems);
+            Dictionary<string, JsonType.FlatItem> currentById = ToFlatItemDictionary(currentItems);
+            Dictionary<string, JsonType.FlatItem> savedById = ToFlatItemDictionary(savedItems);
             HashSet<string> stashRootIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (currentItems.Length > 0)
             {
@@ -1939,17 +1939,17 @@ namespace pitTeam.Patches
 
             HashSet<string> deleteCandidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             HashSet<string> addCandidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            List<FlatItemsDataClass> changedItems = new List<FlatItemsDataClass>();
+            List<JsonType.FlatItem> changedItems = new List<JsonType.FlatItem>();
 
             // First pass: live items that disappeared, moved, or only changed upd data.
-            foreach (KeyValuePair<string, FlatItemsDataClass> entry in currentById)
+            foreach (KeyValuePair<string, JsonType.FlatItem> entry in currentById)
             {
                 if (stashRootIds.Contains(entry.Key))
                 {
                     continue;
                 }
 
-                if (!savedById.TryGetValue(entry.Key, out FlatItemsDataClass savedItem))
+                if (!savedById.TryGetValue(entry.Key, out JsonType.FlatItem savedItem))
                 {
                     deleteCandidates.Add(entry.Key);
                     continue;
@@ -1969,7 +1969,7 @@ namespace pitTeam.Patches
             }
 
             // Second pass: items present in the saved stash but absent from the live profile.
-            foreach (KeyValuePair<string, FlatItemsDataClass> entry in savedById)
+            foreach (KeyValuePair<string, JsonType.FlatItem> entry in savedById)
             {
                 if (stashRootIds.Contains(entry.Key))
                 {
@@ -1997,12 +1997,12 @@ namespace pitTeam.Patches
                 .Where(item => !HasAncestorInSet(item, deleteRoots, savedById))
                 .ToList();
 
-            List<FlatItemsDataClass> newItems = ExpandFlatItemRoots(addRoots, savedById);
-            FlatItemsDataClass[] deletedItems = deleteRoots
-                .Select(id => new FlatItemsDataClass { _id = currentById[id]._id })
+            List<JsonType.FlatItem> newItems = ExpandFlatItemRoots(addRoots, savedById);
+            JsonType.FlatItem[] deletedItems = deleteRoots
+                .Select(id => new JsonType.FlatItem { _id = currentById[id]._id })
                 .ToArray();
 
-            return new GClass2337
+            return new EFT.StashChangesResponse
             {
                 @new = newItems.ToArray(),
                 change = changedItems.ToArray(),
@@ -2010,10 +2010,10 @@ namespace pitTeam.Patches
             };
         }
 
-        private static Dictionary<string, FlatItemsDataClass> ToFlatItemDictionary(IEnumerable<FlatItemsDataClass> items)
+        private static Dictionary<string, JsonType.FlatItem> ToFlatItemDictionary(IEnumerable<JsonType.FlatItem> items)
         {
-            Dictionary<string, FlatItemsDataClass> result = new Dictionary<string, FlatItemsDataClass>(StringComparer.OrdinalIgnoreCase);
-            foreach (FlatItemsDataClass item in items)
+            Dictionary<string, JsonType.FlatItem> result = new Dictionary<string, JsonType.FlatItem>(StringComparer.OrdinalIgnoreCase);
+            foreach (JsonType.FlatItem item in items)
             {
                 if (item?._id == null)
                 {
@@ -2028,15 +2028,15 @@ namespace pitTeam.Patches
 
         private static HashSet<string> ExpandAddCandidatesWithAddressableParents(
             HashSet<string> addCandidates,
-            Dictionary<string, FlatItemsDataClass> currentById,
-            Dictionary<string, FlatItemsDataClass> savedById,
+            Dictionary<string, JsonType.FlatItem> currentById,
+            Dictionary<string, JsonType.FlatItem> savedById,
             HashSet<string> deleteCandidates,
             HashSet<string> stashRootIds)
         {
             HashSet<string> expanded = new HashSet<string>(addCandidates, StringComparer.OrdinalIgnoreCase);
             foreach (string candidate in addCandidates.ToArray())
             {
-                if (!savedById.TryGetValue(candidate, out FlatItemsDataClass candidateItem))
+                if (!savedById.TryGetValue(candidate, out JsonType.FlatItem candidateItem))
                 {
                     continue;
                 }
@@ -2050,7 +2050,7 @@ namespace pitTeam.Patches
                         break;
                     }
 
-                    if (!savedById.TryGetValue(parentId, out FlatItemsDataClass parent))
+                    if (!savedById.TryGetValue(parentId, out JsonType.FlatItem parent))
                     {
                         break;
                     }
@@ -2073,9 +2073,9 @@ namespace pitTeam.Patches
         }
 
         private static bool HasAncestorInSet(
-            FlatItemsDataClass item,
+            JsonType.FlatItem item,
             IEnumerable<string> ancestorIds,
-            Dictionary<string, FlatItemsDataClass> sourceById)
+            Dictionary<string, JsonType.FlatItem> sourceById)
         {
             HashSet<string> ancestorSet = new HashSet<string>(ancestorIds, StringComparer.OrdinalIgnoreCase);
             string parentId = GetParentId(item);
@@ -2086,7 +2086,7 @@ namespace pitTeam.Patches
                     return true;
                 }
 
-                if (!sourceById.TryGetValue(parentId, out FlatItemsDataClass parent))
+                if (!sourceById.TryGetValue(parentId, out JsonType.FlatItem parent))
                 {
                     return false;
                 }
@@ -2097,7 +2097,7 @@ namespace pitTeam.Patches
             return false;
         }
 
-        private static List<string> ReduceToRootCandidates(HashSet<string> candidates, Dictionary<string, FlatItemsDataClass> sourceById)
+        private static List<string> ReduceToRootCandidates(HashSet<string> candidates, Dictionary<string, JsonType.FlatItem> sourceById)
         {
             List<string> roots = new List<string>();
             foreach (string candidate in candidates)
@@ -2112,7 +2112,7 @@ namespace pitTeam.Patches
                         break;
                     }
 
-                    if (!sourceById.TryGetValue(parentId, out FlatItemsDataClass parent))
+                    if (!sourceById.TryGetValue(parentId, out JsonType.FlatItem parent))
                     {
                         break;
                     }
@@ -2129,10 +2129,10 @@ namespace pitTeam.Patches
             return roots;
         }
 
-        private static List<FlatItemsDataClass> ExpandFlatItemRoots(IEnumerable<string> rootIds, Dictionary<string, FlatItemsDataClass> sourceById)
+        private static List<JsonType.FlatItem> ExpandFlatItemRoots(IEnumerable<string> rootIds, Dictionary<string, JsonType.FlatItem> sourceById)
         {
             Dictionary<string, List<string>> childrenByParent = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-            foreach (KeyValuePair<string, FlatItemsDataClass> entry in sourceById)
+            foreach (KeyValuePair<string, JsonType.FlatItem> entry in sourceById)
             {
                 string parentId = GetParentId(entry.Value);
                 if (string.IsNullOrWhiteSpace(parentId))
@@ -2149,7 +2149,7 @@ namespace pitTeam.Patches
                 children.Add(entry.Key);
             }
 
-            List<FlatItemsDataClass> result = new List<FlatItemsDataClass>();
+            List<JsonType.FlatItem> result = new List<JsonType.FlatItem>();
             HashSet<string> added = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (string rootId in rootIds)
             {
@@ -2161,12 +2161,12 @@ namespace pitTeam.Patches
 
         private static void AddFlatItemTree(
             string itemId,
-            Dictionary<string, FlatItemsDataClass> sourceById,
+            Dictionary<string, JsonType.FlatItem> sourceById,
             Dictionary<string, List<string>> childrenByParent,
             HashSet<string> added,
-            List<FlatItemsDataClass> result)
+            List<JsonType.FlatItem> result)
         {
-            if (!added.Add(itemId) || !sourceById.TryGetValue(itemId, out FlatItemsDataClass item))
+            if (!added.Add(itemId) || !sourceById.TryGetValue(itemId, out JsonType.FlatItem item))
             {
                 return;
             }
@@ -2183,7 +2183,7 @@ namespace pitTeam.Patches
             }
         }
 
-        private static bool PlacementChanged(FlatItemsDataClass current, FlatItemsDataClass saved)
+        private static bool PlacementChanged(JsonType.FlatItem current, JsonType.FlatItem saved)
         {
             return !string.Equals(current._tpl.ToString(), saved._tpl.ToString(), StringComparison.OrdinalIgnoreCase)
                 || !string.Equals(GetParentId(current), GetParentId(saved), StringComparison.OrdinalIgnoreCase)
@@ -2191,12 +2191,12 @@ namespace pitTeam.Patches
                 || !JsonTokenEquals(current.location, saved.location);
         }
 
-        private static string GetParentId(FlatItemsDataClass item)
+        private static string GetParentId(JsonType.FlatItem item)
         {
             return item?.parentId?.ToString();
         }
 
-        private static bool JsonTokenEquals(GClass846 left, GClass846 right)
+        private static bool JsonTokenEquals(UnparsedData left, UnparsedData right)
         {
             Newtonsoft.Json.Linq.JToken leftToken = left?.JToken;
             Newtonsoft.Json.Linq.JToken rightToken = right?.JToken;
@@ -2208,30 +2208,30 @@ namespace pitTeam.Patches
             return Newtonsoft.Json.Linq.JToken.DeepEquals(leftToken, rightToken);
         }
 
-        private static bool PlayerStashMatchesSavedSnapshot(Profile activeProfile, FlatItemsDataClass[] savedStashItems)
+        private static bool PlayerStashMatchesSavedSnapshot(Profile activeProfile, JsonType.FlatItem[] savedStashItems)
         {
             if (activeProfile?.Inventory?.Stash == null || savedStashItems == null || savedStashItems.Length == 0)
             {
                 return false;
             }
 
-            FlatItemsDataClass[] liveItems = Singleton<ItemFactoryClass>.Instance.TreeToFlatItems(
+            JsonType.FlatItem[] liveItems = Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(
                 new Item[] { activeProfile.Inventory.Stash });
             if (liveItems == null || liveItems.Length != savedStashItems.Length)
             {
                 return false;
             }
 
-            Dictionary<string, FlatItemsDataClass> liveById = ToFlatItemDictionary(liveItems);
-            Dictionary<string, FlatItemsDataClass> savedById = ToFlatItemDictionary(savedStashItems);
+            Dictionary<string, JsonType.FlatItem> liveById = ToFlatItemDictionary(liveItems);
+            Dictionary<string, JsonType.FlatItem> savedById = ToFlatItemDictionary(savedStashItems);
             if (liveById.Count != savedById.Count)
             {
                 return false;
             }
 
-            foreach (KeyValuePair<string, FlatItemsDataClass> savedEntry in savedById)
+            foreach (KeyValuePair<string, JsonType.FlatItem> savedEntry in savedById)
             {
-                if (!liveById.TryGetValue(savedEntry.Key, out FlatItemsDataClass liveItem)
+                if (!liveById.TryGetValue(savedEntry.Key, out JsonType.FlatItem liveItem)
                     || PlacementChanged(liveItem, savedEntry.Value)
                     || !JsonTokenEquals(liveItem.upd, savedEntry.Value.upd))
                 {
@@ -2274,7 +2274,7 @@ namespace pitTeam.Patches
             return pitFireTeam.IsFollowerLoadoutRealTransferMode() && IsDefaultLoadoutEditorSelection();
         }
 
-        private static FlatItemsDataClass[] CreateLoadoutEditorSaveStashItems()
+        private static JsonType.FlatItem[] CreateLoadoutEditorSaveStashItems()
         {
             Item stash = LoadoutEditorProfile?.Inventory?.Stash;
             if (stash == null)
@@ -2282,13 +2282,13 @@ namespace pitTeam.Patches
                 throw new InvalidOperationException("Loadout editor player stash was unavailable for real item save.");
             }
 
-            FlatItemsDataClass[] serializedStash = Singleton<ItemFactoryClass>.Instance.TreeToFlatItems(new Item[] { stash });
+            JsonType.FlatItem[] serializedStash = Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(new Item[] { stash });
             if (serializedStash == null || serializedStash.Length == 0)
             {
                 throw new InvalidOperationException("Loadout editor player stash was unavailable for real item save.");
             }
 
-            FlatItemsDataClass[] sanitizedStash = RemoveLoadoutEditorEquipmentItemsFromSavedStash(serializedStash);
+            JsonType.FlatItem[] sanitizedStash = RemoveLoadoutEditorEquipmentItemsFromSavedStash(serializedStash);
             if (sanitizedStash == null || sanitizedStash.Length == 0)
             {
                 throw new InvalidOperationException("Loadout editor player stash was unavailable after real item save sanitization.");
@@ -2310,13 +2310,13 @@ namespace pitTeam.Patches
             Item stash = editorProfile?.Inventory?.Stash;
             LoadoutEditorInitialEquipmentItems = equipment == null
                 ? null
-                : Singleton<ItemFactoryClass>.Instance.TreeToFlatItems(new Item[] { equipment });
+                : Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(new Item[] { equipment });
             LoadoutEditorInitialStashItems = stash == null
                 ? null
-                : Singleton<ItemFactoryClass>.Instance.TreeToFlatItems(new Item[] { stash });
+                : Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(new Item[] { stash });
         }
 
-        private static bool HasLoadoutEditorRealChanges(FlatItemsDataClass[] currentEquipment, FlatItemsDataClass[] currentStash)
+        private static bool HasLoadoutEditorRealChanges(JsonType.FlatItem[] currentEquipment, JsonType.FlatItem[] currentStash)
         {
             if (LoadoutEditorInitialEquipmentItems == null || LoadoutEditorInitialStashItems == null)
             {
@@ -2343,8 +2343,8 @@ namespace pitTeam.Patches
                     return true;
                 }
 
-                FlatItemsDataClass[] currentEquipment = Singleton<ItemFactoryClass>.Instance.TreeToFlatItems(new Item[] { equipment });
-                FlatItemsDataClass[] currentStash = Singleton<ItemFactoryClass>.Instance.TreeToFlatItems(new Item[] { stash });
+                JsonType.FlatItem[] currentEquipment = Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(new Item[] { equipment });
+                JsonType.FlatItem[] currentStash = Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(new Item[] { stash });
                 return HasLoadoutEditorRealChanges(currentEquipment, currentStash);
             }
             catch (Exception ex)
@@ -2354,23 +2354,23 @@ namespace pitTeam.Patches
             }
         }
 
-        private static bool FlatItemArraysEqual(FlatItemsDataClass[] left, FlatItemsDataClass[] right)
+        private static bool FlatItemArraysEqual(JsonType.FlatItem[] left, JsonType.FlatItem[] right)
         {
             if (left == null || right == null || left.Length != right.Length)
             {
                 return false;
             }
 
-            Dictionary<string, FlatItemsDataClass> leftById = ToFlatItemDictionary(left);
-            Dictionary<string, FlatItemsDataClass> rightById = ToFlatItemDictionary(right);
+            Dictionary<string, JsonType.FlatItem> leftById = ToFlatItemDictionary(left);
+            Dictionary<string, JsonType.FlatItem> rightById = ToFlatItemDictionary(right);
             if (leftById.Count != rightById.Count)
             {
                 return false;
             }
 
-            foreach (KeyValuePair<string, FlatItemsDataClass> entry in leftById)
+            foreach (KeyValuePair<string, JsonType.FlatItem> entry in leftById)
             {
-                if (!rightById.TryGetValue(entry.Key, out FlatItemsDataClass rightItem)
+                if (!rightById.TryGetValue(entry.Key, out JsonType.FlatItem rightItem)
                     || !FlatItemStateEquals(entry.Value, rightItem))
                 {
                     return false;
@@ -2380,7 +2380,7 @@ namespace pitTeam.Patches
             return true;
         }
 
-        private static bool FlatItemStateEquals(FlatItemsDataClass left, FlatItemsDataClass right)
+        private static bool FlatItemStateEquals(JsonType.FlatItem left, JsonType.FlatItem right)
         {
             if (left == null || right == null)
             {
@@ -2395,14 +2395,14 @@ namespace pitTeam.Patches
                 && JsonTokenEquals(left.upd, right.upd);
         }
 
-        private static GClass3953 TryGetCustomBuildById(string buildId)
+        private static EFT.UI.Builds.EquipmentBuild TryGetCustomBuildById(string buildId)
         {
             if (string.IsNullOrWhiteSpace(buildId) || ActiveProfileSession?.EquipmentBuildsStorage?.EquipmentBuilds == null)
             {
                 return null;
             }
 
-            foreach (KeyValuePair<MongoID, GClass3953> entry in ActiveProfileSession.EquipmentBuildsStorage.EquipmentBuilds)
+            foreach (KeyValuePair<MongoID, EFT.UI.Builds.EquipmentBuild> entry in ActiveProfileSession.EquipmentBuildsStorage.EquipmentBuilds)
             {
                 if (entry.Value?.BuildType != EEquipmentBuildType.Custom)
                 {
@@ -2421,17 +2421,17 @@ namespace pitTeam.Patches
         private sealed class FriendlyTeammateDefaultEquipmentRequest
         {
             public string aid { get; set; }
-            public FlatItemsDataClass[] items { get; set; }
-            public FlatItemsDataClass[] playerStashItems { get; set; }
+            public JsonType.FlatItem[] items { get; set; }
+            public JsonType.FlatItem[] playerStashItems { get; set; }
             public bool realItemCommit { get; set; }
         }
 
         private sealed class FriendlyTeammateDefaultEquipmentResponse
         {
             public bool realItemCommit { get; set; }
-            public FlatItemsDataClass[] playerStashItems { get; set; }
-            public FlatItemsDataClass[] playerNewStashItems { get; set; }
-            public FlatItemsDataClass[] playerChangedStashItems { get; set; }
+            public JsonType.FlatItem[] playerStashItems { get; set; }
+            public JsonType.FlatItem[] playerNewStashItems { get; set; }
+            public JsonType.FlatItem[] playerChangedStashItems { get; set; }
             public string[] playerDeletedStashItemIds { get; set; }
         }
 
@@ -2449,9 +2449,9 @@ namespace pitTeam.Patches
             public string itemId { get; set; }
             public double? durability { get; set; }
             public double? maxDurability { get; set; }
-            public FlatItemsDataClass[] playerStashItems { get; set; }
-            public FlatItemsDataClass[] playerNewStashItems { get; set; }
-            public FlatItemsDataClass[] playerChangedStashItems { get; set; }
+            public JsonType.FlatItem[] playerStashItems { get; set; }
+            public JsonType.FlatItem[] playerNewStashItems { get; set; }
+            public JsonType.FlatItem[] playerChangedStashItems { get; set; }
             public string[] playerDeletedStashItemIds { get; set; }
         }
 
@@ -2462,7 +2462,7 @@ namespace pitTeam.Patches
                 return false;
             }
 
-            GClass3834 messageWindow;
+            EFT.UI.DialogWindowContext messageWindow;
             try
             {
                 return await ItemUiContext.Instance.ShowMessageWindow(

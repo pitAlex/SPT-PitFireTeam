@@ -28,7 +28,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            MagazineItemClass insertedMagazine = GetCurrentMagazineSafely(weapon);
+            EFT.InventoryLogic.Magazine insertedMagazine = GetCurrentMagazineSafely(weapon);
             if (insertedMagazine != null &&
                 insertedMagazine.Count > 0 &&
                 !FollowerWeaponMagazineCompatibility.AreLoadedCartridgesCompatible(weapon, insertedMagazine))
@@ -40,7 +40,7 @@ namespace pitTeam.BigBrain.Actions
 
             List<BodyGearCandidate> looseAmmo = sourceAmmoCandidates?
                 .Where(candidate =>
-                    candidate?.Item is AmmoItemClass ammo &&
+                    candidate?.Item is EFT.InventoryLogic.Ammo ammo &&
                     IsItemInsideRoot(ammo, sourceRoot) &&
                     FollowerWeaponLooseAmmoSupport.IsCompatible(weapon, ammo))
                 .GroupBy(candidate => candidate.Item.Id, StringComparer.Ordinal)
@@ -96,7 +96,7 @@ namespace pitTeam.BigBrain.Actions
             int reserveTargetRounds = ResolveMagazineTopOffReserveTargetRounds(
                 projectedBeforeTopOff,
                 targets);
-            List<AmmoItemClass> carriedAmmo = GetFollowerWeaponCartridgeItems(
+            List<EFT.InventoryLogic.Ammo> carriedAmmo = GetFollowerWeaponCartridgeItems(
                     followerEquipment,
                     weapon)
                 .Concat(GetMagazineCartridgeItems(insertedMagazine))
@@ -114,7 +114,7 @@ namespace pitTeam.BigBrain.Actions
                     carriedAmmo,
                     reserveTargetRounds,
                     out TacticalAmmoDecision tacticalDecision);
-                if (ammoCandidate?.Item is not AmmoItemClass ammo)
+                if (ammoCandidate?.Item is not EFT.InventoryLogic.Ammo ammo)
                 {
                     continue;
                 }
@@ -175,7 +175,7 @@ namespace pitTeam.BigBrain.Actions
 
         private List<MagazineTopOffTarget> BuildMagazineTopOffTargets(
             Weapon weapon,
-            MagazineItemClass insertedMagazine,
+            EFT.InventoryLogic.Magazine insertedMagazine,
             OperationalMagazinePlan refillPlan)
         {
             List<MagazineTopOffTarget> targets = new List<MagazineTopOffTarget>();
@@ -191,7 +191,7 @@ namespace pitTeam.BigBrain.Actions
                     targets,
                     targetIds,
                     weapon,
-                    candidate.Item as MagazineItemClass,
+                    candidate.Item as EFT.InventoryLogic.Magazine,
                     isInsertedMagazine: false);
             }
 
@@ -212,7 +212,7 @@ namespace pitTeam.BigBrain.Actions
             ICollection<MagazineTopOffTarget> targets,
             ISet<string> targetIds,
             Weapon weapon,
-            MagazineItemClass magazine,
+            EFT.InventoryLogic.Magazine magazine,
             bool isInsertedMagazine)
         {
             if (magazine == null ||
@@ -232,25 +232,25 @@ namespace pitTeam.BigBrain.Actions
 
         private static BodyGearCandidate SelectMagazineTopOffAmmo(
             Weapon weapon,
-            MagazineItemClass magazine,
+            EFT.InventoryLogic.Magazine magazine,
             IEnumerable<BodyGearCandidate> candidates,
-            IEnumerable<AmmoItemClass> carriedAmmo,
+            IEnumerable<EFT.InventoryLogic.Ammo> carriedAmmo,
             int reserveTargetRounds,
             out TacticalAmmoDecision selectedDecision)
         {
             selectedDecision = default;
             List<BodyGearCandidate> source = candidates?
                 .Where(candidate =>
-                    candidate?.Item is AmmoItemClass ammo &&
+                    candidate?.Item is EFT.InventoryLogic.Ammo ammo &&
                     CanTopOffMagazineWithAmmo(weapon, magazine, ammo))
                 .ToList() ?? new List<BodyGearCandidate>();
             foreach (BodyGearCandidate candidate in source
-                .OrderByDescending(candidate => ((AmmoItemClass)candidate.Item).PenetrationPower)
-                .ThenByDescending(candidate => ((AmmoItemClass)candidate.Item).Damage)
-                .ThenByDescending(candidate => ((AmmoItemClass)candidate.Item).ArmorDamage)
-                .ThenByDescending(candidate => ((AmmoItemClass)candidate.Item).StackObjectsCount))
+                .OrderByDescending(candidate => ((EFT.InventoryLogic.Ammo)candidate.Item).PenetrationPower)
+                .ThenByDescending(candidate => ((EFT.InventoryLogic.Ammo)candidate.Item).Damage)
+                .ThenByDescending(candidate => ((EFT.InventoryLogic.Ammo)candidate.Item).ArmorDamage)
+                .ThenByDescending(candidate => ((EFT.InventoryLogic.Ammo)candidate.Item).StackObjectsCount))
             {
-                AmmoItemClass ammo = (AmmoItemClass)candidate.Item;
+                EFT.InventoryLogic.Ammo ammo = (EFT.InventoryLogic.Ammo)candidate.Item;
                 int availableRounds = source
                     .Where(entry => string.Equals(entry.Item.TemplateId, ammo.TemplateId, StringComparison.Ordinal))
                     .Sum(entry => Math.Max(0, entry.Item.StackObjectsCount));
@@ -290,10 +290,10 @@ namespace pitTeam.BigBrain.Actions
 
         private static bool CanTopOffMagazineWithAmmo(
             Weapon weapon,
-            MagazineItemClass magazine,
-            AmmoItemClass ammo)
+            EFT.InventoryLogic.Magazine magazine,
+            EFT.InventoryLogic.Ammo ammo)
         {
-            bool usesMagazineDonor = TryGetMagazineDonor(ammo, out MagazineItemClass? donor);
+            bool usesMagazineDonor = TryGetMagazineDonor(ammo, out EFT.InventoryLogic.Magazine? donor);
             if (weapon == null ||
                 magazine == null ||
                 ammo == null ||
@@ -329,7 +329,7 @@ namespace pitTeam.BigBrain.Actions
             InventoryEquipment followerEquipment,
             Item sourceRoot,
             Weapon weapon,
-            MagazineItemClass magazine,
+            EFT.InventoryLogic.Magazine magazine,
             BodyGearCandidate topOffCandidate,
             out BodyGearMove? move,
             out string reason)
@@ -345,7 +345,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            GStruct154<GClass3411> detachResult = InteractionsHandlerClass.Move(
+            Diz.LanguageExtensions.OperationResult<EFT.InventoryLogic.MoveResult> detachResult = EFT.InventoryLogic.ItemManipulator.Move(
                 magazine,
                 stagingAddress,
                 inventory,
@@ -420,9 +420,9 @@ namespace pitTeam.BigBrain.Actions
         {
             move = null;
             reason = "invalidContext";
-            if (candidate?.Item is not AmmoItemClass ammo ||
+            if (candidate?.Item is not EFT.InventoryLogic.Ammo ammo ||
                 candidate.AmmoSalvageWeapon is not Weapon weapon ||
-                candidate.AmmoSalvageMagazine is not MagazineItemClass magazine ||
+                candidate.AmmoSalvageMagazine is not EFT.InventoryLogic.Magazine magazine ||
                 candidate.AmmoSalvageTransferCount <= 0 ||
                 !CanTopOffMagazineWithAmmo(weapon, magazine, ammo))
             {
@@ -444,14 +444,14 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            bool usesMagazineDonor = TryGetMagazineDonor(ammo, out MagazineItemClass? donor);
+            bool usesMagazineDonor = TryGetMagazineDonor(ammo, out EFT.InventoryLogic.Magazine? donor);
             if (usesMagazineDonor && !IsSameLootItem(donor.Cartridges.Last, ammo))
             {
                 reason = "donorStackNotOnTop";
                 return false;
             }
 
-            GStruct153 applyResult = usesMagazineDonor
+            Diz.LanguageExtensions.OperationResult applyResult = usesMagazineDonor
                 ? magazine.ApplyWithoutRestrictions(inventory, ammo, transferCount, true)
                 : magazine.Apply(inventory, ammo, transferCount, true);
             if (applyResult.Failed || applyResult.Value == null)
@@ -484,13 +484,13 @@ namespace pitTeam.BigBrain.Actions
         }
 
         private static bool TryGetMagazineDonor(
-            AmmoItemClass ammo,
-            out MagazineItemClass? magazine)
+            EFT.InventoryLogic.Ammo ammo,
+            out EFT.InventoryLogic.Magazine? magazine)
         {
             magazine = null;
             EFT.InventoryLogic.IContainer container = ammo?.Parent?.Container;
             if ((container is not StackSlot && container is not Slot) ||
-                container.ParentItem is not MagazineItemClass parentMagazine)
+                container.ParentItem is not EFT.InventoryLogic.Magazine parentMagazine)
             {
                 return false;
             }
@@ -507,9 +507,9 @@ namespace pitTeam.BigBrain.Actions
         {
             move = null;
             reason = "invalidContext";
-            if (candidate?.Item is not MagazineItemClass magazine ||
+            if (candidate?.Item is not EFT.InventoryLogic.Magazine magazine ||
                 candidate.AmmoSalvageWeapon is not Weapon weapon ||
-                candidate.AmmoSalvageMagazine is not MagazineItemClass targetMagazine ||
+                candidate.AmmoSalvageMagazine is not EFT.InventoryLogic.Magazine targetMagazine ||
                 !IsSameLootItem(magazine, targetMagazine))
             {
                 return false;
@@ -528,7 +528,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            GStruct154<GClass3411> restoreResult = InteractionsHandlerClass.Move(
+            Diz.LanguageExtensions.OperationResult<EFT.InventoryLogic.MoveResult> restoreResult = EFT.InventoryLogic.ItemManipulator.Move(
                 magazine,
                 magazineSlot.CreateItemAddress(),
                 inventory,
@@ -561,7 +561,7 @@ namespace pitTeam.BigBrain.Actions
         private static bool TryFindMagazineTopOffStagingAddress(
             InventoryEquipment followerEquipment,
             Item sourceRoot,
-            MagazineItemClass magazine,
+            EFT.InventoryLogic.Magazine magazine,
             out ItemAddress? address)
         {
             address = null;
@@ -592,18 +592,18 @@ namespace pitTeam.BigBrain.Actions
                 return true;
             }
 
-            if (sourceRoot == null || sourceRoot is LootContainerItemClass)
+            if (sourceRoot == null || sourceRoot is EFT.InventoryLogic.LootContainer)
             {
                 return false;
             }
 
             HashSet<EFT.InventoryLogic.IContainer> seen = new HashSet<EFT.InventoryLogic.IContainer>();
-            IEnumerable<SearchableItemItemClass> searchableItems =
-                (sourceRoot is SearchableItemItemClass searchableRoot
+            IEnumerable<EFT.InventoryLogic.SearchableItem> searchableItems =
+                (sourceRoot is EFT.InventoryLogic.SearchableItem searchableRoot
                     ? new[] { searchableRoot }
-                    : Array.Empty<SearchableItemItemClass>())
-                .Concat(SnapshotLootTreeItems(sourceRoot).OfType<SearchableItemItemClass>());
-            foreach (SearchableItemItemClass searchable in searchableItems)
+                    : Array.Empty<EFT.InventoryLogic.SearchableItem>())
+                .Concat(SnapshotLootTreeItems(sourceRoot).OfType<EFT.InventoryLogic.SearchableItem>());
+            foreach (EFT.InventoryLogic.SearchableItem searchable in searchableItems)
             {
                 foreach (EFT.InventoryLogic.IContainer container in GetSearchableContainersRecursive(searchable))
                 {
@@ -625,13 +625,13 @@ namespace pitTeam.BigBrain.Actions
 
         private sealed class MagazineTopOffTarget
         {
-            public MagazineTopOffTarget(MagazineItemClass magazine, bool isInsertedMagazine)
+            public MagazineTopOffTarget(EFT.InventoryLogic.Magazine magazine, bool isInsertedMagazine)
             {
                 Magazine = magazine;
                 IsInsertedMagazine = isInsertedMagazine;
             }
 
-            public MagazineItemClass Magazine { get; }
+            public EFT.InventoryLogic.Magazine Magazine { get; }
             public bool IsInsertedMagazine { get; }
         }
     }

@@ -50,7 +50,7 @@ namespace pitTeam.BigBrain.Actions
         private const int LargeMagazineLowAmmoThreshold = 20;
         private const int PistolLargeMagazineLowAmmoThreshold = 10;
 
-        private readonly GClass183 shootLogic;
+        private readonly AimingToGoalTarget shootLogic;
         private bool shouldSprint;
         private float nextMoveRefreshTime;
         private Vector3 committedAdvancePoint;
@@ -72,7 +72,7 @@ namespace pitTeam.BigBrain.Actions
 
         public CombatGoToEnemyAction(BotOwner botOwner) : base(botOwner)
         {
-            shootLogic = new GClass183(botOwner);
+            shootLogic = new AimingToGoalTarget(botOwner);
         }
 
         public override void Start()
@@ -247,7 +247,7 @@ namespace pitTeam.BigBrain.Actions
                 ? (BotOwner.Transform.position + enemyPos) / 2f
                 : enemyPos;
 
-            ShootPointClass shootPoint = BotOwner.CurrentEnemyTargetPosition(true);
+            ShootToPoint shootPoint = BotOwner.CurrentEnemyTargetPosition(true);
             CoverSearchType searchType = SetAttackCoverSearchType(CoverShootType.shoot);
             CustomNavigationPoint point = Covers.GetClosestCoverPoint(BotOwner, centerPos, 50f, cover =>
             {
@@ -278,7 +278,7 @@ namespace pitTeam.BigBrain.Actions
 
             if (goalEnemy.CanShoot && goalEnemy.IsVisible)
             {
-                shootLogic.UpdateNodeByBrain(GetData<GClass27>(data));
+                shootLogic.UpdateNodeByBrain(GetData<AimingResultParams>(data));
                 return;
             }
 
@@ -480,12 +480,12 @@ namespace pitTeam.BigBrain.Actions
                 ? BotOwner.WeaponRoot.position + Vector3.up * 0.1f
                 : BotOwner.Position + Vector3.up * 1.4f;
 
-            return Physics.Raycast(origin, lookDirection.normalized, WallFacingProbeDistance, LayerMaskClass.HighPolyWithTerrainMask);
+            return Physics.Raycast(origin, lookDirection.normalized, WallFacingProbeDistance, LayersMaskController.HighPolyWithTerrainMask);
         }
 
         private bool TryMoveToEnemy(Vector3 targetPoint)
         {
-            if (BotOwner.MoveToEnemyData.method_0(targetPoint, out Vector3 currentTargetPos) &&
+            if (BotOwner.MoveToEnemyData.CanShootAtEndCurWay(targetPoint, out Vector3 currentTargetPos) &&
                 TryGoToPoint(currentTargetPos, true))
             {
                 return true;
@@ -744,7 +744,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             committedLookMode = mode;
-            committedLookModeUntil = Time.time + GClass856.Random(LookCommitMinSeconds, LookCommitMaxSeconds);
+            committedLookModeUntil = Time.time + MyExtensions.Random(LookCommitMinSeconds, LookCommitMaxSeconds);
         }
 
         private bool TryGetAdvanceLookPoint(out Vector3 point)
@@ -867,7 +867,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             Weapon currentWeapon = BotOwner.WeaponManager.CurrentWeapon;
-            MagazineItemClass currentMagazine = currentWeapon?.GetCurrentMagazine();
+            EFT.InventoryLogic.Magazine currentMagazine = currentWeapon?.GetCurrentMagazine();
             if (currentWeapon == null || currentMagazine == null)
             {
                 return false;

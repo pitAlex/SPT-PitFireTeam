@@ -58,14 +58,14 @@ namespace pitTeam.Components
         protected BotOwner _bot;
         protected pitAIBossPlayer _player;
 
-        protected BotLastBlindEffectModifierClass settingModif;
+        protected BotSettingsInGameModif settingModif;
 
         protected bool _IsSquadMate = false;
 
         protected string _grouId = "";
         protected string _teamId = "";
 
-        protected List<AICoreLayerClass<BotLogicDecision>>? vanillaLayers;
+        protected List<AICoreLayer<BotLogicDecision>>? vanillaLayers;
 
         public bool IsSquadMate
         {
@@ -302,7 +302,7 @@ namespace pitTeam.Components
             _IsSquadMate = isSquad;
             CaptureInitialHolsterWeapon(finalAttempt: false);
 
-            settingModif = new BotLastBlindEffectModifierClass(1f, 1f, 1f, 0.9f, 1f, 1f, 1f, 1f, 1f);
+            settingModif = new BotSettingsInGameModif(1f, 1f, 1f, 0.9f, 1f, 1f, 1f, 1f, 1f);
 
             if (player.realPlayer.Side != EPlayerSide.Savage) NpcMessage.AddNpc(bot, isSquad);
 
@@ -559,13 +559,13 @@ namespace pitTeam.Components
                 BotZone zone = _bot.BotsController.BotSpawner.GetClosestZone(_bot.GetPlayer.Transform.position, out var zoneDist);
 
                 List<BotOwner> activeEnemies = new List<BotOwner>();
-                foreach (BotOwner item2 in _bot.BotsController.BotSpawner.method_5(_bot))
+                foreach (BotOwner item2 in _bot.BotsController.BotSpawner.GetBotEnemiesList(_bot))
                 {
                     if (!Utils.Props.friendlyBotTypes.Contains(item2.Profile.Info.Settings.Role))
                         activeEnemies.Add(item2);
                 }
 
-                BotsGroup group = new BotsGroupPlayer(zone, _bot.BotsController.BotGame, _bot, activeEnemies, _bot.BotsController.BotSpawner.DeadBodiesController, _bot.BotsController.BotSpawner.AllPlayers, _player);
+                BotsGroup group = new BotsGroupPlayer(zone, _bot.BotsController.BotGame, _bot, activeEnemies, _bot.BotsController.BotSpawner._deadBodiesController, _bot.BotsController.BotSpawner._allPlayers, _player);
 
                 _bot.BotsGroup = group;
                 RefreshSainEnemyListAfterGroupReassign();
@@ -592,20 +592,20 @@ namespace pitTeam.Components
             if (isPickedUp)
             {
                 // ensure bot sees the player's group as his group
-                var _groupRequestController = _bot.BotRequestController.GroupRequestController_1;
+                var _groupRequestController = _bot.BotRequestController._groupRequestController;
                 if (_groupRequestController != null)
                 {
-                    _groupRequestController.OnAddRequest -= _bot.BotRequestController.method_0;
+                    _groupRequestController.OnAddRequest -= _bot.BotRequestController.OnAddRequest;
                 }
 
-                _bot.Memory.BotsGroup_0 = _bot.BotsGroup;
-                _bot.BotRequestController.GroupRequestController_1 = null;
+                _bot.Memory._botsGroup = _bot.BotsGroup;
+                _bot.BotRequestController._groupRequestController = null;
                 ResetPickupFollowerRuntimeState();
             }
 
             EnsureSainBossAndFollowersFriendly();
 
-            var _bots = _bot.BotsController.BotSpawner.Bots;
+            var _bots = _bot.BotsController.BotSpawner._bots;
             var _rougeTypes = Utils.Props.BossFollowersType.ToList();
             _rougeTypes.Add(WildSpawnType.exUsec);
 
@@ -671,7 +671,7 @@ namespace pitTeam.Components
 
             bool isGoon = Utils.Props.BossFollowersType.Contains(_botRole);
             // increase bot's power
-            BotDifficultySettingsClass settings = Singleton<GClass620>.Instance.GetSettings(BotDifficulty.hard, _botRole, _bot.BotsController.IsPvE);
+            BotSettings settings = Singleton<BotSettingsController>.Instance.GetSettings(BotDifficulty.hard, _botRole, _bot.BotsController.IsPvE);
 
             // - hardcode some settings to make the bot more efficient
             settings.FileSettings.Move.REACH_DIST = 1.5f;
@@ -690,14 +690,14 @@ namespace pitTeam.Components
 
             settings.FileSettings.Mind.CAN_TALK = true;
             settings.FileSettings.Mind.TALK_WITH_QUERY = true;
-            bot.BotTalk.CanSay = true;
+            bot.BotTalk._canSay = true;
             // - fix missing phrases (bug appeared in 0.16)
-            if (!bot.BotTalk.Priority.Any(x => x.Key == EPhraseTrigger.Ready))
-                bot.BotTalk.Priority.Add(EPhraseTrigger.Ready, 140f);
-            if (!bot.BotTalk.Priority.Any(x => x.Key == EPhraseTrigger.Going))
-                bot.BotTalk.Priority.Add(EPhraseTrigger.Going, 141f);
-            if (!bot.BotTalk.Priority.Any(x => x.Key == EPhraseTrigger.DontKnow))
-                bot.BotTalk.Priority.Add(EPhraseTrigger.DontKnow, 142f);
+            if (!bot.BotTalk._priority.Any(x => x.Key == EPhraseTrigger.Ready))
+                bot.BotTalk._priority.Add(EPhraseTrigger.Ready, 140f);
+            if (!bot.BotTalk._priority.Any(x => x.Key == EPhraseTrigger.Going))
+                bot.BotTalk._priority.Add(EPhraseTrigger.Going, 141f);
+            if (!bot.BotTalk._priority.Any(x => x.Key == EPhraseTrigger.DontKnow))
+                bot.BotTalk._priority.Add(EPhraseTrigger.DontKnow, 142f);
 
             settings.FileSettings.Mind.CAN_STAND_BY = false;
             settings.FileSettings.Mind.CAN_TAKE_ANY_ITEM = true;
@@ -1032,13 +1032,13 @@ namespace pitTeam.Components
 
                 _bot.BotsGroup = group;
 
-                if (_bot.BotRequestController.GroupRequestController_1 != null)
+                if (_bot.BotRequestController._groupRequestController != null)
                 {
-                    _bot.BotRequestController.GroupRequestController_1.OnAddRequest -= _bot.BotRequestController.method_0;
+                    _bot.BotRequestController._groupRequestController.OnAddRequest -= _bot.BotRequestController.OnAddRequest;
                 }
 
-                _bot.Memory.BotsGroup_0 = group;
-                _bot.BotRequestController.GroupRequestController_1 = null;
+                _bot.Memory._botsGroup = group;
+                _bot.BotRequestController._groupRequestController = null;
 
                 _bot.GetPlayer.Profile.Info.GroupId = _grouId;
                 _bot.GetPlayer.Profile.Info.TeamId = _teamId;
@@ -2346,16 +2346,16 @@ namespace pitTeam.Components
                 }
 
                 Vector3 firePos = owner.GetPlayer.PlayerBones.WeaponRoot.position;
-                LayerMask mask = owner.LookSensor?.Mask ?? LayerMaskClass.HighPolyWithTerrainMask;
+                LayerMask mask = owner.LookSensor?.Mask ?? LayersMaskController.HighPolyWithTerrainMask;
 
                 if (headPart != null &&
-                    Utils.Utils.CanShootToTarget(new ShootPointClass(headPart.Position, 1f), firePos, mask, false))
+                    Utils.Utils.CanShootToTarget(new ShootToPoint(headPart.Position, 1f), firePos, mask, false))
                 {
                     return true;
                 }
 
                 if (bodyPart != null &&
-                    Utils.Utils.CanShootToTarget(new ShootPointClass(bodyPart.Position, 1f), firePos, mask, false))
+                    Utils.Utils.CanShootToTarget(new ShootToPoint(bodyPart.Position, 1f), firePos, mask, false))
                 {
                     return true;
                 }
@@ -2723,24 +2723,24 @@ namespace pitTeam.Components
             });
 
             // Force decision to end so new layer can take over
-            if (currentLayer is BaseLogicLayerSimpleAbstractClass simpleLayer)
+            if (currentLayer is BaseLogicLayer simpleLayer)
             {
                 simpleLayer.CalcActionNextFrame();
             }
-            else if (currentLayer is BaseLogicLayerAbstractClass baseLayer)
+            else if (currentLayer is BaseLogicLayerSimple baseLayer)
             {
-                baseLayer.Bool_1 = true;
+                baseLayer._nextFrameDropAction = true;
             }
         }
 
-        private void RemoveBrainLayer(BaseBrain baseBrain, Func<AICoreLayerClass<BotLogicDecision>, bool> shouldRemove)
+        private void RemoveBrainLayer(BaseBrain baseBrain, Func<AICoreLayer<BotLogicDecision>, bool> shouldRemove)
         {
             try
             {
                 if (baseBrain == null) return;
 
-                var dictField = AccessTools.Field(typeof(AICoreStrategyAbstractClass<BotLogicDecision>), "Dictionary_0");
-                var layers = dictField?.GetValue(baseBrain) as Dictionary<int, AICoreLayerClass<BotLogicDecision>>;
+                var dictField = AccessTools.Field(typeof(AICoreStrategy<BotLogicDecision>), "_layers");
+                var layers = dictField?.GetValue(baseBrain) as Dictionary<int, AICoreLayer<BotLogicDecision>>;
                 if (layers == null) return;
 
                 var toRemove = new List<int>();
@@ -2770,7 +2770,7 @@ namespace pitTeam.Components
                         {
                             _bot.Brain.Agent.Deactivate(name);
                             layer.IsActive = false;
-                            baseBrain.List_0.Remove(layer);
+                            baseBrain._activeLayers.Remove(layer);
                             layers.Remove(index);
                         }
                     }
@@ -2921,8 +2921,8 @@ namespace pitTeam.Components
                 return;
             }
 
-            GStruct154<GClass3411> moveResult =
-                InteractionsHandlerClass.Move(weapon, primaryAddress, inventory, true);
+            Diz.LanguageExtensions.OperationResult<EFT.InventoryLogic.MoveResult> moveResult =
+                EFT.InventoryLogic.ItemManipulator.Move(weapon, primaryAddress, inventory, true);
             if (moveResult.Failed ||
                 moveResult.Value.ItemsDestroyRequired ||
                 !inventory.CanExecute(moveResult.Value))
@@ -3017,8 +3017,8 @@ namespace pitTeam.Components
             return weapon != null &&
                    !string.IsNullOrEmpty(weapon.Id) &&
                    weapon.GetItemComponent<KnifeComponent>() == null &&
-                   weapon is not PistolItemClass &&
-                   weapon is not RevolverItemClass &&
+                   weapon is not EFT.InventoryLogic.Pistol &&
+                   weapon is not EFT.InventoryLogic.Revolver &&
                    InteractableObjects.IsLootedWeapon(owner, weapon) &&
                    !InteractableObjects.IsStrictCargoItem(owner, weapon);
         }
@@ -3198,7 +3198,7 @@ namespace pitTeam.Components
             }
         }
 
-        private void OnBeingHit(DamageInfoStruct arg1, EBodyPart arg2, float arg3)
+        private void OnBeingHit(EFT.Ballistics.DamageInfo arg1, EBodyPart arg2, float arg3)
         {
             if (_activeCommand == FollowerCommandType.PushEnemy)
             {
@@ -3234,13 +3234,13 @@ namespace pitTeam.Components
 
             bot.PatrollingData?.Pause();
 
-            if (brain.CurLayerInfo is BaseLogicLayerSimpleAbstractClass simpleLayer)
+            if (brain.CurLayerInfo is BaseLogicLayer simpleLayer)
             {
                 simpleLayer.CalcActionNextFrame(BotLogicDecision.holdPosition);
             }
-            else if (brain.CurLayerInfo is BaseLogicLayerAbstractClass baseLayer)
+            else if (brain.CurLayerInfo is BaseLogicLayerSimple baseLayer)
             {
-                baseLayer.Bool_1 = true;
+                baseLayer._nextFrameDropAction = true;
             }
 
             bot.StopMove();
@@ -3250,7 +3250,7 @@ namespace pitTeam.Components
             brain.CalcActionNextFrame();
         }
 
-        private void RemoveConflictingLayers(BaseBrain brain, AICoreAgentClass<BotLogicDecision> agent)
+        private void RemoveConflictingLayers(BaseBrain brain, AICoreAgent<BotLogicDecision> agent)
         {
             if (brain == null || agent == null) return;
 
@@ -3267,7 +3267,7 @@ namespace pitTeam.Components
             };
 
             var toRemove = new List<int>();
-            foreach (var kvp in brain.Dictionary_0)
+            foreach (var kvp in brain._layers)
             {
                 var layer = kvp.Value;
                 if (layer == null) continue;
@@ -3289,18 +3289,18 @@ namespace pitTeam.Components
 
             foreach (int index in toRemove)
             {
-                if (!brain.Dictionary_0.TryGetValue(index, out var layer) || layer == null) continue;
+                if (!brain._layers.TryGetValue(index, out var layer) || layer == null) continue;
 
                 agent.Deactivate(layer.Name());
-                brain.method_3(index);
+                brain.DeactivateLayer(index);
                 layer.IsActive = false;
 
-                brain.List_0.Remove(layer);
-                //brain.Dictionary_0.Remove(index);
+                brain._activeLayers.Remove(layer);
+                //brain._layers.Remove(index);
             }
         }
 
-        private static bool IsNamedLayer(AICoreLayerClass<BotLogicDecision> layer, string layerName, string expectedName)
+        private static bool IsNamedLayer(AICoreLayer<BotLogicDecision> layer, string layerName, string expectedName)
         {
             if (string.Equals(layerName, expectedName, StringComparison.OrdinalIgnoreCase) ||
                 layerName.EndsWith("." + expectedName, StringComparison.OrdinalIgnoreCase))
@@ -3354,13 +3354,13 @@ namespace pitTeam.Components
         {
             if (brain == null) return;
 
-            foreach (var kvp in brain.Dictionary_0)
+            foreach (var kvp in brain._layers)
             {
                 if (kvp.Value != null && kvp.Value.Name() == "pitTeam.FollowerPatrol")
                 {
-                    if (!brain.method_2(kvp.Value))
+                    if (!brain.IsLayerActive(kvp.Value))
                     {
-                        brain.method_1(kvp.Key);
+                        brain.ActivateLayer(kvp.Key);
                     }
                     return;
                 }
@@ -3381,26 +3381,26 @@ namespace pitTeam.Components
             if (wrapper == null) return;
 
             AccessTools
-                .Method(typeof(AICoreStrategyAbstractClass<BotLogicDecision>), "method_0")
+                .Method(typeof(AICoreStrategy<BotLogicDecision>), nameof(AICoreStrategy<BotLogicDecision>.TryAddLayer))
                 ?.Invoke(brain, new object[] { customEntry.Key, wrapper, true });
         }
 
-        private void ClearActiveLayerPointers(BaseBrain brain, AICoreAgentClass<BotLogicDecision> agent)
+        private void ClearActiveLayerPointers(BaseBrain brain, AICoreAgent<BotLogicDecision> agent)
         {
             try
             {
-                var activeLayerField = AccessTools.Field(typeof(AICoreStrategyAbstractClass<BotLogicDecision>), "Gclass35_0");
+                var activeLayerField = AccessTools.Field(typeof(AICoreStrategy<BotLogicDecision>), "aICoreLayer");
                 activeLayerField?.SetValue(brain, null);
 
-                var agentActiveLayerField = AccessTools.Field(typeof(AICoreAgentClass<BotLogicDecision>), "Gclass35_0");
+                var agentActiveLayerField = AccessTools.Field(typeof(AICoreAgent<BotLogicDecision>), "_lastActiveLayer");
                 agentActiveLayerField?.SetValue(agent, null);
 
                 agent.UsingLayer = string.Empty;
 
-                var lastResultField = AccessTools.Field(typeof(AICoreAgentClass<BotLogicDecision>), "Gstruct8_0");
+                var lastResultField = AccessTools.Field(typeof(AICoreAgent<BotLogicDecision>), "_lastResult");
                 if (lastResultField != null)
                 {
-                    var defaultResult = default(AICoreActionResultStruct<BotLogicDecision, GClass26>);
+                    var defaultResult = default(AICoreActionResult<BotLogicDecision, CoreActionResultParams>);
                     lastResultField.SetValue(agent, defaultResult);
                 }
             }

@@ -28,8 +28,8 @@ namespace pitTeam.BigBrain
         private FollowerCombatLogicBase? combatLogic;
         private readonly string brainShortName;
 
-        private AICoreActionResultStruct<BotLogicDecision, GClass26>? currentDecision;
-        private AICoreActionResultStruct<BotLogicDecision, GClass26>? lastDecision;
+        private AICoreActionResult<BotLogicDecision, CoreActionResultParams>? currentDecision;
+        private AICoreActionResult<BotLogicDecision, CoreActionResultParams>? lastDecision;
         private bool hadCombatSinceActivation;
         private float lingerUntil;
         private bool lingerArmed;
@@ -206,7 +206,7 @@ namespace pitTeam.BigBrain
                     new FollowerCombatActionData(BotLogicDecision.holdPosition, "MissingCombatLogic", null));
             }
 
-            AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision;
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> nextDecision;
             bool keepForMedical = !combatActive && ShouldKeepCombatLayerForMedicalWork();
             if (!combatActive && !keepForMedical)
             {
@@ -220,7 +220,7 @@ namespace pitTeam.BigBrain
                 }
 
                 ArmLingerIfNeeded();
-                nextDecision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.holdPosition, LingerReason);
+                nextDecision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.holdPosition, LingerReason);
             }
             else if (keepForMedical)
             {
@@ -321,13 +321,13 @@ namespace pitTeam.BigBrain
                 BattleRecorder.RecordDecisionEnd(
                     BotOwner,
                     currentDecision.Value,
-                    new AICoreActionEndStruct("explosiveDanger", true),
+                    new AICoreActionEnd("explosiveDanger", true),
                     combatLogic.GetCurrentObjectiveName());
                 return true;
             }
 
             // The concrete logic decides end conditions; it may delegate to shared common logic.
-            AICoreActionEndStruct endResult = combatLogic.ShallEndCurrentDecision(currentDecision.Value);
+            AICoreActionEnd endResult = combatLogic.ShallEndCurrentDecision(currentDecision.Value);
             if (endResult.Value)
             {
                 BattleRecorder.RecordDecisionEnd(BotOwner, currentDecision.Value, endResult, combatLogic.GetCurrentObjectiveName());
@@ -698,7 +698,7 @@ namespace pitTeam.BigBrain
         }
 
         private static bool IsOrderedPushMovementContinuation(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             return IsOrderedPushReason(decision.Reason) &&
                    (IsMovementOrPushDecision(decision.Action) ||
@@ -794,7 +794,7 @@ namespace pitTeam.BigBrain
             return true;
         }
 
-        private static bool IsHealingDecision(AICoreActionResultStruct<BotLogicDecision, GClass26>? decision)
+        private static bool IsHealingDecision(AICoreActionResult<BotLogicDecision, CoreActionResultParams>? decision)
         {
             return decision.HasValue && FollowerCombatCommon.IsMedicalDecision(decision.Value);
         }
@@ -933,7 +933,7 @@ namespace pitTeam.BigBrain
             };
         }
 
-        private Action CreateBigBrainAction(AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        private Action CreateBigBrainAction(AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             FollowerCombatActionData actionData = new FollowerCombatActionData(decision.Action, decision.Reason, decision.Data);
 

@@ -42,13 +42,13 @@ namespace pitTeam.Patches
         private const float SoundReactionCooldownSeconds = 0.12f;
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(BotHearingSensor), "method_0");
+            return AccessTools.Method(typeof(BotHearingSensor), nameof(BotHearingSensor.OnSoundPlayed));
         }
 
         [PatchPostfix]
         public static void PatchPostfix(BotHearingSensor __instance, IPlayer player, Vector3 position, float power, AISoundType type)
         {
-            BotOwner botOwner_0 = __instance.BotOwner;
+            BotOwner botOwner_0 = __instance._botOwner;
             if (BossPlayers.IsFollower(botOwner_0) && FollowerEnemyEnforceSuppression.IsSuppressed(botOwner_0))
             {
                 return;
@@ -84,7 +84,7 @@ namespace pitTeam.Patches
                         return;
                     }
 
-                    bool shouldReact = __instance.method_6(position, power, out var distance);
+                    bool shouldReact = __instance.IsSoundHeard(position, power, out var distance);
                     if (!shouldReact)
                     {
                         Trace(botOwner_0, $"Hearing.step ignore method6False dist={distance:F1} power={power:F1}");
@@ -120,7 +120,7 @@ namespace pitTeam.Patches
                         return;
                     }
 
-                    bool shouldReact = __instance.method_6(position, power, out var distance);
+                    bool shouldReact = __instance.IsSoundHeard(position, power, out var distance);
                     Vector3 botPosition = botOwner_0.GetPlayer.Transform.position;
                     if (!shouldReact)
                     {
@@ -181,7 +181,7 @@ namespace pitTeam.Patches
         [PatchPostfix]
         public static void PatchPostfix(Player __instance, BetterSource ___NestedStepSoundSource)
         {
-            float volume = __instance.MovementContext.CovertMovementVolumeBySpeed * __instance.method_57();
+            float volume = __instance.MovementContext.CovertMovementVolumeBySpeed * __instance.CalculateStepSoundVolumeSpeedFactor();
             float range = ___NestedStepSoundSource.MaxDistance * 0.85f;
 
             if (BossPlayers.IsPlayerBoss(__instance.ProfileId)) return;
@@ -297,7 +297,7 @@ namespace pitTeam.Patches
                     return;
                 }
 
-                bool heardVoice = bot.HearingSensor.method_6(__instance.Transform.position, VoiceReactDistance, out var distance);
+                bool heardVoice = bot.HearingSensor.IsSoundHeard(__instance.Transform.position, VoiceReactDistance, out var distance);
                 bool speakerHasLosToFollower = EnemySpeakerHasLineOfSightToFollower(__instance, bot, out float losDistance);
                 bool shouldReact = heardVoice || (speakerHasLosToFollower && losDistance <= VoiceReactDistance);
                 bool followerHasLosToSpeaker = FollowerHasLineOfSightToSpeaker(bot, __instance);
@@ -389,11 +389,11 @@ namespace pitTeam.Patches
 
             distance = Vector3.Distance(speakerPos, followerBody);
 
-            LayerMask mask = speakerBot.LookSensor != null ? speakerBot.LookSensor.Mask : LayerMaskClass.HighPolyWithTerrainMask;
-            bool canSeeHead = Utils.Utils.CanShootToTarget(new ShootPointClass(followerHead, 1f), speakerPos, mask, false);
+            LayerMask mask = speakerBot.LookSensor != null ? speakerBot.LookSensor.Mask : LayersMaskController.HighPolyWithTerrainMask;
+            bool canSeeHead = Utils.Utils.CanShootToTarget(new ShootToPoint(followerHead, 1f), speakerPos, mask, false);
             if (canSeeHead) return true;
 
-            bool canSeeBody = Utils.Utils.CanShootToTarget(new ShootPointClass(followerBody, 1f), speakerPos, mask, false);
+            bool canSeeBody = Utils.Utils.CanShootToTarget(new ShootToPoint(followerBody, 1f), speakerPos, mask, false);
             return canSeeBody;
         }
 
@@ -406,9 +406,9 @@ namespace pitTeam.Patches
             Vector3 speakerHead = speaker.MainParts?[BodyPartType.head]?.Position ?? (speaker.Transform.position + Vector3.up * 1.4f);
             Vector3 speakerBody = speaker.MainParts?[BodyPartType.body]?.Position ?? (speaker.Transform.position + Vector3.up * 1.0f);
 
-            LayerMask mask = follower.LookSensor != null ? follower.LookSensor.Mask : LayerMaskClass.HighPolyWithTerrainMask;
-            if (Utils.Utils.CanShootToTarget(new ShootPointClass(speakerHead, 1f), followerPos, mask, false)) return true;
-            return Utils.Utils.CanShootToTarget(new ShootPointClass(speakerBody, 1f), followerPos, mask, false);
+            LayerMask mask = follower.LookSensor != null ? follower.LookSensor.Mask : LayersMaskController.HighPolyWithTerrainMask;
+            if (Utils.Utils.CanShootToTarget(new ShootToPoint(speakerHead, 1f), followerPos, mask, false)) return true;
+            return Utils.Utils.CanShootToTarget(new ShootToPoint(speakerBody, 1f), followerPos, mask, false);
         }
     }
 

@@ -10,11 +10,11 @@ namespace pitTeam.BigBrain.Actions
     /// </summary>
     internal sealed class CombatThrowGrenadeFromPlaceAction : FollowerCombatActionBase
     {
-        private readonly GClass287 baseLogic;
+        private readonly ThrowGrenadeRequestNode baseLogic;
 
         public CombatThrowGrenadeFromPlaceAction(BotOwner botOwner) : base(botOwner)
         {
-            baseLogic = new GClass287(botOwner);
+            baseLogic = new ThrowGrenadeRequestNode(botOwner);
         }
 
         public override void Update(CustomLayer.ActionData data)

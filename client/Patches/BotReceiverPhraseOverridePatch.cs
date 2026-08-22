@@ -4,7 +4,7 @@ using HarmonyLib;
 using SPT.Reflection.Patching;
 using System.Reflection;
 
-using EventInfo = BotEventHandler.GClass692;
+using EventInfo = GlobalEventDispatcher.PhraseDelegateInfo;
 
 namespace pitTeam.Patches
 {
@@ -13,7 +13,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(BotReceiver), "method_0");
+            return AccessTools.Method(typeof(BotReceiver), nameof(BotReceiver.OnPhraseSay));
         }
 
         [PatchPrefix]
@@ -24,7 +24,7 @@ namespace pitTeam.Patches
                 return true;
             }
 
-            BotOwner botOwner = __instance.BotOwner_0;
+            BotOwner botOwner = __instance._owner;
             if (botOwner == null || !BossPlayers.IsFollower(botOwner))
             {
                 return true;

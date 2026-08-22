@@ -80,7 +80,7 @@ namespace pitTeam.Patches
         private static List<(MongoID id, string name, string prefab)> _bearEnglishVoiceCache;
         private static List<(MongoID id, string name, string prefab)> _bearVoiceFallbackCache;
 
-        private static bool IsEnglishBearVoice(GClass3681 voice)
+        private static bool IsEnglishBearVoice(EFT.Customization.CustomizationPlayerVoice voice)
         {
             if (voice == null) return false;
 
@@ -102,7 +102,7 @@ namespace pitTeam.Patches
 
             try
             {
-                CustomizationSolverClass solver = Singleton<CustomizationSolverClass>.Instance;
+                EFT.CustomizationSolver solver = Singleton<EFT.CustomizationSolver>.Instance;
                 if (solver == null) return false;
 
                 if (_bearVoiceFallbackCache == null || _bearVoiceFallbackCache.Count == 0)
@@ -238,7 +238,7 @@ namespace pitTeam.Patches
 
                             if(isInEnemyList) return;
 
-                            var botSettingsClass = new BotSettingsClass(fl.GetPlayer, bot.BotsGroup, EBotEnemyCause.initial);
+                            var botSettingsClass = new BotGroupEnemyInfo(fl.GetPlayer, bot.BotsGroup, EBotEnemyCause.initial);
 
                             bot.BotsGroup.Enemies.Add(fl,botSettingsClass);
                             if(isInNeutralList)
@@ -292,7 +292,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(ProfileEndpointFactoryAbstractClass), "LoadBots");
+            return AccessTools.Method(typeof(EFT.ClientBackendSession), "LoadBots");
         }
 
         [PatchPostfix]

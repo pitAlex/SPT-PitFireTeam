@@ -98,7 +98,7 @@ namespace pitTeam.Components
 
         private static string GetPluginVersionText()
         {
-            Version version = Assembly.GetExecutingAssembly().GetName().Version;
+            System.Version version = Assembly.GetExecutingAssembly().GetName().Version;
             if (version == null)
             {
                 return "UNKNOWN";
@@ -1030,7 +1030,7 @@ namespace pitTeam.Components
             AnimatedToggleCanvasGroupField?.SetValue(toggle, canvasGroup);
 
             ToggleGroup group = EnsureLoadoutManagementToggleGroup();
-            toggle.SpawnableToggle.method_1(group);
+            toggle.SpawnableToggle.Init(group);
 
             foreach (TextMeshProUGUI text in toggle.GetComponentsInChildren<TextMeshProUGUI>(true))
             {

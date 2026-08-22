@@ -4,7 +4,7 @@
         <OutputType>Library</OutputType>
         <RootNamespace>pitTeam.SAINAddon</RootNamespace>
         <AssemblyName>pitFireTeam.SAINAddon</AssemblyName>
-        <Version>0.9.0</Version>
+        <Version>0.10.0</Version>
         <LangVersion>latest</LangVersion>
         <Nullable>enable</Nullable>
         <NoWarn>$(NoWarn);CS8600;CS8601;CS8602;CS8604;CS8618;CS8620;CS8625</NoWarn>
@@ -18,25 +18,31 @@
 
     <ItemGroup>
         <Reference Include="BepInEx">
-            <HintPath>..\client\libs\BepInEx.dll</HintPath>
+            <HintPath>..\client\libs4.1\BepInEx.dll</HintPath>
         </Reference>
         <Reference Include="0Harmony">
             <HintPath>..\client\libs\0Harmony.dll</HintPath>
         </Reference>
         <Reference Include="Assembly-CSharp">
-            <HintPath>..\client\libs\Assembly-CSharp.dll</HintPath>
+            <HintPath>..\client\libs4.1\Assembly-CSharp.dll</HintPath>
+        </Reference>
+        <Reference Include="AnimationSystem.Types">
+            <HintPath>..\client\libs4.1\AnimationSystem.Types.dll</HintPath>
         </Reference>
         <Reference Include="Comfort">
-            <HintPath>..\client\libs\Comfort.dll</HintPath>
+            <HintPath>..\client\libs4.1\Comfort.dll</HintPath>
         </Reference>
         <Reference Include="DrakiaXYZ-BigBrain">
-            <HintPath>..\client\libs\DrakiaXYZ-BigBrain.dll</HintPath>
+            <HintPath>..\client\libs4.1\DrakiaXYZ-BigBrain.dll</HintPath>
         </Reference>
         <Reference Include="DissonanceVoip">
-            <HintPath>..\client\libs\DissonanceVoip.dll</HintPath>
+            <HintPath>..\client\libs4.1\DissonanceVoip.dll</HintPath>
         </Reference>
         <Reference Include="SAIN">
-            <HintPath>..\client\libs\SAIN.dll</HintPath>
+            <HintPath>..\client\libs4.1\SAIN.dll</HintPath>
+        </Reference>
+        <Reference Include="SAIN.Preset.Shared">
+            <HintPath>..\client\libs4.1\SAIN.Preset.Shared.dll</HintPath>
         </Reference>
         <Reference Include="UnityEngine">
             <HintPath>..\client\libs\UnityEngine.dll</HintPath>

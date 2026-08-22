@@ -114,7 +114,7 @@ namespace pitTeam.BigBrain.Actions
 
         private bool TryStartContainerPrimaryTacticalAmmoMove(
             InventoryController inventory,
-            SearchableItemItemClass containerRoot,
+            EFT.InventoryLogic.SearchableItem containerRoot,
             InventoryEquipment followerEquipment,
             bool allowLooseAmmoCarry)
         {
@@ -141,7 +141,7 @@ namespace pitTeam.BigBrain.Actions
 
         private bool TryStartContainerSupportTacticalAmmoMove(
             InventoryController inventory,
-            SearchableItemItemClass containerRoot,
+            EFT.InventoryLogic.SearchableItem containerRoot,
             InventoryEquipment followerEquipment,
             EquipmentSlot supportSlot,
             bool allowLooseAmmoCarry)
@@ -170,7 +170,7 @@ namespace pitTeam.BigBrain.Actions
 
         private bool TryStartContainerSupportTacticalMagazineMove(
             InventoryController inventory,
-            SearchableItemItemClass containerRoot,
+            EFT.InventoryLogic.SearchableItem containerRoot,
             InventoryEquipment followerEquipment,
             EquipmentSlot supportSlot)
         {
@@ -178,11 +178,11 @@ namespace pitTeam.BigBrain.Actions
                     inventory,
                     followerEquipment,
                     (root, weapon) => GetContainerOperationalMagazineCandidates(
-                        (SearchableItemItemClass)root,
+                        (EFT.InventoryLogic.SearchableItem)root,
                         weapon,
                         includeEmptyForTopOff: true),
                     (root, weapon) => GetContainerWeaponLooseAmmoCandidates(
-                        (SearchableItemItemClass)root,
+                        (EFT.InventoryLogic.SearchableItem)root,
                         weapon),
                     containerRoot,
                     containerLootAttemptedItemIds,
@@ -205,7 +205,7 @@ namespace pitTeam.BigBrain.Actions
 
         private bool TryStartContainerPrimaryTacticalMagazineMove(
             InventoryController inventory,
-            SearchableItemItemClass containerRoot,
+            EFT.InventoryLogic.SearchableItem containerRoot,
             InventoryEquipment followerEquipment)
         {
             return TryStartContainerSupportTacticalMagazineMove(
@@ -257,7 +257,7 @@ namespace pitTeam.BigBrain.Actions
         {
             Weapon support = GetEligibleDetachableWeaponForSlot(followerEquipment, supportSlot);
             bool isLootedSupport = InteractableObjects.IsLootedWeapon(BotOwner, support);
-            Func<MagazineItemClass, bool>? magazineEligibility = isLootedSupport
+            Func<EFT.InventoryLogic.Magazine, bool>? magazineEligibility = isLootedSupport
                 ? magazine => InteractableObjects.IsApprovedLootedWeaponMagazine(
                     BotOwner,
                     support,
@@ -318,7 +318,7 @@ namespace pitTeam.BigBrain.Actions
 
             List<BodyGearCandidate> candidates = sourceMagazineFactory(sourceRoot, weapon)
                 .Where(candidate =>
-                    candidate?.Item is MagazineItemClass magazine &&
+                    candidate?.Item is EFT.InventoryLogic.Magazine magazine &&
                     !string.IsNullOrEmpty(magazine.Id) &&
                     !attemptedSourceItemIds.Contains(magazine.Id))
                 .GroupBy(candidate => candidate.Item.Id, StringComparer.Ordinal)
@@ -331,32 +331,32 @@ namespace pitTeam.BigBrain.Actions
             }
 
             bool isLootedWeapon = InteractableObjects.IsLootedWeapon(BotOwner, weapon);
-            Func<MagazineItemClass, bool>? existingMagazineEligibility = isLootedWeapon
+            Func<EFT.InventoryLogic.Magazine, bool>? existingMagazineEligibility = isLootedWeapon
                 ? magazine => InteractableObjects.IsApprovedLootedWeaponMagazine(
                     BotOwner,
                     weapon,
                     magazine)
                 : null;
-            List<MagazineItemClass> alternateReloadReserves = GetAlternateReloadReservesForSupportMagazinePlan(
+            List<EFT.InventoryLogic.Magazine> alternateReloadReserves = GetAlternateReloadReservesForSupportMagazinePlan(
                 inventory,
                 followerEquipment,
                 weapon);
-            List<AmmoItemClass> availableLooseAmmo = GetFollowerWeaponLooseAmmoItems(
+            List<EFT.InventoryLogic.Ammo> availableLooseAmmo = GetFollowerWeaponLooseAmmoItems(
                     followerEquipment,
                     weapon,
                     includeStrictCargo: true)
                 .Concat(sourceAmmoFactory(sourceRoot, weapon)
                     .Where(candidate =>
-                        candidate?.Item is AmmoItemClass ammo &&
+                        candidate?.Item is EFT.InventoryLogic.Ammo ammo &&
                         !string.IsNullOrEmpty(ammo.Id) &&
                         !attemptedSourceItemIds.Contains(ammo.Id))
                     .Select(candidate => candidate.Item)
-                    .OfType<AmmoItemClass>())
+                    .OfType<EFT.InventoryLogic.Ammo>())
                 .GroupBy(ammo => ammo.Id, StringComparer.Ordinal)
                 .Select(group => group.First())
                 .ToList();
             bool allowEmptyCandidates = candidates
-                .Select(candidate => candidate.Item as MagazineItemClass)
+                .Select(candidate => candidate.Item as EFT.InventoryLogic.Magazine)
                 .Where(magazine => magazine?.Count <= 0)
                 .Any(magazine => availableLooseAmmo.Any(ammo =>
                     CanTopOffMagazineWithAmmo(weapon, magazine, ammo)));
@@ -410,12 +410,12 @@ namespace pitTeam.BigBrain.Actions
             return false;
         }
 
-        private List<MagazineItemClass> GetAlternateReloadReservesForSupportMagazinePlan(
+        private List<EFT.InventoryLogic.Magazine> GetAlternateReloadReservesForSupportMagazinePlan(
             InventoryController inventory,
             InventoryEquipment followerEquipment,
             Weapon plannedSupport)
         {
-            List<MagazineItemClass> reserves = new List<MagazineItemClass>();
+            List<EFT.InventoryLogic.Magazine> reserves = new List<EFT.InventoryLogic.Magazine>();
             foreach (EquipmentSlot slot in new[]
                      {
                          EquipmentSlot.FirstPrimaryWeapon,
@@ -429,7 +429,7 @@ namespace pitTeam.BigBrain.Actions
                     continue;
                 }
 
-                MagazineItemClass reserve = GetReloadReserveForEquippedWeapon(
+                EFT.InventoryLogic.Magazine reserve = GetReloadReserveForEquippedWeapon(
                     inventory,
                     followerEquipment,
                     equipped);
@@ -445,7 +445,7 @@ namespace pitTeam.BigBrain.Actions
                 .ToList();
         }
 
-        private MagazineItemClass? GetReloadReserveForEquippedWeapon(
+        private EFT.InventoryLogic.Magazine? GetReloadReserveForEquippedWeapon(
             InventoryController inventory,
             InventoryEquipment followerEquipment,
             Weapon weapon)
@@ -465,7 +465,7 @@ namespace pitTeam.BigBrain.Actions
                 return null;
             }
 
-            MagazineItemClass inserted = GetCurrentMagazineSafely(weapon);
+            EFT.InventoryLogic.Magazine inserted = GetCurrentMagazineSafely(weapon);
             if (inserted != null &&
                 FollowerWeaponPrimaryReadiness.HasMagazineReloadLandingSpace(
                     followerEquipment,
@@ -491,7 +491,7 @@ namespace pitTeam.BigBrain.Actions
                 .FirstOrDefault();
         }
 
-        private string DescribeReloadReserves(IEnumerable<MagazineItemClass> reserves)
+        private string DescribeReloadReserves(IEnumerable<EFT.InventoryLogic.Magazine> reserves)
         {
             List<string> descriptions = reserves?
                 .Where(magazine => magazine != null)
@@ -509,9 +509,9 @@ namespace pitTeam.BigBrain.Actions
             Weapon weapon,
             string role,
             Weapon? deferredWeapon,
-            Func<MagazineItemClass, bool>? fastAccessMagazineEligibility,
-            Func<AmmoItemClass, bool>? carriedAmmoSupplyEligibility,
-            Func<IEnumerable<AmmoItemClass>> carriedCartridgeFactory,
+            Func<EFT.InventoryLogic.Magazine, bool>? fastAccessMagazineEligibility,
+            Func<EFT.InventoryLogic.Ammo, bool>? carriedAmmoSupplyEligibility,
+            Func<IEnumerable<EFT.InventoryLogic.Ammo>> carriedCartridgeFactory,
             bool allowSearchedSourceTopOff,
             out BodyGearMove? move,
             bool allowLooseAmmoCarry)
@@ -531,7 +531,7 @@ namespace pitTeam.BigBrain.Actions
 
             List<BodyGearCandidate> source = sourceAmmoFactory(weapon)
                 .Where(candidate =>
-                    candidate?.Item is AmmoItemClass ammo &&
+                    candidate?.Item is EFT.InventoryLogic.Ammo ammo &&
                     !string.IsNullOrEmpty(ammo.Id) &&
                     !attemptedSourceItemIds.Contains(ammo.Id) &&
                     FollowerWeaponLooseAmmoSupport.IsCompatible(weapon, ammo))
@@ -562,7 +562,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            List<AmmoItemClass> carried = carriedCartridgeFactory()
+            List<EFT.InventoryLogic.Ammo> carried = carriedCartridgeFactory()
                 .Where(ammo => ammo != null && !string.IsNullOrEmpty(ammo.Id))
                 .GroupBy(ammo => ammo.Id, StringComparer.Ordinal)
                 .Select(group => group.First())
@@ -570,12 +570,12 @@ namespace pitTeam.BigBrain.Actions
             int reserveTargetRounds = ResolveWeaponTacticalAmmoReserveTarget(
                 inventory,
                 weapon,
-                carried.Concat(source.Select(candidate => (AmmoItemClass)candidate.Item)),
+                carried.Concat(source.Select(candidate => (EFT.InventoryLogic.Ammo)candidate.Item)),
                 fastAccessMagazineEligibility);
             List<TacticalAmmoSourceEvaluation> evaluations = source
                 .Select(candidate =>
                 {
-                    AmmoItemClass ammo = (AmmoItemClass)candidate.Item;
+                    EFT.InventoryLogic.Ammo ammo = (EFT.InventoryLogic.Ammo)candidate.Item;
                     int availableRounds = source
                         .Where(entry => string.Equals(entry.Item.TemplateId, ammo.TemplateId, StringComparison.Ordinal))
                         .Sum(entry => Math.Max(0, entry.Item.StackObjectsCount));
@@ -590,7 +590,7 @@ namespace pitTeam.BigBrain.Actions
                             existing.TemplateId.ToString(),
                             ammo.TemplateId.ToString(),
                             StringComparison.Ordinal));
-                    SearchableItemItemClass secure = CloneSearchableContainer(
+                    EFT.InventoryLogic.SearchableItem secure = CloneSearchableContainer(
                         followerEquipment.GetSlot(EquipmentSlot.SecuredContainer)?.ContainedItem);
                     bool useSecureOverride = TrySimulateContainerAdd(secure, ammo, out _) &&
                         FollowerTacticalAmmoPolicy.CanUseSecureStorageOverride(
@@ -602,16 +602,16 @@ namespace pitTeam.BigBrain.Actions
                     return new TacticalAmmoSourceEvaluation(candidate, decision);
                 })
                 .OrderByDescending(evaluation => evaluation.Decision.Kind)
-                .ThenByDescending(evaluation => ((AmmoItemClass)evaluation.Candidate.Item).PenetrationPower)
-                .ThenByDescending(evaluation => ((AmmoItemClass)evaluation.Candidate.Item).Damage)
-                .ThenByDescending(evaluation => ((AmmoItemClass)evaluation.Candidate.Item).ArmorDamage)
+                .ThenByDescending(evaluation => ((EFT.InventoryLogic.Ammo)evaluation.Candidate.Item).PenetrationPower)
+                .ThenByDescending(evaluation => ((EFT.InventoryLogic.Ammo)evaluation.Candidate.Item).Damage)
+                .ThenByDescending(evaluation => ((EFT.InventoryLogic.Ammo)evaluation.Candidate.Item).ArmorDamage)
                 .ToList();
 
             foreach (TacticalAmmoSourceEvaluation evaluation in evaluations)
             {
                 Modules.Logger.LogInfo(
                     $"[LootCommand][TacticalAmmo] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
-                    $"role={role} weapon={DescribeLootDebugItem(weapon)} source={DescribeLooseAmmo(evaluation.Candidate.Item as AmmoItemClass)} " +
+                    $"role={role} weapon={DescribeLootDebugItem(weapon)} source={DescribeLooseAmmo(evaluation.Candidate.Item as EFT.InventoryLogic.Ammo)} " +
                     evaluation.Decision.ToDiagnosticString());
             }
 
@@ -627,7 +627,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            AmmoItemClass selectedAmmo = selected.Candidate.Item as AmmoItemClass;
+            EFT.InventoryLogic.Ammo selectedAmmo = selected.Candidate.Item as EFT.InventoryLogic.Ammo;
             if (TryBuildWeaponLooseAmmoMove(
                     inventory,
                     followerEquipment,
@@ -689,15 +689,15 @@ namespace pitTeam.BigBrain.Actions
                 : null;
         }
 
-        private IEnumerable<AmmoItemClass> GetSupportTacticalCartridgeItems(
+        private IEnumerable<EFT.InventoryLogic.Ammo> GetSupportTacticalCartridgeItems(
             InventoryEquipment followerEquipment,
             Weapon support,
-            Func<MagazineItemClass, bool>? magazineEligibility)
+            Func<EFT.InventoryLogic.Magazine, bool>? magazineEligibility)
         {
             HashSet<string> yieldedIds = new HashSet<string>(StringComparer.Ordinal);
 
             // The inserted magazine and chamber belong to the support weapon itself.
-            foreach (AmmoItemClass ammo in SnapshotLootTreeItems(support).OfType<AmmoItemClass>())
+            foreach (EFT.InventoryLogic.Ammo ammo in SnapshotLootTreeItems(support).OfType<EFT.InventoryLogic.Ammo>())
             {
                 if (IsCompatibleUniqueAmmo(support, ammo, yieldedIds))
                 {
@@ -706,10 +706,10 @@ namespace pitTeam.BigBrain.Actions
             }
 
             // Reload-access supply is restricted to the magazines this support weapon may use.
-            foreach (MagazineItemClass magazine in GetFastAccessMagazines(followerEquipment)
+            foreach (EFT.InventoryLogic.Magazine magazine in GetFastAccessMagazines(followerEquipment)
                          .Where(magazine => magazineEligibility == null || magazineEligibility(magazine)))
             {
-                foreach (AmmoItemClass ammo in SnapshotLootTreeItems(magazine).OfType<AmmoItemClass>())
+                foreach (EFT.InventoryLogic.Ammo ammo in SnapshotLootTreeItems(magazine).OfType<EFT.InventoryLogic.Ammo>())
                 {
                     if (IsCompatibleUniqueAmmo(support, ammo, yieldedIds))
                     {
@@ -718,7 +718,7 @@ namespace pitTeam.BigBrain.Actions
                 }
             }
 
-            foreach (AmmoItemClass ammo in GetFollowerWeaponLooseAmmoItems(
+            foreach (EFT.InventoryLogic.Ammo ammo in GetFollowerWeaponLooseAmmoItems(
                          followerEquipment,
                          support,
                          includeStrictCargo: true))
@@ -733,7 +733,7 @@ namespace pitTeam.BigBrain.Actions
 
         private static bool IsCompatibleUniqueAmmo(
             Weapon weapon,
-            AmmoItemClass ammo,
+            EFT.InventoryLogic.Ammo ammo,
             HashSet<string> yieldedIds)
         {
             return ammo != null &&
@@ -743,12 +743,12 @@ namespace pitTeam.BigBrain.Actions
         }
 
         private static bool IsSupportCarriedAmmoSupplyEligible(
-            AmmoItemClass ammo,
-            Func<MagazineItemClass, bool>? magazineEligibility)
+            EFT.InventoryLogic.Ammo ammo,
+            Func<EFT.InventoryLogic.Magazine, bool>? magazineEligibility)
         {
             // Loose stacks are shared supply. Cartridges inside a magazine may be donated only
             // when that magazine belongs to the support weapon's permitted reload package.
-            return !TryGetMagazineDonor(ammo, out MagazineItemClass? donor) ||
+            return !TryGetMagazineDonor(ammo, out EFT.InventoryLogic.Magazine? donor) ||
                    magazineEligibility == null ||
                    magazineEligibility(donor);
         }
@@ -758,7 +758,7 @@ namespace pitTeam.BigBrain.Actions
             HashSet<string> attemptedSourceItemIds,
             Weapon? deferredWeapon)
         {
-            if (candidate?.Item is not AmmoItemClass ammo ||
+            if (candidate?.Item is not EFT.InventoryLogic.Ammo ammo ||
                 string.IsNullOrEmpty(ammo.Id))
             {
                 return;
@@ -794,7 +794,7 @@ namespace pitTeam.BigBrain.Actions
         }
 
         private static BodyGearCandidate CreateMagazineMaintenanceAmmoCandidate(
-            AmmoItemClass ammo,
+            EFT.InventoryLogic.Ammo ammo,
             Weapon weapon,
             string role)
         {
@@ -818,8 +818,8 @@ namespace pitTeam.BigBrain.Actions
             Weapon weapon,
             IEnumerable<BodyGearCandidate> sourceCandidates,
             string role,
-            Func<MagazineItemClass, bool>? fastAccessMagazineEligibility,
-            Func<AmmoItemClass, bool>? carriedAmmoSupplyEligibility,
+            Func<EFT.InventoryLogic.Magazine, bool>? fastAccessMagazineEligibility,
+            Func<EFT.InventoryLogic.Ammo, bool>? carriedAmmoSupplyEligibility,
             bool allowSearchedSourceTopOff,
             out BodyGearMove? move)
         {
@@ -849,23 +849,23 @@ namespace pitTeam.BigBrain.Actions
                 : Enumerable.Empty<BodyGearCandidate>();
             List<BodyGearCandidate> supplies = carriedSupply
                 .Concat(eligibleSourceSupply)
-                .Where(candidate => candidate?.Item is AmmoItemClass)
+                .Where(candidate => candidate?.Item is EFT.InventoryLogic.Ammo)
                 .GroupBy(candidate => candidate.Item.Id, StringComparer.Ordinal)
                 .Select(group => group.First())
                 .OrderBy(candidate => candidate.ReportAsLootNothing ? 0 : 1)
-                .ThenByDescending(candidate => ((AmmoItemClass)candidate.Item).PenetrationPower)
-                .ThenByDescending(candidate => ((AmmoItemClass)candidate.Item).Damage)
-                .ThenByDescending(candidate => ((AmmoItemClass)candidate.Item).ArmorDamage)
+                .ThenByDescending(candidate => ((EFT.InventoryLogic.Ammo)candidate.Item).PenetrationPower)
+                .ThenByDescending(candidate => ((EFT.InventoryLogic.Ammo)candidate.Item).Damage)
+                .ThenByDescending(candidate => ((EFT.InventoryLogic.Ammo)candidate.Item).ArmorDamage)
                 .ThenBy(candidate => candidate.Item.Id, StringComparer.Ordinal)
                 .ToList();
 
             foreach (BodyGearCandidate supply in supplies)
             {
-                MagazineItemClass inserted = GetCurrentMagazineSafely(weapon);
+                EFT.InventoryLogic.Magazine inserted = GetCurrentMagazineSafely(weapon);
                 if (inserted != null &&
                     inserted.Count < inserted.MaxCount &&
                     (fastAccessMagazineEligibility == null || fastAccessMagazineEligibility(inserted)) &&
-                    supply.Item is AmmoItemClass insertedAmmo &&
+                    supply.Item is EFT.InventoryLogic.Ammo insertedAmmo &&
                     CanTopOffMagazineWithAmmo(weapon, inserted, insertedAmmo))
                 {
                     int transferCount = Math.Min(
@@ -930,18 +930,18 @@ namespace pitTeam.BigBrain.Actions
             Weapon weapon,
             BodyGearCandidate candidate,
             string role,
-            Func<MagazineItemClass, bool>? fastAccessMagazineEligibility,
+            Func<EFT.InventoryLogic.Magazine, bool>? fastAccessMagazineEligibility,
             out BodyGearMove? move,
             out string reason)
         {
             move = null;
             reason = "noOperationalMagazineGap";
-            if (candidate?.Item is not AmmoItemClass ammo)
+            if (candidate?.Item is not EFT.InventoryLogic.Ammo ammo)
             {
                 return false;
             }
 
-            foreach (MagazineItemClass magazine in GetFastAccessMagazines(followerEquipment)
+            foreach (EFT.InventoryLogic.Magazine magazine in GetFastAccessMagazines(followerEquipment)
                          .Where(magazine =>
                              magazine.Count < magazine.MaxCount &&
                              (fastAccessMagazineEligibility == null ||
@@ -949,7 +949,7 @@ namespace pitTeam.BigBrain.Actions
                              IsMagazineCompatibleWithWeapon(weapon, magazine) &&
                              CanTopOffMagazineWithAmmo(weapon, magazine, ammo))
                          .OrderByDescending(magazine =>
-                             magazine.Cartridges?.Last is AmmoItemClass top &&
+                             magazine.Cartridges?.Last is EFT.InventoryLogic.Ammo top &&
                              string.Equals(top.TemplateId, ammo.TemplateId, StringComparison.Ordinal))
                          .ThenByDescending(magazine =>
                              magazine.MaxCount > 0 ? (float)magazine.Count / magazine.MaxCount : 0f)
@@ -958,7 +958,7 @@ namespace pitTeam.BigBrain.Actions
                 int transferCount = Math.Min(
                     magazine.MaxCount - magazine.Count,
                     ammo.StackObjectsCount);
-                GStruct153 applyResult = magazine.Apply(inventory, ammo, transferCount, true);
+                Diz.LanguageExtensions.OperationResult applyResult = magazine.Apply(inventory, ammo, transferCount, true);
                 if (applyResult.Failed || applyResult.Value == null)
                 {
                     reason = $"applyRejected:{DescribeInventoryError(applyResult.Error)}";

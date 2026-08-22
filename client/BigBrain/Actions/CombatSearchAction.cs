@@ -13,7 +13,7 @@ namespace pitTeam.BigBrain.Actions
     /// </summary>
     internal sealed class CombatSearchAction : FollowerCombatActionBase
     {
-        private readonly GClass235 baseLogic;
+        private readonly SearchInvisibleEnemy baseLogic;
 
         private const float MaxCornerThreatAngleDegrees = 35f;
         private const float MemorySearchArrivalDistanceSqr = 4f;
@@ -26,7 +26,7 @@ namespace pitTeam.BigBrain.Actions
 
         public CombatSearchAction(BotOwner botOwner) : base(botOwner)
         {
-            baseLogic = new GClass235(botOwner);
+            baseLogic = new SearchInvisibleEnemy(botOwner);
         }
 
         public override void Start()
@@ -144,10 +144,10 @@ namespace pitTeam.BigBrain.Actions
             memorySearchRealReportTime = reportTime;
             memorySearchPoint = hit.position;
             BotOwner.SearchData.SearchPoint = new BotSearchPoint(memorySearchPoint, EBotSearchPoint.playerPosition);
-            BotOwner.SearchData.LastSearchPoint = null;
-            BotOwner.SearchData.NextPosibleCheckTime = Time.time + 10f;
-            BotOwner.SearchData.NextPosibleGoRefresh = 0f;
-            BotOwner.SearchData.Going = false;
+            BotOwner.SearchData._lastSearchPoint = null;
+            BotOwner.SearchData._nextPosibleCheckTime = Time.time + 10f;
+            BotOwner.SearchData._nextPosibleGoRefresh = 0f;
+            BotOwner.SearchData._going = false;
             BotOwner.Mover.Stop();
             BattleRecorder.RecordCommitmentEvent(
                 BotOwner,
@@ -162,7 +162,7 @@ namespace pitTeam.BigBrain.Actions
             if (BotOwner.SearchData != null)
             {
                 BotOwner.SearchData.SearchPoint = null;
-                BotOwner.SearchData.Going = false;
+                BotOwner.SearchData._going = false;
             }
 
             BotOwner.Mover.Stop();
@@ -224,7 +224,7 @@ namespace pitTeam.BigBrain.Actions
             BotOwner.Mover.Sprint(false, true);
             BotOwner.SetTargetMoveSpeed(1f);
             NavMeshPathStatus status = BotOwner.GoToPoint(searchPoint.Position, false, -1f, true, false, true, false, true);
-            BotOwner.SearchData.IsReachableLast = status == NavMeshPathStatus.PathComplete;
+            BotOwner.SearchData.isReachableLast = status == NavMeshPathStatus.PathComplete;
         }
 
         private bool HasPendingSearchMovement()
@@ -261,18 +261,18 @@ namespace pitTeam.BigBrain.Actions
                 Vector3 cornerDirection = corner - botPos;
                 if (IsCornerLookAlignedWithThreat(cornerDirection, dest - botPos))
                 {
-                    baseLogic.BotObserveDataClass.SetVectorToLook(cornerDirection);
+                    baseLogic._botObserveData.SetVectorToLook(cornerDirection);
                 }
                 else
                 {
-                    baseLogic.BotObserveDataClass.SetVectorToLook(dest - botPos);
+                    baseLogic._botObserveData.SetVectorToLook(dest - botPos);
                 }
             }
             else
             {
-                baseLogic.BotObserveDataClass.SetVectorToLook(dest - botPos);
+                baseLogic._botObserveData.SetVectorToLook(dest - botPos);
             }
-            baseLogic.BotObserveDataClass.Update();
+            baseLogic._botObserveData.Update();
         }
 
         private static bool IsFinite(Vector3 value)

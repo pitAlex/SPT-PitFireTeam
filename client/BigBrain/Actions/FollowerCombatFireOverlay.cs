@@ -145,7 +145,7 @@ namespace pitTeam.BigBrain.Actions
                 }
 
                 bool directLane = Utils.Utils.CanShootToTarget(
-                    new ShootPointClass(target, 1f),
+                    new ShootToPoint(target, 1f),
                     fireOrigin,
                     botOwner.LookSensor.Mask,
                     false);
@@ -254,7 +254,7 @@ namespace pitTeam.BigBrain.Actions
                 goalEnemy.IsVisible &&
                 goalEnemy.CanShoot)
             {
-                ShootPointClass? shootPoint = botOwner.CurrentEnemyTargetPosition(false);
+                ShootToPoint? shootPoint = botOwner.CurrentEnemyTargetPosition(false);
                 Vector3 rawTarget = shootPoint?.Point ?? goalEnemy.GetBodyPartPosition();
                 target = StabilizeVisibleTarget(goalEnemy, rawTarget);
                 suppression = false;

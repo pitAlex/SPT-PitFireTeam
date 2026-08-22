@@ -30,9 +30,9 @@ namespace pitTeam.Modules
         internal static WeaponPrimaryReadinessSnapshot EvaluateActual(
             InventoryController inventory,
             Weapon weapon,
-            Func<AmmoItemClass, bool>? reserveEligibility = null)
+            Func<EFT.InventoryLogic.Ammo, bool>? reserveEligibility = null)
         {
-            List<AmmoItemClass> reserves = GetCompatibleLooseAmmo(
+            List<EFT.InventoryLogic.Ammo> reserves = GetCompatibleLooseAmmo(
                     inventory,
                     weapon,
                     reserveEligibility)
@@ -48,7 +48,7 @@ namespace pitTeam.Modules
             return EvaluateWeaponState(weapon, projectedReserveStacks, loadedRoundsOverride);
         }
 
-        internal static bool IsCompatibleLooseAmmo(Weapon weapon, AmmoItemClass ammo)
+        internal static bool IsCompatibleLooseAmmo(Weapon weapon, EFT.InventoryLogic.Ammo ammo)
         {
             if (!IsInternalMagazineWeapon(weapon) ||
                 !FollowerWeaponLooseAmmoSupport.IsCompatible(weapon, ammo))
@@ -56,7 +56,7 @@ namespace pitTeam.Modules
                 return false;
             }
 
-            MagazineItemClass internalMagazine;
+            EFT.InventoryLogic.Magazine internalMagazine;
             try
             {
                 internalMagazine = weapon.GetCurrentMagazine();
@@ -65,10 +65,10 @@ namespace pitTeam.Modules
                     return false;
                 }
 
-                // RevolverItemClass feeds directly from its cylinder. The M32 and similar
+                // EFT.InventoryLogic.Revolver feeds directly from its cylinder. The M32 and similar
                 // shoulder-fired revolvers do not expose a separate chamber slot that accepts
                 // loose ammunition, so cylinder compatibility is the final feed check.
-                if (weapon is RevolverItemClass)
+                if (weapon is EFT.InventoryLogic.Revolver)
                 {
                     return true;
                 }
@@ -195,10 +195,10 @@ namespace pitTeam.Modules
                 feedKind: "internalMagazine");
         }
 
-        private static IEnumerable<AmmoItemClass> GetCompatibleLooseAmmo(
+        private static IEnumerable<EFT.InventoryLogic.Ammo> GetCompatibleLooseAmmo(
             InventoryController inventory,
             Weapon weapon,
-            Func<AmmoItemClass, bool>? reserveEligibility)
+            Func<EFT.InventoryLogic.Ammo, bool>? reserveEligibility)
         {
             InventoryEquipment equipment = inventory?.Inventory?.Equipment;
             if (equipment == null || !IsInternalMagazineWeapon(weapon))
@@ -225,7 +225,7 @@ namespace pitTeam.Modules
                     continue;
                 }
 
-                foreach (AmmoItemClass ammo in snapshot.OfType<AmmoItemClass>())
+                foreach (EFT.InventoryLogic.Ammo ammo in snapshot.OfType<EFT.InventoryLogic.Ammo>())
                 {
                     if (string.IsNullOrEmpty(ammo.Id) ||
                         !yieldedIds.Add(ammo.Id) ||
@@ -256,7 +256,7 @@ namespace pitTeam.Modules
                     return false;
                 }
 
-                MagazineItemClass internalMagazine = weapon.GetCurrentMagazine();
+                EFT.InventoryLogic.Magazine internalMagazine = weapon.GetCurrentMagazine();
                 if (internalMagazine == null || internalMagazine.MaxCount <= 0)
                 {
                     return false;

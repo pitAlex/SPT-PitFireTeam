@@ -17,7 +17,7 @@ namespace pitTeam.Patches
         [PatchPostfix]
         private static void PatchPostfix(BotCalcGoal __instance)
         {
-            BotOwner bot = __instance?.BotOwner_0;
+            BotOwner bot = __instance?._owner;
             if (bot == null)
             {
                 return;

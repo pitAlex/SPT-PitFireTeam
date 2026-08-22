@@ -245,15 +245,15 @@ namespace pitTeam.BigBrain
                 : Time.time;
             enemyInfo.PersonalLastSeenTime = Time.time;
             enemyInfo.PersonalLastPos = enemyPosition;
-            enemyInfo.method_6(EEnemyPartVisibleType.Visible);
-            enemyInfo.method_3(true);
+            enemyInfo.SetVisibleType(EEnemyPartVisibleType.Visible);
+            enemyInfo.PrevIsVisible(true);
         }
 
         private static void DemoteVisibility(EnemyInfo enemyInfo, SensorState previousState)
         {
             enemyInfo.IsVisible = false;
-            enemyInfo.method_6(EEnemyPartVisibleType.NotVisible);
-            enemyInfo.method_3(false);
+            enemyInfo.SetVisibleType(EEnemyPartVisibleType.NotVisible);
+            enemyInfo.PrevIsVisible(false);
 
             if (!previousState.HasValue)
             {
@@ -344,7 +344,7 @@ namespace pitTeam.BigBrain
             }
 
             Vector3 fireOrigin = GetFireOrigin(botOwner);
-            LayerMask shootMask = LayerMaskClass.HighPolyWithTerrainMask;
+            LayerMask shootMask = LayersMaskController.HighPolyWithTerrainMask;
 
             if (CanShootMainPart(botOwner, goalEnemy, BodyPartType.head, fireOrigin, shootMask) ||
                 CanShootMainPart(botOwner, goalEnemy, BodyPartType.body, fireOrigin, shootMask))
@@ -357,7 +357,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            ShootPointClass? shootPoint = botOwner.CurrentEnemyTargetPosition(true);
+            ShootToPoint? shootPoint = botOwner.CurrentEnemyTargetPosition(true);
             if (shootPoint != null)
             {
                 return HasClearLine(fireOrigin, shootPoint.Point, shootMask, shootPoint.DistCoef);
@@ -484,10 +484,10 @@ namespace pitTeam.BigBrain
         {
             if (distance <= CloseFoliageVisibilityDistance)
             {
-                return LayerMaskClass.HighPolyWithTerrainMask;
+                return LayersMaskController.HighPolyWithTerrainMask;
             }
 
-            return botOwner.LookSensor?.Mask ?? LayerMaskClass.HighPolyWithTerrainMaskAI;
+            return botOwner.LookSensor?.Mask ?? LayersMaskController.HighPolyWithTerrainMaskAI;
         }
 
         private static Vector3 GetFireOrigin(BotOwner botOwner)
@@ -523,8 +523,8 @@ namespace pitTeam.BigBrain
         {
             enemyInfo.SetCanShoot(false);
             enemyInfo.IsVisible = false;
-            enemyInfo.method_6(EEnemyPartVisibleType.NotVisible);
-            enemyInfo.method_3(false);
+            enemyInfo.SetVisibleType(EEnemyPartVisibleType.NotVisible);
+            enemyInfo.PrevIsVisible(false);
         }
 
         private static void ClearStaleVisibleOrShootFlag(EnemyInfo enemyInfo)

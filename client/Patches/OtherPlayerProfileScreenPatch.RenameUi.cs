@@ -11,7 +11,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.Events;
 using UnityEngine.UI;
-using ResultProfile = GClass1416;
+using ResultProfile = EFT.OtherPlayerProfile;
 
 namespace pitTeam.Patches
 {
@@ -365,7 +365,7 @@ namespace pitTeam.Patches
             inputField.SetTextWithoutNotify(currentNickname);
             inputField.text = currentNickname;
             inputField.interactable = true;
-            nicknameField.method_3(currentNickname);
+            nicknameField.ValidateEnteredString(currentNickname);
             inputField.textViewport.offsetMin = Vector2.zero;
             inputField.textViewport.offsetMax = Vector2.zero;
             AddTeammateNicknameFieldUi.SetStatusLabelText(
@@ -488,10 +488,10 @@ namespace pitTeam.Patches
                 return;
             }
 
-            ENicknameError validationError = nicknameField.method_5(normalized);
+            ENicknameError validationError = nicknameField.ValidationError(normalized);
             if (validationError != ENicknameError.ValidNickname)
             {
-                nicknameField.method_6(validationError, false);
+                nicknameField.ShowNicknameError(validationError, false);
                 string message = validationError == ENicknameError.TooShort
                     ? GetSocialUiText("NicknameTooShort")
                     : validationError.Localized(EStringCase.None);

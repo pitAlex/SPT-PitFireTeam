@@ -260,7 +260,7 @@ namespace pitTeam.Utils
 
                 // Find enemies in range
                 Collider[] hits = new Collider[20]; // Pre-allocated array to prevent memory allocation
-                int numHits = Physics.OverlapSphereNonAlloc(position, radius, hits, LayerMaskClass.PlayerMask);
+                int numHits = Physics.OverlapSphereNonAlloc(position, radius, hits, LayersMaskController.PlayerMask);
 
                 if (numHits == 0)
                 {
@@ -273,7 +273,7 @@ namespace pitTeam.Utils
 
                 for (int i = 0; i < numHits; i++)
                 {
-                    Player pl = bot.ShootData.method_4(hits[i]);
+                    Player pl = bot.ShootData.GetPlayerByCollider(hits[i]);
                     if (pl == null || !pl.HealthController.IsAlive || processedEnemies.Contains(pl.ProfileId))
                         continue;
 
@@ -376,7 +376,7 @@ namespace pitTeam.Utils
                 }
             }
 
-            BotSettingsClass groupInfo;
+            BotGroupEnemyInfo groupInfo;
             bot.BotsGroup.Enemies.TryGetValue(enemy, out groupInfo);
 
             if (groupInfo == null)
@@ -395,7 +395,7 @@ namespace pitTeam.Utils
 
             if (groupInfo == null)
             {
-                groupInfo = new BotSettingsClass(enemy, bot.BotsGroup, cause);
+                groupInfo = new BotGroupEnemyInfo(enemy, bot.BotsGroup, cause);
 
                 bot.Memory.AddEnemy(enemy, groupInfo, false);
             }

@@ -14,9 +14,9 @@ using System.Reflection;
 using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.UI;
-using dropDownItem = GClass3682;
-using OtherProfileResult = GClass2213;
-using ResultProfile = GClass1416;
+using dropDownItem = EFT.Customization.CustomizationSuite;
+using OtherProfileResult = EFT.OtherPlayerProfileDescriptor;
+using ResultProfile = EFT.OtherPlayerProfile;
 
 namespace pitTeam.Patches
 {
@@ -289,38 +289,34 @@ namespace pitTeam.Patches
         }
 
         private static void DisplayClothingOptions(
-            LastPlayerStateClass playerVisualRepresentation,
+            EFT.PlayerVisualRepresentation playerVisualRepresentation,
             InventoryPlayerModelWithStatsWindow window,
             InventoryController inventoryController,
             InventoryClothingSelectionPanel panel
         )
         {
-            InventoryPlayerModelWithStatsWindow.Class3160 state = new InventoryPlayerModelWithStatsWindow.Class3160
-            {
-                playerVisualRepresentation = playerVisualRepresentation,
-                inventoryPlayerModelWithStatsWindow_0 = window,
-                inventoryController = inventoryController
-            };
-
             IEnumerable<dropDownItem> availableSuites =
-                Singleton<CustomizationSolverClass>.Instance.GetAvailableSuites(EPlayerSide.Bear)
-                .Concat(Singleton<CustomizationSolverClass>.Instance.GetAvailableSuites(EPlayerSide.Usec))
-                .Concat(Singleton<CustomizationSolverClass>.Instance.GetAvailableSuites(EPlayerSide.Savage));
+                Singleton<EFT.CustomizationSolver>.Instance.GetAvailableSuites(EPlayerSide.Bear)
+                .Concat(Singleton<EFT.CustomizationSolver>.Instance.GetAvailableSuites(EPlayerSide.Usec))
+                .Concat(Singleton<EFT.CustomizationSolver>.Instance.GetAvailableSuites(EPlayerSide.Savage))
+                .Where(suite => suite != null)
+                .GroupBy(suite => suite.Id.ToString(), StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First());
 
             List<dropDownItem> upper = new List<dropDownItem>();
             List<dropDownItem> lower = new List<dropDownItem>();
-            MongoID selectedBody = state.playerVisualRepresentation.Customization[EBodyModelPart.Body];
-            MongoID selectedFeet = state.playerVisualRepresentation.Customization[EBodyModelPart.Feet];
+            MongoID selectedBody = playerVisualRepresentation.Customization[EBodyModelPart.Body];
+            MongoID selectedFeet = playerVisualRepresentation.Customization[EBodyModelPart.Feet];
             dropDownItem currentUpper = null;
             dropDownItem currentLower = null;
 
             foreach (dropDownItem suite in availableSuites)
             {
-                if (suite is GClass3683 upperSuite)
+                if (suite is EFT.Customization.UpperBodySuit upperSuite)
                 {
                     upper.Add(upperSuite);
                 }
-                else if (suite is GClass3684 lowerSuite)
+                else if (suite is EFT.Customization.LowerBodySuit lowerSuite)
                 {
                     lower.Add(lowerSuite);
                 }
@@ -335,14 +331,23 @@ namespace pitTeam.Patches
                 }
             }
 
-            panel.Show(upper, currentUpper, lower, currentLower, false, state.method_0);
+            panel.Show(upper, currentUpper, lower, currentLower, false, suite =>
+            {
+                suite.SetClothingsToProfile(playerVisualRepresentation.Customization);
+                if (window._playerModelView.gameObject.activeSelf)
+                {
+                    window._playerModelView.Close();
+                }
+                window.ShowPreview(playerVisualRepresentation, inventoryController);
+                PlayerModelWithStatsWindow_OnCustomizationChanged(suite);
+            });
         }
 
         private static void DisplayLoadoutOptions(
             OtherPlayerProfileScreen screen,
             ResultProfile profile,
             InventoryController inventoryController,
-            ISession session,
+            EFT.IEftSession session,
             InventoryClothingSelectionPanel panel,
             InventoryPlayerModelWithStatsWindow window,
             FriendlyTeammateProfileOptions options,
@@ -595,7 +600,7 @@ namespace pitTeam.Patches
             return string.Equals(tactic, "protector", StringComparison.OrdinalIgnoreCase);
         }
 
-        private static void RefreshPlayerVisualization(ResultProfile profile, InventoryController inventoryController, ISession session, InventoryPlayerModelWithStatsWindow window)
+        private static void RefreshPlayerVisualization(ResultProfile profile, InventoryController inventoryController, EFT.IEftSession session, InventoryPlayerModelWithStatsWindow window)
         {
             try
             {
@@ -645,7 +650,7 @@ namespace pitTeam.Patches
                         playerModelView.Close();
                     }
 
-                    window.method_3(profile.PlayerVisualRepresentation, inventoryController);
+                    window.ShowPreview(profile.PlayerVisualRepresentation, inventoryController);
                 }, TaskScheduler.FromCurrentSynchronizationContext()).HandleExceptions();
             }
             catch (Exception ex)

@@ -273,7 +273,7 @@ namespace pitTeam.Utils
             States.Remove(bot.ProfileId);
         }
 
-        public static void FollowerHit(BotOwner bot, DamageInfoStruct damageInfo)
+        public static void FollowerHit(BotOwner bot, EFT.Ballistics.DamageInfo damageInfo)
         {
             if (bot == null || bot.IsDead || bot.BotState != EBotState.Active)
             {
@@ -440,7 +440,7 @@ namespace pitTeam.Utils
             }
         }
 
-        public static void BulletFelt(BotOwner bot, EftBulletClass bullet, Vector3? impactPoint = null)
+        public static void BulletFelt(BotOwner bot, EFT.Ballistics.Shot bullet, Vector3? impactPoint = null)
         {
             if (bot == null || bullet == null || bot.IsDead || bot.BotState != EBotState.Active) return;
             if (FollowerEnemyEnforceSuppression.IsSuppressed(bot)) return;
@@ -550,7 +550,7 @@ namespace pitTeam.Utils
                 return false;
             }
 
-            if (!Physics.Linecast(origin, impact, out RaycastHit hit, LayerMaskClass.HighPolyWithTerrainMask))
+            if (!Physics.Linecast(origin, impact, out RaycastHit hit, LayersMaskController.HighPolyWithTerrainMask))
             {
                 return false;
             }
@@ -811,7 +811,7 @@ namespace pitTeam.Utils
                 if (enemy.MainParts.TryGetValue(BodyPartType.head, out var enemyHead) && enemyHead != null)
                 {
                     if (Utils.CanShootToTarget(
-                        new ShootPointClass(enemyHead.Position, 1f),
+                        new ShootToPoint(enemyHead.Position, 1f),
                         firePos,
                         bot.LookSensor.Mask
                     ))
@@ -823,7 +823,7 @@ namespace pitTeam.Utils
                 if (enemy.MainParts.TryGetValue(BodyPartType.body, out var enemyBody) && enemyBody != null)
                 {
                     return Utils.CanShootToTarget(
-                        new ShootPointClass(enemyBody.Position, 1f),
+                        new ShootToPoint(enemyBody.Position, 1f),
                         firePos,
                         bot.LookSensor.Mask
                     );

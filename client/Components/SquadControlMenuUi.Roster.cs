@@ -641,8 +641,8 @@ namespace pitTeam.Components
 
             try
             {
-                IChatInteractions chatInteractions = ItemUiContext.Instance?.Session;
-                SocialNetworkClass socialNetwork = chatInteractions?.SocialNetwork;
+                EFT.ISocial chatInteractions = ItemUiContext.Instance?.Session;
+                EFT.SocialNetwork socialNetwork = chatInteractions?.SocialNetwork;
                 if (socialNetwork?.FriendsList == null)
                 {
                     pitFireTeam.Log.LogError("[UI] Failed to delete teammate: social network is unavailable.");
@@ -1184,7 +1184,7 @@ namespace pitTeam.Components
 
             try
             {
-                GClass1416 profile = new GClass1416(profileTask.Result.Value);
+                EFT.OtherPlayerProfile profile = new EFT.OtherPlayerProfile(profileTask.Result.Value);
                 iconImage.SetPresetIcon(profile.Customization, profile.Equipment);
             }
             catch (Exception ex)
@@ -1210,7 +1210,7 @@ namespace pitTeam.Components
             try
             {
                 OtherPlayerProfileScreenPatch.PrepareReturnOverride(ReturnFromProfileToSquadControl);
-                OtherPlayerProfileScreen.GClass3883 screenController =
+                OtherPlayerProfileScreen.OtherPlayerProfileScreenController screenController =
                     await ItemUiContext.Instance.ShowPlayerProfileScreen(accountId, EItemViewType.OtherPlayerProfile);
                 if (screenController == null)
                 {
@@ -1232,7 +1232,7 @@ namespace pitTeam.Components
                 pitFireTeam.Log.LogError(exception);
             }
 
-            NotificationManagerClass.DisplayWarningNotification(
+            EFT.Communications.NotificationManager.DisplayWarningNotification(
                 GetSocialUiText("SquadControlProfileCorrupt"),
                 ENotificationDurationType.Default);
         }
@@ -1418,12 +1418,12 @@ namespace pitTeam.Components
         {
             Canvas canvas = reference != null ? reference.GetComponentInParent<Canvas>() : null;
             CanvasScaler scaler = canvas != null ? canvas.GetComponent<CanvasScaler>() : null;
-            if (scaler == null || scaler.scaleFactor <= 0.001f || GClass3825.Float_0 <= 0.001f)
+            if (scaler == null || scaler.scaleFactor <= 0.001f || EFT.UI.UICanvasScalerController._scaleFactor <= 0.001f)
             {
                 return 1f;
             }
 
-            return Mathf.Clamp(GClass3825.Float_0 / scaler.scaleFactor, 0.5f, 2f);
+            return Mathf.Clamp(EFT.UI.UICanvasScalerController._scaleFactor / scaler.scaleFactor, 0.5f, 2f);
         }
 
         // Sequential portrait load queue — one SetPresetIcon per entry, processed in order.

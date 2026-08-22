@@ -37,7 +37,7 @@ namespace pitTeam.BigBrain.Actions
             foreach (EquipmentSlot slot in new[] { EquipmentSlot.TacticalVest, EquipmentSlot.Pockets, EquipmentSlot.Backpack })
             {
                 Item root = corpseEquipment.GetSlot(slot)?.ContainedItem;
-                foreach (MagazineItemClass magazine in GetOperationalMagazineItems(
+                foreach (EFT.InventoryLogic.Magazine magazine in GetOperationalMagazineItems(
                              root,
                              weapon,
                              $"{slot}.WeaponSupportMagazine",
@@ -56,11 +56,11 @@ namespace pitTeam.BigBrain.Actions
         }
 
         private IEnumerable<BodyGearCandidate> GetContainerOperationalMagazineCandidates(
-            SearchableItemItemClass containerRoot,
+            EFT.InventoryLogic.SearchableItem containerRoot,
             Weapon weapon,
             bool includeEmptyForTopOff = false)
         {
-            foreach (MagazineItemClass magazine in GetOperationalMagazineItems(
+            foreach (EFT.InventoryLogic.Magazine magazine in GetOperationalMagazineItems(
                          containerRoot,
                          weapon,
                          "Container.WeaponSupportMagazine",
@@ -84,7 +84,7 @@ namespace pitTeam.BigBrain.Actions
             bool includeEmptyForTopOff = false)
         {
             Item backpack = followerEquipment?.GetSlot(EquipmentSlot.Backpack)?.ContainedItem;
-            foreach (MagazineItemClass magazine in GetOperationalMagazineItems(
+            foreach (EFT.InventoryLogic.Magazine magazine in GetOperationalMagazineItems(
                          backpack,
                          weapon,
                          "FollowerBackpack.WeaponSupportMagazine",
@@ -107,7 +107,7 @@ namespace pitTeam.BigBrain.Actions
             }
         }
 
-        private IEnumerable<MagazineItemClass> GetOperationalMagazineItems(
+        private IEnumerable<EFT.InventoryLogic.Magazine> GetOperationalMagazineItems(
             Item root,
             Weapon weapon,
             string sourceName,
@@ -145,7 +145,7 @@ namespace pitTeam.BigBrain.Actions
 #endif
             foreach (Item item in snapshot)
             {
-                if (item is not MagazineItemClass magazine)
+                if (item is not EFT.InventoryLogic.Magazine magazine)
                 {
                     continue;
                 }
@@ -268,8 +268,8 @@ namespace pitTeam.BigBrain.Actions
             Weapon weapon,
             IEnumerable<BodyGearCandidate>? candidates,
             bool allowEmptyCandidates = false,
-            Func<MagazineItemClass, bool>? existingFastAccessMagazineEligibility = null,
-            IEnumerable<MagazineItemClass>? alternateReloadReserveItems = null)
+            Func<EFT.InventoryLogic.Magazine, bool>? existingFastAccessMagazineEligibility = null,
+            IEnumerable<EFT.InventoryLogic.Magazine>? alternateReloadReserveItems = null)
         {
             OperationalMagazinePlan plan = new OperationalMagazinePlan();
             if (inventory == null || followerEquipment == null || weapon == null || candidates == null)
@@ -279,13 +279,13 @@ namespace pitTeam.BigBrain.Actions
 
             List<BodyGearCandidate> candidateList = candidates.ToList();
             plan.ScannedCount = candidateList.Count;
-            SearchableItemItemClass simulatedVest = CloneSearchableContainer(
+            EFT.InventoryLogic.SearchableItem simulatedVest = CloneSearchableContainer(
                 followerEquipment.GetSlot(EquipmentSlot.TacticalVest)?.ContainedItem);
-            SearchableItemItemClass simulatedPockets = CloneSearchableContainer(
+            EFT.InventoryLogic.SearchableItem simulatedPockets = CloneSearchableContainer(
                 followerEquipment.GetSlot(EquipmentSlot.Pockets)?.ContainedItem);
-            SearchableItemItemClass simulatedBackpack = CloneSearchableContainer(
+            EFT.InventoryLogic.SearchableItem simulatedBackpack = CloneSearchableContainer(
                 followerEquipment.GetSlot(EquipmentSlot.Backpack)?.ContainedItem);
-            List<MagazineItemClass> alternateReloadReserves = NormalizeReloadReserveItems(
+            List<EFT.InventoryLogic.Magazine> alternateReloadReserves = NormalizeReloadReserveItems(
                 alternateReloadReserveItems);
             HashSet<string> consideredItemIds = new HashSet<string>(StringComparer.Ordinal);
             Modules.Logger.LogInfo(
@@ -300,7 +300,7 @@ namespace pitTeam.BigBrain.Actions
             {
                 if (!TryGetOperationalMagazineCandidate(
                         candidate,
-                        out MagazineItemClass? magazine,
+                        out EFT.InventoryLogic.Magazine? magazine,
                         out string validationReason,
                         allowEmptyCandidates))
                 {
@@ -324,7 +324,7 @@ namespace pitTeam.BigBrain.Actions
 
             List<OperationalMagazineReserveOption> reserveOptions = validCandidates
                 .Select(candidate => new OperationalMagazineReserveOption(
-                    (MagazineItemClass)candidate.Item,
+                    (EFT.InventoryLogic.Magazine)candidate.Item,
                     candidate))
                 .Concat(GetFastAccessMagazines(followerEquipment)
                     .Where(magazine =>
@@ -368,8 +368,8 @@ namespace pitTeam.BigBrain.Actions
                         simulatedPockets,
                         option.Magazine,
                         BuildReloadReserveSet(option.Magazine, alternateReloadReserves),
-                        out SearchableItemItemClass? anchorVest,
-                        out SearchableItemItemClass? anchorPockets,
+                        out EFT.InventoryLogic.SearchableItem? anchorVest,
+                        out EFT.InventoryLogic.SearchableItem? anchorPockets,
                         out BodyGearFollowUpDestination anchorDestination))
                 {
                     continue;
@@ -402,12 +402,12 @@ namespace pitTeam.BigBrain.Actions
 
             foreach (BodyGearCandidate candidate in validCandidates
                          .Where(candidate => !ReferenceEquals(candidate, reserveAnchorCandidate))
-                         .OrderByDescending(candidate => GetMagazineCellArea((MagazineItemClass)candidate.Item))
-                         .ThenByDescending(candidate => GetMagazineLongestSide((MagazineItemClass)candidate.Item))
-                         .ThenByDescending(candidate => ((MagazineItemClass)candidate.Item).Count)
-                         .ThenByDescending(candidate => ((MagazineItemClass)candidate.Item).MaxCount))
+                         .OrderByDescending(candidate => GetMagazineCellArea((EFT.InventoryLogic.Magazine)candidate.Item))
+                         .ThenByDescending(candidate => GetMagazineLongestSide((EFT.InventoryLogic.Magazine)candidate.Item))
+                         .ThenByDescending(candidate => ((EFT.InventoryLogic.Magazine)candidate.Item).Count)
+                         .ThenByDescending(candidate => ((EFT.InventoryLogic.Magazine)candidate.Item).MaxCount))
             {
-                MagazineItemClass magazine = (MagazineItemClass)candidate.Item;
+                EFT.InventoryLogic.Magazine magazine = (EFT.InventoryLogic.Magazine)candidate.Item;
                 bool placedInFastAccess = false;
                 if (plan.ReloadReserveMagazine != null &&
                     TrySimulateFastAccessAddWithReserves(
@@ -415,8 +415,8 @@ namespace pitTeam.BigBrain.Actions
                         simulatedPockets,
                         magazine,
                         BuildReloadReserveSet(plan.ReloadReserveMagazine, alternateReloadReserves),
-                        out SearchableItemItemClass? nextVest,
-                        out SearchableItemItemClass? nextPockets,
+                        out EFT.InventoryLogic.SearchableItem? nextVest,
+                        out EFT.InventoryLogic.SearchableItem? nextPockets,
                         out BodyGearFollowUpDestination fastAccessDestination))
                 {
                     BodyGearCandidate fastAccessCandidate = candidate.WithFollowUpDestination(fastAccessDestination);
@@ -496,9 +496,9 @@ namespace pitTeam.BigBrain.Actions
             InventoryEquipment followerEquipment,
             BodyGearCandidate candidate,
             OperationalMagazinePlan plan,
-            ref SearchableItemItemClass? simulatedBackpack)
+            ref EFT.InventoryLogic.SearchableItem? simulatedBackpack)
         {
-            MagazineItemClass magazine = candidate.Item as MagazineItemClass;
+            EFT.InventoryLogic.Magazine magazine = candidate.Item as EFT.InventoryLogic.Magazine;
             if (IsLootNowInBotInventory(BotOwner?.GetPlayer, magazine))
             {
                 // A loose follower-backpack magazine that cannot move to fast access is already
@@ -509,7 +509,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             if (simulatedBackpack != null &&
-                TrySimulateContainerAdd(simulatedBackpack, magazine, out SearchableItemItemClass? nextBackpack))
+                TrySimulateContainerAdd(simulatedBackpack, magazine, out EFT.InventoryLogic.SearchableItem? nextBackpack))
             {
                 BodyGearCandidate backpackCandidate = candidate.WithFollowUpDestination(
                     BodyGearFollowUpDestination.BackpackCargo);
@@ -574,7 +574,7 @@ namespace pitTeam.BigBrain.Actions
             move = null;
             if (!TryGetOperationalMagazineCandidate(
                     candidate,
-                    out MagazineItemClass? magazine,
+                    out EFT.InventoryLogic.Magazine? magazine,
                     out _,
                     allowEmptyCandidate))
             {
@@ -614,7 +614,7 @@ namespace pitTeam.BigBrain.Actions
             move = null;
             if (!TryGetOperationalMagazineCandidate(
                     candidate,
-                    out MagazineItemClass? magazine,
+                    out EFT.InventoryLogic.Magazine? magazine,
                     out _,
                     allowEmptyCandidate))
             {
@@ -651,7 +651,7 @@ namespace pitTeam.BigBrain.Actions
             out string reason)
         {
             move = null;
-            if (!TryGetOperationalMagazineCandidate(candidate, out MagazineItemClass? magazine))
+            if (!TryGetOperationalMagazineCandidate(candidate, out EFT.InventoryLogic.Magazine? magazine))
             {
                 reason = "invalidMagazine";
                 return false;
@@ -693,7 +693,7 @@ namespace pitTeam.BigBrain.Actions
             }
         }
 
-        private static SearchableItemItemClass? CloneSearchableContainer(Item item)
+        private static EFT.InventoryLogic.SearchableItem? CloneSearchableContainer(Item item)
         {
             try
             {
@@ -703,7 +703,7 @@ namespace pitTeam.BigBrain.Actions
                     clone.CurrentAddress = null;
                 }
 
-                return clone as SearchableItemItemClass;
+                return clone as EFT.InventoryLogic.SearchableItem;
             }
             catch
             {
@@ -730,12 +730,12 @@ namespace pitTeam.BigBrain.Actions
         }
 
         private static bool TrySimulateFastAccessAddWithReserves(
-            SearchableItemItemClass vest,
-            SearchableItemItemClass pockets,
+            EFT.InventoryLogic.SearchableItem vest,
+            EFT.InventoryLogic.SearchableItem pockets,
             Item item,
-            IEnumerable<MagazineItemClass> reserveItems,
-            out SearchableItemItemClass? nextVest,
-            out SearchableItemItemClass? nextPockets,
+            IEnumerable<EFT.InventoryLogic.Magazine> reserveItems,
+            out EFT.InventoryLogic.SearchableItem? nextVest,
+            out EFT.InventoryLogic.SearchableItem? nextPockets,
             out BodyGearFollowUpDestination destination)
         {
             nextVest = vest;
@@ -743,7 +743,7 @@ namespace pitTeam.BigBrain.Actions
             destination = BodyGearFollowUpDestination.Default;
 
             if (vest != null &&
-                TrySimulateFastAccessContainerAdd(vest, item, out SearchableItemItemClass? trialVest) &&
+                TrySimulateFastAccessContainerAdd(vest, item, out EFT.InventoryLogic.SearchableItem? trialVest) &&
                 CanFitFastAccessReserves(trialVest, pockets, reserveItems))
             {
                 nextVest = trialVest;
@@ -752,7 +752,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             if (pockets != null &&
-                TrySimulateFastAccessContainerAdd(pockets, item, out SearchableItemItemClass? trialPockets) &&
+                TrySimulateFastAccessContainerAdd(pockets, item, out EFT.InventoryLogic.SearchableItem? trialPockets) &&
                 CanFitFastAccessReserves(vest, trialPockets, reserveItems))
             {
                 nextPockets = trialPockets;
@@ -764,11 +764,11 @@ namespace pitTeam.BigBrain.Actions
         }
 
         private static bool CanFitFastAccessReserves(
-            SearchableItemItemClass vest,
-            SearchableItemItemClass pockets,
-            IEnumerable<MagazineItemClass> reserveItems)
+            EFT.InventoryLogic.SearchableItem vest,
+            EFT.InventoryLogic.SearchableItem pockets,
+            IEnumerable<EFT.InventoryLogic.Magazine> reserveItems)
         {
-            List<MagazineItemClass> reserves = NormalizeReloadReserveItems(reserveItems)
+            List<EFT.InventoryLogic.Magazine> reserves = NormalizeReloadReserveItems(reserveItems)
                 .OrderByDescending(GetMagazineCellArea)
                 .ThenByDescending(GetMagazineLongestSide)
                 .ToList();
@@ -776,9 +776,9 @@ namespace pitTeam.BigBrain.Actions
         }
 
         private static bool TryFitFastAccessReloadReserves(
-            SearchableItemItemClass vest,
-            SearchableItemItemClass pockets,
-            IReadOnlyList<MagazineItemClass> reserves,
+            EFT.InventoryLogic.SearchableItem vest,
+            EFT.InventoryLogic.SearchableItem pockets,
+            IReadOnlyList<EFT.InventoryLogic.Magazine> reserves,
             int index)
         {
             if (index >= reserves.Count)
@@ -786,28 +786,28 @@ namespace pitTeam.BigBrain.Actions
                 return true;
             }
 
-            MagazineItemClass reserve = reserves[index];
+            EFT.InventoryLogic.Magazine reserve = reserves[index];
             if (vest != null &&
-                TrySimulateFastAccessContainerAdd(vest, reserve, out SearchableItemItemClass? nextVest) &&
+                TrySimulateFastAccessContainerAdd(vest, reserve, out EFT.InventoryLogic.SearchableItem? nextVest) &&
                 TryFitFastAccessReloadReserves(nextVest, pockets, reserves, index + 1))
             {
                 return true;
             }
 
             return pockets != null &&
-                   TrySimulateFastAccessContainerAdd(pockets, reserve, out SearchableItemItemClass? nextPockets) &&
+                   TrySimulateFastAccessContainerAdd(pockets, reserve, out EFT.InventoryLogic.SearchableItem? nextPockets) &&
                    TryFitFastAccessReloadReserves(vest, nextPockets, reserves, index + 1);
         }
 
-        private static List<MagazineItemClass> BuildReloadReserveSet(
-            MagazineItemClass reloadReserve,
-            IEnumerable<MagazineItemClass> alternateReloadReserves)
+        private static List<EFT.InventoryLogic.Magazine> BuildReloadReserveSet(
+            EFT.InventoryLogic.Magazine reloadReserve,
+            IEnumerable<EFT.InventoryLogic.Magazine> alternateReloadReserves)
         {
             // The follower reloads only one weapon at a time. Preserve one shared opening sized
             // for the largest relevant magazine instead of reserving simultaneous landing spaces.
             return NormalizeReloadReserveItems(
                 new[] { reloadReserve }.Concat(
-                    alternateReloadReserves ?? Enumerable.Empty<MagazineItemClass>()))
+                    alternateReloadReserves ?? Enumerable.Empty<EFT.InventoryLogic.Magazine>()))
                 .OrderByDescending(GetMagazineCellArea)
                 .ThenByDescending(GetMagazineLongestSide)
                 .ThenByDescending(magazine => magazine.MaxCount)
@@ -815,14 +815,14 @@ namespace pitTeam.BigBrain.Actions
                 .ToList();
         }
 
-        private static List<MagazineItemClass> NormalizeReloadReserveItems(
-            IEnumerable<MagazineItemClass> items)
+        private static List<EFT.InventoryLogic.Magazine> NormalizeReloadReserveItems(
+            IEnumerable<EFT.InventoryLogic.Magazine> items)
         {
             return items?
                 .Where(item => item != null && !string.IsNullOrEmpty(item.Id))
                 .GroupBy(item => item.Id, StringComparer.Ordinal)
                 .Select(group => group.First())
-                .ToList() ?? new List<MagazineItemClass>();
+                .ToList() ?? new List<EFT.InventoryLogic.Magazine>();
         }
 
         private bool HasOperationalMagazineReloadLandingSpace(
@@ -850,9 +850,9 @@ namespace pitTeam.BigBrain.Actions
         }
 
         private static bool TrySimulateContainerAdd(
-            SearchableItemItemClass container,
+            EFT.InventoryLogic.SearchableItem container,
             Item item,
-            out SearchableItemItemClass? nextContainer)
+            out EFT.InventoryLogic.SearchableItem? nextContainer)
         {
             nextContainer = CloneSearchableContainer(container);
             if (nextContainer?.Grids == null || item == null)
@@ -861,7 +861,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            foreach (StashGridClass grid in nextContainer.Grids)
+            foreach (EFT.InventoryLogic.Grid grid in nextContainer.Grids)
             {
                 Item planningItem = ClonePlanningItem(item);
                 if (planningItem != null &&
@@ -876,9 +876,9 @@ namespace pitTeam.BigBrain.Actions
         }
 
         private static bool TrySimulateFastAccessContainerAdd(
-            SearchableItemItemClass container,
+            EFT.InventoryLogic.SearchableItem container,
             Item item,
-            out SearchableItemItemClass? nextContainer)
+            out EFT.InventoryLogic.SearchableItem? nextContainer)
         {
             nextContainer = CloneSearchableContainer(container);
             if (nextContainer?.Grids == null || item == null)
@@ -887,7 +887,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            foreach (StashGridClass grid in OrderFastAccessGridsByBestFit(nextContainer.Grids, item))
+            foreach (EFT.InventoryLogic.Grid grid in OrderFastAccessGridsByBestFit(nextContainer.Grids, item))
             {
                 Item planningItem = ClonePlanningItem(item);
                 if (planningItem != null &&
@@ -901,14 +901,14 @@ namespace pitTeam.BigBrain.Actions
             return false;
         }
 
-        private static IEnumerable<StashGridClass> OrderFastAccessGridsByBestFit(
-            IEnumerable<StashGridClass> grids,
+        private static IEnumerable<EFT.InventoryLogic.Grid> OrderFastAccessGridsByBestFit(
+            IEnumerable<EFT.InventoryLogic.Grid> grids,
             Item item)
         {
             int itemArea = 0;
             try
             {
-                XYCellSizeStruct size = item?.CalculateCellSize() ?? default;
+                IntVec2 size = item?.CalculateCellSize() ?? default;
                 itemArea = Math.Max(0, size.X * size.Y);
             }
             catch
@@ -916,7 +916,7 @@ namespace pitTeam.BigBrain.Actions
                 // Stable grid order remains the fallback when a modded item cannot report size.
             }
 
-            return (grids ?? Enumerable.Empty<StashGridClass>())
+            return (grids ?? Enumerable.Empty<EFT.InventoryLogic.Grid>())
                 .Where(grid => grid != null)
                 .OrderBy(grid => Math.Max(0, grid.GridWidth * grid.GridHeight - itemArea))
                 .ThenBy(grid => grid.GridWidth * grid.GridHeight);
@@ -924,21 +924,21 @@ namespace pitTeam.BigBrain.Actions
 
         private bool TryGetOperationalMagazineCandidate(
             BodyGearCandidate candidate,
-            out MagazineItemClass? magazine)
+            out EFT.InventoryLogic.Magazine? magazine)
         {
             return TryGetOperationalMagazineCandidate(candidate, out magazine, out _, allowEmptyCandidate: false);
         }
 
         private bool TryGetOperationalMagazineCandidate(
             BodyGearCandidate candidate,
-            out MagazineItemClass? magazine,
+            out EFT.InventoryLogic.Magazine? magazine,
             out string reason,
             bool allowEmptyCandidate = false)
         {
             magazine = null;
             reason = "ok";
 
-            if (candidate?.Item is not MagazineItemClass candidateMagazine)
+            if (candidate?.Item is not EFT.InventoryLogic.Magazine candidateMagazine)
             {
                 reason = "notMagazine";
                 return false;
@@ -988,7 +988,7 @@ namespace pitTeam.BigBrain.Actions
                 StringComparison.Ordinal);
         }
 
-        private static bool IsMagazineCompatibleWithWeapon(Weapon weapon, MagazineItemClass magazine)
+        private static bool IsMagazineCompatibleWithWeapon(Weapon weapon, EFT.InventoryLogic.Magazine magazine)
         {
             return FollowerWeaponMagazineCompatibility.IsMechanicallyCompatible(weapon, magazine);
         }
@@ -1025,13 +1025,13 @@ namespace pitTeam.BigBrain.Actions
         {
             address = null;
             Item fastAccessRoot = followerEquipment?.GetSlot(equipmentSlot)?.ContainedItem;
-            if (fastAccessRoot is not SearchableItemItemClass searchable)
+            if (fastAccessRoot is not EFT.InventoryLogic.SearchableItem searchable)
             {
                 return false;
             }
 
             HashSet<EFT.InventoryLogic.IContainer> visited = new HashSet<EFT.InventoryLogic.IContainer>();
-            foreach (StashGridClass grid in OrderFastAccessGridsByBestFit(searchable.Grids, magazine))
+            foreach (EFT.InventoryLogic.Grid grid in OrderFastAccessGridsByBestFit(searchable.Grids, magazine))
             {
                 visited.Add(grid);
                 if (grid.TryFindLocationForItem(magazine, out ItemAddress candidateAddress) &&
@@ -1095,7 +1095,7 @@ namespace pitTeam.BigBrain.Actions
 
         private static string DescribeOperationalWeapon(Weapon weapon)
         {
-            MagazineItemClass currentMagazine = null;
+            EFT.InventoryLogic.Magazine currentMagazine = null;
             try
             {
                 currentMagazine = weapon?.GetCurrentMagazine();
@@ -1118,7 +1118,7 @@ namespace pitTeam.BigBrain.Actions
             string size = "?";
             try
             {
-                XYCellSizeStruct cellSize = item.CalculateCellSize();
+                IntVec2 cellSize = item.CalculateCellSize();
                 size = $"{cellSize.X}x{cellSize.Y}";
             }
             catch
@@ -1126,7 +1126,7 @@ namespace pitTeam.BigBrain.Actions
                 size = "?";
             }
 
-            string count = item is MagazineItemClass magazine
+            string count = item is EFT.InventoryLogic.Magazine magazine
                 ? $" count={magazine.Count}/{magazine.MaxCount}"
                 : string.Empty;
 
@@ -1139,7 +1139,7 @@ namespace pitTeam.BigBrain.Actions
             return $"{item.GetType().Name}:{templateId} id={ShortLootId(item.Id)} size={size}{count}";
         }
 
-        private static GStruct155 SafeCheckAction(Item item, ItemAddress address)
+        private static Diz.LanguageExtensions.Option SafeCheckAction(Item item, ItemAddress address)
         {
             try
             {
@@ -1147,33 +1147,33 @@ namespace pitTeam.BigBrain.Actions
             }
             catch (Exception ex)
             {
-                return new GClass1522(ex.Message);
+                return new Diz.LanguageExtensions.StringError(ex.Message);
             }
         }
 
-        private static GStruct156<bool> SafeCanBeMoved(GInterface409 item, EFT.InventoryLogic.IContainer container)
+        private static Diz.LanguageExtensions.Option<bool> SafeCanBeMoved(EFT.InventoryLogic.IMoveCheckable item, EFT.InventoryLogic.IContainer container)
         {
             try
             {
                 if (item == null || container == null)
                 {
-                    return new GClass1522(item == null ? "itemMissing" : "containerMissing");
+                    return new Diz.LanguageExtensions.StringError(item == null ? "itemMissing" : "containerMissing");
                 }
 
                 return item.CanBeMoved(container);
             }
             catch (Exception ex)
             {
-                return new GClass1522(ex.Message);
+                return new Diz.LanguageExtensions.StringError(ex.Message);
             }
         }
 
-        private static string DescribeInventoryEventResult(GStruct155 result)
+        private static string DescribeInventoryEventResult(Diz.LanguageExtensions.Option result)
         {
             return result.Failed ? $"failed:{DescribeInventoryError(result.Error)}" : "ok";
         }
 
-        private static string DescribeInventoryEventResult(GStruct156<bool> result)
+        private static string DescribeInventoryEventResult(Diz.LanguageExtensions.Option<bool> result)
         {
             return result.Failed ? $"failed:{DescribeInventoryError(result.Error)}" : $"ok:{result.Value}";
         }
@@ -1235,7 +1235,7 @@ namespace pitTeam.BigBrain.Actions
         {
             public List<BodyGearCandidate> FollowUps { get; } = new List<BodyGearCandidate>();
             public List<BodyGearCandidate> CompatibleLoadedCandidates { get; } = new List<BodyGearCandidate>();
-            public MagazineItemClass? ReloadReserveMagazine { get; set; }
+            public EFT.InventoryLogic.Magazine? ReloadReserveMagazine { get; set; }
             public int OperationalVestCount { get; set; }
             public int OperationalPocketsCount { get; set; }
             public int OperationalFastAccessCount => OperationalVestCount + OperationalPocketsCount;
@@ -1259,14 +1259,14 @@ namespace pitTeam.BigBrain.Actions
         private sealed class OperationalMagazineReserveOption
         {
             public OperationalMagazineReserveOption(
-                MagazineItemClass magazine,
+                EFT.InventoryLogic.Magazine magazine,
                 BodyGearCandidate? candidate)
             {
                 Magazine = magazine;
                 Candidate = candidate;
             }
 
-            public MagazineItemClass Magazine { get; }
+            public EFT.InventoryLogic.Magazine Magazine { get; }
             public BodyGearCandidate? Candidate { get; }
         }
 
@@ -1333,7 +1333,7 @@ namespace pitTeam.BigBrain.Actions
         {
             address = null;
 
-            if (candidate.Item is BackpackItemClass)
+            if (candidate.Item is EFT.InventoryLogic.Backpack)
             {
                 return false;
             }

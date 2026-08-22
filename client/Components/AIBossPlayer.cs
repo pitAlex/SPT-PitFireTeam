@@ -16,8 +16,8 @@ using UnityEngine;
 using UnityEngine.AI;
 
 
-using EventInfo = BotEventHandler.GClass692;
-using GestusInfo = GClass532;
+using EventInfo = GlobalEventDispatcher.PhraseDelegateInfo;
+using GestusInfo = BotReceiverGestus;
 
 namespace pitTeam.Components
 {
@@ -83,7 +83,7 @@ namespace pitTeam.Components
         private float _lastAttentionCommandAt = -999f;
         private readonly Dictionary<string, Action<EDamageType>> _followerDeathHandlers = new Dictionary<string, Action<EDamageType>>();
         private readonly Dictionary<string, FallenFollowerInfo> _pendingFriendlyDown = new Dictionary<string, FallenFollowerInfo>();
-        private GClass641.IBotTimer _friendlyDownTimer;
+        private TimerManager.ITimer _friendlyDownTimer;
         private static bool _sainAddonDecisionResetBridgeErrorLogged;
         private bool _bossGroupStaticUpdateSubscribed;
         private float _nextBossGroupStaticUpdateAt;
@@ -111,8 +111,8 @@ namespace pitTeam.Components
 
             player.HealthController.DiedEvent += OnDead;
 
-            Singleton<BotEventHandler>.Instance.OnPhraseSay += PhraseSaid;
-            Singleton<BotEventHandler>.Instance.OnGestusShow += GestusShown;
+            Singleton<GlobalEventDispatcher>.Instance.OnPhraseSay += PhraseSaid;
+            Singleton<GlobalEventDispatcher>.Instance.OnGestusShow += GestusShown;
 
         }
 
@@ -303,7 +303,7 @@ namespace pitTeam.Components
 
             foreach (var item in Followers)
             {
-                item?.Receiver?.method_0(info);
+                item?.Receiver?.OnPhraseSay(info);
             }
         }
 
@@ -373,7 +373,7 @@ namespace pitTeam.Components
 
             foreach (var item in Followers)
             {
-                item?.Receiver?.method_6(info);
+                item?.Receiver?.OnGestusShow(info);
             }
         }
 
@@ -698,7 +698,7 @@ namespace pitTeam.Components
             out Player enemy)
         {
             enemy = null;
-            IEnumerable<IPlayer> allPlayers = _botsController?.BotSpawner?.AllPlayers;
+            IEnumerable<IPlayer> allPlayers = _botsController?.BotSpawner?._allPlayers;
             if (allPlayers == null || realPlayer == null)
             {
                 return false;
@@ -787,7 +787,7 @@ namespace pitTeam.Components
         private bool TryGetEnemyAimingAtPlayer(out Player enemy)
         {
             enemy = null;
-            IEnumerable<IPlayer> allPlayers = _botsController?.BotSpawner?.AllPlayers;
+            IEnumerable<IPlayer> allPlayers = _botsController?.BotSpawner?._allPlayers;
             if (allPlayers == null || realPlayer == null)
             {
                 return false;
@@ -866,7 +866,7 @@ namespace pitTeam.Components
                 countSharedSeenAsPersonal: visibleForContact);
             if (trackedEnemy != null)
             {
-                BotSettingsClass botSettings = GetOrCreateContactEnemyGroupInfo(follower, enemy, trackedEnemy);
+                BotGroupEnemyInfo botSettings = GetOrCreateContactEnemyGroupInfo(follower, enemy, trackedEnemy);
                 botSettings.EnemyLastPosition = enemy.Position;
                 botSettings.IsHaveSeen = visibleForContact;
                 botSettings.EnemyLastSeenTimeSense = Time.time;
@@ -1129,10 +1129,10 @@ namespace pitTeam.Components
             return filtered;
         }
 
-        private static BotSettingsClass GetOrCreateContactEnemyGroupInfo(BotOwner follower, Player enemy, EnemyInfo trackedEnemy)
+        private static BotGroupEnemyInfo GetOrCreateContactEnemyGroupInfo(BotOwner follower, Player enemy, EnemyInfo trackedEnemy)
         {
             if (follower?.BotsGroup?.Enemies != null &&
-                follower.BotsGroup.Enemies.TryGetValue(enemy, out BotSettingsClass groupInfo) &&
+                follower.BotsGroup.Enemies.TryGetValue(enemy, out BotGroupEnemyInfo groupInfo) &&
                 groupInfo != null)
             {
                 return groupInfo;
@@ -1143,7 +1143,7 @@ namespace pitTeam.Components
                 return trackedEnemy.GroupInfo;
             }
 
-            return new BotSettingsClass(enemy, follower.BotsGroup, EBotEnemyCause.checkAddTODO);
+            return new BotGroupEnemyInfo(enemy, follower.BotsGroup, EBotEnemyCause.checkAddTODO);
         }
 
         private List<Player> GetBossVisibleEnemiesForContact(IPlayer requester)
@@ -1175,9 +1175,9 @@ namespace pitTeam.Components
                 if (enemy.MainParts.TryGetValue(BodyPartType.head, out var headPartVisible))
                 {
                     visible = Utils.Utils.CanShootToTarget(
-                        new ShootPointClass(headPartVisible.Position, 1),
+                        new ShootToPoint(headPartVisible.Position, 1),
                         firePos,
-                        LayerMaskClass.HighPolyWithTerrainMask,
+                        LayersMaskController.HighPolyWithTerrainMask,
                         false
                     );
                 }
@@ -1185,9 +1185,9 @@ namespace pitTeam.Components
                 if (!visible && enemy.MainParts.TryGetValue(BodyPartType.body, out var bodyPart))
                 {
                     visible = Utils.Utils.CanShootToTarget(
-                        new ShootPointClass(bodyPart.Position, 1),
+                        new ShootToPoint(bodyPart.Position, 1),
                         firePos,
-                        LayerMaskClass.HighPolyWithTerrainMask,
+                        LayersMaskController.HighPolyWithTerrainMask,
                         false
                     );
                 }
@@ -1207,7 +1207,7 @@ namespace pitTeam.Components
             List<Player> result = new List<Player>();
             if (requester == null) return result;
 
-            IEnumerable<IPlayer> allPlayers = _botsController?.BotSpawner?.AllPlayers;
+            IEnumerable<IPlayer> allPlayers = _botsController?.BotSpawner?._allPlayers;
             if (allPlayers == null) return result;
 
             Vector3 firePos = requester.PlayerBones?.WeaponRoot?.position ?? (requester.Position + Vector3.up * 1.2f);
@@ -1250,7 +1250,7 @@ namespace pitTeam.Components
                 return result;
             }
 
-            IEnumerable<IPlayer> allPlayers = _botsController?.BotSpawner?.AllPlayers;
+            IEnumerable<IPlayer> allPlayers = _botsController?.BotSpawner?._allPlayers;
             if (allPlayers == null)
             {
                 return result;
@@ -1378,7 +1378,7 @@ namespace pitTeam.Components
 
             if (enemy.MainParts.TryGetValue(BodyPartType.head, out var headPart))
             {
-                if (Utils.Utils.CanShootToTarget(new ShootPointClass(headPart.Position, 1), firePos, LayerMaskClass.HighPolyWithTerrainMask, false))
+                if (Utils.Utils.CanShootToTarget(new ShootToPoint(headPart.Position, 1), firePos, LayersMaskController.HighPolyWithTerrainMask, false))
                 {
                     return true;
                 }
@@ -1386,7 +1386,7 @@ namespace pitTeam.Components
 
             if (enemy.MainParts.TryGetValue(BodyPartType.body, out var bodyPart))
             {
-                if (Utils.Utils.CanShootToTarget(new ShootPointClass(bodyPart.Position, 1), firePos, LayerMaskClass.HighPolyWithTerrainMask, false))
+                if (Utils.Utils.CanShootToTarget(new ShootToPoint(bodyPart.Position, 1), firePos, LayersMaskController.HighPolyWithTerrainMask, false))
                 {
                     return true;
                 }
@@ -1501,17 +1501,17 @@ namespace pitTeam.Components
             Vector3 followerFirePos = follower.WeaponRoot.position;
 
             bool seesHead = hasHead && Utils.Utils.CanShootToTarget(
-                new ShootPointClass(headPart.Position, 1),
+                new ShootToPoint(headPart.Position, 1),
                 followerFirePos,
-                LayerMaskClass.HighPolyWithTerrainMask,
+                LayersMaskController.HighPolyWithTerrainMask,
                 false
             );
             if (seesHead) return true;
 
             bool seesBody = hasBody && Utils.Utils.CanShootToTarget(
-                new ShootPointClass(bodyPart.Position, 1),
+                new ShootToPoint(bodyPart.Position, 1),
                 followerFirePos,
-                LayerMaskClass.HighPolyWithTerrainMask,
+                LayersMaskController.HighPolyWithTerrainMask,
                 false
             );
             return seesBody;
@@ -2772,9 +2772,9 @@ namespace pitTeam.Components
             Vector3 target = position + Vector3.up * 0.6f;
 
             return Utils.Utils.CanShootToTarget(
-                new ShootPointClass(target, 1),
+                new ShootToPoint(target, 1),
                 from,
-                LayerMaskClass.HighPolyWithTerrainMask,
+                LayersMaskController.HighPolyWithTerrainMask,
                 false
             );
         }
@@ -3594,7 +3594,7 @@ namespace pitTeam.Components
             }
 
             bool directLane = Utils.Utils.CanShootToTarget(
-                new ShootPointClass(targetPosition, 1f),
+                new ShootToPoint(targetPosition, 1f),
                 fireOrigin,
                 follower.LookSensor.Mask,
                 false);
@@ -3642,7 +3642,7 @@ namespace pitTeam.Components
                 }
 
                 bool directLane = Utils.Utils.CanShootToTarget(
-                    new ShootPointClass(targetPosition, 1f),
+                    new ShootToPoint(targetPosition, 1f),
                     fireOrigin,
                     follower.LookSensor.Mask,
                     false);
@@ -3871,7 +3871,7 @@ namespace pitTeam.Components
                 OrderedLauncherRayScanDistance * 0.5f,
                 hits,
                 OrderedLauncherRayScanDistance * 0.5f,
-                LayerMaskClass.PlayerMask);
+                LayersMaskController.PlayerMask);
 
             for (int i = 0; i < hitCount; i++)
             {
@@ -4353,12 +4353,12 @@ namespace pitTeam.Components
 
         private static bool TryGetCommandSurfaceHit(Ray interactionRay, Vector3 rayDirection, float maxDistance, out RaycastHit lookHit)
         {
-            if (Physics.Raycast(interactionRay.origin, rayDirection, out lookHit, maxDistance, LayerMaskClass.HighPolyWithTerrainMask))
+            if (Physics.Raycast(interactionRay.origin, rayDirection, out lookHit, maxDistance, LayersMaskController.HighPolyWithTerrainMask))
             {
                 return true;
             }
 
-            return Physics.SphereCast(interactionRay.origin, 0.22f, rayDirection, out lookHit, maxDistance, LayerMaskClass.HighPolyWithTerrainMask);
+            return Physics.SphereCast(interactionRay.origin, 0.22f, rayDirection, out lookHit, maxDistance, LayersMaskController.HighPolyWithTerrainMask);
         }
 
         private static bool TrySampleCommandNavPoint(Vector3 rawTarget, float preferredY, out Vector3 commandTarget)
@@ -4510,7 +4510,7 @@ namespace pitTeam.Components
 
             RaycastHit[] hits = new RaycastHit[10];
             Ray ray = requester.InteractionRay;
-            int hitCount = Physics.SphereCastNonAlloc(ray, sphereRadius, hits, distance, LayerMaskClass.PlayerMask);
+            int hitCount = Physics.SphereCastNonAlloc(ray, sphereRadius, hits, distance, LayersMaskController.PlayerMask);
             if (hitCount <= 0) return null;
 
             for (int i = 0; i < hitCount; i++)
@@ -4568,17 +4568,17 @@ namespace pitTeam.Components
             Vector3 bossFirePos = requester.PlayerBones.WeaponRoot.position;
 
             bool seesHead = hasHead && Utils.Utils.CanShootToTarget(
-                new ShootPointClass(headPart.Position, 1),
+                new ShootToPoint(headPart.Position, 1),
                 bossFirePos,
-                LayerMaskClass.HighPolyWithTerrainMask,
+                LayersMaskController.HighPolyWithTerrainMask,
                 false
             );
             if (seesHead) return true;
 
             bool seesBody = hasBody && Utils.Utils.CanShootToTarget(
-                new ShootPointClass(bodyPart.Position, 1),
+                new ShootToPoint(bodyPart.Position, 1),
                 bossFirePos,
-                LayerMaskClass.HighPolyWithTerrainMask,
+                LayersMaskController.HighPolyWithTerrainMask,
                 false
             );
             return seesBody;
@@ -4621,7 +4621,7 @@ namespace pitTeam.Components
                 }
                 else
                 {
-                    BotSettingsClass botSettingsClass = new BotSettingsClass(Singleton<GameWorld>.Instance.GetAlivePlayerByProfileID(enemy.ProfileId), bossGroup, EBotEnemyCause.addPlayerToBoss);
+                    BotGroupEnemyInfo botSettingsClass = new BotGroupEnemyInfo(Singleton<GameWorld>.Instance.GetAlivePlayerByProfileID(enemy.ProfileId), bossGroup, EBotEnemyCause.addPlayerToBoss);
                     botSettingsClass.EnemyLastPosition = enemy.Position;
                     follower.Memory.AddEnemy(enemy, botSettingsClass, false);
 
@@ -4685,8 +4685,8 @@ namespace pitTeam.Components
             _stableEnemyReportByFollower.Clear();
             realPlayer.HealthController.DiedEvent -= OnDead;
 
-            Singleton<BotEventHandler>.Instance.OnPhraseSay -= PhraseSaid;
-            Singleton<BotEventHandler>.Instance.OnGestusShow -= GestusShown;
+            Singleton<GlobalEventDispatcher>.Instance.OnPhraseSay -= PhraseSaid;
+            Singleton<GlobalEventDispatcher>.Instance.OnGestusShow -= GestusShown;
 
             //_botsController.Bots.OnBotAdd -= OnBotAdd;
 
@@ -4954,7 +4954,7 @@ namespace pitTeam.Components
             public float Since;
         }
     }
-    public class AIBossPlayerLogic : GClass430
+    public class AIBossPlayerLogic : BossBoar
     {
         private Player _player;
         private pitAIBossPlayer _aiplayer;
@@ -4965,7 +4965,7 @@ namespace pitTeam.Components
             _aiplayer = aiplayer;
         }
 
-        public void OnHit(DamageInfoStruct arg1, EBodyPart arg2, float arg3)
+        public void OnHit(EFT.Ballistics.DamageInfo arg1, EBodyPart arg2, float arg3)
         {
             if (
                 arg1.Player != null && arg1.Player.IsAI &&

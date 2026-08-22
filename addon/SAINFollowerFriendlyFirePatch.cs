@@ -3,6 +3,7 @@ using HarmonyLib;
 using SAIN;
 using SAIN.Components;
 using SAIN.SAINComponent.Classes;
+using SAIN.Preset.Shared.Enums;
 using pitTeam.Modules;
 using pitTeam.Utils;
 using System.Reflection;

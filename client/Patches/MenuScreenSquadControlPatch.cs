@@ -19,7 +19,7 @@ namespace pitTeam.Patches
             return AccessTools.Method(
                 typeof(MenuScreen),
                 "Show",
-                new Type[] { typeof(Profile), typeof(MatchmakerPlayerControllerClass), typeof(ESessionMode) });
+                new Type[] { typeof(Profile), typeof(EFT.UI.Matchmaker.MatchmakerPlayersController), typeof(ESessionMode) });
         }
 
         [PatchPostfix]
@@ -41,7 +41,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(MenuScreen), "method_3");
+            return AccessTools.Method(typeof(MenuScreen), nameof(MenuScreen.ChangeToReconnectionAvailable));
         }
 
         [PatchPostfix]
@@ -55,7 +55,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(MenuScreen), "method_9");
+            return AccessTools.Method(typeof(MenuScreen), nameof(MenuScreen.ChangeScreenInGameStatus));
         }
 
         [PatchPostfix]

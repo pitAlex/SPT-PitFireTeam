@@ -7,13 +7,13 @@ using System;
 using System.Linq;
 using System.Reflection;
 using UnityEngine;
-using ResultProfile = GClass1416;
+using ResultProfile = EFT.OtherPlayerProfile;
 
 namespace pitTeam.Patches
 {
     internal partial class OtherPlayerProfileScreenPatch
     {
-        private static void DisplaySkillsPanel(OtherPlayerProfileScreen screen, ResultProfile profile, ISession session)
+        private static void DisplaySkillsPanel(OtherPlayerProfileScreen screen, ResultProfile profile, EFT.IEftSession session)
         {
             if (screen == null || profile?.Skills == null || session?.Profile == null)
             {
@@ -85,7 +85,7 @@ namespace pitTeam.Patches
                 return;
             }
 
-            AddViewListClass ui = UiField?.GetValue(screen) as AddViewListClass;
+            EFT.UI.UIParent ui = UiField?.GetValue(screen) as EFT.UI.UIParent;
             ui?.AddDisposable(clone);
 
             SkillsPanelHost = hostRect;
@@ -119,12 +119,12 @@ namespace pitTeam.Patches
 
         private static void ReplaceSkillArray(FieldInfo field, SkillManager skillManager)
         {
-            if (field?.GetValue(skillManager) is not SkillClass[] skills)
+            if (field?.GetValue(skillManager) is not EFT.Skill[] skills)
             {
                 return;
             }
 
-            SkillClass[] filtered = skills
+            EFT.Skill[] filtered = skills
                 .Where(skill => skill != null && !skill.Locked && !HiddenFollowerSkills.Contains(skill.Id))
                 .ToArray();
 
@@ -147,7 +147,7 @@ namespace pitTeam.Patches
             }
         }
 
-        private static object ResolveSkillsHealthController(ResultProfile profile, ISession session)
+        private static object ResolveSkillsHealthController(ResultProfile profile, EFT.IEftSession session)
         {
             try
             {

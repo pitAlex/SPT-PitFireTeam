@@ -1,9 +1,11 @@
 using pitTeam.Server.Models;
 using pitTeam.Server.Constants;
+using SPTarkov.Common.Models.Logging;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.Constants;
-using SPTarkov.Server.Core.Generators;
-using SPTarkov.Server.Core.Helpers;
+using SPTarkov.Server.Core.Generators.Bot;
+using SPTarkov.Server.Core.Helpers.Items;
+using SPTarkov.Server.Core.Helpers.Profile;
 using SPTarkov.Server.Core.Models.Eft.Match;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Common;
@@ -16,9 +18,11 @@ using SPTarkov.Server.Core.Models.Enums;
 using SPTarkov.Server.Core.Models.Enums.RaidSettings;
 using SPTarkov.Server.Core.Models.Spt.Dialog;
 using SPTarkov.Server.Core.Models.Spt.Bots;
+using SPTarkov.Server.Core.Models.Spt.Tables;
 using SPTarkov.Server.Core.Models.Utils;
 using SPTarkov.Server.Core.Servers;
-using SPTarkov.Server.Core.Services;
+using SPTarkov.Server.Core.Services.Commerce;
+using SPTarkov.Server.Core.Services.Profile;
 using SPTarkov.Server.Core.Utils;
 using SPTarkov.Server.Core.Utils.Cloners;
 using CommonCustomization = SPTarkov.Server.Core.Models.Eft.Common.Tables.Customization;
@@ -31,7 +35,7 @@ namespace pitTeam.Server.Services;
 [Injectable]
 public class FriendlyTeammateService(
     BotGenerator botGenerator,
-    DatabaseService databaseService,
+    GlobalTable globalTable,
     FileUtil fileUtil,
     HashUtil hashUtil,
     JsonUtil jsonUtil,
@@ -3807,7 +3811,7 @@ public class FriendlyTeammateService(
         return min + rng.NextDouble() * (max - min);
     }
 
-    private static void AddOverallCounter(BotBase teammate, double value, params string[] key)
+    private static void AddOverallCounter(BotBase teammate, long value, params string[] key)
     {
         if (value <= 0 || key == null || key.Length == 0)
         {
@@ -3957,7 +3961,7 @@ public class FriendlyTeammateService(
         }
 
         var accumulatedExperience = 0;
-        var experienceTable = databaseService.GetGlobals().Configuration.Exp.Level.ExperienceTable;
+        var experienceTable = globalTable.Configuration.Exp.Level.ExperienceTable;
         for (var i = 0; i < experienceTable.Length; i++)
         {
             accumulatedExperience += experienceTable[i].Experience;

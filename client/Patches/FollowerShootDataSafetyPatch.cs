@@ -26,7 +26,7 @@ namespace pitTeam.Patches
         {
             try
             {
-                BotOwner? botOwner = __instance?.Owner;
+                BotOwner? botOwner = __instance?._owner;
                 if (botOwner == null ||
                     !BossPlayers.IsFollower(botOwner) ||
                     pitFireTeam.UseSainFollowerCombat ||

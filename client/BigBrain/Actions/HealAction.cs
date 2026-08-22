@@ -11,11 +11,11 @@ namespace pitTeam.BigBrain.Actions
     /// </summary>
     internal class HealAction : CustomLogic
     {
-        private GClass197 baseLogic;
+        private HealNode baseLogic;
         private float nextMedicalRefreshAt;
         public HealAction(BotOwner botOwner) : base(botOwner)
         {
-            baseLogic = new GClass197(botOwner);
+            baseLogic = new HealNode(botOwner);
         }
 
         public override void Start()

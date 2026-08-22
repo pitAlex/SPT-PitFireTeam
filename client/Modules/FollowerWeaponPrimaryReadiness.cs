@@ -13,8 +13,8 @@ namespace pitTeam.Modules
         internal static WeaponPrimaryReadinessSnapshot EvaluateActual(
             InventoryController inventory,
             Weapon weapon,
-            Func<AmmoItemClass, bool>? internalAmmoEligibility = null,
-            Func<MagazineItemClass, bool>? fastAccessMagazineEligibility = null)
+            Func<EFT.InventoryLogic.Ammo, bool>? internalAmmoEligibility = null,
+            Func<EFT.InventoryLogic.Magazine, bool>? fastAccessMagazineEligibility = null)
         {
             if (FollowerWeaponLooseFeedReadiness.IsSupported(weapon))
             {
@@ -30,7 +30,7 @@ namespace pitTeam.Modules
         internal static WeaponPrimaryReadinessSnapshot EvaluatePlannedProjection(
             InventoryController inventory,
             Weapon weapon,
-            IEnumerable<MagazineItemClass> projectedFastAccessMagazines)
+            IEnumerable<EFT.InventoryLogic.Magazine> projectedFastAccessMagazines)
         {
             return EvaluateInventoryState(inventory, weapon, projectedFastAccessMagazines, null);
         }
@@ -45,7 +45,7 @@ namespace pitTeam.Modules
                 return true;
             }
 
-            MagazineItemClass insertedMagazine;
+            EFT.InventoryLogic.Magazine insertedMagazine;
             try
             {
                 insertedMagazine = weapon?.GetCurrentMagazine();
@@ -60,7 +60,7 @@ namespace pitTeam.Modules
 
         internal static bool HasMagazineReloadLandingSpace(
             InventoryEquipment equipment,
-            MagazineItemClass magazine)
+            EFT.InventoryLogic.Magazine magazine)
         {
             if (magazine == null)
             {
@@ -225,8 +225,8 @@ namespace pitTeam.Modules
         private static WeaponPrimaryReadinessSnapshot EvaluateInventoryState(
             InventoryController inventory,
             Weapon weapon,
-            IEnumerable<MagazineItemClass>? projectedFastAccessMagazines,
-            Func<MagazineItemClass, bool>? fastAccessMagazineEligibility)
+            IEnumerable<EFT.InventoryLogic.Magazine>? projectedFastAccessMagazines,
+            Func<EFT.InventoryLogic.Magazine, bool>? fastAccessMagazineEligibility)
         {
             if (weapon == null)
             {
@@ -234,7 +234,7 @@ namespace pitTeam.Modules
             }
 
             Slot magazineSlot;
-            MagazineItemClass insertedMagazine;
+            EFT.InventoryLogic.Magazine insertedMagazine;
             try
             {
                 magazineSlot = weapon.GetMagazineSlot();
@@ -245,7 +245,7 @@ namespace pitTeam.Modules
                 return EvaluateFormula(0, false, 0, 0, Array.Empty<int>(), 0, $"weaponRead:{ex.Message}");
             }
 
-            List<MagazineItemClass> compatibleMagazines = new List<MagazineItemClass>();
+            List<EFT.InventoryLogic.Magazine> compatibleMagazines = new List<EFT.InventoryLogic.Magazine>();
             HashSet<string> includedMagazineIds = new HashSet<string>(StringComparer.Ordinal);
             string referenceReason = "availableLoadedMagazines";
 
@@ -253,9 +253,9 @@ namespace pitTeam.Modules
             {
                 try
                 {
-                    List<MagazineItemClass> reachableMagazines = new List<MagazineItemClass>();
-                    inventory.GetReachableItemsOfTypeNonAlloc<MagazineItemClass>(reachableMagazines, null);
-                    foreach (MagazineItemClass magazine in reachableMagazines.ToArray())
+                    List<EFT.InventoryLogic.Magazine> reachableMagazines = new List<EFT.InventoryLogic.Magazine>();
+                    inventory.GetReachableItemsOfTypeNonAlloc<EFT.InventoryLogic.Magazine>(reachableMagazines, null);
+                    foreach (EFT.InventoryLogic.Magazine magazine in reachableMagazines.ToArray())
                     {
                         if (fastAccessMagazineEligibility != null &&
                             !fastAccessMagazineEligibility(magazine))
@@ -280,7 +280,7 @@ namespace pitTeam.Modules
 
             if (projectedFastAccessMagazines != null && magazineSlot != null)
             {
-                foreach (MagazineItemClass magazine in projectedFastAccessMagazines.ToArray())
+                foreach (EFT.InventoryLogic.Magazine magazine in projectedFastAccessMagazines.ToArray())
                 {
                     if (fastAccessMagazineEligibility != null &&
                         !fastAccessMagazineEligibility(magazine))
@@ -375,14 +375,14 @@ namespace pitTeam.Modules
         {
             try
             {
-                SearchableItemItemClass containerClone = containerItem?.CloneItem() as SearchableItemItemClass;
+                EFT.InventoryLogic.SearchableItem containerClone = containerItem?.CloneItem() as EFT.InventoryLogic.SearchableItem;
                 if (containerClone?.Grids == null || item == null)
                 {
                     return false;
                 }
 
                 containerClone.CurrentAddress = null;
-                foreach (StashGridClass grid in containerClone.Grids)
+                foreach (EFT.InventoryLogic.Grid grid in containerClone.Grids)
                 {
                     Item itemClone = item.CloneItem();
                     if (itemClone == null)
@@ -408,10 +408,10 @@ namespace pitTeam.Modules
         private static void TryAddCompatibleFastAccessMagazine(
             Weapon weapon,
             Slot magazineSlot,
-            MagazineItemClass insertedMagazine,
-            MagazineItemClass candidate,
+            EFT.InventoryLogic.Magazine insertedMagazine,
+            EFT.InventoryLogic.Magazine candidate,
             HashSet<string> includedMagazineIds,
-            List<MagazineItemClass> compatibleMagazines,
+            List<EFT.InventoryLogic.Magazine> compatibleMagazines,
             bool excludeInstalledMagazines = true)
         {
             if (candidate == null ||
@@ -463,8 +463,8 @@ namespace pitTeam.Modules
         }
 
         private static int ResolveAvailableOrdinaryReference(
-            MagazineItemClass insertedMagazine,
-            IEnumerable<MagazineItemClass> compatibleMagazines,
+            EFT.InventoryLogic.Magazine insertedMagazine,
+            IEnumerable<EFT.InventoryLogic.Magazine> compatibleMagazines,
             out int availableMagazineCount)
         {
             int largestAvailableCapacity = 0;
@@ -478,7 +478,7 @@ namespace pitTeam.Modules
 
             if (compatibleMagazines != null)
             {
-                foreach (MagazineItemClass magazine in compatibleMagazines)
+                foreach (EFT.InventoryLogic.Magazine magazine in compatibleMagazines)
                 {
                     if (magazine?.Count <= 0)
                     {

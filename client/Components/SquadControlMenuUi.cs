@@ -248,7 +248,7 @@ namespace pitTeam.Components
         private static bool forceRosterRefreshOnNextInject;
         private static readonly HashSet<string> pendingTileRefreshAccountIds = new HashSet<string>(StringComparer.Ordinal);
         private bool raidSettingsOverlayActive;
-        private MatchmakerPlayerControllerClass subscribedGroupBadgeLogController;
+        private EFT.UI.Matchmaker.MatchmakerPlayersController subscribedGroupBadgeLogController;
         private Action unsubscribeGroupBadgeLog;
         private ToggleGroup loadoutManagementToggleGroup;
         private Coroutine loadoutManagementRosterRefreshCoroutine;

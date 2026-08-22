@@ -10,7 +10,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(MatchMakerSelectionLocationScreen), "method_5");
+            return AccessTools.Method(typeof(MatchMakerSelectionLocationScreen), nameof(MatchMakerSelectionLocationScreen.ShowInternal));
         }
         [PatchPostfix]
         private static void PatchPostfix(MatchMakerSelectionLocationScreen __instance, RaidSettings raidSettings)

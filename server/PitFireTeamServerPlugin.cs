@@ -1,11 +1,9 @@
+using SPTarkov.Common.Models.Logging;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.DI;
 using SPTarkov.Server.Core.Models.Common;
-using SPTarkov.Server.Core.Models.Spt.Config;
 using SPTarkov.Server.Core.Models.Spt.Mod;
-using SPTarkov.Server.Core.Models.Utils;
-using SPTarkov.Server.Core.Servers;
-using SPTarkov.Server.Core.Services;
+using SPTarkov.Server.Core.Models.Spt.Tables;
 using SPTarkov.Server.Core.Utils.Json;
 using System.IO;
 using pitTeam.Server.Services;
@@ -14,38 +12,36 @@ using Version = SemanticVersioning.Version;
 
 namespace pitTeam.Server;
 
-public record PitFireTeamServerMetadata : AbstractModMetadata
+public record PitFireTeamServerMetadata : IModMetadata
 {
-    public override string ModGuid { get; init; } = "xyz.pit.fireteam";
-    public override string Name { get; init; } = "PitFireTeam";
-    public override string Author { get; init; } = "PitAlex";
-    public override List<string>? Contributors { get; init; }
-    public override Version Version { get; init; } = new("0.9.0");
-    public override Range SptVersion { get; init; } = new("~4.0.0");
-    public override List<string>? Incompatibilities { get; init; }
-    public override Dictionary<string, Range>? ModDependencies { get; init; }
-    public override string? Url { get; init; } = "https://github.com/pitAlex/SPT-PitFireTeam";
-    public override bool? IsBundleMod { get; init; }
-    public override string License { get; init; } = "MIT";
+    public string ModGuid { get; init; } = "xyz.pit.fireteam";
+    public string Name { get; init; } = "PitFireTeam";
+    public string Author { get; init; } = "PitAlex";
+    public List<string>? Contributors { get; init; }
+    public Version Version { get; init; } = new("0.10.0");
+    public Range SptVersion { get; init; } = new("~4.1.0");
+    public bool HasPrepatcher { get; init; } = false;
+    public List<string>? Incompatibilities { get; init; }
+    public Dictionary<string, Range>? ModDependencies { get; init; }
+    public string? Url { get; init; } = "https://github.com/pitAlex/SPT-PitFireTeam";
+    public string License { get; init; } = "MIT";
 }
 
-#pragma warning disable CS0618 // ConfigServer is the stable config access path in the current SPT 4.08 target.
-[Injectable(TypePriority = OnLoadOrder.PostDBModLoader + 1)]
+[Injectable(TypePriority = OnLoadOrder.Preload + 1)]
 public class PitFireTeamServerPlugin(
     ISptLogger<PitFireTeamServerPlugin> logger,
-    DatabaseService databaseService,
-    FriendlyServerSettingsService settingsService,
-    FriendlyTeammateService teammateService
+    TradersTable traders,
+    LocaleTable locales,
+    FriendlyServerSettingsService settingsService
 ) : IOnLoad
 {
-    public Task OnLoad()
+    public Task OnLoadAsync(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         EnsureCourierTraderRegistered();
         EnsureCourierTraderLocales();
         EnsureCourierAvatarIsServed();
         settingsService.ApplyPersistedSettings();
-        teammateService.RecoverDuplicateTeammateItemsForAllProfiles();
-        logger.Info("PitFireTeam loaded");
         return Task.CompletedTask;
     }
 
@@ -53,7 +49,6 @@ public class PitFireTeamServerPlugin(
     {
         try
         {
-            var traders = databaseService.GetTraders();
             if (traders.ContainsKey(FriendlyCourierTraderProfile.CourierTraderId))
             {
                 return;
@@ -73,7 +68,7 @@ public class PitFireTeamServerPlugin(
         try
         {
             string traderId = FriendlyCourierTraderProfile.CourierTraderIdValue;
-            foreach (var (locale, lazyGlobal) in databaseService.GetLocales().Global)
+            foreach (var (locale, lazyGlobal) in locales.Global)
             {
                 lazyGlobal.AddTransformer(localized =>
                 {
@@ -135,4 +130,18 @@ public class PitFireTeamServerPlugin(
     }
 
 }
-#pragma warning restore CS0618
+
+[Injectable(TypePriority = OnLoadOrder.PostLoad + 1)]
+public class PitFireTeamServerPostLoad(
+    ISptLogger<PitFireTeamServerPostLoad> logger,
+    FriendlyTeammateService teammateService
+) : IOnLoad
+{
+    public Task OnLoadAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        teammateService.RecoverDuplicateTeammateItemsForAllProfiles();
+        logger.Info("PitFireTeam loaded");
+        return Task.CompletedTask;
+    }
+}

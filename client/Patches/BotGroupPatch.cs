@@ -16,7 +16,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(BotsGroup), "method_1");
+            return AccessTools.Method(typeof(BotsGroup), nameof(BotsGroup.IsPlayerBadUsec));
 
         }
         [PatchPrefix]
@@ -536,13 +536,13 @@ namespace pitTeam.Patches
         {
             return AccessTools.Method(
                 typeof(BotsController),
-                "method_12",
-                new[] { typeof(DamageInfoStruct), typeof(Player) });
+                nameof(BotsController.OnBeingHit),
+                new[] { typeof(EFT.Ballistics.DamageInfo), typeof(Player) });
         }
 
         [PatchPrefix]
         [HarmonyPriority(Priority.First)]
-        private static void PatchPrefix(DamageInfoStruct damageInfo, Player target)
+        private static void PatchPrefix(EFT.Ballistics.DamageInfo damageInfo, Player target)
         {
             try
             {
@@ -557,7 +557,7 @@ namespace pitTeam.Patches
         }
 
         [PatchPostfix]
-        private static void PatchPostfix(DamageInfoStruct damageInfo, Player target)
+        private static void PatchPostfix(EFT.Ballistics.DamageInfo damageInfo, Player target)
         {
             try
             {
@@ -678,7 +678,7 @@ namespace pitTeam.Patches
             }
 
             if (group.Enemies == null ||
-                !group.Enemies.TryGetValue(attacker, out BotSettingsClass settings) ||
+                !group.Enemies.TryGetValue(attacker, out BotGroupEnemyInfo settings) ||
                 settings == null ||
                 member.Memory == null)
             {

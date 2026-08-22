@@ -25,8 +25,8 @@ namespace pitTeam.BigBrain.Actions
         private const float RecentContactFireAngle = 15f;
         private const float PointBlankContactFireAngle = 55f;
 
-        private readonly GClass178 shootLogic;
-        private readonly GClass274 grenadeLogic;
+        private readonly Aiming shootLogic;
+        private readonly ShallThrowGrenade grenadeLogic;
         private readonly NavMeshPath dogFightPath = new NavMeshPath();
 
         private DogFightMoveStatus moveStatus;
@@ -34,8 +34,8 @@ namespace pitTeam.BigBrain.Actions
 
         public CombatDogFightAction(BotOwner botOwner) : base(botOwner)
         {
-            shootLogic = new GClass183(botOwner);
-            grenadeLogic = new GClass274(botOwner);
+            shootLogic = new AimingToGoalTarget(botOwner);
+            grenadeLogic = new ShallThrowGrenade(botOwner);
         }
 
         public override void Start()
@@ -55,7 +55,7 @@ namespace pitTeam.BigBrain.Actions
             if (BotOwner?.DogFight != null)
             {
                 BotOwner.DogFight.DogFightState = BotDogFightStatus.none;
-                BotOwner.DogFight.PursuitInProgress = false;
+                BotOwner.DogFight._pursuitInProgress = false;
             }
 
             base.Stop();
@@ -197,7 +197,7 @@ namespace pitTeam.BigBrain.Actions
                 BotOwner.ShootData.Shoot();
             }
 
-            shootLogic.UpdateNodeByBrain(GetData<GClass27>(data));
+            shootLogic.UpdateNodeByBrain(GetData<AimingResultParams>(data));
         }
 
         private bool UpdateSainLikeMovement(EnemyInfo? goalEnemy)

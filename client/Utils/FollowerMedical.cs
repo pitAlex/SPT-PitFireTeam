@@ -283,7 +283,7 @@ namespace pitTeam.Utils
         private static bool HasPostCombatFullHealWork(BotOwner bot)
         {
             Player player = bot?.GetPlayer;
-            BotFirstAidClass firstAid = bot?.Medecine?.FirstAid;
+            BotFirstAid firstAid = bot?.Medecine?.FirstAid;
             if (player?.HealthController == null ||
                 player.ActiveHealthController == null ||
                 firstAid == null ||
@@ -358,7 +358,7 @@ namespace pitTeam.Utils
                 return;
             }
 
-            foreach (EBodyPart part in GClass3058.RealBodyParts)
+            foreach (EBodyPart part in EFT.HealthSystem.HealthHelper.RealBodyParts)
             {
                 if (player.ActiveHealthController.IsBodyPartDestroyed(part))
                 {
@@ -369,7 +369,7 @@ namespace pitTeam.Utils
                 float missingHealth = health.Maximum - health.Current;
                 if (missingHealth.Positive())
                 {
-                    player.ActiveHealthController.ChangeHealth(part, missingHealth, GClass3051.MedKitUse);
+                    player.ActiveHealthController.ChangeHealth(part, missingHealth, EFT.HealthSystem.DamageHelper.MedKitUse);
                 }
             }
         }
@@ -381,10 +381,10 @@ namespace pitTeam.Utils
                 return;
             }
 
-            List<IEffect> bleedingEffects = new List<IEffect>();
-            foreach (IEffect effect in player.ActiveHealthController.GetAllEffects(EBodyPart.Common))
+            List<EFT.HealthSystem.IHealthEffect> bleedingEffects = new List<EFT.HealthSystem.IHealthEffect>();
+            foreach (EFT.HealthSystem.IHealthEffect effect in player.ActiveHealthController.GetAllEffects(EBodyPart.Common))
             {
-                if (effect is GInterface341 &&
+                if (effect is EFT.HealthSystem.IBleeding &&
                     effect.State != EEffectState.None &&
                     effect.State != EEffectState.Removed)
                 {
@@ -398,7 +398,7 @@ namespace pitTeam.Utils
             }
         }
 
-        private static void ForceRemoveEffect(IEffect effect)
+        private static void ForceRemoveEffect(EFT.HealthSystem.IHealthEffect effect)
         {
             if (effect == null)
             {
@@ -446,7 +446,7 @@ namespace pitTeam.Utils
                 float minHealth = GetFirstAidVisibleHealth(player, part);
                 if (health.Current < minHealth)
                 {
-                    player.ActiveHealthController.ChangeHealth(part, minHealth - health.Current, GClass3051.MedKitUse);
+                    player.ActiveHealthController.ChangeHealth(part, minHealth - health.Current, EFT.HealthSystem.DamageHelper.MedKitUse);
                 }
             }
         }
@@ -459,12 +459,12 @@ namespace pitTeam.Utils
 
         private static void ClampImpossibleBodyPartHealth(Player player, EBodyPart part)
         {
-            if (player?.ActiveHealthController?.Dictionary_0 == null ||
+            if (player?.ActiveHealthController?.BodyState == null ||
                 player.Profile?.Health?.BodyParts == null ||
-                !player.Profile.Health.BodyParts.TryGetValue(part, out Profile.ProfileHealthClass.ProfileBodyPartHealthClass profilePart) ||
+                !player.Profile.Health.BodyParts.TryGetValue(part, out Profile.HealthInfo.BodyPartInfo profilePart) ||
                 profilePart?.Health == null ||
                 profilePart.Health.Maximum <= 0f ||
-                !player.ActiveHealthController.Dictionary_0.TryGetValue(part, out GClass3009<ActiveHealthController.GClass3008>.BodyPartState state) ||
+                !player.ActiveHealthController.BodyState.TryGetValue(part, out EFT.HealthSystem.BaseHealthController<ActiveHealthController.Effect>.BodyPartState state) ||
                 state?.Health == null)
             {
                 return;
@@ -500,7 +500,7 @@ namespace pitTeam.Utils
             if (bot.Mover != null)
             {
                 bot.Mover.Pause = false;
-                bot.Mover.SprintStopEnd = 0f;
+                bot.Mover._sprintStopEnd = 0f;
                 bot.Mover.SetTargetMoveSpeed(1f);
             }
 
@@ -686,16 +686,16 @@ namespace pitTeam.Utils
                     return false;
                 }
 
-                if (!TryFindFirstAidTopOffTarget(bot, out EBodyPart bodyPart, out MedsItemClass med))
+                if (!TryFindFirstAidTopOffTarget(bot, out EBodyPart bodyPart, out EFT.InventoryLogic.Meds med))
                 {
                     return false;
                 }
 
-                BotFirstAidClass firstAid = bot.Medecine.FirstAid;
+                BotFirstAid firstAid = bot.Medecine.FirstAid;
                 firstAid.CurUsingMeds = med;
-                firstAid.Nullable_0 = bodyPart;
-                firstAid.Bool_3 = false;
-                firstAid.Bool_4 = false;
+                firstAid._bodyPartToHeal = bodyPart;
+                firstAid._isBleedingLight = false;
+                firstAid._isBleedingHeavy = false;
                 firstAid.Damaged = true;
                 firstAid.TryApplyToCurrentPart();
                 return firstAid.Using;
@@ -715,16 +715,16 @@ namespace pitTeam.Utils
                    bot.Medecine.SurgicalKit?.Using != true &&
                    bot.WeaponManager?.Grenades?.ThrowindNow != true &&
                    bot.WeaponManager?.Reload?.Reloading != true &&
-                   bot.Medecine.FirstAid.method_1();
+                   bot.Medecine.FirstAid.CanUseByTime();
         }
 
-        private static bool TryFindFirstAidTopOffTarget(BotOwner bot, out EBodyPart bodyPart, out MedsItemClass med)
+        private static bool TryFindFirstAidTopOffTarget(BotOwner bot, out EBodyPart bodyPart, out EFT.InventoryLogic.Meds med)
         {
             bodyPart = default;
             med = null;
 
             Player player = bot?.GetPlayer;
-            BotFirstAidClass firstAid = bot?.Medecine?.FirstAid;
+            BotFirstAid firstAid = bot?.Medecine?.FirstAid;
             if (player?.HealthController == null ||
                 player.ActiveHealthController == null ||
                 firstAid == null ||
@@ -752,9 +752,9 @@ namespace pitTeam.Utils
 
         private static bool TryFindFirstAidTopOffTargetCore(
             Player player,
-            BotFirstAidClass firstAid,
+            BotFirstAid firstAid,
             out EBodyPart bodyPart,
-            out MedsItemClass med)
+            out EFT.InventoryLogic.Meds med)
         {
             bodyPart = default;
             med = null;
@@ -767,9 +767,9 @@ namespace pitTeam.Utils
                 return false;
             }
 
-            EquipmentSlot[] searchSlots = firstAid.Bool_2 ? BotMedecine.secureSlots : BotMedecine.anySlots;
-            List<MedsItemClass> meds = new List<MedsItemClass>();
-            player.InventoryController.GetAcceptableItemsNonAlloc<MedsItemClass>(searchSlots, meds, null, null);
+            EquipmentSlot[] searchSlots = firstAid._shallUseInSafe ? BotMedecine.secureSlots : BotMedecine.anySlots;
+            List<EFT.InventoryLogic.Meds> meds = new List<EFT.InventoryLogic.Meds>();
+            player.InventoryController.GetAcceptableItemsNonAlloc<EFT.InventoryLogic.Meds>(searchSlots, meds, null, null);
             if (meds.Count == 0)
             {
                 return false;
@@ -778,7 +778,7 @@ namespace pitTeam.Utils
             float bestNormalized = float.MaxValue;
             float bestMissing = 0f;
             float bestMedScore = float.MaxValue;
-            foreach (EBodyPart part in GClass3058.RealBodyParts)
+            foreach (EBodyPart part in EFT.HealthSystem.HealthHelper.RealBodyParts)
             {
                 if (player.ActiveHealthController.IsBodyPartDestroyed(part))
                 {
@@ -792,7 +792,7 @@ namespace pitTeam.Utils
                     continue;
                 }
 
-                if (!TrySelectTopOffMed(player, meds, part, missing, out MedsItemClass candidateMed, out float medScore))
+                if (!TrySelectTopOffMed(player, meds, part, missing, out EFT.InventoryLogic.Meds candidateMed, out float medScore))
                 {
                     continue;
                 }
@@ -839,10 +839,10 @@ namespace pitTeam.Utils
 
         private static bool TrySelectTopOffMed(
             Player player,
-            List<MedsItemClass> meds,
+            List<EFT.InventoryLogic.Meds> meds,
             EBodyPart bodyPart,
             float missingHealth,
-            out MedsItemClass selected,
+            out EFT.InventoryLogic.Meds selected,
             out float selectedScore)
         {
             selected = null;
@@ -850,7 +850,7 @@ namespace pitTeam.Utils
 
             for (int i = 0; i < meds.Count; i++)
             {
-                MedsItemClass med = meds[i];
+                EFT.InventoryLogic.Meds med = meds[i];
                 if (med == null ||
                     !med.TryGetItemComponent<MedKitComponent>(out MedKitComponent medKit) ||
                     medKit.HpResource <= 0f ||
@@ -933,7 +933,7 @@ namespace pitTeam.Utils
                     // Hands may already be mid-transition; continue with inventory-event cleanup.
                 }
 
-                GEventArgs1[] activeEvents = player.InventoryController.List_0.ToArray();
+                EFT.InventoryLogic.ItemEventArgs[] activeEvents = player.InventoryController.ActiveEvents.ToArray();
                 for (int i = 0; i < activeEvents.Length; i++)
                 {
                     player.InventoryController.RemoveActiveEvent(activeEvents[i]);
@@ -1000,7 +1000,7 @@ namespace pitTeam.Utils
 
         private static void SelectUsableBleedFirstAid(BotOwner bot)
         {
-            BotFirstAidClass firstAid = bot?.Medecine?.FirstAid;
+            BotFirstAid firstAid = bot?.Medecine?.FirstAid;
             Player player = bot?.GetPlayer;
             if (firstAid == null ||
                 firstAid.Using ||
@@ -1010,13 +1010,13 @@ namespace pitTeam.Utils
                 return;
             }
 
-            MedsItemClass current = firstAid.CurUsingMeds;
+            EFT.InventoryLogic.Meds current = firstAid.CurUsingMeds;
             if (CanTreatDamageEffect(current, bleedingType))
             {
                 return;
             }
 
-            MedsItemClass best = FindBestBleedTreatment(firstAid, bleedingType);
+            EFT.InventoryLogic.Meds best = FindBestBleedTreatment(firstAid, bleedingType);
             if (best != null)
             {
                 firstAid.CurUsingMeds = best;
@@ -1042,13 +1042,13 @@ namespace pitTeam.Utils
                 return false;
             }
 
-            if (player.HealthController.FindExistingEffect<GInterface340>(EBodyPart.Common) != null)
+            if (player.HealthController.FindExistingEffect<EFT.HealthSystem.IHeavyBleeding>(EBodyPart.Common) != null)
             {
                 bleedingType = EDamageEffectType.HeavyBleeding;
                 return true;
             }
 
-            if (player.HealthController.FindExistingEffect<GInterface339>(EBodyPart.Common) != null)
+            if (player.HealthController.FindExistingEffect<EFT.HealthSystem.ILightBleeding>(EBodyPart.Common) != null)
             {
                 bleedingType = EDamageEffectType.LightBleeding;
                 return true;
@@ -1062,14 +1062,14 @@ namespace pitTeam.Utils
             return TryGetActiveBleeding(player, out _);
         }
 
-        private static MedsItemClass FindBestBleedTreatment(BotFirstAidClass firstAid, EDamageEffectType bleedingType)
+        private static EFT.InventoryLogic.Meds FindBestBleedTreatment(BotFirstAid firstAid, EDamageEffectType bleedingType)
         {
-            MedsItemClass best = null;
+            EFT.InventoryLogic.Meds best = null;
             float bestScore = float.MaxValue;
 
-            for (int i = 0; i < firstAid.List_0.Count; i++)
+            for (int i = 0; i < firstAid._medsList.Count; i++)
             {
-                MedsItemClass med = firstAid.List_0[i];
+                EFT.InventoryLogic.Meds med = firstAid._medsList[i];
                 if (!CanTreatDamageEffect(med, bleedingType, out int cost, out MedKitComponent medKit))
                 {
                     continue;
@@ -1096,13 +1096,13 @@ namespace pitTeam.Utils
             return Mathf.Max(0f, medKit.HpResource - cost) + (medKit.MaxHpResource * 0.01f);
         }
 
-        private static bool CanTreatDamageEffect(MedsItemClass med, EDamageEffectType bleedingType)
+        private static bool CanTreatDamageEffect(EFT.InventoryLogic.Meds med, EDamageEffectType bleedingType)
         {
             return CanTreatDamageEffect(med, bleedingType, out _, out _);
         }
 
         private static bool CanTreatDamageEffect(
-            MedsItemClass med,
+            EFT.InventoryLogic.Meds med,
             EDamageEffectType bleedingType,
             out int cost,
             out MedKitComponent medKit)
@@ -1119,18 +1119,18 @@ namespace pitTeam.Utils
                    medKit.HpResource + Mathf.Epsilon >= cost;
         }
 
-        private static bool ClaimsDamageEffect(MedsItemClass med, EDamageEffectType bleedingType)
+        private static bool ClaimsDamageEffect(EFT.InventoryLogic.Meds med, EDamageEffectType bleedingType)
         {
             return TryGetDamageEffectCost(med, bleedingType, out _);
         }
 
-        private static bool TryGetDamageEffectCost(MedsItemClass med, EDamageEffectType bleedingType, out int cost)
+        private static bool TryGetDamageEffectCost(EFT.InventoryLogic.Meds med, EDamageEffectType bleedingType, out int cost)
         {
             cost = 0;
             if (med == null ||
                 !med.TryGetItemComponent<HealthEffectsComponent>(out HealthEffectsComponent healthEffects) ||
                 healthEffects?.DamageEffects == null ||
-                !healthEffects.DamageEffects.TryGetValue(bleedingType, out GClass1443 effect))
+                !healthEffects.DamageEffects.TryGetValue(bleedingType, out JsonType.DamageEffectSpecification effect))
             {
                 return false;
             }

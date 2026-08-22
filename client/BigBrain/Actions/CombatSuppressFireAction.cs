@@ -24,7 +24,7 @@ namespace pitTeam.BigBrain.Actions
         private const float MovingSuppressLaneStableSeconds = 0.2f;
         private const float MovingSuppressLaneTargetResetDistanceSqr = 4f;
 
-        private readonly GClass281 baseLogic;
+        private readonly ShootSuppressNode baseLogic;
         private readonly FollowerEmergencyFireGate emergencyFireGate = new FollowerEmergencyFireGate();
         private string? lastLauncherSuppressSafetyRejectReason;
         private float nextLauncherSuppressSafetyRejectAt;
@@ -38,7 +38,7 @@ namespace pitTeam.BigBrain.Actions
 
         public CombatSuppressFireAction(BotOwner botOwner) : base(botOwner)
         {
-            baseLogic = new GClass281(botOwner);
+            baseLogic = new ShootSuppressNode(botOwner);
         }
 
         public override void Stop()
@@ -133,7 +133,7 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            Vector3 suppressTarget = GetRawData(data) is GClass27 suppressData && suppressData.PointToShoot.HasValue
+            Vector3 suppressTarget = GetRawData(data) is AimingResultParams suppressData && suppressData.PointToShoot.HasValue
                 ? suppressData.PointToShoot.Value
                 : BotOwner.SuppressShoot?.GetPoint() ?? goalEnemy.CurrPosition;
             if (ShouldHoldSuppressFireUntilAimed(
@@ -143,7 +143,7 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            baseLogic.UpdateNodeByBrain(GetData<GClass27>(data));
+            baseLogic.UpdateNodeByBrain(GetData<AimingResultParams>(data));
             EnforceCloseThreatStandingPose("suppressFire", reason, goalEnemy);
         }
 
@@ -776,7 +776,7 @@ namespace pitTeam.BigBrain.Actions
         private bool CanSuppressFromCurrentPosition(Vector3 fireOrigin, Vector3 target, bool requireDirectLane = false)
         {
             if (Utils.Utils.CanShootToTarget(
-                    new ShootPointClass(target, 1f),
+                    new ShootToPoint(target, 1f),
                     fireOrigin,
                     BotOwner.LookSensor.Mask,
                     false))
@@ -909,8 +909,8 @@ namespace pitTeam.BigBrain.Actions
             if (shootData != null)
             {
                 shootData.LastTriggerPressd = Time.time;
-                shootData.TimeFingerDown = Time.time;
-                shootData.NextFingerDownCan = Time.time + 0.25f;
+                shootData.timeFingerDown = Time.time;
+                shootData.nextFingerDownCan = Time.time + 0.25f;
             }
 
             RecordLauncherSuppressShootAttempt(
@@ -1018,7 +1018,7 @@ namespace pitTeam.BigBrain.Actions
                 : BotOwner.Position + Vector3.up * 1.2f;
             Vector3 fireDirection = enemyPoint - fireOrigin;
             if (fireDirection.sqrMagnitude <= 0.01f ||
-                Physics.Raycast(fireOrigin, fireDirection.normalized, fireDirection.magnitude, LayerMaskClass.HighPolyWithTerrainMask))
+                Physics.Raycast(fireOrigin, fireDirection.normalized, fireDirection.magnitude, LayersMaskController.HighPolyWithTerrainMask))
             {
                 return suppressPoint;
             }

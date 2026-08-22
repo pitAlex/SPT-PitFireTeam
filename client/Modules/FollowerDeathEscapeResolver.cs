@@ -56,7 +56,7 @@ namespace pitTeam.Modules
         public int AliveSquadmates { get; set; }
         public bool HasSecureMeds { get; set; }
         public bool VitalsDestroyed { get; set; }
-        public FlatItemsDataClass[] EquipmentItems { get; set; }
+        public JsonType.FlatItem[] EquipmentItems { get; set; }
         public string[] TrackedItemIds { get; set; }
     }
 
@@ -359,7 +359,7 @@ namespace pitTeam.Modules
             {
                 Item secureContainer = bot.GetPlayer?.InventoryController?.Inventory?.Equipment?
                     .GetSlot(EquipmentSlot.SecuredContainer)?.ContainedItem;
-                if (secureContainer is not SearchableItemItemClass searchable)
+                if (secureContainer is not EFT.InventoryLogic.SearchableItem searchable)
                 {
                     return false;
                 }
@@ -371,7 +371,7 @@ namespace pitTeam.Modules
                         continue;
                     }
 
-                    if (item is StimulatorItemClass)
+                    if (item is EFT.InventoryLogic.Stimulator)
                     {
                         return true;
                     }
@@ -382,7 +382,7 @@ namespace pitTeam.Modules
                         return true;
                     }
 
-                    if (item is MedsItemClass)
+                    if (item is EFT.InventoryLogic.Meds)
                     {
                         return true;
                     }
@@ -445,7 +445,7 @@ namespace pitTeam.Modules
 
         private static ExfiltrationPoint[] GetDeathEscapeExtractCandidates(pitAIBossPlayer boss)
         {
-            ExfiltrationControllerClass controller = ExfiltrationControllerClass.Instance;
+            CommonAssets.Scripts.Game.ExfiltrationController controller = CommonAssets.Scripts.Game.ExfiltrationController.Instance;
             if (controller == null)
             {
                 return Array.Empty<ExfiltrationPoint>();
@@ -681,7 +681,7 @@ namespace pitTeam.Modules
             public float CurrentWeightKg { get; private set; }
             public int BackpackCarryCapacity { get; }
             public int RecoveredBackpacks { get; private set; }
-            public List<SearchableItemItemClass> ExternallyCarriedBackpacks { get; } = new List<SearchableItemItemClass>();
+            public List<EFT.InventoryLogic.SearchableItem> ExternallyCarriedBackpacks { get; } = new List<EFT.InventoryLogic.SearchableItem>();
 
             public bool CanCarryWeight(float itemWeight)
             {
@@ -704,7 +704,7 @@ namespace pitTeam.Modules
 
             public void AddExternallyCarriedBackpack(Item item)
             {
-                if (item is SearchableItemItemClass backpack)
+                if (item is EFT.InventoryLogic.SearchableItem backpack)
                 {
                     ExternallyCarriedBackpacks.Add(backpack);
                 }
@@ -717,7 +717,7 @@ namespace pitTeam.Modules
             public string ProfileId { get; set; } = string.Empty;
             public string Nickname { get; set; } = string.Empty;
             public Vector3 Position { get; set; }
-            public FlatItemsDataClass[] EquipmentItems { get; set; }
+            public JsonType.FlatItem[] EquipmentItems { get; set; }
             public string[] TrackedItemIds { get; set; } = Array.Empty<string>();
         }
 

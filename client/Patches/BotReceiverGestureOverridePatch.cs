@@ -11,18 +11,18 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(BotReceiver), "method_6");
+            return AccessTools.Method(typeof(BotReceiver), nameof(BotReceiver.OnGestusShow));
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(BotReceiver __instance, GClass532 data)
+        private static bool PatchPrefix(BotReceiver __instance, BotReceiverGestus data)
         {
             if (data?.Player == null)
             {
                 return true;
             }
 
-            BotOwner botOwner = __instance.BotOwner_0;
+            BotOwner botOwner = __instance._owner;
             if (botOwner == null || !BossPlayers.IsFollower(botOwner))
             {
                 return true;

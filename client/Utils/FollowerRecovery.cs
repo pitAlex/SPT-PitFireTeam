@@ -23,13 +23,13 @@ namespace pitTeam.Utils
             BaseBrain? baseBrain = bot.Brain?.BaseBrain;
             if (baseBrain == null) return;
 
-            if (baseBrain.CurLayerInfo is BaseLogicLayerSimpleAbstractClass simpleLayer)
+            if (baseBrain.CurLayerInfo is BaseLogicLayer simpleLayer)
             {
                 simpleLayer.CalcActionNextFrame(null);
             }
-            else if (baseBrain.CurLayerInfo is BaseLogicLayerAbstractClass baseLayer)
+            else if (baseBrain.CurLayerInfo is BaseLogicLayerSimple baseLayer)
             {
-                baseLayer.Bool_1 = true;
+                baseLayer._nextFrameDropAction = true;
             }
 
             baseBrain.CalcActionNextFrame();
@@ -54,10 +54,10 @@ namespace pitTeam.Utils
                 return;
             }
 
-            float timeout = reload.ReloadType == BotReload.EReloadType.MagReload
+            float timeout = reload._reloadType == BotReload.EReloadType.MagReload
                 ? BotReload.MAG_RELOAD_MAX_TIME
                 : BotReload.AMMO_RELOAD_MAX_TIME;
-            if (UnityEngine.Time.time - reload.ReloadStartTime <= timeout)
+            if (UnityEngine.Time.time - reload._reloadStartTime <= timeout)
             {
                 return;
             }

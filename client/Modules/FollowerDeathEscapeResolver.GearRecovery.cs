@@ -464,14 +464,14 @@ namespace pitTeam.Modules
                 return false;
             }
 
-            foreach (SearchableItemItemClass container in GetRecoveryContainers(state))
+            foreach (EFT.InventoryLogic.SearchableItem container in GetRecoveryContainers(state))
             {
                 if (container?.Grids == null)
                 {
                     continue;
                 }
 
-                foreach (StashGridClass grid in container.Grids)
+                foreach (EFT.InventoryLogic.Grid grid in container.Grids)
                 {
                     if (grid?.AddAnywhere(item, EErrorHandlingType.Ignore).Succeeded == true)
                     {
@@ -483,12 +483,12 @@ namespace pitTeam.Modules
             return false;
         }
 
-        private static IEnumerable<SearchableItemItemClass> GetRecoveryContainers(RecoveryCarrierState state)
+        private static IEnumerable<EFT.InventoryLogic.SearchableItem> GetRecoveryContainers(RecoveryCarrierState state)
         {
             HashSet<string> yielded = new HashSet<string>(StringComparer.Ordinal);
             foreach (EquipmentSlot slot in GetRecoveryContainerOrder())
             {
-                SearchableItemItemClass rootContainer = state.Equipment.GetSlot(slot)?.ContainedItem as SearchableItemItemClass;
+                EFT.InventoryLogic.SearchableItem rootContainer = state.Equipment.GetSlot(slot)?.ContainedItem as EFT.InventoryLogic.SearchableItem;
                 if (rootContainer == null || !yielded.Add(rootContainer.Id))
                 {
                     continue;
@@ -498,7 +498,7 @@ namespace pitTeam.Modules
 
                 // If a recovered backpack/container was packed into another container, use
                 // its grids too. This is how fallen teammates' backpacks expand survivor space.
-                foreach (SearchableItemItemClass nested in rootContainer.GetAllItems().OfType<SearchableItemItemClass>())
+                foreach (EFT.InventoryLogic.SearchableItem nested in rootContainer.GetAllItems().OfType<EFT.InventoryLogic.SearchableItem>())
                 {
                     if (nested != null && yielded.Add(nested.Id))
                     {
@@ -507,7 +507,7 @@ namespace pitTeam.Modules
                 }
             }
 
-            foreach (SearchableItemItemClass carriedBackpack in state.ExternallyCarriedBackpacks)
+            foreach (EFT.InventoryLogic.SearchableItem carriedBackpack in state.ExternallyCarriedBackpacks)
             {
                 if (carriedBackpack == null || !yielded.Add(carriedBackpack.Id))
                 {
@@ -695,8 +695,8 @@ namespace pitTeam.Modules
             {
                 // Match EFT's player weight-limit formula from BasePhysicalClass.UpdateWeightLimits:
                 // WalkOverweightLimits.x is scaled by Strength carry bonus and health/stim modifiers.
-                float baseLimit = Singleton<BackendConfigSettingsClass>.Instantiated
-                    ? Singleton<BackendConfigSettingsClass>.Instance.Stamina.WalkOverweightLimits.x
+                float baseLimit = Singleton<EFT.GlobalConfiguration>.Instantiated
+                    ? Singleton<EFT.GlobalConfiguration>.Instance.Stamina.WalkOverweightLimits.x
                     : FallbackEscapeCarrierWeightKg;
                 float skillRelative = bot?.GetPlayer?.Skills?.CarryingWeightRelativeModifier ?? 1f;
                 float healthRelative = bot?.GetPlayer?.HealthController?.CarryingWeightRelativeModifier ?? 1f;
@@ -725,7 +725,7 @@ namespace pitTeam.Modules
                 : candidate.Item.CloneItemWithSameId();
         }
 
-        private static FlatItemsDataClass[] SerializeFollowerEquipment(BotOwner bot)
+        private static JsonType.FlatItem[] SerializeFollowerEquipment(BotOwner bot)
         {
             try
             {
@@ -735,7 +735,7 @@ namespace pitTeam.Modules
                     return null;
                 }
 
-                return Singleton<ItemFactoryClass>.Instance.TreeToFlatItems(new Item[] { equipment });
+                return Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(new Item[] { equipment });
             }
             catch (Exception ex)
             {
@@ -745,13 +745,13 @@ namespace pitTeam.Modules
             }
         }
 
-        private static FlatItemsDataClass[] SerializeEquipment(InventoryEquipment equipment)
+        private static JsonType.FlatItem[] SerializeEquipment(InventoryEquipment equipment)
         {
             try
             {
                 return equipment == null
                     ? null
-                    : Singleton<ItemFactoryClass>.Instance.TreeToFlatItems(new Item[] { equipment });
+                    : Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(new Item[] { equipment });
             }
             catch (Exception ex)
             {

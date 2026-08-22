@@ -598,7 +598,7 @@ namespace pitTeam.BigBrain.Actions
                     reachedTarget = BotOwner.GoToSomePointData?.IsCome() == true,
                     targetPose = SanitizeFloat(BotOwner.Mover?.TargetPose ?? 0f),
                     poseLevel = SanitizeFloat(BotOwner.GetPlayer?.MovementContext?.PoseLevel ?? 0f),
-                    isInPatrol = BotOwner.GetPlayer?.MovementContext?.IsInPatrol == true,
+                    isInPatrol = BotOwner.GetPlayer?.MovementContext?._isInPatrol == true,
                     blockFirearms = BotOwner.GetPlayer?.MovementContext?.BlockFirearms == true
                 },
                 weaponPosture = CreateWeaponPostureDiagnostic(),
@@ -637,7 +637,7 @@ namespace pitTeam.BigBrain.Actions
                 currentSlot = selector?.LastEquipmentSlot.ToString(),
                 reloading = BotOwner.WeaponManager?.Reload?.Reloading == true,
                 canShootByState = BotOwner.ShootData?.CanShootByState == true,
-                aimingType = BotOwner.AimingManager?.Current.ToString(),
+                aimingType = BotOwner.AimingManager?._current.ToString(),
                 currentAimingReady = currentAiming?.IsReady == true,
                 currentAimingHardAim = currentAiming?.HardAim == true,
                 currentAimingDistance = currentAiming != null ? SanitizeFloat(currentAiming.LastDist2Target) : null

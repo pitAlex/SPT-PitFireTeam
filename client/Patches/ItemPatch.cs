@@ -1,12 +1,14 @@
 using EFT.InventoryLogic;
 using EFT.UI;
+using EFT;
 using EFT.UI.DragAndDrop;
+using Diz.LanguageExtensions;
 using HarmonyLib;
 using SPT.Reflection.Patching;
 using System.Collections.Generic;
 using System.Reflection;
 
-using ModSlotViewTP = EFT.UI.DragAndDrop.ModSlotView.GStruct448;
+using ModSlotViewTP = EFT.UI.DragAndDrop.ModSlotView.TooltipData;
 
 namespace pitTeam.Patches
 {
@@ -19,7 +21,7 @@ namespace pitTeam.Patches
         }
 
         [PatchPrefix]
-        public static bool PatchPrefix(UnlootableComponent __instance, ref bool __result, IContainer container)
+        public static bool PatchPrefix(UnlootableComponent __instance, ref bool __result, EFT.UI.DragAndDrop.IContainerView container)
         {
             bool isBotEquipment = false;
 
@@ -90,7 +92,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(ItemSpecificationPanel), "method_21");
+            return AccessTools.Method(typeof(ItemSpecificationPanel), nameof(ItemSpecificationPanel.GetModLockedState));
         }
 
         [PatchPrefix]

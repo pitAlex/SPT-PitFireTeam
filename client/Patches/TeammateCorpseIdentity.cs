@@ -12,7 +12,7 @@ namespace pitTeam.Patches
 
         public static bool IsTeammateCorpseOwner(IItemOwner owner)
         {
-            return owner is GClass3385 corpseOwner &&
+            return owner is EFT.InventoryLogic.CorpseItemController corpseOwner &&
                    BossPlayers.IsFollowerProfileId(corpseOwner.KilledProfileID);
         }
     }

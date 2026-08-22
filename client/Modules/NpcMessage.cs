@@ -125,9 +125,9 @@ namespace pitTeam.Modules
                 }
             }
 
-            if (type == "ally" && allies.Count > 0) return allies.Random();
-            else if (type == "boss" && bosses.Count > 0) return bosses.Random();
-            else if (mates.Count > 0) return mates.Random();
+            if (type == "ally" && allies.Count > 0) return allies.PickRandom();
+            else if (type == "boss" && bosses.Count > 0) return bosses.PickRandom();
+            else if (mates.Count > 0) return mates.PickRandom();
 
             return null;
         }
@@ -157,10 +157,10 @@ namespace pitTeam.Modules
                     }
                 }
 
-                if (allies.Count > 0) info = allies.Random();
+                if (allies.Count > 0) info = allies.PickRandom();
                 else
                 {
-                    info = mates.Count > 0 ? mates.Random() : null;
+                    info = mates.Count > 0 ? mates.PickRandom() : null;
                     if (info != null && Instance._matesLost.Count > 0)
                     {
                         ((Dictionary<string, object>)((Dictionary<string, object>)info)["SquadInfo"]).Add("Partial", true);

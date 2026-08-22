@@ -193,8 +193,8 @@ namespace pitTeam.Modules
                 return;
             }
 
-            GStruct154<GClass3411> moveResult =
-                InteractionsHandlerClass.Move(weapon, primaryAddress, inventory, true);
+            Diz.LanguageExtensions.OperationResult<EFT.InventoryLogic.MoveResult> moveResult =
+                EFT.InventoryLogic.ItemManipulator.Move(weapon, primaryAddress, inventory, true);
             if (moveResult.Failed ||
                 moveResult.Value.ItemsDestroyRequired ||
                 !inventory.CanExecute(moveResult.Value))
@@ -372,13 +372,13 @@ namespace pitTeam.Modules
                     return false;
                 }
 
-                selector.MainWeapon = EquipmentSlot.FirstPrimaryWeapon;
+                selector._mainWeapon = EquipmentSlot.FirstPrimaryWeapon;
                 BotWeaponInfo mainInfo = new BotWeaponInfo(
                     bot,
                     weapon,
                     EquipmentSlot.FirstPrimaryWeapon,
-                    weaponManager.method_5);
-                weaponManager.Info[EquipmentSlot.FirstPrimaryWeapon] = mainInfo;
+                    weaponManager.ChangeToMode);
+                weaponManager.info[EquipmentSlot.FirstPrimaryWeapon] = mainInfo;
 
                 TryRegisterTrackedSupportWeapon(
                     bot,
@@ -389,14 +389,14 @@ namespace pitTeam.Modules
                     context,
                     out _);
 
-                if (weaponManager.CurrentWeaponInfo == null ||
+                if (weaponManager._currentWeaponInfo == null ||
                     selector.LastEquipmentSlot == EquipmentSlot.FirstPrimaryWeapon)
                 {
-                    weaponManager.CurrentWeaponInfo = mainInfo;
+                    weaponManager._currentWeaponInfo = mainInfo;
                 }
 
                 selector.IsWeaponReady = true;
-                selector.NextChangeTime = 0f;
+                selector._nextChangeTime = 0f;
                 reason = "ok";
                 return true;
             }
@@ -419,7 +419,7 @@ namespace pitTeam.Modules
             reason = string.Empty;
             Weapon primaryWeapon = bot.GetPlayer?.InventoryController?.Inventory?.Equipment
                 ?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem as Weapon;
-            EquipmentSlot supportSlot = expectedSupportSlot ?? selector.SupportWeapon;
+            EquipmentSlot supportSlot = expectedSupportSlot ?? selector._supportWeapon;
             if (supportSlot != EquipmentSlot.SecondPrimaryWeapon &&
                 supportSlot != EquipmentSlot.Holster)
             {
@@ -430,7 +430,7 @@ namespace pitTeam.Modules
             // SupportWeapon is vanilla's singular preferred fallback. When both support slots
             // are populated it normally remains SecondPrimaryWeapon, but the explicitly supplied
             // holster slot still needs its own reload/weapon record.
-            if (!expectedSupportSlot.HasValue && selector.SupportWeapon != supportSlot)
+            if (!expectedSupportSlot.HasValue && selector._supportWeapon != supportSlot)
             {
                 reason = "selectorSupportRoleMismatch";
                 return false;
@@ -465,7 +465,7 @@ namespace pitTeam.Modules
             }
 
             Item cachedSupport = supportSlot == EquipmentSlot.Holster
-                ? selector.HolsterItem
+                ? selector._holsterItem
                 : selector.SecondPrimaryWeaponItem;
             if (!IsSameItem(cachedSupport, supportWeapon))
             {
@@ -473,7 +473,7 @@ namespace pitTeam.Modules
                 return false;
             }
 
-            if (weaponManager.Info.TryGetValue(
+            if (weaponManager.info.TryGetValue(
                     supportSlot,
                     out BotWeaponInfo existingInfo) &&
                 IsSameItem(existingInfo?.weapon, supportWeapon))
@@ -488,13 +488,13 @@ namespace pitTeam.Modules
                 bot,
                 supportWeapon,
                 supportSlot,
-                weaponManager.method_5);
-            weaponManager.Info[supportSlot] = supportInfo;
+                weaponManager.ChangeToMode);
+            weaponManager.info[supportSlot] = supportInfo;
             Logger.LogInfo(
                 $"[LootCommand][WeaponRegistration] follower='{bot.Profile?.Nickname ?? bot.ProfileId ?? "unknown"}' " +
                 $"support={supportWeapon.TemplateId} context={context} result=registered " +
-                $"supportSlot={supportSlot} selectorSupport={selector.SupportWeapon} " +
-                $"canChange={selector.CanChangeToSupportWeapons}");
+                $"supportSlot={supportSlot} selectorSupport={selector._supportWeapon} " +
+                $"canChange={selector._canChangeToSupportWeapons}");
             reason = "registered";
             return true;
         }

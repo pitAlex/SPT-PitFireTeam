@@ -483,6 +483,7 @@ For teammate profiles the patch:
 - hides stock report actions
 - clears the stock right-side profile content blocks
 - reuses the stock clothing panel for suit selection
+- combines unlocked BEAR, USEC, and Savage clothing while keeping each suite id unique, so cross-faction availability does not duplicate dropdown entries
 - injects a cloned second clothing-style row for loadout + tactic in `Simple`
 - replaces the loadout dropdown side with `EDIT LOADOUT` in `Restricted`, `Immersive`, and `Realistic`, leaving the tactic dropdown intact
 - injects an aggression slider row below that

@@ -773,7 +773,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            GStruct154<GClass3411> moveResult = InteractionsHandlerClass.Move(item, address, inventory, true);
+            Diz.LanguageExtensions.OperationResult<EFT.InventoryLogic.MoveResult> moveResult = EFT.InventoryLogic.ItemManipulator.Move(item, address, inventory, true);
             if (moveResult.Failed)
             {
                 LogBodyGearMoveBuildRejection(inventory, candidate, address, "moveResultFailed", moveResult.Error, null);
@@ -816,9 +816,9 @@ namespace pitTeam.BigBrain.Actions
             ItemAddress address,
             string reason,
             Error error,
-            GClass3411 operation)
+            EFT.InventoryLogic.MoveResult operation)
         {
-            if (candidate?.Item is not MagazineItemClass ||
+            if (candidate?.Item is not EFT.InventoryLogic.Magazine ||
                 candidate.SourceName?.IndexOf("WeaponSupportMagazine", StringComparison.OrdinalIgnoreCase) < 0)
             {
                 return;
@@ -828,7 +828,7 @@ namespace pitTeam.BigBrain.Actions
             string checkTo = DescribeInventoryEventResult(SafeCheckAction(item, address));
             string checkCurrent = DescribeInventoryEventResult(SafeCheckAction(item, null));
             string canBeMoved = "notGInterface409";
-            if (item is GInterface409 movable)
+            if (item is EFT.InventoryLogic.IMoveCheckable movable)
             {
                 canBeMoved = DescribeInventoryEventResult(SafeCanBeMoved(movable, address?.Container));
             }
@@ -955,7 +955,7 @@ namespace pitTeam.BigBrain.Actions
                     {
                         InteractableObjects.ClearStrictCargoTree(BotOwner, completedItem);
                         InteractableObjects.RegisterLootedWeaponTree(BotOwner, completedItem);
-                        if (completedItem is MagazineItemClass completedMagazine &&
+                        if (completedItem is EFT.InventoryLogic.Magazine completedMagazine &&
                             move.ApprovedReloadWeapon != null)
                         {
                             InteractableObjects.RegisterLootedWeaponMagazine(

@@ -81,7 +81,7 @@ namespace pitTeam.BigBrain.Actions
 
         private bool TryStartEasyContainerHolsterWeaponEquipMove(
             InventoryController inventory,
-            SearchableItemItemClass containerRoot,
+            EFT.InventoryLogic.SearchableItem containerRoot,
             InventoryEquipment followerEquipment)
         {
             if (!CanAddHolsterWeapon(followerEquipment))

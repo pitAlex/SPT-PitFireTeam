@@ -287,7 +287,7 @@ namespace pitTeam.BigBrain
             Utils.FollowerRecovery.SoftReset(BotOwner);
 
             BotLogicDecision logicDecision = BotOwner.Brain.Agent.LastResult().Action;
-            if (BotOwner.Brain.Agent.Dictionary_0.TryGetValue(logicDecision, out var logicInstance))
+            if (BotOwner.Brain.Agent._nodesDictionary.TryGetValue(logicDecision, out var logicInstance))
             {
                 logicInstance.Dispose();
             }
@@ -481,7 +481,7 @@ namespace pitTeam.BigBrain
             }
 
             bool hasHealRelevantDamage = BotOwner.GetPlayer.HealthStatus != ETagStatus.Healthy;
-            foreach (EBodyPart part in GClass3058.RealBodyParts)
+            foreach (EBodyPart part in EFT.HealthSystem.HealthHelper.RealBodyParts)
             {
                 if (!BotOwner.GetPlayer.ActiveHealthController.IsBodyPartDestroyed(part))
                 {
@@ -1380,7 +1380,7 @@ namespace pitTeam.BigBrain
                 return FollowerOutOfCombatReloadPolicy.CanTopOffWeapon(BotOwner, currentWeapon);
             }
 
-            MagazineItemClass? currentMagazine = currentWeapon.GetCurrentMagazine();
+            EFT.InventoryLogic.Magazine? currentMagazine = currentWeapon.GetCurrentMagazine();
             int maxBulletCount = currentMagazine?.MaxCount ?? currentWeapon.GetMaxMagazineCount();
             if (maxBulletCount <= 0)
             {
@@ -1436,7 +1436,7 @@ namespace pitTeam.BigBrain
                 return BotOwner.WeaponManager.Reload.TryReload();
             }
 
-            MagazineItemClass? bestMagazine = BotOwner.WeaponManager.Reload.GetMagazineForReload(currentWeapon);
+            EFT.InventoryLogic.Magazine? bestMagazine = BotOwner.WeaponManager.Reload.GetMagazineForReload(currentWeapon);
             if (bestMagazine == null || bestMagazine.Count <= currentWeapon.GetCurrentMagazineCount())
             {
                 return false;
@@ -1867,7 +1867,7 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
-            MagazineItemClass? currentMagazine = weapon.GetCurrentMagazine();
+            EFT.InventoryLogic.Magazine? currentMagazine = weapon.GetCurrentMagazine();
             int currentCount = GetCurrentLoadedCount(weapon);
             int maxCount = GetCurrentCapacity(weapon, currentMagazine);
             if (maxCount <= 0 || currentCount >= maxCount)
@@ -1898,9 +1898,9 @@ namespace pitTeam.BigBrain
 
             bool lootedWeapon = InteractableObjects.IsLootedWeapon(botOwner, weapon);
             int currentCount = weapon.GetCurrentMagazineCount();
-            List<MagazineItemClass> magazines = new List<MagazineItemClass>();
-            botOwner.GetPlayer.InventoryController.GetReachableItemsOfTypeNonAlloc<MagazineItemClass>(magazines, null);
-            foreach (MagazineItemClass magazine in magazines)
+            List<EFT.InventoryLogic.Magazine> magazines = new List<EFT.InventoryLogic.Magazine>();
+            botOwner.GetPlayer.InventoryController.GetReachableItemsOfTypeNonAlloc<EFT.InventoryLogic.Magazine>(magazines, null);
+            foreach (EFT.InventoryLogic.Magazine magazine in magazines)
             {
                 if (magazine == null ||
                     IsInstalledInWeaponTree(magazine) ||
@@ -1911,7 +1911,7 @@ namespace pitTeam.BigBrain
                     continue;
                 }
 
-                if (InteractionsHandlerClass.CheckMoveIgnoringTargetItem(
+                if (EFT.InventoryLogic.ItemManipulator.CheckMoveIgnoringTargetItem(
                         magazine,
                         magazineSlot,
                         botOwner.GetPlayer.InventoryController).Succeeded)
@@ -1943,7 +1943,7 @@ namespace pitTeam.BigBrain
                     continue;
                 }
 
-                MagazineItemClass? currentMagazine = weapon.GetCurrentMagazine();
+                EFT.InventoryLogic.Magazine? currentMagazine = weapon.GetCurrentMagazine();
                 if (currentMagazine != null && currentMagazine.Count < currentMagazine.MaxCount)
                 {
                     filledAny |= TryFillMagazineWithLooseAmmo(botOwner, currentMagazine);
@@ -1955,7 +1955,7 @@ namespace pitTeam.BigBrain
             return filledAny;
         }
 
-        private static bool HasCompatibleLooseAmmo(BotOwner botOwner, Weapon weapon, MagazineItemClass? currentMagazine)
+        private static bool HasCompatibleLooseAmmo(BotOwner botOwner, Weapon weapon, EFT.InventoryLogic.Magazine? currentMagazine)
         {
             if (botOwner?.GetPlayer?.InventoryController == null || weapon == null)
             {
@@ -1970,9 +1970,9 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            List<AmmoItemClass> ammos = new List<AmmoItemClass>();
-            botOwner.GetPlayer.InventoryController.GetAcceptableItemsNonAlloc<AmmoItemClass>(
-                BotReload.AvailableEquipmentSlots,
+            List<EFT.InventoryLogic.Ammo> ammos = new List<EFT.InventoryLogic.Ammo>();
+            botOwner.GetPlayer.InventoryController.GetAcceptableItemsNonAlloc<EFT.InventoryLogic.Ammo>(
+                BotReload._availableEquipmentSlots,
                 ammos,
                 ammo =>
                     ammo != null &&
@@ -1999,19 +1999,19 @@ namespace pitTeam.BigBrain
             }
 
             bool filledAny = false;
-            List<MagazineItemClass> magazines = new List<MagazineItemClass>();
-            botOwner.GetPlayer.InventoryController.GetReachableItemsOfTypeNonAlloc<MagazineItemClass>(
+            List<EFT.InventoryLogic.Magazine> magazines = new List<EFT.InventoryLogic.Magazine>();
+            botOwner.GetPlayer.InventoryController.GetReachableItemsOfTypeNonAlloc<EFT.InventoryLogic.Magazine>(
                 magazines,
                 magazine =>
                     magazine != null &&
                     !IsInstalledInWeaponTree(magazine) &&
                     magazine.Count < magazine.MaxCount &&
-                    InteractionsHandlerClass.CheckMoveIgnoringTargetItem(
+                    EFT.InventoryLogic.ItemManipulator.CheckMoveIgnoringTargetItem(
                         magazine,
                         magazineSlot,
                         botOwner.GetPlayer.InventoryController).Succeeded);
 
-            foreach (MagazineItemClass magazine in magazines)
+            foreach (EFT.InventoryLogic.Magazine magazine in magazines)
             {
                 // Partial fills are intentional: a 10-round stack should turn a 0/11 pistol mag into 10/11.
                 filledAny |= TryFillMagazineWithLooseAmmo(botOwner, magazine);
@@ -2020,7 +2020,7 @@ namespace pitTeam.BigBrain
             return filledAny;
         }
 
-        private static bool TryFillMagazineWithLooseAmmo(BotOwner botOwner, MagazineItemClass magazine)
+        private static bool TryFillMagazineWithLooseAmmo(BotOwner botOwner, EFT.InventoryLogic.Magazine magazine)
         {
             if (botOwner?.GetPlayer?.InventoryController == null ||
                 magazine?.Cartridges?.Filters == null ||
@@ -2030,9 +2030,9 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            List<AmmoItemClass> ammos = new List<AmmoItemClass>();
-            botOwner.GetPlayer.InventoryController.GetAcceptableItemsNonAlloc<AmmoItemClass>(
-                BotReload.AvailableEquipmentSlots,
+            List<EFT.InventoryLogic.Ammo> ammos = new List<EFT.InventoryLogic.Ammo>();
+            botOwner.GetPlayer.InventoryController.GetAcceptableItemsNonAlloc<EFT.InventoryLogic.Ammo>(
+                BotReload._availableEquipmentSlots,
                 ammos,
                 ammo =>
                     ammo != null &&
@@ -2041,8 +2041,8 @@ namespace pitTeam.BigBrain
                     ammo.CheckAction(null).Succeeded,
                 null);
 
-            AmmoItemClass? bestAmmo = null;
-            foreach (AmmoItemClass ammo in ammos)
+            EFT.InventoryLogic.Ammo? bestAmmo = null;
+            foreach (EFT.InventoryLogic.Ammo ammo in ammos)
             {
                 if (bestAmmo == null || ammo.StackObjectsCount > bestAmmo.StackObjectsCount)
                 {
@@ -2104,7 +2104,7 @@ namespace pitTeam.BigBrain
             return weapon.GetCurrentMagazineCount();
         }
 
-        private static int GetCurrentCapacity(Weapon weapon, MagazineItemClass? currentMagazine)
+        private static int GetCurrentCapacity(Weapon weapon, EFT.InventoryLogic.Magazine? currentMagazine)
         {
             if (weapon.ReloadMode == Weapon.EReloadMode.OnlyBarrel && weapon.Chambers != null)
             {

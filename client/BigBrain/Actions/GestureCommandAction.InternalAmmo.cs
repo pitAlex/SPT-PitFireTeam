@@ -38,7 +38,7 @@ namespace pitTeam.BigBrain.Actions
 
         private bool TryStartContainerSupportLooseFeedAmmoMove(
             InventoryController inventory,
-            SearchableItemItemClass containerRoot,
+            EFT.InventoryLogic.SearchableItem containerRoot,
             InventoryEquipment followerEquipment,
             EquipmentSlot supportSlot)
         {
@@ -87,7 +87,7 @@ namespace pitTeam.BigBrain.Actions
 
             List<BodyGearCandidate> source = sourceAmmoFactory(support)
                 .Where(candidate =>
-                    candidate?.Item is AmmoItemClass ammo &&
+                    candidate?.Item is EFT.InventoryLogic.Ammo ammo &&
                     !string.IsNullOrEmpty(ammo.Id) &&
                     !attemptedSourceItemIds.Contains(ammo.Id))
                 .GroupBy(candidate => candidate.Item.Id, StringComparer.Ordinal)
@@ -114,7 +114,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            List<AmmoItemClass> followerAmmo = GetFollowerWeaponLooseAmmoItems(
+            List<EFT.InventoryLogic.Ammo> followerAmmo = GetFollowerWeaponLooseAmmoItems(
                     followerEquipment,
                     support,
                     includeStrictCargo: false)
@@ -233,7 +233,7 @@ namespace pitTeam.BigBrain.Actions
                 sourceAmmoCandidates,
                 BodyGearFollowUpDestination.InternalAmmoCarry,
                 "newInternalWeapon");
-            List<AmmoItemClass> followerAmmo = GetFollowerWeaponLooseAmmoItems(
+            List<EFT.InventoryLogic.Ammo> followerAmmo = GetFollowerWeaponLooseAmmoItems(
                     followerEquipment,
                     weapon,
                     includeStrictCargo: false)
@@ -352,7 +352,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            List<AmmoItemClass> followerAmmo = GetFollowerWeaponLooseAmmoItems(
+            List<EFT.InventoryLogic.Ammo> followerAmmo = GetFollowerWeaponLooseAmmoItems(
                     followerEquipment,
                     weapon,
                     includeStrictCargo: false)
@@ -416,23 +416,23 @@ namespace pitTeam.BigBrain.Actions
             InventoryEquipment followerEquipment,
             Weapon weapon,
             IReadOnlyList<BodyGearCandidate> sourceAmmo,
-            IReadOnlyList<AmmoItemClass> followerAmmo,
+            IReadOnlyList<EFT.InventoryLogic.Ammo> followerAmmo,
             string? consumedAmmoId,
             int consumedRounds)
         {
-            SearchableItemItemClass simulatedSecure = CloneSearchableContainer(
+            EFT.InventoryLogic.SearchableItem simulatedSecure = CloneSearchableContainer(
                 followerEquipment?.GetSlot(EquipmentSlot.SecuredContainer)?.ContainedItem);
-            SearchableItemItemClass simulatedPockets = CloneSearchableContainer(
+            EFT.InventoryLogic.SearchableItem simulatedPockets = CloneSearchableContainer(
                 followerEquipment?.GetSlot(EquipmentSlot.Pockets)?.ContainedItem);
-            SearchableItemItemClass simulatedBackpack = CloneSearchableContainer(
+            EFT.InventoryLogic.SearchableItem simulatedBackpack = CloneSearchableContainer(
                 followerEquipment?.GetSlot(EquipmentSlot.Backpack)?.ContainedItem);
-            SearchableItemItemClass simulatedVest = CloneSearchableContainer(
+            EFT.InventoryLogic.SearchableItem simulatedVest = CloneSearchableContainer(
                 followerEquipment?.GetSlot(EquipmentSlot.TacticalVest)?.ContainedItem);
             VestReloadReserveSet vestReloadReserves = FindVestReloadReserves(
                 followerEquipment,
                 simulatedVest);
             List<int> reserveStacks = new List<int>();
-            foreach (AmmoItemClass ammo in followerAmmo ?? Array.Empty<AmmoItemClass>())
+            foreach (EFT.InventoryLogic.Ammo ammo in followerAmmo ?? Array.Empty<EFT.InventoryLogic.Ammo>())
             {
                 int effectiveCount = GetEffectiveInternalAmmoCount(ammo, consumedAmmoId, consumedRounds);
                 if (effectiveCount > 0)
@@ -444,7 +444,7 @@ namespace pitTeam.BigBrain.Actions
             InternalAmmoPlan plan = new InternalAmmoPlan();
             foreach (BodyGearCandidate candidate in sourceAmmo ?? Array.Empty<BodyGearCandidate>())
             {
-                if (candidate?.Item is not AmmoItemClass ammo ||
+                if (candidate?.Item is not EFT.InventoryLogic.Ammo ammo ||
                     !FollowerWeaponLooseFeedReadiness.IsCompatibleLooseAmmo(weapon, ammo))
                 {
                     continue;
@@ -483,7 +483,7 @@ namespace pitTeam.BigBrain.Actions
         }
 
         private static int GetEffectiveInternalAmmoCount(
-            AmmoItemClass ammo,
+            EFT.InventoryLogic.Ammo ammo,
             string? consumedAmmoId,
             int consumedRounds)
         {
@@ -500,7 +500,7 @@ namespace pitTeam.BigBrain.Actions
         private static void TrySelectInternalAmmoLoad(
             Weapon weapon,
             IReadOnlyList<BodyGearCandidate> sourceAmmo,
-            IReadOnlyList<AmmoItemClass> followerAmmo,
+            IReadOnlyList<EFT.InventoryLogic.Ammo> followerAmmo,
             out BodyGearCandidate? loadCandidate,
             out int loadCount)
         {
@@ -513,7 +513,7 @@ namespace pitTeam.BigBrain.Actions
             }
             else
             {
-                MagazineItemClass internalMagazine;
+                EFT.InventoryLogic.Magazine internalMagazine;
                 try
                 {
                     internalMagazine = weapon?.GetCurrentMagazine();
@@ -532,16 +532,16 @@ namespace pitTeam.BigBrain.Actions
             }
 
             loadCandidate = sourceAmmo?
-                .Where(candidate => candidate?.Item is AmmoItemClass ammo &&
+                .Where(candidate => candidate?.Item is EFT.InventoryLogic.Ammo ammo &&
                     FollowerWeaponLooseFeedReadiness.IsCompatibleLooseAmmo(weapon, ammo))
-                .OrderByDescending(candidate => ((AmmoItemClass)candidate.Item).PenetrationPower)
-                .ThenByDescending(candidate => ((AmmoItemClass)candidate.Item).Damage)
-                .ThenByDescending(candidate => ((AmmoItemClass)candidate.Item).ArmorDamage)
-                .ThenByDescending(candidate => ((AmmoItemClass)candidate.Item).StackObjectsCount)
+                .OrderByDescending(candidate => ((EFT.InventoryLogic.Ammo)candidate.Item).PenetrationPower)
+                .ThenByDescending(candidate => ((EFT.InventoryLogic.Ammo)candidate.Item).Damage)
+                .ThenByDescending(candidate => ((EFT.InventoryLogic.Ammo)candidate.Item).ArmorDamage)
+                .ThenByDescending(candidate => ((EFT.InventoryLogic.Ammo)candidate.Item).StackObjectsCount)
                 .FirstOrDefault();
             if (loadCandidate == null)
             {
-                AmmoItemClass carriedAmmo = followerAmmo?
+                EFT.InventoryLogic.Ammo carriedAmmo = followerAmmo?
                     .Where(ammo => FollowerWeaponLooseFeedReadiness.IsCompatibleLooseAmmo(weapon, ammo))
                     .OrderByDescending(ammo => ammo.PenetrationPower)
                     .ThenByDescending(ammo => ammo.Damage)
@@ -558,7 +558,7 @@ namespace pitTeam.BigBrain.Actions
                 }
             }
 
-            if (loadCandidate?.Item is AmmoItemClass selectedAmmo)
+            if (loadCandidate?.Item is EFT.InventoryLogic.Ammo selectedAmmo)
             {
                 // Weapon.Apply fills one chamber per off-hands transaction. Replanning after each
                 // settled shell keeps chamber count and split-stack references authoritative.
@@ -581,13 +581,13 @@ namespace pitTeam.BigBrain.Actions
         {
             move = null;
             reason = "invalidLoad";
-            if (ammoCandidate?.Item is not AmmoItemClass ammo || loadCount <= 0)
+            if (ammoCandidate?.Item is not EFT.InventoryLogic.Ammo ammo || loadCount <= 0)
             {
                 return false;
             }
 
             int loadedBefore = FollowerWeaponLooseFeedReadiness.GetLoadedRounds(weapon);
-            GStruct153 loadResult;
+            Diz.LanguageExtensions.OperationResult loadResult;
             int plannedLoadCount;
             if (FollowerWeaponChamberReadiness.IsSupportedChamberWeapon(weapon))
             {
@@ -599,12 +599,12 @@ namespace pitTeam.BigBrain.Actions
 
                 plannedLoadCount = 1;
                 // This is the same off-hands operation used by vanilla
-                // TraderControllerClass.LoadMultiBarrelWeapon.
+                // EFT.InventoryLogic.ItemController.LoadMultiBarrelWeapon.
                 loadResult = weapon.Apply(inventory, ammo, plannedLoadCount, true);
             }
             else
             {
-                MagazineItemClass internalMagazine;
+                EFT.InventoryLogic.Magazine internalMagazine;
                 try
                 {
                     internalMagazine = weapon.GetCurrentMagazine();

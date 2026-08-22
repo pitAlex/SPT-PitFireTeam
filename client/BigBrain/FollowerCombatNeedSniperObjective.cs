@@ -57,8 +57,8 @@ namespace pitTeam.BigBrain
         }
 
         public override void DecisionChanged(
-            AICoreActionResultStruct<BotLogicDecision, GClass26>? prevDecision,
-            AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision)
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? prevDecision,
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> nextDecision)
         {
             CombatCommon.HandleSharedDecisionChanged(nextDecision);
             CombatCommon.HandleCommittedCoverDecisionChanged(nextDecision);
@@ -77,7 +77,7 @@ namespace pitTeam.BigBrain
         {
         }
 
-        public override AICoreActionResultStruct<BotLogicDecision, GClass26> GetDecision(EnemyInfo goalEnemy)
+        public override AICoreActionResult<BotLogicDecision, CoreActionResultParams> GetDecision(EnemyInfo goalEnemy)
         {
             if (!CombatCommon.HasActiveCombatEnemy(goalEnemy))
             {
@@ -86,14 +86,14 @@ namespace pitTeam.BigBrain
 
             CombatCommon.TrySwitchBackToPrimaryAtRange(goalEnemy, Enemy.EnemyDistance.Close);
 
-            AICoreActionResultStruct<BotLogicDecision, GClass26>? dogFight = CombatCommon.TryGetDogFightDecision();
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? dogFight = CombatCommon.TryGetDogFightDecision();
             if (dogFight != null)
             {
                 complete = true;
                 return dogFight.Value;
             }
 
-            AICoreActionResultStruct<BotLogicDecision, GClass26>? healDecision = CombatCommon.TryGetNeedHealDecision();
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? healDecision = CombatCommon.TryGetNeedHealDecision();
             if (healDecision != null)
             {
                 complete = true;
@@ -112,7 +112,7 @@ namespace pitTeam.BigBrain
             if (CombatCommon.CanShootFromCurrentCover(out _))
             {
                 complete = true;
-                return new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+                return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                     BotLogicDecision.shootFromCover,
                     $"{ReasonPrefix}.currentCover");
             }
@@ -123,7 +123,7 @@ namespace pitTeam.BigBrain
                 return RejectObjective("selfPreservation");
             }
 
-            if (CombatCommon.HasCommittedPosition(out AICoreActionResultStruct<BotLogicDecision, GClass26> committedPosition))
+            if (CombatCommon.HasCommittedPosition(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> committedPosition))
             {
                 return committedPosition;
             }
@@ -132,7 +132,7 @@ namespace pitTeam.BigBrain
                     goalEnemy,
                     false,
                     false,
-                    out AICoreActionResultStruct<BotLogicDecision, GClass26> committedMovement))
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> committedMovement))
             {
                 return committedMovement;
             }
@@ -178,7 +178,7 @@ namespace pitTeam.BigBrain
                     supportEnemy,
                     currentEnemyPosition,
                     $"{ReasonPrefix}.currentPosition",
-                    out AICoreActionResultStruct<BotLogicDecision, GClass26> currentPositionDecision,
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentPositionDecision,
                     preferBackline: false,
                     enforceMarksmanPositionPolicy: true,
                     allowForwardPositions: true,
@@ -193,7 +193,7 @@ namespace pitTeam.BigBrain
                     supportEnemy,
                     supportPosition,
                     $"{ReasonPrefix}.position",
-                    out AICoreActionResultStruct<BotLogicDecision, GClass26> positionDecision,
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> positionDecision,
                     preferBackline: false,
                     enforceMarksmanPositionPolicy: true,
                     allowForwardPositions: true,
@@ -208,8 +208,8 @@ namespace pitTeam.BigBrain
                 () => CreateNoLaneDetails(supportPosition, supportCoverReject, currentPositionReject, CombatCommon.LastSupportFiringPositionRejectReason));
         }
 
-        public override AICoreActionEndStruct ShallEndCurrentDecision(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision)
+        public override AICoreActionEnd ShallEndCurrentDecision(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
         {
             if (currentDecision.Reason == null || !currentDecision.Reason.StartsWith(ReasonPrefix, StringComparison.Ordinal))
             {
@@ -221,7 +221,7 @@ namespace pitTeam.BigBrain
             {
                 complete = true;
                 ClearObjectiveCommitments();
-                return new AICoreActionEndStruct("needSniperEnemyMissing", true);
+                return new AICoreActionEnd("needSniperEnemyMissing", true);
             }
 
             if (currentDecision.Action == BotLogicDecision.shootFromCover ||
@@ -251,9 +251,9 @@ namespace pitTeam.BigBrain
             return CombatCommon.ShallEndCurrentDecision(currentDecision);
         }
 
-        private AICoreActionEndStruct EndCoverMove(string? reason)
+        private AICoreActionEnd EndCoverMove(string? reason)
         {
-            AICoreActionEndStruct end = CombatCommon.EndRunToCover(reason);
+            AICoreActionEnd end = CombatCommon.EndRunToCover(reason);
             if (!end.Value)
             {
                 return end;
@@ -275,9 +275,9 @@ namespace pitTeam.BigBrain
             return end;
         }
 
-        private AICoreActionEndStruct EndPositionMove(string? reason)
+        private AICoreActionEnd EndPositionMove(string? reason)
         {
-            AICoreActionEndStruct end = CombatCommon.EndGoToPoint(endWhenEnemyVisibleShootable: true);
+            AICoreActionEnd end = CombatCommon.EndGoToPoint(endWhenEnemyVisibleShootable: true);
             if (!end.Value)
             {
                 return end;
@@ -287,19 +287,19 @@ namespace pitTeam.BigBrain
             if (string.Equals(end.Reason, "arrivedAtPoint", StringComparison.Ordinal))
             {
                 ArmArrivalHold();
-                return new AICoreActionEndStruct("needSniperPositionArrived", true);
+                return new AICoreActionEnd("needSniperPositionArrived", true);
             }
 
             return end;
         }
 
-        private AICoreActionEndStruct EndHold(string? reason)
+        private AICoreActionEnd EndHold(string? reason)
         {
             if (IsRetryHoldReason(reason))
             {
                 if (Time.time >= retryScanUntil)
                 {
-                    return new AICoreActionEndStruct("needSniperRetryScan", true);
+                    return new AICoreActionEnd("needSniperRetryScan", true);
                 }
 
                 CombatCommon.HoldFor(Mathf.Max(0.1f, retryScanUntil - Time.time));
@@ -311,14 +311,14 @@ namespace pitTeam.BigBrain
             {
                 complete = true;
                 CombatCommon.ClearCommittedPosition();
-                return new AICoreActionEndStruct("needSniperShotReady", true);
+                return new AICoreActionEnd("needSniperShotReady", true);
             }
 
             if (Time.time >= settleUntil)
             {
                 complete = true;
                 CombatCommon.ClearCommittedPosition();
-                return new AICoreActionEndStruct("needSniperArrivedSettled", true);
+                return new AICoreActionEnd("needSniperArrivedSettled", true);
             }
 
             CombatCommon.HoldFor(Mathf.Max(0.1f, settleUntil - Time.time));
@@ -330,7 +330,7 @@ namespace pitTeam.BigBrain
             settleUntil = Time.time + ArrivalSettleSeconds;
             CombatCommon.SetCommittedPosition(
                 BotOwner.Position,
-                new AICoreActionResultStruct<BotLogicDecision, GClass26>(BotLogicDecision.holdPosition, PositionHoldReason),
+                new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.holdPosition, PositionHoldReason),
                 ArrivalSettleSeconds);
         }
 
@@ -397,14 +397,14 @@ namespace pitTeam.BigBrain
             CombatCommon.ClearInitialDecision();
         }
 
-        private AICoreActionResultStruct<BotLogicDecision, GClass26> Hold(string suffix)
+        private AICoreActionResult<BotLogicDecision, CoreActionResultParams> Hold(string suffix)
         {
-            return new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+            return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                 BotLogicDecision.holdPosition,
                 $"{ReasonPrefix}.{suffix}");
         }
 
-        private AICoreActionResultStruct<BotLogicDecision, GClass26> RetryOrRejectObjective(string suffix, Func<object?>? detailsFactory = null)
+        private AICoreActionResult<BotLogicDecision, CoreActionResultParams> RetryOrRejectObjective(string suffix, Func<object?>? detailsFactory = null)
         {
             if (Time.time >= searchRetryUntil)
             {
@@ -425,7 +425,7 @@ namespace pitTeam.BigBrain
                 "retry",
                 suffix,
                 detailsFactory);
-            return new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+            return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                 BotLogicDecision.holdPosition,
                 $"{RetryHoldReason}.{suffix}");
         }
@@ -484,7 +484,7 @@ namespace pitTeam.BigBrain
             return float.IsNaN(value) || float.IsInfinity(value) ? null : value;
         }
 
-        private AICoreActionResultStruct<BotLogicDecision, GClass26> RejectObjective(string suffix)
+        private AICoreActionResult<BotLogicDecision, CoreActionResultParams> RejectObjective(string suffix)
         {
             complete = true;
             ClearObjectiveCommitments();

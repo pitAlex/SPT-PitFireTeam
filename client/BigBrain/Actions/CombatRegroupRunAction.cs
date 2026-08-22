@@ -21,8 +21,8 @@ namespace pitTeam.BigBrain.Actions
         private const float RegroupRunClaimTtl = 2f;
         private const float RegroupRunTargetArrivalDistance = 1f;
         private const float RegroupRunArrivalRefreshInterval = 0.75f;
-        private readonly GClass219 baseLogic;
-        private GClass30? cachedData;
+        private readonly GoToSomePoint baseLogic;
+        private CoreActionResultGoToPoint? cachedData;
         private Vector3 cachedPoint;
         private Vector3 bossAnchor;
         private bool hasCachedPoint;
@@ -31,7 +31,7 @@ namespace pitTeam.BigBrain.Actions
 
         public CombatRegroupRunAction(BotOwner botOwner) : base(botOwner)
         {
-            baseLogic = new GClass219(botOwner);
+            baseLogic = new GoToSomePoint(botOwner);
         }
 
         public override void Start()
@@ -95,7 +95,7 @@ namespace pitTeam.BigBrain.Actions
             hasCachedPoint = true;
             hasBossAnchor = true;
             nextArrivalRefreshAt = Time.time + RegroupRunArrivalRefreshInterval;
-            cachedData = new GClass30(cachedPoint)
+            cachedData = new CoreActionResultGoToPoint(cachedPoint)
             {
                 Used = true
             };

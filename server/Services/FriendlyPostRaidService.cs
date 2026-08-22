@@ -1,6 +1,9 @@
 using pitTeam.Server.Models;
+using SPTarkov.Common.Models.Logging;
 using SPTarkov.DI.Annotations;
-using SPTarkov.Server.Core.Helpers;
+using SPTarkov.Server.Core.Helpers.Items;
+using SPTarkov.Server.Core.Helpers.Profile;
+using SPTarkov.Server.Core.Helpers.Server;
 using SPTarkov.Server.Core.Models.Eft.Common;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Common.Tables;
@@ -10,7 +13,7 @@ using SPTarkov.Server.Core.Models.Enums;
 using SPTarkov.Server.Core.Models.Spt.Dialog;
 using SPTarkov.Server.Core.Models.Utils;
 using SPTarkov.Server.Core.Servers;
-using SPTarkov.Server.Core.Services;
+using SPTarkov.Server.Core.Services.Commerce;
 using SPTarkov.Server.Core.Utils;
 using System.Collections.Concurrent;
 
@@ -244,7 +247,7 @@ public class FriendlyPostRaidService(
             }
         }
 
-        notificationSendHelper.SendMessageToPlayer(sessionId, sender, message, MessageType.UserMessage);
+        _ = notificationSendHelper.SendMessageToPlayerAsync(sessionId, sender, message, MessageType.UserMessage);
     }
 
     public void RecordKillMessage(MongoId sessionId, FriendlyPostRaidKillMessageRequest request)
@@ -941,7 +944,7 @@ public class FriendlyPostRaidService(
             return;
         }
 
-        notificationSendHelper.SendMessageToPlayer(sessionId, ToSenderInfo(victim), message, MessageType.UserMessage);
+        _ = notificationSendHelper.SendMessageToPlayerAsync(sessionId, ToSenderInfo(victim), message, MessageType.UserMessage);
     }
 
     private static UserDialogInfo ToSenderInfo(Victim victim)

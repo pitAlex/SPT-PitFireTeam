@@ -2,14 +2,14 @@ using EFT;
 using UnityEngine;
 using UnityEngine.AI;
 
-using StandardBrain = GClass26;
+using StandardBrain = CoreActionResultParams;
 
 namespace pitTeam.Utils
 {
     public class BotLogicDecisions
     {
         public static readonly float sprintDistance = 15f;
-        public static AICoreActionResultStruct<BotLogicDecision, StandardBrain> RegroupToBoss(BotOwner bot)
+        public static AICoreActionResult<BotLogicDecision, StandardBrain> RegroupToBoss(BotOwner bot)
         {
 
             BotRequest request = bot.BotRequestController.CurRequest;
@@ -23,7 +23,7 @@ namespace pitTeam.Utils
 
             if (requester == null)
             {
-                return new AICoreActionResultStruct<BotLogicDecision, StandardBrain>(BotLogicDecision.followerPatrol, "requester.None");
+                return new AICoreActionResult<BotLogicDecision, StandardBrain>(BotLogicDecision.followerPatrol, "requester.None");
             }
 
             Vector3 requestPos = requester.Transform.position;
@@ -67,14 +67,14 @@ namespace pitTeam.Utils
                 {
                     request.Complete();
                 }
-                return new AICoreActionResultStruct<BotLogicDecision, StandardBrain>(BotLogicDecision.followerPatrol, "requester.badPosition");
+                return new AICoreActionResult<BotLogicDecision, StandardBrain>(BotLogicDecision.followerPatrol, "requester.badPosition");
             }
 
             bot.GoToSomePointData.SetPoint(finPos.Value);
 
             bool shouldSprint01 = (finPos.Value - bot.GetPlayer.Transform.position).sqrMagnitude >= sprintDistance * sprintDistance;
 
-            return new AICoreActionResultStruct<BotLogicDecision, StandardBrain>(BotLogicDecision.goToPoint, shouldSprint01 ? "regroupToBossFast" : "regroupToBoss");
+            return new AICoreActionResult<BotLogicDecision, StandardBrain>(BotLogicDecision.goToPoint, shouldSprint01 ? "regroupToBossFast" : "regroupToBoss");
         }
     }
 }

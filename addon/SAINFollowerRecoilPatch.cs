@@ -4,7 +4,7 @@ using HarmonyLib;
 using pitTeam.Modules;
 using SAIN;
 using SAIN.Components;
-using SAIN.Preset.BotSettings.SAINSettings;
+using SAIN.Preset.Shared.BotSettings.SAINSettings;
 using SAIN.SAINComponent.Classes.WeaponFunction;
 using System;
 using System.Collections.Generic;

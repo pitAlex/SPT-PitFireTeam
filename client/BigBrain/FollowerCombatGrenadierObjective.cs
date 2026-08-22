@@ -99,8 +99,8 @@ namespace pitTeam.BigBrain
         }
 
         public override void DecisionChanged(
-            AICoreActionResultStruct<BotLogicDecision, GClass26>? prevDecision,
-            AICoreActionResultStruct<BotLogicDecision, GClass26> nextDecision)
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? prevDecision,
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> nextDecision)
         {
             CombatCommon.HandleSharedDecisionChanged(nextDecision);
             if (IsLauncherMoveReason(nextDecision.Reason))
@@ -120,14 +120,14 @@ namespace pitTeam.BigBrain
         {
         }
 
-        public override AICoreActionResultStruct<BotLogicDecision, GClass26> GetDecision(EnemyInfo goalEnemy)
+        public override AICoreActionResult<BotLogicDecision, CoreActionResultParams> GetDecision(EnemyInfo goalEnemy)
         {
             if (!CombatCommon.HasActiveCombatEnemy(goalEnemy))
             {
                 return FailObjective("noEnemy");
             }
 
-            if (TryGetEmergencyDecision(goalEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> emergencyDecision))
+            if (TryGetEmergencyDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> emergencyDecision))
             {
                 // A first-primary launcher must not remain in hand while the shared combat stack
                 // retreats, heals, reloads, or enters a point-blank fight. The support launcher
@@ -136,7 +136,7 @@ namespace pitTeam.BigBrain
                 CombatCommon.RequestFirstPrimaryLauncherHolsterFallback(
                     $"grenadierEmergency.{emergencyReason}");
                 if (CombatCommon.TryCreatePendingFirstPrimaryLauncherHolsterFallbackDecision(
-                        out AICoreActionResultStruct<BotLogicDecision, GClass26> holsterFallbackDecision))
+                        out AICoreActionResult<BotLogicDecision, CoreActionResultParams> holsterFallbackDecision))
                 {
                     emergencyDecision = holsterFallbackDecision;
                 }
@@ -152,7 +152,7 @@ namespace pitTeam.BigBrain
             {
                 if (!CombatCommon.TryPrepareGrenadeLauncherWeaponForSuppress(
                         GetModeReasonPrefix(),
-                        out AICoreActionResultStruct<BotLogicDecision, GClass26> prepareDecision,
+                        out AICoreActionResult<BotLogicDecision, CoreActionResultParams> prepareDecision,
                         out bool ready,
                         out string failReason))
                 {
@@ -173,7 +173,7 @@ namespace pitTeam.BigBrain
                 return FailObjective("windowExpired");
             }
 
-            if (TryGetLauncherDecision(goalEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> launcherDecision))
+            if (TryGetLauncherDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> launcherDecision))
             {
                 return launcherDecision;
             }
@@ -181,8 +181,8 @@ namespace pitTeam.BigBrain
             return RetryOrFail("noOpportunity");
         }
 
-        public override AICoreActionEndStruct ShallEndCurrentDecision(
-            AICoreActionResultStruct<BotLogicDecision, GClass26> currentDecision)
+        public override AICoreActionEnd ShallEndCurrentDecision(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
         {
             if (!IsGrenadierReason(currentDecision.Reason))
             {
@@ -194,7 +194,7 @@ namespace pitTeam.BigBrain
             {
                 complete = true;
                 ClearObjectiveCommitments();
-                return new AICoreActionEndStruct("grenadierEnemyMissing", true);
+                return new AICoreActionEnd("grenadierEnemyMissing", true);
             }
 
             if (currentDecision.Action == BotLogicDecision.shootFromPlace)
@@ -216,7 +216,7 @@ namespace pitTeam.BigBrain
 
             if (currentDecision.Action == BotLogicDecision.holdPosition)
             {
-                return new AICoreActionEndStruct("grenadierHoldComplete", true);
+                return new AICoreActionEnd("grenadierHoldComplete", true);
             }
 
             return CombatCommon.ShallEndCurrentDecision(currentDecision);
@@ -227,16 +227,16 @@ namespace pitTeam.BigBrain
             return string.Equals(reason, AutonomousActivationReason, StringComparison.Ordinal);
         }
 
-        internal static AICoreActionResultStruct<BotLogicDecision, GClass26> CreateAutonomousActivationDecision()
+        internal static AICoreActionResult<BotLogicDecision, CoreActionResultParams> CreateAutonomousActivationDecision()
         {
-            return new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+            return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                 BotLogicDecision.holdPosition,
                 AutonomousActivationReason);
         }
 
         private bool TryGetEmergencyDecision(
             EnemyInfo goalEnemy,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             if (TryGetPhysicsAbortDecision(out decision))
@@ -256,7 +256,7 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
-            if (CombatCommon.TryGetReloadRetreatDecision(goalEnemy, out AICoreActionResultStruct<BotLogicDecision, GClass26> reloadRetreatDecision))
+            if (CombatCommon.TryGetReloadRetreatDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> reloadRetreatDecision))
             {
                 decision = reloadRetreatDecision;
                 return true;
@@ -277,7 +277,7 @@ namespace pitTeam.BigBrain
                 : 0f;
         }
 
-        private bool TryGetPhysicsAbortDecision(out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+        private bool TryGetPhysicsAbortDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             Vector3 position = BotOwner.Position;
@@ -352,14 +352,14 @@ namespace pitTeam.BigBrain
 
         private bool CreatePhysicsAbortDecision(
             string reason,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             BattleRecorder.RecordObjectiveDiagnostic(
                 BotOwner,
                 nameof(FollowerCombatGrenadierObjective),
                 "physicsAbort",
                 reason);
-            decision = new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+            decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                 BotLogicDecision.holdPosition,
                 FollowerCombatRegroupObjective.ActivateRegroupReason);
             return true;
@@ -374,7 +374,7 @@ namespace pitTeam.BigBrain
 
         private bool TryGetLauncherDecision(
             EnemyInfo goalEnemy,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             if (launcherPlan != null && TryUseLauncherPlan(goalEnemy, launcherPlan, out decision))
@@ -400,7 +400,7 @@ namespace pitTeam.BigBrain
         private bool TryUseLauncherPlan(
             EnemyInfo goalEnemy,
             FollowerCombatCommon.GrenadeLauncherFirePlan plan,
-            out AICoreActionResultStruct<BotLogicDecision, GClass26> decision)
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
             if (plan.HasSuppressFrom &&
@@ -419,7 +419,7 @@ namespace pitTeam.BigBrain
             return false;
         }
 
-        private AICoreActionEndStruct EndLauncherFire(string? reason)
+        private AICoreActionEnd EndLauncherFire(string? reason)
         {
             EnemyInfo? goalEnemy = BotOwner.Memory?.GoalEnemy;
             if (!CombatCommon.HasActiveCombatEnemy(goalEnemy))
@@ -427,7 +427,7 @@ namespace pitTeam.BigBrain
                 complete = true;
                 launcherPlan = null;
                 ClearObjectiveCommitments();
-                return new AICoreActionEndStruct("grenadierEnemyMissing", true);
+                return new AICoreActionEnd("grenadierEnemyMissing", true);
             }
 
             Weapon? launcher = FollowerCombatCommon.GetActiveOrEquippedGrenadeLauncher(BotOwner);
@@ -440,7 +440,7 @@ namespace pitTeam.BigBrain
                     CombatCommon.PrepareLauncherSuppressWeaponFallback();
                     CombatCommon.RequestFirstPrimaryLauncherHolsterFallback("launcherSingleUseSpent");
                     ClearObjectiveCommitments();
-                    return new AICoreActionEndStruct("launcherSingleUseSpent", true);
+                    return new AICoreActionEnd("launcherSingleUseSpent", true);
                 }
 
                 // Leave the ordinary shooting node as soon as the cylinder/barrel is empty. The
@@ -449,7 +449,7 @@ namespace pitTeam.BigBrain
                 launcherReady = false;
                 launcherPlan = null;
                 activeUntil = Time.time + OpportunityWindowSeconds;
-                return new AICoreActionEndStruct("launcherNeedsReload", true);
+                return new AICoreActionEnd("launcherNeedsReload", true);
             }
 
             if (!FollowerCombatCommon.TryCanUseGrenadeLauncherNormalFire(
@@ -473,7 +473,7 @@ namespace pitTeam.BigBrain
                 }
 
                 launcherPlan = null;
-                return new AICoreActionEndStruct($"launcherNormalFireRejected:{fireRejectReason}", true);
+                return new AICoreActionEnd($"launcherNormalFireRejected:{fireRejectReason}", true);
             }
 
             // CombatShootFromPlaceAction runs EFT's normal aim-and-trigger worker directly after
@@ -482,20 +482,20 @@ namespace pitTeam.BigBrain
             return default;
         }
 
-        private AICoreActionEndStruct EndLauncherMove()
+        private AICoreActionEnd EndLauncherMove()
         {
             if (launcherPlan == null)
             {
                 launcherPlan = null;
-                return new AICoreActionEndStruct("grenadierMovePlanMissing", true);
+                return new AICoreActionEnd("grenadierMovePlanMissing", true);
             }
 
             if (CombatCommon.IsAtGrenadeLauncherFirePosition(launcherPlan))
             {
-                return new AICoreActionEndStruct("grenadierMoveArrived", true);
+                return new AICoreActionEnd("grenadierMoveArrived", true);
             }
 
-            AICoreActionEndStruct moveEnd = CombatCommon.EndGoToPoint(endWhenEnemyVisibleShootable: false);
+            AICoreActionEnd moveEnd = CombatCommon.EndGoToPoint(endWhenEnemyVisibleShootable: false);
             if (moveEnd.Value)
             {
                 CombatCommon.ClearCommittedMovement();
@@ -504,18 +504,18 @@ namespace pitTeam.BigBrain
             return moveEnd.Value ? moveEnd : default;
         }
 
-        private AICoreActionEndStruct EndRetryHold()
+        private AICoreActionEnd EndRetryHold()
         {
             if (Time.time >= retryScanUntil)
             {
-                return new AICoreActionEndStruct("grenadierRetryScan", true);
+                return new AICoreActionEnd("grenadierRetryScan", true);
             }
 
             CombatCommon.HoldFor(Mathf.Max(0.05f, retryScanUntil - Time.time));
             return default;
         }
 
-        private AICoreActionResultStruct<BotLogicDecision, GClass26> RetryOrFail(string suffix)
+        private AICoreActionResult<BotLogicDecision, CoreActionResultParams> RetryOrFail(string suffix)
         {
             if (Time.time >= activeUntil)
             {
@@ -533,7 +533,7 @@ namespace pitTeam.BigBrain
             return Hold($"retry.{suffix}");
         }
 
-        private AICoreActionResultStruct<BotLogicDecision, GClass26> FailObjective(string suffix)
+        private AICoreActionResult<BotLogicDecision, CoreActionResultParams> FailObjective(string suffix)
         {
             complete = true;
             RecordAttemptCooldown($"fail.{suffix}");
@@ -651,9 +651,9 @@ namespace pitTeam.BigBrain
             return reason != null && reason.StartsWith(RetryHoldReason, StringComparison.Ordinal);
         }
 
-        private static AICoreActionResultStruct<BotLogicDecision, GClass26> Hold(string suffix)
+        private static AICoreActionResult<BotLogicDecision, CoreActionResultParams> Hold(string suffix)
         {
-            return new AICoreActionResultStruct<BotLogicDecision, GClass26>(
+            return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                 BotLogicDecision.holdPosition,
                 $"{ReasonPrefix}.{suffix}");
         }

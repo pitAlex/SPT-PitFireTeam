@@ -29,13 +29,13 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return typeof(GClass141).GetMethod("ShallUseNow");
+            return typeof(PmcBearLayer).GetMethod("ShallUseNow");
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(GClass141 __instance, ref bool __result)
+        private static bool PatchPrefix(PmcBearLayer __instance, ref bool __result)
         {
-            return FollowerPmcCombatSuppression.Prefix(__instance?.BotOwner_0, ref __result);
+            return FollowerPmcCombatSuppression.Prefix(__instance?._owner, ref __result);
         }
     }
 
@@ -43,13 +43,13 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return typeof(GClass145).GetMethod("ShallUseNow");
+            return typeof(PmcUsecLayer).GetMethod("ShallUseNow");
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(GClass145 __instance, ref bool __result)
+        private static bool PatchPrefix(PmcUsecLayer __instance, ref bool __result)
         {
-            return FollowerPmcCombatSuppression.Prefix(__instance?.BotOwner_0, ref __result);
+            return FollowerPmcCombatSuppression.Prefix(__instance?._owner, ref __result);
         }
     }
 
@@ -57,13 +57,13 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return typeof(GClass142).GetMethod("ShallUseNow");
+            return typeof(PmcLayer).GetMethod("ShallUseNow");
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(GClass142 __instance, ref bool __result)
+        private static bool PatchPrefix(PmcLayer __instance, ref bool __result)
         {
-            return FollowerPmcCombatSuppression.Prefix(__instance?.BotOwner_0, ref __result);
+            return FollowerPmcCombatSuppression.Prefix(__instance?._owner, ref __result);
         }
     }
 }

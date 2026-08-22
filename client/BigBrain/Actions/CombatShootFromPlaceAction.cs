@@ -18,7 +18,7 @@ namespace pitTeam.BigBrain.Actions
         private const float SameSpotMaxDistanceSqr = 0.75f * 0.75f;
         private const float ProneFireProbeHeight = 0.35f;
         private const float LostVisualSuppressMaxAimAngle = 18f;
-        private readonly GClass276 baseLogic;
+        private readonly ShootFromPlace baseLogic;
         private readonly FollowerEmergencyFireGate emergencyFireGate = new FollowerEmergencyFireGate();
         private float aimAlignStartedAt;
         private float nextLauncherNormalFireRejectAt;
@@ -29,7 +29,7 @@ namespace pitTeam.BigBrain.Actions
 
         public CombatShootFromPlaceAction(BotOwner botOwner) : base(botOwner)
         {
-            baseLogic = new GClass276(botOwner);
+            baseLogic = new ShootFromPlace(botOwner);
         }
 
         public override void Start()
@@ -53,7 +53,7 @@ namespace pitTeam.BigBrain.Actions
         public override void Update(CustomLayer.ActionData data)
         {
             EnemyInfo? goalEnemy = BotOwner.Memory?.GoalEnemy;
-            ShootPointClass? shootPoint = goalEnemy != null ? GetShootFromPlacePoint(goalEnemy) : null;
+            ShootToPoint? shootPoint = goalEnemy != null ? GetShootFromPlacePoint(goalEnemy) : null;
             string crouchPolicyReason = "enemyTargetMissing";
             float crouchEnemyDistance = goalEnemy?.Distance ?? 0f;
             bool allowCrouch = shootPoint != null &&
@@ -146,7 +146,7 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            baseLogic.UpdateNodeByBrain(GetData<GClass28>(data));
+            baseLogic.UpdateNodeByBrain(GetData<ShootHoldResultParams>(data));
             if (shootPoint != null)
             {
                 emergencyFireGate.TryFire(
@@ -188,7 +188,7 @@ namespace pitTeam.BigBrain.Actions
                 impactTarget);
 
             BotOwner.Steering.LookToPoint(aimPoint);
-            baseLogic.Gclass178_0.UpdateNodeByBrain(new GClass27(aimPoint));
+            baseLogic._aiming.UpdateNodeByBrain(new AimingResultParams(aimPoint));
 
             RecordLauncherNormalFire(
                 reason,
@@ -276,7 +276,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            ShootPointClass shootPoint = GetShootFromPlacePoint(goalEnemy!);
+            ShootToPoint shootPoint = GetShootFromPlacePoint(goalEnemy!);
             return FollowerShootPoseSafety.HasReliablePoseLane(BotOwner, shootPoint.Point, probeHeight);
         }
 
@@ -327,10 +327,10 @@ namespace pitTeam.BigBrain.Actions
             return true;
         }
 
-        private ShootPointClass GetShootFromPlacePoint(EnemyInfo goalEnemy)
+        private ShootToPoint GetShootFromPlacePoint(EnemyInfo goalEnemy)
         {
             return BotOwner.CurrentEnemyTargetPosition(false) ??
-                   new ShootPointClass(goalEnemy.GetBodyPartPosition(), 1f);
+                   new ShootToPoint(goalEnemy.GetBodyPartPosition(), 1f);
         }
 
         /// <summary>
