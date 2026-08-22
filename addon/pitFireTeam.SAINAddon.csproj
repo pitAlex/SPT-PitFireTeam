@@ -4,7 +4,7 @@
         <OutputType>Library</OutputType>
         <RootNamespace>pitTeam.SAINAddon</RootNamespace>
         <AssemblyName>pitFireTeam.SAINAddon</AssemblyName>
-        <Version>0.9.0</Version>
+        <Version>0.9.1</Version>
         <LangVersion>latest</LangVersion>
         <Nullable>enable</Nullable>
         <NoWarn>$(NoWarn);CS8600;CS8601;CS8602;CS8604;CS8618;CS8620;CS8625</NoWarn>
