@@ -4,7 +4,7 @@ using HarmonyLib;
 
 namespace pitTeam.SAINAddon
 {
-    [BepInPlugin("xyz.pit.fireteam.sainaddon", "PitAlex-PitFireTeamSAINAddon", "0.10.0")]
+    [BepInPlugin("xyz.pit.fireteam.sainaddon", "PitAlex-PitFireTeamSAINAddon", "0.10.1")]
     [BepInDependency("xyz.pit.fireteam", BepInDependency.DependencyFlags.HardDependency)]
     [BepInDependency("me.sol.sain", BepInDependency.DependencyFlags.HardDependency)]
     [BepInDependency("xyz.drakia.bigbrain", BepInDependency.DependencyFlags.HardDependency)]

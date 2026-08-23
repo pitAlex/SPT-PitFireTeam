@@ -60,3 +60,4 @@ types
 /TASKS.md
 *.csproj.lscache
 /video/
+/server/refs/
