@@ -144,6 +144,7 @@ Commands influence teammate behavior but do not force exact actions. teammates w
 - **Follow Me / Cooperative** - recruit an eligible same-side bot or tell existing teammates to resume following.
 - **Attention / Look** - clears command pressure and makes teammates focus on the boss or indicated direction.
 - **Regroup** - tells teammates to converge near the boss. In combat, this becomes a combat regroup objective (within 18 meters radius of the boss, Marksman within 24m).
+- **Exit Located** - calls eligible teammates into a tight extraction formation around you without detouring to normal regroup cover.
 - **Hold Position** - in combat, temporarily behaves like setting teammate aggression to 0%. The override resets after combat ends or when replaced by another command. Can be applied to an individual teammate by looking at him.
 - **Go Go Go** - clears the temporary Hold Position combat-aggression override and returns teammates to their saved aggression. Can be applied to an individual teammate by looking at him.
 - **Go Forward** - orders saved teammates with an enemy to focus that enemy as an ordered push objective. They will pressure, move to reachable firing positions, or go in for the kill while still respecting healing, reload, and immediate survival needs. Outside combat, it can send teammates toward the pointed location. Can be applied to an individual teammate by looking at him.

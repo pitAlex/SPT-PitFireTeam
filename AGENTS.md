@@ -512,6 +512,10 @@ Supported commands via `GestureCommandAction`:
     - core-path combat regroup no longer runs through `GestureCommandAction`
     - during combat it is now an objective trigger consumed by the active `FollowerCombatLogicBase` implementation
     - out of combat it still uses the request-layer regroup command path
+- **ExitLocated** — Reuses regroup ownership in tight extraction mode
+    - out-of-combat and SAIN-addon arrival requires `2.5m` NavMesh distance on the boss level
+    - core combat completes inside `4m`
+    - tight target failure falls back to the boss position, never normal boss-near cover
 - **Attention** (Look) — Clear enemy state, release command, force attention to boss/point
 - Directional quick phrases and contact cues now share a command-look override path:
     - `OverThere`, `Contact`, `Front`, `Left`, `Right`, and `OnSix` feed a temporary look target relative to the boss look direction
@@ -943,6 +947,10 @@ Request/gesture movement:
         - vanilla regroup is implemented and active for no-SAIN or out-of-combat cases,
         - SAIN combat regroup is executed through addon `SAINFollowerCombatLayer` -> `SAINFollowerCombatRegroupAction`,
         - regroup converges to boss-near cover/random point (not exact boss position) and supports boss-movement reanchor.
+    - `ExitLocated` (`EPhraseTrigger.ExitLocated`):
+        - reuses the same regroup command and combat-objective ownership in tight mode,
+        - out-of-combat and SAIN-addon paths complete at `2.5m` NavMesh distance on the boss level; core combat completes at `4m`,
+        - prefers tight follower spacing and falls back directly to the boss position without normal regroup cover acquisition.
     - Regroup ignore/interruption safeguards:
         - ignored when follower is healing or already close enough (`~8m` nav-path distance on same level),
         - interrupted/released when follower can see and shoot enemy, needs heal, or must avoid danger (grenade/BTR),

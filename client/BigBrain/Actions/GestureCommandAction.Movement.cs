@@ -251,19 +251,25 @@ namespace pitTeam.BigBrain.Actions
         private bool TryGetRegroupTarget(Vector3 bossPos, out Vector3 target)
         {
             target = Vector3.zero;
-            if (followerData?.TightRegroupRequested == true &&
-                TryGetBossCombatEvents(out CombatEvents? tightRegroupEvents) &&
-                tightRegroupEvents.TryFindBossSpreadDestination(
-                    BotOwner,
-                    bossPos,
-                    0.75f,
-                    2f,
-                    SameLevelTolerance,
-                    RegroupReservationSpacing,
-                    out Vector3 tightSpreadTarget))
+            if (followerData?.TightRegroupRequested == true)
             {
-                target = tightSpreadTarget;
-                return true;
+                if (TryGetBossCombatEvents(out CombatEvents? tightRegroupEvents) &&
+                    tightRegroupEvents.TryFindBossSpreadDestination(
+                        BotOwner,
+                        bossPos,
+                        0.75f,
+                        2f,
+                        SameLevelTolerance,
+                        RegroupReservationSpacing,
+                        out Vector3 tightSpreadTarget))
+                {
+                    target = tightSpreadTarget;
+                    return true;
+                }
+
+                // Tight extraction regroup never falls back to the wider cover search.
+                // Returning false makes the caller use the boss position directly.
+                return false;
             }
 
             float bestDistance = float.MaxValue;

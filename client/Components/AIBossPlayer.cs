@@ -2630,7 +2630,7 @@ namespace pitTeam.Components
 
             float navDistance = Utils.Utils.GetNavDistance(follower.Position, bossPos);
             float closeDistance = tightRegroup
-                ? FollowerCombatRegroupObjective.TightRegroupCompleteDistance
+                ? BigBrain.Actions.GestureCommandAction.TightRegroupArriveNavDistance
                 : RegroupCloseNavDistance;
             return navDistance <= closeDistance;
         }

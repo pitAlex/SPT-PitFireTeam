@@ -58,7 +58,7 @@ There are three execution paths:
 | `HoldPosition` | none | infinite | `GestureCommandAction` |
 | `MoveToPoint` | sampled world/nav point | infinite | `GestureCommandAction` |
 | `ComeCloser` | boss position snapshot owned by action | timed unless resuming a hold | `GestureCommandAction` |
-| `RegroupNearBoss` | none | timed | `GestureCommandAction`, core combat regroup, or SAIN addon |
+| `RegroupNearBoss` | normal or tight mode | timed | `GestureCommandAction`, core combat regroup, or SAIN addon |
 | `TakeLootItem` | reserved current loot item, not `_commandTarget` | timed | `GestureCommandAction` |
 | `OpenDoor` | reserved current door, not `_commandTarget` | timed | `GestureCommandAction` |
 | `PushEnemy` | current combat enemy | consumed into objective | core ordered-push objective |
@@ -379,6 +379,24 @@ Combat variant:
 - Core combat consumes `RegroupNearBoss` into `FollowerCombatRegroupObjective`.
 - SAIN addon can consume it as `ESquadDecision.Regroup` when SAIN route is enabled.
 
+### Exit Located Phrase
+
+Input:
+
+- `EPhraseTrigger.ExitLocated`
+
+Command state:
+
+- `SetRegroup(20f, tightRegroup: true)`
+- Uses the same ownership, interruption, same-level, and NavMesh safety rules as normal regroup.
+
+Execution:
+
+- Assembles eligible followers inside a tight extraction envelope around the boss.
+- Prefers a nearby spread destination; if none is valid, moves directly toward the boss instead of selecting normal boss-near cover.
+- Completes at `2.5m` NavMesh distance out of combat and on the SAIN addon route, or at the core combat objective's `4m` envelope.
+- Skips normal regroup's final boss-local cover acquisition.
+
 ### Loot Phrases
 
 Loot and pickup selections enter `AIBossPlayer` through the player's `OnPhraseSay` event. Assignment diagnostics record the quick-menu action, live and stored targets, phrase arrival, follower eligibility, reservation, and final command state so a lost order can be located at its exact boundary.
@@ -676,6 +694,7 @@ Marksman behavior:
 Input:
 
 - `EPhraseTrigger.Regroup` while combat regroup context exists.
+- `EPhraseTrigger.ExitLocated` uses the same objective in tight extraction mode.
 
 Command state:
 
