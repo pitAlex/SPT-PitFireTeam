@@ -63,6 +63,8 @@ namespace pitTeam.Patches
         public float Aggression { get; set; } = 50f;
         public List<FriendlyTeammateLoadoutOption> Loadouts { get; set; }
         public List<FriendlyTeammateTacticOption> Tactics { get; set; }
+        public List<string> OwnedBodyCustomizationIds { get; set; }
+        public List<string> OwnedFeetCustomizationIds { get; set; }
         public FriendlyTeammateProfileRecoveryNotice RecoveryNotice { get; set; }
     }
 
@@ -426,6 +428,7 @@ namespace pitTeam.Patches
         private static int PendingAggressionPersistRevision { get; set; }
         internal static Action PendingBackOverrideAction { get; set; }
         internal static Action ActiveBackOverrideAction { get; set; }
+        private static string PendingRecruitProfileAccountId { get; set; }
         private static bool TaskBarDisabledForReturnOverride { get; set; }
 
         internal static bool IsLoadoutEditorEquipmentContext(EFT.InventoryLogic.ItemContext context)
@@ -856,6 +859,32 @@ namespace pitTeam.Patches
             PendingBackOverrideAction = null;
         }
 
+        internal static void PreparePendingRecruitProfileView(string accountId)
+        {
+            PendingRecruitProfileAccountId = string.IsNullOrWhiteSpace(accountId) ? null : accountId;
+        }
+
+        internal static void ClearPendingRecruitProfileView(string accountId = null)
+        {
+            if (string.IsNullOrWhiteSpace(accountId)
+                || string.Equals(PendingRecruitProfileAccountId, accountId, StringComparison.Ordinal))
+            {
+                PendingRecruitProfileAccountId = null;
+            }
+        }
+
+        private static bool ConsumePendingRecruitProfileView(string accountId)
+        {
+            if (string.IsNullOrWhiteSpace(accountId)
+                || !string.Equals(PendingRecruitProfileAccountId, accountId, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            PendingRecruitProfileAccountId = null;
+            return true;
+        }
+
         internal static void RestoreMenuTaskBarForReturnOverride()
         {
             if (!TaskBarDisabledForReturnOverride)
@@ -920,6 +949,14 @@ namespace pitTeam.Patches
 
             RestoreHideoutButtonVisuals(__instance, profile);
 
+            if (ConsumePendingRecruitProfileView(profile.AccountId))
+            {
+                HideProfileActions(__instance);
+                ClearProfileRightSideContent(__instance);
+                DisplaySkillsPanel(__instance, profile, session);
+                return;
+            }
+
             FriendlyTeammateProfileOptions options = TryLoadProfileOptions(profile.AccountId);
             if (options == null)
             {
@@ -955,7 +992,7 @@ namespace pitTeam.Patches
             MoveFactionBadgeForFollowerProfile(__instance, playerModelWindow);
 
             clothingPanel.gameObject.SetActive(true);
-            DisplayClothingOptions(profile.PlayerVisualRepresentation, playerModelWindow, inventoryController, clothingSelectionPanel);
+            DisplayClothingOptions(profile.PlayerVisualRepresentation, playerModelWindow, inventoryController, clothingSelectionPanel, options);
 
             EFT.UI.UIParent ui = UiField?.GetValue(__instance) as EFT.UI.UIParent;
             if (ui == null)
@@ -1872,6 +1909,7 @@ namespace pitTeam.Patches
             OtherPlayerProfileScreenPatch.ActiveProfilePlayerModelWindow = null;
             OtherPlayerProfileScreenPatch.ActiveTeammateLoadoutId = null;
             OtherPlayerProfileScreenPatch.ActiveTeammateLoadoutName = null;
+            OtherPlayerProfileScreenPatch.ClearPendingRecruitProfileView();
             OtherPlayerProfileScreenPatch.CustomDropdownIds.Clear();
             OtherPlayerProfileScreenPatch.StopPendingAggressionPersist();
             OtherPlayerProfileScreenPatch.CloseRenameOverlay();

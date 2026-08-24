@@ -12,6 +12,10 @@ public record FriendlyTeammateProfileOptionsResponse
 
     public List<FriendlyTeammateTacticOption> Tactics { get; set; } = [];
 
+    public List<string> OwnedBodyCustomizationIds { get; set; } = [];
+
+    public List<string> OwnedFeetCustomizationIds { get; set; } = [];
+
     public FriendlyTeammateProfileRecoveryNotice? RecoveryNotice { get; set; }
 }
 

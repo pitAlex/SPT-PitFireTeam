@@ -207,7 +207,7 @@ public class FriendlyTeammateService(
         PrepareNewTeammateDefaultForCurrentLoadoutMode(teammate);
         SaveDefaultEquipmentSnapshot(sessionId, teammate, overwrite: true, includeSecureContainer: IsCurrentLoadoutManagementModeExtreme());
         SaveTeammate(sessionId, teammate);
-        SaveTeammateSettings(sessionId, teammate, CreateDefaultTeammateSettings());
+        SaveTeammateSettings(sessionId, teammate, CreateDefaultTeammateSettings(teammate.Customization));
 
         logger.Info($"Created teammate '{nickname}' for session '{sessionId}' with aid '{teammate.Aid}'");
 
@@ -272,7 +272,7 @@ public class FriendlyTeammateService(
         PrepareNewTeammateDefaultForCurrentLoadoutMode(teammate);
         SaveDefaultEquipmentSnapshot(sessionId, teammate, overwrite: true, includeSecureContainer: IsCurrentLoadoutManagementModeExtreme());
         SaveTeammate(sessionId, teammate);
-        SaveTeammateSettings(sessionId, teammate, CreateDefaultTeammateSettings());
+        SaveTeammateSettings(sessionId, teammate, CreateDefaultTeammateSettings(teammate.Customization));
 
         logger.Info($"Accepted recruit pickup '{nickname}' for session '{sessionId}' with aid '{teammate.Aid}' capturedProfile={usedCapturedProfile}");
 
@@ -818,13 +818,21 @@ public class FriendlyTeammateService(
     {
         var teammate = FindByAccountId(sessionId, request.Aid);
         var profile = profileHelper.GetFullProfile(sessionId);
-        var selectedLoadoutId = NormalizeCurrentLoadoutId(profile, GetTeammateSettings(sessionId, teammate).SelectedLoadoutId);
+        var settings = GetTeammateSettings(sessionId, teammate);
+        if (EnsureOwnedClothing(settings, teammate.Customization))
+        {
+            SaveTeammateSettings(sessionId, teammate, settings);
+        }
+
+        var selectedLoadoutId = NormalizeCurrentLoadoutId(profile, settings.SelectedLoadoutId);
 
         var response = new FriendlyTeammateProfileOptionsResponse
         {
             CurrentLoadoutId = selectedLoadoutId,
-            CurrentTactic = NormalizeCombatTactic(GetTeammateSettings(sessionId, teammate).CombatTactic),
-            Aggression = NormalizeAggression(GetTeammateSettings(sessionId, teammate).Aggression),
+            CurrentTactic = NormalizeCombatTactic(settings.CombatTactic),
+            Aggression = NormalizeAggression(settings.Aggression),
+            OwnedBodyCustomizationIds = settings.OwnedBodyCustomizationIds.ToList(),
+            OwnedFeetCustomizationIds = settings.OwnedFeetCustomizationIds.ToList(),
             RecoveryNotice = ConsumeProfileRecoveryNotice(sessionId, teammate),
             Loadouts =
             [
@@ -866,9 +874,13 @@ public class FriendlyTeammateService(
         }
 
         teammate.Customization ??= new CommonCustomization();
+        var settings = GetTeammateSettings(sessionId, teammate);
+        EnsureOwnedClothing(settings, teammate.Customization);
         teammate.Customization.Body = NormalizeRequiredValue(request.Suit[0], "body");
         teammate.Customization.Feet = NormalizeRequiredValue(request.Suit[1], "feet");
+        EnsureOwnedClothing(settings, teammate.Customization);
 
+        SaveTeammateSettings(sessionId, teammate, settings);
         SaveTeammate(sessionId, teammate);
     }
 
@@ -4860,15 +4872,51 @@ public class FriendlyTeammateService(
         return loadedSettings;
     }
 
-    private static FriendlyTeammateSettings CreateDefaultTeammateSettings()
+    private static FriendlyTeammateSettings CreateDefaultTeammateSettings(CommonCustomization? customization = null)
     {
-        return new FriendlyTeammateSettings
+        var settings = new FriendlyTeammateSettings
         {
             SelectedLoadoutId = DefaultLoadoutId,
             AutoJoinEnabled = false,
             Aggression = 50f,
             CombatTactic = "Rifleman",
         };
+
+        EnsureOwnedClothing(settings, customization);
+        return settings;
+    }
+
+    private static bool EnsureOwnedClothing(FriendlyTeammateSettings settings, CommonCustomization? customization)
+    {
+        bool changed = false;
+
+        if (settings.OwnedBodyCustomizationIds == null)
+        {
+            settings.OwnedBodyCustomizationIds = [];
+            changed = true;
+        }
+
+        if (settings.OwnedFeetCustomizationIds == null)
+        {
+            settings.OwnedFeetCustomizationIds = [];
+            changed = true;
+        }
+
+        changed |= RememberOwnedCustomization(settings.OwnedBodyCustomizationIds, customization?.Body?.ToString());
+        changed |= RememberOwnedCustomization(settings.OwnedFeetCustomizationIds, customization?.Feet?.ToString());
+        return changed;
+    }
+
+    private static bool RememberOwnedCustomization(List<string> ownedCustomizationIds, string? customizationId)
+    {
+        if (string.IsNullOrWhiteSpace(customizationId)
+            || ownedCustomizationIds.Any(id => string.Equals(id, customizationId, StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        ownedCustomizationIds.Add(customizationId);
+        return true;
     }
 
     private void SaveTeammateSettings(MongoId sessionId, BotBase teammate, FriendlyTeammateSettings settings)

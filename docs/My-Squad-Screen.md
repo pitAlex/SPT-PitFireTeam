@@ -483,7 +483,7 @@ For teammate profiles the patch:
 - hides stock report actions
 - clears the stock right-side profile content blocks
 - reuses the stock clothing panel for suit selection
-- combines unlocked BEAR, USEC, and Savage clothing while keeping each suite id unique, so cross-faction availability does not duplicate dropdown entries
+- combines unlocked BEAR, USEC, and Savage clothing with each teammate's persisted wardrobe while keeping each suite id unique, so generated clothing remains selectable even when the player has not unlocked it
 - injects a cloned second clothing-style row for loadout + tactic in `Simple`
 - replaces the loadout dropdown side with `EDIT LOADOUT` in `Restricted`, `Immersive`, and `Realistic`, leaving the tactic dropdown intact
 - injects an aggression slider row below that
@@ -508,6 +508,8 @@ Verified persisted actions today:
     - `POST /singleplayer/pitfireteam/teammate/profile/aggression`
 
 After successful profile-side persistence the code marks the squad roster dirty so the next `My Squad` reopen can refresh changed tiles.
+
+Pending recruit friend requests also open through `OtherPlayerProfileScreen`, but remain read-only. Their stock empty favorite-item and achievement sections are replaced with the same filtered follower-skills panel used for accepted teammates; teammate management controls stay unavailable until the recruit is accepted.
 
 ### Loadout and tactic selectors
 

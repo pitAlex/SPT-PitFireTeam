@@ -247,6 +247,8 @@ namespace pitTeam.Patches
 
     internal class FriendRequestProfileViewPatch : ModulePatch
     {
+        private const string RecruitInvitationIdPrefix = "pitfireteam-recruit-";
+
         protected override MethodBase GetTargetMethod()
         {
             return AccessTools.Method(typeof(EFT.UI.Chat.ChatMemberContextInteractions), nameof(EFT.UI.Chat.ChatMemberContextInteractions.WatchPlayerProfile));
@@ -273,7 +275,21 @@ namespace pitTeam.Patches
                 return true;
             }
 
-            ItemUiContext.Instance.ShowPlayerProfileScreen(profileAccountId, EItemViewType.OtherPlayerProfile).HandleExceptions();
+            OtherPlayerProfileScreenPatch.ClearPendingRecruitProfileView();
+            if (__instance._invitation?._id?.StartsWith(RecruitInvitationIdPrefix, StringComparison.Ordinal) == true)
+            {
+                OtherPlayerProfileScreenPatch.PreparePendingRecruitProfileView(profileAccountId);
+            }
+
+            Task<OtherPlayerProfileScreen.OtherPlayerProfileScreenController> profileTask =
+                ItemUiContext.Instance.ShowPlayerProfileScreen(profileAccountId, EItemViewType.OtherPlayerProfile);
+            profileTask.ContinueWith(task =>
+            {
+                if (task.IsCanceled || task.IsFaulted || task.Result == null)
+                {
+                    OtherPlayerProfileScreenPatch.ClearPendingRecruitProfileView(profileAccountId);
+                }
+            }).HandleExceptions();
             return false;
         }
     }
