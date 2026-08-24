@@ -2554,7 +2554,11 @@ namespace pitTeam.Components
             foreach (BotFollowerPlayer follower in BossPlayers.GetFollowersByBoss(bossProfileId))
             {
                 BotOwner squadmate = follower?.GetBot();
-                if (squadmate == null || squadmate == owner)
+                if (squadmate == null ||
+                    squadmate == owner ||
+                    squadmate.IsDead ||
+                    squadmate.BotState != EBotState.Active ||
+                    squadmate.GetPlayer?.HealthController?.IsAlive != true)
                 {
                     continue;
                 }

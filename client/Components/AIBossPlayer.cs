@@ -1569,48 +1569,63 @@ namespace pitTeam.Components
             {
                 if (follower == null || follower.IsDead || follower.BotState != EBotState.Active) continue;
                 if (!BossPlayers.IsFollower(follower)) continue;
-                if (IsFollowerLockedByLootCommand(follower)) continue;
 
-                BotFollowerPlayer? followerData = BossPlayers.Instance?.GetFollower(follower);
-                if (!IsCombatRegroupContext())
+                try
                 {
-                    followerData?.SetCanPatrol(false);
-                }
-                followerData?.ClearCommand("Attention:Look");
-                followerData?.ClearTemporaryCombatAggressionOverride("Attention");
-                followerData?.ClearOrderedPushTargetLock("Attention");
-                FollowerCombatTargetCommitments.ClearMission(follower, null, "Attention");
-
-                FollowerEnemyEnforceSuppression.Suppress(follower, enforceBlockSeconds);
-
-                ClearEnemyStateForAttention(follower, clearedGroupIds);
-
-                if (pitFireTeam.UseSainFollowerCombat)
-                {
-                    try
+                    bool preserveLootTransaction = IsFollowerLockedByLootCommand(follower);
+                    BotFollowerPlayer? followerData = BossPlayers.Instance?.GetFollower(follower);
+                    if (!preserveLootTransaction)
                     {
-                        SainAddonBridge.TryForceReleaseFollowerCombatState(follower);
-                        TryResetSainDecisionState(follower);
+                        if (!IsCombatRegroupContext())
+                        {
+                            followerData?.SetCanPatrol(false);
+                        }
+                        followerData?.ClearCommand("Attention:Look");
                     }
-                    catch (Exception ex)
+
+                    followerData?.ClearTemporaryCombatAggressionOverride("Attention");
+                    followerData?.ClearOrderedPushTargetLock("Attention");
+                    FollowerCombatTargetCommitments.ClearMission(follower, null, "Attention");
+
+                    FollowerEnemyEnforceSuppression.Suppress(follower, enforceBlockSeconds);
+
+                    ClearEnemyStateForAttention(follower, clearedGroupIds);
+
+                    if (pitFireTeam.UseSainFollowerCombat)
                     {
-                        Modules.Logger.LogError($"[SAIN] Force-release combat state failed for attention follower={follower?.Profile?.Nickname}");
-                        Modules.Logger.LogError(ex);
+                        try
+                        {
+                            SainAddonBridge.TryForceReleaseFollowerCombatState(follower);
+                            TryResetSainDecisionState(follower);
+                        }
+                        catch (Exception ex)
+                        {
+                            Modules.Logger.LogError($"[SAIN] Force-release combat state failed for attention follower={follower?.Profile?.Nickname}");
+                            Modules.Logger.LogError(ex);
+                        }
                     }
+                    else
+                    {
+                        FollowerCombatLayer.TryForceReleaseCoreFollowerCombatState(follower, "Attention");
+                    }
+
+                    if (!preserveLootTransaction)
+                    {
+                        FollowerRecovery.SoftReset(follower);
+
+                        if (follower.Mover?.TargetPose < 0.85f)
+                        {
+                            follower.SetPose(1f);
+                        }
+                    }
+
+                    follower.BotTalk.TrySay(EPhraseTrigger.Roger, true);
                 }
-                else
+                catch (Exception ex)
                 {
-                    FollowerCombatLayer.TryForceReleaseCoreFollowerCombatState(follower, "Attention");
+                    Modules.Logger.LogError($"[Attention] Follower cleanup failed follower={follower.Profile?.Nickname ?? follower.ProfileId}");
+                    Modules.Logger.LogError(ex);
                 }
-
-                FollowerRecovery.SoftReset(follower);
-
-                if (follower.Mover?.TargetPose < 0.85f)
-                {
-                    follower.SetPose(1f);
-                }
-
-                follower?.BotTalk.TrySay(EPhraseTrigger.Roger, true);
             }
         }
 
