@@ -106,26 +106,23 @@ namespace pitTeam.BigBrain.Actions
             }
         }
 
-        private static IEnumerable<EFT.InventoryLogic.IContainer> GetFilteredLootCarryContainers(InventoryEquipment equipment)
+        private static IEnumerable<EFT.InventoryLogic.Grid> GetFilteredLootCarryGrids(
+            InventoryEquipment equipment,
+            EquipmentSlot slot)
         {
-            HashSet<EFT.InventoryLogic.IContainer> seen = new HashSet<EFT.InventoryLogic.IContainer>();
-
-            // Filtered loot cargo may use backpack and pockets. The rig stays reserved for combat
-            // magazines and tactical swaps.
-            foreach (EquipmentSlot slot in FilteredLootCarrySlotOrder)
+            Item root = equipment?.GetSlot(slot)?.ContainedItem;
+            if (root is not EFT.InventoryLogic.SearchableItem searchable || searchable.Grids == null)
             {
-                Item root = equipment.GetSlot(slot)?.ContainedItem;
-                if (root is not EFT.InventoryLogic.SearchableItem searchable)
-                {
-                    continue;
-                }
+                yield break;
+            }
 
-                foreach (EFT.InventoryLogic.IContainer container in GetSearchableContainersRecursive(searchable))
+            // Ordinary filtered cargo belongs in the equipped container's visible root grids.
+            // Do not let recursive inner containers blur the backpack-before-pockets contract.
+            foreach (EFT.InventoryLogic.Grid grid in searchable.Grids)
+            {
+                if (grid != null)
                 {
-                    if (container != null && seen.Add(container))
-                    {
-                        yield return container;
-                    }
+                    yield return grid;
                 }
             }
         }

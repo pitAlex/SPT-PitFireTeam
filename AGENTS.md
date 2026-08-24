@@ -63,7 +63,7 @@ When multiple approaches are possible, prefer:
 
 # pitFireTeam: Current Implementation Summary
 
-**Last updated:** 2026-08-18
+**Last updated:** 2026-08-23
 
 **Scope:** Runtime behavior across `pitFireTeam/client`, `pitFireTeam/addon`, and `pitFireTeam/server`.  
 **SAIN Addon is optional and runtime-gated**
@@ -499,9 +499,14 @@ Supported commands via `GestureCommandAction`:
     - marksman close auto-search is suppressed while this temporary hold-position override is active
     - override clears when combat/patrol handoff reports the follower safely out of combat, or when `Gogogo` is issued
 - **Gogogo combat phrase** (`EPhraseTrigger.Gogogo`) — Clears any temporary combat-aggression override and returns followers to their persisted aggression value
-- **LootGeneric** / **LootWeapon** — Closest eligible follower assigned via `InteractableObjects.SetTaker(...)`, moves + inventory transfer
-    - Now resilient to transient state changes: pins selected loot and attempts taker recovery before aborting
-    - Supports all item types with improved state consistency
+- **LootGeneric** / **LootWeapon** — Command-driven loose-item, body, and container looting
+    - loose-item pickup selects the eligible follower with the shortest complete NavMesh path, reserves taker ownership through `InteractableObjects.SetTaker(...)`, and executes `TakeLootItem`
+    - body/container searches are restricted to saved teammates spawned through the raid squad flow and execute `TakeBodyGear` / `TakeContainerLoot`
+    - non-teammate body/container assignment uses the shortest complete NavMesh path within `22m`; active combat, loot-command ownership, and target reservations prevent unsafe or duplicate assignment
+    - body/container searches use simulated search timing, one settled inventory transaction at a time, filtered cargo rules, weapon-readiness/support planning, and command-locked cleanup
+    - loose pickup pins the selected item and attempts taker recovery across transient state changes before aborting
+    - accepted squadmate loot is tracked through `InteractableObjects.StoreItem(...)`; normal raid-end returns and player-death escape recovery use the centralized return-items path
+    - detailed policy and current runtime-verification debt live in `docs/Looting.md` and the three `docs/Weapon-Pickup-*.md` trackers
 - **OpenDoor** — Closest eligible follower assigned via `InteractableObjects.SetOpener(...)`, moves + `DoorOpener.Interact(Open)`
 - **Regroup** — Vanilla: converge to boss-near cover; SAIN: via addon `SAINFollowerCombatRegroupAction`
     - core-path combat regroup no longer runs through `GestureCommandAction`
@@ -919,11 +924,16 @@ Request/gesture movement:
     - `HoldPosition`: stop, crouch pose, periodic random look-around, no command timeout (persists until replaced/cleared).
     - `ComeCloser`: move to boss until close (about `1m`).
     - `MoveToPoint` (`There`): move to projected/navmesh-validated target point (walk-only), then brief look-around on arrival.
-    - `LootGeneric` / `LootWeapon` command route:
-        - boss phrase selects closest eligible follower to the targeted loot object,
+    - loose `LootGeneric` / `LootWeapon` command route:
+        - boss phrase selects the eligible follower with the shortest complete NavMesh path to the targeted loot object,
         - follower is assigned as taker through `InteractableObjects.SetTaker(...)`,
         - follower runs `FollowerCommandType.TakeLootItem` in `GestureCommandAction` (move to loot point + inventory transfer attempt),
-        - BE item-return post is disabled; loot tracking remains local-only for now.
+        - successful pickup stores the accepted item through `InteractableObjects.StoreItem(...)` for post-raid return handling.
+    - body/container loot command route:
+        - only saved teammates spawned through the raid squad flow are eligible,
+        - `CheckHim` / `LootBody` creates `FollowerCommandType.TakeBodyGear`; a loot phrase aimed at a searchable container creates `FollowerCommandType.TakeContainerLoot`,
+        - the selected follower reserves the target, becomes command-locked, performs the search simulation, and executes filtered inventory moves sequentially,
+        - combat, invalid state, timeout, or transaction failure releases command and reservation ownership through the centralized cleanup paths.
     - `OpenDoor` command route:
         - boss phrase selects closest eligible follower to the targeted door,
         - follower is assigned as opener through `InteractableObjects.SetOpener(...)`,

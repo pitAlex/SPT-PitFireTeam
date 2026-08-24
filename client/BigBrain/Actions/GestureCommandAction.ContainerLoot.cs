@@ -509,6 +509,7 @@ namespace pitTeam.BigBrain.Actions
             Modules.Logger.LogInfo(
                 $"[LootCommand][MagDebug] Container move starting for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
                 $"source={move?.SourceName ?? "unknown"} item={DescribeLootDebugItem(move?.Item)} " +
+                $"to={DescribeLootAddress(move?.DestinationAddress)} " +
                 $"followUps={move?.FollowUpCandidates?.Count ?? 0} lootCue={move?.SuccessPhrase}");
             containerLootMoveInProgress = true;
             containerLootAttemptStartedAt = Time.time;
@@ -917,7 +918,8 @@ namespace pitTeam.BigBrain.Actions
                 bool terminalOnStagingFailure = true,
                 bool announceStagingLoot = false,
                 Weapon? approvedReloadWeapon = null,
-                bool useDirectAmmoLoadTransaction = false)
+                bool useDirectAmmoLoadTransaction = false,
+                ItemAddress? destinationAddress = null)
             {
                 Item = item;
                 Operation = operation;
@@ -942,6 +944,7 @@ namespace pitTeam.BigBrain.Actions
                 AnnounceStagingLoot = announceStagingLoot;
                 ApprovedReloadWeapon = approvedReloadWeapon;
                 UseDirectAmmoLoadTransaction = useDirectAmmoLoadTransaction;
+                DestinationAddress = destinationAddress;
             }
 
             public Item Item { get; }
@@ -967,6 +970,7 @@ namespace pitTeam.BigBrain.Actions
             public bool AnnounceStagingLoot { get; }
             public Weapon? ApprovedReloadWeapon { get; }
             public bool UseDirectAmmoLoadTransaction { get; }
+            public ItemAddress? DestinationAddress { get; }
             public bool TransactionRecoveryAttempted { get; set; }
 
             public BodyGearMove WithFollowUps(
@@ -997,7 +1001,8 @@ namespace pitTeam.BigBrain.Actions
                     TerminalOnStagingFailure,
                     AnnounceStagingLoot,
                     ApprovedReloadWeapon,
-                    UseDirectAmmoLoadTransaction);
+                    UseDirectAmmoLoadTransaction,
+                    DestinationAddress);
             }
         }
 
@@ -1223,12 +1228,6 @@ namespace pitTeam.BigBrain.Actions
             EquipmentSlot.TacticalVest,
             EquipmentSlot.ArmorVest,
             EquipmentSlot.Headwear
-        };
-
-        private static readonly EquipmentSlot[] FilteredLootCarrySlotOrder =
-        {
-            EquipmentSlot.Backpack,
-            EquipmentSlot.Pockets
         };
 
     }

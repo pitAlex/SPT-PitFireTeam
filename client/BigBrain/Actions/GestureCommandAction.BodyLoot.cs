@@ -723,28 +723,66 @@ namespace pitTeam.BigBrain.Actions
                 return true;
             }
 
-            foreach (EFT.InventoryLogic.IContainer container in GetFilteredLootCarryContainers(followerEquipment))
+            // Keep ordinary cargo visible and predictable: the equipped backpack's own grids are
+            // authoritative, and pockets are only a fallback when no executable backpack move exists.
+            if (TryBuildFilteredLootCarryMove(
+                    inventory,
+                    followerEquipment,
+                    candidate,
+                    EquipmentSlot.Backpack,
+                    "backpack",
+                    out move) ||
+                TryBuildFilteredLootCarryMove(
+                    inventory,
+                    followerEquipment,
+                    candidate,
+                    EquipmentSlot.Pockets,
+                    "pocketsFallback",
+                    out move))
             {
-                if (!container.TryFindLocationForItem(candidate.Item, out ItemAddress packAddress) ||
-                    object.Equals(candidate.Item.Parent, packAddress))
+                if (candidate.Item is Weapon cargoWeapon)
+                {
+                    move = AppendWeaponLooseAmmoSupportFollowUps(
+                        move,
+                        followerEquipment,
+                        cargoWeapon,
+                        operationalAmmoCandidates,
+                        "filteredWeaponCargo");
+                }
+
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool TryBuildFilteredLootCarryMove(
+            InventoryController inventory,
+            InventoryEquipment followerEquipment,
+            BodyGearCandidate candidate,
+            EquipmentSlot destinationSlot,
+            string destinationName,
+            out BodyGearMove? move)
+        {
+            move = null;
+            foreach (EFT.InventoryLogic.Grid grid in GetFilteredLootCarryGrids(followerEquipment, destinationSlot))
+            {
+                if (!grid.TryFindLocationForItem(candidate.Item, out ItemAddress destinationAddress) ||
+                    object.Equals(candidate.Item.Parent, destinationAddress))
                 {
                     continue;
                 }
 
-                if (TryCreateBodyGearMove(inventory, candidate, packAddress, out move))
+                if (!TryCreateBodyGearMove(inventory, candidate, destinationAddress, out move))
                 {
-                    if (candidate.Item is Weapon cargoWeapon)
-                    {
-                        move = AppendWeaponLooseAmmoSupportFollowUps(
-                            move,
-                            followerEquipment,
-                            cargoWeapon,
-                            operationalAmmoCandidates,
-                            "filteredWeaponCargo");
-                    }
-
-                    return true;
+                    continue;
                 }
+
+                Modules.Logger.LogInfo(
+                    $"[LootCommand][CargoPlacement] Planned filtered cargo for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
+                    $"destination={destinationName} item={DescribeLootDebugItem(candidate.Item)} " +
+                    $"address={DescribeLootAddress(destinationAddress)}");
+                return true;
             }
 
             return false;
@@ -805,7 +843,8 @@ namespace pitTeam.BigBrain.Actions
                 isStagingOperation: isStagingOperation,
                 stagingWeapon: stagingWeapon,
                 ammoSalvageMagazineId: candidate.AmmoSalvageMagazine?.Id,
-                approvedReloadWeapon: candidate.WeaponSupportWeapon);
+                approvedReloadWeapon: candidate.WeaponSupportWeapon,
+                destinationAddress: address);
             return true;
         }
 
@@ -848,6 +887,7 @@ namespace pitTeam.BigBrain.Actions
             Modules.Logger.LogInfo(
                 $"[LootCommand][MagDebug] Body move starting for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
                 $"source={move?.SourceName ?? "unknown"} item={DescribeLootDebugItem(move?.Item)} " +
+                $"to={DescribeLootAddress(move?.DestinationAddress)} " +
                 $"followUps={move?.FollowUpCandidates?.Count ?? 0} lootCue={move?.SuccessPhrase}");
             bodyLootMoveInProgress = true;
             bodyLootAttemptStartedAt = Time.time;

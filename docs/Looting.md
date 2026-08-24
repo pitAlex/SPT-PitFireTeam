@@ -282,7 +282,7 @@ The price service intentionally evaluates the tree as a whole. It should not be 
 Filtered body/container looting uses these destination rules:
 
 - weapons can use empty compatible weapon slots before backpack/pockets
-- non-weapons use backpack and pockets only
+- non-weapons use the equipped backpack's visible grids first, with pockets only as fallback
 - the follower's tactical vest is not used as carry space
 - secure container is not used
 - eligible installed plate fallbacks use backpack or pockets; loose plates remain excluded
