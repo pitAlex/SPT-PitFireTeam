@@ -111,8 +111,11 @@ namespace pitTeam.BigBrain.Actions
 
             float verticalDiff = Mathf.Abs(BotOwner.Position.y - bossPos.y);
             float navDistanceToBoss = Utils.Utils.GetNavDistance(BotOwner.Position, bossPos);
+            float arriveDistance = followerData?.TightRegroupRequested == true
+                ? TightRegroupArriveNavDistance
+                : RegroupArriveNavDistance;
 
-            if (verticalDiff <= SameLevelTolerance && navDistanceToBoss <= RegroupArriveNavDistance)
+            if (verticalDiff <= SameLevelTolerance && navDistanceToBoss <= arriveDistance)
             {
                 BotOwner.StopMove();
                 if (!regroupReportedOnPosition)
@@ -248,6 +251,21 @@ namespace pitTeam.BigBrain.Actions
         private bool TryGetRegroupTarget(Vector3 bossPos, out Vector3 target)
         {
             target = Vector3.zero;
+            if (followerData?.TightRegroupRequested == true &&
+                TryGetBossCombatEvents(out CombatEvents? tightRegroupEvents) &&
+                tightRegroupEvents.TryFindBossSpreadDestination(
+                    BotOwner,
+                    bossPos,
+                    0.75f,
+                    2f,
+                    SameLevelTolerance,
+                    RegroupReservationSpacing,
+                    out Vector3 tightSpreadTarget))
+            {
+                target = tightSpreadTarget;
+                return true;
+            }
+
             float bestDistance = float.MaxValue;
             List<CustomNavigationPoint> coverPoints = Covers.GetCoverPoints(
                 BotOwner,

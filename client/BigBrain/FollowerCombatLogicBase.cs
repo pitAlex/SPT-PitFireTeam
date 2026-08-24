@@ -637,10 +637,11 @@ namespace pitTeam.BigBrain
 
         private void ActivateRegroupObjective(BotFollowerPlayer followerData)
         {
+            bool tightRegroup = followerData.TightRegroupRequested;
             followerData.ClearOrderedPushTargetLock("CombatObjective:Regroup");
             combatCommon.ClearCommittedPushDecision("CombatObjective:Regroup");
             followerData.ClearCommand("CombatObjective:ConsumeRegroup");
-            ActivateRegroupObjective(forceReset: true, "activateRegroupOrder");
+            ActivateRegroupObjective(forceReset: true, "activateRegroupOrder", tightRegroup);
             followerData.SetCombatRegroupBossAnchor(true);
         }
 
@@ -662,7 +663,10 @@ namespace pitTeam.BigBrain
             BattleRecorder.RecordObjectiveSwitch(BotOwner, GetCurrentObjectiveName(), "activateOrderedPush");
         }
 
-        private void ActivateRegroupObjective(bool forceReset = false, string reason = "activateRegroup")
+        private void ActivateRegroupObjective(
+            bool forceReset = false,
+            string reason = "activateRegroup",
+            bool tightRegroup = false)
         {
             if (currentObjective == CombatObjectiveKind.Regroup && !forceReset)
             {
@@ -672,7 +676,14 @@ namespace pitTeam.BigBrain
             // Activate resets regroup-local state so every new regroup order starts fresh from the
             // follower's current combat geometry instead of reusing stale bossward targets.
             DeactivateGrenadierForObjectiveSwitch(reason);
-            regroupObjective.Activate();
+            if (regroupObjective is FollowerCombatRegroupObjective concreteRegroupObjective)
+            {
+                concreteRegroupObjective.Activate(tightRegroup);
+            }
+            else
+            {
+                regroupObjective.Activate();
+            }
             currentObjective = CombatObjectiveKind.Regroup;
             BattleRecorder.RecordObjectiveSwitch(BotOwner, GetCurrentObjectiveName(), reason);
         }

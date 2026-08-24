@@ -16,6 +16,7 @@ namespace pitTeam.BigBrain
         private const float CombatRegroupOrderedDistanceMarksman = 24f;
         private const float CombatRegroupOrderedDistanceFactory = 10f;
         private const float CombatRegroupSameLevelTolerance = 1.75f;
+        internal const float TightRegroupCompleteDistance = 4f;
         private const float RegroupHotContactSeconds = 2.5f;
         private const float RegroupFallbackSpreadMinRadius = 1f;
         private const float RegroupFallbackSpreadMaxRadius = 6f;
@@ -51,6 +52,7 @@ namespace pitTeam.BigBrain
         private bool arrivalCoverScanAttempted;
         private Vector3 arrivalCoverSectorAnchor;
         private bool hasArrivalCoverSectorAnchor;
+        private bool tightRegroup;
 
         private enum RegroupBossDirection
         {
@@ -80,14 +82,21 @@ namespace pitTeam.BigBrain
             arrivalCoverScanAttempted = false;
             arrivalCoverSectorAnchor = Vector3.zero;
             hasArrivalCoverSectorAnchor = false;
+            tightRegroup = false;
             ResetWithdrawProgressTracking();
         }
 
         public override void Activate()
         {
+            Activate(tightRegroup: false);
+        }
+
+        internal void Activate(bool tightRegroup)
+        {
             // Regroup is command-triggered but objective-owned, so each activation should discard
             // previous bossward targets and recompute from current combat geometry.
             Reset();
+            this.tightRegroup = tightRegroup;
             regroupActivatedAt = Time.time;
         }
 
@@ -142,7 +151,8 @@ namespace pitTeam.BigBrain
             Vector3 bossPosition = CombatCommon.GetBossPosition();
             if (HasReachedBoss(bossPosition))
             {
-                if (TryGetArrivalCoverDecision(
+                if (!tightRegroup &&
+                    TryGetArrivalCoverDecision(
                         goalEnemy,
                         bossPosition,
                         out AICoreActionResult<BotLogicDecision, CoreActionResultParams> arrivalCoverDecision))
@@ -154,7 +164,7 @@ namespace pitTeam.BigBrain
                 return GetArrivedSettleDecision();
             }
 
-            if (ShouldAvoidUrbanDetourRegroup(bossPosition))
+            if (!tightRegroup && ShouldAvoidUrbanDetourRegroup(bossPosition))
             {
                 return GetArrivedSettleDecision(RegroupUrbanDetourReason);
             }
@@ -871,7 +881,7 @@ namespace pitTeam.BigBrain
 
         private float GetRegroupCompleteDistance()
         {
-            return GetOrderedRegroupDistance();
+            return tightRegroup ? TightRegroupCompleteDistance : GetOrderedRegroupDistance();
         }
 
         private float GetRegroupCoverRadius()

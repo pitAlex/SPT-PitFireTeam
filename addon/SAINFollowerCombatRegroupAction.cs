@@ -26,6 +26,8 @@ namespace pitTeam.SAINAddon
         private const float HoldInCoverSeconds = 4f;
         private const float FollowerSpacing = 3f;
         private const float ArriveDistance = 1.5f;
+        private const float TightRegroupNavDistance = 2.5f;
+        private const float SameLevelTolerance = 1.75f;
         private const float AttackMoveEnemyFrontDot = 0.1f;
         private const float DestinationClaimStaleSeconds = 4f;
         private static readonly Dictionary<string, Dictionary<string, DestinationClaim>> DestinationClaimsByBossId =
@@ -101,8 +103,12 @@ namespace pitTeam.SAINAddon
                     _lastFallbackPointEndedAt = Time.time;
                 }
 
-                bool foundTarget = UseVanillaBossFallbackMode
-                    ? TrySelectDefaultBossTarget(boss, bossPosition, out Vector3 target, out bool holdInCover)
+                Vector3 target;
+                bool holdInCover;
+                bool foundTarget = IsTightRegroupRequested()
+                    ? TrySelectTightRegroupTarget(boss, bossPosition, out target, out holdInCover)
+                    : UseVanillaBossFallbackMode
+                    ? TrySelectDefaultBossTarget(boss, bossPosition, out target, out holdInCover)
                     : TrySelectRegroupTarget(boss, bossPosition, out target, out holdInCover);
 
                 if (foundTarget)
@@ -254,6 +260,13 @@ namespace pitTeam.SAINAddon
 
         private bool IsAlreadyInRegroupRange(Vector3 bossPosition)
         {
+            if (IsTightRegroupRequested())
+            {
+                return Mathf.Abs(bossPosition.y - BotOwner.Position.y) <= SameLevelTolerance &&
+                       TryGetPathLength(bossPosition, out float tightPathDistance) &&
+                       tightPathDistance <= TightRegroupNavDistance;
+            }
+
             float bossDistance = (bossPosition - BotOwner.Position).magnitude;
             return bossDistance <= ArriveDistance;
         }
@@ -314,6 +327,34 @@ namespace pitTeam.SAINAddon
             }
 
             return found;
+        }
+
+        private bool TrySelectTightRegroupTarget(
+            pitAIBossPlayer boss,
+            Vector3 bossPosition,
+            out Vector3 target,
+            out bool holdInCover)
+        {
+            holdInCover = false;
+            BuildAliveFollowerSnapshot(boss);
+            int aliveCount = Mathf.Max(1, _aliveFollowers.Count);
+            int slotIndex = GetFollowerSlotIndex();
+            float angle = slotIndex * (360f / aliveCount);
+            target = bossPosition + Quaternion.Euler(0f, angle, 0f) * Vector3.forward * 1.5f;
+            if (!NavMesh.SamplePosition(target, out NavMeshHit hit, 1.5f, NavMesh.AllAreas) ||
+                !TryGetPathLength(hit.position, out _))
+            {
+                target = default;
+                return false;
+            }
+
+            target = hit.position;
+            return true;
+        }
+
+        private bool IsTightRegroupRequested()
+        {
+            return BossPlayers.Instance?.GetFollower(BotOwner)?.TightRegroupRequested == true;
         }
 
         private bool TrySelectDefaultBossTarget(pitAIBossPlayer boss, Vector3 bossPosition, out Vector3 target, out bool holdInCover)

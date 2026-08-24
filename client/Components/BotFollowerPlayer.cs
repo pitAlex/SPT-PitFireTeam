@@ -130,6 +130,7 @@ namespace pitTeam.Components
         private FollowerCommandType _activeCommand = FollowerCommandType.None;
         private Vector3 _commandTarget;
         private float _commandUntilTime;
+        private bool _tightRegroupRequested;
         private int _moveToPointIssueSequence;
         private int _pushEnemyIssueSequence;
         private bool _suppressEnemyRequiresLauncher;
@@ -1374,7 +1375,7 @@ namespace pitTeam.Components
             BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(SetComeCloser));
         }
 
-        public void SetRegroup(float duration)
+        public void SetRegroup(float duration, bool tightRegroup = false)
         {
             if (ShouldIgnoreCommandSet())
             {
@@ -1389,6 +1390,7 @@ namespace pitTeam.Components
             _activeCommand = FollowerCommandType.RegroupNearBoss;
             _commandTarget = Vector3.zero;
             _commandUntilTime = Time.time + Mathf.Max(2f, duration);
+            _tightRegroupRequested = tightRegroup;
             _resumeHoldAfterComeCloser = false;
             _resumeHoldAfterTakeLoot = false;
             _resumeHoldAfterTakeLootCrouch = false;
@@ -2073,6 +2075,9 @@ namespace pitTeam.Components
 
         public int PushEnemyIssueSequence => _pushEnemyIssueSequence;
 
+        public bool TightRegroupRequested =>
+            _activeCommand == FollowerCommandType.RegroupNearBoss && _tightRegroupRequested;
+
         public bool SuppressEnemyRequiresLauncher =>
             _activeCommand == FollowerCommandType.SuppressEnemy && _suppressEnemyRequiresLauncher;
 
@@ -2636,6 +2641,7 @@ namespace pitTeam.Components
             _activeCommand = FollowerCommandType.None;
             _commandTarget = Vector3.zero;
             _commandUntilTime = 0f;
+            _tightRegroupRequested = false;
             _suppressEnemyRequiresLauncher = false;
             _suppressEnemyForceWeapon = false;
             _suppressEnemyUseAutomaticSecondary = false;

@@ -84,6 +84,7 @@ Combat command state lives on `BotFollowerPlayer` and is intentionally separate 
 - `EPhraseTrigger.Suppress` becomes `SuppressEnemy` for focused followers or eligible squad suppressors.
 - `EPhraseTrigger.NeedSniper` becomes `NeedSniper` for Marksman combat.
 - `EPhraseTrigger.NeedHelp` fakes a boss-under-attack event against the closest valid enemy.
+- `EPhraseTrigger.ExitLocated` orders eligible active followers into a tight extraction regroup. It keeps normal regroup's combat ownership, same-level/NavMesh checks, cross-floor routing, threat-facing movement, and safety interruptions, but completes around `4m` in core combat (`2.5m` out of combat) and skips the final boss-local cover acquisition.
 - Picked-up followers use a personality/odds gate before accepting combat `HoldPosition` and ordered `GoForward` push. Saved squadmates obey normally.
 - Picked-up followers also use that personality model for autonomous protection willingness. Low-protection pickups behave closer to `On Your Own`: they tolerate more boss distance before regrouping and can skip boss-under-attack protection routes.
 - Core combat reads `EffectiveCombatAggression` through `FollowerCombatCommon.GetAggression01()`.
@@ -580,6 +581,7 @@ Combat regroup is objective-owned.
 Regroup behavior:
 
 - explicit combat regroup activates the regroup objective
+- `ExitLocated` activates the same objective in tight mode: it must reach the smaller extraction envelope, cannot use the urban-detour early settle, and completes without the normal final arrival-cover scan
 - explicit push can leave regroup and activate the ordered-push objective
 - autonomous boss-distance regroup waits through a short recent-fight grace window when the follower still has fresh personal enemy contact, recent follower fire, recent hit/damage pressure, visible contact, or shootable contact; the follower-fire signal survives a same-fight `GoalEnemy` change
 - extreme separation bypasses that grace so a follower who is very far out of bounds still rejoins

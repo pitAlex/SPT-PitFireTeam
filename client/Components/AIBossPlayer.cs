@@ -250,7 +250,14 @@ namespace pitTeam.Components
                 else if (info.phrase == EPhraseTrigger.Regroup)
                 {
                     // Regroup: out of combat exits patrol; in combat orders a literal boss-position regroup.
-                    ApplyRegroupCommand(info.PlayerRequester);
+                    ApplyRegroupCommand(info.PlayerRequester, tightRegroup: false);
+                    return;
+                }
+                else if (info.phrase == EPhraseTrigger.ExitLocated)
+                {
+                    // Exit Located assembles the squad tightly for extraction. It keeps the shared
+                    // regroup safety/routing path but uses a closer, cover-independent arrival policy.
+                    ApplyRegroupCommand(info.PlayerRequester, tightRegroup: true);
                     return;
                 }
                 else if (info.phrase == EPhraseTrigger.OnYourOwn)
@@ -1821,7 +1828,7 @@ namespace pitTeam.Components
             return true;
         }
 
-        private void ApplyRegroupCommand(IPlayer requester)
+        private void ApplyRegroupCommand(IPlayer requester, bool tightRegroup)
         {
             if (requester == null) return;
 
@@ -1848,8 +1855,8 @@ namespace pitTeam.Components
                     // SAIN combat regroup path: clear/prepare SAIN decision state, then mark a regroup command
                     // for the addon combat layer to pick up instead of the core request movement action.
                     bool ignore = combatRegroupContext
-                        ? ShouldIgnoreCombatRegroup(follower, bossPos)
-                        : ShouldIgnoreRegroup(follower, bossPos);
+                        ? ShouldIgnoreCombatRegroup(follower, bossPos, tightRegroup)
+                        : ShouldIgnoreRegroup(follower, bossPos, tightRegroup);
                     if (ignore)
                     {
                         followerData.ClearCommand("Regroup:ignoredCloseOrHealing");
@@ -1857,19 +1864,19 @@ namespace pitTeam.Components
                     }
 
                     TryResetSainDecisionState(follower);
-                    followerData.SetRegroup(20f);
+                    followerData.SetRegroup(20f, tightRegroup);
                     follower.Gesture.TryGestus(EInteraction.OkGesture, false);
                     continue;
                 }
 
                 // Core regroup path: FollowerRequestLayer consumes SetRegroup and runs the vanilla/core regroup action.
-                if (ShouldIgnoreRegroup(follower, bossPos))
+                if (ShouldIgnoreRegroup(follower, bossPos, tightRegroup))
                 {
                     followerData.ClearCommand("Regroup:ignoredCloseOrHealing");
                     continue;
                 }
 
-                followerData.SetRegroup(20f);
+                followerData.SetRegroup(20f, tightRegroup);
                 follower.Gesture.TryGestus(EInteraction.OkGesture, false);
             }
         }
@@ -2567,7 +2574,7 @@ namespace pitTeam.Components
             return false;
         }
 
-        private static bool ShouldIgnoreRegroup(BotOwner follower, Vector3 bossPos)
+        private static bool ShouldIgnoreRegroup(BotOwner follower, Vector3 bossPos, bool tightRegroup)
         {
             if (follower == null) return true;
 
@@ -2584,10 +2591,13 @@ namespace pitTeam.Components
             }
 
             float navDistance = Utils.Utils.GetNavDistance(follower.Position, bossPos);
-            return navDistance <= RegroupCloseNavDistance;
+            float closeDistance = tightRegroup
+                ? BigBrain.Actions.GestureCommandAction.TightRegroupArriveNavDistance
+                : RegroupCloseNavDistance;
+            return navDistance <= closeDistance;
         }
 
-        private static bool ShouldIgnoreCombatRegroup(BotOwner follower, Vector3 bossPos)
+        private static bool ShouldIgnoreCombatRegroup(BotOwner follower, Vector3 bossPos, bool tightRegroup)
         {
             if (follower == null) return true;
 
@@ -2604,7 +2614,10 @@ namespace pitTeam.Components
             }
 
             float navDistance = Utils.Utils.GetNavDistance(follower.Position, bossPos);
-            return navDistance <= RegroupCloseNavDistance;
+            float closeDistance = tightRegroup
+                ? FollowerCombatRegroupObjective.TightRegroupCompleteDistance
+                : RegroupCloseNavDistance;
+            return navDistance <= closeDistance;
         }
 
         private void HookFollowerDeath(BotOwner follower)
