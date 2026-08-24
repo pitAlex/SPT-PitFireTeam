@@ -298,6 +298,10 @@ namespace pitTeam.Modules
             if (bot?.ProfileId != null)
             {
                 _followersByProfileId[bot.ProfileId] = _follower;
+                if (squadMate)
+                {
+                    SquadRaidKillReport.RegisterTeammate(bot.ProfileId, bot.Profile?.Nickname);
+                }
             }
 
             // Fire lifecycle event for addon integration (cache registration, etc).

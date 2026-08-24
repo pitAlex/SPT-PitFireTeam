@@ -1420,6 +1420,7 @@ namespace pitTeam.Patches
                 if (Controller == null)
                 {
                     PlayerKilledPatch.ResetKillMessageRaidState();
+                    SquadRaidKillReport.BeginRaid(Utils.Utils.FlagGet("RaidTransit"));
                     new BossPlayers();
                     new InteractableObjects();
                     new NpcMessage();
@@ -1448,6 +1449,10 @@ namespace pitTeam.Patches
                     BattleRecorder.StartRaid(locationId);
                 }
 
+                if (player?.IsYourPlayer == true)
+                {
+                    SquadRaidKillReport.SetPlayerNickname(player.Profile?.Nickname);
+                }
 
                 pitAIBossPlayer playerBoss = BossPlayers.AddPlayerAsBoss(player, __instance);
 

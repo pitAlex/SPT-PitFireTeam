@@ -450,6 +450,7 @@ namespace pitTeam
             new PlayerVoicePhraseAvailabilityInitPatch().Enable();
             new PlayerVoicePhraseAvailabilityReplacePatch().Enable();
             new PlayerKilledPatch().Enable();
+            new SessionResultKillListShowPatch().Enable();
             new PlayerDeadFallbackPatch().Enable();
             new PlayerMakingShotPatch().Enable();
             new PlayerShotPatch().Enable();

@@ -285,6 +285,7 @@ namespace pitTeam.Patches
                     return;
                 }
 
+                SquadRaidKillReport.RecordTeammateKill(followerPlayer, __instance);
                 TryCreditFollowerKillQuestProgress(__instance, followerPlayer, follower, damageInfo, bodyPart);
 
                 EPlayerSide killedPlayerSide = __instance.Side;
