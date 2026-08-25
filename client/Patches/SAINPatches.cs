@@ -117,6 +117,7 @@ namespace pitTeam.Patches
             PatchSainTalkGenerationForFollowers(harmony);
             PatchSainPlayerVoiceLineForFollowers(harmony);
             PatchFollowerCloseFoliageVision(harmony);
+            FollowerSainProficiency.ApplyPatches(harmony);
 
 
             if (squadType != null && SAINEnableClass != null)

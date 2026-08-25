@@ -71,6 +71,8 @@ namespace pitTeam.Components
         private const float FriendlyDownVisibilityDistance = 60f;
         private const float FriendlyDownObserveWindow = 60f;
         private const float FriendlyDownPollMs = 3000f;
+        private const float PostCombatClearChance = 0.35f;
+        private const float PostCombatClearPermitSeconds = 2.5f;
         private const float TeamStatusDebounceSeconds = 0.08f;
         private const float AttentionCommandDebounceSeconds = 0.35f;
         private const float OrderedLauncherRayScanDistance = 120f;
@@ -83,6 +85,9 @@ namespace pitTeam.Components
         private float _lastAttentionCommandAt = -999f;
         private readonly Dictionary<string, Action<EDamageType>> _followerDeathHandlers = new Dictionary<string, Action<EDamageType>>();
         private readonly Dictionary<string, FallenFollowerInfo> _pendingFriendlyDown = new Dictionary<string, FallenFollowerInfo>();
+        private readonly HashSet<string> _activeFollowerCombatProfiles = new HashSet<string>(StringComparer.Ordinal);
+        private readonly HashSet<string> _postCombatEpisodeParticipants = new HashSet<string>(StringComparer.Ordinal);
+        private bool _postCombatClearEpisodeArmed;
         private TimerManager.ITimer _friendlyDownTimer;
         private static bool _sainAddonDecisionResetBridgeErrorLogged;
         private bool _bossGroupStaticUpdateSubscribed;
@@ -2770,6 +2775,82 @@ namespace pitTeam.Components
             _pendingFriendlyDown.Remove(info.DeadFollowerProfileId);
         }
 
+        internal void NotifyFollowerCombatLayerStarted(BotOwner follower)
+        {
+            if (follower == null || string.IsNullOrEmpty(follower.ProfileId))
+            {
+                return;
+            }
+
+            if (_activeFollowerCombatProfiles.Count == 0)
+            {
+                _postCombatEpisodeParticipants.Clear();
+                _postCombatClearEpisodeArmed = true;
+            }
+
+            _activeFollowerCombatProfiles.Add(follower.ProfileId);
+            _postCombatEpisodeParticipants.Add(follower.ProfileId);
+        }
+
+        internal void NotifyFollowerCombatLayerReleased(BotOwner follower, string reason)
+        {
+            if (follower == null || string.IsNullOrEmpty(follower.ProfileId) ||
+                !_activeFollowerCombatProfiles.Remove(follower.ProfileId))
+            {
+                return;
+            }
+
+            if (_activeFollowerCombatProfiles.Count > 0)
+            {
+                return;
+            }
+
+            bool shouldConsiderClear = _postCombatClearEpisodeArmed &&
+                string.Equals(reason, FollowerCombatLayer.LingerExpiredReason, StringComparison.Ordinal);
+            _postCombatClearEpisodeArmed = false;
+
+            if (shouldConsiderClear)
+            {
+                TryAnnouncePostCombatClear();
+            }
+
+            _postCombatEpisodeParticipants.Clear();
+        }
+
+        private void TryAnnouncePostCombatClear()
+        {
+            try
+            {
+                List<BotOwner> candidates = Followers.Where(follower =>
+                    follower != null &&
+                    !follower.IsDead &&
+                    follower.BotState == EBotState.Active &&
+                    !string.IsNullOrEmpty(follower.ProfileId) &&
+                    _postCombatEpisodeParticipants.Contains(follower.ProfileId) &&
+                    follower.BotTalk != null &&
+                    follower.BotTalk._canSay &&
+                    !follower.BotTalk.IsSilenced &&
+                    follower.BotsGroup != null &&
+                    follower.GetPlayer?.Speaker != null &&
+                    !follower.GetPlayer.Speaker.Speaking &&
+                    !follower.GetPlayer.Speaker.Busy).ToList();
+
+                if (candidates.Count == 0 || UnityEngine.Random.value >= PostCombatClearChance)
+                {
+                    return;
+                }
+
+                BotOwner speaker = candidates[UnityEngine.Random.Range(0, candidates.Count)];
+                FollowerPostCombatClearPhraseGate.Arm(speaker, PostCombatClearPermitSeconds);
+                speaker.BotTalk.TrySay(EPhraseTrigger.Clear, true);
+            }
+            catch (Exception ex)
+            {
+                Modules.Logger.LogError("[PostCombatLinger] Failed to announce squad clear");
+                Modules.Logger.LogError(ex);
+            }
+        }
+
         private BotOwner FindClosestWitness(string deadFollowerProfileId, Vector3 deathPos)
         {
             BotOwner best = null;
@@ -4728,6 +4809,9 @@ namespace pitTeam.Components
                 UnhookFollowerDeath(follower);
             }
             _pendingFriendlyDown.Clear();
+            _activeFollowerCombatProfiles.Clear();
+            _postCombatEpisodeParticipants.Clear();
+            _postCombatClearEpisodeArmed = false;
             CombatEvents.Clear();
             StopFriendlyDownTimerIfIdle();
             aBossLogic.Dispose();

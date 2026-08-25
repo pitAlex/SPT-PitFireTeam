@@ -87,9 +87,16 @@ namespace pitTeam.SAINAddon
             if (getSettings == null) return;
 
             BotDifficulty difficulty = bot.Profile?.Info?.Settings?.BotDifficulty ?? BotDifficulty.normal;
-            SAINSettingsClass? sourceTemplate =
+            SAINSettingsClass? selectedTemplate =
                 getSettings.Invoke(botSettings, new object[] { WildSpawnType.followerBigPipe, difficulty }) as SAINSettingsClass;
-            if (sourceTemplate == null) return;
+            if (selectedTemplate == null) return;
+
+            FollowerSainProficiency.SetTemplateRole(bot, WildSpawnType.followerBigPipe);
+            SAINSettingsClass sourceTemplate =
+                FollowerSainProficiency.CreateNormalizedFileSettings(
+                    bot,
+                    selectedTemplate) as SAINSettingsClass
+                ?? selectedTemplate;
 
             SAINSettingsClass followerTemplate = CloneSettings(sourceTemplate);
             ApplyFollowerTemplateFineTuning(followerTemplate, bot);

@@ -1,6 +1,6 @@
 # Friendly AI Performance Settings Investigation
 
-**Status:** source investigation and implementation design only
+**Status:** source investigation plus implemented SAIN Default proficiency baseline
 
 **Target:** SPT 4.1.3, SAIN 4.5.0, pitFireTeam `0.10.0`
 
@@ -8,7 +8,7 @@
 
 This document identifies the settings and runtime calculations that determine follower vision and firearm performance. It also defines a safe boundary for future user controls without changing combat tactics or reintroducing action churn.
 
-No runtime settings or UI were implemented as part of this investigation.
+The SAIN Default baseline and follower-local values model are implemented. Per-follower UI controls are not implemented yet.
 
 ## Executive conclusions
 
@@ -95,7 +95,27 @@ This is the central compatibility constraint. A control that works only by chang
 
 ### Core follower settings
 
-`BotFollowerPlayer.SetFollowerSettings()` replaces the bot's settings with a hard-difficulty role template and then changes many shared file-setting fields.
+Every `BotFollowerPlayer` now owns one generic `FollowerProficiencyValues` object cloned from `FollowerProficiency.DefaultValues` at construction. The object has separate `Vanilla` and `Sain` sections so both calculation paths share one follower lifetime without mixing their field formats.
+
+`BotFollowerPlayer.SetFollowerSettings()` applies the `Vanilla` section. It selects the configured vanilla template difficulty and reads the follower runtime modifier, aiming, vision, hearing, and shooting values from that object instead of embedding the proficiency numbers in the application code. Boss/BirdEye proficiency exceptions are held in the same vanilla section. Tactical and capability settings—cover policy, healing, loyalty, patrol, grenade permission, and similar behavior—remain outside the proficiency object intentionally.
+
+Saved PMC squadmates finalize that follower-owned object after their combat tactic has been assigned and before the vanilla runtime modifier is constructed. Rifleman and Protector retain the current PMC baseline. Marksman applies a narrow trade: moderately better clear-LOS range, recognition, and distance scatter, with a modest penalty while moving, turning quickly, or firing automatically in close combat. Marksman grass vision is only `1.1` versus the ordinary follower's `1.0`, and both keep `LOOK_THROUGH_GRASS = false`; boss-style foliage penetration is not part of marksman proficiency.
+
+The selected vanilla role template is captured before those tactic values are applied. This preserves the original templates of recruitable non-PMC followers instead of replacing their core proficiency with PMC constants.
+
+| Vanilla value | Rifleman / current PMC | Marksman |
+|---|---:|---:|
+| `Core.VisibleDistance` | `185` | `210` |
+| `Look.VISIBILITY_CHANGE_SPEED` | `1.2` | `1.5` |
+| `Core.ScatteringPerMeter` | `0.045` | `0.043` |
+| `Aiming.SCATTERING_DIST_MODIF` | `0.67` | `0.64` |
+| `Aiming.BOTTOM_COEF` | `0.05` | `0.06` |
+| `Aiming.COEF_FROM_COVER` | `0.30` | `0.25` |
+| `Aiming.COEF_IF_MOVE` | `1.0` | `1.15` |
+| `Aiming.TIME_COEF_IF_MOVE` | `1.1` | `1.25` |
+| `Shoot.AUTOMATIC_FIRE_SCATTERING_COEF` | `1.5` | `1.7` |
+| `Shoot.WAIT_NEXT_SINGLE_SHOT` | `0.10` | `0.13` |
+| `Look.MAX_VISION_GRASS_METERS` | `1.0` | `1.1` |
 
 Relevant current values include:
 
@@ -123,9 +143,42 @@ Relevant current values include:
 
 BirdEye additionally gets `VisibleDistCoef = 0.8`, which multiplies the base follower `0.9`, plus `SCATTERING_DIST_MODIF = 0.2` and `HARD_AIM = 0.9`.
 
+### SAIN Default proficiency normalization
+
+When the external SAIN plugin is installed, `FollowerSainProficiency` now anchors follower proficiency to SAIN 4.5's server-generated built-in `Default` preset. The selected SAIN preset continues to affect ordinary bots and follower policy settings, but it no longer makes followers easier or harder through the proficiency fields covered here.
+
+After each follower's SAIN Default role/difficulty values are resolved, the same follower-local tactic is reapplied. SAIN Marksman receives a modest long-range range/scatter/aim advantage while its faster-CQB window, turning aim, moving aim, and automatic-fire control are weaker than Rifleman. Rifleman remains at the normalized SAIN Default baseline rather than receiving a broad long-range nerf.
+
+| SAIN value | Rifleman / Default baseline | Marksman |
+|---|---:|---:|
+| `Core.VisibleDistance` | `250` | `275` |
+| `Core.ScatteringPerMeter` | `0.08` | `0.07` |
+| `Aiming.DistanceAimTimeMultiplier` | `1.0` | `0.9` |
+| `Aiming.AngleAimTimeMultiplier` | `1.0` | `1.15` |
+| `Aiming.FasterCQBReactionsDistance` | `30` | `15` |
+| `Aiming.FasterCQBReactionsMinimum` | `0.33` | `0.45` |
+| `Aiming.MAX_AIMING_UPGRADE_BY_TIME` | `0.25` | `0.20` |
+| `Aiming.COEF_IF_MOVE` | `1.5` | `1.75` |
+| `Aiming.TIME_COEF_IF_MOVE` | `1.5` | `1.75` |
+| `Shoot.AUTOMATIC_FIRE_SCATTERING_COEF` | `1.4` | `1.6` |
+
+The normalization is follower-local and applies in both runtime configurations: core combat with the SAIN addon absent, and addon-owned combat when the addon is present. It:
+
+- stores every normalized SAIN value in the `Sain` section of the follower-owned `BotFollowerPlayer.Proficiency` object,
+- starts from the same global `FollowerProficiency.DefaultValues` object as vanilla, then resolves only the follower's SAIN section for its exact SAIN role and difficulty,
+- clones the selected role/difficulty settings instead of mutating SAIN's shared preset objects,
+- replaces only vision, aiming, hearing, weapon proficiency, recoil/fire-rate, strafe, and lean values with the corresponding `Default` values,
+- preserves selected-preset behavior settings such as search, cover, patrol, extraction, talk, and other policy fields,
+- reapplies SAIN's built-in Default global/bot/personality/location difficulty coefficients after `BotFollowerPlayer` replaces `BotCurrentSettings`,
+- restores the Default profile difficulty scalar and cached hearing value,
+- uses follower-filtered final patches for SAIN's global recoil multiplier and global aim-time controls,
+- dismisses the immutable follower modifier and restores the prior SAIN file-settings reference when the follower is dismissed.
+
+For a hard PMC under stock SAIN 4.5 Default data, the important normalized values include global scatter `0.75`, accuracy-speed coefficient `0.8`, precision/vision/hearing coefficients `1.0`, global recoil `0.5`, field of view `170`, semiautomatic fire-rate multiplier `1.5`, strafe speed `0.8`, and enabled faster-CQB reactions. The typed object's initializers document both vanilla and SAIN fallback numbers in one file, while SAIN's generated Default bundle hydrates the SAIN section and each follower's exact role/difficulty overrides at runtime.
+
 ### SAIN addon baseline
 
-Saved squadmates receive a cloned `followerBigPipe` SAIN template. The addon then rebuilds SAIN difficulty state and sets a role-based personality:
+Saved squadmates receive a cloned `followerBigPipe` SAIN template. Its proficiency fields pass through the same built-in Default normalization before the addon rebuilds SAIN difficulty state and sets a role-based personality:
 
 - PMC-like followers and BigPipe: `Chad`
 - Knight: `GigaChad`
@@ -148,7 +201,7 @@ The low-light patch does not remove SAIN's time-of-day distance reduction, weath
 
 ### SAIN template overwrite details
 
-`SainSettingsExtensions.SetConfigValues()` overwrites selected EFT categories after the core follower baseline is installed. It applies SAIN Aiming, Look, Mind, Scattering, Shoot, Grenade, and Boss settings.
+`SainSettingsExtensions.SetConfigValues()` overwrites selected EFT categories after the core follower baseline is installed. It applies SAIN Aiming, Look, Mind, Scattering, Shoot, Grenade, and Boss settings. The addon now supplies a follower-local clone whose proficiency fields have already been normalized to Default, so this overwrite no longer reintroduces the selected preset's easier/harder proficiency values.
 
 Material examples:
 

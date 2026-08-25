@@ -71,6 +71,7 @@ public class FriendlyTeammateService(
         "Assault",
         "Shotgun",
         "Sniper",
+        "DMR",
         "LMG",
     ];
 

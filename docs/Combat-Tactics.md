@@ -1,6 +1,6 @@
 # Combat Tactics Notes
 
-Last updated: 2026-08-24
+Last updated: 2026-08-25
 
 ## Scope
 
@@ -441,6 +441,17 @@ Committed grenade can still cancel if the throw becomes unsafe before release, t
 
 Cooldown is tied to the actual throw release, not just grenade decision initialization. The explicit runtime gate allows the chosen grenade action to attempt the throw, but `DoThrow` still respects follower individual and group cooldowns so one suppress-grenade action cannot chain multiple throws.
 
+## Post-Combat Linger
+
+Core combat uses a dedicated `CombatPostCombatLingerAction` for the three-second handoff after the last valid enemy disappears. `linger` is no longer executed through the shared vanilla `HoldPosition` node, so post-combat presentation cannot inherit its no-enemy prone policy, reload policy, fire overlay, or enemy-facing hold selection.
+
+- Entry stops inherited movement, sprint, and firearm use, then preserves the live horizontal look direction and current non-prone pose for a short randomized `0.35-0.6s` transition.
+- Each linger samples its presentation once in `Start()`: standing (`1.0`), half stance (`0.5`), or full crouch (`0.0`), plus one left/right horizontal glance `35-75` degrees from the inherited look direction. These values are held for the action; they are not rerolled per update.
+- Pose level `0.0` is crouch, not prone. The dedicated action never requests prone. If the preceding combat action legitimately ended prone, linger repeatedly requests EFT's normal get-up transition and applies the sampled stance after the bot is no longer prone.
+- Renewed combat, pending medical work, force release, and ordinary request-layer command handoff retain their existing layer-level priority and can end linger immediately. The presentation action does not own those lifecycle decisions.
+- Post-combat `EPhraseTrigger.Clear` is squad-scoped. `pitAIBossPlayer` tracks which followers participated in the combat episode and waits until the last tracked core combat layer releases through normal `lingerExpired`. It then performs one `35%` roll for the squad, chooses one living/non-busy participant, and calls `TrySay(Clear, true)` so at most one follower is selected and EFT's group delay remains a second safeguard.
+- Vanilla and external-SAIN automatic `Clear`/lost-visual requests remain muted. The selected speaker receives a short owner-specific `Clear` permit that survives the `BotTalk` query path and is consumed at actual `Player.Say` output. The dormant SAIN addon `PlayerComponent.PlayVoiceLine` mute checks the same permit, preserving the contract if addon combat is enabled again without restoring SAIN's automatic post-combat chatter.
+
 ## Healing And Stims
 
 Medical decisions are shared in `FollowerCombatCommon`.
@@ -514,6 +525,7 @@ Default situational behavior:
 - moving push look control uses the enemy body only for direct sight and otherwise requires a follower-owned reliable known position. When neither exists, `attackMoving` faces its active route and tactical movement keeps its destination/corner look instead of aiming at a stale group-sense point, hidden live transform, or zero/world-origin position. A valid threat point remains preferred so this fallback does not weaken threat-facing retreat or moving fire.
 - completed, unusable, or too-distant memory-only reports retain their separate bounded think-window contract instead of ending and recreating the same stale investigation every frame; pending medical work prevents automatic or ordered push phases from reopening until healing/recovery can take ownership
 - a close unseen `runToEnemy` / `goToEnemy` push that makes no progress transitions once into safe suppression when a valid lane exists, otherwise into a committed tactical/simple search around the last-known enemy position; movement fallback cannot claim success during its path-reuse grace unless a matching active path still exists
+- `runToEnemy` distinguishes EFT's requested sprint flag from actual player sprint/path engagement. After the startup grace, repeated loss of either actual sprint or the active path accumulates across brief false recoveries; only a stable real sprint clears that evidence. A failed run enters the action's walking `goToEnemy` fallback for at least the existing three-second recovery window instead of reasserting sprint every frame, preventing route-corner run/stop loops and sprint-forced jerk turns.
 - with SAIN installed, a close ordered advance against a memory-only exact retained target uses SAIN's last-known point for one committed search/hold phase instead of repeatedly advancing against the hidden live transform; the ordered kill objective remains active and resumes immediately for real contact or changed retained position
 - ordered-push stall suppression uses the same bounded autonomous-suppression lifecycle as the default tactic, so a blocked standing lane exits after its protected opening window and the fallback cannot pin the follower in place indefinitely
 - controlled `goToEnemy` sprint is re-evaluated against the live enemy anchor every update and drops to weapon-ready movement within `15m`, or immediately on visible/shootable contact, instead of carrying a far-route sprint commitment through the blind final approach

@@ -35,12 +35,6 @@ namespace pitTeam.Components
             if (player.realPlayer.Side != EPlayerSide.Savage && (!Utils.Props.BossFollowersType.Contains(bossRole) || !Utils.Utils.FlagGet("questGoons")))
                 NpcMessage.AddNpc(bot, false, true);
 
-            settingModif.AccuratySpeedCoef = 1f;
-
-            if (bossRole == WildSpawnType.followerBirdEye)
-            {
-                settingModif.VisibleDistCoef = 0.8f; // tone down the visibility of BirdEye
-            }
         }
 
         protected override void SetFollowerSettings(BotOwner bot)
@@ -48,22 +42,23 @@ namespace pitTeam.Components
 
             base.SetFollowerSettings(bot);
 
-            bot.Settings.FileSettings.Look.LOOK_THROUGH_GRASS = false;
+            bot.Settings.FileSettings.Look.LOOK_THROUGH_GRASS = Proficiency.Vanilla.Boss.LOOK_THROUGH_GRASS;
 
             bot.Settings.FileSettings.Boss.EFFECT_REGENERATION_PER_MIN = 60f;
 
             if (bot.IsRole(WildSpawnType.followerBirdEye))
             {
+                FollowerVanillaBirdEyeValues birdEye = Proficiency.Vanilla.BirdEye;
                 //bot.Settings.FileSettings.Core.GainSightCoef = 0.1f;
-                bot.Settings.FileSettings.Cover.SOUND_TO_GET_SPOTTED = 10f;
-                bot.Settings.FileSettings.Cover.SPOTTED_COVERS_RADIUS = 12f;
-                bot.Settings.FileSettings.Shoot.LOW_DIST_TO_CHANGE_WEAPON = 30f;
-                bot.Settings.FileSettings.Shoot.FAR_DIST_TO_CHANGE_WEAPON = 68f;
-                bot.Settings.FileSettings.Shoot.DIST_TO_CHANGE_TO_MAIN = 60f;
-                bot.Settings.FileSettings.Aiming.SCATTERING_DIST_MODIF = 0.2f;
-                bot.Settings.FileSettings.Aiming.HARD_AIM = 0.9f;
+                bot.Settings.FileSettings.Cover.SOUND_TO_GET_SPOTTED = birdEye.SOUND_TO_GET_SPOTTED;
+                bot.Settings.FileSettings.Cover.SPOTTED_COVERS_RADIUS = birdEye.SPOTTED_COVERS_RADIUS;
+                bot.Settings.FileSettings.Shoot.LOW_DIST_TO_CHANGE_WEAPON = birdEye.LOW_DIST_TO_CHANGE_WEAPON;
+                bot.Settings.FileSettings.Shoot.FAR_DIST_TO_CHANGE_WEAPON = birdEye.FAR_DIST_TO_CHANGE_WEAPON;
+                bot.Settings.FileSettings.Shoot.DIST_TO_CHANGE_TO_MAIN = birdEye.DIST_TO_CHANGE_TO_MAIN;
+                bot.Settings.FileSettings.Aiming.SCATTERING_DIST_MODIF = birdEye.SCATTERING_DIST_MODIF;
+                bot.Settings.FileSettings.Aiming.HARD_AIM = birdEye.HARD_AIM;
                 bot.Settings.FileSettings.Mind.MAX_AGGRO_BOT_DIST = 200f;
-                bot.Settings.FileSettings.Look.MAX_VISION_GRASS_METERS = 1.5f;
+                bot.Settings.FileSettings.Look.MAX_VISION_GRASS_METERS = birdEye.MAX_VISION_GRASS_METERS;
             }
 
             //bot.Tactic.AggressionChange(-1f);

@@ -63,7 +63,7 @@ When multiple approaches are possible, prefer:
 
 # pitFireTeam: Current Implementation Summary
 
-**Last updated:** 2026-08-23
+**Last updated:** 2026-08-25
 
 **Scope:** Runtime behavior across `pitFireTeam/client`, `pitFireTeam/addon`, and `pitFireTeam/server`.  
 **SAIN Addon is optional and runtime-gated**
@@ -194,6 +194,14 @@ Current verified custom teammate feature state:
 - Follower control model:
     - Combat remains vanilla/SAIN-owned.
     - Friendly follow logic is implemented as a BigBrain custom layer/action (`FollowerPatrolLayer` + `FollowAction`).
+    - When the external SAIN plugin is installed, follower proficiency is normalized to SAIN 4.5's server-generated built-in `Default` preset through `FollowerSainProficiency`:
+        - ordinary bots remain controlled by the selected SAIN preset,
+        - follower aim, vision, hearing, recoil/fire-rate, weapon proficiency, strafe, and lean values use Default,
+        - selected-preset search/cover/patrol/extraction/talk and other policy settings are preserved,
+        - `FollowerProficiency.DefaultValues` is the one global starting object and every `BotFollowerPlayer.Proficiency` owns an independent generic clone with separate `Vanilla` and `Sain` sections,
+        - pitFireTeam's vanilla template difficulty, runtime coefficients, aim, vision, hearing, shooting, and boss/BirdEye proficiency overrides are centralized in the `Vanilla` section; tactical/capability policy remains outside it,
+        - `FollowerSainProficiency` is only the external-SAIN adapter; its runtime patches consume the follower's `Sain` section, clone follower-local SAIN categories, and never mutate SAIN's shared preset objects,
+        - the same boundary applies with or without the optional SAIN addon; addon squadmates keep their `followerBigPipe` template role.
     - Regroup request execution is split by runtime context:
         - vanilla regroup path for no-SAIN or out-of-combat,
         - SAIN combat path is handled by addon `SAINFollowerCombatLayer` (custom SAIN squad-layer replacement for followers).
@@ -251,6 +259,7 @@ Current verified custom teammate feature state:
     - healing/stimulator actions are the explicit exception and are allowed to finish without a live enemy.
 - Current supported BigBrain combat actions are file-split and mapped from `BotLogicDecision`:
     - `CombatHoldPositionAction`
+    - `CombatPostCombatLingerAction`
     - `CombatRunToCoverAction`
     - `CombatAttackMovingAction`
     - `CombatAttackMovingWithSuppressAction`
@@ -279,7 +288,8 @@ Current verified custom teammate feature state:
 - `CombatRunToEnemyAction` is now also custom-owned on the core path:
     - no longer delegates directly to vanilla `GClass227`,
     - keeps a committed run target,
-    - refreshes pathing when stair/vertical pushes stop making progress.
+    - refreshes pathing when stair/vertical pushes stop making progress,
+    - distinguishes a requested sprint from actual player sprint/path engagement; repeated engagement failure enters the existing stable walking fallback instead of re-requesting sprint every frame.
 - `runToEnemy` remains the decisive sprint path and is still allowed to end when the bot reaches a valid firing state.
 - `goToPointTactical` end routing is now split by reason:
     - `enemySearch` uses old-plugin-style `EndEnemySearch` logic,
@@ -291,7 +301,9 @@ Current verified custom teammate feature state:
     - combat decisions are now follower-local inside `FollowerCombatDefault`.
 - Core combat layer handoff:
     - live-enemy loss no longer immediately drops combat in all cases,
-    - `FollowerCombatLayer` can enter a short `linger` hold for post-combat release/handoff timing,
+    - `FollowerCombatLayer` enters a short `linger` action for post-combat release/handoff timing,
+    - `CombatPostCombatLingerAction` owns only presentation: it preserves the inherited look/pose briefly, then samples one standing/half/crouched stance and one horizontal left/right glance without invoking vanilla no-enemy prone behavior,
+    - the last normally-expiring core linger performs one squad-level `35%` `EPhraseTrigger.Clear` roll and selects at most one participating follower; automatic vanilla/SAIN `Clear` remains muted outside the short selected-speaker permit,
     - normal action completion is delegated to tactic/common end logic instead of a layer-level action-enum comparison.
 - Core combat routing is now objective-based on the vanilla/core path:
     - `FollowerCombatLogicBase` now owns the shared objective router and objective lifecycle
@@ -449,6 +461,7 @@ Cross-tactic rule:
     - no hidden opportunistic grenade throw inside dogfight,
     - grenade throw goes through `throwGrenadeFromPlace` with a dedicated safety gate.
 - Combat talk frequency is now gated by the `botTalk` config on both vanilla `BotTalk` and SAIN `PlayerComponent.PlayVoiceLine` follower paths.
+- Post-combat `Clear` is separate from combat trash talk: automatic follower `Clear` remains muted, while the core linger coordinator can temporarily permit one selected squad speaker after a single `35%` team roll; the dormant SAIN addon mute recognizes the same permit.
 
 **`PrepareStartDecision` — Combat Entry Decision Tree (`FollowerCombatCommon`):**
 
@@ -1236,6 +1249,7 @@ SAIN integration:
 - SAIN stale search cleanup:
     - stale `EnemyKnownPlaces` / `SAINSearchClass` state was identified as the source of repeated `EPhraseTrigger.Clear` / `LostVisual` after combat or attention.
     - addon release/reset bridge now explicitly clears active SAIN search state and invalidates known places during follower combat-state release/reset.
+    - the addon talk mute only yields for the core post-combat linger coordinator's short, owner-specific `Clear` permit; it does not restore automatic SAIN `Clear` generation.
 - `PingTeamates` GUI path optimization:
     - per-frame draw loops now use index-based iteration instead of delegate-based `List.ForEach`.
     - bot status text reuses a single `StringBuilder` instance instead of allocating per bot per frame.

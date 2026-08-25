@@ -953,6 +953,7 @@ namespace pitTeam.Modules
 
                 }
 
+                player.NotifyFollowerCombatLayerReleased(bot, "followerRemoved");
                 player.RemoveFollower(bot);
                 bot.BotFollower.BossToFollow = null;
             }

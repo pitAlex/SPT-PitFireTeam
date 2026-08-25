@@ -197,7 +197,14 @@ namespace pitTeam.Patches
 
         public static bool ShouldBlock(BotOwner owner, EPhraseTrigger phrase)
         {
-            return owner != null && BossPlayers.IsFollower(owner) && MutedFollowerTriggers.Contains(phrase);
+            if (owner == null || !BossPlayers.IsFollower(owner) || !MutedFollowerTriggers.Contains(phrase))
+            {
+                return false;
+            }
+
+            // Vanilla requests Clear for every bot when memory enters peace. Keep that path muted,
+            // but permit the one follower selected by the squad post-combat linger coordinator.
+            return !FollowerPostCombatClearPhraseGate.IsAllowed(owner, phrase);
         }
     }
 
@@ -284,7 +291,14 @@ namespace pitTeam.Patches
                 return true;
             }
 
-            return !FollowerTalkFrequencyGate.ShouldBlockCombatTalk(__instance.AIData?.BotOwner, phrase);
+            BotOwner owner = __instance.AIData?.BotOwner;
+            if (FollowerPostCombatClearPhraseGate.IsAllowed(owner, phrase))
+            {
+                FollowerPostCombatClearPhraseGate.Consume(owner, phrase);
+                return true;
+            }
+
+            return !FollowerTalkFrequencyGate.ShouldBlockCombatTalk(owner, phrase);
         }
     }
 

@@ -9,7 +9,7 @@ using UnityEngine;
 namespace pitTeam.BigBrain.Actions
 {
     /// <summary>
-    /// Combat hold action used for committed cover holds, boss holds, no-action holds, and linger.
+    /// Combat hold action used for committed cover holds, boss holds, and no-action holds.
     /// It keeps the bot stationary while selecting a useful look direction from current enemy data,
     /// recent contact, command overrides, ally pressure, or boss context.
     /// </summary>

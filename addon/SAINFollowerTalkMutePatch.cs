@@ -113,6 +113,13 @@ namespace pitTeam.SAINAddon
                 return true;
             }
 
+            // Preserve the core squad-linger announcement contract if the addon is enabled later.
+            // SAIN's automatic Clear/LostVisual generation remains muted everywhere else.
+            if (FollowerPostCombatClearPhraseGate.IsAllowed(owner!, phrase))
+            {
+                return true;
+            }
+
             if (FollowerContactPhraseGate.IsContactPhrase(phrase) && !FollowerContactPhraseGate.ShouldAllow(owner!))
             {
                 __result = false;
