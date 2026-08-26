@@ -8,6 +8,8 @@ public record FriendlyTeammateProfileOptionsResponse
 
     public float Aggression { get; set; } = 50f;
 
+    public FriendlyTeammateProficiencySettings Proficiency { get; set; } = new();
+
     public List<FriendlyTeammateLoadoutOption> Loadouts { get; set; } = [];
 
     public List<FriendlyTeammateTacticOption> Tactics { get; set; } = [];

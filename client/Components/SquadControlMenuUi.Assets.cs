@@ -389,8 +389,7 @@ namespace pitTeam.Components
                 return squadIconSprite;
             }
 
-            const string menuOverhaulPluginGuid = "com.moxopixel.menuoverhaul";
-            bool useInverseIcon = Chainloader.PluginInfos.ContainsKey(menuOverhaulPluginGuid);
+            bool useInverseIcon = Chainloader.PluginInfos.ContainsKey(pitFireTeam.MenuOverhaulPluginId);
             string iconPath = FindSquadIconPath(useInverseIcon ? "squad-inverse.png" : "squad.png");
             if (string.IsNullOrEmpty(iconPath) && useInverseIcon)
             {

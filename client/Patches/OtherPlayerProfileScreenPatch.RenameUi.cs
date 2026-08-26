@@ -440,7 +440,7 @@ namespace pitTeam.Patches
 
         private static Button CreateWindowCloseButton(Transform parent)
         {
-            GameObject buttonObject = new GameObject("pitFireTeam_RenameCloseButton", typeof(RectTransform), typeof(Image), typeof(Button));
+            GameObject buttonObject = new GameObject("pitFireTeam_WindowCloseButton", typeof(RectTransform), typeof(Image), typeof(Button));
             buttonObject.transform.SetParent(parent, false);
 
             RectTransform rect = buttonObject.GetComponent<RectTransform>();

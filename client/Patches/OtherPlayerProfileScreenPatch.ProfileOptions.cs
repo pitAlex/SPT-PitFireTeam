@@ -519,7 +519,7 @@ namespace pitTeam.Patches
                         EnsureBodySuccess(responseJson);
                         Modules.Logger.LogInfo($"[UI] Persisted teammate tactic '{tacticValue}' for '{profile.AccountId}'.");
 
-                        SetAggressionRowMarksmanState(IsMarksmanTactic(tacticValue));
+                        SetProficiencyAggressionForTactic(IsMarksmanTactic(tacticValue));
                         MarkSquadRosterDirty(profile?.AccountId);
                         RefreshPlayerVisualization(profile, inventoryController, session, window);
                     }

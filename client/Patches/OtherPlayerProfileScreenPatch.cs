@@ -10,6 +10,7 @@ using EFT.UI;
 using EFT.UI.DragAndDrop;
 using EFT.UI.Screens;
 using EFT.UI.Settings;
+using pitTeam.Modules;
 using pitTeam.Utils;
 using HarmonyLib;
 using Newtonsoft.Json;
@@ -61,6 +62,7 @@ namespace pitTeam.Patches
         public string CurrentLoadoutId { get; set; }
         public string CurrentTactic { get; set; }
         public float Aggression { get; set; } = 50f;
+        public FollowerProficiencyModifierValues Proficiency { get; set; } = new FollowerProficiencyModifierValues();
         public List<FriendlyTeammateLoadoutOption> Loadouts { get; set; }
         public List<FriendlyTeammateTacticOption> Tactics { get; set; }
         public List<string> OwnedBodyCustomizationIds { get; set; }
@@ -99,13 +101,19 @@ namespace pitTeam.Patches
         public float aggression { get; set; }
     }
 
+    internal class FriendlyTeammateProficiencyRequest
+    {
+        public string aid { get; set; }
+        public FollowerProficiencyModifierValues proficiency { get; set; }
+    }
+
     internal class FriendlyTeammateTacticRequest
     {
         public string aid { get; set; }
         public string tactic { get; set; }
     }
 
-    internal sealed class LoadoutEditorHeaderDragHandle : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
+    internal sealed class ProfileOverlayHeaderDragHandle : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
     {
         public RectTransform Target;
 
@@ -311,6 +319,7 @@ namespace pitTeam.Patches
         private static readonly FieldInfo SettingsScreenGameTabField = AccessTools.Field(typeof(SettingsScreen), "_gameSettingsScreen");
         private static readonly FieldInfo GameSettingsSliderTemplateField = AccessTools.Field(typeof(GameSettingsTab), "_fov");
         private static readonly FieldInfo NumberSliderValueInputField = AccessTools.Field(typeof(NumberSlider), "_valueInput");
+        private static RectTransform CachedSettingsSliderContainerTemplate { get; set; }
         private static readonly FieldInfo ReportPanelField = AccessTools.Field(typeof(OtherPlayerProfileScreen), "_reportPanel");
         private static readonly FieldInfo OverallStatsPanelField = AccessTools.Field(typeof(OtherPlayerProfileScreen), "_overallStatsPanel");
         private static readonly FieldInfo AchievementsProgressBlockField = AccessTools.Field(typeof(OtherPlayerProfileScreen), "_achievementsProgressBlock");
@@ -384,7 +393,6 @@ namespace pitTeam.Patches
         public static EFT.IEftSession ActiveProfileSession { get; set; }
         public static InventoryPlayerModelWithStatsWindow ActiveProfilePlayerModelWindow { get; set; }
         public static Transform LoadoutSelector { get; set; }
-        public static Transform AggressionSelector { get; set; }
         public static DefaultUIButton EditLoadoutButton { get; set; }
         public static Transform EditLoadoutButtonRoot { get; set; }
         public static GameObject LoadoutEditorOverlayRoot { get; set; }
@@ -1006,12 +1014,7 @@ namespace pitTeam.Patches
                 LoadoutSelector = null;
             }
 
-            if (AggressionSelector != null)
-            {
-                GameObject.Destroy(AggressionSelector.gameObject);
-                AggressionSelector = null;
-            }
-
+            ResetProficiencyUi();
             StopPendingAggressionPersist();
 
             RectTransform clone = GameObject.Instantiate(clothingPanel, parent, true);
@@ -1037,7 +1040,7 @@ namespace pitTeam.Patches
                     ReplaceLoadoutDropdownWithEditButton(__instance, profile, loadoutPanel);
                 }
 
-                CreateAggressionSliderRow(__instance, clone, parent, profile, options);
+                CreateProficiencyButton(__instance, clone, parent, profile, options);
                 CreateEditLoadoutButton(__instance, clone, parent, profile, 2);
                 CreateEditNameButton(__instance, clone, parent, profile, 3);
                 DisplaySkillsPanel(__instance, profile, session);
@@ -1050,95 +1053,18 @@ namespace pitTeam.Patches
             }
         }
 
-        private static RectTransform CreateAggressionSliderRow(
-            OtherPlayerProfileScreen screen,
-            RectTransform loadoutSelector,
-            Transform parent,
-            ResultProfile profile,
-            FriendlyTeammateProfileOptions options)
-        {
-            if (screen == null || loadoutSelector == null || parent == null || profile == null || options == null)
-            {
-                return null;
-            }
-
-            if (AggressionSelector != null)
-            {
-                GameObject.Destroy(AggressionSelector.gameObject);
-                AggressionSelector = null;
-            }
-
-            RectTransform rowClone = GameObject.Instantiate(loadoutSelector, parent, true);
-            rowClone.name = "pitFireTeam_AggressionRow";
-            rowClone.anchoredPosition = loadoutSelector.anchoredPosition + GetProfileControlRowOffset(loadoutSelector, 1);
-            rowClone.gameObject.SetActive(true);
-
-            Transform upperRoot = rowClone.Find("Upper");
-            if (upperRoot != null)
-            {
-                upperRoot.gameObject.SetActive(false);
-            }
-
-            Transform lowerRoot = rowClone.Find("Lower");
-            if (lowerRoot != null)
-            {
-                lowerRoot.gameObject.SetActive(false);
-            }
-
-            float aggressionValue = Mathf.Clamp(options.Aggression, 0f, 100f);
-
-            CreateAggressionRowContent(rowClone, profile, aggressionValue, true);
-            AggressionSelector = rowClone;
-            return rowClone;
-        }
-
         private static bool IsMarksmanTactic(string tactic)
         {
             return string.Equals(tactic, "marksman", StringComparison.OrdinalIgnoreCase);
         }
 
-        private static void SetAggressionRowMarksmanState(bool isMarksman)
+        private static void SetProficiencyAggressionForTactic(bool isMarksman)
         {
-            if (AggressionSelector == null)
+            ActiveProfileTactic = isMarksman ? "Marksman" : "Rifleman";
+            ActiveProfileAggression = isMarksman ? 30f : 50f;
+            if (ProficiencyAggressionSlider != null)
             {
-                return;
-            }
-
-            CanvasGroup rowCanvasGroup = AggressionSelector.GetComponent<CanvasGroup>() ?? AggressionSelector.gameObject.AddComponent<CanvasGroup>();
-            rowCanvasGroup.alpha = 1f;
-
-            CustomTextMeshProUGUI label = AggressionSelector.Find("pitFireTeam_AggressionLabel")?.GetComponent<CustomTextMeshProUGUI>();
-            if (label != null)
-            {
-                label.color = Color.white;
-            }
-
-            NumberSlider slider = AggressionSelector.GetComponentsInChildren<NumberSlider>(true)
-                .FirstOrDefault(candidate => candidate != null && string.Equals(candidate.name, "pitFireTeam_ProfileAggressionSlider", StringComparison.Ordinal));
-            if (slider != null)
-            {
-                slider.enabled = true;
-                slider.UpdateValue(isMarksman ? 30f : 50f, false, 0f, 100f);
-
-                Slider stockSlider = slider.GetComponentInChildren<Slider>(true);
-                if (stockSlider != null)
-                {
-                    stockSlider.interactable = true;
-                }
-
-                TMP_InputField valueInput = NumberSliderValueInputField?.GetValue(slider) as TMP_InputField;
-                if (valueInput != null)
-                {
-                    ConfigureSliderValueInputChrome(valueInput);
-                    valueInput.readOnly = false;
-                    valueInput.interactable = true;
-                }
-            }
-
-            Transform existingTooltip = AggressionSelector.Find("pitFireTeam_AggressionDisabledTooltip");
-            if (existingTooltip != null)
-            {
-                GameObject.Destroy(existingTooltip.gameObject);
+                ProficiencyAggressionSlider.UpdateValue(ActiveProfileAggression, false, 0f, 100f);
             }
         }
 
@@ -1169,6 +1095,8 @@ namespace pitTeam.Patches
             {
                 return;
             }
+
+            ProficiencyAggressionSlider = slider;
 
             RectTransform sliderRoot = slider.transform as RectTransform;
             if (sliderRoot != null)
@@ -1218,6 +1146,7 @@ namespace pitTeam.Patches
             slider.Bind(value =>
             {
                 int roundedValue = Mathf.RoundToInt(value);
+                ActiveProfileAggression = roundedValue;
                 if (interactable)
                 {
                     ScheduleAggressionPersist(profile.AccountId, roundedValue);
@@ -1273,6 +1202,11 @@ namespace pitTeam.Patches
 
         private static RectTransform ResolveSettingsSliderContainerTemplate()
         {
+            if (CachedSettingsSliderContainerTemplate != null)
+            {
+                return CachedSettingsSliderContainerTemplate;
+            }
+
             GameSettingsTab gameSettingsTab = ResolveGameSettingsTabTemplate();
             if (gameSettingsTab == null)
             {
@@ -1282,11 +1216,13 @@ namespace pitTeam.Patches
             Transform sliderRoot = gameSettingsTab.transform.Find("Image/Scroll View/Viewport/Other Settings/Scrolls/FOV");
             if (sliderRoot is RectTransform sliderRect)
             {
-                return sliderRect;
+                CachedSettingsSliderContainerTemplate = sliderRect;
+                return CachedSettingsSliderContainerTemplate;
             }
 
             NumberSlider fallbackSlider = ResolveSettingsSliderTemplate();
-            return fallbackSlider?.transform as RectTransform;
+            CachedSettingsSliderContainerTemplate = fallbackSlider?.transform as RectTransform;
+            return CachedSettingsSliderContainerTemplate;
         }
 
         private static NumberSlider ResolveSettingsSliderTemplate()
@@ -1737,6 +1673,7 @@ namespace pitTeam.Patches
         private static void ResetTeammateProfileUi(InventoryPlayerModelWithStatsWindow playerModelWindow)
         {
             CloseProfileRecoveryOverlay();
+            ResetProficiencyUi();
             playerModelWindow.OnCustomizationChanged -= PlayerModelWithStatsWindow_OnCustomizationChanged;
             ViewedProfile = null;
             ActiveProfileScreen = null;
@@ -1912,6 +1849,7 @@ namespace pitTeam.Patches
             OtherPlayerProfileScreenPatch.ClearPendingRecruitProfileView();
             OtherPlayerProfileScreenPatch.CustomDropdownIds.Clear();
             OtherPlayerProfileScreenPatch.StopPendingAggressionPersist();
+            OtherPlayerProfileScreenPatch.ResetProficiencyUi();
             OtherPlayerProfileScreenPatch.CloseRenameOverlay();
             OtherPlayerProfileScreenPatch.RestoreFactionBadgePosition();
 
@@ -1958,12 +1896,6 @@ namespace pitTeam.Patches
             {
                 GameObject.Destroy(OtherPlayerProfileScreenPatch.LoadoutSelector.gameObject);
                 OtherPlayerProfileScreenPatch.LoadoutSelector = null;
-            }
-
-            if (OtherPlayerProfileScreenPatch.AggressionSelector != null)
-            {
-                GameObject.Destroy(OtherPlayerProfileScreenPatch.AggressionSelector.gameObject);
-                OtherPlayerProfileScreenPatch.AggressionSelector = null;
             }
 
             if (OtherPlayerProfileScreenPatch.EditLoadoutButtonRoot != null)

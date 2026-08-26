@@ -203,11 +203,13 @@ namespace pitTeam
 
     [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "0.10.1")]
     [BepInDependency("xyz.drakia.bigbrain")]
+    [BepInDependency(pitFireTeam.MenuOverhaulPluginId, BepInDependency.DependencyFlags.SoftDependency)]
     public class pitFireTeam : BaseUnityPlugin
     {
         public const string SainPluginId = "me.sol.sain";
         public const string SainAddonPluginId = "xyz.pit.fireteam.sainaddon";
         public const string SeparateHostilityPluginId = "dk.sptplugins.separatehostility";
+        public const string MenuOverhaulPluginId = "com.moxopixel.menuoverhaul";
         internal const LoadoutManagementMode DefaultLoadoutManagementMode = LoadoutManagementMode.Restricted;
         private const string StartupRecoveryNoticeRoute = "/singleplayer/pitfireteam/recovery-notice";
         private const string StartupRecoveryNoticeAckRoute = "/singleplayer/pitfireteam/recovery-notice/ack";
@@ -434,6 +436,7 @@ namespace pitTeam
             new FollowerWeaponSelectorManualUpdatePatch().Enable();
             new FollowerSupportNoAmmoMainSwitchPolicyPatch().Enable();
             new FollowerHoldLingerReloadSuppressPatch().Enable();
+            new FollowerAimTimeProficiencyPatch().Enable();
             new FollowerShootDataSafetyPatch().Enable();
             new FollowerShootFromPlaceCrouchPatch().Enable();
             new FollowerGrenadeAvailabilityPatch().Enable();

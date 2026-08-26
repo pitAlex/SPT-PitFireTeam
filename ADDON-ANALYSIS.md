@@ -3,6 +3,7 @@
 > Status note: the SAIN addon is currently disabled for the initial release path.
 > Treat this file as deferred reference material, not as the authoritative description of release behavior.
 > When addon work resumes, re-verify each section against live `addon/` code before relying on it.
+> `docs/SAIN-Integration.md` is the authoritative ownership contract: the addon exists to switch followers to SAIN combat brains and may tune that brain-specific mode. Aim, recoil, vision, foliage, personality, and proficiency patches listed here must be classified: intentional SAIN-brain tuning may remain, while general external SAIN conflict fixes must live in the main plugin and work without the addon.
 
 ## Deferred TODOs
 

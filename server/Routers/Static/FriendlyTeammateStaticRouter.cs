@@ -77,6 +77,10 @@ public class FriendlyTeammateStaticRouter(JsonUtil jsonUtil, FriendlyTeammateCal
                 "/singleplayer/pitfireteam/teammate/profile/aggression",
                 async (url, info, sessionId, output, cancellationToken) => await callbacks.SetAggression(url, info, sessionId)
             ),
+            new RouteAction<FriendlyTeammateProficiencyRequest>(
+                "/singleplayer/pitfireteam/teammate/profile/proficiency",
+                async (url, info, sessionId, output, cancellationToken) => await callbacks.SetProficiency(url, info, sessionId)
+            ),
             new RouteAction<FriendlyTeammateTacticRequest>(
                 "/singleplayer/pitfireteam/teammate/profile/tactic",
                 async (url, info, sessionId, output, cancellationToken) => await callbacks.SetTactic(url, info, sessionId)

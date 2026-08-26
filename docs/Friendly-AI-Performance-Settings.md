@@ -1,14 +1,14 @@
 # Friendly AI Performance Settings Investigation
 
-**Status:** source investigation plus implemented SAIN Default proficiency baseline
+**Status:** implemented per-follower proficiency controls; gameplay calibration pending
 
-**Target:** SPT 4.1.3, SAIN 4.5.0, pitFireTeam `0.10.0`
+**Target:** SPT 4.1.3, SAIN 4.5.0, pitFireTeam `0.10.1`
 
 **Investigated:** 2026-08-24
 
-This document identifies the settings and runtime calculations that determine follower vision and firearm performance. It also defines a safe boundary for future user controls without changing combat tactics or reintroducing action churn.
+This document identifies the settings and runtime calculations that determine follower vision and firearm performance. It also documents the implemented user-control boundary, which changes execution proficiency without changing combat tactics or reintroducing action churn.
 
-The SAIN Default baseline and follower-local values model are implemented. Per-follower UI controls are not implemented yet.
+The SAIN Default baseline, follower-local values model, persistent per-teammate percentages, profile UI, runtime modifier, and final aim-time patch are implemented. Runtime gameplay calibration across the validation matrix remains pending. `docs/SAIN-Integration.md` is authoritative for the addon boundary.
 
 ## Executive conclusions
 
@@ -24,12 +24,11 @@ The SAIN Default baseline and follower-local values model are implemented. Per-f
    - the target becomes or replaces `GoalEnemy`,
    - the aiming controller builds and completes an aim plan,
    - the shooting worker passes state and trigger-cooldown gates.
-3. If Vision Speed and Aim Speed are exposed separately, a fifth generic Reaction slider would overlap both. The source-accurate granular surface is therefore:
-   - **Vision Distance**
-   - **Vision Speed**
-   - **Aim Speed**
-   - **Accuracy**
-4. If a simpler surface is preferred, the planned `Reaction` value from `Combat-Tactics.md` should be treated as a composite of Vision Speed and Aim Speed, not as another independent runtime statistic. It must not change vision range, hearing, memory, tactics, or decision cadence.
+3. The implemented user surface groups the source-accurate runtime controls into three understandable proficiency values:
+   - **Vision** applies one percentage to maximum vision distance only.
+   - **Precision** applies one percentage to aim-offset convergence/scatter and contributes half of final aim speed. External-SAIN compatibility for this value is core-owned and must not depend on the addon.
+   - **Reaction** applies one percentage to visual-acquisition speed, contributes the other half of final aim speed, and scales the core close-dogfight direct-fire gate.
+4. Reaction does not modify hearing, memory, tactics, target selection, decision cadence, `WAIT_NEW_SENSOR`, or `WAIT_NEW__LOOK_SENSOR`.
 5. User values must be follower-local, neutral by default, and applied at the final calculation boundary. Direct per-follower edits to most `BotSettings.FileSettings` objects are unsafe because SPT 4.1.3's `BotSettingsComponents.Copy()` shallow-copies every category except `Core`.
 6. SAIN calculation patches remain active for a SAIN bot even when SAIN combat layers are not active. Disabling SAIN layer ownership is not sufficient to preserve a pitFireTeam setting.
 7. Accuracy must not be implemented by changing tactical selection. Low- and high-skill followers should choose comparable cover, support, regroup, heal, and engagement decisions; only shot execution should differ.
@@ -87,9 +86,13 @@ The earlier SAIN 4.4 personality and weather reports were used as leads and rech
 |---|---|---|
 | No SAIN | pitFireTeam core BigBrain | EFT calculations |
 | SAIN installed, addon missing | pitFireTeam core BigBrain for followers | Mixed: SAIN `GetSAIN` patches still replace aim time, fire rate, body-part choice, vision speed, and vision distance |
-| SAIN plus addon | pitFireTeam SAIN-addon combat layer | SAIN calculations plus pitFireTeam follower-specific addon patches |
+| SAIN plus addon | SAIN follower combat | The same core-owned proficiency and external-SAIN compatibility boundary, plus any explicitly documented SAIN-brain-specific tuning |
 
 This is the central compatibility constraint. A control that works only by changing the pre-SAIN EFT file settings can be clamped, overwritten, or replaced later.
+
+### SAIN addon boundary
+
+The optional addon exists to switch follower combat-brain ownership from pitFireTeam core combat to SAIN combat. Vision, Precision, Reaction, SAIN Default normalization, and general compensation for external SAIN calculation conflicts belong to core and must work with or without the addon. The addon may add documented SAIN-brain-specific tuning, so the active brain's finalized baseline may differ, but the saved percentage keeps the same multiplier meaning against that baseline.
 
 ## Current follower baseline
 
@@ -176,9 +179,9 @@ The normalization is follower-local and applies in both runtime configurations: 
 
 For a hard PMC under stock SAIN 4.5 Default data, the important normalized values include global scatter `0.75`, accuracy-speed coefficient `0.8`, precision/vision/hearing coefficients `1.0`, global recoil `0.5`, field of view `170`, semiautomatic fire-rate multiplier `1.5`, strafe speed `0.8`, and enabled faster-CQB reactions. The typed object's initializers document both vanilla and SAIN fallback numbers in one file, while SAIN's generated Default bundle hydrates the SAIN section and each follower's exact role/difficulty overrides at runtime.
 
-### SAIN addon baseline
+### Current addon tuning classification
 
-Saved squadmates receive a cloned `followerBigPipe` SAIN template. Its proficiency fields pass through the same built-in Default normalization before the addon rebuilds SAIN difficulty state and sets a role-based personality:
+The current addon source still gives saved squadmates a cloned `followerBigPipe` SAIN template, rebuilds SAIN difficulty state, and sets a role-based personality:
 
 - PMC-like followers and BigPipe: `Chad`
 - Knight: `GigaChad`
@@ -187,7 +190,7 @@ Saved squadmates receive a cloned `followerBigPipe` SAIN template. Its proficien
 
 SAIN's stock 4.5 personality defaults leave shooting-related `DifficultySettings` multipliers at neutral `1.0`; their default differences are primarily behavior/search policy. Custom SAIN presets may change those multipliers.
 
-The addon also applies strong final shooting assistance:
+The addon also currently applies strong final shooting assistance:
 
 - disables SAIN random aim sway while a follower has a visible, shootable target,
 - skips SAIN's aim-hit displacement for followers,
@@ -197,11 +200,11 @@ The addon also applies strong final shooting assistance:
 - reduces only SAIN's low-light **gain-sight time** penalty to 40% of its original distance from neutral,
 - restores vanilla foliage fields during follower look checks.
 
-The low-light patch does not remove SAIN's time-of-day distance reduction, weather distance reduction, or weather gain-sight penalty.
+The low-light patch does not remove SAIN's time-of-day distance reduction, weather distance reduction, or weather gain-sight penalty. Tuning in this subsection may remain when it is intentionally specific to addon-owned SAIN combat. Any portion required to correct external SAIN interference in both combat modes must move to a core-owned, addon-independent boundary.
 
-### SAIN template overwrite details
+### Current SAIN template overwrite details
 
-`SainSettingsExtensions.SetConfigValues()` overwrites selected EFT categories after the core follower baseline is installed. It applies SAIN Aiming, Look, Mind, Scattering, Shoot, Grenade, and Boss settings. The addon now supplies a follower-local clone whose proficiency fields have already been normalized to Default, so this overwrite no longer reintroduces the selected preset's easier/harder proficiency values.
+`SainSettingsExtensions.SetConfigValues()` overwrites selected EFT categories after the core follower baseline is installed. It applies SAIN Aiming, Look, Mind, Scattering, Shoot, Grenade, and Boss settings. The addon currently supplies a follower-local clone whose proficiency fields have already been normalized to Default, so this overwrite does not reintroduce the selected preset's easier/harder proficiency values. This describes existing code. The common proficiency contract remains core-owned; additional values may be addon-owned only when they intentionally tune the active SAIN brain.
 
 Material examples:
 
@@ -315,9 +318,9 @@ The EFT result already contains follower-local `RuntimeVisionEffectsK`, so a use
 
 SAIN raycasts at a nominal 30 Hz and updates the two bot look groups on alternating fixed-update passes. That creates a small scheduling floor which no coefficient can remove.
 
-### Recommended control
+### Implemented control
 
-**Vision Speed** should multiply `RuntimeVisionEffectK` through a follower-owned runtime modifier.
+**Reaction** multiplies `RuntimeVisionEffectK` through a follower-owned runtime modifier.
 
 It must not alter `VisibleDistCoef`. This preserves a useful distinction:
 
@@ -367,11 +370,13 @@ A pre-calculation coefficient can therefore be attenuated by CQB logic or erased
 
 ### Recommended control
 
-**Aim Speed** should be an authoritative follower-only postfix on the final regular-firearm aim time:
+**Aim Speed** is an authoritative follower-only postfix on the final regular-firearm aim time. Its factor is derived equally from Precision and Reaction:
 
 ```text
+aim speed factor = (Precision + Reaction) / 200
+
 final follower aim time = clamp(
-    result from EFT or SAIN / user AimSpeed factor,
+    result from EFT or SAIN / aim speed factor,
     pitFireTeam safe minimum,
     pitFireTeam safe maximum)
 ```
@@ -379,7 +384,7 @@ final follower aim time = clamp(
 Benefits:
 
 - works whether SAIN ran its prefix or EFT ran the original,
-- remains independent of vision speed,
+- makes aim completion respond equally to firearm Precision and target-acquisition Reaction,
 - avoids relying on `AccuratySpeedCoef`'s broader semantic coupling,
 - preserves all distance, angle, movement, stance, equipment, and environment relationships,
 - gives neutral settings exact current behavior.
@@ -495,51 +500,51 @@ The important intervals are:
 - **aim time:** goal/aim start to aim ready,
 - **trigger latency:** aim ready to first trigger.
 
-Only recognition time and aim time should be user-adjustable in the first granular implementation. Selection latency belongs to combat/enemy-selection stability, and trigger latency is heavily tied to weapon cadence and existing action state.
+The implemented controls keep the vision envelope separate from recognition: Vision adjusts range, Reaction adjusts LOS-to-visible speed, and Precision adjusts shot execution. Precision and Reaction each contribute half of final aim speed because players perceive both target processing and weapon control in the aim-ready interval. Selection latency remains combat/enemy-selection policy, while weapon cadence remains unchanged.
 
-## Recommended user surface
+Core `CombatDogFightAction` has a narrow exception because its safe close-contact helpers can call `ShootData.Shoot()` before the ordinary aim worker reports ready. Those helpers use a `0.2s / Reaction factor` gate per contact/target. The ordinary aim/shoot worker still runs and may fire independently, so the gate removes the instantaneous bypass without delaying a normally completed shot.
 
-### Granular surface
+## Implemented user surface
 
-Expose four persistent 0-100 values per saved teammate:
+### Composite surface
 
-| Setting | 0-100 meaning | Neutral default | Runtime ownership |
+The `Proficiency` dialog exposes three persistent percentage values per saved teammate. Each value ranges from `0` to `200`, with `100` preserving the follower's finalized class/tactic baseline:
+
+| Setting | 0-200 meaning | Neutral default | Runtime ownership |
 |---|---|---|---|
-| Vision Distance | shorter to farther range | preserves current `0.9` follower baseline | core runtime modifier |
-| Vision Speed | slower to faster recognition | preserves current gain-sight behavior | core runtime modifier |
-| Aim Speed | slower to faster aim readiness | preserves current EFT/SAIN final result | core final Harmony postfix |
-| Accuracy | wider to tighter shot execution | preserves current scatter/precision/recoil | core modifier plus addon recoil bridge |
+| Vision | shorter to farther vision range | preserves class-specific distance | core runtime modifier |
+| Precision | wider to tighter firearm execution | preserves class-specific scatter and precision; supplies half of aim speed | core modifier plus final external-SAIN-compatible accuracy boundary |
+| Reaction | slower to faster recognition/response | preserves class-specific recognition; supplies half of aim speed | core vision-speed modifier, final aim boundary, and core dogfight direct-fire gate |
 
-The default value should map to a factor of `1.0`, so existing profiles and migrated profiles behave exactly as they do before the feature.
-
-Use a centered exponential mapping rather than a linear zero-to-max multiplier. One candidate is:
+The percentage converts directly to a multiplier:
 
 ```text
-factor(value, span) = span ^ ((value - 50) / 50)
+factor(value) = value / 100
 ```
 
-For `span = 1.5`:
+- `0` is stored and displayed as `0%`; the runtime-safe factor is floored to `0.05x`
+- `100` maps to `1.0x`
+- `150` maps to `1.5x`
+- `200` maps to `2.0x`
 
-- `0` maps to about `0.67x`,
-- `50` maps to `1.0x`,
-- `100` maps to `1.5x`.
+The class/tactic proficiency baseline is finalized before these factors are applied. A Marksman therefore keeps the Marksman-specific defaults described above: `150` Vision means `1.5x` the finalized Marksman distance, not `1.5x` the Rifleman or global starting values. The same ordering applies to Precision and Reaction.
 
-This is an initial conservative calibration range, not a final balance claim. Validate it with recorder data before expanding the endpoints.
+### Internal granular mapping
 
-### Simple surface
+The persistent compatibility object retains four granular fields even though the UI exposes three values:
 
-If only two user-facing values are desired:
+- **Vision** owns `VisionDistance`.
+- **Reaction** owns `VisionSpeed`.
+- **Precision** owns `Accuracy`.
+- `AimSpeed` is derived as `(Accuracy + VisionSpeed) / 2` for persistence and recorder compatibility.
 
-- **Reaction** applies the same centered skill factor to Vision Speed and Aim Speed, but not Vision Distance.
-- **Accuracy** applies the accuracy mapping above.
+The server and client independently clamp the three authoritative fields and always recalculate `AimSpeed`. Existing saved profiles naturally initialize Reaction from their former `VisionSpeed` value; neutral profiles remain `100` across all three controls.
 
-The storage model may still keep the granular values internally so the UI can be expanded without another migration.
-
-## Recommended implementation architecture
+## Implemented architecture
 
 ### 1. Persistent data
 
-Add neutral-default values to the teammate settings and API DTO chain:
+Neutral-default values flow through the teammate settings and API DTO chain:
 
 ```text
 FriendlyTeammateSettings
@@ -550,23 +555,25 @@ FriendlyTeammateSettings
     -> BotFollowerPlayer performance snapshot
 ```
 
-Saved teammates own the persistent values. Recruited/picked-up followers use neutral defaults or a future global recruited-follower default.
+Saved teammates own the persistent values. Recruited/picked-up followers use neutral `100%` defaults.
 
 ### 2. Central mapping
 
-Create one core-owned value object, for example `FollowerPerformanceProfile`, responsible for:
+The core-owned `FollowerProficiencyModifierValues` object is responsible for:
 
-- clamping raw 0-100 values,
+- clamping raw percentage values to `0..200`,
 - migration defaults,
 - converting raw values to runtime factors,
+- deriving aim speed equally from Precision and Reaction,
 - exposing configured and effective values to the recorder,
-- preventing tactics from reading or mutating the values.
+- preventing tactics from reading or mutating the values,
+- retaining raw `0..200` values for UI/persistence while flooring unsafe runtime factors to `0.05x` where EFT restoration or inverse calculations cannot accept zero.
 
 Do not put mapping formulas in actions, tactics, UI, server services, or addon patches.
 
 ### 3. Core runtime application
 
-At follower initialization:
+At follower initialization, after tactic-specific proficiency is finalized:
 
 - snapshot the persistent values,
 - build one follower-local `BotSettingsInGameModif`,
@@ -577,23 +584,21 @@ Do not mutate a `BotSettingsInGameModif` after `BotCurrentSettings.Apply()`. `Di
 
 ### 4. Final aim-time patch
 
-Patch regular-firearm `BotAimingData.CalcTimeShoot()` with a follower-only postfix. A postfix runs after either the EFT original or SAIN's replacement prefix, making it the authoritative compatibility boundary.
+Regular-firearm `BotAimingData.CalcTimeShoot()` has a follower-only postfix. It runs after either the EFT original or SAIN's replacement prefix, making it the authoritative compatibility boundary.
 
-Use a project-owned safety clamp and log both the incoming and final result in debug/recorder builds.
+It uses a project-owned safety clamp and records both the incoming and final result.
 
-### 5. SAIN addon bridge
+### 5. External SAIN compatibility
 
-Extend the existing narrow `SainAddonBridge` contract so the addon can query the follower's effective Accuracy factor or receive it during the follower lifecycle event.
-
-Use that factor only at the addon-owned final recoil patch initially. Keep SAIN template cloning, personality assignment, and combat logic independent.
+Any SAIN calculation that would otherwise overwrite or bypass a follower's finalized Vision, Precision, or Reaction in either combat mode must be compensated at a core-owned follower-only boundary gated by external SAIN presence. The addon may consume the finalized factors and add explicit SAIN-brain-specific tuning, but it cannot be the required compatibility fix for core-owned followers.
 
 ### 6. UI and localization
 
-Place per-teammate sliders beside the existing tactic and aggression profile controls. All names, descriptions, status text, validation, and migration notices must use the centralized localization model and embedded English fallback described in `docs/Localization.md`.
+The per-teammate Vision, Precision, and Reaction sliders live in the draggable `Proficiency` profile dialog. Aggression remains a separate `0..100` behavior control in the same dialog. All labels use the centralized localization model and embedded English fallback described in `docs/Localization.md`.
 
-Suggested descriptions should state what each control does **not** change, especially that Vision Speed does not increase range and Accuracy does not change tactics.
+Descriptions state that Vision owns range, Precision owns shot accuracy, Reaction owns recognition speed, and Precision plus Reaction share aim speed without changing tactics or target selection.
 
-## Hazards to resolve before implementation
+## Implementation hazards and boundaries
 
 ### Shallow settings copy
 
@@ -677,24 +682,24 @@ Validation matrix:
 Acceptance criteria:
 
 - neutral values reproduce the current effective baseline,
-- low/high Vision Distance changes range without materially changing recognition at a fixed in-range distance,
-- low/high Vision Speed changes LOS-to-visible time without changing range,
-- low/high Aim Speed changes aim-start-to-ready time without changing tactical decisions,
-- low/high Accuracy changes dispersion/hit rate/recoil without changing tactical decisions,
+- low/high Vision changes range without changing LOS-to-visible speed,
+- low/high Precision changes dispersion/hit rate/recoil and half of aim speed without changing tactical decisions,
+- low/high Reaction changes LOS-to-visible time, half of aim speed, and the narrow core dogfight direct-fire gate without changing the two sensor-wait settings,
 - tactical decision/reason sequences remain comparable for identical encounters,
 - no new action end/reselect churn appears,
 - no setting leaks to non-followers or other follower profiles.
 
-## Recommended delivery sequence
+## Implementation status
 
-1. Add recorder stages and effective-stat snapshots.
-2. Add persistent neutral data and migration.
-3. Add centralized mapping with no non-neutral UI exposure yet.
-4. Implement Vision Distance and Vision Speed through the follower-local modifier.
-5. Implement final Aim Speed postfix for regular firearms.
-6. Implement Accuracy scatter/precision and the narrow SAIN recoil bridge.
-7. Add localized per-profile UI.
-8. Calibrate conservative endpoints across the runtime matrix.
-9. Consider a simple composite Reaction UI only after granular behavior is proven.
+1. Recorder effective-stat snapshots: implemented.
+2. Persistent neutral data and migration defaults: implemented.
+3. Centralized follower-local percentage mapping: implemented.
+4. Vision distance core runtime modifier: implemented.
+5. Combined Precision/Reaction final aim-speed postfix: implemented.
+6. Precision scatter/convergence and core-owned final external-SAIN recoil compatibility: implemented independently of addon presence.
+7. Reaction recognition-speed modifier and core dogfight direct-fire gate: implemented.
+8. Localized four-control profile UI including Aggression: implemented.
+9. Conservative endpoint calibration across the runtime matrix: pending gameplay tests.
+10. Granular advanced controls remain internal unless a later calibration need justifies exposing them.
 
-This sequence proves execution ownership before exposing balance ranges and keeps the shooting-performance work separate from the recently stabilized combat decision architecture.
+The implementation keeps shooting-performance ownership separate from the combat decision architecture. Changing these values does not select different actions or tactics.

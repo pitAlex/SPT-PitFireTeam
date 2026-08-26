@@ -167,6 +167,8 @@ namespace pitTeam.Components
         private bool _temporaryCombatAggressionOverrideActive;
         private float _temporaryCombatAggressionOverride;
         private float _temporaryCombatAggressionClearAfter;
+        private float? _lastBaseAimTime;
+        private float? _lastFinalAimTime;
         private FollowerCombatTactic _combatTactic = FollowerCombatTactic.Balanced;
         private bool _backpackInspectionActive;
         private float? _pickupIndependence01;
@@ -301,6 +303,8 @@ namespace pitTeam.Components
         /// This is an independent clone of the one global default object.
         /// </summary>
         public FollowerProficiencyValues Proficiency { get; }
+        public float? LastBaseAimTime => _lastBaseAimTime;
+        public float? LastFinalAimTime => _lastFinalAimTime;
 
         public BotFollowerPlayer(BotOwner bot, pitAIBossPlayer player, bool isSquad = false, WildSpawnType botRole = WildSpawnType.assault)
         {
@@ -314,6 +318,12 @@ namespace pitTeam.Components
 
             if (player.realPlayer.Side != EPlayerSide.Savage) NpcMessage.AddNpc(bot, isSquad);
 
+        }
+
+        public void RecordProficiencyAimTime(float baseAimTime, float finalAimTime)
+        {
+            _lastBaseAimTime = baseAimTime;
+            _lastFinalAimTime = finalAimTime;
         }
 
         private void CaptureInitialHolsterWeapon(bool finalAttempt)
@@ -694,13 +704,15 @@ namespace pitTeam.Components
             }
 
             FollowerVanillaRuntimeDifficultyValues runtime = proficiency.RuntimeDifficulty;
+            FollowerProficiencyModifierValues modifiers = Proficiency.Modifiers;
+            float accuracyFactor = modifiers.SafeAccuracyFactor;
             settingModif = new BotSettingsInGameModif(
-                runtime.PrecicingSpeedCoef,
+                runtime.PrecicingSpeedCoef * accuracyFactor,
                 runtime.AccuratySpeedCoef,
                 runtime.LayChanceDangerCoef,
-                runtime.VisibleDistCoef,
-                runtime.RuntimeVisionEffectK,
-                runtime.ScatteringCoef,
+                runtime.VisibleDistCoef * modifiers.SafeVisionDistanceFactor,
+                runtime.RuntimeVisionEffectK * modifiers.SafeVisionSpeedFactor,
+                runtime.ScatteringCoef / accuracyFactor,
                 runtime.HearingDistCoef,
                 runtime.PriorityScatteringCoef,
                 runtime.TriggerDownDelay);

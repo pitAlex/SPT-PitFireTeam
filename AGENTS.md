@@ -9,7 +9,7 @@ You must think like a maintainer of a fragile gameplay-AI integration project, n
 ## Terminology
 
 - **SAIN Plugin** (or "SAIN mod", "SAIN") — the third-party SAIN mod by Sol (`me.sol.sain`). This is an external dependency. See `LOCAL.md` for the machine-local source path when source inspection is needed.
-- **SAIN Addon** — our own addon DLL (`addon/`, plugin ID `xyz.pit.fireteam.sainaddon`) that integrates SAIN brain layers with followers. This is our code.
+- **SAIN Addon** — our optional addon DLL (`addon/`, plugin ID `xyz.pit.fireteam.sainaddon`) whose purpose is to switch follower combat-brain ownership from pitFireTeam core combat to SAIN combat. It may tune behavior specifically for that SAIN-brain mode, but general SAIN conflict fixes belong in the main plugin and must not require the addon. See `docs/SAIN-Integration.md`.
 
 Never confuse these two. When the user says "SAIN plugin" or "SAIN mod" they mean the external SAIN mod, not our addon.
 
@@ -34,7 +34,7 @@ Never invent APIs, properties, or behaviors that do not exist. Only reference me
 Separate vanilla and SAIN reasoning. Every behavior should be classified as one of:
 
 - vanilla / core plugin path
-- SAIN addon / SAIN-owned path (runtime-gated by SAIN + addon presence)
+- SAIN addon / SAIN-owned combat-brain path (runtime-gated by SAIN + addon presence)
 
 Do not mix these paths unless the code clearly bridges them.
 
@@ -83,11 +83,11 @@ When multiple approaches are possible, prefer:
     - Group invite and raid-spawning routes.
     - Post-raid item/escape handling.
 
-3. **SAIN ADDON** (`addon/`) — Optional SAIN-specific combat layer and retention system.
-    - Custom follower combat layer replacing SAIN squad layer.
-    - Decision routing for suppression, search, help, and regroup actions.
-    - Enemy retention gating and forced acquisition assistance.
-    - Follower-specific aim/vision/hearing tuning patches.
+3. **SAIN ADDON** (`addon/`) — Optional combat-brain ownership adapter.
+    - Switches followers from pitFireTeam core combat to SAIN combat when both SAIN and the addon are present.
+    - Supplies the layer, command, state, and lifecycle glue required for safe SAIN brain ownership.
+    - May add explicitly documented tuning that exists to improve addon-owned SAIN-brain behavior.
+    - Does not own general external-SAIN compatibility fixes; those belong in core and must work when the addon is absent.
 
 ---
 
@@ -152,6 +152,7 @@ Current verified custom teammate feature state:
     - persisted loadout selection flows through follower details and shows as the current teammate equipment name
     - teammate rename is implemented through a custom overlay + backend rename route
     - stock `SkillsScreen` is cloned into teammate profile view with filtered follower-relevant skills
+    - the draggable `Proficiency` dialog persists separate aggression plus follower-local `0..200` Vision, Precision, and Reaction percentages; Vision owns distance, Precision owns accuracy plus half of aim speed, Reaction owns recognition speed plus half of aim speed, neutral `100` is applied after the selected tactic's baseline when the teammate spawns, and the bottom Reset button restores all three percentages plus tactic-default aggression
     - teammate-only profile UI resets correctly when switching back to a normal player profile
 - Teammate custom loadout editor is implemented for the current cloned/local editing model:
     - teammate profile has an `Edit Loadout` entry point
@@ -200,8 +201,9 @@ Current verified custom teammate feature state:
         - selected-preset search/cover/patrol/extraction/talk and other policy settings are preserved,
         - `FollowerProficiency.DefaultValues` is the one global starting object and every `BotFollowerPlayer.Proficiency` owns an independent generic clone with separate `Vanilla` and `Sain` sections,
         - pitFireTeam's vanilla template difficulty, runtime coefficients, aim, vision, hearing, shooting, and boss/BirdEye proficiency overrides are centralized in the `Vanilla` section; tactical/capability policy remains outside it,
+        - saved teammates also own a cloned `Modifiers` section retaining four granular compatibility fields behind three class-relative controls; Vision owns distance, Precision owns accuracy, Reaction owns recognition speed, stored aim speed is derived equally from Precision and Reaction, the immutable follower modifier applies vision/core accuracy, final aim time uses a follower-only postfix, and core `FollowerSainProficiency` applies the Accuracy factor to SAIN's final calculated recoil independently of addon presence,
         - `FollowerSainProficiency` is only the external-SAIN adapter; its runtime patches consume the follower's `Sain` section, clone follower-local SAIN categories, and never mutate SAIN's shared preset objects,
-        - the same boundary applies with or without the optional SAIN addon; addon squadmates keep their `followerBigPipe` template role.
+        - all general external-SAIN proficiency compatibility is core-owned and must work with or without the optional SAIN addon; the addon may layer intentional SAIN-brain-specific tuning after that common boundary.
     - Regroup request execution is split by runtime context:
         - vanilla regroup path for no-SAIN or out-of-combat,
         - SAIN combat path is handled by addon `SAINFollowerCombatLayer` (custom SAIN squad-layer replacement for followers).
@@ -766,13 +768,17 @@ Supported commands via `GestureCommandAction`:
 
 ---
 
-# SAIN ADDON: Combat & Retention System
+# SAIN ADDON: SAIN Combat-Brain Ownership
 
 **Plugin ID:** `xyz.pit.fireteam.sainaddon`  
 **Main entry:** `addon/SAINAddonPlugin.cs`  
 **Bootstrap:** `addon/SAINRegroupBootstrap.cs`
 
 ## SAIN Integration Model
+
+`docs/SAIN-Integration.md` is authoritative. The addon's responsibility is to switch follower combat-brain ownership to SAIN, provide the integration glue needed to operate and release that brain safely, and optionally tune that SAIN-brain mode. General proficiency normalization and fixes for external SAIN conflicts are core concerns and must not depend on addon presence.
+
+Some implementation inventory below records historical addon-owned tuning that still exists in source. Each item must be classified as legitimate SAIN-brain-specific tuning, a general compatibility fix that must move to core, or a split of both.
 
 **Conditional Path:**
 
@@ -853,7 +859,7 @@ On Timeout:
 - Post-release grace: 1.5s before patrol activation
 - Apply crouch nudge during grace (prevent sprint-thrash)
 
-## SAIN-Specific Patches (13 Always + 1 Conditional)
+## Current SAIN-Specific Patch Inventory (classification required)
 
 **Always Applied:**
 
@@ -1180,7 +1186,7 @@ SAIN integration:
 - SAIN layers use their own mover handoff/control path while active (notably in combat):
     - `SAINLayer.OnLayerChanged(...)` stops built-in mover when entering SAIN layer and handles mover/navmesh handoff on layer switch.
     - treat SAIN combat movement issues as SAIN-layer/mover behavior first, then plugin command-layer behavior.
-- SAIN addon currently applies follower-focused combat/retention patches from `addon/SAINRegroupBootstrap.cs`:
+- SAIN addon currently applies follower-focused combat/retention patches from `addon/SAINRegroupBootstrap.cs`; tuning patches in this inventory must be classified under `docs/SAIN-Integration.md` before the addon is re-enabled:
     - addon is currently disabled for the initial release path; treat the remaining bullets here as deferred addon notes, not release-authoritative behavior,
     - `SAINFollowerFriendlyFirePatch` (for follower shooters, post-processes SAIN shot blocking with core `FollowerShotSafety` lane checks against the player boss and other followers),
     - `SAINFollowerGroupTalkDirectionPatch` (uses boss look direction for directional enemy talk checks),
@@ -1199,8 +1205,8 @@ SAIN integration:
     - SAIN addon only keeps the SAIN-specific `CheckAddEnemy` gating path (`SAINEnemyAcquireGatePatch` + `SAINFollowerEnemyRetentionService` same-side/ally filtering),
     - old addon-only wrapper `addon/SAINCalcGoalPatch.cs` was removed; do not describe current addon retention as using that file.
 - Follower SAIN tuning rule:
-    - current stable path prefers SAIN template settings (`followerBigPipe`) over follower-specific aim/look compensation patches.
-    - follower-specific aim sway, hit-accuracy, recoil, low-light, and bush-vision patches are currently wired by bootstrap; use `SAINFollowerPersonalityPatch.ApplyFollowerTemplateFineTuning(...)` for future template-level tuning.
+    - general follower proficiency and fixes for external SAIN interference belong in core and must work without the addon.
+    - aim sway, hit-accuracy, recoil, low-light, bush-vision, and personality/template tuning may remain in the addon only where they are deliberate SAIN-brain-specific improvements; shared compatibility portions must move to core, and mixed patches should be split.
 - SAIN attention/release reset now clears stale search state through the addon bridge:
     - `SAINFollowerRuntimeBridge.ForceReleaseFollowerCombatState(...)` and `TryResetFollowerDecisionState(...)` clear `SAINSearchClass` active target/path and invalidate `EnemyKnownPlaces` for all tracked SAIN enemies before resetting decisions/layer state.
 - Legacy `SAINDecisionRegroupPatch.cs` remains in addon source but is currently not wired by bootstrap.
@@ -1346,7 +1352,7 @@ Update (2026-03-06):
     - when a follower commits an enemy through this path, the service propagates that enemy to sibling followers.
     - Attention/Look suppression is honored through `client/Modules/FollowerEnemyEnforceSuppression.cs` and the retention service (`blocked_attention_suppression` path).
     - Forced retention remains toggle-controlled via `addon/SAINAddonToggles.cs` (`EnableForcedEnemyRetention`).
-- Follower proficiency was increased (hard+ oriented) through SAIN addon patches:
+- Historical implementation note requiring boundary classification: follower proficiency was increased (hard+ oriented) through SAIN addon patches:
     - `addon/SAINFollowerPersonalityPatch.cs` raises follower detection/reaction and tightens aim behavior (higher `GainSightCoef`, higher hearing/visible multipliers, faster precision, lower accuracy/scatter multipliers).
     - `addon/SAINFollowerHitAccuracyPatch.cs` bypasses SAIN `AimHitEffectClass.GetHit` aim-affection for followers so incoming hits do not degrade follower aim.
     - `addon/SAINFollowerLowLightVisionPatch.cs` reduces low-light time-to-spot penalty for followers by post-processing SAIN time vision modifier in `EnemyGainSightClass.CalcTimeModifier`.

@@ -232,7 +232,14 @@ namespace pitTeam.Modules
             Instance = null;
         }
 
-        private BotFollowerPlayer AddBotFollower(BotOwner bot, pitAIBossPlayer player, bool squadMate = false, WildSpawnType role = WildSpawnType.assault, string tactic = "Default", float aggression = 50f)
+        private BotFollowerPlayer AddBotFollower(
+            BotOwner bot,
+            pitAIBossPlayer player,
+            bool squadMate = false,
+            WildSpawnType role = WildSpawnType.assault,
+            string tactic = "Default",
+            float aggression = 50f,
+            FollowerProficiencyModifierValues proficiency = null)
         {
 
             BotFollowerPlayer? _follower = null;
@@ -254,6 +261,7 @@ namespace pitTeam.Modules
             {
                 tactic = "Default";
                 aggression = CreateRecruitCombatAggression();
+                proficiency = null;
             }
 
             if (_shallBeFollower.Contains(bot.ProfileId)) _shallBeFollower.Remove(bot.ProfileId);
@@ -281,6 +289,7 @@ namespace pitTeam.Modules
 
             _follower.CombatTactic = BotFollowerPlayer.ParseCombatTactic(tactic);
             _follower.CombatAggression = aggression;
+            _follower.Proficiency.ReplaceModifiers(proficiency);
 
             try
             {
@@ -1170,9 +1179,16 @@ namespace pitTeam.Modules
             Instance.RemoveBossPlayer(profileId, true);
         }
 
-        public static BotFollowerPlayer AddFollower(BotOwner bot, pitAIBossPlayer player, bool squadMate = false, WildSpawnType role = WildSpawnType.assault, string tactic = "Default", float aggression = 50f)
+        public static BotFollowerPlayer AddFollower(
+            BotOwner bot,
+            pitAIBossPlayer player,
+            bool squadMate = false,
+            WildSpawnType role = WildSpawnType.assault,
+            string tactic = "Default",
+            float aggression = 50f,
+            FollowerProficiencyModifierValues proficiency = null)
         {
-            return Instance.AddBotFollower(bot, player, squadMate, role, tactic, aggression);
+            return Instance.AddBotFollower(bot, player, squadMate, role, tactic, aggression, proficiency);
         }
 
         public static void ShallBeFollower(string profileId)

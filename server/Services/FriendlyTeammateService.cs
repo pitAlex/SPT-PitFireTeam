@@ -796,6 +796,7 @@ public class FriendlyTeammateService(
                     Aid = teammate.Aid?.ToString() ?? string.Empty,
                     Tactic = NormalizeCombatTactic(settings.CombatTactic),
                     Aggression = NormalizeAggression(settings.Aggression),
+                    Proficiency = NormalizeProficiency(settings.Proficiency),
                     Equipment = equipmentName,
                     Voice = teammate.Customization?.Voice?.ToString() ?? string.Empty,
                     Head = teammate.Customization?.Head?.ToString() ?? string.Empty,
@@ -832,6 +833,7 @@ public class FriendlyTeammateService(
             CurrentLoadoutId = selectedLoadoutId,
             CurrentTactic = NormalizeCombatTactic(settings.CombatTactic),
             Aggression = NormalizeAggression(settings.Aggression),
+            Proficiency = NormalizeProficiency(settings.Proficiency),
             OwnedBodyCustomizationIds = settings.OwnedBodyCustomizationIds.ToList(),
             OwnedFeetCustomizationIds = settings.OwnedFeetCustomizationIds.ToList(),
             RecoveryNotice = ConsumeProfileRecoveryNotice(sessionId, teammate),
@@ -1330,6 +1332,14 @@ public class FriendlyTeammateService(
         var teammate = FindByAccountId(sessionId, request.Aid);
         var settings = GetTeammateSettings(sessionId, teammate);
         settings.Aggression = NormalizeAggression(request.Aggression);
+        SaveTeammateSettings(sessionId, teammate, settings);
+    }
+
+    public void SetTeammateProficiency(MongoId sessionId, FriendlyTeammateProficiencyRequest request)
+    {
+        var teammate = FindByAccountId(sessionId, request.Aid);
+        var settings = GetTeammateSettings(sessionId, teammate);
+        settings.Proficiency = NormalizeProficiency(request.Proficiency);
         SaveTeammateSettings(sessionId, teammate, settings);
     }
 
@@ -4869,6 +4879,7 @@ public class FriendlyTeammateService(
             loadedSettings.SelectedLoadoutId = DefaultLoadoutId;
         }
         loadedSettings.Aggression = NormalizeAggression(loadedSettings.Aggression);
+        loadedSettings.Proficiency = NormalizeProficiency(loadedSettings.Proficiency);
         loadedSettings.CombatTactic = NormalizeCombatTactic(loadedSettings.CombatTactic);
         return loadedSettings;
     }
@@ -4880,6 +4891,7 @@ public class FriendlyTeammateService(
             SelectedLoadoutId = DefaultLoadoutId,
             AutoJoinEnabled = false,
             Aggression = 50f,
+            Proficiency = new FriendlyTeammateProficiencySettings(),
             CombatTactic = "Rifleman",
         };
 
@@ -5013,6 +5025,27 @@ public class FriendlyTeammateService(
         }
 
         return Math.Clamp(value, 0f, 100f);
+    }
+
+    private static FriendlyTeammateProficiencySettings NormalizeProficiency(
+        FriendlyTeammateProficiencySettings? values)
+    {
+        values ??= new FriendlyTeammateProficiencySettings();
+        values.VisionDistance = NormalizeProficiencyPercentage(values.VisionDistance);
+        values.VisionSpeed = NormalizeProficiencyPercentage(values.VisionSpeed);
+        values.Accuracy = NormalizeProficiencyPercentage(values.Accuracy);
+        values.AimSpeed = (values.Accuracy + values.VisionSpeed) * 0.5f;
+        return values;
+    }
+
+    private static float NormalizeProficiencyPercentage(float value)
+    {
+        if (float.IsNaN(value) || float.IsInfinity(value))
+        {
+            return 100f;
+        }
+
+        return Math.Clamp(value, 0f, 200f);
     }
 
     private static float GetDefaultAggressionForTactic(string tactic)

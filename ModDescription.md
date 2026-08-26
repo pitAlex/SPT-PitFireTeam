@@ -35,7 +35,7 @@ You can manage your teammates from the in-game **My Squad** screen. From there, 
 **Notable features:**
 
 - **Dedicated squad screen** - manage your roster, customize teammates, and settings from a separate My Squad interface.
-- **Teammate customization** - change teammate name, appearance, voice, tactic, aggression, and loadout.
+- **Teammate customization** - change teammate name, appearance, voice, tactic, aggression, proficiency, and loadout.
 - **Weapon-aware combat** - teammate decisions consider weapon role, caliber, magazine capacity, ammo penetration, and secondary weapon options.
 - **Teammate commands** - issue combat, movement, attention, loot, and door commands through existing Tarkov phrases and gestures.
 - **Objective-based combat orders** - use commands such as **Go Forward**, **Need Help**, **Cover Me**, and **Suppress** to shift squad priorities without directly micromanaging every movement.
@@ -101,7 +101,7 @@ Teammates can be customized from their profile screen.
 - In **Restricted**, **Immersive**, and **Realistic**, use **Kit Loadouts** to purchase or equip saved player kits for the teammate.
 - Edit the teammate's **Default** kit from the profile screen.
 - Select a combat tactic.
-- Adjust aggression for Rifleman and Marksman tactics.
+- Adjust aggression and per-teammate Vision, Precision, and Reaction.
 - View teammate-relevant skills.
 
 **Tactics available:**
@@ -109,13 +109,15 @@ Teammates can be customized from their profile screen.
 - **`Rifleman`** - the default balanced combat style. Riflemen stay useful near the boss when there is no good attack opportunity, but can push, search, and pressure when the enemy state and aggression allow it.
 - **`Marksman`** - ranged-focused behavior for sniper-style teammates. Marksmen prefer firing positions and distance, avoid generic assault pushes, and can switch to an automatic secondary for close fights when appropriate.
 
-**Aggression slider:**
+**Proficiency:**
 
 Aggression controls how willing a teammate is to leave boss-local safety for proactive pressure. Lower aggression keeps teammates more defensive and boss-local. Higher aggression allows more search, push, and pressure when combat conditions justify it. At 0%, teammates avoid proactive pressure and prefer to stay around the boss. The combat **Hold Position** command temporarily behaves like 0% aggression until combat ends or **Go Go Go** clears it.
 
 **Rifleman aggression:** Rifleman uses 50% as its default balanced baseline. Lower values bias toward cover, support, and regroup. Higher values make Riflemen more willing to push or search farther from the boss when threat checks allow it.
 
 **Marksman aggression:** Marksman uses 30% as its default baseline. Marksman aggression is tactic-relative: it mainly controls proactive automatic-weapon close-search/auto-search pressure. It does not turn Marksman into a generic Rifleman, and it does not block defensive automatic secondary use when enemies get close. At 0%, Marksman avoids proactive auto-search and stays range/position focused. Higher values make Marksman more willing to use automatic-weapon offensive search when distance and threat checks are safe.
+
+The same dialog provides three per-teammate proficiency percentages from 0 to 200. **Vision** changes detection distance. **Precision** changes shot accuracy and contributes half of aim speed. **Reaction** changes visual-recognition speed and contributes the other half of aim speed, so both Precision and Reaction must be `200%` to reach `2x` aim speed. `100%` preserves that teammate tactic's own default, so a Marksman's `150%` Vision is 1.5 times the Marksman vision baseline rather than the Rifleman baseline. The dialog's **Reset** button returns all three percentages to `100%` and Aggression to the tactic default. These values are saved per teammate and take effect the next time that follower spawns. Reaction does not alter the game's independent sensor-wait timers. The optional SAIN addon changes which combat brain owns the follower; it does not change the meaning of these proficiency values.
 
 **Loadout customization:**
 

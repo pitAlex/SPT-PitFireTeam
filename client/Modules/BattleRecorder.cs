@@ -1653,6 +1653,7 @@ namespace pitTeam.Modules
                 boss = bossSnapshot,
                 targetCommitment = CreateTargetCommitmentSnapshot(bot, followerData, goalEnemy),
                 tactic = followerData?.CombatTactic.ToString(),
+                proficiency = CreateProficiencySnapshot(bot, followerData),
                 combatSettings = followerData != null
                     ? new
                     {
@@ -1676,6 +1677,62 @@ namespace pitTeam.Modules
                 state.LastEffectiveMoveTargetDistance = effectiveTargetDistance;
             }
             return snapshot;
+        }
+
+        private static object? CreateProficiencySnapshot(BotOwner bot, BotFollowerPlayer? follower)
+        {
+            if (bot == null || follower == null)
+            {
+                return null;
+            }
+
+            FollowerProficiencyModifierValues modifiers = follower.Proficiency.Modifiers;
+            BotCurrentSettings current = bot.Settings?.Current;
+            return new
+            {
+                configured = new
+                {
+                    visionDistance = SanitizeFloat(modifiers.VisionDistance),
+                    visionSpeed = SanitizeFloat(modifiers.VisionSpeed),
+                    aimSpeed = SanitizeFloat(modifiers.AimSpeed),
+                    accuracy = SanitizeFloat(modifiers.Accuracy)
+                },
+                factors = new
+                {
+                    visionDistance = SanitizeFloat(modifiers.VisionDistanceFactor),
+                    visionSpeed = SanitizeFloat(modifiers.VisionSpeedFactor),
+                    aimSpeed = SanitizeFloat(modifiers.AimSpeedFactor),
+                    accuracy = SanitizeFloat(modifiers.AccuracyFactor),
+                    safeVisionDistance = SanitizeFloat(modifiers.SafeVisionDistanceFactor),
+                    safeVisionSpeed = SanitizeFloat(modifiers.SafeVisionSpeedFactor),
+                    safeAimSpeed = SanitizeFloat(modifiers.SafeAimSpeedFactor),
+                    safeAccuracy = SanitizeFloat(modifiers.SafeAccuracyFactor)
+                },
+                effective = current != null
+                    ? new
+                    {
+                        visibleDistance = SanitizeFloat(current.CurrentVisibleDistance),
+                        runtimeVisionEffect = SanitizeFloat(current.RuntimeVisionEffectsK),
+                        precisionSpeed = SanitizeFloat(current.CurrentPrecicingSpeed),
+                        scattering = SanitizeFloat(current.CurrentScattering),
+                        closeScattering = SanitizeFloat(current.CurrentScatteringClose)
+                    }
+                    : null,
+                lastAimTime = new
+                {
+                    baseline = follower.LastBaseAimTime.HasValue
+                        ? SanitizeFloat(follower.LastBaseAimTime.Value)
+                        : null,
+                    final = follower.LastFinalAimTime.HasValue
+                        ? SanitizeFloat(follower.LastFinalAimTime.Value)
+                        : null
+                },
+                ownership = pitFireTeam.UseSainFollowerCombat
+                    ? "sainAddon"
+                    : pitFireTeam.IsSAINInstalled
+                        ? "sainCalculationsCoreCombat"
+                        : "vanillaCore"
+            };
         }
 
         private static object CreateDecisionPayload(AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)

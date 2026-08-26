@@ -1,6 +1,8 @@
 using EFT;
+using Newtonsoft.Json;
 using pitTeam.Components;
 using System;
+using UnityEngine;
 
 namespace pitTeam.Modules
 {
@@ -30,6 +32,7 @@ namespace pitTeam.Modules
     {
         public FollowerVanillaProficiencyValues Vanilla { get; private set; } = new();
         public FollowerSainProficiencyOverrides Sain { get; private set; } = new();
+        public FollowerProficiencyModifierValues Modifiers { get; private set; } = new();
         public FollowerCombatTactic CombatTactic { get; private set; } = FollowerCombatTactic.Balanced;
 
         public FollowerProficiencyValues Clone()
@@ -38,8 +41,14 @@ namespace pitTeam.Modules
             {
                 Vanilla = Vanilla.Clone(),
                 Sain = Sain.Clone(),
+                Modifiers = Modifiers.Clone(),
                 CombatTactic = CombatTactic,
             };
+        }
+
+        public void ReplaceModifiers(FollowerProficiencyModifierValues? values)
+        {
+            Modifiers = (values ?? new FollowerProficiencyModifierValues()).Clone();
         }
 
         /// <summary>
@@ -109,6 +118,128 @@ namespace pitTeam.Modules
             Sain.Aiming.COEF_IF_MOVE = 1.75f;
             Sain.Aiming.TIME_COEF_IF_MOVE = 1.75f;
             Sain.Shoot.AUTOMATIC_FIRE_SCATTERING_COEF = 1.6f;
+        }
+    }
+
+    /// <summary>
+    /// Per-follower percentage controls. Raw values remain suitable for persistence and UI;
+    /// runtime-safe factors protect EFT modifier dismissal and inverse calculations at 0%.
+    /// </summary>
+    public sealed class FollowerProficiencyModifierValues
+    {
+        public const float MinimumPercent = 0f;
+        public const float MaximumPercent = 200f;
+        public const float DefaultPercent = 100f;
+        public const float MinimumRuntimeFactor = 0.05f;
+
+        public float VisionDistance { get; set; } = DefaultPercent;
+        public float VisionSpeed { get; set; } = DefaultPercent;
+        public float AimSpeed { get; set; } = DefaultPercent;
+        public float Accuracy { get; set; } = DefaultPercent;
+
+        [JsonIgnore]
+        public float VisionDistanceFactor => ToFactor(VisionDistance);
+
+        [JsonIgnore]
+        public float VisionSpeedFactor => ToFactor(VisionSpeed);
+
+        [JsonIgnore]
+        public float AimSpeedFactor => ToFactor(GetAimSpeedPercent());
+
+        [JsonIgnore]
+        public float AccuracyFactor => ToFactor(Accuracy);
+
+        [JsonIgnore]
+        public float SafeVisionDistanceFactor => ToRuntimeFactor(VisionDistance);
+
+        [JsonIgnore]
+        public float SafeVisionSpeedFactor => ToRuntimeFactor(VisionSpeed);
+
+        [JsonIgnore]
+        public float SafeAimSpeedFactor => ToRuntimeFactor(GetAimSpeedPercent());
+
+        [JsonIgnore]
+        public float SafeAccuracyFactor => ToRuntimeFactor(Accuracy);
+
+        public FollowerProficiencyModifierValues Clone()
+        {
+            FollowerProficiencyModifierValues clone = new()
+            {
+                VisionDistance = NormalizePercent(VisionDistance),
+                VisionSpeed = NormalizePercent(VisionSpeed),
+                Accuracy = NormalizePercent(Accuracy),
+            };
+            clone.RefreshDerivedAimSpeed();
+            return clone;
+        }
+
+        public float GetVisionPercent()
+        {
+            return NormalizePercent(VisionDistance);
+        }
+
+        public void SetVisionPercent(float value)
+        {
+            VisionDistance = NormalizePercent(value);
+        }
+
+        public float GetPrecisionPercent()
+        {
+            return NormalizePercent(Accuracy);
+        }
+
+        public void SetPrecisionPercent(float value)
+        {
+            Accuracy = NormalizePercent(value);
+            RefreshDerivedAimSpeed();
+        }
+
+        public float GetReactionPercent()
+        {
+            return NormalizePercent(VisionSpeed);
+        }
+
+        public void SetReactionPercent(float value)
+        {
+            VisionSpeed = NormalizePercent(value);
+            RefreshDerivedAimSpeed();
+        }
+
+        public float GetAimSpeedPercent()
+        {
+            return GetCompositePercent(Accuracy, VisionSpeed);
+        }
+
+        public float ScaleReactionDelay(float baselineSeconds)
+        {
+            return Mathf.Max(0f, baselineSeconds) / SafeVisionSpeedFactor;
+        }
+
+        public static float NormalizePercent(float value)
+        {
+            return float.IsNaN(value) || float.IsInfinity(value)
+                ? DefaultPercent
+                : Mathf.Clamp(value, MinimumPercent, MaximumPercent);
+        }
+
+        private static float ToFactor(float percent)
+        {
+            return NormalizePercent(percent) / DefaultPercent;
+        }
+
+        private static float GetCompositePercent(float first, float second)
+        {
+            return (NormalizePercent(first) + NormalizePercent(second)) * 0.5f;
+        }
+
+        private void RefreshDerivedAimSpeed()
+        {
+            AimSpeed = GetAimSpeedPercent();
+        }
+
+        private static float ToRuntimeFactor(float percent)
+        {
+            return Mathf.Max(MinimumRuntimeFactor, ToFactor(percent));
         }
     }
 

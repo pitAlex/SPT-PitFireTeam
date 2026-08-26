@@ -6,6 +6,7 @@ Last updated: 2026-08-25
 
 - This document covers the core follower combat path under `client/BigBrain`.
 - It only mentions the optional SAIN addon combat path where a boss command crosses the core/addon boundary.
+- `docs/SAIN-Integration.md` is authoritative for that boundary: addon presence switches combat-brain ownership to SAIN and may tune that brain-specific mode, while general SAIN conflict fixes and the proficiency percentage contract remain core-owned.
 - Treat this as current runtime documentation, not a backlog.
 
 ## Runtime Ownership
@@ -753,13 +754,12 @@ These are concrete lifecycle bugs found during the same analysis. They should no
 
 Short `enemyMissingOrDead` repeats around recovery suppression also occurred, but they were bounded and are not the principal failure in this record. Keep them observable rather than broadening the above fixes around them.
 
-### Future: Per-Follower Shooting Performance
+### Per-Follower Shooting Performance
 
-- Add persistent `Reaction` and `Accuracy` values per teammate, exposed as 0-100 profile sliders alongside tactic and aggression. Existing teammates must migrate to defaults that preserve current behavior.
-- These values govern shooting execution only. Combat tactics must not read them when deciding whether to take cover, retreat, suppress, push, regroup, support, or heal. A poor shooter should still make the same tactically sound decisions, but acquire the shot more slowly and shoot less accurately.
-- `Reaction` should map confirmed-contact-to-fire readiness: gain-sight timing, initial aim time, and target-handoff delay. It must not silently change vision/hearing range, enemy memory, aggression, or the combat decision cadence.
-- `Accuracy` should centrally map precision convergence, scattering, recoil/burst control, and body-part preference. Avoid independent hard-coded accuracy changes at individual actions or tactics.
-- Build the runtime mapping around the current hard baseline and overrides in `BotFollowerPlayer.SetFollowerSettings`, rather than having each tactic alter EFT shooting settings.
-- Treat external SAIN as a separate execution boundary. With the addon disabled, SAIN's `GetSAIN`-gated patches can still replace aim-time, fire-rate, vision-speed, and body-part calculations even though `SAINLayersActive` is false. Per-follower values therefore need an authoritative final modifier or a narrow compatibility bridge so the selected SAIN preset cannot silently erase them.
-- When implemented, the battle recorder should capture the configured and effective reaction/accuracy values plus the timing chain from valid contact to aim-ready to first trigger. This allows tactical quality to be evaluated independently from marksmanship.
-- Validate with otherwise identical followers at low and high shooting skill: their tactical decision/reason sequence should remain comparable, while their aim latency, dispersion, hit rate, and burst control differ.
+- Persistent `0..200` Vision, Precision, and Reaction values are exposed per teammate alongside tactic and aggression; `100` preserves the finalized tactic baseline.
+- Combat tactics do not read these values when deciding whether to take cover, retreat, suppress, push, regroup, support, or heal. A poor shooter should still make tactically comparable decisions but execute sighting and shots less effectively.
+- Vision owns range only. Precision owns accuracy and half of final aim speed. Reaction owns visibility-gain speed, the other half of final aim speed, and the narrow direct-fire gate used by the core dogfight action.
+- Reaction does not change hearing, enemy memory, aggression, combat decision cadence, `WAIT_NEW_SENSOR`, or `WAIT_NEW__LOOK_SENSOR`.
+- External SAIN remains a separate execution boundary. Core-owned final aim and recoil compatibility works whether or not the optional SAIN-brain addon is installed.
+- The battle recorder captures the configured fields, derived aim-speed factor, and effective runtime values so tactical quality can be evaluated independently from marksmanship.
+- Validate otherwise identical followers at low and high values: tactical decision/reason sequences should remain comparable while vision envelope, recognition time, aim latency, dispersion, hit rate, and recoil change only according to their documented owners.

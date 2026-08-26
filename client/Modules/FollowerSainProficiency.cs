@@ -1,4 +1,5 @@
 using EFT;
+using EFT.InventoryLogic;
 using HarmonyLib;
 using pitTeam.Components;
 using System;
@@ -46,6 +47,12 @@ namespace pitTeam.Modules
         private static MethodInfo? _getSainByProfile;
         private static MethodInfo? _serverDefaultsMethod;
         private static MethodInfo? _currentLocationMethod;
+        private static PropertyInfo? _recoilBotOwnerProperty;
+        private static FieldInfo? _recoilBotOwnerField;
+        private static FieldInfo? _currentRecoilHorizAngleField;
+        private static FieldInfo? _currentRecoilVertAngleField;
+        private static bool _recoilRuntimeFieldsResolved;
+        private static bool _accuracyPatchFailureReported;
         private static object? _defaultBundle;
         private static object? _loadedPreset;
         private static bool _patchesApplied;
@@ -78,6 +85,13 @@ namespace pitTeam.Modules
                     harmony,
                     recoilType != null ? AccessTools.PropertyGetter(recoilType, "RecoilMultiplier") : null,
                     postfixName: nameof(UseDefaultFollowerRecoil));
+
+                PatchMethod(
+                    harmony,
+                    recoilType != null
+                        ? AccessTools.Method(recoilType, "calculateRecoil", new[] { typeof(Weapon) })
+                        : null,
+                    postfixName: nameof(ApplyFollowerAccuracyToCalculatedRecoil));
 
                 MethodInfo? calculateAim = aimTimePatchType != null
                     ? AccessTools.Method(aimTimePatchType, "CalculateAim")
@@ -346,6 +360,74 @@ namespace pitTeam.Modules
             {
                 // Preserve SAIN's result if the optional integration changes shape.
             }
+        }
+
+        [HarmonyPostfix]
+        private static void ApplyFollowerAccuracyToCalculatedRecoil(object __instance)
+        {
+            try
+            {
+                ResolveRecoilRuntimeFields(__instance.GetType());
+                BotOwner? bot = (_recoilBotOwnerProperty?.GetValue(__instance) ??
+                    _recoilBotOwnerField?.GetValue(__instance)) as BotOwner;
+                if (bot == null ||
+                    !FollowerProficiency.TryGetValues(bot, out FollowerProficiencyValues? values))
+                {
+                    return;
+                }
+
+                float accuracyFactor = values.Modifiers.SafeAccuracyFactor;
+                if (Mathf.Approximately(accuracyFactor, 1f))
+                {
+                    return;
+                }
+
+                if (_currentRecoilHorizAngleField?.GetValue(__instance) is not float currentHorizontal ||
+                    _currentRecoilVertAngleField?.GetValue(__instance) is not float currentVertical)
+                {
+                    return;
+                }
+
+                float scaledHorizontal = currentHorizontal / accuracyFactor;
+                float scaledVertical = currentVertical / accuracyFactor;
+                if (float.IsNaN(scaledHorizontal) ||
+                    float.IsInfinity(scaledHorizontal) ||
+                    float.IsNaN(scaledVertical) ||
+                    float.IsInfinity(scaledVertical))
+                {
+                    return;
+                }
+
+                _currentRecoilHorizAngleField.SetValue(__instance, scaledHorizontal);
+                _currentRecoilVertAngleField.SetValue(__instance, scaledVertical);
+            }
+            catch (Exception ex)
+            {
+                if (!_accuracyPatchFailureReported)
+                {
+                    _accuracyPatchFailureReported = true;
+                    Logger.LogError("[SAIN] Failed to apply core-owned follower Accuracy to calculated recoil; further failures will be suppressed.");
+                    Logger.LogError(ex);
+                }
+            }
+        }
+
+        private static void ResolveRecoilRuntimeFields(Type recoilType)
+        {
+            if (_recoilRuntimeFieldsResolved)
+            {
+                return;
+            }
+
+            _recoilBotOwnerProperty = AccessTools.Property(recoilType, "BotOwner");
+            if (_recoilBotOwnerProperty == null)
+            {
+                _recoilBotOwnerField = AccessTools.Field(recoilType, "BotOwner");
+            }
+
+            _currentRecoilHorizAngleField = AccessTools.Field(recoilType, "_currentRecoilHorizAngle");
+            _currentRecoilVertAngleField = AccessTools.Field(recoilType, "_currentRecoilVertAngle");
+            _recoilRuntimeFieldsResolved = true;
         }
 
         [HarmonyPrefix]

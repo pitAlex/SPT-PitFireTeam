@@ -1,5 +1,6 @@
 using DrakiaXYZ.BigBrain.Brains;
 using EFT;
+using pitTeam.Modules;
 using pitTeam.Utils;
 using UnityEngine;
 using UnityEngine.AI;
@@ -24,6 +25,7 @@ namespace pitTeam.BigBrain.Actions
         private const float CloseContactFireAngle = 18f;
         private const float RecentContactFireAngle = 15f;
         private const float PointBlankContactFireAngle = 55f;
+        private const float ImmediateFireReactionDelay = 0.2f;
 
         private readonly Aiming shootLogic;
         private readonly ShallThrowGrenade grenadeLogic;
@@ -31,6 +33,9 @@ namespace pitTeam.BigBrain.Actions
 
         private DogFightMoveStatus moveStatus;
         private float nextMoveUpdateTime;
+        private string immediateFireEnemyProfileId = string.Empty;
+        private float immediateFireReadyTime;
+        private bool immediateFireContactActive;
 
         public CombatDogFightAction(BotOwner botOwner) : base(botOwner)
         {
@@ -44,6 +49,7 @@ namespace pitTeam.BigBrain.Actions
             StopStationaryCombatMovement();
             moveStatus = DogFightMoveStatus.None;
             nextMoveUpdateTime = 0f;
+            ResetImmediateFireReactionGate();
         }
 
         public override void Stop()
@@ -51,6 +57,7 @@ namespace pitTeam.BigBrain.Actions
             StopCombatShooting();
             moveStatus = DogFightMoveStatus.None;
             nextMoveUpdateTime = 0f;
+            ResetImmediateFireReactionGate();
 
             if (BotOwner?.DogFight != null)
             {
@@ -95,6 +102,7 @@ namespace pitTeam.BigBrain.Actions
 
             bool hasAcceptedMovement = UpdateSainLikeMovement(goalEnemy);
             bool hasFireContact = hasConfirmedShot || hasPointBlankContactShot || hasRecentContactShot;
+            bool immediateFireReactionReady = UpdateImmediateFireReactionGate(goalEnemy, hasFireContact);
 
             // Close retreat movement is dangerous if it turns the bot away from the attacker.
             // A nearby door can also make EFT immediately cancel an otherwise accepted dodge.
@@ -159,7 +167,7 @@ namespace pitTeam.BigBrain.Actions
 
             if (hasPointBlankContactShot && !hasConfirmedShot)
             {
-                if (GetLookAngleToPoint(shootPoint) <= PointBlankContactFireAngle)
+                if (immediateFireReactionReady && GetLookAngleToPoint(shootPoint) <= PointBlankContactFireAngle)
                 {
                     BotOwner.ShootData.Shoot();
                 }
@@ -173,7 +181,7 @@ namespace pitTeam.BigBrain.Actions
 
             if (hasRecentContactShot && !hasConfirmedShot)
             {
-                if (GetLookAngleToPoint(shootPoint) <= RecentContactFireAngle)
+                if (immediateFireReactionReady && GetLookAngleToPoint(shootPoint) <= RecentContactFireAngle)
                 {
                     BotOwner.ShootData.Shoot();
                 }
@@ -186,18 +194,55 @@ namespace pitTeam.BigBrain.Actions
             }
 
             if (goalEnemy.Distance <= CloseContactFireDistance &&
+                immediateFireReactionReady &&
                 GetLookAngleToPoint(shootPoint) <= CloseContactFireAngle)
             {
                 BotOwner.ShootData.Shoot();
             }
 
             if (goalEnemy.Distance <= FastFireDistance &&
+                immediateFireReactionReady &&
                 CombatAttackMoveLook.GetThreatLookAngle(BotOwner, goalEnemy) <= FastFireAngle)
             {
                 BotOwner.ShootData.Shoot();
             }
 
             shootLogic.UpdateNodeByBrain(GetData<AimingResultParams>(data));
+        }
+
+        private bool UpdateImmediateFireReactionGate(EnemyInfo? goalEnemy, bool hasFireContact)
+        {
+            if (!hasFireContact || goalEnemy == null)
+            {
+                ResetImmediateFireReactionGate();
+                return false;
+            }
+
+            string enemyProfileId = goalEnemy.ProfileId ?? string.Empty;
+            if (!immediateFireContactActive ||
+                !string.Equals(immediateFireEnemyProfileId, enemyProfileId, System.StringComparison.Ordinal))
+            {
+                immediateFireContactActive = true;
+                immediateFireEnemyProfileId = enemyProfileId;
+                immediateFireReadyTime = Time.time + GetImmediateFireReactionDelay();
+                return false;
+            }
+
+            return Time.time >= immediateFireReadyTime;
+        }
+
+        private float GetImmediateFireReactionDelay()
+        {
+            return FollowerProficiency.TryGetValues(BotOwner, out FollowerProficiencyValues? values)
+                ? values.Modifiers.ScaleReactionDelay(ImmediateFireReactionDelay)
+                : ImmediateFireReactionDelay;
+        }
+
+        private void ResetImmediateFireReactionGate()
+        {
+            immediateFireContactActive = false;
+            immediateFireEnemyProfileId = string.Empty;
+            immediateFireReadyTime = 0f;
         }
 
         private bool UpdateSainLikeMovement(EnemyInfo? goalEnemy)

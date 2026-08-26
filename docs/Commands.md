@@ -46,6 +46,7 @@ There are three execution paths:
 
 3. **SAIN addon combat**
    - Only active when SAIN plugin and the pitFireTeam SAIN addon are both present.
+   - The addon's purpose is to switch follower combat-brain ownership to SAIN; command handling here is bridge glue required to preserve pitFireTeam orders on that path. SAIN-brain-specific tuning may also live in the addon, but general SAIN conflict fixes belong in the main plugin.
    - `RegroupNearBoss` is seen by `SAINFollowerCombatLayer` and translated into SAIN `ESquadDecision.Regroup`.
    - Temporary `HoldPosition` combat aggression override is also treated as regroup/protection intent by the SAIN addon.
 
