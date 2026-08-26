@@ -1,6 +1,6 @@
 # Command System Notes
 
-Last updated: 2026-07-30
+Last updated: 2026-08-26
 
 ## Scope
 
@@ -58,6 +58,7 @@ There are three execution paths:
 | `HoldPosition` | none | infinite | `GestureCommandAction` |
 | `MoveToPoint` | sampled world/nav point | infinite | `GestureCommandAction` |
 | `ComeCloser` | boss position snapshot owned by action | timed unless resuming a hold | `GestureCommandAction` |
+| `ContactApproach` | boss position and Contact bearing snapshots | timed | `GestureCommandAction` |
 | `RegroupNearBoss` | normal or tight mode | timed | `GestureCommandAction`, core combat regroup, or SAIN addon |
 | `TakeLootItem` | reserved current loot item, not `_commandTarget` | timed | `GestureCommandAction` |
 | `OpenDoor` | reserved current door, not `_commandTarget` | timed | `GestureCommandAction` |
@@ -109,8 +110,13 @@ Behavior:
 - Builds candidate enemies from interactable seen-enemy cache, boss visible enemies, SAIN contact fallback, and directed visible candidates.
 - Registers valid enemies into follower memory and can promote a prioritized enemy as `GoalEnemy`.
 - Applies a short look override toward the boss's look direction for followers without their own visible goal.
+- The first Contact phrase keeps this existing look-only behavior. A second Contact phrase issued between `0.35s` and `5s` later consumes the pair and asks eligible out-of-combat followers to check from the boss's position snapshot while keeping the Contact bearing.
+- The repeated-Contact approach is phrase-only; the custom `OverThere` gesture does not arm or consume the pair.
+- The approach reuses request-layer Come Closer movement: it only starts for a same-floor follower with a complete NavMesh path, walks or runs according to distance, and stops within about `1.5m` of the boss snapshot.
+- A repeated Contact replaces any prior Hold order. After checking from the reached position, the follower returns to normal follow instead of holding at either the original or new position.
+- Followers do not start the approach while combat handoff is active, healing, inspecting a backpack, committed to loot work, already close enough, on another floor, or unable to build a complete path.
 - Custom `OverThere` also forwards an `OnRepeatedContact` phrase event to visible followers so they can play normal voice/receiver feedback.
-- This is a combat cue, not a `FollowerCommandType`.
+- The normal Contact cue does not create command state; only the valid second phrase creates `FollowerCommandType.ContactApproach`.
 - Contact injection clears most active request-layer commands after the follower now has an enemy, except `PushEnemy` and `SuppressEnemy`.
 - If the contact enemy and player can see each other, Contact acts as a quick Need Help cue for nearby followers: followers within `50m` of the player cancel ordered push and prioritize that enemy through the boss-under-attack/help path.
 

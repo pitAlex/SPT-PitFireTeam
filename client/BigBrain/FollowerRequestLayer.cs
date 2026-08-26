@@ -159,7 +159,8 @@ namespace pitTeam.BigBrain
 
             return command == FollowerCommandType.HoldPosition ||
                    command == FollowerCommandType.MoveToPoint ||
-                   command == FollowerCommandType.ComeCloser;
+                   command == FollowerCommandType.ComeCloser ||
+                   command == FollowerCommandType.ContactApproach;
         }
 
         [System.Diagnostics.Conditional("DEBUG")]

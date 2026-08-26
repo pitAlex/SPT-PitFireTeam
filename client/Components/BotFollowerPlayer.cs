@@ -43,7 +43,9 @@ namespace pitTeam.Components
         CombatComeToBossCover = 11,
         CombatMoveToPointTactical = 12,
         // Commanded searchable-container looting through backpack/pocket cargo space.
-        TakeContainerLoot = 13
+        TakeContainerLoot = 13,
+        // Second-step out-of-combat Contact check toward the boss's snapshotted position.
+        ContactApproach = 14
     }
 
     public enum FollowerCombatTactic
@@ -1402,8 +1404,14 @@ namespace pitTeam.Components
                 return;
             }
 
-            FollowerCommandType previous = _activeCommand;
-            if (_activeCommand == FollowerCommandType.HoldPosition)
+            bool resumeHold = _activeCommand == FollowerCommandType.HoldPosition ||
+                              (_activeCommand == FollowerCommandType.ContactApproach && _resumeHoldAfterComeCloser);
+            if (_activeCommand == FollowerCommandType.ContactApproach)
+            {
+                ClearCommand("SetComeCloser:replace(ContactApproach)");
+            }
+
+            if (resumeHold)
             {
                 _resumeHoldAfterComeCloser = true;
             }
@@ -1420,6 +1428,36 @@ namespace pitTeam.Components
             _resumeHoldAfterTakeLoot = false;
             _resumeHoldAfterTakeLootCrouch = false;
             BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(SetComeCloser));
+        }
+
+        public void SetContactApproach(Vector3 bossPositionAtContact, Vector3 lookTarget, float duration)
+        {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
+            if (_activeCommand != FollowerCommandType.None &&
+                _activeCommand != FollowerCommandType.HoldPosition &&
+                _activeCommand != FollowerCommandType.ComeCloser &&
+                _activeCommand != FollowerCommandType.ContactApproach)
+            {
+                ClearCommand($"SetContactApproach:replace({_activeCommand})");
+            }
+
+            float commandDuration = Mathf.Max(2f, duration);
+            ClearVanillaRequestState(null, nameof(SetContactApproach));
+            _activeCommand = FollowerCommandType.ContactApproach;
+            _commandTarget = bossPositionAtContact;
+            _commandUntilTime = Time.time + commandDuration;
+            // ContactApproach deliberately replaces Hold. Completing the check leaves the
+            // follower at the reached position and returns to normal follow from there.
+            _resumeHoldAfterComeCloser = false;
+            _resumeHoldAfterTakeLoot = false;
+            _resumeHoldAfterTakeLootCrouch = false;
+            ResetPostLootMoveState();
+            SetCommandLookOverride(lookTarget, commandDuration);
+            BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(SetContactApproach));
         }
 
         public void SetRegroup(float duration, bool tightRegroup = false)
@@ -1791,9 +1829,16 @@ namespace pitTeam.Components
 
         public void CompleteComeCloser()
         {
-            if (_activeCommand != FollowerCommandType.ComeCloser)
+            if (_activeCommand != FollowerCommandType.ComeCloser &&
+                _activeCommand != FollowerCommandType.ContactApproach)
             {
                 return;
+            }
+
+            bool completedContactApproach = _activeCommand == FollowerCommandType.ContactApproach;
+            if (completedContactApproach)
+            {
+                ClearCommandLookOverride();
             }
 
             if (_resumeHoldAfterComeCloser)
@@ -1813,6 +1858,9 @@ namespace pitTeam.Components
         {
             return _activeCommand == FollowerCommandType.ComeCloser && _resumeHoldAfterComeCloser;
         }
+
+        public bool IsContactApproachRequested =>
+            _activeCommand == FollowerCommandType.ContactApproach;
 
         public void CompleteMoveToPoint(string reason)
         {

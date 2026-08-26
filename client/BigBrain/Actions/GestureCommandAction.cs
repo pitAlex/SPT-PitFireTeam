@@ -345,7 +345,11 @@ namespace pitTeam.BigBrain.Actions
                     break;
 
                 case FollowerCommandType.ComeCloser:
-                    HandleComeCloser();
+                    HandleComeCloser(target, contactApproach: false);
+                    break;
+
+                case FollowerCommandType.ContactApproach:
+                    HandleComeCloser(target, contactApproach: true);
                     break;
 
                 case FollowerCommandType.MoveToPoint:
@@ -379,7 +383,8 @@ namespace pitTeam.BigBrain.Actions
                 lastMoveToPointIssueSequence = followerData.MoveToPointIssueSequence;
                 if (
                     command == FollowerCommandType.MoveToPoint ||
-                    command == FollowerCommandType.ComeCloser
+                    command == FollowerCommandType.ComeCloser ||
+                    command == FollowerCommandType.ContactApproach
                 )
                 {
                     BotOwner.Steering.LookToMovingDirection();

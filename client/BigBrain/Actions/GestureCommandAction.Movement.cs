@@ -365,7 +365,7 @@ namespace pitTeam.BigBrain.Actions
             return combatEvents != null;
         }
 
-        private void HandleComeCloser()
+        private void HandleComeCloser(Vector3 commandTarget, bool contactApproach)
         {
             if (BotOwner.BotFollower.BossToFollow is not pitAIBossPlayer boss || boss.realPlayer == null)
             {
@@ -373,10 +373,16 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            if (!comeTargetInitialized)
+            bool contactTargetChanged = contactApproach &&
+                                        comeTargetInitialized &&
+                                        (comeTarget - commandTarget).sqrMagnitude > 0.25f;
+            if (!comeTargetInitialized || contactTargetChanged)
             {
-                comeTarget = boss.realPlayer.Transform.position;
+                comeTarget = contactApproach
+                    ? commandTarget
+                    : boss.realPlayer.Transform.position;
                 comeTargetInitialized = true;
+                comeArrivalHoldUntil = 0f;
             }
             if (!comePoseInitialized)
             {
@@ -387,6 +393,17 @@ namespace pitTeam.BigBrain.Actions
             }
 
             float distance = (comeTarget - BotOwner.Position).magnitude;
+            if (contactApproach && Time.time >= nextPathCheckAt)
+            {
+                nextPathCheckAt = Time.time + 0.5f;
+                if (!Utils.Utils.TryGetCompletePathDistance(BotOwner.Position, comeTarget, out _))
+                {
+                    followerData?.ClearCommand("ContactApproach:pathInvalid");
+                    BotOwner.StopMove();
+                    return;
+                }
+            }
+
             if (distance > 1.5f && comeArrivalHoldUntil > 0f)
             {
                 comeArrivalHoldUntil = 0f;
@@ -394,7 +411,7 @@ namespace pitTeam.BigBrain.Actions
             if (distance <= 1.5f)
             {
 
-                HandleComeArrivalPause();
+                HandleComeArrivalPause(contactApproach);
                 if (Time.time < comeArrivalHoldUntil)
                 {
                     return;
@@ -411,7 +428,10 @@ namespace pitTeam.BigBrain.Actions
 
             BotOwner.GoToSomePointData.SetPoint(comeTarget);
             BotOwner.GoToSomePointData.UpdateToGo(distance > 16f, 1, comeMovePose);
-            BotOwner.Steering.LookToPathDestPoint();
+            if (!contactApproach || !BotFollowerPlayer.TryApplyCommandLookOverride(BotOwner))
+            {
+                BotOwner.Steering.LookToPathDestPoint();
+            }
             moveCommandInitialized = false;
             nextHoldLookChangeAt = 0f;
             moveArrivalLookUntil = 0f;
@@ -807,12 +827,18 @@ namespace pitTeam.BigBrain.Actions
             activeMoveTarget = Vector3.zero;
         }
 
-        private void HandleComeArrivalPause()
+        private void HandleComeArrivalPause(bool contactApproach)
         {
             BotOwner.StopMove();
             if (BotOwner.Mover.Sprinting)
             {
                 BotOwner.Mover.Sprint(false, false);
+            }
+
+            if (contactApproach && comeArrivalHoldUntil <= 0f)
+            {
+                comeArrivalHoldUntil = Time.time + Utils.Utils.Random(1.25f, 2.5f);
+                nextHoldLookChangeAt = 0f;
             }
 
             if (followerData?.TryGetCommandLookOverride(out Vector3 holdLookOverridePoint) == true)

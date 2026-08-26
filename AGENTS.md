@@ -496,6 +496,7 @@ Supported commands via `GestureCommandAction`:
     - Standard gesture-initiated: applies crouch by default
     - Phrase-initiated (STOP): applies no crouch, released by distance >25m or boss out-of-range
 - **ComeCloser** — Move within ~1m of boss, then resume prior hold
+- **ContactApproach** — A second Contact phrase within 5s moves eligible out-of-combat same-floor followers toward the boss's snapshotted position while they keep looking along the commanded Contact bearing
 - **MoveToPoint** ("There") — Walk to NavMesh-validated target, brief arrival look-around
     - Gesture-initiated: single-follower move-to-point
     - Phrase-initiated: still used for explicit point movement when follower has no combat enemy
@@ -940,6 +941,7 @@ Request/gesture movement:
 - `GestureCommandAction` handles:
     - `HoldPosition`: stop, crouch pose, periodic random look-around, no command timeout (persists until replaced/cleared).
     - `ComeCloser`: move to boss until close (about `1m`).
+    - `ContactApproach`: phrase-only second-step Contact check using the boss position and look bearing snapshotted on the second phrase; it reuses ComeCloser movement, complete-path validation, distance-based walk/run, and same-floor gating, but deliberately discards a prior Hold so completion returns to normal follow.
     - `MoveToPoint` (`There`): move to projected/navmesh-validated target point (walk-only), then brief look-around on arrival.
     - loose `LootGeneric` / `LootWeapon` command route:
         - boss phrase selects the eligible follower with the shortest complete NavMesh path to the targeted loot object,
@@ -990,6 +992,7 @@ Request/gesture movement:
     - `Hold` / `Come` interrupt and replace `There`/arrival-look behavior.
 - Contact look pause:
     - On enemy-contact orders (`OnRepeatedContact` / custom `OverThere`), command random look logic is paused for ~`2-4s` so bots keep contact orientation.
+    - A second `OnRepeatedContact` phrase within `5s` consumes the phrase pair and creates an out-of-combat `ContactApproach` for eligible followers; custom `OverThere` remains look/contact-only and does not participate in the pair.
 - Gesture routing:
     - Custom `OverThere` is handled separately from `There`.
     - A short suppression guard prevents immediate `There` echo from being treated as move-to-point after custom `OverThere`.

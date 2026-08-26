@@ -55,6 +55,10 @@ namespace pitTeam.Components
         private const float TeamStatusGestureDistance = 20f;
         private const float ContactLookDistance = 45f;
         private const float ContactConeMinDot = 0.45f;
+        private const float ContactRepeatWindowSeconds = 5f;
+        private const float ContactRepeatMinimumSeconds = 0.35f;
+        private const float ContactApproachDurationSeconds = 20f;
+        private const float ContactApproachArriveDistance = 1.5f;
         private const float GestureCommandDistance = 20f;
         private const float HoldGestureDistance = 25f;
         private const float PhraseCommandDistance = 30f;
@@ -83,6 +87,7 @@ namespace pitTeam.Components
         private float _nextThereGestureAt;
         private float _lastTeamStatusCommandAt = -999f;
         private float _lastAttentionCommandAt = -999f;
+        private float _lastContactPhraseAt = -999f;
         private readonly Dictionary<string, Action<EDamageType>> _followerDeathHandlers = new Dictionary<string, Action<EDamageType>>();
         private readonly Dictionary<string, FallenFollowerInfo> _pendingFriendlyDown = new Dictionary<string, FallenFollowerInfo>();
         private readonly HashSet<string> _activeFollowerCombatProfiles = new HashSet<string>(StringComparer.Ordinal);
@@ -206,7 +211,9 @@ namespace pitTeam.Components
                 else if (info.phrase == EPhraseTrigger.OnRepeatedContact)
                 {
                     // Contact: point followers toward a seen or aimed-at threat and seed enemy memory.
-                    ProcessContactCommand(info.PlayerRequester);
+                    ProcessContactCommand(
+                        info.PlayerRequester,
+                        approachOnRepeat: ConsumeRepeatedContactPhrase());
                     return;
                 }
                 else if (info.phrase == EPhraseTrigger.InTheFront ||
@@ -405,7 +412,25 @@ namespace pitTeam.Components
             }
         }
 
-        private void ProcessContactCommand(IPlayer requester, bool requireGestureVisibility = false)
+        private bool ConsumeRepeatedContactPhrase()
+        {
+            float now = Time.time;
+            float elapsed = now - _lastContactPhraseAt;
+            if (elapsed < ContactRepeatMinimumSeconds)
+            {
+                // Do not let duplicate delivery of one spoken phrase count as the second step.
+                return false;
+            }
+
+            bool repeatedWithinWindow = elapsed <= ContactRepeatWindowSeconds;
+            _lastContactPhraseAt = repeatedWithinWindow ? -999f : now;
+            return repeatedWithinWindow;
+        }
+
+        private void ProcessContactCommand(
+            IPlayer requester,
+            bool requireGestureVisibility = false,
+            bool approachOnRepeat = false)
         {
             if (requester == null) return;
 
@@ -451,6 +476,7 @@ namespace pitTeam.Components
                 aBossLogic.MarkManualUnderAttack(contactHelpEnemy);
             }
 
+            Vector3 bossPositionAtContact = requester.Transform.position;
             Vector3 lookTarget = GetLookTargetFromDirection(requester, requester.LookDirection);
             int followersProcessed = 0;
             int followersSkippedVisibility = 0;
@@ -484,7 +510,16 @@ namespace pitTeam.Components
                 }
                 followersProcessed++;
 
-                if (seenEnemies == null || seenEnemies.Count == 0) continue;
+                if (seenEnemies == null || seenEnemies.Count == 0)
+                {
+                    TryIssueRepeatedContactApproach(
+                        approachOnRepeat,
+                        follower,
+                        followerData,
+                        bossPositionAtContact,
+                        lookTarget);
+                    continue;
+                }
 
                 bool contactHelpForFollower =
                     contactInvokesNeedHelp &&
@@ -585,8 +620,58 @@ namespace pitTeam.Components
                     followerData.RequestOrderedPushCancel("ContactHelp");
                     PrioritizeEnemy(follower, contactHelpEnemy);
                 }
+
+                TryIssueRepeatedContactApproach(
+                    approachOnRepeat,
+                    follower,
+                    followerData,
+                    bossPositionAtContact,
+                    lookTarget);
             }
 
+        }
+
+        private static void TryIssueRepeatedContactApproach(
+            bool approachOnRepeat,
+            BotOwner follower,
+            BotFollowerPlayer followerData,
+            Vector3 bossPositionAtContact,
+            Vector3 lookTarget)
+        {
+            if (!approachOnRepeat ||
+                follower == null ||
+                followerData == null ||
+                followerData.IsBackpackInspectionActive ||
+                followerData.HasCombatHandoffSignal())
+            {
+                return;
+            }
+
+            BotLogicDecision currentDecision =
+                follower.Brain?.Agent?.LastResult().Action ?? BotLogicDecision.holdPosition;
+            bool healing = follower.Medecine?.FirstAid?.Using == true ||
+                           follower.Medecine?.SurgicalKit?.Using == true ||
+                           currentDecision == BotLogicDecision.heal ||
+                           currentDecision == BotLogicDecision.healStimulators;
+            if (healing ||
+                Mathf.Abs(follower.Position.y - bossPositionAtContact.y) > RegroupSameLevelTolerance)
+            {
+                return;
+            }
+
+            if (!Utils.Utils.TryGetCompletePathDistance(
+                    follower.Position,
+                    bossPositionAtContact,
+                    out float navDistance) ||
+                navDistance <= ContactApproachArriveDistance)
+            {
+                return;
+            }
+
+            followerData.SetContactApproach(
+                bossPositionAtContact,
+                lookTarget,
+                ContactApproachDurationSeconds);
         }
 
         public void MarkBossShot(Vector3 shotOrigin, Vector3 shotDirection)
