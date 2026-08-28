@@ -104,7 +104,6 @@ namespace pitTeam.BigBrain
         private float _nextErrorLogAt;
 
         private float healSoftTimeoutAt = 0f;
-        private float healStartAt = 0f;
         private float healNodeEnteredAt = 0f;
         private bool isHealing = false;
         private bool triedFillMagazines = false;
@@ -540,28 +539,21 @@ namespace pitTeam.BigBrain
                 out bool isUsingHeal,
                 out bool hasPendingHealWork,
                 out bool hasRecoverableTopOffWork);
-            float healTimeout = BotOwner.Medecine.SurgicalKit.Using ? 45f : 15f;
             if (isUsingHeal)
             {
                 healNodeEnteredAt = Time.time;
-                if (!healUseObserved || healStartAt <= 0f)
+                if (!healUseObserved)
                 {
                     healUseObserved = true;
-                    healStartAt = Time.time;
                 }
 
-                if (healStartAt > 0f && healStartAt + healTimeout < Time.time)
-                {
-                    AbortHealing();
-                    return true;
-                }
-
+                // FollowerMedical owns stuck controller recovery. Do not cancel a legitimate
+                // multi-part heal here merely because its total animation exceeds 15 seconds.
                 return false;
             }
 
             bool completedMedicalUse = healUseObserved;
             healUseObserved = false;
-            healStartAt = 0f;
 
             // Old EndHeal equivalent: no real medical work -> end heal action. The post-combat
             // restore timer can keep running after movement resumes.
@@ -652,7 +644,6 @@ namespace pitTeam.BigBrain
             stoppedForHealDecision = false;
             healUseObserved = false;
             ResetPatrolHealStartAnnouncementIfSequenceComplete();
-            healStartAt = 0f;
             healSoftTimeoutAt = 0f;
             healNodeEnteredAt = 0f;
             nextHealStartCheckAt = 0f;
@@ -667,7 +658,6 @@ namespace pitTeam.BigBrain
             stoppedForHealDecision = false;
             healUseObserved = false;
             ResetPatrolHealStartAnnouncementIfSequenceComplete();
-            healStartAt = 0f;
             healSoftTimeoutAt = 0f;
             healNodeEnteredAt = 0f;
             nextHealStartCheckAt = 0f;
@@ -686,7 +676,6 @@ namespace pitTeam.BigBrain
             stoppedForHealDecision = false;
             patrolHealStartAnnounced = false;
             healUseObserved = false;
-            healStartAt = 0f;
             healSoftTimeoutAt = 0f;
             healNodeEnteredAt = 0f;
             nextHealStartCheckAt = 0f;
@@ -955,7 +944,6 @@ namespace pitTeam.BigBrain
         {
             if (!isHealing)
             {
-                healStartAt = 0f;
                 healUseObserved = false;
                 healNodeEnteredAt = Time.time;
             }

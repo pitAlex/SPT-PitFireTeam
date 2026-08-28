@@ -161,6 +161,7 @@ namespace pitTeam.BigBrain
         internal const string RecoveryNoCoverFightReason = "recovery.noCoverFight";
         internal const string RecoveryNoCoverSuppressReason = "recovery.noCoverSuppress";
         internal const string RecoveryNoCoverThreatHoldReason = "recovery.noCoverThreatHold";
+        internal const string HealRetryHoldReason = "medicalRetryHold";
         private const float RecoveryNoCoverCommitSeconds = 2.5f;
         private const float RecoveryNoCoverPointBlankBreakDistance = 5f;
         private const float OrderedSuppressMinSeconds = 2f;
@@ -239,6 +240,7 @@ namespace pitTeam.BigBrain
         private AICoreActionResult<BotLogicDecision, CoreActionResultParams>? initialDecision;
         private float healBlockUntil;
         private float healStartedAt;
+        private float healIdleStartedAt;
         private float stimStartedAt;
         private float nextCombatHealWorkRefreshAt;
         private float combatReloadRetryAt;
@@ -662,6 +664,7 @@ namespace pitTeam.BigBrain
             initialDecision = null;
             healBlockUntil = 0f;
             healStartedAt = 0f;
+            healIdleStartedAt = 0f;
             stimStartedAt = 0f;
             nextCombatHealWorkRefreshAt = 0f;
             combatReloadRetryAt = 0f;
@@ -8759,6 +8762,13 @@ namespace pitTeam.BigBrain
                 return healDecision;
             }
 
+            if (ShouldHoldForHealRetry())
+            {
+                return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
+                    BotLogicDecision.holdPosition,
+                    HealRetryHoldReason);
+            }
+
             return null;
         }
 
@@ -15203,6 +15213,11 @@ namespace pitTeam.BigBrain
 
         public bool IsHealDecisionRetryBlocked => healBlockUntil >= Time.time;
 
+        public bool ShouldHoldForHealRetry()
+        {
+            return IsHealDecisionRetryBlocked && HasActiveOrPendingHealWork();
+        }
+
         /// <summary>
         /// Check if follower is injured and should avoid aggressive advances.
         /// Prefers cover-holding or cautious movement when injured and under recent fire.
@@ -16015,15 +16030,12 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEnd(exposedReason, true);
             }
 
-            float timeout = botOwner.Medecine.SurgicalKit.Using ? 45f : 15f;
             if (activelyHealing)
             {
-                if (healStartedAt > 0f && healStartedAt + timeout < Time.time)
-                {
-                    AbortActiveHeal();
-                    return new AICoreActionEnd("healTimedOut", true);
-                }
-
+                healIdleStartedAt = 0f;
+                // FollowerMedical owns stuck medical-controller recovery. An active EFT heal may
+                // legitimately span several body parts, so combat must not abort it on wall-clock
+                // duration alone. Tactical exposure interrupts above remain immediate.
                 return Continue();
             }
 
@@ -16033,11 +16045,15 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEnd("healCompleted", true);
             }
 
-            // If the heal action never transitions into active first-aid/surgery use, do not let the
-            // bot sit in healInCover forever waiting on a stuck vanilla node.
-            if (!activelyHealing &&
-                healStartedAt > 0f &&
-                healStartedAt + 3f < Time.time)
+            // Give EFT a fresh window to start the first treatment or its next treatment after a
+            // completed animation. This idle timer begins only after active use stops; measuring it
+            // from the original decision would instantly expire after any legitimate long heal.
+            if (healIdleStartedAt <= 0f)
+            {
+                healIdleStartedAt = Time.time;
+            }
+
+            if (Time.time - healIdleStartedAt > 3f)
             {
                 CompleteActiveHeal();
                 return new AICoreActionEnd("healIdleTimedOut", true);
@@ -16098,6 +16114,7 @@ namespace pitTeam.BigBrain
             FollowerMedical.RefreshMedicalWork(botOwner);
             healBlockUntil = Time.time + 0.75f;
             healStartedAt = 0f;
+            healIdleStartedAt = 0f;
         }
 
         public AICoreActionEnd EndStimulators()
@@ -17313,14 +17330,7 @@ namespace pitTeam.BigBrain
             FollowerMedical.CompleteHealing(botOwner);
             healBlockUntil = Time.time + 5f;
             healStartedAt = 0f;
-        }
-
-        private void AbortActiveHeal()
-        {
-            ClearCommittedHealCover();
-            FollowerMedical.AbortHealing(botOwner, recoverDestroyedSurgeryParts: true);
-            healBlockUntil = Time.time + 5f;
-            healStartedAt = 0f;
+            healIdleStartedAt = 0f;
         }
 
         public AICoreActionEnd EndShootFromCover()
@@ -17518,6 +17528,7 @@ namespace pitTeam.BigBrain
                    string.Equals(reason, "unsafePushBossHold", StringComparison.Ordinal) ||
                    string.Equals(reason, "escortNoSafeCover", StringComparison.Ordinal) ||
                    string.Equals(reason, "bossHoldOpen", StringComparison.Ordinal) ||
+                   string.Equals(reason, HealRetryHoldReason, StringComparison.Ordinal) ||
                    string.Equals(reason, "reloadNoCover", StringComparison.Ordinal) ||
                    string.Equals(reason, RecoveryNoCoverThreatHoldReason, StringComparison.Ordinal) ||
                    FollowerCombatPush.IsNoPushHoldReason(reason) ||

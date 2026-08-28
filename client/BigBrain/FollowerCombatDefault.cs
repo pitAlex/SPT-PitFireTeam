@@ -410,6 +410,13 @@ namespace pitTeam.BigBrain
                 return healDecision;
             }
 
+            if (combatCommon.ShouldHoldForHealRetry())
+            {
+                return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
+                    BotLogicDecision.holdPosition,
+                    FollowerCombatCommon.HealRetryHoldReason);
+            }
+
             if (!ShouldPrioritizeRecoveryBeforeSupport(goalEnemy) &&
                 TryGetAllySupportDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> earlyAllySupportDecision))
             {
@@ -1107,7 +1114,7 @@ namespace pitTeam.BigBrain
             switch (currentDecision.Action)
             {
                 case BotLogicDecision.holdPosition:
-                    return EndHoldPosition(currentDecision.Reason);
+                    return EndHoldPosition(currentDecision);
                 case BotLogicDecision.runToCover:
                 case BotLogicDecision.attackMoving:
                 case BotLogicDecision.attackMovingWithSuppress:
@@ -1877,8 +1884,10 @@ namespace pitTeam.BigBrain
         /// <summary>
         /// Ends passive hold when the bot leaves committed cover or should transition back into action.
         /// </summary>
-        private AICoreActionEnd EndHoldPosition(string reason)
+        private AICoreActionEnd EndHoldPosition(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
         {
+            string reason = currentDecision.Reason;
             combatCommon.ValidateCommittedCover();
 
             if (string.Equals(reason, FollowerCombatCommon.RecoveryNoCoverThreatHoldReason, StringComparison.Ordinal))
@@ -1896,6 +1905,11 @@ namespace pitTeam.BigBrain
                 combatCommon.ClearCommittedCover();
                 ClearCoverIntent();
                 return new AICoreActionEnd("combatGestureBreakHold", true);
+            }
+
+            if (string.Equals(reason, FollowerCombatCommon.HealRetryHoldReason, StringComparison.Ordinal))
+            {
+                return EndMedicalRetryHold(currentDecision);
             }
 
             if (FollowerCombatCommon.IsReloadHoldReason(reason))
@@ -2032,6 +2046,72 @@ namespace pitTeam.BigBrain
             }
 
             return combatCommon.EndBaseHoldPosition(reason);
+        }
+
+        private AICoreActionEnd EndMedicalRetryHold(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
+        {
+            EnemyInfo? goalEnemy = botOwner.Memory?.GoalEnemy;
+            if (!combatCommon.HasActiveCombatEnemy(goalEnemy) || goalEnemy == null)
+            {
+                return new AICoreActionEnd("medicalRetryCombatEnded", true);
+            }
+
+            if (TryGetImmediateFightDecision(
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> immediateFight) &&
+                combatCommon.TryPrepareDecisionTransition(
+                    currentDecision,
+                    "medicalRetryImmediateFight",
+                    immediateFight))
+            {
+                return new AICoreActionEnd("medicalRetryImmediateFight", true);
+            }
+
+            if (TryGetRecoverDecision(
+                    goalEnemy,
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> recoveryDecision) &&
+                combatCommon.TryPrepareDecisionTransition(
+                    currentDecision,
+                    "medicalRetryDangerRecovery",
+                    recoveryDecision))
+            {
+                return new AICoreActionEnd("medicalRetryDangerRecovery", true);
+            }
+
+            if (TryGetBossUnderAttackDecision(
+                    goalEnemy,
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> bossSupportDecision) &&
+                combatCommon.TryPrepareDecisionTransition(
+                    currentDecision,
+                    "medicalRetryBossSupport",
+                    bossSupportDecision))
+            {
+                return new AICoreActionEnd("medicalRetryBossSupport", true);
+            }
+
+            if (combatCommon.IsHealDecisionRetryBlocked)
+            {
+                return FollowerCombatCommon.Continue();
+            }
+
+            if (TryGetHealDecision(
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> healDecision) &&
+                combatCommon.TryPrepareDecisionTransition(
+                    currentDecision,
+                    "medicalRetryReady",
+                    healDecision))
+            {
+                return new AICoreActionEnd("medicalRetryReady", true);
+            }
+
+            if (!combatCommon.HasActiveOrPendingHealWork())
+            {
+                return new AICoreActionEnd("medicalRetryCleared", true);
+            }
+
+            // TryGetNeedHealDecision arms its own bounded retry when no safe heal successor exists.
+            // Retain this reason until a concrete heal/recovery/fight transition is available.
+            return FollowerCombatCommon.Continue();
         }
 
         private AICoreActionEnd EndPushSearchHold(string reason)

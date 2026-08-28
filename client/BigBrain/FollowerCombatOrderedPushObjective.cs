@@ -108,6 +108,18 @@ namespace pitTeam.BigBrain
                 return inFightDecision.Value;
             }
 
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? healDecision = CombatCommon.TryGetNeedHealDecision();
+            if (healDecision != null)
+            {
+                return healDecision.Value;
+            }
+
+            if (CombatCommon.HasActiveOrPendingHealWork())
+            {
+                combatPush.ClearCommittedPush("orderedPushHealPending");
+                return Hold("healPending");
+            }
+
             if (CombatCommon.TryGetCombatLongGunPreparationDecision(
                     orderedEnemy,
                     orderedPush: true,
@@ -120,18 +132,6 @@ namespace pitTeam.BigBrain
             if (CombatCommon.HasInitialDecision)
             {
                 return CombatCommon.ConsumeInitialDecision();
-            }
-
-            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? healDecision = CombatCommon.TryGetNeedHealDecision();
-            if (healDecision != null)
-            {
-                return healDecision.Value;
-            }
-
-            if (CombatCommon.HasActiveOrPendingHealWork())
-            {
-                combatPush.ClearCommittedPush("orderedPushHealPending");
-                return Hold("healPending");
             }
 
             if (TryGetRecoveryDecision(
@@ -206,7 +206,7 @@ namespace pitTeam.BigBrain
 
                 if (string.Equals(currentDecision.Reason, HealPendingReason, StringComparison.Ordinal))
                 {
-                    return EndHealPendingHold(orderedEnemy);
+                    return EndHealPendingHold(currentDecision);
                 }
 
                 if (CombatCommon.IsCommittedHolderReason(currentDecision.Reason))
@@ -289,23 +289,53 @@ namespace pitTeam.BigBrain
             return true;
         }
 
-        private AICoreActionEnd EndHealPendingHold(EnemyInfo orderedEnemy)
+        private AICoreActionEnd EndHealPendingHold(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
         {
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? dogFightDecision =
+                CombatCommon.TryGetDogFightDecision();
+            if (dogFightDecision != null &&
+                CombatCommon.TryPrepareDecisionTransition(
+                    currentDecision,
+                    "orderedHealPendingImmediateFight",
+                    dogFightDecision.Value))
+            {
+                return new AICoreActionEnd("orderedHealPendingImmediateFight", true);
+            }
+
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? inFightDecision = CombatCommon.InFightLogic();
+            if (inFightDecision != null &&
+                CombatCommon.TryPrepareDecisionTransition(
+                    currentDecision,
+                    "orderedHealPendingImmediateFight",
+                    inFightDecision.Value))
+            {
+                return new AICoreActionEnd("orderedHealPendingImmediateFight", true);
+            }
+
+            if (CombatCommon.IsHealDecisionRetryBlocked)
+            {
+                return FollowerCombatCommon.Continue();
+            }
+
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? healDecision =
+                CombatCommon.TryGetNeedHealDecision();
+            if (healDecision != null &&
+                CombatCommon.TryPrepareDecisionTransition(
+                    currentDecision,
+                    "orderedHealRetryReady",
+                    healDecision.Value))
+            {
+                return new AICoreActionEnd("orderedHealRetryReady", true);
+            }
+
             if (!CombatCommon.HasActiveOrPendingHealWork())
             {
                 return new AICoreActionEnd("orderedHealPendingCleared", true);
             }
 
-            if (!CombatCommon.IsHealDecisionRetryBlocked)
-            {
-                return new AICoreActionEnd("orderedHealRetryReady", true);
-            }
-
-            if (FollowerImmediateFirePolicy.IsLocalSelfDefenseThreat(orderedEnemy))
-            {
-                return new AICoreActionEnd("orderedHealPendingImmediateThreat", true);
-            }
-
+            // No safe medical successor exists yet. TryGetNeedHealDecision owns the bounded retry;
+            // retain this hold instead of ending and immediately selecting it again.
             return FollowerCombatCommon.Continue();
         }
 
