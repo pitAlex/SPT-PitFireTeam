@@ -8,10 +8,11 @@ Use Tarkov's **Suppress** phrase while your squad is in combat.
 
 Suppress has two targeting modes:
 
-- **Focused follower** - if you are looking directly at a teammate when you give the order, only that teammate tries to suppress. Because you are looking at the teammate instead of the enemy, he chooses from his own current enemy or from enemies visible to you.
-- **Squad order** - if you are not looking at a teammate, eligible teammates can suppress together. The squad avoids interrupting teammates who are already shooting, healing, dogfighting, under immediate pressure, or committed to emergency combat movement.
+- **Directed enemy** - if a visible enemy is under your crosshair, the closest available teammate whose `GoalEnemy` is that same enemy receives the order. A nearby follower standing in front of you is not treated as the command target merely because the look ray passes through him.
+- **Directed retask** - if no teammate currently owns that enemy, one teammate within `30m` may accept the target only when his own enemy is dead/missing or has not been personally seen for more than two seconds. The suppression objective then turns, finds a suppress-from position when needed, and fires only if it can create a safe lane.
+- **Follower-local squad order** - if no visible enemy is under your crosshair, every eligible teammate may try to suppress his own living `GoalEnemy`. The command does not substitute an arbitrary boss-visible enemy or a distant point along the look ray.
 
-This means focused suppression is best when you want one specific teammate to create pressure, while unfocused suppression is best when you want the squad to cover a threat area.
+If a directed target has no matching or safely retaskable suppressor, or planning cannot produce a usable firing action, the squad gives one **Negative** response instead of firing at an unrelated position.
 
 ## Weapons That Can Suppress
 
@@ -29,7 +30,7 @@ Low-capacity precision weapons are usually not good suppression tools.
 
 Riflemen are the main suppression role. They can use suppress-capable rifles, larger magazines, or grenade launchers.
 
-When you give an unfocused squad suppression order, multiple eligible Riflemen can join with weapon suppression, but only one teammate is allowed to act as the grenadier. The grenadier is chosen from available launcher users based on position, usable enemy target, launch lane, and friendly safety.
+When you give a follower-local squad suppression order, multiple eligible Riflemen can join with weapon suppression, but only one teammate is allowed to act as the grenadier. The grenadier is chosen from available launcher users based on position, their own usable enemy target, launch lane, and friendly safety.
 
 ## Grenade Launchers
 
@@ -45,11 +46,13 @@ Grenade-launcher suppression is safety gated:
 
 If the launcher cannot be used safely, the teammate may fall back to normal weapon suppression. If no safe suppression action is available, he can answer **Negative** and continue normal combat behavior.
 
+Ordinary weapon suppression follows the same physical boundary: a direct lane or foliage-only obstruction is allowed, but a wall, vehicle, or building blocks the trigger. This lane is revalidated after movement and immediately before every suppress shot.
+
 ## Marksmen
 
 Marksmen are precision support, not the normal suppression role.
 
-A Marksman can join squad suppression only when there is no active Rifleman available and the Marksman has a loaded automatic second primary weapon. In that case, he can switch to the automatic secondary for the ordered burst.
+A Marksman can accept directed suppression when he is the closest same-target follower and has a loaded automatic second primary weapon. For a follower-local squad order, he joins only when there is no active Rifleman available. In either case, he switches to that automatic secondary for the ordered burst.
 
 Do not expect a Marksman with only a sniper rifle or DMR to provide useful suppressive fire.
 
@@ -76,4 +79,4 @@ Suppression will not override everything. Teammates may delay or reject the orde
 - friendly shot safety blocks the lane or impact area
 - they do not have a usable enemy target
 
-Use **Contact** first if teammates have not registered the enemy yet. Use **Go Forward** after suppression if you want Riflemen to take ownership of the fight and move on the enemy.
+Aim directly at a visible enemy when you need suppression against that specific target. Use **Contact** first when the enemy is not currently visible enough to target with the Suppress phrase. Use **Go Forward** after suppression if you want Riflemen to take ownership of the fight and move on the enemy.

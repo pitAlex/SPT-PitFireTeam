@@ -67,14 +67,24 @@ namespace pitTeam.SAINAddon
                 LookThroughPeriodByHit = look.LOOK_THROUGH_PERIOD_BY_HIT,
             };
 
-            look.MAX_VISION_GRASS_METERS = VanillaLookDefaults.MAX_VISION_GRASS_METERS;
+            float maxVisionGrassMeters = FollowerProficiency.TryGetValues(owner, out FollowerProficiencyValues? proficiency)
+                ? proficiency.Vanilla.Vision.MAX_VISION_GRASS_METERS
+                : VanillaLookDefaults.MAX_VISION_GRASS_METERS;
+            bool lookThroughGrass = proficiency?.Vanilla.Vision.LOOK_THROUGH_GRASS ??
+                VanillaLookDefaults.LOOK_THROUGH_GRASS;
+            if (maxVisionGrassMeters <= 0f)
+            {
+                maxVisionGrassMeters = VanillaLookDefaults.MAX_VISION_GRASS_METERS;
+            }
+
+            look.MAX_VISION_GRASS_METERS = maxVisionGrassMeters;
             look.MAX_VISION_GRASS_METERS_FLARE = VanillaLookDefaults.MAX_VISION_GRASS_METERS_FLARE;
-            look.MAX_VISION_GRASS_METERS_OPT = VanillaLookDefaults.MAX_VISION_GRASS_METERS_OPT;
+            look.MAX_VISION_GRASS_METERS_OPT = 1f / maxVisionGrassMeters;
             look.MAX_VISION_GRASS_METERS_FLARE_OPT = VanillaLookDefaults.MAX_VISION_GRASS_METERS_FLARE_OPT;
             look.GOAL_TO_FULL_DISSAPEAR_GREEN = VanillaLookDefaults.GOAL_TO_FULL_DISSAPEAR_GREEN;
             look.NO_GREEN_DIST = VanillaLookDefaults.NO_GREEN_DIST;
             look.NO_GRASS_DIST = VanillaLookDefaults.NO_GRASS_DIST;
-            look.LOOK_THROUGH_GRASS = VanillaLookDefaults.LOOK_THROUGH_GRASS;
+            look.LOOK_THROUGH_GRASS = lookThroughGrass;
             look.LOOK_THROUGH_GRASS_DIST_METERS = VanillaLookDefaults.LOOK_THROUGH_GRASS_DIST_METERS;
             look.INSIDE_BUSH_COEF = VanillaLookDefaults.INSIDE_BUSH_COEF;
             look.LOOK_THROUGH_PERIOD_BY_HIT = VanillaLookDefaults.LOOK_THROUGH_PERIOD_BY_HIT;

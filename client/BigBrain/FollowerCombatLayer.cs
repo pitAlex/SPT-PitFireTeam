@@ -16,10 +16,11 @@ namespace pitTeam.BigBrain
 {
     internal sealed class FollowerCombatLayer : CustomLayer
     {
-        private const float PostEnemyKeepActiveSeconds = 3f;
+        internal const float PostEnemyKeepActiveSeconds = 3f;
         private const float PostCombatFirstAidKeepActiveSeconds = 7f;
         private const float PostCombatSurgeryKeepActiveSeconds = 20f;
-        private const string LingerReason = "linger";
+        internal const string LingerReason = "linger";
+        internal const string LingerExpiredReason = "lingerExpired";
 
         private static readonly HashSet<BotLogicDecision> LoggedUnsupportedDecisions = new HashSet<BotLogicDecision>();
         private static readonly HashSet<string> ActiveFollowerCombatBots = new HashSet<string>(StringComparer.Ordinal);
@@ -86,7 +87,7 @@ namespace pitTeam.BigBrain
 
             if (lingerArmed && IsLingerExpired() && !HasCurrentLiveGoalEnemy() && !TryKeepActiveForOrderedPush())
             {
-                CompletePostCombatLinger("lingerExpired", allowRetainedLayerRearm: true);
+                CompletePostCombatLinger(LingerExpiredReason, allowRetainedLayerRearm: true);
                 return false;
             }
 
@@ -125,7 +126,7 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
-            CompletePostCombatLinger("lingerExpired", allowRetainedLayerRearm: true);
+            CompletePostCombatLinger(LingerExpiredReason, allowRetainedLayerRearm: true);
             return false;
         }
 
@@ -146,6 +147,7 @@ namespace pitTeam.BigBrain
             ClearMedicalKeepActive();
             Utils.FollowerMedical.CompletePostCombatFullHeal(BotOwner);
             MarkActive(true);
+            NotifyBossCombatLayerStarted(BotOwner);
             BotFollowerPlayer? followerData = BossPlayers.Instance?.GetFollower(BotOwner);
             followerData?.CancelTemporaryCombatAggressionOverrideClearDelay();
             followerData?.BeginCombatIndependenceFromPatrol();
@@ -210,7 +212,7 @@ namespace pitTeam.BigBrain
             bool keepForMedical = !combatActive && ShouldKeepCombatLayerForMedicalWork();
             if (!combatActive && !keepForMedical)
             {
-                // As soon as live enemy is gone, hand off to a short linger hold while the
+                // As soon as the live enemy is gone, hand off to the dedicated linger action while the
                 // combat layer remains active for release/handoff timing.
                 BossPlayers.Instance?.GetFollower(BotOwner)?.ClearOrderedPushTargetLock("CombatLayer:Inactive");
                 if (!combatLogicResetForInactive)
@@ -303,7 +305,7 @@ namespace pitTeam.BigBrain
                 bool expired = IsLingerExpired();
                 if (expired)
                 {
-                    CompletePostCombatLinger("lingerExpired", allowRetainedLayerRearm: true);
+                    CompletePostCombatLinger(LingerExpiredReason, allowRetainedLayerRearm: true);
                 }
 
                 return expired;
@@ -476,6 +478,7 @@ namespace pitTeam.BigBrain
 
             PendingForceReleaseRequests[botOwner.ProfileId] = releaseReason;
             BattleRecorder.RecordCombatLayerState(botOwner, false, releaseReason);
+            NotifyBossCombatLayerReleased(botOwner, releaseReason);
             FollowerRecovery.SoftReset(botOwner);
             return true;
         }
@@ -505,6 +508,24 @@ namespace pitTeam.BigBrain
             if (MarkActive(false))
             {
                 BattleRecorder.RecordCombatLayerState(BotOwner, false, reason);
+            }
+
+            NotifyBossCombatLayerReleased(BotOwner, reason);
+        }
+
+        private static void NotifyBossCombatLayerStarted(BotOwner? botOwner)
+        {
+            if (botOwner?.BotFollower?.BossToFollow is pitAIBossPlayer boss)
+            {
+                boss.NotifyFollowerCombatLayerStarted(botOwner);
+            }
+        }
+
+        private static void NotifyBossCombatLayerReleased(BotOwner? botOwner, string reason)
+        {
+            if (botOwner?.BotFollower?.BossToFollow is pitAIBossPlayer boss)
+            {
+                boss.NotifyFollowerCombatLayerReleased(botOwner, reason);
             }
         }
 
@@ -937,6 +958,12 @@ namespace pitTeam.BigBrain
         {
             FollowerCombatActionData actionData = new FollowerCombatActionData(decision.Action, decision.Reason, decision.Data);
 
+            if (decision.Action == BotLogicDecision.holdPosition &&
+                string.Equals(decision.Reason, LingerReason, StringComparison.Ordinal))
+            {
+                return new Action(typeof(CombatPostCombatLingerAction), decision.Reason, actionData);
+            }
+
             if (decision.Action == (BotLogicDecision)CustomBotDecisions.attackRetreat)
             {
                 return new Action(typeof(CombatAttackRetreatAction), decision.Reason, actionData);
@@ -999,5 +1026,3 @@ namespace pitTeam.BigBrain
     }
 
 }
-
-

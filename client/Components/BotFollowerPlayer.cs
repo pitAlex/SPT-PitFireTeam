@@ -43,7 +43,9 @@ namespace pitTeam.Components
         CombatComeToBossCover = 11,
         CombatMoveToPointTactical = 12,
         // Commanded searchable-container looting through backpack/pocket cargo space.
-        TakeContainerLoot = 13
+        TakeContainerLoot = 13,
+        // Second-step out-of-combat Contact check toward the boss's snapshotted position.
+        ContactApproach = 14
     }
 
     public enum FollowerCombatTactic
@@ -130,11 +132,13 @@ namespace pitTeam.Components
         private FollowerCommandType _activeCommand = FollowerCommandType.None;
         private Vector3 _commandTarget;
         private float _commandUntilTime;
+        private bool _tightRegroupRequested;
         private int _moveToPointIssueSequence;
         private int _pushEnemyIssueSequence;
         private bool _suppressEnemyRequiresLauncher;
         private bool _suppressEnemyForceWeapon;
         private bool _suppressEnemyUseAutomaticSecondary;
+        private string? _suppressEnemyTargetProfileId;
         private bool _orderedPushCancelRequested;
         private string? _orderedPushCancelReason;
         private bool _orderedPushTargetLockActive;
@@ -164,6 +168,8 @@ namespace pitTeam.Components
         private bool _temporaryCombatAggressionOverrideActive;
         private float _temporaryCombatAggressionOverride;
         private float _temporaryCombatAggressionClearAfter;
+        private float? _lastBaseAimTime;
+        private float? _lastFinalAimTime;
         private FollowerCombatTactic _combatTactic = FollowerCombatTactic.Balanced;
         private bool _backpackInspectionActive;
         private float? _pickupIndependence01;
@@ -293,19 +299,32 @@ namespace pitTeam.Components
             }
         }
 
+        /// <summary>
+        /// Follower-local proficiency values for both vanilla EFT and optional integrations.
+        /// This is an independent clone of the one global default object.
+        /// </summary>
+        public FollowerProficiencyValues Proficiency { get; }
+        public float? LastBaseAimTime => _lastBaseAimTime;
+        public float? LastFinalAimTime => _lastFinalAimTime;
+
         public BotFollowerPlayer(BotOwner bot, pitAIBossPlayer player, bool isSquad = false, WildSpawnType botRole = WildSpawnType.assault)
         {
             _bot = bot;
             _player = player;
             _botRole = botRole == WildSpawnType.assault ? _bot.Profile.Info.Settings.Role : botRole;
+            Proficiency = FollowerProficiency.DefaultValues.Clone();
 
             _IsSquadMate = isSquad;
             CaptureInitialHolsterWeapon(finalAttempt: false);
 
-            settingModif = new BotSettingsInGameModif(1f, 1f, 1f, 0.9f, 1f, 1f, 1f, 1f, 1f);
-
             if (player.realPlayer.Side != EPlayerSide.Savage) NpcMessage.AddNpc(bot, isSquad);
 
+        }
+
+        public void RecordProficiencyAimTime(float baseAimTime, float finalAimTime)
+        {
+            _lastBaseAimTime = baseAimTime;
+            _lastFinalAimTime = finalAimTime;
         }
 
         private void CaptureInitialHolsterWeapon(bool finalAttempt)
@@ -649,6 +668,7 @@ namespace pitTeam.Components
 
             // apply the settings modifier
             _bot.Settings.Current.Apply(settingModif);
+            FollowerSainProficiency.ApplyToFollower(_bot, this);
 
             Utils.Utils.SetTimeout(() =>
             {
@@ -670,8 +690,33 @@ namespace pitTeam.Components
         {
 
             bool isGoon = Utils.Props.BossFollowersType.Contains(_botRole);
-            // increase bot's power
-            BotSettings settings = Singleton<BotSettingsController>.Instance.GetSettings(BotDifficulty.hard, _botRole, _bot.BotsController.IsPvE);
+            FollowerVanillaProficiencyValues proficiency = Proficiency.Vanilla;
+            BotSettings settings = Singleton<BotSettingsController>.Instance.GetSettings(
+                proficiency.TemplateDifficulty,
+                _botRole,
+                _bot.BotsController.IsPvE);
+
+            // BossPlayers assigns CombatTactic before Init. Capture the real selected role template
+            // now, apply the follower-local tactic values, and only then construct the modifier.
+            Proficiency.FinalizeForTactic(settings, CombatTactic);
+            if (_botRole == WildSpawnType.followerBirdEye)
+            {
+                proficiency.RuntimeDifficulty.VisibleDistCoef = proficiency.BirdEye.VisibleDistCoef;
+            }
+
+            FollowerVanillaRuntimeDifficultyValues runtime = proficiency.RuntimeDifficulty;
+            FollowerProficiencyModifierValues modifiers = Proficiency.Modifiers;
+            float accuracyFactor = modifiers.SafeAccuracyFactor;
+            settingModif = new BotSettingsInGameModif(
+                runtime.PrecicingSpeedCoef * accuracyFactor,
+                runtime.AccuratySpeedCoef,
+                runtime.LayChanceDangerCoef,
+                runtime.VisibleDistCoef * modifiers.SafeVisionDistanceFactor,
+                runtime.RuntimeVisionEffectK * modifiers.SafeVisionSpeedFactor,
+                runtime.ScatteringCoef / accuracyFactor,
+                runtime.HearingDistCoef,
+                runtime.PriorityScatteringCoef,
+                runtime.TriggerDownDelay);
 
             // - hardcode some settings to make the bot more efficient
             settings.FileSettings.Move.REACH_DIST = 1.5f;
@@ -798,12 +843,17 @@ namespace pitTeam.Components
             settings.FileSettings.Boss.SHALL_WARN = false;
             settings.FileSettings.Patrol.MAX_YDIST_TO_START_WARN_REQUEST_TO_REQUESTER = 0f;
 
-            settings.FileSettings.Look.MINIMUM_VISIBLE_DIST = 15f;
+            settings.FileSettings.Look.MINIMUM_VISIBLE_DIST = proficiency.Vision.MINIMUM_VISIBLE_DIST;
 
             // Keep follower grenade capability hard-disabled by default.
             // Runtime code opens a short throw window only for explicit follower grenade actions.
             settings.FileSettings.Core.CanGrenade = false;
             settings.FileSettings.Core.CanRun = true;
+            settings.FileSettings.Core.AccuratySpeed = proficiency.Core.AccuratySpeed;
+            settings.FileSettings.Core.VisibleDistance = proficiency.Core.VisibleDistance;
+            settings.FileSettings.Core.VisibleAngle = proficiency.Core.VisibleAngle;
+            settings.FileSettings.Core.ScatteringPerMeter = proficiency.Core.ScatteringPerMeter;
+            settings.FileSettings.Core.ScatteringClosePerMeter = proficiency.Core.ScatteringClosePerMeter;
 
             settings.FileSettings.Cover.CHECK_CLOSEST_FRIEND = true;
             settings.FileSettings.Cover.DOG_FIGHT_AFTER_LEAVE = 1;
@@ -817,68 +867,75 @@ namespace pitTeam.Components
             settings.FileSettings.Cover.SPOTTED_GRENADE_TIME = 7;
 
             // - faster aiming sett
-            settings.FileSettings.Aiming.COEF_IF_MOVE = 1f;
-            settings.FileSettings.Aiming.BOTTOM_COEF = 0.05f;
-            settings.FileSettings.Aiming.COEF_FROM_COVER = 0.3f;
-            settings.FileSettings.Aiming.PANIC_COEF = 1f;
+            settings.FileSettings.Aiming.COEF_IF_MOVE = proficiency.Aiming.COEF_IF_MOVE;
+            settings.FileSettings.Aiming.TIME_COEF_IF_MOVE = proficiency.Aiming.TIME_COEF_IF_MOVE;
+            settings.FileSettings.Aiming.BOTTOM_COEF = proficiency.Aiming.BOTTOM_COEF;
+            settings.FileSettings.Aiming.COEF_FROM_COVER = proficiency.Aiming.COEF_FROM_COVER;
+            settings.FileSettings.Aiming.PANIC_COEF = proficiency.Aiming.PANIC_COEF;
+            settings.FileSettings.Aiming.SCATTERING_DIST_MODIF = proficiency.Aiming.SCATTERING_DIST_MODIF;
+            settings.FileSettings.Aiming.SCATTERING_DIST_MODIF_CLOSE = proficiency.Aiming.SCATTERING_DIST_MODIF_CLOSE;
             if (!isGoon)
             {
-                settings.FileSettings.Aiming.MAX_AIMING_UPGRADE_BY_TIME = 0.15f;
+                settings.FileSettings.Aiming.MAX_AIMING_UPGRADE_BY_TIME = proficiency.Aiming.MAX_AIMING_UPGRADE_BY_TIME;
             }
 
             // - improved shooting settings
-            settings.FileSettings.Aiming.SHPERE_FRIENDY_FIRE_SIZE = 0.5f;
-            settings.FileSettings.Aiming.AIMING_TYPE = 6; // the head is a priority
+            settings.FileSettings.Aiming.SHPERE_FRIENDY_FIRE_SIZE = proficiency.Aiming.SHPERE_FRIENDY_FIRE_SIZE;
+            settings.FileSettings.Aiming.DIST_TO_SHOOT_TO_CENTER = proficiency.Aiming.DIST_TO_SHOOT_TO_CENTER;
+            settings.FileSettings.Aiming.AIMING_TYPE = proficiency.Aiming.AIMING_TYPE;
             if (!isGoon)
             {
-                settings.FileSettings.Aiming.ANY_PART_SHOOT_TIME = 15f;
-                settings.FileSettings.Aiming.ANYTIME_LIGHT_WHEN_AIM_100 = 50;
-                settings.FileSettings.Aiming.BAD_SHOOTS_MAX = 2;
-                settings.FileSettings.Aiming.BAD_SHOOTS_MIN = 1;
-                settings.FileSettings.Aiming.FIRST_CONTACT_ADD_CHANCE_100 = 20f;
+                settings.FileSettings.Aiming.ANY_PART_SHOOT_TIME = proficiency.Aiming.ANY_PART_SHOOT_TIME;
+                settings.FileSettings.Aiming.ANYTIME_LIGHT_WHEN_AIM_100 = proficiency.Aiming.ANYTIME_LIGHT_WHEN_AIM_100;
+                settings.FileSettings.Aiming.BAD_SHOOTS_MAX = proficiency.Aiming.BAD_SHOOTS_MAX;
+                settings.FileSettings.Aiming.BAD_SHOOTS_MIN = proficiency.Aiming.BAD_SHOOTS_MIN;
+                settings.FileSettings.Aiming.FIRST_CONTACT_ADD_CHANCE_100 = proficiency.Aiming.FIRST_CONTACT_ADD_CHANCE_100;
             }
             // - hit disturbance settings
-            settings.FileSettings.Aiming.BASE_HIT_AFFECTION_DELAY_SEC = 0.2f;
-            settings.FileSettings.Aiming.BASE_HIT_AFFECTION_MAX_ANG = 10f;
-            settings.FileSettings.Aiming.BASE_HIT_AFFECTION_MIN_ANG = 2f;
-            settings.FileSettings.Aiming.DAMAGE_PANIC_TIME = 10f;
+            settings.FileSettings.Aiming.BASE_HIT_AFFECTION_DELAY_SEC = proficiency.Aiming.BASE_HIT_AFFECTION_DELAY_SEC;
+            settings.FileSettings.Aiming.BASE_HIT_AFFECTION_MAX_ANG = proficiency.Aiming.BASE_HIT_AFFECTION_MAX_ANG;
+            settings.FileSettings.Aiming.BASE_HIT_AFFECTION_MIN_ANG = proficiency.Aiming.BASE_HIT_AFFECTION_MIN_ANG;
+            settings.FileSettings.Aiming.DAMAGE_PANIC_TIME = proficiency.Aiming.DAMAGE_PANIC_TIME;
             if (!isGoon)
             {
-                settings.FileSettings.Aiming.DAMAGE_TO_DISCARD_AIM_0_100 = 30f;
+                settings.FileSettings.Aiming.DAMAGE_TO_DISCARD_AIM_0_100 = proficiency.Aiming.DAMAGE_TO_DISCARD_AIM_0_100;
             }
 
 
-            settings.FileSettings.Look.CAN_USE_LIGHT = true;
-            settings.FileSettings.Look.NIGHT_VISION_ON = 100.0f;
-            settings.FileSettings.Look.NIGHT_VISION_OFF = 110.0f;
-            settings.FileSettings.Look.NIGHT_VISION_DIST = 160.0f;
-            settings.FileSettings.Look.VISIBLE_ANG_NIGHTVISION = 120f;
-            settings.FileSettings.Look.LOOK_THROUGH_PERIOD_BY_HIT = 5f;
-            settings.FileSettings.Look.LightOnVisionDistance = 40.0f;
-            settings.FileSettings.Look.LOOK_LAST_POSENEMY_IF_NO_DANGER_SEC = 25f;
-            settings.FileSettings.Look.VISIBLE_ANG_LIGHT = 45.0f;
-            settings.FileSettings.Look.VISIBLE_DISNACE_WITH_LIGHT = 65.0f;
+            settings.FileSettings.Look.CAN_USE_LIGHT = proficiency.Vision.CAN_USE_LIGHT;
+            settings.FileSettings.Look.NIGHT_VISION_ON = proficiency.Vision.NIGHT_VISION_ON;
+            settings.FileSettings.Look.NIGHT_VISION_OFF = proficiency.Vision.NIGHT_VISION_OFF;
+            settings.FileSettings.Look.NIGHT_VISION_DIST = proficiency.Vision.NIGHT_VISION_DIST;
+            settings.FileSettings.Look.VISIBLE_ANG_NIGHTVISION = proficiency.Vision.VISIBLE_ANG_NIGHTVISION;
+            settings.FileSettings.Look.LOOK_THROUGH_PERIOD_BY_HIT = proficiency.Vision.LOOK_THROUGH_PERIOD_BY_HIT;
+            settings.FileSettings.Look.LightOnVisionDistance = proficiency.Vision.LightOnVisionDistance;
+            settings.FileSettings.Look.LOOK_LAST_POSENEMY_IF_NO_DANGER_SEC = proficiency.Vision.LOOK_LAST_POSENEMY_IF_NO_DANGER_SEC;
+            settings.FileSettings.Look.VISIBLE_ANG_LIGHT = proficiency.Vision.VISIBLE_ANG_LIGHT;
+            settings.FileSettings.Look.VISIBLE_DISNACE_WITH_LIGHT = proficiency.Vision.VISIBLE_DISNACE_WITH_LIGHT;
 
 
-            settings.FileSettings.Look.GOAL_TO_FULL_DISSAPEAR = 1.1f;
-            settings.FileSettings.Look.GOAL_TO_FULL_DISSAPEAR_GREEN = 2f;
-            //settings.FileSettings.Look.LOOK_THROUGH_GRASS = true;
-            settings.FileSettings.Look.MAX_VISION_GRASS_METERS = 1.0f;
-            settings.FileSettings.Look.NO_GREEN_DIST = 4.0f;
-            settings.FileSettings.Look.NO_GRASS_DIST = 5.0f;
+            settings.FileSettings.Look.GOAL_TO_FULL_DISSAPEAR = proficiency.Vision.GOAL_TO_FULL_DISSAPEAR;
+            settings.FileSettings.Look.GOAL_TO_FULL_DISSAPEAR_GREEN = proficiency.Vision.GOAL_TO_FULL_DISSAPEAR_GREEN;
+            settings.FileSettings.Look.VISIBILITY_CHANGE_SPEED = proficiency.Vision.VISIBILITY_CHANGE_SPEED;
+            settings.FileSettings.Look.MAX_VISION_GRASS_METERS = proficiency.Vision.MAX_VISION_GRASS_METERS;
+            settings.FileSettings.Look.NO_GREEN_DIST = proficiency.Vision.NO_GREEN_DIST;
+            settings.FileSettings.Look.NO_GRASS_DIST = proficiency.Vision.NO_GRASS_DIST;
+            settings.FileSettings.Look.LOOK_THROUGH_GRASS = proficiency.Vision.LOOK_THROUGH_GRASS;
 
-            settings.FileSettings.Look.CHECK_HEAD_ANY_DIST = true;
-            settings.FileSettings.Look.MIDDLE_DIST_CAN_SHOOT_HEAD = true;
+            settings.FileSettings.Look.CHECK_HEAD_ANY_DIST = proficiency.Vision.CHECK_HEAD_ANY_DIST;
+            settings.FileSettings.Look.MIDDLE_DIST_CAN_SHOOT_HEAD = proficiency.Vision.MIDDLE_DIST_CAN_SHOOT_HEAD;
 
-            settings.FileSettings.Hearing.DISPERSION_COEF = 1.6f;
-            settings.FileSettings.Hearing.CLOSE_DIST = 7f;
-            settings.FileSettings.Hearing.FAR_DIST = 35f;
+            settings.FileSettings.Hearing.DISPERSION_COEF = proficiency.Hearing.DISPERSION_COEF;
+            settings.FileSettings.Hearing.CLOSE_DIST = proficiency.Hearing.CLOSE_DIST;
+            settings.FileSettings.Hearing.FAR_DIST = proficiency.Hearing.FAR_DIST;
 
             settings.FileSettings.Cover.SIT_DOWN_WHEN_HOLDING = true;
 
-            settings.FileSettings.Shoot.WAIT_NEXT_SINGLE_SHOT = 0.1f;
-            settings.FileSettings.Shoot.WAIT_NEXT_SINGLE_SHOT_LONG_MAX = 1.8f;
-            settings.FileSettings.Shoot.NEXT_SINGLE_SHOT_PAUSE = 3f;
+            settings.FileSettings.Shoot.AUTOMATIC_FIRE_SCATTERING_COEF =
+                proficiency.Shooting.AUTOMATIC_FIRE_SCATTERING_COEF;
+            settings.FileSettings.Shoot.WAIT_NEXT_SINGLE_SHOT = proficiency.Shooting.WAIT_NEXT_SINGLE_SHOT;
+            settings.FileSettings.Shoot.WAIT_NEXT_SINGLE_SHOT_LONG_MAX = proficiency.Shooting.WAIT_NEXT_SINGLE_SHOT_LONG_MAX;
+            settings.FileSettings.Shoot.NEXT_SINGLE_SHOT_PAUSE = proficiency.Shooting.NEXT_SINGLE_SHOT_PAUSE;
 
             settings.FileSettings.Boss.EFFECT_REGENERATION_PER_MIN = 40f;
 
@@ -893,8 +950,8 @@ namespace pitTeam.Components
             bot.GetPlayer.ActiveHealthController.SetDamageCoeff(settings.FileSettings.Core.DamageCoeff);
 
             // counter SAIN
-            bot.LookSensor.ShootFromEyes = true;
-            bot.Settings.FileSettings.Look.SHOOT_FROM_EYES = true;
+            bot.LookSensor.ShootFromEyes = proficiency.Vision.SHOOT_FROM_EYES;
+            bot.Settings.FileSettings.Look.SHOOT_FROM_EYES = proficiency.Vision.SHOOT_FROM_EYES;
 
             // - friendly bot never gets tired
             bot.GetPlayer.Physical.Stamina.ForceMode = true;
@@ -1013,6 +1070,11 @@ namespace pitTeam.Components
                 // - ensure bot no longer follows the player
                 if (_bot.BotFollower.HaveBoss)
                 {
+                    if (_bot.BotFollower.BossToFollow is pitAIBossPlayer followerBoss)
+                    {
+                        followerBoss.NotifyFollowerCombatLayerReleased(_bot, "followerDismissed");
+                    }
+
                     _bot.BotFollower.BossToFollow.RemoveFollower(_bot);
                     _bot.BotFollower.BossToFollow = null;
 
@@ -1091,6 +1153,8 @@ namespace pitTeam.Components
             }
             finally
             {
+                FollowerSainProficiency.RestoreFollower(_bot);
+
                 // Fire lifecycle event for addon integration (cleanup, cache removal, etc).
                 Modules.SainAddonBridge.RaiseFollowerLifecycleEvent(_bot, FollowerLifecycleEvent.OnDismiss);
 
@@ -1354,8 +1418,14 @@ namespace pitTeam.Components
                 return;
             }
 
-            FollowerCommandType previous = _activeCommand;
-            if (_activeCommand == FollowerCommandType.HoldPosition)
+            bool resumeHold = _activeCommand == FollowerCommandType.HoldPosition ||
+                              (_activeCommand == FollowerCommandType.ContactApproach && _resumeHoldAfterComeCloser);
+            if (_activeCommand == FollowerCommandType.ContactApproach)
+            {
+                ClearCommand("SetComeCloser:replace(ContactApproach)");
+            }
+
+            if (resumeHold)
             {
                 _resumeHoldAfterComeCloser = true;
             }
@@ -1374,7 +1444,37 @@ namespace pitTeam.Components
             BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(SetComeCloser));
         }
 
-        public void SetRegroup(float duration)
+        public void SetContactApproach(Vector3 bossPositionAtContact, Vector3 lookTarget, float duration)
+        {
+            if (ShouldIgnoreCommandSet())
+            {
+                return;
+            }
+
+            if (_activeCommand != FollowerCommandType.None &&
+                _activeCommand != FollowerCommandType.HoldPosition &&
+                _activeCommand != FollowerCommandType.ComeCloser &&
+                _activeCommand != FollowerCommandType.ContactApproach)
+            {
+                ClearCommand($"SetContactApproach:replace({_activeCommand})");
+            }
+
+            float commandDuration = Mathf.Max(2f, duration);
+            ClearVanillaRequestState(null, nameof(SetContactApproach));
+            _activeCommand = FollowerCommandType.ContactApproach;
+            _commandTarget = bossPositionAtContact;
+            _commandUntilTime = Time.time + commandDuration;
+            // ContactApproach deliberately replaces Hold. Completing the check leaves the
+            // follower at the reached position and returns to normal follow from there.
+            _resumeHoldAfterComeCloser = false;
+            _resumeHoldAfterTakeLoot = false;
+            _resumeHoldAfterTakeLootCrouch = false;
+            ResetPostLootMoveState();
+            SetCommandLookOverride(lookTarget, commandDuration);
+            BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(SetContactApproach));
+        }
+
+        public void SetRegroup(float duration, bool tightRegroup = false)
         {
             if (ShouldIgnoreCommandSet())
             {
@@ -1389,6 +1489,7 @@ namespace pitTeam.Components
             _activeCommand = FollowerCommandType.RegroupNearBoss;
             _commandTarget = Vector3.zero;
             _commandUntilTime = Time.time + Mathf.Max(2f, duration);
+            _tightRegroupRequested = tightRegroup;
             _resumeHoldAfterComeCloser = false;
             _resumeHoldAfterTakeLoot = false;
             _resumeHoldAfterTakeLootCrouch = false;
@@ -1563,7 +1664,8 @@ namespace pitTeam.Components
             Vector3 orderTarget,
             bool requireLauncher,
             bool forceWeapon,
-            bool useAutomaticSecondary)
+            bool useAutomaticSecondary,
+            string? targetProfileId = null)
         {
             if (ShouldIgnoreCommandSet())
             {
@@ -1581,6 +1683,7 @@ namespace pitTeam.Components
             _suppressEnemyRequiresLauncher = requireLauncher;
             _suppressEnemyForceWeapon = forceWeapon;
             _suppressEnemyUseAutomaticSecondary = useAutomaticSecondary;
+            _suppressEnemyTargetProfileId = string.IsNullOrEmpty(targetProfileId) ? null : targetProfileId;
             _resumeHoldAfterComeCloser = false;
             _resumeHoldAfterTakeLoot = false;
             _resumeHoldAfterTakeLootCrouch = false;
@@ -1742,9 +1845,16 @@ namespace pitTeam.Components
 
         public void CompleteComeCloser()
         {
-            if (_activeCommand != FollowerCommandType.ComeCloser)
+            if (_activeCommand != FollowerCommandType.ComeCloser &&
+                _activeCommand != FollowerCommandType.ContactApproach)
             {
                 return;
+            }
+
+            bool completedContactApproach = _activeCommand == FollowerCommandType.ContactApproach;
+            if (completedContactApproach)
+            {
+                ClearCommandLookOverride();
             }
 
             if (_resumeHoldAfterComeCloser)
@@ -1764,6 +1874,9 @@ namespace pitTeam.Components
         {
             return _activeCommand == FollowerCommandType.ComeCloser && _resumeHoldAfterComeCloser;
         }
+
+        public bool IsContactApproachRequested =>
+            _activeCommand == FollowerCommandType.ContactApproach;
 
         public void CompleteMoveToPoint(string reason)
         {
@@ -2073,6 +2186,9 @@ namespace pitTeam.Components
 
         public int PushEnemyIssueSequence => _pushEnemyIssueSequence;
 
+        public bool TightRegroupRequested =>
+            _activeCommand == FollowerCommandType.RegroupNearBoss && _tightRegroupRequested;
+
         public bool SuppressEnemyRequiresLauncher =>
             _activeCommand == FollowerCommandType.SuppressEnemy && _suppressEnemyRequiresLauncher;
 
@@ -2081,6 +2197,9 @@ namespace pitTeam.Components
 
         public bool SuppressEnemyUseAutomaticSecondary =>
             _activeCommand == FollowerCommandType.SuppressEnemy && _suppressEnemyUseAutomaticSecondary;
+
+        public string? SuppressEnemyTargetProfileId =>
+            _activeCommand == FollowerCommandType.SuppressEnemy ? _suppressEnemyTargetProfileId : null;
 
         public void RequestOrderedPushCancel(string reason)
         {
@@ -2549,7 +2668,11 @@ namespace pitTeam.Components
             foreach (BotFollowerPlayer follower in BossPlayers.GetFollowersByBoss(bossProfileId))
             {
                 BotOwner squadmate = follower?.GetBot();
-                if (squadmate == null || squadmate == owner)
+                if (squadmate == null ||
+                    squadmate == owner ||
+                    squadmate.IsDead ||
+                    squadmate.BotState != EBotState.Active ||
+                    squadmate.GetPlayer?.HealthController?.IsAlive != true)
                 {
                     continue;
                 }
@@ -2636,9 +2759,11 @@ namespace pitTeam.Components
             _activeCommand = FollowerCommandType.None;
             _commandTarget = Vector3.zero;
             _commandUntilTime = 0f;
+            _tightRegroupRequested = false;
             _suppressEnemyRequiresLauncher = false;
             _suppressEnemyForceWeapon = false;
             _suppressEnemyUseAutomaticSecondary = false;
+            _suppressEnemyTargetProfileId = null;
             _holdPositionShouldCrouch = true;
             _resumeHoldAfterComeCloser = false;
             _resumeHoldAfterTakeLoot = false;
@@ -3135,7 +3260,7 @@ namespace pitTeam.Components
 
         private void EnsureSainBossAndFollowersFriendly()
         {
-            if (!pitFireTeam.UseSainFollowerCombat) return;
+            if (!pitFireTeam.IsSAINInstalled) return;
             if (_bot == null || _player?.realPlayer == null) return;
 
             try
@@ -3413,7 +3538,7 @@ namespace pitTeam.Components
 
         private void RefreshSainEnemyListAfterGroupReassign()
         {
-            if (!pitFireTeam.UseSainFollowerCombat) return;
+            if (!pitFireTeam.IsSAINInstalled) return;
             if (_bot == null) return;
 
             try

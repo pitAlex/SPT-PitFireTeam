@@ -73,7 +73,7 @@ namespace pitTeam.Modules
                 visionChecks++;
                 if (HasSimpleVision(botPlayer, candidate))
                 {
-                    if (ShouldSkipSameSideCandidate(owner, candidate))
+                    if (ShouldBlockCandidateForMissingHostileIntent(owner, candidate))
                     {
                         AddProcessedFriendlySeen(owner, candidate.ProfileId);
                         continue;
@@ -169,18 +169,23 @@ namespace pitTeam.Modules
 
         public static bool CandidateHasBossOrFollowerAsEnemy(BotOwner owner, Player candidate)
         {
-            if (!candidate.IsAI)
+            if (owner?.BotFollower?.BossToFollow is not pitAIBossPlayer boss)
+            {
+                return false;
+            }
+
+            return CandidateHasBossOrFollowerAsEnemy(boss, candidate);
+        }
+
+        internal static bool CandidateHasBossOrFollowerAsEnemy(pitAIBossPlayer boss, Player candidate)
+        {
+            if (boss?.realPlayer == null || candidate == null || !candidate.IsAI)
             {
                 return false;
             }
 
             BotOwner candidateBot = candidate.AIData?.BotOwner;
             if (candidateBot?.BotsGroup == null)
-            {
-                return false;
-            }
-
-            if (owner.BotFollower?.BossToFollow is not pitAIBossPlayer boss || boss.realPlayer == null)
             {
                 return false;
             }
@@ -215,7 +220,17 @@ namespace pitTeam.Modules
 
         public static bool CandidateHasGoalEnemyBossOrFollower(BotOwner owner, Player candidate)
         {
-            if (!candidate.IsAI)
+            if (owner?.BotFollower?.BossToFollow is not pitAIBossPlayer boss)
+            {
+                return false;
+            }
+
+            return CandidateHasGoalEnemyBossOrFollower(boss, candidate);
+        }
+
+        internal static bool CandidateHasGoalEnemyBossOrFollower(pitAIBossPlayer boss, Player candidate)
+        {
+            if (boss?.realPlayer == null || candidate == null || !candidate.IsAI)
             {
                 return false;
             }
@@ -223,11 +238,6 @@ namespace pitTeam.Modules
             BotOwner candidateBot = candidate.AIData?.BotOwner;
             EnemyInfo goalEnemy = candidateBot?.Memory?.GoalEnemy;
             if (goalEnemy?.ProfileId == null)
-            {
-                return false;
-            }
-
-            if (owner.BotFollower?.BossToFollow is not pitAIBossPlayer boss || boss.realPlayer == null)
             {
                 return false;
             }
@@ -456,30 +466,41 @@ namespace pitTeam.Modules
             return count;
         }
 
-        private static bool ShouldSkipSameSideCandidate(BotOwner owner, Player candidate)
+        public static bool ShouldBlockCandidateForMissingHostileIntent(
+            BotOwner owner,
+            Player candidate,
+            bool debounceHostileIntent = true)
         {
             if (owner == null || candidate == null)
             {
                 return false;
             }
 
-            if (owner.Side != candidate.Side)
+            bool sameSide = owner.Side == candidate.Side;
+            bool scavCandidate = FactionHostility.IsScavFaction(candidate);
+            if (!sameSide && !scavCandidate)
             {
                 return false;
+            }
+
+            if (!candidate.IsAI)
+            {
+                return true;
             }
 
             bool hasBossOrFollowerAsEnemy =
                 CandidateHasBossOrFollowerAsEnemy(owner, candidate) ||
                 CandidateHasGoalEnemyBossOrFollower(owner, candidate);
-            hasBossOrFollowerAsEnemy = HasDebouncedSameSideHostileIntent(owner, candidate.ProfileId, hasBossOrFollowerAsEnemy);
-
-            bool isPmcSide = owner.Side == EPlayerSide.Bear || owner.Side == EPlayerSide.Usec;
-            if (!isPmcSide)
+            if (debounceHostileIntent)
             {
-                return !hasBossOrFollowerAsEnemy;
+                hasBossOrFollowerAsEnemy = HasDebouncedSameSideHostileIntent(
+                    owner,
+                    candidate.ProfileId,
+                    hasBossOrFollowerAsEnemy);
             }
 
-            if (Utils.Utils.FlagGet("isBadGuy"))
+            bool isPmcSide = owner.Side == EPlayerSide.Bear || owner.Side == EPlayerSide.Usec;
+            if (sameSide && isPmcSide && Utils.Utils.FlagGet("isBadGuy"))
             {
                 return false;
             }

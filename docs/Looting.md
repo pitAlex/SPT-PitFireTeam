@@ -282,7 +282,7 @@ The price service intentionally evaluates the tree as a whole. It should not be 
 Filtered body/container looting uses these destination rules:
 
 - weapons can use empty compatible weapon slots before backpack/pockets
-- non-weapons use backpack and pockets only
+- non-weapons use the equipped backpack's visible grids first, with pockets only as fallback
 - the follower's tactical vest is not used as carry space
 - secure container is not used
 - eligible installed plate fallbacks use backpack or pockets; loose plates remain excluded
@@ -730,7 +730,7 @@ Filtered body/container rules:
 
 - dogtag is moved before any vest, magazine, or weapon transaction on non-teammate USEC/BEAR bodies
 - dogtag-only body looting still says `LootNothing`
-- teammate dogtags are not treated as filtered dogtag loot
+- saved teammate dogtags are not treated as filtered dogtag loot; picked-up in-raid followers remain normal lootable corpses
 - backpack magazines can be looted if eligible
 - pocket and vest magazines are skipped
 - loose armor plates are ignored; installed plates may be taken as price-qualified, 50-percent-durability fallbacks after their parent armor/rig stays behind

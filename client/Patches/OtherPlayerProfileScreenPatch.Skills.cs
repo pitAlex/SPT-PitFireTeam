@@ -90,7 +90,7 @@ namespace pitTeam.Patches
 
             SkillsPanelHost = hostRect;
             SkillsPanel = clone;
-            pitFireTeam.Log.LogWarning($"[UI] Follower skills panel shown for '{profile.AccountId}'.");
+            Modules.Logger.LogInfo($"[UI] Profile skills panel shown for '{profile.AccountId}'.");
         }
 
         private static Profile BuildSkillsProfile(Profile sessionProfile, SkillManager sourceSkills)

@@ -410,6 +410,13 @@ namespace pitTeam.BigBrain
                 return healDecision;
             }
 
+            if (combatCommon.ShouldHoldForHealRetry())
+            {
+                return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
+                    BotLogicDecision.holdPosition,
+                    FollowerCombatCommon.HealRetryHoldReason);
+            }
+
             if (!ShouldPrioritizeRecoveryBeforeSupport(goalEnemy) &&
                 TryGetAllySupportDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> earlyAllySupportDecision))
             {
@@ -475,9 +482,10 @@ namespace pitTeam.BigBrain
                 return orderedPushDecision;
             }
 
-            // Very low aggression followers should treat bossward regroup as their primary objective
-            // unless the enemy is already close enough that local engagement is unavoidable.
-            if (TryGetLowAggressionRegroupDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> lowAggressionRegroup))
+            // Protector still shares this objective and retains its legacy low-aggression rule until
+            // it receives a dedicated policy. Balanced Riflemen are owned by the centralized
+            // autonomous engagement arbitration instead.
+            if (TryGetProtectorLowAggressionRegroupDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> lowAggressionRegroup))
             {
                 return lowAggressionRegroup;
             }
@@ -741,6 +749,13 @@ namespace pitTeam.BigBrain
             if (immediate != null)
             {
                 decision = immediate.Value;
+                return true;
+            }
+
+            if (pushEvent.IsSearchPush && combatCommon.HasCommittedPosition(out decision))
+            {
+                // The search leader's event remains active while this follower settles. Preserve
+                // the arrival hold before any support branch is allowed to generate another point.
                 return true;
             }
 
@@ -1107,7 +1122,7 @@ namespace pitTeam.BigBrain
             switch (currentDecision.Action)
             {
                 case BotLogicDecision.holdPosition:
-                    return EndHoldPosition(currentDecision.Reason);
+                    return EndHoldPosition(currentDecision);
                 case BotLogicDecision.runToCover:
                 case BotLogicDecision.attackMoving:
                 case BotLogicDecision.attackMovingWithSuppress:
@@ -1232,7 +1247,7 @@ namespace pitTeam.BigBrain
             {
                 // Once local logic decides a visible enemy should be pushed, hand off to the old-plugin
                 // engage helper so it can choose rush/walk/approach behavior from its richer threat checks.
-                bool enemyLowThreat = combatCommon.IsEnemyLowThreat(goalEnemy, combatCommon.GetAggression01());
+                bool enemyLowThreat = combatCommon.IsAutonomousEngagementLowThreat(goalEnemy);
                 decision = combatPush.EngageEnemy(FollowerCombatPush.PushActivationSource.Automatic, enemyLowThreat);
                 return true;
             }
@@ -1262,7 +1277,7 @@ namespace pitTeam.BigBrain
             }
 
             combatCommon.ClearCommittedCover();
-            bool enemyLowThreat = combatCommon.IsEnemyLowThreat(goalEnemy, combatCommon.GetAggression01());
+            bool enemyLowThreat = combatCommon.IsAutonomousEngagementLowThreat(goalEnemy);
             decision = combatPush.EngageEnemy(FollowerCombatPush.PushActivationSource.Automatic, enemyLowThreat);
             return true;
         }
@@ -1515,7 +1530,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            bool enemyLowThreat = combatCommon.IsEnemyLowThreat(goalEnemy, combatCommon.GetAggression01());
+            bool enemyLowThreat = combatCommon.IsAutonomousEngagementLowThreat(goalEnemy);
             decision = combatPush.EngageEnemy(FollowerCombatPush.PushActivationSource.Automatic, enemyLowThreat);
             return true;
         }
@@ -1601,16 +1616,19 @@ namespace pitTeam.BigBrain
         }
 
         /// <summary>
-        /// Low aggression can force regroup as the primary combat objective. This is stronger than the
-        /// normal boss-line split and exists mainly so defensive followers stop solving the fight from
-        /// their current position unless the enemy is already close enough to demand local engagement.
-        /// 0% aggression only fights at VeryClose. Up to 30% aggression only fights at Close.
+        /// Legacy Protector fallback while that tactic still shares the Rifleman objective. Balanced
+        /// Riflemen use EvaluateAutonomousEngagement instead of this fixed threshold.
         /// </summary>
-        private bool TryGetLowAggressionRegroupDecision(
+        private bool TryGetProtectorLowAggressionRegroupDecision(
             EnemyInfo goalEnemy,
             out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
+
+            if (combatCommon.GetFollowerTactic() != FollowerCombatTactic.Protector)
+            {
+                return false;
+            }
 
             float aggression = combatCommon.GetAggression01();
             if (aggression > 0.3f)
@@ -1877,8 +1895,10 @@ namespace pitTeam.BigBrain
         /// <summary>
         /// Ends passive hold when the bot leaves committed cover or should transition back into action.
         /// </summary>
-        private AICoreActionEnd EndHoldPosition(string reason)
+        private AICoreActionEnd EndHoldPosition(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
         {
+            string reason = currentDecision.Reason;
             combatCommon.ValidateCommittedCover();
 
             if (string.Equals(reason, FollowerCombatCommon.RecoveryNoCoverThreatHoldReason, StringComparison.Ordinal))
@@ -1898,9 +1918,14 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEnd("combatGestureBreakHold", true);
             }
 
+            if (string.Equals(reason, FollowerCombatCommon.HealRetryHoldReason, StringComparison.Ordinal))
+            {
+                return EndMedicalRetryHold(currentDecision);
+            }
+
             if (FollowerCombatCommon.IsReloadHoldReason(reason))
             {
-                return combatCommon.EndReloadHold(reason);
+                return combatCommon.EndReloadHold(currentDecision);
             }
 
             if (FollowerCombatCommon.IsWeaponPreparationHoldReason(reason))
@@ -2034,6 +2059,101 @@ namespace pitTeam.BigBrain
             return combatCommon.EndBaseHoldPosition(reason);
         }
 
+        private AICoreActionEnd EndMedicalRetryHold(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
+        {
+            EnemyInfo? goalEnemy = botOwner.Memory?.GoalEnemy;
+            if (!combatCommon.HasActiveCombatEnemy(goalEnemy) || goalEnemy == null)
+            {
+                return new AICoreActionEnd("medicalRetryCombatEnded", true);
+            }
+
+            if (TryGetImmediateFightDecision(
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> immediateFight) &&
+                combatCommon.TryPrepareDecisionTransition(
+                    currentDecision,
+                    "medicalRetryImmediateFight",
+                    immediateFight))
+            {
+                return new AICoreActionEnd("medicalRetryImmediateFight", true);
+            }
+
+            if (combatCommon.IsActivelyUsingMedical &&
+                TryGetHealDecision(
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> activeHealDecision) &&
+                combatCommon.TryPrepareDecisionTransition(
+                    currentDecision,
+                    "medicalRetryActiveHeal",
+                    activeHealDecision))
+            {
+                return new AICoreActionEnd("medicalRetryActiveHeal", true);
+            }
+
+            if (combatCommon.HasReachedSafeHealPosition(goalEnemy))
+            {
+                if (combatCommon.IsHealDecisionRetryBlocked)
+                {
+                    return FollowerCombatCommon.Continue();
+                }
+
+                if (TryGetHealDecision(
+                        out AICoreActionResult<BotLogicDecision, CoreActionResultParams> reachedCoverHealDecision) &&
+                    combatCommon.TryPrepareDecisionTransition(
+                        currentDecision,
+                        "medicalRetrySafeCoverReady",
+                        reachedCoverHealDecision))
+                {
+                    return new AICoreActionEnd("medicalRetrySafeCoverReady", true);
+                }
+            }
+
+            if (TryGetRecoverDecision(
+                    goalEnemy,
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> recoveryDecision) &&
+                combatCommon.TryPrepareDecisionTransition(
+                    currentDecision,
+                    "medicalRetryDangerRecovery",
+                    recoveryDecision))
+            {
+                return new AICoreActionEnd("medicalRetryDangerRecovery", true);
+            }
+
+            if (TryGetBossUnderAttackDecision(
+                    goalEnemy,
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> bossSupportDecision) &&
+                combatCommon.TryPrepareDecisionTransition(
+                    currentDecision,
+                    "medicalRetryBossSupport",
+                    bossSupportDecision))
+            {
+                return new AICoreActionEnd("medicalRetryBossSupport", true);
+            }
+
+            if (combatCommon.IsHealDecisionRetryBlocked)
+            {
+                return FollowerCombatCommon.Continue();
+            }
+
+            if (TryGetHealDecision(
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> healDecision) &&
+                combatCommon.TryPrepareDecisionTransition(
+                    currentDecision,
+                    "medicalRetryReady",
+                    healDecision))
+            {
+                return new AICoreActionEnd("medicalRetryReady", true);
+            }
+
+            if (!combatCommon.HasActiveOrPendingHealWork())
+            {
+                return new AICoreActionEnd("medicalRetryCleared", true);
+            }
+
+            // TryGetNeedHealDecision arms its own bounded retry when no safe heal successor exists.
+            // Retain this reason until a concrete heal/recovery/fight transition is available.
+            return FollowerCombatCommon.Continue();
+        }
+
         private AICoreActionEnd EndPushSearchHold(string reason)
         {
             if (combatCommon.HasActiveOrPendingHealWork())
@@ -2121,6 +2241,18 @@ namespace pitTeam.BigBrain
             {
                 combatCommon.ClearCommittedPosition();
                 return new AICoreActionEnd("enemyContactBreakCommittedHold", true);
+            }
+
+            if (canBreakForEngagement &&
+                !isRecoveryHold &&
+                goalEnemy != null &&
+                !goalEnemy.IsVisible &&
+                TryPrepareAdvanceBreak(
+                    goalEnemy,
+                    "autonomousEngagementBreakCommittedHold",
+                    out AICoreActionEnd autonomousEngagementBreak))
+            {
+                return autonomousEngagementBreak;
             }
 
             if (!FollowerCombatCommon.IsBossDistanceProtectedCommitmentReason(reason) &&
@@ -2809,7 +2941,7 @@ namespace pitTeam.BigBrain
             return goalEnemy.IsVisible ||
                    combatCommon.ShouldAdvance(goalEnemy) ||
                    (goalEnemy.Distance <= CombatDistanceConfiguration.Instance.GetClosePushDistance() &&
-                    combatCommon.IsEnemyLowThreat(goalEnemy, combatCommon.GetAggression01()));
+                    combatCommon.IsAutonomousEngagementLowThreat(goalEnemy));
         }
 
         private bool TryGetCoverIntentRepositionDecision(
@@ -2966,11 +3098,21 @@ namespace pitTeam.BigBrain
         }
 
         /// <summary>
-        /// Computes whether the follower should switch to the regroup objective based on live boss
-        /// nav distance. Regroup itself decides whether that becomes forward, backward, or lateral movement.
+        /// Computes whether the follower should switch to the regroup objective. Balanced Riflemen use
+        /// the centralized distance/threat/player-pull arbitration; Protector retains the legacy pure
+        /// escort-distance gate until its own objective is implemented.
         /// </summary>
         private bool ShouldRegroupForBossDistance()
         {
+            EnemyInfo? goalEnemy = botOwner.Memory?.GoalEnemy;
+            if (combatCommon.GetFollowerTactic() == FollowerCombatTactic.Balanced &&
+                combatCommon.HasActiveCombatEnemy(goalEnemy) &&
+                goalEnemy != null)
+            {
+                return combatCommon.EvaluateAutonomousEngagement(goalEnemy).Result ==
+                       FollowerCombatRiflemanEngagement.Outcome.Regroup;
+            }
+
             Vector3 bossPosition = combatCommon.GetBossPosition();
             if (!IsFinite(bossPosition))
             {

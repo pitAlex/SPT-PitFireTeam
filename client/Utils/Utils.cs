@@ -1,5 +1,6 @@
 using EFT;
 using pitTeam.Components;
+using pitTeam.Modules;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -13,6 +14,8 @@ namespace pitTeam.Utils
         public string Tactic { get; set; }
 
         public float Aggression { get; set; }
+
+        public FollowerProficiencyModifierValues Proficiency { get; set; } = new FollowerProficiencyModifierValues();
 
         public string Equipment { get; set; }
 

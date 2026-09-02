@@ -109,6 +109,7 @@ namespace pitTeam.BigBrain.Actions
         private float nextMoveDiagnosticAt;
 #endif
         private const float RegroupArriveNavDistance = 4f;
+        internal const float TightRegroupArriveNavDistance = 2.5f;
         private const float RegroupRunDistance = 10f;
         private const float SameLevelTolerance = 1.75f;
         private const float RegroupCoverSearchRadius = 15f;
@@ -344,7 +345,11 @@ namespace pitTeam.BigBrain.Actions
                     break;
 
                 case FollowerCommandType.ComeCloser:
-                    HandleComeCloser();
+                    HandleComeCloser(target, contactApproach: false);
+                    break;
+
+                case FollowerCommandType.ContactApproach:
+                    HandleComeCloser(target, contactApproach: true);
                     break;
 
                 case FollowerCommandType.MoveToPoint:
@@ -378,7 +383,8 @@ namespace pitTeam.BigBrain.Actions
                 lastMoveToPointIssueSequence = followerData.MoveToPointIssueSequence;
                 if (
                     command == FollowerCommandType.MoveToPoint ||
-                    command == FollowerCommandType.ComeCloser
+                    command == FollowerCommandType.ComeCloser ||
+                    command == FollowerCommandType.ContactApproach
                 )
                 {
                     BotOwner.Steering.LookToMovingDirection();

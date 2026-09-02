@@ -97,16 +97,25 @@ namespace pitTeam.Patches
 
     public static class FollowerContactPhraseGate
     {
-        private const float StableSeenWindowSeconds = 1.25f;
+        private const float ContactConfirmationSeconds = 1f;
+        private const float ContactRetrySeconds = 0.25f;
+        private const string UpdateHubSubscriberId = "FollowerContactPhraseGate";
 
         private sealed class ContactState
         {
             public string LastEnemyProfileId;
             public string SuppressedEnemyProfileId;
             public float SuppressUntilTime;
+            public string PendingEnemyProfileId;
+            public EPhraseTrigger PendingPhrase;
+            public ETagStatus? PendingAdditionalMask;
+            public float ConfirmAtTime;
+            public float NextAttemptTime;
+            public bool ManualEmissionInProgress;
         }
 
         private static readonly Dictionary<string, ContactState> StateByFollower = new Dictionary<string, ContactState>(StringComparer.Ordinal);
+        private static bool _updateRegistered;
 
         public static bool IsContactPhrase(EPhraseTrigger phrase)
         {
@@ -129,13 +138,34 @@ namespace pitTeam.Patches
 
             state.SuppressedEnemyProfileId = safeEnemyId;
             state.SuppressUntilTime = UnityEngine.Time.time + Math.Max(0.1f, durationSeconds);
+
+            if (string.Equals(state.PendingEnemyProfileId, safeEnemyId, StringComparison.Ordinal))
+            {
+                // A player Contact / Over There command supersedes an autonomous contact callout
+                // that was still waiting for its one-second persistence confirmation.
+                state.LastEnemyProfileId = safeEnemyId;
+                ClearPending(state);
+            }
+
+            EnsureUpdateRegistered();
         }
 
-        public static bool ShouldAllow(BotOwner owner)
+        public static bool ShouldAllowOrSchedule(
+            BotOwner owner,
+            EPhraseTrigger phrase,
+            ETagStatus? additionalMask = null)
         {
-            if (owner == null || string.IsNullOrEmpty(owner.ProfileId))
+            if (owner == null ||
+                string.IsNullOrEmpty(owner.ProfileId) ||
+                !IsContactPhrase(phrase))
             {
                 return false;
+            }
+
+            if (StateByFollower.TryGetValue(owner.ProfileId, out ContactState manualState) &&
+                manualState.ManualEmissionInProgress)
+            {
+                return true;
             }
 
             if (owner.Memory?.HaveEnemy != true || owner.Memory.GoalEnemy == null)
@@ -145,35 +175,17 @@ namespace pitTeam.Patches
             }
 
             EnemyInfo goalEnemy = owner.Memory.GoalEnemy;
-            bool stableContact =
-                goalEnemy.IsVisible ||
-                (goalEnemy.PersonalLastSeenTime > 0f &&
-                 UnityEngine.Time.time - goalEnemy.PersonalLastSeenTime <= StableSeenWindowSeconds);
-            if (!stableContact)
-            {
-                return false;
-            }
+            string enemyId = GetEnemyId(goalEnemy);
+            ContactState state = GetOrCreateState(owner.ProfileId);
+            float now = UnityEngine.Time.time;
 
-            string enemyId = goalEnemy.ProfileId;
-            if (string.IsNullOrEmpty(enemyId))
-            {
-                enemyId = "<unknown>";
-            }
-
-            if (StateByFollower.TryGetValue(owner.ProfileId, out ContactState suppressedState) &&
-                UnityEngine.Time.time <= suppressedState.SuppressUntilTime &&
-                string.Equals(suppressedState.SuppressedEnemyProfileId, enemyId, StringComparison.Ordinal))
+            if (IsCommandSuppressed(state, enemyId, now))
             {
                 // Player-directed Contact / Over There already told the follower where to fight. Mark
                 // that enemy as handled so they do not acknowledge the command with a delayed contact callout.
-                suppressedState.LastEnemyProfileId = enemyId;
+                state.LastEnemyProfileId = enemyId;
+                ClearPending(state);
                 return false;
-            }
-
-            if (!StateByFollower.TryGetValue(owner.ProfileId, out ContactState state))
-            {
-                StateByFollower[owner.ProfileId] = new ContactState { LastEnemyProfileId = enemyId };
-                return true;
             }
 
             if (string.Equals(state.LastEnemyProfileId, enemyId, StringComparison.Ordinal))
@@ -181,8 +193,156 @@ namespace pitTeam.Patches
                 return false;
             }
 
-            state.LastEnemyProfileId = enemyId;
-            return true;
+            if (string.Equals(state.PendingEnemyProfileId, enemyId, StringComparison.Ordinal))
+            {
+                // Preserve the first request and its original confirmation time. Visibility/sense
+                // flicker must not restart the one-second proof window every time EFT asks again.
+                if (phrase == EPhraseTrigger.OnFirstContact)
+                {
+                    state.PendingPhrase = phrase;
+                    state.PendingAdditionalMask = additionalMask;
+                }
+
+                return false;
+            }
+
+            state.PendingEnemyProfileId = enemyId;
+            state.PendingPhrase = phrase;
+            state.PendingAdditionalMask = additionalMask;
+            state.ConfirmAtTime = now + ContactConfirmationSeconds;
+            state.NextAttemptTime = state.ConfirmAtTime;
+            EnsureUpdateRegistered();
+
+            // Delay the original request. UpdatePendingContact emits it manually only if the same
+            // living GoalEnemy survives the anti-flicker confirmation window.
+            return false;
+        }
+
+        private static void UpdatePendingContact(BotOwner owner)
+        {
+            if (owner == null ||
+                string.IsNullOrEmpty(owner.ProfileId) ||
+                !StateByFollower.TryGetValue(owner.ProfileId, out ContactState state))
+            {
+                return;
+            }
+
+            if (owner.Memory?.HaveEnemy != true || owner.Memory.GoalEnemy == null)
+            {
+                StateByFollower.Remove(owner.ProfileId);
+                return;
+            }
+
+            if (string.IsNullOrEmpty(state.PendingEnemyProfileId))
+            {
+                return;
+            }
+
+            EnemyInfo goalEnemy = owner.Memory.GoalEnemy;
+            string enemyId = GetEnemyId(goalEnemy);
+            if (!string.Equals(state.PendingEnemyProfileId, enemyId, StringComparison.Ordinal) ||
+                goalEnemy.Person?.HealthController?.IsAlive == false)
+            {
+                ClearPending(state);
+                return;
+            }
+
+            float now = UnityEngine.Time.time;
+            if (now < state.ConfirmAtTime || now < state.NextAttemptTime)
+            {
+                return;
+            }
+
+            if (IsCommandSuppressed(state, enemyId, now) ||
+                string.Equals(state.LastEnemyProfileId, enemyId, StringComparison.Ordinal))
+            {
+                state.LastEnemyProfileId = enemyId;
+                ClearPending(state);
+                return;
+            }
+
+            BotTalk botTalk = owner.BotTalk;
+            if (botTalk == null ||
+                botTalk.IsSilenced ||
+                FollowerForcedPhraseGate.ShouldBlock(owner, state.PendingPhrase))
+            {
+                state.NextAttemptTime = now + ContactRetrySeconds;
+                return;
+            }
+
+            BotGroupTalk groupTalk = owner.BotsGroup?.GroupTalk;
+            if (groupTalk != null && !groupTalk.CanSay(owner, state.PendingPhrase))
+            {
+                state.NextAttemptTime = now + ContactRetrySeconds;
+                return;
+            }
+
+            EPhraseTrigger phrase = state.PendingPhrase;
+            ETagStatus? additionalMask = state.PendingAdditionalMask;
+            state.NextAttemptTime = now + ContactRetrySeconds;
+            state.ManualEmissionInProgress = true;
+            try
+            {
+                // The contact already survived the persistence proof, so bypass the normal speech
+                // cooldown while preserving EFT's squad-level phrase reservation.
+                botTalk.DropNextSayPeriod();
+                groupTalk?.PhraseSad(owner, phrase);
+                botTalk.Say(phrase, true, additionalMask);
+                state.LastEnemyProfileId = enemyId;
+                ClearPending(state);
+            }
+            finally
+            {
+                state.ManualEmissionInProgress = false;
+            }
+        }
+
+        private static ContactState GetOrCreateState(string ownerProfileId)
+        {
+            if (!StateByFollower.TryGetValue(ownerProfileId, out ContactState state))
+            {
+                state = new ContactState();
+                StateByFollower[ownerProfileId] = state;
+            }
+
+            return state;
+        }
+
+        private static string GetEnemyId(EnemyInfo goalEnemy)
+        {
+            return string.IsNullOrEmpty(goalEnemy?.ProfileId) ? "<unknown>" : goalEnemy.ProfileId;
+        }
+
+        private static bool IsCommandSuppressed(ContactState state, string enemyId, float now)
+        {
+            return state != null &&
+                   now <= state.SuppressUntilTime &&
+                   string.Equals(state.SuppressedEnemyProfileId, enemyId, StringComparison.Ordinal);
+        }
+
+        private static void ClearPending(ContactState state)
+        {
+            if (state == null)
+            {
+                return;
+            }
+
+            state.PendingEnemyProfileId = null;
+            state.PendingPhrase = EPhraseTrigger.None;
+            state.PendingAdditionalMask = null;
+            state.ConfirmAtTime = 0f;
+            state.NextAttemptTime = 0f;
+        }
+
+        private static void EnsureUpdateRegistered()
+        {
+            if (_updateRegistered)
+            {
+                return;
+            }
+
+            BotOwnerUpdateHub.RegisterFollower(UpdateHubSubscriberId, UpdatePendingContact);
+            _updateRegistered = true;
         }
     }
 
@@ -197,7 +357,14 @@ namespace pitTeam.Patches
 
         public static bool ShouldBlock(BotOwner owner, EPhraseTrigger phrase)
         {
-            return owner != null && BossPlayers.IsFollower(owner) && MutedFollowerTriggers.Contains(phrase);
+            if (owner == null || !BossPlayers.IsFollower(owner) || !MutedFollowerTriggers.Contains(phrase))
+            {
+                return false;
+            }
+
+            // Vanilla requests Clear for every bot when memory enters peace. Keep that path muted,
+            // but permit the one follower selected by the squad post-combat linger coordinator.
+            return !FollowerPostCombatClearPhraseGate.IsAllowed(owner, phrase);
         }
     }
 
@@ -247,7 +414,7 @@ namespace pitTeam.Patches
 
             if (FollowerContactPhraseGate.IsContactPhrase(type) && BossPlayers.IsFollower(__instance._owner))
             {
-                if (!FollowerContactPhraseGate.ShouldAllow(__instance._owner))
+                if (!FollowerContactPhraseGate.ShouldAllowOrSchedule(__instance._owner, type, additionaMask))
                 {
                     return false;
                 }
@@ -284,7 +451,14 @@ namespace pitTeam.Patches
                 return true;
             }
 
-            return !FollowerTalkFrequencyGate.ShouldBlockCombatTalk(__instance.AIData?.BotOwner, phrase);
+            BotOwner owner = __instance.AIData?.BotOwner;
+            if (FollowerPostCombatClearPhraseGate.IsAllowed(owner, phrase))
+            {
+                FollowerPostCombatClearPhraseGate.Consume(owner, phrase);
+                return true;
+            }
+
+            return !FollowerTalkFrequencyGate.ShouldBlockCombatTalk(owner, phrase);
         }
     }
 
@@ -314,7 +488,7 @@ namespace pitTeam.Patches
 
             if (FollowerContactPhraseGate.IsContactPhrase(type) && BossPlayers.IsFollower(__instance._owner))
             {
-                if (!FollowerContactPhraseGate.ShouldAllow(__instance._owner))
+                if (!FollowerContactPhraseGate.ShouldAllowOrSchedule(__instance._owner, type, additionalMask))
                 {
                     return false;
                 }

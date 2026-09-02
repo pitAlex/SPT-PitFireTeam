@@ -11,10 +11,15 @@ namespace pitTeam.Utils
 {
     internal static class FollowerMedical
     {
-        private const float FirstAidStuckTimeout = 15f;
-        private const float StimulatorStuckTimeout = 3f;
-        private const float SurgeryStuckTimeout = 40f;
-        private const float HandsAfterMedicalStuckTimeout = 5f;
+        private const float MedicalProgressSampleInterval = 0.25f;
+        private const float FirstAidStallTimeout = 15f;
+        private const float FirstAidHardTimeout = 45f;
+        private const float StimulatorStallTimeout = 5f;
+        private const float StimulatorHardTimeout = 15f;
+        private const float SurgeryStallTimeout = 40f;
+        private const float SurgeryHardTimeout = 90f;
+        private const float HandsAfterMedicalStallTimeout = 5f;
+        private const float HandsAfterMedicalHardTimeout = 20f;
         private const float RecentMedicalWindow = 8f;
         private const float FirstAidMinVisibleNormalizedHealth = 0.06f;
         private const float EmergencySurgeryHealthPenalty = 0.5f;
@@ -34,8 +39,38 @@ namespace pitTeam.Utils
         {
             public string? Reason;
             public float StartedAt;
-            public float Timeout;
+            public float LastProgressAt;
+            public float StallTimeout;
+            public float HardTimeout;
+            public float NextProgressSampleAt;
             public float RecentMedicalUntil;
+            public MedicalProgressSnapshot Progress;
+        }
+
+        private readonly struct MedicalProgressSnapshot
+        {
+            public MedicalProgressSnapshot(
+                Meds? activeMeds,
+                bool firstAidPending,
+                bool surgeryPending,
+                bool handsInteractionActive,
+                float currentHealth,
+                float maximumHealth)
+            {
+                ActiveMeds = activeMeds;
+                FirstAidPending = firstAidPending;
+                SurgeryPending = surgeryPending;
+                HandsInteractionActive = handsInteractionActive;
+                CurrentHealth = currentHealth;
+                MaximumHealth = maximumHealth;
+            }
+
+            public Meds? ActiveMeds { get; }
+            public bool FirstAidPending { get; }
+            public bool SurgeryPending { get; }
+            public bool HandsInteractionActive { get; }
+            public float CurrentHealth { get; }
+            public float MaximumHealth { get; }
         }
 
         private sealed class PostCombatFullHealState
@@ -318,7 +353,11 @@ namespace pitTeam.Utils
             }
 
             MedicalHandsWatchState state = GetWatchState(bot.ProfileId);
-            string? reason = GetMedicalBusyReason(bot, state, out float timeout);
+            string? reason = GetMedicalBusyReason(
+                bot,
+                state,
+                out float stallTimeout,
+                out float hardTimeout);
             if (reason == null)
             {
                 if (!IsHandsInteractionActive(bot.GetPlayer))
@@ -332,21 +371,42 @@ namespace pitTeam.Utils
             {
                 state.Reason = reason;
                 state.StartedAt = Time.time;
-                state.Timeout = timeout;
+                state.LastProgressAt = Time.time;
+                state.StallTimeout = stallTimeout;
+                state.HardTimeout = hardTimeout;
+                state.NextProgressSampleAt = Time.time + MedicalProgressSampleInterval;
+                state.Progress = CaptureMedicalProgress(bot, reason);
                 return;
             }
 
             if (state.StartedAt <= 0f)
             {
                 state.StartedAt = Time.time;
+                state.LastProgressAt = Time.time;
             }
 
-            if (Time.time - state.StartedAt <= state.Timeout)
+            if (Time.time >= state.NextProgressSampleAt)
+            {
+                MedicalProgressSnapshot progress = CaptureMedicalProgress(bot, reason);
+                if (HasMedicalProgressed(state.Progress, progress))
+                {
+                    state.LastProgressAt = Time.time;
+                }
+
+                state.Progress = progress;
+                state.NextProgressSampleAt = Time.time + MedicalProgressSampleInterval;
+            }
+
+            bool progressStalled = Time.time - state.LastProgressAt > state.StallTimeout;
+            bool hardTimeoutReached = Time.time - state.StartedAt > state.HardTimeout;
+            if (!progressStalled && !hardTimeoutReached)
             {
                 return;
             }
 
-            TryRecoverStuckMedicalHands(bot, reason);
+            TryRecoverStuckMedicalHands(
+                bot,
+                hardTimeoutReached ? $"{reason}.hardTimeout" : $"{reason}.stalled");
             state.RecentMedicalUntil = Time.time + RecentMedicalWindow;
             ResetWatchState(state);
         }
@@ -564,28 +624,36 @@ namespace pitTeam.Utils
             return !ignoreBrokenLegPenalty && player.HealthController.IsBodyPartBroken(part);
         }
 
-        private static string? GetMedicalBusyReason(BotOwner bot, MedicalHandsWatchState state, out float timeout)
+        private static string? GetMedicalBusyReason(
+            BotOwner bot,
+            MedicalHandsWatchState state,
+            out float stallTimeout,
+            out float hardTimeout)
         {
-            timeout = 0f;
+            stallTimeout = 0f;
+            hardTimeout = 0f;
 
             if (bot.Medecine?.Stimulators?.Using == true)
             {
                 state.RecentMedicalUntil = Time.time + RecentMedicalWindow;
-                timeout = StimulatorStuckTimeout;
+                stallTimeout = StimulatorStallTimeout;
+                hardTimeout = StimulatorHardTimeout;
                 return "stimulator";
             }
 
             if (bot.Medecine?.FirstAid?.Using == true)
             {
                 state.RecentMedicalUntil = Time.time + RecentMedicalWindow;
-                timeout = FirstAidStuckTimeout;
+                stallTimeout = FirstAidStallTimeout;
+                hardTimeout = FirstAidHardTimeout;
                 return "firstAid";
             }
 
             if (bot.Medecine?.SurgicalKit?.Using == true)
             {
                 state.RecentMedicalUntil = Time.time + RecentMedicalWindow;
-                timeout = SurgeryStuckTimeout;
+                stallTimeout = SurgeryStallTimeout;
+                hardTimeout = SurgeryHardTimeout;
                 return "surgery";
             }
 
@@ -600,11 +668,63 @@ namespace pitTeam.Utils
             if ((isHealDecision || Time.time < state.RecentMedicalUntil) &&
                 IsHandsInteractionActive(bot.GetPlayer))
             {
-                timeout = HandsAfterMedicalStuckTimeout;
+                stallTimeout = HandsAfterMedicalStallTimeout;
+                hardTimeout = HandsAfterMedicalHardTimeout;
                 return "medicalHands";
             }
 
             return null;
+        }
+
+        private static MedicalProgressSnapshot CaptureMedicalProgress(BotOwner bot, string reason)
+        {
+            Meds? activeMeds = reason switch
+            {
+                "firstAid" => bot.Medecine?.FirstAid?.CurUsingMeds,
+                "surgery" => bot.Medecine?.SurgicalKit?.CurUsingMeds,
+                _ => null,
+            };
+
+            float currentHealth = 0f;
+            float maximumHealth = 0f;
+            try
+            {
+                ActiveHealthController? healthController = bot.GetPlayer?.ActiveHealthController;
+                if (healthController != null)
+                {
+                    foreach (EBodyPart part in EFT.HealthSystem.HealthHelper.RealBodyParts)
+                    {
+                        ValueStruct health = healthController.GetBodyPartHealth(part, false);
+                        currentHealth += health.Current;
+                        maximumHealth += health.Maximum;
+                    }
+                }
+            }
+            catch
+            {
+                // Health is supporting evidence only. The remaining controller/hands signals still
+                // distinguish an advancing medical sequence from one frozen in a single state.
+            }
+
+            return new MedicalProgressSnapshot(
+                activeMeds,
+                bot.Medecine?.FirstAid?.Have2Do == true,
+                bot.Medecine?.SurgicalKit?.HaveWork == true,
+                IsHandsInteractionActive(bot.GetPlayer),
+                currentHealth,
+                maximumHealth);
+        }
+
+        private static bool HasMedicalProgressed(
+            MedicalProgressSnapshot previous,
+            MedicalProgressSnapshot current)
+        {
+            return !ReferenceEquals(previous.ActiveMeds, current.ActiveMeds) ||
+                   previous.FirstAidPending != current.FirstAidPending ||
+                   previous.SurgeryPending != current.SurgeryPending ||
+                   previous.HandsInteractionActive != current.HandsInteractionActive ||
+                   Mathf.Abs(previous.CurrentHealth - current.CurrentHealth) > 0.01f ||
+                   Mathf.Abs(previous.MaximumHealth - current.MaximumHealth) > 0.01f;
         }
 
         private static bool IsHandsInteractionActive(Player player)
@@ -1159,7 +1279,11 @@ namespace pitTeam.Utils
         {
             state.Reason = null;
             state.StartedAt = 0f;
-            state.Timeout = 0f;
+            state.LastProgressAt = 0f;
+            state.StallTimeout = 0f;
+            state.HardTimeout = 0f;
+            state.NextProgressSampleAt = 0f;
+            state.Progress = default;
         }
     }
 }

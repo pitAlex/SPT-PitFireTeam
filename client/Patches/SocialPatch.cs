@@ -247,6 +247,8 @@ namespace pitTeam.Patches
 
     internal class FriendRequestProfileViewPatch : ModulePatch
     {
+        private const string RecruitInvitationIdPrefix = "pitfireteam-recruit-";
+
         protected override MethodBase GetTargetMethod()
         {
             return AccessTools.Method(typeof(EFT.UI.Chat.ChatMemberContextInteractions), nameof(EFT.UI.Chat.ChatMemberContextInteractions.WatchPlayerProfile));
@@ -261,19 +263,36 @@ namespace pitTeam.Patches
                 return true;
             }
 
-            string profileAccountId = profileMember.AccountId;
+            bool isRecruitInvitation =
+                __instance._invitation?._id?.StartsWith(RecruitInvitationIdPrefix, StringComparison.Ordinal) == true;
+            string currentAccountId = __instance._selectedMember?.AccountId;
+            bool hasCurrentAccountId = !string.IsNullOrWhiteSpace(currentAccountId) && currentAccountId != "0";
+            if (hasCurrentAccountId && !isRecruitInvitation)
+            {
+                return true;
+            }
+
+            string profileAccountId = hasCurrentAccountId ? currentAccountId : profileMember.AccountId;
             if (string.IsNullOrWhiteSpace(profileAccountId) || profileAccountId == "0")
             {
                 return true;
             }
 
-            string currentAccountId = __instance._selectedMember?.AccountId;
-            if (!string.IsNullOrWhiteSpace(currentAccountId) && currentAccountId != "0")
+            OtherPlayerProfileScreenPatch.ClearPendingRecruitProfileView();
+            if (isRecruitInvitation)
             {
-                return true;
+                OtherPlayerProfileScreenPatch.PreparePendingRecruitProfileView(profileAccountId);
             }
 
-            ItemUiContext.Instance.ShowPlayerProfileScreen(profileAccountId, EItemViewType.OtherPlayerProfile).HandleExceptions();
+            Task<OtherPlayerProfileScreen.OtherPlayerProfileScreenController> profileTask =
+                ItemUiContext.Instance.ShowPlayerProfileScreen(profileAccountId, EItemViewType.OtherPlayerProfile);
+            profileTask.ContinueWith(task =>
+            {
+                if (task.IsCanceled || task.IsFaulted || task.Result == null)
+                {
+                    OtherPlayerProfileScreenPatch.ClearPendingRecruitProfileView(profileAccountId);
+                }
+            }).HandleExceptions();
             return false;
         }
     }

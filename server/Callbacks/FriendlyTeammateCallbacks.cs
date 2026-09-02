@@ -187,6 +187,19 @@ public class FriendlyTeammateCallbacks(
         }
     }
 
+    public ValueTask<string> SetProficiency(string url, FriendlyTeammateProficiencyRequest request, MongoId sessionId)
+    {
+        try
+        {
+            teammateService.SetTeammateProficiency(sessionId, request);
+            return new ValueTask<string>(httpResponse.NullResponse());
+        }
+        catch (FriendlyTeammateException ex)
+        {
+            return new ValueTask<string>(httpResponse.GetBody<object?>(null, err: BackendErrorCodes.UnknownTradingError, errmsg: ex.Message));
+        }
+    }
+
     public ValueTask<string> SetTactic(string url, FriendlyTeammateTacticRequest request, MongoId sessionId)
     {
         try

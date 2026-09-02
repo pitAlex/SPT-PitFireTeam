@@ -8,6 +8,8 @@ public record FriendlyTeammateFollowerDetailsResponse
 
     public float Aggression { get; set; }
 
+    public FriendlyTeammateProficiencySettings Proficiency { get; set; } = new();
+
     public string Equipment { get; set; } = string.Empty;
 
     public string Voice { get; set; } = string.Empty;

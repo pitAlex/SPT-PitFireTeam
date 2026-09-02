@@ -8,12 +8,12 @@ using UnityEngine;
 namespace pitTeam.Modules
 {
     /// <summary>
-    /// Read-only access to the external SAIN mod's current enemy selection. SAIN keeps its own
-    /// GoalEnemy and mirrors that EnemyInfo into EFT memory; core follower combat uses this bridge
-    /// only to verify the exact established target for retained memory and to read SAIN's own
-    /// pressure status. Neither use grants sight, aim, or fire permission.
+    /// Core-owned access to the external SAIN mod's enemy state. This bridge is reflection-only so
+    /// the main plugin remains loadable without SAIN. It can mirror an explicit follower contact
+    /// into SAIN and read SAIN's exact retained target/pressure state, but it never grants EFT sight,
+    /// aim, or fire permission.
     /// </summary>
-    internal static class SainGoalEnemyBridge
+    public static class SainGoalEnemyBridge
     {
         private static bool sainAccessorResolved;
         private static bool accessorFailureLogged;
@@ -27,6 +27,10 @@ namespace pitTeam.Modules
         private static Type? enemyControllerType;
         private static PropertyInfo? controllerGoalEnemyProperty;
         private static FieldInfo? controllerGoalEnemyField;
+        private static MethodInfo? controllerCheckAddEnemyMethod;
+        private static MethodInfo? controllerChooseEnemyMethod;
+        private static MethodInfo? controllerGoalEnemySetter;
+        private static MethodInfo? controllerSetGoalEnemyMethod;
 
         private static Type? sainEnemyType;
         private static PropertyInfo? enemyProfileIdProperty;
@@ -34,6 +38,7 @@ namespace pitTeam.Modules
         private static PropertyInfo? enemyLastKnownPositionProperty;
         private static PropertyInfo? enemyInfoProperty;
         private static PropertyInfo? enemyLookingAtMeProperty;
+        private static MethodInfo? enemyUpdateLastSeenPositionMethod;
         private static readonly ConditionalWeakTable<BotOwner, EnemyLookCache> EnemyLookCaches =
             new ConditionalWeakTable<BotOwner, EnemyLookCache>();
 
@@ -43,6 +48,81 @@ namespace pitTeam.Modules
             public float RefreshAt;
             public bool HasValue;
             public bool LookingAtFollower;
+        }
+
+        public static bool TrySyncEnemyState(BotOwner owner, Player enemyPlayer, bool prioritizeAsGoal)
+        {
+            if (!pitFireTeam.IsSAINInstalled ||
+                owner == null ||
+                enemyPlayer == null ||
+                string.IsNullOrEmpty(owner.ProfileId))
+            {
+                return false;
+            }
+
+            try
+            {
+                object? sainBot = TryGetSainBot(owner);
+                if (sainBot == null)
+                {
+                    return false;
+                }
+
+                ResolveSainBotAccessors(sainBot.GetType());
+                object? enemyController = sainBotEnemyControllerProperty?.GetValue(sainBot);
+                if (enemyController == null)
+                {
+                    return false;
+                }
+
+                ResolveEnemyControllerAccessors(enemyController.GetType());
+                if (controllerCheckAddEnemyMethod == null)
+                {
+                    return false;
+                }
+
+                object? sainEnemy = controllerCheckAddEnemyMethod.Invoke(
+                    enemyController,
+                    new object[] { enemyPlayer });
+                if (sainEnemy == null)
+                {
+                    return false;
+                }
+
+                ResolveEnemyAccessors(sainEnemy.GetType());
+                if (enemyUpdateLastSeenPositionMethod == null)
+                {
+                    return false;
+                }
+
+                enemyUpdateLastSeenPositionMethod.Invoke(
+                    sainEnemy,
+                    new object[] { enemyPlayer.Position, Time.time });
+
+                object? currentGoal = controllerGoalEnemyProperty?.GetValue(enemyController) ??
+                                      controllerGoalEnemyField?.GetValue(enemyController);
+                if (prioritizeAsGoal || currentGoal == null)
+                {
+                    SetGoalEnemy(enemyController, sainEnemy);
+                }
+                else
+                {
+                    controllerChooseEnemyMethod?.Invoke(enemyController, Array.Empty<object>());
+                    currentGoal = controllerGoalEnemyProperty?.GetValue(enemyController) ??
+                                  controllerGoalEnemyField?.GetValue(enemyController);
+                    if (currentGoal == null)
+                    {
+                        SetGoalEnemy(enemyController, sainEnemy);
+                    }
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogAccessorFailureOnce(ex);
+                return false;
+            }
         }
 
         public static bool IsEnemyLookingAtFollower(BotOwner owner, EnemyInfo expectedEnemyInfo)
@@ -270,6 +350,16 @@ namespace pitTeam.Modules
             enemyControllerType = runtimeType;
             controllerGoalEnemyProperty = AccessTools.Property(runtimeType, "GoalEnemy");
             controllerGoalEnemyField = AccessTools.Field(runtimeType, "_goalEnemy");
+            controllerCheckAddEnemyMethod = AccessTools.Method(
+                runtimeType,
+                "CheckAddEnemy",
+                new[] { typeof(IPlayer) });
+            controllerChooseEnemyMethod = AccessTools.Method(runtimeType, "ChooseEnemy", Type.EmptyTypes);
+            controllerGoalEnemySetter = AccessTools.PropertySetter(runtimeType, "GoalEnemy");
+            controllerSetGoalEnemyMethod = AccessTools.Method(
+                runtimeType,
+                "setGoalEnemy",
+                new[] { typeof(EnemyInfo) });
         }
 
         private static void ResolveEnemyAccessors(Type runtimeType)
@@ -285,6 +375,19 @@ namespace pitTeam.Modules
             enemyLastKnownPositionProperty = AccessTools.Property(runtimeType, "LastKnownPosition");
             enemyInfoProperty = AccessTools.Property(runtimeType, "EnemyInfo");
             enemyLookingAtMeProperty = AccessTools.Property(runtimeType, "EnemyLookingAtMe");
+            enemyUpdateLastSeenPositionMethod = AccessTools.Method(
+                runtimeType,
+                "UpdateLastSeenPosition",
+                new[] { typeof(Vector3), typeof(float) });
+        }
+
+        private static void SetGoalEnemy(object enemyController, object sainEnemy)
+        {
+            controllerGoalEnemySetter?.Invoke(enemyController, new[] { sainEnemy });
+            if (enemyInfoProperty?.GetValue(sainEnemy) is EnemyInfo enemyInfo)
+            {
+                controllerSetGoalEnemyMethod?.Invoke(enemyController, new object[] { enemyInfo });
+            }
         }
 
         private static void LogAccessorFailureOnce(Exception exception)
@@ -295,7 +398,7 @@ namespace pitTeam.Modules
             }
 
             accessorFailureLogged = true;
-            pitFireTeam.Log.LogWarning($"[SAIN] Failed to read retained follower enemy state: {exception.GetBaseException().Message}");
+            pitFireTeam.Log.LogWarning($"[SAIN] Failed to access follower enemy state: {exception.GetBaseException().Message}");
         }
     }
 }

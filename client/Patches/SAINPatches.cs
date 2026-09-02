@@ -113,10 +113,12 @@ namespace pitTeam.Patches
             PatchFollowerCombatPatrolStanceWithoutAddon(harmony);
             PatchFollowerReloadBlockIfAddonMissing(harmony);
             PatchFollowerWeaponSelectionGuard(harmony);
+            FollowerSainCenterMassPatch.Apply(harmony);
             PatchSainTalkPrefixesForFollowers(harmony);
             PatchSainTalkGenerationForFollowers(harmony);
             PatchSainPlayerVoiceLineForFollowers(harmony);
             PatchFollowerCloseFoliageVision(harmony);
+            FollowerSainProficiency.ApplyPatches(harmony);
 
 
             if (squadType != null && SAINEnableClass != null)

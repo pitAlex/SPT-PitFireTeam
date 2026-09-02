@@ -35,10 +35,6 @@ namespace pitTeam.SAINAddon
             new Dictionary<string, Dictionary<string, HashSet<string>>>(System.StringComparer.Ordinal);
         private static readonly FieldInfo TimeLastKnownUpdatedField = typeof(SAIN.SAINComponent.Classes.EnemyClasses.EnemyKnownPlaces)
             .GetField("<TimeLastKnownUpdated>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic);
-        private static readonly MethodInfo SetGoalEnemyMethod =
-            AccessTools.Method(typeof(SAINEnemyController), "setGoalEnemy", new[] { typeof(EnemyInfo) });
-        private static readonly MethodInfo GoalEnemySetter =
-            AccessTools.PropertySetter(typeof(SAINEnemyController), "GoalEnemy");
 
         public static void OnBossGroupStaticUpdate(pitAIBossPlayer boss)
         {
@@ -627,59 +623,6 @@ namespace pitTeam.SAINAddon
 
                 TimeLastKnownUpdatedField.SetValue(knownPlaces, expiredAt);
             }
-        }
-
-        public static bool TrySyncFollowerEnemyState(BotOwner owner, Player enemyPlayer, bool prioritizeAsGoal)
-        {
-            if (owner == null || enemyPlayer == null || string.IsNullOrEmpty(owner.ProfileId))
-            {
-                return false;
-            }
-
-            if (!SAINEnableClass.GetSAIN(owner.ProfileId, out BotComponent bot) || bot == null)
-            {
-                return false;
-            }
-
-            var enemyController = bot.EnemyController;
-            if (enemyController == null)
-            {
-                return false;
-            }
-
-            var sainEnemy = enemyController.CheckAddEnemy(enemyPlayer);
-            if (sainEnemy == null)
-            {
-                return false;
-            }
-
-            sainEnemy.UpdateLastSeenPosition(enemyPlayer.Position, Time.time);
-            bool shouldForceGoal = prioritizeAsGoal || enemyController.GoalEnemy == null;
-            if (shouldForceGoal)
-            {
-                SetGoalEnemy(enemyController, sainEnemy);
-            }
-            else
-            {
-                enemyController.ChooseEnemy();
-                if (enemyController.GoalEnemy == null)
-                {
-                    SetGoalEnemy(enemyController, sainEnemy);
-                }
-            }
-
-            if (!bot.IsInCombat)
-            {
-                bot.BotActivation.SetInCombat(true);
-            }
-
-            return true;
-        }
-
-        private static void SetGoalEnemy(SAINEnemyController enemyController, Enemy sainEnemy)
-        {
-            GoalEnemySetter?.Invoke(enemyController, new object[] { sainEnemy });
-            SetGoalEnemyMethod?.Invoke(enemyController, new object[] { sainEnemy.EnemyInfo });
         }
 
         public static bool TryResetFollowerDecisionState(BotOwner owner)

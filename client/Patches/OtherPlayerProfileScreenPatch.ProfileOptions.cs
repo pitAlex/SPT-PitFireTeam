@@ -292,21 +292,39 @@ namespace pitTeam.Patches
             EFT.PlayerVisualRepresentation playerVisualRepresentation,
             InventoryPlayerModelWithStatsWindow window,
             InventoryController inventoryController,
-            InventoryClothingSelectionPanel panel
+            InventoryClothingSelectionPanel panel,
+            FriendlyTeammateProfileOptions options
         )
         {
+            EFT.CustomizationSolver solver = Singleton<EFT.CustomizationSolver>.Instance;
+            MongoID selectedBody = playerVisualRepresentation.Customization[EBodyModelPart.Body];
+            MongoID selectedFeet = playerVisualRepresentation.Customization[EBodyModelPart.Feet];
+            HashSet<string> ownedBodyIds = new HashSet<string>(
+                options.OwnedBodyCustomizationIds ?? new List<string>(),
+                StringComparer.OrdinalIgnoreCase);
+            HashSet<string> ownedFeetIds = new HashSet<string>(
+                options.OwnedFeetCustomizationIds ?? new List<string>(),
+                StringComparer.OrdinalIgnoreCase);
+
+            ownedBodyIds.Add(selectedBody.ToString());
+            ownedFeetIds.Add(selectedFeet.ToString());
+
+            IEnumerable<dropDownItem> followerOwnedSuites = solver._customizationSuiteTemplates.Values
+                .Where(suite =>
+                    (suite is EFT.Customization.UpperBodySuit && ownedBodyIds.Contains(suite.MainBodyPartItem.ToString()))
+                    || (suite is EFT.Customization.LowerBodySuit && ownedFeetIds.Contains(suite.MainBodyPartItem.ToString())));
+
             IEnumerable<dropDownItem> availableSuites =
-                Singleton<EFT.CustomizationSolver>.Instance.GetAvailableSuites(EPlayerSide.Bear)
-                .Concat(Singleton<EFT.CustomizationSolver>.Instance.GetAvailableSuites(EPlayerSide.Usec))
-                .Concat(Singleton<EFT.CustomizationSolver>.Instance.GetAvailableSuites(EPlayerSide.Savage))
+                solver.GetAvailableSuites(EPlayerSide.Bear)
+                .Concat(solver.GetAvailableSuites(EPlayerSide.Usec))
+                .Concat(solver.GetAvailableSuites(EPlayerSide.Savage))
+                .Concat(followerOwnedSuites)
                 .Where(suite => suite != null)
                 .GroupBy(suite => suite.Id.ToString(), StringComparer.OrdinalIgnoreCase)
                 .Select(group => group.First());
 
             List<dropDownItem> upper = new List<dropDownItem>();
             List<dropDownItem> lower = new List<dropDownItem>();
-            MongoID selectedBody = playerVisualRepresentation.Customization[EBodyModelPart.Body];
-            MongoID selectedFeet = playerVisualRepresentation.Customization[EBodyModelPart.Feet];
             dropDownItem currentUpper = null;
             dropDownItem currentLower = null;
 
@@ -501,7 +519,7 @@ namespace pitTeam.Patches
                         EnsureBodySuccess(responseJson);
                         Modules.Logger.LogInfo($"[UI] Persisted teammate tactic '{tacticValue}' for '{profile.AccountId}'.");
 
-                        SetAggressionRowMarksmanState(IsMarksmanTactic(tacticValue));
+                        SetProficiencyAggressionForTactic(IsMarksmanTactic(tacticValue));
                         MarkSquadRosterDirty(profile?.AccountId);
                         RefreshPlayerVisualization(profile, inventoryController, session, window);
                     }

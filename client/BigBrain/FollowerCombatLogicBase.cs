@@ -637,10 +637,11 @@ namespace pitTeam.BigBrain
 
         private void ActivateRegroupObjective(BotFollowerPlayer followerData)
         {
+            bool tightRegroup = followerData.TightRegroupRequested;
             followerData.ClearOrderedPushTargetLock("CombatObjective:Regroup");
             combatCommon.ClearCommittedPushDecision("CombatObjective:Regroup");
             followerData.ClearCommand("CombatObjective:ConsumeRegroup");
-            ActivateRegroupObjective(forceReset: true, "activateRegroupOrder");
+            ActivateRegroupObjective(forceReset: true, "activateRegroupOrder", tightRegroup);
             followerData.SetCombatRegroupBossAnchor(true);
         }
 
@@ -662,7 +663,10 @@ namespace pitTeam.BigBrain
             BattleRecorder.RecordObjectiveSwitch(BotOwner, GetCurrentObjectiveName(), "activateOrderedPush");
         }
 
-        private void ActivateRegroupObjective(bool forceReset = false, string reason = "activateRegroup")
+        private void ActivateRegroupObjective(
+            bool forceReset = false,
+            string reason = "activateRegroup",
+            bool tightRegroup = false)
         {
             if (currentObjective == CombatObjectiveKind.Regroup && !forceReset)
             {
@@ -672,7 +676,14 @@ namespace pitTeam.BigBrain
             // Activate resets regroup-local state so every new regroup order starts fresh from the
             // follower's current combat geometry instead of reusing stale bossward targets.
             DeactivateGrenadierForObjectiveSwitch(reason);
-            regroupObjective.Activate();
+            if (regroupObjective is FollowerCombatRegroupObjective concreteRegroupObjective)
+            {
+                concreteRegroupObjective.Activate(tightRegroup);
+            }
+            else
+            {
+                regroupObjective.Activate();
+            }
             currentObjective = CombatObjectiveKind.Regroup;
             BattleRecorder.RecordObjectiveSwitch(BotOwner, GetCurrentObjectiveName(), reason);
         }
@@ -681,6 +692,14 @@ namespace pitTeam.BigBrain
         {
             followerData.ClearOrderedPushTargetLock("CombatObjective:Suppression");
             combatCommon.ClearCommittedPushDecision("CombatObjective:Suppression");
+            if (!TryResolveSuppressionCommandEnemy(followerData, goalEnemy, out goalEnemy))
+            {
+                followerData.ClearCommand("CombatObjective:RejectSuppressionTarget");
+                BotOwner.BotTalk?.TrySay(EPhraseTrigger.Negative, false);
+                BotOwner.Gesture?.TryGestus(EInteraction.NoGesture, false);
+                return;
+            }
+
             if (!combatCommon.HasActiveCombatEnemy(goalEnemy))
             {
                 followerData.ClearCommand("CombatObjective:RejectSuppression");
@@ -745,6 +764,48 @@ namespace pitTeam.BigBrain
             }
 
             combatCommon.SetOrderedSuppressTarget(suppressTarget);
+        }
+
+        private bool TryResolveSuppressionCommandEnemy(
+            BotFollowerPlayer followerData,
+            EnemyInfo currentGoalEnemy,
+            out EnemyInfo resolvedGoalEnemy)
+        {
+            resolvedGoalEnemy = currentGoalEnemy;
+            string? requestedProfileId = followerData.SuppressEnemyTargetProfileId;
+            if (string.IsNullOrEmpty(requestedProfileId) ||
+                string.Equals(currentGoalEnemy?.ProfileId, requestedProfileId, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            if (BotOwner?.EnemiesController?.EnemyInfos == null)
+            {
+                return false;
+            }
+
+            foreach (var trackedEnemy in BotOwner.EnemiesController.EnemyInfos)
+            {
+                EnemyInfo candidate = trackedEnemy.Value;
+                if (!string.Equals(trackedEnemy.Key?.ProfileId, requestedProfileId, StringComparison.Ordinal) ||
+                    candidate?.Person?.HealthController?.IsAlive != true)
+                {
+                    continue;
+                }
+
+                candidate.PriorityIndex = 0;
+                using (FollowerGoalEnemyTracker.Begin(
+                           "FollowerCombatLogicBase.TryResolveSuppressionCommandEnemy",
+                           "restoreDirectedSuppressTarget"))
+                {
+                    BotOwner.Memory.GoalEnemy = candidate;
+                }
+
+                resolvedGoalEnemy = candidate;
+                return true;
+            }
+
+            return false;
         }
 
         private bool CanSatisfySuppressionOrder(BotFollowerPlayer? followerData)

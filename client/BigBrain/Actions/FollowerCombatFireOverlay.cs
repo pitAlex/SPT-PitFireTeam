@@ -254,8 +254,18 @@ namespace pitTeam.BigBrain.Actions
                 goalEnemy.IsVisible &&
                 goalEnemy.CanShoot)
             {
-                ShootToPoint? shootPoint = botOwner.CurrentEnemyTargetPosition(false);
-                Vector3 rawTarget = shootPoint?.Point ?? goalEnemy.GetBodyPartPosition();
+                if (!FollowerAimTargetPolicy.TrySelectFollowerShootPoint(
+                        goalEnemy,
+                        out Vector3 rawTarget,
+                        out bool hasShootPoint) ||
+                    !hasShootPoint)
+                {
+                    target = Vector3.zero;
+                    suppression = false;
+                    reason = "noVisibleShootablePart";
+                    return false;
+                }
+
                 target = StabilizeVisibleTarget(goalEnemy, rawTarget);
                 suppression = false;
                 reason = "visibleEnemy";

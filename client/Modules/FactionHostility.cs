@@ -158,6 +158,11 @@ namespace pitTeam.Modules
             return Faction.None;
         }
 
+        internal static bool IsScavFaction(IPlayer player)
+        {
+            return GetFaction(player) == Faction.Scav;
+        }
+
         private static bool IsScavFactionRole(WildSpawnType role)
         {
             if (OrdinaryScavRoles.Contains(role))

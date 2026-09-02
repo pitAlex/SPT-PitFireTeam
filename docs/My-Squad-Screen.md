@@ -62,6 +62,7 @@ Verified behavior:
 
 - the button is a cloned `DefaultUIButton`, not a custom prefab
 - it uses a custom icon and localized title
+- pitFireTeam declares Menu Overhaul as a soft BepInEx dependency, so when both mods are installed the `My Squad` button is injected after Menu Overhaul finishes rebuilding the main-menu layout
 - when Menu Overhaul (`com.moxopixel.menuoverhaul`) is loaded, the icon uses `squad-inverse.png`; if that asset is missing, it falls back to `squad.png`
 - reconnect/minimized menu states re-sync its visibility
 
@@ -377,7 +378,7 @@ Fresh configurations and Reset to Defaults use:
 
 ### Raid faction hostility setting
 
-`Faction Hostilities` is a default-on Raid setting that registers BEAR and USEC as opposing factions and registers PMCs against Scavs, Scav bosses, and their followers when bots activate. Scavs start neutral toward Cultists, Raiders, and Rogues; those three factions warn Scavs and can turn hostile if the warning is ignored. Partisan is excluded so his stock karma, zone, and proximity hostility logic remains authoritative. A player Scav already marked hostile by Fence karma or as free-to-kill keeps the game's existing hostility instead of being reset to neutral. Existing non-combat/quest-protected roles remain excluded. It does not make same-side PMCs hostile or bypass normal sight and hearing. The setting is disabled while a raid is active because existing bot relationships cannot be safely undone or rebuilt mid-raid.
+`Faction Hostilities` is a default-on Raid setting that registers BEAR and USEC as opposing factions and registers PMCs against Scavs, Scav bosses, and their followers when bots activate. Follower groups do not accept a Scav from that faction matrix alone: the Scav must first have the player or any follower in its enemy relationship, actively target one of them, or enter through a direct aggression cause. This keeps a follower from initiating against a Scav that remains neutral to the whole squad while still reacting when the Scav is hostile to the player but has not separately targeted the follower. Scavs start neutral toward Cultists, Raiders, and Rogues; those three factions warn Scavs and can turn hostile if the warning is ignored. Partisan is excluded so his stock karma, zone, and proximity hostility logic remains authoritative. A player Scav already marked hostile by Fence karma or as free-to-kill keeps the game's existing hostility instead of being reset to neutral. Existing non-combat/quest-protected roles remain excluded. It does not make same-side PMCs hostile or bypass normal sight and hearing. The setting is disabled while a raid is active because existing bot relationships cannot be safely undone or rebuilt mid-raid.
 
 ### Loadout Management setting
 
@@ -483,10 +484,10 @@ For teammate profiles the patch:
 - hides stock report actions
 - clears the stock right-side profile content blocks
 - reuses the stock clothing panel for suit selection
-- combines unlocked BEAR, USEC, and Savage clothing while keeping each suite id unique, so cross-faction availability does not duplicate dropdown entries
+- combines unlocked BEAR, USEC, and Savage clothing with each teammate's persisted wardrobe while keeping each suite id unique, so generated clothing remains selectable even when the player has not unlocked it
 - injects a cloned second clothing-style row for loadout + tactic in `Simple`
 - replaces the loadout dropdown side with `EDIT LOADOUT` in `Restricted`, `Immersive`, and `Realistic`, leaving the tactic dropdown intact
-- injects an aggression slider row below that
+- injects a `PROFICIENCY` button row below that
 - injects an `Edit Loadout` button row below that in `Simple`, or a `KIT LOADOUTS` row in the real-transfer modes
 - clones and hosts a filtered `SkillsScreen`
 - moves the faction badge down to fit the custom rows
@@ -506,8 +507,12 @@ Verified persisted actions today:
     - `POST /singleplayer/pitfireteam/teammate/profile/tactic`
 - aggression
     - `POST /singleplayer/pitfireteam/teammate/profile/aggression`
+- proficiency percentages
+    - `POST /singleplayer/pitfireteam/teammate/profile/proficiency`
 
 After successful profile-side persistence the code marks the squad roster dirty so the next `My Squad` reopen can refresh changed tiles.
+
+Pending recruit friend requests also open through `OtherPlayerProfileScreen`, but remain read-only. Their stock empty favorite-item and achievement sections are replaced with the same filtered follower-skills panel used for accepted teammates; teammate management controls stay unavailable until the recruit is accepted.
 
 ### Loadout and tactic selectors
 
@@ -537,16 +542,75 @@ Lower dropdown:
 
 Loadout selection persists immediately through the backend and refreshes the live profile visualization.
 
-### Aggression row
+### Proficiency dialog
 
-Aggression is a cloned row containing a stock-style slider.
+`PROFICIENCY` opens the teammate-profile modal that owns follower proficiency controls. Its panel uses the same draggable header behavior and title styling as `Edit Loadout`.
 
 Behavior:
 
-- current value comes from teammate profile options
-- values are clamped to `0..100`
-- persistence is delayed/debounced before posting to backend
+- `Aggression` is functional: its current value comes from teammate profile options, values are clamped to `0..100`, and persistence is delayed/debounced before posting to the backend
 - marksman tactic uses aggression as a tactic-relative offensive auto-search control
+- `Vision`, `Precision`, and `Reaction` are functional `0..200` percentage sliders with neutral default `100`
+- `Vision` changes only the follower's detection-distance multiplier
+- `Precision` changes shot accuracy, contributes half of the final aim-speed multiplier, and sets a conservative head-target preference from `10%` at Precision `0` through `33%` at `100` to `60%` at `200`
+- `Reaction` changes visual-recognition speed, contributes the other half of final aim speed, and scales the short direct-fire gate used by core close dogfights
+- the bottom `RESET` button restores Vision, Precision, and Reaction to `100`, restores Aggression to the active tactic's default (`50` for Rifleman or `30` for Marksman), updates all four visible sliders immediately, and persists one aggression update plus one proficiency-object update
+- the current values load from teammate profile options; changing any slider updates one follower-local proficiency object and persists the whole object after a short debounce
+- saved values flow through follower details and are snapshotted when that teammate spawns
+
+#### Proficiency percentage contract
+
+The three proficiency values are direct percentage modifiers:
+
+```text
+effective multiplier = slider value / 100
+```
+
+- `0` represents `0%`
+- `100` represents the unchanged class/tactic default (`1.0x`)
+- `120` represents `120%` (`1.2x`)
+- `150` represents `150%` (`1.5x`)
+- `200` represents `200%` (`2.0x`)
+
+The modifiers are stored per saved teammate and applied **after** that follower's role and combat tactic have finalized their own proficiency values. They never replace those values with one global baseline. Changing a teammate between Rifleman and Marksman therefore changes the baseline that `100%` represents, while the saved percentages remain relative to the selected class.
+
+Final aim speed deliberately combines two player-facing qualities:
+
+```text
+vision range factor = Vision / 100
+accuracy factor = Precision / 100
+recognition-speed factor = Reaction / 100
+aim-speed factor = (Precision + Reaction) / 200
+head preference = 10 + 0.23 * Precision                         (Precision 0..100)
+head preference = 33 + 0.27 * (Precision - 100)                (Precision 100..200)
+```
+
+This means Precision `100` plus Reaction `100` keeps normal aim speed, either value at `200` while the other stays at `100` produces `1.5x` aim speed, and both at `200` are required for `2.0x` aim speed.
+
+For profile compatibility and recorder detail, storage retains the four granular fields `VisionDistance`, `VisionSpeed`, `AimSpeed`, and `Accuracy`. Their authoritative mapping is `VisionDistance = Vision`, `VisionSpeed = Reaction`, and `Accuracy = Precision`; `AimSpeed` is a derived compatibility field recalculated as the average of Precision and Reaction. Existing saved profiles naturally carry their former recognition-speed value into the new Reaction slider.
+
+The applied runtime modifier is an immutable spawn-time snapshot. Profile changes affect the teammate the next time that follower is spawned, normally in the next raid; they do not rewrite the settings object of an already-active follower.
+
+Concrete `Vision` distance examples:
+
+| Runtime path | Rifleman at `100` | Marksman at `100` | Marksman at `150` |
+|---|---:|---:|---:|
+| Vanilla/core `VisibleDistance` | `185m` | `210m` | `315m` (`210 x 1.5`) |
+| SAIN-normalized `VisibleDistance` | `250m` | `275m` | `412.5m` (`275 x 1.5`) |
+
+Meaning of each percentage:
+
+- `Vision`: multiplies only the finalized detection distance. `150` sees up to `1.5x` farther than that class's default; it does not make recognition faster.
+- `Precision`: multiplies shot-execution accuracy, tightening scatter, accelerating precision convergence, and reducing external-SAIN recoil at the core compatibility boundary. It supplies half of the combined aim-speed value and maps piecewise to a `10%` / `33%` / `60%` head preference at slider values `0` / `100` / `200`.
+- `Reaction`: multiplies the visual visibility-gain rate and supplies the other half of combined aim speed. On the core combat path it also scales the `0.2s` close-dogfight direct-fire gate; this gate is `0.2s` at `100`, `0.1s` at `200`, and never delays the normal aim/shoot worker once that worker is independently ready.
+
+Vision, Precision, Reaction, and general compatibility with the external SAIN plugin are core-owned and must work in all three runtime modes: no SAIN, SAIN installed without the addon, and SAIN with the addon. The optional addon only replaces core combat with its custom SAIN Squad-derived follower layer and custom actions; it does not own calculation tuning, mutate shared SAIN settings, or change the percentage contract. The combined Precision/Reaction aim-speed factor is applied after the final EFT-or-SAIN aim-time calculation, and Precision's Accuracy factor is applied to SAIN's final calculated recoil by the main plugin rather than the addon.
+
+Body-part selection filters to parts that are both visible and currently shootable before applying head preference. The probability therefore chooses only between valid firing solutions: a sole exposed head remains eligible regardless of the probability, a visible torso remains available when it has a real shot lane, and an occluded torso is never selected merely because the head-preference roll failed. The core direct-fire overlay uses this same selector rather than EFT's body-only `CurrentEnemyTargetPosition(false)` helper. The selected part remains stable for EFT's normal retarget interval, so this does not reroll on every shot. SAIN's global center-mass height clamp is bypassed only for pitFireTeam followers so it cannot move an already valid upper-body target back behind cover.
+
+Reaction does **not** change EFT's `WAIT_NEW_SENSOR` or `WAIT_NEW__LOOK_SENSOR`. Those remain the game's independent ambient look/hearing refresh and stationary-cover look-switch timers.
+
+The raw `0` value remains saved and displayed as `0%`. EFT modifier restoration and inverse calculations cannot safely consume a literal zero, so runtime application uses a project-owned minimum effective factor of `0.05x` (`5%`) for values from `0` through `5`; values above `5` map directly to their displayed percentage.
 
 ### Rename flow
 

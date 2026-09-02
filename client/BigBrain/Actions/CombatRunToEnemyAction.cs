@@ -40,6 +40,9 @@ namespace pitTeam.BigBrain.Actions
         private const float RunPointNavSampleRadius = 2.25f;
         private const float LookCommitMinSeconds = 0.2f;
         private const float LookCommitMaxSeconds = 0.4f;
+        private const float RunEngagementGraceSeconds = 0.75f;
+        private const float RunEngagementFailureSeconds = 1.25f;
+        private const float StableRunEngagementResetSeconds = 0.5f;
         private const float CloseKnownThreatLookDistance = 12f;
         private const float CloseKnownThreatStopDistance = 4f;
         private const float CloseKnownThreatBadLookAngle = 65f;
@@ -59,6 +62,9 @@ namespace pitTeam.BigBrain.Actions
         private int stalledProgressChecks;
         private RunLookMode committedLookMode;
         private float committedLookModeUntil;
+        private float runModeStartedAt;
+        private float runEngagementFailureSince;
+        private float stableRunEngagementSince;
 
         public CombatRunToEnemyAction(BotOwner botOwner) : base(botOwner)
         {
@@ -84,7 +90,7 @@ namespace pitTeam.BigBrain.Actions
 
             if (!canRun)
             {
-                SwitchToWalkFallback(data);
+                SwitchToWalkFallback(data, "cannotRun");
                 return;
             }
 
@@ -115,6 +121,8 @@ namespace pitTeam.BigBrain.Actions
             stalledProgressChecks = 0;
             committedLookMode = RunLookMode.None;
             committedLookModeUntil = 0f;
+            ResetRunEngagementWatchdog();
+            runModeStartedAt = Time.time;
 
             EnemyInfo goalEnemy = BotOwner.Memory.GoalEnemy;
             if (goalEnemy != null)
@@ -130,10 +138,12 @@ namespace pitTeam.BigBrain.Actions
             SetCombatSprint(false);
             committedLookMode = RunLookMode.None;
             committedLookModeUntil = 0f;
+            ResetRunEngagementWatchdog();
         }
 
-        private void SwitchToWalkFallback(CustomLayer.ActionData data)
+        private void SwitchToWalkFallback(CustomLayer.ActionData data, string gate)
         {
+            RecordMovementState(data, "walkFallback", gate);
             StopRunMode();
             movementMode = MovementMode.Walk;
             restoreRunGate.Reset();
@@ -150,6 +160,7 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
+            RecordMovementState(data, "run", "walkFallbackRecovered");
             walkFallback.Stop();
             movementMode = MovementMode.Run;
             restoreRunGate.Reset();
@@ -184,6 +195,12 @@ namespace pitTeam.BigBrain.Actions
             TryPreferPrimaryAtRange(goalEnemy, reason);
             if (HoldPushMovementUntilLongGunReady(reason))
             {
+                return;
+            }
+
+            if (ShouldFallbackFromFailedRunEngagement())
+            {
+                SwitchToWalkFallback(data, "actualSprintPathFailed");
                 return;
             }
 
@@ -223,6 +240,48 @@ namespace pitTeam.BigBrain.Actions
 
             DoorInteractionStatus doorStatus = BotOwner.DoorOpener.UpdateDoorInteractionStatus();
             return !IsDoorInteractionBlockingSprint(doorStatus);
+        }
+
+        private bool ShouldFallbackFromFailedRunEngagement()
+        {
+            if (Time.time - runModeStartedAt < RunEngagementGraceSeconds)
+            {
+                return false;
+            }
+
+            bool runEngaged = BotOwner.Mover.HasPathAndNoComplete &&
+                              BotOwner.Mover.Sprinting &&
+                              IsActuallySprinting(BotOwner);
+            if (runEngaged)
+            {
+                if (stableRunEngagementSince <= 0f)
+                {
+                    stableRunEngagementSince = Time.time;
+                }
+
+                if (Time.time - stableRunEngagementSince >= StableRunEngagementResetSeconds)
+                {
+                    runEngagementFailureSince = 0f;
+                }
+
+                return false;
+            }
+
+            stableRunEngagementSince = 0f;
+            if (runEngagementFailureSince <= 0f)
+            {
+                runEngagementFailureSince = Time.time;
+                return false;
+            }
+
+            return Time.time - runEngagementFailureSince >= RunEngagementFailureSeconds;
+        }
+
+        private void ResetRunEngagementWatchdog()
+        {
+            runModeStartedAt = 0f;
+            runEngagementFailureSince = 0f;
+            stableRunEngagementSince = 0f;
         }
 
         private void NotMovingCheck(EnemyInfo goalEnemy)
@@ -789,6 +848,23 @@ namespace pitTeam.BigBrain.Actions
             BotOwner.SetPose(0f);
             committedLookMode = RunLookMode.None;
             committedLookModeUntil = 0f;
+        }
+
+        [System.Diagnostics.Conditional("DEBUG")]
+        private void RecordMovementState(CustomLayer.ActionData data, string mode, string gate)
+        {
+            if (!BattleRecorder.IsRecordingFor(BotOwner, requireRecordedCombat: true))
+            {
+                return;
+            }
+
+            BattleRecorder.RecordCombatMovementEvent(
+                BotOwner,
+                "runToEnemy",
+                GetReason(data),
+                mode,
+                gate,
+                BotOwner.Mover?.TargetPoint);
         }
 
         private static Vector3 Flatten(Vector3 value)

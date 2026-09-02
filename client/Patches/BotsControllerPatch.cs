@@ -937,6 +937,8 @@ namespace pitTeam.Patches
             // remember what tactic this bot is associated with as the tactic will be set after spawn
             Dictionary<string, string> profileTactic = new Dictionary<string, string>();
             Dictionary<string, float> profileAggression = new Dictionary<string, float>();
+            Dictionary<string, FollowerProficiencyModifierValues> profileProficiency =
+                new Dictionary<string, FollowerProficiencyModifierValues>();
 
             // scav players will have random followers that cannot be customized
             if (side == EPlayerSide.Savage)
@@ -975,6 +977,8 @@ namespace pitTeam.Patches
 
                 Dictionary<string, string> botsTactic = new Dictionary<string, string>();
                 Dictionary<string, float> botsAggression = new Dictionary<string, float>();
+                Dictionary<string, FollowerProficiencyModifierValues> botsProficiency =
+                    new Dictionary<string, FollowerProficiencyModifierValues>();
 
                 try
                 {
@@ -985,6 +989,7 @@ namespace pitTeam.Patches
                     {
                         botsTactic[item.Aid] = item.Tactic;
                         botsAggression[item.Aid] = item.Aggression;
+                        botsProficiency[item.Aid] = item.Proficiency ?? new FollowerProficiencyModifierValues();
                     }
                 }
                 catch (Exception ex)
@@ -1020,6 +1025,10 @@ namespace pitTeam.Patches
                         {
                             profileAggression[profile.Id] = 50f;
                         }
+
+                        profileProficiency[profile.Id] = botsProficiency.TryGetValue(aid, out FollowerProficiencyModifierValues proficiency)
+                            ? proficiency
+                            : new FollowerProficiencyModifierValues();
                     }
                 }
 
@@ -1070,6 +1079,9 @@ namespace pitTeam.Patches
                             {
                                 aggression = 50f;
                             }
+                            profileProficiency.TryGetValue(
+                                me.Profile.ProfileId,
+                                out FollowerProficiencyModifierValues proficiency);
 
                             WildSpawnType botType = type;
 
@@ -1080,7 +1092,7 @@ namespace pitTeam.Patches
 
                             Modules.Logger.LogInfo("Tactic is " + tactic);
 
-                            BossPlayers.AddFollower(me, player, true, botType, tactic, aggression);
+                            BossPlayers.AddFollower(me, player, true, botType, tactic, aggression, proficiency);
 
                             TrySayFollowerReadyControlled(me, 2000);
 
@@ -1420,6 +1432,7 @@ namespace pitTeam.Patches
                 if (Controller == null)
                 {
                     PlayerKilledPatch.ResetKillMessageRaidState();
+                    SquadRaidKillReport.BeginRaid(Utils.Utils.FlagGet("RaidTransit"));
                     new BossPlayers();
                     new InteractableObjects();
                     new NpcMessage();
@@ -1448,6 +1461,10 @@ namespace pitTeam.Patches
                     BattleRecorder.StartRaid(locationId);
                 }
 
+                if (player?.IsYourPlayer == true)
+                {
+                    SquadRaidKillReport.SetPlayerNickname(player.Profile?.Nickname);
+                }
 
                 pitAIBossPlayer playerBoss = BossPlayers.AddPlayerAsBoss(player, __instance);
 

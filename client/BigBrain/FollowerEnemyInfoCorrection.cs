@@ -1,6 +1,7 @@
 using EFT;
 using pitTeam.Modules;
 using pitTeam.Utils;
+using System.Runtime.CompilerServices;
 using UnityEngine;
 
 namespace pitTeam.BigBrain
@@ -10,8 +11,9 @@ namespace pitTeam.BigBrain
         private const float MaxReasonableEnemyDistance = 1000f;
         private const float DistanceCorrectionTolerance = 0.25f;
         private const float CloseFoliageVisibilityDistance = 10f;
-        private const float CloseTargetShootFallbackDistance = 12f;
         private const float StaleVisibleFlagMaxAge = 0.75f;
+        private static readonly ConditionalWeakTable<EnemyInfo, VerifiedShootPartsCache> VerifiedShootParts =
+            new ConditionalWeakTable<EnemyInfo, VerifiedShootPartsCache>();
         [System.ThreadStatic]
         private static int lookCheckDepth;
         [System.ThreadStatic]
@@ -75,6 +77,7 @@ namespace pitTeam.BigBrain
             BotOwner botOwner = enemyInfo.Owner;
             if (!TryGetReliableDistance(botOwner, enemyInfo, out float distance, out Vector3 enemyPosition))
             {
+                ClearVerifiedShootParts(enemyInfo);
                 enemyInfo.SetCanShoot(false);
                 DemoteVisibility(enemyInfo, previousState);
                 return;
@@ -84,13 +87,20 @@ namespace pitTeam.BigBrain
 
             if (!ShouldRunLineCorrection(enemyInfo, previousState, distance))
             {
+                ClearVerifiedShootParts(enemyInfo);
                 enemyInfo.SetCanShoot(false);
                 DemoteVisibility(enemyInfo, previousState);
                 return;
             }
 
-            bool directlyVisible = HasDirectVisibility(botOwner, enemyInfo, distance);
-            bool canShoot = directlyVisible && HasVerifiedShootLane(botOwner, enemyInfo, distance);
+            bool canShoot = ResolveVerifiedShootParts(
+                botOwner,
+                enemyInfo,
+                distance,
+                out bool directlyVisible,
+                out bool headShootable,
+                out bool bodyShootable);
+            SetVerifiedShootParts(enemyInfo, headShootable, bodyShootable);
 
             if (directlyVisible)
             {
@@ -144,10 +154,24 @@ namespace pitTeam.BigBrain
             }
         }
 
-        public static bool HasVerifiedShootLane(BotOwner botOwner, EnemyInfo goalEnemy)
+        internal static bool TryGetVerifiedShootParts(
+            EnemyInfo? enemyInfo,
+            out bool headShootable,
+            out bool bodyShootable)
         {
-            return TryGetReliableDistance(botOwner, goalEnemy, out float distance, out _) &&
-                   HasVerifiedShootLane(botOwner, goalEnemy, distance);
+            headShootable = false;
+            bodyShootable = false;
+            if (enemyInfo == null ||
+                !VerifiedShootParts.TryGetValue(enemyInfo, out VerifiedShootPartsCache cache) ||
+                !cache.HasValue ||
+                Time.time - cache.UpdatedAt > StaleVisibleFlagMaxAge)
+            {
+                return false;
+            }
+
+            headShootable = cache.HeadShootable;
+            bodyShootable = cache.BodyShootable;
+            return true;
         }
 
         public static bool HasFreshPersonalVisual(EnemyInfo? enemyInfo, float maxAge)
@@ -180,6 +204,7 @@ namespace pitTeam.BigBrain
 
             if (!TryGetReliableDistance(botOwner, enemyInfo, out float distance, out Vector3 enemyPosition))
             {
+                ClearVerifiedShootParts(enemyInfo);
                 enemyInfo.SetCanShoot(false);
                 DemoteVisibility(enemyInfo, previousState);
                 return false;
@@ -187,8 +212,14 @@ namespace pitTeam.BigBrain
 
             CorrectDistanceAndDirection(botOwner, enemyInfo, distance, enemyPosition);
 
-            bool directlyVisible = HasDirectVisibility(botOwner, enemyInfo, distance);
-            bool canShoot = directlyVisible && HasVerifiedShootLane(botOwner, enemyInfo, distance);
+            bool canShoot = ResolveVerifiedShootParts(
+                botOwner,
+                enemyInfo,
+                distance,
+                out bool directlyVisible,
+                out bool headShootable,
+                out bool bodyShootable);
+            SetVerifiedShootParts(enemyInfo, headShootable, bodyShootable);
             if (directlyVisible)
             {
                 PromoteDirectVisible(enemyInfo, enemyPosition, previousState);
@@ -301,8 +332,17 @@ namespace pitTeam.BigBrain
             return goalEnemy.CurrPosition;
         }
 
-        private static bool HasDirectVisibility(BotOwner botOwner, EnemyInfo goalEnemy, float distance)
+        private static bool ResolveVerifiedShootParts(
+            BotOwner botOwner,
+            EnemyInfo goalEnemy,
+            float distance,
+            out bool directlyVisible,
+            out bool headShootable,
+            out bool bodyShootable)
         {
+            directlyVisible = false;
+            headShootable = false;
+            bodyShootable = false;
             if (botOwner.LookSensor == null ||
                 distance > botOwner.LookSensor.VisibleDist + 0.25f)
             {
@@ -310,10 +350,27 @@ namespace pitTeam.BigBrain
             }
 
             LayerMask visibilityMask = GetVisibilityMask(botOwner, distance);
-            Vector3 origin = GetLookOrigin(botOwner);
+            Vector3 lookOrigin = GetLookOrigin(botOwner);
+            bool hasHead = TryGetMainPartPosition(goalEnemy, BodyPartType.head, out Vector3 headPosition);
+            bool hasBody = TryGetMainPartPosition(goalEnemy, BodyPartType.body, out Vector3 bodyPosition);
+            bool headVisible = hasHead &&
+                               IsPointInsideFollowerVisionCone(botOwner, headPosition) &&
+                               HasClearLine(lookOrigin, headPosition, visibilityMask);
+            bool bodyVisible = hasBody &&
+                               IsPointInsideFollowerVisionCone(botOwner, bodyPosition) &&
+                               HasClearLine(lookOrigin, bodyPosition, visibilityMask);
 
-            return CanSeeMainPart(botOwner, goalEnemy, BodyPartType.head, origin, visibilityMask) ||
-                   CanSeeMainPart(botOwner, goalEnemy, BodyPartType.body, origin, visibilityMask);
+            directlyVisible = headVisible || bodyVisible;
+            if (!directlyVisible || !botOwner.LookSensor.EnoughDistToShoot(out _))
+            {
+                return false;
+            }
+
+            Vector3 fireOrigin = GetFireOrigin(botOwner);
+            LayerMask shootMask = LayersMaskController.HighPolyWithTerrainMask;
+            headShootable = headVisible && HasClearLine(fireOrigin, headPosition, shootMask);
+            bodyShootable = bodyVisible && HasClearLine(fireOrigin, bodyPosition, shootMask);
+            return headShootable || bodyShootable;
         }
 
         private static bool ShouldRunLineCorrection(EnemyInfo enemyInfo, SensorState previousState, float distance)
@@ -333,62 +390,6 @@ namespace pitTeam.BigBrain
             return previousState.HasValue &&
                    previousState.IsVisible &&
                    previousState.VisibleType == EEnemyPartVisibleType.Visible;
-        }
-
-        private static bool HasVerifiedShootLane(BotOwner botOwner, EnemyInfo goalEnemy, float distance)
-        {
-            if (botOwner.LookSensor == null ||
-                !botOwner.LookSensor.EnoughDistToShoot(out _))
-            {
-                return false;
-            }
-
-            Vector3 fireOrigin = GetFireOrigin(botOwner);
-            LayerMask shootMask = LayersMaskController.HighPolyWithTerrainMask;
-
-            if (CanShootMainPart(botOwner, goalEnemy, BodyPartType.head, fireOrigin, shootMask) ||
-                CanShootMainPart(botOwner, goalEnemy, BodyPartType.body, fireOrigin, shootMask))
-            {
-                return true;
-            }
-
-            if (distance > CloseTargetShootFallbackDistance)
-            {
-                return false;
-            }
-
-            ShootToPoint? shootPoint = botOwner.CurrentEnemyTargetPosition(true);
-            if (shootPoint != null)
-            {
-                return HasClearLine(fireOrigin, shootPoint.Point, shootMask, shootPoint.DistCoef);
-            }
-
-            Vector3 bodyPoint = goalEnemy.GetBodyPartPosition();
-            return IsFinite(bodyPoint) &&
-                   HasClearLine(fireOrigin, bodyPoint, shootMask);
-        }
-
-        private static bool CanSeeMainPart(
-            BotOwner botOwner,
-            EnemyInfo goalEnemy,
-            BodyPartType partType,
-            Vector3 origin,
-            LayerMask mask)
-        {
-            return TryGetMainPartPosition(goalEnemy, partType, out Vector3 partPosition) &&
-                   IsPointInsideFollowerVisionCone(botOwner, partPosition) &&
-                   HasClearLine(origin, partPosition, mask);
-        }
-
-        private static bool CanShootMainPart(
-            BotOwner botOwner,
-            EnemyInfo goalEnemy,
-            BodyPartType partType,
-            Vector3 origin,
-            LayerMask mask)
-        {
-            return TryGetMainPartPosition(goalEnemy, partType, out Vector3 partPosition) &&
-                   HasClearLine(origin, partPosition, mask);
         }
 
         private static bool HasClearLine(Vector3 origin, Vector3 target, LayerMask mask, float distanceCoefficient = 1f)
@@ -521,6 +522,7 @@ namespace pitTeam.BigBrain
 
         private static void ForceInvisibleAndUnshootable(EnemyInfo enemyInfo)
         {
+            ClearVerifiedShootParts(enemyInfo);
             enemyInfo.SetCanShoot(false);
             enemyInfo.IsVisible = false;
             enemyInfo.SetVisibleType(EEnemyPartVisibleType.NotVisible);
@@ -542,6 +544,29 @@ namespace pitTeam.BigBrain
             }
 
             ForceInvisibleAndUnshootable(enemyInfo);
+        }
+
+        private static void SetVerifiedShootParts(
+            EnemyInfo enemyInfo,
+            bool headShootable,
+            bool bodyShootable)
+        {
+            VerifiedShootPartsCache cache = VerifiedShootParts.GetOrCreateValue(enemyInfo);
+            cache.HasValue = true;
+            cache.HeadShootable = headShootable;
+            cache.BodyShootable = bodyShootable;
+            cache.UpdatedAt = Time.time;
+        }
+
+        private static void ClearVerifiedShootParts(EnemyInfo enemyInfo)
+        {
+            if (VerifiedShootParts.TryGetValue(enemyInfo, out VerifiedShootPartsCache cache))
+            {
+                cache.HasValue = false;
+                cache.HeadShootable = false;
+                cache.BodyShootable = false;
+                cache.UpdatedAt = 0f;
+            }
         }
 
         private static bool IsValidDistance(float value)
@@ -570,6 +595,14 @@ namespace pitTeam.BigBrain
             public float PersonalLastSeenTime;
             public Vector3 PersonalLastPos;
             public float FirstTimeSeen;
+        }
+
+        private sealed class VerifiedShootPartsCache
+        {
+            public bool HasValue;
+            public bool HeadShootable;
+            public bool BodyShootable;
+            public float UpdatedAt;
         }
     }
 }

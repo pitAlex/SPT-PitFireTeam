@@ -54,7 +54,7 @@ namespace pitTeam.SAINAddon
                 return false;
             }
 
-            if (!SAINFollowerEnemyRetentionService.ShouldAllowSameSideAcquire(owner, IPlayer, out _))
+            if (!SAINFollowerEnemyRetentionService.ShouldAllowRelationshipAcquire(owner, IPlayer, out _))
             {
                 return false;
             }

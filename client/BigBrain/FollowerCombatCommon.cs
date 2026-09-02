@@ -78,8 +78,8 @@ namespace pitTeam.BigBrain
         private const float HealRetreatStallSeconds = 4f;
         private const float TacticalPointArrivalDistance = 1.25f;
         private const float StandingCoverShotProbeHeight = 1.45f;
-        private const float HealCoverMinNavDistance = 2f;
-        private const float HealCoverMinEnemyDistanceGain = -2f;
+        private const float DefensiveRetreatCoverMinNavDistance = 2f;
+        private const float DefensiveRetreatCoverMinEnemyDistanceGain = -2f;
         private const float EnemyFrontCrossGuardMaxDistance = 35f;
         private const float BossFireLaneCandidateRadius = 0.9f;
         private const float BossFireLanePathRadius = 1.1f;
@@ -94,7 +94,9 @@ namespace pitTeam.BigBrain
         private const float ExposedFirePointBlankDistance = 8f;
         private const float ExposedFireNoReturnLeaseSeconds = 0.55f;
         private const float ExposedFireReturnedLeaseSeconds = 0.9f;
-        private const float ExposedFireRecoveryRetrySeconds = 0.35f;
+        private const float ExposedFireRetreatRunBlendMinNavDistance = 15f;
+        private const float ExposedFireRetreatRunBlendMaxNavDistance = 35f;
+        private const float ExposedFireRecoveryRescanMoveDistanceSqr = 3f * 3f;
         private const float MemoryOnlySearchArrivalDistanceSqr = 4f;
         private const float MemoryOnlySearchRefreshDistanceSqr = 4f;
         private const float TargetHandoffScanDurationSeconds = 0.4f;
@@ -131,9 +133,11 @@ namespace pitTeam.BigBrain
         private const float FollowerRegularGrenadeTargetHeight = 0.25f;
         private const float FollowerRegularGrenadeAirburstFuseMarginSeconds = 0.45f;
         private const float ReloadRetreatThreatDistance = 18f;
+        internal const string ReloadNoCoverCloseVisibleEvasionReason = "reloadNoCover.closeVisibleEvasion";
         private const float ReloadRetreatAmmoRatio = 0.25f;
         private const int ReloadRetreatMinMagazineAmmo = 5;
         private const float CombatReloadRetryCooldownSeconds = 3f;
+        private const float FollowerOwnedReloadPersonalVisualClearSeconds = 3f;
         private const float CombatLongGunReloadRejectedCooldownSeconds = 30f;
         private const float CombatLongGunReloadTransitionSeconds = 0.25f;
         private const int PushLongGunMinLoadedRounds = 10;
@@ -161,6 +165,7 @@ namespace pitTeam.BigBrain
         internal const string RecoveryNoCoverFightReason = "recovery.noCoverFight";
         internal const string RecoveryNoCoverSuppressReason = "recovery.noCoverSuppress";
         internal const string RecoveryNoCoverThreatHoldReason = "recovery.noCoverThreatHold";
+        internal const string HealRetryHoldReason = "medicalRetryHold";
         private const float RecoveryNoCoverCommitSeconds = 2.5f;
         private const float RecoveryNoCoverPointBlankBreakDistance = 5f;
         private const float OrderedSuppressMinSeconds = 2f;
@@ -239,6 +244,7 @@ namespace pitTeam.BigBrain
         private AICoreActionResult<BotLogicDecision, CoreActionResultParams>? initialDecision;
         private float healBlockUntil;
         private float healStartedAt;
+        private float healIdleStartedAt;
         private float stimStartedAt;
         private float nextCombatHealWorkRefreshAt;
         private float combatReloadRetryAt;
@@ -357,7 +363,10 @@ namespace pitTeam.BigBrain
         private float exposedFireStartedAt;
         private float exposedFireInitialTriggerPressedAt;
         private int exposedFireInitialDamageRevision;
-        private float exposedFireRecoveryRetryAt;
+        private bool exposedFireRecoveryScanFailed;
+        private int exposedFireRecoveryFailedDamageRevision;
+        private Vector3 exposedFireRecoveryFailedFollowerPosition;
+        private Vector3 exposedFireRecoveryFailedEnemyPosition;
         private string completedMemorySearchEnemyProfileId = string.Empty;
         private Vector3 completedMemorySearchPoint;
         private float completedMemorySearchReportTime;
@@ -382,6 +391,7 @@ namespace pitTeam.BigBrain
         private int threatCoverPhysicsProbeFrame = -1;
         private int threatCoverPhysicsProbeCount;
         private bool lastAssignedRetreatCoverWasWeak;
+        private readonly FollowerCombatRiflemanEngagement riflemanEngagement;
 
         private readonly struct PreparedCombatDecisionTransition
         {
@@ -517,6 +527,32 @@ namespace pitTeam.BigBrain
             Rejected
         }
 
+        private readonly struct FollowerOwnedReloadPermissionScope : IDisposable
+        {
+            private readonly BotOwner? previousOwner;
+            private readonly int previousDepth;
+
+            public FollowerOwnedReloadPermissionScope(BotOwner owner)
+            {
+                previousOwner = followerOwnedReloadPermissionOwner;
+                previousDepth = followerOwnedReloadPermissionDepth;
+                followerOwnedReloadPermissionOwner = owner;
+                followerOwnedReloadPermissionDepth = previousDepth + 1;
+            }
+
+            public void Dispose()
+            {
+                followerOwnedReloadPermissionOwner = previousOwner;
+                followerOwnedReloadPermissionDepth = previousDepth;
+            }
+        }
+
+        [ThreadStatic]
+        private static BotOwner? followerOwnedReloadPermissionOwner;
+
+        [ThreadStatic]
+        private static int followerOwnedReloadPermissionDepth;
+
         private readonly struct CombatLongGunReloadFailureState
         {
             public CombatLongGunReloadFailureState(string weaponId, int loadedRounds, float retryAt)
@@ -613,6 +649,7 @@ namespace pitTeam.BigBrain
         public FollowerCombatCommon(BotOwner botOwner)
         {
             this.botOwner = botOwner;
+            riflemanEngagement = new FollowerCombatRiflemanEngagement(botOwner, this);
         }
 
         public bool HasInitialDecision => initialDecision.HasValue;
@@ -662,6 +699,7 @@ namespace pitTeam.BigBrain
             initialDecision = null;
             healBlockUntil = 0f;
             healStartedAt = 0f;
+            healIdleStartedAt = 0f;
             stimStartedAt = 0f;
             nextCombatHealWorkRefreshAt = 0f;
             combatReloadRetryAt = 0f;
@@ -3635,6 +3673,16 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
+            float aggression = aggressionOverride01 ?? GetAggression01();
+            FollowerCombatTactic tactic = tacticOverride ?? GetFollowerTactic();
+            if (!aggressionOverride01.HasValue &&
+                !tacticOverride.HasValue &&
+                !maxPushDistanceOverride.HasValue &&
+                tactic == FollowerCombatTactic.Balanced)
+            {
+                return EvaluateAutonomousEngagement(goalEnemy).AllowsEngagement;
+            }
+
             if (IsFollowerCriticallyWounded() ||
                 botOwner.Memory.IsUnderFire ||
                 WasHitRecently(botOwner, 1f))
@@ -3642,8 +3690,6 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            float aggression = aggressionOverride01 ?? GetAggression01();
-            FollowerCombatTactic tactic = tacticOverride ?? GetFollowerTactic();
             float pushThreshold = goalEnemy.IsVisible ? 0.35f : 0.45f;
 
             if (ShouldBlockProactiveAutoPushForWeaponThreat(goalEnemy))
@@ -3686,6 +3732,18 @@ namespace pitTeam.BigBrain
             }
 
             return aggression >= pushThreshold && ProtectWantKill(goalEnemy.Distance * 1.2f);
+        }
+
+        public FollowerCombatRiflemanEngagement.Evaluation EvaluateAutonomousEngagement(EnemyInfo goalEnemy)
+        {
+            return riflemanEngagement.Evaluate(goalEnemy);
+        }
+
+        public bool IsAutonomousEngagementLowThreat(EnemyInfo goalEnemy)
+        {
+            return GetFollowerTactic() == FollowerCombatTactic.Balanced
+                ? EvaluateAutonomousEngagement(goalEnemy).IsLowThreat
+                : IsEnemyLowThreat(goalEnemy, GetAggression01());
         }
 
         /// <summary>
@@ -4711,8 +4769,11 @@ namespace pitTeam.BigBrain
             }
 
             string weaponReasonPrefix = $"{reasonPrefix}.weapon";
-            return TryCreateSuppressDecisionAtTarget(suppressTarget, weaponReasonPrefix, out decision, allowObstructedSuppression: true) ||
-                   TryCreateOrderedSuppressAreaDecision(suppressTarget, weaponReasonPrefix, out decision);
+            return TryCreateSuppressDecisionAtTarget(
+                suppressTarget,
+                weaponReasonPrefix,
+                out decision,
+                allowObstructedSuppression: true);
         }
 
         private bool TryCreateSuppressDecisionAtTarget(
@@ -4795,57 +4856,6 @@ namespace pitTeam.BigBrain
             }
 
             return false;
-        }
-
-        private bool TryCreateOrderedSuppressAreaDecision(
-            Vector3 suppressTarget,
-            string reasonPrefix,
-            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
-        {
-            decision = default;
-            if (!IsFinite(suppressTarget) ||
-                string.IsNullOrEmpty(reasonPrefix) ||
-                botOwner.SuppressShoot == null ||
-                !CanCurrentWeaponSuppress())
-            {
-                return false;
-            }
-
-            Vector3 fireOrigin = GetCurrentSuppressionFireOrigin(botOwner);
-            Vector3 standingOrigin = GetStandingSuppressionFireOrigin(botOwner);
-            bool currentLaneFriendlyClear = !FollowerShotSafety.IsFriendlyInSuppressionLane(botOwner, fireOrigin, suppressTarget);
-            bool standingLaneFriendlyClear =
-                (standingOrigin - fireOrigin).sqrMagnitude > 0.04f &&
-                !FollowerShotSafety.IsFriendlyInSuppressionLane(botOwner, standingOrigin, suppressTarget);
-
-            if (!currentLaneFriendlyClear && !standingLaneFriendlyClear)
-            {
-                return false;
-            }
-
-            string suffix = "area";
-            if (!currentLaneFriendlyClear && standingLaneFriendlyClear)
-            {
-                botOwner.SetPose(1f);
-                suffix = "standArea";
-            }
-
-            if (!botOwner.SuppressShoot.InitToPoint(suppressTarget, null))
-            {
-                return false;
-            }
-
-            botOwner.Steering.LookToPoint(suppressTarget);
-            BattleRecorder.RecordGrenadeEvent(
-                botOwner,
-                "weaponSuppressArea",
-                $"{reasonPrefix}.{suffix}",
-                goalEnemy: botOwner.Memory?.GoalEnemy,
-                target: suppressTarget);
-            decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
-                BotLogicDecision.suppressFire,
-                $"{reasonPrefix}.{suffix}");
-            return true;
         }
 
         public bool TryCreateGrenadeLauncherFireDecision(
@@ -6708,14 +6718,15 @@ namespace pitTeam.BigBrain
             EnemyInfo goalEnemy,
             CustomNavigationPoint? cover,
             string reason,
-            BotLogicDecision moveAction)
+            BotLogicDecision moveAction,
+            bool recoveryManeuver = false)
         {
             if (!IsCoverAffinedDecision(moveAction) ||
                 !TryValidateSelectedCombatCover(
                     goalEnemy,
                     cover,
                     reason,
-                    recoveryManeuver: false,
+                    recoveryManeuver,
                     out _))
             {
                 return false;
@@ -6725,7 +6736,7 @@ namespace pitTeam.BigBrain
                 goalEnemy,
                 cover!,
                 reason,
-                recoveryManeuver: false,
+                recoveryManeuver,
                 moveAction);
             return true;
         }
@@ -8759,6 +8770,13 @@ namespace pitTeam.BigBrain
                 return healDecision;
             }
 
+            if (ShouldHoldForHealRetry())
+            {
+                return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
+                    BotLogicDecision.holdPosition,
+                    HealRetryHoldReason);
+            }
+
             return null;
         }
 
@@ -9555,14 +9573,16 @@ namespace pitTeam.BigBrain
                 }
             }
 
-            // Decision 4: enemy unseen and low threat -> close pressure/push.
-            if (!goalEnemy.IsVisible &&
-                !Enemy.IsMemoryOnlyAcquisitionWithoutPersonalContact(goalEnemy) &&
-                !ShouldBlockProactiveAutoPushForWeaponThreat(goalEnemy) &&
-                IsEnemyLowThreat(goalEnemy, aggression > 0.6f, aggression >= 0.8f ? 2f : 1f) &&
-                IsWeakEnemyAutoPushRoleAllowed(goalEnemy))
+            // Decision 4: autonomous unseen pressure. Balanced Riflemen use the centralized
+            // engagement arbitration; Protector retains its legacy gate until it has its own objective.
+            bool shouldStartAutonomousPressure = GetFollowerTactic() == FollowerCombatTactic.Balanced
+                ? EvaluateAutonomousEngagement(goalEnemy).AllowsEngagement
+                : !Enemy.IsMemoryOnlyAcquisitionWithoutPersonalContact(goalEnemy) &&
+                  !ShouldBlockProactiveAutoPushForWeaponThreat(goalEnemy) &&
+                  IsEnemyLowThreat(goalEnemy, aggression > 0.6f, aggression >= 0.8f ? 2f : 1f) &&
+                  IsWeakEnemyAutoPushRoleAllowed(goalEnemy);
+            if (!goalEnemy.IsVisible && shouldStartAutonomousPressure)
             {
-
                 initialDecision = EnemySearch(
                     ShouldUseCautiousWeaponThreatStyle(goalEnemy)
                         ? "startWeakEnemyPush.tactical.cautious"
@@ -9730,16 +9750,18 @@ namespace pitTeam.BigBrain
             }
 
             bool coverTried = false;
-            CustomNavigationPoint? suppressFrom = null;
-            if (TryAssignCloseSuppressedHealCover(goalEnemy, ref coverTried))
+            if (!TryAssignCloseSuppressedHealCover(goalEnemy, ref coverTried))
             {
-                suppressFrom = botOwner.Memory?.CurCustomCoverPoint;
-                if (suppressFrom != null)
-                {
-                    botOwner.GoToSomePointData?.SetPoint(suppressFrom.Position);
-                }
+                return false;
             }
 
+            CustomNavigationPoint? suppressFrom = botOwner.Memory?.CurCustomCoverPoint;
+            if (suppressFrom == null)
+            {
+                return false;
+            }
+
+            botOwner.GoToSomePointData?.SetPoint(suppressFrom.Position);
             if (!botOwner.SuppressShoot.InitToPoint(suppressTarget, suppressFrom))
             {
                 return false;
@@ -9749,9 +9771,7 @@ namespace pitTeam.BigBrain
             botOwner.Steering.LookToPoint(suppressTarget);
             decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                 BotLogicDecision.suppressFire,
-                suppressFrom != null
-                    ? "autoSuppress.dogFightHealRetreat.move"
-                    : "autoSuppress.dogFightHealRetreat.place");
+                "autoSuppress.dogFightHealRetreat.move");
             return true;
         }
 
@@ -9863,22 +9883,24 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            if (Time.time < exposedFireRecoveryRetryAt)
+            if (!CanAttemptExposedFireRecoveryScan(goalEnemy))
             {
                 return false;
             }
 
-            // A failed cover pass must preserve the current fire action. Retry at a bounded cadence
-            // and end only after the shared recovery contract has produced actual movement.
-            exposedFireRecoveryRetryAt = Time.time + ExposedFireRecoveryRetrySeconds;
-            if (!TryGetCommittedRecoveryDecision(
+            // Search the full combat-cover radius once. A failed maximum-radius pass cannot improve
+            // just because a short timer elapsed, so preserve aggressive fire until new damage or
+            // meaningful follower/enemy movement changes the geometry.
+            if (!TryGetExposedFireRecoveryDecision(
                     goalEnemy,
                     out AICoreActionResult<BotLogicDecision, CoreActionResultParams> recoveryDecision) ||
                 !IsMovementDecision(recoveryDecision))
             {
+                CaptureFailedExposedFireRecoveryScan(goalEnemy);
                 return false;
             }
 
+            ResetFailedExposedFireRecoveryScan();
             string breakReason = freshDamage
                 ? "exposedFireFreshDamageRecovery"
                 : returnedFire
@@ -9900,6 +9922,104 @@ namespace pitTeam.BigBrain
             return true;
         }
 
+        private bool TryGetExposedFireRecoveryDecision(
+            EnemyInfo goalEnemy,
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
+        {
+            decision = default;
+            float maximumRadius = CombatDistanceConfiguration.Instance.GetCombatCoverMaxDistance();
+            if (!TryFindDefensiveRetreatCover(
+                    goalEnemy,
+                    maximumRadius,
+                    maximumRadius,
+                    IsBlockedRecoveryCover,
+                    out CustomNavigationPoint? retreatCover) ||
+                retreatCover == null)
+            {
+                return false;
+            }
+
+            float navDistance = GetCoverNavDistance(retreatCover);
+            if (!IsFinite(navDistance))
+            {
+                return false;
+            }
+
+            BotLogicDecision moveAction = SelectExposedFireRecoveryMoveAction(navDistance);
+            if (
+                !TryCommitSelectedCombatCoverWithAction(
+                    goalEnemy,
+                    retreatCover,
+                    "exposedFireRetreatCover",
+                    moveAction,
+                    recoveryManeuver: true))
+            {
+                return false;
+            }
+
+            decision = CreateCommittedCoverMoveDecision();
+            return decision.Action == moveAction;
+        }
+
+        private BotLogicDecision SelectExposedFireRecoveryMoveAction(float navDistance)
+        {
+            if (!CanSprintForCombatMovement())
+            {
+                return (BotLogicDecision)CustomBotDecisions.attackRetreat;
+            }
+
+            float distanceFactor = Mathf.InverseLerp(
+                ExposedFireRetreatRunBlendMinNavDistance,
+                ExposedFireRetreatRunBlendMaxNavDistance,
+                navDistance);
+            float runChance = Mathf.SmoothStep(0f, 1f, distanceFactor);
+            return UnityEngine.Random.value < runChance
+                ? BotLogicDecision.runToCover
+                : (BotLogicDecision)CustomBotDecisions.attackRetreat;
+        }
+
+        private bool CanAttemptExposedFireRecoveryScan(EnemyInfo goalEnemy)
+        {
+            if (!exposedFireRecoveryScanFailed)
+            {
+                return true;
+            }
+
+            if (FollowerAwareness.GetDamageRevision(botOwner) != exposedFireRecoveryFailedDamageRevision ||
+                (botOwner.Position - exposedFireRecoveryFailedFollowerPosition).sqrMagnitude >=
+                ExposedFireRecoveryRescanMoveDistanceSqr)
+            {
+                return true;
+            }
+
+            Vector3 enemyPosition = GetEnemyAnchor(goalEnemy);
+            return IsFinite(enemyPosition) &&
+                   (enemyPosition - exposedFireRecoveryFailedEnemyPosition).sqrMagnitude >=
+                   ExposedFireRecoveryRescanMoveDistanceSqr;
+        }
+
+        private void CaptureFailedExposedFireRecoveryScan(EnemyInfo goalEnemy)
+        {
+            exposedFireRecoveryScanFailed = true;
+            exposedFireRecoveryFailedDamageRevision = FollowerAwareness.GetDamageRevision(botOwner);
+            exposedFireRecoveryFailedFollowerPosition = botOwner.Position;
+            exposedFireRecoveryFailedEnemyPosition = GetEnemyAnchor(goalEnemy);
+            BattleRecorder.RecordCommitmentEvent(
+                botOwner,
+                "exposedFire",
+                "recoveryUnavailable",
+                "noHardCoverInMaximumRadius",
+                target: exposedFireRecoveryFailedEnemyPosition);
+        }
+
+        private void ResetFailedExposedFireRecoveryScan()
+        {
+            exposedFireRecoveryScanFailed = false;
+            exposedFireRecoveryFailedDamageRevision = 0;
+            exposedFireRecoveryFailedFollowerPosition = Vector3.zero;
+            exposedFireRecoveryFailedEnemyPosition = Vector3.zero;
+        }
+
         private void UpdateExposedFireLease(
             AICoreActionResult<BotLogicDecision, CoreActionResultParams> nextDecision)
         {
@@ -9914,7 +10034,7 @@ namespace pitTeam.BigBrain
             exposedFireStartedAt = Time.time;
             exposedFireInitialTriggerPressedAt = botOwner.ShootData?.LastTriggerPressd ?? 0f;
             exposedFireInitialDamageRevision = FollowerAwareness.GetDamageRevision(botOwner);
-            exposedFireRecoveryRetryAt = 0f;
+            ResetFailedExposedFireRecoveryScan();
         }
 
         private void ResetExposedFireLease()
@@ -9924,7 +10044,7 @@ namespace pitTeam.BigBrain
             exposedFireStartedAt = 0f;
             exposedFireInitialTriggerPressedAt = 0f;
             exposedFireInitialDamageRevision = 0;
-            exposedFireRecoveryRetryAt = 0f;
+            ResetFailedExposedFireRecoveryScan();
         }
 
         private void PrepareDecisionTransition(
@@ -10188,7 +10308,7 @@ namespace pitTeam.BigBrain
                     return false;
                 }
 
-                PreparedLongGunReloadStartResult reloadStart = TryStartPreparedLongGunReload();
+                PreparedLongGunReloadStartResult reloadStart = TryStartPreparedLongGunReload(goalEnemy);
                 if (reloadStart == PreparedLongGunReloadStartResult.Started)
                 {
                     ClearCombatLongGunReloadFailure(pendingSlot);
@@ -10702,6 +10822,12 @@ namespace pitTeam.BigBrain
                     return false;
                 }
 
+                if (IsCloseVisibleReloadEvasionThreat(goalEnemy, allowRecentContact: false))
+                {
+                    decision = CreateReloadNoCoverCloseVisibleEvasionDecision();
+                    return true;
+                }
+
                 decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                     BotLogicDecision.holdPosition,
                     "reloadNoCover");
@@ -10842,7 +10968,7 @@ namespace pitTeam.BigBrain
             return reload.TryReload();
         }
 
-        private PreparedLongGunReloadStartResult TryStartPreparedLongGunReload()
+        private PreparedLongGunReloadStartResult TryStartPreparedLongGunReload(EnemyInfo? goalEnemy)
         {
             BotWeaponManager? weaponManager = botOwner.WeaponManager;
             BotReload? reload = weaponManager?.Reload;
@@ -10861,18 +10987,57 @@ namespace pitTeam.BigBrain
                 return PreparedLongGunReloadStartResult.Deferred;
             }
 
-            // TryReload() owns a fallback which selects another weapon when no reload resource is
-            // found. This combat transaction already owns a specific primary slot, so prove the
-            // reload first and invoke Reload() directly to keep a rejection from becoming a swap.
-            if (!reload.CanReload(false))
+            if (!CanUseFollowerOwnedReloadPermission(goalEnemy))
             {
-                return PreparedLongGunReloadStartResult.Rejected;
+                return PreparedLongGunReloadStartResult.Deferred;
             }
 
-            reload.Reload();
+            // TryReload() owns a fallback which selects another weapon when no reload resource is
+            // found. This combat transaction already owns a specific primary slot and has waited
+            // three seconds since personal visual contact. Bypass only vanilla's group-sense
+            // tactical veto while retaining CanReload's weapon, controller, and resource checks.
+            using (new FollowerOwnedReloadPermissionScope(botOwner))
+            {
+                if (!reload.CanReload(false))
+                {
+                    return PreparedLongGunReloadStartResult.Rejected;
+                }
+
+                reload.Reload();
+            }
+
             return reload.Reloading
                 ? PreparedLongGunReloadStartResult.Started
                 : PreparedLongGunReloadStartResult.Deferred;
+        }
+
+        private bool CanUseFollowerOwnedReloadPermission(EnemyInfo? goalEnemy)
+        {
+            if (!HasActiveCombatEnemy(goalEnemy) ||
+                goalEnemy!.IsVisible ||
+                goalEnemy.CanShoot ||
+                botOwner.Memory.IsUnderFire ||
+                WasHitRecently(botOwner, 0.75f) ||
+                FollowerAwareness.WasRecentlyThreatened(botOwner))
+            {
+                return false;
+            }
+
+            float lastPersonalVisual = Mathf.Max(
+                goalEnemy.PersonalLastSeenTime,
+                goalEnemy.PersonalSeenTime);
+            float noVisualReference = lastPersonalVisual > 0f
+                ? lastPersonalVisual
+                : goalEnemy.FirstTimeSeen;
+            return noVisualReference > 0f &&
+                   Time.time - noVisualReference >= FollowerOwnedReloadPersonalVisualClearSeconds;
+        }
+
+        internal static bool IsFollowerOwnedReloadPermissionActive(BotOwner? owner)
+        {
+            return owner != null &&
+                   followerOwnedReloadPermissionDepth > 0 &&
+                   ReferenceEquals(followerOwnedReloadPermissionOwner, owner);
         }
 
         public static bool IsReloadHoldReason(string? reason)
@@ -10882,10 +11047,27 @@ namespace pitTeam.BigBrain
                    string.Equals(reason, "reloadLongGun", StringComparison.Ordinal);
         }
 
-        public AICoreActionEnd EndReloadHold(string reason)
+        public AICoreActionEnd EndReloadHold(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
         {
+            string reason = currentDecision.Reason ?? string.Empty;
             if (botOwner.WeaponManager?.Reload?.Reloading == true)
             {
+                EnemyInfo? goalEnemy = botOwner.Memory?.GoalEnemy;
+                if (string.Equals(reason, "reloadNoCover", StringComparison.Ordinal) &&
+                    IsCloseVisibleReloadEvasionThreat(goalEnemy, allowRecentContact: false))
+                {
+                    AICoreActionResult<BotLogicDecision, CoreActionResultParams> evasionDecision =
+                        CreateReloadNoCoverCloseVisibleEvasionDecision();
+                    if (TryPrepareDecisionTransition(
+                            currentDecision,
+                            "reloadNoCoverCloseVisibleEvasion",
+                            evasionDecision))
+                    {
+                        return new AICoreActionEnd("reloadNoCoverCloseVisibleEvasion", true);
+                    }
+                }
+
                 return Continue();
             }
 
@@ -10896,6 +11078,31 @@ namespace pitTeam.BigBrain
 
             DeferCombatReloadRetry();
             return new AICoreActionEnd($"{reason}Finished", true);
+        }
+
+        private AICoreActionResult<BotLogicDecision, CoreActionResultParams> CreateReloadNoCoverCloseVisibleEvasionDecision()
+        {
+            SetDogFightState(BotDogFightStatus.dogFight);
+            return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
+                BotLogicDecision.dogFight,
+                ReloadNoCoverCloseVisibleEvasionReason);
+        }
+
+        private bool IsCloseVisibleReloadEvasionThreat(EnemyInfo? goalEnemy, bool allowRecentContact)
+        {
+            if (!HasActiveCombatEnemy(goalEnemy) ||
+                goalEnemy == null ||
+                goalEnemy.Distance > ReloadRetreatThreatDistance)
+            {
+                return false;
+            }
+
+            if (goalEnemy.IsVisible && goalEnemy.CanShoot)
+            {
+                return true;
+            }
+
+            return allowRecentContact && HasRecentPersonalContact(goalEnemy, CloseThreatRecentSeenSeconds);
         }
 
         private void DeferCombatReloadRetry()
@@ -11073,12 +11280,14 @@ namespace pitTeam.BigBrain
                 return null;
             }
 
+            bool hasReachedSafeHealPosition = HasReachedSafeHealPosition(goalEnemy);
+
             if (healBlockUntil >= Time.time)
             {
                 return null;
             }
 
-            if (CanHealAtCommittedHealCover(goalEnemy))
+            if (hasReachedSafeHealPosition)
             {
                 if (TryGetHealCoverStimDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> healCoverStimDecision))
                 {
@@ -11501,7 +11710,8 @@ namespace pitTeam.BigBrain
         {
             decision = default;
 
-            if (goalEnemy == null ||
+            if (!HasActiveCombatEnemy(goalEnemy) ||
+                goalEnemy == null ||
                 CanSprintForCombatMovement() ||
                 botOwner.Memory.IsInCover ||
                 botOwner.Medecine.FirstAid.Using ||
@@ -11788,6 +11998,58 @@ namespace pitTeam.BigBrain
             return true;
         }
 
+        public bool HasReachedSafeHealPosition(EnemyInfo? goalEnemy)
+        {
+            if (CanHealAtCommittedHealCover(goalEnemy))
+            {
+                return true;
+            }
+
+            if (!HasActiveCombatEnemy(goalEnemy) ||
+                goalEnemy == null ||
+                botOwner.Memory.IsUnderFire ||
+                WasHitRecently(botOwner, 1.25f) ||
+                goalEnemy.IsVisible ||
+                goalEnemy.CanShoot)
+            {
+                return false;
+            }
+
+            CustomNavigationPoint? reachedCover = committedCoverPoint;
+            if (!IsCoverUsable(reachedCover) || !IsBotAtCoverDestination(reachedCover))
+            {
+                reachedCover = botOwner.Memory?.CurCustomCoverPoint;
+            }
+
+            if (!IsCoverUsable(reachedCover) ||
+                IsBlockedHealCover(reachedCover) ||
+                !IsBotAtCoverDestination(reachedCover))
+            {
+                return false;
+            }
+
+            Vector3 enemyAnchor = GetEnemyAnchor(goalEnemy);
+            if (!IsFinite(enemyAnchor) ||
+                !IsHardThreatCover(reachedCover!, enemyAnchor, goalEnemy.ProfileId))
+            {
+                return false;
+            }
+
+            committedHealCover = reachedCover;
+            hasCommittedHealPoint = false;
+            committedHealPoint = Vector3.zero;
+            committedHealMoveAction = default;
+            committedHealMoveReason = null;
+            SetCoverTactic(BotsGroup.BotCurrentTactic.Ambush);
+            SetCover(reachedCover);
+            return CanHealAtCommittedHealCover(goalEnemy);
+        }
+
+        public bool IsActivelyUsingMedical =>
+            botOwner.Medecine?.FirstAid?.Using == true ||
+            botOwner.Medecine?.SurgicalKit?.Using == true ||
+            botOwner.Medecine?.Stimulators?.Using == true;
+
         private bool IsBotAtCommittedHealCover()
         {
             if (committedHealCover == null)
@@ -11879,6 +12141,24 @@ namespace pitTeam.BigBrain
             out CustomNavigationPoint? cover,
             float? maxNavDistanceOverride = null)
         {
+            float searchRadius = CombatDistanceConfiguration.Instance.GetHealCoverSearchRadius();
+            float maxNavDistance = maxNavDistanceOverride ??
+                                   CombatDistanceConfiguration.Instance.GetHealCoverMaxNavDistance();
+            return TryFindDefensiveRetreatCover(
+                goalEnemy,
+                searchRadius,
+                maxNavDistance,
+                IsBlockedHealCover,
+                out cover);
+        }
+
+        private bool TryFindDefensiveRetreatCover(
+            EnemyInfo goalEnemy,
+            float searchRadius,
+            float maxNavDistance,
+            Func<CustomNavigationPoint, bool> isBlocked,
+            out CustomNavigationPoint? cover)
+        {
             cover = null;
             Vector3 enemyAnchor = GetEnemyAnchor(goalEnemy);
             if (!IsFinite(enemyAnchor))
@@ -11900,8 +12180,6 @@ namespace pitTeam.BigBrain
             }
 
             float healCoverRetreatDistance = CombatDistanceConfiguration.Instance.GetHealCoverRetreatDistance();
-            float healCoverSearchRadius = CombatDistanceConfiguration.Instance.GetHealCoverSearchRadius();
-            float healCoverMaxNavDistance = maxNavDistanceOverride ?? CombatDistanceConfiguration.Instance.GetHealCoverMaxNavDistance();
             CoverSearchType healSearchType = SetCoverTacticAndGetSearchType(
                 BotsGroup.BotCurrentTactic.Ambush,
                 CoverShootType.hide,
@@ -11911,7 +12189,7 @@ namespace pitTeam.BigBrain
             float currentEnemyDistance = Vector3.Distance(botOwner.Position, enemyAnchor);
             cover = SelectBestThreatCover(
                 retreatAnchor,
-                healCoverSearchRadius,
+                searchRadius,
                 healSearchType,
                 enemyAnchor,
                 goalEnemy.ProfileId,
@@ -11922,7 +12200,7 @@ namespace pitTeam.BigBrain
                         return false;
                     }
 
-                    if (IsBlockedHealCover(point))
+                    if (isBlocked(point))
                     {
                         return false;
                     }
@@ -11931,14 +12209,14 @@ namespace pitTeam.BigBrain
 
                     float navDistance = GetEvaluatedCoverNavDistance(point);
                     if (!IsFinite(navDistance) ||
-                        navDistance < HealCoverMinNavDistance ||
-                        navDistance > healCoverMaxNavDistance)
+                        navDistance < DefensiveRetreatCoverMinNavDistance ||
+                        navDistance > maxNavDistance)
                     {
                         return false;
                     }
 
                     float candidateEnemyDistance = Vector3.Distance(point.Position, enemyAnchor);
-                    return candidateEnemyDistance + HealCoverMinEnemyDistanceGain >= currentEnemyDistance;
+                    return candidateEnemyDistance + DefensiveRetreatCoverMinEnemyDistanceGain >= currentEnemyDistance;
                 },
                 point =>
                 {
@@ -12807,6 +13085,19 @@ namespace pitTeam.BigBrain
                 return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.holdPosition, "enemySearchNoEnemy");
             }
 
+            if (!pushOrdered && GetFollowerTactic() == FollowerCombatTactic.Balanced)
+            {
+                FollowerCombatRiflemanEngagement.Evaluation engagement = EvaluateAutonomousEngagement(goalEnemy);
+                if (!engagement.AllowsEngagement)
+                {
+                    return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
+                        BotLogicDecision.holdPosition,
+                        engagement.Result == FollowerCombatRiflemanEngagement.Outcome.Regroup
+                            ? FollowerCombatRegroupObjective.ActivateRegroupReason
+                            : $"{reason}.arbitrationHold");
+                }
+            }
+
             Enemy.EnemyDistance distance = Enemy.Distance(goalEnemy);
             if (distance <= Enemy.EnemyDistance.Close)
             {
@@ -12820,6 +13111,7 @@ namespace pitTeam.BigBrain
 
             bool directSearchLeashBlocked =
                 !pushOrdered &&
+                GetFollowerTactic() != FollowerCombatTactic.Balanced &&
                 (weakEnemy
                     ? ShouldBlockWeakEnemyRushForBossDistance(goalEnemy)
                     : ShouldBlockAutomaticSearchRushForBossDistance(goalEnemy));
@@ -15203,6 +15495,11 @@ namespace pitTeam.BigBrain
 
         public bool IsHealDecisionRetryBlocked => healBlockUntil >= Time.time;
 
+        public bool ShouldHoldForHealRetry()
+        {
+            return IsHealDecisionRetryBlocked && HasActiveOrPendingHealWork();
+        }
+
         /// <summary>
         /// Check if follower is injured and should avoid aggressive advances.
         /// Prefers cover-holding or cautious movement when injured and under recent fire.
@@ -15292,11 +15589,34 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEnd("enemyMissingOrDead", true);
             }
 
-            const string reloadRetreatEndReason = "reloadRetreatNeeded";
-            if (ShouldSeekReloadRetreat(goalEnemy) &&
-                CanAttemptDecisionTransition(currentDecision, reloadRetreatEndReason, goalEnemy))
+            if (string.Equals(
+                    currentDecision.Reason,
+                    ReloadNoCoverCloseVisibleEvasionReason,
+                    StringComparison.Ordinal) &&
+                botOwner.WeaponManager?.Reload?.Reloading == true &&
+                IsCloseVisibleReloadEvasionThreat(goalEnemy, allowRecentContact: true))
             {
-                if (TryGetReloadRetreatDecision(
+                return Continue();
+            }
+
+            const string reloadRetreatEndReason = "reloadRetreatNeeded";
+            const string injuredSuppressRetreatEndReason = "dogFightInjuredSuppressRetreat";
+            bool reloadRetreatEligible = ShouldSeekReloadRetreat(goalEnemy);
+            bool keepDogFightOpeningCommitment = ShouldKeepDogFightOpeningCommitment(goalEnemy);
+            bool injuredSuppressRetreatEligible =
+                !keepDogFightOpeningCommitment &&
+                !IsPointBlankContactWithoutHardSeparation(botOwner, goalEnemy) &&
+                ShouldUseDogFightInjuredSuppressRetreat(goalEnemy);
+            string retreatSuccessorRetryReason = reloadRetreatEligible
+                ? injuredSuppressRetreatEligible
+                    ? "dogFightRetreatSuccessorUnavailable.reloadAndInjured"
+                    : "dogFightRetreatSuccessorUnavailable.reload"
+                : "dogFightRetreatSuccessorUnavailable.injured";
+            if ((reloadRetreatEligible || injuredSuppressRetreatEligible) &&
+                CanAttemptDecisionTransition(currentDecision, retreatSuccessorRetryReason, goalEnemy))
+            {
+                if (reloadRetreatEligible &&
+                    TryGetReloadRetreatDecision(
                         goalEnemy,
                         out AICoreActionResult<BotLogicDecision, CoreActionResultParams> reloadRetreatDecision))
                 {
@@ -15309,21 +15629,20 @@ namespace pitTeam.BigBrain
                     return new AICoreActionEnd(reloadRetreatEndReason, true);
                 }
 
-                DeferDecisionTransition(currentDecision, reloadRetreatEndReason, goalEnemy);
-            }
+                if (injuredSuppressRetreatEligible &&
+                    TryGetDogFightInjuredSuppressRetreatDecision(
+                        goalEnemy,
+                        out AICoreActionResult<BotLogicDecision, CoreActionResultParams> injuredSuppressRetreat))
+                {
+                    PrepareDecisionTransition(
+                        currentDecision,
+                        injuredSuppressRetreatEndReason,
+                        goalEnemy,
+                        injuredSuppressRetreat);
+                    return new AICoreActionEnd(injuredSuppressRetreatEndReason, true);
+                }
 
-            if (goalEnemy != null &&
-                !ShouldKeepDogFightOpeningCommitment(goalEnemy) &&
-                TryGetDogFightInjuredSuppressRetreatDecision(
-                    goalEnemy,
-                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> injuredSuppressRetreat))
-            {
-                PrepareDecisionTransition(
-                    currentDecision,
-                    "dogFightInjuredSuppressRetreat",
-                    goalEnemy,
-                    injuredSuppressRetreat);
-                return new AICoreActionEnd("dogFightInjuredSuppressRetreat", true);
+                DeferDecisionTransition(currentDecision, retreatSuccessorRetryReason, goalEnemy);
             }
 
             if (ShouldReleasePointBlankDogFight(currentDecision.Reason, goalEnemy))
@@ -16015,15 +16334,12 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEnd(exposedReason, true);
             }
 
-            float timeout = botOwner.Medecine.SurgicalKit.Using ? 45f : 15f;
             if (activelyHealing)
             {
-                if (healStartedAt > 0f && healStartedAt + timeout < Time.time)
-                {
-                    AbortActiveHeal();
-                    return new AICoreActionEnd("healTimedOut", true);
-                }
-
+                healIdleStartedAt = 0f;
+                // FollowerMedical owns stuck medical-controller recovery. An active EFT heal may
+                // legitimately span several body parts, so combat must not abort it on wall-clock
+                // duration alone. Tactical exposure interrupts above remain immediate.
                 return Continue();
             }
 
@@ -16033,11 +16349,15 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEnd("healCompleted", true);
             }
 
-            // If the heal action never transitions into active first-aid/surgery use, do not let the
-            // bot sit in healInCover forever waiting on a stuck vanilla node.
-            if (!activelyHealing &&
-                healStartedAt > 0f &&
-                healStartedAt + 3f < Time.time)
+            // Give EFT a fresh window to start the first treatment or its next treatment after a
+            // completed animation. This idle timer begins only after active use stops; measuring it
+            // from the original decision would instantly expire after any legitimate long heal.
+            if (healIdleStartedAt <= 0f)
+            {
+                healIdleStartedAt = Time.time;
+            }
+
+            if (Time.time - healIdleStartedAt > 3f)
             {
                 CompleteActiveHeal();
                 return new AICoreActionEnd("healIdleTimedOut", true);
@@ -16098,6 +16418,7 @@ namespace pitTeam.BigBrain
             FollowerMedical.RefreshMedicalWork(botOwner);
             healBlockUntil = Time.time + 0.75f;
             healStartedAt = 0f;
+            healIdleStartedAt = 0f;
         }
 
         public AICoreActionEnd EndStimulators()
@@ -17313,14 +17634,7 @@ namespace pitTeam.BigBrain
             FollowerMedical.CompleteHealing(botOwner);
             healBlockUntil = Time.time + 5f;
             healStartedAt = 0f;
-        }
-
-        private void AbortActiveHeal()
-        {
-            ClearCommittedHealCover();
-            FollowerMedical.AbortHealing(botOwner, recoverDestroyedSurgeryParts: true);
-            healBlockUntil = Time.time + 5f;
-            healStartedAt = 0f;
+            healIdleStartedAt = 0f;
         }
 
         public AICoreActionEnd EndShootFromCover()
@@ -17518,6 +17832,7 @@ namespace pitTeam.BigBrain
                    string.Equals(reason, "unsafePushBossHold", StringComparison.Ordinal) ||
                    string.Equals(reason, "escortNoSafeCover", StringComparison.Ordinal) ||
                    string.Equals(reason, "bossHoldOpen", StringComparison.Ordinal) ||
+                   string.Equals(reason, HealRetryHoldReason, StringComparison.Ordinal) ||
                    string.Equals(reason, "reloadNoCover", StringComparison.Ordinal) ||
                    string.Equals(reason, RecoveryNoCoverThreatHoldReason, StringComparison.Ordinal) ||
                    FollowerCombatPush.IsNoPushHoldReason(reason) ||
@@ -17550,7 +17865,10 @@ namespace pitTeam.BigBrain
 
             if (IsReloadHoldReason(reason))
             {
-                return EndReloadHold(reason);
+                return EndReloadHold(
+                    new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
+                        BotLogicDecision.holdPosition,
+                        reason));
             }
 
             EnemyInfo? goalEnemy = botOwner.Memory.GoalEnemy;

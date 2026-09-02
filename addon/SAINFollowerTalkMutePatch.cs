@@ -113,7 +113,15 @@ namespace pitTeam.SAINAddon
                 return true;
             }
 
-            if (FollowerContactPhraseGate.IsContactPhrase(phrase) && !FollowerContactPhraseGate.ShouldAllow(owner!))
+            // Preserve the core squad-linger announcement contract if the addon is enabled later.
+            // SAIN's automatic Clear/LostVisual generation remains muted everywhere else.
+            if (FollowerPostCombatClearPhraseGate.IsAllowed(owner!, phrase))
+            {
+                return true;
+            }
+
+            if (FollowerContactPhraseGate.IsContactPhrase(phrase) &&
+                !FollowerContactPhraseGate.ShouldAllowOrSchedule(owner!, phrase, mask))
             {
                 __result = false;
                 LogBlockedPhrase(
@@ -121,7 +129,7 @@ namespace pitTeam.SAINAddon
                     enemy: null,
                     "PlayerComponent.PlayVoiceLine",
                     phrase.ToString(),
-                    $"reason=contactGate mask={mask} aggressive={aggressive}");
+                    $"reason=contactPendingOrSuppressed mask={mask} aggressive={aggressive}");
                 return false;
             }
 

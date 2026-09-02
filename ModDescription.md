@@ -35,7 +35,7 @@ You can manage your teammates from the in-game **My Squad** screen. From there, 
 **Notable features:**
 
 - **Dedicated squad screen** - manage your roster, customize teammates, and settings from a separate My Squad interface.
-- **Teammate customization** - change teammate name, appearance, voice, tactic, aggression, and loadout.
+- **Teammate customization** - change teammate name, appearance, voice, tactic, aggression, proficiency, and loadout.
 - **Weapon-aware combat** - teammate decisions consider weapon role, caliber, magazine capacity, ammo penetration, and secondary weapon options.
 - **Teammate commands** - issue combat, movement, attention, loot, and door commands through existing Tarkov phrases and gestures.
 - **Objective-based combat orders** - use commands such as **Go Forward**, **Need Help**, **Cover Me**, and **Suppress** to shift squad priorities without directly micromanaging every movement.
@@ -43,7 +43,7 @@ You can manage your teammates from the in-game **My Squad** screen. From there, 
 - **Map transitions** - teammates who you spawned with can follow you through map transitions.
 - **Progression system** - teammates gain raid experience and common-skill progress that persists between raids.
 - **Quest assist** - teammate kills can count toward player kill quests when the kill meets the quest criteria.
-- **Faction hostility repair** - a default-on Raid setting repairs missing BEAR-versus-USEC and PMC-versus-Scav/Scav-boss enemy relationships. Cultists, Raiders, and Rogues use neutral warning relationships toward Scavs instead of immediate hostility, while existing player-Scav karma hostility remains authoritative. Partisan is excluded so his stock karma, zone, and proximity behavior remains in control.
+- **Faction hostility repair** - a default-on Raid setting repairs missing BEAR-versus-USEC and PMC-versus-Scav/Scav-boss enemy relationships. Followers require a Scav to show hostile intent against you or any teammate before accepting that Scav as an enemy, so a Scav hostile only to you is still recognized without followers initiating against one neutral to the whole squad. Cultists, Raiders, and Rogues use neutral warning relationships toward Scavs instead of immediate hostility, while existing player-Scav karma hostility remains authoritative. Partisan is excluded so his stock karma, zone, and proximity behavior remains in control.
 - **Looting and loot return** - teammates who you spawned with can pick up loot, search bodies and containers on command, return carried items after the raid, and let you manage their backpacks while in raid. (See Looting)
 - **Fallen teammate gear gathering** - outside combat, a teammate can be ordered to check a body and gather recoverable gear from it, mainly to help collect gear from fallen squadmates.
 - **Post-raid reports** - receive report about if your team made it out with the loot after you died. (See Gameplay Guide > Raid Survival Post Player)
@@ -101,7 +101,7 @@ Teammates can be customized from their profile screen.
 - In **Restricted**, **Immersive**, and **Realistic**, use **Kit Loadouts** to purchase or equip saved player kits for the teammate.
 - Edit the teammate's **Default** kit from the profile screen.
 - Select a combat tactic.
-- Adjust aggression for Rifleman and Marksman tactics.
+- Adjust aggression and per-teammate Vision, Precision, and Reaction.
 - View teammate-relevant skills.
 
 **Tactics available:**
@@ -109,13 +109,15 @@ Teammates can be customized from their profile screen.
 - **`Rifleman`** - the default balanced combat style. Riflemen stay useful near the boss when there is no good attack opportunity, but can push, search, and pressure when the enemy state and aggression allow it.
 - **`Marksman`** - ranged-focused behavior for sniper-style teammates. Marksmen prefer firing positions and distance, avoid generic assault pushes, and can switch to an automatic secondary for close fights when appropriate.
 
-**Aggression slider:**
+**Proficiency:**
 
 Aggression controls how willing a teammate is to leave boss-local safety for proactive pressure. Lower aggression keeps teammates more defensive and boss-local. Higher aggression allows more search, push, and pressure when combat conditions justify it. At 0%, teammates avoid proactive pressure and prefer to stay around the boss. The combat **Hold Position** command temporarily behaves like 0% aggression until combat ends or **Go Go Go** clears it.
 
 **Rifleman aggression:** Rifleman uses 50% as its default balanced baseline. Lower values bias toward cover, support, and regroup. Higher values make Riflemen more willing to push or search farther from the boss when threat checks allow it.
 
 **Marksman aggression:** Marksman uses 30% as its default baseline. Marksman aggression is tactic-relative: it mainly controls proactive automatic-weapon close-search/auto-search pressure. It does not turn Marksman into a generic Rifleman, and it does not block defensive automatic secondary use when enemies get close. At 0%, Marksman avoids proactive auto-search and stays range/position focused. Higher values make Marksman more willing to use automatic-weapon offensive search when distance and threat checks are safe.
+
+The same dialog provides three per-teammate proficiency percentages from 0 to 200. **Vision** changes detection distance. **Precision** changes shot accuracy, contributes half of aim speed, and changes head preference from 10% at `0` through 33% at `100` to 60% at `200`; preference is applied only after blocked body parts are removed, so an exposed head can be targeted without aiming through cover. **Reaction** changes visual-recognition speed and contributes the other half of aim speed, so both Precision and Reaction must be `200%` to reach `2x` aim speed. `100%` preserves that teammate tactic's own default, so a Marksman's `150%` Vision is 1.5 times the Marksman vision baseline rather than the Rifleman baseline. The dialog's **Reset** button returns all three percentages to `100%` and Aggression to the tactic default. These values are saved per teammate and take effect the next time that follower spawns. Reaction does not alter the game's independent sensor-wait timers. The optional SAIN addon changes which combat brain owns the follower; it does not change the meaning of these proficiency values.
 
 **Loadout customization:**
 
@@ -144,6 +146,7 @@ Commands influence teammate behavior but do not force exact actions. teammates w
 - **Follow Me / Cooperative** - recruit an eligible same-side bot or tell existing teammates to resume following.
 - **Attention / Look** - clears command pressure and makes teammates focus on the boss or indicated direction.
 - **Regroup** - tells teammates to converge near the boss. In combat, this becomes a combat regroup objective (within 18 meters radius of the boss, Marksman within 24m).
+- **Exit Located** - calls eligible teammates into a tight extraction formation around you without detouring to normal regroup cover.
 - **Hold Position** - in combat, temporarily behaves like setting teammate aggression to 0%. The override resets after combat ends or when replaced by another command. Can be applied to an individual teammate by looking at him.
 - **Go Go Go** - clears the temporary Hold Position combat-aggression override and returns teammates to their saved aggression. Can be applied to an individual teammate by looking at him.
 - **Go Forward** - orders saved teammates with an enemy to focus that enemy as an ordered push objective. They will pressure, move to reachable firing positions, or go in for the kill while still respecting healing, reload, and immediate survival needs. Outside combat, it can send teammates toward the pointed location. Can be applied to an individual teammate by looking at him.
@@ -558,7 +561,8 @@ In teammate loadout editing, if you happen to end up in a situation where you ca
 - Teammates might not heal their health all the way. It is a game issue, use the Heal key to force heal.
 - Teleporting teammates while they are interacting with doors or other objects can leave them in a bad state.
 - **The game has navigation problems that even SAIN is not able to fully resolve. If your bots get stuck, use teleportation. In other situations, their movement is in teleportation-like bursts. Be mindful of this and stay aware of their position or you will find yourself in a fight all alone or without all your squad as they got stuck somewhere.**
-- **Faction Hostilities** repairs missing enemy relationships but does not grant bots awareness of enemies they have not seen or heard. If bots behave incorrectly toward the opposite PMC faction or other normally hostile factions, disable **Faction Hostilities** under **Raid Settings** and test again. This setting can conflict with other mods or settings that also attempt to repair or change faction relationships.
+- Bots can occasionally fall through faulty map geometry or navigation meshes and die below the playable area, leaving no body at the apparent death location. This is a base-game map/NavMesh issue and is not caused by pitFireTeam; once the bot has fallen through the map, the teammate and equipment may not be recoverable during that raid.
+- **Faction Hostilities** repairs missing enemy relationships but does not grant bots awareness of enemies they have not seen or heard. Followers also require Scavs to show hostile intent against you or a teammate before accepting them as enemies. If bots behave incorrectly toward the opposite PMC faction or other normally hostile factions, disable **Faction Hostilities** under **Raid Settings** and test again. This setting can conflict with other mods or settings that also attempt to repair or change faction relationships.
 - Teammates can sometimes pick up an enemy they never saw or heard. Use **Attention** to reset them. In some cases, they may keep reacquiring that enemy until the enemy is dead. This comes from the game's detection and memory logic, and broad workarounds can break normal enemy behavior.
 - SAIN can interfere with teleportation, teleporting the bot back to previous location. You may need to trigger teleportation multiple times for it to stick.
 - Teammates can occasionally have registration delay on enemies. This is buggy behavior within the game that I am not able to fix.

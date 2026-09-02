@@ -1637,7 +1637,7 @@ namespace pitTeam.BigBrain
 
             if (currentDecision.Action == BotLogicDecision.holdPosition)
             {
-                return EndHoldPosition(currentDecision.Reason);
+                return EndHoldPosition(currentDecision);
             }
 
             if (currentDecision.Action == BotLogicDecision.suppressFire &&
@@ -1924,12 +1924,19 @@ namespace pitTeam.BigBrain
                    FollowerCombatCommon.WasHitRecently(BotOwner, 0.75f);
         }
 
-        private AICoreActionEnd EndHoldPosition(string? reason)
+        private AICoreActionEnd EndHoldPosition(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
         {
+            string? reason = currentDecision.Reason;
             if (CombatCommon.HasActiveCombatGestureOrder())
             {
                 ClearCommittedCoverAndRepositionState();
                 return new AICoreActionEnd("sniperCombatGestureBreakHold", true);
+            }
+
+            if (string.Equals(reason, FollowerCombatCommon.HealRetryHoldReason, StringComparison.Ordinal))
+            {
+                return EndMedicalRetryHold(currentDecision);
             }
 
             if (string.Equals(reason, FireSupportHoldReason, StringComparison.Ordinal))
@@ -2146,6 +2153,83 @@ namespace pitTeam.BigBrain
             // For tactical control, consider calling CombatCommon.HoldCoverForMaxDuration() during hold entry
             // to apply marksman-aware hold durations (10-18s based on aggression).
             return CombatCommon.EndBaseHoldPosition(reason ?? string.Empty);
+        }
+
+        private AICoreActionEnd EndMedicalRetryHold(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
+        {
+            EnemyInfo? goalEnemy = BotOwner.Memory?.GoalEnemy;
+            if (!CombatCommon.HasActiveCombatEnemy(goalEnemy) || goalEnemy == null)
+            {
+                return new AICoreActionEnd("sniperMedicalRetryCombatEnded", true);
+            }
+
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? dogFight =
+                CombatCommon.TryGetDogFightDecision();
+            if (dogFight != null &&
+                CombatCommon.TryPrepareDecisionTransition(
+                    currentDecision,
+                    "sniperMedicalRetryDogFight",
+                    dogFight.Value))
+            {
+                return new AICoreActionEnd("sniperMedicalRetryDogFight", true);
+            }
+
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? immediateShoot =
+                CombatCommon.TryGetImmediateShootDecision("sniper.medicalRetryImmediateShoot");
+            if (immediateShoot != null &&
+                CombatCommon.TryPrepareDecisionTransition(
+                    currentDecision,
+                    "sniperMedicalRetryImmediateShoot",
+                    immediateShoot.Value))
+            {
+                return new AICoreActionEnd("sniperMedicalRetryImmediateShoot", true);
+            }
+
+            if (TryGetRecoverDecision(
+                    goalEnemy,
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> recoveryDecision) &&
+                CombatCommon.TryPrepareDecisionTransition(
+                    currentDecision,
+                    "sniperMedicalRetryDangerRecovery",
+                    recoveryDecision))
+            {
+                return new AICoreActionEnd("sniperMedicalRetryDangerRecovery", true);
+            }
+
+            if (TryGetBossUnderAttackDecision(
+                    goalEnemy,
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> bossSupportDecision) &&
+                CombatCommon.TryPrepareDecisionTransition(
+                    currentDecision,
+                    "sniperMedicalRetryBossSupport",
+                    bossSupportDecision))
+            {
+                return new AICoreActionEnd("sniperMedicalRetryBossSupport", true);
+            }
+
+            if (CombatCommon.IsHealDecisionRetryBlocked)
+            {
+                return FollowerCombatCommon.Continue();
+            }
+
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? healDecision =
+                CombatCommon.TryGetNeedHealDecision();
+            if (healDecision != null &&
+                CombatCommon.TryPrepareDecisionTransition(
+                    currentDecision,
+                    "sniperMedicalRetryReady",
+                    healDecision.Value))
+            {
+                return new AICoreActionEnd("sniperMedicalRetryReady", true);
+            }
+
+            if (!CombatCommon.HasActiveOrPendingHealWork())
+            {
+                return new AICoreActionEnd("sniperMedicalRetryCleared", true);
+            }
+
+            return FollowerCombatCommon.Continue();
         }
 
         private AICoreActionEnd EndCloseWeaponPreparationHold()
