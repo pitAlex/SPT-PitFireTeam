@@ -42,43 +42,28 @@ namespace pitTeam.SAINAddon
             return true;
         }
 
-        public static bool ShouldAllowSameSideAcquire(BotOwner owner, IPlayer enemy, out string reason)
+        public static bool ShouldAllowRelationshipAcquire(BotOwner owner, IPlayer enemy, out string reason)
         {
-            reason = "allow_non_same_side";
+            reason = "allow_relationship";
             if (owner == null || enemy == null)
             {
-                return false;
-            }
-
-            if (owner.Side != enemy.Side)
-            {
-                return true;
-            }
-
-            if (!enemy.IsAI)
-            {
-                reason = "blocked_same_side_human";
                 return false;
             }
 
             Player enemyPlayer = enemy as Player;
             if (enemyPlayer == null)
             {
-                reason = "blocked_same_side_non_player";
+                reason = "blocked_non_player";
                 return false;
             }
 
-            bool hostileIntent =
-                FollowerCalcGoalEnemyAcquire.CandidateHasBossOrFollowerAsEnemy(owner, enemyPlayer) ||
-                FollowerCalcGoalEnemyAcquire.CandidateHasGoalEnemyBossOrFollower(owner, enemyPlayer);
-            hostileIntent = FollowerCalcGoalEnemyAcquire.HasDebouncedSameSideHostileIntent(owner, enemy.ProfileId, hostileIntent);
-            if (!hostileIntent)
+            if (FollowerCalcGoalEnemyAcquire.ShouldBlockCandidateForMissingHostileIntent(owner, enemyPlayer))
             {
-                reason = "blocked_same_side_no_hostile_intent";
+                reason = "blocked_missing_hostile_intent";
                 return false;
             }
 
-            reason = "allow_same_side_hostile_intent";
+            reason = "allow_relationship_or_hostile_intent";
             return true;
         }
     }

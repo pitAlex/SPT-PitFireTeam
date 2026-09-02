@@ -120,7 +120,8 @@ namespace pitTeam.SAINAddon
                 return true;
             }
 
-            if (FollowerContactPhraseGate.IsContactPhrase(phrase) && !FollowerContactPhraseGate.ShouldAllow(owner!))
+            if (FollowerContactPhraseGate.IsContactPhrase(phrase) &&
+                !FollowerContactPhraseGate.ShouldAllowOrSchedule(owner!, phrase, mask))
             {
                 __result = false;
                 LogBlockedPhrase(
@@ -128,7 +129,7 @@ namespace pitTeam.SAINAddon
                     enemy: null,
                     "PlayerComponent.PlayVoiceLine",
                     phrase.ToString(),
-                    $"reason=contactGate mask={mask} aggressive={aggressive}");
+                    $"reason=contactPendingOrSuppressed mask={mask} aggressive={aggressive}");
                 return false;
             }
 

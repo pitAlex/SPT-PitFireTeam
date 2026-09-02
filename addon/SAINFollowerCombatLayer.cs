@@ -294,7 +294,7 @@ namespace pitTeam.SAINAddon
             }
 
             bool prioritizeAsGoal = prioritized || bot.GoalEnemy == null;
-            return SAINFollowerRuntimeBridge.TrySyncFollowerEnemyState(BotOwner, enemy, prioritizeAsGoal);
+            return SainGoalEnemyBridge.TrySyncEnemyState(BotOwner, enemy, prioritizeAsGoal);
         }
 
         private void ReleaseGroupSearchLock()

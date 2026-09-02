@@ -2351,11 +2351,12 @@ namespace pitTeam.Modules
                             if (enemyBot != null)
                             {
                                 // who ever has the play in sights is the enemy
-                                if (enemyBot.Memory.GoalEnemy != null && enemyBot.Memory.GoalEnemy.ProfileId == player.ProfileId)
+                                EnemyInfo? goalEnemy = enemyBot.Memory?.GoalEnemy;
+                                if (goalEnemy?.ProfileId == player.ProfileId)
                                 {
                                     isenemy = true;
                                 }
-                                else
+                                else if (enemyBot.BotsGroup != null)
                                 {
                                     var bossAllies = Utils.Props.BossFollowersType.ToList();
                                     bossAllies.Add(WildSpawnType.exUsec);

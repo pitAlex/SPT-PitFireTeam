@@ -12,7 +12,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using System.Reflection;
 using UnityEngine;
 
 namespace pitTeam.Modules
@@ -20,14 +19,10 @@ namespace pitTeam.Modules
     internal static class BattleRecorder
     {
         private const string UpdateHubSubscriptionId = "pitTeam.BattleRecorder";
-        private const float SainOpponentRetentionSeconds = 5f;
-        private const float SainOpponentDecisionProbeSeconds = 0.1f;
-        private const float SainOpponentDiscoveryProbeSeconds = 1f;
         private const float FollowerWeaponActivityProbeSeconds = 0.1f;
+        private const float GoalEnemyTransitionCoalesceSeconds = 1f;
         private const int FlushEventBatchSize = 64;
         private static readonly long FlushIntervalTicks = TimeSpan.FromSeconds(1).Ticks;
-        private const BindingFlags SainMemberFlags =
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 
         private static readonly object SyncRoot = new object();
         private static readonly JsonSerializerSettings JsonSettings = new JsonSerializerSettings
@@ -39,10 +34,6 @@ namespace pitTeam.Modules
 
         private static readonly Dictionary<string, RecorderFollowerState> FollowerStates =
             new Dictionary<string, RecorderFollowerState>(StringComparer.Ordinal);
-        private static readonly Dictionary<string, RecorderSainOpponentState> SainOpponentStates =
-            new Dictionary<string, RecorderSainOpponentState>(StringComparer.Ordinal);
-        private static readonly Dictionary<Type, Dictionary<string, MemberInfo?>> SainMemberCache =
-            new Dictionary<Type, Dictionary<string, MemberInfo?>>();
 
         private static StreamWriter? writer;
         private static string? currentRaidId;
@@ -54,11 +45,6 @@ namespace pitTeam.Modules
         private static bool initialized;
         private static bool updateHubSubscribed;
         private static bool writeErrorLogged;
-        private static bool sainAccessorResolved;
-        private static bool sainAccessorFailureRecorded;
-        private static Type? sainEnableType;
-        private static MethodInfo? getSainByBotOwnerMethod;
-        private static MethodInfo? getSainByProfileMethod;
 
         [System.Diagnostics.Conditional("DEBUG")]
         public static void Initialize()
@@ -125,20 +111,16 @@ namespace pitTeam.Modules
                 nextFlushUtcTicks = 0L;
                 writeErrorLogged = false;
                 FollowerStates.Clear();
-                SainOpponentStates.Clear();
-                sainAccessorFailureRecorded = false;
 
                 WriteEventInternal("raidStart", null, new
                 {
                     raidId = currentRaidId,
                     locationId = currentLocationId,
                     file = currentFilePath,
-                    schemaVersion = 6,
+                    schemaVersion = 10,
                     snapshotIntervalMs = GetSnapshotIntervalMs(),
                     followerWeaponActivityProbeMs = Mathf.RoundToInt(FollowerWeaponActivityProbeSeconds * 1000f),
-                    sainOpponentDecisionProbeMs = Mathf.RoundToInt(SainOpponentDecisionProbeSeconds * 1000f),
-                    sainOpponentDiscoveryProbeMs = Mathf.RoundToInt(SainOpponentDiscoveryProbeSeconds * 1000f),
-                    sainOpponentRetentionMs = Mathf.RoundToInt(SainOpponentRetentionSeconds * 1000f)
+                    goalEnemyTransitionCoalesceMs = Mathf.RoundToInt(GoalEnemyTransitionCoalesceSeconds * 1000f)
                 });
                 if (!IsRecording())
                 {
@@ -161,6 +143,7 @@ namespace pitTeam.Modules
             {
                 if (writer != null)
                 {
+                    FlushAllGoalEnemyTransitionRepeats();
                     WriteEventInternal("raidEnd", null, new
                     {
                         raidId = currentRaidId,
@@ -177,7 +160,6 @@ namespace pitTeam.Modules
             {
                 DisposeWriter();
                 FollowerStates.Clear();
-                SainOpponentStates.Clear();
                 currentRaidId = null;
                 currentLocationId = null;
                 currentFilePath = null;
@@ -629,6 +611,17 @@ namespace pitTeam.Modules
             }
 
             RecorderFollowerState state = GetOrCreateState(bot);
+            float now = Time.time;
+            if (state.GoalEnemyTransitionSignature != null &&
+                now - state.GoalEnemyTransitionFirstTime <= GoalEnemyTransitionCoalesceSeconds &&
+                state.GoalEnemyTransitionSignature.Matches(bot, previous, next, source, reason, allowed, state))
+            {
+                state.GoalEnemyTransitionRepeatCount++;
+                state.GoalEnemyTransitionLastTime = now;
+                return;
+            }
+
+            FlushGoalEnemyTransitionRepeats(bot, state);
             WriteEventInternal("goalEnemyTransition", bot, new
             {
                 source,
@@ -638,6 +631,19 @@ namespace pitTeam.Modules
                 next = CreateTransitionEnemyContext(bot, next),
                 context = CreateTransitionContext(bot, state)
             });
+
+            state.GoalEnemyTransitionSignature = new GoalEnemyTransitionSignature(
+                bot,
+                previous,
+                next,
+                source,
+                reason,
+                allowed,
+                state);
+            state.GoalEnemyTransitionFirstTime = now;
+            state.GoalEnemyTransitionLastTime = now;
+            state.GoalEnemyTransitionRepeatCount = 0;
+            state.GoalEnemyTransitionBot = bot;
         }
 
         [System.Diagnostics.Conditional("DEBUG")]
@@ -851,6 +857,120 @@ namespace pitTeam.Modules
         }
 
         [System.Diagnostics.Conditional("DEBUG")]
+        public static void RecordAimTargetSelection(
+            BotOwner bot,
+            EnemyInfo enemyInfo,
+            EnemyPart? previousPart,
+            bool previousPartEligible,
+            bool previousRetargetTimerActive,
+            float precisionPercent,
+            float headPreference,
+            bool hasCorrectedParts,
+            bool correctedHead,
+            bool correctedBody,
+            bool eligibleHead,
+            bool eligibleBody,
+            int eligibleNonHeadCount,
+            bool forcedHead,
+            bool headRollAttempted,
+            bool headRollSucceeded,
+            EnemyPart? selectedPart,
+            Vector3? selectedPoint)
+        {
+            if (!CanRecordBot(bot) || enemyInfo == null)
+            {
+                return;
+            }
+
+            RecorderFollowerState state = GetOrCreateState(bot);
+            if (!IsBotInRecordedCombat(bot, state))
+            {
+                return;
+            }
+
+            enemyInfo._allParts.TryGetValue(BodyPartType.head, out EnemyPart? rawHead);
+            enemyInfo._allParts.TryGetValue(BodyPartType.body, out EnemyPart? rawBody);
+            enemyInfo._allPartsVision.TryGetValue(BodyPartType.head, out EnemyPartVision? rawHeadVision);
+            enemyInfo._allPartsVision.TryGetValue(BodyPartType.body, out EnemyPartVision? rawBodyVision);
+
+            Vector3? enemyRoot = enemyInfo.Person?.Transform != null
+                ? enemyInfo.Person.Transform.position
+                : null;
+            string retargetReason = previousPart == null
+                ? "noPreviousPart"
+                : !previousPartEligible
+                    ? "previousPartIneligible"
+                    : "retargetTimerExpired";
+
+            WriteEventInternal("aimTargetSelection", bot, new
+            {
+                enemy = new
+                {
+                    profileId = enemyInfo.ProfileId ?? enemyInfo.Person?.ProfileId,
+                    nickname = enemyInfo.Person?.Profile?.Nickname,
+                    distance = SanitizeFloat(enemyInfo.Distance),
+                    visibleType = enemyInfo.VisibleType.ToString(),
+                    isVisible = enemyInfo.IsVisible,
+                    canShoot = enemyInfo.CanShoot,
+                    root = enemyRoot.HasValue && IsFinite(enemyRoot.Value)
+                        ? CreateVector(enemyRoot.Value)
+                        : null
+                },
+                retarget = new
+                {
+                    reason = retargetReason,
+                    previousPart = previousPart?.BodyPartType.ToString(),
+                    previousPartEligible,
+                    previousRetargetTimerActive
+                },
+                proficiency = new
+                {
+                    precisionPercent = SanitizeFloat(precisionPercent),
+                    headPreference = SanitizeFloat(headPreference)
+                },
+                correction = new
+                {
+                    hasCorrectedParts,
+                    headShootable = correctedHead,
+                    bodyShootable = correctedBody
+                },
+                rawParts = new
+                {
+                    head = CreateAimPartDiagnostic(rawHead, rawHeadVision, enemyRoot),
+                    body = CreateAimPartDiagnostic(rawBody, rawBodyVision, enemyRoot)
+                },
+                eligibility = new
+                {
+                    head = eligibleHead,
+                    body = eligibleBody,
+                    nonHeadCount = eligibleNonHeadCount
+                },
+                roll = new
+                {
+                    forcedHead,
+                    attempted = headRollAttempted,
+                    succeeded = headRollSucceeded
+                },
+                selected = selectedPart != null
+                    ? new
+                    {
+                        part = selectedPart.BodyPartType.ToString(),
+                        point = selectedPoint.HasValue && IsFinite(selectedPoint.Value)
+                            ? CreateVector(selectedPoint.Value)
+                            : null,
+                        heightFromEnemyRoot = selectedPoint.HasValue &&
+                                              enemyRoot.HasValue &&
+                                              IsFinite(selectedPoint.Value) &&
+                                              IsFinite(enemyRoot.Value)
+                            ? SanitizeFloat(selectedPoint.Value.y - enemyRoot.Value.y)
+                            : null
+                    }
+                    : null,
+                context = CreateTransitionContext(bot, state)
+            });
+        }
+
+        [System.Diagnostics.Conditional("DEBUG")]
         public static void RecordCombatMovementEvent(
             BotOwner bot,
             string action,
@@ -922,11 +1042,11 @@ namespace pitTeam.Modules
 
                 if (!BossPlayers.IsFollower(owner))
                 {
-                    TryRecordSainOpponent(owner);
                     return;
                 }
 
                 RecorderFollowerState state = GetOrCreateState(owner);
+                FlushExpiredGoalEnemyTransitionRepeats(owner, state);
                 bool layerActive = FollowerCombatLayer.IsFollowerCombatLayerActive(owner);
                 TryRecordFollowerWeaponActivity(owner, state, layerActive);
                 BotFollowerPlayer? followerData = BossPlayers.Instance?.GetFollower(owner);
@@ -1047,425 +1167,6 @@ namespace pitTeam.Modules
             state.LastWeaponActivityTriggerPressedTime = lastTriggerPressedTime;
             state.LastWeaponActivityWeaponId = activeWeaponId;
             state.LastWeaponActivityLoadedRounds = loadedRounds;
-        }
-
-        private static void TryRecordSainOpponent(BotOwner owner)
-        {
-            if (!pitFireTeam.IsSAINInstalled || owner.GetPlayer?.HealthController?.IsAlive != true)
-            {
-                return;
-            }
-
-            RecorderSainOpponentState state = GetOrCreateSainOpponentState(owner.ProfileId);
-            if (Time.time < state.NextProbeTime)
-            {
-                return;
-            }
-
-            state.NextProbeTime = Time.time + Mathf.Min(
-                SainOpponentDecisionProbeSeconds,
-                GetSnapshotIntervalSeconds());
-
-            string? eftTargetProfileId = owner.Memory?.GoalEnemy?.ProfileId;
-            bool eftTargetsTeam = IsTeamProfileId(eftTargetProfileId);
-            bool followerTargetsOpponent = TryFindFollowerTargetingOpponent(owner.ProfileId, out string? followerProfileId);
-            bool discoveryProbeDue = Time.time >= state.NextDiscoveryProbeTime;
-            if (discoveryProbeDue)
-            {
-                state.NextDiscoveryProbeTime = Time.time + SainOpponentDiscoveryProbeSeconds;
-            }
-
-            object? sainBot = null;
-            if (eftTargetsTeam ||
-                followerTargetsOpponent ||
-                state.RelevantUntil > Time.time ||
-                discoveryProbeDue)
-            {
-                sainBot = TryGetSainBot(owner);
-            }
-
-            if (sainBot == null)
-            {
-                return;
-            }
-
-            object? sainEnemy = ReadSainMember(sainBot, "GoalEnemy");
-            string? sainTargetProfileId = ReadSainString(sainEnemy, "EnemyProfileId");
-            bool sainTargetsTeam = IsTeamProfileId(sainTargetProfileId);
-            bool directlyRelevant = eftTargetsTeam || sainTargetsTeam || followerTargetsOpponent;
-            if (directlyRelevant)
-            {
-                state.RelevantUntil = Time.time + SainOpponentRetentionSeconds;
-            }
-            else if (state.RelevantUntil <= Time.time)
-            {
-                state.HasDecisionSignature = false;
-                state.HasPreviousSnapshot = false;
-                return;
-            }
-
-            string relationReason = CreateSainOpponentRelationReason(
-                eftTargetsTeam,
-                sainTargetsTeam,
-                followerTargetsOpponent,
-                directlyRelevant);
-            SainOpponentDecisionSample decision = CreateSainOpponentDecisionSample(sainBot, sainTargetProfileId);
-
-            if (!state.HasDecisionSignature || !string.Equals(state.LastDecisionSignature, decision.Signature, StringComparison.Ordinal))
-            {
-                WriteEventInternal("sainOpponentDecision", owner, new
-                {
-                    relation = CreateSainOpponentRelationPayload(
-                        relationReason,
-                        eftTargetProfileId,
-                        sainTargetProfileId,
-                        followerProfileId,
-                        state),
-                    previous = state.HasDecisionSignature
-                        ? new
-                        {
-                            layer = state.LastLayer,
-                            action = state.LastAction,
-                            combatDecision = state.LastCombatDecision,
-                            squadDecision = state.LastSquadDecision,
-                            selfDecision = state.LastSelfDecision,
-                            targetProfileId = state.LastTargetProfileId
-                        }
-                        : null,
-                    current = CreateSainDecisionPayload(sainBot, decision)
-                });
-            }
-
-            state.HasDecisionSignature = true;
-            state.LastDecisionSignature = decision.Signature;
-            state.LastLayer = decision.Layer;
-            state.LastAction = decision.Action;
-            state.LastCombatDecision = decision.CombatDecision;
-            state.LastSquadDecision = decision.SquadDecision;
-            state.LastSelfDecision = decision.SelfDecision;
-            state.LastTargetProfileId = sainTargetProfileId;
-
-            if (Time.time >= state.NextSnapshotTime)
-            {
-                state.NextSnapshotTime = Time.time + GetSnapshotIntervalSeconds();
-                WriteEventInternal(
-                    "sainOpponentSnapshot",
-                    owner,
-                    CreateSainOpponentSnapshot(
-                        owner,
-                        sainBot,
-                        sainEnemy,
-                        decision,
-                        state,
-                        relationReason,
-                        eftTargetProfileId,
-                        sainTargetProfileId,
-                        followerProfileId));
-            }
-        }
-
-        private static object CreateSainOpponentSnapshot(
-            BotOwner owner,
-            object sainBot,
-            object? sainEnemy,
-            SainOpponentDecisionSample decision,
-            RecorderSainOpponentState state,
-            string relationReason,
-            string? eftTargetProfileId,
-            string? sainTargetProfileId,
-            string? followerProfileId)
-        {
-            Vector3 position = owner.Position;
-            float snapshotElapsed = 0f;
-            float distanceMoved = 0f;
-            if (state.HasPreviousSnapshot)
-            {
-                snapshotElapsed = Mathf.Max(0f, Time.time - state.LastSnapshotTime);
-                distanceMoved = Vector3.Distance(position, state.LastSnapshotPosition);
-            }
-
-            object? mover = ReadSainMember(sainBot, "Mover");
-            object? activePath = ReadSainMember(mover, "ActivePath");
-            object? cover = ReadSainMember(sainBot, "Cover");
-            object? coverInUse = ReadSainMember(cover, "CoverInUse");
-            object? coverMovingTo = ReadSainMember(cover, "CoverPoint_MovingTo");
-            object? manualShoot = ReadSainMember(sainBot, "ManualShoot");
-            object? shoot = ReadSainMember(sainBot, "Shoot");
-            object? aim = ReadSainMember(sainBot, "Aim");
-            object? suppression = ReadSainMember(sainBot, "Suppression");
-            object? info = ReadSainMember(sainBot, "Info");
-            object? lastShotEnemy = ReadSainMember(shoot, "LastShotEnemy");
-            object? lastSuppressByEnemy = ReadSainMember(suppression, "LastSuppressByEnemy");
-            Player? player = owner.GetPlayer ?? owner.AIData?.Player;
-            Vector3 lookDirection = NormalizePlanar(owner.LookDirection);
-            Vector3 bodyDirection = player?.Transform != null
-                ? NormalizePlanar(player.Transform.forward)
-                : lookDirection;
-
-            object payload = new
-            {
-                relation = CreateSainOpponentRelationPayload(
-                    relationReason,
-                    eftTargetProfileId,
-                    sainTargetProfileId,
-                    followerProfileId,
-                    state),
-                sain = new
-                {
-                    active = ReadSainBool(sainBot, "BotActive"),
-                    inCombat = ReadSainBool(sainBot, "IsInCombat"),
-                    inStandBy = ReadSainBool(sainBot, "BotInStandBy"),
-                    layersActive = ReadSainBool(sainBot, "SAINLayersActive"),
-                    layer = decision.Layer,
-                    action = new
-                    {
-                        name = decision.Action,
-                        type = ReadSainMember(sainBot, "CurrentAction")?.GetType().Name
-                    },
-                    decision = CreateSainDecisionPayload(sainBot, decision),
-                    personality = new
-                    {
-                        name = ReadSainString(info, "Personality"),
-                        aggressionMultiplier = ReadSainFloat(info, "AggressionMultiplier"),
-                        timeBeforeSearch = ReadSainFloat(info, "TimeBeforeSearch"),
-                        holdGroundDelay = ReadSainFloat(info, "HoldGroundDelay"),
-                        forgetEnemyTime = ReadSainFloat(info, "ForgetEnemyTime")
-                    }
-                },
-                position = CreateVector(position),
-                lookDirection = CreateVector(lookDirection),
-                movement = new
-                {
-                    moving = ReadSainBool(mover, "Moving"),
-                    running = ReadSainBool(mover, "Running"),
-                    crawling = ReadSainBool(mover, "Crawling"),
-                    eftSprinting = owner.Mover?.Sprinting == true,
-                    poseLevel = player?.MovementContext != null
-                        ? SanitizeFloat(player.MovementContext.PoseLevel)
-                        : null,
-                    bodyDirection = bodyDirection.sqrMagnitude > 0.0001f
-                        ? CreateVector(bodyDirection)
-                        : null,
-                    snapshotElapsed = state.HasPreviousSnapshot ? SanitizeFloat(snapshotElapsed) : null,
-                    distanceMovedSinceSnapshot = state.HasPreviousSnapshot ? SanitizeFloat(distanceMoved) : null,
-                    speedMetersPerSecond = state.HasPreviousSnapshot && snapshotElapsed > 0.001f
-                        ? SanitizeFloat(distanceMoved / snapshotElapsed)
-                        : null,
-                    path = activePath != null
-                        ? new
-                        {
-                            status = ReadSainString(activePath, "Status"),
-                            destination = ReadSainVectorPayload(activePath, "Destination"),
-                            pathLength = ReadSainFloat(activePath, "PathLength"),
-                            pathStatus = ReadSainString(activePath, "PathStatus"),
-                            currentIndex = ReadSainInt(activePath, "CurrentIndex"),
-                            onLastCorner = ReadSainBool(activePath, "OnLastCorner"),
-                            destinationReachDistance = ReadSainFloat(activePath, "DestinationReachDistance"),
-                            wantToSprint = ReadSainBool(activePath, "WantToSprint"),
-                            sprintStatus = ReadSainString(activePath, "CurrentSprintStatus"),
-                            sprintReason = ReadSainString(activePath, "SprintReason")
-                        }
-                        : null
-                },
-                contact = CreateSainEnemyPayload(sainEnemy),
-                cover = new
-                {
-                    seekingState = ReadSainString(cover, "CoverSeekingState"),
-                    finderState = ReadSainString(cover, "CurrentCoverFinderState"),
-                    sprintingToCover = ReadSainBool(cover, "SprintingToCover"),
-                    spottedInCover = ReadSainBool(cover, "SpottedInCover"),
-                    inUse = CreateSainCoverPointPayload(owner, coverInUse),
-                    movingTo = CreateSainCoverPointPayload(owner, coverMovingTo)
-                },
-                fire = new
-                {
-                    eft = CreateCombatActivitySnapshot(owner),
-                    manual = new
-                    {
-                        shooting = ReadSainBool(manualShoot, "Shooting"),
-                        reason = ReadSainString(manualShoot, "Reason"),
-                        shootPosition = ReadSainVectorPayload(manualShoot, "ShootPosition")
-                    },
-                    aim = new
-                    {
-                        canAim = ReadSainBool(aim, "CanAim"),
-                        status = ReadSainString(aim, "AimStatus"),
-                        lastAimAge = CreateReflectedAge(aim, "LastAimTime")
-                    },
-                    lastShotEnemyProfileId = ReadSainString(lastShotEnemy, "EnemyProfileId"),
-                    friendlyFireClear = ReadSainBool(ReadSainMember(sainBot, "FriendlyFire"), "ClearShot")
-                },
-                suppression = new
-                {
-                    state = ReadSainString(suppression, "CurrentState"),
-                    amount = ReadSainFloat(suppression, "SuppressionNumber"),
-                    suppressed = ReadSainBool(suppression, "IsSuppressed"),
-                    heavySuppressed = ReadSainBool(suppression, "IsHeavySuppressed"),
-                    suppressingTarget = ReadSainBool(suppression, "SuppressingTarget"),
-                    lastSuppressByProfileId = ReadSainString(lastSuppressByEnemy, "EnemyProfileId")
-                },
-                memory = new
-                {
-                    haveEnemy = owner.Memory?.HaveEnemy == true,
-                    underFire = owner.Memory?.IsUnderFire == true,
-                    inCover = owner.Memory?.IsInCover == true
-                },
-                medical = new
-                {
-                    firstAidPending = owner.Medecine?.FirstAid?.Have2Do == true,
-                    firstAidUsing = owner.Medecine?.FirstAid?.Using == true,
-                    surgeryPending = owner.Medecine?.SurgicalKit?.HaveWork == true,
-                    surgeryUsing = owner.Medecine?.SurgicalKit?.Using == true,
-                    healthStatus = owner.GetPlayer?.HealthStatus.ToString()
-                },
-                health = CreateLimbStatusSnapshot(owner),
-                weapon = CreateLightWeaponSnapshot(owner)
-            };
-
-            state.LastSnapshotPosition = position;
-            state.LastSnapshotTime = Time.time;
-            state.HasPreviousSnapshot = true;
-            return payload;
-        }
-
-        private static object CreateSainDecisionPayload(object sainBot, SainOpponentDecisionSample decision)
-        {
-            object? decisionObject = ReadSainMember(sainBot, "Decision");
-            return new
-            {
-                hasDecision = ReadSainBool(decisionObject, "HasDecision"),
-                combat = decision.CombatDecision,
-                previousCombat = ReadSainString(decisionObject, "PreviousCombatDecision"),
-                squad = decision.SquadDecision,
-                previousSquad = ReadSainString(decisionObject, "PreviousSquadDecision"),
-                self = decision.SelfDecision,
-                previousSelf = ReadSainString(decisionObject, "PreviousSelfDecision"),
-                changeTime = ReadSainFloat(decisionObject, "ChangeDecisionTime"),
-                age = ReadSainFloat(decisionObject, "TimeSinceChangeDecision")
-            };
-        }
-
-        private static SainOpponentDecisionSample CreateSainOpponentDecisionSample(
-            object sainBot,
-            string? targetProfileId)
-        {
-            object? action = ReadSainMember(sainBot, "CurrentAction");
-            object? decision = ReadSainMember(sainBot, "Decision");
-            string? layer = ReadSainString(sainBot, "ActiveLayer");
-            string? actionName = ReadSainString(action, "Name") ?? action?.GetType().Name;
-            string? combatDecision = ReadSainString(decision, "CurrentCombatDecision");
-            string? squadDecision = ReadSainString(decision, "CurrentSquadDecision");
-            string? selfDecision = ReadSainString(decision, "CurrentSelfDecision");
-            string signature = string.Join(
-                "|",
-                layer ?? string.Empty,
-                actionName ?? string.Empty,
-                combatDecision ?? string.Empty,
-                squadDecision ?? string.Empty,
-                selfDecision ?? string.Empty,
-                targetProfileId ?? string.Empty);
-
-            return new SainOpponentDecisionSample(
-                signature,
-                layer,
-                actionName,
-                combatDecision,
-                squadDecision,
-                selfDecision);
-        }
-
-        private static object? CreateSainEnemyPayload(object? enemy)
-        {
-            if (enemy == null)
-            {
-                return null;
-            }
-
-            return new
-            {
-                profileId = ReadSainString(enemy, "EnemyProfileId"),
-                name = ReadSainString(enemy, "EnemyName"),
-                current = ReadSainBool(enemy, "IsCurrentEnemy"),
-                known = ReadSainBool(enemy, "EnemyKnown"),
-                distance = ReadSainFloat(enemy, "RealDistance"),
-                seen = ReadSainBool(enemy, "Seen"),
-                visible = ReadSainBool(enemy, "IsVisible"),
-                canShoot = ReadSainBool(enemy, "CanShoot"),
-                lineOfSight = ReadSainBool(enemy, "InLineOfSight"),
-                heard = ReadSainBool(enemy, "Heard"),
-                enemyLookingAtMe = ReadSainBool(enemy, "EnemyLookingAtMe"),
-                timeSinceSeen = ReadSainFloat(enemy, "TimeSinceSeen"),
-                timeSinceHeard = ReadSainFloat(enemy, "TimeSinceHeard"),
-                position = ReadSainVectorPayload(enemy, "EnemyPosition"),
-                lastKnownPosition = ReadSainVectorPayload(enemy, "LastKnownPosition")
-            };
-        }
-
-        private static object? CreateSainCoverPointPayload(BotOwner owner, object? coverPoint)
-        {
-            if (coverPoint == null)
-            {
-                return null;
-            }
-
-            object? pointData = ReadSainMember(coverPoint, "CoverPoint");
-            object? coverData = ReadSainMember(coverPoint, "CoverData");
-            object? hitCounts = ReadSainMember(coverPoint, "_hitsInCover");
-            Vector3? position = ReadSainVector(coverPoint, "Position");
-            return new
-            {
-                id = ReadSainInt(coverPoint, "Id") ?? ReadSainInt(pointData, "Id"),
-                position = position.HasValue ? CreateVector(position.Value) : null,
-                distance = position.HasValue
-                    ? SanitizeFloat(Vector3.Distance(owner.Position, position.Value))
-                    : ReadSainFloat(coverPoint, "DistanceToBot") ?? ReadSainFloat(coverData, "BotDistance"),
-                spotted = ReadSainBool(hitCounts, "Spotted"),
-                bad = ReadSainBool(coverData, "IsBad"),
-                straightDistanceStatus = ReadSainString(coverData, "StraightLengthStatus"),
-                pathDistanceStatus = ReadSainString(coverData, "PathLengthStatus")
-            };
-        }
-
-        private static object CreateSainOpponentRelationPayload(
-            string reason,
-            string? eftTargetProfileId,
-            string? sainTargetProfileId,
-            string? followerProfileId,
-            RecorderSainOpponentState state)
-        {
-            return new
-            {
-                reason,
-                eftTargetProfileId,
-                sainTargetProfileId,
-                followerTargetingProfileId = followerProfileId,
-                retainedFor = SanitizeFloat(Mathf.Max(0f, state.RelevantUntil - Time.time))
-            };
-        }
-
-        private static string CreateSainOpponentRelationReason(
-            bool eftTargetsTeam,
-            bool sainTargetsTeam,
-            bool followerTargetsOpponent,
-            bool directlyRelevant)
-        {
-            var reasons = new List<string>(3);
-            if (eftTargetsTeam)
-            {
-                reasons.Add("eftTargetsTeam");
-            }
-
-            if (sainTargetsTeam)
-            {
-                reasons.Add("sainTargetsTeam");
-            }
-
-            if (followerTargetsOpponent)
-            {
-                reasons.Add("followerTargetsOpponent");
-            }
-
-            return directlyRelevant ? string.Join("+", reasons) : "retained";
         }
 
         private static object CreateBotSnapshot(BotOwner bot, RecorderFollowerState state)
@@ -2499,267 +2200,37 @@ namespace pitTeam.Modules
             return false;
         }
 
-        private static RecorderSainOpponentState GetOrCreateSainOpponentState(string profileId)
-        {
-            if (!SainOpponentStates.TryGetValue(profileId, out RecorderSainOpponentState? state))
-            {
-                state = new RecorderSainOpponentState();
-                SainOpponentStates[profileId] = state;
-            }
-
-            return state;
-        }
-
-        private static bool TryFindFollowerTargetingOpponent(
-            string opponentProfileId,
-            out string? followerProfileId)
-        {
-            followerProfileId = null;
-            foreach (BotFollowerPlayer follower in BossPlayers.GetFollowers())
-            {
-                BotOwner? followerBot = follower?.GetBot();
-                if (followerBot == null || string.IsNullOrEmpty(followerBot.ProfileId))
-                {
-                    continue;
-                }
-
-                if (!FollowerStates.TryGetValue(followerBot.ProfileId, out RecorderFollowerState? followerState) ||
-                    !IsBotInRecordedCombat(followerBot, followerState))
-                {
-                    continue;
-                }
-
-                if (string.Equals(
-                        followerBot.Memory?.GoalEnemy?.ProfileId,
-                        opponentProfileId,
-                        StringComparison.Ordinal))
-                {
-                    followerProfileId = followerBot.ProfileId;
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private static bool IsTeamProfileId(string? profileId)
-        {
-            return !string.IsNullOrEmpty(profileId) &&
-                   (BossPlayers.IsPlayerBoss(profileId) || BossPlayers.IsFollowerProfileId(profileId));
-        }
-
-        private static object? TryGetSainBot(BotOwner owner)
-        {
-            try
-            {
-                ResolveSainAccessor();
-                if (getSainByBotOwnerMethod != null)
-                {
-                    return getSainByBotOwnerMethod.Invoke(null, new object[] { owner });
-                }
-
-                if (getSainByProfileMethod != null && !string.IsNullOrEmpty(owner.ProfileId))
-                {
-                    object?[] arguments = { owner.ProfileId, null };
-                    bool found = getSainByProfileMethod.Invoke(null, arguments) is bool result && result;
-                    return found ? arguments[1] : null;
-                }
-            }
-            catch (Exception ex)
-            {
-                RecordSainAccessorFailure("invokeFailed", ex);
-            }
-
-            return null;
-        }
-
-        private static void ResolveSainAccessor()
-        {
-            if (sainAccessorResolved)
-            {
-                return;
-            }
-
-            sainAccessorResolved = true;
-            sainEnableType = FindLoadedType("SAIN.SAINEnableClass") ??
-                             FindLoadedType("SAIN.Plugin.SAINEnableClass");
-            if (sainEnableType == null)
-            {
-                RecordSainAccessorFailure("typeNotFound", null);
-                return;
-            }
-
-            foreach (MethodInfo method in sainEnableType.GetMethods(
-                         BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
-            {
-                if (!string.Equals(method.Name, "GetSAIN", StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                ParameterInfo[] parameters = method.GetParameters();
-                if (parameters.Length == 1 && parameters[0].ParameterType == typeof(BotOwner))
-                {
-                    getSainByBotOwnerMethod = method;
-                }
-                else if (parameters.Length == 2 &&
-                         parameters[0].ParameterType == typeof(string) &&
-                         parameters[1].IsOut)
-                {
-                    getSainByProfileMethod = method;
-                }
-            }
-
-            if (getSainByBotOwnerMethod == null && getSainByProfileMethod == null)
-            {
-                RecordSainAccessorFailure("methodNotFound", null);
-            }
-        }
-
-        private static Type? FindLoadedType(string fullName)
-        {
-            foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                try
-                {
-                    Type? type = assembly.GetType(fullName, false);
-                    if (type != null)
-                    {
-                        return type;
-                    }
-                }
-                catch
-                {
-                }
-            }
-
-            return null;
-        }
-
-        private static void RecordSainAccessorFailure(string reason, Exception? exception)
-        {
-            if (sainAccessorFailureRecorded)
-            {
-                return;
-            }
-
-            sainAccessorFailureRecorded = true;
-            WriteEventInternal("sainOpponentRecorderDiagnostic", null, new
-            {
-                reason,
-                exception = exception?.GetBaseException().Message
-            });
-        }
-
-        private static object? ReadSainMember(object? instance, string memberName)
-        {
-            if (instance == null)
-            {
-                return null;
-            }
-
-            try
-            {
-                Type type = instance.GetType();
-                if (!SainMemberCache.TryGetValue(type, out Dictionary<string, MemberInfo?>? members))
-                {
-                    members = new Dictionary<string, MemberInfo?>(StringComparer.Ordinal);
-                    SainMemberCache[type] = members;
-                }
-
-                if (!members.TryGetValue(memberName, out MemberInfo? member))
-                {
-                    member = type.GetProperty(memberName, SainMemberFlags) ??
-                             (MemberInfo?)type.GetField(memberName, SainMemberFlags);
-                    members[memberName] = member;
-                }
-
-                return member switch
-                {
-                    PropertyInfo property => property.GetValue(instance),
-                    FieldInfo field => field.GetValue(instance),
-                    _ => null
-                };
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        private static string? ReadSainString(object? instance, string memberName)
-        {
-            return ReadSainMember(instance, memberName)?.ToString();
-        }
-
-        private static bool? ReadSainBool(object? instance, string memberName)
-        {
-            object? value = ReadSainMember(instance, memberName);
-            return value is bool boolValue ? boolValue : null;
-        }
-
-        private static float? ReadSainFloat(object? instance, string memberName)
-        {
-            object? value = ReadSainMember(instance, memberName);
-            if (value == null)
-            {
-                return null;
-            }
-
-            try
-            {
-                return SanitizeFloat(Convert.ToSingle(value, CultureInfo.InvariantCulture));
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        private static int? ReadSainInt(object? instance, string memberName)
-        {
-            object? value = ReadSainMember(instance, memberName);
-            if (value == null)
-            {
-                return null;
-            }
-
-            try
-            {
-                return Convert.ToInt32(value, CultureInfo.InvariantCulture);
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        private static Vector3? ReadSainVector(object? instance, string memberName)
-        {
-            object? value = ReadSainMember(instance, memberName);
-            return value is Vector3 vector && IsFinite(vector) ? vector : null;
-        }
-
-        private static object? ReadSainVectorPayload(object? instance, string memberName)
-        {
-            Vector3? value = ReadSainVector(instance, memberName);
-            return value.HasValue ? CreateVector(value.Value) : null;
-        }
-
-        private static float? CreateReflectedAge(object? instance, string memberName)
-        {
-            float? timestamp = ReadSainFloat(instance, memberName);
-            return timestamp.HasValue && timestamp.Value > 0f
-                ? SanitizeFloat(Mathf.Max(0f, Time.time - timestamp.Value))
-                : null;
-        }
-
         private static bool CanRecordBot(BotOwner? bot)
         {
             return bot != null &&
                    IsRecording() &&
                    !string.IsNullOrEmpty(bot.ProfileId) &&
                    BossPlayers.IsFollower(bot);
+        }
+
+        private static object? CreateAimPartDiagnostic(
+            EnemyPart? part,
+            EnemyPartVision? vision,
+            Vector3? enemyRoot)
+        {
+            if (part == null)
+            {
+                return null;
+            }
+
+            Vector3 position = part.Position;
+            return new
+            {
+                canShoot = part.CanShoot,
+                visible = vision?.Visible == true,
+                visibleType = vision?.VisibleType.ToString(),
+                position = IsFinite(position) ? CreateVector(position) : null,
+                heightFromEnemyRoot = enemyRoot.HasValue &&
+                                      IsFinite(enemyRoot.Value) &&
+                                      IsFinite(position)
+                    ? SanitizeFloat(position.y - enemyRoot.Value.y)
+                    : null
+            };
         }
 
         private static bool ShouldSkipCommandRecord(BotOwner bot, FollowerCommandType command)
@@ -2837,6 +2308,84 @@ namespace pitTeam.Modules
                    !float.IsInfinity(value.x) &&
                    !float.IsInfinity(value.y) &&
                    !float.IsInfinity(value.z);
+        }
+
+        private static void FlushExpiredGoalEnemyTransitionRepeats(
+            BotOwner bot,
+            RecorderFollowerState state)
+        {
+            if (state.GoalEnemyTransitionSignature == null ||
+                Time.time - state.GoalEnemyTransitionFirstTime < GoalEnemyTransitionCoalesceSeconds)
+            {
+                return;
+            }
+
+            FlushGoalEnemyTransitionRepeats(bot, state);
+            ResetGoalEnemyTransitionCoalescing(state);
+        }
+
+        private static void FlushAllGoalEnemyTransitionRepeats()
+        {
+            foreach (RecorderFollowerState state in FollowerStates.Values)
+            {
+                if (state.GoalEnemyTransitionBot != null)
+                {
+                    FlushGoalEnemyTransitionRepeats(state.GoalEnemyTransitionBot, state);
+                }
+
+                ResetGoalEnemyTransitionCoalescing(state);
+            }
+        }
+
+        private static void FlushGoalEnemyTransitionRepeats(
+            BotOwner bot,
+            RecorderFollowerState state)
+        {
+            GoalEnemyTransitionSignature? signature = state.GoalEnemyTransitionSignature;
+            if (signature == null || state.GoalEnemyTransitionRepeatCount <= 0)
+            {
+                return;
+            }
+
+            WriteEventInternal("goalEnemyTransitionRepeat", bot, new
+            {
+                source = signature.Source,
+                reason = signature.Reason,
+                allowed = signature.Allowed,
+                previous = signature.PreviousProfileId != null
+                    ? new
+                    {
+                        profileId = signature.PreviousProfileId,
+                        isVisible = signature.PreviousVisible,
+                        canShoot = signature.PreviousCanShoot
+                    }
+                    : null,
+                next = signature.NextProfileId != null
+                    ? new
+                    {
+                        profileId = signature.NextProfileId,
+                        isVisible = signature.NextVisible,
+                        canShoot = signature.NextCanShoot
+                    }
+                    : null,
+                repeatCount = state.GoalEnemyTransitionRepeatCount,
+                totalOccurrences = state.GoalEnemyTransitionRepeatCount + 1,
+                firstTime = SanitizeFloat(state.GoalEnemyTransitionFirstTime),
+                lastTime = SanitizeFloat(state.GoalEnemyTransitionLastTime),
+                duration = SanitizeFloat(Mathf.Max(
+                    0f,
+                    state.GoalEnemyTransitionLastTime - state.GoalEnemyTransitionFirstTime)),
+                context = signature.CreateLightweightContext()
+            });
+        }
+
+        private static void ResetGoalEnemyTransitionCoalescing(RecorderFollowerState state)
+        {
+            state.GoalEnemyTransitionSignature = null;
+            state.GoalEnemyTransitionFirstTime = 0f;
+            state.GoalEnemyTransitionLastTime = 0f;
+            state.GoalEnemyTransitionRepeatCount = 0;
+            state.GoalEnemyTransitionBot = null;
         }
 
         private static void WriteEventInternal(string eventType, BotOwner? bot, object payload)
@@ -2943,7 +2492,7 @@ namespace pitTeam.Modules
                 return;
             }
 
-            BotOwnerUpdateHub.Register(UpdateHubSubscriptionId, OnBotManualUpdate);
+            BotOwnerUpdateHub.RegisterFollower(UpdateHubSubscriptionId, OnBotManualUpdate);
             updateHubSubscribed = true;
         }
 
@@ -2954,7 +2503,7 @@ namespace pitTeam.Modules
                 return;
             }
 
-            BotOwnerUpdateHub.Unregister(UpdateHubSubscriptionId);
+            BotOwnerUpdateHub.UnregisterFollower(UpdateHubSubscriptionId);
             updateHubSubscribed = false;
         }
 
@@ -3000,51 +2549,114 @@ namespace pitTeam.Modules
             public string? LastWeaponActivityWeaponId;
             public int LastWeaponActivityLoadedRounds = -1;
             public float NextWeaponSafetyRecordTime;
+            public GoalEnemyTransitionSignature? GoalEnemyTransitionSignature;
+            public float GoalEnemyTransitionFirstTime;
+            public float GoalEnemyTransitionLastTime;
+            public int GoalEnemyTransitionRepeatCount;
+            public BotOwner? GoalEnemyTransitionBot;
         }
 
-        private sealed class RecorderSainOpponentState
+        private sealed class GoalEnemyTransitionSignature
         {
-            public float NextProbeTime;
-            public float NextSnapshotTime;
-            public float NextDiscoveryProbeTime;
-            public float RelevantUntil;
-            public bool HasPreviousSnapshot;
-            public Vector3 LastSnapshotPosition;
-            public float LastSnapshotTime;
-            public bool HasDecisionSignature;
-            public string? LastDecisionSignature;
-            public string? LastLayer;
-            public string? LastAction;
-            public string? LastCombatDecision;
-            public string? LastSquadDecision;
-            public string? LastSelfDecision;
-            public string? LastTargetProfileId;
-        }
-
-        private readonly struct SainOpponentDecisionSample
-        {
-            public SainOpponentDecisionSample(
-                string signature,
-                string? layer,
-                string? action,
-                string? combatDecision,
-                string? squadDecision,
-                string? selfDecision)
+            public GoalEnemyTransitionSignature(
+                BotOwner bot,
+                EnemyInfo? previous,
+                EnemyInfo? next,
+                string source,
+                string reason,
+                bool allowed,
+                RecorderFollowerState state)
             {
-                Signature = signature;
-                Layer = layer;
-                Action = action;
-                CombatDecision = combatDecision;
-                SquadDecision = squadDecision;
-                SelfDecision = selfDecision;
+                Source = source;
+                Reason = reason;
+                Allowed = allowed;
+                PreviousProfileId = previous?.ProfileId;
+                PreviousVisible = previous?.IsVisible == true;
+                PreviousCanShoot = previous?.CanShoot == true;
+                NextProfileId = next?.ProfileId;
+                NextVisible = next?.IsVisible == true;
+                NextCanShoot = next?.CanShoot == true;
+                CurrentGoalProfileId = bot.Memory?.GoalEnemy?.ProfileId;
+                HaveEnemy = bot.Memory?.HaveEnemy == true;
+                UnderFire = bot.Memory?.IsUnderFire == true;
+                InCover = bot.Memory?.IsInCover == true;
+                InCombat = state.InCombat;
+                CombatEpisodeId = state.CombatEpisodeId;
+                CurrentObjective = state.CurrentObjective;
+                LastDecisionAction = state.LastDecisionAction;
+                LastDecisionReason = state.LastDecisionReason;
             }
 
-            public string Signature { get; }
-            public string? Layer { get; }
-            public string? Action { get; }
-            public string? CombatDecision { get; }
-            public string? SquadDecision { get; }
-            public string? SelfDecision { get; }
+            public string Source { get; }
+            public string Reason { get; }
+            public bool Allowed { get; }
+            public string? PreviousProfileId { get; }
+            public bool PreviousVisible { get; }
+            public bool PreviousCanShoot { get; }
+            public string? NextProfileId { get; }
+            public bool NextVisible { get; }
+            public bool NextCanShoot { get; }
+            private string? CurrentGoalProfileId { get; }
+            private bool HaveEnemy { get; }
+            private bool UnderFire { get; }
+            private bool InCover { get; }
+            private bool InCombat { get; }
+            private int CombatEpisodeId { get; }
+            private string? CurrentObjective { get; }
+            private string? LastDecisionAction { get; }
+            private string? LastDecisionReason { get; }
+
+            public bool Matches(
+                BotOwner bot,
+                EnemyInfo? previous,
+                EnemyInfo? next,
+                string source,
+                string reason,
+                bool allowed,
+                RecorderFollowerState state)
+            {
+                return Allowed == allowed &&
+                       string.Equals(Source, source, StringComparison.Ordinal) &&
+                       string.Equals(Reason, reason, StringComparison.Ordinal) &&
+                       string.Equals(PreviousProfileId, previous?.ProfileId, StringComparison.Ordinal) &&
+                       PreviousVisible == (previous?.IsVisible == true) &&
+                       PreviousCanShoot == (previous?.CanShoot == true) &&
+                       string.Equals(NextProfileId, next?.ProfileId, StringComparison.Ordinal) &&
+                       NextVisible == (next?.IsVisible == true) &&
+                       NextCanShoot == (next?.CanShoot == true) &&
+                       string.Equals(CurrentGoalProfileId, bot.Memory?.GoalEnemy?.ProfileId, StringComparison.Ordinal) &&
+                       HaveEnemy == (bot.Memory?.HaveEnemy == true) &&
+                       UnderFire == (bot.Memory?.IsUnderFire == true) &&
+                       InCover == (bot.Memory?.IsInCover == true) &&
+                       InCombat == state.InCombat &&
+                       CombatEpisodeId == state.CombatEpisodeId &&
+                       string.Equals(CurrentObjective, state.CurrentObjective, StringComparison.Ordinal) &&
+                       string.Equals(LastDecisionAction, state.LastDecisionAction, StringComparison.Ordinal) &&
+                       string.Equals(LastDecisionReason, state.LastDecisionReason, StringComparison.Ordinal);
+            }
+
+            public object CreateLightweightContext()
+            {
+                return new
+                {
+                    state = new
+                    {
+                        inCombat = InCombat,
+                        combatEpisodeId = CombatEpisodeId,
+                        currentObjective = CurrentObjective,
+                        lastDecisionAction = LastDecisionAction,
+                        lastDecisionReason = LastDecisionReason
+                    },
+                    memory = new
+                    {
+                        haveEnemy = HaveEnemy,
+                        underFire = UnderFire,
+                        inCover = InCover,
+                        currentGoalProfileId = CurrentGoalProfileId
+                    }
+                };
+            }
         }
+
     }
 }

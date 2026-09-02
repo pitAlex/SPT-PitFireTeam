@@ -8,7 +8,6 @@ namespace pitTeam.Modules
     {
         private static Func<BotOwner, bool>? _isReadyForPatrolAfterCombat;
         private static Action<BotOwner>? _forceReleaseFollowerCombatState;
-        private static Func<BotOwner, Player, bool, bool>? _trySyncFollowerEnemyState;
         private static Func<BotOwner, bool>? _tryResetFollowerDecisionState;
 
         public static bool IsFollowerCombatEnabled => pitFireTeam.UseSainFollowerCombat;
@@ -16,25 +15,21 @@ namespace pitTeam.Modules
         public static bool HasRuntimeCallbacks =>
             _isReadyForPatrolAfterCombat != null &&
             _forceReleaseFollowerCombatState != null &&
-            _trySyncFollowerEnemyState != null &&
             _tryResetFollowerDecisionState != null;
 
         public static void RegisterRuntimeCallbacks(
             Func<BotOwner, bool> isReadyForPatrolAfterCombat,
             Action<BotOwner> forceReleaseFollowerCombatState,
-            Func<BotOwner, Player, bool, bool> trySyncFollowerEnemyState,
             Func<BotOwner, bool> tryResetFollowerDecisionState)
         {
             _isReadyForPatrolAfterCombat = isReadyForPatrolAfterCombat;
             _forceReleaseFollowerCombatState = forceReleaseFollowerCombatState;
-            _trySyncFollowerEnemyState = trySyncFollowerEnemyState;
             _tryResetFollowerDecisionState = tryResetFollowerDecisionState;
         }
 
         public static void UnregisterRuntimeCallbacks(
             Func<BotOwner, bool> isReadyForPatrolAfterCombat,
             Action<BotOwner> forceReleaseFollowerCombatState,
-            Func<BotOwner, Player, bool, bool> trySyncFollowerEnemyState,
             Func<BotOwner, bool> tryResetFollowerDecisionState)
         {
             if (_isReadyForPatrolAfterCombat == isReadyForPatrolAfterCombat)
@@ -45,11 +40,6 @@ namespace pitTeam.Modules
             if (_forceReleaseFollowerCombatState == forceReleaseFollowerCombatState)
             {
                 _forceReleaseFollowerCombatState = null;
-            }
-
-            if (_trySyncFollowerEnemyState == trySyncFollowerEnemyState)
-            {
-                _trySyncFollowerEnemyState = null;
             }
 
             if (_tryResetFollowerDecisionState == tryResetFollowerDecisionState)
@@ -79,16 +69,6 @@ namespace pitTeam.Modules
 
             _forceReleaseFollowerCombatState(botOwner);
             return true;
-        }
-
-        public static bool TrySyncEnemyState(BotOwner botOwner, Player enemyPlayer, bool prioritizeAsGoal)
-        {
-            if (!IsFollowerCombatEnabled || _trySyncFollowerEnemyState == null)
-            {
-                return false;
-            }
-
-            return _trySyncFollowerEnemyState(botOwner, enemyPlayer, prioritizeAsGoal);
         }
 
         public static bool TryResetDecisionState(BotOwner botOwner)

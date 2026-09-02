@@ -347,6 +347,7 @@ namespace pitTeam
 
             var harmony = new Harmony("xyz.pit.fireteam");
             OrbitCompatibility.PatchIfInstalled(harmony);
+            AILimitCompatibility.PatchIfInstalled(harmony);
 
             // bot patches to help with various scenarios while being a follower of the player
             // Temporarily disabled for 4.x stability; revisit once BotsGroup method signatures are remapped.
@@ -436,7 +437,9 @@ namespace pitTeam
             new FollowerWeaponSelectorManualUpdatePatch().Enable();
             new FollowerSupportNoAmmoMainSwitchPolicyPatch().Enable();
             new FollowerHoldLingerReloadSuppressPatch().Enable();
+            new FollowerCombatReloadPermissionPatch().Enable();
             new FollowerAimTimeProficiencyPatch().Enable();
+            new FollowerAimTargetPatch().Enable();
             new FollowerShootDataSafetyPatch().Enable();
             new FollowerShootFromPlaceCrouchPatch().Enable();
             new FollowerGrenadeAvailabilityPatch().Enable();

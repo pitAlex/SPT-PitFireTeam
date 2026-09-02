@@ -1,6 +1,6 @@
 # Pit Fire Team
 
-Pit Fire Team is a Single Player Tarkov mod for managing and commanding AI teammates.
+Pit Fire Team is a Single Player Tushonka mod for managing and commanding AI teammates.
 
 The project is split into three parts:
 

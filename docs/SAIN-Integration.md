@@ -8,59 +8,107 @@ This document defines the boundary between the external SAIN plugin, the pitFire
 
 - **SAIN plugin / SAIN mod**: the external `me.sol.sain` plugin.
 - **SAIN addon**: pitFireTeam's optional `xyz.pit.fireteam.sainaddon` DLL under `addon/`.
-- **Core combat**: pitFireTeam's custom follower combat brain under `client/BigBrain`.
-- **SAIN combat**: follower combat decisions and actions owned by SAIN after the addon hands combat-brain ownership to SAIN.
+- **Core combat**: pitFireTeam's follower combat brain implemented through the core/vanilla BigBrain path under `client/BigBrain`.
+- **SAIN-addon combat**: pitFireTeam's alternative follower combat brain implemented as a custom SAIN Squad-based layer under `addon/`. It is not the stock SAIN Squad layer and it is not a general SAIN patch collection.
 
-## Authoritative addon purpose
+## Sole addon purpose
 
-The SAIN addon's purpose is to switch follower combat-brain ownership:
+The SAIN addon has exactly one responsibility:
+
+> Create a pitFireTeam **Follower Combat Brain Layer based on SAIN**, used instead of the core/vanilla BigBrain follower combat layer.
+
+The runtime ownership matrix is:
 
 | Runtime | Follower combat-brain owner |
 |---|---|
-| SAIN not installed | pitFireTeam core combat |
-| SAIN installed, addon absent | pitFireTeam core combat |
-| SAIN installed, addon present | SAIN combat |
+| SAIN not installed | pitFireTeam core/vanilla BigBrain combat |
+| SAIN installed, addon absent | pitFireTeam core/vanilla BigBrain combat |
+| SAIN installed, addon present | pitFireTeam custom SAIN-addon follower combat layer |
 
-The addon contains the integration glue needed to select the SAIN combat path, prevent a conflicting follower layer from owning the same bot, bridge pitFireTeam commands into that path, and return lifecycle control safely. It may also contain tuning that is intentionally specific to followers while the SAIN brain owns combat.
+Addon absence is a supported runtime mode, not a compatibility failure. External SAIN can still patch low-level EFT calculations in that mode, but pitFireTeam core continues to own follower combat decisions.
 
-The addon must not be required for:
+## SAIN Squad-derived layer model
 
-- follower Vision, Precision, or Reaction controls,
-- follower proficiency defaults or tactic-relative proficiency,
-- normalization against a SAIN preset,
-- fixes for external SAIN calculations that conflict with pitFireTeam followers generally,
-- compatibility required while the core combat brain owns the follower.
+The addon implements its brain as a custom `SAINFollowerCombatLayer` derived from `SAINLayer` and categorized as `ESAINLayer.Squad`.
 
-The addon may tune SAIN-brain-specific decisions, actions, movement, search, cover, firing behavior, or other performance characteristics when those changes exist to improve the SAIN follower-brain experience. Such tuning must be explicitly scoped to addon-owned SAIN combat and documented as an intentional difference, not presented as a general SAIN compatibility fix.
+Its permitted responsibilities are limited to the custom follower brain itself:
 
-Installing or removing the addon changes which combat brain owns the follower, so intentional brain-specific behavior and baselines may differ. It must not silently change the persisted meaning of the same proficiency percentages: `150%` remains a `1.5x` modifier against the finalized baseline for the active follower mode.
+- replace the native SAIN Squad layer for pitFireTeam followers while the custom layer is active, preventing two squad-combat layers from owning the same follower;
+- follow SAIN's Squad-layer decision/action model while making the human player boss the squad leader and tactical anchor;
+- translate pitFireTeam combat commands and objective state into decisions owned by that custom layer;
+- use appropriate native SAIN actions where they fit the player-led follower model;
+- create custom SAIN actions for follower-specific regroup, protection, suppression, search, movement, or other combat behavior;
+- own only the follower-local decision, action, movement, and lifecycle state required to enter, run, reset, and release that custom combat brain.
+
+Behavior may differ from core combat because the custom layer can choose different SAIN decisions and actions. Such differences must be implemented inside the layer, its decision calculator, its custom actions, or their follower-local state.
+
+## Forbidden addon responsibilities
+
+The addon is not a compatibility-patch project and must not become one.
+
+It must not:
+
+- create general compatibility patches for the external SAIN plugin;
+- Harmony-patch, replace, or post-process general SAIN methods merely to change follower proficiency, accuracy, recoil, vision, hearing, personality, target acquisition, speech, door behavior, search steering, friendly-fire policy, or similar systems;
+- overwrite or mutate shared SAIN presets, global/static settings, singleton-owned settings, shared configuration objects, or other objects consumed by ordinary SAIN bots;
+- use a follower-only predicate as justification for altering a general SAIN method from the addon;
+- own follower Vision, Precision, Reaction, proficiency normalization, or compensation for external SAIN calculations;
+- own general follower/enemy relationship repair, contact propagation, enemy-state synchronization, target acquisition, perception compatibility, or friendly-fire compatibility;
+- require its callbacks for behavior that must work when SAIN is installed but the addon is absent.
+
+The only narrow interception allowed for layer ownership is the follower-specific registration/handoff needed to run the custom layer and prevent the native SAIN Squad layer from simultaneously owning those same followers. This exception does not authorize general SAIN behavior patches.
+
+`UseSainFollowerCombat` is exclusively a combat-brain ownership gate. It may gate the custom layer, its commands, its actions, and its lifecycle. It must never gate general external-SAIN compatibility.
 
 ## Core ownership while SAIN is installed
 
-The external SAIN plugin patches several EFT calculations whenever `GetSAIN(bot)` succeeds. Those calculations can remain active even when pitFireTeam core combat owns the follower and SAIN combat layers are disabled.
+General external-SAIN compatibility belongs to the main plugin and is gated by `IsSAINInstalled`, not addon presence. It must behave consistently in both configurations:
 
-Therefore, follower-specific compatibility with SAIN calculations belongs to the core plugin and is gated by external SAIN presence, not addon presence. `FollowerSainProficiency`, the final follower aim-time modifier, and any required final Precision/Vision/Reaction compatibility boundary must behave consistently in both of these configurations:
-
-- SAIN installed, addon absent,
+- SAIN installed, addon absent;
 - SAIN installed, addon present.
 
-The addon may consume the already-finalized follower state and add intentional SAIN-brain-specific tuning. It must not be the only place that repairs a general external SAIN conflict, because the same conflict can affect followers when the addon is absent and core combat still owns them.
+Core owns, among other things:
 
-## Current implementation classification
+- follower-local proficiency normalization and the finalized Vision, Precision, and Reaction contract;
+- final aim-time, recoil, body-part, and other calculation compatibility required because external SAIN patches EFT;
+- follower/enemy friendship and hostility repair;
+- contact propagation, enemy-state synchronization, target acquisition, and perception compatibility;
+- general friendly-fire and shot-safety compatibility;
+- any reflection or Harmony boundary required to keep external SAIN compatible with pitFireTeam followers in all supported runtime modes.
 
-The existing addon source contains follower-tuning patches for aim sway, hit accuracy, recoil, low light, foliage/bush handling, and personality/template fine-tuning. Each must be classified before the addon is re-enabled:
+Core compatibility must be follower-scoped and must not mutate SAIN's shared preset objects. The addon may consume the already-finalized follower state, but it cannot rewrite that state through general SAIN patches.
 
-- If it deliberately improves behavior only while the SAIN brain owns follower combat, it may remain in the addon as documented SAIN-brain tuning.
-- If it corrects an external SAIN conflict that also affects core-owned followers, the general fix belongs in the main plugin and must work without the addon.
-- A patch may need to be split: the general compatibility correction lives in core, while an additional SAIN-brain-only tuning layer remains in the addon.
+Player-visual contact promotion is one example of this core boundary. A target genuinely seen by the player is reported as visual contact rather than sense-only contact. If the follower has not independently seen the target, current `IsVisible` and `CanShoot` remain false while core seeds the complete personal contact record at the promotion timestamp. The addon is not involved in that compatibility path.
 
-Command, enemy-state, friendly-fire, and lifecycle bridges remain addon concerns when they are necessary to operate the SAIN brain. Calling a SAIN API by itself does not make a general compatibility fix addon-owned; scope and runtime ownership decide placement.
+## Existing legacy addon patches
+
+The current addon source contains historical patches for aim sway, hit accuracy, recoil, low light, foliage, personality/templates, enemy acquisition, speech, doors, friendly fire, and search steering. Their presence in source does not make them valid addon architecture and does not grandfather them.
+
+Each legacy patch must follow one of these outcomes before the addon is re-enabled:
+
+1. **Move to core** if it is general external-SAIN compatibility that must work with or without the addon.
+2. **Reimplement inside the custom layer or a custom SAIN action** if it is genuinely part of the alternate follower combat brain and can be expressed without overwriting a general SAIN method or shared object.
+3. **Remove it** if neither boundary applies.
+
+A mixed patch must be separated along the same boundary. The addon may keep only the layer/action-local behavior; general compatibility moves to core.
+
+## Bridge contract
+
+Core-to-addon callbacks exist only to operate the optional custom brain:
+
+- determine whether addon-owned combat state is ready to release;
+- pass a combat command into the custom layer;
+- reset or release the custom layer and its follower-local action state;
+- clean up addon-owned follower-local state when a follower is dismissed.
+
+General external-SAIN synchronization must call a core-owned service directly and must not be routed through `SainAddonBridge`.
 
 ## Review rule
 
-For every SAIN-related change, answer these questions before choosing its project location:
+For every proposed addon change, answer these questions in order:
 
-1. Does this change select or operate the SAIN follower combat brain? If yes, it may belong in the addon.
-2. Does this repair an external SAIN conflict that also exists while core combat owns the follower? If yes, it belongs in the main plugin and must not require the addon.
-3. Does this deliberately improve only the addon-owned SAIN brain? If yes, it may remain in the addon and must be documented as brain-specific tuning.
-4. Does a saved proficiency percentage retain the same multiplier meaning in both modes, even if their finalized brain-specific baselines differ? If not, the boundary is wrong.
+1. Does it implement a decision, action, movement, command translation, or lifecycle operation inside the custom SAIN Squad-derived follower combat brain? If not, it does not belong in the addon.
+2. Can it be implemented through the custom layer, a custom SAIN action, or follower-local addon state without patching a general SAIN method or mutating a shared SAIN object? If not, it does not belong in the addon.
+3. Is it compatibility required when external SAIN is installed but addon combat is absent? If yes, it belongs in core and must use `IsSAINInstalled` rather than `UseSainFollowerCombat`.
+4. Does it change shared presets, global settings, ordinary SAIN bots, or the persisted proficiency contract? If yes, the design is invalid.
+5. Is `UseSainFollowerCombat` being used for anything other than selecting, operating, or releasing the custom addon combat brain? If yes, the gate is wrong.

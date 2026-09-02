@@ -46,6 +46,12 @@ namespace pitTeam.BigBrain.Actions
         public override void Start()
         {
             base.Start();
+            if (BotOwner?.DogFight != null)
+            {
+                // A prepared dogfight-to-dogfight handoff crosses the BigBrain Stop/Start boundary.
+                // Stop clears EFT's state, so the action that actually owns the successor must re-arm it.
+                BotOwner.DogFight.DogFightState = BotDogFightStatus.dogFight;
+            }
             StopStationaryCombatMovement();
             moveStatus = DogFightMoveStatus.None;
             nextMoveUpdateTime = 0f;
@@ -71,6 +77,7 @@ namespace pitTeam.BigBrain.Actions
         public override void Update(CustomLayer.ActionData data)
         {
             EnemyInfo? goalEnemy = BotOwner.Memory?.GoalEnemy;
+            string reason = GetReason(data);
 
             // Dogfight is about weapon control, not travel speed. Keep movement slow and update a
             // short SAIN-like dodge destination without giving up a settled firing pose first.
@@ -100,7 +107,15 @@ namespace pitTeam.BigBrain.Actions
                 MaintainThreatFacing(goalEnemy!, GetDogFightThreatLookPoint(goalEnemy!), allowHardTurn: true);
             }
 
-            bool hasAcceptedMovement = UpdateSainLikeMovement(goalEnemy);
+            bool reloadNoCoverEvasion =
+                BotOwner.WeaponManager?.Reload?.Reloading == true &&
+                string.Equals(
+                    reason,
+                    FollowerCombatCommon.ReloadNoCoverCloseVisibleEvasionReason,
+                    System.StringComparison.Ordinal);
+            bool hasAcceptedMovement = UpdateSainLikeMovement(
+                goalEnemy,
+                allowAdvance: !reloadNoCoverEvasion);
             bool hasFireContact = hasConfirmedShot || hasPointBlankContactShot || hasRecentContactShot;
             bool immediateFireReactionReady = UpdateImmediateFireReactionGate(goalEnemy, hasFireContact);
 
@@ -119,6 +134,12 @@ namespace pitTeam.BigBrain.Actions
 
             ApplyDogFightPose(hasAcceptedMovement, goalEnemy);
             BotOwner.Sprint(false, true);
+
+            if (reloadNoCoverEvasion)
+            {
+                StopCombatShooting();
+                return;
+            }
 
             if (goalEnemy == null || !hasConfirmedShot && !hasPointBlankContactShot && !hasRecentContactShot)
             {
@@ -141,7 +162,7 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            if (StopUnownedGrenadeLauncherFire(GetReason(data), goalEnemy))
+            if (StopUnownedGrenadeLauncherFire(reason, goalEnemy))
             {
                 return;
             }
@@ -245,7 +266,7 @@ namespace pitTeam.BigBrain.Actions
             immediateFireReadyTime = 0f;
         }
 
-        private bool UpdateSainLikeMovement(EnemyInfo? goalEnemy)
+        private bool UpdateSainLikeMovement(EnemyInfo? goalEnemy, bool allowAdvance)
         {
             if (goalEnemy == null)
             {
@@ -266,12 +287,22 @@ namespace pitTeam.BigBrain.Actions
                 return IsMovementAccepted();
             }
 
-            if (TryBackUpFromEnemy(goalEnemy))
+            if (TryBackUpFromEnemy(goalEnemy, allowLooseFallback: allowAdvance))
             {
                 moveStatus = DogFightMoveStatus.BackingUp;
                 float baseTime = goalEnemy.IsVisible ? 0.75f : 1f;
                 nextMoveUpdateTime = Time.time + baseTime * Random.Range(0.66f, 1.33f);
                 return true;
+            }
+
+            if (!allowAdvance)
+            {
+                // A no-cover reload may dodge away from the threat, but must never turn a failed
+                // retreat probe into a forward approach while the follower cannot fire.
+                BotOwner.Mover.Stop();
+                moveStatus = DogFightMoveStatus.None;
+                nextMoveUpdateTime = Time.time + MoveUpdateFallbackDelay;
+                return false;
             }
 
             if (TryMoveTowardEnemy(goalEnemy))
@@ -319,7 +350,7 @@ namespace pitTeam.BigBrain.Actions
             return BotOwner.GoToPoint(navMeshHit.position, false, -1f, false, false) == NavMeshPathStatus.PathComplete;
         }
 
-        private bool TryBackUpFromEnemy(EnemyInfo goalEnemy)
+        private bool TryBackUpFromEnemy(EnemyInfo goalEnemy, bool allowLooseFallback)
         {
             Vector3? target = FindBackUpTarget(goalEnemy);
             if (target == null)
@@ -354,10 +385,22 @@ namespace pitTeam.BigBrain.Actions
                     continue;
                 }
 
+                Vector3 acceptedDirection = navMeshHit.position - botPosition;
+                acceptedDirection.y = 0f;
+                if (Vector3.Dot(acceptedDirection, away) <= 0f)
+                {
+                    continue;
+                }
+
                 if (BotOwner.GoToPoint(navMeshHit.position, false, -1f, false, false) == NavMeshPathStatus.PathComplete)
                 {
                     return true;
                 }
+            }
+
+            if (!allowLooseFallback)
+            {
+                return false;
             }
 
             if (goalEnemy.IsVisible && Time.time - goalEnemy.PersonalSeenTime < RecentSeenThreshold * Random.Range(0.66f, 1.33f))

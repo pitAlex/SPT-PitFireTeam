@@ -137,10 +137,18 @@ namespace pitTeam.Patches
         {
             if (person == null || (person.IsAI && person.AIData?.BotOwner?.GetPlayer == null)) return true;
             if (person.Profile?.Info == null) return true;
-            if (cause == EBotEnemyCause.addPlayerToBoss) return true;
-
-
             bool isBossPlayerGroup = __instance is BotsGroupPlayer;
+
+            // Propagated non-Scav relationships keep their existing fast path. A Scav being
+            // propagated into the follower group must still prove hostile intent against the
+            // player or a follower; addPlayerToBoss is relationship sharing, not intent itself.
+            if (cause == EBotEnemyCause.addPlayerToBoss &&
+                (!isBossPlayerGroup ||
+                 person is not Player propagatedScav ||
+                 !FactionHostility.IsScavFaction(propagatedScav)))
+            {
+                return true;
+            }
 
             pitAIBossPlayer? plBoss = BossPlayers.GetBoss(person.ProfileId);
 
@@ -228,6 +236,17 @@ namespace pitTeam.Patches
                 return false;
             }
 
+            if (person is Player candidate &&
+                FactionHostility.IsScavFaction(candidate) &&
+                RequiresAwarenessGate(cause) &&
+                __instance is BotsGroupPlayer playerGroup &&
+                !FollowerCalcGoalEnemyAcquire.CandidateHasBossOrFollowerAsEnemy(playerGroup.Boss, candidate) &&
+                !FollowerCalcGoalEnemyAcquire.CandidateHasGoalEnemyBossOrFollower(playerGroup.Boss, candidate))
+            {
+                __result = false;
+                return false;
+            }
+
             // For follower groups, prevent "omniscient" enemy acquisition:
             // apply this only to soft/propagated causes. High-confidence/direct causes are allowed.
             bool shouldGateByAwareness = RequiresAwarenessGate(cause);
@@ -310,6 +329,13 @@ namespace pitTeam.Patches
                 cause == EBotEnemyCause.warn ||
                 __instance is BotsGroupPlayer
             )
+            {
+                return;
+            }
+
+            // During BotsGroup construction AddEnemy returns false and queues the person for a
+            // replay after the first member is added. Propagate only the successful replay.
+            if (!__result)
             {
                 return;
             }
@@ -408,6 +434,15 @@ namespace pitTeam.Patches
             if (BossPlayers.IsPlayerBoss(enemy.ProfileId)) return false;
             if (enemy.IsAI && enemy.AIData?.BotOwner != null && BossPlayers.IsFollower(enemy.AIData.BotOwner)) return false;
 
+            if (enemy is Player candidate &&
+                FollowerCalcGoalEnemyAcquire.ShouldBlockCandidateForMissingHostileIntent(
+                    reporter,
+                    candidate,
+                    debounceHostileIntent: false))
+            {
+                return false;
+            }
+
             return true;
         }
     }
@@ -454,16 +489,21 @@ namespace pitTeam.Patches
 
             boss = player;
 
-            foreach (var item in Enemies)
+            var inheritedEnemies = new List<IPlayer>(Enemies.Keys);
+            for (int i = 0; i < inheritedEnemies.Count; i++)
             {
-                WildSpawnType? Role = item.Value.Player?.Profile?.Info?.Settings?.Role;
-                if (
-                    Role.HasValue &&
-                    Utils.Props.friendlyBotTypes.Contains(Role.Value)
-                )
+                IPlayer inheritedEnemy = inheritedEnemies[i];
+                WildSpawnType? role = inheritedEnemy?.Profile?.Info?.Settings?.Role;
+                bool protectedFriendlyRole =
+                    role.HasValue && Utils.Props.friendlyBotTypes.Contains(role.Value);
+                bool neutralScav =
+                    inheritedEnemy is Player candidate &&
+                    FactionHostility.IsScavFaction(candidate) &&
+                    !FollowerCalcGoalEnemyAcquire.CandidateHasBossOrFollowerAsEnemy(player, candidate) &&
+                    !FollowerCalcGoalEnemyAcquire.CandidateHasGoalEnemyBossOrFollower(player, candidate);
+                if (protectedFriendlyRole || neutralScav)
                 {
-                    RemoveEnemy(item.Value.Player, item.Value.Cause);
-                    break;
+                    RemoveEnemy(inheritedEnemy);
                 }
             }
 

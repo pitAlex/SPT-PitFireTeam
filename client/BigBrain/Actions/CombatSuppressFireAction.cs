@@ -592,6 +592,15 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
+            // Revalidate every ordinary suppress shot, including a reached suppress-from point.
+            // Planning can become stale while the bot moves or the target changes cover; only a
+            // direct lane or the explicit foliage-only exception may reach the trigger.
+            if (!CanSuppressFromCurrentPosition(fireOrigin, target))
+            {
+                StopCombatShooting();
+                return true;
+            }
+
             if (FollowerShotSafety.IsFriendlyInSuppressionLane(BotOwner, fireOrigin, target))
             {
                 StopCombatShooting();

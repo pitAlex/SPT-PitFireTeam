@@ -65,6 +65,10 @@ namespace pitTeam.Patches
                     {
                         BotOwnerUpdateHub.Invoke(__instance);
                     }
+                    if (BotOwnerUpdateHub.HasFollowerSubscribers && BossPlayers.IsFollower(__instance))
+                    {
+                        BotOwnerUpdateHub.InvokeFollower(__instance);
+                    }
 
                 }
             }

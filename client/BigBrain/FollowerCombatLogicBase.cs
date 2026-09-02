@@ -692,6 +692,14 @@ namespace pitTeam.BigBrain
         {
             followerData.ClearOrderedPushTargetLock("CombatObjective:Suppression");
             combatCommon.ClearCommittedPushDecision("CombatObjective:Suppression");
+            if (!TryResolveSuppressionCommandEnemy(followerData, goalEnemy, out goalEnemy))
+            {
+                followerData.ClearCommand("CombatObjective:RejectSuppressionTarget");
+                BotOwner.BotTalk?.TrySay(EPhraseTrigger.Negative, false);
+                BotOwner.Gesture?.TryGestus(EInteraction.NoGesture, false);
+                return;
+            }
+
             if (!combatCommon.HasActiveCombatEnemy(goalEnemy))
             {
                 followerData.ClearCommand("CombatObjective:RejectSuppression");
@@ -756,6 +764,48 @@ namespace pitTeam.BigBrain
             }
 
             combatCommon.SetOrderedSuppressTarget(suppressTarget);
+        }
+
+        private bool TryResolveSuppressionCommandEnemy(
+            BotFollowerPlayer followerData,
+            EnemyInfo currentGoalEnemy,
+            out EnemyInfo resolvedGoalEnemy)
+        {
+            resolvedGoalEnemy = currentGoalEnemy;
+            string? requestedProfileId = followerData.SuppressEnemyTargetProfileId;
+            if (string.IsNullOrEmpty(requestedProfileId) ||
+                string.Equals(currentGoalEnemy?.ProfileId, requestedProfileId, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            if (BotOwner?.EnemiesController?.EnemyInfos == null)
+            {
+                return false;
+            }
+
+            foreach (var trackedEnemy in BotOwner.EnemiesController.EnemyInfos)
+            {
+                EnemyInfo candidate = trackedEnemy.Value;
+                if (!string.Equals(trackedEnemy.Key?.ProfileId, requestedProfileId, StringComparison.Ordinal) ||
+                    candidate?.Person?.HealthController?.IsAlive != true)
+                {
+                    continue;
+                }
+
+                candidate.PriorityIndex = 0;
+                using (FollowerGoalEnemyTracker.Begin(
+                           "FollowerCombatLogicBase.TryResolveSuppressionCommandEnemy",
+                           "restoreDirectedSuppressTarget"))
+                {
+                    BotOwner.Memory.GoalEnemy = candidate;
+                }
+
+                resolvedGoalEnemy = candidate;
+                return true;
+            }
+
+            return false;
         }
 
         private bool CanSatisfySuppressionOrder(BotFollowerPlayer? followerData)

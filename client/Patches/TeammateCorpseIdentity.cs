@@ -12,8 +12,12 @@ namespace pitTeam.Patches
 
         public static bool IsTeammateCorpseOwner(IItemOwner owner)
         {
-            return owner is EFT.InventoryLogic.CorpseItemController corpseOwner &&
-                   BossPlayers.IsFollowerProfileId(corpseOwner.KilledProfileID);
+            if (owner is not EFT.InventoryLogic.CorpseItemController corpseOwner)
+            {
+                return false;
+            }
+
+            return BossPlayers.GetFollowerByProfileId(corpseOwner.KilledProfileID)?.IsSquadMate == true;
         }
     }
 }

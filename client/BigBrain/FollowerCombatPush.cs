@@ -1007,6 +1007,7 @@ namespace pitTeam.BigBrain
             }
 
             if (combatCommon.TryGetCommittedPushDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> committedPush) &&
+                combatCommon.GetFollowerTactic() != FollowerCombatTactic.Balanced &&
                 IsStartWeakEnemyPushReason(committedPush.Reason) &&
                 combatCommon.ShouldBlockWeakEnemyRushForBossDistance(goalEnemy))
             {

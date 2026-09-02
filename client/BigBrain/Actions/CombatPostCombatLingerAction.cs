@@ -19,11 +19,17 @@ namespace pitTeam.BigBrain.Actions
         private const float LateralLookMinDegrees = 35f;
         private const float LateralLookMaxDegrees = 75f;
         private const float DirectionEpsilonSqr = 0.01f;
+        private const float StationarySpeedThreshold = 0.2f;
+        private const float StableGroundSeconds = 0.25f;
+        private const float GroundProbeOriginHeight = 0.35f;
+        private const float GroundProbeDistance = 1.5f;
 
         private float transitionUntil;
+        private float stationaryGroundSince;
         private float targetPose;
         private Vector3 entryLookDirection;
         private Vector3 lingerLookDirection;
+        private bool stanceApplied;
 
         public CombatPostCombatLingerAction(BotOwner botOwner) : base(botOwner)
         {
@@ -51,6 +57,8 @@ namespace pitTeam.BigBrain.Actions
                     _ => 0f,
                 };
                 transitionUntil = Time.time + UnityEngine.Random.Range(TransitionMinSeconds, TransitionMaxSeconds);
+                stationaryGroundSince = 0f;
+                stanceApplied = false;
             }
             catch (Exception ex)
             {
@@ -76,16 +84,25 @@ namespace pitTeam.BigBrain.Actions
                 }
 
                 bool transitioning = Time.time < transitionUntil;
+                bool stationaryOnStableGround = stanceApplied || UpdateStableGroundState();
                 Vector3 lookDirection = transitioning ? entryLookDirection : lingerLookDirection;
                 if (lookDirection.sqrMagnitude >= DirectionEpsilonSqr)
                 {
                     BotOwner.Steering.LookToDirection(lookDirection);
                 }
 
-                if (!transitioning && BotOwner.BotLay?.IsLay != true && BotOwner.Mover != null &&
-                    !Mathf.Approximately(BotOwner.Mover.TargetPose, targetPose))
+                if (!transitioning &&
+                    !stanceApplied &&
+                    stationaryOnStableGround &&
+                    BotOwner.BotLay?.IsLay != true &&
+                    BotOwner.Mover != null)
                 {
-                    BotOwner.SetPose(targetPose);
+                    if (!Mathf.Approximately(BotOwner.Mover.TargetPose, targetPose))
+                    {
+                        BotOwner.SetPose(targetPose);
+                    }
+
+                    stanceApplied = true;
                 }
             }
             catch (Exception ex)
@@ -95,6 +112,54 @@ namespace pitTeam.BigBrain.Actions
                 FollowerRecovery.StopShooting(BotOwner);
                 BotOwner?.StopMove();
             }
+        }
+
+        private bool UpdateStableGroundState()
+        {
+            var movementContext = BotOwner?.GetPlayer?.MovementContext;
+            if (movementContext == null || !movementContext.IsGrounded)
+            {
+                stationaryGroundSince = 0f;
+                return false;
+            }
+
+            Vector3 velocity = movementContext.Velocity;
+            float stationarySpeedSqr = StationarySpeedThreshold * StationarySpeedThreshold;
+            if (!IsFinite(velocity) || velocity.sqrMagnitude > stationarySpeedSqr)
+            {
+                stationaryGroundSince = 0f;
+                return false;
+            }
+
+            Vector3 groundProbeOrigin = BotOwner.Position + Vector3.up * GroundProbeOriginHeight;
+            if (!Physics.Raycast(
+                    groundProbeOrigin,
+                    Vector3.down,
+                    GroundProbeDistance,
+                    LayersMaskController.HighPolyWithTerrainMask,
+                    QueryTriggerInteraction.Ignore))
+            {
+                stationaryGroundSince = 0f;
+                return false;
+            }
+
+            if (stationaryGroundSince <= 0f)
+            {
+                stationaryGroundSince = Time.time;
+                return false;
+            }
+
+            return Time.time - stationaryGroundSince >= StableGroundSeconds;
+        }
+
+        private static bool IsFinite(Vector3 value)
+        {
+            return !float.IsNaN(value.x) &&
+                   !float.IsInfinity(value.x) &&
+                   !float.IsNaN(value.y) &&
+                   !float.IsInfinity(value.y) &&
+                   !float.IsNaN(value.z) &&
+                   !float.IsInfinity(value.z);
         }
 
         private Vector3 GetHorizontalLookDirection()

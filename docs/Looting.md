@@ -730,7 +730,7 @@ Filtered body/container rules:
 
 - dogtag is moved before any vest, magazine, or weapon transaction on non-teammate USEC/BEAR bodies
 - dogtag-only body looting still says `LootNothing`
-- teammate dogtags are not treated as filtered dogtag loot
+- saved teammate dogtags are not treated as filtered dogtag loot; picked-up in-raid followers remain normal lootable corpses
 - backpack magazines can be looted if eligible
 - pocket and vest magazines are skipped
 - loose armor plates are ignored; installed plates may be taken as price-qualified, 50-percent-durability fallbacks after their parent armor/rig stays behind

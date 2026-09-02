@@ -4,6 +4,7 @@ using EFT.InventoryLogic;
 using pitTeam.BigBrain.Actions;
 using pitTeam.Components;
 using pitTeam.Modules;
+using pitTeam.Patches;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -1213,6 +1214,15 @@ namespace pitTeam.BigBrain
             if (BotOwner?.WeaponManager == null) return;
             Utils.FollowerRecovery.CheckReloadTimeout(BotOwner);
             if (Time.time < nextReloadCheckAt) return;
+
+            // The post-combat hold-linger patch deliberately suppresses vanilla TryReload for
+            // three seconds after GoalEnemy clears. Do not consume this patrol weapon's retry
+            // budget during that intentional suppression; revisit it once the cooldown expires.
+            if (FollowerWeaponSwitchPolicyRuntime.ShouldSuppressHoldLingerReload(BotOwner))
+            {
+                nextReloadCheckAt = Time.time + 0.5f;
+                return;
+            }
 
             var selector = BotOwner.WeaponManager.Selector;
             if (reloadingInProgress)

@@ -8,6 +8,8 @@
 
 This document identifies the settings and runtime calculations that determine follower vision and firearm performance. It also documents the implemented user-control boundary, which changes execution proficiency without changing combat tactics or reintroducing action churn.
 
+For frame-time cost, multi-follower scaling, and Battle Recorder A/B settings, see `docs/Runtime-Performance-Testing.md`.
+
 The SAIN Default baseline, follower-local values model, persistent per-teammate percentages, profile UI, runtime modifier, and final aim-time patch are implemented. Runtime gameplay calibration across the validation matrix remains pending. `docs/SAIN-Integration.md` is authoritative for the addon boundary.
 
 ## Executive conclusions
@@ -86,13 +88,13 @@ The earlier SAIN 4.4 personality and weather reports were used as leads and rech
 |---|---|---|
 | No SAIN | pitFireTeam core BigBrain | EFT calculations |
 | SAIN installed, addon missing | pitFireTeam core BigBrain for followers | Mixed: SAIN `GetSAIN` patches still replace aim time, fire rate, body-part choice, vision speed, and vision distance |
-| SAIN plus addon | SAIN follower combat | The same core-owned proficiency and external-SAIN compatibility boundary, plus any explicitly documented SAIN-brain-specific tuning |
+| SAIN plus addon | pitFireTeam custom SAIN Squad-derived follower combat layer | The same core-owned proficiency and external-SAIN compatibility boundary; addon differences come only from its combat decisions/actions |
 
 This is the central compatibility constraint. A control that works only by changing the pre-SAIN EFT file settings can be clamped, overwritten, or replaced later.
 
 ### SAIN addon boundary
 
-The optional addon exists to switch follower combat-brain ownership from pitFireTeam core combat to SAIN combat. Vision, Precision, Reaction, SAIN Default normalization, and general compensation for external SAIN calculation conflicts belong to core and must work with or without the addon. The addon may add documented SAIN-brain-specific tuning, so the active brain's finalized baseline may differ, but the saved percentage keeps the same multiplier meaning against that baseline.
+The optional addon exists solely to replace pitFireTeam core/vanilla BigBrain combat with a custom follower combat layer based on SAIN's Squad model, making the human player the leader and allowing custom SAIN actions. Vision, Precision, Reaction, SAIN Default normalization, and compensation for external SAIN calculation conflicts belong to core and must work with or without the addon. The addon must not tune these calculations through general SAIN patches or shared settings-object mutation.
 
 ## Current follower baseline
 
@@ -179,7 +181,7 @@ The normalization is follower-local and applies in both runtime configurations: 
 
 For a hard PMC under stock SAIN 4.5 Default data, the important normalized values include global scatter `0.75`, accuracy-speed coefficient `0.8`, precision/vision/hearing coefficients `1.0`, global recoil `0.5`, field of view `170`, semiautomatic fire-rate multiplier `1.5`, strafe speed `0.8`, and enabled faster-CQB reactions. The typed object's initializers document both vanilla and SAIN fallback numbers in one file, while SAIN's generated Default bundle hydrates the SAIN section and each follower's exact role/difficulty overrides at runtime.
 
-### Current addon tuning classification
+### Legacy nonconforming addon patch inventory
 
 The current addon source still gives saved squadmates a cloned `followerBigPipe` SAIN template, rebuilds SAIN difficulty state, and sets a role-based personality:
 
@@ -190,7 +192,7 @@ The current addon source still gives saved squadmates a cloned `followerBigPipe`
 
 SAIN's stock 4.5 personality defaults leave shooting-related `DifficultySettings` multipliers at neutral `1.0`; their default differences are primarily behavior/search policy. Custom SAIN presets may change those multipliers.
 
-The addon also currently applies strong final shooting assistance:
+It also currently applies strong final shooting assistance:
 
 - disables SAIN random aim sway while a follower has a visible, shootable target,
 - skips SAIN's aim-hit displacement for followers,
@@ -200,17 +202,17 @@ The addon also currently applies strong final shooting assistance:
 - reduces only SAIN's low-light **gain-sight time** penalty to 40% of its original distance from neutral,
 - restores vanilla foliage fields during follower look checks.
 
-The low-light patch does not remove SAIN's time-of-day distance reduction, weather distance reduction, or weather gain-sight penalty. Tuning in this subsection may remain when it is intentionally specific to addon-owned SAIN combat. Any portion required to correct external SAIN interference in both combat modes must move to a core-owned, addon-independent boundary.
+These entries describe legacy source, not permitted addon ownership. General proficiency, aim, recoil, vision, foliage, personality, and difficulty compatibility must move to a core-owned boundary or be removed. If the alternate brain needs different tactics, express that difference through `SAINFollowerCombatLayer`, its decision calculator, or a custom SAIN action without patching general SAIN methods or rewriting shared/general settings objects.
 
-### Current SAIN template overwrite details
+### Legacy SAIN template overwrite details
 
-`SainSettingsExtensions.SetConfigValues()` overwrites selected EFT categories after the core follower baseline is installed. It applies SAIN Aiming, Look, Mind, Scattering, Shoot, Grenade, and Boss settings. The addon currently supplies a follower-local clone whose proficiency fields have already been normalized to Default, so this overwrite does not reintroduce the selected preset's easier/harder proficiency values. This describes existing code. The common proficiency contract remains core-owned; additional values may be addon-owned only when they intentionally tune the active SAIN brain.
+`SainSettingsExtensions.SetConfigValues()` currently overwrites selected EFT categories after the core follower baseline is installed. It applies SAIN Aiming, Look, Mind, Scattering, Shoot, Grenade, and Boss settings. This describes legacy code only; settings/proficiency application is not a valid addon responsibility and must be core-owned if still required.
 
 Material examples:
 
 - SAIN can replace `MAX_AIMING_UPGRADE_BY_TIME`, `COEF_IF_MOVE`, `MAX_AIM_TIME`, first-contact delay, and hit-recovery fields.
 - `SetConfigValues()` does **not** call the existing `SAINCoreSettings.Apply()` helper. Base `VisibleDistance`, `GainSightCoef`, `AccuratySpeed`, and base per-meter scattering therefore continue to come from the EFT settings object; SAIN modifies them mainly through stacked `BotSettingsInGameModif` difficulty layers.
-- The SAIN addon explicitly reruns the difficulty modifier stack after core replaces `bot.Settings`. That is necessary because runtime modifiers belong to the old `BotCurrentSettings` object otherwise.
+- The legacy addon explicitly reruns the difficulty modifier stack after core replaces `bot.Settings`. This behavior must move to core follower initialization or be removed; it may not remain as addon-owned settings rewriting.
 
 ## Vision distance
 
@@ -314,7 +316,7 @@ final visibility speed = EFT visibility speed / SAIN gain-sight modifier
 
 SAIN's modifier accounts for body-part visibility, gear, weather, time of day, movement, elevation, third-party angle, peripheral angle, pose, and prior seen/heard positions. Larger SAIN modifiers mean slower recognition.
 
-The EFT result already contains follower-local `RuntimeVisionEffectsK`, so a user recognition factor remains effective even after SAIN divides the result. The addon low-light patch subsequently reduces only the time-of-day component of SAIN's penalty.
+The EFT result already contains follower-local `RuntimeVisionEffectsK`, so a user recognition factor remains effective even after SAIN divides the result. The historical addon low-light patch that subsequently changes SAIN's penalty is nonconforming; any required compatibility belongs at a core follower-only boundary.
 
 SAIN raycasts at a nominal 30 Hz and updates the two bot look groups on alternating fixed-update passes. That creates a small scheduling floor which no coefficient can remove.
 
@@ -443,7 +445,7 @@ This means an EFT-only scattering slider is effective for the standard aim offse
 
 - inverse aim-offset/scattering scale,
 - precision-convergence speed,
-- a narrow final SAIN recoil scale through the addon bridge.
+- a narrow final SAIN recoil scale through the core follower-only external-SAIN compatibility boundary.
 
 Recommended relationships:
 
@@ -455,21 +457,22 @@ SAIN final recoil    *= 1 / Accuracy factor
 
 Keep the existing stable-shooting patches active at every skill level. Re-enabling random visible-target sway or hit displacement for low Accuracy risks recreating unstable aim behavior instead of producing controlled inaccuracy.
 
-Do not initially map Accuracy to:
+Do not map Accuracy to:
 
 - tactics or objectives,
-- target selection,
 - vision or hearing,
 - enemy memory,
 - base damage,
 - grenade precision,
 - a large fire-rate change.
 
-### Body-part preference is not accuracy
+### Precision-owned body-part preference
 
 Core sets `AIMING_TYPE = 6`, but SAIN's `BodyPartToShootPatch` replaces EFT body-part selection and uses `AimForHead` plus `AimForHeadChance`. SAIN's actual target point can also be limited by the global center-mass setting.
 
-Changing head preference with Accuracy changes lethality and hit location, not just precision. Keep current body-part behavior at neutral in the first release. If users need it, expose a separate advanced **Aim Target** option after accuracy calibration.
+Precision deliberately owns one conservative target-selection value in addition to firearm execution: head preference is `10%` at Precision `0`, `33%` at `100`, and `60%` at `200`, with piecewise-linear interpolation between those points. This is a preference among valid firing solutions, not a hit guarantee. The follower target resolver first removes every body part that is not both visible and shootable; only then does it roll head versus non-head. A sole exposed head is selected regardless of probability, while no shootable body part produces no shot instead of an invented torso target.
+
+The target resolver retains the chosen valid part for EFT's normal body-part retarget interval. It does not allocate or reroll every shot. Core direct fire consumes this resolver directly instead of `CurrentEnemyTargetPosition(false)`, because that EFT helper always returns the body position and bypasses both normal body-part selection and the follower Precision policy. When external SAIN owns firing, the main plugin also bypasses SAIN 4.5's global center-mass height clamp for registered followers because that clamp ignores SAIN's own per-bot `AimCenterMass` value and can move a valid exposed-head target down behind cover.
 
 ### Burst control is not pure accuracy
 
@@ -513,7 +516,7 @@ The `Proficiency` dialog exposes three persistent percentage values per saved te
 | Setting | 0-200 meaning | Neutral default | Runtime ownership |
 |---|---|---|---|
 | Vision | shorter to farther vision range | preserves class-specific distance | core runtime modifier |
-| Precision | wider to tighter firearm execution | preserves class-specific scatter and precision; supplies half of aim speed | core modifier plus final external-SAIN-compatible accuracy boundary |
+| Precision | wider to tighter firearm execution plus `10%..60%` head preference | preserves class-specific scatter and precision, uses `33%` head preference, and supplies half of aim speed | core modifier, valid-part target resolver, plus final external-SAIN-compatible accuracy boundary |
 | Reaction | slower to faster recognition/response | preserves class-specific recognition; supplies half of aim speed | core vision-speed modifier, final aim boundary, and core dogfight direct-fire gate |
 
 The percentage converts directly to a multiplier:
@@ -590,13 +593,13 @@ It uses a project-owned safety clamp and records both the incoming and final res
 
 ### 5. External SAIN compatibility
 
-Any SAIN calculation that would otherwise overwrite or bypass a follower's finalized Vision, Precision, or Reaction in either combat mode must be compensated at a core-owned follower-only boundary gated by external SAIN presence. The addon may consume the finalized factors and add explicit SAIN-brain-specific tuning, but it cannot be the required compatibility fix for core-owned followers.
+Any SAIN calculation that would otherwise overwrite or bypass a follower's finalized Vision, Precision, or Reaction in either combat mode must be compensated at a core-owned follower-only boundary gated by external SAIN presence. The addon may consume the finalized values while choosing decisions/actions in its custom combat layer, but it must not alter those calculations through general SAIN patches or shared-object mutation.
 
 ### 6. UI and localization
 
 The per-teammate Vision, Precision, and Reaction sliders live in the draggable `Proficiency` profile dialog. Aggression remains a separate `0..100` behavior control in the same dialog. All labels use the centralized localization model and embedded English fallback described in `docs/Localization.md`.
 
-Descriptions state that Vision owns range, Precision owns shot accuracy, Reaction owns recognition speed, and Precision plus Reaction share aim speed without changing tactics or target selection.
+Descriptions state that Vision owns range, Precision owns shot accuracy plus conservative valid-part head preference, Reaction owns recognition speed, and Precision plus Reaction share aim speed without changing tactics or objectives.
 
 ## Implementation hazards and boundaries
 
@@ -683,7 +686,7 @@ Acceptance criteria:
 
 - neutral values reproduce the current effective baseline,
 - low/high Vision changes range without changing LOS-to-visible speed,
-- low/high Precision changes dispersion/hit rate/recoil and half of aim speed without changing tactical decisions,
+- low/high Precision changes dispersion/hit rate/recoil, valid-part head preference, and half of aim speed without changing tactical decisions,
 - low/high Reaction changes LOS-to-visible time, half of aim speed, and the narrow core dogfight direct-fire gate without changing the two sensor-wait settings,
 - tactical decision/reason sequences remain comparable for identical encounters,
 - no new action end/reselect churn appears,
@@ -699,7 +702,8 @@ Acceptance criteria:
 6. Precision scatter/convergence and core-owned final external-SAIN recoil compatibility: implemented independently of addon presence.
 7. Reaction recognition-speed modifier and core dogfight direct-fire gate: implemented.
 8. Localized four-control profile UI including Aggression: implemented.
-9. Conservative endpoint calibration across the runtime matrix: pending gameplay tests.
-10. Granular advanced controls remain internal unless a later calibration need justifies exposing them.
+9. Allocation-free visible-and-shootable body-part selection, Precision head preference, and follower-only SAIN center-mass bypass: implemented.
+10. Conservative endpoint calibration across the runtime matrix: pending gameplay tests.
+11. Granular advanced controls remain internal unless a later calibration need justifies exposing them.
 
 The implementation keeps shooting-performance ownership separate from the combat decision architecture. Changing these values does not select different actions or tactics.

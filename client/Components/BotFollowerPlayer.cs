@@ -138,6 +138,7 @@ namespace pitTeam.Components
         private bool _suppressEnemyRequiresLauncher;
         private bool _suppressEnemyForceWeapon;
         private bool _suppressEnemyUseAutomaticSecondary;
+        private string? _suppressEnemyTargetProfileId;
         private bool _orderedPushCancelRequested;
         private string? _orderedPushCancelReason;
         private bool _orderedPushTargetLockActive;
@@ -880,6 +881,7 @@ namespace pitTeam.Components
 
             // - improved shooting settings
             settings.FileSettings.Aiming.SHPERE_FRIENDY_FIRE_SIZE = proficiency.Aiming.SHPERE_FRIENDY_FIRE_SIZE;
+            settings.FileSettings.Aiming.DIST_TO_SHOOT_TO_CENTER = proficiency.Aiming.DIST_TO_SHOOT_TO_CENTER;
             settings.FileSettings.Aiming.AIMING_TYPE = proficiency.Aiming.AIMING_TYPE;
             if (!isGoon)
             {
@@ -1662,7 +1664,8 @@ namespace pitTeam.Components
             Vector3 orderTarget,
             bool requireLauncher,
             bool forceWeapon,
-            bool useAutomaticSecondary)
+            bool useAutomaticSecondary,
+            string? targetProfileId = null)
         {
             if (ShouldIgnoreCommandSet())
             {
@@ -1680,6 +1683,7 @@ namespace pitTeam.Components
             _suppressEnemyRequiresLauncher = requireLauncher;
             _suppressEnemyForceWeapon = forceWeapon;
             _suppressEnemyUseAutomaticSecondary = useAutomaticSecondary;
+            _suppressEnemyTargetProfileId = string.IsNullOrEmpty(targetProfileId) ? null : targetProfileId;
             _resumeHoldAfterComeCloser = false;
             _resumeHoldAfterTakeLoot = false;
             _resumeHoldAfterTakeLootCrouch = false;
@@ -2193,6 +2197,9 @@ namespace pitTeam.Components
 
         public bool SuppressEnemyUseAutomaticSecondary =>
             _activeCommand == FollowerCommandType.SuppressEnemy && _suppressEnemyUseAutomaticSecondary;
+
+        public string? SuppressEnemyTargetProfileId =>
+            _activeCommand == FollowerCommandType.SuppressEnemy ? _suppressEnemyTargetProfileId : null;
 
         public void RequestOrderedPushCancel(string reason)
         {
@@ -2756,6 +2763,7 @@ namespace pitTeam.Components
             _suppressEnemyRequiresLauncher = false;
             _suppressEnemyForceWeapon = false;
             _suppressEnemyUseAutomaticSecondary = false;
+            _suppressEnemyTargetProfileId = null;
             _holdPositionShouldCrouch = true;
             _resumeHoldAfterComeCloser = false;
             _resumeHoldAfterTakeLoot = false;
@@ -3252,7 +3260,7 @@ namespace pitTeam.Components
 
         private void EnsureSainBossAndFollowersFriendly()
         {
-            if (!pitFireTeam.UseSainFollowerCombat) return;
+            if (!pitFireTeam.IsSAINInstalled) return;
             if (_bot == null || _player?.realPlayer == null) return;
 
             try
@@ -3530,7 +3538,7 @@ namespace pitTeam.Components
 
         private void RefreshSainEnemyListAfterGroupReassign()
         {
-            if (!pitFireTeam.UseSainFollowerCombat) return;
+            if (!pitFireTeam.IsSAINInstalled) return;
             if (_bot == null) return;
 
             try

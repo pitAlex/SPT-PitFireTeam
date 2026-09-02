@@ -134,6 +134,7 @@ namespace pitTeam.Modules
             try
             {
                 object? sainBot = GetSainBot(bot);
+                FollowerAimTargetPolicy.RegisterSainFollower(sainBot);
                 object? info = GetMemberValue(sainBot, "Info");
                 object? difficulty = GetMemberValue(info, "Difficulty");
                 if (sainBot == null || info == null || difficulty == null || !TryGetDefaultBundle(out object? bundle))
@@ -197,7 +198,13 @@ namespace pitTeam.Modules
 
         public static void RestoreFollower(BotOwner bot)
         {
-            if (bot == null || string.IsNullOrEmpty(bot.ProfileId) || !States.TryGetValue(bot.ProfileId, out FollowerState? state))
+            if (bot == null)
+            {
+                return;
+            }
+
+            FollowerAimTargetPolicy.UnregisterSainFollower(GetSainBot(bot));
+            if (string.IsNullOrEmpty(bot.ProfileId) || !States.TryGetValue(bot.ProfileId, out FollowerState? state))
             {
                 return;
             }
@@ -630,6 +637,14 @@ namespace pitTeam.Modules
             CaptureCategoryValues(GetMemberValue(defaultSettings, "Shoot"), values.Shoot);
             CaptureCategoryValues(GetMemberValue(defaultSettings, "Mind"), values.Mind);
             CaptureCategoryValues(GetMemberValue(defaultSettings, "Move"), values.Move);
+
+            // SAIN 4.5's global center-mass target clamp ignores its per-bot AimCenterMass value.
+            // Keep the follower-local settings semantically correct for future SAIN versions while
+            // the core target patch owns today's visible-part selection and Precision preference.
+            values.Aiming.AimCenterMass = false;
+            values.Aiming.AimForHead = true;
+            values.Aiming.AimForHeadChance = FollowerAimTargetPolicy.GetHeadPreference(
+                state.Values.Modifiers.GetPrecisionPercent());
 
             object? defaultGlobal = GetMemberValue(bundle, "GlobalSettings");
             object? globalDifficulty = GetMemberValue(defaultGlobal, "Difficulty");

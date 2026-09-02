@@ -21,7 +21,6 @@ namespace pitTeam.SAINAddon
             SainAddonBridge.RegisterRuntimeCallbacks(
                 SAINFollowerRuntimeBridge.IsReadyForPatrolAfterCombat,
                 SAINFollowerRuntimeBridge.ForceReleaseFollowerCombatState,
-                SAINFollowerRuntimeBridge.TrySyncFollowerEnemyState,
                 SAINFollowerRuntimeBridge.TryResetFollowerDecisionState);
 
             // Register lifecycle event handler for follower cache management.
@@ -39,7 +38,6 @@ namespace pitTeam.SAINAddon
             SainAddonBridge.UnregisterRuntimeCallbacks(
                 SAINFollowerRuntimeBridge.IsReadyForPatrolAfterCombat,
                 SAINFollowerRuntimeBridge.ForceReleaseFollowerCombatState,
-                SAINFollowerRuntimeBridge.TrySyncFollowerEnemyState,
                 SAINFollowerRuntimeBridge.TryResetFollowerDecisionState);
 
             SainAddonBridge.OnFollowerLifecycleEvent -= SAINFollowerRecoilPatch.OnFollowerLifecycleEvent;

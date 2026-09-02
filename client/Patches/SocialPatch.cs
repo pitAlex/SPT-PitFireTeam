@@ -263,20 +263,23 @@ namespace pitTeam.Patches
                 return true;
             }
 
-            string profileAccountId = profileMember.AccountId;
+            bool isRecruitInvitation =
+                __instance._invitation?._id?.StartsWith(RecruitInvitationIdPrefix, StringComparison.Ordinal) == true;
+            string currentAccountId = __instance._selectedMember?.AccountId;
+            bool hasCurrentAccountId = !string.IsNullOrWhiteSpace(currentAccountId) && currentAccountId != "0";
+            if (hasCurrentAccountId && !isRecruitInvitation)
+            {
+                return true;
+            }
+
+            string profileAccountId = hasCurrentAccountId ? currentAccountId : profileMember.AccountId;
             if (string.IsNullOrWhiteSpace(profileAccountId) || profileAccountId == "0")
             {
                 return true;
             }
 
-            string currentAccountId = __instance._selectedMember?.AccountId;
-            if (!string.IsNullOrWhiteSpace(currentAccountId) && currentAccountId != "0")
-            {
-                return true;
-            }
-
             OtherPlayerProfileScreenPatch.ClearPendingRecruitProfileView();
-            if (__instance._invitation?._id?.StartsWith(RecruitInvitationIdPrefix, StringComparison.Ordinal) == true)
+            if (isRecruitInvitation)
             {
                 OtherPlayerProfileScreenPatch.PreparePendingRecruitProfileView(profileAccountId);
             }

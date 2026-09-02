@@ -328,6 +328,7 @@ namespace pitTeam.Modules
         public float PANIC_COEF { get; set; } = 1f;
         public float MAX_AIMING_UPGRADE_BY_TIME { get; set; } = 0.15f;
         public float SHPERE_FRIENDY_FIRE_SIZE { get; set; } = 0.5f;
+        public float DIST_TO_SHOOT_TO_CENTER { get; set; } = 0f;
         public int AIMING_TYPE { get; set; } = 6;
         public float ANY_PART_SHOOT_TIME { get; set; } = 15f;
         public float ANYTIME_LIGHT_WHEN_AIM_100 { get; set; } = 50f;

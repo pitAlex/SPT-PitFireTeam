@@ -15,11 +15,14 @@ namespace pitTeam.BigBrain
         private const float PressureRecoverySeconds = 3f;
         private const float SainRetainedCloseSearchDistance = 15f;
         private const float SainRetainedSearchHoldSeconds = 1.25f;
+        private const float MarksmanDirectReacquisitionIntervalSeconds = 0.5f;
+        private const float MarksmanDirectReacquisitionMaxLookAngle = 20f;
 
         private readonly FollowerCombatPush combatPush;
         private bool complete;
         private string? targetProfileId;
         private float pressureRecoveryUntil;
+        private float nextMarksmanDirectReacquisitionAt;
 
         public FollowerCombatOrderedPushObjective(BotOwner botOwner, FollowerCombatCommon combatCommon)
             : base(botOwner, combatCommon)
@@ -34,6 +37,7 @@ namespace pitTeam.BigBrain
             complete = false;
             targetProfileId = null;
             pressureRecoveryUntil = 0f;
+            nextMarksmanDirectReacquisitionAt = 0f;
             combatPush.Reset();
         }
 
@@ -88,6 +92,7 @@ namespace pitTeam.BigBrain
 
             BossPlayers.Instance?.GetFollower(BotOwner)?.RefreshOrderedPushTargetLock(orderedEnemy);
             ExpirePressureRecoveryIfNeeded();
+            TryRefreshOrderedMarksmanContact(orderedEnemy);
 
             if (CombatCommon.TryGetReloadRetreatDecision(
                     orderedEnemy,
@@ -170,6 +175,35 @@ namespace pitTeam.BigBrain
             return combatPush.CreateOrderedPushDecision(orderedEnemy);
         }
 
+        private bool TryRefreshOrderedMarksmanContact(EnemyInfo orderedEnemy)
+        {
+            if (Time.time < nextMarksmanDirectReacquisitionAt ||
+                orderedEnemy.IsVisible ||
+                orderedEnemy.CanShoot ||
+                !FollowerCombatCommon.IsEnemyMarksman(orderedEnemy) ||
+                orderedEnemy.Person?.HealthController?.IsAlive != true ||
+                BotOwner.LookSensor == null)
+            {
+                return false;
+            }
+
+            Vector3 toEnemy = orderedEnemy.Person.Position - BotOwner.Position;
+            float maxVisibleDistance = BotOwner.LookSensor.VisibleDist + 0.25f;
+            if (toEnemy.sqrMagnitude <= 0.01f ||
+                toEnemy.sqrMagnitude > maxVisibleDistance * maxVisibleDistance ||
+                BotOwner.LookDirection.sqrMagnitude <= 0.01f ||
+                Vector3.Angle(BotOwner.LookDirection, toEnemy) > MarksmanDirectReacquisitionMaxLookAngle)
+            {
+                return false;
+            }
+
+            // Ordered pushes against the dedicated marksman role get one bounded verification
+            // when the follower is already looking directly at an in-range memory contact. The
+            // shared correction still owns the actual visibility cone and LOS/fire-lane rays.
+            nextMarksmanDirectReacquisitionAt = Time.time + MarksmanDirectReacquisitionIntervalSeconds;
+            return FollowerEnemyInfoCorrection.RefreshDirectContactForAcquisition(BotOwner, orderedEnemy);
+        }
+
         public override AICoreActionEnd ShallEndCurrentDecision(
             AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
         {
@@ -189,6 +223,13 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEnd(rejectReason, true);
             }
 
+            if (TryRefreshOrderedMarksmanContact(orderedEnemy) &&
+                orderedEnemy.IsVisible &&
+                orderedEnemy.CanShoot)
+            {
+                return new AICoreActionEnd("orderedMarksmanDirectContact", true);
+            }
+
             if (currentDecision.Action == BotLogicDecision.shootFromPlace &&
                 CombatCommon.TryPrepareExposedFireRecoveryBreak(
                     currentDecision,
@@ -199,6 +240,11 @@ namespace pitTeam.BigBrain
 
             if (currentDecision.Action == BotLogicDecision.holdPosition)
             {
+                if (FollowerCombatCommon.IsReloadHoldReason(currentDecision.Reason))
+                {
+                    return CombatCommon.EndReloadHold(currentDecision);
+                }
+
                 if (FollowerCombatCommon.IsWeaponPreparationHoldReason(currentDecision.Reason))
                 {
                     return CombatCommon.EndWeaponPreparationHold(currentDecision.Reason);

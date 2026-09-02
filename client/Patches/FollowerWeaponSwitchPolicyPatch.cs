@@ -85,6 +85,18 @@ namespace pitTeam.Patches
             return Time.time - lostAt <= EnemyNullReloadCooldownSeconds;
         }
 
+        public static bool ShouldSuppressHoldLingerReload(BotOwner botOwner)
+        {
+            if (botOwner == null)
+            {
+                return false;
+            }
+
+            UpdateEnemyState(botOwner);
+            return IsInEnemyNullCooldown(botOwner) &&
+                   botOwner.Brain?.LastDecision == BotLogicDecision.holdPosition;
+        }
+
         public static bool ShouldAllowSupportNoAmmoMainSwitch(BotOwner botOwner, BotReload reload)
         {
             if (botOwner == null || reload == null)
@@ -453,15 +465,7 @@ namespace pitTeam.Patches
                 return true;
             }
 
-            FollowerWeaponSwitchPolicyRuntime.UpdateEnemyState(botOwner);
-
-            if (!FollowerWeaponSwitchPolicyRuntime.IsInEnemyNullCooldown(botOwner))
-            {
-                return true;
-            }
-
-            BotLogicDecision? lastDecision = botOwner.Brain?.LastDecision;
-            if (lastDecision == null || lastDecision.Value != BotLogicDecision.holdPosition)
+            if (!FollowerWeaponSwitchPolicyRuntime.ShouldSuppressHoldLingerReload(botOwner))
             {
                 return true;
             }
@@ -470,6 +474,26 @@ namespace pitTeam.Patches
                 Logger.LogInfo($"[WeaponPolicy] suppress reload during hold-linger cooldown follower={botOwner.Profile?.Nickname ?? botOwner.name}");
 
             __result = false;
+            return false;
+        }
+    }
+    internal sealed class FollowerCombatReloadPermissionPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+        {
+            return AccessTools.Method(typeof(BotReload), nameof(BotReload.FightShallReload));
+        }
+
+        [PatchPrefix]
+        private static bool PatchPrefix(BotReload __instance, ref bool __result)
+        {
+            BotOwner botOwner = Traverse.Create(__instance).Field("_owner").GetValue<BotOwner>();
+            if (!FollowerCombatCommon.IsFollowerOwnedReloadPermissionActive(botOwner))
+            {
+                return true;
+            }
+
+            __result = true;
             return false;
         }
     }

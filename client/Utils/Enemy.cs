@@ -227,7 +227,7 @@ namespace pitTeam.Utils
                 }
 
                 string enemyId = enemy.ProfileId;
-                nearbyGroupMembers = CountNearbyLivingGroupMembers(enemy, position, radius);
+                nearbyGroupMembers = GetNearbyLivingGroupMemberCount(enemy, position, radius);
 
                 // Register cleanup exactly once for this enemy. The previous bag check never added
                 // the id and therefore attached another death callback on every uncached call.
@@ -305,7 +305,7 @@ namespace pitTeam.Utils
             }
         }
 
-        private static int CountNearbyLivingGroupMembers(EnemyInfo enemy, Vector3 position, float radius)
+        public static int GetNearbyLivingGroupMemberCount(EnemyInfo enemy, Vector3 enemyPosition, float radius = 17f)
         {
             BotOwner? enemyOwner = enemy.Person?.AIData?.BotOwner;
             BotsGroup? enemyGroup = enemyOwner?.BotsGroup;
@@ -331,7 +331,7 @@ namespace pitTeam.Utils
                     member.IsDead ||
                     member.BotState != EBotState.Active ||
                     member.GetPlayer?.HealthController?.IsAlive != true ||
-                    (member.Position - position).sqrMagnitude > radiusSqr)
+                    (member.Position - enemyPosition).sqrMagnitude > radiusSqr)
                 {
                     continue;
                 }
@@ -353,6 +353,16 @@ namespace pitTeam.Utils
         {
             if (bot == null || enemy == null) return null;
             if (bot.BotsGroup == null || bot.Memory == null || bot.EnemiesController == null) return null;
+
+            if (BossPlayers.IsFollower(bot) &&
+                RequiresAcquisitionAwarenessGate(cause) &&
+                FollowerCalcGoalEnemyAcquire.ShouldBlockCandidateForMissingHostileIntent(
+                    bot,
+                    enemy,
+                    debounceHostileIntent: false))
+            {
+                return null;
+            }
 
             if (BossPlayers.IsFollower(bot))
             {
@@ -545,6 +555,60 @@ namespace pitTeam.Utils
                     info.GroupInfo.EnemyLastVisiblePosition = enemyPosition;
                 }
             }
+        }
+
+        /// <summary>
+        /// Seeds a complete personal contact record from a position the player has genuinely seen.
+        /// This records when and where the follower received the visual report without claiming that
+        /// the follower currently sees or can shoot the enemy.
+        /// </summary>
+        public static void SeedPlayerVisualContact(
+            BotOwner follower,
+            EnemyInfo? info,
+            Vector3 enemyPosition,
+            Vector3 enemyWeaponRootPosition,
+            float contactTime)
+        {
+            if (follower == null || info == null || !IsFinite(enemyPosition))
+            {
+                return;
+            }
+
+            float observedAt = IsFinite(contactTime) && contactTime > 0f
+                ? contactTime
+                : Time.time;
+            Vector3 direction = enemyPosition - follower.Position;
+
+            info.HaveSeenPersonal = true;
+            if (!IsFinite(info.FirstTimeSeen) || info.FirstTimeSeen <= 0f)
+            {
+                info.FirstTimeSeen = observedAt;
+            }
+
+            info.PersonalSeenTime = observedAt;
+            info.PersonalLastSeenTime = observedAt;
+            info.PersonalLastPos = enemyPosition;
+            if (IsFinite(direction))
+            {
+                info.Direction = direction;
+                info.Distance = direction.magnitude;
+            }
+
+            BotGroupEnemyInfo? groupInfo = info.GroupInfo;
+            if (groupInfo == null)
+            {
+                return;
+            }
+
+            groupInfo.EnemyLastPosition = enemyPosition;
+            groupInfo.EnemyLastVisiblePosition = enemyPosition;
+            groupInfo.EnemyLastSeenTimeSense = observedAt;
+            groupInfo.EnemyLastSeenTimeReal = observedAt;
+            groupInfo.IsHaveSeen = true;
+            groupInfo.IsLastPositionChecked = false;
+            groupInfo.EnemyWeaponRootLastPos = IsFinite(enemyWeaponRootPosition)
+                ? enemyWeaponRootPosition
+                : enemyPosition + Vector3.up * 1.2f;
         }
 
         private static bool IsFinite(Vector3 value)

@@ -29,6 +29,8 @@ namespace pitTeam.BigBrain.Actions
         private const float SettleDestinationClaimTtlSeconds = 3f;
         private const float SettleDestinationClaimReleaseTolerance = 0.5f;
         private const float FollowPathRecoveryCooldown = 0.5f;
+        private const float FollowSprintEngagementFailureSeconds = 1.25f;
+        private const float FollowWalkFallbackSeconds = 3f;
         private const float PatrolLeaderIdleRequiredSeconds = 5f;
         private const float PatrolLeaderMoveInputThresholdSqr = 0.01f;
         private const float PatrolLeaderMoveSampleInterval = 0.35f;
@@ -43,6 +45,8 @@ namespace pitTeam.BigBrain.Actions
 
         private float nextFollowUpdateAt;
         private float nextFollowPathRecoveryAt;
+        private float followSprintEngagementFailureSince;
+        private float followWalkFallbackUntil;
         private float nextSettlePointAt;
         private bool isPathBlocked;
 
@@ -100,6 +104,8 @@ namespace pitTeam.BigBrain.Actions
 
             nextFollowUpdateAt = 0f;
             nextFollowPathRecoveryAt = 0f;
+            followSprintEngagementFailureSince = 0f;
+            followWalkFallbackUntil = 0f;
             nextSettlePointAt = 0f;
             holdPositionUntil = 0f;
             nextPatrolUpdateAt = 0f;
@@ -400,14 +406,76 @@ namespace pitTeam.BigBrain.Actions
 
         private void ApplyFollowChaseMovementState(bool shouldSprint)
         {
+            bool actualSprintEngaged = FollowerCombatActionBase.IsActuallySprinting(BotOwner);
+            if (!shouldSprint)
+            {
+                followSprintEngagementFailureSince = 0f;
+                followWalkFallbackUntil = 0f;
+                ApplyFollowWalkState(actualSprintEngaged);
+                return;
+            }
+
+            if (Time.time < followWalkFallbackUntil)
+            {
+                ApplyFollowWalkState(actualSprintEngaged);
+                return;
+            }
+
+            bool canSprint = BotOwner.CanSprintPlayer && BotOwner.Mover.NoSprint != true;
+            if (!canSprint)
+            {
+                BeginFollowWalkFallback(actualSprintEngaged);
+                return;
+            }
+
+            bool sprintEngaged =
+                BotOwner.Mover.HasPathAndNoComplete &&
+                BotOwner.Mover.Sprinting &&
+                actualSprintEngaged;
+            if (sprintEngaged)
+            {
+                followSprintEngagementFailureSince = 0f;
+            }
+            else if (followSprintEngagementFailureSince <= 0f)
+            {
+                followSprintEngagementFailureSince = Time.time;
+            }
+            else if (Time.time - followSprintEngagementFailureSince >= FollowSprintEngagementFailureSeconds)
+            {
+                BeginFollowWalkFallback(actualSprintEngaged);
+                return;
+            }
+
             if (BotOwner.Mover.TargetPose != 1f)
             {
                 BotOwner.Mover.SetPose(1f);
             }
 
-            if (BotOwner.Mover.Sprinting != shouldSprint)
+            BotOwner.Mover.SetTargetMoveSpeed(1f);
+            if (!BotOwner.Mover.Sprinting || !actualSprintEngaged)
             {
-                BotOwner.Mover.Sprint(shouldSprint, false);
+                BotOwner.Mover.Sprint(true, false);
+            }
+        }
+
+        private void BeginFollowWalkFallback(bool actualSprintEngaged)
+        {
+            followSprintEngagementFailureSince = 0f;
+            followWalkFallbackUntil = Time.time + FollowWalkFallbackSeconds;
+            ApplyFollowWalkState(actualSprintEngaged);
+        }
+
+        private void ApplyFollowWalkState(bool actualSprintEngaged)
+        {
+            if (BotOwner.Mover.TargetPose != 1f)
+            {
+                BotOwner.Mover.SetPose(1f);
+            }
+
+            BotOwner.Mover.SetTargetMoveSpeed(1f);
+            if (BotOwner.Mover.Sprinting || actualSprintEngaged)
+            {
+                BotOwner.Mover.Sprint(false, false);
             }
         }
 

@@ -1,6 +1,6 @@
 # Command System Notes
 
-Last updated: 2026-08-26
+Last updated: 2026-08-30
 
 ## Scope
 
@@ -46,7 +46,7 @@ There are three execution paths:
 
 3. **SAIN addon combat**
    - Only active when SAIN plugin and the pitFireTeam SAIN addon are both present.
-   - The addon's purpose is to switch follower combat-brain ownership to SAIN; command handling here is bridge glue required to preserve pitFireTeam orders on that path. SAIN-brain-specific tuning may also live in the addon, but general SAIN conflict fixes belong in the main plugin.
+   - The addon's sole purpose is to provide a custom follower combat brain based on SAIN's Squad layer, with the human player as leader. Command handling here is bridge glue that translates pitFireTeam orders into that layer; the addon may implement custom SAIN actions, but it must not own general compatibility patches or overwrite shared/general SAIN objects or methods.
    - `RegroupNearBoss` is seen by `SAINFollowerCombatLayer` and translated into SAIN `ESquadDecision.Regroup`.
    - Temporary `HoldPosition` combat aggression override is also treated as regroup/protection intent by the SAIN addon.
 
@@ -732,18 +732,21 @@ Command state:
 
 Targeting:
 
-- If the boss is looking at a follower, only that follower receives the order and chooses from its own current enemy or boss-visible contact; the boss look ray is not reused as a launcher target.
-- If no follower is focused, eligible followers may suppress together, but the boss skips followers already healing, under immediate fire pressure, actively shooting, dogfighting, or moving/fighting in an emergency.
-- Squad suppression allows no more than one grenadier. The selected grenadier is scored by usable hostile target distance, direct launch lane, friendly impact safety, and friendly lane safety.
-- Rifleman/default followers use suppress-capable current weapons. Marksman followers only join squad suppression when there is no active Rifleman/default in the squad and the marksman has a loaded automatic second primary.
-- Ensures a target by using the follower's current enemy, boss-visible enemies, or, for unfocused launcher selection only, boss order-ray launcher targets within `120m`.
+- If a visible hostile is within the boss's tight crosshair cone, the closest available follower already holding that exact profile as `GoalEnemy` receives the order.
+- If nobody owns the directed target, one follower within `30m` may be retasked only when his own enemy is missing/dead or has been out of personal sight for more than two seconds. Target registration and `GoalEnemy` promotion then use the existing explicit-contact path.
+- If no visible hostile is under the crosshair, eligible followers may suppress together, but each uses only his own living `GoalEnemy`; the command does not substitute an arbitrary boss-visible enemy or raw look-ray point.
+- Follower-local squad suppression skips followers already healing, under immediate fire pressure, actively shooting, dogfighting, or moving/fighting in an emergency.
+- Squad suppression allows no more than one grenadier. The selected grenadier is scored by its own usable hostile target distance, direct launch lane, friendly impact safety, and friendly lane safety.
+- Rifleman/default followers use suppress-capable current weapons. A directed same-target Marksman may accept with a loaded automatic second primary; without a crosshair target, Marksmen join only when there is no active Rifleman/default in the squad.
+- A directed order that cannot find a matching/safely retaskable follower, and a follower-local order with no viable suppressor, produces one `Negative` response.
 
 Core behavior:
 
 - `FollowerPmcCombatLogic` marks `SuppressEnemy` consumable.
+- Directed suppression retains the requested enemy profile through command consumption and restores that tracked living enemy before objective activation if another target setter changed `GoalEnemy` in the meantime.
 - `FollowerCombatLogicBase` validates weapon/enemy and activates `FollowerCombatSuppressionObjective`.
 - The objective tries dogfight/heal first, then launcher support from the current position or a suppress-from point, then weapon suppression from the current position or a suppress-from point. Marksman fallback suppression can switch to a loaded automatic second primary before planning the weapon burst.
-- Suppression can use obstructed known-point suppression when explicitly ordered, subject to shot safety.
+- Ordered weapon suppression accepts only a direct lane or the explicit foliage-only obstruction classifier. Hard world geometry rejects planning, and the action revalidates that same boundary immediately before every shot, including after reaching a suppress-from point.
 - If no launcher or primary support action can be created, the follower answers `Negative`.
 - Command is cleared on consume, rejection, completion, missing enemy/target, blocked lane, or weapon rejection.
 
