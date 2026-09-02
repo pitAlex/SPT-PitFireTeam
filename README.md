@@ -6,7 +6,7 @@ Pit Fire Team is a Single Player Tushonka mod for managing and commanding AI tea
 
 Download the latest release from the official SPT Forge page:
 
-https://forge.sp-tarkov.com/mod/2676/pit-fireteam
+https://sp-mod.com/mod/2676/pit-fireteam
 
 The project is split into three parts:
 
