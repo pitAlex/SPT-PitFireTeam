@@ -22,8 +22,6 @@ This document preserves the repeatable settings, evidence, and next test order f
 | `28 BattleRecorderSnapshotIntervalMs` | `200` ms |
 | `03 EnemyRemember` | `60` seconds, the maximum exposed value |
 
-The live configuration also contains `29 VanillaCombatTestMode = true`, but the current source does not bind or read that key. Treat it as stale configuration text, not an active test setting.
-
 The complete record used for this checkpoint was `20260830-005753-bigmap.jsonl`:
 
 - size: `41.70 MiB`
