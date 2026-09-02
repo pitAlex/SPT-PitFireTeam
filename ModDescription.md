@@ -116,10 +116,6 @@ Open **Proficiency** from a teammate's profile to fine-tune their fighting style
 - **Precision (0-200%)** - how accurately they shoot. Higher values tighten their shots and increase their preference for headshots: **10%** at 0 Precision, **33%** at 100, and **60%** at 200. They choose from exposed targets, so an exposed head can still be targeted when the body is behind cover.
 - **Reaction (0-200%)** - how quickly they recognize enemies. Higher values help them pick up threats and respond faster, including in close fights.
 
-**100%** Vision, Precision, and Reaction preserve the selected tactic's defaults. For example, **150% Vision** gives a Marksman 1.5 times the Marksman's normal detection range. Precision and Reaction contribute equally to aiming speed: setting one to **200%** with the other at **100%** gives **1.5x** aim speed; both must reach **200%** for **2x** aim speed.
-
-**Reset** restores Vision, Precision, and Reaction to **100%**, and Aggression to the tactic's default. Settings are saved individually for each teammate and take effect when they next spawn.
-
 The combat **Hold Position** command temporarily behaves like **0% Aggression** until combat ends or **Go Go Go** clears it.
 
 **Loadout customization:**
