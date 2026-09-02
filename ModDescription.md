@@ -1,6 +1,4 @@
-This is the official successor of the Friendly PMC mod that was available for SPT 3.x.
-
-Pit Fire Team makes it possible to have bots follow you around and fight alongside you against enemies. You can create a customizable PMC squad, bring selected teammates into raids, recruit eligible same-side bots during a raid, and use Tarkov's existing phrase and gesture system to command your teammates.
+Pit Fire Team makes it possible to have bots follow you around and fight alongside you against enemies. You can create a customizable PMC squad, bring selected teammates into raids, recruit eligible same-side bots during a raid, and use phrases and gestures system to command your teammates.
 
 ---
 
@@ -37,16 +35,16 @@ You can manage your teammates from the in-game **My Squad** screen. From there, 
 - **Dedicated squad screen** - manage your roster, customize teammates, and settings from a separate My Squad interface.
 - **Teammate customization** - change teammate name, appearance, voice, tactic, aggression, proficiency, and loadout.
 - **Weapon-aware combat** - teammate decisions consider weapon role, caliber, magazine capacity, ammo penetration, and secondary weapon options.
-- **Teammate commands** - issue combat, movement, attention, loot, and door commands through existing Tarkov phrases and gestures.
+- **Teammate commands** - issue combat, movement, attention, loot, and door commands through existing game's phrases and gestures.
 - **Objective-based combat orders** - use commands such as **Go Forward**, **Need Help**, **Cover Me**, and **Suppress** to shift squad priorities without directly micromanaging every movement.
 - **Raid group support** - invite teammates into your group manually or use Auto Join to preload selected teammates into your next PMC raid.
 - **Map transitions** - teammates who you spawned with can follow you through map transitions.
 - **Progression system** - teammates gain raid experience and common-skill progress that persists between raids.
 - **Quest assist** - teammate kills can count toward player kill quests when the kill meets the quest criteria.
-- **Faction hostility repair** - a default-on Raid setting repairs missing BEAR-versus-USEC and PMC-versus-Scav/Scav-boss enemy relationships. Followers require a Scav to show hostile intent against you or any teammate before accepting that Scav as an enemy, so a Scav hostile only to you is still recognized without followers initiating against one neutral to the whole squad. Cultists, Raiders, and Rogues use neutral warning relationships toward Scavs instead of immediate hostility, while existing player-Scav karma hostility remains authoritative. Partisan is excluded so his stock karma, zone, and proximity behavior remains in control.
-- **Looting and loot return** - teammates who you spawned with can pick up loot, search bodies and containers on command, return carried items after the raid, and let you manage their backpacks while in raid. (See Looting)
+- **Faction hostility repair** - a default-on Raid setting repairs missing BEAR-versus-USEC and PMC-versus-Scav/Scav-boss enemy relationships. Followers require a Scav to show hostile intent against you or any teammate before accepting that Scav as an enemy, so a Scav hostile only to you is still recognized without followers initiating against one neutral to the whole squad. Cultists, Raiders, and Rogues use neutral warning relationships toward Scavs instead of immediate hostility, while existing player-Scav karma hostility remains authoritative. Partisan is excluded, so his stock karma, zone, and proximity behavior remains in control.
+- **Looting and loot return** - teammates whom you spawned with can pick up loot, search bodies and containers on command, return carried items after the raid, and let you manage their backpacks while in raid. (See Looting)
 - **Fallen teammate gear gathering** - outside combat, a teammate can be ordered to check a body and gather recoverable gear from it, mainly to help collect gear from fallen squadmates.
-- **Post-raid reports** - receive report about if your team made it out with the loot after you died. (See Gameplay Guide > Raid Survival Post Player)
+- **Post-raid reports** - receive a report about whether your team made it out with the loot after you died. (See Gameplay Guide > Raid Survival Post Player)
 
 **Compatibility tested with:**
 
@@ -61,11 +59,11 @@ The mod is still sensitive to other mods that heavily change bot AI, grouping, p
 
 **Required dependency:**
 
-- [BigBrain](https://forge.sp-tarkov.com/mod/902/bigbrain)
+- [BigBrain](https://sp-mod.com/mod/902/bigbrain)
 
 **Recommended:**
 
-- [WAYPOINTS - EXPANDED NAVMESH](https://forge.sp-tarkov.com/mod/827/waypoints-expanded-navmesh), because teammates can have a harder time navigating without expanded navmesh data.
+- [WAYPOINTS - EXPANDED NAVMESH](https://sp-mod.com/mod/827/waypoints-expanded-navmesh), because teammates can have a harder time navigating without expanded navmesh data.
 
 Extract the downloaded archive into your SPT install directory. It should add files under both **BepInEx** and **user** / **SPT/user**, depending on your SPT layout.
 
@@ -101,7 +99,7 @@ Teammates can be customized from their profile screen.
 - In **Restricted**, **Immersive**, and **Realistic**, use **Kit Loadouts** to purchase or equip saved player kits for the teammate.
 - Edit the teammate's **Default** kit from the profile screen.
 - Select a combat tactic.
-- Adjust aggression and per-teammate Vision, Precision, and Reaction.
+- Tune each teammate's **Proficiency** with four sliders: Aggression, Vision, Precision, and Reaction.
 - View teammate-relevant skills.
 
 **Tactics available:**
@@ -111,13 +109,18 @@ Teammates can be customized from their profile screen.
 
 **Proficiency:**
 
-Aggression controls how willing a teammate is to leave boss-local safety for proactive pressure. Lower aggression keeps teammates more defensive and boss-local. Higher aggression allows more search, push, and pressure when combat conditions justify it. At 0%, teammates avoid proactive pressure and prefer to stay around the boss. The combat **Hold Position** command temporarily behaves like 0% aggression until combat ends or **Go Go Go** clears it.
+Open **Proficiency** from a teammate's profile to fine-tune their fighting style with four sliders:
 
-**Rifleman aggression:** Rifleman uses 50% as its default balanced baseline. Lower values bias toward cover, support, and regroup. Higher values make Riflemen more willing to push or search farther from the boss when threat checks allow it.
+- **Aggression (0-100%)** - how willing they are to push, search, and pressure enemies. Lower values favor cover, support, and staying near you; higher values encourage taking an opening when the threat allows it. Riflemen default to **50%**, Marksmen to **30%**. For Marksmen, this mainly affects offensive searches with an automatic secondary while preserving their ranged role. At **0%**, teammates avoid proactive pressure, but still defend themselves.
+- **Vision (0-200%)** - how far they can spot enemies. Higher values extend detection range; lower values shorten it.
+- **Precision (0-200%)** - how accurately they shoot. Higher values tighten their shots and increase their preference for headshots: **10%** at 0 Precision, **33%** at 100, and **60%** at 200. They choose from exposed targets, so an exposed head can still be targeted when the body is behind cover.
+- **Reaction (0-200%)** - how quickly they recognize enemies. Higher values help them pick up threats and respond faster, including in close fights.
 
-**Marksman aggression:** Marksman uses 30% as its default baseline. Marksman aggression is tactic-relative: it mainly controls proactive automatic-weapon close-search/auto-search pressure. It does not turn Marksman into a generic Rifleman, and it does not block defensive automatic secondary use when enemies get close. At 0%, Marksman avoids proactive auto-search and stays range/position focused. Higher values make Marksman more willing to use automatic-weapon offensive search when distance and threat checks are safe.
+**100%** Vision, Precision, and Reaction preserve the selected tactic's defaults. For example, **150% Vision** gives a Marksman 1.5 times the Marksman's normal detection range. Precision and Reaction contribute equally to aiming speed: setting one to **200%** with the other at **100%** gives **1.5x** aim speed; both must reach **200%** for **2x** aim speed.
 
-The same dialog provides three per-teammate proficiency percentages from 0 to 200. **Vision** changes detection distance. **Precision** changes shot accuracy, contributes half of aim speed, and changes head preference from 10% at `0` through 33% at `100` to 60% at `200`; preference is applied only after blocked body parts are removed, so an exposed head can be targeted without aiming through cover. **Reaction** changes visual-recognition speed and contributes the other half of aim speed, so both Precision and Reaction must be `200%` to reach `2x` aim speed. `100%` preserves that teammate tactic's own default, so a Marksman's `150%` Vision is 1.5 times the Marksman vision baseline rather than the Rifleman baseline. The dialog's **Reset** button returns all three percentages to `100%` and Aggression to the tactic default. These values are saved per teammate and take effect the next time that follower spawns. Reaction does not alter the game's independent sensor-wait timers. The optional SAIN addon changes which combat brain owns the follower; it does not change the meaning of these proficiency values.
+**Reset** restores Vision, Precision, and Reaction to **100%**, and Aggression to the tactic's default. Settings are saved individually for each teammate and take effect when they next spawn.
+
+The combat **Hold Position** command temporarily behaves like **0% Aggression** until combat ends or **Go Go Go** clears it.
 
 **Loadout customization:**
 
@@ -137,23 +140,23 @@ When a kit is purchased or equipped, the teammate's current kit is returned thro
 
 ![Gestures Menu](https://iili.io/BQdlFv1.md.png)
 
-Commands use Tarkov's existing phrase and gesture system. Depending on voice and side, some phrases may appear in different places or may not be available for every voice.
+Commands use the games's existing phrase and gesture system. Depending on voice and side, some phrases may appear in different places or may not be available for every voice.
 Some of the commands can be applied to individual teammates by looking directly at them when issuing the command.
-Commands influence teammate behavior but do not force exact actions. teammates will adapt based on combat conditions and may not always respond immediately if engaged or under threat.
+Commands influence teammate behavior but do not force exact actions. Teammates will adapt based on combat conditions and may not always respond immediately if engaged or under threat.
 
 **In COMMAND:**
 
 - **Follow Me / Cooperative** - recruit an eligible same-side bot or tell existing teammates to resume following.
 - **Attention / Look** - clears command pressure and makes teammates focus on the boss or indicated direction.
-- **Regroup** - tells teammates to converge near the boss. In combat, this becomes a combat regroup objective (within 18 meters radius of the boss, Marksman within 24m).
+- **Regroup** - tells teammates to converge near the boss. In combat, this becomes a combat regroup objective (within a 18-meter radius of the boss, Marksman within 24m).
 - **Exit Located** - calls eligible teammates into a tight extraction formation around you without detouring to normal regroup cover.
 - **Hold Position** - in combat, temporarily behaves like setting teammate aggression to 0%. The override resets after combat ends or when replaced by another command. Can be applied to an individual teammate by looking at him.
 - **Go Go Go** - clears the temporary Hold Position combat-aggression override and returns teammates to their saved aggression. Can be applied to an individual teammate by looking at him.
 - **Go Forward** - orders saved teammates with an enemy to focus that enemy as an ordered push objective. They will pressure, move to reachable firing positions, or go in for the kill while still respecting healing, reload, and immediate survival needs. Outside combat, it can send teammates toward the pointed location. Can be applied to an individual teammate by looking at him.
 - **Stop** - stops teammates out of combat without forcing crouch. If the boss moves too far away, teammates resume normal follow behavior. Can be applied to an individual teammate by looking at him.
-- **Suppress** - orders teammates to create short pressure on a known enemy position. If you are looking directly at a teammate, only that teammate tries to suppress using his own current enemy or a boss-visible contact. If you are not looking at a teammate, eligible squadmates can suppress together while avoiding teammates who are already shooting, healing, under immediate pressure, or in a close fight. Riflemen are the normal suppression role. A Marksman can join only when no Rifleman is active and he has a loaded automatic second primary.
+- **Suppress** - orders teammates to create short pressure on a known enemy position. If you are looking directly at a teammate, only that teammate tries to suppress using his own current enemy or a boss-visible contact. If you are not looking at a teammate, eligible squadmates can suppress together while avoiding teammates who are already shooting, healing, under immediate pressure, or in a close fight. Riflemen are the normal suppression role. A Marksman can join only when no Rifleman is active, and he has a loaded automatic second primary.
     - Riflemen need a suppress-capable weapon: full-auto, a magazine capacity of at least 25 rounds, or a usable grenade launcher in the second primary slot. Squad suppression allows only one grenadier, chosen by position, enemy target, launch lane, and friendly safety. If no safe lane or suitable equipment exists, the teammate can say "negative" and continue normal combat decisions.
-- **On Your Own** - lets teammates spread out and act more independently instead of staying tied to your position. Outside combat, they use normal follow while you are moving, then patrol around the current area using Patrol Radius after you stop and they are close enough to start patrol. In combat, it lets them hold their own and manage the fight from where they are while you work somewhere else. Use **Go Forward** when you want Riflemen to take the initiative against a known enemy.
+- **On Your Own** - lets teammates spread out and act more independently instead of staying tied to your position. Outside combat, they use normal follow while you are moving, then patrol around the current area using Patrol Radius after you stop, and they are close enough to start patrol. In combat, it lets them hold their own and manage the fight from where they are while you work somewhere else. Use **Go Forward** when you want Riflemen to take the initiative against a known enemy.
     - **Regroup** during combat still calls them back to you for that order, but it does not cancel On Your Own. Use **Cover Me** during combat if you want them to start watching your position again. Outside combat, **Cover Me**, **Regroup**, or **Follow Me** returns them to normal follow behavior.
 
 **In HELP:**
@@ -251,8 +254,8 @@ Treat your squad like a tactical team you are responsible for managing. Use comm
 
 ---
 
-In Non-Realistic loadout management mode, saved teammates automatically have ammo (primary weapon only and works best with vanilla ammo) and medical supplies available, in their secure container, and do not require these items in their loadout. This automatic medical supply is meant as a baseline, not endless sustain: a Grizzly and surgery kit may not be enough if a teammate goes through many fights, heavy bleeding, repeated blacked limbs, or long combat chains. If you find extra meds during a raid, it is worth giving them to your followers so they can keep treating themselves if their secure-container supplies are depleted or no longer enough. Recruited allies found during a raid do not receive this behavior and rely on their existing equipment.
-teammates still use Tarkov bot movement and navigation. They can choose cover or movement paths that are not exactly where you expected, especially in complex interiors.
+In Non-Realistic loadout management mode, saved teammates automatically have ammo (primary weapon only and works best with vanilla ammo) and medical supplies available in their secure container, and do not require these items in their loadout. This automatic medical supply is meant as a baseline, not endless sustain: a Grizzly and surgery kit may not be enough if a teammate goes through many fights, heavy bleeding, repeated blacked limbs, or long combat chains. If you find extra meds during a raid, it is worth giving them to your followers so they can keep treating themselves if their secure-container supplies are depleted or no longer enough. Recruited allies found during a raid do not receive this behavior and rely on their existing equipment.
+Teammates still use vanilla bot movement and navigation. They can choose cover or movement paths that are not exactly where you expected, especially in complex interiors.
 
 ---
 
@@ -464,7 +467,7 @@ Riflemen are the main suppression role. They need a weapon that can actually sup
 
 Only one teammate will use a grenade launcher for a squad suppression order. The grenadier is chosen by position, usable enemy target, launch lane, and friendly safety. Launcher suppression checks the target area and will not fire if the impact point or lane is unsafe for you or other teammates.
 
-Marksmen are precision support, not normal suppressors. A Marksman can join squad suppression only when there is no active Rifleman available and he has a loaded automatic second primary weapon. Do not expect a Marksman with only a sniper rifle or DMR to provide useful suppressive fire.
+Marksmen are precision support, not normal suppressors. A Marksman can join squad suppression only when there is no active Rifleman available, and he has a loaded automatic second primary weapon. Do not expect a Marksman with only a sniper rifle or DMR to provide useful suppressive fire.
 
 If the teammate does not have appropriate equipment, does not have a usable enemy target, is busy surviving the current fight, or cannot find a safe lane, he can reject the order.
 
@@ -525,7 +528,7 @@ Before editing teammate loadouts, check **Known Issues and Conflicts** for curre
 
 Switching away from **Simple** also changes profile customization. The saved-loadout dropdown is replaced by **Kit Loadouts**, where saved player equipment builds can be priced, purchased, or equipped using selected stash items. Secure containers are only included in **Realistic** mode.
 
-In non-Realistic modes, the automatically managed secure container provides basic medical support, including a Grizzly and surgery kit. For long raids or repeated fights, supplement this by putting extra meds in the teammate's backpack or giving them useful meds you find in raid.
+In non-Realistic modes, the automatically managed secure container provides basic medical support, including a Grizzly and surgery kit. For long raids or repeated fights, supplement this by putting extra meds in the teammate's backpack or giving them useful meds you find in the raid.
 
 ## Upcoming
 
@@ -534,7 +537,7 @@ The following are planned features in reaching a release version (1.0.0) and bey
 **Version 1.0.0:**
 
 - **Squad Budget** - restricts the maximum number of teammates you can add to your squad based on available Command Points. Command Points are gained by leveling up, keeping teammates alive, and keeping picked-up raid allies alive. Points are lost if you kill teammates or allies.
-- **Loadout Managment Reworked** - "Restricted" mode becomes "Standard" mode and "Simple" mode gets dropped
+- **Loadout Management Reworked** - "Restricted" mode becomes "Standard" mode and "Simple" mode gets dropped
 
 ### Addons:
 
@@ -549,26 +552,26 @@ Addons are standalone features that extend the mod’s core functionality. They 
 
 The mod changes bot grouping, teammate ownership, commands, and combat routing. Mods that heavily change bot AI, spawning, hostility, senses, or group behavior can conflict with it.
 
-Mods that add custom gear like belts should not be used on teammates, it can cause game crashes.
+Mods that add custom gear like belts should not be used on teammates; it can cause game crashes.
 
 The Labyrinth is a special map with special AI, not meant to AI followers. They will not spawn there.
 
 In teammate loadout editing, do not repair equipment and then move items into or out of the teammate loadout before saving. For now, repair should be the last step before saving. If the editor starts failing after this, cancel out of the Edit Loadout overlay, re-open Edit Loadout, then save without moving anything.
 
-In teammate loadout editing, if you happen to end up in a situation where you cannot save teammate loadout due to message regarding duplicate items, restart the game to recover the teammates profile. Note that any duplicate item will be stripped in the process.
+In teammate loadout editing, if you happen to end up in a situation where you cannot save the teammate loadout due to a message regarding duplicate items, restart the game to recover the teammate's profile. Note that any duplicate item will be stripped in the process.
 
 - Teammates can linger after combat. Use **Attention** to reset them.
-- Teammates might not heal their health all the way. It is a game issue, use the Heal key to force heal.
+- Teammates might not heal their health all the way. It is a game issue; use the Heal key to force heal.
 - Teleporting teammates while they are interacting with doors or other objects can leave them in a bad state.
-- **The game has navigation problems that even SAIN is not able to fully resolve. If your bots get stuck, use teleportation. In other situations, their movement is in teleportation-like bursts. Be mindful of this and stay aware of their position or you will find yourself in a fight all alone or without all your squad as they got stuck somewhere.**
+- **The game has navigation problems that even SAIN is not able to fully resolve. If your bots get stuck, use teleportation. In other situations, their movement is in teleportation-like bursts. Be mindful of this and stay aware of their position, or you will find yourself in a fight all alone or without all your squad as they got stuck somewhere.**
 - Bots can occasionally fall through faulty map geometry or navigation meshes and die below the playable area, leaving no body at the apparent death location. This is a base-game map/NavMesh issue and is not caused by pitFireTeam; once the bot has fallen through the map, the teammate and equipment may not be recoverable during that raid.
 - **Faction Hostilities** repairs missing enemy relationships but does not grant bots awareness of enemies they have not seen or heard. Followers also require Scavs to show hostile intent against you or a teammate before accepting them as enemies. If bots behave incorrectly toward the opposite PMC faction or other normally hostile factions, disable **Faction Hostilities** under **Raid Settings** and test again. This setting can conflict with other mods or settings that also attempt to repair or change faction relationships.
 - Teammates can sometimes pick up an enemy they never saw or heard. Use **Attention** to reset them. In some cases, they may keep reacquiring that enemy until the enemy is dead. This comes from the game's detection and memory logic, and broad workarounds can break normal enemy behavior.
-- SAIN can interfere with teleportation, teleporting the bot back to previous location. You may need to trigger teleportation multiple times for it to stick.
+- SAIN can interfere with teleportation, teleporting the bot back to the previous location. You may need to trigger teleportation multiple times for it to stick.
 - Teammates can occasionally have registration delay on enemies. This is buggy behavior within the game that I am not able to fix.
 - Teammates may have shaky aiming during some executions. It does not affect their performance, but can be an annoying visual glitch.
 - Bushes are cursed with SAIN. Teammates can hesitate or refuse to shoot through bushes even when they know where the enemy is. Use **Suppress** with suitable suppression weapons to force fire at the enemy location through foliage.
-- If you have problems with My Squad screen and are not on English lanuage, switch to it, to see if that works. If so, post the issue along with the language that you originally tried.
+- If you have problems with My Squad screen and are not on English language, switch to it to see if that works. If so, post the issue along with the language that you originally tried.
 
 If a teammate appears stuck, try Attention or teleportation before assuming the raid is unrecoverable.
 
