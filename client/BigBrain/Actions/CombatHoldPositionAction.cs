@@ -70,7 +70,7 @@ namespace pitTeam.BigBrain.Actions
                 BotOwner.SetPose(1f);
             }
 
-            TryPreferMarksmanPrimaryAtRange(BotOwner.Memory?.GoalEnemy);
+            TryPreferMarksmanPrimaryAtRange(BotOwner.Memory?.GoalEnemy, reason);
             FollowerCombatCommon.TryRaiseForStandingCoverShot(BotOwner, out _);
             fireOverlay.Update(
                 BotOwner.Memory?.GoalEnemy,

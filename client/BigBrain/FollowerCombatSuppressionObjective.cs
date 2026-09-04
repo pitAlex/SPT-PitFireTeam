@@ -170,7 +170,7 @@ namespace pitTeam.BigBrain
             {
                 if (string.Equals(currentDecision.Reason, AutomaticSecondarySwitchReason, StringComparison.Ordinal))
                 {
-                    if (CombatCommon.IsEligibleAutomaticSecondarySelectedAndReady())
+                    if (CombatCommon.IsEligibleAutomaticMarksmanSupportSelectedAndReady())
                     {
                         automaticSecondarySwitchPending = false;
                         automaticSecondarySwitchUntil = 0f;
@@ -191,8 +191,8 @@ namespace pitTeam.BigBrain
 
                 if (string.Equals(currentDecision.Reason, AutomaticSecondarySettleReason, StringComparison.Ordinal))
                 {
-                    if (CombatCommon.IsEligibleAutomaticSecondarySelectedAndReady() ||
-                        CombatCommon.IsWeaponSelectionSettledForAutomaticSecondaryRequest())
+                    if (CombatCommon.IsEligibleAutomaticMarksmanSupportSelectedAndReady() ||
+                        CombatCommon.IsWeaponSelectionSettledForAutomaticMarksmanSupportRequest())
                     {
                         automaticSecondarySettleUntil = 0f;
                         return new AICoreActionEnd("suppressionAutomaticSecondarySettled", true);
@@ -245,12 +245,19 @@ namespace pitTeam.BigBrain
             return reason != null && reason.StartsWith(ReasonPrefix, StringComparison.Ordinal);
         }
 
+        internal static bool IsAutomaticSupportIntentReason(string? reason)
+        {
+            return string.Equals(reason, AutomaticSecondarySwitchReason, StringComparison.Ordinal) ||
+                   string.Equals(reason, AutomaticSecondarySettleReason, StringComparison.Ordinal) ||
+                   reason?.StartsWith($"{ReasonPrefix}.weapon.", StringComparison.Ordinal) == true;
+        }
+
         private bool TryGetAutomaticSecondarySwitchDecision(
             out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision,
             out bool ready)
         {
             decision = default;
-            ready = CombatCommon.IsEligibleAutomaticSecondarySelectedAndReady();
+            ready = CombatCommon.IsEligibleAutomaticMarksmanSupportSelectedAndReady();
             if (ready)
             {
                 automaticSecondarySwitchPending = false;
@@ -272,7 +279,7 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
-            if (!CombatCommon.IsWeaponSelectionSettledForAutomaticSecondaryRequest())
+            if (!CombatCommon.IsWeaponSelectionSettledForAutomaticMarksmanSupportRequest())
             {
                 if (automaticSecondarySettleUntil <= Time.time)
                 {
@@ -287,8 +294,8 @@ namespace pitTeam.BigBrain
 
             automaticSecondarySettleUntil = 0f;
 
-            if (!CombatCommon.HasLoadedAutomaticSecondaryForPush() ||
-                !CombatCommon.TryRequestEligibleAutomaticSecondary())
+            if (!CombatCommon.HasLoadedAutomaticMarksmanSupportWeapon() ||
+                !CombatCommon.TryRequestEligibleAutomaticMarksmanSupport())
             {
                 return false;
             }

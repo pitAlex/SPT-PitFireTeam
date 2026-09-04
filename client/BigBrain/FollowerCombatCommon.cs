@@ -219,6 +219,11 @@ namespace pitTeam.BigBrain
             EquipmentSlot.Backpack,
             EquipmentSlot.SecuredContainer
         };
+        private static readonly EquipmentSlot[] MarksmanAutomaticSupportSlots =
+        {
+            EquipmentSlot.SecondPrimaryWeapon,
+            EquipmentSlot.Holster
+        };
         private static readonly string[] DefaultBossObjectiveCoverBreakReasons =
         {
             "coverHold",
@@ -3200,7 +3205,7 @@ namespace pitTeam.BigBrain
             return enemyInfo.Person?.HealthController?.IsAlive == true;
         }
 
-        private static bool HasActiveCombatEnemy(BotOwner botOwner, EnemyInfo? goalEnemy)
+        internal static bool HasActiveCombatEnemy(BotOwner botOwner, EnemyInfo? goalEnemy)
         {
             if (botOwner?.Memory?.HaveEnemy != true || goalEnemy == null)
             {
@@ -14005,7 +14010,7 @@ namespace pitTeam.BigBrain
 
         /// <summary>
         /// Returns true if the bot already has a loaded automatic weapon equipped or can swap to a
-        /// loaded automatic second primary for close combat.
+        /// loaded automatic marksman support weapon in the second-primary or holster slot.
         /// </summary>
         public bool HasAutomaticCloseCombatWeaponAvailable()
         {
@@ -14014,14 +14019,12 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            if (TryGetSelectedLoadedAutomaticPrimary(out _))
+            if (TryGetSelectedLoadedAutomaticCloseWeapon(out _))
             {
                 return true;
             }
 
-            BotWeaponSelector? selector = botOwner.WeaponManager?.Selector;
-            return selector?.CanChangeToSecondWeapons == true &&
-                   HasLoadedAutomaticSecondaryForPush();
+            return TryGetEligibleAutomaticMarksmanSupportWeaponCached(out _, out _);
         }
 
         /// <summary>
@@ -14037,7 +14040,7 @@ namespace pitTeam.BigBrain
                 selector.IsChanging ||
                 !selector.IsWeaponReady ||
                 weaponManager?.IsWeaponReady == false ||
-                !TryGetSelectedLoadedAutomaticPrimary(out Weapon? selectedWeapon))
+                !TryGetSelectedLoadedAutomaticCloseWeapon(out Weapon? selectedWeapon))
             {
                 return false;
             }
@@ -14047,11 +14050,11 @@ namespace pitTeam.BigBrain
         }
 
         /// <summary>
-        /// Requests the eligible automatic second primary. A true result means this caller owns
+        /// Requests the eligible automatic marksman support weapon. A true result means this caller owns
         /// one accepted asynchronous switch request; already-selected but unready weapons are not
         /// reported as a new request.
         /// </summary>
-        public bool TryRequestAutomaticSecondaryForCloseCombat()
+        public bool TryRequestAutomaticSupportForCloseCombat()
         {
             BotWeaponSelector? selector = botOwner?.WeaponManager?.Selector;
             if (selector == null || !HasAutomaticCloseCombatWeaponAvailable())
@@ -14059,48 +14062,50 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            if (TryGetSelectedLoadedAutomaticPrimary(out _))
+            if (TryGetSelectedLoadedAutomaticCloseWeapon(out _))
             {
                 return false;
             }
 
-            if (selector.IsChanging)
+            if (selector.IsChanging ||
+                !TryGetEligibleAutomaticMarksmanSupportWeaponCached(
+                    out _,
+                    out EquipmentSlot supportSlot))
             {
                 return false;
             }
 
-            return selector.CanChangeToSecondWeapons && selector.ChangeToSecond();
+            return TryRequestMarksmanAutomaticSupportSlot(selector, supportSlot);
         }
 
         /// <summary>
-        /// Ordered marksman suppression is explicitly tied to the eligible automatic second
-        /// primary, not merely to any weapon capable of sustained fire.
+        /// Ordered marksman suppression is explicitly tied to an eligible automatic support
+        /// weapon, not merely to any weapon capable of sustained fire.
         /// </summary>
-        public bool IsEligibleAutomaticSecondarySelectedAndReady()
+        public bool IsEligibleAutomaticMarksmanSupportSelectedAndReady()
         {
             BotWeaponManager? weaponManager = botOwner?.WeaponManager;
             BotWeaponSelector? selector = weaponManager?.Selector;
-            Weapon? firstPrimary = GetFirstPrimaryWeapon(botOwner);
-            Weapon? secondPrimary = GetSecondPrimaryWeapon(botOwner);
             if (selector == null ||
-                selector.LastEquipmentSlot != EquipmentSlot.SecondPrimaryWeapon ||
                 selector.IsChanging ||
                 !selector.IsWeaponReady ||
                 weaponManager?.IsWeaponReady == false ||
-                !IsAutomaticSecondaryUsableForPush(firstPrimary, secondPrimary))
+                !TryGetSelectedEligibleAutomaticMarksmanSupportWeaponCached(
+                    out Weapon? supportWeapon,
+                    out _))
             {
                 return false;
             }
 
             Weapon? activeWeapon = weaponManager?.ShootController?.Item ?? weaponManager?.CurrentWeapon;
-            return IsSameWeapon(activeWeapon, secondPrimary);
+            return IsSameWeapon(activeWeapon, supportWeapon);
         }
 
         /// <summary>
         /// True only when EFT's selector and weapon manager have finished any in-flight hands
         /// transition. LastEquipmentSlot is not authoritative until this boundary is reached.
         /// </summary>
-        public bool IsWeaponSelectionSettledForAutomaticSecondaryRequest()
+        public bool IsWeaponSelectionSettledForAutomaticMarksmanSupportRequest()
         {
             BotWeaponManager? weaponManager = botOwner?.WeaponManager;
             BotWeaponSelector? selector = weaponManager?.Selector;
@@ -14112,36 +14117,31 @@ namespace pitTeam.BigBrain
         }
 
         /// <summary>
-        /// Issues one switch to the eligible automatic second primary used by an automatic-secondary
-        /// suppression order. This returns true only for a request accepted at a settled selector
+        /// Issues one switch to the eligible automatic weapon used by a marksman support/suppression
+        /// order. This returns true only for a request accepted at a settled selector
         /// boundary; callers own and wait on that one asynchronous request.
         /// </summary>
-        public bool TryRequestEligibleAutomaticSecondary()
+        public bool TryRequestEligibleAutomaticMarksmanSupport()
         {
             BotWeaponSelector? selector = botOwner?.WeaponManager?.Selector;
-            Weapon? firstPrimary = GetFirstPrimaryWeapon(botOwner);
-            Weapon? secondPrimary = GetSecondPrimaryWeapon(botOwner);
             if (selector == null ||
-                !IsWeaponSelectionSettledForAutomaticSecondaryRequest() ||
-                !IsAutomaticSecondaryUsableForPush(firstPrimary, secondPrimary))
+                !IsWeaponSelectionSettledForAutomaticMarksmanSupportRequest() ||
+                !TryGetEligibleAutomaticMarksmanSupportWeaponCached(
+                    out _,
+                    out EquipmentSlot supportSlot))
             {
                 return false;
             }
 
-            if (selector.LastEquipmentSlot == EquipmentSlot.SecondPrimaryWeapon)
+            if (selector.LastEquipmentSlot == supportSlot)
             {
                 return false;
             }
 
-            if (!selector.CanChangeToSecondWeapons)
-            {
-                return false;
-            }
-
-            return selector.ChangeToSecond();
+            return TryRequestMarksmanAutomaticSupportSlot(selector, supportSlot);
         }
 
-        private bool TryGetSelectedLoadedAutomaticPrimary(out Weapon? weapon)
+        private bool TryGetSelectedLoadedAutomaticCloseWeapon(out Weapon? weapon)
         {
             weapon = null;
             BotWeaponSelector? selector = botOwner?.WeaponManager?.Selector;
@@ -14153,22 +14153,20 @@ namespace pitTeam.BigBrain
             if (selector.LastEquipmentSlot == EquipmentSlot.FirstPrimaryWeapon)
             {
                 weapon = GetFirstPrimaryWeapon(botOwner);
-                return IsAutomaticWeapon(weapon) && CountLoadedRounds(weapon) > 0;
+                if (IsAutomaticWeapon(weapon) && CountLoadedRounds(weapon) > 0)
+                {
+                    return true;
+                }
+
+                weapon = null;
+                return false;
             }
 
-            if (selector.LastEquipmentSlot != EquipmentSlot.SecondPrimaryWeapon)
+            if (!TryGetSelectedEligibleAutomaticMarksmanSupportWeaponCached(out weapon, out _))
             {
                 return false;
             }
 
-            Weapon? firstPrimary = GetFirstPrimaryWeapon(botOwner);
-            Weapon? secondPrimary = GetSecondPrimaryWeapon(botOwner);
-            if (!IsAutomaticSecondaryUsableForPush(firstPrimary, secondPrimary))
-            {
-                return false;
-            }
-
-            weapon = secondPrimary;
             return true;
         }
 
@@ -14207,6 +14205,16 @@ namespace pitTeam.BigBrain
             return IsAutomaticSecondaryUsableForPush(primaryWeapon, secondaryWeapon);
         }
 
+        public bool HasLoadedAutomaticMarksmanSupportWeapon()
+        {
+            return TryGetEligibleAutomaticMarksmanSupportWeaponCached(out _, out _);
+        }
+
+        public static bool HasLoadedAutomaticMarksmanSupportWeapon(BotOwner? owner)
+        {
+            return TryGetEligibleAutomaticMarksmanSupportWeapon(owner, out _, out _);
+        }
+
         public bool TrySwitchToAutomaticSecondaryForShotgunDistance()
         {
             return TrySwitchToAutomaticSecondary(requireCloseQuarter: false, requireShotgunPrimary: true, out _);
@@ -14231,6 +14239,46 @@ namespace pitTeam.BigBrain
             }
 
             return false;
+        }
+
+        public bool IsUsingAutomaticMarksmanSupportOverNonAutomaticPrimary()
+        {
+            return IsUsingAutomaticMarksmanSupportOverNonAutomaticPrimary(botOwner);
+        }
+
+        public static bool IsUsingAutomaticMarksmanSupportOverNonAutomaticPrimary(BotOwner? owner)
+        {
+            BotWeaponSelector? selector = owner?.WeaponManager?.Selector;
+            if (selector == null)
+            {
+                return false;
+            }
+
+            EquipmentSlot selectedSlot = selector.LastEquipmentSlot;
+            if (selectedSlot != EquipmentSlot.SecondPrimaryWeapon &&
+                selectedSlot != EquipmentSlot.Holster)
+            {
+                return false;
+            }
+
+            Weapon? primaryWeapon = GetFirstPrimaryWeapon(owner);
+            Weapon? supportWeapon = GetMarksmanSupportWeapon(owner, selectedSlot);
+            return primaryWeapon != null &&
+                   !IsAutomaticWeapon(primaryWeapon) &&
+                   IsAutomaticWeapon(supportWeapon);
+        }
+
+        public bool TrySwitchBackToPrimaryFromAutomaticMarksmanSupport()
+        {
+            BotWeaponSelector? selector = botOwner?.WeaponManager?.Selector;
+            if (!IsUsingAutomaticMarksmanSupportOverNonAutomaticPrimary() ||
+                selector == null ||
+                selector.IsChanging)
+            {
+                return false;
+            }
+
+            return selector.ChangeToMain();
         }
 
         public static bool IsAutomaticSecondaryPushReason(string? reason)
@@ -14361,6 +14409,110 @@ namespace pitTeam.BigBrain
                    secondaryWeapon?.GetCurrentMagazine()?.Cartridges?.Count > 0;
         }
 
+        private bool TryGetSelectedEligibleAutomaticMarksmanSupportWeaponCached(
+            out Weapon? supportWeapon,
+            out EquipmentSlot supportSlot)
+        {
+            supportWeapon = null;
+            supportSlot = EquipmentSlot.Scabbard;
+            BotWeaponSelector? selector = botOwner?.WeaponManager?.Selector;
+            if (selector == null)
+            {
+                return false;
+            }
+
+            EquipmentSlot selectedSlot = selector.LastEquipmentSlot;
+            if (selectedSlot != EquipmentSlot.SecondPrimaryWeapon &&
+                selectedSlot != EquipmentSlot.Holster)
+            {
+                return false;
+            }
+
+            Weapon? candidate = GetMarksmanSupportWeapon(botOwner, selectedSlot);
+            if (!IsAutomaticSecondaryUsableForPushCached(GetFirstPrimaryWeapon(botOwner), candidate))
+            {
+                return false;
+            }
+
+            supportWeapon = candidate;
+            supportSlot = selectedSlot;
+            return true;
+        }
+
+        private bool TryGetEligibleAutomaticMarksmanSupportWeaponCached(
+            out Weapon? supportWeapon,
+            out EquipmentSlot supportSlot)
+        {
+            if (TryGetSelectedEligibleAutomaticMarksmanSupportWeaponCached(
+                    out supportWeapon,
+                    out supportSlot))
+            {
+                return true;
+            }
+
+            Weapon? primaryWeapon = GetFirstPrimaryWeapon(botOwner);
+            foreach (EquipmentSlot candidateSlot in MarksmanAutomaticSupportSlots)
+            {
+                Weapon? candidate = GetMarksmanSupportWeapon(botOwner, candidateSlot);
+                if (!IsAutomaticSecondaryUsableForPushCached(primaryWeapon, candidate))
+                {
+                    continue;
+                }
+
+                supportWeapon = candidate;
+                supportSlot = candidateSlot;
+                return true;
+            }
+
+            supportWeapon = null;
+            supportSlot = EquipmentSlot.Scabbard;
+            return false;
+        }
+
+        private static bool TryGetEligibleAutomaticMarksmanSupportWeapon(
+            BotOwner? owner,
+            out Weapon? supportWeapon,
+            out EquipmentSlot supportSlot)
+        {
+            Weapon? primaryWeapon = GetFirstPrimaryWeapon(owner);
+            foreach (EquipmentSlot candidateSlot in MarksmanAutomaticSupportSlots)
+            {
+                Weapon? candidate = GetMarksmanSupportWeapon(owner, candidateSlot);
+                if (!IsAutomaticSecondaryUsableForPush(primaryWeapon, candidate))
+                {
+                    continue;
+                }
+
+                supportWeapon = candidate;
+                supportSlot = candidateSlot;
+                return true;
+            }
+
+            supportWeapon = null;
+            supportSlot = EquipmentSlot.Scabbard;
+            return false;
+        }
+
+        private static Weapon? GetMarksmanSupportWeapon(BotOwner? owner, EquipmentSlot slot)
+        {
+            return slot switch
+            {
+                EquipmentSlot.SecondPrimaryWeapon => GetSecondPrimaryWeapon(owner),
+                EquipmentSlot.Holster => GetHolsterWeapon(owner),
+                _ => null,
+            };
+        }
+
+        private static bool TryRequestMarksmanAutomaticSupportSlot(
+            BotWeaponSelector selector,
+            EquipmentSlot supportSlot)
+        {
+            return selector != null &&
+                   (supportSlot == EquipmentSlot.SecondPrimaryWeapon ||
+                    supportSlot == EquipmentSlot.Holster) &&
+                   selector.TryChangeToSlot(supportSlot, false);
+        }
+
         private static bool IsAutomaticSecondaryUsableForPush(Weapon? primaryWeapon, Weapon? secondaryWeapon)
         {
             return primaryWeapon != null &&
@@ -14468,6 +14620,13 @@ namespace pitTeam.BigBrain
             Player? player = owner?.GetPlayer;
             return player?.InventoryController?.Inventory?.Equipment
                 ?.GetSlot(EquipmentSlot.SecondPrimaryWeapon)?.ContainedItem as Weapon;
+        }
+
+        internal static Weapon? GetHolsterWeapon(BotOwner? owner)
+        {
+            Player? player = owner?.GetPlayer;
+            return player?.InventoryController?.Inventory?.Equipment
+                ?.GetSlot(EquipmentSlot.Holster)?.ContainedItem as Weapon;
         }
 
         private static bool IsSameWeapon(Weapon? left, Weapon? right)

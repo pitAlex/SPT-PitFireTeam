@@ -14,7 +14,6 @@ namespace pitTeam.BigBrain
         private const float RepositionCooldownSeconds = 4f;
         private const float RegroupSameLevelTolerance = 1.75f;
         private const float MarksmanDefaultAutoSearchAggression = 0.3f;
-        private const float CloseIntentRecentSeenSeconds = 2.25f;
         private const float FireSupportSettleSeconds = 2.5f;
         private const string FireSupportHoldReason = "sniper.fireSupportHold";
         private const string NoActionHoldReason = "sniper.noActionHold";
@@ -34,7 +33,7 @@ namespace pitTeam.BigBrain
         private const float IndirectThreatRecentHitSeconds = 3f;
         private const float IndirectThreatSuppressMaxDistance = 260f;
         private const string CloseWeaponPrepareHoldReason = "sniper.closeWeaponPrepare";
-        private const float CloseWeaponPrepareTimeoutSeconds = 1.5f;
+        private const float CloseWeaponPrepareTimeoutSeconds = 3f;
         private const float CloseWeaponPrepareRetryCooldownSeconds = 1f;
 
         private readonly CommittedCoverPhaseState repositionPhase = new CommittedCoverPhaseState();
@@ -71,7 +70,7 @@ namespace pitTeam.BigBrain
             CombatCommon.ResetRecoveryNoCoverCommitment();
             if (!CombatCommon.HasActiveCombatEnemy())
             {
-                CombatCommon.TrySwitchBackToPrimaryFromAutomaticSecondary();
+                CombatCommon.TrySwitchBackToPrimaryFromAutomaticMarksmanSupport();
             }
         }
 
@@ -467,7 +466,7 @@ namespace pitTeam.BigBrain
 
             // Only an accepted switch request starts the bounded preparation hold. An unrelated
             // reload/hands transition must not be mistaken for a switch owned by this tactic.
-            if (!CombatCommon.TryRequestAutomaticSecondaryForCloseCombat())
+            if (!CombatCommon.TryRequestAutomaticSupportForCloseCombat())
             {
                 BlockCloseWeaponPreparationRetry();
                 return false;
@@ -590,7 +589,7 @@ namespace pitTeam.BigBrain
         private static bool ShouldUseCloseIntentSecondary(
             AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
-            return IsCloseIntentDecisionReason(decision.Reason);
+            return IsAutomaticSupportIntentReason(decision.Reason);
         }
 
         private static bool IsCloseIntentDecisionReason(string? reason)
@@ -601,19 +600,23 @@ namespace pitTeam.BigBrain
                     reason.StartsWith("sniper.closeAuto", StringComparison.Ordinal));
         }
 
+        internal static bool IsAutomaticSupportIntentReason(string? reason)
+        {
+            return IsCloseIntentDecisionReason(reason) ||
+                   string.Equals(reason, CloseWeaponPrepareHoldReason, StringComparison.Ordinal) ||
+                   FollowerCombatSuppressionObjective.IsAutomaticSupportIntentReason(reason);
+        }
+
         private bool CanUseCloseIntentSecondary(EnemyInfo goalEnemy)
         {
-            if (goalEnemy == null || goalEnemy.Distance > CombatDistanceConfiguration.Instance.GetCloseQuarterDistance())
-            {
-                return false;
-            }
+            return CanUseAutomaticSupportForCloseThreat(BotOwner, goalEnemy);
+        }
 
-            if (goalEnemy.IsVisible && goalEnemy.CanShoot)
-            {
-                return true;
-            }
-
-            return Time.time - goalEnemy.PersonalSeenTime <= CloseIntentRecentSeenSeconds;
+        internal static bool CanUseAutomaticSupportForCloseThreat(BotOwner botOwner, EnemyInfo? goalEnemy)
+        {
+            return FollowerCombatCommon.HasActiveCombatEnemy(botOwner, goalEnemy) &&
+                   goalEnemy != null &&
+                   goalEnemy.Distance <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance();
         }
 
         private void TrySwitchToPrimaryForSniperDecision()
@@ -624,9 +627,10 @@ namespace pitTeam.BigBrain
                 return;
             }
 
-            if (selector.LastEquipmentSlot != EquipmentSlot.FirstPrimaryWeapon)
+            if (selector.LastEquipmentSlot != EquipmentSlot.FirstPrimaryWeapon &&
+                !selector.IsChanging)
             {
-                selector.TryChangeToMain();
+                selector.ChangeToMain();
             }
         }
 
@@ -640,7 +644,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            if (!CombatCommon.IsUsingAutomaticSecondaryOverNonAutomaticPrimary())
+            if (!CombatCommon.IsUsingAutomaticMarksmanSupportOverNonAutomaticPrimary())
             {
                 return false;
             }

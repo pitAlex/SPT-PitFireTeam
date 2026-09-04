@@ -162,8 +162,8 @@ Marksman behavior:
 - Generic `GoForward`/push is not a marksman assault order.
 - Marksman supports team push/search by finding a shooting position or support cover.
 - Marksman support positions reject wrong-level candidates when the boss/team is vertically separated, and reject directly close candidates that are actually path-separated from the boss.
-- If close automatic support is allowed by marksman aggression and safety checks, marksman can use automatic secondary behavior.
-- At support/reposition ranges, marksman switches back to the primary rifle instead of keeping an automatic secondary selected from a stale or non-close contact.
+- If close automatic support is allowed by marksman aggression and safety checks, marksman can use an eligible automatic support weapon from either `SecondPrimaryWeapon` or `Holster`.
+- At support/reposition ranges, marksman switches back to the primary rifle instead of keeping an automatic support weapon selected after the enemy leaves close-quarter danger.
 - If a nearby Rifleman can reasonably take the push, marksman should prefer support/reposition instead of becoming the primary pusher.
 
 ### Suppression Order
@@ -177,7 +177,7 @@ Objective behavior:
 - With no crosshair enemy, the order can fan out to eligible suppressors, but each follower uses only his own living `GoalEnemy`; it never falls back to an arbitrary boss-visible target or a raw point along the boss look ray.
 - Squad suppression skips followers already healing, recently damaged, under fire, dogfighting, actively shooting, in close visible contact, or already committed to emergency/fight movement.
 - Squad suppression allows no more than one grenadier. The grenadier is chosen from launcher-capable Rifleman/default followers by its own usable hostile target distance, direct launch lane, friendly impact safety, and friendly lane safety.
-- Rifleman/default followers suppress with suppress-capable current weapons. A directed same-target Marksman may accept with a loaded automatic second primary; without a crosshair target, a Marksman joins only when there is no active Rifleman/default in the squad.
+- Rifleman/default followers suppress with suppress-capable current weapons. A directed same-target Marksman may accept with a loaded eligible automatic support weapon in either the second-primary or holster slot; without a crosshair target, a Marksman joins only when there is no active Rifleman/default in the squad.
 - The command is consumed into an objective, like regroup, so it is not polled inside the normal Default decision tree.
 - It does not interrupt active healing or an already active fight action; it waits until that action's normal end logic allows a switch. The directed target profile is retained with the command so a later `GoalEnemy` setter change cannot silently redirect the suppression objective.
 - It targets the current enemy's best known shoot/suppress point.
@@ -579,11 +579,11 @@ Marksman behavior:
 - uses the shared recovery predicate, recovery-qualified cover selection, recovery movement/arrival contract, and bounded no-cover fight/suppress/hold retry instead of treating a firing position as survival cover
 - uses prepared-break decisions so support/protection, renewed pressure, and immediate fire only break hold when the concrete successor is retained for the next decision pass
 - ignores generic assault push behavior unless marksman policy asks for close support/search
-- can use automatic-secondary close search only when the same loaded-ammo and penetration policy used by automatic push accepts that second primary; holster weapons do not qualify
-- close automatic-secondary preparation is transactional: a viable visible shot keeps the current weapon, while unseen close-search intent waits in a bounded enemy-facing hold until the selected primary is active and both selector and weapon manager report it ready
+- can use automatic-support close search only when the same loaded-ammo and penetration policy used by automatic push accepts a full-auto weapon in either `SecondPrimaryWeapon` or `Holster`
+- close automatic-support preparation is transactional: a viable visible shot keeps the current weapon, while unseen close-search intent waits for up to `3s` in an enemy-facing hold until the selected support weapon is active and both selector and weapon manager report it ready
 - close automatic search uses a concrete cover-backed tactical destination at least `16m` from the enemy anchor; it does not fall back to the shared simple-search action that walks directly to the enemy position
 - does not run proactive automatic close-search while temporary boss `HoldPosition` aggression override is active
-- switches back to primary when returning to support/reposition marksman decisions, and when combat drops before patrol reload maintenance starts
+- keeps an automatic second-primary or holster weapon while the active enemy remains inside close-quarter danger, including support/reposition/no-action holds at the same position; switches back to primary only after the enemy leaves close-quarter range, becomes invalid, or combat drops before patrol reload maintenance starts
 - supports team push/search through firing-position support, not blind rushing
 - consumes ordered suppression only for the boss-selected automatic-secondary fallback; ordinary generic Marksman suppression orders remain rejected
 - initializes autonomous `autoSuppress.sniper.*` through the shared bounded suppression lifecycle, including its protected opening, shot/timeout accounting, and restart guard
