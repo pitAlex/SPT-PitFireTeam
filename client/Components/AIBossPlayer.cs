@@ -3538,7 +3538,7 @@ namespace pitTeam.Components
                 bool isMarksman = followerData.CombatTactic == FollowerCombatTactic.Marksman;
                 bool useAutomaticSecondary = isMarksman &&
                                              (playerFacingEnemy != null || !squadHasRifleman) &&
-                                             FollowerCombatCommon.HasLoadedAutomaticSecondaryForPush(follower);
+                                             FollowerCombatCommon.HasLoadedAutomaticMarksmanSupportWeapon(follower);
                 if (isMarksman && !useAutomaticSecondary)
                 {
                     continue;

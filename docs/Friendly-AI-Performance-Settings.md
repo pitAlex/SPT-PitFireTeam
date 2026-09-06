@@ -10,6 +10,8 @@ This document identifies the settings and runtime calculations that determine fo
 
 For frame-time cost, multi-follower scaling, and Battle Recorder A/B settings, see `docs/Runtime-Performance-Testing.md`.
 
+For the inherited-difficulty finding and the hard + 100% calibration reset, see [Follower Difficulty Baseline: Two-Phase Test Plan](Follower-Difficulty-Baseline-Testing.md). Phase 1 is saved-data preparation and testing; recruitment normalization and a runtime baseline override remain deferred to Phase 2.
+
 The SAIN Default baseline, follower-local values model, persistent per-teammate percentages, profile UI, runtime modifier, and final aim-time patch are implemented. Runtime gameplay calibration across the validation matrix remains pending. `docs/SAIN-Integration.md` is authoritative for the addon boundary.
 
 ## Executive conclusions

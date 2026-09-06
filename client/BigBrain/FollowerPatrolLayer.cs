@@ -120,6 +120,7 @@ namespace pitTeam.BigBrain
         private readonly HashSet<string> stowedTacticalDeviceWeaponsProcessed = new HashSet<string>(StringComparer.Ordinal);
         private EquipmentSlot? forcedTopOffSlot = null;
         private EquipmentSlot? returnAfterTopOffSlot = null;
+        private EquipmentSlot? patrolReloadFinalSlot = null;
         private string? reloadingWeaponId = null;
         private float nextPatrolLauncherFallbackRecordAt = 0f;
         private float nextStowedTacticalDeviceCheckAt = 0f;
@@ -1001,6 +1002,7 @@ namespace pitTeam.BigBrain
             reloadWeaponsProcessed.Clear();
             forcedTopOffSlot = null;
             returnAfterTopOffSlot = null;
+            patrolReloadFinalSlot = null;
             reloadingWeaponId = null;
             nextPatrolLauncherFallbackRecordAt = 0f;
             nextReloadCheckAt = Time.time + OutOfCombatReloadInitialCooldown;
@@ -1225,6 +1227,25 @@ namespace pitTeam.BigBrain
             }
 
             var selector = BotOwner.WeaponManager.Selector;
+            CapturePatrolReloadFinalSlot(selector);
+
+            if (!reloadingInProgress &&
+                forcedTopOffSlot.HasValue &&
+                !TryConfirmForcedTopOffSwitch(selector))
+            {
+                nextReloadCheckAt = Time.time + 0.25f;
+                return;
+            }
+
+            if (!reloadingInProgress &&
+                !forcedTopOffSlot.HasValue &&
+                returnAfterTopOffSlot.HasValue &&
+                !TryCompleteReturnAfterTopOffSwitch(selector))
+            {
+                nextReloadCheckAt = Time.time + 0.25f;
+                return;
+            }
+
             if (reloadingInProgress)
             {
                 // EFT reload completion is not just BotReload.Reloading. Wait for hands/weapon readiness
@@ -1238,7 +1259,7 @@ namespace pitTeam.BigBrain
                 MarkReloadWeaponProcessed(reloadingWeaponId);
                 ClearOutOfCombatReloadAttemptBudget(reloadingWeaponId);
                 reloadingWeaponId = null;
-                TryReturnAfterTopOffSwitch(selector);
+                TryCompleteReturnAfterTopOffSwitch(selector);
                 nextReloadCheckAt = Time.time + OutOfCombatReloadSlotCooldown;
                 nextMagazineFillCheckAt = Time.time + OutOfCombatReloadFullCycleCooldown;
                 return;
@@ -1247,6 +1268,12 @@ namespace pitTeam.BigBrain
             if (!BotOwner.WeaponManager.IsWeaponReady || BotOwner.WeaponManager.Reload.Reloading) return;
             if (AreAllReloadWeaponsProcessed())
             {
+                if (!TryRestorePatrolReloadFinalSlot(selector))
+                {
+                    nextReloadCheckAt = Time.time + 0.25f;
+                    return;
+                }
+
                 // Every carried weapon has reached a terminal reload decision for this patrol window.
                 nextReloadCheckAt = Time.time + OutOfCombatReloadFullCycleCooldown;
                 return;
@@ -1289,7 +1316,7 @@ namespace pitTeam.BigBrain
                     {
                         MarkReloadSlotFailed(currentSlot);
                         MarkReloadWeaponProcessed(currentWeaponId);
-                        TryReturnAfterTopOffSwitch(selector);
+                        TryCompleteReturnAfterTopOffSwitch(selector);
                     }
 
                     forcedTopOffSlot = null;
@@ -1533,6 +1560,11 @@ namespace pitTeam.BigBrain
                     return true;
                 }
 
+                if (forcedTopOffSlot == slot)
+                {
+                    forcedTopOffSlot = null;
+                }
+
                 reloadSlotsTried.Add(slot);
                 MarkReloadWeaponProcessed(weapon.Id);
                 processedSlot = true;
@@ -1546,13 +1578,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            bool switched = slot switch
-            {
-                EquipmentSlot.FirstPrimaryWeapon => selector.ChangeToMain(),
-                EquipmentSlot.SecondPrimaryWeapon => selector.TryChangeToSlot(EquipmentSlot.SecondPrimaryWeapon, false),
-                EquipmentSlot.Holster => selector.TryChangeToSlot(EquipmentSlot.Holster, false),
-                _ => false,
-            };
+            bool switched = RequestPatrolWeaponSlot(selector, slot);
 
             if (switched)
             {
@@ -1560,7 +1586,7 @@ namespace pitTeam.BigBrain
                 forcedTopOffSlot = slot;
                 if (previousSlot != slot && !reloadLootedPrimaryLauncher)
                 {
-                    returnAfterTopOffSlot = previousSlot;
+                    returnAfterTopOffSlot = NormalizePatrolReturnSlot(selector, previousSlot);
                 }
             }
 
@@ -1791,30 +1817,148 @@ namespace pitTeam.BigBrain
             return ex.Message?.IndexOf("Collection was modified", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        private void TryReturnAfterTopOffSwitch(BotWeaponSelector selector)
+        private void CapturePatrolReloadFinalSlot(BotWeaponSelector selector)
         {
-            if (!returnAfterTopOffSlot.HasValue ||
-                selector == null ||
-                selector.LastEquipmentSlot == returnAfterTopOffSlot.Value)
+            if (patrolReloadFinalSlot.HasValue || selector == null)
             {
-                returnAfterTopOffSlot = null;
                 return;
             }
 
-            switch (returnAfterTopOffSlot.Value)
+            patrolReloadFinalSlot = NormalizePatrolReturnSlot(selector, selector.LastEquipmentSlot);
+        }
+
+        private EquipmentSlot NormalizePatrolReturnSlot(BotWeaponSelector selector, EquipmentSlot requestedSlot)
+        {
+            if ((requestedSlot == EquipmentSlot.FirstPrimaryWeapon ||
+                 requestedSlot == EquipmentSlot.SecondPrimaryWeapon) &&
+                GetWeaponInSlot(requestedSlot) != null)
             {
-                case EquipmentSlot.FirstPrimaryWeapon:
-                    selector.ChangeToMain();
-                    break;
-                case EquipmentSlot.SecondPrimaryWeapon:
-                    selector.TryChangeToSlot(EquipmentSlot.SecondPrimaryWeapon, false);
-                    break;
-                case EquipmentSlot.Holster:
-                    selector.TryChangeToSlot(EquipmentSlot.Holster, false);
-                    break;
+                return requestedSlot;
             }
 
-            returnAfterTopOffSlot = null;
+            EquipmentSlot mainSlot = selector._mainWeapon;
+            if ((mainSlot == EquipmentSlot.FirstPrimaryWeapon ||
+                 mainSlot == EquipmentSlot.SecondPrimaryWeapon) &&
+                GetWeaponInSlot(mainSlot) != null)
+            {
+                return mainSlot;
+            }
+
+            if (GetWeaponInSlot(EquipmentSlot.FirstPrimaryWeapon) != null)
+            {
+                return EquipmentSlot.FirstPrimaryWeapon;
+            }
+
+            return GetWeaponInSlot(EquipmentSlot.SecondPrimaryWeapon) != null
+                ? EquipmentSlot.SecondPrimaryWeapon
+                : requestedSlot;
+        }
+
+        private bool TryCompleteReturnAfterTopOffSwitch(BotWeaponSelector selector)
+        {
+            if (!returnAfterTopOffSlot.HasValue)
+            {
+                return true;
+            }
+
+            EquipmentSlot targetSlot = NormalizePatrolReturnSlot(selector, returnAfterTopOffSlot.Value);
+            returnAfterTopOffSlot = targetSlot;
+            if (GetWeaponInSlot(targetSlot) == null)
+            {
+                returnAfterTopOffSlot = null;
+                return true;
+            }
+
+            if (IsPatrolWeaponSlotConfirmed(selector, targetSlot))
+            {
+                returnAfterTopOffSlot = null;
+                return true;
+            }
+
+            if (selector == null || selector.IsChanging || !selector.IsWeaponReady ||
+                BotOwner?.WeaponManager?.IsWeaponReady != true)
+            {
+                return false;
+            }
+
+            RequestPatrolWeaponSlot(selector, targetSlot);
+            return false;
+        }
+
+        private bool TryConfirmForcedTopOffSwitch(BotWeaponSelector selector)
+        {
+            if (!forcedTopOffSlot.HasValue)
+            {
+                return true;
+            }
+
+            EquipmentSlot targetSlot = forcedTopOffSlot.Value;
+            Weapon? targetWeapon = GetWeaponInSlot(targetSlot);
+            if (targetWeapon == null)
+            {
+                forcedTopOffSlot = null;
+                return true;
+            }
+
+            // A terminal top-off decision may queue restoration of the prior weapon. Do not let
+            // the completed target keep fighting that restoration on later patrol ticks.
+            if (IsReloadWeaponProcessed(targetWeapon))
+            {
+                forcedTopOffSlot = null;
+                return true;
+            }
+
+            if (IsPatrolWeaponSlotConfirmed(selector, targetSlot))
+            {
+                return true;
+            }
+
+            if (selector == null || selector.IsChanging || !selector.IsWeaponReady ||
+                BotOwner?.WeaponManager?.IsWeaponReady != true)
+            {
+                return false;
+            }
+
+            if (IsOutOfCombatReloadSwitchBudgetSpent(targetSlot, targetWeapon))
+            {
+                forcedTopOffSlot = null;
+                return true;
+            }
+
+            RecordOutOfCombatReloadSwitchAttempt(targetSlot, targetWeapon);
+            RequestPatrolWeaponSlot(selector, targetSlot);
+            return false;
+        }
+
+        private bool TryRestorePatrolReloadFinalSlot(BotWeaponSelector selector)
+        {
+            CapturePatrolReloadFinalSlot(selector);
+            if (!patrolReloadFinalSlot.HasValue)
+            {
+                return true;
+            }
+
+            returnAfterTopOffSlot = patrolReloadFinalSlot;
+            return TryCompleteReturnAfterTopOffSwitch(selector);
+        }
+
+        private bool IsPatrolWeaponSlotConfirmed(BotWeaponSelector selector, EquipmentSlot slot)
+        {
+            Weapon? targetWeapon = GetWeaponInSlot(slot);
+            Weapon? handsWeapon = BotOwner?.GetPlayer?.HandsController?.Item as Weapon;
+            return selector != null &&
+                   targetWeapon != null &&
+                   handsWeapon != null &&
+                   selector.LastEquipmentSlot == slot &&
+                   !selector.IsChanging &&
+                   selector.IsWeaponReady &&
+                   BotOwner?.WeaponManager?.IsWeaponReady == true &&
+                   string.Equals(targetWeapon.Id, handsWeapon.Id, StringComparison.Ordinal);
+        }
+
+        private static bool RequestPatrolWeaponSlot(BotWeaponSelector selector, EquipmentSlot slot)
+        {
+            return selector.TryChangeToSlot(slot, false);
         }
 
         private Weapon? GetWeaponInSlot(EquipmentSlot slot)

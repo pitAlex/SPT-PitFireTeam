@@ -11,7 +11,6 @@ namespace pitTeam.BigBrain
         private const string AutomaticSecondarySwitchReason = "objectiveSuppress.autoSecondarySwitch";
         private const string AutomaticSecondarySettleReason = "objectiveSuppress.autoSecondarySettle";
         private const float WeaponSwitchRetrySeconds = 0.25f;
-        private const float AutomaticSecondarySwitchTimeoutSeconds = 1.5f;
 
         private bool complete;
         private bool negativeSaid;
@@ -283,7 +282,7 @@ namespace pitTeam.BigBrain
             {
                 if (automaticSecondarySettleUntil <= Time.time)
                 {
-                    automaticSecondarySettleUntil = Time.time + AutomaticSecondarySwitchTimeoutSeconds;
+                    automaticSecondarySettleUntil = Time.time + FollowerCombatCommon.SupportWeaponPrepareTimeoutSeconds;
                 }
 
                 decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
@@ -301,7 +300,7 @@ namespace pitTeam.BigBrain
             }
 
             automaticSecondarySwitchPending = true;
-            automaticSecondarySwitchUntil = Time.time + AutomaticSecondarySwitchTimeoutSeconds;
+            automaticSecondarySwitchUntil = Time.time + FollowerCombatCommon.SupportWeaponPrepareTimeoutSeconds;
             automaticSecondarySettleUntil = 0f;
             CombatCommon.HoldFor(0.25f);
             decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(

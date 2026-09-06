@@ -15,7 +15,7 @@ namespace pitTeam.BigBrain.Actions
     /// </summary>
     internal sealed class CombatHoldPositionAction : FollowerCombatActionBase
     {
-        private const float UnsafeVanillaReloadDeferralSeconds = 0.25f;
+        private const float VanillaReloadDeferralSeconds = 0.25f;
         private const float PushSearchArrivalStandingSettleSeconds = 0.75f;
 
         private readonly HoldPosition baseLogic;
@@ -52,7 +52,7 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            DeferUnsafeVanillaHoldReload(reason);
+            SuppressUnownedVanillaHoldReload();
             baseLogic.UpdateNodeByBrain(GetData<ShootHoldResultParams>(data));
 
             // Vanilla hold nodes can lower pose after the decision-level crouch policy has already
@@ -88,29 +88,14 @@ namespace pitTeam.BigBrain.Actions
                        System.StringComparison.Ordinal);
         }
 
-        private void DeferUnsafeVanillaHoldReload(string? reason)
+        private void SuppressUnownedVanillaHoldReload()
         {
-            if (BotOwner.WeaponManager?.Reload?.Reloading == true ||
-                BotOwner.Memory?.IsInCover == true ||
-                FollowerCombatCommon.IsReloadHoldReason(reason) ||
-                FollowerCombatCommon.IsWeaponPreparationHoldReason(reason))
-            {
-                return;
-            }
-
-            bool exposedPressure = BotOwner.Memory?.IsUnderFire == true ||
-                                   FollowerAwareness.WasRecentlyHit(BotOwner);
-            if (!exposedPressure)
-            {
-                return;
-            }
-
-            // HoldPosition otherwise starts its own below-half-magazine reload based only on stale
-            // real-sight time. Keep that hidden policy out of exposed pressure holds so the
-            // cover-first combat reload router remains the sole owner of unsafe reload starts.
+            // The shared combat router owns every follower reload decision. Vanilla HoldPosition
+            // calls TryReload() on its own and a rejected reload can switch to the support weapon,
+            // bypassing the router's pressure gates and long-gun preparation transaction.
             baseLogic._nextCheckReload = Mathf.Max(
                 baseLogic._nextCheckReload,
-                Time.time + UnsafeVanillaReloadDeferralSeconds);
+                Time.time + VanillaReloadDeferralSeconds);
         }
 
         public override void Stop()

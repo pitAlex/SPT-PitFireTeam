@@ -497,4 +497,29 @@ namespace pitTeam.Patches
             return false;
         }
     }
+
+    internal sealed class FollowerCombatReloadFallbackSuppressPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+        {
+            return AccessTools.Method(
+                typeof(BotWeaponSelector),
+                nameof(BotWeaponSelector.TrySwitchToLauncherOrChangeWeapon));
+        }
+
+        [PatchPrefix]
+        private static bool PatchPrefix(BotWeaponSelector __instance)
+        {
+            BotOwner botOwner = FollowerWeaponSwitchPolicyRuntime.GetSelectorBotOwner(__instance);
+            if (!FollowerCombatCommon.ShouldSuppressFollowerOwnedReloadFallback(botOwner))
+            {
+                return true;
+            }
+
+            if (pitFireTeam.IsDebugBuild)
+                Logger.LogInfo($"[WeaponPolicy] suppressed rejected combat reload weapon fallback follower={botOwner.Profile?.Nickname ?? botOwner.name}");
+
+            return false;
+        }
+    }
 }
