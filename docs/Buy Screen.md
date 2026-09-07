@@ -142,6 +142,8 @@ The visible checkbox uses the label `Use items in stash` and is reset to off eac
 
 The `Purchase` / `EQUIP` button opens a confirmation overlay and then performs the real kit transaction.
 
+In teammate buy mode, the main button is enabled whenever a build with equipment is selected. This state is applied after stock `SetCurrentBuild`, so an error while simulating a transfer into the player's equipment cannot disable teammate purchases. Quote and resource checks still run when opening the confirmation and before purchase, and the confirmation button remains disabled when its resource checks fail.
+
 When clicked in buy mode:
 
 - stock equip behavior is blocked
@@ -188,6 +190,7 @@ Currently restored state includes:
 
 - equip button text
 - equip button raw-text mode
+- equip button interactability
 - buy-mode `Use items in stash` checkbox removal
 - `CanEquip` visibility
 - hidden bottom panel visibility

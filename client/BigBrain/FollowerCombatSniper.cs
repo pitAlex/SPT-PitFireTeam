@@ -14,7 +14,6 @@ namespace pitTeam.BigBrain
         private const float RepositionCooldownSeconds = 4f;
         private const float RegroupSameLevelTolerance = 1.75f;
         private const float MarksmanDefaultAutoSearchAggression = 0.3f;
-        private const float CloseIntentRecentSeenSeconds = 2.25f;
         private const float FireSupportSettleSeconds = 2.5f;
         private const string FireSupportHoldReason = "sniper.fireSupportHold";
         private const string NoActionHoldReason = "sniper.noActionHold";
@@ -34,11 +33,11 @@ namespace pitTeam.BigBrain
         private const float IndirectThreatRecentHitSeconds = 3f;
         private const float IndirectThreatSuppressMaxDistance = 260f;
         private const string CloseWeaponPrepareHoldReason = "sniper.closeWeaponPrepare";
-        private const float CloseWeaponPrepareTimeoutSeconds = 1.5f;
         private const float CloseWeaponPrepareRetryCooldownSeconds = 1f;
 
         private readonly CommittedCoverPhaseState repositionPhase = new CommittedCoverPhaseState();
         private readonly CommittedCoverPhaseState supportPhase = new CommittedCoverPhaseState();
+        private readonly FiringPositionArrivalState firingPositionArrival = new FiringPositionArrivalState();
         private readonly BotOwner BotOwner;
         private readonly FollowerCombatCommon CombatCommon;
         private AICoreActionResult<BotLogicDecision, CoreActionResultParams>? currentEndSourceDecision;
@@ -48,6 +47,9 @@ namespace pitTeam.BigBrain
         private float closeWeaponPrepareRetryUntil;
         private string closeWeaponPrepareEnemyProfileId = string.Empty;
         private bool closeWeaponPreparationPending;
+        private AICoreActionResult<BotLogicDecision, CoreActionResultParams>? preparedCloseSearchDecision;
+        private Vector3 preparedCloseSearchPoint;
+        private float closeSearchRetryUntil;
 
         public FollowerCombatSniper(BotOwner botOwner, FollowerCombatCommon combatCommon)
         {
@@ -64,14 +66,16 @@ namespace pitTeam.BigBrain
             repositionPhase.Reset();
             supportPhase.Reset();
             currentEndSourceDecision = null;
+            firingPositionArrival.Reset();
             noActionFallbackUntil = 0f;
             nextFiringPositionAllowedTime = 0f;
             ClearCloseWeaponPreparation();
             closeWeaponPrepareRetryUntil = 0f;
+            closeSearchRetryUntil = 0f;
             CombatCommon.ResetRecoveryNoCoverCommitment();
             if (!CombatCommon.HasActiveCombatEnemy())
             {
-                CombatCommon.TrySwitchBackToPrimaryFromAutomaticSecondary();
+                CombatCommon.TrySwitchBackToPrimaryFromAutomaticMarksmanSupport();
             }
         }
 
@@ -79,12 +83,45 @@ namespace pitTeam.BigBrain
             AICoreActionResult<BotLogicDecision, CoreActionResultParams>? prevDecision,
             AICoreActionResult<BotLogicDecision, CoreActionResultParams> nextDecision)
         {
+            if (!firingPositionArrival.Owns(nextDecision.Reason))
+            {
+                firingPositionArrival.Reset();
+            }
+            else if (firingPositionArrival.IsAdjusting &&
+                firingPositionArrival.MatchesEnemy(BotOwner.Memory.GoalEnemy?.ProfileId) &&
+                (BotOwner.GoToSomePointData.HaveTarget() != true ||
+                 (BotOwner.GoToSomePointData.Point - firingPositionArrival.AdjustmentPoint).sqrMagnitude > 0.01f))
+            {
+                // The prepared successor owns this exact point even if the outgoing action
+                // refreshed its old destination between end selection and the action handoff.
+                BotOwner.GoToSomePointData.SetPoint(firingPositionArrival.AdjustmentPoint);
+            }
+
+            if (!string.Equals(nextDecision.Reason, CloseWeaponPrepareHoldReason, StringComparison.Ordinal))
+            {
+                ClearCloseWeaponPreparation();
+            }
+
             ApplyMarksmanWeaponPolicy(BotOwner.Memory.GoalEnemy, nextDecision);
             CombatCommon.HandleSharedDecisionChanged(nextDecision);
             CombatCommon.HandleCommittedCoverDecisionChanged(nextDecision);
             CombatCommon.HandleFollowerSuppressDecisionChanged(nextDecision);
             CombatCommon.UpdateRecoveryNoCoverCommitment(nextDecision);
+            if (FollowerCombatCommon.IsMovementDecision(nextDecision) &&
+                IsAutomaticSupportIntentReason(nextDecision.Reason))
+            {
+                CombatCommon.ClearCommittedPosition("sniperAutomaticSearchStarted");
+                // Tactical-point search owns its own destination, not the previous sniper cover.
+                if (nextDecision.Action == BotLogicDecision.goToPointTactical)
+                {
+                    CombatCommon.ClearCommittedCover("sniperAutomaticSearchStarted");
+                }
+            }
             UpdateMarksmanCommittedHolderPhase(nextDecision);
+            if (IsSniperCoverHoldReason(nextDecision.Reason))
+            {
+                CombatCommon.TryRenewCommittedPositionHold(nextDecision, RepositionHoldTimeoutSeconds);
+            }
 
             if (CombatCommon.ShouldCommitMovementDecision(nextDecision, false))
             {
@@ -207,6 +244,11 @@ namespace pitTeam.BigBrain
                 return reloadRetreat;
             }
 
+            if (TryContinueFiringPositionArrival(goalEnemy, out var arrivalDecision))
+            {
+                return arrivalDecision;
+            }
+
             // Close-quarter handling is marksman policy: secondary weapon and compact movement,
             // while explicit support orders are owned by separate combat objectives.
             if (!ShouldDeferCloseAutoToNearbyRifleman(goalEnemy) &&
@@ -220,7 +262,9 @@ namespace pitTeam.BigBrain
                 return recover;
             }
 
-            if (CombatCommon.HasCommittedPosition(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> committedPosition))
+            if (CombatCommon.HasCommittedPosition(
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> committedPosition,
+                    deferCombatBreaks: true))
             {
                 return committedPosition;
             }
@@ -308,13 +352,14 @@ namespace pitTeam.BigBrain
             decision = default;
 
             bool closeEnoughForSecondary = goalEnemy.Distance <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance();
-            if (!closeEnoughForSecondary)
+            bool offensiveSearchAllowed = ShouldUseOffensiveAutoSearch(goalEnemy);
+            if (!closeEnoughForSecondary && !offensiveSearchAllowed)
             {
                 return false;
             }
 
             // Face-to-face contact should favor immediate fire with the current weapon.
-            if (goalEnemy.IsVisible &&
+            if (closeEnoughForSecondary && goalEnemy.IsVisible &&
                 goalEnemy.CanShoot
             )
             {
@@ -323,7 +368,9 @@ namespace pitTeam.BigBrain
                     "sniper.closeImmediateShoot");
                 return true;
             }
-            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? dogFight = CombatCommon.TryGetDogFightDecision();
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? dogFight = closeEnoughForSecondary
+                ? CombatCommon.TryGetDogFightDecision()
+                : null;
             if (dogFight != null)
             {
                 if (dogFight.Value.Action == BotLogicDecision.dogFight)
@@ -341,7 +388,7 @@ namespace pitTeam.BigBrain
             }
 
 
-            if (ShouldUseOffensiveAutoSearch(goalEnemy))
+            if (offensiveSearchAllowed)
             {
                 if (TryCreateSafeCloseSearchDecision(
                         goalEnemy,
@@ -353,7 +400,8 @@ namespace pitTeam.BigBrain
                 }
             }
 
-            if (!TryCreateCloseSuppressMove(goalEnemy, "sniper.closeAutoSuppress", out decision))
+            if (!closeEnoughForSecondary ||
+                !TryCreateCloseSuppressMove(goalEnemy, "sniper.closeAutoSuppress", out decision))
             {
                 return false;
             }
@@ -396,21 +444,13 @@ namespace pitTeam.BigBrain
 
         private bool IsMarksmanCloseSearchDestinationSafe(
             EnemyInfo goalEnemy,
-            AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
+            Vector3 target)
         {
-            if (decision.Action != BotLogicDecision.goToPointTactical)
-            {
-                return false;
-            }
-
-            if (BotOwner.GoToSomePointData?.HaveTarget() != true)
-            {
-                return false;
-            }
-
             Vector3 enemyAnchor = FollowerCombatCommon.GetEnemyAnchor(goalEnemy);
-            Vector3 target = BotOwner.GoToSomePointData.Point;
-            if (!IsFinite(enemyAnchor) || !IsFinite(target))
+            if (!IsFinite(enemyAnchor) || !IsFinite(target) ||
+                (target - BotOwner.Position).sqrMagnitude <= 2f * 2f ||
+                !Utils.Utils.TryGetCompletePathDistance(BotOwner.Position, target, out float navDistance) ||
+                !IsFinite(navDistance) || navDistance > 90f)
             {
                 return false;
             }
@@ -425,6 +465,27 @@ namespace pitTeam.BigBrain
             string reason,
             out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
+            decision = default;
+            if (Time.time < closeSearchRetryUntil)
+            {
+                return false;
+            }
+
+            // Select a real, distinct route before drawing the support weapon. Otherwise a failed
+            // search can repeatedly draw automatic support and immediately return to sniper hold.
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? searchDecision =
+                CombatCommon.EnemyCoverSearch(reason, weakEnemy: false, avoidBossFireLane: true);
+            if (!searchDecision.HasValue ||
+                searchDecision.Value.Action != BotLogicDecision.goToPointTactical ||
+                BotOwner.GoToSomePointData?.HaveTarget() != true ||
+                !IsMarksmanCloseSearchDestinationSafe(goalEnemy, BotOwner.GoToSomePointData.Point))
+            {
+                closeSearchRetryUntil = Time.time + FiringPositionCooldownSeconds;
+                BattleRecorder.RecordObjectiveDiagnostic(BotOwner, "Sniper", "engagementRejected", "noSafeAutomaticSearchDestination");
+                return false;
+            }
+
+            Vector3 searchPoint = BotOwner.GoToSomePointData.Point;
             if (!TryPrepareAutomaticCloseWeapon(goalEnemy, out decision, out bool weaponReady))
             {
                 return false;
@@ -432,15 +493,9 @@ namespace pitTeam.BigBrain
 
             if (!weaponReady)
             {
+                preparedCloseSearchDecision = searchDecision;
+                preparedCloseSearchPoint = searchPoint;
                 return true;
-            }
-
-            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? searchDecision =
-                CombatCommon.EnemyCoverSearch(reason, weakEnemy: false, avoidBossFireLane: true);
-            if (!searchDecision.HasValue ||
-                !IsMarksmanCloseSearchDestinationSafe(goalEnemy, searchDecision.Value))
-            {
-                return false;
             }
 
             decision = searchDecision.Value;
@@ -467,7 +522,7 @@ namespace pitTeam.BigBrain
 
             // Only an accepted switch request starts the bounded preparation hold. An unrelated
             // reload/hands transition must not be mistaken for a switch owned by this tactic.
-            if (!CombatCommon.TryRequestAutomaticSecondaryForCloseCombat())
+            if (!CombatCommon.TryRequestAutomaticSupportForCloseCombat())
             {
                 BlockCloseWeaponPreparationRetry();
                 return false;
@@ -492,7 +547,7 @@ namespace pitTeam.BigBrain
             }
 
             closeWeaponPrepareEnemyProfileId = enemyProfileId;
-            closeWeaponPrepareUntil = Time.time + CloseWeaponPrepareTimeoutSeconds;
+            closeWeaponPrepareUntil = Time.time + FollowerCombatCommon.SupportWeaponPrepareTimeoutSeconds;
         }
 
         private void BlockCloseWeaponPreparationRetry()
@@ -506,6 +561,8 @@ namespace pitTeam.BigBrain
             closeWeaponPrepareUntil = 0f;
             closeWeaponPrepareEnemyProfileId = string.Empty;
             closeWeaponPreparationPending = false;
+            preparedCloseSearchDecision = null;
+            preparedCloseSearchPoint = Vector3.zero;
         }
 
         private bool IsWithinMarksmanAutoSearchDistance(EnemyInfo goalEnemy, float aggression)
@@ -590,7 +647,7 @@ namespace pitTeam.BigBrain
         private static bool ShouldUseCloseIntentSecondary(
             AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
-            return IsCloseIntentDecisionReason(decision.Reason);
+            return IsAutomaticSupportIntentReason(decision.Reason);
         }
 
         private static bool IsCloseIntentDecisionReason(string? reason)
@@ -601,19 +658,35 @@ namespace pitTeam.BigBrain
                     reason.StartsWith("sniper.closeAuto", StringComparison.Ordinal));
         }
 
+        internal static bool IsAutomaticSupportIntentReason(string? reason)
+        {
+            const string coverHoldPrefix = "committedCoverHold.";
+            const string pointHoldPrefix = "committedPositionHold.";
+            if (reason?.StartsWith(coverHoldPrefix, StringComparison.Ordinal) == true)
+            {
+                reason = reason.Substring(coverHoldPrefix.Length);
+            }
+            else if (reason?.StartsWith(pointHoldPrefix, StringComparison.Ordinal) == true)
+            {
+                reason = reason.Substring(pointHoldPrefix.Length);
+            }
+
+            return IsCloseIntentDecisionReason(reason) ||
+                   string.Equals(reason, "sniper.closeImmediateShoot", StringComparison.Ordinal) ||
+                   string.Equals(reason, CloseWeaponPrepareHoldReason, StringComparison.Ordinal) ||
+                   FollowerCombatSuppressionObjective.IsAutomaticSupportIntentReason(reason);
+        }
+
         private bool CanUseCloseIntentSecondary(EnemyInfo goalEnemy)
         {
-            if (goalEnemy == null || goalEnemy.Distance > CombatDistanceConfiguration.Instance.GetCloseQuarterDistance())
-            {
-                return false;
-            }
+            return CanUseAutomaticSupportForCloseThreat(BotOwner, goalEnemy);
+        }
 
-            if (goalEnemy.IsVisible && goalEnemy.CanShoot)
-            {
-                return true;
-            }
-
-            return Time.time - goalEnemy.PersonalSeenTime <= CloseIntentRecentSeenSeconds;
+        internal static bool CanUseAutomaticSupportForCloseThreat(BotOwner botOwner, EnemyInfo? goalEnemy)
+        {
+            return FollowerCombatCommon.HasActiveCombatEnemy(botOwner, goalEnemy) &&
+                   goalEnemy != null &&
+                   goalEnemy.Distance <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance();
         }
 
         private void TrySwitchToPrimaryForSniperDecision()
@@ -624,9 +697,10 @@ namespace pitTeam.BigBrain
                 return;
             }
 
-            if (selector.LastEquipmentSlot != EquipmentSlot.FirstPrimaryWeapon)
+            if (selector.LastEquipmentSlot != EquipmentSlot.FirstPrimaryWeapon &&
+                !selector.IsChanging)
             {
-                selector.TryChangeToMain();
+                selector.ChangeToMain();
             }
         }
 
@@ -640,7 +714,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            if (!CombatCommon.IsUsingAutomaticSecondaryOverNonAutomaticPrimary())
+            if (!CombatCommon.IsUsingAutomaticMarksmanSupportOverNonAutomaticPrimary())
             {
                 return false;
             }
@@ -1037,7 +1111,8 @@ namespace pitTeam.BigBrain
                 return;
             }
 
-            if (IsRepositionCommittedHoldReason(nextDecision.Reason))
+            if (IsRepositionCommittedHoldReason(nextDecision.Reason) ||
+                string.Equals(nextDecision.Reason, "sniper.coverHold", StringComparison.Ordinal))
             {
                 if (!repositionPhase.IsActive)
                 {
@@ -1175,7 +1250,7 @@ namespace pitTeam.BigBrain
 
             // Destination proximity is not protection. If EFT still says the bot is exposed, the
             // arrived point failed its recovery purpose and must not be recycled as the successor.
-            if (CombatCommon.IsBotInCommittedCover())
+            if (CombatCommon.IsAtCommittedCoverArrival())
             {
                 CombatCommon.BlockCommittedRecoveryCover("marksmanExposedAtCommittedCover");
                 CombatCommon.ResetCommittedCover();
@@ -1444,10 +1519,14 @@ namespace pitTeam.BigBrain
                         return true;
                     }
 
-                    if (ShouldReleaseSupportHoldForOpportunity(goalEnemy) || IsSupportHoldExpired())
+                    if (IsSupportHoldExpired())
                     {
-                        ClearCommittedCoverAndRepositionState();
-                        return false;
+                        if (TryGetIdleEngagementDecision(goalEnemy, out decision))
+                        {
+                            return true;
+                        }
+
+                        supportPhase.BeginHoldLifecycle(FireSupportSettleSeconds, SupportHoldTimeoutSeconds);
                     }
 
                     if (supportArrived)
@@ -1497,10 +1576,14 @@ namespace pitTeam.BigBrain
                         return true;
                     }
 
-                    if (ShouldReleaseRepositionHoldForOpportunity(goalEnemy) || IsRepositionHoldExpired())
+                    if (IsRepositionHoldExpired())
                     {
-                        ClearCommittedCoverAndRepositionState();
-                        return false;
+                        if (TryGetIdleEngagementDecision(goalEnemy, out decision))
+                        {
+                            return true;
+                        }
+
+                        repositionPhase.BeginHoldLifecycle(FireSupportSettleSeconds, RepositionHoldTimeoutSeconds);
                     }
 
                     CombatCommon.HoldCoverForMaxDuration();
@@ -1551,6 +1634,17 @@ namespace pitTeam.BigBrain
             out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
+            if (CombatCommon.IsAtCommittedCoverArrival())
+            {
+                if (!IsRepositionCooldownActive() &&
+                    TryGetRepositionHoldOpportunityDecision(goalEnemy, out decision))
+                {
+                    return true;
+                }
+
+                return TryGetRepositionArrivalHold(out decision);
+            }
+
             if (IsRepositionCooldownActive())
             {
                 return false;
@@ -1574,11 +1668,31 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
+            if (CombatCommon.IsAtCommittedCoverArrival())
+            {
+                return TryGetRepositionArrivalHold(out decision);
+            }
+
             repositionPhase.BeginTravel();
 
             // The committed cover already has the action and mutated reason stored.
             // Just use the stored values instead of recomputing them.
             decision = CombatCommon.CreateCommittedCoverMoveDecision();
+            return true;
+        }
+
+        private bool TryGetRepositionArrivalHold(
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
+        {
+            // Reusing an arrived cover is a hold, never a new travel phase. In particular, indirect
+            // threat pressure must not bypass arrival promotion and recreate the completed move.
+            CombatCommon.ClearCommittedMovement("sniperRepositionAlreadyArrived");
+            CombatCommon.ArmCommittedArrivalHold("sniper.reposition");
+            if (!CombatCommon.HasCommittedPosition(out decision, deferCombatBreaks: true))
+            {
+                return false;
+            }
+
             return true;
         }
 
@@ -1599,6 +1713,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
+            nextFiringPositionAllowedTime = Time.time + FiringPositionCooldownSeconds;
             if (!CombatCommon.TryCreateSupportFiringPositionDecision(
                     goalEnemy,
                     enemyAnchor,
@@ -1608,12 +1723,14 @@ namespace pitTeam.BigBrain
                     enforceMarksmanPositionPolicy: true,
                     allowForwardPositions: false,
                     allowBattlefieldPositions: true,
-                    maxNavDistance: 90f))
+                    maxNavDistance: 90f,
+                    minDisplacement: 2f))
             {
+                BattleRecorder.RecordObjectiveDiagnostic(BotOwner, "Sniper", "engagementRejected",
+                    CombatCommon.LastSupportFiringPositionRejectReason ?? "noFiringPosition");
                 return false;
             }
 
-            nextFiringPositionAllowedTime = Time.time + FiringPositionCooldownSeconds;
             return true;
         }
 
@@ -1626,7 +1743,28 @@ namespace pitTeam.BigBrain
             if (HasExplicitRegroupOrder())
             {
                 ClearCommittedCoverAndRepositionState();
+                firingPositionArrival.Reset();
                 return new AICoreActionEnd("sniperExplicitRegroup", true);
+            }
+
+            if (IsFiringPositionArrivalDecision(currentDecision.Reason))
+            {
+                return EndFiringPositionArrival(currentDecision);
+            }
+
+            if (IsFiringPositionArrivalTravel(currentDecision))
+            {
+                AICoreActionEnd travelEnd = currentDecision.Action == BotLogicDecision.runToCover
+                    ? EndMarksmanCommittedRunToCover(currentDecision.Reason)
+                    : CombatCommon.EndGoToPoint(endWhenEnemyVisibleShootable:
+                        currentDecision.Action == BotLogicDecision.goToPointTactical ||
+                        ShouldBreakMarksmanPositionMoveForVisibleThreat());
+                if (travelEnd.Value && (IsMarksmanArrivalEnd(travelEnd.Reason) ||
+                    string.Equals(travelEnd.Reason, "arrivedAtPoint", StringComparison.Ordinal)))
+                {
+                    return BeginFiringPositionArrival(currentDecision);
+                }
+                return travelEnd;
             }
 
             if (FollowerCombatCommon.IsRecoveryManeuverReason(currentDecision.Reason) &&
@@ -1675,6 +1813,223 @@ namespace pitTeam.BigBrain
             }
 
             return CombatCommon.ShallEndCurrentDecision(currentDecision);
+        }
+
+        private static bool IsFiringPositionArrivalDecision(string? reason)
+        {
+            return reason == "sniper.position.arrival.adjust" || reason == "sniper.position.arrival.wait" ||
+                   reason == "sniper.closeSearch.arrival.adjust" || reason == "sniper.closeSearch.arrival.wait";
+        }
+
+        private static bool IsFiringPositionArrivalTravel(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
+        {
+            string? reason = decision.Reason;
+            if (reason == null || IsFiringPositionArrivalDecision(reason) ||
+                reason.StartsWith("sniper.NeedSniper", StringComparison.Ordinal)) return false;
+
+            if (decision.Action == BotLogicDecision.goToPointTactical)
+                return reason == "sniper.closeSearch" || reason == "sniper.startCloseSearch";
+            if (decision.Action == BotLogicDecision.goToPoint)
+                return IsMarksmanPositionMoveReason(reason);
+
+            return decision.Action == BotLogicDecision.runToCover &&
+                (reason.StartsWith("sniper.reposition", StringComparison.Ordinal) ||
+                 reason.StartsWith("sniper.FireSupport", StringComparison.Ordinal) ||
+                 reason.StartsWith("sniper.startPosition", StringComparison.Ordinal) ||
+                 reason.StartsWith("sniper.coverMove", StringComparison.Ordinal) ||
+                 reason.StartsWith("sniper.relocate", StringComparison.Ordinal));
+        }
+
+        private bool TryGetFiringPositionArrivalShot(
+            string reason,
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
+        {
+            if (CombatCommon.CanShootFromCurrentCoverOrStandingIntent(out _))
+            {
+                decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
+                    BotLogicDecision.shootFromCover, reason);
+                return true;
+            }
+            var immediate = CombatCommon.TryGetImmediateShootDecision(reason);
+            decision = immediate.GetValueOrDefault();
+            return immediate.HasValue;
+        }
+
+        private bool TryPreparePendingMedicalBreak(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
+        {
+            if (FollowerCombatCommon.IsMedicalDecision(currentDecision) ||
+                currentDecision.Reason == FollowerCombatCommon.HealRetryHoldReason ||
+                !(BotOwner.Medecine?.FirstAid.Have2Do == true ||
+                  BotOwner.Medecine?.SurgicalKit.HaveWork == true ||
+                  BotOwner.Medecine?.FirstAid.Using == true ||
+                  BotOwner.Medecine?.SurgicalKit.Using == true)) return false;
+
+            // Keep the shared medical planner's contact/retry policy and its concrete destination.
+            var medical = CombatCommon.TryGetNeedHealDecision();
+            if (!medical.HasValue || !TryPrepareBreakDecision(medical.Value, false, false)) return false;
+            CombatCommon.ClearCommittedPosition("sniperHoldMedicalWork");
+            firingPositionArrival.Reset();
+            return true;
+        }
+
+        private AICoreActionEnd BeginFiringPositionArrival(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> source)
+        {
+            EnemyInfo? enemy = BotOwner.Memory.GoalEnemy;
+            if (!CombatCommon.HasActiveCombatEnemy(enemy) || enemy == null)
+                return new AICoreActionEnd("arrivalEnemyInvalid", true);
+            if (TryPreparePendingMedicalBreak(source))
+                return new AICoreActionEnd("sniperArrivalMedicalWork", true);
+
+            bool automatic = IsAutomaticSupportIntentReason(source.Reason);
+            if (!firingPositionArrival.Begin(BotOwner.Position, enemy.ProfileId, source.Reason,
+                    automatic ? "sniper.closeSearch.arrival" : "sniper.position.arrival"))
+                return FollowerCombatCommon.Continue();
+
+            if (TryPrepareFiringPositionArrivalShot(out AICoreActionEnd shotEnd)) return shotEnd;
+
+            ClearFiringPositionArrivalCommitments("sniperArrivalRecheck");
+            if (CombatCommon.TryCreateLocalFiringPositionAdjustment(enemy, firingPositionArrival.Origin,
+                    automatic, firingPositionArrival.MoveReason, out var adjustment) &&
+                firingPositionArrival.TryAdjust(BotOwner.GoToSomePointData.Point) &&
+                TryPrepareBreakDecision(adjustment, false, false))
+            {
+                BattleRecorder.RecordObjectiveDiagnostic(BotOwner, "marksman", "arrivalAdjustmentPrepared",
+                    $"source={source.Reason} origin={firingPositionArrival.Origin} point={firingPositionArrival.AdjustmentPoint}");
+                return new AICoreActionEnd("sniperArrivalAdjustPrepared", true);
+            }
+
+            BattleRecorder.RecordObjectiveDiagnostic(BotOwner, "marksman", "arrivalAdjustmentRejected",
+                $"source={source.Reason} origin={firingPositionArrival.Origin} reason={CombatCommon.LastSupportFiringPositionRejectReason}");
+            return PrepareFiringPositionArrivalWait();
+        }
+
+        private bool TryPrepareFiringPositionArrivalShot(out AICoreActionEnd end)
+        {
+            end = default;
+            if (!TryGetFiringPositionArrivalShot(firingPositionArrival.ShotReason, out var shot) ||
+                !TryPrepareBreakDecision(shot, false, false)) return false;
+
+            CombatCommon.ClearCommittedPosition("sniperArrivalShot");
+            CombatCommon.ClearCommittedMovement("sniperArrivalShot");
+            firingPositionArrival.Reset();
+            end = new AICoreActionEnd("sniperArrivalShotPrepared", true);
+            return true;
+        }
+
+        private bool TryContinueFiringPositionArrival(
+            EnemyInfo enemy,
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
+        {
+            decision = default;
+            if (!firingPositionArrival.IsActive && !firingPositionArrival.IsReleased) return false;
+            if (!CombatCommon.HasActiveCombatEnemy(enemy) || !firingPositionArrival.MatchesEnemy(enemy.ProfileId))
+            {
+                ClearFiringPositionArrivalCommitments("sniperArrivalEnemyChanged");
+                firingPositionArrival.Reset();
+                return false;
+            }
+            if (firingPositionArrival.IsActive)
+            {
+                decision = GetFiringPositionArrivalDecision();
+                return true;
+            }
+
+            // The bounded attempt is over. Real fire/recovery, then distance regroup, precede an
+            // opportunistic close search that could otherwise recycle the just-failed position.
+            string shotReason = firingPositionArrival.ShotReason;
+            firingPositionArrival.Reset();
+            if (TryGetFiringPositionArrivalShot(shotReason, out decision)) return true;
+            if (TryGetRecoverDecision(enemy, out decision)) return true;
+            if (!ShouldRegroupForBossDistance()) return false;
+            decision = Regroup(enemy);
+            return true;
+        }
+
+        private AICoreActionResult<BotLogicDecision, CoreActionResultParams> GetFiringPositionArrivalDecision()
+        {
+            return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
+                firingPositionArrival.IsAdjusting ? BotLogicDecision.goToPoint : BotLogicDecision.holdPosition,
+                firingPositionArrival.IsAdjusting ? firingPositionArrival.MoveReason : firingPositionArrival.WaitReason);
+        }
+
+        private AICoreActionEnd PrepareFiringPositionArrivalWait()
+        {
+            if (!firingPositionArrival.IsWaiting)
+                firingPositionArrival.BeginWait(Time.time, UnityEngine.Random.Range(1.5f, 2.5f));
+            var wait = GetFiringPositionArrivalDecision();
+            if (!TryPrepareBreakDecision(wait, false, false)) return FollowerCombatCommon.Continue();
+
+            ClearFiringPositionArrivalCommitments("sniperArrivalWait");
+            float remaining = Mathf.Max(0f, firingPositionArrival.WaitUntil - Time.time);
+            CombatCommon.SetCommittedPosition(BotOwner.Position, wait, remaining);
+            CombatCommon.HoldFor(remaining);
+            BattleRecorder.RecordObjectiveDiagnostic(BotOwner, "marksman", "arrivalWaitPrepared",
+                $"source={firingPositionArrival.SourceReason} origin={firingPositionArrival.Origin} until={firingPositionArrival.WaitUntil}");
+            return new AICoreActionEnd("sniperArrivalWaitPrepared", true);
+        }
+
+        private AICoreActionEnd EndFiringPositionArrival(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> current)
+        {
+            EnemyInfo? enemy = BotOwner.Memory.GoalEnemy;
+            if (!firingPositionArrival.Owns(current.Reason) || !CombatCommon.HasActiveCombatEnemy(enemy) ||
+                enemy == null || !firingPositionArrival.MatchesEnemy(enemy.ProfileId) ||
+                CombatCommon.HasActiveCombatGestureOrder())
+            {
+                ClearFiringPositionArrivalCommitments("sniperArrivalInterrupted");
+                firingPositionArrival.Reset();
+                return new AICoreActionEnd("sniperArrivalInterrupted", true);
+            }
+            if (TryPreparePendingMedicalBreak(current))
+                return new AICoreActionEnd("sniperArrivalMedicalWork", true);
+            if (TryPrepareFiringPositionArrivalShot(out AICoreActionEnd shotEnd)) return shotEnd;
+
+            if ((BotOwner.Memory.IsUnderFire || FollowerCombatCommon.WasHitRecently(BotOwner, 0.75f)) &&
+                TryPreparePressureRecoveryBreak(enemy, "sniperArrivalRecoveryPrepared", out AICoreActionEnd recoveryEnd))
+            {
+                firingPositionArrival.Reset();
+                return recoveryEnd;
+            }
+            if (ShouldBreakForBossUnderAttack(enemy) &&
+                TryGetBossUnderAttackDecision(enemy, out var support) &&
+                TryPrepareBreakDecision(support, false, false))
+            {
+                CombatCommon.ClearCommittedPosition("sniperArrivalBossSupport");
+                firingPositionArrival.Reset();
+                return new AICoreActionEnd("sniperArrivalBossSupportPrepared", true);
+            }
+
+            if (firingPositionArrival.IsAdjusting)
+            {
+                AICoreActionEnd moveEnd = CombatCommon.EndLocalFiringPositionAdjustment(firingPositionArrival.AdjustmentPoint);
+                if (!moveEnd.Value) return moveEnd;
+                BattleRecorder.RecordObjectiveDiagnostic(BotOwner, "marksman", "arrivalAdjustmentEnded", moveEnd.Reason);
+                // Reached, blocked, or invalidated: spend the wait, never search again here.
+                return PrepareFiringPositionArrivalWait();
+            }
+
+            if (firingPositionArrival.TryRelease(Time.time))
+            {
+                ClearFiringPositionArrivalCommitments("sniperArrivalReleased");
+                closeSearchRetryUntil = Mathf.Max(closeSearchRetryUntil, Time.time + FiringPositionCooldownSeconds);
+                nextFiringPositionAllowedTime = Mathf.Max(nextFiringPositionAllowedTime, Time.time + FiringPositionCooldownSeconds);
+                BattleRecorder.RecordObjectiveDiagnostic(BotOwner, "marksman", "arrivalReleased",
+                    $"source={firingPositionArrival.SourceReason} origin={firingPositionArrival.Origin}");
+                return new AICoreActionEnd("sniperArrivalWaitExpired", true);
+            }
+            return FollowerCombatCommon.Continue();
+        }
+
+        private void ClearFiringPositionArrivalCommitments(string reason)
+        {
+            CombatCommon.ClearCommittedCover(reason);
+            CombatCommon.ClearCommittedPosition(reason);
+            CombatCommon.ClearCommittedMovement(reason);
+            repositionPhase.Clear();
+            supportPhase.Clear();
         }
 
         private AICoreActionEnd EndMarksmanRecoveryMovement(
@@ -1860,23 +2215,7 @@ namespace pitTeam.BigBrain
                     return new AICoreActionEnd("marksmanPositionShotReady", true);
                 }
 
-                bool supportPosition = IsMarksmanSupportPositionReason(reason);
-                string holdReason = supportPosition ? SupportPositionHoldReason : PositionHoldReason;
-                CombatCommon.SetCommittedPosition(
-                    BotOwner.Position,
-                    new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.holdPosition, holdReason),
-                    supportPosition ? FireSupportSettleSeconds : RepositionHoldTimeoutSeconds);
-
-                if (supportPosition)
-                {
-                    supportPhase.BeginHoldLifecycle(FireSupportSettleSeconds, SupportHoldTimeoutSeconds);
-                }
-                else
-                {
-                    repositionPhase.StartCooldown(RepositionCooldownSeconds);
-                    repositionPhase.BeginHoldLifecycle(FireSupportSettleSeconds, RepositionHoldTimeoutSeconds);
-                }
-
+                ArmMarksmanTravelArrivalHold(reason);
                 return new AICoreActionEnd("marksmanPositionArrived", true);
             }
 
@@ -1934,6 +2273,11 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEnd("sniperCombatGestureBreakHold", true);
             }
 
+            if (TryPreparePendingMedicalBreak(currentDecision))
+            {
+                return new AICoreActionEnd("sniperHoldMedicalWork", true);
+            }
+
             if (string.Equals(reason, FollowerCombatCommon.HealRetryHoldReason, StringComparison.Ordinal))
             {
                 return EndMedicalRetryHold(currentDecision);
@@ -1967,6 +2311,32 @@ namespace pitTeam.BigBrain
             if (string.Equals(reason, CloseWeaponPrepareHoldReason, StringComparison.Ordinal))
             {
                 return EndCloseWeaponPreparationHold();
+            }
+
+            if (CombatCommon.IsCommittedHolderReason(reason) &&
+                FollowerCombatCommon.IsRecoveryManeuverReason(reason))
+            {
+                EnemyInfo? recoveryEnemy = BotOwner.Memory.GoalEnemy;
+                if (!CombatCommon.HasActiveCombatEnemy(recoveryEnemy))
+                {
+                    CombatCommon.ClearCommittedPosition("sniperRecoveryHoldNoEnemy");
+                    return new AICoreActionEnd("sniperRecoveryHoldNoEnemy", true);
+                }
+
+                if (TryPrepareImmediateShotBreak(recoveryEnemy!, "sniperRecoveryHoldShotReady", out var recoveryShot))
+                {
+                    return recoveryShot;
+                }
+
+                if (CombatCommon.WasHitAfterCommittedPosition() &&
+                    TryPreparePressureRecoveryBreak(recoveryEnemy!, "sniperRecoveryHoldNewHit", out var newHitRecovery))
+                {
+                    return newHitRecovery;
+                }
+
+                // Keep the bounded arrival grace even when IsInCover is late. Expiry or leaving
+                // the actual arrival envelope releases it for a fresh recovery decision.
+                return CombatCommon.EndCommittedPositionHold(currentDecision, deferCombatBreaks: true);
             }
 
             if (!string.IsNullOrEmpty(reason) && reason.Contains("regroupNotNeeded"))
@@ -2137,16 +2507,21 @@ namespace pitTeam.BigBrain
                 // Expiry is permission to seek a different firing position, not permission to clear
                 // the current cover and immediately recommit it. End only with an atomically prepared
                 // replacement; otherwise retain this hold and retry after another bounded lifecycle.
-                if (TryGetRepositionHoldOpportunityDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> expiredReposition) &&
-                    TryPrepareBreakDecision(expiredReposition, false, true))
+                if (TryPrepareIdleEngagementBreak(goalEnemy))
                 {
                     return new AICoreActionEnd("sniperCoverHoldExpiredReposition", true);
                 }
 
                 repositionPhase.StartCooldown(RepositionCooldownSeconds);
                 repositionPhase.BeginHoldLifecycle(FireSupportSettleSeconds, RepositionHoldTimeoutSeconds);
+                CombatCommon.TryRenewCommittedPositionHold(currentDecision, RepositionHoldTimeoutSeconds);
                 CombatCommon.HoldCoverForMaxDuration();
                 return FollowerCombatCommon.Continue();
+            }
+
+            if (CombatCommon.IsCommittedHolderReason(reason))
+            {
+                return CombatCommon.EndCommittedPositionHold(currentDecision, deferCombatBreaks: true);
             }
 
             // Note: baseHoldPosition end-timeout uses EndBaseHoldPosition which respects EFT-level hold gates.
@@ -2173,6 +2548,21 @@ namespace pitTeam.BigBrain
                     dogFight.Value))
             {
                 return new AICoreActionEnd("sniperMedicalRetryDogFight", true);
+            }
+
+            // Pressure recovery is a fallback only after a due medical retry has had its turn.
+            if (!CombatCommon.IsHealDecisionRetryBlocked)
+            {
+                AICoreActionResult<BotLogicDecision, CoreActionResultParams>? healDecision =
+                    CombatCommon.TryGetNeedHealDecision();
+                if (healDecision != null &&
+                    CombatCommon.TryPrepareDecisionTransition(
+                        currentDecision,
+                        "sniperMedicalRetryReady",
+                        healDecision.Value))
+                {
+                    return new AICoreActionEnd("sniperMedicalRetryReady", true);
+                }
             }
 
             AICoreActionResult<BotLogicDecision, CoreActionResultParams>? immediateShoot =
@@ -2213,17 +2603,6 @@ namespace pitTeam.BigBrain
                 return FollowerCombatCommon.Continue();
             }
 
-            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? healDecision =
-                CombatCommon.TryGetNeedHealDecision();
-            if (healDecision != null &&
-                CombatCommon.TryPrepareDecisionTransition(
-                    currentDecision,
-                    "sniperMedicalRetryReady",
-                    healDecision.Value))
-            {
-                return new AICoreActionEnd("sniperMedicalRetryReady", true);
-            }
-
             if (!CombatCommon.HasActiveOrPendingHealWork())
             {
                 return new AICoreActionEnd("sniperMedicalRetryCleared", true);
@@ -2237,7 +2616,8 @@ namespace pitTeam.BigBrain
             EnemyInfo? goalEnemy = BotOwner.Memory.GoalEnemy;
             if (!CombatCommon.HasActiveCombatEnemy(goalEnemy) ||
                 goalEnemy == null ||
-                goalEnemy.Distance > CombatDistanceConfiguration.Instance.GetCloseQuarterDistance())
+                (goalEnemy.Distance > CombatDistanceConfiguration.Instance.GetCloseQuarterDistance() &&
+                 (!preparedCloseSearchDecision.HasValue || !ShouldUseOffensiveAutoSearch(goalEnemy))))
             {
                 ClearCloseWeaponPreparation();
                 return new AICoreActionEnd("sniperCloseWeaponPrepareNoCloseEnemy", true);
@@ -2267,6 +2647,23 @@ namespace pitTeam.BigBrain
 
             if (CombatCommon.IsAutomaticCloseCombatWeaponReady())
             {
+                if (preparedCloseSearchDecision.HasValue)
+                {
+                    if (!ShouldUseOffensiveAutoSearch(goalEnemy) || ShouldDeferCloseAutoToNearbyRifleman(goalEnemy) ||
+                        !IsMarksmanCloseSearchDestinationSafe(goalEnemy, preparedCloseSearchPoint))
+                    {
+                        closeSearchRetryUntil = Time.time + FiringPositionCooldownSeconds;
+                        ClearCloseWeaponPreparation();
+                        return new AICoreActionEnd("sniperCloseSearchInvalidated", true);
+                    }
+
+                    BotOwner.GoToSomePointData.SetPoint(preparedCloseSearchPoint);
+                    if (!TryPrepareBreakDecision(preparedCloseSearchDecision.Value, false, false))
+                    {
+                        return FollowerCombatCommon.Continue();
+                    }
+                }
+
                 ClearCloseWeaponPreparation();
                 return new AICoreActionEnd("sniperCloseWeaponReady", true);
             }
@@ -2415,25 +2812,24 @@ namespace pitTeam.BigBrain
                 return supportRefreshBreak;
             }
 
-            if (ShouldReleaseSupportHoldForOpportunity(goalEnemy) || IsSupportHoldExpired())
-            {
-                ClearCommittedCoverAndRepositionState();
-                return new AICoreActionEnd("fireSupportHoldExpired", true);
-            }
-
             if (ShouldBreakCommittedCoverForBossObjective(goalEnemy, allowLockedBreak: true))
             {
                 ClearCommittedCoverAndRepositionState();
                 return new AICoreActionEnd("fireSupportHoldBossObjective", true);
             }
 
-            AICoreActionEnd baseEnd = CombatCommon.EndBaseHoldPosition(FireSupportHoldReason);
-            if (baseEnd.Value)
+            if (IsSupportHoldExpired())
             {
-                ClearCommittedCoverAndRepositionState();
+                if (TryPrepareIdleEngagementBreak(goalEnemy))
+                {
+                    return new AICoreActionEnd("fireSupportHoldEngagement", true);
+                }
+
+                supportPhase.BeginHoldLifecycle(FireSupportSettleSeconds, SupportHoldTimeoutSeconds);
             }
 
-            return baseEnd;
+            CombatCommon.HoldFor(FireSupportSettleSeconds);
+            return FollowerCombatCommon.Continue();
         }
 
         private AICoreActionEnd EndFireSupportPositionHold()
@@ -2476,9 +2872,12 @@ namespace pitTeam.BigBrain
 
             if (IsSupportHoldExpired())
             {
-                supportPhase.Clear();
-                CombatCommon.ClearCommittedPosition();
-                return new AICoreActionEnd("fireSupportPositionExpired", true);
+                if (TryPrepareIdleEngagementBreak(goalEnemy))
+                {
+                    return new AICoreActionEnd("fireSupportPositionEngagement", true);
+                }
+
+                supportPhase.BeginHoldLifecycle(FireSupportSettleSeconds, SupportHoldTimeoutSeconds);
             }
 
             CombatCommon.HoldFor(FireSupportSettleSeconds);
@@ -2532,9 +2931,12 @@ namespace pitTeam.BigBrain
 
             if (IsRepositionHoldExpired())
             {
-                repositionPhase.Clear();
-                CombatCommon.ClearCommittedPosition();
-                return new AICoreActionEnd("marksmanPositionExpired", true);
+                if (TryPrepareIdleEngagementBreak(goalEnemy))
+                {
+                    return new AICoreActionEnd("marksmanPositionEngagement", true);
+                }
+
+                repositionPhase.BeginHoldLifecycle(FireSupportSettleSeconds, RepositionHoldTimeoutSeconds);
             }
 
             CombatCommon.HoldFor(FireSupportSettleSeconds);
@@ -2582,8 +2984,13 @@ namespace pitTeam.BigBrain
 
             if (Time.time >= noActionFallbackUntil || IsRepositionHoldExpired())
             {
-                repositionPhase.Clear();
-                return new AICoreActionEnd("sniperNoActionExpired", true);
+                if (TryPrepareIdleEngagementBreak(goalEnemy))
+                {
+                    return new AICoreActionEnd("sniperNoActionEngagement", true);
+                }
+
+                noActionFallbackUntil = Time.time + FiringPositionCooldownSeconds;
+                repositionPhase.BeginHoldLifecycle(FireSupportSettleSeconds, FiringPositionCooldownSeconds);
             }
 
             CombatCommon.HoldFor(Mathf.Max(0.1f, noActionFallbackUntil - Time.time));
@@ -2808,16 +3215,53 @@ namespace pitTeam.BigBrain
             return true;
         }
 
-        private bool ShouldReleaseSupportHoldForOpportunity(EnemyInfo goalEnemy)
+        private bool TryGetIdleEngagementDecision(
+            EnemyInfo goalEnemy,
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
-            return CanScanSupportHold() &&
-                   ShouldUseOffensiveAutoSearch(goalEnemy);
+            decision = default;
+            if (!CombatCommon.HasActiveCombatEnemy(goalEnemy))
+            {
+                return false;
+            }
+
+            if (!BotOwner.Memory.IsUnderFire && !FollowerCombatCommon.WasHitRecently(BotOwner, 0.75f) &&
+                !ShouldDeferCloseAutoToNearbyRifleman(goalEnemy) && ShouldUseOffensiveAutoSearch(goalEnemy) &&
+                TryCreateSafeCloseSearchDecision(goalEnemy, "sniper.closeSearch", out decision))
+            {
+                return true;
+            }
+
+            if (TryGetRepositionHoldOpportunityDecision(goalEnemy, out decision))
+            {
+                return true;
+            }
+
+            // A valid current cover is not proof of a useful firing position. Search the wider
+            // candidate set without first releasing it; only an accepted distinct route replaces it.
+            if (!TryCreateOwnFiringPositionDecision(goalEnemy, "sniper.position.reengage", out decision))
+            {
+                return false;
+            }
+
+            CombatCommon.ClearCommittedCover("sniperEngagementReposition");
+            CombatCommon.ClearCommittedPosition("sniperEngagementReposition");
+            repositionPhase.BeginTravel();
+            return true;
         }
 
-        private bool ShouldReleaseRepositionHoldForOpportunity(EnemyInfo goalEnemy)
+        private bool TryPrepareIdleEngagementBreak(EnemyInfo goalEnemy)
         {
-            return CanScanRepositionHold() &&
-                   ShouldUseOffensiveAutoSearch(goalEnemy);
+            if (!TryGetIdleEngagementDecision(goalEnemy, out var decision) ||
+                !TryPrepareBreakDecision(decision, false,
+                    FollowerCombatCommon.IsMovementDecision(decision) && !IsAutomaticSupportIntentReason(decision.Reason)))
+            {
+                return false;
+            }
+
+            CombatCommon.ClearCommittedPosition("sniperHoldEngagement");
+            BattleRecorder.RecordObjectiveDiagnostic(BotOwner, "Sniper", "engagementPrepared", decision.Reason);
+            return true;
         }
 
         private void ClearCommittedCoverAndRepositionState()

@@ -11,7 +11,6 @@ namespace pitTeam.BigBrain
         private const string AutomaticSecondarySwitchReason = "objectiveSuppress.autoSecondarySwitch";
         private const string AutomaticSecondarySettleReason = "objectiveSuppress.autoSecondarySettle";
         private const float WeaponSwitchRetrySeconds = 0.25f;
-        private const float AutomaticSecondarySwitchTimeoutSeconds = 1.5f;
 
         private bool complete;
         private bool negativeSaid;
@@ -170,7 +169,7 @@ namespace pitTeam.BigBrain
             {
                 if (string.Equals(currentDecision.Reason, AutomaticSecondarySwitchReason, StringComparison.Ordinal))
                 {
-                    if (CombatCommon.IsEligibleAutomaticSecondarySelectedAndReady())
+                    if (CombatCommon.IsEligibleAutomaticMarksmanSupportSelectedAndReady())
                     {
                         automaticSecondarySwitchPending = false;
                         automaticSecondarySwitchUntil = 0f;
@@ -191,8 +190,8 @@ namespace pitTeam.BigBrain
 
                 if (string.Equals(currentDecision.Reason, AutomaticSecondarySettleReason, StringComparison.Ordinal))
                 {
-                    if (CombatCommon.IsEligibleAutomaticSecondarySelectedAndReady() ||
-                        CombatCommon.IsWeaponSelectionSettledForAutomaticSecondaryRequest())
+                    if (CombatCommon.IsEligibleAutomaticMarksmanSupportSelectedAndReady() ||
+                        CombatCommon.IsWeaponSelectionSettledForAutomaticMarksmanSupportRequest())
                     {
                         automaticSecondarySettleUntil = 0f;
                         return new AICoreActionEnd("suppressionAutomaticSecondarySettled", true);
@@ -245,12 +244,19 @@ namespace pitTeam.BigBrain
             return reason != null && reason.StartsWith(ReasonPrefix, StringComparison.Ordinal);
         }
 
+        internal static bool IsAutomaticSupportIntentReason(string? reason)
+        {
+            return string.Equals(reason, AutomaticSecondarySwitchReason, StringComparison.Ordinal) ||
+                   string.Equals(reason, AutomaticSecondarySettleReason, StringComparison.Ordinal) ||
+                   reason?.StartsWith($"{ReasonPrefix}.weapon.", StringComparison.Ordinal) == true;
+        }
+
         private bool TryGetAutomaticSecondarySwitchDecision(
             out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision,
             out bool ready)
         {
             decision = default;
-            ready = CombatCommon.IsEligibleAutomaticSecondarySelectedAndReady();
+            ready = CombatCommon.IsEligibleAutomaticMarksmanSupportSelectedAndReady();
             if (ready)
             {
                 automaticSecondarySwitchPending = false;
@@ -272,11 +278,11 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
-            if (!CombatCommon.IsWeaponSelectionSettledForAutomaticSecondaryRequest())
+            if (!CombatCommon.IsWeaponSelectionSettledForAutomaticMarksmanSupportRequest())
             {
                 if (automaticSecondarySettleUntil <= Time.time)
                 {
-                    automaticSecondarySettleUntil = Time.time + AutomaticSecondarySwitchTimeoutSeconds;
+                    automaticSecondarySettleUntil = Time.time + FollowerCombatCommon.SupportWeaponPrepareTimeoutSeconds;
                 }
 
                 decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
@@ -287,14 +293,14 @@ namespace pitTeam.BigBrain
 
             automaticSecondarySettleUntil = 0f;
 
-            if (!CombatCommon.HasLoadedAutomaticSecondaryForPush() ||
-                !CombatCommon.TryRequestEligibleAutomaticSecondary())
+            if (!CombatCommon.HasLoadedAutomaticMarksmanSupportWeapon() ||
+                !CombatCommon.TryRequestEligibleAutomaticMarksmanSupport())
             {
                 return false;
             }
 
             automaticSecondarySwitchPending = true;
-            automaticSecondarySwitchUntil = Time.time + AutomaticSecondarySwitchTimeoutSeconds;
+            automaticSecondarySwitchUntil = Time.time + FollowerCombatCommon.SupportWeaponPrepareTimeoutSeconds;
             automaticSecondarySettleUntil = 0f;
             CombatCommon.HoldFor(0.25f);
             decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(

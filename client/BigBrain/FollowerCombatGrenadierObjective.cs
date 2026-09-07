@@ -17,6 +17,7 @@ namespace pitTeam.BigBrain
         private const string RetryHoldReason = "objectiveGrenadier.retry";
         private const string AutonomousActivationReason = "objectiveGrenadier.activateAuto";
         private const float RetryScanSeconds = 0.25f;
+        private const float PreparationProbeSeconds = 0.15f;
         private const float PhysicsAbortMinActiveSeconds = 0.5f;
         private const float PhysicsAbortNavSampleRadius = 3f;
         private const float PhysicsAbortNavDrop = 3f;
@@ -37,6 +38,8 @@ namespace pitTeam.BigBrain
         private float highestObservedY;
         private float lastBossDistance;
         private float retryScanUntil;
+        private float launcherPreparationUntil;
+        private float nextPreparationProbeAt;
         private Vector3 highestObservedPosition;
         private FollowerCombatCommon.GrenadeLauncherFirePlan? launcherPlan;
 
@@ -60,6 +63,8 @@ namespace pitTeam.BigBrain
             highestObservedY = float.NegativeInfinity;
             lastBossDistance = 0f;
             retryScanUntil = 0f;
+            launcherPreparationUntil = 0f;
+            nextPreparationProbeAt = 0f;
             highestObservedPosition = Vector3.zero;
             launcherPlan = null;
         }
@@ -129,23 +134,7 @@ namespace pitTeam.BigBrain
 
             if (TryGetEmergencyDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> emergencyDecision))
             {
-                // A first-primary launcher must not remain in hand while the shared combat stack
-                // retreats, heals, reloads, or enters a point-blank fight. The support launcher
-                // path is unaffected because this helper only accepts the first-primary launcher.
-                string emergencyReason = emergencyDecision.Reason ?? emergencyDecision.Action.ToString();
-                CombatCommon.RequestFirstPrimaryLauncherHolsterFallback(
-                    $"grenadierEmergency.{emergencyReason}");
-                if (CombatCommon.TryCreatePendingFirstPrimaryLauncherHolsterFallbackDecision(
-                        out AICoreActionResult<BotLogicDecision, CoreActionResultParams> holsterFallbackDecision))
-                {
-                    emergencyDecision = holsterFallbackDecision;
-                }
-
-                complete = true;
-                RecordAttemptCooldown($"emergency.{emergencyReason}");
-                CombatCommon.PrepareLauncherSuppressWeaponFallback();
-                ClearObjectiveCommitments();
-                return emergencyDecision;
+                return FinishForEmergency(emergencyDecision);
             }
 
             if (!launcherReady)
@@ -161,11 +150,26 @@ namespace pitTeam.BigBrain
 
                 if (!ready)
                 {
+                    if (launcherPreparationUntil <= 0f)
+                    {
+                        bool needsReload = FollowerCombatCommon.CountLoadedRounds(
+                            FollowerCombatCommon.GetActiveOrEquippedGrenadeLauncher(BotOwner)) <= 0 ||
+                            BotOwner.WeaponManager?.Reload?.Reloading == true;
+                        launcherPreparationUntil = Time.time + (needsReload
+                            ? FollowerCombatCommon.GrenadeLauncherPrepareTimeoutSeconds
+                            : FollowerCombatCommon.SupportWeaponPrepareTimeoutSeconds);
+                    }
+
+                    if (Time.time >= launcherPreparationUntil)
+                    {
+                        return FailObjective("launcherPreparationTimedOut");
+                    }
+
+                    nextPreparationProbeAt = Time.time + PreparationProbeSeconds;
                     return prepareDecision;
                 }
 
-                launcherReady = true;
-                activeUntil = Time.time + OpportunityWindowSeconds;
+                MarkLauncherReady();
             }
 
             if (Time.time >= activeUntil)
@@ -209,6 +213,12 @@ namespace pitTeam.BigBrain
             }
 
             if (currentDecision.Action == BotLogicDecision.holdPosition &&
+                IsLauncherPreparationReason(currentDecision.Reason))
+            {
+                return EndLauncherPreparation(currentDecision, goalEnemy!);
+            }
+
+            if (currentDecision.Action == BotLogicDecision.holdPosition &&
                 IsRetryHoldReason(currentDecision.Reason))
             {
                 return EndRetryHold();
@@ -220,6 +230,77 @@ namespace pitTeam.BigBrain
             }
 
             return CombatCommon.ShallEndCurrentDecision(currentDecision);
+        }
+
+        private AICoreActionEnd EndLauncherPreparation(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision,
+            EnemyInfo goalEnemy)
+        {
+            if (Time.time < nextPreparationProbeAt)
+            {
+                return FollowerCombatCommon.Continue();
+            }
+
+            nextPreparationProbeAt = Time.time + PreparationProbeSeconds;
+            if (TryGetEmergencyDecision(goalEnemy, out var emergency))
+            {
+                var successor = FinishForEmergency(emergency);
+                CombatCommon.TryPrepareDecisionTransition(currentDecision, "grenadierPreparationEmergency", successor);
+                return new AICoreActionEnd("grenadierPreparationEmergency", true);
+            }
+
+            // Poll the same transaction in place, including bounded reload retries. Changing from
+            // draw to reload is progress inside preparation, not a reason to recreate the hold.
+            if (!CombatCommon.TryPrepareGrenadeLauncherWeaponForSuppress(
+                    GetModeReasonPrefix(), out _, out bool ready, out string failReason))
+            {
+                FailObjective(failReason);
+                return new AICoreActionEnd($"grenadierPreparationFailed:{failReason}", true);
+            }
+
+            if (ready)
+            {
+                MarkLauncherReady();
+                return new AICoreActionEnd("grenadierLauncherReady", true);
+            }
+
+            // The shared reload wait is already bounded. This backstop also covers a loaded
+            // launcher whose asynchronous hands/selector readiness never finishes.
+            if (launcherPreparationUntil <= 0f || Time.time >= launcherPreparationUntil)
+            {
+                FailObjective("launcherPreparationTimedOut");
+                return new AICoreActionEnd("grenadierPreparationTimedOut", true);
+            }
+
+            CombatCommon.HoldFor(PreparationProbeSeconds);
+            return FollowerCombatCommon.Continue();
+        }
+
+        private void MarkLauncherReady()
+        {
+            launcherReady = true;
+            launcherPreparationUntil = 0f;
+            nextPreparationProbeAt = 0f;
+            activeUntil = Time.time + OpportunityWindowSeconds;
+        }
+
+        private AICoreActionResult<BotLogicDecision, CoreActionResultParams> FinishForEmergency(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> emergencyDecision)
+        {
+            // A first-primary launcher must not remain in hand during a shared survival action.
+            // Support launchers retain their existing return-to-primary lifecycle.
+            string emergencyReason = emergencyDecision.Reason ?? emergencyDecision.Action.ToString();
+            CombatCommon.RequestFirstPrimaryLauncherHolsterFallback($"grenadierEmergency.{emergencyReason}");
+            if (CombatCommon.TryCreatePendingFirstPrimaryLauncherHolsterFallbackDecision(out var holsterFallback))
+            {
+                emergencyDecision = holsterFallback;
+            }
+
+            complete = true;
+            RecordAttemptCooldown($"emergency.{emergencyReason}");
+            CombatCommon.PrepareLauncherSuppressWeaponFallback();
+            ClearObjectiveCommitments();
+            return emergencyDecision;
         }
 
         internal static bool IsAutonomousActivationReason(string? reason)
@@ -582,6 +663,8 @@ namespace pitTeam.BigBrain
 
         private void ClearObjectiveCommitments()
         {
+            launcherPreparationUntil = 0f;
+            nextPreparationProbeAt = 0f;
             CombatCommon.ClearFollowerSuppressState();
             CombatCommon.ClearCommittedMovement();
             CombatCommon.ClearCommittedPosition();

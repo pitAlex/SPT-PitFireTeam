@@ -53,7 +53,7 @@ namespace pitTeam.BigBrain.Actions
         public override void Update(CustomLayer.ActionData data)
         {
             currentReason = GetReason(data);
-            TryPreferMarksmanPrimaryAtRange(BotOwner.Memory?.GoalEnemy);
+            TryPreferMarksmanPrimaryAtRange(BotOwner.Memory?.GoalEnemy, currentReason);
 
             bool canRun = TryCanActuallyRun(out string runGate);
             if (movementMode == MovementMode.ThreatFacingFire)

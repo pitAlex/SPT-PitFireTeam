@@ -797,6 +797,8 @@ namespace pitTeam.BigBrain.Actions
                 BotOwner.Mover.Sprint(false, false);
             }
 
+            TryRestoreMainWeaponDuringHold();
+
             if (followerData?.TryGetCommandLookOverride(out Vector3 holdLookOverridePoint) == true)
             {
                 holdLookPoint = Vector3.zero;
@@ -825,6 +827,59 @@ namespace pitTeam.BigBrain.Actions
             moveArrivalLookUntil = 0f;
             comeArrivalHoldUntil = 0f;
             activeMoveTarget = Vector3.zero;
+        }
+
+        private void TryRestoreMainWeaponDuringHold()
+        {
+            BotWeaponManager? weaponManager = BotOwner?.WeaponManager;
+            BotWeaponSelector? selector = weaponManager?.Selector;
+            if (weaponManager == null ||
+                selector == null ||
+                BotOwner.Memory?.GoalEnemy != null ||
+                weaponManager.Reload?.Reloading == true ||
+                FollowerMedical.IsUsingMedical(BotOwner))
+            {
+                return;
+            }
+
+            Weapon? firstPrimary = BotOwner.GetPlayer?.InventoryController?.Inventory?.Equipment
+                ?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem as Weapon;
+            Weapon? secondPrimary = BotOwner.GetPlayer?.InventoryController?.Inventory?.Equipment
+                ?.GetSlot(EquipmentSlot.SecondPrimaryWeapon)?.ContainedItem as Weapon;
+            Weapon? handsWeapon = BotOwner.GetPlayer?.HandsController?.Item as Weapon;
+            if ((firstPrimary != null && string.Equals(handsWeapon?.Id, firstPrimary.Id, StringComparison.Ordinal)) ||
+                (secondPrimary != null && string.Equals(handsWeapon?.Id, secondPrimary.Id, StringComparison.Ordinal)))
+            {
+                return;
+            }
+
+            EquipmentSlot targetSlot = selector._mainWeapon;
+            Weapon? targetWeapon = targetSlot == EquipmentSlot.FirstPrimaryWeapon
+                ? firstPrimary
+                : targetSlot == EquipmentSlot.SecondPrimaryWeapon
+                    ? secondPrimary
+                    : null;
+            if (targetWeapon == null)
+            {
+                targetSlot = firstPrimary != null
+                    ? EquipmentSlot.FirstPrimaryWeapon
+                    : EquipmentSlot.SecondPrimaryWeapon;
+                targetWeapon = firstPrimary ?? secondPrimary;
+            }
+
+            if (targetWeapon == null || selector.IsChanging || Time.time < nextHoldMainWeaponReturnAt)
+            {
+                return;
+            }
+
+            nextHoldMainWeaponReturnAt = Time.time + 0.75f;
+            if (targetSlot == selector._mainWeapon)
+            {
+                selector.ChangeToMain();
+                return;
+            }
+
+            selector.TryChangeToSlot(targetSlot, false);
         }
 
         private void HandleComeArrivalPause(bool contactApproach)

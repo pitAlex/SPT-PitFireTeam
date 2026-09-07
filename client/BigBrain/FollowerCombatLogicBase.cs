@@ -821,7 +821,7 @@ namespace pitTeam.BigBrain
             }
 
             return followerData?.SuppressEnemyUseAutomaticSecondary == true &&
-                   combatCommon.HasLoadedAutomaticSecondaryForPush();
+                   combatCommon.HasLoadedAutomaticMarksmanSupportWeapon();
         }
 
         private void ActivateNeedSniperObjective(BotFollowerPlayer followerData, EnemyInfo goalEnemy)

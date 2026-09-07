@@ -2068,16 +2068,6 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEnd("medicalRetryCombatEnded", true);
             }
 
-            if (TryGetImmediateFightDecision(
-                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> immediateFight) &&
-                combatCommon.TryPrepareDecisionTransition(
-                    currentDecision,
-                    "medicalRetryImmediateFight",
-                    immediateFight))
-            {
-                return new AICoreActionEnd("medicalRetryImmediateFight", true);
-            }
-
             if (combatCommon.IsActivelyUsingMedical &&
                 TryGetHealDecision(
                     out AICoreActionResult<BotLogicDecision, CoreActionResultParams> activeHealDecision) &&
@@ -2107,6 +2097,29 @@ namespace pitTeam.BigBrain
                 }
             }
 
+            // Once the retry is due, look for the medical successor before generic pressure
+            // recovery. A repeated no-cover suppression fallback must not starve this search.
+            if (!combatCommon.IsHealDecisionRetryBlocked &&
+                TryGetHealDecision(
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> healDecision) &&
+                combatCommon.TryPrepareDecisionTransition(
+                    currentDecision,
+                    "medicalRetryReady",
+                    healDecision))
+            {
+                return new AICoreActionEnd("medicalRetryReady", true);
+            }
+
+            if (TryGetImmediateFightDecision(
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> immediateFight) &&
+                combatCommon.TryPrepareDecisionTransition(
+                    currentDecision,
+                    "medicalRetryImmediateFight",
+                    immediateFight))
+            {
+                return new AICoreActionEnd("medicalRetryImmediateFight", true);
+            }
+
             if (TryGetRecoverDecision(
                     goalEnemy,
                     out AICoreActionResult<BotLogicDecision, CoreActionResultParams> recoveryDecision) &&
@@ -2132,16 +2145,6 @@ namespace pitTeam.BigBrain
             if (combatCommon.IsHealDecisionRetryBlocked)
             {
                 return FollowerCombatCommon.Continue();
-            }
-
-            if (TryGetHealDecision(
-                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> healDecision) &&
-                combatCommon.TryPrepareDecisionTransition(
-                    currentDecision,
-                    "medicalRetryReady",
-                    healDecision))
-            {
-                return new AICoreActionEnd("medicalRetryReady", true);
             }
 
             if (!combatCommon.HasActiveOrPendingHealWork())

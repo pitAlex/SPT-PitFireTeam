@@ -10,6 +10,16 @@ using pitTeam.BigBrain;
 
 namespace pitTeam.Patches
 {
+    internal static class BotMemoryOwnerAccessor
+    {
+        private static readonly FieldInfo OwnerField = AccessTools.Field(typeof(EFT.BotMemory), "_owner");
+
+        internal static BotOwner Get(EFT.BotMemory memory)
+        {
+            return OwnerField.GetValue(memory) as BotOwner;
+        }
+    }
+
     /**
      * Patch to yell friendly fire from teamates
      */
@@ -24,7 +34,7 @@ namespace pitTeam.Patches
         {
             try
             {
-                var botOwner_0 = AccessTools.Field(typeof(EFT.BotMemory), "_owner").GetValue(__instance) as BotOwner;
+                BotOwner botOwner_0 = BotMemoryOwnerAccessor.Get(__instance);
 
                 if (damageInfo.Player == null) return;
 
@@ -67,7 +77,7 @@ namespace pitTeam.Patches
         {
             try
             {
-                BotOwner botOwner = AccessTools.Field(typeof(EFT.BotMemory), "_owner").GetValue(__instance) as BotOwner;
+                BotOwner botOwner = BotMemoryOwnerAccessor.Get(__instance);
                 EnemyInfo previous = __instance.GoalEnemy;
                 string reason = FollowerGoalEnemyTracker.CurrentReason;
 

@@ -218,7 +218,7 @@ namespace pitTeam.Patches
             HideScreenBottomPanel(screen.transform);
             HideCurrentWeightValue(screen.transform);
             EnsureExcludeExistingItemsToggle(screen.transform);
-            ApplyActionButtonText(screen.transform);
+            ApplyActionButtonState(screen.transform);
             HideCanEquipIcon(screen.transform);
             ApplySelectedBuildPrice(screen);
         }
@@ -429,6 +429,7 @@ namespace pitTeam.Patches
                 EquipButtonText = equipButton?.HeaderText,
                 EquipButtonFontSize = equipButton?.HeaderSize ?? 18,
                 EquipButtonRawText = equipButton != null && ButtonRawTextField?.GetValue(equipButton) is bool rawText && rawText,
+                EquipButtonInteractable = equipButton?.Interactable ?? false,
                 EquipButtonLabel = equipButtonTransform?.GetComponentInChildren<TMP_Text>(true),
                 EquipButtonLabelText = equipButtonTransform?.GetComponentInChildren<TMP_Text>(true)?.text,
                 CanEquip = canEquip,
@@ -455,6 +456,7 @@ namespace pitTeam.Patches
                     _screenChromeState.EquipButtonText ?? "EQUIP",
                     _screenChromeState.EquipButtonFontSize,
                     _screenChromeState.EquipButtonRawText);
+                _screenChromeState.EquipButton.Interactable = _screenChromeState.EquipButtonInteractable;
             }
             else if (_screenChromeState.EquipButtonLabel != null)
             {
@@ -641,7 +643,7 @@ namespace pitTeam.Patches
             {
                 _excludeExistingItems = isOn;
                 Modules.Logger.LogInfo($"[UI] Teammate buy exclude existing items changed: {isOn}");
-                ApplyActionButtonText(screen);
+                ApplyActionButtonState(screen);
             });
 
             _screenChromeState.ExcludeExistingItemsToggleRoot = root;
@@ -3955,7 +3957,7 @@ namespace pitTeam.Patches
             return counts;
         }
 
-        private static void ApplyActionButtonText(Transform screen)
+        private static void ApplyActionButtonState(Transform screen)
         {
             string label = GetSocialUiText("PurchaseKitAction");
             if (_excludeExistingItems && TryCreateBuyQuote(out EquipmentBuildBuyQuote quote) && quote.CanEquipFromStash)
@@ -3968,6 +3970,12 @@ namespace pitTeam.Patches
             if (button != null)
             {
                 button.SetRawText(label, 18);
+                // Stock SetCurrentBuild gates Equip on a simulated transfer into the player's gear.
+                // Buying for a teammate only needs a selected kit here; the confirmation owns resources.
+                EFT.UI.Builds.EquipmentBuild selectedBuild = _activeScreen == null
+                    ? null
+                    : ScreenSelectedBuildField?.GetValue(_activeScreen) as EFT.UI.Builds.EquipmentBuild;
+                button.Interactable = selectedBuild?.Equipment != null;
             }
 
             TMP_Text text = buttonTransform?.GetComponentInChildren<TMP_Text>(true);
@@ -4123,6 +4131,7 @@ namespace pitTeam.Patches
             public string EquipButtonText;
             public int EquipButtonFontSize;
             public bool EquipButtonRawText;
+            public bool EquipButtonInteractable;
             public TMP_Text EquipButtonLabel;
             public string EquipButtonLabelText;
             public Transform CanEquip;
@@ -4360,7 +4369,7 @@ namespace pitTeam.Patches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(EquipmentBuildsScreen), nameof(EquipmentBuildsScreen.SelectBuildHandler));
+            return AccessTools.Method(typeof(EquipmentBuildsScreen), nameof(EquipmentBuildsScreen.SetCurrentBuild));
         }
 
         [PatchPostfix]

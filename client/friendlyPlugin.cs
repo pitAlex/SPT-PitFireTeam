@@ -201,7 +201,7 @@ namespace pitTeam
         public string Message { get; set; }
     }
 
-    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "0.10.1")]
+    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "0.10.2")]
     [BepInDependency("xyz.drakia.bigbrain")]
     [BepInDependency(pitFireTeam.MenuOverhaulPluginId, BepInDependency.DependencyFlags.SoftDependency)]
     public class pitFireTeam : BaseUnityPlugin
@@ -386,7 +386,9 @@ namespace pitTeam
                 new FollowerSprintPatch().Enable();
             new FollowerSprintStateDirectionPatch().Enable();
 
+#if DEBUG
             new AICoreAgentUpdatePatch().Enable();
+#endif
 
             // recruit/request patches
             new BotReceiverFollowMeRecruitPatch().Enable();
@@ -438,6 +440,7 @@ namespace pitTeam
             new FollowerSupportNoAmmoMainSwitchPolicyPatch().Enable();
             new FollowerHoldLingerReloadSuppressPatch().Enable();
             new FollowerCombatReloadPermissionPatch().Enable();
+            new FollowerCombatReloadFallbackSuppressPatch().Enable();
             new FollowerAimTimeProficiencyPatch().Enable();
             new FollowerAimTargetPatch().Enable();
             new FollowerShootDataSafetyPatch().Enable();

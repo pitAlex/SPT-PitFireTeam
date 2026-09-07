@@ -31,6 +31,7 @@ namespace pitTeam.BigBrain.Actions
         private float nextPathCheckAt;
         private bool moveCommandInitialized;
         private float nextHoldLookChangeAt;
+        private float nextHoldMainWeaponReturnAt;
         private Vector3 holdLookPoint;
         private float moveArrivalLookUntil;
         private float comeArrivalHoldUntil;
@@ -143,6 +144,7 @@ namespace pitTeam.BigBrain.Actions
             nextPathCheckAt = 0f;
             moveCommandInitialized = false;
             nextHoldLookChangeAt = 0f;
+            nextHoldMainWeaponReturnAt = 0f;
             holdLookPoint = Vector3.zero;
             moveArrivalLookUntil = 0f;
             comeArrivalHoldUntil = 0f;
@@ -283,6 +285,7 @@ namespace pitTeam.BigBrain.Actions
                 regroupBossAnchorInitialized = false;
                 regroupBossAnchorPosition = Vector3.zero;
                 nextRegroupBossAnchorCheckAt = 0f;
+                nextHoldMainWeaponReturnAt = 0f;
                 lootPickupInProgress = false;
                 lootPickupReadyAt = 0f;
                 lootPickupAttemptStartedAt = 0f;
