@@ -15,6 +15,7 @@ namespace pitTeam.Utils
         private const string NativeShaderName = "Hidden/HighLightMesh";
         private const string InternalColorShaderName = "Hidden/Internal-Colored";
         private const float PingLineWidth = 1f;
+        private const float HealthColorSampleInterval = 0.2f;
         private const int NativeAlwaysPass = 3;
         private const int NativeCompositePass = 4;
 
@@ -34,6 +35,7 @@ namespace pitTeam.Utils
         private readonly HashSet<Renderer> _seenRenderers = new HashSet<Renderer>();
         private readonly Dictionary<Renderer, HighlightMeshTarget> _targetCache = new Dictionary<Renderer, HighlightMeshTarget>();
         private readonly Dictionary<BotOwner, Material> _healthHighlightMaterials = new Dictionary<BotOwner, Material>();
+        private readonly Dictionary<BotOwner, HealthColorSample> _healthColorSamples = new Dictionary<BotOwner, HealthColorSample>();
         private readonly List<HighlightMeshTarget> _viewmodelTargets = new List<HighlightMeshTarget>();
         private readonly HashSet<Renderer> _seenViewmodelRenderers = new HashSet<Renderer>();
 
@@ -230,7 +232,7 @@ namespace pitTeam.Utils
                 }
 
                 Material material = GetHealthHighlightMaterial(teammate);
-                material.SetColor(ColorProperty, StatusReportHighlightColor.GetConfiguredHealthColor(teammate));
+                material.SetColor(ColorProperty, GetHealthHighlightColor(teammate));
                 material.SetVector(OffsetProperty, outlineOffset);
 
                 BeginMaskRender();
@@ -280,6 +282,21 @@ namespace pitTeam.Utils
 
             _healthHighlightMaterials[teammate] = material;
             return material;
+        }
+
+        private Color GetHealthHighlightColor(BotOwner teammate)
+        {
+            float now = Time.time;
+            if (_healthColorSamples.TryGetValue(teammate, out HealthColorSample sample) &&
+                now < sample.NextSampleAt)
+            {
+                return sample.Color;
+            }
+
+            sample.Color = StatusReportHighlightColor.GetConfiguredHealthColor(teammate);
+            sample.NextSampleAt = now + HealthColorSampleInterval;
+            _healthColorSamples[teammate] = sample;
+            return sample.Color;
         }
 
         private void BeginMaskRender()
@@ -532,6 +549,7 @@ namespace pitTeam.Utils
             }
 
             _healthHighlightMaterials.Clear();
+            _healthColorSamples.Clear();
             _viewmodelTargets.Clear();
             _seenViewmodelRenderers.Clear();
             _localPlayer = null;
@@ -654,6 +672,12 @@ namespace pitTeam.Utils
                     commandBuffer.DrawRenderer(_renderer, material, subMeshIndex, pass);
                 }
             }
+        }
+
+        private struct HealthColorSample
+        {
+            public Color Color;
+            public float NextSampleAt;
         }
     }
 }

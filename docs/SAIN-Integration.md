@@ -78,6 +78,10 @@ Core owns, among other things:
 
 Core compatibility must be follower-scoped and must not mutate SAIN's shared preset objects. The addon may consume the already-finalized follower state, but it cannot rewrite that state through general SAIN patches.
 
+Follower foliage compatibility removes foliage/grass from SAIN 4.5's line-of-sight, vision, and shooting ray masks at every distance, replacing the previous 10-metre exception. Hard geometry remains in those follower rays; non-followers retain SAIN's original masks. This bypass changes only SAIN's binary foliage veto: EFT look checks, `FollowerEnemyInfoCorrection` (including its own 10-metre foliage exception), suppression safety, and decision/commitment timing are unchanged. It does not disable foliage handling throughout the follower pipeline.
+
+The mask bypass runs inside SAIN's native command builder through a validated startup transpiler. Follower status and the three query parameters are selected once per enemy; native body-part sampling, command order, geometry, and job cadence are preserved. The former reflection-based replacement builder is removed. An unsupported instruction/member layout logs an error and leaves the native builder unchanged. Compare the parent `VisionRaycastJob.EnemyVisionJob` timing when profiling this optimization, since removing the old separately measured prefix changes attribution as well as runtime overhead.
+
 Player-visual contact promotion is one example of this core boundary. A target genuinely seen by the player is reported as visual contact rather than sense-only contact. If the follower has not independently seen the target, current `IsVisible` and `CanShoot` remain false while core seeds the complete personal contact record at the promotion timestamp. The addon is not involved in that compatibility path.
 
 ## Existing legacy addon patches

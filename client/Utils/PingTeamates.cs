@@ -472,6 +472,11 @@ namespace pitTeam.Utils
 
         void OnGUI()
         {
+            if (Event.current.type != EventType.Repaint)
+            {
+                return;
+            }
+
             bool killedMarkerDisplayActive = IsEnemyKilledMarkerDisplayActive(Time.time);
             bool liveEnemyMarkerDisplayActive = IsLiveEnemyMarkerDisplayActive();
             if (!liveEnemyMarkerDisplayActive && !killedMarkerDisplayActive) return;

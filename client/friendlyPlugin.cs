@@ -386,7 +386,9 @@ namespace pitTeam
                 new FollowerSprintPatch().Enable();
             new FollowerSprintStateDirectionPatch().Enable();
 
+#if DEBUG
             new AICoreAgentUpdatePatch().Enable();
+#endif
 
             // recruit/request patches
             new BotReceiverFollowMeRecruitPatch().Enable();
