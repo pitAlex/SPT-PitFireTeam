@@ -4,7 +4,7 @@
         <OutputType>Library</OutputType>
         <RootNamespace>pitTeam</RootNamespace>
         <AssemblyName>pitFireTeam</AssemblyName>
-        <Version>0.10.2</Version>
+        <Version>0.10.3</Version>
         <LangVersion>latest</LangVersion>
         <Nullable>enable</Nullable>
         <NoWarn>$(NoWarn);CS0618;CS0649;CS8600;CS8601;CS8602;CS8604;CS8618;CS8620;CS8625</NoWarn>
@@ -26,13 +26,7 @@
             <HintPath>libs4.1\ItemTemplate.Types.dll</HintPath>
         </Reference>
         <Reference Include="spt-common">
-            <HintPath>libs4.1\spt-common.dll</HintPath>
-        </Reference>
-        <Reference Include="spt-custom">
-            <HintPath>libs4.1\spt-custom.dll</HintPath>
-        </Reference>
-        <Reference Include="spt-prepatch">
-            <HintPath>libs4.1\spt-prepatch.dll</HintPath>
+            <HintPath>libs4.1\spt4.1.0\spt-common.dll</HintPath>
         </Reference>
         <Reference Include="BepInEx">
             <HintPath>libs4.1\BepInEx.dll</HintPath>
@@ -65,10 +59,7 @@
             <HintPath>libs4.1\Sirenix.Serialization.dll</HintPath>
         </Reference>
         <Reference Include="spt-reflection">
-            <HintPath>libs4.1\spt-reflection.dll</HintPath>
-        </Reference>
-        <Reference Include="spt-singleplayer">
-            <HintPath>libs4.1\spt-singleplayer.dll</HintPath>
+            <HintPath>libs4.1\spt4.1.0\spt-reflection.dll</HintPath>
         </Reference>
 
         <Reference Include="System" />
@@ -144,6 +135,21 @@
         <None Remove="libs4.1\**\*" />
         <None Include=".editorconfig" />
     </ItemGroup>
+
+    <Target Name="ValidateSptClientReferences" BeforeTargets="ResolveReferences">
+        <!-- These are the SPT libraries called by the core plugin. Keep the 4.1.0 baseline. -->
+        <ItemGroup>
+            <SptClientReference Include="$(MSBuildProjectDirectory)/libs4.1/spt4.1.0/spt-common.dll" />
+            <SptClientReference Include="$(MSBuildProjectDirectory)/libs4.1/spt4.1.0/spt-reflection.dll" />
+        </ItemGroup>
+        <Error Condition="!Exists('%(SptClientReference.Identity)')"
+               Text="Required SPT 4.1.0 client reference was not found: %(SptClientReference.Identity)" />
+        <GetAssemblyIdentity AssemblyFiles="@(SptClientReference)">
+            <Output TaskParameter="Assemblies" ItemName="SptClientReferenceIdentity" />
+        </GetAssemblyIdentity>
+        <Error Condition="'%(SptClientReferenceIdentity.Version)' != '4.1.0.0'"
+               Text="SPT 4.1.x compatibility requires 4.1.0.0 compile references. %(SptClientReferenceIdentity.Identity) is %(SptClientReferenceIdentity.Version)." />
+    </Target>
 
     <Target Name="BuildSAINAddon" AfterTargets="Build" Condition="'$(BuildSAINAddon)' != 'false' and '$(IsBuildingSAINAddon)' != 'true'">
         <MSBuild Projects="..\addon\pitFireTeam.SAINAddon.csproj"

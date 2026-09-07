@@ -88,6 +88,7 @@ namespace pitTeam.BigBrain
         private const float PatrolHealCoverArriveDistance = 2f;
         private const string PatrolHealCoverActionReason = "runToHeal";
         private const string PatrolHealWaitActionReason = "healCooldownWait";
+        internal const string CombatReadinessWaitReason = "postCombatWait";
 
         private static readonly EquipmentSlot[] ReloadSlotOrder =
         {
@@ -172,7 +173,9 @@ namespace pitTeam.BigBrain
             if (!BotOwner.BotFollower.HaveBoss) return false;
             if (BotOwner.BotFollower.BossToFollow is not pitAIBossPlayer) return false;
 
-            if (BotOwner.Memory.HaveEnemy)
+            // Combat already ignores dead goals. Use the same liveness check here so a stale
+            // EFT HaveEnemy flag cannot leave every follower layer inactive after the kill.
+            if (BotOwner.Memory.HaveEnemy && BotFollowerPlayer.IsEnemyInfoAlive(BotOwner.Memory.GoalEnemy))
             {
                 return false;
             }
@@ -198,12 +201,21 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            if (!followerData.IsReadyForPatrolAfterCombat())
-            {
-                return false;
-            }
+            // Core combat may already have released while a squadmate still has contact.
+            // Patrol owns an explicit wait in that gap; only normal following requires readiness.
+            return !pitFireTeam.UseSainFollowerCombat || followerData.IsReadyForPatrolAfterCombat();
+        }
 
-            return true;
+        private bool ShouldWaitForCombatReadiness()
+        {
+            followerData ??= BossPlayers.Instance?.GetFollower(BotOwner);
+            return !pitFireTeam.UseSainFollowerCombat &&
+                   followerData != null &&
+                   !Utils.FollowerMedical.IsUsingMedical(BotOwner) &&
+                   !isHealing &&
+                   (patrolHealCover == null || patrolHealCoverFallback) &&
+                   !followerData.IsBackpackInspectionActive &&
+                   !followerData.IsReadyForPatrolAfterCombat();
         }
 
         private static bool HasRequestLayerCommand(BotFollowerPlayer followerData)
@@ -229,8 +241,7 @@ namespace pitTeam.BigBrain
                 foreach (var kv in infos)
                 {
                     var info = kv.Value;
-                    if (info == null) continue;
-                    if (info.IsVisible) return true;
+                    if (info?.IsVisible == true && BotFollowerPlayer.IsEnemyInfoAlive(info)) return true;
                 }
             }
             catch
@@ -317,6 +328,12 @@ namespace pitTeam.BigBrain
 
             try
             {
+                if (ShouldWaitForCombatReadiness())
+                {
+                    selectedAction = new Action(typeof(PatrolCombatWaitAction), CombatReadinessWaitReason);
+                    return selectedAction;
+                }
+
                 if (TryCompletePostCombatFullHealRestore())
                 {
                     selectedAction = new Action(typeof(FollowAction), "FollowerPatrol");
@@ -391,6 +408,16 @@ namespace pitTeam.BigBrain
         {
             try
             {
+                bool shouldWait = ShouldWaitForCombatReadiness();
+                if (selectedAction?.Type == typeof(PatrolCombatWaitAction))
+                {
+                    return !IsActive() || !shouldWait;
+                }
+                if (shouldWait)
+                {
+                    return true;
+                }
+
                 bool isHealAction = selectedAction?.Type == typeof(HealAction);
                 bool isHealWaitAction = selectedAction?.Type == typeof(PatrolHealWaitAction);
                 bool isHealCoverAction = selectedAction?.Type == typeof(CombatRunToCoverAction);
@@ -552,6 +579,11 @@ namespace pitTeam.BigBrain
                 // FollowerMedical owns stuck controller recovery. Do not cancel a legitimate
                 // multi-part heal here merely because its total animation exceeds 15 seconds.
                 return false;
+            }
+
+            if (TryEndTimedOutPatrolHealing(isUsingHeal))
+            {
+                return true;
             }
 
             bool completedMedicalUse = healUseObserved;
@@ -898,19 +930,8 @@ namespace pitTeam.BigBrain
             bool hasPendingHealWork,
             bool hasRecoverableTopOffWork)
         {
-            if (healSoftTimeoutAt > 0f && Time.time >= healSoftTimeoutAt)
+            if (isUsingHeal || TryEndTimedOutPatrolHealing(isUsingHeal))
             {
-                if (Utils.FollowerMedical.IsPostCombatFullHealActive(BotOwner))
-                {
-                    Utils.FollowerMedical.ForceHeal(BotOwner);
-                    Utils.FollowerMedical.CompletePostCombatFullHeal(BotOwner);
-                    CompleteHealing();
-                }
-                else
-                {
-                    AbortHealing();
-                }
-
                 return true;
             }
 
@@ -940,6 +961,29 @@ namespace pitTeam.BigBrain
             }
 
             return CanStartPatrolHealAction(isUsingHeal, hasPendingHealWork, hasRecoverableTopOffWork);
+        }
+
+        private bool TryEndTimedOutPatrolHealing(bool isUsingHeal)
+        {
+            // One deadline for both an idle heal node and its cooldown wait. Retrying an
+            // advertised treatment must not renew this budget; real item use remains protected.
+            if (isUsingHeal || Utils.FollowerMedical.IsUsingMedical(BotOwner) ||
+                healSoftTimeoutAt <= 0f || Time.time < healSoftTimeoutAt)
+            {
+                return false;
+            }
+
+            if (Utils.FollowerMedical.IsPostCombatFullHealActive(BotOwner))
+            {
+                Utils.FollowerMedical.ForceHeal(BotOwner);
+                Utils.FollowerMedical.CompletePostCombatFullHeal(BotOwner);
+                CompleteHealing();
+            }
+            else
+            {
+                AbortHealing();
+            }
+            return true;
         }
 
         private void BeginPatrolHealSequence(bool announce)

@@ -201,7 +201,7 @@ namespace pitTeam
         public string Message { get; set; }
     }
 
-    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "0.10.2")]
+    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "0.10.3")]
     [BepInDependency("xyz.drakia.bigbrain")]
     [BepInDependency(pitFireTeam.MenuOverhaulPluginId, BepInDependency.DependencyFlags.SoftDependency)]
     public class pitFireTeam : BaseUnityPlugin

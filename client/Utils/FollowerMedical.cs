@@ -2,6 +2,7 @@ using Comfort.Common;
 using EFT;
 using EFT.HealthSystem;
 using EFT.InventoryLogic;
+using pitTeam.Components;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
@@ -170,16 +171,18 @@ namespace pitTeam.Utils
 
             if (!PostCombatFullHealStates.TryGetValue(key, out PostCombatFullHealState state))
             {
-                state = new PostCombatFullHealState();
+                state = new PostCombatFullHealState
+                {
+                    StartedAt = Time.time,
+                    LastWorkSeenAt = Time.time
+                };
                 PostCombatFullHealStates[key] = state;
             }
-
-            state.StartedAt = Time.time;
-            state.HealStartedAt = 0f;
-            state.LastWorkSeenAt = Time.time;
+            // Linger completion and the later physical layer Stop belong to one recovery.
+            // Combat activation clears this state before a genuinely new episode.
         }
 
-        public static void MarkPostCombatFullHealActionStarted(BotOwner bot)
+        public static void MarkPostCombatHealingStarted(BotOwner bot)
         {
             string key = GetBotKey(bot);
             if (string.IsNullOrEmpty(key) ||
@@ -194,6 +197,16 @@ namespace pitTeam.Utils
             }
 
             state.LastWorkSeenAt = Time.time;
+        }
+
+        internal static string DescribePostCombatRecovery(BotOwner bot)
+        {
+            string key = GetBotKey(bot);
+            if (string.IsNullOrEmpty(key) || !PostCombatFullHealStates.TryGetValue(key, out PostCombatFullHealState state))
+                return "recovery=none";
+            return $"recoveryAge={Time.time - state.StartedAt:F1} healStarted={state.HealStartedAt > 0f} " +
+                   $"healAge={(state.HealStartedAt > 0f ? Time.time - state.HealStartedAt : 0f):F1} " +
+                   $"handsInteraction={IsHandsInteractionActive(bot.GetPlayer)}";
         }
 
         public static bool IsPostCombatFullHealActive(BotOwner bot)
@@ -851,7 +864,7 @@ namespace pitTeam.Utils
                 bot.HealthController?.IsAlive != true ||
                 bot.Settings?.FileSettings?.Mind?.CAN_USE_MEDS != true ||
                 !ShouldAllowManualFirstAidTopOff(bot) ||
-                bot.Memory?.HaveEnemy == true ||
+                (bot.Memory?.HaveEnemy == true && BotFollowerPlayer.IsEnemyInfoAlive(bot.Memory.GoalEnemy)) ||
                 HasVisibleKnownEnemy(bot) ||
                 firstAid.Using ||
                 bot.Medecine.SurgicalKit?.HaveWork == true ||
@@ -1008,7 +1021,7 @@ namespace pitTeam.Utils
                 {
                     EnemyInfo info = kv.Value;
                     if (info?.IsVisible == true &&
-                        info.Person?.HealthController?.IsAlive == true)
+                        BotFollowerPlayer.IsEnemyInfoAlive(info))
                     {
                         return true;
                     }

@@ -57,6 +57,8 @@ The mod is still sensitive to other mods that heavily change bot AI, grouping, p
 
 ## Installation
 
+**Required SPT version: 4.1.x (minimum 4.1.0).**
+
 **Required dependency:**
 
 - [BigBrain](https://sp-mod.com/mod/902/bigbrain)
@@ -65,7 +67,7 @@ The mod is still sensitive to other mods that heavily change bot AI, grouping, p
 
 - [WAYPOINTS - EXPANDED NAVMESH](https://sp-mod.com/mod/827/waypoints-expanded-navmesh), because teammates can have a harder time navigating without expanded navmesh data.
 
-Extract the downloaded archive into your SPT install directory. It should add files under both **BepInEx** and **user** / **SPT/user**, depending on your SPT layout.
+Extract the downloaded archive into your SPT install directory. It should add files under **BepInEx/plugins/pitFireTeam** and **SPT_Runtime/user/mods/pitFireTeam-ServerMod**.
 
 ## My Squad Screen
 

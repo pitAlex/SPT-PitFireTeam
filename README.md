@@ -2,6 +2,8 @@
 
 Pit Fire Team is a Single Player Tushonka mod for managing and commanding AI teammates.
 
+**SPT target: 4.1.x (minimum 4.1.0).** See [compatibility checks](docs/SPT-Compatibility.md) for the build baseline and validation coverage.
+
 ## Download
 
 Download the latest release from the official SPT Forge page:

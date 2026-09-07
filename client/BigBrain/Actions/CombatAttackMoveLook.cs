@@ -1,5 +1,4 @@
 using EFT;
-using pitTeam.Utils;
 using UnityEngine;
 
 namespace pitTeam.BigBrain.Actions
@@ -12,6 +11,7 @@ namespace pitTeam.BigBrain.Actions
     internal static class CombatAttackMoveLook
     {
         private const float MaxForcedTurnAngle = 145f;
+        private const float RecentThreatMemorySeconds = 12f;
 
         public static bool TryLookThreatFacing(BotOwner botOwner, EnemyInfo? goalEnemy, bool allowHardTurn = false)
         {
@@ -25,7 +25,7 @@ namespace pitTeam.BigBrain.Actions
         }
 
         /// <summary>
-        /// Resolves only follower-owned visual or remembered enemy positions. Unlike the close-threat
+        /// Resolves only follower-owned visual or recent remembered enemy positions. Unlike the close-threat
         /// helper above, this must not fall through to the enemy's hidden live transform: ordinary
         /// movement uses it when deciding whether threat-facing is safer than route-facing.
         /// </summary>
@@ -58,7 +58,7 @@ namespace pitTeam.BigBrain.Actions
                 }
             }
 
-            if (!Enemy.TryGetReliableKnownPosition(botOwner, goalEnemy, out Vector3 knownPosition))
+            if (!TryGetRecentThreatPosition(botOwner, goalEnemy, out Vector3 knownPosition))
             {
                 return false;
             }
@@ -66,6 +66,42 @@ namespace pitTeam.BigBrain.Actions
             lookPoint = knownPosition + Vector3.up * 0.8f;
             return FollowerCombatCommon.IsFinite(lookPoint) &&
                    (lookPoint - botOwner.Position).sqrMagnitude > 0.01f;
+        }
+
+        private static bool TryGetRecentThreatPosition(BotOwner botOwner, EnemyInfo goalEnemy, out Vector3 position)
+        {
+            position = Vector3.zero;
+            float personalTime = goalEnemy.PersonalLastSeenTime;
+            float sharedTime = goalEnemy.GroupInfo?.EnemyLastSeenTimeReal ?? 0f;
+            Vector3 personalPosition = goalEnemy.PersonalLastPos;
+            Vector3 sharedPosition = goalEnemy.GroupInfo != null ? goalEnemy.EnemyLastPositionReal : Vector3.zero;
+            bool personalValid = IsRecentThreatPosition(botOwner.Position, personalPosition, personalTime);
+            bool sharedValid = IsRecentThreatPosition(botOwner.Position, sharedPosition, sharedTime);
+
+            // Search may retain old positions, but movement-facing must not turn an already-passed
+            // sighting into a new close threat. Prefer a newer real report over stale personal memory;
+            // group sense timestamps and the hidden live transform do not renew this look permission.
+            if (sharedValid && (!personalValid || sharedTime > personalTime))
+            {
+                position = sharedPosition;
+                return true;
+            }
+
+            if (personalValid)
+            {
+                position = personalPosition;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsRecentThreatPosition(Vector3 botPosition, Vector3 position, float seenTime)
+        {
+            float age = Time.time - seenTime;
+            return seenTime > 0f && age >= 0f && age <= RecentThreatMemorySeconds &&
+                   FollowerCombatCommon.IsFinite(position) && position.sqrMagnitude > 0.01f &&
+                   (position - botPosition).sqrMagnitude > 0.01f;
         }
 
         public static bool TryLookReliableThreatFacing(

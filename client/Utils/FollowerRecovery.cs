@@ -6,6 +6,22 @@ namespace pitTeam.Utils
 {
     public static class FollowerRecovery
     {
+        internal static void ClearInvalidGoalEnemy(BotOwner bot)
+        {
+            if (pitFireTeam.UseSainFollowerCombat || bot?.Memory?.GoalEnemy == null ||
+                Components.BotFollowerPlayer.IsEnemyInfoAlive(bot.Memory.GoalEnemy))
+            {
+                return;
+            }
+
+            // Rejecting a memory-only replacement must not leave a dead goal in EFT forever.
+            // Clear only the invalid mirror; live contacts, missions and acquisition gates stay intact.
+            using (Modules.FollowerGoalEnemyTracker.Begin(nameof(FollowerRecovery), "deadGoalEnemyCleanup"))
+            {
+                bot.Memory.GoalEnemy = null;
+            }
+        }
+
         public static void SoftReset(BotOwner? bot)
         {
             if (bot == null || bot.IsDead || bot.BotState != EBotState.Active) return;

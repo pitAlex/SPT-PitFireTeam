@@ -437,26 +437,7 @@ namespace pitTeam.BigBrain.Actions
         private bool TryGetThreatLookPoint(EnemyInfo goalEnemy, float maxDistance, out Vector3 lookPoint)
         {
             lookPoint = Vector3.zero;
-            if (goalEnemy == null)
-            {
-                return false;
-            }
-
-            Vector3 anchor;
-            if (goalEnemy.IsVisible)
-            {
-                anchor = goalEnemy.GetBodyPartPosition();
-            }
-            else if (Enemy.TryGetReliableKnownPosition(BotOwner, goalEnemy, out Vector3 knownPosition))
-            {
-                anchor = knownPosition + Vector3.up * 0.8f;
-            }
-            else
-            {
-                anchor = FollowerCombatCommon.GetEnemyAnchor(goalEnemy) + Vector3.up * 0.8f;
-            }
-
-            if (!IsFinite(anchor))
+            if (!CombatAttackMoveLook.TryGetReliableThreatLookPoint(BotOwner, goalEnemy, out Vector3 anchor))
             {
                 return false;
             }
@@ -545,12 +526,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (!Enemy.TryGetReliableKnownPosition(BotOwner, goalEnemy, out enemyAnchor))
-            {
-                enemyAnchor = FollowerCombatCommon.GetEnemyAnchor(goalEnemy);
-            }
-
-            if (!IsFinite(enemyAnchor))
+            if (!TryGetThreatLookPoint(goalEnemy, maxDistance, out enemyAnchor))
             {
                 return false;
             }
@@ -593,7 +569,7 @@ namespace pitTeam.BigBrain.Actions
         {
             BotOwner.LookData.SetLookPointByHearing(null);
             CommitLookMode(RunLookMode.ThreatAnchor);
-            BotOwner.Steering.LookToPoint(enemyAnchor + Vector3.up * 0.8f);
+            BotOwner.Steering.LookToPoint(enemyAnchor);
         }
 
         private bool TryMoveToEnemy(EnemyInfo goalEnemy)
@@ -816,9 +792,16 @@ namespace pitTeam.BigBrain.Actions
 
             Vector3 sampledPoint = navMeshHit.position;
             float enemyDistanceSqr = (sampledPoint - enemyPosition).sqrMagnitude;
-            return enemyDistanceSqr >= MinEnemyRunPointDistance * MinEnemyRunPointDistance &&
-                   enemyDistanceSqr <= MaxEnemyRunPointDistance * MaxEnemyRunPointDistance &&
-                   Mathf.Abs(sampledPoint.y - enemyPosition.y) <= VerticalTolerance;
+            if (!IsFinite(sampledPoint) ||
+                enemyDistanceSqr < MinEnemyRunPointDistance * MinEnemyRunPointDistance ||
+                enemyDistanceSqr > MaxEnemyRunPointDistance * MaxEnemyRunPointDistance ||
+                Mathf.Abs(sampledPoint.y - enemyPosition.y) > VerticalTolerance)
+            {
+                return false;
+            }
+
+            navPoint = sampledPoint;
+            return true;
         }
 
         private bool CanShootEnemyFromPoint(ShootToPoint shootPoint, Vector3 point)

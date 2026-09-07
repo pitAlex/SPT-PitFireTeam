@@ -124,10 +124,14 @@ namespace pitTeam.Patches
                     return true;
                 }
 
-                bool shouldBlockClear = FollowerContactEnemyRetention.ShouldBlockGoalEnemyClear(botOwner, previous);
+                // A dead/removed goal never owns a retention veto. A different living retained
+                // contact can still be restored by its normal owner on the next decision pass.
+                bool previousIsAlive = Components.BotFollowerPlayer.IsEnemyInfoAlive(previous);
+                bool shouldBlockClear = FollowerContactEnemyRetention.ShouldBlockGoalEnemyClear(botOwner, previous) &&
+                    previousIsAlive;
                 string? clearBlockedReason = shouldBlockClear ? "retentionBlockedClear" : null;
                 if (!shouldBlockClear &&
-                    previous != null &&
+                    previousIsAlive &&
                     string.Equals(reason, "unscopedSetter", System.StringComparison.Ordinal) &&
                     SainGoalEnemyBridge.TryGetRetainedSameGoalEnemy(
                         botOwner,
