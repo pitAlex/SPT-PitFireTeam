@@ -1,7 +1,5 @@
 using EFT;
 using pitTeam.BigBrain;
-using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using UnityEngine;
 
 namespace pitTeam.Modules
@@ -18,9 +16,6 @@ namespace pitTeam.Modules
         private const float MaximumHeadPreference = 60f;
         private const float MinimumRetargetSeconds = 0.1f;
 
-        private static readonly HashSet<object> RegisteredSainFollowers =
-            new HashSet<object>(ReferenceComparer.Instance);
-
         internal static float GetHeadPreference(float precisionPercent)
         {
             float precision = FollowerProficiencyModifierValues.NormalizePercent(precisionPercent);
@@ -35,27 +30,6 @@ namespace pitTeam.Modules
                    (MaximumHeadPreference - NeutralHeadPreference) *
                    ((precision - FollowerProficiencyModifierValues.DefaultPercent) /
                     FollowerProficiencyModifierValues.DefaultPercent);
-        }
-
-        internal static void RegisterSainFollower(object? sainBot)
-        {
-            if (sainBot != null)
-            {
-                RegisteredSainFollowers.Add(sainBot);
-            }
-        }
-
-        internal static void UnregisterSainFollower(object? sainBot)
-        {
-            if (sainBot != null)
-            {
-                RegisteredSainFollowers.Remove(sainBot);
-            }
-        }
-
-        internal static bool IsRegisteredSainFollower(object? sainBot)
-        {
-            return sainBot != null && RegisteredSainFollowers.Contains(sainBot);
         }
 
         /// <summary>
@@ -333,21 +307,6 @@ namespace pitTeam.Modules
             if (rightArm != null && index-- == 0) return rightArm;
             if (leftLeg != null && index-- == 0) return leftLeg;
             return rightLeg;
-        }
-
-        private sealed class ReferenceComparer : IEqualityComparer<object>
-        {
-            internal static ReferenceComparer Instance { get; } = new ReferenceComparer();
-
-            public new bool Equals(object? left, object? right)
-            {
-                return ReferenceEquals(left, right);
-            }
-
-            public int GetHashCode(object value)
-            {
-                return RuntimeHelpers.GetHashCode(value);
-            }
         }
     }
 }

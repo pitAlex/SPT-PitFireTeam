@@ -801,26 +801,7 @@ namespace pitTeam.BigBrain.Actions
 
         private bool TryGetEnemyLookAnchor(EnemyInfo goalEnemy, out Vector3 enemyAnchor)
         {
-            enemyAnchor = Vector3.zero;
-            if (goalEnemy == null)
-            {
-                return false;
-            }
-
-            if (goalEnemy.IsVisible)
-            {
-                enemyAnchor = goalEnemy.GetBodyPartPosition();
-            }
-            else if (Enemy.TryGetReliableKnownPosition(BotOwner, goalEnemy, out Vector3 knownPosition))
-            {
-                enemyAnchor = knownPosition + Vector3.up * 0.8f;
-            }
-            else
-            {
-                enemyAnchor = FollowerCombatCommon.GetEnemyAnchor(goalEnemy) + Vector3.up * 0.8f;
-            }
-
-            return IsFinite(enemyAnchor);
+            return CombatAttackMoveLook.TryGetReliableThreatLookPoint(BotOwner, goalEnemy, out enemyAnchor);
         }
 
         private bool TryGetEnemyPathAnchor(EnemyInfo goalEnemy, out Vector3 enemyAnchor)
@@ -918,38 +899,20 @@ namespace pitTeam.BigBrain.Actions
         private bool TryGetOwnedEnemyLookDirection(EnemyInfo goalEnemy, out Vector3 lookDirection)
         {
             lookDirection = Vector3.zero;
-            if (goalEnemy == null)
+            if (!TryGetEnemyLookAnchor(goalEnemy, out Vector3 enemyAnchor))
             {
                 return false;
             }
 
-            if (goalEnemy.IsVisible)
+            if (!goalEnemy.IsVisible &&
+                ShouldPreferMovingDirectionOverStaleLocalLook(goalEnemy) &&
+                IsSameLocalLookPoint(goalEnemy.PersonalLastPos, enemyAnchor))
             {
-                lookDirection = goalEnemy.GetBodyPartPosition() - BotOwner.Position;
-                return lookDirection.sqrMagnitude > 0.01f;
+                return false;
             }
 
-            if (Time.time - goalEnemy.PersonalLastSeenTime <= 12f)
-            {
-                Vector3 personalLastPos = goalEnemy.PersonalLastPos;
-                bool preferMovementOverPersonal = ShouldPreferMovingDirectionOverStaleLocalLook(goalEnemy);
-                if (!preferMovementOverPersonal &&
-                    (personalLastPos - BotOwner.Position).sqrMagnitude > 0.01f)
-                {
-                    lookDirection = personalLastPos - BotOwner.Position;
-                    return true;
-                }
-
-                Vector3 lastKnownPosition = goalEnemy.EnemyLastPositionReal;
-                if ((lastKnownPosition - BotOwner.Position).sqrMagnitude > 0.01f &&
-                    (!preferMovementOverPersonal || !IsSameLocalLookPoint(personalLastPos, lastKnownPosition)))
-                {
-                    lookDirection = lastKnownPosition - BotOwner.Position;
-                    return true;
-                }
-            }
-
-            return false;
+            lookDirection = enemyAnchor - BotOwner.Position;
+            return lookDirection.sqrMagnitude > 0.01f;
         }
 
         private bool ShouldPreferMovingDirectionOverStaleLocalLook(EnemyInfo goalEnemy)

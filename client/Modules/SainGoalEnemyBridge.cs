@@ -50,6 +50,30 @@ namespace pitTeam.Modules
             public bool LookingAtFollower;
         }
 
+        // Diagnostics only: read the actual SAIN goal even when it differs from EFT's mirror.
+        internal static string DescribeGoalEnemy(BotOwner owner)
+        {
+            if (!pitFireTeam.IsSAINInstalled) return "sain=absent";
+            try
+            {
+                object? bot = TryGetSainBot(owner);
+                if (bot == null) return "sain=unavailable";
+                ResolveSainBotAccessors(bot.GetType());
+                object? controller = sainBotEnemyControllerProperty?.GetValue(bot);
+                if (controller == null) return "sainController=unavailable";
+                ResolveEnemyControllerAccessors(controller.GetType());
+                object? goal = controllerGoalEnemyProperty?.GetValue(controller) ?? controllerGoalEnemyField?.GetValue(controller);
+                if (goal == null) return "sainGoal=none";
+                ResolveEnemyAccessors(goal.GetType());
+                return $"sainGoal={enemyProfileIdProperty?.GetValue(goal)} sainKnown={enemyKnownProperty?.GetValue(goal)} " +
+                       $"sainMirrorMatch={ReferenceEquals(enemyInfoProperty?.GetValue(goal), owner.Memory?.GoalEnemy)}";
+            }
+            catch
+            {
+                return "sainGoal=unavailable";
+            }
+        }
+
         public static bool TrySyncEnemyState(BotOwner owner, Player enemyPlayer, bool prioritizeAsGoal)
         {
             if (!pitFireTeam.IsSAINInstalled ||

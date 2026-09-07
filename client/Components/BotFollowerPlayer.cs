@@ -58,6 +58,7 @@ namespace pitTeam.Components
     public class BotFollowerPlayer
     {
         protected BotOwner _bot;
+        private readonly FollowerPostCombatDiagnostics postCombatDiagnostics = new FollowerPostCombatDiagnostics();
         protected pitAIBossPlayer _player;
 
         protected BotSettingsInGameModif settingModif;
@@ -2384,7 +2385,7 @@ namespace pitTeam.Components
             }
 
             EnemyInfo goalEnemy = owner.Memory.GoalEnemy;
-            if (goalEnemy == null)
+            if (!IsEnemyInfoAlive(goalEnemy))
             {
                 _knownEnemyProfileId = null;
                 _knownEnemySince = 0f;
@@ -2567,6 +2568,14 @@ namespace pitTeam.Components
             }
         }
 
+        internal string DescribePatrolCombatBlock()
+        {
+            if (HasActiveCombatSignal(_bot)) return "personalCombatSignal";
+            if (HasRecentGroupCombatSignal(_bot)) return "recentGroupContact";
+            if (HasSquadmateCombatSignal(_bot, out string? source)) return "squadmate:" + source;
+            return "none";
+        }
+
         private static bool IsSafelyOutOfCombat(BotOwner owner)
         {
             if (owner == null || owner.IsDead || owner.BotState != EBotState.Active)
@@ -2584,7 +2593,7 @@ namespace pitTeam.Components
                 return false;
             }
 
-            if (HasSquadmateCombatSignal(owner))
+            if (HasSquadmateCombatSignal(owner, out _))
             {
                 return false;
             }
@@ -2655,8 +2664,9 @@ namespace pitTeam.Components
             return false;
         }
 
-        private static bool HasSquadmateCombatSignal(BotOwner owner)
+        private static bool HasSquadmateCombatSignal(BotOwner owner, out string? sourceProfileId)
         {
+            sourceProfileId = null;
             BotFollowerPlayer self = BossPlayers.Instance?.GetFollower(owner);
             pitAIBossPlayer boss = self?.GetBoss();
             string bossProfileId = boss?.realPlayer?.ProfileId;
@@ -2679,6 +2689,7 @@ namespace pitTeam.Components
 
                 if (HasActiveCombatSignal(squadmate) || HasRecentGroupCombatSignal(squadmate))
                 {
+                    sourceProfileId = squadmate.ProfileId;
                     return true;
                 }
             }
@@ -2686,7 +2697,7 @@ namespace pitTeam.Components
             return false;
         }
 
-        private static bool IsEnemyInfoAlive(EnemyInfo info)
+        internal static bool IsEnemyInfoAlive(EnemyInfo info)
         {
             if (info == null)
             {
@@ -2955,7 +2966,9 @@ namespace pitTeam.Components
             {
                 if (owner == null || owner != _bot) return;
 
+                Utils.FollowerRecovery.ClearInvalidGoalEnemy(owner);
                 Utils.FollowerMedical.UpdateMedicalHandsWatchdog(owner);
+                postCombatDiagnostics.Update(owner, this);
                 UpdateTemporaryCombatAggressionClearDelay();
                 TryPromoteReadyLootedWeapon(owner);
 

@@ -6,9 +6,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>pitFireTeam.Server</AssemblyName>
     <RootNamespace>pitTeam.Server</RootNamespace>
-    <Version>0.10.2</Version>
+    <Version>0.10.3</Version>
     <OutputType>Library</OutputType>
-    <SptReferenceRoot Condition="'$(SptReferenceRoot)' == ''">$(MSBuildProjectDirectory)/refs/4.1.3</SptReferenceRoot>
+    <SptReferenceRoot Condition="'$(SptReferenceRoot)' == ''">$(MSBuildProjectDirectory)/refs/4.1.0</SptReferenceRoot>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="SPTarkov.Common">
@@ -41,7 +41,18 @@
     </ItemGroup>
     <Error
       Condition="!Exists('%(RequiredSptReference.Identity)')"
-      Text="Required SPT 4.1.3 server reference was not found: %(RequiredSptReference.Identity)"
+      Text="Required SPT 4.1.0 server reference was not found: %(RequiredSptReference.Identity)"
+    />
+    <!-- Compile against the oldest supported SPT patch, not the installed runtime. -->
+    <ItemGroup>
+      <SptAssemblyReference Include="@(RequiredSptReference)" Exclude="$(SptReferenceRoot)/SemanticVersioning.dll" />
+    </ItemGroup>
+    <GetAssemblyIdentity AssemblyFiles="@(SptAssemblyReference)">
+      <Output TaskParameter="Assemblies" ItemName="SptReferenceIdentity" />
+    </GetAssemblyIdentity>
+    <Error
+      Condition="'%(SptReferenceIdentity.Version)' != '4.1.0.0'"
+      Text="SPT 4.1.x compatibility requires 4.1.0.0 compile references. %(SptReferenceIdentity.Identity) is %(SptReferenceIdentity.Version)."
     />
   </Target>
 </Project>

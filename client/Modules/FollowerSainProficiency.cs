@@ -134,7 +134,6 @@ namespace pitTeam.Modules
             try
             {
                 object? sainBot = GetSainBot(bot);
-                FollowerAimTargetPolicy.RegisterSainFollower(sainBot);
                 object? info = GetMemberValue(sainBot, "Info");
                 object? difficulty = GetMemberValue(info, "Difficulty");
                 if (sainBot == null || info == null || difficulty == null || !TryGetDefaultBundle(out object? bundle))
@@ -203,7 +202,6 @@ namespace pitTeam.Modules
                 return;
             }
 
-            FollowerAimTargetPolicy.UnregisterSainFollower(GetSainBot(bot));
             if (string.IsNullOrEmpty(bot.ProfileId) || !States.TryGetValue(bot.ProfileId, out FollowerState? state))
             {
                 return;
@@ -638,7 +636,7 @@ namespace pitTeam.Modules
             CaptureCategoryValues(GetMemberValue(defaultSettings, "Mind"), values.Mind);
             CaptureCategoryValues(GetMemberValue(defaultSettings, "Move"), values.Move);
 
-            // SAIN 4.5's global center-mass target clamp ignores its per-bot AimCenterMass value.
+            // Retain the per-bot field for the SAIN 4.5.0 settings schema.
             // Keep the follower-local settings semantically correct for future SAIN versions while
             // the core target patch owns today's visible-part selection and Precision preference.
             values.Aiming.AimCenterMass = false;

@@ -22,11 +22,12 @@ namespace pitTeam.BigBrain.Actions
         {
             base.Start();
             FollowerRecovery.StopShooting(BotOwner);
-            FollowerMedical.MarkPostCombatFullHealActionStarted(BotOwner);
         }
 
         public override void Update(CustomLayer.ActionData data)
         {
+            // BigBrain can reuse this action ID across combat/patrol without calling Start().
+            FollowerMedical.MarkPostCombatHealingStarted(BotOwner);
             FollowerRecovery.StopShooting(BotOwner);
             if (BotOwner?.Medecine?.Using != true && Time.time >= nextMedicalRefreshAt)
             {

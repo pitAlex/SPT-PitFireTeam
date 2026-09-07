@@ -3,6 +3,7 @@ using EFT;
 
 using HarmonyLib;
 using SPT.Reflection.Patching;
+using System;
 using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
@@ -42,11 +43,43 @@ namespace pitTeam.Patches
         private const float SoundReactionCooldownSeconds = 0.12f;
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(BotHearingSensor), nameof(BotHearingSensor.OnSoundPlayed));
+            return AccessTools.Method(typeof(GlobalEventDispatcher), nameof(GlobalEventDispatcher.PlaySound));
         }
 
         [PatchPostfix]
-        public static void PatchPostfix(BotHearingSensor __instance, IPlayer player, Vector3 position, float power, AISoundType type)
+        public static void PatchPostfix(IPlayer person, Vector3 position, float power, AISoundType type)
+        {
+            if (person == null || BossPlayers.Instance == null || Singleton<GameWorld>.Instance == null ||
+                BossPlayers.IsPlayerBoss(person.ProfileId) || BossPlayers.IsFollowerProfileId(person.ProfileId))
+            {
+                return;
+            }
+
+            // SAIN 4.5.1 may skip BotHearingSensor.Init before this bot is recruited. Listen
+            // at the shared dispatcher instead; replacing the old sensor hook avoids duplicate
+            // follower reactions on 4.5.0 and without SAIN, and needs no raid subscriptions.
+            var followers = BossPlayers.GetFollowers();
+            for (int i = 0; i < followers.Count; i++)
+            {
+                BotOwner? bot = followers[i]?.GetBot();
+                if (bot == null || bot.IsDead || bot.BotState != EBotState.Active || bot.HearingSensor == null ||
+                    bot.GetPlayer == null || bot.Memory == null || bot.EnemiesController == null || bot.BotsGroup == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    ReactToSound(bot.HearingSensor, person, position, power, type);
+                }
+                catch (Exception ex)
+                {
+                    Modules.Logger.LogError($"Follower sound reaction failed for {bot.ProfileId}: {ex}");
+                }
+            }
+        }
+
+        private static void ReactToSound(BotHearingSensor __instance, IPlayer player, Vector3 position, float power, AISoundType type)
         {
             BotOwner botOwner_0 = __instance._botOwner;
             if (BossPlayers.IsFollower(botOwner_0) && FollowerEnemyEnforceSuppression.IsSuppressed(botOwner_0))
