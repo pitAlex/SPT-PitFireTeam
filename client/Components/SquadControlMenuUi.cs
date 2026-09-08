@@ -230,7 +230,6 @@ namespace pitTeam.Components
         private DefaultUIButton addTeammateButton;
         private TextMeshProUGUI emptyRosterLabel;
         private GameObject removeConfirmOverlay;
-        private GameObject loadoutManagementConfirmOverlay;
         private GameObject portraitContextMenuOverlay;
         private float currentRosterShellHeight;
         private Button activeShortcutCaptureButton;

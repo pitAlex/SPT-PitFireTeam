@@ -52,9 +52,9 @@ Related summaries:
 
 `Tracked follower loot` means follower loot registered through `InteractableObjects.StoreItem(...)`. Tracked loot is eligible for the mod's return/recovery flows when the owning squadmate survives the relevant flow.
 
-`Equipped gear loot` means loot moved into an equipment slot as part of `Allow Gear Swapping`. In `Simple` and `Restricted`, this is add-only: empty slots may be filled, but occupied gear slots are not replaced, and added gear is tracked so it returns as cargo. In `Immersive` and `Realistic`, eligible equipped gear is not tracked as return cargo so an escaped teammate can keep it in the saved kit snapshot.
+`Equipped gear loot` means loot moved into an equipment slot as part of `Allow Gear Swapping`. In `Restricted`, this is add-only: empty slots may be filled, but occupied gear slots are not replaced, and added gear is tracked so it returns as cargo. In `Immersive` and `Realistic`, eligible equipped gear is not tracked as return cargo so an escaped teammate can keep it in the saved kit snapshot.
 
-`Protected teammate gear` means saved teammate equipment that should not become free player gear under `Simple` or `Restricted` loadout management. Protected gear cleanup is owned by the loadout-management and escape/recovery systems, not by the looting planner alone.
+`Protected teammate gear` means saved teammate equipment that should not become free player gear under `Restricted` loadout management. Protected gear cleanup is owned by the loadout-management and escape/recovery systems, not by the looting planner alone.
 
 `Whole tree` means the root item plus all attached/contained child items. A weapon tree includes installed mods. A helmet tree includes attached face shield/night vision/other devices. A container tree includes contents.
 
@@ -148,7 +148,7 @@ Rules:
 
 Loadout-mode interaction:
 
-- in `Simple` and `Restricted`, protected teammate gear roots are skipped
+- in `Restricted`, protected teammate gear roots are skipped
 - non-protected containers may carry protected descendants, and later cleanup strips protected descendants before extraction or return delivery
 - in `Immersive` and `Realistic`, protected-equipment skipping is not applied because fallen teammate gear is lootable in those modes
 
@@ -307,7 +307,7 @@ Items transferred through `View Backpack` have a separate strict-cargo provenanc
 
 Equipped gear moves use a mode-specific rule:
 
-- `Simple` and `Restricted`: only add into empty equipment slots, then store the added loot through `StoreItem(...)` so the weapon and supporting magazines return by mail like normal cargo.
+- `Restricted`: only add into empty equipment slots, then store the added loot through `StoreItem(...)` so the weapon and supporting magazines return by mail like normal cargo.
 - The seated magazine is also retained as a fallback tracked root. If combat reload ejects it from the tracked weapon tree, it remains temporary cargo instead of leaking into the teammate's persisted kit; while it stays seated, return-root ancestor checks prevent duplicate delivery.
 - `Immersive` and `Realistic`: allow the implemented occupied-slot swap cases and do not store equipped loot as return cargo, so the escaped teammate's live equipment snapshot can keep it as the new kit.
 
@@ -367,7 +367,7 @@ General rules:
 - expose gear equip/swap through `Allow Gear Swapping`, separate from the `Pickup Weapons`, `Pickup Gear`, and min/max price filters
 - allow additive gear equip behavior in any loadout management mode when the setting is enabled
 - bypass `Pickup Weapons` and min/max price for missing-primary acquisition and implemented true swap decisions, but require `Pickup Weapons` for optional second-primary or holster weapon additions and keep ordinary weapon cargo under both category and price filters
-- in `Simple` and `Restricted`, only add gear into empty equipment slots and treat that added gear as return cargo instead of saved kit
+- in `Restricted`, only add gear into empty equipment slots and treat that added gear as return cargo instead of saved kit
 - in `Immersive` and `Realistic`, allow implemented occupied-slot swaps and leave equipped gear untracked so it can persist as teammate kit
 - add easy gear equip as an explicit planner before the current carry-space planner
 - keep destructive throw/drop swaps disabled; the narrow tactical-vest upgrade path below only runs when the old vest can be preserved first
@@ -407,7 +407,7 @@ Rules:
 - empty same-source magazines may enter this top-off plan when their shape can satisfy the operational carry and reload-reserve rules after loading
 - empty magazines are admitted only to this provisional placement plan; they are not moved as operational or backpack cargo until a successful top-off gives them usable rounds
 - an external inserted magazine is temporarily moved into free grid space on the same body/container, filled there, and restored before normal weapon planning resumes; no source grid space means that inserted magazine is left unchanged
-- top-off never modifies the follower's existing pre-raid magazines, preventing found rounds from being merged into an original equipment tree whose Simple/Restricted return ownership would be ambiguous
+- top-off never modifies the follower's existing pre-raid magazines, preventing found rounds from being merged into an original equipment tree whose Restricted return ownership would be ambiguous
 - top-off compares each source cartridge with all compatible ammunition already carried by the follower plus the inserted/source magazines accepted into the operational package; quantity need and the penetration delta against that round-weighted stock jointly decide whether a downgrade is worthwhile
 - readiness being satisfied by partial magazines does not skip top-off: the same need/power/opportunity policy may still fill their free capacity with a worthwhile upgrade, while sufficient equal-or-better package ammunition rejects redundant source rounds
 - penetration quality is evaluated in five-point steps: `38` accepts down to `35`, while an exact `35` boundary accepts down to `30` when ammunition is needed
@@ -508,7 +508,7 @@ With `Allow Gear Swapping` enabled, loose ammunition on a searched body/containe
 - magazine top-off is readiness maintenance and does not depend on `Pickup Weapons` or ordinary price/category filters
 - if the primary is not ready, compatible empty or partial magazines already in vest/pockets are filled before source-ammo acquisition is considered; the inserted magazine is not modified by this phase
 - carried loose ammunition is preferred as the top-off supply; this includes the managed primary-ammo stacks injected into the secure container in every non-Realistic mode
-- `Immersive`/`Realistic` may use compatible searched-source ammunition after carried supply; `Simple`/`Restricted` do not merge searched rounds into protected spawned magazines and may only carry accepted source ammunition as returnable cargo
+- `Immersive`/`Realistic` may use compatible searched-source ammunition after carried supply; `Restricted` do not merge searched rounds into protected spawned magazines and may only carry accepted source ammunition as returnable cargo
 - top-off only fills free capacity: it never unloads, replaces, or rearranges cartridges that are already inside a magazine
 - after existing magazines are topped off, compatible source magazines are assigned to reload-safe vest or pocket space before remaining loose ammunition is judged as surplus; an empty source magazine participates only when compatible loose ammunition is available to fill it
 - **need weight** is the compatible carried-round deficit against the weapon's two-magazine reserve target
@@ -614,7 +614,7 @@ Plate-carrier comparison rules:
 Vest-upgrade transaction rules:
 
 - preflight current vest contents and magazine positions before changing anything
-- `Simple` and `Restricted` stop after the empty-slot add case; they never replace an occupied tactical vest
+- `Restricted` stop after the empty-slot add case; they never replace an occupied tactical vest
 - phase 1 refuses occupied-vest replacement when the old vest has any non-plate contents, preserving operational magazines in the current vest instead of moving them
 - do not use the tactical vest as general cargo during the swap; its purpose is operational space
 - move the old vest tree into the follower's backpack first; only then equip the found vest as a follow-up move
@@ -776,9 +776,9 @@ Gear swapping phase 1 tests:
 - newly found weapons recruit compatible backpack cargo only when the executable combined fast-access plan reaches readiness
 - a later source spare can recruit the backpack spare for a tracked secondary, then promote that weapon from settled live state
 - narrow vest upgrade can fill an empty tactical vest slot or replace a worn vest only after preserving the old vest tree in the backpack
-- `Simple`/`Restricted` narrow vest behavior stops at empty-slot add; occupied vest replacement is refused
+- `Restricted` narrow vest behavior stops at empty-slot add; occupied vest replacement is refused
 - looted weapon does not trigger patrol reload maintenance with spawned magazines
-- after a looted primary reloads, follower death/raid-end cleanup does not leave its ejected original magazine in the teammate's persisted `Simple`/`Restricted` kit
+- after a looted primary reloads, follower death/raid-end cleanup does not leave its ejected original magazine in the teammate's persisted `Restricted` kit
 - loose weapon pickup into `FirstPrimaryWeapon` registers as the combat primary, and a pending weapon-taken callback cannot fault after that follower dies
 - a looted launcher in `FirstPrimaryWeapon` remains the follower's real primary and enters the grenadier objective for eligible combat targets; only a launcher used from `SecondPrimaryWeapon` returns to another main weapon after the attempt
 - rejected swap leaves current follower gear untouched

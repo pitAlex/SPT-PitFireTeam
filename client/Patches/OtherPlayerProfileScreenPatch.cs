@@ -83,12 +83,6 @@ namespace pitTeam.Patches
         public string[] suit { get; set; }
     }
 
-    internal class FriendlyTeammateLoadoutRequest
-    {
-        public string aid { get; set; }
-        public string loadoutId { get; set; }
-    }
-
     internal class FriendlyTeammateRenameRequest
     {
         public string aid { get; set; }
@@ -299,7 +293,6 @@ namespace pitTeam.Patches
         private const string OptionsRoute = "/singleplayer/pitfireteam/teammate/profile/options";
         private const string SuitRoute = "/singleplayer/pitfireteam/teammate/profile/suit";
         private const string RenameRoute = "/singleplayer/pitfireteam/teammate/profile/rename";
-        private const string LoadoutRoute = "/singleplayer/pitfireteam/teammate/profile/loadout";
         private const string DefaultEquipmentRoute = "/singleplayer/pitfireteam/teammate/profile/default-equipment";
         private const string RepairEquipmentRoute = "/singleplayer/pitfireteam/teammate/profile/repair-equipment";
         private const string AggressionRoute = "/singleplayer/pitfireteam/teammate/profile/aggression";
@@ -412,8 +405,6 @@ namespace pitTeam.Patches
             new Dictionary<string, Item>(StringComparer.OrdinalIgnoreCase);
         public static string ActiveTeammateLoadoutId { get; set; }
         public static string ActiveTeammateLoadoutName { get; set; }
-        public static string LoadoutEditorSourceLoadoutId { get; set; }
-        public static string LoadoutEditorSourceLoadoutName { get; set; }
         public static SkillsScreen SkillsPanel { get; set; }
         public static RectTransform SkillsPanelHost { get; set; }
         public static CustomTextMeshProUGUI OriginalNicknameLabel { get; set; }
@@ -1035,10 +1026,7 @@ namespace pitTeam.Patches
                 ConfigureLoadoutPanel(loadoutPanel, clothingSelectionPanel);
                 DisplayLoadoutOptions(__instance, profile, inventoryController, session, loadoutPanel, playerModelWindow, options, replaceLoadoutDropdown: false);
                 ApplyLoadoutPanelLayout(loadoutPanel, clothingSelectionPanel);
-                if (pitFireTeam.IsFollowerLoadoutRealTransferMode())
-                {
-                    ReplaceLoadoutDropdownWithEditButton(__instance, profile, loadoutPanel);
-                }
+                ReplaceLoadoutDropdownWithEditButton(__instance, profile, loadoutPanel);
 
                 CreateProficiencyButton(__instance, clone, parent, profile, options);
                 CreateEditLoadoutButton(__instance, clone, parent, profile, 2);
@@ -1495,23 +1483,12 @@ namespace pitTeam.Patches
             button.name = "pitFireTeam_EditLoadoutButton";
             button.gameObject.SetActive(true);
             button.Interactable = true;
-            bool realTransferMode = pitFireTeam.IsFollowerLoadoutRealTransferMode();
-            button.SetRawText(
-                realTransferMode
-                    ? GetSocialUiText("BuyGearLoadout")
-                    : GetSocialUiText("EditLoadout"),
-                18);
+            button.SetRawText(GetSocialUiText("BuyGearLoadout"), 18);
             HideProfileButtonIconContainer(button);
             button.OnClick.RemoveAllListeners();
             button.OnClick.AddListener(() =>
             {
-                if (realTransferMode)
-                {
-                    TeammateEquipmentBuildsScreenFlow.Open(profile, session: ActiveProfileSession, inventoryController: ActiveProfileInventoryController);
-                    return;
-                }
-
-                ShowLoadoutEditorOverlay(screen, profile);
+                TeammateEquipmentBuildsScreenFlow.Open(profile, session: ActiveProfileSession, inventoryController: ActiveProfileInventoryController);
             });
 
             if (button.transform is RectTransform buttonRect && buttonTemplate.transform is RectTransform templateRect)

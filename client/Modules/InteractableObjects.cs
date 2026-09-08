@@ -125,7 +125,7 @@ namespace pitTeam.Modules
             }
 
             // Raid cleanup can unload the request owner immediately after this object is disposed.
-            // Send the return payload now so temporary Simple/Restricted gear cannot be stripped
+            // Send the return payload now so temporary Restricted gear cannot be stripped
             // from teammate persistence before the mail request has actually reached the server.
             return SendReturnItems(_toSendItems, member, "post-raid returned follower items", synchronous: true);
         }
@@ -390,7 +390,7 @@ namespace pitTeam.Modules
             return ids;
         }
 
-        // In Simple/Restricted modes teammate gear is lootable during the raid for interaction
+        // In Restricted modes teammate gear is lootable during the raid for interaction
         // parity, but those exact item ids must not survive player extraction. The server also
         // derives saved teammate gear from profile JSON; this client route covers live-only
         // movement such as gear handed through the teammate backpack inspection flow.
@@ -2111,7 +2111,7 @@ namespace pitTeam.Modules
                 return false;
             }
 
-            // Simple/Restricted teammate spawn gear may be moved around in raid for interaction
+            // Restricted teammate spawn gear may be moved around in raid for interaction
             // parity, but it must not become return-mail cargo. If a handled tree mixes protected
             // gear and unrelated cargo, split clean non-protected children back out for return
             // tracking instead of mailing the protected parent.

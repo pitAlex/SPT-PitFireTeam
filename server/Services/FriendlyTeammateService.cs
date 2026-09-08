@@ -519,33 +519,19 @@ public class FriendlyTeammateService(
         logger.Info($"Loadout management mode changed for session '{sessionId}' from '{previousMode}' to '{nextMode}'.");
     }
 
-    public void SelectDefaultLoadoutForAllTeammates(MongoId sessionId, string? previousMode = null, string? nextMode = null)
+    public void ApplyLoadoutManagementModeChange(MongoId sessionId, string? previousMode = null, string? nextMode = null)
     {
         var teammates = LoadTeammates(sessionId);
         string normalizedPreviousMode = NormalizeLoadoutManagementMode(previousMode);
         string normalizedNextMode = NormalizeLoadoutManagementMode(nextMode);
         bool crossedRealisticBoundary = IsExtremeLoadoutManagementMode(normalizedPreviousMode)
-            || IsExtremeLoadoutManagementMode(normalizedNextMode);
-        bool shouldSelectDefault = IsSimpleLoadoutManagementMode(normalizedPreviousMode)
-            && !IsSimpleLoadoutManagementMode(normalizedNextMode);
+            != IsExtremeLoadoutManagementMode(normalizedNextMode);
 
         foreach (var teammate in teammates)
         {
             try
             {
                 bool teammateChanged = false;
-
-                if (shouldSelectDefault)
-                {
-                    RestoreDefaultEquipment(sessionId, teammate);
-
-                    var settings = GetTeammateSettings(sessionId, teammate);
-                    settings.SelectedLoadoutId = DefaultLoadoutId;
-
-                    SaveTeammateSettings(sessionId, teammate, settings);
-                    teammateChanged = true;
-                    logger.Info($"Restored and selected existing Default loadout for teammate '{teammate.Aid}' after leaving Simple loadout management.");
-                }
 
                 if (crossedRealisticBoundary && RemoveSecureContainerTree(teammate))
                 {
@@ -776,28 +762,17 @@ public class FriendlyTeammateService(
 
     public List<FriendlyTeammateFollowerDetailsResponse> ListFollowerDetails(MongoId sessionId)
     {
-        var fullProfile = profileHelper.GetFullProfile(sessionId);
-        var loadoutNames = GetCustomEquipmentBuilds(fullProfile)
-            .ToDictionary(build => build.Id.ToString(), build => build.Name ?? string.Empty, StringComparer.OrdinalIgnoreCase);
-
         return LoadTeammates(sessionId)
             .Select(teammate =>
             {
                 var settings = GetTeammateSettings(sessionId, teammate);
-                var loadoutId = NormalizeCurrentLoadoutId(fullProfile, settings.SelectedLoadoutId);
-                var equipmentName = string.Equals(loadoutId, DefaultLoadoutId, StringComparison.OrdinalIgnoreCase)
-                    ? DefaultLoadoutName
-                    : loadoutNames.TryGetValue(loadoutId, out var customName)
-                        ? customName
-                        : DefaultLoadoutName;
-
                 return new FriendlyTeammateFollowerDetailsResponse
                 {
                     Aid = teammate.Aid?.ToString() ?? string.Empty,
                     Tactic = NormalizeCombatTactic(settings.CombatTactic),
                     Aggression = NormalizeAggression(settings.Aggression),
                     Proficiency = NormalizeProficiency(settings.Proficiency),
-                    Equipment = equipmentName,
+                    Equipment = DefaultLoadoutName,
                     Voice = teammate.Customization?.Voice?.ToString() ?? string.Empty,
                     Head = teammate.Customization?.Head?.ToString() ?? string.Empty,
                 };
@@ -819,18 +794,15 @@ public class FriendlyTeammateService(
     public FriendlyTeammateProfileOptionsResponse GetProfileOptions(MongoId sessionId, FriendlyTeammateProfileOptionsRequest request)
     {
         var teammate = FindByAccountId(sessionId, request.Aid);
-        var profile = profileHelper.GetFullProfile(sessionId);
         var settings = GetTeammateSettings(sessionId, teammate);
         if (EnsureOwnedClothing(settings, teammate.Customization))
         {
             SaveTeammateSettings(sessionId, teammate, settings);
         }
 
-        var selectedLoadoutId = NormalizeCurrentLoadoutId(profile, settings.SelectedLoadoutId);
-
         var response = new FriendlyTeammateProfileOptionsResponse
         {
-            CurrentLoadoutId = selectedLoadoutId,
+            CurrentLoadoutId = DefaultLoadoutId,
             CurrentTactic = NormalizeCombatTactic(settings.CombatTactic),
             Aggression = NormalizeAggression(settings.Aggression),
             Proficiency = NormalizeProficiency(settings.Proficiency),
@@ -853,17 +825,6 @@ public class FriendlyTeammateService(
                 })
                 .ToList(),
         };
-
-        foreach (var build in GetCustomEquipmentBuilds(profile))
-        {
-            response.Loadouts.Add(
-                new FriendlyTeammateLoadoutOption
-                {
-                    Id = build.Id.ToString(),
-                    Name = build.Name ?? string.Empty,
-                }
-            );
-        }
 
         return response;
     }
@@ -901,39 +862,30 @@ public class FriendlyTeammateService(
         SaveTeammate(sessionId, teammate);
     }
 
+    // Compatibility endpoint for older clients. Presets must go through kit purchase.
     public void SetTeammateLoadout(MongoId sessionId, FriendlyTeammateLoadoutRequest request)
     {
-        var teammate = FindByAccountId(sessionId, request.Aid);
-        var selectedLoadoutId = NormalizeRequiredValue(request.LoadoutId, "loadoutId");
-        var settings = GetTeammateSettings(sessionId, teammate);
-
-        if (string.Equals(selectedLoadoutId, DefaultLoadoutId, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(request.LoadoutId, DefaultLoadoutId, StringComparison.OrdinalIgnoreCase))
         {
-            RestoreDefaultEquipment(sessionId, teammate);
-            settings.SelectedLoadoutId = DefaultLoadoutId;
-            SaveTeammateSettings(sessionId, teammate, settings);
-            SaveTeammate(sessionId, teammate);
-            return;
+            throw new FriendlyTeammateException(GetLanguageValue(
+                languageService.GetStringMap(sessionId, "socialUi"),
+                "LoadoutRequiresRealTransfer",
+                "LoadoutRequiresRealTransfer"));
         }
 
-        var fullProfile = profileHelper.GetFullProfile(sessionId);
-        var playerPmc = GetPlayerProfile(sessionId);
-        var equipmentBuild = GetCustomEquipmentBuilds(fullProfile)
-            .FirstOrDefault(build => string.Equals(build.Id.ToString(), selectedLoadoutId, StringComparison.OrdinalIgnoreCase));
-
-        if (equipmentBuild == null)
-        {
-            throw new FriendlyTeammateException($"Unable to find teammate equipment build '{selectedLoadoutId}'");
-        }
-
-        ApplyEquipmentBuild(teammate, equipmentBuild, playerPmc);
-        settings.SelectedLoadoutId = selectedLoadoutId;
-        SaveTeammateSettings(sessionId, teammate, settings);
-        SaveTeammate(sessionId, teammate);
+        FindByAccountId(sessionId, request.Aid);
     }
 
     public FriendlyTeammateDefaultEquipmentResponse SaveTeammateDefaultEquipment(MongoId sessionId, FriendlyTeammateDefaultEquipmentRequest request)
     {
+        if (!request.RealItemCommit)
+        {
+            throw new FriendlyTeammateException(GetLanguageValue(
+                languageService.GetStringMap(sessionId, "socialUi"),
+                "LoadoutRequiresRealTransfer",
+                "LoadoutRequiresRealTransfer"));
+        }
+
         var teammate = FindByAccountId(sessionId, request.Aid);
         var items = request.Items?.Where(item => item != null).ToList();
         if (items == null || items.Count == 0)
@@ -942,39 +894,13 @@ public class FriendlyTeammateService(
         }
 
         string mode = NormalizeLoadoutManagementMode(settingsService.LoadSettings().LoadoutManagementMode);
-        if (request.RealItemCommit && IsRealTransferLoadoutManagementMode(mode))
-        {
-            // Restricted/Immersive/Extreme Default edits are real ownership transfers. Keep the normal
-            // clone-save path for Simple and for future non-default loadout modes until those rules are explicit.
-            return SaveTeammateDefaultEquipmentWithRealItemCommit(sessionId, teammate, request, items, mode);
-        }
-
-        teammate.Inventory ??= new BotBaseInventory();
-        var mergedItems = MergeEquipmentWithPreservedSpecialItems(teammate.Inventory.Items, cloner.Clone(items) ?? items);
-        teammate.Inventory.Items = mergedItems;
-        teammate.Inventory.Equipment = teammate.Inventory.Items.First().Id;
-
-        var settings = GetTeammateSettings(sessionId, teammate);
-        settings.SelectedLoadoutId = DefaultLoadoutId;
-
-        SaveDefaultEquipmentSnapshot(sessionId, teammate, overwrite: true, includeSecureContainer: IsExtremeLoadoutManagementMode(mode));
-        SaveTeammateSettings(sessionId, teammate, settings);
-        SaveTeammate(sessionId, teammate);
-
-        return new FriendlyTeammateDefaultEquipmentResponse();
+        return SaveTeammateDefaultEquipmentWithRealItemCommit(sessionId, teammate, request, items, mode);
     }
 
     public FriendlyTeammateBuyKitResponse BuyTeammateKit(MongoId sessionId, FriendlyTeammateBuyKitRequest request)
     {
         var teammate = FindByAccountId(sessionId, request.Aid);
         string mode = NormalizeLoadoutManagementMode(settingsService.LoadSettings().LoadoutManagementMode);
-        if (!IsRealTransferLoadoutManagementMode(mode))
-        {
-            throw CreateKitPurchaseException(
-                sessionId,
-                "Rejected teammate kit purchase outside a real-transfer loadout management mode.");
-        }
-
         var buildItems = request.Items?.Where(item => item != null).ToList();
         if (buildItems == null || buildItems.Count == 0)
         {
@@ -1830,7 +1756,7 @@ public class FriendlyTeammateService(
             return;
         }
 
-        // Simple/Restricted never lose teammate gear on death; Immersive and Extreme do.
+        // Restricted never loses teammate gear on death; Immersive and Extreme do.
         string mode = NormalizeLoadoutManagementMode(settingsService.LoadSettings().LoadoutManagementMode);
         if (!IsImmersiveLikeLoadoutManagementMode(mode))
         {
@@ -2910,19 +2836,12 @@ public class FriendlyTeammateService(
 
     private static string NormalizeLoadoutManagementMode(string? mode)
     {
-        return string.IsNullOrWhiteSpace(mode)
-            ? FriendlyServerSettingsRequest.DefaultLoadoutManagementMode
-            : mode.Trim();
+        return FriendlyServerSettingsRequest.NormalizeLoadoutManagementMode(mode);
     }
 
     private static bool IsExtremeLoadoutManagementMode(string mode)
     {
         return string.Equals(mode, "Extreme", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsSimpleLoadoutManagementMode(string mode)
-    {
-        return string.Equals(mode, "Simple", StringComparison.OrdinalIgnoreCase);
     }
 
     private bool IsCurrentLoadoutManagementModeExtreme()
@@ -2954,12 +2873,6 @@ public class FriendlyTeammateService(
         FriendlyServerSettingsRequest settings)
     {
         return IsRestrictedLoadoutManagementMode(mode) && settings?.RestrictedGearMaintenance == true;
-    }
-
-    private static bool IsRealTransferLoadoutManagementMode(string mode)
-    {
-        return IsRestrictedLoadoutManagementMode(mode)
-            || IsImmersiveLikeLoadoutManagementMode(mode);
     }
 
     private void EnsureFollowerHasSecureContainerSupplies(BotBase profile)
@@ -4494,6 +4407,7 @@ public class FriendlyTeammateService(
             }
 
             RecoverTeammateProfileIfNeeded(sessionId, teammate, file);
+            RestoreLegacyPresetSelection(sessionId, teammate);
             teammates.Add(teammate);
         }
 
@@ -4501,6 +4415,23 @@ public class FriendlyTeammateService(
             .OrderBy(profile => profile.Info?.RegistrationDate ?? int.MaxValue)
             .ThenBy(profile => profile.Aid ?? int.MaxValue)
             .ToList();
+    }
+
+    private void RestoreLegacyPresetSelection(MongoId sessionId, BotBase teammate)
+    {
+        var settings = GetTeammateSettings(sessionId, teammate);
+        if (string.Equals(settings.SelectedLoadoutId, DefaultLoadoutId, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        // Simple could leave a free preset clone equipped. Restore the saved Default before
+        // exposing inventory to profile, purchase, courier, or spawn paths, for every session.
+        RestoreDefaultEquipment(sessionId, teammate);
+        SaveTeammate(sessionId, teammate);
+        settings.SelectedLoadoutId = DefaultLoadoutId;
+        SaveTeammateSettings(sessionId, teammate, settings);
+        logger.Info($"Restored legacy preset selection to Default for teammate '{teammate.Aid}'.");
     }
 
     private static int GetCurrentUnixTimestampSeconds()
@@ -4540,7 +4471,7 @@ public class FriendlyTeammateService(
     {
         EnsureFollowerHasPockets(teammate);
 
-        // Simple/Restricted/Immersive use a temporary managed secure container only on the spawn clone.
+        // Restricted/Immersive use a temporary managed secure container only on the spawn clone.
         // Do not persist generated meds/ammo, or a stale hidden container, into the teammate profile.
         if (!IsCurrentLoadoutManagementModeExtreme() && RemoveSecureContainerTree(teammate))
         {
@@ -4994,29 +4925,6 @@ public class FriendlyTeammateService(
         teammate.Inventory.Equipment = teammate.Inventory.Items.First().Id;
     }
 
-    private List<EquipmentBuild> GetCustomEquipmentBuilds(SptProfile profile)
-    {
-        return profile.UserBuildData?.EquipmentBuilds?
-            .Where(build => build.BuildType == EquipmentBuildType.Custom)
-            .Where(build => !string.IsNullOrWhiteSpace(build.Name))
-            .ToList()
-            ?? [];
-    }
-
-    private string NormalizeCurrentLoadoutId(SptProfile profile, string? selectedLoadoutId)
-    {
-        if (string.IsNullOrWhiteSpace(selectedLoadoutId)
-            || string.Equals(selectedLoadoutId, DefaultLoadoutId, StringComparison.OrdinalIgnoreCase))
-        {
-            return DefaultLoadoutId;
-        }
-
-        bool exists = GetCustomEquipmentBuilds(profile)
-            .Any(build => string.Equals(build.Id.ToString(), selectedLoadoutId, StringComparison.OrdinalIgnoreCase));
-
-        return exists ? selectedLoadoutId : DefaultLoadoutId;
-    }
-
     private static float NormalizeAggression(float value)
     {
         if (float.IsNaN(value) || float.IsInfinity(value))
@@ -5076,21 +4984,6 @@ public class FriendlyTeammateService(
             "pusher" => "Rifleman",
             _ => "Rifleman",
         };
-    }
-
-    private void ApplyEquipmentBuild(BotBase teammate, EquipmentBuild equipmentBuild, PmcData playerPmc)
-    {
-        if (equipmentBuild.Items == null || equipmentBuild.Items.Count == 0)
-        {
-            throw new FriendlyTeammateException("Teammate equipment build has no items");
-        }
-
-        var clonedBuild = cloner.Clone(equipmentBuild.Items) ?? equipmentBuild.Items;
-        var normalizedBuild = itemHelper.ReplaceIDs(clonedBuild, playerPmc).ToList();
-        MongoId rootId = normalizedBuild.First().Id;
-        teammate.Inventory ??= new BotBaseInventory { Items = [] };
-        teammate.Inventory.Items = MergeEquipmentWithPreservedSpecialItems(teammate.Inventory.Items, normalizedBuild);
-        teammate.Inventory.Equipment = rootId;
     }
 
     private List<Item> MergeEquipmentWithPreservedSpecialItems(

@@ -35,7 +35,7 @@ Included:
 - non-launcher `OnlyBarrel` single- and multi-chamber readiness, one-round staging, loose-ammunition carry planning, and later promotion
 - non-holster revolver classification by weapon class, including shotgun, launcher, and custom rifle/sniper revolver mechanisms
 - first-primary reload from magazines successfully acquired with the looted weapon package
-- existing `Simple`/`Restricted` return and `Immersive`/`Realistic` persistence rules
+- existing `Restricted` return and `Immersive`/`Realistic` persistence rules
 
 Excluded:
 
@@ -339,7 +339,7 @@ Unless specified otherwise, the ordinary reference is 30 and the threshold is 60
 | WI-10 | Compatible magazines arrive one at a time | Same final inventory state produces the same final decision | P4/P5 | Secondary manual-transfer path passed; cargo manual/loose-pickup fix implemented, runtime pending |
 | WI-11 | Primary becomes occupied before support promotion | Keep candidate in support | P5 | Implemented; runtime pending |
 | WI-12 | Follower dies or enters combat during promotion | Do not start the move; dead/inactive completion does not rebind | P5/P6 | Implemented; runtime pending |
-| WI-13 | `Simple` or `Restricted` follower extracts after equip | Weapon and supporting acquired magazines remain return cargo | P6 | Not started |
+| WI-13 | `Restricted` follower extracts after equip | Weapon and supporting acquired magazines remain return cargo | P6 | Not started |
 | WI-14 | `Immersive` or `Realistic` follower extracts after equip | Accepted equipment remains part of the saved kit | P6 | Not started |
 | WI-15 | A newly found weapon and spare are compatible with a loose spare carried beside an existing cargo weapon | Compare the weapons before deciding which one receives the cargo spare | Future weapon swapping | Deferred |
 | WI-16 | A tracked cargo weapon and spare are in backpack, then a new compatible source spare is found | Move the new spare and loose cargo spare into fast access with reload reserve, then promote the cargo weapon from live state | P2 | Implemented; runtime pending |
@@ -482,7 +482,7 @@ The first detachable-magazine top-off slice is implemented for a missing-primary
 - the follower's full compatible cartridge stock, including rounds loaded in carried weapons and magazines, establishes quantity and round-weighted penetration; the shared tactical policy balances reserve deficit against the source penetration delta
 - an inserted external magazine is staged into free space on the same source, topped off, and restored before the ordinary planner resumes
 - every transaction settles before planning continues; no projected cartridge contributes to readiness
-- existing follower magazines are deliberately excluded so found ammunition cannot merge into pre-raid magazine ownership in `Simple`/`Restricted`
+- existing follower magazines are deliberately excluded so found ammunition cannot merge into pre-raid magazine ownership in `Restricted`
 
 Later phases still need these distinct ownership and transaction models:
 
@@ -539,13 +539,13 @@ The final placement phases must log one additional post-transfer `actual` snapsh
 
 - Added the P11 missing-primary magazine top-off stage. Compatible loose rounds from the same body/container fill the fullest acquired operational magazines through real EFT transactions before readiness is recalculated.
 - Included partial inserted magazines and fitting partial or empty same-source magazines. External inserted magazines are detached into free same-source grid space, filled, and restored before the ordinary weapon planner continues.
-- Kept follower-owned magazines outside acquired-package top-off and donor consolidation so raid ammunition cannot merge into pre-raid magazine ownership in `Simple`/`Restricted`.
+- Kept follower-owned magazines outside acquired-package top-off and donor consolidation so raid ammunition cannot merge into pre-raid magazine ownership in `Restricted`.
 - Added tactical source-ammo suppression: loaded and loose cartridges already carried establish the quality baseline, and sufficient equal-or-better stock prevents weaker body/container rounds from being loaded or collected.
 - Replaced the hard quality cutoff with the P12 need/power/opportunity evaluator. Carried quantity and round-weighted penetration govern replenishment; stocked-ammo opportunity classification remains available for the deferred replacement phase.
 - Corrected the ready-package boundary so arithmetic readiness from partial magazines no longer bypasses top-off. The weight baseline includes the inserted magazine and every source magazine planned for operational fast access, allowing worthwhile rounds to fill partials before readiness while rejecting redundant equal/weaker ammunition.
 - Replaced percentage-scale opportunity tuning with five-point penetration bands. Shortage accepts the immediately lower band (`38 -> 35`, exact `35 -> 30`), stocked upgrades combine band improvement with useful quantity, and `50+` penetration is accepted outright when upgrades are enabled.
 - Narrowed P12 to top-off before replacement: an equipped under-ready primary fills free capacity in compatible vest/pocket magazines without consulting `Pickup Weapons` and never unloads existing cartridges.
-- Carried loose ammunition is now the first maintenance supply, including the generated secure-container primary-ammo stacks in non-Realistic modes. Immersive/Realistic may then use searched-source rounds; Simple/Restricted keep searched rounds out of protected spawned magazines.
+- Carried loose ammunition is now the first maintenance supply, including the generated secure-container primary-ammo stacks in non-Realistic modes. Immersive/Realistic may then use searched-source rounds; Restricted keep searched rounds out of protected spawned magazines.
 
 ### 2026-07-16
 

@@ -331,7 +331,6 @@ Verified entry groups:
     - `Pickup Gear`
     - `Allow Gear Swapping`
 - `Loadout Management`
-    - `Simple`
     - `Restricted`
     - `Field Upkeep` (visible only while `Restricted` is active)
     - `Immersive`
@@ -386,9 +385,7 @@ Fresh configurations and Reset to Defaults use:
 
 The group is hidden in raid-restricted settings contexts, including the in-raid `Squad Settings` overlay, so the loadout economy mode cannot be changed while a raid is active.
 
-It is rendered as four mutually exclusive rows using cloned Ragfair `UIAnimatedToggleSpawner` controls under one `ToggleGroup`:
-
-- `Simple`
+It is rendered as three mutually exclusive rows using cloned Ragfair `UIAnimatedToggleSpawner` controls under one `ToggleGroup`:
 - `Restricted`
 - `Immersive`
 - `Realistic` (stored internally as `Extreme`)
@@ -397,7 +394,7 @@ The rows are intentionally vertical: each row shows the mode description on the 
 
 When `Restricted` is the active mode, a `Field Upkeep` checkbox row appears between `Restricted` and `Immersive`. It defaults off and uses the same settings-row layout as other checkbox settings instead of joining the radio `ToggleGroup`.
 
-Changing from `Simple` to a non-`Simple` mode opens a confirmation overlay before the setting is applied. The overlay warns that switching loadout management will switch all teammates to their `Default` loadout. `Continue` applies the mode and closes the overlay; the `X` cancels and leaves the previous mode selected. Other mode changes apply immediately because non-`Simple` modes already require `Default`.
+Changing modes applies immediately and syncs to the server. `Restricted` is the default; all three modes edit real `Default` equipment. Legacy preset selections restore the saved `Default` automatically.
 
 When a mode change is applied, the client saves the BepInEx setting, syncs the new mode to the server, and rebuilds the settings entries so conditional rows such as `Field Upkeep` appear or disappear immediately. The settings scroll position is captured before this rebuild and restored after Unity finishes recalculating the layout, so the view does not jump back to the top.
 
@@ -418,7 +415,7 @@ The category checkboxes default on and are applied before price:
 - `Pickup Valuables` covers barter items, keys, special items, info items, money, and other non-gear loot.
 - `Pickup Weapons` covers weapons, ammunition, magazines, weapon mods, and grenades.
 - `Pickup Gear` covers helmets, body armor, armored rigs, and tactical rigs.
-- `Allow Gear Swapping` is the explicit gate for gear equip/swap behavior. `Simple` and `Restricted` only add gear into empty slots and return that added gear as tracked cargo, while `Immersive` and `Realistic` can also swap eligible gear into the teammate kit.
+- `Allow Gear Swapping` is the explicit gate for gear equip/swap behavior. `Restricted` only add gear into empty slots and return that added gear as tracked cargo, while `Immersive` and `Realistic` can also swap eligible gear into the teammate kit.
 
 Crossing into or out of `Realistic` also strips the secure-container tree from saved teammate `Default` loadouts before the next profile/edit view can expose it.
 
@@ -485,10 +482,10 @@ For teammate profiles the patch:
 - clears the stock right-side profile content blocks
 - reuses the stock clothing panel for suit selection
 - combines unlocked BEAR, USEC, and Savage clothing with each teammate's persisted wardrobe while keeping each suite id unique, so generated clothing remains selectable even when the player has not unlocked it
-- injects a cloned second clothing-style row for loadout + tactic in `Simple`
+- injects a cloned second clothing-style row for equipment editing + tactic
 - replaces the loadout dropdown side with `EDIT LOADOUT` in `Restricted`, `Immersive`, and `Realistic`, leaving the tactic dropdown intact
 - injects a `PROFICIENCY` button row below that
-- injects an `Edit Loadout` button row below that in `Simple`, or a `KIT LOADOUTS` row in the real-transfer modes
+- injects a `KIT LOADOUTS` button row below that
 - clones and hosts a filtered `SkillsScreen`
 - moves the faction badge down to fit the custom rows
 - turns the stock hideout button into `EDIT NAME`
@@ -501,8 +498,8 @@ Verified persisted actions today:
     - `POST /singleplayer/pitfireteam/teammate/profile/suit`
 - rename
     - `POST /singleplayer/pitfireteam/teammate/profile/rename`
-- selected loadout from saved player equipment builds
-    - `POST /singleplayer/pitfireteam/teammate/profile/loadout`
+- real `Default` equipment transfer
+    - `POST /singleplayer/pitfireteam/teammate/profile/default-equipment`
 - tactic
     - `POST /singleplayer/pitfireteam/teammate/profile/tactic`
 - aggression
@@ -517,13 +514,6 @@ Pending recruit friend requests also open through `OtherPlayerProfileScreen`, bu
 ### Loadout and tactic selectors
 
 The loadout/tactic row is still based on `InventoryClothingSelectionPanel`.
-
-Upper control in `Simple`:
-
-- current teammate equipment selection
-- populated from:
-    - `Default`
-    - player custom equipment builds returned by the backend
 
 Upper control in `Restricted`, `Immersive`, and `Realistic`:
 
@@ -540,7 +530,7 @@ Lower dropdown:
     - `Marksman`
 - `Protector` is intentionally hidden for the beta release and old persisted values normalize back to `Rifleman`
 
-Loadout selection persists immediately through the backend and refreshes the live profile visualization.
+Equipment saves and kit purchases persist through the backend and refresh the live profile visualization.
 
 ### Proficiency dialog
 
@@ -647,7 +637,7 @@ The `Edit Loadout` button opens a full-screen modal overlay on top of the teamma
 The overlay currently builds:
 
 - draggable header bar
-- subtitle explaining whether the edit is cloned/local (`Simple`) or staged real item movement (`Restricted`, `Immersive`, `Realistic`)
+- subtitle explaining staged real item movement
 - left section: cloned fake player stash
 - right section: cloned follower inventory/equipment view
 - cancel button
@@ -657,7 +647,6 @@ Confirmed implementation details:
 
 - the left stash is a staged stash view built from the player stash
 - the right follower inventory is built from staged teammate equipment and a local editor inventory controller
-- `Simple` keeps clone/save behavior
 - `Restricted`, `Immersive`, and `Realistic` preserve item ids while editing `Default` so `Done` can commit real item movement
 - repair is available for repairable teammate gear in all modes; it updates teammate equipment and player repair resources, not saved player equipment presets
 - secure container is removed from the edited equipment before display/save except in `Realistic`
@@ -682,19 +671,11 @@ Verified save behavior:
 
 - the editor uses a staged local stash + follower equipment session
 - item edits stay local until `Done`
-- if the selected loadout is a custom player equipment build:
-    - `Done` opens the stock preset naming dialog
-    - saving with the same name overwrites that custom preset
-    - saving with a new name creates a new custom preset
-    - the teammate selected loadout is then updated to that saved preset
-- if the selected loadout is `Default`:
-    - the editor now opens the teammate's actual current default equipment instead of stale pre-switch profile equipment
-    - `Done` does not show the preset naming dialog
-    - it saves directly as the bot's default equipment and closes
-    - in `Restricted`, `Immersive`, and `Realistic`, the server also updates the real player stash and the client refreshes the live stash view from the server response
+- the editor opens the teammate's current `Default` equipment
+- `Done` saves teammate equipment and the real player stash, then refreshes the live stash view
+- no preset naming or overwrite dialog is shown
 
 ### Current limitations
 
 - real-item movement is currently limited to `Default`
-- custom player equipment build editing still uses the stock preset save flow
 - spawn preparation and death-stripping behavior are tracked separately in `docs/Loadout-Management.md`

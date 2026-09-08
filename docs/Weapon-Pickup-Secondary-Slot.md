@@ -53,7 +53,7 @@ Ownership rules:
   magazines in every loadout mode because the resulting rounds remain inside
   tracked loot.
 - Searched ammunition may modify protected original magazines only in
-  `Immersive` or `Realistic`; `Simple` and `Restricted` retain the existing
+  `Immersive` or `Realistic`; `Restricted` retain the existing
   protected-magazine boundary.
 
 S1 does not:
@@ -151,7 +151,7 @@ primary:
 | S3-03 | Primary and secondary both accept the source ammunition | Primary receives first refusal; secondary sees only unresolved rounds |
 | S3-04 | Secondary is sufficiently stocked and secure storage has room | Equal/already-carried or stronger ammunition fills secure storage; materially worse ammunition remains unless shortage policy accepts it |
 | S3-05 | Empty or partial double-/single-barrel secondary with compatible shells | One chamber transaction settles at a time; useful remainder is carried |
-| S3-06 | Simple/Restricted follower spawned with the secondary | Searched rounds may be carried but do not directly modify protected original equipment |
+| S3-06 | Restricted follower spawned with the secondary | Searched rounds may be carried but do not directly modify protected original equipment |
 
 ## Deferred Secondary Verification
 

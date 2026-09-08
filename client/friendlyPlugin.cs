@@ -64,8 +64,8 @@ namespace pitTeam
 
     public enum LoadoutManagementMode
     {
-        Simple,
-        Restricted,
+        // Preserve persisted numeric values for the remaining modes.
+        Restricted = 1,
         Immersive,
         Extreme
     }
@@ -117,7 +117,6 @@ namespace pitTeam
 
         public Dictionary<string, string> equipmentLock { get; set; }
         public Dictionary<string, string> loadoutManagement { get; set; }
-        public Dictionary<string, string> loadoutManagementSimple { get; set; }
         public Dictionary<string, string> loadoutManagementRestricted { get; set; }
         public Dictionary<string, string> loadoutManagementRestrictedGearMaintenance { get; set; }
         public Dictionary<string, string> loadoutManagementImmersive { get; set; }
@@ -201,7 +200,7 @@ namespace pitTeam
         public string Message { get; set; }
     }
 
-    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "0.10.3")]
+    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "1.0.0")]
     [BepInDependency("xyz.drakia.bigbrain")]
     [BepInDependency(pitFireTeam.MenuOverhaulPluginId, BepInDependency.DependencyFlags.SoftDependency)]
     public class pitFireTeam : BaseUnityPlugin
@@ -1166,6 +1165,10 @@ namespace pitTeam
             pmcArmbands.SettingChanged += (_, _) => SyncServerSettings();
 
             loadoutManagementMode = Config.Bind("", "14 LoadoutManagement", DefaultLoadoutManagementMode, new ConfigDescription(optionsLang.loadoutManagement["Description"], null, CreateConfigAttributes(-1005, false, optionsLang.loadoutManagement)));
+            if (!Enum.IsDefined(typeof(LoadoutManagementMode), loadoutManagementMode.Value))
+            {
+                loadoutManagementMode.Value = DefaultLoadoutManagementMode;
+            }
 
             restrictedGearMaintenance = Config.Bind("", "14 LoadoutManagementRestrictedGearMaintenance", false, new ConfigDescription(optionsLang.loadoutManagementRestrictedGearMaintenance["Description"], null, CreateConfigAttributes(-1005, false, optionsLang.loadoutManagementRestrictedGearMaintenance)));
             restrictedGearMaintenance.SettingChanged += (_, _) => SyncServerSettings();
@@ -1252,14 +1255,6 @@ namespace pitTeam
         {
             LoadoutManagementMode mode = loadoutManagementMode?.Value ?? DefaultLoadoutManagementMode;
             return mode == LoadoutManagementMode.Immersive || mode == LoadoutManagementMode.Extreme;
-        }
-
-        internal static bool IsFollowerLoadoutRealTransferMode()
-        {
-            LoadoutManagementMode mode = loadoutManagementMode?.Value ?? DefaultLoadoutManagementMode;
-            return mode == LoadoutManagementMode.Restricted
-                || mode == LoadoutManagementMode.Immersive
-                || mode == LoadoutManagementMode.Extreme;
         }
 
         internal static bool IsFollowerLoadoutRealisticMode()

@@ -10,8 +10,24 @@ public record FriendlyServerSettingsRequest : IRequestData
     [JsonPropertyName("pmcArmbands")]
     public bool PmcArmbands { get; set; } = true;
 
+    private string loadoutManagementMode = DefaultLoadoutManagementMode;
+
     [JsonPropertyName("loadoutManagementMode")]
-    public string LoadoutManagementMode { get; set; } = DefaultLoadoutManagementMode;
+    public string LoadoutManagementMode
+    {
+        get => loadoutManagementMode;
+        set => loadoutManagementMode = NormalizeLoadoutManagementMode(value);
+    }
+
+    public static string NormalizeLoadoutManagementMode(string? mode)
+    {
+        return mode?.Trim().ToLowerInvariant() switch
+        {
+            "immersive" => "Immersive",
+            "extreme" or "realistic" => "Extreme",
+            _ => DefaultLoadoutManagementMode,
+        };
+    }
 
     [JsonPropertyName("restrictedGearMaintenance")]
     public bool RestrictedGearMaintenance { get; set; } = false;

@@ -10,7 +10,7 @@ The current implementation reuses EFT's stock `EquipmentBuildsScreen` and applie
 
 ## Entry Flow
 
-The teammate profile screen shows `KIT LOADOUTS` for non-`Simple` loadout-management modes, where saved loadout selection is hidden and `Default` is the real editable gear surface.
+The teammate profile screen shows `KIT LOADOUTS` for all loadout-management modes, where saved loadout selection is hidden and `Default` is the real editable gear surface.
 
 Pressing the button:
 

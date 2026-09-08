@@ -184,7 +184,7 @@ namespace pitTeam.BigBrain.Actions
             AddMagazineTopOffTarget(targets, targetIds, weapon, insertedMagazine, isInsertedMagazine: true);
             // Do not merge found rounds into the follower's pre-raid magazines. Keeping every
             // top-off target in the acquired weapon/source package preserves return bookkeeping in
-            // Simple and Restricted modes; existing fast-access mags still count for readiness.
+            // Restricted mode; existing fast-access mags still count for readiness.
             foreach (BodyGearCandidate candidate in refillPlan.FollowUps.Where(IsOperationalFastAccessFollowUp))
             {
                 AddMagazineTopOffTarget(

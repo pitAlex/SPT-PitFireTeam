@@ -146,10 +146,9 @@ Current verified custom teammate feature state:
 - Teammate profile view now has completed profile-side customization features:
     - hideout/report actions are hidden for teammate profiles
     - stock clothes dropdowns are reused for teammate suit selection
-    - custom loadout dropdown is injected below the clothes selector
-    - loadout choices come from the player profile's saved equipment builds plus `Default`
-    - selected teammate loadout persists through `/singleplayer/pitfireteam/teammate/profile/loadout`
-    - persisted loadout selection flows through follower details and shows as the current teammate equipment name
+    - `EDIT LOADOUT` edits the teammate's real `Default` equipment; `KIT LOADOUTS` acquires saved equipment builds through the purchase flow
+    - `Restricted` is the default; `Simple` and free preset selection are removed
+    - legacy custom selections restore saved `Default` equipment on load before inventory is exposed
     - teammate rename is implemented through a custom overlay + backend rename route
     - stock `SkillsScreen` is cloned into teammate profile view with filtered follower-relevant skills
     - the draggable `Proficiency` dialog persists separate aggression plus follower-local `0..200` Vision, Precision, and Reaction percentages; Vision owns distance, Precision owns accuracy plus half of aim speed, Reaction owns recognition speed plus half of aim speed, neutral `100` is applied after the selected tactic's baseline when the teammate spawns, and the bottom Reset button restores all three percentages plus tactic-default aggression
@@ -162,11 +161,10 @@ Current verified custom teammate feature state:
     - secure container and dogtag are hidden from the follower-side container display
     - drag header / overlay movement is implemented
     - edits stay local until `Done`
-    - custom player equipment builds can be overwritten or saved under a new preset name
-    - editing `Default` saves directly as the teammate default equipment without opening the preset naming dialog
+    - saving commits real stash ownership transfers and teammate `Default` equipment without a preset naming dialog
 - Current backend/social/profile/runtime limitations:
     - voice/head customization from profile screen is not implemented yet
-    - custom loadout editor still uses cloned/local items; immersive real stash consumption is not implemented
+    - custom loadout editor stages local inventory copies with real ids; saving commits real stash transfers in all three modes
     - Team screen `Settings` tab covers checkbox/ranged settings and keybind capture; staged save/cancel/default parity is still pending if needed later
     - teammate invite/group flow still needs more parity with old plugin around pre-raid screen sequencing and group state handling
     - old chatbot-style teammate management is not ported; current management path is the roster/context-menu flow

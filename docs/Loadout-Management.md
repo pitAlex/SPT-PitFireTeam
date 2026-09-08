@@ -1,6 +1,6 @@
 # Loadout Management
 
-Date: 2026-05-13
+Date: 2026-09-08
 
 ## Scope
 
@@ -9,12 +9,11 @@ This document tracks the current `Loadout Management` setting and the first impl
 Current phase focus:
 
 - expose the mode in `My Squad -> Settings`
-- confirm before switching modes
-- preserve each teammate's saved `Default` gear and select `Default` when the mode changes
-- test default-loadout spawn preparation for the four modes
+- preserve each teammate's saved `Default` gear and migrate legacy preset selections to `Default`
+- test default-loadout spawn preparation for the three modes
 - test Immersive-style death gear loss for teammates using `Default`
 
-This is not yet the full real-stash economy implementation. Default-loadout real item ownership transfer is implemented for `Restricted`, `Immersive`, and `Realistic` (internal mode value: `Extreme`). The non-`Simple` profile UI intentionally hides the saved-loadout dropdown and uses `Default` as the editable real-gear surface, with `KIT LOADOUTS` reserved as the way to acquire a full kit.
+This is not yet the full real-stash economy implementation. Default-loadout real item ownership transfer is implemented for `Restricted`, `Immersive`, and `Realistic` (internal mode value: `Extreme`). The profile UI replaces the saved-loadout dropdown with `EDIT LOADOUT` and uses `Default` as the editable real-gear surface, with `KIT LOADOUTS` reserved as the way to acquire a full kit.
 
 See `docs/Buy Screen.md` for the current stock `EquipmentBuildsScreen` reuse, buy-mode UI changes, and kit price-display behavior.
 
@@ -26,47 +25,21 @@ See `docs/Team-Escape.md` for the player-death squad escape, recovered death-gea
 
 The group is hidden while the settings panel is opened from a raid-restricted context, including the in-raid `Squad Settings` overlay.
 
-It contains four mutually exclusive mode choices:
+It contains three mutually exclusive mode choices:
 
-- `Simple`
 - `Restricted`
 - `Immersive`
 - `Realistic` (stored internally as `Extreme`)
 
 The UI uses cloned Ragfair `UIAnimatedToggleSpawner` controls under a Unity `ToggleGroup`. Each option is rendered as its own vertical row: description text on the left, radio-style toggle on the right.
 
-When the user clicks a different mode:
-
-1. the current visible selection is kept unchanged
-2. a confirmation overlay opens
-3. `Continue` applies the new mode
-4. the overlay `X` cancels and keeps the previous mode
-
-Confirmation text:
-
-- title: `SWITCH LOADOUT MANAGMENT`
-- question: `Switching loadout management will switch all teammates to their Default loadout.`
-- confirm button: `Continue`
-
-After confirmation, the client saves the config, syncs the mode to the server, and updates the visible toggle state in place.
+Selecting a different mode saves the config, syncs it to the server, and refreshes the visible toggle and roster. All modes use `Default`, so there is no preset-selection confirmation.
 
 ## Modes
 
-### Simple
-
-`Simple` is the current baseline behavior.
-
-The user can edit or choose a follower loadout without requiring the gear to be physically consumed from the player's inventory.
-
-Current intended constraints:
-
-- `Edit Loadout` works against the stash-side editor surface, so the player's currently worn gear is not part of that editor view
-- equipment preset dropdown availability must exclude items currently equipped by the player or already reserved/equipped by other teammates
-- spawned follower gear is protected
-- gear is not lost on follower death
-- spawned follower gear cannot be extracted with
-
 ### Restricted
+
+`Restricted` is the default. Legacy `Simple`, missing, and invalid settings resolve to `Restricted`; existing `Immersive` and `Realistic` settings retain their behavior.
 
 Target behavior:
 
@@ -150,11 +123,8 @@ When `loadoutManagementMode` changes:
 
 1. the server keeps every teammate's saved inventory and `Default` equipment snapshot unchanged
 2. if the change moves into or out of `Realistic` / internal `Extreme`, the saved `Default` secure-container tree is removed and the default snapshot is overwritten
-3. when leaving `Simple` for any non-`Simple` mode, each teammate's selected loadout is set to `Default`
-4. switching between non-`Simple` modes does not repeat the `Default` selection because those modes already require it
-5. the client only shows the `Default`-selection warning when leaving `Simple`
 
-This avoids on-the-fly ownership checks against non-default selected equipment when the economic rules change, without destroying the existing `Default` gear.
+Every teammate is migrated on load: a legacy custom preset selection restores the saved `Default` equipment before the profile can be viewed, edited, purchased over, delivered, or spawned. The profile is saved before the selection so an interrupted migration can retry. The saved `Default` snapshot is preserved. No custom preset can be selected for free, and clone-only equipment saves are rejected by the server.
 
 The server also receives `restrictedGearMaintenance`. This conditional `Restricted` setting defaults to `false` and does not change the selected loadout or saved `Default` snapshot when toggled.
 
@@ -188,7 +158,7 @@ After the save succeeds, the server returns the saved player stash snapshot to t
 
 ## Kit Purchase
 
-`KIT LOADOUTS` is available in `Restricted`, `Immersive`, and `Realistic` / internal `Extreme`. `Simple` keeps the saved-loadout dropdown and does not use the buyout screen.
+`KIT LOADOUTS` is available in every mode: `Restricted`, `Immersive`, and `Realistic` / internal `Extreme`. Saved builds are available through this purchase flow only.
 
 The buy screen reuses EFT's stock `EquipmentBuildsScreen` in a custom teammate-buy mode. The selected build is priced with market-facing item prices, including nested weapon mods, armor plates, armor inserts, magazine contents, and container contents. Weapon trees first try to use the best available overlapping assembled trader/barter offer; any extra unmatched parts then fall back to the gated kit discount where fuller kits can earn deeper weapon-only discounts. Armor, helmets, rigs, backpacks, loose/grid-contained items, ammo, meds, keys, cards, coins, and carried loot remain full price.
 
@@ -208,12 +178,12 @@ The old-kit delivery intentionally does not include the teammate equipment root 
 
 Repair is available from the teammate loadout editor for repairable teammate equipment in all loadout-management modes.
 
-Repair follows the real teammate-equipment rule even in `Simple`:
+Repair follows the real teammate-equipment rule:
 
 - the repaired item is updated on the teammate's current `Default` equipment/profile
 - player repair kits and repair-related player profile changes are consumed through the stock repair service
 - saved player equipment presets are not changed by repair
-- pressing `Done` remains the action that writes editor changes back to the selected player equipment preset in the clone/preset flow
+- pending staged inventory changes are committed through the real stash transfer before repair
 
 ## Live Stash Refresh
 
@@ -268,7 +238,7 @@ Items placed into the inspected backpack during the session are registered as tr
 
 ## Protected Extraction Filtering
 
-`Simple` and `Restricted` allow teammate gear to be physically looted in raid so the player can inspect, reorganize, or recover from inventory edge cases without special slot locks. Commanded fallen-teammate recovery (`Check Him` / `Loot Body` on a teammate corpse) is stricter about protected roots: followers skip protected teammate gear roots, but non-protected backpacks and rigs are recovered as whole containers instead of being emptied item by item. To prevent gear farming, extraction and return-delivery cleanup strip protected teammate item ids from the extracted player profile or returned container tree.
+`Restricted` allows teammate gear to be physically looted in raid so the player can inspect, reorganize, or recover from inventory edge cases without special slot locks. Commanded fallen-teammate recovery (`Check Him` / `Loot Body` on a teammate corpse) is stricter about protected roots: followers skip protected teammate gear roots, but non-protected backpacks and rigs are recovered as whole containers instead of being emptied item by item. To prevent gear farming, extraction and return-delivery cleanup strip protected teammate item ids from the extracted player profile or returned container tree.
 
 Protected ids come from two sources:
 
@@ -332,6 +302,6 @@ When a `Restricted` teammate with `Field Upkeep` enabled dies while using `Defau
 
 ## Current Gaps
 
-Non-`Simple` custom preset selection remains intentionally hidden so it does not conflict with real item ownership rules. The remaining planned loadout work is the future `KIT LOADOUTS` purchase hardening where consumed stash items can preserve their exact live durability/resource state when they become teammate equipment instead of using the saved build's item state.
+Direct custom preset selection has been removed; all equipment changes use real item ownership rules. The remaining planned loadout work is the future `KIT LOADOUTS` purchase hardening where consumed stash items can preserve their exact live durability/resource state when they become teammate equipment instead of using the saved build's item state.
 
 Player-owned items handed to a teammate during raid are currently known only to the client at the moment of handoff. The server can derive saved teammate default gear from teammate profiles, but it cannot independently know every player-owned item that was temporarily moved through a live teammate inventory unless the client reports those item ids. The current protected-extraction filter uses a client side registration route for those handled item ids; a later pass should make this ownership/event reporting more explicit and durable instead of treating it as part of the extraction cleanup flow.

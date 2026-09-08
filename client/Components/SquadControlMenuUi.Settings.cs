@@ -407,7 +407,6 @@ namespace pitTeam.Components
             if (!IsRaidRestrictedSettingsContext())
             {
                 string loadoutSection = pitFireTeam.GetLanguageText(language => language.loadoutManagementSettings);
-                yield return new SquadSettingEntry { SectionTitle = loadoutSection, LoadoutMode = LoadoutManagementMode.Simple };
                 yield return new SquadSettingEntry { SectionTitle = loadoutSection, LoadoutMode = LoadoutManagementMode.Restricted };
                 if (pitFireTeam.loadoutManagementMode?.Value == LoadoutManagementMode.Restricted &&
                     pitFireTeam.restrictedGearMaintenance != null)
@@ -1163,12 +1162,6 @@ namespace pitTeam.Components
             }
 
             Modules.Logger.LogInfo($"[UI] Loadout management mode change requested: {previousMode} -> {mode}");
-            if (previousMode == LoadoutManagementMode.Simple && mode != LoadoutManagementMode.Simple)
-            {
-                ShowLoadoutManagementConfirmOverlay(mode);
-                return;
-            }
-
             ApplyLoadoutManagementModeChange(mode);
         }
 
@@ -1176,14 +1169,12 @@ namespace pitTeam.Components
         {
             if (pitFireTeam.loadoutManagementMode == null)
             {
-                CloseLoadoutManagementConfirmOverlay();
                 return;
             }
 
             pitFireTeam.loadoutManagementMode.Value = mode;
             pitFireTeam.Instance?.Config.Save();
             Task serverSyncTask = pitFireTeam.SyncServerSettingsNowAsync();
-            CloseLoadoutManagementConfirmOverlay();
             RebuildSettingsEntries(preserveScrollPosition: true);
             RefreshRosterPortraitsAfterLoadoutManagementSync(serverSyncTask);
         }
@@ -1249,114 +1240,6 @@ namespace pitTeam.Components
                 {
                     pair.Value.SetIsOnWithoutNotify(pair.Key == current);
                 }
-            }
-        }
-
-        private void ShowLoadoutManagementConfirmOverlay(LoadoutManagementMode mode)
-        {
-            CloseLoadoutManagementConfirmOverlay(rebuild: false);
-
-            Transform overlayParent = settingsPanel?.transform.parent ?? screenRoot?.transform;
-            if (overlayParent == null)
-            {
-                pitFireTeam.Log.LogWarning("[UI] Loadout management confirmation overlay could not open: no overlay parent was available.");
-                return;
-            }
-
-            GameObject overlayRoot = new GameObject("pitFireTeam_LoadoutManagementConfirmOverlay", typeof(RectTransform), typeof(Image));
-            overlayRoot.transform.SetParent(overlayParent, false);
-            RectTransform overlayRect = overlayRoot.GetComponent<RectTransform>();
-            Stretch(overlayRect);
-            overlayRect.SetAsLastSibling();
-
-            Image overlayImage = overlayRoot.GetComponent<Image>();
-            overlayImage.color = new Color(0f, 0f, 0f, 0.62f);
-            overlayImage.raycastTarget = true;
-
-            GameObject panel = new GameObject("pitFireTeam_LoadoutManagementConfirmPanel", typeof(RectTransform), typeof(Image));
-            panel.transform.SetParent(overlayRoot.transform, false);
-            RectTransform panelRect = panel.GetComponent<RectTransform>();
-            panelRect.anchorMin = new Vector2(0.5f, 0.5f);
-            panelRect.anchorMax = new Vector2(0.5f, 0.5f);
-            panelRect.pivot = new Vector2(0.5f, 0.5f);
-            panelRect.sizeDelta = new Vector2(680f, 204f);
-
-            Image panelImage = panel.GetComponent<Image>();
-            panelImage.color = new Color(0.02f, 0.02f, 0.02f, 0.98f);
-            panelImage.raycastTarget = true;
-
-            GameObject header = new GameObject("pitFireTeam_LoadoutManagementConfirmHeader", typeof(RectTransform), typeof(Image));
-            header.transform.SetParent(panel.transform, false);
-            RectTransform headerRect = header.GetComponent<RectTransform>();
-            headerRect.anchorMin = new Vector2(0f, 1f);
-            headerRect.anchorMax = new Vector2(1f, 1f);
-            headerRect.pivot = new Vector2(0.5f, 1f);
-            headerRect.offsetMin = new Vector2(0f, -28f);
-            headerRect.offsetMax = new Vector2(0f, 0f);
-
-            Image headerImage = header.GetComponent<Image>();
-            headerImage.color = new Color(0.06f, 0.06f, 0.06f, 1f);
-            headerImage.raycastTarget = true;
-
-            GameObject titleObject = CreateText(
-                "pitFireTeam_LoadoutManagementConfirmTitle",
-                GetSocialUiText("LoadoutManagementConfirmTitle").ToUpperInvariant(),
-                18f,
-                TextAlignmentOptions.MidlineLeft);
-            RectTransform titleRect = titleObject.GetComponent<RectTransform>();
-            titleRect.SetParent(header.transform, false);
-            titleRect.anchorMin = new Vector2(0f, 0f);
-            titleRect.anchorMax = new Vector2(1f, 1f);
-            titleRect.offsetMin = new Vector2(16f, 0f);
-            titleRect.offsetMax = new Vector2(-42f, 0f);
-
-            Button closeButton = CreateWindowCloseButton(header.transform, "pitFireTeam_LoadoutManagementConfirmCloseButton");
-            if (closeButton.transform is RectTransform closeRect)
-            {
-                closeRect.anchorMin = new Vector2(1f, 0.5f);
-                closeRect.anchorMax = new Vector2(1f, 0.5f);
-                closeRect.pivot = new Vector2(1f, 0.5f);
-                closeRect.anchoredPosition = new Vector2(-4f, 0f);
-            }
-
-            closeButton.onClick.AddListener(() => CloseLoadoutManagementConfirmOverlay());
-
-            GameObject bodyObject = CreateText(
-                "pitFireTeam_LoadoutManagementConfirmBody",
-                GetSocialUiText("LoadoutManagementConfirmPrompt"),
-                24f,
-                TextAlignmentOptions.Center);
-            RectTransform bodyRect = bodyObject.GetComponent<RectTransform>();
-            bodyRect.SetParent(panel.transform, false);
-            bodyRect.anchorMin = new Vector2(0f, 0f);
-            bodyRect.anchorMax = new Vector2(1f, 1f);
-            bodyRect.offsetMin = new Vector2(28f, 72f);
-            bodyRect.offsetMax = new Vector2(-28f, -42f);
-
-            TextMeshProUGUI bodyLabel = bodyObject.GetComponent<TextMeshProUGUI>();
-            bodyLabel.enableWordWrapping = true;
-            bodyLabel.overflowMode = TextOverflowModes.Ellipsis;
-
-            DefaultUIButton confirmButton = CreateOverlayActionButton(panel.transform, new Vector2(0f, 10f), new Vector2(180f, 36f));
-            confirmButton.SetRawText(GetSocialUiText("LoadoutManagementConfirm"), 22);
-            confirmButton.OnClick.RemoveAllListeners();
-            confirmButton.OnClick.AddListener(() => ApplyLoadoutManagementModeChange(mode));
-
-            loadoutManagementConfirmOverlay = overlayRoot;
-            Modules.Logger.LogInfo($"[UI] Loadout management confirmation overlay opened for mode: {mode}");
-        }
-
-        private void CloseLoadoutManagementConfirmOverlay(bool rebuild = false)
-        {
-            if (loadoutManagementConfirmOverlay != null)
-            {
-                Destroy(loadoutManagementConfirmOverlay);
-                loadoutManagementConfirmOverlay = null;
-            }
-
-            if (rebuild)
-            {
-                RebuildSettingsEntries();
             }
         }
 
@@ -2728,7 +2611,7 @@ namespace pitTeam.Components
                 LoadoutManagementMode.Restricted => language.loadoutManagementRestricted,
                 LoadoutManagementMode.Immersive => language.loadoutManagementImmersive,
                 LoadoutManagementMode.Extreme => language.loadoutManagementExtreme,
-                _ => language.loadoutManagementSimple,
+                _ => language.loadoutManagementRestricted,
             };
         }
 

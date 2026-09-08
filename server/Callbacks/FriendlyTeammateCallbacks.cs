@@ -50,7 +50,7 @@ public class FriendlyTeammateCallbacks(
         if (!string.Equals(previousMode, nextMode, StringComparison.OrdinalIgnoreCase))
         {
             teammateService.LogLoadoutManagementModeChange(sessionId, previousMode, nextMode);
-            teammateService.SelectDefaultLoadoutForAllTeammates(sessionId, previousMode, nextMode);
+            teammateService.ApplyLoadoutManagementModeChange(sessionId, previousMode, nextMode);
         }
 
         return new ValueTask<string>(httpResponse.NullResponse());

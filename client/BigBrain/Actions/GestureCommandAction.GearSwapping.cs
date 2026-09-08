@@ -3092,7 +3092,7 @@ namespace pitTeam.BigBrain.Actions
 
         private static bool ShouldReturnGearSwapAsCargo()
         {
-            // Simple/Restricted gear additions are temporary combat upgrades and must return by mail
+            // Restricted gear additions are temporary combat upgrades and must return by mail
             // like normal follower cargo. Immersive/Realistic leave them untracked so the escaped
             // teammate's live equipment snapshot can persist the new kit.
             return !pitFireTeam.IsFollowerLoadoutLootableMode();
@@ -3100,7 +3100,7 @@ namespace pitTeam.BigBrain.Actions
 
         private static bool CanReplaceOccupiedGearSlot()
         {
-            // Simple/Restricted can add into empty equipment slots, but cannot replace spawned kit.
+            // Restricted can add into empty equipment slots, but cannot replace spawned kit.
             // Actual occupied-slot swapping is reserved for the lootable Immersive/Realistic modes.
             return pitFireTeam.IsFollowerLoadoutLootableMode();
         }

@@ -474,7 +474,7 @@ Execution:
     - tries backpack, rig, and pocket carry containers for the remaining body gear
     - treats backpacks and rigs as whole cargo: if the follower can carry the container, its contents ride with it; if the container cannot be carried, the command does not pull items out of it
     - pockets are not a movable cargo container, so pocket contents are still considered individually
-    - in `Simple` and `Restricted`, skips roots that are protected follower equipment. Non-protected containers may carry protected descendants, and post-raid filtering strips those protected descendants before extraction or return delivery
+    - in `Restricted`, skips roots that are protected follower equipment. Non-protected containers may carry protected descendants, and post-raid filtering strips those protected descendants before extraction or return delivery
 - In `Immersive` and `Realistic`, protected-equipment skipping is not applied because fallen teammate gear is lootable in those modes.
 - Non-teammate corpses use filtered looting:
     - tries to take the corpse dogtag first only for non-teammate USEC/BEAR bodies; dogtags bypass the min/max price filter but still require a valid backpack/pocket move
@@ -501,7 +501,7 @@ Execution:
     - compatible secondary magazines that cannot pass the reload-safe fast-access plan remain at the body instead of becoming ordinary backpack cargo
     - ordinary cargo item price is compared once against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound; money ignores these price bounds when `Pickup Valuables` is enabled
     - non-weapon successful moves only target the follower's backpack and pockets, never the follower's rig
-- Stores successful cargo moves through `InteractableObjects.StoreItem(...)` for squadmates. Additive equipped gear moves are also stored in `Simple` and `Restricted`; Immersive/Realistic equipped gear can persist as the teammate's kit instead.
+- Stores successful cargo moves through `InteractableObjects.StoreItem(...)` for squadmates. Additive equipped gear moves are also stored in `Restricted`; Immersive/Realistic equipped gear can persist as the teammate's kit instead.
 - On completion, says `EPhraseTrigger.Ready` when at least one non-dogtag item was moved, `EPhraseTrigger.Negative` when eligible loot existed but no executable move could be built, or `EPhraseTrigger.LootNothing` when no eligible non-dogtag item existed.
 - Once searching starts, normal replacement commands are ignored until the loot command completes; combat, timeout, and safety invalidation can still stop the command.
 - After successful looting, walks to a reachable uncrowded same-level point within 3m of the corpse before resuming normal follow or the previous hold order.
@@ -550,7 +550,7 @@ Execution:
 - Tactical vests follow the same narrow gear rule: fill an empty tactical vest slot directly in any mode, or replace an occupied vest only in Immersive/Realistic when the found vest is a protection upgrade, the old vest has no non-plate contents, and the old vest can be moved as a whole tree into the backpack first.
 - Missing-primary acquisition and implemented true swaps bypass min/max price and the `Pickup Weapons` category filter. Optional second-primary/holster weapon additions require `Pickup Weapons`; ordinary weapon and wearable cargo fallbacks respect their separate category filters plus price.
 - Closes the container on normal completion. Combat, timeout, or safety interruption can leave it open.
-- Stores successful cargo moves through `InteractableObjects.StoreItem(...)` for squadmates. Additive equipped gear moves are also stored in `Simple` and `Restricted`; Immersive/Realistic equipped gear can persist as the teammate's kit instead.
+- Stores successful cargo moves through `InteractableObjects.StoreItem(...)` for squadmates. Additive equipped gear moves are also stored in `Restricted`; Immersive/Realistic equipped gear can persist as the teammate's kit instead.
 - On completion, says `EPhraseTrigger.Ready` when at least one item was moved, `EPhraseTrigger.Negative` when eligible loot existed but no executable move could be built, or `EPhraseTrigger.LootNothing` when no eligible item existed.
 - Once searching starts, normal replacement commands are ignored until the loot command completes; combat, timeout, and safety invalidation can still stop the command.
 - After successful looting, walks to a reachable uncrowded same-level point within 3m of the container before resuming normal follow or the previous hold order.

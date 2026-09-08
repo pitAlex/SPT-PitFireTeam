@@ -258,7 +258,6 @@ Player gear recovery applies in every loadout-management mode. An escaped squadm
 
 Pocket recovery follows SPT's `lostondeath` `PocketItems` setting. The permanent `Pockets` container is never returned, but its contents are recoverable when pocket items would be lost on death.
 
-- `Simple`
 - `Restricted`
 - `Immersive`
 - `Realistic` / internal `Extreme`
@@ -284,7 +283,7 @@ Fallen teammate gear recovery only applies in:
 - `Immersive`
 - `Realistic` / internal `Extreme`
 
-In `Simple` and `Restricted`, teammate gear is protected and is not recovered from fallen bodies.
+In `Restricted`, teammate gear is protected and is not recovered from fallen bodies.
 
 In `Restricted` with `Field Upkeep` enabled, fallen teammate gear is still protected from player extraction and is still not returned as recovery mail. The server instead saves the fallen teammate's death-time `Default` equipment state, after removing tracked player-given loot and gear ids owned by other teammates.
 

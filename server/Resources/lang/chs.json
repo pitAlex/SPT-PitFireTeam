@@ -124,10 +124,7 @@
     "Name": "装备管理模式",
     "Description": "控制小队成员装备的选择、消耗和保存方式。"
   },
-  "loadoutManagementSimple": {
-    "Name": "简单",
-    "Description": "以仓库中的装备为模板自由创建小队成员装备，不会消耗任何物品。小队成员装备受保护：不会因阵亡丢失，也无法带出。"
-  },
+
   "loadoutManagementRestricted": {
     "Name": "受限",
     "Description": "小队成员装备必须使用仓库中的装备或通过装备购买系统购买。装备仍然受保护：不会因阵亡丢失，也无法带出。"
@@ -279,7 +276,6 @@
     "UnknownItem": "未知物品",
     "EditLoadoutTitle": "编辑装备",
     "EditLoadoutTitleWithName": "编辑装备：{0}",
-    "EditLoadoutSubtitle": "编辑 {0} 的克隆物品。此处的更改还不会影响到实际仓库。",
     "EditLoadoutSubtitleReal": "编辑 {0} 的准备装备。保存将在你的仓库与此小队成员之间转移物品。",
     "ProfileRecoveredTitle": "角色已恢复",
     "ProfileRecoveredBody": "该小队成员的角色已从异常状态恢复。过程中其物品栏中的部分物品可能已被删除。",
@@ -291,7 +287,6 @@
     "PlayerStashPlaceholder": "加载克隆仓库视图失败。\n{0}",
     "BotInventory": "队员物品栏",
     "BotInventoryPlaceholder": "加载克隆队员物品栏失败。\n{0}",
-    "SaveEquipmentPresetFailed": "保存装备预设失败。",
     "ProfileTactic": "步枪手",
     "ProfileTacticMarksman": "精确射手",
     "ProfileTacticProtector": "掩护手",
@@ -332,10 +327,7 @@
     "SquadControlEmptyRoster": "你还没有创建任何小队成员，请按下方的添加按钮开始。",
     "SettingsPressKey": "按下按键……",
     "SettingsNotBound": "未绑定",
-    "SettingsUnavailableDuringRaid": "战局中不可用",
-    "LoadoutManagementConfirmTitle": "切换装备管理模式",
-    "LoadoutManagementConfirmPrompt": "切换装备管理模式会将所有小队成员的装备切换为默认装备。",
-    "LoadoutManagementConfirm": "继续"
+    "SettingsUnavailableDuringRaid": "战局中不可用"
   },
   "returnItems": ["您的队员送回了这些物品，请查收。"],
   "returnItemsDeath": ["您的队员找回了这些物品。"],

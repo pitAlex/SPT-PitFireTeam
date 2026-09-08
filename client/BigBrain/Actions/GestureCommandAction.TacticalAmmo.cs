@@ -285,7 +285,7 @@ namespace pitTeam.BigBrain.Actions
                     support,
                     magazineEligibility),
                 // Source rounds become part of tracked loot when they enter an approved looted
-                // support magazine, so Simple/Restricted do not touch protected spawn gear.
+                // support magazine, so Restricted do not touch protected spawn gear.
                 allowSearchedSourceTopOff: isLootedSupport || pitFireTeam.IsFollowerLoadoutLootableMode(),
                 out move,
                 allowLooseAmmoCarry);

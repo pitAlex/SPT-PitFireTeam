@@ -113,7 +113,7 @@ namespace pitTeam.Localization
                     "Allow helmets, body armor, armored rigs, and tactical rigs to be taken from bodies and containers."),
                 lootAllowGearSwapping = Entry(
                     "Allow Gear Swapping",
-                    "Allow followers to equip eligible gear while looting. Simple and Restricted only add into empty slots and return that gear as cargo; Immersive and Realistic may also swap eligible gear into the teammate kit."),
+                    "Allow followers to equip eligible gear while looting. Restricted only adds into empty slots and returns that gear as cargo; Immersive and Realistic may also swap eligible gear into the teammate kit."),
                 memberTactic = Entry(
                     "Squad Member {0} Tactic",
                     "Set Squad member fight tactic."),
@@ -138,9 +138,6 @@ namespace pitTeam.Localization
                 loadoutManagement = Entry(
                     "Loadout Management",
                     "Controls how teammate loadouts are selected, consumed, and preserved."),
-                loadoutManagementSimple = Entry(
-                    "Simple",
-                    "Create teammate loadouts freely using gear from your stash as a template, without consuming any items. Teammate gear is protected: it is not lost on death and cannot be extracted with."),
                 loadoutManagementRestricted = Entry(
                     "Restricted",
                     "Teammate loadouts must use gear from your stash or be purchased through the kit buyout system. Gear is still protected: it is not lost on death and cannot be extracted with."),
@@ -306,19 +303,18 @@ namespace pitTeam.Localization
                     ["UnknownItem"] = "Unknown item",
                     ["EditLoadoutTitle"] = "Edit Loadout",
                     ["EditLoadoutTitleWithName"] = "Edit Loadout : {0}",
-                    ["EditLoadoutSubtitle"] = "Edit cloned items for {0}. Changes here do not touch the real stash yet.",
                     ["EditLoadoutSubtitleReal"] = "Edit staged gear for {0}. Saving moves items between your stash and this teammate.",
                     ["ProfileRecoveredTitle"] = "Profile recovered",
                     ["ProfileRecoveredBody"] = "The profile of this teammate has been recovered from a bad state. Some items from his inventory may have been deleted in the process.",
                     ["DuplicateProfileRecoveryTitle"] = "Profile recovered",
                     ["DuplicateProfileRecoveryBody"] = "Duplicate items were found in both player and teammate profiles. The following teammate profiles have been stripped of the duplicate in order to safely recover them: {0}",
+                    ["LoadoutRequiresRealTransfer"] = "Teammate gear must be transferred from your stash or purchased through Kit Loadouts. Reopen the teammate profile with the current client version.",
                     ["LoadoutEditorSaveFailed"] = "Failed to save teammate inventory.",
                     ["LockedStashItemBlocked"] = "Teammate loadout save blocked: an item inside a locked stash container was moved or changed. Unlock the container and try again. Locked container: id={0}, tpl={1}. Blocked item: id={2}, tpl={3}.",
                     ["PlayerStash"] = "Player Stash",
                     ["PlayerStashPlaceholder"] = "Failed to load cloned stash view.\n{0}",
                     ["BotInventory"] = "Follower Inventory",
                     ["BotInventoryPlaceholder"] = "Failed to load cloned follower inventory.\n{0}",
-                    ["SaveEquipmentPresetFailed"] = "Failed to save equipment preset.",
                     ["ProfileTactic"] = "Rifleman",
                     ["ProfileTacticMarksman"] = "Marksman",
                     ["ProfileTacticProtector"] = "Protector",
@@ -369,9 +365,6 @@ namespace pitTeam.Localization
                     ["SettingsPressKey"] = "Press key...",
                     ["SettingsNotBound"] = "Not Bound",
                     ["SettingsUnavailableDuringRaid"] = "Not available during raid",
-                    ["LoadoutManagementConfirmTitle"] = "SWITCH LOADOUT MANAGMENT",
-                    ["LoadoutManagementConfirmPrompt"] = "Switching loadout management will switch all teammates to their Default loadout.",
-                    ["LoadoutManagementConfirm"] = "Continue"
                 },
                 returnItems = new[] { "Items received from your teammate. Ready for you to claim." },
                 returnItemsDeath = new[] { "Your teammate recovered these items." },
