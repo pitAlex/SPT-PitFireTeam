@@ -122,7 +122,7 @@ Current verified custom teammate feature state:
     - localized validation/prompt text overrides
     - custom back/submit handling
     - submit posts `{ nickname, voice, head }` to `/singleplayer/pitfireteam/teammate/create`
-    - server creates a PMC bot of the player side and stores it under `user/mods/pitFireTeam-ServerMod/Resources/teammates/<sessionId>/<aid>.json`
+    - server creates a PMC bot of the player side and stores it under `user/mods/pitFireTeam-ServerMod/Resources/teammates/<sessionId>.db` (encrypted JSON records; imported originals are retained in <sessionId>.backup folders, see `docs/Teammate-Storage.md`)
 - Stock social/profile flows are bridged for teammates:
     - teammates are merged into `/client/friend/list`
     - teammate profile view is merged into `/client/profile/view`
@@ -669,7 +669,7 @@ Supported commands via `GestureCommandAction`:
 **Profile Management:**
 
 - Create mod-owned teammate profiles (PMC bot + custom nickname/voice/head)
-- Store on disk: `user/mods/pitFireTeam-ServerMod/Resources/teammates/<sessionId>/<aid>.json`
+- Store on disk: `user/mods/pitFireTeam-ServerMod/Resources/teammates/<sessionId>.db` (encrypted JSON records; imported originals are retained in <sessionId>.backup folders, see `docs/Teammate-Storage.md`)
 - Fetch full profiles for team UI (roster, profile view)
 - Persistence: clothes, head, voice, loadout, auto-join flag, raid-earned XP, and common skills per teammate
 - Teammate IDs use stock `HashUtil.GenerateAccountId()` collision-checked allocation
@@ -723,12 +723,12 @@ Supported commands via `GestureCommandAction`:
 - Create teammate from appearance form (name, voice, head)
 - List/fetch teammates by session
 - Get/set profile (full fetch, clothes/loadout persistence)
-- Persist teammate auto-join flag in sidecar settings JSON
+- Persist teammate auto-join flag in the profile database's settings record
 - Rename teammate
 - Delete teammate + remove from social lists
 - Generate spawn profile for raid
 - Persist follower raid-earned XP and common skill progression
-- Save/load disk I/O for mod-owned JSON
+- Save/load through FriendlyTeammateStorage and TeammateDatabase, including encrypted recovery snapshots
 
 **`FriendlyTeammateSocialCallbacks`** — Social List Patching
 

@@ -1,4 +1,5 @@
 using pitTeam.Server.Callbacks;
+using pitTeam.Server.Services;
 using pitTeam.Server.Models;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.DI;
@@ -9,10 +10,18 @@ using SPTarkov.Server.Core.Utils;
 namespace pitTeam.Server.Routers.Static;
 
 [Injectable(TypePriority = OnLoadOrder.Routers + 1)]
-public class FriendlyTeammateStaticRouter(JsonUtil jsonUtil, FriendlyTeammateCallbacks callbacks)
+public class FriendlyTeammateStaticRouter(JsonUtil jsonUtil, FriendlyTeammateCallbacks callbacks, FriendlyTeammateStorage storage)
     : StaticRouter(
         jsonUtil,
         [
+            new RouteAction<EmptyRequestData>(
+                "/client/game/start",
+                (url, info, sessionId, output, cancellationToken) =>
+                {
+                    storage.InitializeProfile(sessionId);
+                    return new ValueTask<string>(output!);
+                }
+            ),
             new RouteAction<FriendlyTeammateCreateRequest>(
                 "/singleplayer/pitfireteam/teammate/create",
                 async (url, info, sessionId, output, cancellationToken) => await callbacks.Create(url, info, sessionId)

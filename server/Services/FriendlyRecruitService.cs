@@ -7,20 +7,17 @@ using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Enums;
 using SPTarkov.Server.Core.Models.Eft.Profile;
 using SPTarkov.Server.Core.Models.Utils;
-using SPTarkov.Server.Core.Utils;
 
 namespace pitTeam.Server.Services;
 
 [Injectable]
 public class FriendlyRecruitService(
-    FileUtil fileUtil,
-    JsonUtil jsonUtil,
+    FriendlyTeammateStorage storage,
     ProfileHelper profileHelper,
     FriendlyTeammateService teammateService,
     ISptLogger<FriendlyRecruitService> logger
 )
 {
-    private const string ModFolderName = "pitFireTeam-ServerMod";
     private const string RecruitRequestsFileName = "recruit-requests.json";
 #if DEBUG
     // Local-only test override. Release builds use the separate hardcoded-false branch below.
@@ -191,32 +188,11 @@ public class FriendlyRecruitService(
         return removed;
     }
 
-    private List<FriendlyRecruitRequestEntry> LoadRecruitRequests(MongoId sessionId)
-    {
-        var path = GetRecruitRequestsFilePath(sessionId);
-        if (!fileUtil.FileExists(path))
-        {
-            return [];
-        }
+    private List<FriendlyRecruitRequestEntry> LoadRecruitRequests(MongoId sessionId) =>
+        storage.Read<List<FriendlyRecruitRequestEntry>>(sessionId, RecruitRequestsFileName) ?? [];
 
-        return jsonUtil.DeserializeFromFile<List<FriendlyRecruitRequestEntry>>(path) ?? [];
-    }
-
-    private void SaveRecruitRequests(MongoId sessionId, List<FriendlyRecruitRequestEntry> requests)
-    {
-        var json = jsonUtil.Serialize(requests, indented: true);
-        if (json == null)
-        {
-            return;
-        }
-
-        fileUtil.WriteFile(GetRecruitRequestsFilePath(sessionId), json);
-    }
-
-    private string GetRecruitRequestsFilePath(MongoId sessionId)
-    {
-        return Path.Combine(fileUtil.GetModPath(ModFolderName), "Resources", "teammates", sessionId.ToString(), RecruitRequestsFileName);
-    }
+    private void SaveRecruitRequests(MongoId sessionId, List<FriendlyRecruitRequestEntry> requests) =>
+        storage.Write(sessionId, RecruitRequestsFileName, requests);
 
     private static bool IsValidCandidate(FriendlyRecruitPickupCandidate candidate)
     {

@@ -36,7 +36,7 @@ namespace pitTeam.Server.Services;
 public class FriendlyTeammateService(
     BotGenerator botGenerator,
     GlobalTable globalTable,
-    FileUtil fileUtil,
+    FriendlyTeammateStorage storage,
     HashUtil hashUtil,
     JsonUtil jsonUtil,
     ItemHelper itemHelper,
@@ -75,8 +75,6 @@ public class FriendlyTeammateService(
         "LMG",
     ];
 
-    private const string ModFolderName = "pitFireTeam-ServerMod";
-    private const string TeammateFolderName = "teammates";
     private const string DefaultLoadoutName = "Default";
     private const string DefaultLoadoutId = "000000000000000000000000";
     private static readonly string[] TacticOptions = ["Rifleman", "Marksman"];
@@ -101,6 +99,8 @@ public class FriendlyTeammateService(
     {
         "cartridges",
     };
+
+    public void InitializeStorageForAllProfiles() => storage.InitializeAllProfiles(saveServer.GetProfiles().Keys);
 
     public void RecoverDuplicateTeammateItemsForAllProfiles()
     {
@@ -206,9 +206,8 @@ public class FriendlyTeammateService(
         // Temporarily disabled: this floor baseline can over-inflate teammate skills.
         // ApplyPmcFollowerSkillBaseline(teammate);
         PrepareNewTeammateDefaultForCurrentLoadoutMode(teammate);
-        SaveDefaultEquipmentSnapshot(sessionId, teammate, overwrite: true, includeSecureContainer: IsCurrentLoadoutManagementModeExtreme());
-        SaveTeammate(sessionId, teammate);
-        SaveTeammateSettings(sessionId, teammate, CreateDefaultTeammateSettings(teammate.Customization));
+        SaveTeammateWithDefaultEquipment(sessionId, teammate, IsCurrentLoadoutManagementModeExtreme(),
+            CreateDefaultTeammateSettings(teammate.Customization));
 
         logger.Info($"Created teammate '{nickname}' for session '{sessionId}' with aid '{teammate.Aid}'");
 
@@ -271,9 +270,8 @@ public class FriendlyTeammateService(
         NormalizeTeammateSkillsForCreation(teammate, playerPmc);
         InitializeRecruitRaidStats(teammate, targetLevel, GetRecruitStatsSeed(candidate));
         PrepareNewTeammateDefaultForCurrentLoadoutMode(teammate);
-        SaveDefaultEquipmentSnapshot(sessionId, teammate, overwrite: true, includeSecureContainer: IsCurrentLoadoutManagementModeExtreme());
-        SaveTeammate(sessionId, teammate);
-        SaveTeammateSettings(sessionId, teammate, CreateDefaultTeammateSettings(teammate.Customization));
+        SaveTeammateWithDefaultEquipment(sessionId, teammate, IsCurrentLoadoutManagementModeExtreme(),
+            CreateDefaultTeammateSettings(teammate.Customization));
 
         logger.Info($"Accepted recruit pickup '{nickname}' for session '{sessionId}' with aid '{teammate.Aid}' capturedProfile={usedCapturedProfile}");
 
@@ -944,9 +942,7 @@ public class FriendlyTeammateService(
             settings.SelectedLoadoutId = DefaultLoadoutId;
 
             SendPreviousTeammateKitDelivery(sessionId, teammate, previousKitDeliveryItems);
-            SaveDefaultEquipmentSnapshot(sessionId, teammate, overwrite: true, includeSecureContainer: IsExtremeLoadoutManagementMode(mode));
-            SaveTeammateSettings(sessionId, teammate, settings);
-            SaveTeammate(sessionId, teammate);
+            SaveTeammateWithDefaultEquipment(sessionId, teammate, IsExtremeLoadoutManagementMode(mode), settings);
             saveServer.SaveProfileAsync(sessionId).GetAwaiter().GetResult();
 
             logger.Info($"Bought teammate kit for '{teammate.Aid}' with price={price}, useItemsInStash={request.UseItemsInStash}; previous active kit sent by delivery when present.");
@@ -1101,8 +1097,7 @@ public class FriendlyTeammateService(
             teammateItem.Upd.Buff = cloner.Clone(repairedBuff);
 
             string mode = NormalizeLoadoutManagementMode(settingsService.LoadSettings().LoadoutManagementMode);
-            SaveDefaultEquipmentSnapshot(sessionId, teammate, overwrite: true, includeSecureContainer: IsExtremeLoadoutManagementMode(mode));
-            SaveTeammate(sessionId, teammate);
+            SaveTeammateWithDefaultEquipment(sessionId, teammate, IsExtremeLoadoutManagementMode(mode));
             saveServer.SaveProfileAsync(sessionId).GetAwaiter().GetResult();
 
             logger.Info($"Repaired teammate '{teammate.Aid}' default equipment item '{targetItemId}' through stock {(repairWithKit ? "kit" : "trader")} repair service.");
@@ -1227,9 +1222,7 @@ public class FriendlyTeammateService(
             var settings = GetTeammateSettings(sessionId, teammate);
             settings.SelectedLoadoutId = DefaultLoadoutId;
 
-            SaveDefaultEquipmentSnapshot(sessionId, teammate, overwrite: true, includeSecureContainer: IsExtremeLoadoutManagementMode(mode));
-            SaveTeammateSettings(sessionId, teammate, settings);
-            SaveTeammate(sessionId, teammate);
+            SaveTeammateWithDefaultEquipment(sessionId, teammate, IsExtremeLoadoutManagementMode(mode), settings);
             saveServer.SaveProfileAsync(sessionId).GetAwaiter().GetResult();
 
             var playerStashDelta = BuildPlayerStashDelta(playerPmc, originalPlayerItems);
@@ -3418,10 +3411,7 @@ public class FriendlyTeammateService(
 
     private bool DeleteTeammate(MongoId sessionId, BotBase teammate)
     {
-        var filePath = GetTeammateFilePath(sessionId, teammate);
-        var deleted = fileUtil.DeleteFile(filePath);
-        fileUtil.DeleteFile(GetTeammateSettingsFilePath(sessionId, teammate));
-        fileUtil.DeleteFile(GetDefaultEquipmentFilePath(sessionId, teammate));
+        var deleted = storage.DeleteTeammate(sessionId, teammate.Aid ?? throw new FriendlyTeammateException("Missing teammate account id"));
         if (deleted)
         {
             logger.Info($"Deleted teammate '{teammate.Info?.Nickname}' for session '{sessionId}'");
@@ -3990,35 +3980,12 @@ public class FriendlyTeammateService(
                 return;
             }
 
-            string directory = GetTeammateDirectory(sessionId);
-            if (!fileUtil.DirectoryExists(directory))
-            {
-                duplicateRecoveryCheckedSessions.Add(sessionKey);
-                return;
-            }
-
             var recoveredNames = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
             int removedTotal = 0;
 
-            foreach (string profileFilePath in fileUtil.GetFiles(directory).Where(IsTeammateProfileFile))
+            foreach (var teammate in storage.ReadProfiles(sessionId))
             {
-                BotBase? teammate;
-                try
-                {
-                    teammate = jsonUtil.DeserializeFromFile<BotBase>(profileFilePath);
-                }
-                catch (Exception ex)
-                {
-                    logger.Warning($"{nameof(FriendlyTeammateService)}: skipped duplicate item recovery for unreadable teammate profile file '{profileFilePath}': {ex.Message}");
-                    continue;
-                }
-
-                if (teammate?.Id is null)
-                {
-                    continue;
-                }
-
-                int removedProfileItems = RecoverDuplicateTeammateProfileItems(teammate, profileFilePath, playerStashIds);
+                int removedProfileItems = RecoverDuplicateTeammateProfileItems(sessionId, teammate, playerStashIds);
                 int removedDefaultItems = RecoverDuplicateDefaultEquipmentItems(sessionId, teammate, playerStashIds);
                 int removedForTeammate = removedProfileItems + removedDefaultItems;
                 if (removedForTeammate <= 0)
@@ -4049,7 +4016,7 @@ public class FriendlyTeammateService(
         }
     }
 
-    private int RecoverDuplicateTeammateProfileItems(BotBase teammate, string profileFilePath, HashSet<string> playerStashIds)
+    private int RecoverDuplicateTeammateProfileItems(MongoId sessionId, BotBase teammate, HashSet<string> playerStashIds)
     {
         var items = teammate.Inventory?.Items;
         if (items == null || items.Count == 0)
@@ -4066,16 +4033,15 @@ public class FriendlyTeammateService(
             return 0;
         }
 
-        BackupFileBeforeRecovery(profileFilePath);
-        WriteSerializedFile(profileFilePath, teammate, "teammate profile");
+        storage.Write(sessionId, GetTeammateDocumentKey(teammate), teammate, backupPrevious: true);
         logger.Warning($"Recovered teammate '{GetTeammateDisplayName(teammate)}' profile by removing {removedCount} duplicate player stash item(s).");
         return removedCount;
     }
 
     private int RecoverDuplicateDefaultEquipmentItems(MongoId sessionId, BotBase teammate, HashSet<string> playerStashIds)
     {
-        string filePath = GetDefaultEquipmentFilePath(sessionId, teammate);
-        if (!fileUtil.FileExists(filePath))
+        string documentKey = GetDefaultEquipmentDocumentKey(teammate);
+        if (!storage.Exists(sessionId, documentKey))
         {
             return 0;
         }
@@ -4083,11 +4049,11 @@ public class FriendlyTeammateService(
         List<Item>? items;
         try
         {
-            items = jsonUtil.DeserializeFromFile<List<Item>>(filePath);
+            items = storage.Read<List<Item>>(sessionId, documentKey);
         }
         catch (Exception ex)
         {
-            logger.Warning($"{nameof(FriendlyTeammateService)}: skipped duplicate item recovery for unreadable teammate default equipment file '{filePath}': {ex.Message}");
+            logger.Warning($"{nameof(FriendlyTeammateService)}: skipped duplicate item recovery for unreadable teammate default equipment record '{documentKey}': {ex.Message}");
             return 0;
         }
 
@@ -4110,8 +4076,7 @@ public class FriendlyTeammateService(
             return 0;
         }
 
-        BackupFileBeforeRecovery(filePath);
-        WriteSerializedFile(filePath, items, "teammate default equipment");
+        storage.Write(sessionId, documentKey, items, backupPrevious: true);
         logger.Warning($"Recovered teammate '{GetTeammateDisplayName(teammate)}' default equipment by removing {removedCount} duplicate player stash item(s).");
         return removedCount;
     }
@@ -4150,7 +4115,7 @@ public class FriendlyTeammateService(
         return items.RemoveAll(item => item?.Id != null && removeIds.Contains(item.Id.ToString()));
     }
 
-    private void RecoverTeammateProfileIfNeeded(MongoId sessionId, BotBase teammate, string profileFilePath)
+    private void RecoverTeammateProfileIfNeeded(MongoId sessionId, BotBase teammate)
     {
         if (teammate?.Aid == null)
         {
@@ -4160,8 +4125,7 @@ public class FriendlyTeammateService(
         int removedProfileItems = RecoverTeammateInventoryItems(teammate);
         if (removedProfileItems > 0)
         {
-            BackupFileBeforeRecovery(profileFilePath);
-            WriteSerializedFile(profileFilePath, teammate, "teammate profile");
+            storage.Write(sessionId, GetTeammateDocumentKey(teammate), teammate, backupPrevious: true);
             logger.Warning($"Recovered teammate '{GetTeammateDisplayName(teammate)}' profile by removing {removedProfileItems} bad item(s).");
         }
 
@@ -4200,13 +4164,13 @@ public class FriendlyTeammateService(
 
     private int RecoverDefaultEquipmentSnapshotIfNeeded(MongoId sessionId, BotBase teammate)
     {
-        string filePath = GetDefaultEquipmentFilePath(sessionId, teammate);
-        if (!fileUtil.FileExists(filePath))
+        string documentKey = GetDefaultEquipmentDocumentKey(teammate);
+        if (!storage.Exists(sessionId, documentKey))
         {
             return 0;
         }
 
-        List<Item>? items = jsonUtil.DeserializeFromFile<List<Item>>(filePath);
+        List<Item>? items = storage.Read<List<Item>>(sessionId, documentKey);
         if (items == null || items.Count == 0)
         {
             return 0;
@@ -4228,8 +4192,7 @@ public class FriendlyTeammateService(
             return 0;
         }
 
-        BackupFileBeforeRecovery(filePath);
-        WriteSerializedFile(filePath, recoveredItems, "teammate default equipment");
+        storage.Write(sessionId, documentKey, recoveredItems, backupPrevious: true);
         logger.Warning($"Recovered teammate '{GetTeammateDisplayName(teammate)}' default equipment by removing {removedCount} bad item(s).");
         return removedCount;
     }
@@ -4345,70 +4308,13 @@ public class FriendlyTeammateService(
         return $"{sessionId}:{teammate?.Aid?.ToString() ?? string.Empty}";
     }
 
-    private void BackupFileBeforeRecovery(string filePath)
-    {
-        if (string.IsNullOrWhiteSpace(filePath) || !System.IO.File.Exists(filePath))
-        {
-            return;
-        }
-
-        string? directory = System.IO.Path.GetDirectoryName(filePath);
-        string fileName = System.IO.Path.GetFileNameWithoutExtension(filePath);
-        string extension = System.IO.Path.GetExtension(filePath);
-        string timestamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss");
-        string backupPath = System.IO.Path.Combine(directory ?? string.Empty, $"{fileName}.recovery-backup-{timestamp}{extension}");
-
-        try
-        {
-            System.IO.File.Copy(filePath, backupPath, overwrite: false);
-        }
-        catch (Exception ex)
-        {
-            logger.Warning($"Failed to create teammate recovery backup '{backupPath}': {ex.Message}");
-        }
-    }
-
-    private void WriteSerializedFile<T>(string filePath, T value, string description)
-    {
-        string? json = jsonUtil.Serialize(value, indented: true);
-        if (json is null)
-        {
-            throw new FriendlyTeammateException($"Unable to serialize recovered {description}");
-        }
-
-        fileUtil.WriteFile(filePath, json);
-    }
-
     private List<BotBase> LoadTeammates(MongoId sessionId)
     {
-        var directory = GetTeammateDirectory(sessionId);
-        if (!fileUtil.DirectoryExists(directory))
+        var teammates = storage.ReadProfiles(sessionId);
+        foreach (var teammate in teammates)
         {
-            return [];
-        }
-
-        var teammates = new List<BotBase>();
-        foreach (var file in fileUtil.GetFiles(directory).Where(IsTeammateProfileFile))
-        {
-            BotBase? teammate;
-            try
-            {
-                teammate = jsonUtil.DeserializeFromFile<BotBase>(file);
-            }
-            catch (Exception ex)
-            {
-                logger.Warning($"{nameof(FriendlyTeammateService)}: skipped unreadable teammate profile file '{file}': {ex.Message}");
-                continue;
-            }
-
-            if (teammate?.Id is null)
-            {
-                continue;
-            }
-
-            RecoverTeammateProfileIfNeeded(sessionId, teammate, file);
+            RecoverTeammateProfileIfNeeded(sessionId, teammate);
             RestoreLegacyPresetSelection(sessionId, teammate);
-            teammates.Add(teammate);
         }
 
         return teammates
@@ -4467,7 +4373,13 @@ public class FriendlyTeammateService(
         return teammate != null;
     }
 
-    private void SaveTeammate(MongoId sessionId, BotBase teammate)
+    private void SaveTeammate(MongoId sessionId, BotBase teammate) =>
+        storage.WriteBatch(sessionId, new Dictionary<string, string>
+        {
+            [GetTeammateDocumentKey(teammate)] = SerializeTeammate(teammate)
+        });
+
+    private string SerializeTeammate(BotBase teammate)
     {
         EnsureFollowerHasPockets(teammate);
 
@@ -4480,35 +4392,18 @@ public class FriendlyTeammateService(
 
         PruneUnreachableEquipmentItems(teammate);
 
-        var filePath = GetTeammateFilePath(sessionId, teammate);
         var json = jsonUtil.Serialize(teammate, indented: true);
         if (json is null)
         {
             throw new FriendlyTeammateException("Unable to serialize teammate profile");
         }
 
-        fileUtil.WriteFile(filePath, json);
+        return json;
     }
 
-    private string GetTeammateDirectory(MongoId sessionId)
-    {
-        return System.IO.Path.Combine(fileUtil.GetModPath(ModFolderName), "Resources", TeammateFolderName, sessionId.ToString());
-    }
-
-    private string GetTeammateFilePath(MongoId sessionId, BotBase teammate)
-    {
-        return System.IO.Path.Combine(GetTeammateDirectory(sessionId), $"{teammate.Aid}.json");
-    }
-
-    private string GetTeammateSettingsFilePath(MongoId sessionId, BotBase teammate)
-    {
-        return System.IO.Path.Combine(GetTeammateDirectory(sessionId), $"{teammate.Aid}-settings.json");
-    }
-
-    private string GetDefaultEquipmentFilePath(MongoId sessionId, BotBase teammate)
-    {
-        return System.IO.Path.Combine(GetTeammateDirectory(sessionId), $"{teammate.Aid}-equipment.json");
-    }
+    private static string GetTeammateDocumentKey(BotBase teammate) => $"{teammate.Aid}.json";
+    private static string GetTeammateSettingsDocumentKey(BotBase teammate) => $"{teammate.Aid}-settings.json";
+    private static string GetDefaultEquipmentDocumentKey(BotBase teammate) => $"{teammate.Aid}-equipment.json";
 
     private string NormalizeRequiredValue(string? value, string fieldName)
     {
@@ -4535,18 +4430,7 @@ public class FriendlyTeammateService(
             }
         }
 
-        var teammateRoot = System.IO.Path.Combine(fileUtil.GetModPath(ModFolderName), "Resources", TeammateFolderName);
-        if (fileUtil.DirectoryExists(teammateRoot))
-        {
-            foreach (var teammateAid in fileUtil
-                .GetFiles(teammateRoot, recursive: true, searchPattern: "*.json")
-                .Where(IsTeammateProfileFile)
-                .Select(path => jsonUtil.DeserializeFromFile<BotBase>(path)?.Aid ?? 0)
-                .Where(aid => aid > 0))
-            {
-                usedAids.Add(teammateAid);
-            }
-        }
+        usedAids.UnionWith(storage.GetAllAccountIds());
 
         for (var attempts = 0; attempts < 1024; attempts++)
         {
@@ -4582,16 +4466,7 @@ public class FriendlyTeammateService(
             return true;
         }
 
-        var teammateRoot = System.IO.Path.Combine(fileUtil.GetModPath(ModFolderName), "Resources", TeammateFolderName);
-        if (!fileUtil.DirectoryExists(teammateRoot))
-        {
-            return false;
-        }
-
-        return fileUtil
-            .GetFiles(teammateRoot, recursive: true, searchPattern: "*.json")
-            .Where(IsTeammateProfileFile)
-            .Any(path => jsonUtil.DeserializeFromFile<BotBase>(path)?.Aid == aid);
+        return storage.GetAllAccountIds().Contains(aid);
     }
 
     private SearchFriendResponse ToFriendSummary(BotBase teammate)
@@ -4782,27 +4657,15 @@ public class FriendlyTeammateService(
         }
     }
 
-    private bool IsTeammateProfileFile(string path)
-    {
-        if (!string.Equals(fileUtil.GetFileExtension(path), "json", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        string fileName = System.IO.Path.GetFileName(path);
-        string accountId = System.IO.Path.GetFileNameWithoutExtension(fileName);
-        return int.TryParse(accountId, out _);
-    }
-
     private FriendlyTeammateSettings GetTeammateSettings(MongoId sessionId, BotBase teammate)
     {
-        string filePath = GetTeammateSettingsFilePath(sessionId, teammate);
-        if (!fileUtil.FileExists(filePath))
+        string documentKey = GetTeammateSettingsDocumentKey(teammate);
+        if (!storage.Exists(sessionId, documentKey))
         {
             return CreateDefaultTeammateSettings();
         }
 
-        FriendlyTeammateSettings? settings = jsonUtil.DeserializeFromFile<FriendlyTeammateSettings>(filePath);
+        FriendlyTeammateSettings? settings = storage.Read<FriendlyTeammateSettings>(sessionId, documentKey);
         FriendlyTeammateSettings loadedSettings = settings ?? CreateDefaultTeammateSettings();
 
         if (string.IsNullOrWhiteSpace(loadedSettings.SelectedLoadoutId))
@@ -4865,14 +4728,14 @@ public class FriendlyTeammateService(
 
     private void SaveTeammateSettings(MongoId sessionId, BotBase teammate, FriendlyTeammateSettings settings)
     {
-        string filePath = GetTeammateSettingsFilePath(sessionId, teammate);
+        string documentKey = GetTeammateSettingsDocumentKey(teammate);
         string? json = jsonUtil.Serialize(settings, indented: true);
         if (json is null)
         {
             throw new FriendlyTeammateException("Unable to serialize teammate settings");
         }
 
-        fileUtil.WriteFile(filePath, json);
+        storage.WriteBatch(sessionId, new Dictionary<string, string> { [documentKey] = json });
     }
 
     private void SaveDefaultEquipmentSnapshot(
@@ -4883,38 +4746,60 @@ public class FriendlyTeammateService(
     {
         teammate.Inventory ??= new BotBaseInventory { Items = [] };
 
-        string filePath = GetDefaultEquipmentFilePath(sessionId, teammate);
-        if (!overwrite && fileUtil.FileExists(filePath))
+        string documentKey = GetDefaultEquipmentDocumentKey(teammate);
+        if (!overwrite && storage.Exists(sessionId, documentKey))
         {
             return;
         }
 
-        var items = cloner.Clone(teammate.Inventory.Items ?? []) ?? [];
-        if (!includeSecureContainer)
-        {
-            RemoveSecureContainerTree(items);
-        }
-
-        PruneUnreachableEquipmentItems(items, teammate.Inventory?.Equipment?.ToString());
-
+        var items = CreateDefaultEquipmentSnapshot(teammate, includeSecureContainer);
         string? json = jsonUtil.Serialize(items, indented: true);
         if (json is null)
         {
             throw new FriendlyTeammateException("Unable to serialize teammate default equipment");
         }
 
-        fileUtil.WriteFile(filePath, json);
+        storage.WriteBatch(sessionId, new Dictionary<string, string> { [documentKey] = json });
+    }
+
+    private List<Item> CreateDefaultEquipmentSnapshot(BotBase teammate, bool includeSecureContainer)
+    {
+        var items = cloner.Clone(teammate.Inventory?.Items ?? []) ?? [];
+        if (!includeSecureContainer)
+        {
+            RemoveSecureContainerTree(items);
+        }
+        PruneUnreachableEquipmentItems(items, teammate.Inventory?.Equipment?.ToString());
+        return items;
+    }
+
+    private void SaveTeammateWithDefaultEquipment(
+        MongoId sessionId, BotBase teammate, bool includeSecureContainer, FriendlyTeammateSettings? settings = null)
+    {
+        var items = CreateDefaultEquipmentSnapshot(teammate, includeSecureContainer);
+        var documents = new Dictionary<string, string>
+        {
+            [GetDefaultEquipmentDocumentKey(teammate)] = jsonUtil.Serialize(items)
+                ?? throw new FriendlyTeammateException("Unable to serialize teammate default equipment"),
+            [GetTeammateDocumentKey(teammate)] = SerializeTeammate(teammate),
+        };
+        if (settings != null)
+        {
+            documents[GetTeammateSettingsDocumentKey(teammate)] = jsonUtil.Serialize(settings)
+                ?? throw new FriendlyTeammateException("Unable to serialize teammate settings");
+        }
+        storage.WriteBatch(sessionId, documents);
     }
 
     private void RestoreDefaultEquipment(MongoId sessionId, BotBase teammate)
     {
-        string filePath = GetDefaultEquipmentFilePath(sessionId, teammate);
-        if (!fileUtil.FileExists(filePath))
+        string documentKey = GetDefaultEquipmentDocumentKey(teammate);
+        if (!storage.Exists(sessionId, documentKey))
         {
             throw new FriendlyTeammateException("Teammate default equipment snapshot is missing");
         }
 
-        List<Item>? items = jsonUtil.DeserializeFromFile<List<Item>>(filePath);
+        List<Item>? items = storage.Read<List<Item>>(sessionId, documentKey);
         if (items == null || items.Count == 0)
         {
             throw new FriendlyTeammateException("Unable to load teammate default equipment");

@@ -140,6 +140,7 @@ public class PitFireTeamServerPostLoad(
     public Task OnLoadAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        teammateService.InitializeStorageForAllProfiles();
         teammateService.RecoverDuplicateTeammateItemsForAllProfiles();
         logger.Info("PitFireTeam loaded");
         return Task.CompletedTask;
