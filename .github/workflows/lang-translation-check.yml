@@ -1,0 +1,91 @@
+name: Language Translation Check
+
+# Triggers OpenCode to check translation completeness whenever language files change
+# on the default branch. Also supports manual runs via workflow_dispatch.
+# Note: the official anomalyco/opencode/github action does not support the push event,
+# so this workflow drives the OpenCode CLI directly in headless mode (opencode run --auto).
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'server/Resources/lang/**'
+      - 'client/Localization/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check-translations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install OpenCode
+        run: npm install -g opencode-ai@latest
+
+      - name: Run OpenCode translation check
+        run: |
+          if [ -n "${OPENCODE_MODEL:-}" ]; then
+            opencode run --auto --model "$OPENCODE_MODEL" "$(cat .github/prompts/lang-check.md)"
+          else
+            # No model configured: OpenCode silently falls back to the free
+            # `opencode/big-pickle` model when no provider API key is set.
+            opencode run --auto "$(cat .github/prompts/lang-check.md)"
+          fi
+        env:
+          OPENCODE_MODEL: ${{ vars.OPENCODE_MODEL }}
+          # Set the API key for the model provider you want to use (must match OPENCODE_MODEL).
+          # With no key configured, OpenCode falls back to the free `opencode/big-pickle`
+          # model (anonymous, IP rate-limited, not intended for production use).
+          # ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          # GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+
+      - name: Fix formatting with AutoCorrect
+        uses: huacnlee/autocorrect-action@v2
+        with:
+          args: --fix server/Resources/lang client/Localization .github/prompts
+
+      - name: Detect translation changes
+        id: diff
+        run: |
+          git add -N server/Resources/lang client/Localization
+          if git diff --quiet -- server/Resources/lang client/Localization; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and open pull request
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          branch="opencode/lang-check-$(date +%Y%m%d%H%M%S)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add server/Resources/lang client/Localization
+          git commit -m "feat: Generate translation"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push origin "$branch"
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "feat: Generate translation" \
+            --body "OpenCode detected missing language files or inconsistent key names and automatically generated this PR after filling in the gaps. Please review the terminology and formatting manually before merging; if you still find issues after merging, you can manually trigger the workflow again (workflow_dispatch)."
