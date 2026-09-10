@@ -1759,6 +1759,8 @@ namespace pitTeam.Modules
         /** Store the item that was given to a follower */
         public static void StoreItem(BotOwner bot, Item item)
         {
+            SquadRaidKillReport.RecordCollectedDogtags(item);
+
             if (Instance == null || Instance._lootedItems == null || Instance._followersWithLoot == null)
             {
                 return;

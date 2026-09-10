@@ -2453,9 +2453,14 @@ namespace pitTeam.BigBrain.Actions
                             out BodyGearMove? topOffMove,
                             out string topOffReason))
                     {
+                        bool terminalForSearch = MarkRejectedMagazineTopOffSourceAttempted(
+                            candidate,
+                            bodyLootAttemptedItemIds,
+                            topOffReason);
                         Modules.Logger.LogInfo(
                             $"[LootCommand][MagazineTopOff] Body follow-up skipped: " +
-                            $"reason={topOffReason} item={DescribeLootDebugItem(candidate?.Item)}");
+                            $"reason={topOffReason} terminalForSearch={terminalForSearch} " +
+                            $"item={DescribeLootDebugItem(candidate?.Item)}");
                         continue;
                     }
 
@@ -2749,9 +2754,14 @@ namespace pitTeam.BigBrain.Actions
                             out BodyGearMove? topOffMove,
                             out string topOffReason))
                     {
+                        bool terminalForSearch = MarkRejectedMagazineTopOffSourceAttempted(
+                            candidate,
+                            containerLootAttemptedItemIds,
+                            topOffReason);
                         Modules.Logger.LogInfo(
                             $"[LootCommand][MagazineTopOff] Container follow-up skipped: " +
-                            $"reason={topOffReason} item={DescribeLootDebugItem(candidate?.Item)}");
+                            $"reason={topOffReason} terminalForSearch={terminalForSearch} " +
+                            $"item={DescribeLootDebugItem(candidate?.Item)}");
                         continue;
                     }
 

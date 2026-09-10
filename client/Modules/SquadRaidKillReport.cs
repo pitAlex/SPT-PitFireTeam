@@ -1,4 +1,5 @@
 using EFT;
+using EFT.InventoryLogic;
 using System;
 using System.Collections.Generic;
 
@@ -35,6 +36,8 @@ namespace pitTeam.Modules
         private static readonly Dictionary<string, MutableKillGroup> GroupsByProfileId =
             new Dictionary<string, MutableKillGroup>(StringComparer.Ordinal);
         private static string _playerNickname = string.Empty;
+        private static readonly HashSet<string> CollectedDogtagProfileIds =
+            new HashSet<string>(StringComparer.Ordinal);
 
         internal static void BeginRaid(bool isTransitContinuation)
         {
@@ -48,6 +51,61 @@ namespace pitTeam.Modules
                 _playerNickname = string.Empty;
                 OrderedGroups.Clear();
                 GroupsByProfileId.Clear();
+                CollectedDogtagProfileIds.Clear();
+            }
+        }
+
+        internal static void RecordCollectedDogtags(Item root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            try
+            {
+                RecordCollectedDogtag(root);
+                if (root is CompoundItem)
+                {
+                    foreach (Item item in root.GetAllItems())
+                    {
+                        if (!ReferenceEquals(item, root))
+                        {
+                            RecordCollectedDogtag(item);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[RaidKillReport] Failed to record a collected follower dogtag.");
+                Logger.LogError(ex);
+            }
+        }
+
+        private static void RecordCollectedDogtag(Item item)
+        {
+            string profileId = item?.GetItemComponent<DogtagComponent>()?.ProfileId;
+            if (string.IsNullOrWhiteSpace(profileId))
+            {
+                return;
+            }
+
+            lock (SyncRoot)
+            {
+                // Retain only identification, independently of return-mail inventory cleanup.
+                if (CollectedDogtagProfileIds.Add(profileId))
+                {
+                    Logger.LogInfo($"[RaidKillReport] Follower-collected dogtag identified victim={profileId}");
+                }
+            }
+        }
+
+        internal static bool IsIdentifiedByCollectedDogtag(string profileId)
+        {
+            lock (SyncRoot)
+            {
+                return !string.IsNullOrWhiteSpace(profileId) && CollectedDogtagProfileIds.Contains(profileId);
             }
         }
 

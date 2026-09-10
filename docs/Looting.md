@@ -170,6 +170,7 @@ Rules:
 - dogtags bypass category and price filters, but still need a backpack/pocket destination
 - dogtags are moved to backpack or pockets
 - dogtag-only body looting still reports `EPhraseTrigger.LootNothing`
+- dogtags successfully collected by a saved teammate identify matching victims in both the player's and teammates' kill-result rows; identification survives loot cleanup and transit and resets for a new raid, while opening/searching a body or a failed pickup alone does not identify it
 - normal filtered looting does not take the corpse's worn backpack as a container shortcut
 - `Pickup Gear` allows worn armor, armored rigs, tactical rigs, and headwear to be evaluated as whole cargo trees before any fallback contents
 - backpack contents are checked item by item
@@ -750,6 +751,7 @@ Gear swapping phase 1 tests:
 - internal-feed loose ammunition nested in magazines/weapons or marked as strict cargo is ignored
 - accepted weapon-support loose ammunition uses secure container, pockets, backpack, then reload-safe vest space; detachable-magazine readiness remains magazine-only
 - detachable-magazine loose-ammo top-off fills acquired inserted/source magazines before readiness and never counts uncommitted loose cartridges
+- an EFT-rejected loose-ammo top-off restores an inserted magazine once, marks that exact ammo source terminal for the current search, and continues planning instead of repeating the detach/restore cycle until timeout
 - acquired detachable-magazine packages consolidate compatible partial donor magazines before loose-ammo top-off and readiness; every donor transfer must settle before the next planning pass
 - tracked-secondary top-off runtime passed with an empty `0/30` inserted magazine, one `30/30` source spare, and compatible loose ammunition: settled readiness reached `60/60`, promotion used `LootWeapon`, and remaining accepted rounds entered protected storage
 - a later donor-consolidation test exposed two ordering gaps now awaiting retest: loot-time `handsBusy` discarded a ready promotion until combat ended, and a refillable empty source magazine was rejected before top-off; both are now preserved through command-owned post-loot promotion and provisional empty-mag placement

@@ -483,6 +483,27 @@ namespace pitTeam.BigBrain.Actions
             return true;
         }
 
+        private static bool MarkRejectedMagazineTopOffSourceAttempted(
+            BodyGearCandidate candidate,
+            ISet<string> attemptedItemIds,
+            string reason)
+        {
+            if (candidate?.Item == null ||
+                string.IsNullOrEmpty(candidate.Item.Id) ||
+                attemptedItemIds == null ||
+                string.IsNullOrEmpty(reason) ||
+                !reason.StartsWith("applyRejected:", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            // The queued restore must still run, but an EFT-rejected ammo transaction cannot
+            // become viable during this search. Mark its source terminal so the next live-state
+            // planning pass does not detach and restore the same inserted magazine forever.
+            attemptedItemIds.Add(candidate.Item.Id);
+            return true;
+        }
+
         private static bool TryGetMagazineDonor(
             EFT.InventoryLogic.Ammo ammo,
             out EFT.InventoryLogic.Magazine? magazine)
