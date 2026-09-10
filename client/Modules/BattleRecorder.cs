@@ -117,7 +117,7 @@ namespace pitTeam.Modules
                     raidId = currentRaidId,
                     locationId = currentLocationId,
                     file = currentFilePath,
-                    schemaVersion = 10,
+                    schemaVersion = 11,
                     snapshotIntervalMs = GetSnapshotIntervalMs(),
                     followerWeaponActivityProbeMs = Mathf.RoundToInt(FollowerWeaponActivityProbeSeconds * 1000f),
                     goalEnemyTransitionCoalesceMs = Mathf.RoundToInt(GoalEnemyTransitionCoalesceSeconds * 1000f)
@@ -860,9 +860,9 @@ namespace pitTeam.Modules
         public static void RecordAimTargetSelection(
             BotOwner bot,
             EnemyInfo enemyInfo,
-            EnemyPart? previousPart,
-            bool previousPartEligible,
-            bool previousRetargetTimerActive,
+            EnemyPart? nativePart,
+            bool nativeSelectedHead,
+            Vector3 nativePoint,
             float precisionPercent,
             float headPreference,
             bool hasCorrectedParts,
@@ -874,8 +874,9 @@ namespace pitTeam.Modules
             bool forcedHead,
             bool headRollAttempted,
             bool headRollSucceeded,
+            bool enhancementApplied,
             EnemyPart? selectedPart,
-            Vector3? selectedPoint)
+            Vector3 selectedPoint)
         {
             if (!CanRecordBot(bot) || enemyInfo == null)
             {
@@ -896,12 +897,6 @@ namespace pitTeam.Modules
             Vector3? enemyRoot = enemyInfo.Person?.Transform != null
                 ? enemyInfo.Person.Transform.position
                 : null;
-            string retargetReason = previousPart == null
-                ? "noPreviousPart"
-                : !previousPartEligible
-                    ? "previousPartIneligible"
-                    : "retargetTimerExpired";
-
             WriteEventInternal("aimTargetSelection", bot, new
             {
                 enemy = new
@@ -916,12 +911,13 @@ namespace pitTeam.Modules
                         ? CreateVector(enemyRoot.Value)
                         : null
                 },
-                retarget = new
+                native = new
                 {
-                    reason = retargetReason,
-                    previousPart = previousPart?.BodyPartType.ToString(),
-                    previousPartEligible,
-                    previousRetargetTimerActive
+                    part = nativeSelectedHead
+                        ? BodyPartType.head.ToString()
+                        : nativePart?.BodyPartType.ToString() ?? "nonHead",
+                    selectedHead = nativeSelectedHead,
+                    point = IsFinite(nativePoint) ? CreateVector(nativePoint) : null
                 },
                 proficiency = new
                 {
@@ -945,27 +941,27 @@ namespace pitTeam.Modules
                     body = eligibleBody,
                     nonHeadCount = eligibleNonHeadCount
                 },
-                roll = new
+                enhancement = new
                 {
                     forcedHead,
                     attempted = headRollAttempted,
-                    succeeded = headRollSucceeded
+                    succeeded = headRollSucceeded,
+                    applied = enhancementApplied
                 },
-                selected = selectedPart != null
-                    ? new
-                    {
-                        part = selectedPart.BodyPartType.ToString(),
-                        point = selectedPoint.HasValue && IsFinite(selectedPoint.Value)
-                            ? CreateVector(selectedPoint.Value)
-                            : null,
-                        heightFromEnemyRoot = selectedPoint.HasValue &&
-                                              enemyRoot.HasValue &&
-                                              IsFinite(selectedPoint.Value) &&
-                                              IsFinite(enemyRoot.Value)
-                            ? SanitizeFloat(selectedPoint.Value.y - enemyRoot.Value.y)
-                            : null
-                    }
-                    : null,
+                selected = new
+                {
+                    part = enhancementApplied || nativeSelectedHead
+                        ? BodyPartType.head.ToString()
+                        : selectedPart?.BodyPartType.ToString() ?? "nonHead",
+                    point = IsFinite(selectedPoint)
+                        ? CreateVector(selectedPoint)
+                        : null,
+                    heightFromEnemyRoot = enemyRoot.HasValue &&
+                                          IsFinite(selectedPoint) &&
+                                          IsFinite(enemyRoot.Value)
+                        ? SanitizeFloat(selectedPoint.y - enemyRoot.Value.y)
+                        : null
+                },
                 context = CreateTransitionContext(bot, state)
             });
         }

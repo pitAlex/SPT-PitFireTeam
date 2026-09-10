@@ -18,13 +18,14 @@ $hearingSource = $hearingSource.Substring(0, $hearingSource.IndexOf('    interna
 $target = Get-Method $hearingSource GetTargetMethod
 $dispatch = Get-Method $hearingSource PatchPostfix
 # Test types share this assembly instead of a separate assembly named SAIN.
-$lookup = 'Type.GetType("SAIN.SAINComponent.Classes.SAINShootData, SAIN")'
-if (!$aimSource.Contains($lookup)) { throw 'Review the changed SAIN type lookup before updating this harness.' }
-$aimSource = $aimSource.Replace($lookup, 'CompatibilityChecks.ShootDataType')
+$legacyLookup = 'Type\.GetType\("SAIN\.SAINComponent\.Classes\.SAINShootData, SAIN"\)'
+if (![regex]::IsMatch($aimSource, $legacyLookup)) {
+    throw 'Review the changed SAIN type lookups before updating this harness.'
+}
+$aimSource = [regex]::Replace($aimSource, $legacyLookup, 'CompatibilityChecks.LegacyShootDataType')
 $imports = [regex]::Matches($aimSource, '(?m)^using [^\r\n]+;') | ForEach-Object Value
 $aimSource = [regex]::Replace($aimSource, '(?m)^using [^\r\n]+;\r?\n', '')
 $fixture = @'
-using EFT;
 using Comfort.Common;
 using System.Collections.Generic;
 namespace UnityEngine {
@@ -48,9 +49,22 @@ namespace EFT {
     }
 }
 public class EnemyInfo {
-    public BotOwner Owner=new(); public bool ShootLane=true;
+    public BotOwner Owner=new();
+    public EnemyPart? LastPartToShoot;
+    public Dictionary<BodyPartType,EnemyPart> _allParts=new();
+    public EnemyInfo(){
+        _allParts[BodyPartType.head]=new(BodyPartType.head,new Vector3(4,5,6));
+        _allParts[BodyPartType.body]=new(BodyPartType.body,new Vector3(9,9,9));
+        LastPartToShoot=_allParts[BodyPartType.body];
+    }
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-    public Vector3 GetVisiblePartToShoot()=>new(9,9,9);
+    public Vector3 GetVisiblePartToShoot(){LastPartToShoot=_allParts[BodyPartType.body];return new(9,9,9);}
+}
+public enum BodyPartType { head,body,leftArm,rightArm,leftLeg,rightLeg }
+public class EnemyPart {
+    public BodyPartType BodyPartType; private readonly Vector3 point;
+    public EnemyPart(BodyPartType type,Vector3 point){BodyPartType=type;this.point=point;}
+    public Vector3 GetPartPositionWithOffset()=>point;
 }
 public class GlobalEventDispatcher {
     public event Action<IPlayer,Vector3,float,AISoundType>? OnSoundPlayed;
@@ -67,6 +81,7 @@ namespace SPT.Reflection.Patching {
         protected abstract MethodBase GetTargetMethod(); public MethodBase Target=>GetTargetMethod();
     }
     public class PatchPrefixAttribute:Attribute{}
+    public class PatchPostfixAttribute:Attribute{}
 }
 namespace pitTeam.Modules {
     public class Follower { public BotOwner Bot=null!; public BotOwner GetBot()=>Bot; }
@@ -76,11 +91,17 @@ namespace pitTeam.Modules {
         public static bool IsFollowerProfileId(string id)=>Followers.Exists(f=>f.Bot.ProfileId==id);
         public static bool IsPlayerBoss(string id)=>id=="boss";
     }
+    public sealed class FollowerProficiencyValues {}
+    public static class FollowerProficiency {
+        public static bool TryGetValues(BotOwner bot,out FollowerProficiencyValues? values){
+            values=bot.IsFollower?new():null;return values!=null;
+        }
+    }
     public static class FollowerAimTargetPolicy {
         public static int Calls;
-        public static bool TrySelectFollowerShootPoint(EnemyInfo? e,out Vector3 point,out bool has){
-            point=new(1,2,3);has=false;if(e?.Owner.IsFollower!=true)return false;
-            Calls++;has=e.ShootLane;return true;
+        public static bool TryEnhanceFollowerShootPoint(EnemyInfo? e,Vector3 native,bool nativeHead,EnemyPart? nativePart,out Vector3 point){
+            point=native;if(e?.Owner.IsFollower!=true)return false;Calls++;
+            if(!nativeHead)point=new(1,2,3);return true;
         }
     }
     public static class Logger {
@@ -99,13 +120,33 @@ __DISPATCH__
     }
 }
 namespace SAIN.SAINComponent.Classes.EnemyClasses {
-    public class Enemy { public EnemyInfo EnemyInfo{get;set;}=new(); public bool IsVisible{get;set;}=true; public bool CanShoot{get;set;}=true; }
+    public enum EAimTargetPart { Head,Chest }
+    public class EnemyAimTarget {
+        protected EnemyInfo EnemyInfo{get;}
+        public EAimTargetPart? ChosenPart{get;set;}=EAimTargetPart.Chest;
+        public bool ReturnNull{get;set;}
+        public static int NativeSelections;
+        public EnemyAimTarget(EnemyInfo enemyInfo){EnemyInfo=enemyInfo;}
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        public Vector3? GetPointToShoot(bool allowRepick=true){NativeSelections++;return ReturnNull?null:new Vector3(9,9,9);}
+    }
+    public class Enemy {
+        public EnemyInfo EnemyInfo{get;set;}=new(); public bool IsVisible{get;set;}=true; public bool CanShoot{get;set;}=true;
+        public EnemyAimTarget AimTarget{get;}
+        public Enemy(){AimTarget=new EnemyAimTarget(EnemyInfo);}
+    }
 }
 namespace SAIN.Patches.Aim {
     public static class BodyPartToShootPatch {
-        public static int NativeSelections;
+        public static int NativeSelections; public static bool SelectHead;
         public static bool Patch(ref Vector3 __result,EnemyInfo __instance){
-            NativeSelections++;__result=new Vector3(7,8,9);return false;
+            NativeSelections++;
+            var target=new SAIN.SAINComponent.Classes.EnemyClasses.EnemyAimTarget(__instance){
+                ChosenPart=SelectHead?SAIN.SAINComponent.Classes.EnemyClasses.EAimTargetPart.Head:SAIN.SAINComponent.Classes.EnemyClasses.EAimTargetPart.Chest
+            };
+            __result=target.GetPointToShoot(false)??new Vector3(7,8,9);
+            __instance.LastPartToShoot=__instance._allParts[SelectHead?BodyPartType.head:BodyPartType.body];
+            return false;
         }
     }
 }
@@ -115,7 +156,7 @@ public static class Shoot450 {
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     private static Vector3? GetAimTarget(SAIN.SAINComponent.Classes.EnemyClasses.Enemy? enemy,object bot){
         if(enemy==null||!enemy.IsVisible||!enemy.CanShoot)return null;
-        NativeSelections++;return new Vector3(9,9,9);
+        NativeSelections++;return enemy.EnemyInfo.GetVisiblePartToShoot();
     }
 }
 public static class Shoot451 {
@@ -124,12 +165,12 @@ public static class Shoot451 {
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     private static Vector3? GetAimTarget(SAIN.SAINComponent.Classes.EnemyClasses.Enemy? enemy){
         if(enemy==null||!enemy.IsVisible||!enemy.CanShoot)return null;
-        NativeSelections++;return new Vector3(9,9,9);
+        NativeSelections++;return enemy.AimTarget.GetPointToShoot()??enemy.EnemyInfo.GetVisiblePartToShoot();
     }
 }
 public static class UnsupportedShoot { private static int GetAimTarget(object enemy)=>1; }
 public static class CompatibilityChecks {
-    public static Type? ShootDataType; private static int checks;
+    public static Type? LegacyShootDataType; private static int checks;
     private static void Check(bool value,string name){if(!value)throw new Exception(name);checks++;}
     private static (GlobalEventDispatcher dispatcher,Player source,BotOwner bot) Fresh(bool native=false){
         BossPlayers.Instance=new();BossPlayers.Followers.Clear();Singleton<GameWorld>.Instance=new();
@@ -142,43 +183,66 @@ public static class CompatibilityChecks {
         var harmony=new Harmony("pitFireTeam.tests.sain.compatibility");
         var partTarget=AccessTools.Method(typeof(EnemyInfo),nameof(EnemyInfo.GetVisiblePartToShoot));
         var sainPartPrefix=AccessTools.Method(typeof(SAIN.Patches.Aim.BodyPartToShootPatch),"Patch");
-        new Harmony("BodyPartToShootPatch").Patch(partTarget,prefix:new HarmonyMethod(sainPartPrefix));
-        new Harmony("FollowerAimTargetPatch").Patch(partTarget,prefix:new HarmonyMethod(
-            AccessTools.Method(typeof(pitTeam.Patches.FollowerAimTargetPatch),"PatchPrefix")));
+        var sainPartHarmony=new Harmony("BodyPartToShootPatch");
+        sainPartHarmony.Patch(partTarget,prefix:new HarmonyMethod(sainPartPrefix));
+        var followerPartHarmony=new Harmony("FollowerAimTargetPatch");
+        followerPartHarmony.Patch(partTarget,
+            postfix:new HarmonyMethod(AccessTools.Method(typeof(pitTeam.Patches.FollowerAimTargetPatch),"PatchPostfix")));
+
+        int calls;
         foreach(var version in new[]{typeof(Shoot450),typeof(Shoot451)}){
-            harmony.Unpatch(sainPartPrefix,HarmonyPatchType.All,harmony.Id);
-            ShootDataType=version;pitTeam.Patches.FollowerSainAimTargetPatch.Apply(harmony);
-            Check(Harmony.GetPatchInfo(AccessTools.Method(version,"GetAimTarget"))?.Prefixes.Count==1,version.Name+"_registered");
+            LegacyShootDataType=version;
+            pitTeam.Patches.FollowerSainAimTargetPatch.Apply(harmony);
+            var aimTarget=AccessTools.Method(version,"GetAimTarget");
+            var patches=Harmony.GetPatchInfo(aimTarget);
+            Check(patches?.Prefixes.Count==1&&patches.Postfixes.Count==1,version.Name+"_native_selector_registered");
             Func<SAIN.SAINComponent.Classes.EnemyClasses.Enemy?,Vector3?> aim=version==typeof(Shoot450)?Shoot450.Aim:Shoot451.Aim;
             Func<int> native=()=>version==typeof(Shoot450)?Shoot450.NativeSelections:Shoot451.NativeSelections;
             var enemy=new SAIN.SAINComponent.Classes.EnemyClasses.Enemy();
-            Check(aim(enemy)?.x==1&&native()==0,version.Name+"_follower_preempts_native");
-            enemy.EnemyInfo.ShootLane=false;
-            Check(aim(enemy)==null&&native()==0,version.Name+"_no_lane_does_not_fall_back");
-            enemy.EnemyInfo.ShootLane=true;enemy.IsVisible=false;int calls=FollowerAimTargetPolicy.Calls;
+            SAIN.Patches.Aim.BodyPartToShootPatch.SelectHead=false;
+            enemy.AimTarget.ChosenPart=SAIN.SAINComponent.Classes.EnemyClasses.EAimTargetPart.Chest;
+            calls=FollowerAimTargetPolicy.Calls;int nativeBefore=native();
+            Check(aim(enemy)?.x==1&&native()==nativeBefore+1&&FollowerAimTargetPolicy.Calls==calls+1,
+                version.Name+"_nonhead_enhanced_after_native");
+            SAIN.Patches.Aim.BodyPartToShootPatch.SelectHead=true;
+            enemy.AimTarget.ChosenPart=SAIN.SAINComponent.Classes.EnemyClasses.EAimTargetPart.Head;
+            calls=FollowerAimTargetPolicy.Calls;nativeBefore=native();
+            float expectedHead=version==typeof(Shoot450)?4:9;
+            Check(aim(enemy)?.x==expectedHead&&native()==nativeBefore+1&&FollowerAimTargetPolicy.Calls==calls+1,
+                version.Name+"_native_head_preserved");
+            enemy.EnemyInfo.Owner.IsFollower=false;calls=FollowerAimTargetPolicy.Calls;
+            Check(aim(enemy)?.x==9&&FollowerAimTargetPolicy.Calls==calls,version.Name+"_ordinary_bot_unchanged");
+            enemy.EnemyInfo.Owner.IsFollower=true;enemy.IsVisible=false;calls=FollowerAimTargetPolicy.Calls;
             Check(aim(enemy)==null&&FollowerAimTargetPolicy.Calls==calls,version.Name+"_invisible_guard");
             enemy.IsVisible=true;enemy.CanShoot=false;
             Check(aim(enemy)==null&&FollowerAimTargetPolicy.Calls==calls,version.Name+"_cannot_shoot_guard");
-            enemy.CanShoot=true;enemy.EnemyInfo.Owner.IsFollower=false;
-            Check(aim(enemy)?.x==9&&native()==1,version.Name+"_ordinary_bot_unchanged");
             Check(aim(null)==null,version.Name+"_null_enemy");
-            enemy.EnemyInfo.Owner.IsFollower=true;
-            Check(aim(enemy)?.x==1&&native()==1,version.Name+"_recruited_bot");
-            SAIN.Patches.Aim.BodyPartToShootPatch.NativeSelections=0;
-            var partEnemy=new EnemyInfo();
-            Check(partEnemy.GetVisiblePartToShoot().x==1&&SAIN.Patches.Aim.BodyPartToShootPatch.NativeSelections==0,
-                version.Name+"_later_SAIN_prefix_cannot_overwrite_follower");
-            partEnemy.Owner.IsFollower=false;
-            Check(partEnemy.GetVisiblePartToShoot().x==7&&SAIN.Patches.Aim.BodyPartToShootPatch.NativeSelections==1,
-                version.Name+"_ordinary_bot_keeps_SAIN_part_selector");
-            partEnemy.Owner.IsFollower=true;partEnemy.ShootLane=false;
-            Check(partEnemy.GetVisiblePartToShoot().x==7&&SAIN.Patches.Aim.BodyPartToShootPatch.NativeSelections==2,
-                version.Name+"_EnemyInfo_existing_no_point_fallback_preserved");
-            partEnemy.ShootLane=true;
-            Check(partEnemy.GetVisiblePartToShoot().x==1&&SAIN.Patches.Aim.BodyPartToShootPatch.NativeSelections==2,
-                version.Name+"_EnemyInfo_reacquired_lane_returns_to_follower");
+            if(version==typeof(Shoot451)){
+                enemy.CanShoot=true;enemy.AimTarget.ReturnNull=true;
+                SAIN.Patches.Aim.BodyPartToShootPatch.SelectHead=false;calls=FollowerAimTargetPolicy.Calls;
+                Check(aim(enemy)?.x==1&&FollowerAimTargetPolicy.Calls==calls+1,"Shoot451_EnemyInfo_fallback_enhanced_once");
+            }
+            harmony.Unpatch(aimTarget,HarmonyPatchType.Prefix,harmony.Id);
+            harmony.Unpatch(aimTarget,HarmonyPatchType.Postfix,harmony.Id);
         }
-        ShootDataType=typeof(UnsupportedShoot);int errors=pitTeam.Modules.Logger.Errors.Count;
+
+        SAIN.Patches.Aim.BodyPartToShootPatch.NativeSelections=0;
+        SAIN.Patches.Aim.BodyPartToShootPatch.SelectHead=false;
+        var partEnemy=new EnemyInfo();calls=FollowerAimTargetPolicy.Calls;
+        Check(partEnemy.GetVisiblePartToShoot().x==1&&
+              SAIN.Patches.Aim.BodyPartToShootPatch.NativeSelections==1&&
+              FollowerAimTargetPolicy.Calls==calls+1,"EnemyInfo_SAIN_nonhead_enhanced_once");
+        SAIN.Patches.Aim.BodyPartToShootPatch.SelectHead=true;calls=FollowerAimTargetPolicy.Calls;
+        Check(partEnemy.GetVisiblePartToShoot().x==9&&
+              SAIN.Patches.Aim.BodyPartToShootPatch.NativeSelections==2&&
+              FollowerAimTargetPolicy.Calls==calls+1,"EnemyInfo_SAIN_head_preserved_once");
+        partEnemy.Owner.IsFollower=false;calls=FollowerAimTargetPolicy.Calls;
+        Check(partEnemy.GetVisiblePartToShoot().x==9&&FollowerAimTargetPolicy.Calls==calls,"EnemyInfo_ordinary_bot_unchanged");
+        sainPartHarmony.Unpatch(partTarget,HarmonyPatchType.Prefix,sainPartHarmony.Id);
+        partEnemy=new EnemyInfo();calls=FollowerAimTargetPolicy.Calls;
+        Check(partEnemy.GetVisiblePartToShoot().x==1&&FollowerAimTargetPolicy.Calls==calls+1,"Vanilla_native_nonhead_enhanced");
+
+        LegacyShootDataType=typeof(UnsupportedShoot);int errors=pitTeam.Modules.Logger.Errors.Count;
         pitTeam.Patches.FollowerSainAimTargetPatch.Apply(harmony);
         Check(Harmony.GetPatchInfo(AccessTools.Method(typeof(UnsupportedShoot),"GetAimTarget"))==null&&pitTeam.Modules.Logger.Errors.Count==errors+1,"Unsupported_layout_fails_open");
         var hearing=new pitTeam.Patches.HearingSensorPatch();

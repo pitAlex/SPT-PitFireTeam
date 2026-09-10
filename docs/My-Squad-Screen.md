@@ -542,7 +542,7 @@ Behavior:
 - marksman tactic uses aggression as a tactic-relative offensive auto-search control
 - `Vision`, `Precision`, and `Reaction` are functional `0..200` percentage sliders with neutral default `100`
 - `Vision` changes only the follower's detection-distance multiplier
-- `Precision` changes shot accuracy, contributes half of the final aim-speed multiplier, and sets a conservative head-target preference from `10%` at Precision `0` through `33%` at `100` to `60%` at `200`
+- `Precision` changes shot accuracy, contributes half of the final aim-speed multiplier, and sets a conservative native non-head-to-head enhancement chance from `10%` at Precision `0` through `40%` at `100` to `70%` at `200`
 - `Reaction` changes visual-recognition speed, contributes the other half of final aim speed, and scales the short direct-fire gate used by core close dogfights
 - the bottom `RESET` button restores Vision, Precision, and Reaction to `100`, restores Aggression to the active tactic's default (`50` for Rifleman or `30` for Marksman), updates all four visible sliders immediately, and persists one aggression update plus one proficiency-object update
 - the current values load from teammate profile options; changing any slider updates one follower-local proficiency object and persists the whole object after a short debounce
@@ -571,8 +571,8 @@ vision range factor = Vision / 100
 accuracy factor = Precision / 100
 recognition-speed factor = Reaction / 100
 aim-speed factor = (Precision + Reaction) / 200
-head preference = 10 + 0.23 * Precision                         (Precision 0..100)
-head preference = 33 + 0.27 * (Precision - 100)                (Precision 100..200)
+head preference = 10 + 0.30 * Precision                         (Precision 0..100)
+head preference = 40 + 0.30 * (Precision - 100)                (Precision 100..200)
 ```
 
 This means Precision `100` plus Reaction `100` keeps normal aim speed, either value at `200` while the other stays at `100` produces `1.5x` aim speed, and both at `200` are required for `2.0x` aim speed.
@@ -591,12 +591,12 @@ Concrete `Vision` distance examples:
 Meaning of each percentage:
 
 - `Vision`: multiplies only the finalized detection distance. `150` sees up to `1.5x` farther than that class's default; it does not make recognition faster.
-- `Precision`: multiplies shot-execution accuracy, tightening scatter, accelerating precision convergence, and reducing external-SAIN recoil at the core compatibility boundary. It supplies half of the combined aim-speed value and maps piecewise to a `10%` / `33%` / `60%` head preference at slider values `0` / `100` / `200`.
+- `Precision`: multiplies shot-execution accuracy, tightening scatter, accelerating precision convergence, and reducing external-SAIN recoil at the core compatibility boundary. It supplies half of the combined aim-speed value and maps piecewise to a `10%` / `40%` / `70%` chance to promote a native non-head target to a verified head target at slider values `0` / `100` / `200`.
 - `Reaction`: multiplies the visual visibility-gain rate and supplies the other half of combined aim speed. On the core combat path it also scales the `0.2s` close-dogfight direct-fire gate; this gate is `0.2s` at `100`, `0.1s` at `200`, and never delays the normal aim/shoot worker once that worker is independently ready.
 
 Vision, Precision, Reaction, and general compatibility with the external SAIN plugin are core-owned and must work in all three runtime modes: no SAIN, SAIN installed without the addon, and SAIN with the addon. The optional addon only replaces core combat with its custom SAIN Squad-derived follower layer and custom actions; it does not own calculation tuning, mutate shared SAIN settings, or change the percentage contract. The combined Precision/Reaction aim-speed factor is applied after the final EFT-or-SAIN aim-time calculation, and Precision's Accuracy factor is applied to SAIN's final calculated recoil by the main plugin rather than the addon.
 
-Body-part selection filters to parts that are both visible and currently shootable before applying head preference. The probability therefore chooses only between valid firing solutions: a sole exposed head remains eligible regardless of the probability, a visible torso remains available when it has a real shot lane, and an occluded torso is never selected merely because the head-preference roll failed. The core direct-fire overlay uses this same selector rather than EFT's body-only `CurrentEnemyTargetPosition(false)` helper. The selected part remains stable for EFT's normal retarget interval, so this does not reroll on every shot. SAIN's global center-mass height clamp is bypassed only for pitFireTeam followers so it cannot move an already valid upper-body target back behind cover.
+EFT or SAIN chooses the body part first. If that native choice is the head, pitFireTeam leaves it as the head without applying another probability roll. If it is not the head, Precision gets one opportunity per normal retarget interval to promote the choice to the head, and only when the shared correction verifies a visible, shootable head lane. A hidden head leaves the native target untouched; a sole exposed head can still replace an invalid covered-body fallback. The core direct-fire overlay calls EFT's native `GetVisiblePartToShoot()` selector rather than the body-only `CurrentEnemyTargetPosition(false)` helper, then receives the same enhancement. A promoted head stays selected for the retarget interval while it remains shootable, so this does not reroll on every shot. The older SAIN 4.5.0 global center-mass height clamp is corrected only when it lowers a head that SAIN already selected for a pitFireTeam follower.
 
 Reaction does **not** change EFT's `WAIT_NEW_SENSOR` or `WAIT_NEW__LOOK_SENSOR`. Those remain the game's independent ambient look/hearing refresh and stationary-cover look-switch timers.
 

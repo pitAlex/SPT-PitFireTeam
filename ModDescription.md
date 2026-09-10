@@ -114,7 +114,7 @@ Open **Proficiency** from a teammate's profile to fine-tune their fighting style
 
 - **Aggression (0-100%)** - how willing they are to push, search, and pressure enemies. Lower values favor cover, support, and staying near you; higher values encourage taking an opening when the threat allows it. Riflemen default to **50%**, Marksmen to **30%**. For Marksmen, this mainly affects offensive searches with an automatic secondary while preserving their ranged role. At **0%**, teammates avoid proactive pressure, but still defend themselves.
 - **Vision (0-200%)** - how far they can spot enemies. Higher values extend detection range; lower values shorten it.
-- **Precision (0-200%)** - how accurately they shoot. Higher values tighten their shots and increase their preference for headshots: **10%** at 0 Precision, **33%** at 100, and **60%** at 200. They choose from exposed targets, so an exposed head can still be targeted when the body is behind cover.
+- **Precision (0-200%)** - how accurately they shoot. Higher values tighten their shots and increase the chance of promoting a normal body-part choice to the head: **10%** at 0 Precision, **40%** at 100, and **70%** at 200. A head already chosen by the game or SAIN stays selected, and a hidden head is never forced.
 - **Reaction (0-200%)** - how quickly they recognize enemies. Higher values help them pick up threats and respond faster, including in close fights.
 
 The combat **Hold Position** command temporarily behaves like **0% Aggression** until combat ends or **Go Go Go** clears it.

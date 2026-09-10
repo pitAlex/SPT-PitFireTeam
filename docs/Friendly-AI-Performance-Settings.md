@@ -468,13 +468,13 @@ Do not map Accuracy to:
 - grenade precision,
 - a large fire-rate change.
 
-### Precision-owned body-part preference
+### Precision-owned native target enhancement
 
 Core sets `AIMING_TYPE = 6`, but SAIN's `BodyPartToShootPatch` replaces EFT body-part selection and uses `AimForHead` plus `AimForHeadChance`. SAIN's actual target point can also be limited by the global center-mass setting.
 
-Precision deliberately owns one conservative target-selection value in addition to firearm execution: head preference is `10%` at Precision `0`, `33%` at `100`, and `60%` at `200`, with piecewise-linear interpolation between those points. This is a preference among valid firing solutions, not a hit guarantee. The follower target resolver first removes every body part that is not both visible and shootable; only then does it roll head versus non-head. A sole exposed head is selected regardless of probability, while no shootable body part produces no shot instead of an invented torso target.
+Precision deliberately owns one conservative target enhancement in addition to firearm execution: head preference is `10%` at Precision `0`, `40%` at `100`, and `70%` at `200`, with piecewise-linear interpolation between those points. EFT or SAIN always selects its native target first. A native head choice is preserved without another roll. When the native choice is not the head, the follower rolls once per normal retarget window to promote it to the head, but only when the shared correction verifies that the head is visible and shootable. If the head is hidden, the native non-head point is left unchanged. If the head is the sole verified firing lane, it replaces an invalid non-head fallback without a probability gate.
 
-The target resolver retains the chosen valid part for EFT's normal body-part retarget interval. It does not allocate or reroll every shot. Core direct fire consumes this resolver directly instead of `CurrentEnemyTargetPosition(false)`, because that EFT helper always returns the body position and bypasses both normal body-part selection and the follower Precision policy. When external SAIN owns firing, the main plugin also bypasses SAIN 4.5's global center-mass height clamp for registered followers because that clamp ignores SAIN's own per-bot `AimCenterMass` value and can move a valid exposed-head target down behind cover.
+The enhancement retains a promoted head for EFT's normal body-part retarget interval while that head remains shootable. One weak per-enemy state object owns this cadence; the repeated aiming path does not allocate or reroll every shot. A promoted head uses EFT's existing `GetPartPositionWithOffset()` point, preserving the collider-relative point validated by the shoot-lane check instead of substituting the raw body-part transform. Core direct fire invokes EFT's native `GetVisiblePartToShoot()` selector instead of the body-only `CurrentEnemyTargetPosition(false)` helper, so the same native-first enhancement runs afterward. On SAIN 4.5.0, an already native-selected head is restored after the older global center-mass height clamp so the native body-part decision remains a head decision.
 
 ### Burst control is not pure accuracy
 
@@ -518,7 +518,7 @@ The `Proficiency` dialog exposes three persistent percentage values per saved te
 | Setting | 0-200 meaning | Neutral default | Runtime ownership |
 |---|---|---|---|
 | Vision | shorter to farther vision range | preserves class-specific distance | core runtime modifier |
-| Precision | wider to tighter firearm execution plus `10%..60%` head preference | preserves class-specific scatter and precision, uses `33%` head preference, and supplies half of aim speed | core modifier, valid-part target resolver, plus final external-SAIN-compatible accuracy boundary |
+| Precision | wider to tighter firearm execution plus `10%..70%` head preference | preserves class-specific scatter and precision, uses `40%` head preference, and supplies half of aim speed | core modifier, native-first head enhancement, plus final external-SAIN-compatible accuracy boundary |
 | Reaction | slower to faster recognition/response | preserves class-specific recognition; supplies half of aim speed | core vision-speed modifier, final aim boundary, and core dogfight direct-fire gate |
 
 The percentage converts directly to a multiplier:
@@ -601,7 +601,7 @@ Any SAIN calculation that would otherwise overwrite or bypass a follower's final
 
 The per-teammate Vision, Precision, and Reaction sliders live in the draggable `Proficiency` profile dialog. Aggression remains a separate `0..100` behavior control in the same dialog. All labels use the centralized localization model and embedded English fallback described in `docs/Localization.md`.
 
-Descriptions state that Vision owns range, Precision owns shot accuracy plus conservative valid-part head preference, Reaction owns recognition speed, and Precision plus Reaction share aim speed without changing tactics or objectives.
+Descriptions state that Vision owns range, Precision owns shot accuracy plus a conservative native-first head enhancement, Reaction owns recognition speed, and Precision plus Reaction share aim speed without changing tactics or objectives.
 
 ## Implementation hazards and boundaries
 
@@ -688,7 +688,7 @@ Acceptance criteria:
 
 - neutral values reproduce the current effective baseline,
 - low/high Vision changes range without changing LOS-to-visible speed,
-- low/high Precision changes dispersion/hit rate/recoil, valid-part head preference, and half of aim speed without changing tactical decisions,
+- low/high Precision changes dispersion/hit rate/recoil, native non-head promotion preference, and half of aim speed without changing tactical decisions,
 - low/high Reaction changes LOS-to-visible time, half of aim speed, and the narrow core dogfight direct-fire gate without changing the two sensor-wait settings,
 - tactical decision/reason sequences remain comparable for identical encounters,
 - no new action end/reselect churn appears,
@@ -704,7 +704,7 @@ Acceptance criteria:
 6. Precision scatter/convergence and core-owned final external-SAIN recoil compatibility: implemented independently of addon presence.
 7. Reaction recognition-speed modifier and core dogfight direct-fire gate: implemented.
 8. Localized four-control profile UI including Aggression: implemented.
-9. Allocation-free visible-and-shootable body-part selection, Precision head preference, and follower-only SAIN center-mass bypass: implemented.
+9. Native-first EFT/SAIN body-part preservation, retarget-window Precision head enhancement, and follower-only legacy SAIN center-mass correction: implemented.
 10. Conservative endpoint calibration across the runtime matrix: pending gameplay tests.
 11. Granular advanced controls remain internal unless a later calibration need justifies exposing them.
 

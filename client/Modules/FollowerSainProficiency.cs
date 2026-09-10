@@ -638,7 +638,7 @@ namespace pitTeam.Modules
 
             // Retain the per-bot field for the SAIN 4.5.0 settings schema.
             // Keep the follower-local settings semantically correct for future SAIN versions while
-            // the core target patch owns today's visible-part selection and Precision preference.
+            // the core target patch owns today's native-first visible-part enhancement and Precision preference.
             values.Aiming.AimCenterMass = false;
             values.Aiming.AimForHead = true;
             values.Aiming.AimForHeadChance = FollowerAimTargetPolicy.GetHeadPreference(
