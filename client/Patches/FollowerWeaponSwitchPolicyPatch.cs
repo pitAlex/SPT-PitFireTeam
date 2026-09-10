@@ -198,6 +198,30 @@ namespace pitTeam.Patches
                 : null;
         }
 
+        internal static bool ExcludeLauncherFromReloadSupport(BotWeaponSelector selector)
+        {
+            if (selector == null || !selector._canChangeToSupportWeapons ||
+                selector._supportWeapon != EquipmentSlot.SecondPrimaryWeapon ||
+                !FollowerCombatCommon.IsGrenadeLauncherWeapon(selector.SecondPrimaryWeaponItem as Weapon) ||
+                !BossPlayers.IsFollower(GetSelectorBotOwner(selector)))
+            {
+                return false;
+            }
+
+            // Mask only vanilla's reload support candidate. Keep the slot/item and the explicit
+            // ChangeToSecond capability intact for grenadier, patrol, and inventory operations.
+            selector._canChangeToSupportWeapons = false;
+            return true;
+        }
+
+        internal static void RestoreReloadSupport(BotWeaponSelector selector, bool excluded)
+        {
+            if (excluded)
+            {
+                selector._canChangeToSupportWeapons = true;
+            }
+        }
+
         public static bool ShouldSuppressDeadFollowerWeaponTaken(BotWeaponSelector selector)
         {
             BotOwner botOwner = GetSelectorBotOwner(selector);
@@ -498,6 +522,26 @@ namespace pitTeam.Patches
         }
     }
 
+    internal sealed class FollowerLauncherNoAmmoSwitchPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+        {
+            return AccessTools.Method(typeof(BotWeaponSelector), nameof(BotWeaponSelector.ShallChangeIfNoAmmo));
+        }
+
+        [PatchPrefix]
+        private static void PatchPrefix(BotWeaponSelector __instance, out bool __state)
+        {
+            __state = FollowerWeaponSwitchPolicyRuntime.ExcludeLauncherFromReloadSupport(__instance);
+        }
+
+        [PatchFinalizer]
+        private static void PatchFinalizer(BotWeaponSelector __instance, bool __state)
+        {
+            FollowerWeaponSwitchPolicyRuntime.RestoreReloadSupport(__instance, __state);
+        }
+    }
+
     internal sealed class FollowerCombatReloadFallbackSuppressPatch : ModulePatch
     {
         protected override MethodBase GetTargetMethod()
@@ -508,11 +552,13 @@ namespace pitTeam.Patches
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(BotWeaponSelector __instance)
+        private static bool PatchPrefix(BotWeaponSelector __instance, out bool __state)
         {
+            __state = false;
             BotOwner botOwner = FollowerWeaponSwitchPolicyRuntime.GetSelectorBotOwner(__instance);
             if (!FollowerCombatCommon.ShouldSuppressFollowerOwnedReloadFallback(botOwner))
             {
+                __state = FollowerWeaponSwitchPolicyRuntime.ExcludeLauncherFromReloadSupport(__instance);
                 return true;
             }
 
@@ -520,6 +566,12 @@ namespace pitTeam.Patches
                 Logger.LogInfo($"[WeaponPolicy] suppressed rejected combat reload weapon fallback follower={botOwner.Profile?.Nickname ?? botOwner.name}");
 
             return false;
+        }
+
+        [PatchFinalizer]
+        private static void PatchFinalizer(BotWeaponSelector __instance, bool __state)
+        {
+            FollowerWeaponSwitchPolicyRuntime.RestoreReloadSupport(__instance, __state);
         }
     }
 }

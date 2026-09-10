@@ -268,6 +268,7 @@ namespace pitTeam.BigBrain.Actions
             {
                 if (launcherSuppress)
                 {
+                    StopCombatShooting();
                     RecordLauncherSuppressAimHold($"{reason}:launcherAimNotAligned", target.Value);
                     BotOwner.Steering.LookToPoint(aimTarget);
                     BotOwner.SetPose(1f);
@@ -375,7 +376,7 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            if (standingSuppress && !CanSuppressFromCurrentPosition(fireOrigin, target.Value))
+            if (!launcherSuppress && standingSuppress && !CanSuppressFromCurrentPosition(fireOrigin, target.Value))
             {
                 RecordWeaponSuppressState(reason, "standingLaneBlocked", target.Value);
                 StopCombatShooting();
@@ -524,31 +525,9 @@ namespace pitTeam.BigBrain.Actions
 
         private bool ShouldHoldEmptyLauncherSuppress()
         {
-            BotWeaponManager? weaponManager = BotOwner?.WeaponManager;
-            if (weaponManager == null)
-            {
-                return false;
-            }
-
-            if (weaponManager.Reload?.Reloading == true)
-            {
-                return true;
-            }
-
-            Weapon? activeWeapon = weaponManager.ShootController?.Item ?? weaponManager.CurrentWeapon;
-            if (!FollowerCombatCommon.IsGrenadeLauncherWeapon(activeWeapon) ||
-                FollowerCombatCommon.IsSingleUseLauncherWeapon(activeWeapon) ||
-                FollowerCombatCommon.CountLoadedRounds(activeWeapon) > 0)
-            {
-                return false;
-            }
-
-            FollowerCombatCommon.TryStartActiveGrenadeLauncherLooseAmmoReload(
-                BotOwner,
-                activeWeapon,
-                out _);
-
-            return true;
+            // Preparation owns reloads before the burst; a discharged cylinder/barrel ends it.
+            return FollowerCombatCommon.CountLoadedRounds(
+                FollowerCombatCommon.GetActiveOrEquippedGrenadeLauncher(BotOwner)) <= 0;
         }
 
         private static float GetLauncherSuppressUnsafeRadius(string? reason)
@@ -670,6 +649,7 @@ namespace pitTeam.BigBrain.Actions
             {
                 if (aimNotAligned)
                 {
+                    StopCombatShooting();
                     return true;
                 }
 
@@ -677,6 +657,7 @@ namespace pitTeam.BigBrain.Actions
                 bool weaponNotReady = weaponManager?.IsWeaponReady == false || weaponManager?.Reload?.Reloading == true;
                 if (weaponNotReady)
                 {
+                    StopCombatShooting();
                     RecordLauncherSuppressAimHold(
                         $"launcherWeaponNotReady:ready={weaponManager?.IsWeaponReady}:reloading={weaponManager?.Reload?.Reloading}",
                         suppressTarget);
@@ -869,67 +850,18 @@ namespace pitTeam.BigBrain.Actions
 
         private void FireLauncherSuppressShot(string? reason, Vector3 target, Vector3 aimTarget)
         {
-            BotWeaponManager? weaponManager = BotOwner?.WeaponManager;
-            Weapon? activeWeapon = weaponManager?.ShootController?.Item ?? weaponManager?.CurrentWeapon;
-            bool normalShoot = BotOwner?.ShootData?.Shoot() == true;
-            bool haveBullets = weaponManager?.HaveBullets == true;
-            int loadedRounds = FollowerCombatCommon.CountLoadedRounds(activeWeapon);
-            float aimRaise = Mathf.Max(0f, aimTarget.y - target.y);
-
-            if (!FollowerCombatCommon.IsGrenadeLauncherWeapon(activeWeapon) ||
-                loadedRounds <= 0 ||
-                haveBullets && normalShoot)
-            {
-                RecordLauncherSuppressShootAttempt(
-                    reason,
-                    target,
-                    "launcherShootNormal",
-                    normalShoot,
-                    loadedRounds,
-                    haveBullets,
-                    aimRaise);
-                return;
-            }
-
-            if (weaponManager?.ShootController == null ||
-                weaponManager.IsWeaponReady == false ||
-                weaponManager.Reload?.Reloading == true ||
-                BotOwner?.ShootData?.CanShootByState == false)
-            {
-                RecordLauncherSuppressShootAttempt(
-                    reason,
-                    target,
-                    "launcherShootBlocked",
-                    normalShoot,
-                    loadedRounds,
-                    haveBullets,
-                    aimRaise,
-                    weaponManager?.IsWeaponReady,
-                    weaponManager?.Reload?.Reloading,
-                    BotOwner?.ShootData?.CanShootByState);
-                return;
-            }
-
-            weaponManager.ShootController.IsInLauncherMode();
-            weaponManager.ShootController.SetTriggerPressed(true);
-            BotOwner.AimingManager?.CurrentAiming?.TriggerPressedDone();
-
-            ShootData? shootData = BotOwner.ShootData;
-            if (shootData != null)
-            {
-                shootData.LastTriggerPressd = Time.time;
-                shootData.timeFingerDown = Time.time;
-                shootData.nextFingerDownCan = Time.time + 0.25f;
-            }
-
+            // Pass the retained, ballistic aim point explicitly so native suppression cannot
+            // replace it with GoalEnemy.GetPartToShoot when the enemy becomes visible again.
+            baseLogic._aiming.UpdateNodeByBrain(new AimingResultParams(aimTarget));
+            BotWeaponManager? weaponManager = BotOwner.WeaponManager;
             RecordLauncherSuppressShootAttempt(
                 reason,
                 target,
-                "launcherDirectTrigger",
-                normalShoot,
-                loadedRounds,
-                haveBullets,
-                aimRaise);
+                "launcherSuppressionPoint",
+                BotOwner.ShootData?.Shooting == true,
+                FollowerCombatCommon.CountLoadedRounds(weaponManager?.CurrentWeapon),
+                weaponManager?.HaveBullets == true,
+                Mathf.Max(0f, aimTarget.y - target.y));
         }
 
         [System.Diagnostics.Conditional("DEBUG")]

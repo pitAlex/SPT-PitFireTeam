@@ -191,7 +191,6 @@ namespace pitTeam.BigBrain
         private const float GrenadeLauncherUnarmedImpactUnsafeRadius = 2f;
         private const float GrenadeLauncherMaxTargetDistance = 130f;
         private const float GrenadeLauncherRecentKnownTargetSeconds = 5f;
-        private const float FirstPrimaryLauncherNormalFireContactGraceSeconds = 2f;
         private const float GrenadeLauncherAimGravity = 9.81f;
         private const float GrenadeLauncherAimFallbackInitialSpeed = 76f;
         private const float GrenadeLauncherAimMinCompensationDistance = 25f;
@@ -327,6 +326,8 @@ namespace pitTeam.BigBrain
         private int recoveryNoCoverDamageRevision;
         private int activeFollowerSuppressInitialRounds = -1;
         private bool activeFollowerSuppressShotDetected;
+        private GrenadeLauncherFirePlan? activeLauncherSuppressPlan;
+        private int activeLauncherSuppressTargetIndex;
         private int activeLauncherSuppressInitialRounds = -1;
         private int activeLauncherSuppressLastRounds = -1;
         private int activeLauncherSuppressCapacity = 1;
@@ -659,7 +660,7 @@ namespace pitTeam.BigBrain
                 ReasonPrefix = reasonPrefix;
                 Ordered = ordered;
                 UnsafeRadius = unsafeRadius;
-                Targets = targets;
+                Targets = new List<Vector3>(targets);
                 SuppressFrom = suppressFrom;
             }
 
@@ -930,9 +931,16 @@ namespace pitTeam.BigBrain
             ClearLauncherSuppressFireProfile();
         }
 
+        private bool IsOwnedLauncherSwitchPending()
+        {
+            BotWeaponSelector? selector = botOwner?.WeaponManager?.Selector;
+            return ownsGrenadeLauncherSwitch && selector != null &&
+                   (selector.IsChanging || !selector.IsWeaponReady);
+        }
+
         public void RequestLauncherPrimaryFallback(string reason)
         {
-            if (!IsSupportGrenadeLauncherSelectedOrActive())
+            if (!IsSupportGrenadeLauncherSelectedOrActive() && !IsOwnedLauncherSwitchPending())
             {
                 pendingLauncherPrimaryFallbackReason = null;
                 return;
@@ -945,7 +953,7 @@ namespace pitTeam.BigBrain
         public bool HasPendingLauncherPrimaryFallback()
         {
             return pendingLauncherPrimaryFallbackReason != null &&
-                   IsSupportGrenadeLauncherSelectedOrActive();
+                   (IsSupportGrenadeLauncherSelectedOrActive() || IsOwnedLauncherSwitchPending());
         }
 
         public bool TryCreatePendingLauncherPrimaryFallbackDecision(
@@ -982,7 +990,11 @@ namespace pitTeam.BigBrain
 
             if (!IsSupportGrenadeLauncherSelectedOrActive())
             {
-                pendingLauncherPrimaryFallbackReason = null;
+                if (!IsOwnedLauncherSwitchPending())
+                {
+                    pendingLauncherPrimaryFallbackReason = null;
+                    ownsGrenadeLauncherSwitch = false;
+                }
                 return false;
             }
 
@@ -1000,7 +1012,7 @@ namespace pitTeam.BigBrain
             }
 
             BotWeaponSelector? selector = botOwner?.WeaponManager?.Selector;
-            bool switchRequested = selector?.TryChangeToMain() == true;
+            bool switchRequested = selector?.ChangeToMain() == true;
             RecordLauncherPrimaryFallbackSwitch(switchRequested, opportunity, goalEnemy, decision);
             if (switchRequested && !IsSupportGrenadeLauncherSelectedOrActive())
             {
@@ -1039,14 +1051,14 @@ namespace pitTeam.BigBrain
                     owner,
                     goalEnemy,
                     decision: null,
-                    pendingReason: tacticalIntent ? reason : null,
+                    pendingReason: tacticalIntent ? $"launcherFallback.{reason}" : null,
                     out _,
                     out waitReason))
             {
                 return false;
             }
 
-            return selector.TryChangeToMain();
+            return selector.ChangeToMain();
         }
 
         public bool IsPendingLauncherPrimaryFallbackWeaponSelected()
@@ -1566,6 +1578,8 @@ namespace pitTeam.BigBrain
 
         private void ClearLauncherSuppressFireProfile()
         {
+            activeLauncherSuppressPlan = null;
+            activeLauncherSuppressTargetIndex = 0;
             activeLauncherSuppressInitialRounds = -1;
             activeLauncherSuppressLastRounds = -1;
             activeLauncherSuppressCapacity = 1;
@@ -1577,6 +1591,8 @@ namespace pitTeam.BigBrain
             activeLauncherSuppressMultiShot = false;
             activeLauncherSuppressShotDetected = false;
         }
+
+        public bool HasFiredGrenadeLauncherSuppressShot => activeLauncherSuppressShotDetected;
 
         public bool IsGrenadeLauncherSuppressCommitmentExpired(string? reason, float suppressElapsed)
         {
@@ -1641,6 +1657,19 @@ namespace pitTeam.BigBrain
                 currentRounds < activeLauncherSuppressLastRounds)
             {
                 int fired = activeLauncherSuppressLastRounds - currentRounds;
+                // Advance on discharged rounds, not trigger attempts. EFT's InitToPoints clears
+                // its own list through InitToPoint, so the follower retains the sequence itself.
+                if (currentRounds > 0 && activeLauncherSuppressPlan?.Targets.Count > 0)
+                {
+                    activeLauncherSuppressTargetIndex =
+                        (activeLauncherSuppressTargetIndex + fired) % activeLauncherSuppressPlan.Targets.Count;
+                    Vector3 nextTarget = activeLauncherSuppressPlan.Targets[activeLauncherSuppressTargetIndex];
+                    botOwner.SuppressShoot.InitToPoint(nextTarget, null);
+                    TryEmitGrenadeLauncherSuppressEvent(botOwner.Memory.GoalEnemy, nextTarget, activeFollowerSuppressReason);
+                    BattleRecorder.RecordGrenadeEvent(
+                        botOwner, "launcherNextPoint", activeFollowerSuppressReason,
+                        goalEnemy: botOwner.Memory.GoalEnemy, target: nextTarget);
+                }
                 activeLauncherSuppressShotDetected = true;
                 if (activeLauncherSuppressFirstShotAt <= 0f)
                 {
@@ -4963,21 +4992,6 @@ namespace pitTeam.BigBrain
             return false;
         }
 
-        public bool TryCreateGrenadeLauncherFireDecision(
-            EnemyInfo goalEnemy,
-            string reasonPrefix,
-            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision,
-            bool ordered)
-        {
-            decision = default;
-            if (!TryPrepareGrenadeLauncherFirePlan(goalEnemy, reasonPrefix, ordered, out GrenadeLauncherFirePlan? plan))
-            {
-                return false;
-            }
-
-            return TryStartGrenadeLauncherFireDecision(goalEnemy, plan, out decision);
-        }
-
         public bool TryPrepareGrenadeLauncherFirePlan(
             EnemyInfo goalEnemy,
             string reasonPrefix,
@@ -5161,117 +5175,35 @@ namespace pitTeam.BigBrain
                 ownsGrenadeLauncherSwitch = true;
             }
 
-            if (!TryCanUseGrenadeLauncherNormalFire(
-                    botOwner,
-                    goalEnemy,
-                    plan.Ordered,
-                    out Vector3 normalFireTarget,
-                    out string normalFireRejectReason))
+            if (!TryValidateGrenadeLauncherSuppressTarget(
+                    botOwner, plan.FirstTarget, plan.Ordered, out string rejectReason) ||
+                botOwner.SuppressShoot == null ||
+                !botOwner.SuppressShoot.InitToPoint(plan.FirstTarget, null))
             {
-                TryReleaseOwnedGrenadeLauncher();
                 return RejectGrenadeLauncherSuppress(
-                    $"{plan.ReasonPrefix}:normalFireRejected:{normalFireRejectReason}",
-                    goalEnemy);
+                    $"{plan.ReasonPrefix}:suppressionInitRejected:{rejectReason}", goalEnemy);
             }
 
-            // The objective owns only launcher selection and explosive safety. Actual aiming,
-            // trigger cadence, and combat reload now run through EFT's ordinary shoot-from-place
-            // node so a cylinder launcher can keep firing throughout the engagement.
-            botOwner.Steering.LookToPoint(normalFireTarget);
+            activeLauncherSuppressPlan = plan;
+            activeLauncherSuppressTargetIndex = 0;
+            botOwner.Steering.LookToPoint(plan.FirstTarget);
             botOwner.BotTalk?.TrySay(EPhraseTrigger.GetInCover, true);
-            WarnGrenadeLauncherImpacts(new List<Vector3> { normalFireTarget });
+            WarnGrenadeLauncherImpacts(plan.Targets);
             decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
-                BotLogicDecision.shootFromPlace,
+                BotLogicDecision.suppressFire,
                 plan.DecisionReason);
-            TryEmitGrenadeLauncherSuppressEvent(goalEnemy, normalFireTarget, decision.Reason);
+            TryEmitGrenadeLauncherSuppressEvent(goalEnemy, plan.FirstTarget, decision.Reason);
             BattleRecorder.RecordGrenadeEvent(
                 botOwner,
                 "launcherInit",
                 decision.Reason,
                 goalEnemy: goalEnemy,
-                target: normalFireTarget,
+                target: plan.FirstTarget,
                 suppressFrom: plan.SuppressFromPosition);
             return true;
         }
 
-        internal static bool TryCanUseGrenadeLauncherNormalFire(
-            BotOwner owner,
-            EnemyInfo? goalEnemy,
-            bool ordered,
-            out Vector3 target,
-            out string rejectReason)
-        {
-            target = Vector3.zero;
-            if (owner == null || goalEnemy?.Person?.HealthController?.IsAlive != true)
-            {
-                rejectReason = "enemyMissingOrDead";
-                return false;
-            }
-
-            if (!goalEnemy.IsVisible)
-            {
-                rejectReason = "enemyNotVisible";
-                return false;
-            }
-
-            target = GetEnemyCurrentPosition(goalEnemy);
-            return TryValidateGrenadeLauncherNormalFireTarget(
-                owner,
-                target,
-                ordered,
-                out rejectReason);
-        }
-
-        /// <summary>
-        /// Keeps a first-primary launcher committed to the last personally seen impact point long
-        /// enough for EFT's ordinary aiming worker to become ready. Support-slot launchers remain
-        /// suppression weapons and deliberately do not use this visual-flicker grace path.
-        /// </summary>
-        internal static bool TryContinueFirstPrimaryGrenadeLauncherNormalFire(
-            BotOwner owner,
-            EnemyInfo? goalEnemy,
-            bool ordered,
-            out Vector3 target,
-            out string rejectReason)
-        {
-            target = Vector3.zero;
-            if (owner == null || goalEnemy?.Person?.HealthController?.IsAlive != true)
-            {
-                rejectReason = "enemyMissingOrDead";
-                return false;
-            }
-
-            if (!IsFirstPrimaryGrenadeLauncherSelectedOrActive(owner))
-            {
-                rejectReason = "notFirstPrimaryLauncher";
-                return false;
-            }
-
-            if (goalEnemy.IsVisible)
-            {
-                rejectReason = "enemyVisibleRequiresLiveTarget";
-                return false;
-            }
-
-            if (!HasRecentPersonalContact(goalEnemy, FirstPrimaryLauncherNormalFireContactGraceSeconds))
-            {
-                rejectReason = "enemyVisualGraceExpired";
-                return false;
-            }
-
-            target = IsFinite(goalEnemy.EnemyLastPositionReal) &&
-                     goalEnemy.EnemyLastPositionReal.sqrMagnitude > 0.01f
-                ? goalEnemy.EnemyLastPositionReal
-                : GetEnemyAnchor(goalEnemy);
-
-            return TryValidateGrenadeLauncherNormalFireTarget(
-                owner,
-                target,
-                ordered,
-                out rejectReason);
-        }
-
-        private static bool TryValidateGrenadeLauncherNormalFireTarget(
+        private static bool TryValidateGrenadeLauncherSuppressTarget(
             BotOwner owner,
             Vector3 target,
             bool ordered,
@@ -5279,7 +5211,7 @@ namespace pitTeam.BigBrain
         {
             if (!IsFinite(target))
             {
-                rejectReason = "enemyPositionInvalid";
+                rejectReason = "suppressionPointInvalid";
                 return false;
             }
 
@@ -6136,6 +6068,16 @@ namespace pitTeam.BigBrain
 
             if (!selectedLauncher)
             {
+                // SetSlotItem completes asynchronously; LastEquipmentSlot still names the rifle
+                // while the accepted launcher draw is in progress. The objective bounds this wait.
+                if (selector?.IsChanging == true || selector?.IsWeaponReady == false ||
+                    weaponManager?.IsWeaponReady == false)
+                {
+                    HoldFor(0.15f);
+                    decision = CreateLauncherPreparationHold($"{reasonPrefix}.launcherSwitch");
+                    return true;
+                }
+
                 if (!TrySelectEquippedGrenadeLauncher(
                         botOwner,
                         out bool changedToLauncher,
@@ -16986,7 +16928,7 @@ namespace pitTeam.BigBrain
                 effectiveSuppressElapsed < GrenadeLauncherSuppressAimSettleSeconds;
             if (launcherSuppress &&
                 TryGetLauncherSuppressFireEndReason(
-                    launcherOpeningAim ? false : botOwner.SuppressShoot.Complete,
+                    activeLauncherSuppressPlan != null || launcherOpeningAim ? false : botOwner.SuppressShoot.Complete,
                     suppressElapsed,
                     out string launcherEndReason))
             {
@@ -17002,7 +16944,7 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEnd("launcherCommitmentExpired", true);
             }
 
-            if (!ordered && effectiveSuppressElapsed >= AutoSuppressMaxSeconds)
+            if (!launcherSuppress && !ordered && effectiveSuppressElapsed >= AutoSuppressMaxSeconds)
             {
                 return new AICoreActionEnd("autoSuppressTimedOut", true);
             }

@@ -439,6 +439,7 @@ namespace pitTeam
             new FollowerSupportNoAmmoMainSwitchPolicyPatch().Enable();
             new FollowerHoldLingerReloadSuppressPatch().Enable();
             new FollowerCombatReloadPermissionPatch().Enable();
+            new FollowerLauncherNoAmmoSwitchPatch().Enable();
             new FollowerCombatReloadFallbackSuppressPatch().Enable();
             new FollowerAimTimeProficiencyPatch().Enable();
             new FollowerAimTargetPatch().Enable();
