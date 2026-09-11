@@ -372,6 +372,7 @@ namespace pitTeam
             new AdvAssaultTargetFollowerGuardPatch().Enable();
             new PatrolDataFollowerUpdateGuardPatch().Enable();
             new AvoidDangerFollowerGuardPatch().Enable();
+            FollowerTripwireAwarenessPatch.Apply(harmony);
             new FollowerNightVisionActivatePatch().Enable();
             new FollowerNightVisionOnPatch().Enable();
             new FollowerNightVisionOffPatch().Enable();

@@ -98,6 +98,7 @@ namespace pitTeam.Patches
             }
 
             PatchFollowerLayerFallbackIfAddonMissing(harmony);
+            FollowerSainGrenadeAwarenessPatch.Apply(harmony);
             PatchFollowerEnemyClearGuardIfAddonMissing(harmony);
             PatchFollowerCombatPatrolStanceWithoutAddon(harmony);
             PatchFollowerReloadBlockIfAddonMissing(harmony);

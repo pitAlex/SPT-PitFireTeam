@@ -252,7 +252,7 @@ namespace pitTeam.BigBrain
 
             currentDecision = nextDecision;
             BattleRecorder.RecordDecisionSelected(BotOwner, lastDecision, nextDecision, combatLogic?.GetCurrentObjectiveName());
-            return CreateBigBrainAction(nextDecision);
+            return CreateBigBrainAction(BotOwner, nextDecision);
         }
 
         public override bool IsCurrentActionEnding()
@@ -954,9 +954,9 @@ namespace pitTeam.BigBrain
             };
         }
 
-        private Action CreateBigBrainAction(AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
+        internal static Action CreateBigBrainAction(BotOwner botOwner, AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision, Func<Vector3, bool>? movementAllowed = null)
         {
-            FollowerCombatActionData actionData = new FollowerCombatActionData(decision.Action, decision.Reason, decision.Data);
+            FollowerCombatActionData actionData = new FollowerCombatActionData(decision.Action, decision.Reason, decision.Data, movementAllowed);
 
             if (decision.Action == BotLogicDecision.holdPosition &&
                 string.Equals(decision.Reason, LingerReason, StringComparison.Ordinal))
@@ -1003,7 +1003,7 @@ namespace pitTeam.BigBrain
                 case BotLogicDecision.healStimulators:
                     return new Action(typeof(HealStimulatorsAction), decision.Reason, actionData);
                 case BotLogicDecision.search:
-                    BotOwner.Tactic.SetTactic(BotsGroup.BotCurrentTactic.Attack);
+                    botOwner.Tactic.SetTactic(BotsGroup.BotCurrentTactic.Attack);
                     return new Action(typeof(CombatSearchAction), decision.Reason, actionData);
                 case BotLogicDecision.suppressGrenade:
                     return new Action(typeof(CombatSuppressGrenadeAction), decision.Reason, actionData);

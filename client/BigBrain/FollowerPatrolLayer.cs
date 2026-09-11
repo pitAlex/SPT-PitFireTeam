@@ -59,6 +59,7 @@ namespace pitTeam.BigBrain
                 BrainManager.RemoveLayers(vanillaLayersToDisable, brains);
                 BrainManager.AddCustomLayer(typeof(FollowerCombatLayer), pmcCombatBrains, FollowerCombatLayerPriority);
                 BrainManager.AddCustomLayer(typeof(FollowerRequestLayer), brains, FollowerRequestLayerPriority);
+                BrainManager.AddCustomLayer(typeof(FollowerTripwireLayer), brains, FollowerTripwireLayer.LayerPriority);
                 BrainManager.AddCustomLayer(typeof(FollowerPatrolLayer), brains, FollowerLayerPriority);
             }
             catch (Exception ex)

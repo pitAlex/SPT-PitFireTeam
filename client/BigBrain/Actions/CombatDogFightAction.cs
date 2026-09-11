@@ -31,6 +31,7 @@ namespace pitTeam.BigBrain.Actions
         private readonly ShallThrowGrenade grenadeLogic;
         private readonly NavMeshPath dogFightPath = new NavMeshPath();
 
+        private System.Func<Vector3, bool>? movementAllowed;
         private DogFightMoveStatus moveStatus;
         private float nextMoveUpdateTime;
         private string immediateFireEnemyProfileId = string.Empty;
@@ -76,6 +77,14 @@ namespace pitTeam.BigBrain.Actions
 
         public override void Update(CustomLayer.ActionData data)
         {
+            // BigBrain may pass the previous result's data on the first successor update.
+            data = ResolveCurrentActionData(data);
+            movementAllowed = (data as FollowerCombatActionData)?.MovementAllowed;
+            if (BotOwner.DogFight != null && BotOwner.DogFight.DogFightState == BotDogFightStatus.none)
+            {
+                // The same action ID can cross layers without Start() after Stop() cleared it.
+                BotOwner.DogFight.DogFightState = BotDogFightStatus.dogFight;
+            }
             EnemyInfo? goalEnemy = BotOwner.Memory?.GoalEnemy;
             string reason = GetReason(data);
 
@@ -336,6 +345,20 @@ namespace pitTeam.BigBrain.Actions
             }
         }
 
+        private CustomLayer.ActionData ResolveCurrentActionData(CustomLayer.ActionData data)
+        {
+            return (BrainManager.GetActiveLayer(BotOwner) as CustomLayer)?.CurrentAction?.Data ?? data;
+        }
+
+        private NavMeshPathStatus TryGoToDogFightPoint(Vector3 point)
+        {
+            if (movementAllowed != null && !movementAllowed(point))
+            {
+                return NavMeshPathStatus.PathInvalid;
+            }
+            return BotOwner.GoToPoint(point, false, -1f, false, false);
+        }
+
         private bool TryMoveTowardEnemy(EnemyInfo goalEnemy)
         {
             Vector3 moveTarget = goalEnemy.IsVisible
@@ -347,7 +370,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            return BotOwner.GoToPoint(navMeshHit.position, false, -1f, false, false) == NavMeshPathStatus.PathComplete;
+            return TryGoToDogFightPoint(navMeshHit.position) == NavMeshPathStatus.PathComplete;
         }
 
         private bool TryBackUpFromEnemy(EnemyInfo goalEnemy, bool allowLooseFallback)
@@ -392,7 +415,7 @@ namespace pitTeam.BigBrain.Actions
                     continue;
                 }
 
-                if (BotOwner.GoToPoint(navMeshHit.position, false, -1f, false, false) == NavMeshPathStatus.PathComplete)
+                if (TryGoToDogFightPoint(navMeshHit.position) == NavMeshPathStatus.PathComplete)
                 {
                     return true;
                 }
@@ -419,14 +442,14 @@ namespace pitTeam.BigBrain.Actions
                             dogFightPath.corners.Length > 0)
                         {
                             Vector3 pathEnd = dogFightPath.corners[dogFightPath.corners.Length - 1];
-                            return BotOwner.GoToPoint(pathEnd, false, -1f, false, false) == NavMeshPathStatus.PathComplete;
+                            return TryGoToDogFightPoint(pathEnd) == NavMeshPathStatus.PathComplete;
                         }
                     }
 
-                    return BotOwner.GoToPoint(raycastHit.position, false, -1f, false, false) == NavMeshPathStatus.PathComplete;
+                    return TryGoToDogFightPoint(raycastHit.position) == NavMeshPathStatus.PathComplete;
                 }
 
-                return BotOwner.GoToPoint(point, false, -1f, false, false) == NavMeshPathStatus.PathComplete;
+                return TryGoToDogFightPoint(point) == NavMeshPathStatus.PathComplete;
             }
 
             return false;

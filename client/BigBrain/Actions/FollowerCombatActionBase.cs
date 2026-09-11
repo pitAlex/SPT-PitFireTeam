@@ -17,12 +17,14 @@ namespace pitTeam.BigBrain.Actions
         public BotLogicDecision Decision { get; }
         public string Reason { get; }
         public CoreActionResultParams? Data { get; }
+        public System.Func<Vector3, bool>? MovementAllowed { get; }
 
-        public FollowerCombatActionData(BotLogicDecision decision, string reason, CoreActionResultParams? data)
+        public FollowerCombatActionData(BotLogicDecision decision, string reason, CoreActionResultParams? data, System.Func<Vector3, bool>? movementAllowed = null)
         {
             Decision = decision;
             Reason = reason;
             Data = data;
+            MovementAllowed = movementAllowed;
         }
     }
 
