@@ -111,6 +111,10 @@ namespace pitTeam.BigBrain.Actions
     /// </summary>
     internal sealed class EnemyFacingHoldLogic : HoldPosition
     {
+        private const float MinAllyLookDistance = 3f;
+        private Vector3 idleLookDirection;
+        private float nextIdleLookAt;
+
         private const float SignificantCornerSwitchAngle = 20f;
         private const float CornerSwitchLockDuration = 0.45f;
         private const float CornerSwitchPersistDuration = 0.2f;
@@ -197,26 +201,26 @@ namespace pitTeam.BigBrain.Actions
 
             if (TryGetClosestAllyLookPoint(out Vector3 allyLookPoint))
             {
+                nextIdleLookAt = 0f;
                 _owner.Steering.LookToPoint(allyLookPoint);
                 return;
             }
 
+            LookInRandomDirection();
+        }
+
+        private void LookInRandomDirection()
+        {
+            if (Time.time >= nextIdleLookAt || idleLookDirection.sqrMagnitude < 0.01f)
+            {
+                float angle = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
+                idleLookDirection = new Vector3(Mathf.Sin(angle), 0f, Mathf.Cos(angle));
+                nextIdleLookAt = Time.time + UnityEngine.Random.Range(2f, 4f);
+            }
+
             _owner.LookData.SetLookPointByHearing(null);
-            BotObserveData? observer = _owner.Memory?.botObserveData;
-            Vector3 scanDirection = CombatAttackMoveLook.GetMovementOrLevelDirection(_owner);
-            if (observer != null)
-            {
-                if (!observer.IsActive)
-                {
-                    observer.SetVector(scanDirection);
-                }
-                observer.SetVectorToLook(scanDirection);
-                observer.Update();
-            }
-            else
-            {
-                CombatAttackMoveLook.LookAlongMovementOrLevel(_owner);
-            }
+            _owner.Memory?.botObserveData?.Stop();
+            _owner.Steering.LookToDirection(idleLookDirection);
         }
 
         private bool TryLookTowardCloseUnseenThreat()
@@ -306,7 +310,7 @@ namespace pitTeam.BigBrain.Actions
         }
 
         private void TryCollectClosestAllyFromEnumerable(
-            IEnumerable source,
+            IEnumerable? source,
             ref bool found,
             ref float bestDistanceSqr,
             ref Vector3 lookPoint)
@@ -340,20 +344,23 @@ namespace pitTeam.BigBrain.Actions
             ref float bestDistanceSqr,
             ref Vector3 lookPoint)
         {
-            if (ally == null || ally == _owner || ally.IsDead)
+            if (ally == null || ally == _owner || ally.IsDead || !BossPlayers.IsFollower(ally))
             {
                 return;
             }
 
-            Vector3 targetPoint = ally.Position;
-            float distanceSqr = (targetPoint - _owner.Position).sqrMagnitude;
-            if (distanceSqr >= bestDistanceSqr)
+            Vector3 offset = ally.Position - _owner.Position;
+            offset.y = 0f;
+            float distanceSqr = offset.sqrMagnitude;
+            if (!FollowerCombatCommon.IsFinite(offset) ||
+                distanceSqr < MinAllyLookDistance * MinAllyLookDistance ||
+                distanceSqr >= bestDistanceSqr)
             {
                 return;
             }
 
             bestDistanceSqr = distanceSqr;
-            lookPoint = targetPoint;
+            lookPoint = CombatAttackMoveLook.GetLookOrigin(ally);
             found = true;
         }
 

@@ -23,7 +23,8 @@ $runMethods = @(
 ) | ForEach-Object { Get-CombatMethod $runSource $_ }
 $walkMethods = @('TryGetEnemyLookAnchor', 'TryGetOwnedEnemyLookDirection', 'Flatten', 'IsFinite') |
     ForEach-Object { Get-CombatMethod $walkSource $_ }
-$holdMethods = @('GetEnemyLookPoint', 'TryLookTowardEnemy') | ForEach-Object { Get-CombatMethod $holdSource $_ }
+$holdMethods = @('GetEnemyLookPoint', 'TryLookTowardEnemy', 'Look', 'LookInRandomDirection', 'TryGetClosestAllyLookPoint', 'TryCollectClosestAllyFromEnumerable', 'TryUpdateClosestAlly') | ForEach-Object { (Get-CombatMethod $holdSource $_).Replace('public override void Look()', 'public void UpdateLook()') }
+$holdConstants = [regex]::Matches($holdSource, '(?m)^        private const float [^\r\n]+') | ForEach-Object { $_.Value }
 $dogMethods = @('MaintainThreatFacing', 'GetLookAngleToPoint') | ForEach-Object { Get-CombatMethod $dogSource $_ }
 $runConstants = [regex]::Matches($runSource, '(?m)^        private const float [^\r\n]+') | ForEach-Object { $_.Value }
 $lookEnum = [regex]::Match($runSource, '(?ms)^        private enum RunLookMode.*?^        \}').Value
@@ -31,14 +32,18 @@ $harness = @'
 #nullable enable
 #pragma warning disable CS0649, CS0414, CS8600
 using System;
+using System.Collections;
 using EFT;
+using pitTeam.Modules;
+using pitTeam.Utils;
 using UnityEngine;
 using UnityEngine.AI;
 using pitTeam.Components;
 using pitTeam.BigBrain.Actions;
 namespace UnityEngine {
     public static class Time { public static float time; }
-    public static class Mathf { public static float Abs(float a)=>Math.Abs(a); public static float Clamp01(float a)=>Math.Max(0,Math.Min(1,a)); }
+    public static class Random { public static int Calls; public static float Range(float a,float b){Calls++;return (a+b)/2f;} }
+    public static class Mathf { public const float PI=(float)Math.PI; public static float Sin(float a)=>(float)Math.Sin(a); public static float Cos(float a)=>(float)Math.Cos(a); public static float Abs(float a)=>Math.Abs(a); public static float Clamp01(float a)=>Math.Max(0,Math.Min(1,a)); }
     public struct Vector3 {
         public float x,y,z; public Vector3(float x,float y,float z){this.x=x;this.y=y;this.z=z;}
         public static Vector3 zero=>new Vector3(); public static Vector3 up=>new Vector3(0,1,0); public static Vector3 forward=>new Vector3(0,0,1);
@@ -88,7 +93,9 @@ namespace EFT {
         public void LookToDirection(Vector3 p){Mode="direction";Point=p;}
         public void LookToMovingDirection(){Mode="route";}
     }
+    public class BotsGroup { public BotOwner[] Members=Array.Empty<BotOwner>(); public IEnumerable? Allies; public int MembersCount=>Members.Length; public BotOwner Member(int i)=>Members[i]; }
     public class BotOwner {
+        public bool IsDead,IsFollower=true; public BotsGroup? BotsGroup;
         public Transform? WeaponRoot; public Transform Transform=new Transform();
         public Vector3 Position=new Vector3(160,0,-24),LookDirection=new Vector3(1,0,0);
         public Mover Mover=new Mover(); public Steering Steering=new Steering(); public Memory Memory=new Memory();
@@ -96,10 +103,13 @@ namespace EFT {
         public void StopMove(){Stopped=true;Mover.HasPathAndNoComplete=false;} public void SetPose(float p){}
     }
 }
+namespace pitTeam.Modules { public static class BossPlayers { public static bool IsFollower(BotOwner b)=>b.IsFollower; } }
 namespace pitTeam.Components { public static class BotFollowerPlayer { public static bool TryApplyCommandLookOverride(BotOwner b)=>false; } }
 namespace pitTeam.Utils {
     public static class FollowerAwareness {
         public static bool HasThreat; public static Vector3 Threat;
+        public static bool TryGetTargetHandoffLookPoint(BotOwner bot,out Vector3 point){point=Threat;return false;}
+        public static bool TryGetRecentThreatLookPoint(BotOwner bot,out Vector3 point){point=Threat;return HasThreat;}
         public static bool TryGetRecentFireThreatLookPoint(BotOwner bot,out Vector3 point,out bool dead){point=Threat;dead=false;return HasThreat;}
     }
 }
@@ -130,6 +140,12 @@ namespace pitTeam.BigBrain.Actions {
         __WALK_METHODS__
     }
     public class HoldHarness {
+        __HOLD_CONSTANTS__
+        private Vector3 idleLookDirection; private float nextIdleLookAt;
+        private bool TryLookTowardCloseUnseenThreat()=>false;
+        private bool TryLookTowardSuppressionThreat()=>false;
+        private bool TryLookTowardBossRangedThreat()=>false;
+        public bool AllyPoint(out Vector3 point)=>TryGetClosestAllyLookPoint(out point);
         public BotOwner _owner=new BotOwner(); public bool Cleared,Applied;
         private bool CanKeepCurrentLook(EnemyInfo e)=>true;
         private bool TryAcquireNewLook(EnemyInfo e)=>true;
@@ -266,6 +282,35 @@ namespace pitTeam.BigBrain.Actions {
             Check(!hold.Look()&&hold.Cleared&&!hold.Applied,"Hold_ExpiryClearsCachedLookBeforeItCanRun");
             e=Enemy(5);hold=new HoldHarness();hold._owner.Position=e.EnemyLastPositionReal+new Vector3(0.2f,0,0);hold._owner.Memory.GoalEnemy=e;
             Check(!hold.Look()&&hold.Cleared,"Hold_VisitedReportCannotReuseCornerCache");
+            hold=new HoldHarness();hold._owner.Position=new Vector3(100,0,100);
+            var nearAlly=new BotOwner{Position=new Vector3(100.5f,0,100)};
+            var farAlly=new BotOwner{Position=new Vector3(104,0,100),WeaponRoot=new Transform{position=new Vector3(104,1.4f,100)}};
+            var fartherAlly=new BotOwner{Position=new Vector3(107,0,100)};
+            hold._owner.BotsGroup=new BotsGroup{Members=new[]{hold._owner,nearAlly,fartherAlly,farAlly}};
+            Check(hold.AllyPoint(out point)&&Same(point,farAlly.WeaponRoot.position),"Hold_SkipsCloseFollowerAndChoosesNearestEligibleUpperBody");
+            hold.UpdateLook();Check(hold._owner.Steering.Mode=="point"&&Same(hold._owner.Steering.Point,point),"Hold_FullLookUsesEligibleFollower");
+            farAlly.IsDead=true;fartherAlly.IsFollower=false;
+            Check(!hold.AllyPoint(out _),"Hold_DeadNonFollowerAndNearbyMembersDoNotOwnLook");
+            UnityEngine.Random.Calls=0;hold.UpdateLook();var randomDirection=hold._owner.Steering.Point;
+            Check(hold._owner.Steering.Mode=="direction"&&Math.Abs(randomDirection.y)<0.00001f&&randomDirection.sqrMagnitude>0.99f,"Hold_NoEligibleFollowerChoosesHorizontalRandomLook");
+            Check(UnityEngine.Random.Calls==2,"Hold_SamplesDirectionAndLeaseOnce");
+            Time.time+=0.5f;hold.UpdateLook();Check(UnityEngine.Random.Calls==2&&Same(randomDirection,hold._owner.Steering.Point),"Hold_RandomLookDoesNotJitterEveryUpdate");
+            Time.time+=4f;hold.UpdateLook();Check(UnityEngine.Random.Calls==4,"Hold_RandomScanRenewsAfterLease");
+            farAlly.IsDead=false;hold.UpdateLook();Check(hold._owner.Steering.Mode=="point","Hold_EligibleFollowerPreemptsRandomLease");
+            farAlly.Position=new Vector3(102.99f,0,100);farAlly.WeaponRoot=null;
+            Check(!hold.AllyPoint(out _),"Hold_RejectsFollowerInsideThreeMeters");
+            farAlly.Position=new Vector3(103,0,100);
+            Check(hold.AllyPoint(out point)&&Math.Abs(point.y-1.2f)<0.001f,"Hold_ThreeMeterBoundaryUsesHeightFallback");
+            farAlly.Position=new Vector3(100.5f,8,100);
+            Check(!hold.AllyPoint(out _),"Hold_ClosePlanarFollowerOnAnotherFloorCannotCauseVerticalStare");
+            var alliedFollower=new BotOwner{Position=new Vector3(105,0,100)};
+            hold._owner.BotsGroup.Allies=new[]{alliedFollower};
+            Check(hold.AllyPoint(out point)&&Same(point,CombatAttackMoveLook.GetLookOrigin(alliedFollower)),"Hold_AlliedFollowerFallbackStillWorks");
+            e=Enemy(0);hold._owner.Memory.GoalEnemy=e;hold.Applied=false;hold.UpdateLook();
+            Check(hold.Applied,"Hold_FreshEnemyPreemptsAllyFallback");
+            hold._owner.Memory.GoalEnemy=null;pitTeam.Utils.FollowerAwareness.HasThreat=true;pitTeam.Utils.FollowerAwareness.Threat=new Vector3(90,1,100);hold.UpdateLook();
+            Check(Same(hold._owner.Steering.Point,pitTeam.Utils.FollowerAwareness.Threat),"Hold_FreshThreatPreemptsAllyFallback");
+            pitTeam.Utils.FollowerAwareness.HasThreat=false;
             var dog=new DogHarness();e=Enemy(5);dog.BotOwner.LookDirection=new Vector3(1,5,0);
             dog.Look(e);
             Check(dog.BotOwner.Steering.Mode=="direction"&&Math.Abs(dog.BotOwner.Steering.Point.y)<0.00001f,"Dogfight_StaleContactFallsBackToLevelMovement");
@@ -292,7 +337,7 @@ namespace pitTeam.BigBrain.Actions {
 '@
 $lookSource = $lookSource -replace '(?m)^using [^;]+;\r?\n', ''
 $harness = $harness.Replace('__RUN_CONSTANTS__', ($runConstants -join "`n")).Replace('__LOOK_ENUM__', $lookEnum).
-    Replace('__RUN_METHODS__', ($runMethods -join "`n")).Replace('__WALK_METHODS__', ($walkMethods -join "`n")).Replace('__HOLD_METHODS__', ($holdMethods -join "`n")).Replace('__DOG_METHODS__', ($dogMethods -join "`n"))
+    Replace('__HOLD_CONSTANTS__', ($holdConstants -join "`n")).Replace('__RUN_METHODS__', ($runMethods -join "`n")).Replace('__WALK_METHODS__', ($walkMethods -join "`n")).Replace('__HOLD_METHODS__', ($holdMethods -join "`n")).Replace('__DOG_METHODS__', ($dogMethods -join "`n"))
 Add-Type -TypeDefinition ($harness + "`n" + $lookSource) -Language CSharp
 $count = [pitTeam.BigBrain.Actions.ThreatFacingChecks]::Run()
 Write-Output "Passed $count threat-facing boundary checks against production methods. In-game steering and navigation still require a raid test."

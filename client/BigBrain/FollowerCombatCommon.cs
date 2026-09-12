@@ -14110,14 +14110,11 @@ namespace pitTeam.BigBrain
         public bool ShouldBreakRunToCoverForImmediateFire()
         {
             EnemyInfo? goalEnemy = botOwner.Memory.GoalEnemy;
-            if (WasHitRecently(botOwner, 0.5f) && HasActiveCombatEnemy(goalEnemy))
-            {
-                return true;
-            }
-
+            // Threat pressure alone is not a firing successor. Preserve the cover route when
+            // the enemy can threaten us but we cannot shoot back from the current position.
             if (!HasActiveCombatEnemy(goalEnemy) || !goalEnemy.IsVisible || !goalEnemy.CanShoot)
             {
-                return IsEnemyActivelyThreateningMe(goalEnemy, CloseThreatAdvanceBreakDistance, CloseThreatRecentSeenSeconds);
+                return false;
             }
 
             // While a committed cover run is still inside its initial lock window, treat the move as
@@ -14125,7 +14122,8 @@ namespace pitTeam.BigBrain
             // transient LOS blip peels the follower off the chosen cover before arrival.
             if (HasCommittedCover() &&
                 !IsBotInCommittedCover() &&
-                !IsCommittedCoverLockExpired)
+                !IsCommittedCoverLockExpired &&
+                !WasHitRecently(botOwner, 0.5f))
             {
                 return false;
             }

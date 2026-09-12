@@ -2428,12 +2428,13 @@ namespace pitTeam.BigBrain
 
             AICoreActionEnd result = combatCommon.ShallEndCurrentDecision(currentDecision);
             if (result.Value &&
-                string.Equals(result.Reason, "visibleCloseFireBreakCoverMove", StringComparison.Ordinal))
+                (string.Equals(result.Reason, "visibleCloseFireBreakCoverMove", StringComparison.Ordinal) ||
+                 string.Equals(result.Reason, "stableImmediateFire", StringComparison.Ordinal)))
             {
                 // Ending first and hoping the normal router chooses combat lets low-ammo reload
-                // routing reuse this same committed cover. That creates an end/reselect loop while
-                // the follower keeps sprinting and cannot fire. End only with a real close-fight
-                // handoff ready; otherwise preserve the current run and retry on a later update.
+                // routing reuse this same committed cover. Threat-based immediate-fire exits had
+                // the same failure when no shot was possible. End only with a real firing handoff
+                // ready; otherwise preserve the current run and retry on a later update.
                 if (!TryPrepareCloseCoverFightHandoff(goalEnemy))
                 {
                     return FollowerCombatCommon.Continue();
