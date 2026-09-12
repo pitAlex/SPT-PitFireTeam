@@ -113,7 +113,13 @@ namespace pitTeam.BigBrain.Actions
                     : botPosition;
                 Vector3 currentCorner = _owner.Mover.CurrentCornerPoint;
                 Vector3 destinationLook = destination - lookOrigin;
+                destinationLook.y = 0f;
                 bool hasThreatLook = TryGetThreatLookDirection(lookOrigin, out Vector3 threatLook);
+                if (!hasThreatLook && destinationLook.sqrMagnitude <= 4f)
+                {
+                    CombatAttackMoveLook.LookAlongMovementOrLevel(_owner);
+                    return;
+                }
                 if (IsCloseSearchReason(currentReason) && hasThreatLook)
                 {
                     _botObserveData.SetVectorToLook(threatLook);
@@ -124,6 +130,7 @@ namespace pitTeam.BigBrain.Actions
                 if (ShouldUseCornerLook(currentCorner, lookOrigin, destination))
                 {
                     Vector3 cornerLook = currentCorner - lookOrigin;
+                    cornerLook.y = 0f;
                     if (hasThreatLook && !IsCornerLookAlignedWithThreat(cornerLook, threatLook))
                     {
                         _botObserveData.SetVectorToLook(threatLook);

@@ -42,11 +42,6 @@ namespace pitTeam.BigBrain.Actions
         private const float NavigationLookPathExtraDistance = 15f;
         private const float NavigationLookPathDistanceRatio = 1.35f;
         private const float SprintApproachStopDistance = 15f;
-        private const float StaleLocalLookMinAge = 4f;
-        private const float StaleLocalLookMaxDistance = 5f;
-        private const float StaleLocalLookBackpedalAngle = 120f;
-        private const float ActualMoveDirectionMinDeltaSqr = 0.0009f;
-        private const float ActualMoveDirectionMaxAge = 0.35f;
         private const int LargeMagazineLowAmmoThreshold = 20;
         private const int PistolLargeMagazineLowAmmoThreshold = 10;
 
@@ -66,9 +61,6 @@ namespace pitTeam.BigBrain.Actions
         private float navigationLookCandidateSince;
         private float nextNavigationLookCheckTime;
         private bool cachedShouldPreferNavigationLook;
-        private Vector3 lastActualMovePosition;
-        private Vector3 recentActualMoveDirection;
-        private float recentActualMoveDirectionTime;
 
         public CombatGoToEnemyAction(BotOwner botOwner) : base(botOwner)
         {
@@ -93,9 +85,6 @@ namespace pitTeam.BigBrain.Actions
             navigationLookCandidateSince = 0f;
             nextNavigationLookCheckTime = 0f;
             cachedShouldPreferNavigationLook = false;
-            lastActualMovePosition = BotOwner.Position;
-            recentActualMoveDirection = Vector3.zero;
-            recentActualMoveDirectionTime = 0f;
         }
 
         public override void Update(CustomLayer.ActionData data)
@@ -127,7 +116,6 @@ namespace pitTeam.BigBrain.Actions
             // and tight walls. Track progress every update cycle and refresh when the committed point
             // is no longer making the bot advance.
             RefreshProgressState();
-            RefreshActualMovementDirection();
             NotMovingCheck();
             bool hasPath = BotOwner.Mover.HasPathAndNoComplete;
 
@@ -313,13 +301,6 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            if (ShouldPreferMovingDirectionOverStaleLocalLook(goalEnemy))
-            {
-                CommitLookMode(AdvanceLookMode.MovingDirection);
-                BotOwner.Steering.LookToMovingDirection();
-                return;
-            }
-
             if (TryLookTowardAdvancePoint())
             {
                 return;
@@ -328,12 +309,12 @@ namespace pitTeam.BigBrain.Actions
             if (BotOwner.Mover.HasPathAndNoComplete)
             {
                 CommitLookMode(AdvanceLookMode.MovingDirection);
-                BotOwner.Steering.LookToMovingDirection();
+                CombatAttackMoveLook.LookAlongMovementOrLevel(BotOwner);
                 return;
             }
 
             CommitLookMode(AdvanceLookMode.KeepCurrent);
-            BotOwner.Steering.LookToDirection(BotOwner.LookDirection);
+            CombatAttackMoveLook.LookAlongMovementOrLevel(BotOwner);
         }
 
         private void RefreshEnemyLookLease(EnemyInfo goalEnemy)
@@ -425,10 +406,12 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            Vector3 lookDirection = advanceTarget.Value - BotOwner.Position;
-            if (lookDirection.sqrMagnitude <= 0.01f)
+            Vector3 lookDirection = Flatten(advanceTarget.Value - BotOwner.Position);
+            if (lookDirection.sqrMagnitude <= 4f)
             {
-                return false;
+                CommitLookMode(AdvanceLookMode.MovingDirection);
+                CombatAttackMoveLook.LookAlongMovementOrLevel(BotOwner);
+                return true;
             }
 
             if (IsFacingWall(lookDirection))
@@ -442,12 +425,12 @@ namespace pitTeam.BigBrain.Actions
                 if (Time.time - wallFacingSince >= WallFacingFallbackDebounceSeconds)
                 {
                     CommitLookMode(AdvanceLookMode.MovingDirection);
-                    BotOwner.Steering.LookToMovingDirection();
+                    CombatAttackMoveLook.LookAlongMovementOrLevel(BotOwner);
                     return true;
                 }
 
                 CommitLookMode(AdvanceLookMode.AdvancePoint);
-                BotOwner.Steering.LookToPoint(advanceTarget.Value + Vector3.up * 0.5f);
+                BotOwner.Steering.LookToDirection(lookDirection.normalized);
                 return true;
             }
 
@@ -455,7 +438,7 @@ namespace pitTeam.BigBrain.Actions
             wallFacingSince = 0f;
 
             CommitLookMode(AdvanceLookMode.AdvancePoint);
-            BotOwner.Steering.LookToPoint(advanceTarget.Value + Vector3.up * 0.5f);
+            BotOwner.Steering.LookToDirection(lookDirection.normalized);
             return true;
         }
 
@@ -603,38 +586,6 @@ namespace pitTeam.BigBrain.Actions
             nextProgressCheckTime = Time.time + ProgressCheckInterval;
         }
 
-        private void RefreshActualMovementDirection()
-        {
-            Vector3 currentPosition = BotOwner.Position;
-            Vector3 delta = Flatten(currentPosition - lastActualMovePosition);
-            if (delta.sqrMagnitude > ActualMoveDirectionMinDeltaSqr)
-            {
-                recentActualMoveDirection = delta.normalized;
-                recentActualMoveDirectionTime = Time.time;
-                lastActualMovePosition = currentPosition;
-                return;
-            }
-
-            if (Time.time - recentActualMoveDirectionTime > ActualMoveDirectionMaxAge)
-            {
-                recentActualMoveDirection = Vector3.zero;
-                lastActualMovePosition = currentPosition;
-            }
-        }
-
-        private bool TryGetRecentActualMovementDirection(out Vector3 direction)
-        {
-            direction = Vector3.zero;
-            if (Time.time - recentActualMoveDirectionTime > ActualMoveDirectionMaxAge ||
-                recentActualMoveDirection.sqrMagnitude <= 0.01f)
-            {
-                return false;
-            }
-
-            direction = recentActualMoveDirection;
-            return true;
-        }
-
         private void CommitAdvancePoint(Vector3 point)
         {
             committedAdvancePoint = point;
@@ -715,7 +666,15 @@ namespace pitTeam.BigBrain.Actions
                 case AdvanceLookMode.AdvancePoint:
                     if (TryGetAdvanceLookPoint(out Vector3 advancePoint))
                     {
-                        BotOwner.Steering.LookToPoint(advancePoint + Vector3.up * 0.5f);
+                        Vector3 direction = Flatten(advancePoint - BotOwner.Position);
+                        if (direction.sqrMagnitude <= 4f)
+                        {
+                            CombatAttackMoveLook.LookAlongMovementOrLevel(BotOwner);
+                        }
+                        else
+                        {
+                            BotOwner.Steering.LookToDirection(direction.normalized);
+                        }
                         return true;
                     }
                     return false;
@@ -723,13 +682,13 @@ namespace pitTeam.BigBrain.Actions
                 case AdvanceLookMode.MovingDirection:
                     if (BotOwner.Mover.HasPathAndNoComplete)
                     {
-                        BotOwner.Steering.LookToMovingDirection();
+                        CombatAttackMoveLook.LookAlongMovementOrLevel(BotOwner);
                         return true;
                     }
                     return false;
 
                 case AdvanceLookMode.KeepCurrent:
-                    BotOwner.Steering.LookToDirection(BotOwner.LookDirection);
+                    CombatAttackMoveLook.LookAlongMovementOrLevel(BotOwner);
                     return true;
             }
 
@@ -899,65 +858,8 @@ namespace pitTeam.BigBrain.Actions
         private bool TryGetOwnedEnemyLookDirection(EnemyInfo goalEnemy, out Vector3 lookDirection)
         {
             lookDirection = Vector3.zero;
-            if (!TryGetEnemyLookAnchor(goalEnemy, out Vector3 enemyAnchor))
-            {
-                return false;
-            }
-
-            if (!goalEnemy.IsVisible &&
-                ShouldPreferMovingDirectionOverStaleLocalLook(goalEnemy) &&
-                IsSameLocalLookPoint(goalEnemy.PersonalLastPos, enemyAnchor))
-            {
-                return false;
-            }
-
-            lookDirection = enemyAnchor - BotOwner.Position;
-            return lookDirection.sqrMagnitude > 0.01f;
-        }
-
-        private bool ShouldPreferMovingDirectionOverStaleLocalLook(EnemyInfo goalEnemy)
-        {
-            if (goalEnemy == null ||
-                goalEnemy.IsVisible ||
-                goalEnemy.CanShoot ||
-                !BotOwner.Mover.HasPathAndNoComplete ||
-                !TryGetRecentActualMovementDirection(out Vector3 movementDirection) ||
-                !TryGetAdvanceLookPoint(out Vector3 advancePoint))
-            {
-                return false;
-            }
-
-            Vector3 personalLastPos = goalEnemy.PersonalLastPos;
-            if (!IsFinite(personalLastPos) ||
-                Time.time - goalEnemy.PersonalLastSeenTime < StaleLocalLookMinAge)
-            {
-                return false;
-            }
-
-            Vector3 toPersonal = Flatten(personalLastPos - BotOwner.Position);
-            if (toPersonal.sqrMagnitude <= 0.01f ||
-                toPersonal.sqrMagnitude > StaleLocalLookMaxDistance * StaleLocalLookMaxDistance)
-            {
-                return false;
-            }
-
-            Vector3 toAdvancePoint = Flatten(advancePoint - BotOwner.Position);
-            if (toAdvancePoint.sqrMagnitude <= 0.01f)
-            {
-                return false;
-            }
-
-            return Vector3.Angle(movementDirection, toAdvancePoint.normalized) >= StaleLocalLookBackpedalAngle;
-        }
-
-        private static bool IsSameLocalLookPoint(Vector3 first, Vector3 second)
-        {
-            if (!IsFinite(first) || !IsFinite(second))
-            {
-                return false;
-            }
-
-            return Flatten(first - second).sqrMagnitude <= 1f;
+            return TryGetEnemyLookAnchor(goalEnemy, out Vector3 enemyAnchor) &&
+                   CombatAttackMoveLook.TryGetLookDirection(BotOwner, enemyAnchor, out lookDirection);
         }
 
         private static Vector3 Flatten(Vector3 value)

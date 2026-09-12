@@ -536,10 +536,10 @@ namespace pitTeam.BigBrain
 
             if (orderedEnemy.IsVisible && orderedEnemy.CanShoot)
             {
-                decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
-                    BotLogicDecision.suppressFire,
-                    "objectivePush.recoveryNoCoverSuppress");
-                return true;
+                return CombatCommon.TryCreateSuppressDecision(
+                    orderedEnemy,
+                    "objectivePush.recoveryNoCoverSuppress",
+                    out decision);
             }
 
             return false;
@@ -586,10 +586,8 @@ namespace pitTeam.BigBrain
             if (currentDecision.Action == BotLogicDecision.suppressFire)
             {
                 AICoreActionEnd suppressEnd = CombatCommon.EndSuppressFire(currentDecision.Reason);
-                if (suppressEnd.Value &&
-                    (string.Equals(suppressEnd.Reason, "enemyMissingOrDead", StringComparison.Ordinal) ||
-                     string.Equals(suppressEnd.Reason, "shootImmediately", StringComparison.Ordinal) ||
-                     string.Equals(suppressEnd.Reason, "dogFightStarted", StringComparison.Ordinal)))
+                // Recovery keeps owning the objective, but cannot extend an expired or unsafe burst.
+                if (suppressEnd.Value)
                 {
                     return suppressEnd;
                 }
@@ -644,6 +642,13 @@ namespace pitTeam.BigBrain
 
         private bool IsPressureRecoveryActive =>
             pressureRecoveryUntil > 0f && Time.time < pressureRecoveryUntil;
+
+        internal static bool IsOrderedPushSuppressReason(string? reason)
+        {
+            return reason != null &&
+                   (reason.StartsWith(PressureRecoveryReasonPrefix + "Suppress", StringComparison.Ordinal) ||
+                    reason.StartsWith("objectivePush.recoveryNoCoverSuppress", StringComparison.Ordinal));
+        }
 
         private static bool IsPressureRecoveryReason(string? reason)
         {

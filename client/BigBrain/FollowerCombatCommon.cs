@@ -4891,15 +4891,11 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
-            Vector3 suppressTarget = IsFinite(orderedSuppressTarget) && orderedSuppressTarget.sqrMagnitude > 0.01f
-                ? orderedSuppressTarget
-                : Vector3.zero;
-            if (!IsFinite(suppressTarget) || suppressTarget.sqrMagnitude <= 0.01f)
+            // The launcher plan can outlive rifle contact. Its stored impact point cannot
+            // authorize a rifle fallback after that contact has expired.
+            if (!TryGetSuppressTarget(goalEnemy, out Vector3 suppressTarget))
             {
-                if (!TryGetSuppressTarget(goalEnemy, out suppressTarget))
-                {
-                    return false;
-                }
+                return false;
             }
 
             string weaponReasonPrefix = $"{reasonPrefix}.weapon";
@@ -6710,27 +6706,7 @@ namespace pitTeam.BigBrain
 
         public bool TryGetSuppressTarget(EnemyInfo goalEnemy, out Vector3 suppressTarget)
         {
-            suppressTarget = Vector3.zero;
-            if (goalEnemy == null)
-            {
-                return false;
-            }
-
-            ShootToPoint? shootPoint = botOwner.CurrentEnemyTargetPosition(true);
-            if (shootPoint != null && IsFinite(shootPoint.Point))
-            {
-                suppressTarget = shootPoint.Point;
-                return true;
-            }
-
-            Vector3 enemyAnchor = GetEnemyAnchor(goalEnemy);
-            if (!IsFinite(enemyAnchor) || enemyAnchor.sqrMagnitude <= 0.01f)
-            {
-                return false;
-            }
-
-            suppressTarget = enemyAnchor + Vector3.up * 0.8f;
-            return true;
+            return FollowerSuppressTargetPolicy.TryGetTarget(goalEnemy, out suppressTarget);
         }
 
         private bool CanAcquireCommittedCover()
@@ -16858,6 +16834,11 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEnd("dogFightStarted", true);
             }
 
+            if (!TryGetSuppressTarget(goalEnemy, out _))
+            {
+                return new AICoreActionEnd("followerSuppressContactExpired", true);
+            }
+
             if (goalEnemy != null && FollowerImmediateFirePolicy.CanUseRecentContactSuppress(goalEnemy))
             {
                 return Continue();
@@ -16914,8 +16895,15 @@ namespace pitTeam.BigBrain
             float protectedSeconds = GetFollowerSuppressProtectedSeconds(ordered);
 
             bool launcherSuppress = IsGrenadeLauncherSuppressReason(reason);
+            Vector3? point = botOwner.SuppressShoot.GetPoint();
             if (!launcherSuppress)
             {
+                if (!TryGetSuppressTarget(goalEnemy, out Vector3 freshTarget))
+                {
+                    return new AICoreActionEnd("followerSuppressContactExpired", true);
+                }
+
+                point = freshTarget;
                 UpdateWeaponSuppressShotDetection();
             }
 
@@ -16989,7 +16977,6 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEnd("followerSuppressComplete", true);
             }
 
-            Vector3? point = botOwner.SuppressShoot.GetPoint();
             if (!point.HasValue || !IsFinite(point.Value))
             {
                 if (!launcherSuppress && suppressElapsed < protectedSeconds)
@@ -17180,6 +17167,7 @@ namespace pitTeam.BigBrain
                    IsAutoSuppressReason(reason) ||
                    IsBossProtectionSuppressReason(reason) ||
                    IsRecoverySuppressReason(reason) ||
+                   FollowerCombatOrderedPushObjective.IsOrderedPushSuppressReason(reason) ||
                    FollowerCombatSuppressionObjective.IsSuppressionObjectiveReason(reason) ||
                    FollowerCombatGrenadierObjective.IsGrenadierReason(reason);
         }

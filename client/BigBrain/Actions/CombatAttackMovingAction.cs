@@ -100,7 +100,6 @@ namespace pitTeam.BigBrain.Actions
             private readonly bool withSuppress;
             private readonly FollowerCombatFireOverlay fireOverlay;
             private string? currentReason;
-            private float nextThreatLookTime;
 
             public FollowerAttackMovingLogic(
                 BotOwner botOwner,
@@ -229,10 +228,9 @@ namespace pitTeam.BigBrain.Actions
 
                 if (CombatAttackMoveLook.TryGetReliableThreatLookPoint(_owner, goalEnemy, out _))
                 {
-                    if (nextThreatLookTime < Time.time)
+                    if (!CombatAttackMoveLook.TryLookReliableThreatFacing(_owner, goalEnemy))
                     {
-                        nextThreatLookTime = Time.time + MyExtensions.Random(2f, 3f);
-                        CombatAttackMoveLook.TryLookReliableThreatFacing(_owner, goalEnemy);
+                        CombatAttackMoveLook.LookAlongMovementOrLevel(_owner);
                     }
 
                     return;
@@ -241,12 +239,7 @@ namespace pitTeam.BigBrain.Actions
                 // A memory-only push can retain a very old group-sense point after the enemy has
                 // moved away. Looking at that point when the route reaches it produces a downward or
                 // backwards snap. Without follower-owned threat position, face the active route.
-                nextThreatLookTime = 0f;
-                if (_owner.Mover.HasPathAndNoComplete)
-                {
-                    _owner.LookData.SetLookPointByHearing(null);
-                    _owner.Steering.LookToMovingDirection();
-                }
+                CombatAttackMoveLook.LookAlongMovementOrLevel(_owner);
             }
 
             private bool TryStopUnsafeCloseThreatRetreat(EnemyInfo? goalEnemy)
@@ -258,7 +251,10 @@ namespace pitTeam.BigBrain.Actions
                     return false;
                 }
 
-                CombatAttackMoveLook.TryLookThreatFacing(_owner, goalEnemy, allowHardTurn: true);
+                if (!CombatAttackMoveLook.TryLookThreatFacing(_owner, goalEnemy, allowHardTurn: true))
+                {
+                    return false;
+                }
                 if (CombatAttackMoveLook.GetThreatLookAngle(_owner, goalEnemy) <= UnsafeCloseThreatLookAngle)
                 {
                     return false;
@@ -277,10 +273,11 @@ namespace pitTeam.BigBrain.Actions
                     return false;
                 }
 
-                Vector3 threatPoint = goalEnemy.IsVisible
-                    ? goalEnemy.GetBodyPartPosition()
-                    : goalEnemy.EnemyLastPositionReal + Vector3.up * 0.6f;
-                Vector3 lookDirection = threatPoint - _owner.Position;
+                if (!CombatAttackMoveLook.TryGetCombatThreatLookPoint(_owner, goalEnemy, out Vector3 threatPoint))
+                {
+                    return false;
+                }
+                Vector3 lookDirection = threatPoint - CombatAttackMoveLook.GetLookOrigin(_owner);
                 if (lookDirection.sqrMagnitude < 0.01f)
                 {
                     return false;

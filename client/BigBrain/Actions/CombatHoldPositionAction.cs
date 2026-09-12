@@ -202,6 +202,21 @@ namespace pitTeam.BigBrain.Actions
             }
 
             _owner.LookData.SetLookPointByHearing(null);
+            BotObserveData? observer = _owner.Memory?.botObserveData;
+            Vector3 scanDirection = CombatAttackMoveLook.GetMovementOrLevelDirection(_owner);
+            if (observer != null)
+            {
+                if (!observer.IsActive)
+                {
+                    observer.SetVector(scanDirection);
+                }
+                observer.SetVectorToLook(scanDirection);
+                observer.Update();
+            }
+            else
+            {
+                CombatAttackMoveLook.LookAlongMovementOrLevel(_owner);
+            }
         }
 
         private bool TryLookTowardCloseUnseenThreat()
@@ -345,7 +360,7 @@ namespace pitTeam.BigBrain.Actions
         private bool TryLookTowardEnemy()
         {
             EnemyInfo enemy = _owner.Memory.GoalEnemy ?? _owner.Memory.LastEnemy;
-            if (enemy == null)
+            if (enemy == null || GetEnemyLookPoint(enemy) == Vector3.zero)
             {
                 ClearCurrentLook();
                 return false;
@@ -534,7 +549,6 @@ namespace pitTeam.BigBrain.Actions
         {
             Vector3 enemyLookPoint = GetEnemyLookPoint(enemy);
             bool hasReliableEnemyLookPoint = enemyLookPoint != Vector3.zero;
-            Vector3 fallbackEnemyDirectionPoint = enemy.CurrPosition + Vector3.up * 0.8f;
 
             if (enemy.IsVisible)
             {
@@ -551,7 +565,7 @@ namespace pitTeam.BigBrain.Actions
             CustomNavigationPoint coverPoint = _owner.Memory.CurCustomCoverPoint;
             if (coverPoint != null && hasReliableEnemyLookPoint)
             {
-                Vector3 cornerTargetPoint = hasReliableEnemyLookPoint ? enemyLookPoint : fallbackEnemyDirectionPoint;
+                Vector3 cornerTargetPoint = enemyLookPoint;
                 if (TryGetEnemyDirectionFromPoint(cornerTargetPoint, coverPoint, out Vector3 enemyDirection))
                 {
                     int preferredSide = GetPreferredCornerSide(coverPoint, enemyDirection);
@@ -647,6 +661,15 @@ namespace pitTeam.BigBrain.Actions
 
         private void ApplyCurrentLook()
         {
+            Vector3 freshPoint = currentEnemy != null ? GetEnemyLookPoint(currentEnemy) : Vector3.zero;
+            if (freshPoint == Vector3.zero)
+            {
+                ClearCurrentLook();
+                CombatAttackMoveLook.LookAlongMovementOrLevel(_owner);
+                return;
+            }
+            _owner.Memory?.botObserveData?.Stop();
+            currentLookPoint = freshPoint;
             if (currentLookMode == LookTargetMode.Corner)
             {
                 CustomNavigationPoint coverPoint = _owner.Memory.CurCustomCoverPoint;
@@ -704,29 +727,9 @@ namespace pitTeam.BigBrain.Actions
 
         private Vector3 GetEnemyLookPoint(EnemyInfo enemy)
         {
-            if (enemy.IsVisible)
-            {
-                return enemy.GetBodyPartPosition();
-            }
-
-            Vector3 enemyPoint = enemy.EnemyLastPositionReal;
-            if (!IsUsableDirectionPoint(enemyPoint, _owner.Position))
-            {
-                enemyPoint = enemy.CurrPosition;
-            }
-
-            if (!IsUsableDirectionPoint(enemyPoint, _owner.Position))
-            {
-                return Vector3.zero;
-            }
-
-            Vector3 lookPoint = enemyPoint + Vector3.up * 0.8f;
-            if (!IsUsableDirectionPoint(lookPoint, _owner.Position))
-            {
-                return Vector3.zero;
-            }
-
-            return lookPoint;
+            return CombatAttackMoveLook.TryGetReliableThreatLookPoint(_owner, enemy, out Vector3 point)
+                ? point
+                : Vector3.zero;
         }
 
         private bool TryGetEnemyDirection(EnemyInfo enemy, CustomNavigationPoint coverPoint, out Vector3 enemyDirection)

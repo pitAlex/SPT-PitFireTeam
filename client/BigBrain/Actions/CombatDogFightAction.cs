@@ -113,7 +113,7 @@ namespace pitTeam.BigBrain.Actions
             }
             if (ShouldLockDogFightLook(goalEnemy))
             {
-                MaintainThreatFacing(goalEnemy!, GetDogFightThreatLookPoint(goalEnemy!), allowHardTurn: true);
+                MaintainThreatFacing(goalEnemy!);
             }
 
             bool reloadNoCoverEvasion =
@@ -157,7 +157,7 @@ namespace pitTeam.BigBrain.Actions
                 // lane, stop firing and keep looking rather than letting movement own look.
                 if (ShouldLockDogFightLook(goalEnemy))
                 {
-                    MaintainThreatFacing(goalEnemy!, GetDogFightThreatLookPoint(goalEnemy!), allowHardTurn: true);
+                    MaintainThreatFacing(goalEnemy!);
                 }
 
                 StopCombatShooting();
@@ -185,8 +185,12 @@ namespace pitTeam.BigBrain.Actions
                 ? pointBlankContactTarget
                 : hasRecentContactShot && !hasConfirmedShot
                     ? recentContactTarget
-                    : shootLogic.GetTarget() ?? GetDogFightThreatLookPoint(goalEnemy);
-            MaintainThreatFacing(goalEnemy, shootPoint, allowHardTurn: true);
+                    : shootLogic.GetTarget() ?? goalEnemy.GetBodyPartPosition();
+            if (!CombatAttackMoveLook.TryLookPointFacing(BotOwner, shootPoint, allowHardTurn: true))
+            {
+                StopCombatShooting();
+                return;
+            }
 
             // Dogfight tends to happen inside the squad. Friendly lane safety is the hard stop before
             // either our fast-fire helper or the vanilla shoot node can press the trigger.
@@ -495,11 +499,11 @@ namespace pitTeam.BigBrain.Actions
             return goalEnemy?.Person?.HealthController?.IsAlive == true;
         }
 
-        private void MaintainThreatFacing(EnemyInfo goalEnemy, Vector3 shootPoint, bool allowHardTurn)
+        private void MaintainThreatFacing(EnemyInfo goalEnemy)
         {
-            if (!CombatAttackMoveLook.TryLookThreatFacing(BotOwner, goalEnemy, allowHardTurn))
+            if (!CombatAttackMoveLook.TryLookThreatFacing(BotOwner, goalEnemy, allowHardTurn: true))
             {
-                BotOwner.Steering.LookToPoint(shootPoint);
+                CombatAttackMoveLook.LookAlongMovementOrLevel(BotOwner);
             }
         }
 
@@ -511,30 +515,13 @@ namespace pitTeam.BigBrain.Actions
                 lookDirection = BotOwner.Transform.forward;
             }
 
-            Vector3 toTarget = point - BotOwner.Position;
+            Vector3 toTarget = point - CombatAttackMoveLook.GetLookOrigin(BotOwner);
             if (lookDirection.sqrMagnitude <= 0.001f || toTarget.sqrMagnitude <= 0.001f)
             {
                 return 180f;
             }
 
             return Vector3.Angle(lookDirection, toTarget);
-        }
-
-        private static Vector3 GetDogFightThreatLookPoint(EnemyInfo goalEnemy)
-        {
-            Vector3 bodyPoint = goalEnemy.GetBodyPartPosition();
-            if (FollowerCombatCommon.IsFinite(bodyPoint))
-            {
-                return bodyPoint;
-            }
-
-            Vector3 currentPosition = FollowerCombatCommon.GetEnemyCurrentPosition(goalEnemy) + Vector3.up * 0.8f;
-            if (FollowerCombatCommon.IsFinite(currentPosition))
-            {
-                return currentPosition;
-            }
-
-            return goalEnemy.EnemyLastPositionReal + Vector3.up * 0.8f;
         }
 
         private enum DogFightMoveStatus

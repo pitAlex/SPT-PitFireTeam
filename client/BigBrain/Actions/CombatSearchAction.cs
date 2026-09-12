@@ -184,7 +184,10 @@ namespace pitTeam.BigBrain.Actions
             BotOwner.SetTargetMoveSpeed(1f);
             EnforceCloseThreatStandingPose("search", reason, goalEnemy);
             BotOwner.SetPose(1f);
-            BotOwner.Steering.LookToPoint(goalEnemy!.GetBodyPartPosition());
+            if (!CombatAttackMoveLook.TryLookThreatFacing(BotOwner, goalEnemy, allowHardTurn: true))
+            {
+                CombatAttackMoveLook.LookAlongMovementOrLevel(BotOwner);
+            }
             StopCombatShooting();
             return true;
         }
@@ -251,26 +254,37 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            Vector3 dest = committedDestination ??
-                           (BotOwner.Memory.HaveEnemy ? BotOwner.Memory.GoalEnemy.CurrPosition : BotOwner.Position);
+            bool hasThreat = CombatAttackMoveLook.TryGetReliableThreatLookPoint(
+                BotOwner, BotOwner.Memory?.GoalEnemy, out Vector3 threatPoint);
+            Vector3 dest = hasThreat
+                ? threatPoint
+                : committedDestination ?? BotOwner.Mover.TargetPoint ?? BotOwner.Position;
+            Vector3 toDestination = dest - BotOwner.Position;
+            toDestination.y = 0f;
+            if (!hasThreat && toDestination.sqrMagnitude <= 4f)
+            {
+                CombatAttackMoveLook.LookAlongMovementOrLevel(BotOwner);
+                return;
+            }
             Vector3 botPos = BotOwner.GetPlayer.Transform.position;
             Vector3 corner = BotOwner.Mover.CurrentCornerPoint;
 
             if (Utils.Covers.IsPointBetween(corner, botPos, dest))
             {
                 Vector3 cornerDirection = corner - botPos;
+                cornerDirection.y = 0f;
                 if (IsCornerLookAlignedWithThreat(cornerDirection, dest - botPos))
                 {
                     baseLogic._botObserveData.SetVectorToLook(cornerDirection);
                 }
                 else
                 {
-                    baseLogic._botObserveData.SetVectorToLook(dest - botPos);
+                    baseLogic._botObserveData.SetVectorToLook(new Vector3(dest.x - botPos.x, 0f, dest.z - botPos.z));
                 }
             }
             else
             {
-                baseLogic._botObserveData.SetVectorToLook(dest - botPos);
+                baseLogic._botObserveData.SetVectorToLook(new Vector3(dest.x - botPos.x, 0f, dest.z - botPos.z));
             }
             baseLogic._botObserveData.Update();
         }

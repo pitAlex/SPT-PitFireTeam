@@ -370,7 +370,7 @@ namespace pitTeam.BigBrain.Actions
 
             BotOwner.LookData.SetLookPointByHearing(null);
             CommitLookMode(RunLookMode.KeepCurrent);
-            BotOwner.Steering.LookToDirection(BotOwner.LookDirection);
+            CombatAttackMoveLook.LookAlongMovementOrLevel(BotOwner);
         }
 
         private bool TryApplyCommittedLook(EnemyInfo goalEnemy, bool canRun)
@@ -413,9 +413,7 @@ namespace pitTeam.BigBrain.Actions
                     return false;
 
                 case RunLookMode.KeepCurrent:
-                    BotOwner.LookData.SetLookPointByHearing(null);
-                    BotOwner.Steering.LookToDirection(BotOwner.LookDirection);
-                    return true;
+                    return false;
             }
 
             return false;

@@ -433,6 +433,12 @@ namespace pitTeam.BigBrain.Actions
                     out Vector3 lookPoint))
             {
                 BotOwner.Steering.LookToPoint(lookPoint);
+                return;
+            }
+
+            if (!CombatAttackMoveLook.TryLookThreatFacing(BotOwner, goalEnemy, allowHardTurn: true))
+            {
+                CombatAttackMoveLook.LookAlongMovementOrLevel(BotOwner);
             }
         }
     }

@@ -117,7 +117,7 @@ namespace pitTeam.Modules
                     raidId = currentRaidId,
                     locationId = currentLocationId,
                     file = currentFilePath,
-                    schemaVersion = 11,
+                    schemaVersion = 12,
                     snapshotIntervalMs = GetSnapshotIntervalMs(),
                     followerWeaponActivityProbeMs = Mathf.RoundToInt(FollowerWeaponActivityProbeSeconds * 1000f),
                     goalEnemyTransitionCoalesceMs = Mathf.RoundToInt(GoalEnemyTransitionCoalesceSeconds * 1000f)
@@ -1244,6 +1244,7 @@ namespace pitTeam.Modules
                 botState = bot.BotState.ToString(),
                 position = CreateVector(currentPosition),
                 lookDirection = CreateVector(lookDirection),
+                lookControl = CreateLookControlSnapshot(bot),
                 currentMoveTarget = hasGoToPointTarget ? CreateVector(goToPointTarget) : null,
                 moveTargets = new
                 {
@@ -1463,6 +1464,26 @@ namespace pitTeam.Modules
             };
         }
 
+        private static object CreateLookControlSnapshot(BotOwner bot)
+        {
+            Vector3 direction = bot.LookDirection;
+            BotSteering? steering = bot.Steering;
+            return new
+            {
+                direction = CreateVector(direction),
+                pitchDegrees = SanitizeFloat(Mathf.Atan2(direction.y, new Vector2(direction.x, direction.z).magnitude) * Mathf.Rad2Deg),
+                steeringMode = steering?.SteeringMode.ToString(),
+                requestedPoint = steering?.SteeringMode == EBotSteering.ToCustomPoint
+                    ? CreateVector(steering._customPoint)
+                    : null,
+                requestedDirection = steering?.SteeringMode == EBotSteering.Direction
+                    ? CreateVector(steering._customDirection)
+                    : null,
+                steeringDirection = steering != null ? CreateVector(steering.LookDirection) : null,
+                weaponOrigin = bot.WeaponRoot != null ? CreateVector(bot.WeaponRoot.position) : null
+            };
+        }
+
         private static object CreateCombatActivitySnapshot(BotOwner bot)
         {
             var weaponManager = bot.WeaponManager;
@@ -1487,6 +1508,8 @@ namespace pitTeam.Modules
                     ? SanitizeFloat(currentAiming.LastDist2Target)
                     : null,
                 aimPlan = CreateAimPlanSnapshot(currentAiming),
+                realAimTarget = currentAiming != null ? CreateVector(currentAiming.RealTargetPoint) : null,
+                finalAimTarget = currentAiming != null ? CreateVector(currentAiming.EndTargetPoint) : null,
                 reloading = weaponManager?.Reload?.Reloading == true,
                 weaponReady = weaponManager?.IsWeaponReady == true,
                 haveBullets = weaponManager?.HaveBullets == true
