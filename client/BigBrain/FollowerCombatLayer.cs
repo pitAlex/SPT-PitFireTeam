@@ -74,7 +74,7 @@ namespace pitTeam.BigBrain
             }
 
             FollowerRecovery.CheckReloadTimeout(BotOwner);
-            if (pitFireTeam.UseSainFollowerCombat)
+            if (pitFireTeam.UseSainFollowerCombat(BotOwner))
             {
                 return false;
             }
@@ -912,7 +912,7 @@ namespace pitTeam.BigBrain
         private static FollowerCombatLogicBase Create(BotOwner botOwner)
         {
             BotFollowerPlayer? follower = BossPlayers.Instance?.GetFollower(botOwner);
-            FollowerCombatTactic tactic = follower?.CombatTactic ?? FollowerCombatTactic.Balanced;
+            FollowerCombatTactic tactic = follower?.CoreCombatTactic ?? FollowerCombatTactic.Balanced;
             return tactic switch
             {
                 FollowerCombatTactic.Balanced => new FollowerPmcCombatLogic(botOwner),

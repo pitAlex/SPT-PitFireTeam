@@ -823,7 +823,7 @@ namespace pitTeam.BigBrain
                 }
 
                 BotFollowerPlayer? followerData = BossPlayers.Instance?.GetFollower(follower);
-                if (followerData == null || followerData.CombatTactic != FollowerCombatTactic.Balanced)
+                if (followerData == null || followerData.CoreCombatTactic != FollowerCombatTactic.Balanced)
                 {
                     continue;
                 }

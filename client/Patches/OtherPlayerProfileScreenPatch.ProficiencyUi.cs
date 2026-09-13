@@ -330,7 +330,7 @@ namespace pitTeam.Patches
                 return;
             }
 
-            SetProficiencyAggressionForTactic(IsMarksmanTactic(ActiveProfileTactic));
+            SetProficiencyAggressionForTactic(ActiveProfileTactic);
             ActiveProfileProficiency.SetVisionPercent(FollowerProficiencyModifierValues.DefaultPercent);
             ActiveProfileProficiency.SetPrecisionPercent(FollowerProficiencyModifierValues.DefaultPercent);
             ActiveProfileProficiency.SetReactionPercent(FollowerProficiencyModifierValues.DefaultPercent);

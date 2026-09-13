@@ -61,3 +61,8 @@ types
 *.csproj.lscache
 /video/
 /server/refs/
+
+# Machine-local SAIN addon references and build outputs
+/addon/refs/
+/addon/bin/
+/addon/obj/

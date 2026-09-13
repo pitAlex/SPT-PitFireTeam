@@ -92,7 +92,7 @@ namespace pitTeam.Components {
 __FOLLOWER__
     }
 }
-namespace pitTeam { public static class pitFireTeam { public static bool UseSainFollowerCombat,IsSAINInstalled; } }
+namespace pitTeam { public static class pitFireTeam { public static bool AddonCombatEnabled,IsSAINInstalled; public static bool UseSainFollowerCombat(BotOwner owner)=>AddonCombatEnabled; } }
 namespace pitTeam.Modules {
     public static class SainAddonBridge { public static bool HasRuntimeCallbacks=true; public static bool Ready; public static bool TryIsReadyForPatrolAfterCombat(BotOwner b,out bool ready){ready=Ready;return true;} }
     public static class Logger { public static void LogError(string s){} public static void LogError(Exception e){throw e;} }
@@ -242,13 +242,13 @@ public static class HandoffChecks {
         bot.Memory.GoalEnemy=live;
         pitTeam.Utils.FollowerRecovery.ClearInvalidGoalEnemy(bot);
         Check(bot.Memory.GoalEnemy==live,"CleanupPreservesLivingGoal");
-        bot.Memory.GoalEnemy=null;pitTeam.pitFireTeam.UseSainFollowerCombat=true;
+        bot.Memory.GoalEnemy=null;pitTeam.pitFireTeam.AddonCombatEnabled=true;
         Check(!patrol.IsActive(),"AddonUnavailableReadiness_StillFailsClosed");
         pitTeam.Modules.SainAddonBridge.Ready=true;
         Check(patrol.IsActive(),"AddonReady_StillAllowsPatrol");
         bot.Memory.GoalEnemy=dead;pitTeam.Utils.FollowerRecovery.ClearInvalidGoalEnemy(bot);
         Check(bot.Memory.GoalEnemy==dead,"CoreCleanupDoesNotOwnAddonGoal");
-        pitTeam.pitFireTeam.UseSainFollowerCombat=false;
+        pitTeam.pitFireTeam.AddonCombatEnabled=false;
         bot.BotState=EBotState.Inactive;
         Check(!patrol.IsActive(),"InactiveFollower_StillRejected");
         return count;

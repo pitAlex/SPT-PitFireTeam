@@ -2,6 +2,10 @@
 
 Last updated: 2026-08-30
 
+## SAIN addon phase 1 (2026-09-13)
+
+SainMan selects two addon replicas of SAIN PMC solo/squad combat. Solo contains no follower command additions. Squad decisions and leader-dependent actions are adapted to the human player while preserving native policy. The prior command-driven solo regroup/tactical-point extension is removed. Peace requests remain core-owned; custom combat command translation is deferred. Native automatic regroup selection remains disabled as in SAIN 4.5.1. Historical addon command descriptions below concern the removed implementation and do not imply current parity. See SAIN-Addon-Phase1.md.
+
 ## Scope
 
 This document summarizes boss-issued follower commands as implemented in the client runtime.
@@ -20,7 +24,7 @@ Authoritative files:
 - `client/BigBrain/FollowerCombatRegroupObjective.cs` - core combat regroup.
 - `client/BigBrain/FollowerCombatSuppressionObjective.cs` - core ordered suppression.
 - `client/BigBrain/FollowerCombatNeedSniperObjective.cs` - core marksman support order.
-- `addon/SAINFollowerCombatLayer.cs` - optional SAIN addon regroup/hold-override handling.
+- `client/Modules/SainPlayerSquadBridge.cs` - current addon leadership service; no command execution.
 - `client/Patches/BotReceiverPhraseOverridePatch.cs` and `client/Patches/BotReceiverGestureOverridePatch.cs` - vanilla receiver suppression for mod-owned commands.
 - `client/Patches/GestureMenuPatch.cs` - command menu injection/localization/filtering.
 
@@ -45,10 +49,10 @@ There are three execution paths:
    - Combat gesture commands (`CombatComeToBossCover`, `CombatMoveToPointTactical`) break hold commitments and ordinary combat movement, while protected movement such as heal relocation is allowed to finish.
 
 3. **SAIN addon combat**
-   - Only active when SAIN plugin and the pitFireTeam SAIN addon are both present.
-   - The addon's sole purpose is to provide a custom follower combat brain based on SAIN's Squad layer, with the human player as leader. Command handling here is bridge glue that translates pitFireTeam orders into that layer; the addon may implement custom SAIN actions, but it must not own general compatibility patches or overwrite shared/general SAIN objects or methods.
-   - `RegroupNearBoss` is seen by `SAINFollowerCombatLayer` and translated into SAIN `ESquadDecision.Regroup`.
-   - Temporary `HoldPosition` combat aggression override is also treated as regroup/protection intent by the SAIN addon.
+   - Ready SainMan followers use the separate solo and squad combat replicas.
+   - Phase 1 preserves native solo behavior and adapts squad leadership to the human player.
+   - Custom command translation is deferred. The former command-to-regroup and hold/protection addon paths were removed.
+   - General compatibility remains core-owned.
 
 ## Command State
 
@@ -60,7 +64,7 @@ There are three execution paths:
 | `MoveToPoint` | sampled world/nav point | infinite | `GestureCommandAction` |
 | `ComeCloser` | boss position snapshot owned by action | timed unless resuming a hold | `GestureCommandAction` |
 | `ContactApproach` | boss position and Contact bearing snapshots | timed | `GestureCommandAction` |
-| `RegroupNearBoss` | normal or tight mode | timed | `GestureCommandAction`, core combat regroup, or SAIN addon |
+| `RegroupNearBoss` | normal or tight mode | timed | `GestureCommandAction` or core combat regroup; addon command translation deferred |
 | `TakeLootItem` | reserved current loot item, not `_commandTarget` | timed | `GestureCommandAction` |
 | `OpenDoor` | reserved current door, not `_commandTarget` | timed | `GestureCommandAction` |
 | `PushEnemy` | current combat enemy | consumed into objective | core ordered-push objective |
@@ -633,7 +637,7 @@ Behavior:
 
 SAIN addon:
 
-- `SAINFollowerCombatLayer` treats the temporary override as regroup/protection intent.
+- Phase 1 does not translate the temporary override into a custom squad objective.
 
 Vanilla handling:
 
@@ -718,7 +722,7 @@ Core behavior:
 
 SAIN addon:
 
-- `SAINFollowerCombatLayer.TryHandleRegroupCommand(...)` latches the command briefly and returns `ESquadDecision.Regroup`.
+- Phase 1 does not consume this command. The native squad Regroup action is replicated with a player destination, but native automatic regroup selection remains disabled as upstream.
 
 ### Suppress Enemy
 

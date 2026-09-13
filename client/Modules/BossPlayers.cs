@@ -217,6 +217,7 @@ namespace pitTeam.Modules
                     RemoveBossPlayer(key);
                 }
             }
+            SainPlayerSquadBridge.ClearRaid();
             _bosses.Clear();
             _removedBosses.Clear();
             _followers.Clear();

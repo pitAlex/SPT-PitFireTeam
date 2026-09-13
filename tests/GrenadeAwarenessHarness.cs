@@ -72,7 +72,7 @@ namespace EFT {
     }
     public partial class BotOwner {
         public string ProfileId=Guid.NewGuid().ToString();
-        public bool IsDead,IsFollower=true;
+        public bool IsDead,IsFollower=true; public bool? AddonCombatOverride;
         public EBotState BotState=EBotState.Active;
         public Player GetPlayer=new(){IsAI=true};public BotGroup BotsGroup=new();public BotSettings Settings=new();
         public BotBewareGrenade BewareGrenade;
@@ -124,7 +124,7 @@ public static class AIGrenadeHelper {
 namespace pitTeam {
     public static class pitFireTeam {
         public static bool IsSAINInstalled=true,UseSainFollowerCombat;
-        public static bool ShouldDisableSainForFollowers=>IsSAINInstalled&&!UseSainFollowerCombat;
+        public static bool ShouldDisableSainForFollower(BotOwner owner)=>IsSAINInstalled&&!(owner.AddonCombatOverride??UseSainFollowerCombat);
     }
 }
 namespace pitTeam.Patches {
@@ -210,6 +210,13 @@ public static class GrenadeChecks {
         Check(f.bot.BewareGrenade.Notifications==1,"ordinary_vanilla_bot_unchanged");
         f=Fresh();pitTeam.pitFireTeam.UseSainFollowerCombat=true;Dispatch(f);
         Check(f.bot.BewareGrenade.Notifications==0&&f.tracker.TrackCalls==1,"addon_keeps_SAIN_routing");
+        f=Fresh();f.bot.AddonCombatOverride=true;
+        var mixedCore=new BotOwner{AddonCombatOverride=false};f.controller.Bots.BotOwners.Add(mixedCore);
+        BossPlayers.Followers.Add(new(){Bot=mixedCore});SAIN.SAINEnableClass.Bots[mixedCore.ProfileId]=new(){BotOwner=mixedCore};
+        var mixedTracker=new SAIN.SAINComponent.Classes.WeaponFunction.GrenadeReactionClass{BotOwner=mixedCore};var mixedGrenade=new Grenade();
+        Dispatch(f,grenade:mixedGrenade);mixedTracker.EnemyGrenadeThrown(mixedGrenade,default,mixedGrenade.ProfileId);
+        Check(f.bot.BewareGrenade.Notifications==0&&f.tracker.TrackCalls==1,"mixed_squad_SainMan_keeps_its_SAIN_grenade_routing");
+        Check(mixedCore.BewareGrenade.Notifications==1&&mixedTracker.TrackCalls==0,"mixed_squad_core_tactic_keeps_native_grenade_routing");
         f=Fresh();Dispatch(f,grenade:new(){ProfileId=f.bot.ProfileId});Check(f.bot.BewareGrenade.Notifications==1,"own_grenade_delivered_to_native_policy");
         f=Fresh();Dispatch(f,grenade:new(){ProfileId="boss"});Check(f.bot.BewareGrenade.Notifications==1,"boss_grenade_delivered_to_native_policy");
         f=Fresh();f.bot.IsDead=true;Dispatch(f);Check(f.bot.BewareGrenade.Notifications==0,"dead_follower");

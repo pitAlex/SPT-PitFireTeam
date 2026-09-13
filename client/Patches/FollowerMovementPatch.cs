@@ -21,7 +21,7 @@ namespace pitTeam.Patches
         {
             try
             {
-                if (__instance?._owner == null || !BossPlayers.IsFollower(__instance._owner))
+                if (__instance?._owner == null || !BossPlayers.IsFollower(__instance._owner) || pitFireTeam.UseSainFollowerCombat(__instance._owner))
                 {
                     return true;
                 }

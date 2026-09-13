@@ -395,6 +395,7 @@ namespace pitTeam.Patches
                     {
                         new FriendlyTeammateTacticOption { Id = "Rifleman", Name = "Rifleman" },
                         new FriendlyTeammateTacticOption { Id = "Marksman", Name = "Marksman" },
+                        new FriendlyTeammateTacticOption { Id = "SainMan", Name = "SainMan" },
                     };
 
             int tacticIdSeed = 0;
@@ -408,7 +409,7 @@ namespace pitTeam.Patches
                 }
 
                 string tacticValue = tactic.Id;
-                if (IsBetaHiddenTactic(tacticValue))
+                if (IsUnavailableTactic(tacticValue))
                 {
                     continue;
                 }
@@ -463,7 +464,7 @@ namespace pitTeam.Patches
                         EnsureBodySuccess(responseJson);
                         Modules.Logger.LogInfo($"[UI] Persisted teammate tactic '{tacticValue}' for '{profile.AccountId}'.");
 
-                        SetProficiencyAggressionForTactic(IsMarksmanTactic(tacticValue));
+                        SetProficiencyAggressionForTactic(tacticValue);
                         MarkSquadRosterDirty(profile?.AccountId);
                         RefreshPlayerVisualization(profile, inventoryController, session, window);
                     }
@@ -557,9 +558,10 @@ namespace pitTeam.Patches
             }
         }
 
-        private static bool IsBetaHiddenTactic(string tactic)
+        private static bool IsUnavailableTactic(string tactic)
         {
-            return string.Equals(tactic, "protector", StringComparison.OrdinalIgnoreCase);
+            return string.Equals(tactic, "protector", StringComparison.OrdinalIgnoreCase) ||
+                (string.Equals(tactic, "SainMan", StringComparison.OrdinalIgnoreCase) && !pitFireTeam.IsSainManTacticAvailable);
         }
 
         private static void RefreshPlayerVisualization(ResultProfile profile, InventoryController inventoryController, EFT.IEftSession session, InventoryPlayerModelWithStatsWindow window)

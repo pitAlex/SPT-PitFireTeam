@@ -63,7 +63,7 @@ namespace pitTeam.Patches
         private static void RestoreNativeNotification(
             Grenade grenade, Vector3 position, Vector3 force, float mass, bool __runOriginal)
         {
-            if (__runOriginal || !pitFireTeam.ShouldDisableSainForFollowers ||
+            if (__runOriginal || !pitFireTeam.IsSAINInstalled ||
                 grenade == null || BossPlayers.Instance == null || _hasSainBot == null)
             {
                 return;
@@ -76,7 +76,7 @@ namespace pitTeam.Patches
                 for (int i = 0; i < followers.Count; i++)
                 {
                     BotOwner? bot = followers[i]?.GetBot();
-                    if (bot == null || bot.IsDead || bot.BotState != EBotState.Active ||
+                    if (bot == null || !pitFireTeam.ShouldDisableSainForFollower(bot) || bot.IsDead || bot.BotState != EBotState.Active ||
                         bot.GetPlayer == null || bot.BewareGrenade == null || bot.BotsGroup == null || bot.Settings == null)
                     {
                         continue;
@@ -116,7 +116,7 @@ namespace pitTeam.Patches
                 // Keep one notification path while native avoidance owns the follower.
                 BotOwner owner = _getOwner(__instance);
                 if (FollowerTripwireAwarenessPatch.IsKnown(owner, grenade)) return false;
-                return !pitFireTeam.ShouldDisableSainForFollowers || !BossPlayers.IsFollower(owner);
+                return !pitFireTeam.ShouldDisableSainForFollower(owner) || !BossPlayers.IsFollower(owner);
             }
             catch (Exception ex)
             {

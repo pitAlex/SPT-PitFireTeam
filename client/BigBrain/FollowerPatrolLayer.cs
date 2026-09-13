@@ -11,19 +11,14 @@ using UnityEngine;
 
 namespace pitTeam.BigBrain
 {
-    internal static class FollowerLayerRegistry
+    public static class FollowerLayerRegistry
     {
         private static bool initialized;
         private const int FollowerRequestLayerPriority = 73;
         private const int FollowerLayerPriority = 71;
         private const int FollowerCombatLayerPriority = 72;
 
-        public static void Init()
-        {
-            if (initialized) return;
-            initialized = true;
-
-            List<string> brains = new List<string>
+        public static List<string> GetSupportedBrains() => new List<string>
             {
                 "PmcBear",
                 "PmcUsec",
@@ -36,6 +31,13 @@ namespace pitTeam.BigBrain
                 "BigPipe",
                 "BirdEye"
             };
+
+        public static void Init()
+        {
+            if (initialized) return;
+            initialized = true;
+
+            List<string> brains = GetSupportedBrains();
 
             List<string> pmcCombatBrains = new List<string>
             {
@@ -204,13 +206,13 @@ namespace pitTeam.BigBrain
 
             // Core combat may already have released while a squadmate still has contact.
             // Patrol owns an explicit wait in that gap; only normal following requires readiness.
-            return !pitFireTeam.UseSainFollowerCombat || followerData.IsReadyForPatrolAfterCombat();
+            return !pitFireTeam.UseSainFollowerCombat(BotOwner) || followerData.IsReadyForPatrolAfterCombat();
         }
 
         private bool ShouldWaitForCombatReadiness()
         {
             followerData ??= BossPlayers.Instance?.GetFollower(BotOwner);
-            return !pitFireTeam.UseSainFollowerCombat &&
+            return !pitFireTeam.UseSainFollowerCombat(BotOwner) &&
                    followerData != null &&
                    !Utils.FollowerMedical.IsUsingMedical(BotOwner) &&
                    !isHealing &&

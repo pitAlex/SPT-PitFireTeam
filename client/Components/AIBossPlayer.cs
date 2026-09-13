@@ -1175,12 +1175,12 @@ namespace pitTeam.Components
 
         private static bool TryResetSainDecisionState(BotOwner follower)
         {
-            if (!pitFireTeam.UseSainFollowerCombat) return false;
+            if (!pitFireTeam.UseSainFollowerCombat(follower)) return false;
             if (follower == null) return false;
 
             try
             {
-                if (!SainAddonBridge.IsFollowerCombatEnabled)
+                if (!SainAddonBridge.IsFollowerCombatEnabled(follower))
                 {
                     return false;
                 }
@@ -1747,7 +1747,7 @@ namespace pitTeam.Components
 
                     ClearEnemyStateForAttention(follower, clearedGroupIds);
 
-                    if (pitFireTeam.UseSainFollowerCombat)
+                    if (pitFireTeam.UseSainFollowerCombat(follower))
                     {
                         try
                         {
@@ -2005,7 +2005,6 @@ namespace pitTeam.Components
 
             bool combatRegroupContext = IsCombatRegroupContext();
             Vector3 bossPos = requester.Position;
-            bool useSainRegroupRoute = pitFireTeam.ShouldUseSainRegroupRoute(combatRegroupContext);
             foreach (BotOwner follower in Followers)
             {
                 if (follower == null || follower.IsDead || follower.BotState != EBotState.Active) continue;
@@ -2021,7 +2020,7 @@ namespace pitTeam.Components
                     followerData.SetCombatRegroupBossAnchor(true);
                 }
 
-                if (useSainRegroupRoute)
+                if (pitFireTeam.ShouldUseSainRegroupRoute(follower, combatRegroupContext))
                 {
                     // SAIN combat regroup path: clear/prepare SAIN decision state, then mark a regroup command
                     // for the addon combat layer to pick up instead of the core request movement action.
@@ -4877,7 +4876,7 @@ namespace pitTeam.Components
             }
 
             ReportEnemyToIdleFollowers();
-            if (pitFireTeam.UseSainFollowerCombat)
+            if (pitFireTeam.IsSainFollowerCombatAvailable || SainPlayerSquadBridge.IsEnabled)
             {
                 SainAddonBridge.RaiseBossGroupStaticUpdate(this);
             }

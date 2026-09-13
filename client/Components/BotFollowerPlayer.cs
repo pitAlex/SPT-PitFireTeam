@@ -53,6 +53,7 @@ namespace pitTeam.Components
         Balanced = 0,
         Marksman = 1,
         Protector = 2,
+        SainMan = 3,
     }
 
     public class BotFollowerPlayer
@@ -287,6 +288,10 @@ namespace pitTeam.Components
                     PickupIndependence01);
             }
         }
+
+        // SainMan keeps its persisted identity while the core brain supplies the test/fallback combat.
+        public FollowerCombatTactic CoreCombatTactic => CombatTactic == FollowerCombatTactic.SainMan
+            ? FollowerCombatTactic.Balanced : CombatTactic;
 
         public FollowerCombatTactic CombatTactic
         {
@@ -2354,6 +2359,9 @@ namespace pitTeam.Components
 
             switch (tactic.Trim().ToLowerInvariant())
             {
+                case "sainman":
+                    return FollowerCombatTactic.SainMan;
+
                 case "marksman":
                     return FollowerCombatTactic.Marksman;
 
@@ -2495,7 +2503,7 @@ namespace pitTeam.Components
                 return false;
             }
 
-            if (!pitFireTeam.UseSainFollowerCombat)
+            if (!pitFireTeam.UseSainFollowerCombat(_bot))
             {
                 ClearTemporaryCombatAggressionOverrideAfterCombatCooldown();
                 return true;
@@ -2822,7 +2830,7 @@ namespace pitTeam.Components
                     _bot.Mover.Sprint(false, false);
                 }
 
-                if (pitFireTeam.UseSainFollowerCombat)
+                if (pitFireTeam.UseSainFollowerCombat(_bot))
                 {
                     SainAddonBridge.TryResetDecisionState(_bot);
                     SainAddonBridge.TryForceReleaseFollowerCombatState(_bot);

@@ -1,6 +1,8 @@
+using System;
 using BepInEx;
+using DrakiaXYZ.BigBrain.Brains;
+using pitTeam.BigBrain;
 using pitTeam.Modules;
-using HarmonyLib;
 
 namespace pitTeam.SAINAddon
 {
@@ -10,39 +12,32 @@ namespace pitTeam.SAINAddon
     [BepInDependency("xyz.drakia.bigbrain", BepInDependency.DependencyFlags.HardDependency)]
     public class SAINAddonPlugin : BaseUnityPlugin
     {
-        internal static SAINAddonPlugin? Instance { get; private set; }
-
         private void Awake()
         {
-            Instance = this;
-            var harmony = new Harmony("xyz.pit.fireteam.sainaddon");
-            Logger.LogInfo("[Init] pitFireTeam SAIN addon loaded.");
-
-            SainAddonBridge.RegisterRuntimeCallbacks(
-                SAINFollowerRuntimeBridge.IsReadyForPatrolAfterCombat,
-                SAINFollowerRuntimeBridge.ForceReleaseFollowerCombatState,
-                SAINFollowerRuntimeBridge.TryResetFollowerDecisionState);
-
-            // Register lifecycle event handler for follower cache management.
-            SainAddonBridge.OnFollowerLifecycleEvent += SAINFollowerRecoilPatch.OnFollowerLifecycleEvent;
-            SainAddonBridge.OnFollowerLifecycleEvent += SAINFollowerRuntimeBridge.OnFollowerLifecycleEvent;
-            SainAddonBridge.OnBossGroupStaticUpdate += SAINFollowerRuntimeBridge.OnBossGroupStaticUpdate;
-
-            // Placeholder bootstrap for future SAIN regroup layer/action registration.
-            // Keep this as the dedicated integration point so core plugin can remain vanilla-safe.
-            SAINRegroupBootstrap.Initialize(harmony, Logger);
+            try
+            {
+                SAINActionTypes.Validate();
+                SainManPersonality.Initialize();
+                if (!SainPlayerSquadBridge.Enable()) throw new InvalidOperationException("Player squad bridge is unavailable.");
+                if (!SainSquadDecisionBridge.IsAvailable) throw new InvalidOperationException("Player squad decision bridge is unavailable.");
+                var brains = FollowerLayerRegistry.GetSupportedBrains();
+                BrainManager.AddCustomLayer(typeof(SAINFollowerSquadCombatLayer), brains, SAINFollowerSquadCombatLayer.LayerPriority);
+                BrainManager.AddCustomLayer(typeof(SAINFollowerSoloCombatLayer), brains, SAINFollowerSoloCombatLayer.LayerPriority);
+                SAINFollowerRuntime.Enable();
+                Logger.LogInfo("[Init] SainMan selects addon SAIN solo/squad combat replicas, Chad personality, and player squad leadership. Other tactics retain core combat.");
+            }
+            catch (Exception ex)
+            {
+                SAINFollowerRuntime.Disable();
+                SainPlayerSquadBridge.Disable();
+                Logger.LogError($"[Init] SAIN addon unavailable; core fallback remains enabled. {ex}");
+            }
         }
 
         private void OnDestroy()
         {
-            SainAddonBridge.UnregisterRuntimeCallbacks(
-                SAINFollowerRuntimeBridge.IsReadyForPatrolAfterCombat,
-                SAINFollowerRuntimeBridge.ForceReleaseFollowerCombatState,
-                SAINFollowerRuntimeBridge.TryResetFollowerDecisionState);
-
-            SainAddonBridge.OnFollowerLifecycleEvent -= SAINFollowerRecoilPatch.OnFollowerLifecycleEvent;
-            SainAddonBridge.OnFollowerLifecycleEvent -= SAINFollowerRuntimeBridge.OnFollowerLifecycleEvent;
-            SainAddonBridge.OnBossGroupStaticUpdate -= SAINFollowerRuntimeBridge.OnBossGroupStaticUpdate;
+            SAINFollowerRuntime.Disable();
+            SainPlayerSquadBridge.Disable();
         }
     }
 }

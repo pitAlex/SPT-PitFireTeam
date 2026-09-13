@@ -6,32 +6,42 @@ namespace pitTeam.Modules
 {
     public static class SainAddonBridge
     {
+        private static Func<BotOwner, bool>? _isReadyForCombat;
+        public static bool IsCombatReady(BotOwner owner) => _isReadyForCombat?.Invoke(owner) == true;
         private static Func<BotOwner, bool>? _isReadyForPatrolAfterCombat;
         private static Action<BotOwner>? _forceReleaseFollowerCombatState;
         private static Func<BotOwner, bool>? _tryResetFollowerDecisionState;
 
-        public static bool IsFollowerCombatEnabled => pitFireTeam.UseSainFollowerCombat;
+        public static bool IsSainManSelected(BotOwner botOwner) =>
+            pitFireTeam.IsSainManTacticAvailable && botOwner != null &&
+            BossPlayers.Instance?.GetFollower(botOwner)?.CombatTactic == FollowerCombatTactic.SainMan;
+
+        public static bool IsFollowerCombatEnabled(BotOwner botOwner) => pitFireTeam.UseSainFollowerCombat(botOwner);
 
         public static bool HasRuntimeCallbacks =>
             _isReadyForPatrolAfterCombat != null &&
             _forceReleaseFollowerCombatState != null &&
-            _tryResetFollowerDecisionState != null;
+            _tryResetFollowerDecisionState != null && _isReadyForCombat != null;
 
         public static void RegisterRuntimeCallbacks(
             Func<BotOwner, bool> isReadyForPatrolAfterCombat,
             Action<BotOwner> forceReleaseFollowerCombatState,
-            Func<BotOwner, bool> tryResetFollowerDecisionState)
+            Func<BotOwner, bool> tryResetFollowerDecisionState,
+            Func<BotOwner, bool> isReadyForCombat)
         {
             _isReadyForPatrolAfterCombat = isReadyForPatrolAfterCombat;
             _forceReleaseFollowerCombatState = forceReleaseFollowerCombatState;
             _tryResetFollowerDecisionState = tryResetFollowerDecisionState;
+            _isReadyForCombat = isReadyForCombat;
         }
 
         public static void UnregisterRuntimeCallbacks(
             Func<BotOwner, bool> isReadyForPatrolAfterCombat,
             Action<BotOwner> forceReleaseFollowerCombatState,
-            Func<BotOwner, bool> tryResetFollowerDecisionState)
+            Func<BotOwner, bool> tryResetFollowerDecisionState,
+            Func<BotOwner, bool> isReadyForCombat)
         {
+            if (_isReadyForCombat == isReadyForCombat) _isReadyForCombat = null;
             if (_isReadyForPatrolAfterCombat == isReadyForPatrolAfterCombat)
             {
                 _isReadyForPatrolAfterCombat = null;
@@ -51,7 +61,7 @@ namespace pitTeam.Modules
         public static bool TryIsReadyForPatrolAfterCombat(BotOwner botOwner, out bool ready)
         {
             ready = false;
-            if (!IsFollowerCombatEnabled || _isReadyForPatrolAfterCombat == null)
+            if (!IsFollowerCombatEnabled(botOwner) || _isReadyForPatrolAfterCombat == null)
             {
                 return false;
             }
@@ -62,7 +72,7 @@ namespace pitTeam.Modules
 
         public static bool TryForceReleaseFollowerCombatState(BotOwner botOwner)
         {
-            if (!IsFollowerCombatEnabled || _forceReleaseFollowerCombatState == null)
+            if (!IsFollowerCombatEnabled(botOwner) || _forceReleaseFollowerCombatState == null)
             {
                 return false;
             }
@@ -73,7 +83,7 @@ namespace pitTeam.Modules
 
         public static bool TryResetDecisionState(BotOwner botOwner)
         {
-            if (!IsFollowerCombatEnabled || _tryResetFollowerDecisionState == null)
+            if (!IsFollowerCombatEnabled(botOwner) || _tryResetFollowerDecisionState == null)
             {
                 return false;
             }
@@ -105,7 +115,7 @@ namespace pitTeam.Modules
         /// </summary>
         public static void RaiseBossGroupStaticUpdate(pitAIBossPlayer boss)
         {
-            if (!IsFollowerCombatEnabled)
+            if (!pitFireTeam.IsSainFollowerCombatAvailable && !SainPlayerSquadBridge.IsEnabled)
             {
                 return;
             }

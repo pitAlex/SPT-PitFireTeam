@@ -29,7 +29,7 @@ namespace pitTeam.Patches
                 BotOwner? botOwner = __instance?._owner;
                 if (botOwner == null ||
                     !BossPlayers.IsFollower(botOwner) ||
-                    pitFireTeam.UseSainFollowerCombat ||
+                    pitFireTeam.UseSainFollowerCombat(botOwner) ||
                     FollowerCombatLayer.IsFollowerCombatLayerActive(botOwner) ||
                     FollowerCombatLayer.HasLiveGoalEnemyForFire(botOwner))
                 {

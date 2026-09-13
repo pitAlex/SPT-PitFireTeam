@@ -77,7 +77,7 @@ public class FriendlyTeammateService(
 
     private const string DefaultLoadoutName = "Default";
     private const string DefaultLoadoutId = "000000000000000000000000";
-    private static readonly string[] TacticOptions = ["Rifleman", "Marksman"];
+    private static readonly string[] TacticOptions = ["Rifleman", "Marksman", "SainMan"];
     private const int RelativeLevelDelta = 5;
     private const int SecureContainerAmmoStackCount = 10;
     private const string TeammateGenerationLocation = "factory4_day";
@@ -4858,6 +4858,7 @@ public class FriendlyTeammateService(
         return value.Trim().ToLowerInvariant() switch
         {
             "marksman" => "Marksman",
+            "sainman" => "SainMan",
             "protector" => "Rifleman",
             "guard" => "Rifleman",
             "holder" => "Rifleman",

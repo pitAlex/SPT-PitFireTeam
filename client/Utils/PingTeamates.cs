@@ -651,6 +651,7 @@ namespace pitTeam.Utils
                             {
                                 tactic = followerData.CombatTactic switch
                                 {
+                                    FollowerCombatTactic.SainMan => pitFireTeam.GetSocialUiText("ProfileTacticSainMan"),
                                     FollowerCombatTactic.Marksman => pitFireTeam.GetSocialUiText("ProfileTacticMarksman"),
                                     FollowerCombatTactic.Protector => pitFireTeam.GetSocialUiText("ProfileTacticProtector"),
                                     _ => pitFireTeam.GetTacticOptionText(0),

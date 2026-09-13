@@ -202,6 +202,7 @@ namespace pitTeam
 
     [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "1.0.0")]
     [BepInDependency("xyz.drakia.bigbrain")]
+    [BepInDependency(pitFireTeam.SainPluginId, BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency(pitFireTeam.MenuOverhaulPluginId, BepInDependency.DependencyFlags.SoftDependency)]
     public class pitFireTeam : BaseUnityPlugin
     {
@@ -323,9 +324,12 @@ namespace pitTeam
         public static bool IsSAINAddonInstalled { get; private set; }
         public static bool IsSeparateHostilityInstalled { get; private set; }
 
-        public static bool UseSainFollowerCombat => IsSAINInstalled && IsSAINAddonInstalled;
-        public static bool HasSainRegroupAddon => UseSainFollowerCombat;
-        public static bool ShouldDisableSainForFollowers => IsSAINInstalled && !UseSainFollowerCombat;
+        public static bool IsSainManTacticAvailable => IsSAINInstalled && IsSAINAddonInstalled;
+        public static bool IsSainFollowerCombatAvailable => IsSainManTacticAvailable && SainAddonBridge.HasRuntimeCallbacks;
+        public static bool UseSainFollowerCombat(BotOwner? botOwner) =>
+            IsSainFollowerCombatAvailable && SainAddonBridge.IsSainManSelected(botOwner) && SainAddonBridge.IsCombatReady(botOwner);
+        public static bool ShouldDisableSainForFollower(BotOwner? botOwner) =>
+            IsSAINInstalled && !UseSainFollowerCombat(botOwner);
 
         private void Awake()
         {
@@ -382,8 +386,7 @@ namespace pitTeam
 
             // Core follower actions must own BotMover.Sprint even when SAIN is installed;
             // SAIN's global sprint look-direction gate is only valid for SAIN-owned movement.
-            if (!UseSainFollowerCombat)
-                new FollowerSprintPatch().Enable();
+            new FollowerSprintPatch().Enable();
             new FollowerSprintStateDirectionPatch().Enable();
 
 #if DEBUG
@@ -767,14 +770,14 @@ namespace pitTeam
             }
         }
 
-        public static bool ShouldUseSainRegroupRoute(bool isCombatRegroupContext)
+        public static bool ShouldUseSainRegroupRoute(BotOwner? botOwner, bool isCombatRegroupContext)
         {
-            return HasSainRegroupAddon && isCombatRegroupContext;
+            return UseSainFollowerCombat(botOwner) && isCombatRegroupContext;
         }
 
         public static bool ShouldSainRegroupLayerHandle(BotOwner? botOwner)
         {
-            return HasSainRegroupAddon && botOwner?.Memory?.HaveEnemy == true;
+            return UseSainFollowerCombat(botOwner) && botOwner?.Memory?.HaveEnemy == true;
         }
 
         private static bool HasPlugin(string pluginId)

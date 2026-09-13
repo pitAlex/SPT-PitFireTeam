@@ -10,7 +10,7 @@ namespace pitTeam.Patches
     {
         public static bool Prefix(BotOwner botOwner, ref bool result)
         {
-            if (pitFireTeam.UseSainFollowerCombat)
+            if (pitFireTeam.UseSainFollowerCombat(botOwner))
             {
                 return true;
             }

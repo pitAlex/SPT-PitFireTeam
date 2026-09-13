@@ -9,9 +9,30 @@ This document defines the boundary between the external SAIN plugin, the pitFire
 - **SAIN plugin / SAIN mod**: the external `me.sol.sain` plugin.
 - **SAIN addon**: pitFireTeam's optional `xyz.pit.fireteam.sainaddon` DLL under `addon/`.
 - **Core combat**: pitFireTeam's follower combat brain implemented through the core/vanilla BigBrain path under `client/BigBrain`.
-- **SAIN-addon combat**: pitFireTeam's alternative follower combat brain implemented as a custom SAIN Squad-based layer under `addon/`. It is not the stock SAIN Squad layer and it is not a general SAIN patch collection.
+- **SAIN-addon combat**: pitFireTeam's alternative follower combat brain implemented through custom SAIN-derived layers under `addon/`. It is not the stock SAIN Squad layer and it is not a general SAIN patch collection.
 
-## Sole addon purpose
+## SAIN addon phase 1 (2026-09-13)
+
+The optional addon exposes **SainMan** as a selectable follower tactic when SAIN and the addon are installed. Choosing it switches that follower's combat ownership to the addon. Other tactics retain core combat; absent or unready addon state uses the existing fallback without erasing the saved selection.
+
+The addon has **two combat-layer replicas** of SAIN 4.5.1's PMC combat:
+
+- **SAINFollowerSoloCombatLayer** (priority 74, ESAINLayer.Combat): native solo routing, activation, action ending, and surgery transitions. No custom follower commands or tactical behavior are added in phase 1.
+- **SAINFollowerSquadCombatLayer** (priority 75, ESAINLayer.Squad): native squad routing and lifecycle, with the human player as squad leader.
+
+Both derive from public SAINLayer because SAIN's concrete layers are internal. SAINActionTypes resolves and validates internal native actions once. Registration, per-follower ownership, and activation cleanup are infrastructure differences; native solo behavior is otherwise preserved.
+
+The squad replica uses SAINFollowerSquadDecision, a copy of the native squad provider with only player-leader checks and positions substituted. Native branch order, thresholds, personality inputs, and currently disabled automatic regroup selection stay unchanged. Player-aware copies of RegroupAction and FollowSearchParty retain native movement/steering/search behavior. They follow the real player, never a substitute bot.
+
+Core SainPlayerSquadBridge owns real SAIN membership, human leader identity/liveness/distance, and election/cleanup. LeaderComponent remains null because its BotComponent type cannot represent a human. Core SainSquadDecisionBridge dispatches the ready follower's native provider call to the addon calculator. SAIN's existing decision manager still publishes results and events. Handled None goes to native solo selection; it does not call the native AI-leader squad provider again.
+
+UseSainFollowerCombat(botOwner) requires SainMan, both plugins, both constructed addon layers, native state, player binding, and readiness callbacks. Native solo/squad/extract/debug layers are suppressed only for followers; ready SainMan retains native urgent-threat and flash reactions above both replicas. General external-SAIN compatibility stays core-owned, with no Harmony patches in the addon.
+
+The previously requested Chad assignment remains follower-scoped setup outside solo policy. Shared presets, existing proficiency, and configured enemy-memory durations are preserved. Opt-out/dismiss/raid teardown restore or release state. Native decision reset does not clear living enemy memory; core live combat signals govern patrol handoff.
+
+The premature solo command extension and old one-layer class are removed. Custom combat commands and new follower tactical policies belong to later phases. This phase is replication, cleanup, and player-leader adaptation. Historical notes describing older addon behavior do not establish current command parity.
+
+## Long-term addon purpose
 
 The SAIN addon has exactly one responsibility:
 
@@ -23,13 +44,15 @@ The runtime ownership matrix is:
 |---|---|
 | SAIN not installed | pitFireTeam core/vanilla BigBrain combat |
 | SAIN installed, addon absent | pitFireTeam core/vanilla BigBrain combat |
-| SAIN installed, addon present | pitFireTeam custom SAIN-addon follower combat layer |
+| SAIN installed, addon unready or another tactic selected | pitFireTeam core/vanilla BigBrain combat |
+| SAIN installed, ready addon, SainMan selected | pitFireTeam addon solo and squad replicas |
+
 
 Addon absence is a supported runtime mode, not a compatibility failure. External SAIN can still patch low-level EFT calculations in that mode, but pitFireTeam core continues to own follower combat decisions.
 
-## SAIN Squad-derived layer model
+## SAIN solo/squad layer model and later extensions
 
-The addon implements its brain as a custom `SAINFollowerCombatLayer` derived from `SAINLayer` and categorized as `ESAINLayer.Squad`.
+The addon uses two replicated layers derived from public `SAINLayer`, categorized as `ESAINLayer.Combat` and `ESAINLayer.Squad`. SAIN 4.5.1 makes its concrete layers internal; replicate their small routing classes and extend our versions. Custom solo command handling is reserved for a later phase. Both layer replicas and player-leader squad adaptation are implemented in phase 1. New command policies remain deferred.
 
 Its permitted responsibilities are limited to the custom follower brain itself:
 
@@ -58,7 +81,7 @@ It must not:
 
 The only narrow interception allowed for layer ownership is the follower-specific registration/handoff needed to run the custom layer and prevent the native SAIN Squad layer from simultaneously owning those same followers. This exception does not authorize general SAIN behavior patches.
 
-`UseSainFollowerCombat` is exclusively a combat-brain ownership gate. It may gate the custom layer, its commands, its actions, and its lifecycle. It must never gate general external-SAIN compatibility.
+`UseSainFollowerCombat(botOwner)` is exclusively a per-follower combat-brain ownership gate. It may gate the custom layer, its commands, its actions, and its lifecycle. It must never gate general external-SAIN compatibility.
 
 ## Core ownership while SAIN is installed
 
@@ -78,7 +101,7 @@ Core owns, among other things:
 
 Core compatibility must be follower-scoped and must not mutate SAIN's shared preset objects. The addon may consume the already-finalized follower state, but it cannot rewrite that state through general SAIN patches.
 
-Grenade awareness follows the active avoidance owner. In core-combat mode with SAIN installed, `FollowerSainGrenadeAwarenessPatch` restores the `BotsController.OnGrenadeThrow` notifications that SAIN 4.5.0/4.5.1 skips for SAIN-enabled followers, forwarding them to native `BewareGrenade.AddGrenadeDanger`. Followers already receiving native notifications are not notified twice or given another recognition roll. The corresponding SAIN `EnemyGrenadeThrown` tracker is bypassed for core-controlled followers to prevent duplicate warnings and fallback registrations. Native reaction probability, delay, smoke handling, cover selection, escape movement, and danger expiry remain authoritative. With the SAIN addon active, SAIN's existing grenade routing remains in place. In-raid escape and return-to-command behavior still require verification.
+Grenade awareness follows the active avoidance owner. In core-combat mode with SAIN installed, `FollowerSainGrenadeAwarenessPatch` restores the `BotsController.OnGrenadeThrow` notifications that SAIN 4.5.0/4.5.1 skips for SAIN-enabled followers, forwarding them to native `BewareGrenade.AddGrenadeDanger`. Followers already receiving native notifications are not notified twice or given another recognition roll. The corresponding SAIN `EnemyGrenadeThrown` tracker is bypassed for core-controlled followers to prevent duplicate warnings and fallback registrations. Native reaction probability, delay, smoke handling, cover selection, escape movement, and danger expiry remain authoritative. With ready SainMan addon combat active, SAIN's existing grenade routing remains in place. Core tactics retain the core notification route. In-raid escape and return-to-command behavior still require verification.
 
 Tripwire awareness is core-owned through `FollowerTripwireAwarenessPatch`. It observes the real trigger and activation pin sound, confirms the tripping follower or nearby followers who hear the unobstructed sound, warns with `Spreadout`, and records the actual grenade in native `BewareGrenade`. The danger lifetime covers the real fuse; per-grenade/per-follower deduplication prevents duplicate warnings or SAIN tracking. This preserves native escape and cover selection while adding reliable recognition of a confirmed tripwire.
 
@@ -94,11 +117,11 @@ The mask bypass runs inside SAIN's native command builder through a validated st
 
 Player-visual contact promotion is one example of this core boundary. A target genuinely seen by the player is reported as visual contact rather than sense-only contact. If the follower has not independently seen the target, current `IsVisible` and `CanShoot` remain false while core seeds the complete personal contact record at the promotion timestamp. The addon is not involved in that compatibility path.
 
-## Existing legacy addon patches
+## Removed legacy addon patches
 
-The current addon source contains historical patches for aim sway, hit accuracy, recoil, low light, foliage, personality/templates, enemy acquisition, speech, doors, friendly fire, and search steering. Their presence in source does not make them valid addon architecture and does not grandfather them.
+The historical addon patches and combat implementation were removed in the leadership-only rebuild. Do not restore them from history as an initialization shortcut.
 
-Each legacy patch must follow one of these outcomes before the addon is re-enabled:
+Any behavior reconsidered from those patches must follow one of these outcomes:
 
 1. **Move to core** if it is general external-SAIN compatibility that must work with or without the addon.
 2. **Reimplement inside the custom layer or a custom SAIN action** if it is genuinely part of the alternate follower combat brain and can be expressed without overwriting a general SAIN method or shared object.
@@ -108,7 +131,7 @@ A mixed patch must be separated along the same boundary. The addon may keep only
 
 ## Bridge contract
 
-Core-to-addon callbacks exist only to operate the optional custom brain:
+Combat callbacks exist only to operate the optional custom brain. They remain unregistered in phase one. A separate core-owned leadership service is enabled by addon startup and consumes the existing lifecycle/boss-group events without enabling combat. Future combat callbacks cover:
 
 - determine whether addon-owned combat state is ready to release;
 - pass a combat command into the custom layer;

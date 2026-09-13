@@ -1352,6 +1352,7 @@ namespace pitTeam.Modules
                 targetCommitment = CreateTargetCommitmentSnapshot(bot, followerData, goalEnemy),
                 tactic = followerData?.CombatTactic.ToString(),
                 proficiency = CreateProficiencySnapshot(bot, followerData),
+                sainSquadLeadership = SainPlayerSquadBridge.GetDebugSnapshot(bot),
                 combatSettings = followerData != null
                     ? new
                     {
@@ -1425,7 +1426,7 @@ namespace pitTeam.Modules
                         ? SanitizeFloat(follower.LastFinalAimTime.Value)
                         : null
                 },
-                ownership = pitFireTeam.UseSainFollowerCombat
+                ownership = pitFireTeam.UseSainFollowerCombat(bot)
                     ? "sainAddon"
                     : pitFireTeam.IsSAINInstalled
                         ? "sainCalculationsCoreCombat"

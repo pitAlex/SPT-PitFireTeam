@@ -8,7 +8,7 @@ namespace pitTeam.Utils
     {
         internal static void ClearInvalidGoalEnemy(BotOwner bot)
         {
-            if (pitFireTeam.UseSainFollowerCombat || bot?.Memory?.GoalEnemy == null ||
+            if (pitFireTeam.UseSainFollowerCombat(bot) || bot?.Memory?.GoalEnemy == null ||
                 Components.BotFollowerPlayer.IsEnemyInfoAlive(bot.Memory.GoalEnemy))
             {
                 return;

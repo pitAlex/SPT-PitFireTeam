@@ -1046,10 +1046,10 @@ namespace pitTeam.Patches
             return string.Equals(tactic, "marksman", StringComparison.OrdinalIgnoreCase);
         }
 
-        private static void SetProficiencyAggressionForTactic(bool isMarksman)
+        private static void SetProficiencyAggressionForTactic(string tactic)
         {
-            ActiveProfileTactic = isMarksman ? "Marksman" : "Rifleman";
-            ActiveProfileAggression = isMarksman ? 30f : 50f;
+            ActiveProfileTactic = tactic;
+            ActiveProfileAggression = IsMarksmanTactic(tactic) ? 30f : 50f;
             if (ProficiencyAggressionSlider != null)
             {
                 ProficiencyAggressionSlider.UpdateValue(ActiveProfileAggression, false, 0f, 100f);
@@ -1414,6 +1414,11 @@ namespace pitTeam.Patches
             if (IsDefaultTacticSelection(tactic))
             {
                 return GetSocialUiText("ProfileTactic");
+            }
+
+            if (string.Equals(tactic, "SainMan", StringComparison.OrdinalIgnoreCase))
+            {
+                return GetSocialUiText("ProfileTacticSainMan");
             }
 
             if (string.Equals(tactic, "marksman", StringComparison.OrdinalIgnoreCase))

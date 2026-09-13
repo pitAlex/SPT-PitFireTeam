@@ -6,7 +6,7 @@ Last updated: 2026-08-30
 
 - This document covers the core follower combat path under `client/BigBrain`.
 - It only mentions the optional SAIN addon combat path where a boss command crosses the core/addon boundary.
-- `docs/SAIN-Integration.md` is authoritative for that boundary: addon presence switches combat ownership to the custom SAIN Squad-derived follower layer. Addon differences must live in that layer or its custom SAIN actions; general SAIN patches, shared-object changes, and the proficiency compatibility contract remain core-owned.
+- `docs/SAIN-Integration.md` is authoritative for that boundary: the addon is selected per follower through the SainMan tactic. Installation alone never switches ownership. Ready SainMan uses addon SAINFollowerSoloCombatLayer and SAINFollowerSquadCombatLayer replicas, with native solo behavior, player-led squad adaptation, and Chad personality. Activation requires SainMan selection and per-follower readiness; Rifleman is only the unavailable-addon fallback. Addon differences must live in that layer or its custom SAIN actions; general SAIN patches, shared-object changes, and the proficiency compatibility contract remain core-owned.
 - Treat this as current runtime documentation, not a backlog.
 
 ## Runtime Ownership

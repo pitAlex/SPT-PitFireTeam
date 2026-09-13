@@ -331,7 +331,7 @@ namespace pitTeam.Patches
                 bot.BotTalk.SetSilence(0f);
                 bot.BotTalk.DropNextSayPeriod();
                 bool saidPhrase = false;
-                if (pitFireTeam.ShouldDisableSainForFollowers)
+                if (pitFireTeam.ShouldDisableSainForFollower(bot))
                 {
                     saidPhrase = TryPlayDirectFollowerPhrase(bot, phrase);
                 }

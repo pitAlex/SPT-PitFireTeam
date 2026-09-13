@@ -10,6 +10,7 @@
         <NoWarn>$(NoWarn);CS8600;CS8601;CS8602;CS8604;CS8618;CS8620;CS8625</NoWarn>
         <Deterministic>true</Deterministic>
         <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+        <SainReferenceRoot Condition="'$(SainReferenceRoot)' == ''">$(MSBuildProjectDirectory)/refs/4.5.1</SainReferenceRoot>
     </PropertyGroup>
 
     <ItemGroup>
@@ -20,43 +21,30 @@
         <Reference Include="BepInEx">
             <HintPath>..\client\libs4.1\BepInEx.dll</HintPath>
         </Reference>
-        <Reference Include="0Harmony">
-            <HintPath>..\client\libs\0Harmony.dll</HintPath>
-        </Reference>
-        <Reference Include="Assembly-CSharp">
-            <HintPath>..\client\libs4.1\Assembly-CSharp.dll</HintPath>
-        </Reference>
-        <Reference Include="AnimationSystem.Types">
-            <HintPath>..\client\libs4.1\AnimationSystem.Types.dll</HintPath>
-        </Reference>
-        <Reference Include="Comfort">
-            <HintPath>..\client\libs4.1\Comfort.dll</HintPath>
-        </Reference>
-        <Reference Include="DrakiaXYZ-BigBrain">
-            <HintPath>..\client\libs4.1\DrakiaXYZ-BigBrain.dll</HintPath>
-        </Reference>
-        <Reference Include="DissonanceVoip">
-            <HintPath>..\client\libs4.1\DissonanceVoip.dll</HintPath>
-        </Reference>
-        <Reference Include="SAIN">
-            <HintPath>..\client\libs4.1\SAIN.dll</HintPath>
-        </Reference>
-        <Reference Include="SAIN.Preset.Shared">
-            <HintPath>..\client\libs4.1\SAIN.Preset.Shared.dll</HintPath>
-        </Reference>
         <Reference Include="UnityEngine">
             <HintPath>..\client\libs\UnityEngine.dll</HintPath>
         </Reference>
         <Reference Include="UnityEngine.CoreModule">
             <HintPath>..\client\libs\UnityEngine.CoreModule.dll</HintPath>
         </Reference>
-        <Reference Include="UnityEngine.AIModule">
-            <HintPath>..\client\libs\UnityEngine.AIModule.dll</HintPath>
-        </Reference>
-        <Reference Include="UnityEngine.PhysicsModule">
-            <HintPath>..\client\libs\UnityEngine.PhysicsModule.dll</HintPath>
-        </Reference>
         <Reference Include="System" />
         <Reference Include="System.Core" />
     </ItemGroup>
+    <ItemGroup>
+        <Reference Include="SAIN"><HintPath>$(SainReferenceRoot)/SAIN.dll</HintPath><Private>false</Private></Reference>
+        <Reference Include="SAIN.Preset.Shared"><HintPath>$(SainReferenceRoot)/SAIN.Preset.Shared.dll</HintPath><Private>false</Private></Reference>
+        <Reference Include="Assembly-CSharp"><HintPath>../client/libs4.1/Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+        <Reference Include="DrakiaXYZ-BigBrain"><HintPath>../client/libs4.1/DrakiaXYZ-BigBrain.dll</HintPath><Private>false</Private></Reference>
+        <Reference Include="Comfort"><HintPath>../client/libs4.1/Comfort.dll</HintPath><Private>false</Private></Reference>
+        <Reference Include="Comfort.Unity"><HintPath>../client/libs4.1/Comfort.Unity.dll</HintPath><Private>false</Private></Reference>
+        <Reference Include="DissonanceVoip"><HintPath>../client/libs4.1/DissonanceVoip.dll</HintPath><Private>false</Private></Reference>
+        <Reference Include="UnityEngine.AIModule"><HintPath>../client/libs/UnityEngine.AIModule.dll</HintPath><Private>false</Private></Reference>
+    </ItemGroup>
+    <ItemGroup><None Update="SAIN-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+    <Target Name="ValidateSainReferences" BeforeTargets="ResolveReferences">
+        <ItemGroup><SainReference Include="$(SainReferenceRoot)/SAIN.dll;$(SainReferenceRoot)/SAIN.Preset.Shared.dll" /></ItemGroup>
+        <Error Condition="!Exists('%(SainReference.Identity)')" Text="Provision SAIN 4.5.1 references as documented in addon/SAIN-REFERENCES.md." />
+        <GetAssemblyIdentity AssemblyFiles="@(SainReference)"><Output TaskParameter="Assemblies" ItemName="SainIdentity" /></GetAssemblyIdentity>
+        <Error Condition="'%(SainIdentity.Version)' != '4.5.1.0'" Text="The addon requires SAIN 4.5.1.0 references; found %(SainIdentity.Identity)." />
+    </Target>
 </Project>

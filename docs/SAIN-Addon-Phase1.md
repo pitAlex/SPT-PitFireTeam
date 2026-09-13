@@ -1,4 +1,4 @@
-# SAIN addon analysis
+# SAIN addon preliminary specification
 
 ## SAIN addon phase 1 (2026-09-13)
 
@@ -20,28 +20,3 @@ UseSainFollowerCombat(botOwner) requires SainMan, both plugins, both constructed
 The previously requested Chad assignment remains follower-scoped setup outside solo policy. Shared presets, existing proficiency, and configured enemy-memory durations are preserved. Opt-out/dismiss/raid teardown restore or release state. Native decision reset does not clear living enemy memory; core live combat signals govern patrol handoff.
 
 The premature solo command extension and old one-layer class are removed. Custom combat commands and new follower tactical policies belong to later phases. This phase is replication, cleanup, and player-leader adaptation. Historical notes describing older addon behavior do not establish current command parity.
-
-## Implementation map
-
-| Responsibility | Source |
-|---|---|
-| Plugin registration and validated native action types | addon/SAINAddonPlugin.cs, addon/SAINActionTypes.cs |
-| Solo replica | addon/SAINFollowerSoloCombatLayer.cs |
-| Squad replica | addon/SAINFollowerSquadCombatLayer.cs |
-| Player-led squad decision provider | addon/SAINFollowerSquadDecision.cs |
-| Leader-dependent native action replicas | addon/SAINFollowerSquadRegroupAction.cs, addon/SAINFollowerFollowSearchPartyAction.cs |
-| Both-layer readiness and lifecycle | addon/SAINFollowerRuntime.cs |
-| Core integration boundaries | client/Modules/SainPlayerSquadBridge.cs, client/Modules/SainSquadDecisionBridge.cs |
-| Existing follower-local setup/safety | client/Modules/SainManPersonality.cs, client/Patches/FollowerSainFriendlyFirePatch.cs |
-
-Native squad settings remain instance-local in the copied provider. No new configuration knobs or profile options are required beyond SainMan. Member combat state continues to arrive through SAIN's normal decision events. Native group search still uses searching squadmates sharing the enemy; the movement anchor is now the human leader. Native automatic regroup selection is disabled upstream and remains disabled here.
-
-## Verification
-
-- Installed SAIN 4.5.1: 25 leadership API checks, 12 native action constructors, squad-provider signature, personality/safety API, and public layer base.
-- tests/Verify-SainReplicaParity.ps1: 15 comparisons against actual SAIN 4.5.1 source, covering both layer routers/activation/end methods, the full squad provider including thresholds, and both leader-dependent actions.
-- tests/Verify-SainAddonCombat.ps1: 85 controlled production-code checks with real Harmony, including both-layer readiness, unchanged solo command behavior, squad selection, human leader movement/liveness, native decision fallthrough, personality restoration, and safety.
-- Existing 42 leadership, 35 SAIN compatibility, and 44 post-combat handoff checks remain applicable.
-- These checks do not run a raid. Real Unity movement, action execution, player death, mixed squads, dismissal, and return to follow still need in-game qualification.
-
-The authoritative phase-one spec is [docs/SAIN-Addon-Phase1.md](docs/SAIN-Addon-Phase1.md). [docs/SAIN-Integration.md](docs/SAIN-Integration.md) defines ownership, while [docs/SAIN-Addon-Rework-Plan.md](docs/SAIN-Addon-Rework-Plan.md) retains the original investigation and later-phase proposal. [addon/SAIN-REFERENCES.md](addon/SAIN-REFERENCES.md) records private 4.5.1 references and source provenance. Replicas retain upstream MIT attribution in addon/SAIN-LICENSE.txt.

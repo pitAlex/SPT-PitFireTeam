@@ -9,9 +9,30 @@ You must think like a maintainer of a fragile gameplay-AI integration project, n
 ## Terminology
 
 - **SAIN Plugin** (or "SAIN mod", "SAIN") — the third-party SAIN mod by Sol (`me.sol.sain`). This is an external dependency. See `LOCAL.md` for the machine-local source path when source inspection is needed.
-- **SAIN Addon** — our optional addon DLL (`addon/`, plugin ID `xyz.pit.fireteam.sainaddon`) whose sole purpose is to provide a pitFireTeam follower combat brain implemented as a custom SAIN Squad-derived layer instead of the core/vanilla BigBrain combat layer. It makes the human player the squad leader/tactical anchor and may implement custom SAIN actions inside that brain. It must not own general compatibility patches or overwrite shared/general SAIN objects or methods. See `docs/SAIN-Integration.md`.
+- **SAIN Addon** — our optional addon DLL (`addon/`, plugin ID `xyz.pit.fireteam.sainaddon`) whose sole purpose is to provide a pitFireTeam follower combat brain implemented through replicas of SAIN PMC solo and squad combat layers instead of the core/vanilla BigBrain combat layer. It makes the human player the squad leader/tactical anchor and may implement custom SAIN actions inside that brain. It must not own general compatibility patches or overwrite shared/general SAIN objects or methods. See `docs/SAIN-Integration.md`.
 
 Never confuse these two. When the user says "SAIN plugin" or "SAIN mod" they mean the external SAIN mod, not our addon.
+
+## SAIN addon phase 1 (2026-09-13)
+
+The optional addon exposes **SainMan** as a selectable follower tactic when SAIN and the addon are installed. Choosing it switches that follower's combat ownership to the addon. Other tactics retain core combat; absent or unready addon state uses the existing fallback without erasing the saved selection.
+
+The addon has **two combat-layer replicas** of SAIN 4.5.1's PMC combat:
+
+- **SAINFollowerSoloCombatLayer** (priority 74, ESAINLayer.Combat): native solo routing, activation, action ending, and surgery transitions. No custom follower commands or tactical behavior are added in phase 1.
+- **SAINFollowerSquadCombatLayer** (priority 75, ESAINLayer.Squad): native squad routing and lifecycle, with the human player as squad leader.
+
+Both derive from public SAINLayer because SAIN's concrete layers are internal. SAINActionTypes resolves and validates internal native actions once. Registration, per-follower ownership, and activation cleanup are infrastructure differences; native solo behavior is otherwise preserved.
+
+The squad replica uses SAINFollowerSquadDecision, a copy of the native squad provider with only player-leader checks and positions substituted. Native branch order, thresholds, personality inputs, and currently disabled automatic regroup selection stay unchanged. Player-aware copies of RegroupAction and FollowSearchParty retain native movement/steering/search behavior. They follow the real player, never a substitute bot.
+
+Core SainPlayerSquadBridge owns real SAIN membership, human leader identity/liveness/distance, and election/cleanup. LeaderComponent remains null because its BotComponent type cannot represent a human. Core SainSquadDecisionBridge dispatches the ready follower's native provider call to the addon calculator. SAIN's existing decision manager still publishes results and events. Handled None goes to native solo selection; it does not call the native AI-leader squad provider again.
+
+UseSainFollowerCombat(botOwner) requires SainMan, both plugins, both constructed addon layers, native state, player binding, and readiness callbacks. Native solo/squad/extract/debug layers are suppressed only for followers; ready SainMan retains native urgent-threat and flash reactions above both replicas. General external-SAIN compatibility stays core-owned, with no Harmony patches in the addon.
+
+The previously requested Chad assignment remains follower-scoped setup outside solo policy. Shared presets, existing proficiency, and configured enemy-memory durations are preserved. Opt-out/dismiss/raid teardown restore or release state. Native decision reset does not clear living enemy memory; core live combat signals govern patrol handoff.
+
+The premature solo command extension and old one-layer class are removed. Custom combat commands and new follower tactical policies belong to later phases. This phase is replication, cleanup, and player-leader adaptation. Historical notes describing older addon behavior do not establish current command parity.
 
 ## Working Rules
 
@@ -768,143 +789,23 @@ Supported commands via `GestureCommandAction`:
 
 ---
 
-# SAIN ADDON: Custom SAIN Squad-Derived Follower Combat Brain
+# SAIN ADDON: Player Leadership Foundation
 
-**Plugin ID:** `xyz.pit.fireteam.sainaddon`  
-**Main entry:** `addon/SAINAddonPlugin.cs`  
-**Bootstrap:** `addon/SAINRegroupBootstrap.cs`
+## Current phase: player leadership only (2026-09-13)
 
-## SAIN Integration Model
+The rebuilt addon enables `SainPlayerSquadBridge` in core. It registers no combat layers or decision providers and no combat runtime callbacks. `UseSainFollowerCombat` now requires the full callback set in addition to plugin presence, so this addon keeps every follower on the existing core combat/command path.
 
-`docs/SAIN-Integration.md` is authoritative. The addon's sole responsibility is to provide `SAINFollowerCombatLayer`: a custom follower combat brain that follows SAIN's Squad-layer decision/action model, makes the human player the leader, and may use or create SAIN actions. It may own only that layer's follower-local decisions, actions, movement, commands, and lifecycle state.
+The adapter creates a real SAIN squad for each player group, moves only the recruited follower out of its previous SAIN squad, and exposes the player's leader ID, live position/distance, and alive/dead state. Bot members remain real BotComponents; `LeaderComponent` is null because SAIN's bot-only type cannot represent a human. Future custom actions consume `TryGetPlayerLeader`. No bot is promoted when the player dies. Ordinary squads retain native leadership; recruiting their leader invokes native election for the remaining members.
 
-The addon is not a general SAIN patch or tuning container. It must not Harmony-patch or overwrite general SAIN methods, presets, settings, or shared objects. Historical addon patches listed below are nonconforming inventory to migrate to core, re-express inside the custom layer/actions, or remove before the addon is re-enabled.
+Leadership synchronization uses the existing half-second boss update independently of combat readiness, plus recruitment/dismissal events. Native member removal and raid cleanup release bindings/subscriptions. Battle-recorder snapshots include `sainSquadLeadership` with leader ID, squad GUID, member count, distance, and the combat ownership flag.
 
-**Conditional Path:**
+All 25 historical addon implementation files were removed: the old custom combat layer/actions, bootstrap, general tuning/compatibility patches, acquisition toggle, and broad reset bridge. Existing core proficiency, talk, contact, and safety systems remain authoritative. There is no dormant legacy combat implementation to reactivate.
 
-- Only active when SAIN (`me.sol.sain`) is installed at runtime
-- Core plugin now owns the SAIN/addon split explicitly:
-    - SAIN + addon present: the custom SAIN-addon follower combat path is used
-    - SAIN present + addon missing: core disables SAIN takeover for followers and falls back to vanilla/core follower combat
-- Shared bridge contract via `SainAddonBridge.cs` for core → addon communication
+Extending solo combat so it can respond to player commands is the next combat phase. Neither solo nor squad combat is integrated in this phase. The longer-term two-layer design and source findings remain in `docs/SAIN-Addon-Rework-Plan.md`.
 
-**Layer Stack in Combat:**
+Verification: `tests/Verify-SainPlayerLeadership.ps1 -GameRoot '<game root>'` checks 25 required members in the installed SAIN assembly and exercises the production adapter and ownership gate with real Harmony against controlled squad fixtures. It covers single/distant followers, staggered initialization, recruitment, separate player groups, ordinary AI, player/member death, dismissal, and teardown. In-raid initialization and transitions remain to be verified.
 
-- Priority 73: `SAINFollowerCombatLayer` (custom SAIN squad replacement for followers, active in combat)
-- Priority 71: `FollowerPatrolLayer` (vanilla follow, active out-of-combat)
-- Mover handoff on layer switch via `SAINLayer.OnLayerChanged(...)`
-- The custom layer follows SAIN Squad routing but treats the human player boss, not a bot squad member, as leader and tactical anchor.
-
-## Combat Decision Routing
-
-**`SAINFollowerCombatLayer` Evaluation Chain:**
-
-1. **Regroup Command** — If `RegroupNearBoss` request active: → `SAINFollowerCombatRegroupAction` (8s grace while enemy context remains)
-2. **Temporary HoldPosition Aggression** — If boss `HoldPosition` combat override is active: → boss-protection/regroup fallback (`SAINFollowerCombatDefaultBossAction`)
-3. **Squad Calculator** — Dynamic decision scoring: → routing to specific action
-4. **SAIN Fallback** — If available, use native SAIN squad decision (2s enemy grace)
-5. **No Decision** — Layer exits unless an explicit calculator/fallback path produced a decision
-
-**`SAINFollowerSquadDecisionCalculator` Priority Order:**
-
-| Decision           | Condition                                                      | Action                                                        | Constraints                                                  |
-| ------------------ | -------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------ |
-| **PushSuppressed** | Enemy suppressed by ally + vulnerable + close                  | `RushEnemyAction`                                             | Path < 75m (100m sprint), ammo > 50%                         |
-| **GroupSearch**    | Search-party leader exists + ally searching same enemy         | Leader: SAIN `SearchAction`; others: `FollowBossSearchAction` | Coordinate hunt                                              |
-| **Suppress**       | Ally in retreat from enemy                                     | `SuppressAction`                                              | Distance < 30-50m, ammo > 10-50%, no friendlies in fire lane |
-| **Help**           | Ally engaging visible enemy                                    | `SearchAction`                                                | Distance < 30-45m, seen < 8s                                 |
-| **Search**         | Enemy known but unseen                                         | `SearchAction`                                                | Seen within last 20s                                         |
-| **Regroup**        | Boss-distance regroup in combat or fallback SAIN squad regroup | `DefaultBossAction` / `RegroupAction`                         | Boss-adjacent, avoid stacking                                |
-
-**Action Types:**
-
-- `SAINFollowerCombatRegroupAction` — Converge near boss with spacing
-- `SAINFollowerCombatDefaultBossAction` — Default boss-protection/regroup action mode built on regroup movement
-- `SAINFollowerCombatSuppressAction` — Fire at enemy with friendly-fire checks
-- `SAINFollowerCombatFollowBossSearchAction` — Follow boss while searching
-- SAIN native `SearchAction` / `RushEnemyAction` (resolved once with safe fallback)
-
-## Legacy Enemy Retention & Acquisition Inventory
-
-The following describes existing addon source, not permitted ownership. Enemy acquisition/retention compatibility must move to core; only decisions made from already-finalized enemy state may remain in the custom layer.
-
-**Gate System** (if `EnableForcedEnemyRetention = true`):
-
-- `SAINEnemyAcquireGatePatch` — Patches `SAINEnemyController.CheckAddEnemy`
-- `ShouldAllowAcquire()` — Block attention-suppressed, boss, allied followers
-- `ShouldAllowRelationshipAcquire()` — Whitelist same-side and Scav candidates only with hostile intent against the player or any follower
-
-**Hostile Intent Detection:**
-
-- `FollowerCalcGoalEnemyAcquire.CandidateHasBossOrFollowerAsEnemy()` / `CandidateHasGoalEnemyBossOrFollower()` — relationship and active-target intent, debounced during visual acquisition via `HasDebouncedSameSideHostileIntent()`
-- Prevents friendly-fire escalation
-
-**Suppression Safety:**
-
-- `SAINFollowerSuppressionSafety.IsFriendlyInSuppressionLane()` — Geometry cylinder check (0.55m radius)
-- Blocks suppression if ally in fire path at any body height
-
-**Patrol Readiness (Post-Combat Release):**
-
-Stale Decision Grace Periods:
-
-- Search: 3s
-- SeekCover: 3s
-- Retreat: 4s
-- ShiftCover: 3.5s
-- Solo layer + no decision: 2.5s
-
-On Timeout:
-
-- `ForceReleaseFollowerCombatState()` clears all combat context
-- Clear SAIN search state, expire active enemies, invalidate known places
-- Hard-release layer ownership
-- Post-release grace: 1.5s before patrol activation
-- Apply crouch nudge during grace (prevent sprint-thrash)
-
-## Legacy Nonconforming SAIN Patch Inventory
-
-Only the follower-specific hook required to prevent the native SAIN Squad layer from competing with `SAINFollowerCombatLayer` is valid addon infrastructure. Every other general-method patch below must move to core, be rewritten as layer/action-local behavior, or be removed. A follower-only condition does not make a general SAIN Harmony patch valid addon architecture.
-
-**Always Applied:**
-
-1. **`SAINFollowerSquadLayerDisablePatch`** — Disable SAIN native squad layer for followers
-2. **`SAINFollowerAimSwayPatch`** — Aim sway tuning for followers
-3. **`SAINFollowerHitAccuracyPatch`** — Block incoming hits from degrading follower aim (bypass `AimHitEffectClass.GetHit`)
-4. **`SAINFollowerRecoilPatch`** — Recoil behavior tuning + `OnFollowerDismiss` listener for cache cleanup
-5. **`SAINFollowerFriendlyFirePatch`** — Post-process SAIN shot blocking with follower-only shot-lane safety for boss/followers
-6. **`SAINFollowerGroupTalkDirectionPatch`** — Voice callouts use boss look direction instead of squad leader
-7. **`SAINFollowerTalkMutePatch`** — Mute repeated SAIN contact/lost-visual/clear chatter and route combat talk through the core frequency gate
-8. **`SAINFollowerSearchCurrentEnemyLookPatch`** — Keep SAIN search steering oriented toward the current enemy near search endpoint
-9. **`SAINFollowerDoorPatch`** — Suppress SAIN follower auto-close door choices
-10. **`SAINFollowerPersonalityPatch`** — Clone `followerBigPipe` SAIN template per-follower, apply combat personality (Normal/Chad/GigaChad)
-11. **`SAINFollowerSquadLeaderPatch`** — Force `IAmLeader = false` for all followers
-12. **`SAINFollowerLowLightVisionPatch`** — Reduce low-light vision penalty via `EnemyGainSightClass.CalcTimeModifier`
-13. **`SAINFollowerBushVisionPatch`** — Temporarily restore vanilla foliage/bush look settings while follower enemy look checks run
-
-**Conditional (if `EnableForcedEnemyRetention`):**
-
-14. **`SAINEnemyAcquireGatePatch`** + **`SAINFollowerEnemyRetentionService`** — Gate follower enemy acquisition when forced retention is enabled
-
-## Lifecycle & Bridge Events
-
-**Plugin Initialization:**
-
-- `SAINAddonPlugin` registers callback on load, unregisters on unload
-- `SAINFollowerRuntimeBridge` owns SAIN-typed patrol readiness implementation
-- Bridge exposes: `IsReadyForPatrolAfterCombat(BotOwner)` + stale decision timer management
-
-**Lifecycle Events:**
-
-- `Modules.OnFollowerDismiss` — Fired when follower dismissed; addon cleanup is limited to custom layer/action state, while recoil and other general compatibility caches belong in core
-- `ForceReleaseFollowerCombatState()` — Clear search state, expire enemies, reset decisions on attention/look
-- `TryResetFollowerDecisionState()` — Soft reset for decision state without full layer release
-
-**Integration Rule:**
-
-- Use core → addon bridge calls only to enter, operate, reset, or release the custom addon combat brain.
-- General external-SAIN compatibility uses core-owned reflection/patch services gated by `IsSAINInstalled`; it must never require an addon callback.
-- Missing addon callbacks are an error only when `UseSainFollowerCombat` is active. SAIN installed without the addon is a supported core-combat mode.
+# Core follower patrol and requests
 
 Files:
 
@@ -1216,7 +1117,7 @@ SAIN integration:
     - aim sway, hit-accuracy, recoil, low-light, bush-vision, personality/template, and similar general-method patches may not remain in the addon. If a genuine alternate-brain behavior is needed, express it through the custom layer/action decision path without overwriting general SAIN methods or shared objects.
 - SAIN attention/release reset now clears stale search state through the addon bridge:
     - existing `SAINFollowerRuntimeBridge.ForceReleaseFollowerCombatState(...)` and `TryResetFollowerDecisionState(...)` reach into SAIN search/known-place state; before addon re-enable, narrow cleanup to the active follower's addon-owned layer/action state rather than treating general SAIN state mutation as an addon responsibility.
-- Legacy `SAINDecisionRegroupPatch.cs` remains in addon source but is currently not wired by bootstrap.
+- Legacy addon combat/patch files were removed in the 2026-09-13 leadership-only rebuild.
 
 ## 5) Safety/Crash Guards Added
 

@@ -2897,7 +2897,7 @@ namespace pitTeam.BigBrain
         /// </summary>
         public FollowerCombatTactic GetFollowerTactic()
         {
-            return BossPlayers.Instance?.GetFollower(botOwner)?.CombatTactic ?? FollowerCombatTactic.Balanced;
+            return BossPlayers.Instance?.GetFollower(botOwner)?.CoreCombatTactic ?? FollowerCombatTactic.Balanced;
         }
 
         /// <summary>
