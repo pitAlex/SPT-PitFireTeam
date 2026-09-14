@@ -1,59 +1,63 @@
-// Adapted from SAIN 4.5.1 RegroupAction (Solarint, MIT; SAIN-LICENSE.txt).
-// Same movement/steering policy; the leader is the real player instead of a BotComponent.
+// Follower regroup extension of SAIN 4.5.1 RegroupAction (Solarint, MIT; SAIN-LICENSE.txt).
+// Native SAIN movers and shooting/steering serve a player-anchored, two-mode objective.
 using DrakiaXYZ.BigBrain.Brains;
 using EFT;
+using SAIN.Layers;
 using SAIN.SAINComponent.Classes.EnemyClasses;
 using UnityEngine;
 
-using SAIN.Layers;
-using pitTeam.Modules;
 namespace pitTeam.SAINAddon;
 
 public class SAINFollowerSquadRegroupAction(BotOwner bot) : BotAction(bot, nameof(SAINFollowerSquadRegroupAction)), IBotAction
 {
+    private float nextMove;
+    private object ownedPath;
+
+    public override void Start()
+    {
+        base.Start();
+        Bot.Mover.Stop();
+        Shoot.EndShoot();
+        nextMove = 0f;
+        ownedPath = null;
+    }
+
     public override void Update(CustomLayer.ActionData data)
     {
-        Enemy enemy = Bot.GoalEnemy;
-        Vector3? SquadLeadPos = SainPlayerSquadBridge.TryGetPlayerLeader(BotOwner, out Player leader) && leader.HealthController?.IsAlive == true ? leader.Position : (Vector3?)null;
-        if (SquadLeadPos != null)
-        {
-            bool hasEnemy = enemy != null;
-            bool enemyLOS = enemy?.InLineOfSight == true;
-            float leadDist = (SquadLeadPos.Value - BotOwner.Position).magnitude;
-            float enemyDist = hasEnemy ? enemy.KnownPlaces.BotDistanceFromLastKnown : 999f;
-
-            bool sprint = hasEnemy && leadDist > 30f && !enemyLOS && enemyDist > 50f;
-
-            if (_nextChangeSprintTime < Time.time)
-            {
-                _nextChangeSprintTime = Time.time + 1f;
-                if (sprint)
-                {
-                    Bot.Mover.RunToPoint(SquadLeadPos.Value);
-                }
-                else
-                {
-                    Bot.Mover.WalkToPoint(SquadLeadPos.Value);
-                }
-            }
-        }
-
+        var objective = SAINFollowerRuntime.GetRegroup(BotOwner);
+        if (objective == null) { StopOwnedPath(); return; }
+        objective.Observe();
+        if (!objective.Active || objective.Settling) { StopOwnedPath(); return; }
+        if (Time.time < nextMove) return;
+        nextMove = Time.time + 0.5f;
+        if (!objective.TryGetTarget(out Vector3 target, out bool sprint)) { StopOwnedPath(); return; }
         Bot.Mover.SetTargetPose(1f);
         Bot.Mover.SetTargetMoveSpeed(1f);
+        bool moved = sprint && Bot.Mover.RunToPoint(target);
+        if (!moved) moved = Bot.Mover.WalkToPoint(target);
+        if (moved) ownedPath = Bot.Mover.ActivePath;
+        else { StopOwnedPath(); objective.PathFailed(); }
     }
 
     public override void OnSteeringTicked()
     {
+        if (SAINFollowerRuntime.GetRegroup(BotOwner)?.Active != true) return;
         Enemy enemy = Bot.GoalEnemy;
         if (!Shoot.ShootAnyVisibleEnemies(enemy))
-        {
             Bot.Suppression.TrySuppressAnyEnemy(enemy, Bot.EnemyController.KnownEnemies);
-        }
-        if (!Bot.Steering.SteerByPriority(enemy))
-        {
-            Bot.Steering.LookToMovingDirection();
-        }
+        if (!Bot.Steering.SteerByPriority(enemy)) Bot.Steering.LookToMovingDirection();
     }
 
-    private float _nextChangeSprintTime;
+    public override void Stop()
+    {
+        StopOwnedPath();
+        SAINFollowerRuntime.GetRegroup(BotOwner)?.ReleaseTarget();
+        base.Stop();
+    }
+
+    private void StopOwnedPath()
+    {
+        if (ownedPath != null && ReferenceEquals(Bot.Mover.ActivePath, ownedPath)) Bot.Mover.Stop();
+        ownedPath = null;
+    }
 }

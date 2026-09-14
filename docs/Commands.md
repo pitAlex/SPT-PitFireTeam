@@ -2,9 +2,9 @@
 
 Last updated: 2026-08-30
 
-## SAIN addon phase 1 (2026-09-13)
+## Current SAIN addon command scope (2026-09-14)
 
-SainMan selects two addon replicas of SAIN PMC solo/squad combat. Solo contains no follower command additions. Squad decisions and leader-dependent actions are adapted to the human player while preserving native policy. The prior command-driven solo regroup/tactical-point extension is removed. Peace requests remain core-owned; custom combat command translation is deferred. Native automatic regroup selection remains disabled as in SAIN 4.5.1. Historical addon command descriptions below concern the removed implementation and do not imply current parity. See SAIN-Addon-Phase1.md.
+SainMan selects two addon replicas of SAIN PMC solo/squad combat. The squad layer now supports automatic and commanded regroup around the human player. Solo routing retains native decisions with a bounded firing-position attempt; the shared runtime captures regroup orders for the squad objective. Peace requests remain core-owned, and other combat command translations remain deferred. See [SAIN-Integration.md](SAIN-Integration.md) for the current contract. [Aggression-based personality settings](SAIN-Personalities-and-Aggression.md) are implemented in the addon. Temporary HoldPosition selects Coward combat behavior; accepted GoForward selects temporary GigaChad combat behavior; Gogogo restores saved aggression. Speech traits such as begging, fake death and taunting are excluded. GoForward replaces a prior order/regroup through the ready addon without creating a durable core push.
 
 ## Scope
 
@@ -51,7 +51,7 @@ There are three execution paths:
 3. **SAIN addon combat**
    - Ready SainMan followers use the separate solo and squad combat replicas.
    - Phase 1 preserves native solo behavior and adapts squad leadership to the human player.
-   - Custom command translation is deferred. The former command-to-regroup and hold/protection addon paths were removed.
+   - RegroupNearBoss is consumed into the addon squad regroup objective. Other command translation remains deferred; the former hold/protection addon paths remain removed.
    - General compatibility remains core-owned.
 
 ## Command State
@@ -64,7 +64,7 @@ There are three execution paths:
 | `MoveToPoint` | sampled world/nav point | infinite | `GestureCommandAction` |
 | `ComeCloser` | boss position snapshot owned by action | timed unless resuming a hold | `GestureCommandAction` |
 | `ContactApproach` | boss position and Contact bearing snapshots | timed | `GestureCommandAction` |
-| `RegroupNearBoss` | normal or tight mode | timed | `GestureCommandAction` or core combat regroup; addon command translation deferred |
+| `RegroupNearBoss` | normal or tight mode | timed | `GestureCommandAction`, core combat regroup, or the SainMan squad regroup objective |
 | `TakeLootItem` | reserved current loot item, not `_commandTarget` | timed | `GestureCommandAction` |
 | `OpenDoor` | reserved current door, not `_commandTarget` | timed | `GestureCommandAction` |
 | `PushEnemy` | current combat enemy | consumed into objective | core ordered-push objective |
@@ -97,7 +97,8 @@ Behavior:
 - The outline color is configurable with a `#RRGGBB` value and defaults to green (`#00FF00`).
 - Name, distance, combat status, HP, and tactic (`MD`) can each be toggled under `My Squad > Settings > Base Settings`.
 - Disabling every text field while leaving the highlight enabled produces a highlight-only Status Report.
-- Enemy markers are grouped by enemy profile, so multiple followers reporting the same contact produce one marker. During the Status Report display, the active marker set follows each follower's current enemy selection: switching targets adds the newly selected enemy and removes an old contact once no follower targets it. `Auto Display Enemy Marker` keeps this marker set active independently for the full live contact without automatically playing the report sound or voice line. Each new contact starts at the enemy's current position. A reliably visible enemy uses a steady `27x27` red reticle that follows the live position every frame; an enemy that is not reliably visible uses a vertically bobbing `30.6x30.6` yellow `!` whose position refreshes every five seconds; and a killed enemy uses a steady `27x27` grey skull at its remembered death position. `Auto Display Kill Marker` can open the independent skull display immediately, `Kill Display Time` requests its duration, and `Kill Remember Time` caps that duration and disables killed-enemy markers when set to `0`. The spatial location sound and spoken direction use the position captured when Status Report was triggered.
+- Enemy markers are grouped by enemy profile, so multiple followers reporting the same contact produce one marker. During the Status Report display, the active marker set follows each follower's current enemy selection: switching targets adds the newly selected enemy and removes an old contact once no follower targets it. `Auto Display Enemy Marker` keeps this marker set active independently for the full live contact without automatically playing the report sound or voice line. On the core combat path, each new contact starts at the enemy's current position. A reliably visible enemy uses a steady `27x27` red reticle that follows the live position every frame; an enemy that is not reliably visible uses a vertically bobbing `30.6x30.6` yellow `!` whose position refreshes every five seconds; and a killed enemy uses a steady `27x27` grey skull at its remembered death position. `Auto Display Kill Marker` can open the independent skull display immediately, `Kill Display Time` requests its duration, and `Kill Remember Time` caps that duration and disables killed-enemy markers when set to `0`. The spatial location sound and spoken direction use the position captured when Status Report was triggered.
+- For ready **SainMan**, the selected contact and its yellow `!` come from SAIN's current enemy and last-known location. New sight/hearing or squad knowledge can update that location; hidden target movement cannot. Forgetting/releasing the native target removes that follower's report even if EFT retains a goal. Fresh native visible/shootable contact uses the red reticle. Shared markers remain while another follower reports the enemy. The existing core position/refresh policy above applies to other tactics and absent/unready addon state.
 - Nearby active followers without enemies play `FriendlyGesture`.
 - When no living teammate exists, Status Report plays `radiobeep.ogg` instead of the normal `radiochat.ogg` response.
 - Does not create `FollowerCommandType` state.
@@ -405,7 +406,7 @@ Execution:
 
 - Assembles eligible followers inside a tight extraction envelope around the boss.
 - Prefers a nearby spread destination; if none is valid, moves directly toward the boss instead of selecting normal boss-near cover.
-- Completes at `2.5m` NavMesh distance out of combat and on the SAIN addon route, or at the core combat objective's `4m` envelope.
+- Completes at `2.5m` NavMesh distance out of combat; core combat and the current SainMan combat objective use a `4m` tight envelope with their path/floor arrival checks.
 - Skips normal regroup's final boss-local cover acquisition.
 
 ### Loot Phrases
@@ -637,7 +638,7 @@ Behavior:
 
 SAIN addon:
 
-- Phase 1 does not translate the temporary override into a custom squad objective.
+- SainMan applies the temporary effective aggression through its personality-settings interpolation. HoldPosition uses Coward combat behavior; GoForward uses temporary GigaChad combat behavior; Gogogo restores saved aggression. Begging, fake death and taunting are not imported. This does not create a custom protection objective.
 
 Vanilla handling:
 
@@ -722,7 +723,7 @@ Core behavior:
 
 SAIN addon:
 
-- Phase 1 does not consume this command. The native squad Regroup action is replicated with a player destination, but native automatic regroup selection remains disabled as upstream.
+- SainMan consumes this command into its squad regroup objective. Normal and tight orders share core arrival distances and require a complete path plus the same-level check. Survival actions interrupt movement without cancelling the objective. Auto regroup is considered after native combat choices are exhausted into a stationary cover hold, failed cover selection, or a failed bounded firing-position attempt. Useful shooting, pursuit, an unexhausted firing-position attempt, squad support and movement commitments take priority over player distance. The configured radius and recent-fight grace then apply; independent combat and pending orders suppress automatic activation. A failed firing-position attempt falls back to cover when regroup is unavailable and remains failed after returning to the player. Player movement or repeated action starts cannot rearm it; changed enemy information or a real firing opportunity can. `On Your Own` retains unrestricted native engagement. See `SAIN-Integration.md`.
 
 ### Suppress Enemy
 

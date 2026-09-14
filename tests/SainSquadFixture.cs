@@ -18,11 +18,13 @@ namespace UnityEngine {
         public static Vector3 operator *(Vector3 a,float b)=>new Vector3(a.x*b,a.y*b,a.z*b);
         public static float Dot(Vector3 a,Vector3 b)=>a.x*b.x+a.y*b.y+a.z*b.z;
     }
-    public class Transform {public Vector3 Position;}
+    public class Transform {public Vector3 Position; public Vector3 WeaponRoot=>Position;}
 }
 namespace UnityEngine.AI {
+    public enum NavMeshPathStatus {PathComplete,PathPartial,PathInvalid}
     public struct NavMeshHit {public Vector3 position;}
     public static class NavMesh {
+        public const int AllAreas=-1;
         public static bool SamplePosition(Vector3 pos,out NavMeshHit hit,float radius,int mask){hit=new NavMeshHit{position=pos};return true;}
         public static bool Raycast(Vector3 from,Vector3 to,out NavMeshHit hit,int mask){hit=new NavMeshHit{position=to};return false;}
     }
@@ -37,8 +39,8 @@ namespace EFT {
     }
     public partial class BotOwner {public Vector3 Position=>GetPlayer.Position;public bool CanSprintPlayer=true;}
 }
-namespace SAIN.Models.Enums {public enum EEnemyAction{None,UsingSurgery,Reload} public enum ESprintUrgency{Middle}}
-namespace SAIN.Preset.Shared.Enums {public enum ESquadDecision{None,Surround,Retreat,Suppress,PushSuppressedEnemy,BoundingRetreat,Regroup,SpreadOut,HoldPositions,Help,Search,GroupSearch}}
+namespace SAIN.Models.Enums {public enum EEnemyAction{None,UsingSurgery,Reload} public enum ESprintUrgency{Middle,High}}
+
 namespace SAIN.SAINComponent {
     public abstract class BotBase {
         public BotComponent Bot{get;}public BotOwner BotOwner=>Bot.BotOwner;
@@ -46,11 +48,15 @@ namespace SAIN.SAINComponent {
     }
 }
 namespace SAIN.SAINComponent.Classes.EnemyClasses {
-    public class Path {public float PathLength=20;}
+    public class Path {public float PathLength=20;public UnityEngine.AI.NavMeshPathStatus PathToEnemyStatus=UnityEngine.AI.NavMeshPathStatus.PathComplete;}
     public class Status {public EEnemyAction VulnerableAction;}
-    public class Places {public float BotDistanceFromLastKnown=100;}
+    public class Places {public float BotDistanceFromLastKnown=100;public Vector3? LastKnownPosition=new Vector3(50,0,0);public float TimeSinceLastKnownUpdated=20;}
     public class Enemy {
-        public bool IsVisible,Seen=true,InLineOfSight,Active=true,Valid=true;
+        public string EnemyProfileId=>EnemyPlayer.ProfileId;public Vector3? LastKnownPosition=>KnownPlaces.LastKnownPosition;
+        public bool CanShoot,IsVisible,Seen=true,Heard,InLineOfSight,Active=true,Valid=true;
+        public bool WasValid=>Valid;public bool EnemyKnown=true;
+        public float TimeSinceLastKnownUpdated=>KnownPlaces.TimeSinceLastKnownUpdated;
+        public string EPathDistance="Far";
         public float TimeSinceSeen=20;
         public Player EnemyPlayer=new Player();public Path Path=new Path();public Status Status=new Status();
         public Places KnownPlaces=new Places();public object SuppressionTarget=new object();public Vector3 EnemyPosition;
@@ -69,10 +75,8 @@ namespace SAIN.SAINComponent.Classes.Info {
         public BotComponent LeaderComponent=>SquadInfo.LeaderComponent;
         public Dictionary<string,BotComponent> Members=new Dictionary<string,BotComponent>();
     }
-    public class Rush {public bool CanRushEnemyReloadHeal=true;}
-    public class PersonalitySettings {public Rush Rush=new Rush();}
     public class Profile {public bool IsBoss;public WildSpawnType WildSpawnType=WildSpawnType.pmc;}
-    public partial class SAINBotInfoClass {public PersonalitySettings PersonalitySettings=new PersonalitySettings();public Profile Profile=new Profile();}
+    public partial class SAINBotInfoClass {public SAIN.Preset.Shared.Personalities.BasePersonality.Categories.PersonalityBehaviorSettings PersonalitySettings=>PersonalitySettingsClass.Behavior;public Profile Profile=new Profile();}
 }
 namespace SAIN.SAINComponent.Classes.Decision {
     public class SAINDecisionClass : SAIN.Components.Decision {}
@@ -91,17 +95,17 @@ namespace SAIN.Components {
     public class Gear {public bool HasEarPiece=true;}
     public class Equipment {public Gear GearInfo=new Gear();}
     public class PlayerComponent {public Equipment Equipment=new Equipment();}
-    public class Shooter {public bool ShootAnyVisibleEnemies(Enemy enemy)=>false;}
+    public class Shooter {public int Ends; public void EndShoot(){Ends++;} public bool Succeeds;public bool ShootAnyVisibleEnemies(Enemy enemy)=>Succeeds;}
     public class Suppression {public bool TrySuppressAnyEnemy(Enemy enemy,object known)=>false;}
-    public class EnemyController {public object KnownEnemies=new object();}
+    public class EnemyController {public List<Enemy> KnownEnemies=new List<Enemy>();}
     public class Steering {
-        public bool SteerByPriority(Enemy enemy,bool allow=true)=>false;
-        public void LookToMovingDirection(){}
+        public bool SteerByPriority(Enemy enemy=null,bool allow=true)=>false;
+        public bool LookToMovingDirection()=>true;public void LookToLastKnownEnemyPosition(Enemy enemy){} public int Looks; public Vector3 LookPoint; public void LookToPoint(Vector3 point){Looks++;LookPoint=point;}
     }
     public class Search {public Enemy Enemy;public bool Enabled;public void ToggleSearch(bool value,Enemy enemy){Enabled=value;Enemy=enemy;}}
     public partial class Mover {
         public int Runs;public bool Running;
-        public bool RunToPoint(Vector3 target,bool complete=true,int distance=-1,ESprintUrgency urgency=ESprintUrgency.Middle,bool check=true){Runs++;Destination=target;return Complete;}
+        public bool RunToPoint(Vector3 target,bool complete=true,float distance=-1,ESprintUrgency urgency=ESprintUrgency.Middle,bool check=true){Runs++;Destination=target;if(Complete){ActivePath=new PathData{Destination=target};Moving=true;}return Complete;}
         public void SetTargetPose(float pose){} public void SetTargetMoveSpeed(float speed){}
     }
     public partial class BotComponent {
@@ -134,8 +138,7 @@ public static partial class CombatChecks {
         Check(selected.Sain.Mover.Destination.x==18,"search destination uses player rather than arbitrary AI member");
         search.Stop();Check(!selected.Sain.Search.Enabled,"search action releases native search state");
         selected.Leader.Position=new Vector3(40,0,0);
-        var regroup=new SAINFollowerSquadRegroupAction(selected);regroup.Update(null);
-        Check(selected.Sain.Mover.Destination.x==40&&selected.Sain.Mover.Runs==1,"native regroup sprint policy uses real player position");
+        selected.Leader.Position=Vector3.zero; // Regroup behavior has its own extension checks below.
         selected.Leader.HealthController.IsAlive=false;
         Check(!native.GetDecision(out decision,enemy)&&decision==ESquadDecision.None&&native.NativeCalls==0,"dead player is not replaced by another squad member");
         selected.Leader.HealthController.IsAlive=true;

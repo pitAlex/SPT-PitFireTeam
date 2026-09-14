@@ -32,6 +32,7 @@ namespace pitTeam.Modules
             public float OriginalProfileDifficultySqrt;
             public float OriginalHearingModifier;
             public float OriginalAggressionModifier;
+            public readonly FollowerSainEftCoreProjection EftCore = new();
             public bool Logged;
         }
 
@@ -210,6 +211,8 @@ namespace pitTeam.Modules
             try
             {
                 DismissAppliedModifier(state);
+                state.EftCore.Restore();
+                if (bot.LookSensor != null) bot.LookSensor._nextUpdateVisibleDist = 0f;
                 SetMemberValue(state.Info, "_fileSettings", state.OriginalFileSettings);
 
                 object? profile = GetMemberValue(state.Info, "Profile");
@@ -574,6 +577,8 @@ namespace pitTeam.Modules
             modifier.ScatteringCoef = sain.RuntimeDifficulty.ScatteringCoef;
             modifier.RuntimeVisionEffectK = sain.RuntimeDifficulty.RuntimeVisionEffectK;
             modifier.HearingDistCoef = sain.RuntimeDifficulty.HearingDistCoef;
+            if (state.EftCore.Apply(state.Bot.Settings.Current, sain.Core) && state.Bot.LookSensor != null)
+                state.Bot.LookSensor._nextUpdateVisibleDist = 0f;
             state.Bot.Settings.Current.Apply(modifier);
             state.AppliedModifier = modifier;
 
@@ -588,7 +593,8 @@ namespace pitTeam.Modules
                 state.Logged = true;
                 Logger.LogInfo(
                     $"[SAIN] Follower proficiency uses SAIN Default follower={state.Bot.Profile?.Nickname ?? state.Bot.name} " +
-                    $"role={state.TemplateRole} difficulty={botDifficulty} profile={profileDifficulty:0.##} hearing={hearing:0.##}");
+                    $"role={state.TemplateRole} difficulty={botDifficulty} profile={profileDifficulty:0.##} hearing={hearing:0.##} " +
+                    $"visibleDistance={state.Bot.Settings.Current.CurrentVisibleDistance:0.##} scatter={state.Bot.Settings.Current.CurrentScattering:0.####}");
             }
             return true;
         }

@@ -9,7 +9,7 @@ namespace pitTeam.SAINAddon;
 
 // Replica of SAIN 4.5.1 CombatSoloLayer, Copyright Solarint (MIT; SAIN-LICENSE.txt).
 // Intentional differences: addon identity/registration, ownership gate, internal-action
-// resolution, and releasing our activation state on handoff. No follower command policy.
+// resolution, post-combat linger, recorder hooks, and the bounded engagement attempt.
 public class SAINFollowerSoloCombatLayer : SAINLayer
 {
     public const int LayerPriority = 74;
@@ -19,8 +19,21 @@ public class SAINFollowerSoloCombatLayer : SAINLayer
     {
         SAINFollowerRuntime.RegisterSoloLayer(bot, this);
     }
+    private bool lingerAction;
+
     public override Action GetNextAction()
     {
+        Action next = SelectAction();
+        SAINFollowerRuntime.GetRecorder(BotOwner)?.Selected(Name, next.Type, next.Reason);
+        return next;
+    }
+
+    private Action SelectAction()
+    {
+        // BEGIN addon post-combat handoff
+        lingerAction = SAINFollowerRuntime.GetCombatPhase(BotOwner) != SAINFollowerCombatPhase.Combat;
+        if (lingerAction) return new Action(typeof(SAINFollowerLingerAction), "linger");
+        // END addon post-combat handoff
         _lastSelfDecision = _currentSelfDecision;
         _lastDecision = _currentDecision;
 
@@ -33,7 +46,7 @@ public class SAINFollowerSoloCombatLayer : SAINLayer
         switch (_lastDecision)
         {
             case ECombatDecision.MoveToEngage:
-                return new Action(SAINActionTypes.Get("Solo.MoveToEngageAction"), $"{_lastDecision}");
+                return new Action(typeof(SAINFollowerMoveToEngageAction), $"{_lastDecision}");
 
             case ECombatDecision.MeleeAttack:
                 return new Action(SAINActionTypes.Get("Solo.MeleeAttackAction"), $"{_lastDecision}");
@@ -87,6 +100,18 @@ public class SAINFollowerSoloCombatLayer : SAINLayer
             return false;
         }
 
+        // BEGIN addon post-combat handoff
+        if (GetBotComponent())
+        {
+            SAINFollowerCombatPhase phase = SAINFollowerRuntime.GetCombatPhase(BotOwner);
+            if (phase != SAINFollowerCombatPhase.Combat)
+            {
+                _doSurgeryAction = false;
+                CheckActiveChanged(phase == SAINFollowerCombatPhase.Linger);
+                return phase == SAINFollowerCombatPhase.Linger;
+            }
+        }
+        // END addon post-combat handoff
         bool active = GetBotComponent() && _currentDecision != ECombatDecision.None;
         CheckActiveChanged(active);
         return active;
@@ -94,6 +119,21 @@ public class SAINFollowerSoloCombatLayer : SAINLayer
 
     public override bool IsCurrentActionEnding()
     {
+        bool ending = ShouldEndAction();
+        if (ending) SAINFollowerRuntime.GetRecorder(BotOwner)?.Ended(Name, "decisionOrHandoff");
+        return ending;
+    }
+
+    private bool ShouldEndAction()
+    {
+        // BEGIN addon post-combat handoff
+        if (SAINFollowerRuntime.GetCombatPhase(BotOwner) != SAINFollowerCombatPhase.Combat)
+        {
+            base.IsCurrentActionEnding(); // Drain decision events without restarting linger.
+            return !lingerAction;
+        }
+        if (lingerAction) return true;
+        // END addon post-combat handoff
         if (base.IsCurrentActionEnding())
         {
             return true;
@@ -129,6 +169,8 @@ public class SAINFollowerSoloCombatLayer : SAINLayer
 
     public override void Stop()
     {
+        SAINFollowerRuntime.GetRecorder(BotOwner)?.Ended(Name, "layerStopped");
+        lingerAction = false;
         _doSurgeryAction = false;
         CheckActiveChanged(false);
         base.Stop();

@@ -20,26 +20,45 @@ $count=0
 foreach($kind in @('Solo','Squad')){
     $native=Read-Source (Join-Path $SainSourceRoot ('Layers/Combat/'+$kind+'/Combat'+$kind+'Layer.cs'))
     $replica=Read-Source (Join-Path $RepositoryRoot ('addon/SAINFollower'+$kind+'CombatLayer.cs'))
+    # The post-checkpoint linger extension is tested behaviorally; native combat routing
+    # must still match after removing only its three explicitly delimited entry guards.
+    $handoffPattern='(?ms)^[ \t]*// BEGIN addon post-combat handoff\n.*?^[ \t]*// END addon post-combat handoff\n'
+    if([regex]::Matches($replica,$handoffPattern).Count -ne 3){throw "$kind handoff guard count changed"}
+    $replica=[regex]::Replace($replica,$handoffPattern,'')
+    if($kind -eq 'Squad'){
+        $regroupEnd='(?ms)^[ \t]*// BEGIN addon regroup ending\n.*?^[ \t]*// END addon regroup ending\n'
+        if([regex]::Matches($replica,$regroupEnd).Count -ne 1){throw 'Squad regroup ending guard changed'}
+        $replica=[regex]::Replace($replica,$regroupEnd,'')
+    }
     $replica=$replica.Replace(' || !pitFireTeam.UseSainFollowerCombat(BotOwner)','')
     $replica=[regex]::Replace($replica,'SAINActionTypes.Get\("(?:Solo|Squad)\.(?:Cover\.)?([^"]+)"\)','typeof($1)')
-    $replica=$replica.Replace('SAINFollowerSquadRegroupAction','RegroupAction').Replace('SAINFollowerFollowSearchPartyAction','FollowSearchParty')
+    $replica=$replica.Replace('SAINFollowerSquadRegroupAction','RegroupAction').Replace('SAINFollowerFollowSearchPartyAction','FollowSearchParty').Replace('SAINFollowerMoveToEngageAction','MoveToEngageAction')
     foreach($method in @('GetNextAction','IsActive','IsCurrentActionEnding')){
-        if((Normalize (Method $native $method)) -ne (Normalize (Method $replica $method))){throw "$kind replica diverges in $method"}
-        $count++;Write-Output "PASS $kind $method matches native SAIN 4.5.1 after ownership/type substitutions"
+        $replicaName=switch($method){'GetNextAction' {'SelectAction'} 'IsCurrentActionEnding' {'ShouldEndAction'} default {$method}}
+        $replicaMethod=(Method $replica $replicaName).Replace('private Action SelectAction','public override Action GetNextAction').Replace('private bool ShouldEndAction','public override bool IsCurrentActionEnding')
+        if((Normalize (Method $native $method)) -ne (Normalize $replicaMethod)){throw "$kind replica diverges in $method"}
+        $count++;Write-Output "PASS $kind $method matches native SAIN 4.5.1 after ownership/type substitutions and explicit linger guards"
     }
 }
 $native=Read-Source (Join-Path $SainSourceRoot 'Classes/Bot/Decision/SquadDecisionClass.cs')
 $replica=Read-Source (Join-Path $RepositoryRoot 'addon/SAINFollowerSquadDecision.cs')
 $native=$native.Substring($native.IndexOf('public class '));$replica=$replica.Substring($replica.IndexOf('public class '))
+$regroupEntry='(?ms)^[ \t]*// BEGIN addon regroup objective\n.*?^[ \t]*// END addon regroup objective\n'
+if([regex]::Matches($replica,$regroupEntry).Count -ne 1){throw 'Squad regroup objective entry changed'}
+$replica=[regex]::Replace($replica,$regroupEntry,'')
+# The unused native automatic-regroup method/settings are superseded by the tested
+# follower objective. All remaining native squad policy still compares in full.
+$unused=$native.IndexOf('    float SquadDecision_Regroup_NoEnemy_StartDist')
+if($unused -lt 0){throw 'Native unused regroup section changed'}
+$native=$native.Substring(0,$unused)+'}'
 $native=$native.Replace('SquadDecisionClass','SAINFollowerSquadDecision')
 $native=$native.Replace('!Squad.BotInGroup || Bot.Squad.SquadInfo?.LeaderComponent == null || Squad.LeaderComponent?.IsDead == true','!Squad.BotInGroup || !SainPlayerSquadBridge.TryGetPlayerLeader(BotOwner, out Player leader) || leader.HealthController?.IsAlive != true')
 $native=$native.Replace('Bot.Squad.LeaderComponent != null && shallGroupSearch()','shallGroupSearch()')
 $native=$native.Replace('var lead = squad.LeaderComponent;','SainPlayerSquadBridge.TryGetPlayerLeader(BotOwner, out Player lead);').Replace('lead.Transform.Position','lead.Position')
 if((Normalize $native) -ne (Normalize $replica)){throw 'Squad decision policy/settings diverge beyond player-leader substitutions'}
-$count++;Write-Output 'PASS complete squad provider preserves native branch order, thresholds, and disabled regroup selection'
+$count++;Write-Output 'PASS existing squad policy preserves native branch order and thresholds around the explicit regroup extension'
 
 foreach($entry in @(
-    @{Native='RegroupAction';Replica='SAINFollowerSquadRegroupAction';Methods=@('Update','OnSteeringTicked')},
     @{Native='FollowSearchParty';Replica='SAINFollowerFollowSearchPartyAction';Methods=@('Update','OnSteeringTicked','MoveToLead','GetPosNearLead','Start','Stop')}
 )){
     $native=Read-Source (Join-Path $SainSourceRoot ('Layers/Combat/Squad/'+$entry.Native+'.cs'))
@@ -51,4 +70,4 @@ foreach($entry in @(
         $count++;Write-Output ('PASS '+$entry.Replica+' '+$method+' retains native behavior with player leader')
     }
 }
-Write-Output "Passed $count source parity checks. Registration, ownership, internal type resolution, and player-leader substitutions are intentional differences."
+Write-Output "Passed $count source parity checks. Registration, ownership, internal type resolution, player-leader substitutions, post-combat linger guards, recorder lifecycle wrappers, the bounded MoveToEngage action, and the tested two-mode regroup objective/action are intentional differences."

@@ -1,12 +1,48 @@
 using System;
 using EFT;
+using UnityEngine;
 using pitTeam.Components;
 
 namespace pitTeam.Modules
 {
     public static class SainAddonBridge
     {
+        private static Func<BotOwner, SainEnemyContact?>? _getEnemyContact;
+        private static bool _reportedContactFailure;
+
+        public static void RegisterEnemyContactProvider(Func<BotOwner, SainEnemyContact?> provider)
+        {
+            _getEnemyContact = provider;
+            _reportedContactFailure = false;
+        }
+
+        public static void UnregisterEnemyContactProvider(Func<BotOwner, SainEnemyContact?> provider)
+        {
+            if (_getEnemyContact == provider) _getEnemyContact = null;
+        }
+
+        // Handled with no contact is authoritative: never fall back to an EFT goal's live position.
+        public static bool TryGetEnemyContact(BotOwner owner, out SainEnemyContact? contact)
+        {
+            contact = null;
+            if (!IsFollowerCombatEnabled(owner)) return false;
+            try { contact = _getEnemyContact?.Invoke(owner); }
+            catch (Exception ex)
+            {
+                if (!_reportedContactFailure)
+                {
+                    _reportedContactFailure = true;
+                    Logger.LogError($"[SAIN] Status contact read failed: {ex}");
+                }
+            }
+            return true;
+        }
+
         private static Func<BotOwner, bool>? _isReadyForCombat;
+        public static bool IsUsingMedical(BotOwner owner) => Utils.FollowerMedical.IsUsingMedical(owner);
+        public static bool HasAcceptedGoalEnemy(BotOwner owner) =>
+            BotFollowerPlayer.IsEnemyInfoAlive(owner?.Memory?.GoalEnemy);
+        public static void EndPostCombatFullHeal(BotOwner owner) => Utils.FollowerMedical.CompletePostCombatFullHeal(owner);
         public static bool IsCombatReady(BotOwner owner) => _isReadyForCombat?.Invoke(owner) == true;
         private static Func<BotOwner, bool>? _isReadyForPatrolAfterCombat;
         private static Action<BotOwner>? _forceReleaseFollowerCombatState;
@@ -96,6 +132,17 @@ namespace pitTeam.Modules
             Utils.FollowerMedical.BeginPostCombatFullHeal(botOwner);
         }
 
+        private static Func<BotOwner, bool>? _tryPushEnemy;
+        public static void RegisterPushEnemyHandler(Func<BotOwner, bool> handler) => _tryPushEnemy = handler;
+        public static void UnregisterPushEnemyHandler(Func<BotOwner, bool> handler)
+        {
+            if (_tryPushEnemy == handler) _tryPushEnemy = null;
+        }
+
+        // Called after core command acceptance; the ready addon owns its interpretation.
+        public static bool TryPushEnemy(BotOwner owner) =>
+            IsFollowerCombatEnabled(owner) && _tryPushEnemy?.Invoke(owner) == true;
+
         // Generic event that addon can hook into for follower lifecycle changes.
         public static event Action<BotOwner, FollowerLifecycleEvent>? OnFollowerLifecycleEvent;
 
@@ -122,6 +169,23 @@ namespace pitTeam.Modules
 
             OnBossGroupStaticUpdate?.Invoke(boss);
         }
+    }
+
+    // Passive status-report data; no native SAIN references cross into core.
+    public readonly struct SainEnemyContact
+    {
+        public SainEnemyContact(string profileId, Vector3 lastKnownPosition, Vector3? visiblePosition, float timeSinceSeen)
+        {
+            ProfileId = profileId;
+            LastKnownPosition = lastKnownPosition;
+            VisiblePosition = visiblePosition;
+            TimeSinceSeen = timeSinceSeen;
+        }
+
+        public string ProfileId { get; }
+        public Vector3 LastKnownPosition { get; }
+        public Vector3? VisiblePosition { get; }
+        public float TimeSinceSeen { get; }
     }
 
     /// <summary>

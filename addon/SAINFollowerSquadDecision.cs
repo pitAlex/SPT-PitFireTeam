@@ -1,5 +1,5 @@
 // Replica of SAIN 4.5.1 SquadDecisionClass (Solarint, MIT; SAIN-LICENSE.txt).
-// Only AI-leader checks/positions change. Native thresholds, branch order, and disabled regroup selection remain.
+// Native squad branches remain below the explicit follower regroup extension.
 using EFT;
 using SAIN.Components;
 using SAIN.Models.Enums;
@@ -30,16 +30,27 @@ public class SAINFollowerSquadDecision : BotBase
             return false;
         }
 
+        // BEGIN addon regroup objective
+        // Only commands and ongoing regroup belong here. New Auto waits for the
+        // native solo result at the decision publication boundary.
+        var regroup = SAINFollowerRuntime.GetRegroup(BotOwner);
+        // A settled arrival must yield immediately to an existing native squad-support opportunity.
+        if (regroup?.Settling == true && EnemyDecision(out Decision, enemy))
+        {
+            regroup.Complete("squadSupport");
+            return true;
+        }
+        if (regroup?.GetDecision() == true)
+        {
+            Decision = ESquadDecision.Regroup;
+            return true;
+        }
+        // END addon regroup objective
+
         if (EnemyDecision(out Decision, enemy))
         {
             return true;
         }
-
-        //if (shallRegroup())
-        //{
-        //    Decision = SquadDecision.Regroup;
-        //    return true;
-        //}
 
         return false;
     }
@@ -239,63 +250,4 @@ public class SAINFollowerSquadDecision : BotBase
         return distance < SquadDecision_StartHelpFriendDist && visible;
     }
 
-    float SquadDecision_Regroup_NoEnemy_StartDist = 125f;
-    float SquadDecision_Regroup_NoEnemy_EndDistance = 50f;
-    float SquadDecision_Regroup_Enemy_StartDist = 50f;
-    float SquadDecision_Regroup_Enemy_EndDistance = 15f;
-    float SquadDecision_Regroup_EnemySeenRecentTime = 60f;
-
-    public bool shallRegroup()
-    {
-        var squad = Bot.Squad;
-        if (squad.IAmLeader)
-        {
-            return false;
-        }
-
-        float maxDist = SquadDecision_Regroup_NoEnemy_StartDist;
-        float minDist = SquadDecision_Regroup_NoEnemy_EndDistance;
-
-        var enemy = Bot.GoalEnemy;
-        if (enemy != null)
-        {
-            if (enemy.IsVisible || (enemy.Seen && enemy.TimeSinceSeen < SquadDecision_Regroup_EnemySeenRecentTime))
-            {
-                return false;
-            }
-            maxDist = SquadDecision_Regroup_Enemy_StartDist;
-            minDist = SquadDecision_Regroup_Enemy_EndDistance;
-        }
-
-        SainPlayerSquadBridge.TryGetPlayerLeader(BotOwner, out Player lead);
-        if (lead != null)
-        {
-            Vector3 BotPos = BotOwner.Position;
-            Vector3 leadPos = lead.Position;
-            Vector3 directionToLead = leadPos - BotPos;
-            float leadDistance = directionToLead.magnitude;
-            if (enemy != null)
-            {
-                Vector3 EnemyPos = enemy.EnemyPosition;
-                Vector3 directionToEnemy = EnemyPos - BotPos;
-                float EnemyDistance = directionToEnemy.magnitude;
-                if (EnemyDistance < leadDistance)
-                {
-                    if (EnemyDistance < 30f && Vector3.Dot(directionToEnemy.normalized, directionToLead.normalized) > 0.25f)
-                    {
-                        return false;
-                    }
-                }
-            }
-            if (Bot.Decision.CurrentSquadDecision == ESquadDecision.Regroup)
-            {
-                return leadDistance > minDist;
-            }
-            else
-            {
-                return leadDistance > maxDist;
-            }
-        }
-        return false;
-    }
 }

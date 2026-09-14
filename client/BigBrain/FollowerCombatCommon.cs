@@ -2788,7 +2788,7 @@ namespace pitTeam.BigBrain
                 : $"{prefix}.{reason}";
         }
 
-        private static float GetCommittedCoverHoldDuration(string? reason)
+        public static float GetCommittedCoverHoldDuration(string? reason)
         {
             if (IsReasonOrSubreason(reason, "runToHeal") || IsReasonOrSubreason(reason, "moveToHeal"))
             {
@@ -12773,6 +12773,8 @@ namespace pitTeam.BigBrain
             return cover != null;
         }
 
+        public static float ScoreBossCover(float pathDistance, float bossDistance) => pathDistance * 0.5f + bossDistance;
+
         private bool TryFindBossCover(
             EnemyInfo goalEnemy,
             Vector3 bossPosition,
@@ -12809,8 +12811,7 @@ namespace pitTeam.BigBrain
                     point.CanIShootToEnemy = false;
                     return true;
                 },
-                point => GetEvaluatedCoverNavDistance(point) * 0.5f +
-                         Vector3.Distance(point.Position, bossPosition),
+                point => ScoreBossCover(GetEvaluatedCoverNavDistance(point), Vector3.Distance(point.Position, bossPosition)),
                 allowWeakFallback: true,
                 out _);
 

@@ -185,6 +185,8 @@ namespace pitTeam.Components
             }
         }
 
+        public bool CombatIndependencePreference => _canPatrol || _combatIndependentRequested;
+
         public bool CombatIndependent
         {
             get
@@ -1311,7 +1313,7 @@ namespace pitTeam.Components
 
         public void BeginCombatIndependenceFromPatrol()
         {
-            _combatIndependent = _canPatrol || _combatIndependentRequested;
+            _combatIndependent = CombatIndependencePreference;
             _combatRegroupUsesBossAnchor = false;
         }
 
@@ -1625,6 +1627,9 @@ namespace pitTeam.Components
             {
                 return;
             }
+
+            // Ready SainMan translates this accepted order inside the addon.
+            if (SainAddonBridge.TryPushEnemy(_bot)) return;
 
             unchecked
             {

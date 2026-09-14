@@ -6,9 +6,12 @@ Provision SAIN.dll and SAIN.Preset.Shared.dll into addon/refs/4.5.1 from the SAI
 
 Do not replace client/libs4.1/SAIN.dll (the older reference) or the minimum SPT baseline. Do not deploy these references over the external SAIN installation. Deploy the addon and matching core outputs.
 
-Source inspection used the local SAIN 4.5.1 snapshot listed in LOCAL.md. It has no Git metadata; its precise upstream commit and byte identity with installed SAIN were not established. Installed metadata and native action constructor checks separately validate the API. Replicated solo/squad routing, squad decision policy, and player-leader action adaptations retain upstream MIT attribution in SAIN-LICENSE.txt, which accompanies the addon.
+Source inspection used the local SAIN 4.5.1 snapshot listed in LOCAL.md. It has no Git metadata; its precise upstream commit and byte identity with installed SAIN were not established. Installed metadata, native action constructors and the private FindCoverPoint/sprint-field bridge checks separately validate the API. Replicated solo/squad routing, squad decision policy, and player-leader action adaptations retain upstream MIT attribution in SAIN-LICENSE.txt, which accompanies the addon.
 
 ## Verified local reference hashes (SHA-256)
 
 - SAIN.dll: C8942B646463283D1247B5673D018C1D3F2EDFBE754A06061CB33BD09C368489
 - SAIN.Preset.Shared.dll: CD68E6DC65508C8BBBE71103F2AE7DE083C5281D6A57BC7D3CB846C133FC1F58
+## Documentation handoff (2026-09-14)
+
+See [current addon progress](../ADDON-ANALYSIS.md) for validated build/deployment state and [personality findings](../docs/SAIN-Personalities-and-Aggression.md) for the implemented aggression-based personality settings and remaining raid qualification. Findings about generated defaults also inspect the sibling `SAINServerMod` and `SAIN.Preset.Shared` source projects; they do not establish the active custom preset or installed behavior by themselves.

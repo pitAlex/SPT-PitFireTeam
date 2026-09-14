@@ -117,7 +117,7 @@ namespace pitTeam.Modules
                     raidId = currentRaidId,
                     locationId = currentLocationId,
                     file = currentFilePath,
-                    schemaVersion = 12,
+                    schemaVersion = 13,
                     snapshotIntervalMs = GetSnapshotIntervalMs(),
                     followerWeaponActivityProbeMs = Mathf.RoundToInt(FollowerWeaponActivityProbeSeconds * 1000f),
                     goalEnemyTransitionCoalesceMs = Mathf.RoundToInt(GoalEnemyTransitionCoalesceSeconds * 1000f)
@@ -309,7 +309,7 @@ namespace pitTeam.Modules
         }
 
         [System.Diagnostics.Conditional("DEBUG")]
-        public static void RecordCombatLayerState(BotOwner bot, bool active, string reason)
+        public static void RecordCombatLayerState(BotOwner bot, bool active, string reason, string owner = "core")
         {
             if (!CanRecordBot(bot))
             {
@@ -334,6 +334,7 @@ namespace pitTeam.Modules
             }
 
             state.InCombat = active;
+            state.CombatOwner = owner;
             state.LastCombatSeenTime = Time.time;
             if (active)
             {
@@ -346,6 +347,25 @@ namespace pitTeam.Modules
                 state = CreateRecorderStatePayload(state),
                 snapshot = active ? CreateBotSnapshot(bot, state) : null
             });
+        }
+
+        internal static bool IsAddonRecording() => IsRecording();
+
+        internal static void RecordAddonCombatState(BotOwner bot, bool active, string reason)
+        {
+            if (!CanRecordBot(bot)) return;
+            var state = GetOrCreateState(bot);
+            if (active && (!state.InCombat || state.CombatOwner != "sainAddon"))
+                RecordCombatLayerState(bot, true, reason, "sainAddon");
+            else if (!active && state.InCombat && state.CombatOwner == "sainAddon")
+                RecordCombatLayerState(bot, false, reason, "sainAddon");
+        }
+
+        internal static void RecordAddonEvent(BotOwner bot, string kind, object details)
+        {
+            if (!CanRecordBot(bot)) return;
+            var state = GetOrCreateState(bot);
+            WriteEventInternal(kind, bot, new { owner = "sainAddon", details, state = CreateRecorderStatePayload(state) });
         }
 
         [System.Diagnostics.Conditional("DEBUG")]
@@ -1043,7 +1063,9 @@ namespace pitTeam.Modules
 
                 RecorderFollowerState state = GetOrCreateState(owner);
                 FlushExpiredGoalEnemyTransitionRepeats(owner, state);
-                bool layerActive = FollowerCombatLayer.IsFollowerCombatLayerActive(owner);
+                bool sainActive = SainCombatRecorderBridge.IsActive(owner);
+                RecordAddonCombatState(owner, sainActive, "sainSnapshotSync");
+                bool layerActive = FollowerCombatLayer.IsFollowerCombatLayerActive(owner) || sainActive;
                 TryRecordFollowerWeaponActivity(owner, state, layerActive);
                 BotFollowerPlayer? followerData = BossPlayers.Instance?.GetFollower(owner);
                 bool hasActiveCommand = followerData?.TryPeekActiveCommand(out _, out _, out _) == true;
@@ -1176,6 +1198,7 @@ namespace pitTeam.Modules
                 followerData.TryPeekActiveCommand(out command, out commandTarget, out commandUntilTime);
             }
 
+            SainCombatSnapshot? sain = SainCombatRecorderBridge.Capture(bot);
             Vector3 currentPosition = bot.Position;
             Player? player = bot.GetPlayer ?? bot.AIData?.Player;
             var movementContext = player?.MovementContext;
@@ -1185,12 +1208,15 @@ namespace pitTeam.Modules
                 : bot.Transform != null
                     ? NormalizePlanar(bot.Transform.forward)
                     : lookDirection;
-            bool hasGoToPointTarget = TryGetCurrentMoveTarget(bot, out Vector3 goToPointTarget);
-            bool hasMoverTarget = TryGetMoverTarget(bot, out Vector3 moverTarget);
+            Vector3 goToPointTarget = default, moverTarget = default;
+            bool sainMovement = sain?.ControlsMovement == true;
+            bool hasGoToPointTarget = !sainMovement && TryGetCurrentMoveTarget(bot, out goToPointTarget);
+            bool hasMoverTarget = sainMovement ? sain.Destination.HasValue : TryGetMoverTarget(bot, out moverTarget);
+            if (sainMovement && hasMoverTarget) moverTarget = sain.Destination.GetValueOrDefault();
             bool hasEffectiveMoveTarget = hasMoverTarget || hasGoToPointTarget;
             Vector3 effectiveMoveTarget = hasMoverTarget ? moverTarget : goToPointTarget;
             string? effectiveMoveTargetSource = hasMoverTarget
-                ? "moverTargetPoint"
+                ? sainMovement ? "sainActivePath" : "moverTargetPoint"
                 : hasGoToPointTarget
                     ? "goToSomePointData"
                     : null;
@@ -1245,7 +1271,9 @@ namespace pitTeam.Modules
                 position = CreateVector(currentPosition),
                 lookDirection = CreateVector(lookDirection),
                 lookControl = CreateLookControlSnapshot(bot),
-                currentMoveTarget = hasGoToPointTarget ? CreateVector(goToPointTarget) : null,
+                currentMoveTarget = sainMovement
+                    ? hasMoverTarget ? CreateVector(moverTarget) : null
+                    : hasGoToPointTarget ? CreateVector(goToPointTarget) : null,
                 moveTargets = new
                 {
                     goToSomePoint = hasGoToPointTarget ? CreateVector(goToPointTarget) : null,
@@ -1255,10 +1283,11 @@ namespace pitTeam.Modules
                 },
                 movement = new
                 {
-                    sprinting = bot.Mover?.Sprinting == true,
-                    hasActiveMoverPath = bot.Mover?.HasPathAndNoComplete == true,
-                    hasPathTarget = bot.GoToSomePointData?.HaveTarget() == true,
-                    reachedTarget = bot.GoToSomePointData?.IsCome() == true,
+                    owner = sainMovement ? "sain" : "eft",
+                    sprinting = sainMovement ? sain.Running : bot.Mover?.Sprinting == true,
+                    hasActiveMoverPath = sainMovement ? sain.HasPath && sain.Moving : bot.Mover?.HasPathAndNoComplete == true,
+                    hasPathTarget = sainMovement ? sain.Destination.HasValue : bot.GoToSomePointData?.HaveTarget() == true,
+                    reachedTarget = sainMovement ? sain.Arrived : bot.GoToSomePointData?.IsCome() == true,
                     targetPose = SanitizeFloat(bot.Mover?.TargetPose ?? 0f),
                     poseLevel = SanitizeFloat(movementContext?.PoseLevel ?? 0f),
                     prone = movementContext?.IsInPronePose == true,
@@ -1346,13 +1375,14 @@ namespace pitTeam.Modules
                 weapon = CreateLightWeaponSnapshot(bot),
                 combatActivity = CreateCombatActivitySnapshot(bot),
                 health = CreateLimbStatusSnapshot(bot),
-                cover = CreateCoverSnapshot(bot),
+                cover = sainMovement ? sain.Cover : CreateCoverSnapshot(bot),
                 enemy = enemySnapshot,
                 boss = bossSnapshot,
                 targetCommitment = CreateTargetCommitmentSnapshot(bot, followerData, goalEnemy),
                 tactic = followerData?.CombatTactic.ToString(),
                 proficiency = CreateProficiencySnapshot(bot, followerData),
                 sainSquadLeadership = SainPlayerSquadBridge.GetDebugSnapshot(bot),
+                sain = sain?.Details,
                 combatSettings = followerData != null
                     ? new
                     {
@@ -1407,6 +1437,14 @@ namespace pitTeam.Modules
                     safeAimSpeed = SanitizeFloat(modifiers.SafeAimSpeedFactor),
                     safeAccuracy = SanitizeFloat(modifiers.SafeAccuracyFactor)
                 },
+                baseline = current != null
+                    ? new
+                    {
+                        visibleDistance = SanitizeFloat(current.FileSettings.Core.VisibleDistance),
+                        scattering = SanitizeFloat(current.FileSettings.Core.ScatteringPerMeter),
+                        closeScattering = SanitizeFloat(current.FileSettings.Core.ScatteringClosePerMeter)
+                    }
+                    : null,
                 effective = current != null
                     ? new
                     {
@@ -1449,6 +1487,7 @@ namespace pitTeam.Modules
             return new
             {
                 inCombat = state.InCombat,
+                combatOwner = state.CombatOwner,
                 combatEpisodeId = state.CombatEpisodeId,
                 combatAge = state.CombatStartedTime > 0f
                     ? SanitizeFloat(Time.time - state.CombatStartedTime)
@@ -2204,7 +2243,7 @@ namespace pitTeam.Modules
 
         private static bool IsBotInRecordedCombat(BotOwner bot, RecorderFollowerState state)
         {
-            return state.InCombat || FollowerCombatLayer.IsFollowerCombatLayerActive(bot);
+            return state.InCombat || FollowerCombatLayer.IsFollowerCombatLayerActive(bot) || SainCombatRecorderBridge.IsActive(bot);
         }
 
         private static bool AnyFollowerInRecordedCombat()
@@ -2542,6 +2581,7 @@ namespace pitTeam.Modules
         private sealed class RecorderFollowerState
         {
             public bool InCombat;
+            public string? CombatOwner;
             public int CombatEpisodeId;
             public float CombatStartedTime;
             public float LastCombatSeenTime;

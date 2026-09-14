@@ -38,6 +38,7 @@
         <Reference Include="Comfort"><HintPath>../client/libs4.1/Comfort.dll</HintPath><Private>false</Private></Reference>
         <Reference Include="Comfort.Unity"><HintPath>../client/libs4.1/Comfort.Unity.dll</HintPath><Private>false</Private></Reference>
         <Reference Include="DissonanceVoip"><HintPath>../client/libs4.1/DissonanceVoip.dll</HintPath><Private>false</Private></Reference>
+        <Reference Include="UnityEngine.PhysicsModule"><HintPath>../client/libs/UnityEngine.PhysicsModule.dll</HintPath><Private>false</Private></Reference>
         <Reference Include="UnityEngine.AIModule"><HintPath>../client/libs/UnityEngine.AIModule.dll</HintPath><Private>false</Private></Reference>
     </ItemGroup>
     <ItemGroup><None Update="SAIN-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>

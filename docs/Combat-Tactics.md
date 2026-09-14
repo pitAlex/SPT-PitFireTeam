@@ -6,7 +6,7 @@ Last updated: 2026-08-30
 
 - This document covers the core follower combat path under `client/BigBrain`.
 - It only mentions the optional SAIN addon combat path where a boss command crosses the core/addon boundary.
-- `docs/SAIN-Integration.md` is authoritative for that boundary: the addon is selected per follower through the SainMan tactic. Installation alone never switches ownership. Ready SainMan uses addon SAINFollowerSoloCombatLayer and SAINFollowerSquadCombatLayer replicas, with native solo behavior, player-led squad adaptation, and Chad personality. Activation requires SainMan selection and per-follower readiness; Rifleman is only the unavailable-addon fallback. Addon differences must live in that layer or its custom SAIN actions; general SAIN patches, shared-object changes, and the proficiency compatibility contract remain core-owned.
+- `docs/SAIN-Integration.md` is authoritative for that boundary: the addon is selected per follower through the SainMan tactic. Installation alone never switches ownership. Ready SainMan uses addon SAINFollowerSoloCombatLayer and SAINFollowerSquadCombatLayer replicas, with native solo behavior around explicit extensions, player-led squad adaptation, and aggression-interpolated personality settings. Activation requires SainMan selection and per-follower readiness; Rifleman is only the unavailable-addon fallback. Addon differences must live in that layer or its custom SAIN actions; general SAIN patches, shared-object changes, and the proficiency compatibility contract remain core-owned.
 - Treat this as current runtime documentation, not a backlog.
 
 ## Runtime Ownership
@@ -96,8 +96,8 @@ Combat command state lives on `BotFollowerPlayer` and is intentionally separate 
 
 SAIN addon note:
 
-- `SAINFollowerCombatLayer` treats the temporary HoldPosition aggression override as boss-protection/regroup intent.
-- This keeps the command behavior aligned with core `0%` aggression even though SAIN addon decisions do not use `FollowerCombatCommon`.
+- SainMan applies temporary HoldPosition through `SAINFollowerPersonality`, selecting 0% Coward combat behavior. Combat GoForward selects temporary 100% GigaChad combat behavior; Gogogo restores saved aggression. Speech, assignment and mechanical proficiency do not follow these anchors.
+- This is addon-owned personality policy; the removed single-layer protection objective is not restored. See `docs/SAIN-Personalities-and-Aggression.md`.
 
 ### Hold Position
 
@@ -119,7 +119,7 @@ Out of combat, `HoldPosition` is handled by the request layer as a normal hold c
 
 ### Go Forward / Push Enemy
 
-Combat `GoForward` becomes `PushEnemy` if the follower already has an active enemy.
+Combat `GoForward` reaches the `SetPushEnemy` command boundary if the follower already has an active enemy. Ready SainMan handles the accepted order inside the addon as temporary 100% aggression; other tactics retain the durable core push below. SainMan replaces any prior order/regroup, preserves native survival work and failed engagement attempts, and returns to saved aggression on Gogogo or the existing override-clear lifecycle.
 
 Picked-up follower behavior:
 
@@ -127,7 +127,7 @@ Picked-up follower behavior:
 - Better follower gear versus the current enemy's gear increases acceptance.
 - Lower-level recruits are more likely to refuse because pushing feels dangerous.
 - Higher-level recruits can also refuse from cockiness/independence rather than fear.
-- Refusal responds with `Negative`; acceptance creates the same `PushEnemy` command as a saved squadmate.
+- Refusal responds with `Negative`; acceptance uses the same tactic-specific push handling as a saved squadmate.
 - The same protection willingness affects non-command rifleman decisions: low-protection pickups are slower to regroup to the player and may skip boss-under-attack support unless their personality is more loyal.
 
 Rifleman/default behavior:
@@ -669,6 +669,10 @@ It is intended to compare observed behavior with code behavior:
 - transition-only Balanced `autonomousEngagement` diagnostics with effective/required aggression, complete route distances, distance/threat/player-pull components, group/equipment/role/weapon inputs, and the final Engage/Hold/Regroup result
 
 Use it to validate whether a bug is tactical routing, action execution, perception, or visual/player interpretation.
+
+Schema version 13 adds explicit SAIN addon combat recording through `SainCombatRecorderBridge`. A ready SainMan follower opens a shared `sainAddon` combat episode across solo, squad, and post-combat linger. `sainDecision` records the native published solo/squad/self result; `sainActionSelected` and `sainActionEnd` identify each addon-layer action instance and its duration/end reason; `sainEngageAttempt` records committed firing-position attempts and their failure/reset reasons. Existing objective events and periodic snapshots now have a live combat episode during addon combat.
+
+The nested `sain` snapshot contains native decisions, enemy visibility/shootability and last-known position, firing position, cover state, movement path identity/status/destination/corner/sprint details (up to 16 path points), regroup mode, and engagement-attempt state. `movement.owner` and `moveTargets.effectiveSource` identify SAIN-owned movement; an absent SAIN path does not fall back to a stale EFT target. Core cover fields use native cover while SAIN owns movement. The original EFT enemy fields remain available for comparison with `sain.enemy`. Reads do not evaluate decisions or update gameplay state. The bridge is optional, follower-scoped, Debug-only, and respects the recorder setting. Older recordings cannot recover these previously missing events.
 
 Schema version 12 adds `lookControl`: unflattened look direction, upward-positive pitch, steering mode, requested point/direction, last steering direction, and weapon origin. Combat activity also records the real and final aim targets alongside aim status, so inactive cached aim points can be distinguished from current aiming. Existing planar direction/angle fields remain unchanged.
 

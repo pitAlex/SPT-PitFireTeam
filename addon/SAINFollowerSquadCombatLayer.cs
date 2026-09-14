@@ -20,8 +20,21 @@ public class SAINFollowerSquadCombatLayer : SAINLayer
     {
         SAINFollowerRuntime.RegisterSquadLayer(bot, this);
     }
+    private bool lingerAction;
+
     public override Action GetNextAction()
     {
+        Action next = SelectAction();
+        SAINFollowerRuntime.GetRecorder(BotOwner)?.Selected(Name, next.Type, next.Reason);
+        return next;
+    }
+
+    private Action SelectAction()
+    {
+        // BEGIN addon post-combat handoff
+        lingerAction = SAINFollowerRuntime.GetCombatPhase(BotOwner) != SAINFollowerCombatPhase.Combat;
+        if (lingerAction) return new Action(typeof(SAINFollowerLingerAction), "linger");
+        // END addon post-combat handoff
         LastActionDecision = Bot.Decision.CurrentSquadDecision;
         switch (LastActionDecision)
         {
@@ -62,6 +75,13 @@ public class SAINFollowerSquadCombatLayer : SAINLayer
 
         if (GetBotComponent())
         {
+            // BEGIN addon post-combat handoff
+            if (SAINFollowerRuntime.GetCombatPhase(BotOwner) != SAINFollowerCombatPhase.Combat)
+            {
+                CheckActiveChanged(false); // Solo owns the shared linger window.
+                return false;
+            }
+            // END addon post-combat handoff
             BotComponent bot = Bot;
             if (bot != null && bot.BotActive)
             {
@@ -83,6 +103,25 @@ public class SAINFollowerSquadCombatLayer : SAINLayer
 
     public override bool IsCurrentActionEnding()
     {
+        bool ending = ShouldEndAction();
+        if (ending) SAINFollowerRuntime.GetRecorder(BotOwner)?.Ended(Name, "decisionOrHandoff");
+        return ending;
+    }
+
+    private bool ShouldEndAction()
+    {
+        // BEGIN addon post-combat handoff
+        if (SAINFollowerRuntime.GetCombatPhase(BotOwner) != SAINFollowerCombatPhase.Combat)
+        {
+            base.IsCurrentActionEnding(); // Drain decision events without restarting linger.
+            return !lingerAction;
+        }
+        if (lingerAction) return true;
+        // END addon post-combat handoff
+        // BEGIN addon regroup ending
+        if (LastActionDecision == ESquadDecision.Regroup && SAINFollowerRuntime.GetRegroup(BotOwner)?.Active != true)
+            return true;
+        // END addon regroup ending
         if (base.IsCurrentActionEnding())
         {
             return true;
@@ -99,6 +138,8 @@ public class SAINFollowerSquadCombatLayer : SAINLayer
 
     public override void Stop()
     {
+        SAINFollowerRuntime.GetRecorder(BotOwner)?.Ended(Name, "layerStopped");
+        lingerAction = false;
         CheckActiveChanged(false);
         base.Stop();
     }

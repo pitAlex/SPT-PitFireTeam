@@ -1,14 +1,14 @@
 # SAIN addon rework plan — SAIN 4.5.1
 
-Date: 2026-09-12
+Original investigation: 2026-09-12. Status index updated: 2026-09-14.
 
-Status: phase 1 now includes both native combat-layer replicas and player-leader squad adaptation. Later custom command/tactic policies remain deferred.
+This is a historical investigation and longer-term proposal. Its descriptions of old files, missing callbacks, a 4.5.0 addon reference, single-layer combat and unimplemented phases describe the pre-rework snapshot. Do not use those passages as the current work queue or restore those removed files.
 
-The intended result is a player-led follower squad using two extensible SAIN combat layers: solo and squad. Keep SAIN's working combat machinery and replace the boundaries that assume an AI leader or cannot express pitFireTeam commands. Clean the obsolete addon before enabling it.
+Current state: both SAIN 4.5.1 combat replicas and opt-in SainMan ownership are implemented, followed by player leadership, linger and recovery, core proficiency repair, command/automatic regroup, bounded engagement, boss-oriented cover, accepted-goal combat entry, native-contact status markers and native SAIN recording. Private typed references are now `addon/refs/4.5.1`. See [current progress and validation](../ADDON-ANALYSIS.md) and [current ownership contract](SAIN-Integration.md).
 
-This plan follows the user's requested architecture. `AGENTS.md`, `docs/SAIN-Integration.md`, and `docs/Commands.md` now distinguish the implemented leadership phase from the future solo/squad combat design.
+Aggression-based personality settings are implemented at **100% GigaChad, 70% Chad, 50% Normal, 30% Rat, 0% Coward**, with interpolation and temporary combat-command overrides. Continue qualification from [the personality findings and implementation contract](SAIN-Personalities-and-Aggression.md). Other custom combat command translations remain deferred.
 
-## SAIN addon phase 1 (2026-09-13)
+## Historical phase-one checkpoint (2026-09-13)
 
 The optional addon exposes **SainMan** as a selectable follower tactic when SAIN and the addon are installed. Choosing it switches that follower's combat ownership to the addon. Other tactics retain core combat; absent or unready addon state uses the existing fallback without erasing the saved selection.
 
@@ -29,7 +29,7 @@ The previously requested Chad assignment remains follower-scoped setup outside s
 
 The premature solo command extension and old one-layer class are removed. Custom combat commands and new follower tactical policies belong to later phases. This phase is replication, cleanup, and player-leader adaptation. Historical notes describing older addon behavior do not establish current command parity.
 
-The sections below retain the original investigation and longer-term proposal. docs/SAIN-Addon-Phase1.md and ADDON-ANALYSIS.md are authoritative for implemented scope.
+The sections below retain the original 2026-09-12 investigation and proposed sequence, including superseded file names and assumptions. [The phase-one checkpoint](SAIN-Addon-Phase1.md) records that initial scope; [ADDON-ANALYSIS.md](../ADDON-ANALYSIS.md) is authoritative for current implemented progress.
 
 ## 1. Inspected baseline
 
@@ -270,4 +270,4 @@ SAIN paths below are relative to the inspected 4.5.1 snapshot; pitFireTeam paths
 | Existing priority/command gates | `client/BigBrain/FollowerPatrolLayer.cs:17`, `client/BigBrain/FollowerRequestLayer.cs:95`, `docs/Commands.md` |
 | Core proficiency/talk/vision ownership | `client/Modules/FollowerSainProficiency.cs`, `client/Patches/SAINPatches.cs:95`, `docs/SAIN-Integration.md` |
 
-No implementation tests or raid tests were run for this planning pass. Findings above are source/metadata observations; proposed behavior remains subject to the qualification gates.
+No implementation tests or raid tests were run for the original 2026-09-12 planning pass; subsequent validation is recorded in ADDON-ANALYSIS.md. Findings above are source/metadata observations; proposed behavior remains subject to the qualification gates.

@@ -17,7 +17,7 @@ namespace pitTeam.SAINAddon
                 throw new NotSupportedException("SainMan requires SAIN 4.5.1.");
             foreach (string name in new[]
             {
-                "Solo.Cover.DoSurgeryAction", "Solo.MoveToEngageAction", "Solo.MeleeAttackAction",
+                "Solo.Cover.DoSurgeryAction", "Solo.MeleeAttackAction",
                 "Solo.FightZombiesAction", "Solo.RushEnemyAction", "Solo.ThrowGrenadeAction",
                 "Solo.Cover.ShiftCoverAction", "Solo.Cover.SeekCoverAction", "Solo.StandAndShootAction",
                 "Solo.SearchAction", "Solo.FreezeAction", "Squad.SuppressAction"

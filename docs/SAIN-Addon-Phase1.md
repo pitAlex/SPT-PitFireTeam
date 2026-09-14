@@ -1,4 +1,12 @@
-# SAIN addon preliminary specification
+# SAIN addon phase-one checkpoint
+
+Checkpoint: 2026-09-13, commit `60d725bd60050a7c02ebfaac3ef73772468d2f8e`. Documentation status reviewed 2026-09-14.
+
+This document preserves the original replication/cleanup scope. Later implemented extensions include post-combat linger and recovery, the core proficiency baseline repair, automatic/command regroup, bounded MoveToEngage, boss-oriented cover, accepted-goal combat entry, native-contact status markers and schema-13 SAIN recording. See [current progress](../ADDON-ANALYSIS.md) and [the ownership contract](SAIN-Integration.md) for their current behavior and validation.
+
+Aggression-driven personality settings are implemented at 100% GigaChad, 70% Chad, 50% Normal, 30% Rat and 0% Coward, with interpolation and temporary combat-command overrides. [Personality findings and implementation contract](SAIN-Personalities-and-Aggression.md) records the behavior and remaining raid qualification.
+
+The no-custom-command/no-new-tactical-policy statements below describe the checkpoint only. They do not prohibit the explicitly requested later extensions.
 
 ## SAIN addon phase 1 (2026-09-13)
 

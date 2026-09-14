@@ -11,21 +11,37 @@ try {
         $ctor=@($type.Methods | Where-Object { $_.Name -eq '.ctor' -and $_.IsPublic -and $_.Parameters.Count -eq 1 -and $_.Parameters[0].ParameterType.FullName -eq 'EFT.BotOwner' })
         if($ctor.Count -ne 1){throw "Missing native action constructor: $name"}
     }
+    $cover=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.SAINComponent.Classes.SAINCoverClass'
+    $selection=@($cover.Methods | Where-Object {$_.Name -eq 'FindCoverPoint' -and !$_.IsStatic -and $_.Parameters.Count -eq 0 -and $_.ReturnType.FullName -eq 'SAIN.SAINComponent.SubComponents.CoverFinder.CoverPoint'})
+    if($selection.Count -ne 1 -or !($cover.Fields | Where-Object {$_.Name -eq '_shallSprint' -and $_.FieldType.FullName -eq 'System.Boolean'})){throw 'Cover selection boundary changed'}
     $provider=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.SAINComponent.Classes.Decision.SquadDecisionClass'
     $getDecision=@($provider.Methods | Where-Object {$_.Name -eq 'GetDecision' -and $_.ReturnType.FullName -eq 'System.Boolean' -and $_.Parameters.Count -eq 2})
     if($getDecision.Count -ne 1 -or $getDecision[0].Parameters[0].ParameterType.FullName -ne 'SAIN.Preset.Shared.Enums.ESquadDecision&' -or $getDecision[0].Parameters[1].ParameterType.FullName -ne 'SAIN.SAINComponent.Classes.EnemyClasses.Enemy'){throw 'Squad provider signature changed'}
+    $manager=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.SAINComponent.Classes.Decision.BotDecisionManager'
+    $publish=@($manager.Methods | Where-Object {$_.Name -eq 'SetDecisions' -and $_.ReturnType.FullName -eq 'System.Void' -and !$_.IsStatic -and $_.Parameters.Count -eq 4})
+    $expected=@('SAIN.Preset.Shared.Enums.ECombatDecision','SAIN.Preset.Shared.Enums.ESquadDecision','SAIN.Preset.Shared.Enums.ESelfActionType','SAIN.SAINComponent.Classes.EnemyClasses.Enemy')
+    if($publish.Count -ne 1){throw 'Decision publisher signature changed'}
+    for($i=0;$i -lt 4;$i++){if($publish[0].Parameters[$i].ParameterType.FullName -ne $expected[$i]){throw 'Decision publisher parameter changed'}}
     $info=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.SAINComponent.Classes.Info.SAINBotInfoClass'
-    foreach($name in @('get_Personality','get_PersonalitySettingsClass','get_Difficulty','get_ForgetEnemyTime','set_ForgetEnemyTime','SetPersonality','CalcTimeBeforeSearch','CalcHoldGroundDelay')){
+    foreach($name in @('get_Personality','set_Personality','get_PersonalitySettingsClass','set_PersonalitySettingsClass','get_Difficulty','get_ForgetEnemyTime','set_ForgetEnemyTime','SetPersonality','CalcTimeBeforeSearch','CalcHoldGroundDelay')){
         if(!($info.Methods | Where-Object Name -eq $name)){throw "Missing personality member: $name"}
     }
+    $searchAction=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.Layers.Combat.Solo.SearchAction'
+    foreach($field in @('_sprintEnabled','_sprintTimer')){if(!($searchAction.Fields | Where-Object Name -eq $field)){throw "Missing search cache: $field"}}
+    $talk=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.SAINComponent.Classes.Talk.EnemyTalk'
+    if(!($talk.Methods | Where-Object Name -eq 'UpdatePresetSettings')){throw 'Missing personality talk refresh'}
     $friendly=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.SAINComponent.Classes.SAINFriendlyFireClass'
     if(@($friendly.Methods | Where-Object {$_.Name -eq 'CheckFriendlyFireStatus' -and $_.IsStatic -and $_.Parameters.Count -eq 4}).Count -ne 2){throw 'Friendly-fire overloads changed'}
     $layer=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.Layers.SAINLayer'
     if(!$layer.IsPublic -or !$layer.IsAbstract){throw 'SAINLayer extension boundary changed'}
-    Write-Output "Installed SAIN 4.5.1 validated: $($actions.Count) action constructors, personality API, friendly-fire overloads, public layer base."
+    Write-Output "Installed SAIN 4.5.1 validated: $($actions.Count) action constructors, decision publisher, cover selection, personality API, friendly-fire overloads, public layer base."
 } finally {$assembly.Dispose()}
 
 $fixture=Get-Content -Raw (Join-Path $PSScriptRoot 'SainAddonCombatFixture.cs')
+$followerSource=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Components/BotFollowerPlayer.cs')
+$push=[regex]::Match($followerSource,'(?ms)^        public void SetPushEnemy[(]float duration[)].*?^        [}]')
+if(!$push.Success){throw 'Push command entry changed'}
+$fixture=$fixture.Replace('__PUSH_METHOD__',$push.Value)
 $plugin=Get-Content -Raw (Join-Path $RepositoryRoot 'client/friendlyPlugin.cs')
 $gates=[regex]::Matches($plugin,'(?ms)^        public static bool (?:IsSainManTacticAvailable|IsSainFollowerCombatAvailable|UseSainFollowerCombat|ShouldDisableSainForFollower)\b[^;]+;')
 if($gates.Count -ne 4){throw 'Combat ownership declarations changed'}
@@ -41,6 +57,17 @@ public static class NativeOwnershipGate {
 $($nativeGate.Value)
 }
 "@
+$recorderSource=Get-Content -Raw -Encoding UTF8 (Join-Path $RepositoryRoot 'client/Modules/BattleRecorder.cs')
+$recorderMethods=foreach($name in @('RecordCombatLayerState','RecordAddonCombatState','RecordAddonEvent','CreateRecorderStatePayload')){
+    $match=[regex]::Match($recorderSource,'(?m)^        (?:public|private|internal) static [^\r\n]*\b'+$name+'\(')
+    if(!$match.Success){throw "Missing recorder method: $name"}
+    $begin=$recorderSource.IndexOf('{',$match.Index);$depth=0
+    for($i=$begin;$i -lt $recorderSource.Length;$i++){
+        if($recorderSource[$i] -eq '{'){$depth++}
+        if($recorderSource[$i] -eq '}'){$depth--;if($depth -eq 0){$recorderSource.Substring($match.Index,$i-$match.Index+1);break}}
+    }
+}
+$recorderMethods=$recorderMethods -join [Environment]::NewLine
 $sdk=dotnet --list-sdks | Select-Object -Last 1
 if($sdk -notmatch '^(\S+) \[(.+)\]$'){throw 'SDK missing'}
 $compiler=Join-Path $Matches[2] ($Matches[1]+'/Roslyn/bincore/csc.dll')
@@ -48,10 +75,22 @@ $framework=Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319'
 $temporary=Join-Path ([IO.Path]::GetTempPath()) ('pitFireTeam-sain-combat-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $temporary | Out-Null
 try {
-    $sources=@('addon/SAINActionTypes.cs','addon/SAINFollowerSoloCombatLayer.cs','addon/SAINFollowerSquadCombatLayer.cs','addon/SAINFollowerSquadDecision.cs','addon/SAINFollowerSquadRegroupAction.cs','addon/SAINFollowerFollowSearchPartyAction.cs','client/Modules/SainSquadDecisionBridge.cs','tests/SainSquadFixture.cs','addon/SAINFollowerRuntime.cs','client/Modules/SainAddonBridge.cs','client/Modules/SainManPersonality.cs','client/Patches/FollowerSainFriendlyFirePatch.cs')
+    $sources=@('tests/SainEnemyMarkerFixture.cs','addon/SAINFollowerCover.cs','addon/SAINFollowerCoverFinder.cs','client/Modules/SainCoverSelectionBridge.cs','tests/SainCoverFixture.cs','addon/SAINFollowerPersonality.cs','tests/SainPersonalityFixture.cs','addon/SAINFollowerEngageAttempt.cs','addon/SAINFollowerMoveToEngageAction.cs','addon/SAINFollowerRecorder.cs','client/Modules/SainCombatRecorderBridge.cs','tests/SainEngageRecorderFixture.cs','addon/SAINFollowerRegroupObjective.cs','client/Modules/SainRegroupBridge.cs','tests/SainRegroupFixture.cs','addon/SAINFollowerCombatHandoff.cs','addon/SAINFollowerLingerAction.cs','tests/SainLingerFixture.cs','addon/SAINActionTypes.cs','addon/SAINFollowerSoloCombatLayer.cs','addon/SAINFollowerSquadCombatLayer.cs','addon/SAINFollowerSquadDecision.cs','addon/SAINFollowerSquadRegroupAction.cs','addon/SAINFollowerFollowSearchPartyAction.cs','client/Modules/SainSquadDecisionBridge.cs','tests/SainSquadFixture.cs','addon/SAINFollowerRuntime.cs','client/Modules/SainAddonBridge.cs','client/Modules/SainManPersonality.cs','client/Patches/FollowerSainFriendlyFirePatch.cs')
     $paths=@()
     foreach($sourcePath in $sources){
-        $source=Get-Content -Raw (Join-Path $RepositoryRoot $sourcePath)
+        $source=Get-Content -Raw -Encoding UTF8 (Join-Path $RepositoryRoot $sourcePath)
+        if($sourcePath -eq 'tests/SainEngageRecorderFixture.cs'){$source=$source.Replace('__RECORDER_METHODS__',$recorderMethods)}
+        if($sourcePath -eq 'tests/SainEnemyMarkerFixture.cs'){
+            $ping=Get-Content -Raw -Encoding UTF8 (Join-Path $RepositoryRoot 'client/Utils/PingTeamates.cs')
+            $begin=$ping.IndexOf('        private bool SynchronizeEnemyMarkerContacts(')
+            $end=$ping.IndexOf('        private void CreateGuiStyle()', $begin)
+            if($begin -lt 0 -or $end -le $begin){throw 'Marker resolver boundaries changed'}
+            $source=$source.Replace('__MARKER_METHODS__',$ping.Substring($begin,$end-$begin))
+            $begin=$ping.IndexOf('    internal sealed class EnemyMarkerContact')
+            $end=$ping.IndexOf('    internal sealed class RetainedEnemyDownContact',$begin)
+            if($begin -lt 0 -or $end -le $begin){throw 'Marker contact boundaries changed'}
+            $source=$source.Replace('__MARKER_CONTACT__',$ping.Substring($begin,$end-$begin))
+        }
         # Fixture types live alongside production under test; runtime uses the separate SAIN assembly.
         $source=[regex]::Replace($source,'Type.GetType\("([^"]+), SAIN"(?:, true)?\)','CombatChecks.ResolveType("$1")')
         $path=Join-Path $temporary ([IO.Path]::GetFileName($sourcePath))
@@ -61,9 +100,16 @@ try {
     $harmony=Join-Path $RepositoryRoot 'client/libs/0Harmony.dll';Copy-Item -LiteralPath $harmony -Destination $temporary
     Get-ChildItem (Join-Path $GameRoot 'BepInEx/core') -Filter '*.dll' |
         Where-Object {$_.Name -like 'Mono*' -or $_.Name -eq 'System.ValueTuple.dll'} | Copy-Item -Destination $temporary
+    $json=Join-Path $RepositoryRoot 'client/libs4.1/Newtonsoft.Json.dll';Copy-Item -LiteralPath $json -Destination $temporary
+    $shared=Join-Path $RepositoryRoot 'addon/refs/4.5.1/SAIN.Preset.Shared.dll';Copy-Item -LiteralPath $shared -Destination $temporary
     $exe=Join-Path $temporary 'Combat.exe'
-    $arguments=@($compiler,'/nologo','/target:exe','/langversion:latest','/nullable:disable','/nostdlib+','/nowarn:8632',"/out:$exe","/reference:$harmony")
-    foreach($reference in @('mscorlib.dll','System.dll','System.Core.dll')){$arguments+='/reference:'+(Join-Path $framework $reference)}
+    $arguments=@($compiler,'/nologo','/target:exe','/langversion:latest','/nullable:disable','/define:DEBUG','/nostdlib+','/nowarn:8632',"/out:$exe","/reference:$harmony","/reference:$json","/reference:$shared")
+    foreach($reference in @('mscorlib.dll','System.dll','System.Core.dll','System.Runtime.Serialization.dll')){$arguments+='/reference:'+(Join-Path $framework $reference)}
+    $facade=Join-Path ${env:ProgramFiles(x86)} 'Reference Assemblies/Microsoft/Framework/.NETFramework/v4.7.2/Facades/netstandard.dll'
+    if(!(Test-Path -LiteralPath $facade)){throw '.NET Framework 4.7.2 targeting pack is required for the recorder fixture'}
+    # SAIN.Preset.Shared targets 2.1; Unity's facade forwards these settings types to Framework assemblies.
+    Copy-Item -LiteralPath (Join-Path $GameRoot 'EscapeFromTarkov_Data/Managed/netstandard.dll') -Destination $temporary
+    $arguments+='/reference:'+$facade
     & dotnet @arguments @paths
     if($LASTEXITCODE -ne 0){throw 'Addon combat harness compilation failed'}
     & $exe

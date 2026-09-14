@@ -12,6 +12,8 @@ using SAIN;
 using SAIN.Components;
 using SAIN.Layers;
 using SAIN.Preset.Shared.Enums;
+using SAIN.Preset.Shared.Models.Preset.Personalities;
+using SAIN.Preset.Shared.Personalities.BasePersonality;
 using UnityEngine;
 [assembly: AssemblyVersion("4.5.1.0")]
 namespace UnityEngine {
@@ -26,14 +28,19 @@ namespace UnityEngine {
 }
 namespace EFT {
     public partial class Player { public Vector3 Position; }
-    public class Memory { public bool HaveEnemy,DeadGoal; }
+    public partial class EnemyInfo { public bool Alive=true; }
+    public class Memory { public bool HaveEnemy,DeadGoal,IsUnderFire; public EnemyInfo GoalEnemy=new EnemyInfo(); }
+    public class MedicineItem { public string Id="fixture-med"; }
+    public class FirstAid { public bool Have2Do,Using,IsBleeding; public MedicineItem CurUsingMeds; public bool HaveSmth2Use=>CurUsingMeds!=null; public string _bodyPartToHeal; }
+    public class Medicine { public FirstAid FirstAid=new FirstAid(); }
     public class Mind { public float TIME_TO_FORGOR_ABOUT_ENEMY_SEC=60; }
     public class FileSettings { public Mind Mind=new Mind(); }
     public class Settings { public FileSettings FileSettings=new FileSettings(); }
     public partial class BotOwner {
-        public string ProfileId="selected"; public bool IsDead, Active=true, IsFollower=true, FriendlyInLane;
+        public string ProfileId="selected"; public bool IsDead, Active=true, IsFollower=true, FriendlyInLane, UsingMedical; public Vector3 LookDirection=new Vector3(0,0,1);
         public Player GetPlayer=new Player(); public Memory Memory=new Memory(); public Settings Settings=new Settings();
         public BotComponent Sain; public BotFollowerPlayer Follower; public Player Leader=new Player();
+        public Medicine Medecine=new Medicine(); public int RecoveryStarts,RecoveryEnds; public bool RecoveryActive;
     }
 }
 namespace DrakiaXYZ.BigBrain.Brains {
@@ -47,10 +54,7 @@ namespace DrakiaXYZ.BigBrain.Brains {
 }
 namespace SAIN.Extensions { public static class BotExtensions { public static bool IsBotActive(this BotOwner owner)=>owner.Active&&!owner.IsDead; } }
 namespace SAIN.Models.Enums { public enum ESAINLayer { None,Combat,Squad,AvoidThreat,Flashed } }
-namespace SAIN.Preset.Shared.Enums {
-    public enum ECombatDecision { None,MoveToEngage,MeleeAttack,FightZombies,RushEnemy,ThrowGrenade,ShiftCover,SeekCover,Retreat,ShootDistantEnemy,StandAndShoot,Search,Freeze,DogFight,AvoidGrenade }
-    public enum ESelfActionType { None,Surgery,Reload }
-}
+
 namespace SAIN.Layers {
     public abstract class SAINLayer : DrakiaXYZ.BigBrain.Brains.CustomLayer {
         public BotOwner BotOwner;public BotComponent Bot;public bool NativeDecisionChanged;private SAIN.Models.Enums.ESAINLayer category;
@@ -61,11 +65,12 @@ namespace SAIN.Layers {
         public virtual bool IsCurrentActionEnding(){bool changed=NativeDecisionChanged;NativeDecisionChanged=false;return changed;}
         public virtual void Stop(){}
     }
-    public interface IBotAction {}
-    public abstract class BotAction {
-        protected BotOwner BotOwner;public BotComponent Bot=>BotOwner.Sain;protected Shooter Shoot=>Bot.Shoot;public virtual void OnSteeringTicked(){}
-        protected BotAction(BotOwner owner,string name){BotOwner=owner;}
-        public virtual void Start(){} public virtual void Stop(){}
+    public interface IBotAction {string Name{get;}}
+    public abstract class BotAction : IBotAction {
+        protected BotOwner BotOwner;public string Name{get;}public BotComponent Bot=>BotOwner.Sain;protected Shooter Shoot=>Bot.Shoot;public virtual void OnSteeringTicked(){}
+        protected BotAction(BotOwner owner,string name){BotOwner=owner;Name=name;}
+        protected bool TryShootAnyTarget(SAIN.SAINComponent.Classes.EnemyClasses.Enemy enemy)=>Bot.Shoot.ShootAnyVisibleEnemies(enemy);
+        public virtual void Start(){Bot.CurrentAction=this;} public virtual void Stop(){}
         public virtual void Update(DrakiaXYZ.BigBrain.Brains.CustomLayer.ActionData data){}
     }
     public class NativeLayer {public BotOwner BotOwner{get;set;}} public class SAINAvoidThreatLayer : NativeLayer {} public class ExtractLayer : NativeLayer {}
@@ -81,7 +86,7 @@ namespace SAIN.Layers.Combat.Solo {
     public class FightZombiesAction : BotAction { public FightZombiesAction(BotOwner o):base(o,""){} }
     public class RushEnemyAction : BotAction { public RushEnemyAction(BotOwner o):base(o,""){} }
     public class ThrowGrenadeAction : BotAction { public ThrowGrenadeAction(BotOwner o):base(o,""){} }
-    public class SearchAction : BotAction { public SearchAction(BotOwner o):base(o,""){} }
+    public class SearchAction : BotAction { private bool _sprintEnabled; private float _sprintTimer; public bool Sprint=>_sprintEnabled; public float SprintTimer=>_sprintTimer; public void SeedSprint(){_sprintEnabled=true;_sprintTimer=9999;} public SearchAction(BotOwner o):base(o,""){} }
     public class FreezeAction : BotAction { public FreezeAction(BotOwner o):base(o,""){} }
 }
 namespace SAIN.Layers.Combat.Solo.Cover {
@@ -94,39 +99,41 @@ namespace SAIN.Components {
         public ECombatDecision CurrentCombatDecision;
         public ESelfActionType CurrentSelfDecision;
         public bool HasDecision=>CurrentCombatDecision!=ECombatDecision.None || CurrentSquadDecision!=ESquadDecision.None;
-        public int Resets;public void ResetDecisions(bool active){Resets++;CurrentCombatDecision=ECombatDecision.None;CurrentSquadDecision=ESquadDecision.None;}
+        public SAIN.SAINComponent.Classes.Decision.BotDecisionManager Manager;
+        public int Resets;public void ResetDecisions(bool active){Resets++;Manager.Reset();}
     }
-    public class Cover { public object CoverInUse; }
+    public class Cover { public SAIN.SAINComponent.Classes.ECoverSeekingState CoverSeekingState; public SAIN.SAINComponent.SubComponents.CoverFinder.CoverPoint CoverInUse,CoverPoint_MovingTo; public List<SAIN.SAINComponent.SubComponents.CoverFinder.CoverPoint> CoverPoints=new List<SAIN.SAINComponent.SubComponents.CoverFinder.CoverPoint>(); }
     public partial class Mover {
-        public int Stops,Paths;public bool Complete=true;public Vector3 Destination;
-        public void Stop(){Stops++;}
-        public bool WalkToPoint(Vector3 target,bool complete=true,float distance=-1){Paths++;Destination=target;return Complete;}
+        public PathData ActivePath;
+        public int Stops,Paths;public bool Moving,Complete=true;public Vector3 Destination;
+        public void Stop(){Stops++;ActivePath=null;Moving=false;}
+        public bool WalkToPoint(Vector3 target,bool complete=true,float distance=-1){Paths++;Destination=target;if(Complete){ActivePath=new PathData{Destination=target};Moving=true;}return Complete;}
     }
     public partial class BotComponent {
         public BotOwner BotOwner{get;set;} public bool IsDead=>BotOwner.IsDead;
-        public SAIN.SAINComponent.Classes.Decision.SAINDecisionClass Decision=new SAIN.SAINComponent.Classes.Decision.SAINDecisionClass(); public Cover Cover=new Cover();public Mover Mover=new Mover();
+        public SAIN.SAINComponent.Classes.Decision.SAINDecisionClass Decision=new SAIN.SAINComponent.Classes.Decision.SAINDecisionClass(); public SAIN.SAINComponent.Classes.SAINCoverClass Cover;public Mover Mover=new Mover();
         public SAIN.SAINComponent.Classes.Info.SAINBotInfoClass Info;
-        public SAIN.Models.Enums.ESAINLayer ActiveLayer;
-        public BotComponent(BotOwner owner){BotOwner=owner;Info=new SAIN.SAINComponent.Classes.Info.SAINBotInfoClass(owner);}
+        public SAIN.Models.Enums.ESAINLayer ActiveLayer;public SAIN.Layers.IBotAction CurrentAction{get;set;} public Talk Talk{get;private set;}
+        public BotComponent(BotOwner owner){BotOwner=owner;Cover=new SAIN.SAINComponent.Classes.SAINCoverClass(owner);Decision.Manager=new SAIN.SAINComponent.Classes.Decision.BotDecisionManager(this);Info=new SAIN.SAINComponent.Classes.Info.SAINBotInfoClass(this);Talk=new Talk(this);}
     }
 }
 namespace SAIN {
     public static class SAINEnableClass {public static bool GetSAIN(string id,out BotComponent bot){bot=CombatChecks.Bots.Find(b=>b.ProfileId==id)?.Sain;return bot!=null;}}
-    public static class SAINPlugin {public static object LoadedPreset=new object();}
+    public static class SAINPlugin {public static SAIN.Preset.SAINPresetClass LoadedPreset=new SAIN.Preset.SAINPresetClass();}
 }
 namespace SAIN.SAINComponent.Classes.Info {
-    public enum Personality { Normal,Chad,GigaChad }
+
     public class Difficulty {
         public float AggressionModifier{get;private set;}=1;
-        public int Updates;public void UpdateSettings(object preset){Updates++;AggressionModifier=2;}
+        private readonly SAINBotInfoClass info; public Difficulty(SAINBotInfoClass info){this.info=info;} public bool FailNextUpdate;public int Updates;public void UpdateSettings(object preset){if(FailNextUpdate){FailNextUpdate=false;throw new InvalidOperationException("fixture update failure");}Updates++;AggressionModifier=2*info.PersonalitySettingsClass.Difficulty.AggressionCoef;}
     }
     public partial class SAINBotInfoClass {
-        private BotOwner owner;public SAINBotInfoClass(BotOwner bot){owner=bot;}
-        public Personality Personality{get;private set;}
-        public object PersonalitySettingsClass{get;private set;}=new object();
-        public Difficulty Difficulty{get;}=new Difficulty();
+        private BotOwner owner;public BotComponent Bot{get;} public SAINBotInfoClass(BotComponent bot){Bot=bot;owner=bot.BotOwner;Difficulty=new Difficulty(this);SetPersonality(EPersonality.Normal);}
+        public EPersonality Personality{get;private set;}
+        public PersonalitySettingsClass PersonalitySettingsClass{get;private set;}
+        public Difficulty Difficulty{get;}
         public float ForgetEnemyTime{get;private set;}=60;public int SearchRefreshes,HoldRefreshes;
-        public void SetPersonality(Personality personality){Personality=personality;PersonalitySettingsClass=new object();}
+        public void SetPersonality(EPersonality personality){if(SAINPlugin.LoadedPreset.PersonalityManager.PersonalityDictionary.TryGetValue(personality,out var settings)){Personality=personality;PersonalitySettingsClass=settings;}}
         public void CalcTimeBeforeSearch(){SearchRefreshes++;ForgetEnemyTime=999;owner.Settings.FileSettings.Mind.TIME_TO_FORGOR_ABOUT_ENEMY_SEC=999;}
         public void CalcHoldGroundDelay(){HoldRefreshes++;}
     }
@@ -142,11 +149,30 @@ namespace SAIN.SAINComponent.Classes {
 }
 namespace pitTeam.Components {
     public enum FollowerCombatTactic { Balanced,Marksman,SainMan }
-    public enum FollowerCommandType { None,RegroupNearBoss,CombatComeToBossCover,CombatMoveToPointTactical,PushEnemy }
-    public class pitAIBossPlayer {}
+    public enum FollowerCommandType { None,RegroupNearBoss,CombatComeToBossCover,CombatMoveToPointTactical,PushEnemy,SuppressEnemy,HoldPosition }
+    public class pitAIBossPlayer {public CombatEvents CombatEvents=new CombatEvents();}
     public class BotFollowerPlayer {
         public BotOwner Owner;public FollowerCombatTactic CombatTactic=FollowerCombatTactic.SainMan;
+        internal static bool IsEnemyInfoAlive(EnemyInfo info)=>info?.Alive==true;
         public FollowerCommandType Command;public Vector3 Target;public string EndReason;
+        public float CombatAggression=70;public float? OverrideAggression;public bool IsTemporaryCombatAggressionOverrideActive=>OverrideAggression.HasValue;public float EffectiveCombatAggression=>OverrideAggression??CombatAggression;
+        public bool CanPatrol,CombatIndependenceRequested;
+        public bool CombatIndependencePreference=>CanPatrol||CombatIndependenceRequested;
+        public void BeginCombatIndependenceFromPatrol(){CombatIndependent=CombatIndependencePreference||CombatIndependent;}
+        public void ClearActiveCombatIndependent(){CombatIndependent=false;}
+        public bool CombatIndependent,TightRegroupRequested,CombatRegroupUsesBossAnchor;public float BossProtectionWillingness01=1f;
+        public void SetTemporaryCombatAggressionOverride(float value,string source){OverrideAggression=value;}
+        public void ClearTemporaryCombatAggressionOverride(string source){OverrideAggression=null;}
+        public bool IgnoreCommands;
+        private BotOwner _bot=>Owner;
+        private FollowerCommandType _activeCommand {get=>Command;set=>Command=value;}
+        private Vector3 _commandTarget;
+        public float _commandUntilTime;public int _pushEnemyIssueSequence;
+        private bool _resumeHoldAfterComeCloser,_resumeHoldAfterTakeLoot,_resumeHoldAfterTakeLootCrouch;
+        private bool ShouldIgnoreCommandSet()=>IgnoreCommands;
+        __PUSH_METHOD__
+        public void SetCombatRegroupBossAnchor(bool value){CombatRegroupUsesBossAnchor=value;}
+        public void ClearOrderedPushTargetLock(string reason){}
         public BotOwner GetBot()=>Owner;public bool HasCombatHandoffSignal()=>Owner.Memory.HaveEnemy&&!Owner.Memory.DeadGoal;
         public bool TryGetActiveCommand(out FollowerCommandType command,out Vector3 target){command=Command;target=Target;return command!=FollowerCommandType.None;}
         public void ClearCommand(string reason){Command=FollowerCommandType.None;EndReason=reason;}
@@ -169,7 +195,11 @@ namespace pitTeam.Modules {
     }
 }
 namespace pitTeam.Utils {
-    public static class FollowerMedical {public static void BeginPostCombatFullHeal(BotOwner owner){}}
+    public static class FollowerMedical {
+        public static void BeginPostCombatFullHeal(BotOwner owner){owner.RecoveryStarts++;owner.RecoveryActive=true;}
+        public static void CompletePostCombatFullHeal(BotOwner owner){owner.RecoveryEnds++;owner.RecoveryActive=false;}
+        public static bool IsUsingMedical(BotOwner owner)=>owner.UsingMedical;
+    }
     public static class FollowerShotSafety {public static bool IsFriendlyInShotLane(BotOwner owner,Vector3 origin,Vector3 direction,float distance)=>owner.FriendlyInLane;}
 }
 namespace pitTeam {
@@ -190,6 +220,8 @@ public static partial class CombatChecks {
     public static void Main(){
         SAINActionTypes.Validate();
         SainSquadDecisionBridge.Apply(new Harmony("pitTeam.sain.squad.test"));
+        SainCoverSelectionBridge.Apply(new Harmony("pitTeam.sain.cover.test"));
+        Check(SainCoverSelectionBridge.IsAvailable,"native cover selection bridge installed");
         Check(SainSquadDecisionBridge.IsAvailable,"native squad decision bridge installed");
         var selected=Spawn("selected");var rifle=Spawn("rifle",FollowerCombatTactic.Balanced);var marks=Spawn("marks",FollowerCombatTactic.Marksman);
         var layer=new SAINFollowerSoloCombatLayer(selected,72);new SAINFollowerSoloCombatLayer(rifle,72);new SAINFollowerSoloCombatLayer(marks,74);
@@ -200,36 +232,37 @@ public static partial class CombatChecks {
         Tick();
         Check(pitFireTeam.UseSainFollowerCombat(selected),"ready SainMan selects addon combat");
         Check(!pitFireTeam.UseSainFollowerCombat(rifle)&&!pitFireTeam.UseSainFollowerCombat(marks),"Rifleman and Marksman retain core ownership");
-        Check(selected.Sain.Info.Personality==SAIN.SAINComponent.Classes.Info.Personality.Chad&&rifle.Sain.Info.Personality==SAIN.SAINComponent.Classes.Info.Personality.Normal,"Chad applies only to SainMan");
+        Check(selected.Sain.Info.Personality==EPersonality.Chad&&rifle.Sain.Info.Personality==EPersonality.Normal,"70 percent selects Chad only for SainMan");
         Check(selected.Settings.FileSettings.Mind.TIME_TO_FORGOR_ABOUT_ENEMY_SEC==60&&selected.Sain.Info.ForgetEnemyTime==60&&selected.Sain.Info.Difficulty.Updates==1,"personality refresh preserves follower memory and refreshes native difficulty");
         Tick();Check(selected.Sain.Info.Difficulty.Updates==1,"stable personality is not reapplied every tick");
-        selected.Sain.Info.SetPersonality(SAIN.SAINComponent.Classes.Info.Personality.Normal);Tick();
-        Check(selected.Sain.Info.Personality==SAIN.SAINComponent.Classes.Info.Personality.Chad&&selected.Sain.Info.Difficulty.Updates==2,"preset reroll restores Chad");
+        selected.Sain.Info.SetPersonality(EPersonality.Normal);Tick();
+        Check(selected.Sain.Info.Personality==EPersonality.Chad&&selected.Sain.Info.Difficulty.Updates==2,"preset reroll restores the aggression profile");
         Check(!layer.IsActive(),"no decision leaves addon combat inactive");
         var expected=new Dictionary<ECombatDecision,string>{
-            {ECombatDecision.MoveToEngage,"MoveToEngageAction"},{ECombatDecision.MeleeAttack,"MeleeAttackAction"},
+            {ECombatDecision.MoveToEngage,"SAINFollowerMoveToEngageAction"},{ECombatDecision.MeleeAttack,"MeleeAttackAction"},
             {ECombatDecision.FightZombies,"FightZombiesAction"},{ECombatDecision.RushEnemy,"RushEnemyAction"},
             {ECombatDecision.ThrowGrenade,"ThrowGrenadeAction"},{ECombatDecision.ShiftCover,"ShiftCoverAction"},
             {ECombatDecision.SeekCover,"SeekCoverAction"},{ECombatDecision.Retreat,"SeekCoverAction"},
             {ECombatDecision.ShootDistantEnemy,"StandAndShootAction"},{ECombatDecision.StandAndShoot,"StandAndShootAction"},
             {ECombatDecision.Search,"SearchAction"},{ECombatDecision.Freeze,"FreezeAction"}};
+        selected.Sain.GoalEnemy=new SAIN.SAINComponent.Classes.EnemyClasses.Enemy();
         foreach(var pair in expected){
             selected.Sain.Decision.CurrentCombatDecision=pair.Key;
             Check(layer.IsActive()&&layer.GetNextAction().Type.Name==pair.Value,"native action mapping "+pair.Key);
         }
         layer.NativeDecisionChanged=true;Check(layer.IsCurrentActionEnding(),"native decision event ends current action");
-        selected.Sain.Decision.CurrentSelfDecision=ESelfActionType.Surgery;selected.Sain.Cover.CoverInUse=new object();
+        selected.Sain.Decision.CurrentSelfDecision=ESelfActionType.Surgery;selected.Sain.Cover.CoverInUse=new SAIN.SAINComponent.SubComponents.CoverFinder.CoverPoint();
         Check(layer.IsCurrentActionEnding()&&layer.GetNextAction().Type.Name=="DoSurgeryAction","surgery arrives in cover and selects native surgery");
         selected.Sain.Decision.CurrentSelfDecision=ESelfActionType.None;Check(layer.IsCurrentActionEnding(),"finished surgery releases action");
-        selected.Follower.Command=FollowerCommandType.RegroupNearBoss;
-        Check(layer.GetNextAction().Type.Name=="FreezeAction"&&selected.Follower.Command==FollowerCommandType.RegroupNearBoss,"solo replica does not consume follower commands");
+        selected.Follower.Command=FollowerCommandType.CombatMoveToPointTactical;
+        Check(layer.GetNextAction().Type.Name=="FreezeAction"&&selected.Follower.Command==FollowerCommandType.CombatMoveToPointTactical,"solo replica does not translate other follower commands");
         selected.Follower.Command=FollowerCommandType.None;
         TestSquad(selected,rifle,layer,squadLayer);
         selected.Sain.Decision.CurrentCombatDecision=ECombatDecision.Search;selected.Memory.HaveEnemy=true;
         SainAddonBridge.TryIsReadyForPatrolAfterCombat(selected,out bool ready);Check(!ready,"combat blocks patrol");
         SainAddonBridge.TryResetDecisionState(selected);
         Check(selected.Sain.Decision.CurrentCombatDecision==ECombatDecision.None&&selected.Memory.HaveEnemy,"native reset preserves living enemy memory");
-        selected.Memory.DeadGoal=true;
+        selected.Memory.DeadGoal=true; Time.time+=SAINFollowerCombatHandoff.LingerSeconds;
         SainAddonBridge.TryIsReadyForPatrolAfterCombat(selected,out ready);Check(ready,"dead remembered goal cannot hold patrol hostage");
         selected.Memory.HaveEnemy=false;selected.Memory.DeadGoal=false;
         SainAddonBridge.TryIsReadyForPatrolAfterCombat(selected,out ready);Check(ready,"cleared combat releases patrol");
@@ -239,10 +272,10 @@ public static partial class CombatChecks {
         new SAINFollowerSoloCombatLayer(late,74);Tick();Check(!pitFireTeam.UseSainFollowerCombat(late),"solo alone cannot enable SainMan");
         new SAINFollowerSquadCombatLayer(late,75);Tick();Check(pitFireTeam.UseSainFollowerCombat(late),"both replicas enable late SainMan");
         selected.Follower.CombatTactic=FollowerCombatTactic.Marksman;Tick();
-        Check(!pitFireTeam.UseSainFollowerCombat(selected)&&selected.Sain.Info.Personality==SAIN.SAINComponent.Classes.Info.Personality.Normal,"opt out restores previous personality and core ownership");
+        Check(!pitFireTeam.UseSainFollowerCombat(selected)&&selected.Sain.Info.Personality==EPersonality.Normal,"opt out restores previous personality and core ownership");
         selected.Follower.CombatTactic=FollowerCombatTactic.SainMan;Tick();selected.IsFollower=false;
         SainAddonBridge.RaiseFollowerLifecycleEvent(selected,FollowerLifecycleEvent.OnDismiss);
-        Check(!pitFireTeam.UseSainFollowerCombat(selected)&&selected.Sain.Info.Personality==SAIN.SAINComponent.Classes.Info.Personality.Normal,"dismiss restores native personality");
+        Check(!pitFireTeam.UseSainFollowerCombat(selected)&&selected.Sain.Info.Personality==EPersonality.Normal,"dismiss restores native personality");
         var nativeLayers=new SAIN.Layers.NativeLayer[]{
             new SAIN.Layers.Combat.Solo.CombatSoloLayer(),new SAIN.Layers.Combat.Squad.CombatSquadLayer(),
             new SAIN.Layers.ExtractLayer(),new SAIN.Layers.Combat.Run.DebugLayer(),
@@ -263,6 +296,13 @@ public static partial class CombatChecks {
         late.IsFollower=false;late.FriendlyInLane=true;
         Check(SAIN.SAINComponent.Classes.SAINFriendlyFireClass.CheckFriendlyFireStatus(10,new Vector3(),new Vector3(1,0,0),late.Sain)==SAIN.SAINComponent.Classes.FriendlyFireStatus.Clear,"ordinary bot friendly-fire policy untouched");
         late.IsFollower=true;
+        TestSainEnemyMarkers();
+        TestLinger();
+        TestRegroup();
+        TestCover();
+        TestEngageAttempt();
+        TestSainRecorder();
+        TestPersonality();
         SAINFollowerRuntime.Disable();
         Check(!SainAddonBridge.HasRuntimeCallbacks&&!pitFireTeam.UseSainFollowerCombat(late),"addon shutdown restores core fallback");
         Check(Logger.Errors.Count==0,"no lifecycle errors");

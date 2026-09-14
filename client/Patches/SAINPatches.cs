@@ -101,6 +101,7 @@ namespace pitTeam.Patches
 
             SainPlayerSquadBridge.ApplyPatches();
             SainSquadDecisionBridge.Apply(harmony);
+            SainCoverSelectionBridge.Apply(harmony);
         }
 
         private static void PatchFollowerCombatPatrolStanceWithoutAddon(Harmony harmony)

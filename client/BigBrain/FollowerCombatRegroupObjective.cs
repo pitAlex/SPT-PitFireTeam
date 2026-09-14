@@ -889,14 +889,16 @@ namespace pitTeam.BigBrain
             return GetOrderedRegroupDistance();
         }
 
-        private float GetOrderedRegroupDistance()
+        private float GetOrderedRegroupDistance() => GetOrderedRegroupDistance(CombatCommon.GetFollowerTactic());
+
+        internal static float GetOrderedRegroupDistance(FollowerCombatTactic tactic)
         {
             if (CombatDistanceConfiguration.Instance.IsFactoryMode)
             {
                 return CombatRegroupOrderedDistanceFactory;
             }
 
-            return CombatCommon.GetFollowerTactic() == FollowerCombatTactic.Marksman
+            return tactic == FollowerCombatTactic.Marksman
                 ? CombatRegroupOrderedDistanceMarksman
                 : CombatRegroupOrderedDistance;
         }
