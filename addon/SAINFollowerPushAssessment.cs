@@ -55,7 +55,10 @@ internal sealed class SAINFollowerPushAssessment(BotComponent bot)
             currentBossRoute = projectedBossRoute = 0f;
             if (!independent)
             {
-                bool current = SainRegroupBridge.TryGetDistance(bot.Position, boss, out currentBossRoute);
+                var regroup = SAINFollowerRuntime.GetRegroup(bot.BotOwner);
+                bool current = regroup != null
+                    ? regroup.TryGetPlayerDistance(boss, out currentBossRoute)
+                    : SainRegroupBridge.TryGetDistance(bot.Position, boss, out currentBossRoute);
                 bool projected = SainRegroupBridge.TryGetDistance(known, boss, out projectedBossRoute);
                 pathsComplete &= leaderKnown && current && projected;
             }

@@ -17,7 +17,7 @@ namespace UnityEngine {
     public class Collider { public CoverPoint Point; }
     public partial struct Vector3 { public static Vector3 up=>new Vector3(0,1,0); }
 }
-namespace EFT { public static class LayersMaskController { public const int HighPolyWithTerrainNoGrassMask=1; } }
+namespace EFT { public static class LayersMaskController { public const int HighPolyWithTerrainNoGrassMask=1,HighPolyWithTerrainMask=2; } }
 namespace SAIN.Preset.Shared.GlobalSettings {
     public class GlobalSettingsClass {
         public static GlobalSettingsClass Instance=new GlobalSettingsClass();public GeneralSettings General=new GeneralSettings();
@@ -26,7 +26,7 @@ namespace SAIN.Preset.Shared.GlobalSettings {
     }
 }
 namespace SAIN.Components {
-    public class Medical {public float TimeSinceShot=float.MaxValue;}
+    public class Medical {public float TimeSinceShot=float.MaxValue;public BotSurgery Surgery;}
     public partial class BotComponent {public Medical Medical=new Medical();public Vector3 NavMeshPosition=>Position;}
     public partial class Mover {
         public bool GoToCoverPoint(CoverPoint point,bool sprint,ESprintUrgency urgency) =>
@@ -149,7 +149,34 @@ public static partial class CombatChecks {
         Check(otherFloor.Sain.Cover.FindForTest()==away,"boss preference does not choose another floor as nearby cover");
         var capped=CoverBot("boundedScan");for(int i=0;i<80;i++)SainBotCoverData.Scene.Add(new SainBotColliderData{Collider=new Collider{Point=CoverAt(10+i)}});
         int creates=CoverAnalyzer.Creates;capped.Sain.Cover.FindForTest();
-        Check(CoverAnalyzer.Creates-creates==32,"one player-area search bounds expensive native cover probes");
+        Check(CoverAnalyzer.Creates-creates==4,"boss scan spends at most four native probes in one frame");
+        capped.Sain.Cover.FindForTest();
+        Check(CoverAnalyzer.Creates-creates==4,"repeated layer polls cannot reset the cover frame budget");
+        for(int frame=0;frame<10;frame++){Time.time+=0.05f;capped.Sain.Cover.FindForTest();}
+        Check(CoverAnalyzer.Creates-creates==32,"incremental boss scan retains the total 32-candidate bound");
+        Check(capped.Sain.Cover.CoverPoint_MovingTo!=null,"incremental scan eventually selects a ranked cover");
+        int rechecks=CoverAnalyzer.Rechecks;
+        capped.Sain.Cover.FindForTest();
+        Check(CoverAnalyzer.Rechecks==rechecks,"cached candidates do not repeat native physics and path validation");
+        var slow=CoverBot("slowBudgetedScan");for(int i=0;i<32;i++)SainBotCoverData.Scene.Add(new SainBotColliderData{Collider=new Collider{Point=CoverAt(10+i)}});
+        bool slowSelected=false;for(int frame=0;frame<12;frame++){Time.time+=.3f;slowSelected |= slow.Sain.Cover.FindForTest()!=null;}
+        Check(slowSelected,"slow native decision cadence cannot starve incremental validation through cache expiry");
+        var pending=CoverBot("pendingNoCover");for(int i=0;i<32;i++)SainBotCoverData.Scene.Add(new SainBotColliderData{Collider=new Collider{Point=CoverAt(10+i)}});
+        pending.Sain.Cover.FindForTest();var dogfight=new SAIN.SAINComponent.Classes.Mover.DogFight(pending.Sain);
+        dogfight.DogFightMove(true,pending.Sain.GoalEnemy);
+        Check(dogfight.Moves==0,"unfinished boss scan cannot trigger native no-cover aggressive advance");
+        dogfight.DogFightMove(false,pending.Sain.GoalEnemy);Check(dogfight.Moves==1,"defensive dogfight retains priority while cover scan is pending");
+        pending.Sain.Decision.CurrentCombatDecision=ECombatDecision.DogFight;dogfight.DogFightMove(true,pending.Sain.GoalEnemy);
+        Check(dogfight.Moves==2,"actual native dogfight decision can preempt pending cover selection");
+        var idle=CoverBot("idleRoute");int calls=pitTeam.Utils.Utils.PathCalls;
+        for(int i=0;i<10;i++){Time.time+=0.6f;SAINFollowerRuntime.GetRegroup(idle).Observe();}
+        Check(pitTeam.Utils.Utils.PathCalls==calls,"inactive regroup observes orders without calculating player routes");
+        var regroup=SAINFollowerRuntime.GetRegroup(idle);
+        regroup.TryGetPlayerDistance(idle.Leader.Position,out _);var scratch=pitTeam.Utils.Utils.LastPath;
+        calls=pitTeam.Utils.Utils.PathCalls;regroup.TryGetPlayerDistance(idle.Leader.Position,out _);
+        Check(pitTeam.Utils.Utils.PathCalls==calls,"explicit player route consumers share the cached measurement");
+        Time.time+=0.6f;regroup.TryGetPlayerDistance(idle.Leader.Position,out _);
+        Check(scratch!=null&&ReferenceEquals(scratch,pitTeam.Utils.Utils.LastPath),"distance probes reuse their native scratch path");
         SainBotCoverData.Scene.Clear();
         policy.Clear();Check(!policy.HoldsArrival(b.Sain.GoalEnemy),"combat release clears cover commitment");
         TestRegroupChurn();

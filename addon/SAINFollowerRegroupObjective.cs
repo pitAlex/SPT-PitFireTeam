@@ -23,7 +23,7 @@ internal sealed class SAINFollowerRegroupObjective(BotComponent bot) : BotBase(b
     internal bool Active => Mode != SAINRegroupMode.None;
     private float settleUntil, nextDistanceCheck, distance = float.PositiveInfinity, nextTargetAttempt;
     private bool completePath, hasTarget;
-    private Vector3 measuredPlayer, target, targetPlayer;
+    private Vector3 measuredPlayer, measuredBot, target, targetPlayer;
     private CoverPoint cover;
     private string movement;
     private float autoRetryAt;
@@ -70,8 +70,8 @@ internal sealed class SAINFollowerRegroupObjective(BotComponent bot) : BotBase(b
             Bot.Decision.ResetDecisions(false);
         }
 
-        Measure(player.Position);
         if (!Active) return;
+        Measure(player.Position);
         if (hasTarget && cover != null && (cover.Spotted || cover.CoverData.IsBad || !HotContact(2.5f) ||
             (targetPlayer - player.Position).sqrMagnitude > SainRegroupBridge.BossMoveRefreshDistance * SainRegroupBridge.BossMoveRefreshDistance))
             ReleaseTarget();
@@ -174,9 +174,16 @@ internal sealed class SAINFollowerRegroupObjective(BotComponent bot) : BotBase(b
 
     private void Measure(Vector3 player)
     {
-        if (Time.time < nextDistanceCheck && (player - measuredPlayer).sqrMagnitude < 1f) return;
-        measuredPlayer = player; nextDistanceCheck = Time.time + 0.5f;
+        if (Time.time < nextDistanceCheck && (player - measuredPlayer).sqrMagnitude < 1f &&
+            (BotOwner.Position - measuredBot).sqrMagnitude < 1f) return;
+        measuredPlayer = player; measuredBot = BotOwner.Position; nextDistanceCheck = Time.time + 0.5f;
         completePath = SainRegroupBridge.TryGetDistance(BotOwner.Position, player, out distance);
+    }
+
+    // Shared with push assessment; measuring does not activate regroup.
+    internal bool TryGetPlayerDistance(Vector3 player, out float result)
+    {
+        Measure(player); result = distance; return completePath;
     }
 
     private float CompleteDistance => Mode == SAINRegroupMode.Auto

@@ -1,5 +1,88 @@
 # SAIN addon progress and session handoff
 
+## SAIN combat There / Come here (2026-09-17)
+
+Ready SAINGrunt followers now consume the existing `CombatMoveToPointTactical` and `CombatComeToBossCover` commands through `SAINFollowerRelocationObjective`, before push/regroup and ordinary native squad work. The existing player gesture routing, selected follower, visibility/range checks and 30m There limit are unchanged. Peaceful commands stay Core-owned.
+
+- **There:** complete-path tactical walking to the sampled command point, with destination reservations. The point stays fixed when the player moves.
+- **Come here:** bounded native cover discovery around the player at consumption, restricted to the Core boss-cover radius and at least one metre of progress toward the player. No suitable cover uses Core's shared complete-path fallback, stopping 1.5m back along the final path segment and within 2m of the sampled player position. Once selected, the destination is committed.
+- The addon uses a dedicated action with native SAIN walking/shooting/steering. Point movement yields to a visible shootable enemy or incoming fire, while cover approach can keep walking and firing. No new blind-suppression policy is added. Native medicine, retreat, grenade handling, melee and dogfight retain priority; pending commands keep their original eight-second expiry. Active relocation yields to survival work.
+- Core geometry and thresholds are shared in `FollowerCombatCommandGeometry`: 1.25m arrival, 0.35m progress and a four-second stall bound. The extraction leaves Core's boss-approach algorithm unchanged. Arrival uses the existing three-second settle with fire/safety preemption. Cover planning is bounded to eight seconds and retains four native probes per finder per frame. Repeated polls cannot rearm arrival or switch a completed action into stale native MoveToEngage before publication.
+- There/Come here replace previous push/regroup intent; new commands and Go Forward replace relocation. Explicit gestures also work during On Your Own. Invalid/no-path destinations give Core's Negative/NoGesture feedback. Enemy loss, opt-out and teardown release owned paths/claims without clearing another owner's destination.
+- `sainObjective` events and the objective snapshot include relocation mode, destination, planning/movement/arrival/failure reasons and stall duration. No new Harmony hooks or typed SAIN reference in Core are introduced. Friendly-fire review remains deferred.
+
+Validation: 697 production addon combat checks (48 new gesture checks) pass, including real production command setters/timeouts, publication/layer routing, cover/progress/fallback geometry, navigation failure, reservations, scan budget, arrival, interruption and cleanup. Matching Debug core/addon build passed with zero warnings/errors; 54 leadership/ownership checks and 13 replica comparisons pass. Both extracted Core path methods compare unchanged to their prior bodies. Deployed matching Debug core/addon DLLs and PDBs plus license on 2026-09-17 00:17:50 +03:00 with Tarkov closed. All five installed SHA-256 hashes match. Backup and manifest: `C:/Users/alexa/AppData/Local/Temp/pitFireTeam-before-combat-gestures-20260917-001749`. In-raid navigation and combat presentation still need qualification.
+
+Combat-gesture deployment hashes:
+
+| File | SHA-256 |
+| --- | --- |
+| pitFireTeam.dll | `CA2941FA165A37EFFB15F9DF5000FF506CF6783ECC6338138187A1EAF1249443` |
+| pitFireTeam.pdb | `E925510144EC2EF91F355EEA7D1DACFACD85EA1956220395500A06A6BD0693B3` |
+| pitFireTeam.SAINAddon.dll | `8C4CCBF7F0BD330CB5269F6E82A13C2418C96B713C2D3ED8D60FD65451DA4E61` |
+| pitFireTeam.SAINAddon.pdb | `099C08EABC3640A5AEA8C96AD6FD77CF5703B38C48F7E821C4017AE5F36EBA91` |
+| SAIN-LICENSE.txt | `7047B3162F2663E5DCC062FB2AFF07E00E26DBA13BB19D722CF8A24D8466DC57` |
+
+
+
+## Ordered push contact interruption (2026-09-16)
+
+Shoreline `20260916-183446-Shoreline.jsonl`: Go Forward at 1939.037 starts Brick's ordered push. Native last-known knowledge disappears at 1949.327 and the addon clears it as `targetLost`; EFT goal briefly clears at 1949.35986 and returns at 1949.37659. The same native contact is back by 1949.47656, but Brick creates an Automatic push at 1949.57666, fails its risk score and regroups before SeekCover. Medved retains Ordered mode. This is an addon intent-lifetime bug.
+
+Bound ordered pushes now retain intent for a fixed three-second contact interruption, including a brief missing accepted EFT goal. Advancement pauses, its owned path stops, and native combat admission/knowledge are unchanged. The same valid contact resumes Ordered mode with the committed destination and existing movement/failure budgets; changed native knowledge keeps the existing new-contact handling. Repeated polls and same-target orders cannot extend the deadline. Confirmed target death, replacement/cancel commands, explicit release and lifecycle cleanup remain immediate; sustained loss expires. Automatic pushes keep their existing immediate contact-loss behavior. Retained orders cannot fall through to automatic regroup. Recorder reasons `contactInterrupted` / `contactRestored` and `contactGraceRemaining` expose the interruption.
+
+Validation: 649 production addon combat checks (22 additional checks) and 13 replica comparisons pass. Matching Debug core/addon build passed with zero warnings/errors. Contact-gap tests cover the recorded interruption, accepted-goal handoff, stopped movement, retained leg/stall/failure limits, timeout, repeated commands, late restoration, death, replacement orders, medical priority and automatic-push isolation. Deployed matching Debug core/addon DLLs and PDBs plus license on 2026-09-16 22:21:24 +03:00 with the game closed; all five installed SHA-256 hashes match. Backup and manifest: `C:/Users/alexa/AppData/Local/Temp/pitFireTeam-before-push-contact-retention-20260916-222124`.
+
+Installed hashes for the contact-retention deployment:
+
+| File | SHA-256 |
+| --- | --- |
+| pitFireTeam.dll | `CF10A9BDAE67E8E0CC6DCEF50EFEEA3B9DCC1C286FE807DA10B74367BC0396E3` |
+| pitFireTeam.pdb | `275191F9F9CEF49839B6444025968FF0E878CD2557C57BEF3C59FB8C67B5CAF3` |
+| pitFireTeam.SAINAddon.dll | `42F7566A459C657C94F754FF0D2A489BFB48B14251891AE9F61F4714CFE7951A` |
+| pitFireTeam.SAINAddon.pdb | `507243D646C08DE4F4D973F9C41BCA4BD2DDFDEAA5F702BD860B0F2C3C75027F` |
+| SAIN-LICENSE.txt | `7047B3162F2663E5DCC062FB2AFF07E00E26DBA13BB19D722CF8A24D8466DC57` |
+ Raid qualification remains required.
+
+
+## Deferred: SAIN follower friendly-fire review (2026-09-16)
+
+User explicitly deferred changes. Revisit Shoreline `20260916-183446-Shoreline.jsonl`, around raid time 1661.970 (local time approximately 18:57:41). Medved lost 40.5352 chest health while automatically regrouping about eight metres from Brick. Brick was in native StandAndShoot, with a trigger event about 16.6 ms before the inferred hit; the movement crossed his recorded aiming lane. This strongly suggests friendly fire but the recorder has no attacker identity, so attribution and frequency are not proven.
+
+Compare core's intended-target and actual-shot-direction checks with `FollowerSainFriendlyFirePatch`: both SAIN overloads currently check the supplied barrel direction; the target overload uses the target only for distance. Installed SAIN AimClass calls the friendly-fire check before `NodeUpdate`. Investigate a final pre-shot guard using core's established lane helpers and add passive damage attribution before concluding causality. Include ordinary shooting, suppression/manual shooting, moving squadmates and ordinary-bot isolation. No friendly-fire behavior was changed for the ordered-push fix.
+
+## Performance and push recovery (2026-09-16)
+
+The SAIN addon cover finder now spreads candidate creation and revalidation across frames (four native probes per finder per frame, at most 32 discovered candidates per geometry scan). Stable validation is reused for one second; an unfinished pass retains its completed probes so slower decision publication cannot starve it. Enemy/position changes and native bad/spotted flags invalidate reuse. Failed selection retries after 0.5 seconds or meaningful context changes. Selected-cover observation still revalidates independently at its existing cadence. An addon-owned `DogFightMove` prefix prevents native no-cover aggressive fallback while ordinary cover selection is pending; urgent/defensive combat remains native. Pending push planning uses the stationary push hold.
+
+Inactive regroup no longer measures player routes. Push assessment shares the existing half-second player-distance measurement, and core distance probes reuse a thread-local NavMeshPath. Core's optional SAIN compatibility hooks cache compiled BotOwner access and bind aim/friendly-fire parameters directly, removing repeated reflection and Harmony argument-array boxing on those paths. Disabled recording exits before phase formatting/decision payloads; push risk diagnostics format only on changes, and unconditional regroup info logging is removed. Enabled battle recording still has its existing snapshot/serialization cost; no FPS improvement is claimed without a raid comparison.
+
+Shoreline `20260916-165635-Shoreline.jsonl` recorded Go Forward for both followers at 772.860. Medved exhausted his approach at 773.677 despite a complete native route; Brick retained the command in medical recovery. `SAINFollowerApproachRoute` now supplies a maximum 20-metre walking leg along a newly verified complete route to the remembered location when direct stepping fails. A detour may initially increase direct distance. Endpoint/corner completeness, a maximum 30-metre actual leg route, destination reservations, existing risk gates and the six-second stall/twenty-second execution limits remain. Repeated orders do not rearm a failed contact. Recorder failure reasons distinguish sampling, incomplete routes, invalid corners/legs and reservations.
+
+`SainMedicalDecisionBridge` extends native first-aid enemy checks and surgery safety only for ready addon combat. Reached usable SAIN cover must be stationary, free of pressure/recent hits, and protected from every relevant known contact using core `Covers.IsHardCoverFromThreat` chest/head rays. Visible/shootable/recently seen or very close threats reject the exception; heard-only contacts do not require a nonexistent sight timestamp. Item eligibility, bleeding-before-surgery, native decision publication and medical execution remain native. Physical protection checks are cached briefly; cover/position/knowledge and immediate danger still gate each call. The recorder exposes the last passive `medicalCover` reason/time in cover policy snapshots.
+
+Installed SAIN 4.5.1 `BotSurgery.CheckAreaClearForSurgery` returns clearance without assigning `AreaClearForSurgery`, although native continuation and action execution read that property. The addon publishes the returned value (including false) through a cached private setter for its ready followers. No shared preset or ordinary SAIN bot policy is changed. All new hooks belong to the addon installer and participate in rollback/removal. The original native surgery flag is restored on combat release, opt-out, dismissal, shutdown and native-component replacement, without overwriting a different later value.
+
+Validation: 627 production combat checks, 54 leadership/ownership checks, 49 compatibility checks, 38 proficiency checks and 13 replica comparisons pass. Tests exercise bounded probe work, slow-cadence completion, no-cover fallback suppression, shared route caching, bent-route walking, failed/reserved paths, real Harmony parameter bindings, core hard-cover geometry with controlled physics, native medicine prerequisites, clearance publication, retained push resumption and full hook cleanup. Unity navigation, actual healing and measured frame time still require raid qualification. See ADDON-ANALYSIS.md for deployment details.
+
+### Current Debug deployment
+
+Deployed 2026-09-16 18:06:49 +03:00 to `E:/SPTushanka/BepInEx/plugins/pitFireTeam`. The game client was closed. All five installed files match their build/source SHA-256 hashes. Backup and deployment manifest: `C:/Users/alexa/AppData/Local/Temp/pitFireTeam-before-sain-performance-push-20260916-180352`.
+
+| Installed file | SHA-256 |
+| --- | --- |
+| pitFireTeam.dll | `C0137EE4F02F9D178751083F1CF1EF25F7D5DDC50D7896B8D54B58813A5B5BCC` |
+| pitFireTeam.pdb | `FE68A81A345131DC2F10E38100D0CC197336B2611598CCC5C93A9A5D44680703` |
+| pitFireTeam.SAINAddon.dll | `2009D6922F757D7A6BB35978EC3F50A51ACD93D60B55E5874AE39324F377BE25` |
+| pitFireTeam.SAINAddon.pdb | `D2ED978F8201C1D44570A328225A84040F967012F197537C17CE92B8ADBCE3A9` |
+| SAIN-LICENSE.txt | `7047B3162F2663E5DCC062FB2AFF07E00E26DBA13BB19D722CF8A24D8466DC57` |
+
+## SAINGrunt tactic display name (2026-09-16)
+
+The addon tactic is displayed as **SAINGrunt** in the profile selector and follower Status Report. The persisted `SainMan` identifier, enum value and `ProfileTacticSainMan` localization key remain stable, so existing squads and pickup selection retain the same behavior without migration. The embedded English fallback and English language resource supply the new name. Historical/code references to SainMan below refer to this same tactic.
+
+Validation/deployment: clean Debug core/addon build; English JSON and both UI lookup paths verified. Deployed on 2026-09-16 at 16:42 with all five binary/license hashes matching, plus the single live English label updated. Backup: `C:\Users\alexa\AppData\Local\Temp\pitFireTeam-before-saingrunt-name-20260916-164209`. The historical 16:42 DLL hash table below describes this rename build; earlier check counts are from the unchanged combat implementation.
+
 ## Addon-only SAIN hook ownership (2026-09-16)
 
 Patches used only by the SAIN addon belong in `addon/`. `SAINAddonPatches` installs player-squad leadership, squad decisions, native decision-publication filtering, push-target preference and cover selection under the addon Harmony ID. Failed installation rolls back the complete addon hook set; shutdown releases follower state/membership before removing hooks. `SainManPersonality` also lives in the addon. Public SAIN APIs and enum types are referenced directly; cached reflection remains only for private setters/methods and internal action types.
@@ -130,10 +213,10 @@ Latest completed code validation on 2026-09-16:
 - Matching Debug core/addon build: **zero warnings and errors**. Whitespace checks passed.
 - Both DLLs, PDBs and `SAIN-LICENSE.txt` deployed to the live plugin folder from `LOCAL.md`; all five source/destination SHA-256 hashes matched.
 
-| Installed DLL | SHA-256 |
+| Historical DLL (2026-09-16 16:42) | SHA-256 |
 |---|---|
-| pitFireTeam.dll | `8C696F309A2315B16AE20E154E2E428974A12FDDAF6FFC394E83065F1124EFE7` |
-| pitFireTeam.SAINAddon.dll | `ED8F8B05D1C1E1DEFF0CA76EFA4685E3AA2F8513CED39A7BB0359F92A151DDFD` |
+| pitFireTeam.dll | `4353A14D771475A79259A6BB4AA9CB90E7B1AA5F82C56B570FE7BCD8142C704A` |
+| pitFireTeam.SAINAddon.dll | `F31EA52D7DEFD6AD1740336DBEAC67459635D2B58AC567DC01CCDB8ED9813914` |
 
 These binaries include addon-owned SAIN hooks with typed references, automatic SainMan selection for picked-up SAIN bots, the post-regroup cover-area constraint and quiet publication handoff, follower body-first SAIN aiming, core shared SAIN vision-loop recovery, aggression-interpolated personality settings, boss-oriented cover selection/arrival use, accepted-goal combat entry, core recovery handoff with a fixed medical linger deadline, passive medical diagnostics, accepted-goal-gated native-knowledge Status Report markers and the follower push objective with Rifleman risk assessment and automatic regroup from rejected advancement. A restart/new raid is required. Unity movement/presentation, temporary-command behavior and the complete in-raid lifecycle still need qualification.
 

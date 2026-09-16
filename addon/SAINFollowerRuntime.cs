@@ -123,6 +123,7 @@ namespace pitTeam.SAINAddon
                     state.Objectives?.Clear("nativeStateReplaced");
                     state.Regroup?.Clear("nativeStateReplaced");
                     state.Cover?.Clear();
+                    SainMedicalDecisionBridge.Restore(state.Bot);
                     state.Cover = new SAINFollowerCover(bot);
                     state.Personality = new SAINFollowerPersonality();
                     state.EngageAttempt = new SAINFollowerEngageAttempt(bot);
@@ -229,6 +230,7 @@ namespace pitTeam.SAINAddon
             follower.ClearCommand("SAIN:GoForwardAggression");
             follower.ClearOrderedPushTargetLock("SAIN:GoForwardAggression");
             follower.SetTemporaryCombatAggressionOverride(100f, "SAIN:GoForwardAggression");
+            state.Objectives.Relocation.Clear("GoForwardAggression");
             state.Objectives.Push.BeginOrdered();
             return true;
         }
@@ -247,6 +249,7 @@ namespace pitTeam.SAINAddon
                 state.Recorder?.Dispose();
                 state.Recorder = null;
                 state.Cover?.Clear();
+                SainMedicalDecisionBridge.Restore(state.Bot);
                 state.Objectives?.Clear("release");
                 state.EngageAttempt?.Clear("release");
                 state.Handoff.Clear();
@@ -280,15 +283,21 @@ namespace pitTeam.SAINAddon
             SAINFollowerCombatPhase phase = state.Handoff.Update(state.Bot);
             if (phase != SAINFollowerCombatPhase.Combat)
             {
-                // Keep a just-accepted order for its bounded native-contact binding window.
+                // Retain ordered intent during bounded initial binding/contact interruption.
                 // This does not activate combat without a living native contact.
-                if (state.Objectives?.Push.AwaitingTarget != true) state.Objectives?.Clear("combatEnded");
-                state.EngageAttempt?.Clear("combatEnded"); state.Cover?.Clear();
+                if (state.Objectives?.Push.AwaitingTarget != true)
+                { state.Objectives?.Clear("combatEnded"); state.EngageAttempt?.Clear("combatEnded"); }
+                else state.EngageAttempt?.Pause();
+                state.Cover?.Clear();
+                SainMedicalDecisionBridge.Restore(state.Bot);
             }
             else state.EngageAttempt?.Observe(state.Bot.GoalEnemy);
             state.Recorder?.ObservePhase(phase);
             return phase;
         }
+
+        internal static SAINFollowerRelocationObjective? GetRelocation(BotOwner owner) =>
+            IsReady(owner) && States.TryGetValue(owner, out State state) ? state.Objectives?.Relocation : null;
 
         internal static SAINFollowerPushObjective? GetPush(BotOwner owner) =>
             IsReady(owner) && States.TryGetValue(owner, out State state) ? state.Objectives?.Push : null;
@@ -328,6 +337,7 @@ namespace pitTeam.SAINAddon
         {
             if (!States.TryGetValue(owner, out State state) || state.SoloLayer == null || state.SquadLayer == null) return;
             state.Cover?.Clear();
+            SainMedicalDecisionBridge.Restore(state.Bot);
             state.Recorder?.ObservePhase(SAINFollowerCombatPhase.Released);
             state.Objectives?.Clear("release");
             state.EngageAttempt?.Clear("release");

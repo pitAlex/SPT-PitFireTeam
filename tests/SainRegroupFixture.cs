@@ -53,8 +53,8 @@ namespace pitTeam.Modules {
 namespace pitTeam.Utils {
     public static class FollowerAwareness {public static bool Damaged;public static bool WasRecentlyDamaged(BotOwner owner)=>Damaged;}
     public static class Utils {
-        public static bool PathComplete=true;public static float PathScale=1;
-        public static bool TryGetCompletePathDistance(Vector3 a,Vector3 b,out float distance){distance=(a-b).magnitude*PathScale;return PathComplete;}
+        public static bool PathComplete=true;public static float PathScale=1;public static int PathCalls;public static UnityEngine.AI.NavMeshPath LastPath;
+        public static bool TryGetCompletePathDistance(Vector3 a,Vector3 b,out float distance,UnityEngine.AI.NavMeshPath path=null){PathCalls++;LastPath=path;distance=(a-b).magnitude*PathScale;return PathComplete;}
     }
 }
 namespace SAIN.SAINComponent.Classes {public enum ECoverSeekingState {None,NoCover,MoveTo,Shift,HoldInCover}}

@@ -30,14 +30,15 @@ internal sealed class SAINFollowerRecorder : IDisposable
     }
     internal void ObservePhase(SAINFollowerCombatPhase value)
     {
-        phase = value.ToString();
+        if (!SainCombatRecorderBridge.IsRecording) { Active = false; return; }
+        phase = value switch { SAINFollowerCombatPhase.Combat => "Combat", SAINFollowerCombatPhase.Linger => "Linger", _ => "Released" };
         Active = value == SAINFollowerCombatPhase.Linger ||
             (value == SAINFollowerCombatPhase.Combat && (bot.Decision.HasDecision || SainAddonBridge.IsUsingMedical(bot.BotOwner)));
         SainCombatRecorderBridge.RecordState(bot.BotOwner, Active, phase);
     }
     private void DecisionMade(ECombatDecision solo, ESquadDecision squad, ESelfActionType self, Enemy enemy, BotComponent source)
     {
-        if (!pitFireTeam.UseSainFollowerCombat(bot.BotOwner)) return;
+        if (!SainCombatRecorderBridge.IsRecording || !pitFireTeam.UseSainFollowerCombat(bot.BotOwner)) return;
         try
         {
             if ((solo != ECombatDecision.None || squad != ESquadDecision.None || self != ESelfActionType.None) &&

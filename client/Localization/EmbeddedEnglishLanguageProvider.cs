@@ -317,7 +317,7 @@ namespace pitTeam.Localization
                     ["BotInventoryPlaceholder"] = "Failed to load cloned follower inventory.\n{0}",
                     ["ProfileTactic"] = "Rifleman",
                     ["ProfileTacticMarksman"] = "Marksman",
-                    ["ProfileTacticSainMan"] = "SainMan",
+                    ["ProfileTacticSainMan"] = "SAINGrunt",
                     ["ProfileTacticProtector"] = "Protector",
                     ["ProfileAdjustProficiency"] = "Proficiency",
                     ["AdjustProficiencyTitleWithName"] = "Proficiency : {0}",

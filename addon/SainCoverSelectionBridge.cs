@@ -3,6 +3,8 @@ using EFT;
 using HarmonyLib;
 using pitTeam.Modules;
 using SAIN.SAINComponent.Classes;
+using SAIN.SAINComponent.Classes.Mover;
+using SAIN.SAINComponent.Classes.EnemyClasses;
 using SAIN.SAINComponent.SubComponents.CoverFinder;
 
 namespace pitTeam.SAINAddon
@@ -25,6 +27,9 @@ namespace pitTeam.SAINAddon
                 throw new MissingMemberException("SAIN addon cover boundary changed.");
             harmony.Patch(method, prefix: new HarmonyMethod(typeof(SainCoverSelectionBridge), nameof(Select)),
                 postfix: new HarmonyMethod(typeof(SainCoverSelectionBridge), nameof(Observe)));
+            var fallback = AccessTools.Method(typeof(DogFight), nameof(DogFight.DogFightMove), new[] { typeof(bool), typeof(Enemy) });
+            if (fallback?.ReturnType != typeof(void)) throw new MissingMemberException("SAIN no-cover movement boundary changed.");
+            harmony.Patch(fallback, prefix: new HarmonyMethod(typeof(SainCoverSelectionBridge), nameof(WaitForSelection)));
             IsAvailable = true;
         }
         internal static void Reset()
@@ -65,6 +70,15 @@ namespace pitTeam.SAINAddon
                 if (pitFireTeam.UseSainFollowerCombat(__instance.BotOwner)) _observer(__instance.BotOwner, __result);
             }
             catch (Exception ex) { Report(ex); }
+        }
+        private static bool WaitForSelection(DogFight __instance, bool __0)
+        {
+            // Native UpdateCover treats an empty result as permission to advance.
+            // A budgeted scan is still pending; genuine urgent dogfight keeps priority.
+            if (!__0) return true;
+            try { return !pitFireTeam.UseSainFollowerCombat(__instance.BotOwner) ||
+                SAINFollowerRuntime.GetCover(__instance.BotOwner)?.WaitingForSelection != true; }
+            catch (Exception ex) { Report(ex); return true; }
         }
         private static void Report(Exception ex)
         {

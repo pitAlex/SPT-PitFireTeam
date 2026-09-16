@@ -1,5 +1,9 @@
 # Command System Notes
 
+## SAINGrunt tactic display name (2026-09-16)
+
+The addon tactic is displayed as **SAINGrunt** in the profile selector and follower Status Report. The persisted `SainMan` identifier, enum value and `ProfileTacticSainMan` localization key remain stable, so existing squads and pickup selection retain the same behavior without migration. The embedded English fallback and English language resource supply the new name. Historical/code references to SainMan below refer to this same tactic.
+
 Last updated: 2026-08-30
 
 ## Picked-up follower combat (2026-09-16)
@@ -857,6 +861,10 @@ Core behavior:
 - On consume, `FollowerCombatCommon.TryCreateBossCommandTacticalPointDecision(...)` sets `GoToSomePointData` and returns `BotLogicDecision.goToPointTactical`.
 - Invalid target produces `Negative` and `NoGesture`.
 
+### SAINGrunt combat gesture execution
+
+Ready SAINGrunt followers consume the same combat There and Come With Me commands in the addon. There walks to the selected point. Come With Me prefers valid cover near the player that brings the follower at least one metre closer, then uses Core's direct path fallback stopping just short of the player. Both commit their selected destination, use Core arrival/stall limits, and briefly settle on arrival. Useful close fighting, native medicine and survival retain priority; pending orders retain their original timeout. A replacement command cancels relocation, and invalid destinations use the same negative voice/gesture feedback as Core. Out-of-combat behavior and command targeting/range checks are unchanged. See `SAIN-Integration.md` for ownership and qualification details.
+
 ## Receiver Patches And Vanilla Forwarding
 
 Mod-owned phrases suppressed from vanilla follower receiver handling:
@@ -899,4 +907,4 @@ Common command cleanup cases:
 - `FollowerRequestLayer` clears most known-enemy request commands before combat takes over.
 - `GestureCommandAction` clears movement commands on arrival, invalid path, invalid target, danger, healing, grenade/BTR avoidance, and interaction failure.
 - Core combat objectives clear command state when consuming or rejecting objective commands.
-- Combat gesture orders are cleared when consumed, invalid, or issued while the follower is already moving.
+- Combat gesture orders are cleared when consumed, invalid or expired; accepted orders replace ordinary combat movement while medical relocation is protected.

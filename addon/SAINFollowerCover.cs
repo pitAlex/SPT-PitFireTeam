@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using EFT;
 using pitTeam.Components;
 using pitTeam.Modules;
@@ -20,13 +21,65 @@ internal sealed class SAINFollowerCover(BotComponent bot)
     private CoverPoint selected;
     private bool recovery, hasArrival, claimed, reportedFailure;
     private Vector3 arrival, claimedPosition;
-    private float holdUntil, nextValidation;
+    private float holdUntil, nextValidation, nextSelectionAttempt;
+    private Vector3 attemptedBoss, attemptedBot, attemptedThreat;
+    private string attemptedEnemy;
+    private bool attemptedRegroup;
+    private int attemptedNativeCount;
     private string selectionReason = "nativeFallback";
     private float regroupRadius;
     private string regroupEnemy;
     private Vector3 regroupEnemyAnchor;
     private bool reportedRegroupNoCover;
     private BotFollowerPlayer? Follower => BossPlayers.Instance?.GetFollower(bot.BotOwner);
+    private readonly Dictionary<Enemy, MedicalCoverProbe> medicalProbes = new();
+    private string medicalReason = "notChecked";
+    private float medicalCheckedAt = -1f;
+    private struct MedicalCoverProbe { internal Vector3 Position, Threat; internal float Until; internal bool Safe; }
+    internal bool WaitingForSelection => finder.Pending && !Independent && !Recovery &&
+        bot.Cover.CoverInUse == null && bot.Cover.CoverPoint_MovingTo == null &&
+        bot.Decision.CurrentCombatDecision == ECombatDecision.SeekCover &&
+        bot.Decision.CurrentSelfDecision == ESelfActionType.None &&
+        !(bot.GoalEnemy?.IsVisible == true && bot.GoalEnemy.CanShoot);
+
+    // Core's reached-heal-cover contract, using SAIN knowledge and native cover ownership.
+    // Eligibility/item selection and execution stay in SAIN/EFT.
+    internal bool CanTreatAtCover()
+    {
+        medicalCheckedAt = Time.time; medicalReason = "coverUnready";
+        CoverPoint point = bot.Cover.CoverInUse;
+        if (point == null || point.Spotted || point.CoverData.IsBad || bot.Mover.Moving ||
+            (point.Position - bot.Position).sqrMagnitude > 1.75f * 1.75f) return false;
+        medicalReason = "pressure";
+        if (SainRegroupBridge.IsUnderFire(bot.BotOwner) || bot.Medical.TimeSinceShot < 3f ||
+            bot.Suppression.IsHeavySuppressed) return false;
+        int checkedEnemies = 0;
+        foreach (Enemy enemy in bot.EnemyController.KnownEnemies)
+        {
+            if (enemy == null || !Enemy.IsEnemyActive(enemy) || enemy.EnemyPlayer?.HealthController?.IsAlive != true ||
+                (!enemy.Seen && !enemy.Heard)) continue;
+            medicalReason = "activeOrUncertainThreat";
+            if (++checkedEnemies > 32 || !enemy.WasValid || !enemy.EnemyKnown || enemy.IsVisible || enemy.CanShoot ||
+                (enemy.Seen && enemy.TimeSinceSeen < 3f) || !enemy.LastKnownPosition.HasValue) return false;
+            Vector3 threat = enemy.LastKnownPosition.Value;
+            // Match core's very-close exclusion; hearing does not require a fictitious sight age.
+            medicalReason = "closeThreat";
+            if ((threat - bot.Position).sqrMagnitude < 17f * 17f) return false;
+            if (!medicalProbes.TryGetValue(enemy, out MedicalCoverProbe probe) || Time.time >= probe.Until ||
+                (probe.Position - bot.Position).sqrMagnitude > 0.01f || (probe.Threat - threat).sqrMagnitude > 1f)
+            {
+                if (medicalProbes.Count >= 32 && !medicalProbes.ContainsKey(enemy)) medicalProbes.Clear();
+                probe = new MedicalCoverProbe { Position = bot.Position, Threat = threat, Until = Time.time + 0.5f,
+                    Safe = pitTeam.Utils.Covers.IsHardCoverFromThreat(bot.Position, threat) };
+                medicalProbes[enemy] = probe;
+            }
+            medicalReason = "exposedCover";
+            if (!probe.Safe) return false;
+        }
+        medicalReason = checkedEnemies > 0 ? "protectedCover" : "noKnownThreat";
+        return checkedEnemies > 0;
+    }
+
     private bool Independent => Follower?.CombatIndependent != false;
     private bool Recovery => bot.BotOwner.Memory.IsUnderFire || bot.Medical?.TimeSinceShot < 0.75f ||
         bot.Decision.CurrentCombatDecision == ECombatDecision.Retreat || bot.Decision.CurrentSelfDecision != ESelfActionType.None;
@@ -39,6 +92,11 @@ internal sealed class SAINFollowerCover(BotComponent bot)
         if (Recovery) { selectionReason = "nativeRecovery"; return false; }
         if (!SainPlayerSquadBridge.TryGetPlayerLeader(bot.BotOwner, out Player player) || player.HealthController?.IsAlive != true) return false;
         bool limitToRegroup = RetainRegroupArea();
+        Enemy enemy = bot.GoalEnemy;
+        Vector3 threat = enemy?.LastKnownPosition ?? default;
+        if (Time.time < nextSelectionAttempt && attemptedNativeCount == bot.Cover.CoverPoints.Count && attemptedEnemy == enemy?.EnemyProfileId && attemptedRegroup == limitToRegroup &&
+            (attemptedBoss - player.Position).sqrMagnitude < 4f && (attemptedBot - bot.Position).sqrMagnitude < 4f &&
+            (attemptedThreat - threat).sqrMagnitude < 4f) return limitToRegroup;
         foreach (CoverPoint candidate in finder.Find(bot.GoalEnemy, player.Position))
         {
             if (limitToRegroup && !InsideRegroupArea(candidate.Position, player.Position)) continue;
@@ -48,6 +106,11 @@ internal sealed class SAINFollowerCover(BotComponent bot)
             point = candidate;
             return true;
         }
+        // Incomplete work is not a failed search and must not choose an outward fallback.
+        if (finder.Pending) return true;
+        nextSelectionAttempt = Time.time + 0.5f;
+        attemptedBoss = player.Position; attemptedBot = bot.Position; attemptedThreat = threat;
+        attemptedEnemy = enemy?.EnemyProfileId; attemptedRegroup = limitToRegroup; attemptedNativeCount = bot.Cover.CoverPoints.Count;
         if (limitToRegroup)
         {
             // A native fallback outside the completed envelope would undo regroup again.
@@ -174,14 +237,15 @@ internal sealed class SAINFollowerCover(BotComponent bot)
     internal void EndArrivalHold(string reason)
     {
         regroupRadius = 0f;
+        nextSelectionAttempt = 0f;
         holdUntil = 0f;
         Record(reason);
     }
 
     internal void Clear()
     {
-        ReleaseClaim(); selected = null; hasArrival = false; holdUntil = 0f; finder.Clear();
-        regroupRadius = 0f; regroupEnemy = null; reportedRegroupNoCover = false;
+        ReleaseClaim(); selected = null; hasArrival = false; holdUntil = 0f; nextSelectionAttempt = 0f; finder.Clear();
+        regroupRadius = 0f; regroupEnemy = null; reportedRegroupNoCover = false; medicalProbes.Clear(); medicalCheckedAt = -1f; medicalReason = "notChecked";
     }
     private void Claim(Vector3 position)
     {
@@ -194,7 +258,8 @@ internal sealed class SAINFollowerCover(BotComponent bot)
         claimed = false;
     }
     internal object Snapshot => new { reason = selectionReason, arrivalHoldRemaining = Mathf.Max(0f, holdUntil - Time.time),
-        recovery, scanCount = finder.LastScanCount, regroupRadius };
+        recovery, scanCount = finder.LastScanCount, regroupRadius,
+        medicalCover = new { reason = medicalReason, checkedAt = medicalCheckedAt } };
     private void Record(string reason)
     {
         if (SainCombatRecorderBridge.IsRecording)

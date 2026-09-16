@@ -330,25 +330,6 @@ namespace pitTeam.Patches
             return true;
         }
 
-        private static object? GetMemberValue(object? instance, string name)
-        {
-            if (instance == null)
-            {
-                return null;
-            }
-
-            Type type = instance.GetType();
-            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-            PropertyInfo? property = type.GetProperty(name, flags);
-            if (property != null)
-            {
-                return property.GetValue(instance);
-            }
-
-            FieldInfo? field = type.GetField(name, flags);
-            return field?.GetValue(instance);
-        }
-
         [HarmonyPrefix]
         private static bool PatchEnemyConvesation(EPhraseTrigger trigger, ETagStatus status, Player player)
         {
@@ -414,7 +395,7 @@ namespace pitTeam.Patches
 
         private static bool IsSainTalkOwnerFollower(object instance)
         {
-            BotOwner? botOwner = GetMemberValue(instance, "BotOwner") as BotOwner;
+            BotOwner? botOwner = SainBotOwnerAccessor.Get(instance);
             return botOwner != null && BossPlayers.IsFollower(botOwner);
         }
 
@@ -428,7 +409,7 @@ namespace pitTeam.Patches
 
             try
             {
-                BotOwner? botOwner = AccessTools.Property(__instance.GetType(), "BotOwner")?.GetValue(__instance) as BotOwner;
+                BotOwner? botOwner = SainBotOwnerAccessor.Get(__instance);
                 if (botOwner == null || !BossPlayers.IsFollower(botOwner))
                 {
                     return true;
@@ -459,7 +440,7 @@ namespace pitTeam.Patches
 
             try
             {
-                BotOwner? botOwner = AccessTools.Property(__instance.GetType(), "BotOwner")?.GetValue(__instance) as BotOwner;
+                BotOwner? botOwner = SainBotOwnerAccessor.Get(__instance);
                 if (botOwner == null || !BossPlayers.IsFollower(botOwner) || !pitFireTeam.ShouldDisableSainForFollower(botOwner))
                 {
                     return true;
@@ -483,7 +464,7 @@ namespace pitTeam.Patches
 
             try
             {
-                BotOwner? botOwner = AccessTools.Property(__instance.GetType(), "BotOwner")?.GetValue(__instance) as BotOwner;
+                BotOwner? botOwner = SainBotOwnerAccessor.Get(__instance);
                 if (botOwner == null || !BossPlayers.IsFollower(botOwner) || !pitFireTeam.ShouldDisableSainForFollower(botOwner))
                 {
                     return;
@@ -541,7 +522,7 @@ namespace pitTeam.Patches
 
             try
             {
-                BotOwner? botOwner = AccessTools.Property(__instance.GetType(), "BotOwner")?.GetValue(__instance) as BotOwner;
+                BotOwner? botOwner = SainBotOwnerAccessor.Get(__instance);
                 if (botOwner == null || !BossPlayers.IsFollower(botOwner))
                 {
                     return true;

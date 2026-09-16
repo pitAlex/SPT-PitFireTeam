@@ -26,8 +26,10 @@ internal sealed class SAINFollowerMoveToEngageAction(BotOwner bot) : BotAction(b
     }
     public override void Update(CustomLayer.ActionData data)
     {
+        Push?.Observe();
         Enemy enemy = Bot.GoalEnemy;
-        if (enemy == null) { Bot.Steering.SteerByPriority(); return; }
+        if (enemy == null)
+        { if (wasPush) { StopOwnedPath(); Push?.Pause(); } Bot.Steering.SteerByPriority(); return; }
         Bot.Mover.SetTargetPose(1f);
         Bot.Mover.SetTargetMoveSpeed(1f);
         if (enemy.IsVisible && Shoot.ShootAnyVisibleEnemies(enemy))

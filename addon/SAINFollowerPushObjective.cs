@@ -18,24 +18,32 @@ internal enum SAINPushPhase { None, Approach, Pressure, Recovery, Assessing, Exh
 // SeekCover and native urgent actions. Never promotes a hidden live transform.
 internal sealed class SAINFollowerPushObjective(BotComponent bot)
 {
+    internal const float ContactGraceSeconds = 3f;
     internal SAINPushMode Mode { get; private set; }
     internal SAINPushPhase Phase { get; private set; }
     internal bool Active => Mode != SAINPushMode.None;
     internal bool Ordered => Mode == SAINPushMode.Ordered;
-    internal bool AwaitingTarget => Ordered && !targetBound && Time.time < bindUntil;
+    internal bool AwaitingTarget => Ordered && ((!targetBound && Time.time < bindUntil) ||
+        contactLostUntil >= 0f && Time.time < contactLostUntil);
     internal bool Exhausted => Phase == SAINPushPhase.Exhausted;
     internal bool OwnsMovement { get; private set; }
     internal bool NativeEngagementAllowed { get; private set; }
-    internal bool HoldsPosition => Active && Phase == SAINPushPhase.Pressure && target == bot.GoalEnemy;
+    internal bool HoldsPosition => Active && target != null && !AwaitingTarget && (Phase == SAINPushPhase.Pressure ||
+        Phase == SAINPushPhase.Approach && !Destination.HasValue) && target == bot.GoalEnemy;
     internal string EnemyId { get; private set; }
     internal string Reason { get; private set; }
     internal Vector3? Destination { get; private set; }
     private readonly SAINFollowerCoverFinder finder = new(bot);
     private readonly SAINFollowerPushAssessment assessment = new(bot);
+    private readonly SAINFollowerApproachRoute approachRoute = new();
     private bool riskHeld;
     private float riskRetryAt;
-    private string lastRiskSignature;
+    private string lastRiskReason;
+    private int lastRiskCount;
+    private bool lastRiskCautious;
     private Enemy? target;
+    private Enemy? lastBoundTarget;
+    private float contactLostUntil = -1f;
     private CoverPoint cover;
     private Vector3 anchor, progress;
     private float nextPlan, holdUntil, recoveryUntil, lastTick = -1f, activeSeconds, stalledSeconds, nextValidation;
@@ -55,6 +63,7 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
     {
         Clear("replaced"); Mode = mode; EnemyId = id; nextPlan = 0f;
         target = FindTarget(); targetBound = target != null; bindUntil = Time.time + 3f;
+        lastBoundTarget = target;
         anchor = target?.LastKnownPosition ?? bot.Position;
         Phase = SAINPushPhase.Approach; Record("begin");
     }
@@ -74,17 +83,41 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
     {
         if (!Active) return;
         var follower = Follower;
-        if (follower == null || bot.IsDead || !SainAddonBridge.IsSainManSelected(bot.BotOwner) ||
-            !SAINFollowerCombatHandoff.AllowsEnemyCombat(bot.BotOwner)) { Clear("combatEnded"); return; }
+        if (follower == null || bot.IsDead || !SainAddonBridge.IsSainManSelected(bot.BotOwner))
+        { Clear("combatEnded"); return; }
         if (follower.TryConsumeOrderedPushCancelRequest(out string cancellation))
         { Clear(cancellation); return; }
         if (follower.TryGetActiveCommand(out _, out _) ||
             (Ordered && (!follower.IsTemporaryCombatAggressionOverrideActive || follower.EffectiveCombatAggression < 100f)) ||
             (!Ordered && (follower.CombatIndependent || follower.EffectiveCombatAggression <= 0f)))
         { Clear("replacementOrder"); return; }
+        if (lastBoundTarget?.EnemyPlayer?.HealthController?.IsAlive == false)
+        { Clear("targetDead"); return; }
+        // A late poll cannot revive an order whose contact deadline already expired.
+        if (contactLostUntil >= 0f && Time.time >= contactLostUntil)
+        { Clear("targetLost"); return; }
         target = FindTarget();
-        if (target == null)
-        { if (targetBound || Time.time >= bindUntil) Clear("targetLost"); return; }
+        bool admitted = SAINFollowerCombatHandoff.AllowsEnemyCombat(bot.BotOwner);
+        if (target == null || !admitted)
+        {
+            if (Ordered && targetBound)
+            {
+                // Preserve intent and the existing leg budget, never stale advancement
+                // or enemy memory. Repeated polls/orders cannot extend this deadline.
+                target = null; OwnsMovement = NativeEngagementAllowed = false; Pause();
+                if (contactLostUntil < 0f)
+                { contactLostUntil = Time.time + ContactGraceSeconds; Record("contactInterrupted"); }
+            }
+            else if (!admitted) Clear("combatEnded");
+            else if (targetBound || Time.time >= bindUntil) Clear("targetLost");
+            return;
+        }
+        lastBoundTarget = target;
+        if (contactLostUntil >= 0f)
+        {
+            contactLostUntil = -1f; nextValidation = 0f;
+            Record("contactRestored");
+        }
         if (!targetBound) { targetBound = true; anchor = target.LastKnownPosition.GetValueOrDefault(); }
         Vector3 known = target.LastKnownPosition.GetValueOrDefault();
         if ((known - anchor).sqrMagnitude >= 64f || (Exhausted && target.IsVisible && target.CanShoot))
@@ -115,14 +148,16 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
             solo == ECombatDecision.DogFight || solo == ECombatDecision.MeleeAttack ||
             solo == ECombatDecision.FightZombies || solo == ECombatDecision.Retreat;
         if (urgent || regroupActive) { Pause(); return false; }
+        if (AwaitingTarget && enemy?.EnemyProfileId == EnemyId)
+        { Pause(); result = ECombatDecision.SeekCover; return true; }
         bool approach = (squad == ESquadDecision.None && (solo == ECombatDecision.Search || solo == ECombatDecision.RushEnemy)) ||
             squad == ESquadDecision.PushSuppressedEnemy;
         if (!Active && approach && Valid(enemy) && Follower?.CombatIndependent == false &&
             Follower.EffectiveCombatAggression > 0f && !Follower.TryGetActiveCommand(out _, out _) &&
             SAINFollowerRuntime.GetCover(bot.BotOwner)?.HoldsArrival(enemy) != true)
             Begin(SAINPushMode.Automatic, enemy.EnemyProfileId);
-        if (!Active || enemy != target)
-        { NativeEngagementAllowed = solo == ECombatDecision.MoveToEngage; Pause(); return false; }
+        if (!Active || target == null || enemy != target)
+        { NativeEngagementAllowed = !AwaitingTarget && solo == ECombatDecision.MoveToEngage; Pause(); return false; }
         if (!Ordered && squad != ESquadDecision.None && squad != ESquadDecision.PushSuppressedEnemy)
         { Pause(); return false; }
         if (solo == ECombatDecision.StandAndShoot || solo == ECombatDecision.ShootDistantEnemy)
@@ -133,8 +168,11 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
         }
         if (Exhausted) { Pause(); result = ECombatDecision.SeekCover; return true; }
         assessment.Evaluate(enemy, Follower?.EffectiveCombatAggression ?? 50f, Follower?.CombatIndependent == true);
-        string signature = $"{assessment.Reason}|{assessment.EnemyCount}|{assessment.Cautious}";
-        if (signature != lastRiskSignature) { lastRiskSignature = signature; Record("risk." + assessment.Reason); }
+        if (assessment.Reason != lastRiskReason || assessment.EnemyCount != lastRiskCount || assessment.Cautious != lastRiskCautious)
+        {
+            lastRiskReason = assessment.Reason; lastRiskCount = assessment.EnemyCount; lastRiskCautious = assessment.Cautious;
+            Record("risk." + assessment.Reason);
+        }
         bool pressured = assessment.SafetyBlocked || assessment.WeaponBlocked;
         if (pressured && !pressureLatch)
         { recoveryUntil = Time.time + 3f; ReleaseDestination(); Phase = SAINPushPhase.Recovery; Record("pressureRecovery"); }
@@ -167,7 +205,7 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
         if (SAINFollowerRuntime.GetEngageAttempt(bot.BotOwner)?.FailedFor(enemy) == true)
         { Fail("firingPositionExhausted"); result = ECombatDecision.SeekCover; return true; }
         if (enemy.Path.PathToEnemyStatus != NavMeshPathStatus.PathComplete)
-        { NativeEngagementAllowed = solo == ECombatDecision.MoveToEngage; Pause(); return false; }
+        { NativeEngagementAllowed = !AwaitingTarget && solo == ECombatDecision.MoveToEngage; Pause(); return false; }
         if (Destination.HasValue && cover != null && Time.time >= nextValidation)
         {
             nextValidation = Time.time + 1f;
@@ -189,6 +227,7 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
             {
                 ReleaseDestination(); cover = candidate; Commit(candidate.Position, "forwardCoverAvailable"); break;
             }
+            if (finder.Pending) nextPlan = Time.time;
         }
         if (!Destination.HasValue && Time.time >= nextPlan)
         {
@@ -203,10 +242,12 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
     {
         foreach (CoverPoint candidate in finder.FindForward(enemy))
         { cover = candidate; Commit(candidate.Position, "forwardFiringCover"); return; }
+        if (finder.Pending) { nextPlan = Time.time; return; }
         if (assessment.Cautious)
         {
             foreach (CoverPoint candidate in finder.FindForward(enemy, requireFiringLane: false))
             { cover = candidate; Commit(candidate.Position, "cautiousApproachCover"); return; }
+            if (finder.Pending) { nextPlan = Time.time; return; }
             if (!Ordered && !enemy.IsVisible) { HoldForAssessment("noCoveredApproach"); return; }
         }
         Vector3 known = enemy.LastKnownPosition.GetValueOrDefault();
@@ -217,7 +258,12 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
             (hit.position - known).magnitude < (bot.Position - known).magnitude &&
             SainRegroupBridge.IsDestinationAvailable(bot.BotOwner, hit.position))
         { Commit(hit.position, "provisionalAdvance"); return; }
-        Fail("noCompleteApproach");
+        // Core can follow a navigable detour when no forward cover/direct step works.
+        // Bound this to one walking leg toward the remembered location, not a rush.
+        if (approachRoute.TryStep(bot.Position, known, out Vector3 step, out string failure) &&
+            SainRegroupBridge.IsDestinationAvailable(bot.BotOwner, step))
+        { Commit(step, "routeAdvance"); return; }
+        Fail(failure ?? "approachReserved");
     }
     private void HoldForAssessment(string reason)
     {
@@ -261,11 +307,13 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
     {
         if (Active) Record(reason);
         ReleaseDestination(); Mode = SAINPushMode.None; Phase = SAINPushPhase.None; EnemyId = null; target = null;
-        holdUntil = recoveryUntil = riskRetryAt = 0f; riskHeld = false; lastRiskSignature = null;
+        holdUntil = recoveryUntil = riskRetryAt = 0f; riskHeld = false; lastRiskReason = null;
         pressureLatch = targetBound = false; NativeEngagementAllowed = false;
+        lastBoundTarget = null; contactLostUntil = -1f;
     }
     internal object Snapshot => new { mode = Mode.ToString(), phase = Phase.ToString(), enemyId = EnemyId,
         reason = Reason, destination = SAINFollowerRecorder.Point(Destination), activeSeconds, risk = assessment.Snapshot,
+        contactGraceRemaining = Mathf.Max(0f, contactLostUntil - Time.time),
         arrivalHoldRemaining = Mathf.Max(0f, holdUntil - Time.time), recoveryRemaining = Mathf.Max(0f, recoveryUntil - Time.time) };
     private void Record(string reason)
     {

@@ -66,7 +66,7 @@ public class RecoilFixture {
     [MethodImpl(MethodImplOptions.NoInlining)]
     public void Calculate(){_currentRecoilHorizAngle=2;_currentRecoilVertAngle=-4;}
 }
-public static class ProficiencyChecks {
+public static partial class ProficiencyChecks {
     private static int count;
     private static void Check(bool value,string name){if(!value)throw new Exception(name);count++;Console.WriteLine("PASS "+name);}
     private static bool Near(float a,float b)=>Math.Abs(a-b)<.0001;
@@ -109,6 +109,7 @@ public static class ProficiencyChecks {
         Check(ReferenceEquals(first.Core,replacement),"cleanup preserves a newer core installed by another owner");
         projection.Apply(current,values);var otherSettings=new BotSettingsComponents();var otherCurrent=new BotCurrentSettings(otherSettings);
         projection.Apply(otherCurrent,values);Check(ReferenceEquals(first.Core,replacement)&&Near(otherCurrent.CurrentVisibleDistance,225),"settings replacement releases the old projection and applies to the new runtime");
+        TestHotAimBindings();
         projection.Restore();Console.WriteLine("Passed "+count+" production proficiency checks with controlled EFT/SAIN fixtures.");
     }
 }

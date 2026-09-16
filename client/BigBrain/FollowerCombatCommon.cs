@@ -70,13 +70,13 @@ namespace pitTeam.BigBrain
         private const float PushCoverBlacklistEnemyMoveToleranceSqr = 4f * 4f;
         private const int PushCoverBlacklistMaxEntries = 8;
         private const float CommittedCoverArrivalHoldDistance = 2f;
-        private const float TacticalPointProgressMinDistance = 0.35f;
-        private const float TacticalPointStallSeconds = 4f;
+        private const float TacticalPointProgressMinDistance = FollowerCombatCommandGeometry.ProgressDistance;
+        private const float TacticalPointStallSeconds = FollowerCombatCommandGeometry.StallSeconds;
         private const float TacticalPointBlacklistSeconds = 10f;
         private const float TacticalPointBlacklistRadius = 1.5f;
         private const float HealRetreatProgressMinDistance = 0.35f;
         private const float HealRetreatStallSeconds = 4f;
-        private const float TacticalPointArrivalDistance = 1.25f;
+        private const float TacticalPointArrivalDistance = FollowerCombatCommandGeometry.ArrivalDistance;
         private const float StandingCoverShotProbeHeight = 1.45f;
         private const float DefensiveRetreatCoverMinNavDistance = 2f;
         private const float DefensiveRetreatCoverMinEnemyDistanceGain = -2f;
@@ -157,7 +157,7 @@ namespace pitTeam.BigBrain
         private const float RetreatCommittedCoverHoldSeconds = 3.5f;
         private const float ShootCommittedCoverHoldSeconds = 2.5f;
         private const float BossCommittedCoverHoldSeconds = 3f;
-        private const float CombatComeBossCoverMinimumProgress = 1f;
+        private const float CombatComeBossCoverMinimumProgress = FollowerCombatCommandGeometry.ComeCoverMinimumProgress;
         private const float DefaultCommittedPositionHoldSeconds = 1.25f;
         private const float HealingCommittedHoldSeconds = 12f;
         private const float DefaultFireWhileMovingPushVisibleBreakSeconds = 0.6f;
@@ -13687,78 +13687,8 @@ namespace pitTeam.BigBrain
             return true;
         }
 
-        private bool TryGetBossApproachFallbackPoint(Vector3 bossPosition, out Vector3 fallbackPoint)
-        {
-            const float BossApproachStopDistance = 1.5f;
-            const float BossApproachMaxDistance = 2f;
-
-            fallbackPoint = default;
-            if (!IsFinite(bossPosition))
-            {
-                return false;
-            }
-
-            if (!NavMesh.SamplePosition(bossPosition, out NavMeshHit bossHit, BossApproachMaxDistance, NavMesh.AllAreas))
-            {
-                return false;
-            }
-
-            NavMeshPath path = new NavMeshPath();
-            if (!NavMesh.CalculatePath(botOwner.Position, bossHit.position, NavMesh.AllAreas, path) ||
-                path.status != NavMeshPathStatus.PathComplete ||
-                path.corners == null ||
-                path.corners.Length == 0)
-            {
-                return false;
-            }
-
-            Vector3 target = GetPointBackFromPathEnd(path.corners, BossApproachStopDistance);
-            if (!NavMesh.SamplePosition(target, out NavMeshHit targetHit, 1f, NavMesh.AllAreas))
-            {
-                return false;
-            }
-
-            if ((targetHit.position - bossHit.position).sqrMagnitude > BossApproachMaxDistance * BossApproachMaxDistance)
-            {
-                target = GetPointBackFromPathEnd(path.corners, 1f);
-                if (!NavMesh.SamplePosition(target, out targetHit, 1f, NavMesh.AllAreas) ||
-                    (targetHit.position - bossHit.position).sqrMagnitude > BossApproachMaxDistance * BossApproachMaxDistance)
-                {
-                    return false;
-                }
-            }
-
-            fallbackPoint = targetHit.position;
-            return IsFinite(fallbackPoint);
-        }
-
-        private static Vector3 GetPointBackFromPathEnd(Vector3[] corners, float distanceFromEnd)
-        {
-            Vector3 target = corners[corners.Length - 1];
-            float remaining = Mathf.Max(0f, distanceFromEnd);
-
-            for (int i = corners.Length - 2; i >= 0 && remaining > 0f; i--)
-            {
-                Vector3 previous = corners[i];
-                Vector3 segment = previous - target;
-                float segmentLength = segment.magnitude;
-                if (segmentLength <= 0.01f)
-                {
-                    target = previous;
-                    continue;
-                }
-
-                if (segmentLength >= remaining)
-                {
-                    return target + segment / segmentLength * remaining;
-                }
-
-                remaining -= segmentLength;
-                target = previous;
-            }
-
-            return target;
-        }
+        private bool TryGetBossApproachFallbackPoint(Vector3 bossPosition, out Vector3 fallbackPoint) =>
+            FollowerCombatCommandGeometry.TryBossApproach(botOwner.Position, bossPosition, out fallbackPoint);
 
         public bool TryCreateBossCommandTacticalPointDecision(
             Vector3 target,

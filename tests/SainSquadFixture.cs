@@ -22,10 +22,17 @@ namespace UnityEngine {
 }
 namespace UnityEngine.AI {
     public enum NavMeshPathStatus {PathComplete,PathPartial,PathInvalid}
+    public class NavMeshPath {
+        public NavMeshPathStatus status; public Vector3[] Points=new Vector3[0]; public Vector3[] corners=>Points;
+        public int GetCornersNonAlloc(Vector3[] buffer){int n=Math.Min(buffer.Length,Points.Length);Array.Copy(Points,buffer,n);return n;}
+    }
     public struct NavMeshHit {public Vector3 position;}
     public static class NavMesh {
         public const int AllAreas=-1;
-        public static bool SamplePosition(Vector3 pos,out NavMeshHit hit,float radius,int mask){hit=new NavMeshHit{position=pos};return true;}
+        public static Func<Vector3,bool> SampleAllowed;
+        public static Vector3[] Route;public static bool RouteComplete=true;public static int Calculations;
+        public static bool CalculatePath(Vector3 from,Vector3 to,int mask,NavMeshPath path){Calculations++;path.Points=Route??new[]{from,to};path.status=RouteComplete?NavMeshPathStatus.PathComplete:NavMeshPathStatus.PathPartial;return true;}
+        public static bool SamplePosition(Vector3 pos,out NavMeshHit hit,float radius,int mask){hit=new NavMeshHit{position=pos};return SampleAllowed?.Invoke(pos)!=false;}
         public static bool Raycast(Vector3 from,Vector3 to,out NavMeshHit hit,int mask){hit=new NavMeshHit{position=to};return false;}
     }
 }

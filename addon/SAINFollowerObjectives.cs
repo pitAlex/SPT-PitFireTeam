@@ -11,11 +11,13 @@ namespace pitTeam.SAINAddon;
 internal sealed class SAINFollowerObjectives(BotComponent bot, SAINFollowerRegroupObjective regroup)
 {
     internal SAINFollowerPushObjective Push { get; } = new(bot);
-    internal string Current => regroup.Active ? "Regroup" : Push.Active ? "Push" : "NativeCombat";
+    internal SAINFollowerRelocationObjective Relocation { get; } = new(bot);
+    internal string Current => Relocation.Active ? "Relocation" : regroup.Active ? "Regroup" : Push.Active ? "Push" : "NativeCombat";
     internal void Observe()
     {
         // Observe replacement commands before regroup consumes them.
         Push.Observe();
+        Relocation.Observe();
         regroup.Observe();
     }
     internal bool Filter(Enemy enemy, ECombatDecision solo, ESquadDecision squad, ESelfActionType self,
@@ -23,6 +25,8 @@ internal sealed class SAINFollowerObjectives(BotComponent bot, SAINFollowerRegro
     {
         nextSolo = solo; nextSquad = squad;
         Observe();
+        if (Relocation.GetDecision(enemy, solo, self, out nextSolo))
+        { nextSquad = ESquadDecision.None; return true; }
         if (Push.GetDecision(enemy, solo, squad, self, regroup.Active, out nextSolo))
         {
             nextSquad = ESquadDecision.None;
@@ -36,13 +40,13 @@ internal sealed class SAINFollowerObjectives(BotComponent bot, SAINFollowerRegro
         }
         if (SAINFollowerRuntime.GetCover(bot.BotOwner)?.TryHoldDecision(enemy, solo, squad, self) == true)
         { nextSolo = ECombatDecision.SeekCover; return true; }
-        if (regroup.TryBeginAuto(enemy, solo, squad, self))
+        if (!Push.Ordered && regroup.TryBeginAuto(enemy, solo, squad, self))
         { nextSolo = ECombatDecision.None; nextSquad = ESquadDecision.Regroup; return true; }
         if (solo == ECombatDecision.MoveToEngage && squad == ESquadDecision.None && self == ESelfActionType.None &&
             SAINFollowerRuntime.GetEngageAttempt(bot.BotOwner)?.FailedFor(enemy) == true)
         { nextSolo = ECombatDecision.SeekCover; return true; }
         return false;
     }
-    internal void Clear(string reason) => Push.Clear(reason);
-    internal object Snapshot => new { current = Current, push = Push.Snapshot };
+    internal void Clear(string reason) { Push.Clear(reason); Relocation.Clear(reason); }
+    internal object Snapshot => new { current = Current, push = Push.Snapshot, relocation = Relocation.Snapshot };
 }

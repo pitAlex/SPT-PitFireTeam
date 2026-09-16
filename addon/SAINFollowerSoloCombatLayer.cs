@@ -21,6 +21,9 @@ public class SAINFollowerSoloCombatLayer : SAINLayer
     }
     private bool lingerAction;
     private bool pushHoldAction;
+    private bool relocationAction;
+    private bool UseRelocation => _currentDecision == ECombatDecision.MoveToEngage &&
+        _currentSelfDecision == ESelfActionType.None && SAINFollowerRuntime.GetRelocation(BotOwner)?.OwnsAction == true;
     private bool UsePushHold => _currentSelfDecision == ESelfActionType.None &&
         (_currentDecision == ECombatDecision.StandAndShoot || _currentDecision == ECombatDecision.ShootDistantEnemy) &&
         SAINFollowerRuntime.GetPush(BotOwner)?.HoldsPosition == true;
@@ -47,6 +50,10 @@ public class SAINFollowerSoloCombatLayer : SAINLayer
             return new Action(SAINActionTypes.Get("Solo.Cover.DoSurgeryAction"), $"Surgery");
         }
 
+        // BEGIN addon relocation
+        relocationAction = UseRelocation;
+        if (relocationAction) return new Action(typeof(SAINFollowerRelocationAction), "combatGesture");
+        // END addon relocation
         // BEGIN addon push hold
         pushHoldAction = UsePushHold;
         if (pushHoldAction) return new Action(typeof(SAINFollowerPushHoldAction), "pushArrivalHold");
@@ -142,6 +149,9 @@ public class SAINFollowerSoloCombatLayer : SAINLayer
         }
         if (lingerAction) return true;
         // END addon post-combat handoff
+        // BEGIN addon relocation
+        if (relocationAction != UseRelocation) return true;
+        // END addon relocation
         // BEGIN addon push hold
         if (pushHoldAction != UsePushHold) return true;
         // END addon push hold
@@ -183,6 +193,7 @@ public class SAINFollowerSoloCombatLayer : SAINLayer
         SAINFollowerRuntime.GetRecorder(BotOwner)?.Ended(Name, "layerStopped");
         lingerAction = false;
         pushHoldAction = false;
+        relocationAction = false;
         _doSurgeryAction = false;
         CheckActiveChanged(false);
         base.Stop();

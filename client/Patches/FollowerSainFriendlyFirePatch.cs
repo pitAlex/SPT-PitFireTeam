@@ -32,20 +32,28 @@ namespace pitTeam.Patches
             foreach (MethodInfo method in methods)
             {
                 harmony.Patch(method, postfix: new HarmonyMethod(
-                    AccessTools.Method(typeof(FollowerSainFriendlyFirePatch), nameof(CheckFollowerLane))
+                    AccessTools.Method(typeof(FollowerSainFriendlyFirePatch), method.GetParameters()[0].ParameterType == typeof(Vector3)
+                        ? nameof(CheckFollowerTargetLane) : nameof(CheckFollowerDistanceLane))
                         .MakeGenericMethod(method.ReturnType)));
             }
         }
 
-        private static void CheckFollowerLane<T>(object[] __args, ref T __result)
+        private static void CheckFollowerTargetLane<T>(Vector3 __0, Vector3 __1, Vector3 __2, object __3, ref T __result)
         {
-            BotOwner owner = _getOwner(__args[3]);
+            BotOwner owner = _getOwner(__3);
             if (owner == null || !BossPlayers.IsFollower(owner)) return;
-            Vector3 origin = (Vector3)__args[1];
-            Vector3 direction = (Vector3)__args[2];
-            float distance = __args[0] is Vector3 target ? (target - origin).magnitude : (float)__args[0];
+            CheckFollowerLane(owner, __1, __2, (__0 - __1).magnitude, ref __result);
+        }
+        private static void CheckFollowerDistanceLane<T>(float __0, Vector3 __1, Vector3 __2, object __3, ref T __result)
+        {
+            BotOwner owner = _getOwner(__3);
+            if (owner == null || !BossPlayers.IsFollower(owner)) return;
+            CheckFollowerLane(owner, __1, __2, __0, ref __result);
+        }
+        private static void CheckFollowerLane<T>(BotOwner owner, Vector3 origin, Vector3 direction, float distance, ref T result)
+        {
             if (FollowerShotSafety.IsFriendlyInShotLane(owner, origin, direction, distance))
-                __result = (T)_friendlyBlock;
+                result = (T)_friendlyBlock;
         }
     }
 }

@@ -10,6 +10,8 @@ namespace pitTeam.Modules;
 // addon owns regroup policy/state; this bridge does not execute core combat decisions.
 public static class SainRegroupBridge
 {
+    // Synchronous probes reuse a scratch path on the calling thread.
+    [System.ThreadStatic] private static NavMeshPath distancePath;
     public static float GetTriggerDistance(BotOwner owner) =>
         CombatDistanceConfiguration.Instance.GetBossRegroupTriggerDistance(owner) *
         Mathf.Lerp(PickupFollowerPersonality.RegroupMaxTriggerMultiplier, 1f,
@@ -30,7 +32,7 @@ public static class SainRegroupBridge
             !NavMesh.SamplePosition(from, out NavMeshHit start, 2f, NavMesh.AllAreas) ||
             !NavMesh.SamplePosition(to, out NavMeshHit end, 2f, NavMesh.AllAreas) ||
             !SameLevel(start.position, from) || !SameLevel(end.position, to) ||
-            !Utils.Utils.TryGetCompletePathDistance(start.position, end.position, out float path) ||
+            !Utils.Utils.TryGetCompletePathDistance(start.position, end.position, out float path, distancePath ??= new NavMeshPath()) ||
             float.IsNaN(path) || float.IsInfinity(path)) return false;
         distance = FollowerCombatCommon.GetSafeRegroupDistance(path, Vector3.Distance(from, to));
         return true;
@@ -66,6 +68,5 @@ public static class SainRegroupBridge
     public static void Record(BotOwner owner, string mode, string reason)
     {
         BattleRecorder.RecordObjectiveSwitch(owner, mode == "None" ? "sain.combat" : "sain.regroup." + mode.ToLowerInvariant(), reason);
-        Logger.LogInfo($"[SAIN] Regroup: follower={owner.ProfileId} mode={mode} reason={reason}");
     }
 }

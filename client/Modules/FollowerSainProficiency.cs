@@ -321,7 +321,7 @@ namespace pitTeam.Modules
         {
             try
             {
-                BotOwner? bot = GetMemberValue(__instance, "BotOwner") as BotOwner;
+                BotOwner? bot = SainBotOwnerAccessor.Get(__instance);
                 if (bot == null)
                 {
                     return true;
@@ -354,7 +354,7 @@ namespace pitTeam.Modules
         {
             try
             {
-                BotOwner? bot = GetMemberValue(__instance, "BotOwner") as BotOwner;
+                BotOwner? bot = SainBotOwnerAccessor.Get(__instance);
                 if (!TryGetActiveState(bot, out FollowerState? state))
                 {
                     return;
@@ -439,13 +439,12 @@ namespace pitTeam.Modules
         }
 
         [HarmonyPrefix]
-        private static void BeginDefaultFollowerAim(object[] __args, out bool __state)
+        private static void BeginDefaultFollowerAim(object __0, out bool __state)
         {
             __state = false;
             try
             {
-                object? sainBot = __args != null && __args.Length > 0 ? __args[0] : null;
-                BotOwner? bot = GetMemberValue(sainBot, "BotOwner") as BotOwner;
+                BotOwner? bot = SainBotOwnerAccessor.Get(__0);
                 if (!TryGetActiveState(bot, out FollowerState? state))
                 {
                     return;
@@ -470,7 +469,7 @@ namespace pitTeam.Modules
         }
 
         [HarmonyPrefix]
-        private static bool UseDefaultFollowerFasterCqb(object[] __args, ref float __result)
+        private static bool UseDefaultFollowerFasterCqb(float __0, float __1, ref float __result)
         {
             if (!TryGetActiveAimValues(out FollowerSainProficiencyOverrides? values))
             {
@@ -479,8 +478,8 @@ namespace pitTeam.Modules
 
             try
             {
-                float distance = Convert.ToSingle(__args[0]);
-                float aimTime = Convert.ToSingle(__args[1]);
+                float distance = __0;
+                float aimTime = __1;
                 if (!values.Global.FasterCQBReactionsGlobal ||
                     !values.Aiming.FasterCQBReactions)
                 {
@@ -506,7 +505,7 @@ namespace pitTeam.Modules
         }
 
         [HarmonyPrefix]
-        private static bool UseDefaultFollowerAdsAimTime(object[] __args, ref float __result)
+        private static bool UseDefaultFollowerAdsAimTime(bool __0, float __1, ref float __result)
         {
             if (!TryGetActiveAimValues(out FollowerSainProficiencyOverrides? values))
             {
@@ -515,8 +514,8 @@ namespace pitTeam.Modules
 
             try
             {
-                bool aiming = Convert.ToBoolean(__args[0]);
-                float aimTime = Convert.ToSingle(__args[1]);
+                bool aiming = __0;
+                float aimTime = __1;
                 float multiplier = values.Global.AimDownSightsAimTimeMultiplier;
                 __result = aiming ? aimTime * multiplier : aimTime;
                 return false;
@@ -528,7 +527,7 @@ namespace pitTeam.Modules
         }
 
         [HarmonyPrefix]
-        private static bool UseDefaultFollowerAimClamp(object[] __args, ref float __result)
+        private static bool UseDefaultFollowerAimClamp(float __0, ref float __result)
         {
             if (!TryGetActiveAimValues(out FollowerSainProficiencyOverrides? values))
             {
@@ -537,7 +536,7 @@ namespace pitTeam.Modules
 
             try
             {
-                float aimTime = Convert.ToSingle(__args[0]);
+                float aimTime = __0;
                 float minimum = values.Global.MinAimTime;
                 float maximum = values.Aiming.MAX_AIM_TIME;
                 __result = Mathf.Clamp(aimTime, minimum, maximum);

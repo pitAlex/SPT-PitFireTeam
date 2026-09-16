@@ -14,7 +14,10 @@ $adapter=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/FollowerSai
 $recoil=Block $adapter 'private static void ApplyFollowerAccuracyToCalculatedRecoil\('
 $resolve=Block $adapter 'private static void ResolveRecoilRuntimeFields\('
 $fields=[regex]::Matches($adapter,'(?m)^        private static (?:PropertyInfo\?|FieldInfo\?|bool) _(?:recoilBotOwnerProperty|recoilBotOwnerField|currentRecoilHorizAngleField|currentRecoilVertAngleField|recoilRuntimeFieldsResolved|accuracyPatchFailureReported);').Value -join "`n"
-$generated="using System;using System.Reflection;using EFT;using HarmonyLib;using UnityEngine;using Newtonsoft.Json;using pitTeam.Modules;namespace pitTeam.Modules { $modifiers $core } public static class RecoilHooks { $fields $recoil $resolve }"
+$generated="using System;using System.Collections.Generic;using System.Reflection;using EFT;using HarmonyLib;using UnityEngine;using Newtonsoft.Json;using pitTeam.Modules;namespace pitTeam.Modules { $modifiers $core } public static class RecoilHooks { $fields $recoil $resolve }"
+$aimMethods=foreach($name in @('BeginDefaultFollowerAim','EndDefaultFollowerAim','UseDefaultFollowerFasterCqb','UseDefaultFollowerAdsAimTime','UseDefaultFollowerAimClamp','TryGetActiveAimValues')) { Block $adapter ('private static [^\r\n]+ '+$name+'\(') }
+$generated+=' public static partial class HotAimHooks {'+($aimMethods -join "`n")+' }'
+
 if(!$adapter.Contains('state.EftCore.Apply(state.Bot.Settings.Current, sain.Core)') -or !$adapter.Contains('state.EftCore.Restore()')){throw 'Core projection is not wired into apply/restore'}
 Add-Type -Path (Join-Path $GameRoot 'BepInEx/core/Mono.Cecil.dll')
 $assembly=[Mono.Cecil.AssemblyDefinition]::ReadAssembly((Join-Path $GameRoot 'BepInEx/plugins/SAIN/SAIN.dll'))
@@ -23,6 +26,12 @@ try {
     foreach($name in @('_currentRecoilHorizAngle','_currentRecoilVertAngle')){if(!($recoilType.Fields | Where-Object {$_.Name -eq $name -and $_.FieldType.FullName -eq 'System.Single'})){throw "Missing installed recoil field $name"}}
     $aimType=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.Patches.Shoot.Aim.AimTimePatch'
     foreach($name in @('CalculateAim','CalcFasterCQB','CalcADSModifier','ClampAimTime')){if(!($aimType.Methods|Where-Object Name -eq $name)){throw "Missing installed aim method $name"}}
+    $arguments=@{CalculateAim=@('SAIN.Components.BotComponent','System.Single');CalcFasterCQB=@('System.Single','System.Single');CalcADSModifier=@('System.Boolean','System.Single');ClampAimTime=@('System.Single')}
+    foreach($name in $arguments.Keys){
+        $method=@($aimType.Methods|Where-Object Name -eq $name)
+        if($method.Count -ne 1){throw "Ambiguous installed aim method $name"}
+        for($i=0;$i -lt $arguments[$name].Count;$i++){if($method[0].Parameters[$i].ParameterType.FullName -ne $arguments[$name][$i]){throw "Changed aim argument $name $i"}}
+    }
     'Installed SAIN aim and recoil boundaries verified.'
 } finally {$assembly.Dispose()}
 $sdk=dotnet --list-sdks|Select-Object -Last 1
@@ -33,7 +42,7 @@ $temporary=Join-Path ([IO.Path]::GetTempPath()) ('pitFireTeam-sain-proficiency-'
 New-Item -ItemType Directory -Path $temporary|Out-Null
 try {
     $generatedPath=Join-Path $temporary 'Production.cs';[IO.File]::WriteAllText($generatedPath,$generated)
-    $sources=@($generatedPath,(Join-Path $PSScriptRoot 'SainProficiencyFixture.cs'),(Join-Path $RepositoryRoot 'client/Modules/FollowerSainEftCoreProjection.cs'),(Join-Path $RepositoryRoot 'client/Patches/FollowerAimTimeProficiencyPatch.cs'))
+    $sources=@($generatedPath,(Join-Path $PSScriptRoot 'SainProficiencyFixture.cs'),(Join-Path $PSScriptRoot 'SainHotAimFixture.cs'),(Join-Path $RepositoryRoot 'client/Modules/SainBotOwnerAccessor.cs'),(Join-Path $RepositoryRoot 'client/Modules/FollowerSainEftCoreProjection.cs'),(Join-Path $RepositoryRoot 'client/Patches/FollowerAimTimeProficiencyPatch.cs'))
     $harmony=Join-Path $RepositoryRoot 'client/libs/0Harmony.dll';Copy-Item -LiteralPath $harmony -Destination $temporary
     Get-ChildItem (Join-Path $GameRoot 'BepInEx/core') -Filter '*.dll'|Where-Object {$_.Name -like 'Mono*' -or $_.Name -eq 'System.ValueTuple.dll'}|Copy-Item -Destination $temporary
     $exe=Join-Path $temporary 'Proficiency.exe'

@@ -240,7 +240,11 @@ public static class LeadershipChecks {
         Check(installFailed&&!Harmony.GetAllPatchedMethods().Any(m=>Harmony.GetPatchInfo(m).Owners.Contains(SAINAddonPatches.HarmonyId)),"late installation failure rolls back already installed leadership and decision hooks");
         Check(!SainPlayerSquadBridge.Enable()&&!SainSquadDecisionBridge.IsAvailable&&!SainCoverSelectionBridge.IsAvailable,"failed installation clears readiness for every boundary");
         Check(Harmony.GetPatchInfo(HarmonyLib.AccessTools.Method(typeof(Squad),"assignSquadLeader")).Owners.Contains("pitTeam.core.leader.test"),"addon rollback preserves separate core compatibility patch");
-        SainCoverSelectionBridge.FailApply=false;SAINAddonPatches.Apply();Check(SainPlayerSquadBridge.Enable(),"clean retry after failed installation succeeds");
+        SainCoverSelectionBridge.FailApply=false;SainMedicalDecisionBridge.FailApply=true;installFailed=false;
+        try {SAINAddonPatches.Apply();}catch(InvalidOperationException){installFailed=true;}
+        Check(installFailed&&!Harmony.GetAllPatchedMethods().Any(m=>Harmony.GetPatchInfo(m).Owners.Contains(SAINAddonPatches.HarmonyId)),"medical installation failure rolls back all earlier addon hooks");
+        Check(!SainCoverSelectionBridge.IsAvailable&&!SainMedicalDecisionBridge.IsAvailable,"medical installation failure resets addon boundary readiness");
+        SainMedicalDecisionBridge.FailApply=false;SAINAddonPatches.Apply();Check(SainPlayerSquadBridge.Enable(),"clean retry after failed installation succeeds");
         SAINAddonPatches.Apply();
         Check(Harmony.GetPatchInfo(HarmonyLib.AccessTools.Method(typeof(Squad),"assignSquadLeader")).Prefixes.Count(p=>p.owner==SAINAddonPatches.HarmonyId)==1,"repeated addon installation does not duplicate hooks");
         SainPlayerSquadBridge.Disable();SAINAddonPatches.Remove();
@@ -258,6 +262,11 @@ namespace pitTeam.SAINAddon {
     internal static class SainCoverSelectionBridge {
         public static bool IsAvailable,FailApply;
         public static void Apply(Harmony h){if(FailApply)throw new InvalidOperationException("fixture late install failure");IsAvailable=true;}
+        public static void Reset()=>IsAvailable=false;
+    }
+    internal static class SainMedicalDecisionBridge {
+        public static bool IsAvailable,FailApply;
+        public static void Apply(Harmony h){if(FailApply)throw new InvalidOperationException("fixture medical install failure");IsAvailable=true;}
         public static void Reset()=>IsAvailable=false;
     }
     internal static class InstallProbe {

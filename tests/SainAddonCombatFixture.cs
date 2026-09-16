@@ -20,7 +20,7 @@ using SAIN.Preset.Shared.Personalities.BasePersonality;
 using UnityEngine;
 [assembly: AssemblyVersion("4.5.1.0")]
 namespace UnityEngine {
-    public static class Time { public static float time; }
+    public static class Time { public static float time; public static int frameCount => (int)(time * 60); }
     public partial struct Vector3 {
         public float x,y,z;
         public Vector3(float x,float y,float z){this.x=x;this.y=y;this.z=z;}
@@ -168,15 +168,17 @@ namespace pitTeam.Components {
         public bool IgnoreCommands;
         private BotOwner _bot=>Owner;
         private FollowerCommandType _activeCommand {get=>Command;set=>Command=value;}
-        private Vector3 _commandTarget;
+        private Vector3 _commandTarget {get=>Target;set=>Target=value;}
         public float _commandUntilTime;public int _pushEnemyIssueSequence;
         private bool _resumeHoldAfterComeCloser,_resumeHoldAfterTakeLoot,_resumeHoldAfterTakeLootCrouch;
         private bool ShouldIgnoreCommandSet()=>IgnoreCommands;
         __PUSH_METHOD__
+        __GESTURE_METHODS__
+        private bool IsHealingOrHealDecision()=>Owner.UsingMedical;
         public void SetCombatRegroupBossAnchor(bool value){CombatRegroupUsesBossAnchor=value;}
         public void ClearOrderedPushTargetLock(string reason){}
         public BotOwner GetBot()=>Owner;public bool HasCombatHandoffSignal()=>Owner.Memory.HaveEnemy&&!Owner.Memory.DeadGoal;
-        public bool TryGetActiveCommand(out FollowerCommandType command,out Vector3 target){command=Command;target=Target;return command!=FollowerCommandType.None;}
+        public bool TryGetActiveCommand(out FollowerCommandType command,out Vector3 target){if(Command==FollowerCommandType.CombatComeToBossCover||Command==FollowerCommandType.CombatMoveToPointTactical)return ReadGestureCommand(out command,out target);command=Command;target=Target;return command!=FollowerCommandType.None;}
         public void ClearCommand(string reason){Command=FollowerCommandType.None;EndReason=reason;}
     }
 }
@@ -220,6 +222,7 @@ public static partial class CombatChecks {
         SAINActionTypes.Validate();
         SainSquadDecisionBridge.Apply(new Harmony("xyz.pit.fireteam.sainaddon"));
         SainCoverSelectionBridge.Apply(new Harmony("xyz.pit.fireteam.sainaddon"));
+        SainMedicalDecisionBridge.Apply(new Harmony("xyz.pit.fireteam.sainaddon"));
         Check(SainCoverSelectionBridge.IsAvailable,"native cover selection bridge installed");
         Check(SainSquadDecisionBridge.IsAvailable,"native squad decision bridge installed");
         var selected=Spawn("selected");var rifle=Spawn("rifle",FollowerCombatTactic.Balanced);var marks=Spawn("marks",FollowerCombatTactic.Marksman);
@@ -253,8 +256,8 @@ public static partial class CombatChecks {
         selected.Sain.Decision.CurrentSelfDecision=ESelfActionType.Surgery;selected.Sain.Cover.CoverInUse=new SAIN.SAINComponent.SubComponents.CoverFinder.CoverPoint();
         Check(layer.IsCurrentActionEnding()&&layer.GetNextAction().Type.Name=="DoSurgeryAction","surgery arrives in cover and selects native surgery");
         selected.Sain.Decision.CurrentSelfDecision=ESelfActionType.None;Check(layer.IsCurrentActionEnding(),"finished surgery releases action");
-        selected.Follower.Command=FollowerCommandType.CombatMoveToPointTactical;
-        Check(layer.GetNextAction().Type.Name=="FreezeAction"&&selected.Follower.Command==FollowerCommandType.CombatMoveToPointTactical,"solo replica does not translate other follower commands");
+        selected.Follower.SetCombatMoveToPointTactical(new Vector3(12,0,0),8);
+        Check(layer.GetNextAction().Type.Name=="FreezeAction"&&selected.Follower.Command==FollowerCommandType.CombatMoveToPointTactical,"solo action selection leaves pending gesture for native decision publication");
         selected.Follower.Command=FollowerCommandType.None;
         TestSquad(selected,rifle,layer,squadLayer);
         selected.Sain.Decision.CurrentCombatDecision=ECombatDecision.Search;selected.Memory.HaveEnemy=true;
@@ -302,18 +305,18 @@ public static partial class CombatChecks {
         TestEngageAttempt();
         TestSainRecorder();
         TestPersonality();
-        TestPushObjectives();TestPushRisk();
+        TestRelocations();TestPushObjectives();TestPushRisk();TestMedicalRecovery();
         SAINFollowerRuntime.Disable();
         Check(!SainAddonBridge.HasRuntimeCallbacks&&!pitFireTeam.UseSainFollowerCombat(late),"addon shutdown restores core fallback");
         var addonOwner=new Harmony("xyz.pit.fireteam.sainaddon");
         var decisionHook=HarmonyLib.AccessTools.Method(typeof(SAIN.SAINComponent.Classes.Decision.BotDecisionManager),"SetDecisions");
         Check(Harmony.GetPatchInfo(decisionHook).Owners.Contains(addonOwner.Id),"typed decision publisher hook belongs to addon");
-        addonOwner.UnpatchSelf();SainSquadDecisionBridge.Reset();SainCoverSelectionBridge.Reset();
+        addonOwner.UnpatchSelf();SainSquadDecisionBridge.Reset();SainCoverSelectionBridge.Reset();SainMedicalDecisionBridge.Reset();
         Check(!SainSquadDecisionBridge.IsAvailable&&!SainCoverSelectionBridge.IsAvailable,"decision and cover readiness cleared after removal");
         Check(!Harmony.GetAllPatchedMethods().Any(m=>Harmony.GetPatchInfo(m).Owners.Contains(addonOwner.Id)),"typed decision enemy and cover patches fully removed");
-        SainSquadDecisionBridge.Apply(addonOwner);SainCoverSelectionBridge.Apply(addonOwner);
+        SainSquadDecisionBridge.Apply(addonOwner);SainCoverSelectionBridge.Apply(addonOwner);SainMedicalDecisionBridge.Apply(addonOwner);
         Check(SainSquadDecisionBridge.IsAvailable&&SainCoverSelectionBridge.IsAvailable,"typed hooks reinstall after removal");
-        addonOwner.UnpatchSelf();SainSquadDecisionBridge.Reset();SainCoverSelectionBridge.Reset();
+        addonOwner.UnpatchSelf();SainSquadDecisionBridge.Reset();SainCoverSelectionBridge.Reset();SainMedicalDecisionBridge.Reset();
         Check(Logger.Errors.Count==0,"no lifecycle errors");
         Console.WriteLine("Passed "+count+" production addon combat checks. Unity movement and raid AI still require in-game validation.");
     }

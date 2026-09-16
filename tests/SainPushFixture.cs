@@ -10,7 +10,7 @@ using SAIN.SAINComponent.Classes.EnemyClasses;
 using SAIN.SAINComponent.SubComponents.CoverFinder;
 using UnityEngine;
 
-namespace UnityEngine { public static class Physics { public static bool Blocked; public static bool Linecast(Vector3 from,Vector3 to,int mask)=>Blocked; } }
+namespace UnityEngine { public static partial class Physics { public static bool Blocked; public static bool Linecast(Vector3 from,Vector3 to,int mask)=>Blocked; } }
 namespace SAIN.Components {
     public class PushPose {public int Calls;public void SetPoseToCover(Enemy enemy){Calls++;}}
     public class PushLean {public void HoldLean(float seconds){}}
@@ -28,7 +28,7 @@ namespace SAIN.SAINComponent.Classes.EnemyClasses {
 }
 public static partial class CombatChecks {
     private static BotOwner PushBot(string id,bool ordered=true){
-        Physics.Blocked=false;SainBotCoverData.Scene.Clear();pitTeam.Utils.Utils.PathComplete=true;pitTeam.Utils.Utils.PathScale=1;
+        Physics.Blocked=false;UnityEngine.AI.NavMesh.SampleAllowed=null;UnityEngine.AI.NavMesh.Route=null;UnityEngine.AI.NavMesh.RouteComplete=true;SainBotCoverData.Scene.Clear();pitTeam.Utils.Utils.PathComplete=true;pitTeam.Utils.Utils.PathScale=1;
         pitTeam.Utils.FollowerAwareness.Damaged=false;
         var b=RegroupBot(id,0);b.Sain.EnemyController.KnownEnemies.Add(b.Sain.GoalEnemy);
         b.Memory.GoalEnemy.ProfileId=b.Sain.GoalEnemy.EnemyProfileId;
@@ -98,9 +98,11 @@ public static partial class CombatChecks {
             Check(!p.Active,"core support cancellation releases push "+reason);
         }
         b=PushBot("objectiveInvalidKnowledge");p=SAINFollowerRuntime.GetPush(b);b.Sain.GoalEnemy.KnownPlaces.LastKnownPosition=new Vector3(float.NaN,0,0);p.Observe();
-        Check(!p.Active,"invalid remembered position cannot become a movement destination");
+        Check(p.AwaitingTarget&&!p.OwnsMovement,"invalid remembered position pauses ordered movement");
+        Time.time+=3;p.Observe();Check(!p.Active,"persistently invalid remembered position releases the order");
         b=PushBot("objectiveForget");p=SAINFollowerRuntime.GetPush(b);b.Sain.GoalEnemy.EnemyKnown=false;p.Observe();
-        Check(!p.Active,"native forgetting releases ordered target without resurrecting memory");
+        Check(p.AwaitingTarget&&!b.Sain.GoalEnemy.EnemyKnown,"contact grace does not resurrect native memory");
+        Time.time+=3;p.Observe();Check(!p.Active,"sustained native forgetting releases ordered target");
         b=PushBot("objectivePathFailure");p=SAINFollowerRuntime.GetPush(b);b.Sain.Decision.Manager.Publish(ECombatDecision.Search);b.Sain.Mover.Complete=false;
         action=new SAINFollowerMoveToEngageAction(b);action.Start();action.Update(new DrakiaXYZ.BigBrain.Brains.CustomLayer.ActionData());
         Check(p.Exhausted&&p.Reason=="pathRejected","rejected native movement exhausts the approach");
@@ -143,10 +145,97 @@ public static partial class CombatChecks {
         Check(p.Reason=="forwardCoverAvailable"&&p.Destination.Value.x==15,"provisional approach upgrades to newly usable forward cover");
         int queries=SainBotCoverData.Queries;for(int i=0;i<8;i++)b.Sain.Decision.Manager.Publish(ECombatDecision.Search);
         Check(SainBotCoverData.Queries==queries,"stable objective polls do not repeat cover discovery");
+        TestPushContactInterruption();
+        TestPushRoute();
         var newer=new Vector3(7,0,9);((pitTeam.Components.pitAIBossPlayer)b.BotFollower.BossToFollow).CombatEvents.Claims[b.ProfileId]=newer;
         p.Clear("test");Check(((pitTeam.Components.pitAIBossPlayer)b.BotFollower.BossToFollow).CombatEvents.Claims[b.ProfileId].z==9,"push cleanup preserves newer destination claim");
         b.Follower.SetPushEnemy(12);SainAddonBridge.TryForceReleaseFollowerCombatState(b);Check(!p.Active,"explicit combat release clears objective");
         Check(pitTeam.BigBrain.FollowerPushGeometry.IsForwardPosition(new Vector3(),new Vector3(50,0,0),new Vector3(15,0,0))&&
             !pitTeam.BigBrain.FollowerPushGeometry.IsForwardPosition(new Vector3(),new Vector3(50,0,0),new Vector3(2,0,0)),"shared core forward geometry enforces minimum progress");
     }
+    private static void TestPushContactInterruption(){
+        var b=PushBot("brickContactGap");var p=SAINFollowerRuntime.GetPush(b);var m=b.Sain.Decision.Manager;
+        var enemy=b.Sain.GoalEnemy;var accepted=b.Memory.GoalEnemy;var known=enemy.KnownPlaces.LastKnownPosition;
+        m.Publish(ECombatDecision.Search);SAINFollowerRuntime.GetCombatPhase(b);
+        var destination=p.Destination;var action=new SAINFollowerMoveToEngageAction(b);action.Start();action.Update(null);
+        Time.time+=2;action.Update(null);
+        enemy.KnownPlaces.LastKnownPosition=null;action.Update(null);
+        Check(p.Ordered&&p.AwaitingTarget&&!p.OwnsMovement&&!b.Sain.Mover.Moving,"lost position pauses and stops owned advance before next publication");
+        Check(p.Destination.HasValue&&(p.Destination.Value-destination.Value).sqrMagnitude<.001f&&p.Reason=="contactInterrupted","contact interruption retains committed leg and records cause");
+        m.Publish(ECombatDecision.Search);
+        Check(m.EventSolo==ECombatDecision.SeekCover&&p.Ordered&&!SAINFollowerRuntime.GetRegroup(b).Active,"missing position cannot downgrade ordered push or trigger auto regroup");
+        b.Memory.GoalEnemy=null;b.Sain.GoalEnemy=null;b.Sain.EnemyController.KnownEnemies.Clear();
+        Check(SAINFollowerRuntime.GetCombatPhase(b)!=SAINFollowerCombatPhase.Combat&&p.Ordered&&p.AwaitingTarget,"accepted-goal gap retains intent without activating combat");
+        action.Update(null);Check(!b.Sain.Mover.Moving,"null native goal cannot continue stale push path");
+        Time.time+=.15f;b.Memory.GoalEnemy=accepted;b.Sain.GoalEnemy=enemy;b.Sain.EnemyController.KnownEnemies.Add(enemy);enemy.KnownPlaces.LastKnownPosition=known;
+        p.Observe();Check(p.Ordered&&!p.AwaitingTarget&&p.Reason=="contactRestored","same contact restoration records resumption without losing order");
+        m.Publish(ECombatDecision.Search);action.Start();action.Update(null);
+        Check(p.Ordered&&p.OwnsMovement&&p.Destination.HasValue&&(p.Destination.Value-destination.Value).sqrMagnitude<.001f&&!SAINFollowerRuntime.GetRegroup(b).Active,"Brick replay resumes ordered leg instead of automatic risk rejection");
+        Time.time+=4.01f;action.Update(null);
+        Check(p.Exhausted&&p.Reason=="noProgress","contact gap preserves pre-interruption stall budget");
+        enemy.EnemyKnown=false;p.Observe();Time.time+=.1f;enemy.EnemyKnown=true;m.Publish(ECombatDecision.Search);
+        Check(p.Ordered&&p.Exhausted&&!p.OwnsMovement,"contact reacquisition cannot rearm an exhausted same-contact approach");
+
+        b=PushBot("contactDeadline");p=SAINFollowerRuntime.GetPush(b);enemy=b.Sain.GoalEnemy;enemy.EnemyKnown=false;p.Observe();
+        for(int i=0;i<5;i++){Time.time+=.5f;b.Follower.SetPushEnemy(12);SAINFollowerRuntime.GetCombatPhase(b);}
+        Check(p.Ordered&&p.AwaitingTarget,"repeated polls and same-target orders keep original pending intent");
+        Time.time+=.5f;p.Observe();Check(!p.Active&&p.Reason=="targetLost","polls and repeated orders cannot extend three-second contact deadline");
+        b=PushBot("lateRestoration");p=SAINFollowerRuntime.GetPush(b);enemy=b.Sain.GoalEnemy;enemy.EnemyKnown=false;p.Observe();
+        Time.time+=3.1f;enemy.EnemyKnown=true;p.Observe();Check(!p.Active,"late restoration cannot revive expired order between polls");
+        b=PushBot("deathDuringGap");p=SAINFollowerRuntime.GetPush(b);enemy=b.Sain.GoalEnemy;enemy.EnemyKnown=false;p.Observe();
+        b.Sain.GoalEnemy=null;b.Sain.EnemyController.KnownEnemies.Clear();enemy.EnemyPlayer.HealthController.IsAlive=false;p.Observe();
+        Check(!p.Active&&p.Reason=="targetDead","confirmed death cancels immediately even while native contact is absent");
+        b=PushBot("replaceDuringGap");p=SAINFollowerRuntime.GetPush(b);b.Sain.GoalEnemy.EnemyKnown=false;p.Observe();
+        b.Follower.Command=pitTeam.Components.FollowerCommandType.RegroupNearBoss;p.Observe();Check(!p.Active,"replacement command immediately cancels interrupted push");
+        b=PushBot("releaseDuringGap");p=SAINFollowerRuntime.GetPush(b);b.Sain.GoalEnemy.EnemyKnown=false;p.Observe();
+        SainAddonBridge.TryForceReleaseFollowerCombatState(b);Check(!p.Active&&!p.AwaitingTarget,"explicit release clears interrupted order and deadline");
+        b=PushBot("failedEngageContactGap");p=SAINFollowerRuntime.GetPush(b);enemy=b.Sain.GoalEnemy;
+        var attempt=SAINFollowerRuntime.GetEngageAttempt(b);attempt.Tick(enemy,new Vector3(12,0,0));attempt.Fail("fixture");
+        b.Memory.GoalEnemy=null;SAINFollowerRuntime.GetCombatPhase(b);
+        Check(p.AwaitingTarget&&attempt.FailedFor(enemy),"combat handoff during contact gap cannot erase failed engagement attempt");
+        b=PushBot("automaticContactLoss",false);p=SAINFollowerRuntime.GetPush(b);b.Sain.Decision.Manager.Publish(ECombatDecision.Search);
+        b.Sain.GoalEnemy.EnemyKnown=false;p.Observe();Check(!p.Active,"automatic pushes retain immediate native contact-loss handling");
+        b=PushBot("temporaryOtherThreat");p=SAINFollowerRuntime.GetPush(b);enemy=b.Sain.GoalEnemy;enemy.EnemyKnown=false;p.Observe();
+        var other=new Enemy();other.EnemyPlayer.ProfileId="otherThreat";b.Sain.GoalEnemy=other;b.Sain.EnemyController.KnownEnemies.Add(other);b.Leader.Position=new Vector3(200,0,0);
+        b.Sain.Decision.Manager.Publish(ECombatDecision.StandAndShoot);
+        Check(p.Ordered&&p.EnemyId==enemy.EnemyProfileId&&b.Sain.Decision.CurrentCombatDecision==ECombatDecision.StandAndShoot,"temporary visible-threat action retains interrupted mission identity");
+        b.Sain.Decision.CurrentCombatDecision=ECombatDecision.SeekCover;b.Sain.Cover.CoverSeekingState=SAIN.SAINComponent.Classes.ECoverSeekingState.NoCover;
+        b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
+        Check(p.Ordered&&!SAINFollowerRuntime.GetRegroup(b).Active,"other-contact passive fallback cannot auto regroup over retained order");
+        b=PushBot("medicalDuringGap");p=SAINFollowerRuntime.GetPush(b);b.Sain.GoalEnemy.EnemyKnown=false;p.Observe();
+        b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover,ESquadDecision.None,ESelfActionType.FirstAid);
+        Check(p.Ordered&&b.Sain.Decision.CurrentSelfDecision==ESelfActionType.FirstAid,"native medicine remains higher priority during contact grace");
+    }
+    private static void TestPushRoute(){
+        var b=PushBot("bentRoute");var p=SAINFollowerRuntime.GetPush(b);
+        UnityEngine.AI.NavMesh.SampleAllowed=v=>!(Math.Abs(v.x-20)<.01f&&Math.Abs(v.z)<.01f);
+        UnityEngine.AI.NavMesh.Route=new[]{new Vector3(),new Vector3(-5,0,0),new Vector3(-5,0,25),new Vector3(50,0,25),new Vector3(50,0,0)};
+        b.Sain.GoalEnemy.EnemyPosition=new Vector3(-300,0,-300);
+        b.Sain.Decision.Manager.Publish(ECombatDecision.Search);
+        Check(p.OwnsMovement&&p.Reason=="routeAdvance"&&p.Destination.Value.x==-5&&p.Destination.Value.z==15,"complete detour advances along route even when initial leg is away from hidden enemy");
+        var action=new SAINFollowerMoveToEngageAction(b);action.Start();action.Update(null);
+        Check(b.Sain.Mover.Runs==0&&b.Sain.Mover.Destination.z==15,"route fallback uses controlled walking through existing SAIN movement action");
+        int probes=UnityEngine.AI.NavMesh.Calculations;for(int i=0;i<8;i++)b.Sain.Decision.Manager.Publish(ECombatDecision.Search);
+        Check(UnityEngine.AI.NavMesh.Calculations==probes,"committed route fallback does not recalculate on every decision poll");
+        Time.time+=7;action.Update(null);Check(p.Exhausted&&p.Reason=="noProgress","route fallback retains bounded stalled-approach failure");
+        b=PushBot("invalidFallbackRoute");p=SAINFollowerRuntime.GetPush(b);
+        UnityEngine.AI.NavMesh.SampleAllowed=v=>v.x!=20;UnityEngine.AI.NavMesh.RouteComplete=false;
+        b.Sain.Decision.Manager.Publish(ECombatDecision.Search);
+        Check(p.Exhausted&&p.Reason=="approachRouteIncomplete","stale native complete status cannot admit an actually partial fallback path");
+        var route=new SAINFollowerApproachRoute();UnityEngine.AI.NavMesh.SampleAllowed=null;UnityEngine.AI.NavMesh.RouteComplete=true;
+        UnityEngine.AI.NavMesh.Route=new[]{new Vector3(),new Vector3(40,0,0)};
+        Check(!route.TryStep(new Vector3(),new Vector3(50,0,0),out _,out var why)&&why=="approachRouteCorners","route endpoint must reach remembered position");
+        UnityEngine.AI.NavMesh.Route=new Vector3[65];UnityEngine.AI.NavMesh.Route[63]=new Vector3(50,0,0);
+        Check(!route.TryStep(new Vector3(),new Vector3(50,0,0),out _,out why)&&why=="approachRouteCorners","truncated route-corner buffer is rejected");
+        UnityEngine.AI.NavMesh.Route=null;pitTeam.Utils.Utils.PathScale=2;
+        Check(!route.TryStep(new Vector3(),new Vector3(50,0,0),out _,out why)&&why=="approachStepInvalid","actual leg route remains under core maximum approach distance");
+        pitTeam.Utils.Utils.PathScale=1;
+        b=PushBot("reservedFallbackRoute");p=SAINFollowerRuntime.GetPush(b);
+        UnityEngine.AI.NavMesh.SampleAllowed=v=>v.x!=20;UnityEngine.AI.NavMesh.Route=new[]{new Vector3(),new Vector3(0,0,25),new Vector3(50,0,25),new Vector3(50,0,0)};
+        ((pitTeam.Components.pitAIBossPlayer)b.BotFollower.BossToFollow).CombatEvents.Claims["other"]=new Vector3(0,0,20);
+        b.Sain.Decision.Manager.Publish(ECombatDecision.Search);
+        Check(p.Exhausted&&p.Reason=="approachReserved","route fallback respects teammate destination reservations");
+        UnityEngine.AI.NavMesh.SampleAllowed=null;UnityEngine.AI.NavMesh.Route=null;
+    }
+
 }

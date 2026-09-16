@@ -14,6 +14,13 @@ try {
     $cover=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.SAINComponent.Classes.SAINCoverClass'
     $selection=@($cover.Methods | Where-Object {$_.Name -eq 'FindCoverPoint' -and !$_.IsStatic -and $_.Parameters.Count -eq 0 -and $_.ReturnType.FullName -eq 'SAIN.SAINComponent.SubComponents.CoverFinder.CoverPoint'})
     if($selection.Count -ne 1 -or !($cover.Fields | Where-Object {$_.Name -eq '_shallSprint' -and $_.FieldType.FullName -eq 'System.Boolean'})){throw 'Cover selection boundary changed'}
+    $self=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.SAINComponent.Classes.Decision.SelfActionDecisionClass'
+    if(@($self.Methods | Where-Object {$_.Name -eq 'ShallFirstAidCheckEnemy' -and $_.ReturnType.FullName -eq 'System.Boolean' -and $_.Parameters.Count -eq 1 -and $_.Parameters[0].ParameterType.FullName -eq 'SAIN.SAINComponent.Classes.EnemyClasses.Enemy'}).Count -ne 1){throw 'First-aid safety boundary changed'}
+    $surgery=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.SAINComponent.Classes.BotSurgery'
+    foreach($name in @('CheckEnemies','CheckAreaClearForSurgery')){if(@($surgery.Methods | Where-Object {$_.Name -eq $name -and $_.ReturnType.FullName -eq 'System.Boolean' -and $_.Parameters.Count -eq 0}).Count -ne 1){throw "Surgery boundary changed: $name"}}
+    if(!($surgery.Properties | Where-Object {$_.Name -eq 'AreaClearForSurgery' -and $_.PropertyType.FullName -eq 'System.Boolean' -and $_.SetMethod})){throw 'Surgery clearance setter missing'}
+    $dogfight=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.SAINComponent.Classes.Mover.DogFight'
+    if(@($dogfight.Methods | Where-Object {$_.Name -eq 'DogFightMove' -and $_.ReturnType.FullName -eq 'System.Void' -and ($_.Parameters.ParameterType.FullName -join '|') -eq 'System.Boolean|SAIN.SAINComponent.Classes.EnemyClasses.Enemy'}).Count -ne 1){throw 'No-cover movement boundary changed'}
     $enemyController=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.SAINComponent.Classes.EnemyClasses.SAINEnemyController'
     if(@($enemyController.Methods | Where-Object {$_.Name -eq 'SelectEnemy' -and !$_.IsStatic -and $_.Parameters.Count -eq 0 -and $_.ReturnType.FullName -eq 'SAIN.SAINComponent.Classes.EnemyClasses.Enemy'}).Count -ne 1){throw 'Native enemy preference boundary changed'}
     $provider=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.SAINComponent.Classes.Decision.SquadDecisionClass'
@@ -44,6 +51,12 @@ $followerSource=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Components/B
 $push=[regex]::Match($followerSource,'(?ms)^        public void SetPushEnemy[(]float duration[)].*?^        [}]')
 if(!$push.Success){throw 'Push command entry changed'}
 $fixture=$fixture.Replace('__PUSH_METHOD__',$push.Value)
+$gestureMethods=foreach($name in @('SetCombatComeToBossCover','SetCombatMoveToPointTactical','TryGetActiveCommand')){
+    $match=[regex]::Match($followerSource,'(?ms)^        public (?:void|bool) '+$name+'\(.*?^        [}]')
+    if(!$match.Success){throw "Gesture command boundary missing: $name"}
+    $match.Value.Replace('public bool TryGetActiveCommand','public bool ReadGestureCommand')
+}
+$fixture=$fixture.Replace('__GESTURE_METHODS__',($gestureMethods -join [Environment]::NewLine))
 $plugin=Get-Content -Raw (Join-Path $RepositoryRoot 'client/friendlyPlugin.cs')
 $gates=[regex]::Matches($plugin,'(?ms)^        public static bool (?:IsSainManTacticAvailable|IsSainFollowerCombatAvailable|UseSainFollowerCombat|ShouldDisableSainForFollower)\b[^;]+;')
 if($gates.Count -ne 4){throw 'Combat ownership declarations changed'}
@@ -77,7 +90,7 @@ $framework=Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319'
 $temporary=Join-Path ([IO.Path]::GetTempPath()) ('pitFireTeam-sain-combat-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $temporary | Out-Null
 try {
-    $sources=@('client/Modules/SainCoverGeometry.cs','tests/SainRegroupChurnFixture.cs','client/BigBrain/FollowerPushRiskPolicy.cs','client/Modules/SainPushRiskBridge.cs','addon/SAINFollowerPushAssessment.cs','tests/SainPushRiskFixture.cs','addon/SAINFollowerPushHoldAction.cs','addon/SAINFollowerObjectives.cs','addon/SAINFollowerPushObjective.cs','client/BigBrain/FollowerPushGeometry.cs','tests/SainPushFixture.cs','tests/SainEnemyMarkerFixture.cs','addon/SAINFollowerCover.cs','addon/SAINFollowerCoverFinder.cs','addon/SainCoverSelectionBridge.cs','tests/SainCoverFixture.cs','addon/SAINFollowerPersonality.cs','tests/SainPersonalityFixture.cs','addon/SAINFollowerEngageAttempt.cs','addon/SAINFollowerMoveToEngageAction.cs','addon/SAINFollowerRecorder.cs','client/Modules/SainCombatRecorderBridge.cs','tests/SainEngageRecorderFixture.cs','addon/SAINFollowerRegroupObjective.cs','client/Modules/SainRegroupBridge.cs','tests/SainRegroupFixture.cs','addon/SAINFollowerCombatHandoff.cs','addon/SAINFollowerLingerAction.cs','tests/SainLingerFixture.cs','addon/SAINActionTypes.cs','addon/SAINFollowerSoloCombatLayer.cs','addon/SAINFollowerSquadCombatLayer.cs','addon/SAINFollowerSquadDecision.cs','addon/SAINFollowerSquadRegroupAction.cs','addon/SAINFollowerFollowSearchPartyAction.cs','addon/SainSquadDecisionBridge.cs','tests/SainSquadFixture.cs','addon/SAINFollowerRuntime.cs','client/Modules/SainAddonBridge.cs','addon/SainManPersonality.cs','client/Patches/FollowerSainFriendlyFirePatch.cs')
+    $sources=@('tests/SainRelocationFixture.cs','client/BigBrain/FollowerCombatCommandGeometry.cs','addon/SAINFollowerRelocationObjective.cs','addon/SAINFollowerRelocationAction.cs','addon/SAINFollowerApproachRoute.cs','addon/SainMedicalDecisionBridge.cs','tests/SainMedicalFixture.cs','client/Modules/SainBotOwnerAccessor.cs','client/Modules/SainCoverGeometry.cs','tests/SainRegroupChurnFixture.cs','client/BigBrain/FollowerPushRiskPolicy.cs','client/Modules/SainPushRiskBridge.cs','addon/SAINFollowerPushAssessment.cs','tests/SainPushRiskFixture.cs','addon/SAINFollowerPushHoldAction.cs','addon/SAINFollowerObjectives.cs','addon/SAINFollowerPushObjective.cs','client/BigBrain/FollowerPushGeometry.cs','tests/SainPushFixture.cs','tests/SainEnemyMarkerFixture.cs','addon/SAINFollowerCover.cs','addon/SAINFollowerCoverFinder.cs','addon/SainCoverSelectionBridge.cs','tests/SainCoverFixture.cs','addon/SAINFollowerPersonality.cs','tests/SainPersonalityFixture.cs','addon/SAINFollowerEngageAttempt.cs','addon/SAINFollowerMoveToEngageAction.cs','addon/SAINFollowerRecorder.cs','client/Modules/SainCombatRecorderBridge.cs','tests/SainEngageRecorderFixture.cs','addon/SAINFollowerRegroupObjective.cs','client/Modules/SainRegroupBridge.cs','tests/SainRegroupFixture.cs','addon/SAINFollowerCombatHandoff.cs','addon/SAINFollowerLingerAction.cs','tests/SainLingerFixture.cs','addon/SAINActionTypes.cs','addon/SAINFollowerSoloCombatLayer.cs','addon/SAINFollowerSquadCombatLayer.cs','addon/SAINFollowerSquadDecision.cs','addon/SAINFollowerSquadRegroupAction.cs','addon/SAINFollowerFollowSearchPartyAction.cs','addon/SainSquadDecisionBridge.cs','tests/SainSquadFixture.cs','addon/SAINFollowerRuntime.cs','client/Modules/SainAddonBridge.cs','addon/SainManPersonality.cs','client/Patches/FollowerSainFriendlyFirePatch.cs')
     $paths=@()
     foreach($sourcePath in $sources){
         $source=Get-Content -Raw -Encoding UTF8 (Join-Path $RepositoryRoot $sourcePath)
@@ -92,6 +105,14 @@ try {
             $end=$ping.IndexOf('    internal sealed class RetainedEnemyDownContact',$begin)
             if($begin -lt 0 -or $end -le $begin){throw 'Marker contact boundaries changed'}
             $source=$source.Replace('__MARKER_CONTACT__',$ping.Substring($begin,$end-$begin))
+        }
+        if($sourcePath -eq 'tests/SainMedicalFixture.cs'){
+            $covers=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Utils/Covers.cs')
+            $begin=$covers.IndexOf('        public static bool IsHardCoverFromThreat(Vector3 coverPosition, Vector3 threatPosition)')
+            $end=$covers.IndexOf('        public static bool IsNavigablePoint(', $begin)
+            if($begin -lt 0 -or $end -le $begin){throw 'Core hard-cover geometry changed'}
+            $constants=[regex]::Matches($covers,'(?m)^        private const float HardCover[^;]+;').Value -join [Environment]::NewLine
+            $source=$source.Replace('__CORE_COVER__',$constants+[Environment]::NewLine+$covers.Substring($begin,$end-$begin))
         }
         # Fixture types live alongside production under test; runtime uses the separate SAIN assembly.
         $source=[regex]::Replace($source,'Type.GetType\("([^"]+), SAIN"(?:, true)?\)','CombatChecks.ResolveType("$1")')
