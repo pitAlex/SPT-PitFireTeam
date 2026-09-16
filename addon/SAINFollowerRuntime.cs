@@ -4,6 +4,7 @@ using EFT;
 using pitTeam.Components;
 using pitTeam.Modules;
 using SAIN;
+using SAIN.SAINComponent.SubComponents.CoverFinder;
 using SAIN.Components;
 using SAIN.Preset.Shared.Enums;
 using SAIN.SAINComponent.Classes.EnemyClasses;
@@ -18,6 +19,7 @@ namespace pitTeam.SAINAddon
             public SAINFollowerSquadCombatLayer SquadLayer;
             public SAINFollowerSquadDecision SquadDecisions;
             public SAINFollowerRegroupObjective Regroup;
+            public SAINFollowerObjectives Objectives;
             public SAINFollowerEngageAttempt EngageAttempt;
             public SAINFollowerRecorder Recorder;
             public SAINFollowerPersonality Personality;
@@ -50,7 +52,8 @@ namespace pitTeam.SAINAddon
             SainAddonBridge.RegisterEnemyContactProvider(GetEnemyContact);
             SainCoverSelectionBridge.Register(SelectCover, CoverSelected);
             SainManPersonality.Initialize();
-            SainAddonBridge.RegisterPushEnemyHandler(ApplyPushAggression);
+            SainAddonBridge.RegisterPushEnemyHandler(BeginPushObjective);
+            SainSquadDecisionBridge.RegisterEnemyPreference(PreferEnemy);
             SainSquadDecisionBridge.Register(GetSquadDecision, TryCombatFallback);
             _enabled = true;
             SainCombatRecorderBridge.Register(CaptureCombat, IsRecordedCombat);
@@ -65,7 +68,8 @@ namespace pitTeam.SAINAddon
             _enabled = false;
             SainAddonBridge.UnregisterEnemyContactProvider(GetEnemyContact);
             SainCoverSelectionBridge.Unregister(SelectCover, CoverSelected);
-            SainAddonBridge.UnregisterPushEnemyHandler(ApplyPushAggression);
+            SainAddonBridge.UnregisterPushEnemyHandler(BeginPushObjective);
+            SainSquadDecisionBridge.UnregisterEnemyPreference(PreferEnemy);
             SainSquadDecisionBridge.Unregister(GetSquadDecision, TryCombatFallback);
             SainAddonBridge.UnregisterRuntimeCallbacks(ReadyForPatrol, Release, Reset, IsReady);
             SainAddonBridge.OnBossGroupStaticUpdate -= UpdateGroup;
@@ -76,7 +80,8 @@ namespace pitTeam.SAINAddon
 
         private static SainEnemyContact? GetEnemyContact(BotOwner owner)
         {
-            if (!IsReady(owner) || !States.TryGetValue(owner, out State state)) return null;
+            if (!IsReady(owner) || !SainAddonBridge.HasAcceptedGoalEnemy(owner) ||
+                !States.TryGetValue(owner, out State state)) return null;
             Enemy enemy = state.Bot.GoalEnemy;
             if (enemy == null || !enemy.WasValid || !enemy.EnemyKnown || !Enemy.IsEnemyActive(enemy) ||
                 enemy.EnemyPlayer?.HealthController?.IsAlive != true || !enemy.LastKnownPosition.HasValue)
@@ -115,12 +120,14 @@ namespace pitTeam.SAINAddon
                 {
                     state.Recorder?.Dispose();
                     state.Recorder = null;
+                    state.Objectives?.Clear("nativeStateReplaced");
                     state.Regroup?.Clear("nativeStateReplaced");
                     state.Cover?.Clear();
                     state.Cover = new SAINFollowerCover(bot);
                     state.Personality = new SAINFollowerPersonality();
                     state.EngageAttempt = new SAINFollowerEngageAttempt(bot);
                     state.Regroup = new SAINFollowerRegroupObjective(bot);
+                    state.Objectives = new SAINFollowerObjectives(bot, state.Regroup);
                     state.SquadDecisions = new SAINFollowerSquadDecision(bot);
                 }
                 state.Bot = bot;
@@ -143,15 +150,16 @@ namespace pitTeam.SAINAddon
             }
         }
 
-        private static bool GetSquadDecision(BotOwner owner, object enemy, out int decision)
+        private static bool GetSquadDecision(BotOwner owner, Enemy enemy, out ESquadDecision decision)
         {
-            decision = (int)ESquadDecision.None;
+            decision = ESquadDecision.None;
             if (!States.TryGetValue(owner, out State state) || state.SquadDecisions == null) return false;
             if (!SAINFollowerCombatHandoff.AllowsEnemyCombat(owner)) return true;
             try
             {
-                state.SquadDecisions.GetDecision(out ESquadDecision result, enemy as Enemy);
-                decision = (int)result;
+                state.Objectives?.Observe();
+                state.SquadDecisions.GetDecision(out ESquadDecision result, enemy);
+                decision = result;
             }
             catch (Exception ex)
             {
@@ -166,42 +174,27 @@ namespace pitTeam.SAINAddon
             return true;
         }
 
-        private static bool TryCombatFallback(BotOwner owner, object enemy, int solo, int squad, int self, out int nextSolo, out int nextSquad)
+        private static bool TryCombatFallback(BotOwner owner, Enemy enemy, ECombatDecision solo, ESquadDecision squad, ESelfActionType self, out ECombatDecision nextSolo, out ESquadDecision nextSquad)
         {
             nextSolo = solo; nextSquad = squad;
             if (!States.TryGetValue(owner, out State state) || state.Regroup == null) return false;
             try
             {
-                if (!SAINFollowerCombatHandoff.AllowsDecision(state.Bot, (ECombatDecision)solo, (ESelfActionType)self))
+                if (!SAINFollowerCombatHandoff.AllowsDecision(state.Bot, solo, self))
                 {
-                    nextSolo = (int)ECombatDecision.None;
-                    nextSquad = (int)ESquadDecision.None;
+                    nextSolo = ECombatDecision.None;
+                    nextSquad = ESquadDecision.None;
                     return true;
                 }
-                if (state.Cover?.TryHoldDecision(enemy as Enemy, (ECombatDecision)solo, (ESquadDecision)squad, (ESelfActionType)self) == true)
-                {
-                    nextSolo = (int)ECombatDecision.SeekCover;
-                    return true;
-                }
-                if (state.Regroup.TryBeginAuto(enemy as Enemy, (ECombatDecision)solo, (ESquadDecision)squad, (ESelfActionType)self))
-                {
-                    nextSolo = (int)ECombatDecision.None;
-                    nextSquad = (int)ESquadDecision.Regroup;
-                    return true;
-                }
-                // An exhausted firing-position attempt cannot start another outbound move
-                // merely because regroup finished, the boss is near, or fight grace applies.
-                if (solo == (int)ECombatDecision.MoveToEngage && squad == (int)ESquadDecision.None &&
-                    self == (int)ESelfActionType.None && state.EngageAttempt?.FailedFor(enemy as Enemy) == true)
-                {
-                    nextSolo = (int)ECombatDecision.SeekCover;
-                    return true;
-                }
-                return false;
+                bool handled = state.Objectives.Filter(enemy, solo,
+                    squad, self, out ECombatDecision result, out ESquadDecision squadResult);
+                nextSolo = result; nextSquad = squadResult;
+                return handled;
             }
             catch (Exception ex)
             {
                 state.Prepared = false;
+                state.Objectives?.Clear("decisionFailed");
                 state.Regroup.Clear("decisionFailed");
                 if (!state.ReportedFailure)
                 {
@@ -212,30 +205,31 @@ namespace pitTeam.SAINAddon
             }
         }
 
-        private static bool SelectCover(BotOwner owner, bool sprint, out object point)
+        private static bool SelectCover(BotOwner owner, bool sprint, out CoverPoint point)
         {
             point = null;
             return IsReady(owner) && States.TryGetValue(owner, out State state) && state.Cover != null && state.Cover.TrySelect(sprint, out point);
         }
 
-        private static void CoverSelected(BotOwner owner, object point) => GetCover(owner)?.Selected(point as SAIN.SAINComponent.SubComponents.CoverFinder.CoverPoint);
+        private static void CoverSelected(BotOwner owner, CoverPoint point) => GetCover(owner)?.Selected(point);
 
         internal static SAINFollowerCover? GetCover(BotOwner owner) =>
             IsReady(owner) && States.TryGetValue(owner, out State state) ? state.Cover : null;
 
-        private static bool ApplyPushAggression(BotOwner owner)
+        private static bool BeginPushObjective(BotOwner owner)
         {
             if (!IsReady(owner) || !SainAddonBridge.IsSainManSelected(owner) ||
                 !States.TryGetValue(owner, out State state)) return false;
             var follower = BossPlayers.Instance?.GetFollower(owner);
             if (follower == null) return false;
-            // Replace the order once. Do not leave a durable core PushEnemy pending,
-            // reroute native survival work, or rearm a failed firing-position attempt.
+            // The addon objective owns this accepted order; core command state stays clear.
+            // Native survival work and the existing failed engagement latch are preserved.
             state.Cover?.EndArrivalHold("GoForwardAggression");
             state.Regroup?.Clear("GoForwardAggression");
             follower.ClearCommand("SAIN:GoForwardAggression");
             follower.ClearOrderedPushTargetLock("SAIN:GoForwardAggression");
             follower.SetTemporaryCombatAggressionOverride(100f, "SAIN:GoForwardAggression");
+            state.Objectives.Push.BeginOrdered();
             return true;
         }
 
@@ -253,6 +247,7 @@ namespace pitTeam.SAINAddon
                 state.Recorder?.Dispose();
                 state.Recorder = null;
                 state.Cover?.Clear();
+                state.Objectives?.Clear("release");
                 state.EngageAttempt?.Clear("release");
                 state.Handoff.Clear();
                 state.Regroup?.Clear("release");
@@ -271,6 +266,9 @@ namespace pitTeam.SAINAddon
         internal static SAINFollowerRegroupObjective? GetRegroup(BotOwner owner) =>
             IsReady(owner) && States.TryGetValue(owner, out State state) ? state.Regroup : null;
 
+        internal static bool AllowsMedicalContinuation(BotOwner owner) =>
+            IsReady(owner) && States.TryGetValue(owner, out State state) && state.Handoff.AllowsMedicalContinuation(state.Bot);
+
         internal static bool HasEnteredCombat(BotOwner owner) =>
             owner != null && States.TryGetValue(owner, out State state) && state.Handoff.EnteredCombat;
 
@@ -278,12 +276,35 @@ namespace pitTeam.SAINAddon
         {
             if (!IsReady(owner) || !States.TryGetValue(owner, out State state)) return SAINFollowerCombatPhase.Released;
             state.Cover?.Observe();
-            state.Regroup?.Observe();
+            state.Objectives?.Observe();
             SAINFollowerCombatPhase phase = state.Handoff.Update(state.Bot);
-            if (phase != SAINFollowerCombatPhase.Combat) { state.EngageAttempt?.Clear("combatEnded"); state.Cover?.Clear(); }
+            if (phase != SAINFollowerCombatPhase.Combat)
+            {
+                // Keep a just-accepted order for its bounded native-contact binding window.
+                // This does not activate combat without a living native contact.
+                if (state.Objectives?.Push.AwaitingTarget != true) state.Objectives?.Clear("combatEnded");
+                state.EngageAttempt?.Clear("combatEnded"); state.Cover?.Clear();
+            }
             else state.EngageAttempt?.Observe(state.Bot.GoalEnemy);
             state.Recorder?.ObservePhase(phase);
             return phase;
+        }
+
+        internal static SAINFollowerPushObjective? GetPush(BotOwner owner) =>
+            IsReady(owner) && States.TryGetValue(owner, out State state) ? state.Objectives?.Push : null;
+
+        internal static object? GetObjectiveSnapshot(BotOwner owner) =>
+            States.TryGetValue(owner, out State state) ? state.Objectives?.Snapshot : null;
+
+        private static Enemy PreferEnemy(BotOwner owner, Enemy native)
+        {
+            try { return GetPush(owner)?.PreferEnemy(native) ?? native; }
+            catch (Exception ex)
+            {
+                GetPush(owner)?.Clear("targetPreferenceFailed");
+                Modules.Logger.LogError($"[SAIN] Push target preference failed for {owner.ProfileId}: {ex}");
+                return native;
+            }
         }
 
         internal static SAINFollowerEngageAttempt? GetEngageAttempt(BotOwner owner) =>
@@ -308,6 +329,7 @@ namespace pitTeam.SAINAddon
             if (!States.TryGetValue(owner, out State state) || state.SoloLayer == null || state.SquadLayer == null) return;
             state.Cover?.Clear();
             state.Recorder?.ObservePhase(SAINFollowerCombatPhase.Released);
+            state.Objectives?.Clear("release");
             state.EngageAttempt?.Clear("release");
             state.Handoff.Release(owner);
             state.Regroup?.Clear("release");

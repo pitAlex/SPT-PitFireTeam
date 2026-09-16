@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory)][string]$GameRoot
 )
 # Production boundary checks with real Harmony and controlled EFT/SAIN stand-ins.
-# Existing hearing filters, body-part policy, Unity physics and raid AI are not simulated.
+# Body eligibility uses production methods; head-roll behavior, hearing, physics and raid AI use stand-ins.
 $ErrorActionPreference = 'Stop'
 $nl = [Environment]::NewLine
 $aimSource = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Patches/FollowerAimTargetPatch.cs')
@@ -41,7 +41,10 @@ namespace EFT {
     public interface IPlayer { string ProfileId{get;} }
     public class Player : IPlayer { public string ProfileId{get;set;}="source"; }
     public class GameWorld {}
+    public class WeaponManager { public Launcher UnderbarrelLauncherController=new(); }
+    public class Launcher { public bool IsActive; }
     public class BotOwner {
+        public WeaponManager WeaponManager=new();
         public string ProfileId="follower"; public bool IsDead,IsFollower=true,ThrowHearing;
         public int Callbacks,NativeSounds; public EBotState BotState=EBotState.Active;
         public Player GetPlayer=new(); public object Memory=new(),EnemiesController=new(),BotsGroup=new();
@@ -51,6 +54,8 @@ namespace EFT {
 public class EnemyInfo {
     public BotOwner Owner=new();
     public EnemyPart? LastPartToShoot;
+    public bool Corrected,CorrectedBody,CorrectedHead;
+    public Dictionary<BodyPartType,EnemyPartVision> _allPartsVision=new();
     public Dictionary<BodyPartType,EnemyPart> _allParts=new();
     public EnemyInfo(){
         _allParts[BodyPartType.head]=new(BodyPartType.head,new Vector3(4,5,6));
@@ -61,7 +66,9 @@ public class EnemyInfo {
     public Vector3 GetVisiblePartToShoot(){LastPartToShoot=_allParts[BodyPartType.body];return new(9,9,9);}
 }
 public enum BodyPartType { head,body,leftArm,rightArm,leftLeg,rightLeg }
+public class EnemyPartVision { public bool Visible; }
 public class EnemyPart {
+    public bool CanShoot;
     public BodyPartType BodyPartType; private readonly Vector3 point;
     public EnemyPart(BodyPartType type,Vector3 point){BodyPartType=type;this.point=point;}
     public Vector3 GetPartPositionWithOffset()=>point;
@@ -99,14 +106,23 @@ namespace pitTeam.Modules {
     }
     public static class FollowerAimTargetPolicy {
         public static int Calls;
+        public static bool Promote=true;
+        public static Vector3 LastBaseline;
+        public static bool LastBaselineHead;
+__BODY_METHODS__
         public static bool TryEnhanceFollowerShootPoint(EnemyInfo? e,Vector3 native,bool nativeHead,EnemyPart? nativePart,out Vector3 point){
-            point=native;if(e?.Owner.IsFollower!=true)return false;Calls++;
-            if(!nativeHead)point=new(1,2,3);return true;
+            point=native;if(e?.Owner.IsFollower!=true)return false;Calls++;LastBaseline=native;LastBaselineHead=nativeHead;
+            if(!nativeHead && Promote)point=new(1,2,3);return true;
         }
     }
     public static class Logger {
         public static List<string> Errors=new();
         public static void LogError(string s){Errors.Add(s);} public static void LogInfo(string s){}
+    }
+}
+namespace pitTeam.BigBrain {
+    public static class FollowerEnemyInfoCorrection {
+        public static bool TryGetVerifiedShootParts(EnemyInfo e,out bool head,out bool body){head=e.CorrectedHead;body=e.CorrectedBody;return e.Corrected;}
     }
 }
 namespace pitTeam.Patches {
@@ -120,7 +136,7 @@ __DISPATCH__
     }
 }
 namespace SAIN.SAINComponent.Classes.EnemyClasses {
-    public enum EAimTargetPart { Head,Chest }
+    public enum EAimTargetPart { Head,Chest,LeftLeg,RightLeg }
     public class EnemyAimTarget {
         protected EnemyInfo EnemyInfo{get;}
         public EAimTargetPart? ChosenPart{get;set;}=EAimTargetPart.Chest;
@@ -210,6 +226,31 @@ public static class CompatibilityChecks {
             float expectedHead=version==typeof(Shoot450)?4:9;
             Check(aim(enemy)?.x==expectedHead&&native()==nativeBefore+1&&FollowerAimTargetPolicy.Calls==calls+1,
                 version.Name+"_native_head_preserved");
+            enemy.EnemyInfo._allParts[BodyPartType.body]=new(BodyPartType.body,new Vector3(42,0,0));
+            enemy.EnemyInfo.Corrected=true;enemy.EnemyInfo.CorrectedBody=true;
+            FollowerAimTargetPolicy.Promote=false;calls=FollowerAimTargetPolicy.Calls;
+            Check(aim(enemy)?.x==42 && !FollowerAimTargetPolicy.LastBaselineHead && FollowerAimTargetPolicy.Calls==calls+1,
+                version.Name+"_verified_body_overrides_native_head_before_single_enhancement");
+            SAIN.Patches.Aim.BodyPartToShootPatch.SelectHead=false;
+            enemy.AimTarget.ChosenPart=SAIN.SAINComponent.Classes.EnemyClasses.EAimTargetPart.LeftLeg;
+            Check(aim(enemy)?.x==42,version.Name+"_verified_body_overrides_native_leg");
+            FollowerAimTargetPolicy.Promote=true;calls=FollowerAimTargetPolicy.Calls;
+            Check(aim(enemy)?.x==1 && FollowerAimTargetPolicy.LastBaseline.x==42 && FollowerAimTargetPolicy.Calls==calls+1,
+                version.Name+"_body_baseline_retains_one_precision_head_enhancement");
+            FollowerAimTargetPolicy.Promote=false;
+            enemy.EnemyInfo.CorrectedBody=false;
+            enemy.EnemyInfo._allParts[BodyPartType.body].CanShoot=true;
+            enemy.EnemyInfo._allPartsVision[BodyPartType.body]=new(){Visible=true};
+            Check(aim(enemy)?.x==9,version.Name+"_corrected_blocked_body_preserves_exposed_native_fallback");
+            enemy.EnemyInfo.Corrected=false;
+            Check(aim(enemy)?.x==42,version.Name+"_uncached_body_requires_shootable_and_visible");
+            enemy.EnemyInfo._allPartsVision[BodyPartType.body].Visible=false;
+            Check(aim(enemy)?.x==9,version.Name+"_invisible_body_not_forced");
+            enemy.EnemyInfo.Corrected=true;enemy.EnemyInfo.CorrectedBody=true;
+            enemy.EnemyInfo.Owner.WeaponManager.UnderbarrelLauncherController.IsActive=true;
+            Check(aim(enemy)?.x==9,version.Name+"_launcher_not_redirected_to_body");
+            enemy.EnemyInfo.Owner.WeaponManager.UnderbarrelLauncherController.IsActive=false;
+            FollowerAimTargetPolicy.Promote=true;
             enemy.EnemyInfo.Owner.IsFollower=false;calls=FollowerAimTargetPolicy.Calls;
             Check(aim(enemy)?.x==9&&FollowerAimTargetPolicy.Calls==calls,version.Name+"_ordinary_bot_unchanged");
             enemy.EnemyInfo.Owner.IsFollower=true;enemy.IsVisible=false;calls=FollowerAimTargetPolicy.Calls;
@@ -269,7 +310,14 @@ public static class CompatibilityChecks {
     }
 }
 '@
-$fixture = $fixture.Replace('__TARGET__', $target).Replace('__DISPATCH__', $dispatch)
+$policy = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/FollowerAimTargetPolicy.cs')
+$bodyMethods = foreach($name in @('TryGetBodyFirstShootPoint','GetEligiblePart','IsEligiblePart')) {
+    $match=[regex]::Match($policy,'(?ms)^        (?:internal|private) static [^\r\n]*\b'+$name+'\(.*?^        \}')
+    if(!$match.Success){throw "Missing body eligibility method: $name"}
+    $match.Value
+}
+$fixture = $fixture.Replace('__BODY_METHODS__',($bodyMethods -join $nl)).Replace('__TARGET__', $target).Replace('__DISPATCH__', $dispatch)
+$imports += 'using pitTeam.BigBrain;'
 $harmonyPath = Join-Path $RepositoryRoot 'client/libs/0Harmony.dll'
 $harness = '#nullable enable' + $nl + ($imports -join $nl) + $nl + $fixture + $nl + $aimSource
 $harness += $nl + 'public static class TestEntry { public static int Main(){try{Console.WriteLine("Passed "+CompatibilityChecks.Run()+" compatibility checks with real Harmony.");return 0;}catch(Exception e){Console.Error.WriteLine(e);return 1;}} }'

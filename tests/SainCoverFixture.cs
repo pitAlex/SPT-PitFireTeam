@@ -98,7 +98,8 @@ public static partial class CombatChecks {
         Time.time+=3.1f;policy.Selected(near);Arrive(b,near);
         Check(!policy.HoldsArrival(b.Sain.GoalEnemy),"reselecting the same reached cover cannot rearm its arrival timer");
         b.Sain.Decision.Manager.Publish(ECombatDecision.Search);
-        Check(b.Sain.Decision.CurrentCombatDecision==ECombatDecision.Search,"hold expiry permits normal selection without forcing regroup");
+        Check(b.Sain.Decision.CurrentCombatDecision==ECombatDecision.MoveToEngage&&SAINFollowerRuntime.GetPush(b).OwnsMovement,"hold expiry permits an approach objective without forcing regroup");
+        SAINFollowerRuntime.GetPush(b).Clear("coverFixturePassiveContext");
         b.Sain.Decision.CurrentCombatDecision=ECombatDecision.SeekCover;
         Check(RegroupDecision(b),"passive distant cover can yield naturally to regroup after use");
 
@@ -151,5 +152,6 @@ public static partial class CombatChecks {
         Check(CoverAnalyzer.Creates-creates==32,"one player-area search bounds expensive native cover probes");
         SainBotCoverData.Scene.Clear();
         policy.Clear();Check(!policy.HoldsArrival(b.Sain.GoalEnemy),"combat release clears cover commitment");
+        TestRegroupChurn();
     }
 }

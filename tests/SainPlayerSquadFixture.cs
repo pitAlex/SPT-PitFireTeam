@@ -1,3 +1,5 @@
+using HarmonyLib;
+using pitTeam.SAINAddon;
 using SAIN.SAINComponent.Classes.Info;
 using System;
 using System.Collections.Generic;
@@ -20,9 +22,10 @@ namespace EFT {
     public class Health { public bool IsAlive=true; }
     public class Player { public string ProfileId; public Health HealthController=new(); public Vector3 Position; }
     public class FollowerLink { public object BossToFollow; }
+    public class Memory { public object GoalEnemy; }
     public class BotOwner {
         public string ProfileId {get;set;} public bool IsDead; public Vector3 Position;
-        public FollowerLink BotFollower=new(); public BotsGroup BotsGroup;
+        public Memory Memory=new(); public FollowerLink BotFollower=new(); public BotsGroup BotsGroup;
     }
 }
 public class BotsGroup {
@@ -31,7 +34,7 @@ public class BotsGroup {
 }
 namespace pitTeam.Components {
     __TACTIC_ENUM__
-    public class BotFollowerPlayer { __TACTIC_PARSER__ }
+    public class BotFollowerPlayer { public static bool IsEnemyInfoAlive(object e)=>e!=null; __TACTIC_PARSER__ }
     public class pitAIBossPlayer { public Player realPlayer=new(); public BotsGroup bossGroup=new(); public List<BotOwner> Followers=new(); }
 }
 namespace pitTeam {
@@ -39,7 +42,7 @@ namespace pitTeam {
         public static bool IsSAINInstalled=true, IsSAINAddonInstalled=true;
         __COMBAT_GATE__
     }
-    namespace Utils { public static class FollowerMedical { public static void BeginPostCombatFullHeal(BotOwner b){} } }
+    namespace Utils { public static class FollowerMedical { public static void BeginPostCombatFullHeal(BotOwner b){} public static bool IsUsingMedical(BotOwner b)=>false; public static void CompletePostCombatFullHeal(BotOwner b){} } }
 }
 namespace pitTeam.Modules {
     public class Follower { public BotOwner Bot; public FollowerCombatTactic CombatTactic; public BotOwner GetBot()=>Bot; __CORE_TACTIC__ }
@@ -118,8 +121,6 @@ public static class SelectionChecks {
 }
 public static class LeadershipChecks {
     private static int checks,serial;
-    public static bool FailSetup=true;
-    public static Type ResolveType(string name){if(FailSetup&&name=="SAIN.BotController.Classes.Squad")throw new TypeLoadException("unsupported fixture layout");return Type.GetType(name,true);}
     private static void Check(bool value,string name){checks++;if(!value)throw new Exception(name);Console.WriteLine("PASS "+name);}
     private static BotComponent Spawn(BotsGroup group=null){
         var owner=new BotOwner{ProfileId="bot"+(++serial),BotsGroup=group??new()};owner.BotsGroup.Members.Add(owner);
@@ -138,10 +139,10 @@ public static class LeadershipChecks {
         SainAddonBridge.RaiseFollowerLifecycleEvent(bot.BotOwner,FollowerLifecycleEvent.OnDismiss);
     }
     public static int Main(){try{
-        SainPlayerSquadBridge.ApplyPatches();
-        Check(!SainPlayerSquadBridge.Enable()&&!pitTeam.pitFireTeam.IsSainFollowerCombatAvailable&&Logger.Errors.Count>0,"unsupported initialization leaves combat core-owned");
-        Logger.Errors.Clear();FailSetup=false;
-        SainPlayerSquadBridge.ApplyPatches();Check(SainPlayerSquadBridge.Enable(),"adapter initialized");
+        pitTeam.Patches.FollowerSainSquadLeaderPatch.Apply(new Harmony("pitTeam.core.leader.test"));
+        SAINAddonPatches.Apply();
+        Check(SainPlayerSquadBridge.Enable(),"adapter initialized");
+        Check(SainAddonBridge.HasSquadProvider,"core sees passive leadership registration");
         Check(!pitTeam.pitFireTeam.IsSainFollowerCombatAvailable&&!SainAddonBridge.HasRuntimeCallbacks,"leadership does not enable combat");
         Check(BotFollowerPlayer.ParseCombatTactic(" sainMAN ")==FollowerCombatTactic.SainMan&&SelectionChecks.NormalizeCombatTactic(" sainMAN ")=="SainMan","SainMan survives server normalization and client parsing");
         Check(!SelectionChecks.IsUnavailableTactic("SainMan")&&!SelectionChecks.IsUnavailableTactic("Rifleman")&&SelectionChecks.IsUnavailableTactic("Protector"),"profile offers SainMan with both plugins installed");
@@ -221,10 +222,46 @@ public static class LeadershipChecks {
         var pendingOwner=new BotOwner{ProfileId="pending",BotsGroup=bossB.bossGroup};bossB.bossGroup.Members.Add(pendingOwner);
         pendingOwner.BotFollower.BossToFollow=bossB;BossPlayers.Followers.Add(new(){Bot=pendingOwner,CombatTactic=FollowerCombatTactic.SainMan});
         var pending=new BotComponent(pendingOwner);SAIN.SAINEnableClass.Bots.Add(pendingOwner.ProfileId,pending);
-        SainPlayerSquadBridge.ClearRaid();BotManagerComponent.Instance.BotSquads.Flush();
+        SainAddonBridge.RaiseFollowerLifecycleEvent(null,FollowerLifecycleEvent.OnRaidEnd);BotManagerComponent.Instance.BotSquads.Flush();
         Check(pending.DecisionSubscriptions==0&&pending.Squad.SquadInfo==null,"raid cleanup covers native initialization before first sync");
         Check(second.DecisionSubscriptions==0&&third.DecisionSubscriptions==0,"raid cleanup removes all owned memberships");
         Check(Logger.Errors.Count==0,"no adapter errors");
+        SainPlayerSquadBridge.Disable();SAINAddonPatches.Remove();
+        Check(!SainAddonBridge.HasSquadProvider && SainAddonBridge.GetSquadSnapshot(third.BotOwner)==null,"shutdown removes passive snapshot provider");
+        Check(!Harmony.GetAllPatchedMethods().Any(m=>Harmony.GetPatchInfo(m).Owners.Contains(SAINAddonPatches.HarmonyId)),"shutdown removes every addon-owned patch");
+        Check(!SainPlayerSquadBridge.Enable()&&!SainSquadDecisionBridge.IsAvailable&&!SainCoverSelectionBridge.IsAvailable,"removed hooks cannot report ready");
+        var coreOnly=Spawn();Recruit(coreOnly,Boss("coreOnly"),tactic:FollowerCombatTactic.Balanced);
+        coreOnly.Squad.SquadInfo.Tick();
+        Check(coreOnly.Squad.SquadInfo.LeaderComponent==null,"core guard blocks follower AI leadership without addon hooks");
+        var ordinaryAfterRemoval=Spawn();ordinaryAfterRemoval.Squad.SquadInfo.Tick();
+        Check(ReferenceEquals(ordinaryAfterRemoval.Squad.SquadInfo.LeaderComponent,ordinaryAfterRemoval),"ordinary native leadership survives addon removal");
+        SainCoverSelectionBridge.FailApply=true;bool installFailed=false;
+        try {SAINAddonPatches.Apply();}catch(InvalidOperationException){installFailed=true;}
+        Check(installFailed&&!Harmony.GetAllPatchedMethods().Any(m=>Harmony.GetPatchInfo(m).Owners.Contains(SAINAddonPatches.HarmonyId)),"late installation failure rolls back already installed leadership and decision hooks");
+        Check(!SainPlayerSquadBridge.Enable()&&!SainSquadDecisionBridge.IsAvailable&&!SainCoverSelectionBridge.IsAvailable,"failed installation clears readiness for every boundary");
+        Check(Harmony.GetPatchInfo(HarmonyLib.AccessTools.Method(typeof(Squad),"assignSquadLeader")).Owners.Contains("pitTeam.core.leader.test"),"addon rollback preserves separate core compatibility patch");
+        SainCoverSelectionBridge.FailApply=false;SAINAddonPatches.Apply();Check(SainPlayerSquadBridge.Enable(),"clean retry after failed installation succeeds");
+        SAINAddonPatches.Apply();
+        Check(Harmony.GetPatchInfo(HarmonyLib.AccessTools.Method(typeof(Squad),"assignSquadLeader")).Prefixes.Count(p=>p.owner==SAINAddonPatches.HarmonyId)==1,"repeated addon installation does not duplicate hooks");
+        SainPlayerSquadBridge.Disable();SAINAddonPatches.Remove();
         Console.WriteLine("Passed "+checks+" production leadership checks with real Harmony.");return 0;
     }catch(Exception ex){Console.Error.WriteLine(ex);foreach(var error in Logger.Errors)Console.Error.WriteLine(error);return 1;}}
+}
+// Combat behavior is covered by Verify-SainAddonCombat. These installers inject a
+// late failure to exercise the production patch owner's rollback with real Harmony.
+namespace pitTeam.SAINAddon {
+    internal static class SainSquadDecisionBridge {
+        public static bool IsAvailable;
+        public static void Apply(Harmony h){if(IsAvailable)return;h.Patch(AccessTools.Method(typeof(InstallProbe),nameof(InstallProbe.Decision)),prefix:new HarmonyMethod(typeof(InstallProbe),nameof(InstallProbe.Prefix)));IsAvailable=true;}
+        public static void Reset()=>IsAvailable=false;
+    }
+    internal static class SainCoverSelectionBridge {
+        public static bool IsAvailable,FailApply;
+        public static void Apply(Harmony h){if(FailApply)throw new InvalidOperationException("fixture late install failure");IsAvailable=true;}
+        public static void Reset()=>IsAvailable=false;
+    }
+    internal static class InstallProbe {
+        [MethodImpl(MethodImplOptions.NoInlining)]public static bool Decision()=>true;
+        public static bool Prefix()=>true;
+    }
 }

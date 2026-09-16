@@ -26,8 +26,7 @@ internal sealed class SAINFollowerCombatHandoff
             BossPlayers.Instance?.GetFollower(bot.BotOwner)?.BeginCombatIndependenceFromPatrol();
         if (liveEnemy && !hadEnemy) SainAddonBridge.EndPostCombatFullHeal(bot.BotOwner);
         hadEnemy = liveEnemy;
-        if (liveEnemy || SainAddonBridge.IsUsingMedical(bot.BotOwner) || IsMedical(bot.Decision.CurrentSelfDecision) ||
-            bot.Decision.CurrentCombatDecision == ECombatDecision.AvoidGrenade)
+        if (liveEnemy)
         {
             if (bot.Decision.HasDecision) hadCombat = true;
             lingerUntil = 0f;
@@ -40,6 +39,14 @@ internal sealed class SAINFollowerCombatHandoff
             lingerUntil = Time.time + LingerSeconds;
             pitTeam.Modules.Logger.LogInfo($"[SAIN] Linger started: follower={bot.ProfileId}");
         }
+
+        // Enemy loss owns one deadline. Transient medical selections cannot rearm it.
+        // An already-running native treatment may finish past that deadline; fresh
+        // selections after release belong to core recovery, not another combat episode.
+        if (bot.Decision.CurrentCombatDecision == ECombatDecision.AvoidGrenade ||
+            (AllowsMedicalContinuation(bot) &&
+             (SainAddonBridge.IsUsingMedical(bot.BotOwner) || IsMedical(bot.Decision.CurrentSelfDecision))))
+            return SAINFollowerCombatPhase.Combat;
 
         // Reset this follower through SAIN's publisher, never its private decision fields
         // or living enemy memory. A stale decision must not reactivate either replica.
@@ -76,8 +83,12 @@ internal sealed class SAINFollowerCombatHandoff
     }
 
     internal static bool AllowsDecision(BotComponent bot, ECombatDecision solo, ESelfActionType self) =>
-        AllowsEnemyCombat(bot.BotOwner) || SainAddonBridge.IsUsingMedical(bot.BotOwner) ||
-        IsMedical(self) || solo == ECombatDecision.AvoidGrenade;
+        AllowsEnemyCombat(bot.BotOwner) || solo == ECombatDecision.AvoidGrenade ||
+        (SAINFollowerRuntime.AllowsMedicalContinuation(bot.BotOwner) &&
+         (SainAddonBridge.IsUsingMedical(bot.BotOwner) || IsMedical(self)));
+
+    internal bool AllowsMedicalContinuation(BotComponent bot) =>
+        EnteredCombat && (hadCombat || lingerUntil > Time.time || SainAddonBridge.IsUsingMedical(bot.BotOwner));
 
     private static bool IsMedical(ESelfActionType self) =>
         self == ESelfActionType.FirstAid || self == ESelfActionType.Surgery || self == ESelfActionType.Stims;

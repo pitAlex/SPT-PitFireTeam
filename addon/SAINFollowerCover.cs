@@ -22,26 +22,82 @@ internal sealed class SAINFollowerCover(BotComponent bot)
     private Vector3 arrival, claimedPosition;
     private float holdUntil, nextValidation;
     private string selectionReason = "nativeFallback";
+    private float regroupRadius;
+    private string regroupEnemy;
+    private Vector3 regroupEnemyAnchor;
+    private bool reportedRegroupNoCover;
     private BotFollowerPlayer? Follower => BossPlayers.Instance?.GetFollower(bot.BotOwner);
     private bool Independent => Follower?.CombatIndependent != false;
     private bool Recovery => bot.BotOwner.Memory.IsUnderFire || bot.Medical?.TimeSinceShot < 0.75f ||
         bot.Decision.CurrentCombatDecision == ECombatDecision.Retreat || bot.Decision.CurrentSelfDecision != ESelfActionType.None;
 
-    internal bool TrySelect(bool sprint, out object point)
+    internal bool TrySelect(bool sprint, out CoverPoint point)
     {
         point = null;
         selectionReason = "nativeFallback";
         if (Independent) return false;
         if (Recovery) { selectionReason = "nativeRecovery"; return false; }
         if (!SainPlayerSquadBridge.TryGetPlayerLeader(bot.BotOwner, out Player player) || player.HealthController?.IsAlive != true) return false;
+        bool limitToRegroup = RetainRegroupArea();
         foreach (CoverPoint candidate in finder.Find(bot.GoalEnemy, player.Position))
         {
+            if (limitToRegroup && !InsideRegroupArea(candidate.Position, player.Position)) continue;
             if (!bot.Mover.GoToCoverPoint(candidate, sprint, ESprintUrgency.High)) continue;
-            selectionReason = "bossCover";
+            selectionReason = limitToRegroup ? "regroupCover" : "bossCover";
+            reportedRegroupNoCover = false;
             point = candidate;
             return true;
         }
+        if (limitToRegroup)
+        {
+            // A native fallback outside the completed envelope would undo regroup again.
+            // No valid local cover is a handled empty selection, not a new outward journey.
+            selectionReason = "regroupNoCover";
+            if (!reportedRegroupNoCover) { Record("regroupNoCover"); reportedRegroupNoCover = true; }
+            return true;
+        }
         return false;
+    }
+
+    internal void RegroupCompleted(float radius)
+    {
+        Clear();
+        // Native SeekCover otherwise reuses CoverInUse before asking for a new point.
+        bot.Cover.StopSeekingCover();
+        Enemy enemy = bot.GoalEnemy;
+        if (enemy?.LastKnownPosition == null) return;
+        regroupRadius = radius;
+        regroupEnemy = enemy.EnemyProfileId;
+        regroupEnemyAnchor = enemy.LastKnownPosition.Value;
+        Record("regroupCompleted");
+    }
+
+    private bool RetainRegroupArea()
+    {
+        if (regroupRadius <= 0f) return false;
+        Enemy enemy = bot.GoalEnemy;
+        if (enemy?.LastKnownPosition == null || enemy.EnemyProfileId != regroupEnemy ||
+            (enemy.IsVisible && enemy.CanShoot) ||
+            (enemy.LastKnownPosition.Value - regroupEnemyAnchor).sqrMagnitude >= 64f)
+        {
+            regroupRadius = 0f;
+            return false;
+        }
+        foreach (Enemy known in bot.EnemyController.KnownEnemies)
+            if (known != null && Enemy.IsEnemyActive(known) && known.IsVisible && known.CanShoot)
+            {
+                regroupRadius = 0f;
+                return false;
+            }
+        return true;
+    }
+
+    private bool InsideRegroupArea(Vector3 point, Vector3 player)
+    {
+        float radius = Mathf.Min(regroupRadius, Mathf.Max(2f, SainRegroupBridge.GetTriggerDistance(bot.BotOwner) - 2f));
+        return (point - player).sqrMagnitude <= radius * radius &&
+            SainRegroupBridge.SameLevel(point, player) &&
+            SainRegroupBridge.TryGetDistance(point, player, out float distance) && distance <= radius;
     }
 
     internal void Selected(CoverPoint point)
@@ -69,6 +125,7 @@ internal sealed class SAINFollowerCover(BotComponent bot)
     private void ObserveCore()
     {
         if (Independent) { Clear(); return; }
+        RetainRegroupArea();
         if (hasArrival && (bot.Position - arrival).sqrMagnitude > 16f) { hasArrival = false; holdUntil = 0f; }
         if (selected == null) return;
         bool ownsCover = ReferenceEquals(bot.Cover.CoverInUse, selected) || ReferenceEquals(bot.Cover.CoverPoint_MovingTo, selected);
@@ -94,7 +151,7 @@ internal sealed class SAINFollowerCover(BotComponent bot)
             (!hasArrival || (selected.Position - arrival).sqrMagnitude > 4f))
         {
             hasArrival = true; arrival = selected.Position;
-            holdUntil = Time.time + SainCoverSelectionBridge.ArrivalHoldSeconds(recovery);
+            holdUntil = Time.time + SainCoverGeometry.ArrivalHoldSeconds(recovery);
             Record("arrivalHold");
         }
     }
@@ -116,6 +173,7 @@ internal sealed class SAINFollowerCover(BotComponent bot)
 
     internal void EndArrivalHold(string reason)
     {
+        regroupRadius = 0f;
         holdUntil = 0f;
         Record(reason);
     }
@@ -123,6 +181,7 @@ internal sealed class SAINFollowerCover(BotComponent bot)
     internal void Clear()
     {
         ReleaseClaim(); selected = null; hasArrival = false; holdUntil = 0f; finder.Clear();
+        regroupRadius = 0f; regroupEnemy = null; reportedRegroupNoCover = false;
     }
     private void Claim(Vector3 position)
     {
@@ -135,7 +194,7 @@ internal sealed class SAINFollowerCover(BotComponent bot)
         claimed = false;
     }
     internal object Snapshot => new { reason = selectionReason, arrivalHoldRemaining = Mathf.Max(0f, holdUntil - Time.time),
-        recovery, scanCount = finder.LastScanCount };
+        recovery, scanCount = finder.LastScanCount, regroupRadius };
     private void Record(string reason)
     {
         if (SainCombatRecorderBridge.IsRecording)

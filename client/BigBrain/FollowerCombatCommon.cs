@@ -3534,10 +3534,13 @@ namespace pitTeam.BigBrain
             return IsEnemyLowThreat(goalEnemy, ignoreEquip, maximumEnemies);
         }
 
-        public AutoPushWeaponThreatPolicy GetAutoPushWeaponThreatPolicy(EnemyInfo goalEnemy)
+        public AutoPushWeaponThreatPolicy GetAutoPushWeaponThreatPolicy(EnemyInfo goalEnemy) =>
+            GetAutoPushWeaponThreatPolicy(goalEnemy, activeWeaponOnly: false);
+
+        internal AutoPushWeaponThreatPolicy GetAutoPushWeaponThreatPolicy(EnemyInfo goalEnemy, bool activeWeaponOnly)
         {
             if (!IsArmorRelevantAutoPushTarget(goalEnemy) ||
-                !TryGetCurrentAutoPushAmmoProfile(out AutoPushAmmoProfile ammoProfile))
+                !TryGetCurrentAutoPushAmmoProfile(out AutoPushAmmoProfile ammoProfile, activeWeaponOnly))
             {
                 return AutoPushWeaponThreatPolicy.Normal;
             }
@@ -3589,10 +3592,12 @@ namespace pitTeam.BigBrain
             return TryGetCachedAmmoPenetration(activeWeapon, out penetrationPower);
         }
 
-        private bool TryGetCurrentAutoPushAmmoProfile(out AutoPushAmmoProfile ammoProfile)
+        private bool TryGetCurrentAutoPushAmmoProfile(out AutoPushAmmoProfile ammoProfile, bool activeWeaponOnly = false)
         {
             ammoProfile = default;
-            Weapon? weapon = GetAutoPushWeaponThreatSource();
+            Weapon? weapon = activeWeaponOnly
+                ? botOwner?.WeaponManager?.ShootController?.Item ?? botOwner?.WeaponManager?.CurrentWeapon
+                : GetAutoPushWeaponThreatSource();
             if (weapon == null)
             {
                 return false;
@@ -12968,7 +12973,6 @@ namespace pitTeam.BigBrain
                 return null;
             }
 
-            forward /= currentEnemyDistance;
             ShootToPoint shootPoint = new ShootToPoint(enemyAnchor + Vector3.up * 1.1f, 1f);
             LayerMask mask = botOwner.LookSensor.Mask;
             CoverSearchType searchType = SetCoverTacticAndGetSearchType(
@@ -12987,17 +12991,7 @@ namespace pitTeam.BigBrain
                         return false;
                     }
 
-                    Vector3 advance = point.Position - botPosition;
-                    advance.y = 0f;
-                    float directDistance = advance.magnitude;
-                    if (directDistance <= minForwardProgress ||
-                        Vector3.Dot(advance / directDistance, forward) < minForwardDot)
-                    {
-                        return false;
-                    }
-
-                    float candidateEnemyDistance = DistanceXZ(point.Position, enemyAnchor);
-                    if (candidateEnemyDistance > currentEnemyDistance - minForwardProgress)
+                    if (!FollowerPushGeometry.IsForwardPosition(botPosition, enemyAnchor, point.Position, minForwardProgress, minForwardDot))
                     {
                         return false;
                     }
@@ -15773,7 +15767,13 @@ namespace pitTeam.BigBrain
             }
 
             RefreshCombatHealWorkIfNeeded();
+            return HasReportedHealWorkForPush();
+        }
 
+        // Passive counterpart for the SAIN brain: do not select or refresh native medicine.
+        internal bool HasReportedHealWorkForPush()
+        {
+            if (botOwner.Medecine == null) return false;
             bool firstAidPending = botOwner.Medecine.FirstAid?.Have2Do == true;
             if (firstAidPending && ShouldDeferMinorFirstAidForActiveFight(botOwner.Memory?.GoalEnemy))
             {

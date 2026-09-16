@@ -2,9 +2,13 @@
 
 Last updated: 2026-08-30
 
+## Picked-up follower combat (2026-09-16)
+
+Recruiting a bot already controlled by SAIN now selects SainMan automatically when the SAIN addon is installed. Other recruits retain Rifleman, and saved squadmates keep their configured tactic. The existing addon readiness fallback remains in place.
+
 ## Current SAIN addon command scope (2026-09-14)
 
-SainMan selects two addon replicas of SAIN PMC solo/squad combat. The squad layer now supports automatic and commanded regroup around the human player. Solo routing retains native decisions with a bounded firing-position attempt; the shared runtime captures regroup orders for the squad objective. Peace requests remain core-owned, and other combat command translations remain deferred. See [SAIN-Integration.md](SAIN-Integration.md) for the current contract. [Aggression-based personality settings](SAIN-Personalities-and-Aggression.md) are implemented in the addon. Temporary HoldPosition selects Coward combat behavior; accepted GoForward selects temporary GigaChad combat behavior; Gogogo restores saved aggression. Speech traits such as begging, fake death and taunting are excluded. GoForward replaces a prior order/regroup through the ready addon without creating a durable core push.
+SainMan selects two addon replicas of SAIN PMC solo/squad combat. The squad layer now supports automatic and commanded regroup around the human player. Solo routing retains native decisions with a bounded firing-position attempt; the shared runtime captures regroup orders for the squad objective. Peace requests remain core-owned, and other combat command translations remain deferred. See [SAIN-Integration.md](SAIN-Integration.md) for the current contract. [Aggression-based personality settings](SAIN-Personalities-and-Aggression.md) are implemented in the addon. Temporary HoldPosition selects Coward combat behavior; accepted GoForward selects temporary GigaChad combat behavior; Gogogo restores saved aggression. Speech traits such as begging, fake death and taunting are excluded. GoForward replaces a prior order/regroup through the ready addon and creates a durable addon push objective. Ordered and native-admitted automatic pushes share forward-cover approach, controlled walking, stationary arrival use and recovery; SAIN owns perception and proposes automatic approaches; Rifleman risk conditions gate admission.
 
 ## Scope
 
@@ -98,7 +102,7 @@ Behavior:
 - Name, distance, combat status, HP, and tactic (`MD`) can each be toggled under `My Squad > Settings > Base Settings`.
 - Disabling every text field while leaving the highlight enabled produces a highlight-only Status Report.
 - Enemy markers are grouped by enemy profile, so multiple followers reporting the same contact produce one marker. During the Status Report display, the active marker set follows each follower's current enemy selection: switching targets adds the newly selected enemy and removes an old contact once no follower targets it. `Auto Display Enemy Marker` keeps this marker set active independently for the full live contact without automatically playing the report sound or voice line. On the core combat path, each new contact starts at the enemy's current position. A reliably visible enemy uses a steady `27x27` red reticle that follows the live position every frame; an enemy that is not reliably visible uses a vertically bobbing `30.6x30.6` yellow `!` whose position refreshes every five seconds; and a killed enemy uses a steady `27x27` grey skull at its remembered death position. `Auto Display Kill Marker` can open the independent skull display immediately, `Kill Display Time` requests its duration, and `Kill Remember Time` caps that duration and disables killed-enemy markers when set to `0`. The spatial location sound and spoken direction use the position captured when Status Report was triggered.
-- For ready **SainMan**, the selected contact and its yellow `!` come from SAIN's current enemy and last-known location. New sight/hearing or squad knowledge can update that location; hidden target movement cannot. Forgetting/releasing the native target removes that follower's report even if EFT retains a goal. Fresh native visible/shootable contact uses the red reticle. Shared markers remain while another follower reports the enemy. The existing core position/refresh policy above applies to other tactics and absent/unready addon state.
+- For ready **SainMan**, an accepted living EFT goal is required before any contact marker is shown, including On Your Own. The selected contact and its yellow `!` then come from SAIN's current enemy and last-known location. New sight/hearing or squad knowledge can update that location; hidden target movement cannot. Forgetting/releasing the native target removes that follower's report even if EFT retains a goal. Fresh native visible/shootable contact uses the red reticle. Shared markers remain while another follower reports the enemy. The existing core position/refresh policy above applies to other tactics and absent/unready addon state.
 - Nearby active followers without enemies play `FriendlyGesture`.
 - When no living teammate exists, Status Report plays `radiobeep.ogg` instead of the normal `radiochat.ogg` response.
 - Does not create `FollowerCommandType` state.
@@ -700,6 +704,14 @@ Marksman behavior:
 
 - Generic push is not a direct marksman assault.
 - Marksman support logic may clear unsupported push/suppress commands or turn the situation into support/reposition behavior.
+
+SAIN addon push:
+
+- Accepted Go Forward captures the enemy into `SAINFollowerPushObjective` and applies temporary 100% aggression. It does not leave core PushEnemy pending.
+- Approach prefers short forward firing cover, otherwise controlled walking toward the last-known position. Arrival holds for three seconds without the native random sideways entry move.
+- Useful shooting, urgent threats and medicine interrupt the action while retaining the objective. Pressure triggers recovery; failed approaches remain failed for the same contact.
+- Replacement orders, Gogogo and core CoverMe/NeedHelp/ContactHelp cancellation release the objective. Native forgetting remains authoritative.
+- Native solo Search/RushEnemy and squad PushSuppressedEnemy use the same approach automatically when allowed. On Your Own retains native automatic behavior. Rifleman equipment/cluster/role/player-distance scoring and health/weapon gates filter automatic admission. Ordered push retains its target while using cautious execution and medical/readiness pauses. See [SAIN-Integration.md](SAIN-Integration.md#follower-objectives-and-prudent-push-2026-09-14).
 
 ### Regroup In Combat
 

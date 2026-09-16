@@ -7,6 +7,14 @@ namespace pitTeam.Modules
 {
     public static class SainAddonBridge
     {
+        private static Func<BotOwner, object?>? _getSquadSnapshot;
+        public static bool HasSquadProvider => _getSquadSnapshot != null;
+        public static void RegisterSquadSnapshot(Func<BotOwner, object?> provider) => _getSquadSnapshot = provider;
+        public static void UnregisterSquadSnapshot(Func<BotOwner, object?> provider)
+        {
+            if (_getSquadSnapshot == provider) _getSquadSnapshot = null;
+        }
+        public static object? GetSquadSnapshot(BotOwner owner) => _getSquadSnapshot?.Invoke(owner);
         private static Func<BotOwner, SainEnemyContact?>? _getEnemyContact;
         private static bool _reportedContactFailure;
 
@@ -162,7 +170,7 @@ namespace pitTeam.Modules
         /// </summary>
         public static void RaiseBossGroupStaticUpdate(pitAIBossPlayer boss)
         {
-            if (!pitFireTeam.IsSainFollowerCombatAvailable && !SainPlayerSquadBridge.IsEnabled)
+            if (!pitFireTeam.IsSainFollowerCombatAvailable && !SainAddonBridge.HasSquadProvider)
             {
                 return;
             }

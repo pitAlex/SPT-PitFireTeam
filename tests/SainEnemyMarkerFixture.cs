@@ -73,6 +73,14 @@ public static partial class CombatChecks {
         Check(markers.Count==0,"invalid native coordinates are not displayed");
         target.KnownPlaces.LastKnownPosition=new Vector3(40,0,0);
 
+        var acceptedGoal=bot.Memory.GoalEnemy;bot.Memory.GoalEnemy=null;markers.Update();
+        Check(markers.Count==0&&bot.Sain.GoalEnemy==target,"SAIN contact without accepted EFT goal does not report a marker or erase knowledge");
+        bot.Follower.CombatIndependent=true;markers.Update();
+        Check(markers.Count==0,"On Your Own does not bypass status marker accepted-goal requirement");bot.Follower.CombatIndependent=false;
+        bot.Memory.GoalEnemy=acceptedGoal;acceptedGoal.Alive=false;markers.Update();
+        Check(markers.Count==0,"dead EFT goal cannot authorize a native SAIN marker");acceptedGoal.Alive=true;markers.Update();
+        Check(markers.Count==1&&markers.Contact("tracked").WorldPosition.x==40,"accepted EFT goal restores marker using SAIN knowledge");
+
         var other=Spawn("markerOther");new SAINFollowerSoloCombatLayer(other,74);new SAINFollowerSquadCombatLayer(other,75);Tick();
         var otherTarget=new Enemy{EnemyPosition=new Vector3(160,0,0),IsVisible=true,CanShoot=true,TimeSinceSeen=0};
         otherTarget.EnemyPlayer.ProfileId="tracked";other.Sain.GoalEnemy=otherTarget;

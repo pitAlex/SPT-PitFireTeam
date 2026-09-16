@@ -144,7 +144,7 @@ namespace pitTeam.Patches
                     postfix: new HarmonyMethod(
                         typeof(FollowerSainAimTargetPatch).GetMethod(
                             nameof(EndSainAimTarget), BindingFlags.Static | BindingFlags.NonPublic)));
-                Modules.Logger.LogInfo("[SAIN] Native follower aim-target proficiency enhancement applied.");
+                Modules.Logger.LogInfo("[SAIN] Follower body-first aim selection and Precision head enhancement applied.");
             }
             catch (Exception ex)
             {
@@ -253,7 +253,14 @@ namespace pitTeam.Patches
                     : _isNativeHeadSelected?.Invoke(__0) == true;
                 EnemyPart? nativePart = null;
                 Vector3 nativePoint = __result.Value;
-                if (nativeSelectedHead &&
+                if (FollowerAimTargetPolicy.TryGetBodyFirstShootPoint(
+                        enemyInfo, out EnemyPart? bodyPart, out Vector3 bodyPoint))
+                {
+                    nativePart = bodyPart;
+                    nativePoint = bodyPoint;
+                    nativeSelectedHead = false;
+                }
+                else if (nativeSelectedHead &&
                     enemyInfo._allParts.TryGetValue(BodyPartType.head, out nativePart) &&
                     _nestedNativeSelectionKnown)
                 {

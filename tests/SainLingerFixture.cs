@@ -94,6 +94,7 @@ public static partial class CombatChecks {
         bot.Follower.CombatTactic=FollowerCombatTactic.SainMan;Tick();
         Check(!solo.IsActive(),"reselecting SainMan does not resurrect old linger");
         TestInvestigationGate();
+        TestMedicalLingerDeadline();
     }
     private static void TestInvestigationGate(){
         var bot=RegroupBot("investigation",100);
@@ -125,9 +126,9 @@ public static partial class CombatChecks {
         bot.Sain.Decision.Manager.Publish(ECombatDecision.AvoidGrenade);
         Check(SAINFollowerRuntime.GetCombatPhase(bot)==SAINFollowerCombatPhase.Combat&&bot.Sain.Decision.CurrentCombatDecision==ECombatDecision.AvoidGrenade,"no-goal gate preserves urgent grenade avoidance");
         foreach(var self in new[]{ESelfActionType.FirstAid,ESelfActionType.Surgery,ESelfActionType.Stims}){
-            Check(SAINFollowerCombatHandoff.AllowsDecision(bot.Sain,ECombatDecision.SeekCover,self),"no-goal gate preserves selected "+self);
+            Check(!SAINFollowerCombatHandoff.AllowsDecision(bot.Sain,ECombatDecision.SeekCover,self),"released medical selection cannot reenter addon combat "+self);
         }
-        bot.UsingMedical=true;Check(SAINFollowerCombatHandoff.AllowsDecision(bot.Sain,ECombatDecision.SeekCover,ESelfActionType.None),"ongoing medicine survives missing self decision and goal");
+        bot.UsingMedical=true;Check(!SAINFollowerCombatHandoff.AllowsDecision(bot.Sain,ECombatDecision.SeekCover,ESelfActionType.None),"core-owned recovery medicine cannot reopen addon combat after release");
         bot.UsingMedical=false;
         Check(!SAINFollowerCombatHandoff.AllowsDecision(bot.Sain,ECombatDecision.SeekCover,ESelfActionType.Reload),"reload alone cannot authorize investigative cover movement");
         SainAddonBridge.TryForceReleaseFollowerCombatState(bot);
@@ -140,6 +141,30 @@ public static partial class CombatChecks {
         bot.Follower.CanPatrol=false;bot.Follower.CombatIndependenceRequested=true;
         bot.Sain.Decision.Manager.Publish(ECombatDecision.Search);
         Check(solo.IsActive()&&bot.Follower.CombatIndependent,"saved combat On Your Own intent also authorizes the next independent investigation");
+    }
+
+    private static void TestMedicalLingerDeadline(){
+        var b=RegroupBot("medicalLingerDeadline",20);var m=b.Sain.Decision.Manager;
+        m.Publish(ECombatDecision.SeekCover);SAINFollowerRuntime.GetCombatPhase(b);
+        b.Memory.GoalEnemy=null;
+        float lostAt=Time.time;Check(SAINFollowerRuntime.GetCombatPhase(b)==SAINFollowerCombatPhase.Linger,"enemy loss starts one handoff deadline");
+        Time.time=lostAt+1;m.Publish(ECombatDecision.SeekCover,ESquadDecision.None,ESelfActionType.Surgery);
+        Check(SAINFollowerRuntime.GetCombatPhase(b)==SAINFollowerCombatPhase.Combat,"medical selection may start within original handoff window");
+        m.Publish(ECombatDecision.None);Time.time=lostAt+2;SAINFollowerRuntime.GetCombatPhase(b);
+        m.Publish(ECombatDecision.SeekCover,ESquadDecision.None,ESelfActionType.FirstAid);SAINFollowerRuntime.GetCombatPhase(b);
+        Time.time=lostAt+3.1f;
+        Check(SAINFollowerRuntime.GetCombatPhase(b)==SAINFollowerCombatPhase.Released&&b.RecoveryStarts==1,"cancelled/reselected medicine cannot extend enemy-loss deadline");
+        m.Publish(ECombatDecision.SeekCover,ESquadDecision.None,ESelfActionType.Surgery);
+        Check(b.Sain.Decision.CurrentCombatDecision==ECombatDecision.None&&b.Sain.Decision.CurrentSelfDecision==ESelfActionType.None&&!SainCombatRecorderBridge.IsActive(b),"rejected medical publication clears solo and self without reopening recorder");
+        b.Sain.GoalEnemy=null;b.UsingMedical=true;m.Publish(ECombatDecision.SeekCover,ESquadDecision.None,ESelfActionType.FirstAid);
+        Check(SAINFollowerRuntime.GetCombatPhase(b)==SAINFollowerCombatPhase.Released&&!SainCombatRecorderBridge.IsActive(b)&&b.RecoveryStarts==1,"core healing with no native goal cannot manufacture addon combat episodes");
+        b.UsingMedical=false;b.Memory.GoalEnemy=new EnemyInfo();b.Sain.GoalEnemy=new Enemy();m.Publish(ECombatDecision.SeekCover);SAINFollowerRuntime.GetCombatPhase(b);
+        Check(!b.RecoveryActive,"renewed accepted combat cancels core recovery normally");
+        b.Memory.GoalEnemy=null;b.UsingMedical=true;m.Publish(ECombatDecision.SeekCover,ESquadDecision.None,ESelfActionType.FirstAid);
+        SAINFollowerRuntime.GetCombatPhase(b);Time.time+=8;
+        Check(SAINFollowerRuntime.GetCombatPhase(b)==SAINFollowerCombatPhase.Combat&&b.RecoveryStarts==1,"already-running native treatment survives past fixed deadline");
+        b.UsingMedical=false;
+        Check(SAINFollowerRuntime.GetCombatPhase(b)==SAINFollowerCombatPhase.Released&&b.RecoveryStarts==2,"treatment completion releases immediately when original deadline expired");
     }
 
 }

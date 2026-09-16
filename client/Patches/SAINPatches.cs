@@ -96,12 +96,9 @@ namespace pitTeam.Patches
             PatchSainTalkGenerationForFollowers(harmony);
             PatchSainPlayerVoiceLineForFollowers(harmony);
             FollowerSainVisionRaycastPatch.Apply(harmony);
+            SainVisionRecoveryPatch.Apply(harmony);
             FollowerSainProficiency.ApplyPatches(harmony);
-
-
-            SainPlayerSquadBridge.ApplyPatches();
-            SainSquadDecisionBridge.Apply(harmony);
-            SainCoverSelectionBridge.Apply(harmony);
+            FollowerSainSquadLeaderPatch.Apply(harmony);
         }
 
         private static void PatchFollowerCombatPatrolStanceWithoutAddon(Harmony harmony)

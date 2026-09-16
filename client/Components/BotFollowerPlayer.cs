@@ -3239,6 +3239,17 @@ namespace pitTeam.Components
                    string.Equals(first.Id, second.Id, StringComparison.Ordinal);
         }
 
+        internal static bool HasNativeSainBot(BotOwner owner)
+        {
+            if (owner == null || !pitFireTeam.IsSAINInstalled) return false;
+            try { return GetSainBot(owner) != null; }
+            catch (Exception ex)
+            {
+                Modules.Logger.LogError($"[SAIN] Could not identify recruited bot {owner.ProfileId}; retaining core tactic. {ex}");
+                return false;
+            }
+        }
+
         private static object GetSainBot(BotOwner owner)
         {
             if (owner == null) return null;

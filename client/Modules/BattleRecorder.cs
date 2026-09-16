@@ -1381,7 +1381,7 @@ namespace pitTeam.Modules
                 targetCommitment = CreateTargetCommitmentSnapshot(bot, followerData, goalEnemy),
                 tactic = followerData?.CombatTactic.ToString(),
                 proficiency = CreateProficiencySnapshot(bot, followerData),
-                sainSquadLeadership = SainPlayerSquadBridge.GetDebugSnapshot(bot),
+                sainSquadLeadership = SainAddonBridge.GetSquadSnapshot(bot),
                 sain = sain?.Details,
                 combatSettings = followerData != null
                     ? new

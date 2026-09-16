@@ -195,7 +195,7 @@ public static partial class CombatChecks {
         rollback.Sain.Info.Difficulty.FailNextUpdate=true;bool failed=false;
         try { SainManPersonality.Apply(rollback,rollback.Sain.Info,SAINPlugin.LoadedPreset,EPersonality.Rat,
             SAINFollowerPersonality.Blend(currentProfiles[EPersonality.Rat],currentProfiles[EPersonality.Rat],0)); }
-        catch(TargetInvocationException){failed=true;}
+        catch(InvalidOperationException){failed=true;}
         Check(failed&&ReferenceEquals(prior,rollback.Sain.Info.PersonalitySettingsClass)&&rollback.Sain.Info.Personality==EPersonality.Chad,
             "failed native application restores previous identity and settings reference");
         Check(rollback.Sain.Info.Difficulty.AggressionModifier==priorAggression&&rollback.Sain.Info.ForgetEnemyTime==60&&rollback.Settings.FileSettings.Mind.TIME_TO_FORGOR_ABOUT_ENEMY_SEC==60,

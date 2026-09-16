@@ -28,16 +28,12 @@ namespace pitTeam.BigBrain
         private const string OrderedProvisionalAdvanceReason = "push.ordered.provisionalAdvance";
         private const string OrderedForwardShootCoverReason = "push.ordered.forwardShootCover";
         private const float OrderedForwardCoverScanInterval = 2f;
-        private const float OrderedForwardCoverMaxNavDistance = 30f;
-        private const float OrderedForwardCoverMinProgress = 2f;
-        private const float OrderedForwardCoverMinDot = 0.2f;
+        private const float OrderedForwardCoverMaxNavDistance = FollowerPushGeometry.MaxForwardRoute;
+        private const float OrderedForwardCoverMinProgress = FollowerPushGeometry.MinForwardProgress;
+        private const float OrderedForwardCoverMinDot = FollowerPushGeometry.MinForwardDot;
 #if DEBUG
         private const float MemoryOnlyAutoPushBlockDiagnosticInterval = 1f;
 #endif
-        private const int AutoPushMinMagazineAmmo = 10;
-        private const int StandardAutoPushMagazineCapacity = 30;
-        private const int PrecisionRifleAutoPushMagazineCapacity = 20;
-        private const int ShotgunAutoPushMinMagazineAmmo = 6;
         private const float ShotgunAutoPushMaxEnemyDistance = 20f;
         private const float CautiousPushRoleThreatMultiplier = 1.1f;
         private const float CautiousPushEnemyClusterCount = 2f;
@@ -712,41 +708,10 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            bool lowRemainingAmmo = magazineCount.Value < AutoPushMinMagazineAmmo;
-            bool lowCapacityWeapon = IsLowCapacityAutoPushWeapon(activeWeapon, magazine);
-            if (!lowRemainingAmmo && !lowCapacityWeapon)
-            {
-                return false;
-            }
-
-            allowCloseShotgunPush = lowRemainingAmmo &&
-                                    FollowerCombatCommon.IsShotgunWeapon(activeWeapon) &&
-                                    magazineCount.Value >= ShotgunAutoPushMinMagazineAmmo;
-            return true;
-        }
-
-        private bool IsLowCapacityAutoPushWeapon(Weapon activeWeapon, EFT.InventoryLogic.Magazine? magazine)
-        {
-            int magazineCapacity = magazine?.MaxCount ?? activeWeapon.GetMaxMagazineCount();
-            if (magazineCapacity <= 0 || magazineCapacity >= StandardAutoPushMagazineCapacity)
-            {
-                return false;
-            }
-
-            if (FollowerCombatCommon.IsShotgunWeapon(activeWeapon))
-            {
-                return false;
-            }
-
-            // A smaller magazine is not the same as low remaining ammo for full-auto weapons.
-            // Loaded ammo quality and target armor are handled by the ammo-profile threat policy.
-            if (FollowerCombatCommon.IsAutomaticWeapon(activeWeapon))
-            {
-                return false;
-            }
-
-            return !FollowerCombatCommon.IsPrecisionRifleWeapon(activeWeapon) ||
-                   magazineCapacity < PrecisionRifleAutoPushMagazineCapacity;
+            return FollowerPushRiskPolicy.RestrictMagazine(magazineCount.Value,
+                magazine?.MaxCount ?? activeWeapon.GetMaxMagazineCount(),
+                FollowerCombatCommon.IsAutomaticWeapon(activeWeapon), FollowerCombatCommon.IsShotgunWeapon(activeWeapon),
+                FollowerCombatCommon.IsPrecisionRifleWeapon(activeWeapon), out allowCloseShotgunPush);
         }
 
         private bool CanUseCloseShotgunAutoPush(EnemyInfo goalEnemy, bool allowCloseShotgunPush)

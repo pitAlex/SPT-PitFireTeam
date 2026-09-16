@@ -24,6 +24,27 @@ namespace pitTeam.Modules
             internal float RetainHeadUntil;
         }
 
+        // SAIN's weighted choice may be a limb even with an open torso. Match the main
+        // follower path's body-first baseline before applying the existing head enhancement.
+        internal static bool TryGetBodyFirstShootPoint(
+            EnemyInfo enemyInfo, out EnemyPart? body, out Vector3 point)
+        {
+            body = null;
+            point = default;
+            if (enemyInfo.Owner?.WeaponManager?.UnderbarrelLauncherController?.IsActive == true)
+            {
+                return false;
+            }
+
+            bool corrected = FollowerEnemyInfoCorrection.TryGetVerifiedShootParts(
+                enemyInfo, out bool headShootable, out bool bodyShootable);
+            body = GetEligiblePart(enemyInfo, BodyPartType.body, corrected, headShootable, bodyShootable);
+            if (body == null) return false;
+            point = body.GetPartPositionWithOffset();
+            enemyInfo.LastPartToShoot = body;
+            return true;
+        }
+
         internal static float GetHeadPreference(float precisionPercent)
         {
             float precision = FollowerProficiencyModifierValues.NormalizePercent(precisionPercent);

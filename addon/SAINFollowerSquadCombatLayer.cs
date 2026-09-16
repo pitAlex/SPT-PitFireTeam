@@ -119,8 +119,15 @@ public class SAINFollowerSquadCombatLayer : SAINLayer
         if (lingerAction) return true;
         // END addon post-combat handoff
         // BEGIN addon regroup ending
-        if (LastActionDecision == ESquadDecision.Regroup && SAINFollowerRuntime.GetRegroup(BotOwner)?.Active != true)
-            return true;
+        if (LastActionDecision == ESquadDecision.Regroup &&
+            Bot.Decision.CurrentSquadDecision == ESquadDecision.Regroup &&
+            SAINFollowerRuntime.GetRegroup(BotOwner)?.Active != true)
+        {
+            // Observe can complete between native publications. Keep the completed action
+            // quiet until the publisher replaces Regroup instead of reselecting it each frame.
+            base.IsCurrentActionEnding();
+            return false;
+        }
         // END addon regroup ending
         if (base.IsCurrentActionEnding())
         {

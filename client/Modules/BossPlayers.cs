@@ -217,7 +217,7 @@ namespace pitTeam.Modules
                     RemoveBossPlayer(key);
                 }
             }
-            SainPlayerSquadBridge.ClearRaid();
+            SainAddonBridge.RaiseFollowerLifecycleEvent(null, FollowerLifecycleEvent.OnRaidEnd);
             _bosses.Clear();
             _removedBosses.Clear();
             _followers.Clear();
@@ -260,7 +260,9 @@ namespace pitTeam.Modules
 
             if (!squadMate)
             {
-                tactic = "Default";
+                // Capture native ownership before conversion/Init changes the bot's brain.
+                tactic = pitFireTeam.IsSainManTacticAvailable && BotFollowerPlayer.HasNativeSainBot(bot)
+                    ? "SainMan" : "Default";
                 aggression = CreateRecruitCombatAggression();
                 proficiency = null;
             }

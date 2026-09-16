@@ -1,6 +1,7 @@
 // Follower-local candidate discovery using SAIN 4.5.1's native cover validator.
 using System.Collections.Generic;
 using EFT;
+using pitTeam.BigBrain;
 using pitTeam.Modules;
 using SAIN.Components;
 using SAIN.Preset.Shared.GlobalSettings;
@@ -25,15 +26,25 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
     {
         ranked.Clear();
         if (enemy?.LastKnownPosition == null) return ranked;
-        Vector3 threat = enemy.LastKnownPosition.Value;
-        float refresh = SainRegroupBridge.BossMoveRefreshDistance;
+        Scan(enemy, boss, SainCoverGeometry.SearchRadius, SainRegroupBridge.BossMoveRefreshDistance);
+        foreach (CoverPoint point in candidates) Add(point, boss);
+        foreach (CoverPoint point in bot.Cover.CoverPoints) Add(point, boss);
+        ranked.Sort((a, b) => {
+            int tier = Tier(a, boss).CompareTo(Tier(b, boss));
+            return tier != 0 ? tier : Score(a, boss).CompareTo(Score(b, boss));
+        });
+        return ranked;
+    }
+
+    private void Scan(Enemy enemy, Vector3 boss, float radius, float refresh)
+    {
+        Vector3 threat = enemy.LastKnownPosition.GetValueOrDefault();
         if (!scanned || contact != enemy.EnemyProfileId || (boss - bossAnchor).sqrMagnitude >= refresh * refresh ||
             (bot.Position - botAnchor).sqrMagnitude >= refresh * refresh || (threat - enemyAnchor).sqrMagnitude >= 64f)
         {
             scanned = true; contact = enemy.EnemyProfileId;
             bossAnchor = boss; botAnchor = bot.Position; enemyAnchor = threat;
             candidates.Clear(); LastScanCount = 0;
-            float radius = SainCoverSelectionBridge.SearchRadius;
             colliders.OverlapBoxAndFilter(new SainBotCoverData.BotColliderQueryParams {
                 origin = boss + Vector3.up * 0.25f, halfExtents = new Vector3(radius, 5f, radius),
                 mask = LayersMaskController.HighPolyWithTerrainNoGrassMask,
@@ -51,19 +62,40 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
                     (threat - bot.NavMeshPosition).normalized, out CoverPoint point, out _)) candidates.Add(point);
             }
         }
-        foreach (CoverPoint point in candidates) Add(point, boss);
-        foreach (CoverPoint point in bot.Cover.CoverPoints) Add(point, boss);
-        ranked.Sort((a, b) => {
-            int tier = Tier(a, boss).CompareTo(Tier(b, boss));
-            return tier != 0 ? tier : Score(a, boss).CompareTo(Score(b, boss));
-        });
+    }
+
+    // Same forward-progress/short-route criteria as core ordered push. Native
+    // cover validation supplies protection; the ray checks a potential firing lane,
+    // never grants visibility or permission to shoot a remembered contact.
+    internal List<CoverPoint> FindForward(Enemy enemy, bool requireFiringLane = true)
+    {
+        ranked.Clear();
+        if (enemy?.LastKnownPosition == null) return ranked;
+        Vector3 threat = enemy.LastKnownPosition.Value;
+        Vector3 direction = threat - bot.Position; direction.y = 0f;
+        Scan(enemy, bot.Position + direction.normalized * 15f, 20f, 8f);
+        foreach (CoverPoint point in candidates) AddForward(point, enemy, threat, requireFiringLane);
+        foreach (CoverPoint point in bot.Cover.CoverPoints) AddForward(point, enemy, threat, requireFiringLane);
+        ranked.Sort((a,b) => a.PathData.PathLength.CompareTo(b.PathData.PathLength));
         return ranked;
+    }
+    private void AddForward(CoverPoint point, Enemy enemy, Vector3 threat, bool requireFiringLane)
+    {
+        if (point == null || ranked.Contains(point) || !Validate(point, enemy) ||
+            !SainRegroupBridge.SameLevel(point.Position, bot.Position) ||
+            !SainRegroupBridge.IsDestinationAvailable(bot.BotOwner, point.Position)) return;
+        if (!FollowerPushGeometry.IsForwardPosition(bot.Position, threat, point.Position) ||
+            !SainRegroupBridge.TryGetDistance(bot.Position, point.Position, out float distance) ||
+            distance > FollowerPushGeometry.MaxForwardRoute) return;
+        if (requireFiringLane && Physics.Linecast(point.Position + Vector3.up * 1.5f, threat + Vector3.up * 1.1f,
+            LayersMaskController.HighPolyWithTerrainNoGrassMask)) return;
+        ranked.Add(point);
     }
 
     private int Tier(CoverPoint point, Vector3 boss) =>
-        (point.Position - boss).magnitude <= SainCoverSelectionBridge.SearchRadius ? 0 : 1;
+        (point.Position - boss).magnitude <= SainCoverGeometry.SearchRadius ? 0 : 1;
     private float Score(CoverPoint point, Vector3 boss) =>
-        SainCoverSelectionBridge.Score(point.PathData.PathLength, (point.Position - boss).magnitude);
+        SainCoverGeometry.Score(point.PathData.PathLength, (point.Position - boss).magnitude);
     private void Add(CoverPoint point, Vector3 boss)
     {
         if (point == null || point.Spotted || point.CoverData.IsBad || ranked.Contains(point) ||

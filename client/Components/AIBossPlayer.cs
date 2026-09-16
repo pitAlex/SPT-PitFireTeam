@@ -4876,7 +4876,7 @@ namespace pitTeam.Components
             }
 
             ReportEnemyToIdleFollowers();
-            if (pitFireTeam.IsSainFollowerCombatAvailable || SainPlayerSquadBridge.IsEnabled)
+            if (pitFireTeam.IsSainFollowerCombatAvailable || SainAddonBridge.HasSquadProvider)
             {
                 SainAddonBridge.RaiseBossGroupStaticUpdate(this);
             }

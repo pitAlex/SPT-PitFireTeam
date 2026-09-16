@@ -110,7 +110,11 @@ internal sealed class SAINFollowerRegroupObjective(BotComponent bot) : BotBase(b
             Bot.Decision.CurrentSquadDecision != ESquadDecision.None) return false;
         if (SAINFollowerRuntime.GetCover(BotOwner)?.HoldsArrival(enemy) == true) return false;
         var attempt = SAINFollowerRuntime.GetEngageAttempt(BotOwner);
-        bool failedEngage = solo == ECombatDecision.MoveToEngage && attempt?.FailedFor(enemy) == true &&
+        var push = SAINFollowerRuntime.GetPush(BotOwner);
+        bool failedPush = solo == ECombatDecision.SeekCover && push is { Exhausted: true, Ordered: false } &&
+            push.EnemyId == enemy.EnemyProfileId &&
+            (!Bot.Mover.Moving || Bot.CurrentAction is SAINFollowerMoveToEngageAction);
+        bool failedEngage = failedPush || solo == ECombatDecision.MoveToEngage && attempt?.FailedFor(enemy) == true &&
             (Bot.Decision.CurrentCombatDecision == ECombatDecision.MoveToEngage ||
              (!Bot.Mover.Moving && Bot.Cover.CoverPoint_MovingTo == null));
         if (!failedEngage && (solo != ECombatDecision.SeekCover ||
@@ -139,8 +143,9 @@ internal sealed class SAINFollowerRegroupObjective(BotComponent bot) : BotBase(b
         // Like core escort regroup, retain four seconds of personal fight grace except
         // beyond the 1.6x extreme-distance boundary. Direct orders bypass this gate.
         if (distance < trigger * 1.6f && HotContact(4f)) return false;
-        Begin(SAINRegroupMode.Auto, false, failedEngage ? "engage." + attempt.Failure :
-            coverState == ECoverSeekingState.NoCover ? "passiveNoCover" : "passiveCoverHold");
+        string reason = failedPush ? "pushExhausted" : failedEngage ? "engage." + attempt.Failure :
+            coverState == ECoverSeekingState.NoCover ? "passiveNoCover" : "passiveCoverHold";
+        Begin(SAINRegroupMode.Auto, false, reason);
         return true;
     }
 
@@ -162,6 +167,7 @@ internal sealed class SAINFollowerRegroupObjective(BotComponent bot) : BotBase(b
 
     internal void Complete(string reason)
     {
+        if (Active) SAINFollowerRuntime.GetCover(BotOwner)?.RegroupCompleted(CompleteDistance);
         Clear(reason);
         autoRetryAt = Time.time + 2f;
     }

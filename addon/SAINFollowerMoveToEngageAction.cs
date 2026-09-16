@@ -12,11 +12,14 @@ internal sealed class SAINFollowerMoveToEngageAction(BotOwner bot) : BotAction(b
 {
     private float recalcPathTime;
     private object ownedPath;
+    private SAINFollowerPushObjective? Push => SAINFollowerRuntime.GetPush(BotOwner);
+    private bool wasPush;
     private SAINFollowerEngageAttempt? Attempt => SAINFollowerRuntime.GetEngageAttempt(BotOwner);
 
-    public override void Start() { base.Start(); recalcPathTime = 0f; Attempt?.Resume(); }
+    public override void Start() { base.Start(); recalcPathTime = 0f; wasPush = Push?.OwnsMovement == true; if (!wasPush) Attempt?.Resume(); }
     public override void Stop()
     {
+        Push?.Pause();
         Attempt?.Pause();
         StopOwnedPath();
         base.Stop();
@@ -34,12 +37,18 @@ internal sealed class SAINFollowerMoveToEngageAction(BotOwner bot) : BotAction(b
             Bot.Steering.SteerByPriority(enemy);
             return;
         }
-        var attempt = Attempt;
+        bool pushing = Push?.OwnsMovement == true;
+        // A failure/cancellation can precede the next native publication. Do not let
+        // this still-running action silently create a different engagement attempt.
+        if (!pushing && (wasPush || Push?.Active == true) && Push?.NativeEngagementAllowed != true)
+        { StopOwnedPath(); Push?.Pause(); Bot.Steering.SteerByPriority(enemy); return; }
+        if (pushing != wasPush) { StopOwnedPath(); recalcPathTime = 0f; Attempt?.Pause(); wasPush = pushing; }
+        var attempt = pushing ? null : Attempt;
         Vector3? candidate = Bot.Decision.EnemyDecisions.FiringPosition;
-        Vector3? destination = attempt != null ? attempt.Tick(enemy, candidate) : candidate;
+        Vector3? destination = pushing ? Push.TickMovement() : attempt != null ? attempt.Tick(enemy, candidate) : candidate;
         if (!destination.HasValue)
         {
-            if (attempt?.Failed == true) StopOwnedPath();
+            if (pushing || attempt?.Failed == true) StopOwnedPath();
             Bot.Steering.SteerByPriority(enemy);
             return;
         }
@@ -49,11 +58,11 @@ internal sealed class SAINFollowerMoveToEngageAction(BotOwner bot) : BotAction(b
             (destination.Value - Bot.Position).sqrMagnitude <= 4f) return;
         if (recalcPathTime > Time.time) return;
         recalcPathTime = Time.time + 2f;
-        bool sprint = !BotOwner.Memory.IsUnderFire && (destination.Value - Bot.Position).magnitude > 15f;
+        bool sprint = !pushing && !BotOwner.Memory.IsUnderFire && (destination.Value - Bot.Position).magnitude > 15f;
         bool moved = sprint && Bot.Mover.RunToPoint(destination.Value, true, -1f, ESprintUrgency.Middle);
         if (!moved) moved = Bot.Mover.WalkToPoint(destination.Value, true);
         if (moved) ownedPath = Bot.Mover.ActivePath;
-        else { attempt?.Fail("pathRejected"); StopOwnedPath(); }
+        else { if (pushing) Push.Fail("pathRejected"); else attempt?.Fail("pathRejected"); StopOwnedPath(); }
     }
     private void StopOwnedPath()
     {

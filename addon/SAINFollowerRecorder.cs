@@ -47,7 +47,8 @@ internal sealed class SAINFollowerRecorder : IDisposable
                 SainCombatRecorderBridge.RecordEvent(bot.BotOwner, "sainDecision", new {
                     solo = solo.ToString(), squad = squad.ToString(), self = self.ToString(),
                     enemyId = enemy?.EnemyPlayer?.ProfileId, actionInstanceId = actionId,
-                    firingPosition = Point(bot.Decision.EnemyDecisions.FiringPosition),
+                    objectives = SAINFollowerRuntime.GetObjectiveSnapshot(bot.BotOwner),
+                firingPosition = Point(bot.Decision.EnemyDecisions.FiringPosition),
                     coverState = bot.Cover.CoverSeekingState.ToString(), engageFailure = attempt.Failure
                 });
         }
@@ -103,6 +104,7 @@ internal sealed class SAINFollowerRecorder : IDisposable
                 enemy = enemy == null ? null : new { profileId = enemy.EnemyPlayer?.ProfileId, enemy.IsVisible, enemy.CanShoot,
                     knownPosition = Point(enemy.KnownPlaces.LastKnownPosition), enemy.KnownPlaces.TimeSinceLastKnownUpdated,
                     pathStatus = enemy.Path.PathToEnemyStatus.ToString(), pathLength = enemy.Path.PathLength },
+                objectives = SAINFollowerRuntime.GetObjectiveSnapshot(bot.BotOwner),
                 firingPosition = Point(bot.Decision.EnemyDecisions.FiringPosition),
                 cover = new { state = bot.Cover.CoverSeekingState.ToString(), inUse = Point(bot.Cover.CoverInUse?.Position),
                     movingTo = Point(bot.Cover.CoverPoint_MovingTo?.Position), bad = bot.Cover.CoverInUse?.CoverData.IsBad,

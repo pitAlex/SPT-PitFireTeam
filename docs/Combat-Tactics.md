@@ -9,6 +9,8 @@ Last updated: 2026-08-30
 - `docs/SAIN-Integration.md` is authoritative for that boundary: the addon is selected per follower through the SainMan tactic. Installation alone never switches ownership. Ready SainMan uses addon SAINFollowerSoloCombatLayer and SAINFollowerSquadCombatLayer replicas, with native solo behavior around explicit extensions, player-led squad adaptation, and aggression-interpolated personality settings. Activation requires SainMan selection and per-follower readiness; Rifleman is only the unavailable-addon fallback. Addon differences must live in that layer or its custom SAIN actions; general SAIN patches, shared-object changes, and the proficiency compatibility contract remain core-owned.
 - Treat this as current runtime documentation, not a backlog.
 
+The SainMan addon now has its own push/regroup objective coordinator. Core and addon share forward-cover geometry through `FollowerPushGeometry` and Rifleman risk/magazine scoring through `FollowerPushRiskPolicy`; addon push execution and risk-filtered native automatic admission are documented in [SAIN-Integration.md](SAIN-Integration.md#follower-objectives-and-prudent-push-2026-09-14).
+
 ## Runtime Ownership
 
 Core combat is objective-routed.

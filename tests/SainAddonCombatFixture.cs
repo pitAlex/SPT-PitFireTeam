@@ -1,3 +1,6 @@
+using System.Linq;
+using SAIN.SAINComponent.Classes;
+using SAIN.SAINComponent.Classes.Info;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
@@ -123,15 +126,11 @@ namespace SAIN {
 }
 namespace SAIN.SAINComponent.Classes.Info {
 
-    public class Difficulty {
-        public float AggressionModifier{get;private set;}=1;
-        private readonly SAINBotInfoClass info; public Difficulty(SAINBotInfoClass info){this.info=info;} public bool FailNextUpdate;public int Updates;public void UpdateSettings(object preset){if(FailNextUpdate){FailNextUpdate=false;throw new InvalidOperationException("fixture update failure");}Updates++;AggressionModifier=2*info.PersonalitySettingsClass.Difficulty.AggressionCoef;}
-    }
     public partial class SAINBotInfoClass {
-        private BotOwner owner;public BotComponent Bot{get;} public SAINBotInfoClass(BotComponent bot){Bot=bot;owner=bot.BotOwner;Difficulty=new Difficulty(this);SetPersonality(EPersonality.Normal);}
+        private BotOwner owner;public BotComponent Bot{get;} public SAINBotInfoClass(BotComponent bot){Bot=bot;owner=bot.BotOwner;Difficulty=new BotDifficultyClass(this);SetPersonality(EPersonality.Normal);}
         public EPersonality Personality{get;private set;}
         public PersonalitySettingsClass PersonalitySettingsClass{get;private set;}
-        public Difficulty Difficulty{get;}
+        public BotDifficultyClass Difficulty{get;}
         public float ForgetEnemyTime{get;private set;}=60;public int SearchRefreshes,HoldRefreshes;
         public void SetPersonality(EPersonality personality){if(SAINPlugin.LoadedPreset.PersonalityManager.PersonalityDictionary.TryGetValue(personality,out var settings)){Personality=personality;PersonalitySettingsClass=settings;}}
         public void CalcTimeBeforeSearch(){SearchRefreshes++;ForgetEnemyTime=999;owner.Settings.FileSettings.Mind.TIME_TO_FORGOR_ABOUT_ENEMY_SEC=999;}
@@ -152,6 +151,9 @@ namespace pitTeam.Components {
     public enum FollowerCommandType { None,RegroupNearBoss,CombatComeToBossCover,CombatMoveToPointTactical,PushEnemy,SuppressEnemy,HoldPosition }
     public class pitAIBossPlayer {public CombatEvents CombatEvents=new CombatEvents();}
     public class BotFollowerPlayer {
+        private string pushCancel;
+        public void RequestOrderedPushCancel(string reason){pushCancel=reason;}
+        public bool TryConsumeOrderedPushCancelRequest(out string reason){reason=pushCancel;pushCancel=null;return reason!=null;}
         public BotOwner Owner;public FollowerCombatTactic CombatTactic=FollowerCombatTactic.SainMan;
         internal static bool IsEnemyInfoAlive(EnemyInfo info)=>info?.Alive==true;
         public FollowerCommandType Command;public Vector3 Target;public string EndReason;
@@ -189,10 +191,7 @@ namespace pitTeam.Modules {
         public static bool IsFollower(BotOwner owner)=>owner.IsFollower;
         public static List<BotFollowerPlayer> GetFollowers()=>CombatChecks.Bots.FindAll(b=>b.IsFollower).ConvertAll(b=>b.Follower);
     }
-    public static class SainPlayerSquadBridge {
-        public static bool IsEnabled=true;
-        public static bool TryGetPlayerLeader(BotOwner owner,out Player leader){leader=owner.Leader;return leader!=null;}
-    }
+
 }
 namespace pitTeam.Utils {
     public static class FollowerMedical {
@@ -219,8 +218,8 @@ public static partial class CombatChecks {
     private static void Tick(){Time.time+=1;SainAddonBridge.RaiseBossGroupStaticUpdate(new pitAIBossPlayer());}
     public static void Main(){
         SAINActionTypes.Validate();
-        SainSquadDecisionBridge.Apply(new Harmony("pitTeam.sain.squad.test"));
-        SainCoverSelectionBridge.Apply(new Harmony("pitTeam.sain.cover.test"));
+        SainSquadDecisionBridge.Apply(new Harmony("xyz.pit.fireteam.sainaddon"));
+        SainCoverSelectionBridge.Apply(new Harmony("xyz.pit.fireteam.sainaddon"));
         Check(SainCoverSelectionBridge.IsAvailable,"native cover selection bridge installed");
         Check(SainSquadDecisionBridge.IsAvailable,"native squad decision bridge installed");
         var selected=Spawn("selected");var rifle=Spawn("rifle",FollowerCombatTactic.Balanced);var marks=Spawn("marks",FollowerCombatTactic.Marksman);
@@ -303,9 +302,32 @@ public static partial class CombatChecks {
         TestEngageAttempt();
         TestSainRecorder();
         TestPersonality();
+        TestPushObjectives();TestPushRisk();
         SAINFollowerRuntime.Disable();
         Check(!SainAddonBridge.HasRuntimeCallbacks&&!pitFireTeam.UseSainFollowerCombat(late),"addon shutdown restores core fallback");
+        var addonOwner=new Harmony("xyz.pit.fireteam.sainaddon");
+        var decisionHook=HarmonyLib.AccessTools.Method(typeof(SAIN.SAINComponent.Classes.Decision.BotDecisionManager),"SetDecisions");
+        Check(Harmony.GetPatchInfo(decisionHook).Owners.Contains(addonOwner.Id),"typed decision publisher hook belongs to addon");
+        addonOwner.UnpatchSelf();SainSquadDecisionBridge.Reset();SainCoverSelectionBridge.Reset();
+        Check(!SainSquadDecisionBridge.IsAvailable&&!SainCoverSelectionBridge.IsAvailable,"decision and cover readiness cleared after removal");
+        Check(!Harmony.GetAllPatchedMethods().Any(m=>Harmony.GetPatchInfo(m).Owners.Contains(addonOwner.Id)),"typed decision enemy and cover patches fully removed");
+        SainSquadDecisionBridge.Apply(addonOwner);SainCoverSelectionBridge.Apply(addonOwner);
+        Check(SainSquadDecisionBridge.IsAvailable&&SainCoverSelectionBridge.IsAvailable,"typed hooks reinstall after removal");
+        addonOwner.UnpatchSelf();SainSquadDecisionBridge.Reset();SainCoverSelectionBridge.Reset();
         Check(Logger.Errors.Count==0,"no lifecycle errors");
         Console.WriteLine("Passed "+count+" production addon combat checks. Unity movement and raid AI still require in-game validation.");
+    }
+}
+namespace SAIN.SAINComponent.Classes {
+    public class BotDifficultyClass {
+        public float AggressionModifier{get;private set;}=1;
+        private readonly SAINBotInfoClass info; public BotDifficultyClass(SAINBotInfoClass info){this.info=info;} public bool FailNextUpdate;public int Updates;public void UpdateSettings(object preset){if(FailNextUpdate){FailNextUpdate=false;throw new InvalidOperationException("fixture update failure");}Updates++;AggressionModifier=2*info.PersonalitySettingsClass.Difficulty.AggressionCoef;}
+    }
+}
+
+namespace pitTeam.SAINAddon {
+    public static class SainPlayerSquadBridge {
+        public static bool IsEnabled=true;
+        public static bool TryGetPlayerLeader(BotOwner owner,out Player leader){leader=owner.Leader;return leader!=null;}
     }
 }

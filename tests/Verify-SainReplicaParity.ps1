@@ -25,6 +25,11 @@ foreach($kind in @('Solo','Squad')){
     $handoffPattern='(?ms)^[ \t]*// BEGIN addon post-combat handoff\n.*?^[ \t]*// END addon post-combat handoff\n'
     if([regex]::Matches($replica,$handoffPattern).Count -ne 3){throw "$kind handoff guard count changed"}
     $replica=[regex]::Replace($replica,$handoffPattern,'')
+    if($kind -eq 'Solo'){
+        $pushHold='(?ms)^[ \t]*// BEGIN addon push hold\n.*?^[ \t]*// END addon push hold\n'
+        if([regex]::Matches($replica,$pushHold).Count -ne 2){throw 'Solo push hold guard count changed'}
+        $replica=[regex]::Replace($replica,$pushHold,'')
+    }
     if($kind -eq 'Squad'){
         $regroupEnd='(?ms)^[ \t]*// BEGIN addon regroup ending\n.*?^[ \t]*// END addon regroup ending\n'
         if([regex]::Matches($replica,$regroupEnd).Count -ne 1){throw 'Squad regroup ending guard changed'}
@@ -70,4 +75,4 @@ foreach($entry in @(
         $count++;Write-Output ('PASS '+$entry.Replica+' '+$method+' retains native behavior with player leader')
     }
 }
-Write-Output "Passed $count source parity checks. Registration, ownership, internal type resolution, player-leader substitutions, post-combat linger guards, recorder lifecycle wrappers, the bounded MoveToEngage action, and the tested two-mode regroup objective/action are intentional differences."
+Write-Output "Passed $count source parity checks. Registration, ownership, internal type resolution, player-leader substitutions, post-combat linger guards, recorder lifecycle wrappers, the bounded MoveToEngage action, the tested push objective and stationary hold, and the tested two-mode regroup objective/action are intentional differences."

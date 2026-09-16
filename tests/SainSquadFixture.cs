@@ -31,7 +31,7 @@ namespace UnityEngine.AI {
 }
 namespace EFT {
     public enum ETagStatus {Healthy,Injured,Dying,BadlyInjured}
-    public enum WildSpawnType {bossKnight,pmc}
+    public enum WildSpawnType {bossKnight,pmc,assault,marksman}
     public class HealthController {public bool IsAlive=true;}
     public partial class Player {
         public HealthController HealthController=new HealthController();public string ProfileId="enemy";
@@ -58,6 +58,7 @@ namespace SAIN.SAINComponent.Classes.EnemyClasses {
         public float TimeSinceLastKnownUpdated=>KnownPlaces.TimeSinceLastKnownUpdated;
         public string EPathDistance="Far";
         public float TimeSinceSeen=20;
+        public EnemyInfo EnemyInfo => new EnemyInfo { Person=EnemyPlayer };
         public Player EnemyPlayer=new Player();public Path Path=new Path();public Status Status=new Status();
         public Places KnownPlaces=new Places();public object SuppressionTarget=new object();public Vector3 EnemyPosition;
         public static bool IsEnemyActive(Enemy enemy)=>enemy?.Active==true;
@@ -96,7 +97,7 @@ namespace SAIN.Components {
     public class Equipment {public Gear GearInfo=new Gear();}
     public class PlayerComponent {public Equipment Equipment=new Equipment();}
     public class Shooter {public int Ends; public void EndShoot(){Ends++;} public bool Succeeds;public bool ShootAnyVisibleEnemies(Enemy enemy)=>Succeeds;}
-    public class Suppression {public bool TrySuppressAnyEnemy(Enemy enemy,object known)=>false;}
+    public class Suppression {public bool IsHeavySuppressed;public bool TrySuppressAnyEnemy(Enemy enemy,object known)=>false;}
     public class EnemyController {public List<Enemy> KnownEnemies=new List<Enemy>();}
     public class Steering {
         public bool SteerByPriority(Enemy enemy=null,bool allow=true)=>false;

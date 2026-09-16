@@ -18,26 +18,32 @@ namespace pitTeam.SAINAddon
             {
                 SAINActionTypes.Validate();
                 SainManPersonality.Initialize();
+                SAINAddonPatches.Apply();
                 if (!SainPlayerSquadBridge.Enable()) throw new InvalidOperationException("Player squad bridge is unavailable.");
                 if (!SainSquadDecisionBridge.IsAvailable) throw new InvalidOperationException("Player squad decision bridge is unavailable.");
                 var brains = FollowerLayerRegistry.GetSupportedBrains();
                 BrainManager.AddCustomLayer(typeof(SAINFollowerSquadCombatLayer), brains, SAINFollowerSquadCombatLayer.LayerPriority);
                 BrainManager.AddCustomLayer(typeof(SAINFollowerSoloCombatLayer), brains, SAINFollowerSoloCombatLayer.LayerPriority);
                 SAINFollowerRuntime.Enable();
-                Logger.LogInfo("[Init] SainMan selects addon SAIN solo/squad combat replicas, Chad personality, and player squad leadership. Other tactics retain core combat.");
+                Logger.LogInfo("[Init] SainMan selects addon SAIN solo/squad combat replicas, follower aggression personalities, and player squad leadership. Other tactics retain core combat.");
             }
             catch (Exception ex)
             {
-                SAINFollowerRuntime.Disable();
-                SainPlayerSquadBridge.Disable();
+                StopAddon();
                 Logger.LogError($"[Init] SAIN addon unavailable; core fallback remains enabled. {ex}");
             }
         }
 
-        private void OnDestroy()
+        private void OnDestroy() => StopAddon();
+
+        private static void StopAddon()
         {
-            SAINFollowerRuntime.Disable();
-            SainPlayerSquadBridge.Disable();
+            try { SAINFollowerRuntime.Disable(); }
+            finally
+            {
+                try { SainPlayerSquadBridge.Disable(); }
+                finally { SAINAddonPatches.Remove(); }
+            }
         }
     }
 }

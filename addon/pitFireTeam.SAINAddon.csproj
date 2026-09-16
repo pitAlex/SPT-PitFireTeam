@@ -31,6 +31,7 @@
         <Reference Include="System.Core" />
     </ItemGroup>
     <ItemGroup>
+        <Reference Include="0Harmony"><HintPath>../client/libs/0Harmony.dll</HintPath><Private>false</Private></Reference>
         <Reference Include="SAIN"><HintPath>$(SainReferenceRoot)/SAIN.dll</HintPath><Private>false</Private></Reference>
         <Reference Include="SAIN.Preset.Shared"><HintPath>$(SainReferenceRoot)/SAIN.Preset.Shared.dll</HintPath><Private>false</Private></Reference>
         <Reference Include="Assembly-CSharp"><HintPath>../client/libs4.1/Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>

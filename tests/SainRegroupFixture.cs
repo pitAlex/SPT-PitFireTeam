@@ -35,7 +35,7 @@ namespace pitTeam.BigBrain {
         public static float GetOrderedRegroupDistance(FollowerCombatTactic t)=>CombatDistanceConfiguration.Instance.Factory?10f:18f;
         public static bool IsSameBossLevel(Vector3 a,Vector3 b)=>Math.Abs(a.y-b.y)<=1.75f;
     }
-    public static class FollowerCombatCommon {public static float GetSafeRegroupDistance(float nav,float direct)=>Math.Max(nav,direct);
+    public sealed partial class FollowerCombatCommon {public static float GetSafeRegroupDistance(float nav,float direct)=>Math.Max(nav,direct);
         public static float GetCommittedCoverHoldDuration(string reason)=>reason=="retreatSafeCover"?3.5f:3f;
         public static float ScoreBossCover(float path,float boss)=>path*0.5f+boss;}
 }
@@ -91,6 +91,7 @@ public static partial class CombatChecks {
     private static BotOwner RegroupBot(string id,float playerX=40){
         var bot=Spawn(id);new SAINFollowerSoloCombatLayer(bot,74);new SAINFollowerSquadCombatLayer(bot,75);Tick();
         bot.Leader.Position=new Vector3(playerX,0,0);bot.Sain.GoalEnemy=new Enemy();
+        bot.Memory.GoalEnemy.ProfileId=bot.Sain.GoalEnemy.EnemyProfileId;
         bot.Sain.Decision.CurrentCombatDecision=ECombatDecision.SeekCover;
         bot.Sain.Cover.CoverSeekingState=ECoverSeekingState.NoCover;
         bot.BotFollower.BossToFollow=new pitAIBossPlayer();return bot;
@@ -106,13 +107,13 @@ public static partial class CombatChecks {
             if(decision==ECombatDecision.SeekCover)continue;
             var bot=RegroupBot("autoPriority"+decision,200);
             bot.Sain.Decision.Manager.Publish(decision);
-            Check(!SAINFollowerRuntime.GetRegroup(bot).Active&&bot.Sain.Decision.CurrentCombatDecision==decision,"fresh "+decision+" takes priority over distant-player regroup");
+            Check(!SAINFollowerRuntime.GetRegroup(bot).Active&&bot.Sain.Decision.CurrentCombatDecision==((decision==ECombatDecision.Search||decision==ECombatDecision.RushEnemy)?ECombatDecision.MoveToEngage:decision),"fresh "+decision+" takes priority over distant-player regroup");
         }
         foreach(ESquadDecision decision in Enum.GetValues(typeof(ESquadDecision))){
             if(decision==ESquadDecision.None)continue;
             var bot=RegroupBot("autoSquadPriority"+decision,200);
             bot.Sain.Decision.Manager.Publish(ECombatDecision.None,decision);
-            Check(!SAINFollowerRuntime.GetRegroup(bot).Active&&bot.Sain.Decision.CurrentSquadDecision==decision,"fresh squad "+decision+" retains priority");
+            Check(!SAINFollowerRuntime.GetRegroup(bot).Active&&(decision==ESquadDecision.PushSuppressedEnemy?SAINFollowerRuntime.GetPush(bot).OwnsMovement:bot.Sain.Decision.CurrentSquadDecision==decision),"fresh squad "+decision+" retains priority");
         }
         var held=RegroupBot("autoHeld",200);var objective=SAINFollowerRuntime.GetRegroup(held);var manager=held.Sain.Decision.Manager;
         held.Sain.Cover.CoverSeekingState=ECoverSeekingState.None;
@@ -197,7 +198,7 @@ public static partial class CombatChecks {
         for(int i=0;i<4;i++){
             bot.GetPlayer.Position=new Vector3(i%2==0?30:45,0,0);Time.time+=3;
             bot.Sain.Decision.Manager.Frame(ECombatDecision.Search);
-            Check(!objective.Active&&bot.Sain.Decision.CurrentCombatDecision==ECombatDecision.Search,"search across regroup boundary remains combat, cycle "+i);
+            Check(!objective.Active&&bot.Sain.Decision.CurrentCombatDecision==ECombatDecision.MoveToEngage,"search across regroup boundary remains combat, cycle "+i);
         }
 
         bot=RegroupBot("regroupGrace",25);objective=SAINFollowerRuntime.GetRegroup(bot);

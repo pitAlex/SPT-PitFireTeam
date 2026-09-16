@@ -20,6 +20,10 @@ public class SAINFollowerSoloCombatLayer : SAINLayer
         SAINFollowerRuntime.RegisterSoloLayer(bot, this);
     }
     private bool lingerAction;
+    private bool pushHoldAction;
+    private bool UsePushHold => _currentSelfDecision == ESelfActionType.None &&
+        (_currentDecision == ECombatDecision.StandAndShoot || _currentDecision == ECombatDecision.ShootDistantEnemy) &&
+        SAINFollowerRuntime.GetPush(BotOwner)?.HoldsPosition == true;
 
     public override Action GetNextAction()
     {
@@ -43,6 +47,10 @@ public class SAINFollowerSoloCombatLayer : SAINLayer
             return new Action(SAINActionTypes.Get("Solo.Cover.DoSurgeryAction"), $"Surgery");
         }
 
+        // BEGIN addon push hold
+        pushHoldAction = UsePushHold;
+        if (pushHoldAction) return new Action(typeof(SAINFollowerPushHoldAction), "pushArrivalHold");
+        // END addon push hold
         switch (_lastDecision)
         {
             case ECombatDecision.MoveToEngage:
@@ -134,6 +142,9 @@ public class SAINFollowerSoloCombatLayer : SAINLayer
         }
         if (lingerAction) return true;
         // END addon post-combat handoff
+        // BEGIN addon push hold
+        if (pushHoldAction != UsePushHold) return true;
+        // END addon push hold
         if (base.IsCurrentActionEnding())
         {
             return true;
@@ -171,6 +182,7 @@ public class SAINFollowerSoloCombatLayer : SAINLayer
     {
         SAINFollowerRuntime.GetRecorder(BotOwner)?.Ended(Name, "layerStopped");
         lingerAction = false;
+        pushHoldAction = false;
         _doSurgeryAction = false;
         CheckActiveChanged(false);
         base.Stop();
