@@ -5,11 +5,9 @@ Last updated: 2026-08-30
 ## Scope
 
 - This document covers the core follower combat path under `client/BigBrain`.
-- It only mentions the optional SAIN addon combat path where a boss command crosses the core/addon boundary.
-- `docs/SAIN-Integration.md` is authoritative for that boundary: the addon is selected per follower through the SainMan tactic. Installation alone never switches ownership. Ready SainMan uses addon SAINFollowerSoloCombatLayer and SAINFollowerSquadCombatLayer replicas, with native solo behavior around explicit extensions, player-led squad adaptation, and aggression-interpolated personality settings. Activation requires SainMan selection and per-follower readiness; Rifleman is only the unavailable-addon fallback. Addon differences must live in that layer or its custom SAIN actions; general SAIN patches, shared-object changes, and the proficiency compatibility contract remain core-owned.
+- Core is the baseline. See [SAINGrunt combat](../addon/docs/Combat.md) for addon-specific behavior and [Core SAIN compatibility](SAIN-Compatibility.md) for external-plugin integration.
 - Treat this as current runtime documentation, not a backlog.
 
-The SainMan addon now has its own push/regroup objective coordinator. Core and addon share forward-cover geometry through `FollowerPushGeometry` and Rifleman risk/magazine scoring through `FollowerPushRiskPolicy`; addon push execution and risk-filtered native automatic admission are documented in [SAIN-Integration.md](SAIN-Integration.md#follower-objectives-and-prudent-push-2026-09-14).
 
 ## Runtime Ownership
 
@@ -96,10 +94,7 @@ Combat command state lives on `BotFollowerPlayer` and is intentionally separate 
 - The override is cleared when the follower is safely out of combat and patrol can resume.
 - `BotReceiverPhraseOverridePatch` suppresses vanilla follower receiver handling for `Stop`, `HoldPosition`, and `Gogogo`, so `AIBossPlayer` owns these commands.
 
-SAIN addon note:
-
-- SainMan applies temporary HoldPosition through `SAINFollowerPersonality`, selecting 0% Coward combat behavior. Combat GoForward selects temporary 100% GigaChad combat behavior; Gogogo restores saved aggression. Speech, assignment and mechanical proficiency do not follow these anchors.
-- This is addon-owned personality policy; the removed single-layer protection objective is not restored. See `docs/SAIN-Personalities-and-Aggression.md`.
+Addon aggression mapping is documented in [Personalities and aggression](../addon/docs/Personalities-and-Aggression.md).
 
 ### Hold Position
 
@@ -121,7 +116,7 @@ Out of combat, `HoldPosition` is handled by the request layer as a normal hold c
 
 ### Go Forward / Push Enemy
 
-Combat `GoForward` reaches the `SetPushEnemy` command boundary if the follower already has an active enemy. Ready SainMan handles the accepted order inside the addon as temporary 100% aggression; other tactics retain the durable core push below. SainMan replaces any prior order/regroup, preserves native survival work and failed engagement attempts, and returns to saved aggression on Gogogo or the existing override-clear lifecycle.
+Combat `GoForward` reaches `SetPushEnemy` when the follower has an active enemy. Core combat uses the durable push below; the readiness-gated addon dispatch is described in [SAINGrunt commands](../addon/docs/Commands.md#go-forward).
 
 Picked-up follower behavior:
 
@@ -461,7 +456,7 @@ Core combat uses a dedicated `CombatPostCombatLingerAction` for the three-second
 - Pose level `0.0` is crouch, not prone. The dedicated action never requests prone. If the preceding combat action legitimately ended prone, linger repeatedly requests EFT's normal get-up transition and applies the sampled stance after the bot is no longer prone.
 - Renewed combat, pending medical work, force release, and ordinary request-layer command handoff retain their existing layer-level priority and can end linger immediately. The presentation action does not own those lifecycle decisions.
 - Post-combat `EPhraseTrigger.Clear` is squad-scoped. `pitAIBossPlayer` tracks which followers participated in the combat episode and waits until the last tracked core combat layer releases through normal `lingerExpired`. It then performs one `35%` roll for the squad, chooses one living/non-busy participant, and calls `TrySay(Clear, true)` so at most one follower is selected and EFT's group delay remains a second safeguard.
-- Vanilla and external-SAIN automatic `Clear`/lost-visual requests remain muted. The selected speaker receives a short owner-specific `Clear` permit that survives the `BotTalk` query path and is consumed at actual `Player.Say` output. The dormant SAIN addon `PlayerComponent.PlayVoiceLine` mute checks the same permit, preserving the contract if addon combat is enabled again without restoring SAIN's automatic post-combat chatter.
+- Vanilla and external-SAIN automatic `Clear`/lost-visual requests remain muted. The selected speaker receives a short owner-specific `Clear` permit that survives the `BotTalk` query path and is consumed at actual `Player.Say` output. General speech compatibility with external SAIN remains core-owned; the same permit applies through the core SAIN speech hook.
 - Autonomous `OnFirstContact` / `OnRepeatedContact` requests use a separate anti-flicker confirmation: the first request records the selected enemy and phrase, waits one second without restarting that timer on repeated requests, and speaks only if the same living `GoalEnemy` is still retained. The confirmed call bypasses only the follower's ordinary speech cooldown, still reserves EFT's group phrase delay, and does not override player-issued Contact / Over There suppression.
 
 ## Healing And Stims
@@ -650,6 +645,8 @@ Regroup movement also has its own short commitment so the bot does not recalcula
 
 ## Battle Recorder
 
+[Addon recording](../addon/docs/Combat.md#recording-and-cost) extends this core recorder contract with native decision/action/path data.
+
 The battle recorder is separate from normal plugin logging.
 
 It records combat-only JSONL timelines under the live client plugin folder's `BattleRecords/` directory. See `LOCAL.md` for the machine-local live client plugin folder.
@@ -672,9 +669,6 @@ It is intended to compare observed behavior with code behavior:
 
 Use it to validate whether a bug is tactical routing, action execution, perception, or visual/player interpretation.
 
-Schema version 13 adds explicit SAIN addon combat recording through `SainCombatRecorderBridge`. A ready SainMan follower opens a shared `sainAddon` combat episode across solo, squad, and post-combat linger. `sainDecision` records the native published solo/squad/self result; `sainActionSelected` and `sainActionEnd` identify each addon-layer action instance and its duration/end reason; `sainEngageAttempt` records committed firing-position attempts and their failure/reset reasons. Existing objective events and periodic snapshots now have a live combat episode during addon combat.
-
-The nested `sain` snapshot contains native decisions, enemy visibility/shootability and last-known position, firing position, cover state, movement path identity/status/destination/corner/sprint details (up to 16 path points), regroup mode, and engagement-attempt state. `movement.owner` and `moveTargets.effectiveSource` identify SAIN-owned movement; an absent SAIN path does not fall back to a stale EFT target. Core cover fields use native cover while SAIN owns movement. The original EFT enemy fields remain available for comparison with `sain.enemy`. Reads do not evaluate decisions or update gameplay state. The bridge is optional, follower-scoped, Debug-only, and respects the recorder setting. Older recordings cannot recover these previously missing events.
 
 Schema version 12 adds `lookControl`: unflattened look direction, upward-positive pitch, steering mode, requested point/direction, last steering direction, and weapon origin. Combat activity also records the real and final aim targets alongside aim status, so inactive cached aim points can be distinguished from current aiming. Existing planar direction/angle fields remain unchanged.
 

@@ -1,16 +1,6 @@
-# SAIN personalities and aggression
+# SAINGrunt personalities and aggression
 
-## SAINGrunt tactic display name (2026-09-16)
-
-The addon tactic is displayed as **SAINGrunt** in the profile selector and follower Status Report. The persisted `SainMan` identifier, enum value and `ProfileTacticSainMan` localization key remain stable, so existing squads and pickup selection retain the same behavior without migration. The embedded English fallback and English language resource supply the new name. Historical/code references to SainMan below refer to this same tactic.
-
-## Addon-only SAIN hook ownership (2026-09-16)
-
-Patches used only by the SAIN addon belong in `addon/`. `SAINAddonPatches` installs player-squad leadership, squad decisions, native decision-publication filtering, push-target preference and cover selection under the addon Harmony ID. Failed installation rolls back the complete addon hook set; shutdown releases follower state/membership before removing hooks. `SainManPersonality` also lives in the addon. Public SAIN APIs and enum types are referenced directly; cached reflection remains only for private setters/methods and internal action types.
-
-Core retains compatibility needed without the addon: vision recovery/foliage, aim/recoil/proficiency, enemy synchronization, speech, friendly fire, grenade routing and native layer/weapon/reload guards. The mixed leader-assignment hook was split: core still prevents core followers becoming native AI leaders, while the addon owns human-led squad behavior. Core has no typed SAIN reference. `SainAddonBridge` carries passive leadership diagnostics and lifecycle notifications; shared core navigation/cover helpers remain in core. This supersedes older instructions placing all SAIN interception in core.
-
-Updated: 2026-09-14. Status: implemented in the optional addon; fresh-raid qualification remains required.
+**Base contract:** [Core combat aggression](../../docs/Combat-Tactics.md) and [Core proficiency](../../docs/Friendly-AI-Performance-Settings.md). The addon consumes saved/temporary aggression to adapt tactical SAIN personality fields; it does not own mechanical difficulty. Native installation and restoration are addon-owned under the [integration contract](Integration.md). The display name is SAINGrunt; `SainMan` remains the persisted identifier.
 
 ## Aggression mapping
 
@@ -28,27 +18,24 @@ Aggression means willingness to pursue and fight in SAIN's style, not adopting t
 
 **Talk, random-assignment settings and mechanical difficulty are excluded.** These categories use independent neutral native defaults; begging, fake death and taunting remain disabled at every aggression value. Core continues to own follower speech and finalized Vision, Precision and Reaction.
 
-The confirmed combat command contract uses EffectiveCombatAggression: **Hold Position -> 0% Coward combat behavior; Go Forward -> 100% GigaChad combat behavior; Gogogo -> saved aggression**. Accepted Go Forward orders reach the addon through the core SetPushEnemy boundary only for ready SainMan followers. The addon replaces the prior order/regroup without leaving a durable core push pending. Go Forward now also creates `SAINFollowerPushObjective`, retaining the target and selecting prudent approach/hold/recovery phases through SAIN actions. Its explicit order bypasses discretionary native Freeze/search waiting without rewriting those timers; see [the push contract](SAIN-Integration.md#follower-objectives-and-prudent-push-2026-09-14). Pickup acceptance, command locks, other tactics and out-of-combat movement commands retain their existing paths. Temporary overrides retain the existing post-combat clear lifecycle; saved aggression is never overwritten. Weapon-specific core aggression multipliers are excluded. Finite inputs clamp to 0-100; non-finite inputs use 50.
+The confirmed combat command contract uses EffectiveCombatAggression: **Hold Position -> 0% Coward combat behavior; Go Forward -> 100% GigaChad combat behavior; Gogogo -> saved aggression**. Accepted Go Forward orders reach the addon through the core SetPushEnemy boundary only for ready SainMan followers. The addon replaces the prior order/regroup without leaving a durable core push pending. Go Forward now also creates `SAINFollowerPushObjective`, retaining the target and selecting prudent approach/hold/recovery phases through SAIN actions. Its explicit order bypasses discretionary native Freeze/search waiting without rewriting those timers; see [the push contract](Combat.md#push-objectives). Pickup acceptance, command locks, other tactics and out-of-combat movement commands retain their existing paths. Temporary overrides retain the existing post-combat clear lifecycle; saved aggression is never overwritten. Weapon-specific core aggression multipliers are excluded. Finite inputs clamp to 0-100; non-finite inputs use 50.
 
 ## Implementation and lifecycle
 
-- [SAINFollowerPersonality](../addon/SAINFollowerPersonality.cs) owns the anchors, interpolation and follower-local copy. It caches serialized fields only within the four combat categories and blends the tactical AggressionCoef separately. Every mutable category remains follower-local; excluded categories cannot inherit personality flavor or random assignment from an anchor.
-- [SAINFollowerRuntime](../addon/SAINFollowerRuntime.cs) applies the policy during its existing half-second preparation. It refreshes only after effective aggression, preset/anchor reference, native info, or native personality/settings ownership changes. Native preset reconfiguration also picks up in-place preset edits. Stable ticks do not copy settings or reroll timers.
-- [SainManPersonality](../addon/SainManPersonality.cs) is the addon-owned native setup/restore adapter. It installs the supplied copy, refreshes difficulty through existing proficiency interception, preserves both enemy-memory durations around search/hold timer refresh, refreshes native cached talk settings, and clears only a stale SearchAction sprint roll.
+- [SAINFollowerPersonality](../SAINFollowerPersonality.cs) owns the anchors, interpolation and follower-local copy. It caches serialized fields only within the four combat categories and blends the tactical AggressionCoef separately. Every mutable category remains follower-local; excluded categories cannot inherit personality flavor or random assignment from an anchor.
+- [SAINFollowerRuntime](../SAINFollowerRuntime.cs) applies the policy during its existing half-second preparation. It refreshes only after effective aggression, preset/anchor reference, native info, or native personality/settings ownership changes. Native preset reconfiguration also picks up in-place preset edits. Stable ticks do not copy settings or reroll timers.
+- [SainManPersonality](../SainManPersonality.cs) is the addon-owned native setup/restore adapter. It installs the supplied copy, refreshes difficulty through existing proficiency interception, preserves both enemy-memory durations around search/hold timer refresh, refreshes native cached talk settings, and clears only a stale SearchAction sprint roll.
 - Core still normalizes mechanical difficulty and applies Vision, Precision and Reaction once. Only the tactical `AggressionCoef` follows the chosen/blended profile and feeds SAIN's selected aggression calculation; mechanical personality coefficients stay neutral.
 - Existing Freeze deadlines, search pauses, paths, target memory and failed engagement attempts survive settings transitions. Go Forward explicitly replaces prior regroup as a new command. Native decision checks read changed Freeze/search/rush permissions normally. General follower speech remains core-controlled.
 - Native state replacement, tactic opt-out, dismissal and teardown restore owned personality state. Missing required profiles retain the saved SainMan selection and supported core fallback. Unknown/non-finite settings fail before publication.
 - `sainPersonality` transition events and passive `sain.personality` snapshots record aggression, saved/temporary source, discrete identity, neighboring anchors and fraction. Snapshot reads do not update aggression or gameplay.
 
-Read [AGENTS.md](../AGENTS.md), machine-local `LOCAL.md`, [current progress](../ADDON-ANALYSIS.md), [ownership](SAIN-Integration.md), and [proficiency audit](SAIN-Proficiency-Audit.md) before further changes. The fixed `ApplyChad` assignment loop is removed.
-
-The phase-one WIP checkpoint is `60d725bd60050a7c02ebfaac3ef73772468d2f8e`. This later WIP checkpoint includes the addon extensions and personality implementation. Unrelated insurance/client/server work remains excluded.
 
 ## Source and evidence boundary
 
 Findings come from the local SAIN 4.5.1 snapshot identified by `LOCAL.md`, including its sibling `SAIN.Preset.Shared` and `SAINServerMod` projects. Paths below are relative to that snapshot root, which contains all three projects. They are built-in defaults, not a capture of the user's currently selected/customized preset.
 
-The snapshot has no Git metadata, and byte identity with the installed SAIN DLL has not been established. Installed 4.5.1 API validation is separate; see [reference provenance](../addon/SAIN-REFERENCES.md). Do not treat source observations as measured raid behavior.
+The snapshot has no Git metadata, and byte identity with the installed SAIN DLL has not been established. Installed 4.5.1 API validation is separate; see [reference provenance](References.md). Do not treat source observations as measured raid behavior.
 
 `PersonalityGenerator.BuildDefaults` creates eight personalities. `EPersonality` additionally declares `None` and `Custom1` through `Custom5`; those are not additional generated built-in behavior profiles.
 

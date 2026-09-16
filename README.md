@@ -19,3 +19,8 @@ The project is split into three parts:
 This repository is the active development home for the mod formerly developed under the friendlyPMC working name.
 
 The mod is still under active development, so implementation details and packaging can change between builds.
+## Documentation
+
+- [Core documentation](docs/README.md)
+- [SAIN addon documentation](addon/docs/README.md)
+- [Engineering guidance](AGENTS.md)

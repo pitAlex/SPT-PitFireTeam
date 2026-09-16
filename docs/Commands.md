@@ -1,18 +1,6 @@
-# Command System Notes
+# Core commands
 
-## SAINGrunt tactic display name (2026-09-16)
-
-The addon tactic is displayed as **SAINGrunt** in the profile selector and follower Status Report. The persisted `SainMan` identifier, enum value and `ProfileTacticSainMan` localization key remain stable, so existing squads and pickup selection retain the same behavior without migration. The embedded English fallback and English language resource supply the new name. Historical/code references to SainMan below refer to this same tactic.
-
-Last updated: 2026-08-30
-
-## Picked-up follower combat (2026-09-16)
-
-Recruiting a bot already controlled by SAIN now selects SainMan automatically when the SAIN addon is installed. Other recruits retain Rifleman, and saved squadmates keep their configured tactic. The existing addon readiness fallback remains in place.
-
-## Current SAIN addon command scope (2026-09-14)
-
-SainMan selects two addon replicas of SAIN PMC solo/squad combat. The squad layer now supports automatic and commanded regroup around the human player. Solo routing retains native decisions with a bounded firing-position attempt; the shared runtime captures regroup orders for the squad objective. Peace requests remain core-owned, and other combat command translations remain deferred. See [SAIN-Integration.md](SAIN-Integration.md) for the current contract. [Aggression-based personality settings](SAIN-Personalities-and-Aggression.md) are implemented in the addon. Temporary HoldPosition selects Coward combat behavior; accepted GoForward selects temporary GigaChad combat behavior; Gogogo restores saved aggression. Speech traits such as begging, fake death and taunting are excluded. GoForward replaces a prior order/regroup through the ready addon and creates a durable addon push objective. Ordered and native-admitted automatic pushes share forward-cover approach, controlled walking, stationary arrival use and recovery; SAIN owns perception and proposes automatic approaches; Rifleman risk conditions gate admission.
+Addon adaptations are in [SAINGrunt commands](../addon/docs/Commands.md). Shared input, command state and peaceful execution stay here.
 
 ## Scope
 
@@ -32,7 +20,6 @@ Authoritative files:
 - `client/BigBrain/FollowerCombatRegroupObjective.cs` - core combat regroup.
 - `client/BigBrain/FollowerCombatSuppressionObjective.cs` - core ordered suppression.
 - `client/BigBrain/FollowerCombatNeedSniperObjective.cs` - core marksman support order.
-- `client/Modules/SainPlayerSquadBridge.cs` - current addon leadership service; no command execution.
 - `client/Patches/BotReceiverPhraseOverridePatch.cs` and `client/Patches/BotReceiverGestureOverridePatch.cs` - vanilla receiver suppression for mod-owned commands.
 - `client/Patches/GestureMenuPatch.cs` - command menu injection/localization/filtering.
 
@@ -56,11 +43,8 @@ There are three execution paths:
    - `PushEnemy` is consumed into the ordered-push objective.
    - Combat gesture commands (`CombatComeToBossCover`, `CombatMoveToPointTactical`) break hold commitments and ordinary combat movement, while protected movement such as heal relocation is allowed to finish.
 
-3. **SAIN addon combat**
-   - Ready SainMan followers use the separate solo and squad combat replicas.
-   - Phase 1 preserves native solo behavior and adapts squad leadership to the human player.
-   - RegroupNearBoss is consumed into the addon squad regroup objective. Other command translation remains deferred; the former hold/protection addon paths remain removed.
-   - General compatibility remains core-owned.
+3. **Optional addon combat**
+   - Core dispatches through the readiness-gated bridge; see [addon command handling](../addon/docs/Commands.md).
 
 ## Command State
 
@@ -106,7 +90,7 @@ Behavior:
 - Name, distance, combat status, HP, and tactic (`MD`) can each be toggled under `My Squad > Settings > Base Settings`.
 - Disabling every text field while leaving the highlight enabled produces a highlight-only Status Report.
 - Enemy markers are grouped by enemy profile, so multiple followers reporting the same contact produce one marker. During the Status Report display, the active marker set follows each follower's current enemy selection: switching targets adds the newly selected enemy and removes an old contact once no follower targets it. `Auto Display Enemy Marker` keeps this marker set active independently for the full live contact without automatically playing the report sound or voice line. On the core combat path, each new contact starts at the enemy's current position. A reliably visible enemy uses a steady `27x27` red reticle that follows the live position every frame; an enemy that is not reliably visible uses a vertically bobbing `30.6x30.6` yellow `!` whose position refreshes every five seconds; and a killed enemy uses a steady `27x27` grey skull at its remembered death position. `Auto Display Kill Marker` can open the independent skull display immediately, `Kill Display Time` requests its duration, and `Kill Remember Time` caps that duration and disables killed-enemy markers when set to `0`. The spatial location sound and spoken direction use the position captured when Status Report was triggered.
-- For ready **SainMan**, an accepted living EFT goal is required before any contact marker is shown, including On Your Own. The selected contact and its yellow `!` then come from SAIN's current enemy and last-known location. New sight/hearing or squad knowledge can update that location; hidden target movement cannot. Forgetting/releasing the native target removes that follower's report even if EFT retains a goal. Fresh native visible/shootable contact uses the red reticle. Shared markers remain while another follower reports the enemy. The existing core position/refresh policy above applies to other tactics and absent/unready addon state.
+- Ready SAINGrunt contact/status behavior is documented in [addon status reporting](../addon/docs/Commands.md#status-report-and-enemy-markers).
 - Nearby active followers without enemies play `FriendlyGesture`.
 - When no living teammate exists, Status Report plays `radiobeep.ogg` instead of the normal `radiochat.ogg` response.
 - Does not create `FollowerCommandType` state.
@@ -397,7 +381,7 @@ Execution:
 Combat variant:
 
 - Core combat consumes `RegroupNearBoss` into `FollowerCombatRegroupObjective`.
-- SAIN addon can consume it as `ESquadDecision.Regroup` when SAIN route is enabled.
+- Combat dispatch may be handled by the [addon regroup adapter](../addon/docs/Commands.md#regroup-and-exit-located).
 
 ### Exit Located Phrase
 
@@ -414,7 +398,7 @@ Execution:
 
 - Assembles eligible followers inside a tight extraction envelope around the boss.
 - Prefers a nearby spread destination; if none is valid, moves directly toward the boss instead of selecting normal boss-near cover.
-- Completes at `2.5m` NavMesh distance out of combat; core combat and the current SainMan combat objective use a `4m` tight envelope with their path/floor arrival checks.
+- Completes at `2.5m` NavMesh distance out of combat; core combat uses a `4m` tight envelope with path/floor arrival checks. The addon references this same base contract.
 - Skips normal regroup's final boss-local cover acquisition.
 
 ### Loot Phrases
@@ -644,9 +628,7 @@ Behavior:
 - Defensive survival behavior still wins: immediate fire, dogfight, healing, boss protection, and other urgent actions can still run.
 - Picked-up followers may refuse this hold with `Negative`; higher-level and more independent recruits are more likely to ignore the order.
 
-SAIN addon:
-
-- SainMan applies the temporary effective aggression through its personality-settings interpolation. HoldPosition uses Coward combat behavior; GoForward uses temporary GigaChad combat behavior; Gogogo restores saved aggression. Begging, fake death and taunting are not imported. This does not create a custom protection objective.
+Addon behavior: see [SAINGrunt commands](../addon/docs/Commands.md).
 
 Vanilla handling:
 
@@ -709,13 +691,7 @@ Marksman behavior:
 - Generic push is not a direct marksman assault.
 - Marksman support logic may clear unsupported push/suppress commands or turn the situation into support/reposition behavior.
 
-SAIN addon push:
-
-- Accepted Go Forward captures the enemy into `SAINFollowerPushObjective` and applies temporary 100% aggression. It does not leave core PushEnemy pending.
-- Approach prefers short forward firing cover, otherwise controlled walking toward the last-known position. Arrival holds for three seconds without the native random sideways entry move.
-- Useful shooting, urgent threats and medicine interrupt the action while retaining the objective. Pressure triggers recovery; failed approaches remain failed for the same contact.
-- Replacement orders, Gogogo and core CoverMe/NeedHelp/ContactHelp cancellation release the objective. Native forgetting remains authoritative.
-- Native solo Search/RushEnemy and squad PushSuppressedEnemy use the same approach automatically when allowed. On Your Own retains native automatic behavior. Rifleman equipment/cluster/role/player-distance scoring and health/weapon gates filter automatic admission. Ordered push retains its target while using cautious execution and medical/readiness pauses. See [SAIN-Integration.md](SAIN-Integration.md#follower-objectives-and-prudent-push-2026-09-14).
+Addon push: see [SAINGrunt Go Forward](../addon/docs/Commands.md#go-forward).
 
 ### Regroup In Combat
 
@@ -737,9 +713,7 @@ Core behavior:
 - Completion requires the conservative larger of direct and valid NavMesh distance to be inside the boss radius, plus same-level tolerance.
 - Push or suppress orders can end regroup and return to primary/suppression behavior.
 
-SAIN addon:
-
-- SainMan consumes this command into its squad regroup objective. Normal and tight orders share core arrival distances and require a complete path plus the same-level check. Survival actions interrupt movement without cancelling the objective. Auto regroup is considered after native combat choices are exhausted into a stationary cover hold, failed cover selection, or a failed bounded firing-position attempt. Useful shooting, pursuit, an unexhausted firing-position attempt, squad support and movement commitments take priority over player distance. The configured radius and recent-fight grace then apply; independent combat and pending orders suppress automatic activation. A failed firing-position attempt falls back to cover when regroup is unavailable and remains failed after returning to the player. Player movement or repeated action starts cannot rearm it; changed enemy information or a real firing opportunity can. `On Your Own` retains unrestricted native engagement. See `SAIN-Integration.md`.
+Addon behavior: see [SAINGrunt commands](../addon/docs/Commands.md).
 
 ### Suppress Enemy
 
@@ -861,9 +835,6 @@ Core behavior:
 - On consume, `FollowerCombatCommon.TryCreateBossCommandTacticalPointDecision(...)` sets `GoToSomePointData` and returns `BotLogicDecision.goToPointTactical`.
 - Invalid target produces `Negative` and `NoGesture`.
 
-### SAINGrunt combat gesture execution
-
-Ready SAINGrunt followers consume the same combat There and Come With Me commands in the addon. There walks to the selected point. Come With Me prefers valid cover near the player that brings the follower at least one metre closer, then uses Core's direct path fallback stopping just short of the player. Both commit their selected destination, use Core arrival/stall limits, and briefly settle on arrival. Useful close fighting, native medicine and survival retain priority; pending orders retain their original timeout. A replacement command cancels relocation, and invalid destinations use the same negative voice/gesture feedback as Core. Out-of-combat behavior and command targeting/range checks are unchanged. See `SAIN-Integration.md` for ownership and qualification details.
 
 ## Receiver Patches And Vanilla Forwarding
 

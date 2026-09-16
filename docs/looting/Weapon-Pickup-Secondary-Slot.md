@@ -182,6 +182,5 @@ and no occupied-secondary replacement.
 ## Later Secondary Phases
 
 - S4: persistence, death, interruption, and failed-transaction hardening.
-- Holster phase 1 reuses the single-support planner when second primary is
-  empty; simultaneous secondary-plus-holster planning remains separate.
+- Holster support reuses the shared planner, including shoulder-first combined packages; see [Holster Slot](Weapon-Pickup-Holster-Slot.md).
 - Occupied secondary replacement remains out of scope.

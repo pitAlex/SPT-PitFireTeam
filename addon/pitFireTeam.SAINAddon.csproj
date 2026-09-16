@@ -45,7 +45,7 @@
     <ItemGroup><None Update="SAIN-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
     <Target Name="ValidateSainReferences" BeforeTargets="ResolveReferences">
         <ItemGroup><SainReference Include="$(SainReferenceRoot)/SAIN.dll;$(SainReferenceRoot)/SAIN.Preset.Shared.dll" /></ItemGroup>
-        <Error Condition="!Exists('%(SainReference.Identity)')" Text="Provision SAIN 4.5.1 references as documented in addon/SAIN-REFERENCES.md." />
+        <Error Condition="!Exists('%(SainReference.Identity)')" Text="Provision SAIN 4.5.1 references as documented in addon/docs/References.md." />
         <GetAssemblyIdentity AssemblyFiles="@(SainReference)"><Output TaskParameter="Assemblies" ItemName="SainIdentity" /></GetAssemblyIdentity>
         <Error Condition="'%(SainIdentity.Version)' != '4.5.1.0'" Text="The addon requires SAIN 4.5.1.0 references; found %(SainIdentity.Identity)." />
     </Target>
