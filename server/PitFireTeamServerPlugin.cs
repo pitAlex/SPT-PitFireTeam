@@ -4,6 +4,7 @@ using SPTarkov.Server.Core.DI;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Spt.Mod;
 using SPTarkov.Server.Core.Models.Spt.Tables;
+using SPTarkov.Server.Core.Routers;
 using SPTarkov.Server.Core.Utils.Json;
 using System.IO;
 using pitTeam.Server.Services;
@@ -32,7 +33,8 @@ public class PitFireTeamServerPlugin(
     ISptLogger<PitFireTeamServerPlugin> logger,
     TradersTable traders,
     LocaleTable locales,
-    FriendlyServerSettingsService settingsService
+    FriendlyServerSettingsService settingsService,
+    ImageRouter imageRouter
 ) : IOnLoad
 {
     public Task OnLoadAsync(CancellationToken cancellationToken)
@@ -116,6 +118,9 @@ public class PitFireTeamServerPlugin(
                 logger.Warning($"Courier avatar source missing: {sourcePath}");
                 return;
             }
+
+            // SPT matches image URLs without their extension; remote clients cannot use the local cache copy.
+            imageRouter.AddRoute(Path.ChangeExtension(FriendlyCourierTraderProfile.CourierAvatarPath, null), sourcePath);
 
             string targetDirectory = Path.Combine(serverRoot, "user", "sptappdata", "files", "trader", "avatar");
             Directory.CreateDirectory(targetDirectory);
