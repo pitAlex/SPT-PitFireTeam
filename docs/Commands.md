@@ -6,7 +6,7 @@ Addon adaptations are in [SAINGrunt commands](../addon/docs/Commands.md). Shared
 
 This document summarizes boss-issued follower commands as implemented in the client runtime.
 
-Detailed looting behavior, filtered-loot rules, and gear-swap design constraints are tracked in `docs/Looting.md`.
+Detailed looting behavior, the five corpse action-menu requests, filtered-loot rules, and gear-swap design constraints are tracked in [Looting](looting/Looting.md).
 
 Authoritative files:
 

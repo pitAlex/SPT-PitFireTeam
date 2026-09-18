@@ -298,12 +298,12 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
-                if (TryStartPreferredContainerPrimaryWeaponMove(inventory, containerRoot, followerEquipment))
+                if (AllowsRequestedWeaponWork && TryStartPreferredContainerPrimaryWeaponMove(inventory, containerRoot, followerEquipment))
                 {
                     return;
                 }
 
-                if (TryStartContainerPrimaryTacticalAmmoMove(
+                if (AllowsRequestedWeaponWork && TryStartContainerPrimaryTacticalAmmoMove(
                         inventory,
                         containerRoot,
                         followerEquipment,
@@ -312,12 +312,12 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
-                if (TryStartContainerPrimaryTacticalMagazineMove(inventory, containerRoot, followerEquipment))
+                if (AllowsRequestedWeaponWork && TryStartContainerPrimaryTacticalMagazineMove(inventory, containerRoot, followerEquipment))
                 {
                     return;
                 }
 
-                if (TryStartContainerPrimaryTacticalAmmoMove(
+                if (AllowsRequestedWeaponWork && TryStartContainerPrimaryTacticalAmmoMove(
                         inventory,
                         containerRoot,
                         followerEquipment,
@@ -326,12 +326,12 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
-                if (TryStartEasyContainerWeaponEquipMove(inventory, containerRoot, followerEquipment))
+                if (AllowsRequestedWeaponWork && TryStartEasyContainerWeaponEquipMove(inventory, containerRoot, followerEquipment))
                 {
                     return;
                 }
 
-                if (TryStartContainerSupportTacticalAmmoMove(
+                if (AllowsRequestedWeaponWork && TryStartContainerSupportTacticalAmmoMove(
                         inventory,
                         containerRoot,
                         followerEquipment,
@@ -341,7 +341,7 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
-                if (TryStartContainerSupportTacticalMagazineMove(
+                if (AllowsRequestedWeaponWork && TryStartContainerSupportTacticalMagazineMove(
                         inventory,
                         containerRoot,
                         followerEquipment,
@@ -350,7 +350,7 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
-                if (TryStartContainerSupportTacticalAmmoMove(
+                if (AllowsRequestedWeaponWork && TryStartContainerSupportTacticalAmmoMove(
                         inventory,
                         containerRoot,
                         followerEquipment,
@@ -360,7 +360,7 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
-                if (TryStartContainerSupportLooseFeedAmmoMove(
+                if (AllowsRequestedWeaponWork && TryStartContainerSupportLooseFeedAmmoMove(
                         inventory,
                         containerRoot,
                         followerEquipment,
@@ -369,7 +369,7 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
-                if (TryStartContainerSupportTacticalAmmoMove(
+                if (AllowsRequestedWeaponWork && TryStartContainerSupportTacticalAmmoMove(
                         inventory,
                         containerRoot,
                         followerEquipment,
@@ -379,7 +379,7 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
-                if (TryStartContainerSupportTacticalMagazineMove(
+                if (AllowsRequestedWeaponWork && TryStartContainerSupportTacticalMagazineMove(
                         inventory,
                         containerRoot,
                         followerEquipment,
@@ -388,7 +388,7 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
-                if (TryStartContainerSupportTacticalAmmoMove(
+                if (AllowsRequestedWeaponWork && TryStartContainerSupportTacticalAmmoMove(
                         inventory,
                         containerRoot,
                         followerEquipment,
@@ -398,7 +398,7 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
-                if (TryStartContainerSupportLooseFeedAmmoMove(
+                if (AllowsRequestedWeaponWork && TryStartContainerSupportLooseFeedAmmoMove(
                         inventory,
                         containerRoot,
                         followerEquipment,
@@ -407,32 +407,32 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
-                if (TryStartEasyContainerTacticalVestMove(inventory, containerRoot, followerEquipment))
+                if (AllowsRequestedGearWork && TryStartEasyContainerTacticalVestMove(inventory, containerRoot, followerEquipment))
                 {
                     return;
                 }
 
                 // Prefer completing the follower's tracked support weapon over introducing a
                 // second candidate before weapon-package comparison has been implemented.
-                if (TryStartContainerSecondaryWeaponPromotionMove(inventory, containerRoot, followerEquipment))
+                if (AllowsRequestedWeaponWork && TryStartContainerSecondaryWeaponPromotionMove(inventory, containerRoot, followerEquipment))
                 {
                     return;
                 }
 
-                if (TryStartEasyContainerHolsterWeaponEquipMove(inventory, containerRoot, followerEquipment))
+                if (AllowsRequestedWeaponWork && TryStartEasyContainerHolsterWeaponEquipMove(inventory, containerRoot, followerEquipment))
                 {
                     return;
                 }
 
-                if (TryStartContainerBackpackCargoWeaponPromotionMove(inventory, containerRoot, followerEquipment))
+                if (AllowsRequestedWeaponWork && TryStartContainerBackpackCargoWeaponPromotionMove(inventory, containerRoot, followerEquipment))
                 {
                     return;
                 }
 
-                foreach (BodyGearCandidate candidate in GetStorageLootCandidates(
+                foreach (BodyGearCandidate candidate in OrderRequestedLoot(GetStorageLootCandidates(
                              containerRoot,
                              "Container.Contents",
-                             skipMagazines: false))
+                             skipMagazines: false)))
                 {
                     if (!CanTryFilteredLootCandidate(candidate, containerLootAttemptedItemIds) ||
                         IsLootNowInBotInventory(BotOwner?.GetPlayer, candidate.Item))
@@ -474,6 +474,7 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
+                if (ActiveLootRequest?.CompletePriority() == true) return;
                 FinishContainerLootNoMoreMoves();
             }
             catch (Exception ex)

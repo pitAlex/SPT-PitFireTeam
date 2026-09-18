@@ -18,7 +18,7 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 |---|---|
 | [Combat tactics](Combat-Tactics.md) | Core Rifleman/Marksman decisions, cover, push, healing, regroup and recording |
 | [Commands](Commands.md) | Shared inputs, peaceful execution, core combat orders and status rendering |
-| [Looting](Looting.md) | Commanded loot, filters, gear swaps, ownership and return bookkeeping |
+| [Looting](looting/Looting.md) | Commanded loot, filters, gear swaps, ownership and return bookkeeping |
 | [Primary weapon pickup](Weapon-Pickup-Primary-Slot-Available.md) | Readiness/placement contract and recorded qualification matrix |
 | [Secondary weapon support](Weapon-Pickup-Secondary-Slot.md) | Ammo/magazine maintenance and outstanding verification |
 | [Holster support](Weapon-Pickup-Holster-Slot.md) | Shared support planner and pistol qualification |

@@ -792,7 +792,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (!pitFireTeam.IsLootWeaponPickupEnabled())
+            if (!IsRequestedWeaponPickupEnabled())
             {
                 reason = "pickupGearDisabled";
                 return false;

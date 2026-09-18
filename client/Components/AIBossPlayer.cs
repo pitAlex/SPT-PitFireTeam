@@ -161,6 +161,35 @@ namespace pitTeam.Components
         // OnYourOwn/CoverMe: broadcast patrol or combat-independent mode toggles, not movement requests.
         // OpenDoor/Loot: situational request-layer work.
         // FollowMe/Cooperation: recruit or clear follower commands back to normal follow.
+        private Action? _lootInteractionDispatch;
+
+        internal void SayLootInteraction(Player requester, IInteractive target, FollowerLootMode mode)
+        {
+            if (requester == null || requester.ProfileId != realPlayer?.ProfileId ||
+                _lootInteractionDispatch != null || target is not Corpse corpse)
+            {
+                return;
+            }
+
+            bool dispatched = false;
+            _lootInteractionDispatch = () =>
+            {
+                if (dispatched) return;
+                dispatched = true;
+                ApplyTakeBodyGearCommand(requester, corpse, mode);
+            };
+            try
+            {
+                // Same demand/tags/probability as the normal quick-menu phrase. Say publishes
+                // OnPhraseSay synchronously before playing the voice; that event owns dispatch.
+                requester.Say(EPhraseTrigger.CheckHim, true, 0f, (ETagStatus)0, 100, false);
+            }
+            finally
+            {
+                _lootInteractionDispatch = null;
+            }
+        }
+
         public void PhraseSaid(EventInfo info)
         {
             if (info == null)
@@ -181,6 +210,12 @@ namespace pitTeam.Components
 
             if (info.PlayerRequester != null && info.PlayerRequester.ProfileId == realPlayer.ProfileId)
             {
+                if (_lootInteractionDispatch != null && info.phrase == EPhraseTrigger.CheckHim)
+                {
+                    _lootInteractionDispatch();
+                    return;
+                }
+
                 // Phrase command path:
                 // player voice line -> this boss-side router -> BotFollowerPlayer command state.
                 // FollowerRequestLayer later consumes that state and starts the matching BigBrain action.
@@ -2169,7 +2204,7 @@ namespace pitTeam.Components
             closestFollower.Gesture.TryGestus(EInteraction.OkGesture, false);
         }
 
-        private void ApplyTakeBodyGearCommand(IPlayer requester)
+        internal void ApplyTakeBodyGearCommand(IPlayer requester, Corpse target = null, FollowerLootMode mode = FollowerLootMode.Normal)
         {
             if (requester == null)
             {
@@ -2177,7 +2212,7 @@ namespace pitTeam.Components
                 return;
             }
 
-            Corpse corpse = InteractableObjects.GetCurBodyLootTarget();
+            Corpse corpse = target ?? InteractableObjects.GetCurBodyLootTarget();
             LogLootAssignment("body", null, 0f, "requestReceived", corpse);
             if (corpse == null)
             {
@@ -2209,7 +2244,8 @@ namespace pitTeam.Components
                     bodyPosition,
                     out selectedNavDistance,
                     requireSquadMate: true,
-                    command: "body");
+                    command: "body",
+                    mode: mode);
             if (closestFollower == null)
             {
                 LogLootAssignment("body", null, 0f, "noReachableEligibleFollower", corpse);
@@ -2237,7 +2273,7 @@ namespace pitTeam.Components
 
             // Body looting can take multiple inventory transactions, so reserve the corpse and
             // let the request action own the approach/interruption/cleanup lifecycle.
-            closestFollowerData.SetTakeBodyGear(75f);
+            closestFollowerData.SetTakeBodyGear(75f, mode);
             LogFollowerCommandState(
                 "body",
                 closestFollower,
@@ -2248,14 +2284,14 @@ namespace pitTeam.Components
             closestFollower.Gesture.TryGestus(EInteraction.OkGesture, false);
         }
 
-        private void ApplyTakeContainerLootCommand(IPlayer requester)
+        internal void ApplyTakeContainerLootCommand(IPlayer requester, LootableContainer target = null, FollowerLootMode mode = FollowerLootMode.Normal)
         {
             if (requester == null)
             {
                 return;
             }
 
-            LootableContainer container = InteractableObjects.GetCurLootContainerTarget();
+            LootableContainer container = target ?? InteractableObjects.GetCurLootContainerTarget();
             Modules.Logger.LogInfo(
                 $"[LootCommand][Assignment] command=container result=requestReceived " +
                 $"target='{DescribeLootTarget(container)}'");
@@ -2286,7 +2322,8 @@ namespace pitTeam.Components
                 containerPosition,
                 out float selectedNavDistance,
                 requireSquadMate: true,
-                command: "container");
+                command: "container",
+                mode: mode);
             if (closestFollower == null)
             {
                 LogLootAssignment("container", null, 0f, "noReachableEligibleFollower", container);
@@ -2313,7 +2350,7 @@ namespace pitTeam.Components
             }
 
             FollowerLootPriceService.RequestMarketPricesIfNeeded();
-            closestFollowerData.SetTakeContainerLoot(75f);
+            closestFollowerData.SetTakeContainerLoot(75f, mode);
             LogFollowerCommandState(
                 "container",
                 closestFollower,
@@ -2410,7 +2447,8 @@ namespace pitTeam.Components
             Vector3 targetPosition,
             out float selectedNavDistance,
             bool requireSquadMate = false,
-            string command = "loot")
+            string command = "loot",
+            FollowerLootMode mode = FollowerLootMode.Normal)
         {
             BotOwner bestFollower = null;
             BotOwner gearEvaluationFallback = null;
@@ -2491,7 +2529,9 @@ namespace pitTeam.Components
                     // General body/container cargo is limited to backpack and pockets. Gear-enabled
                     // looting can still produce a valid move with empty weapon slots or vest space,
                     // so retain the closest such follower only as a fallback for the real planner.
-                    if (pitFireTeam.IsLootGearSwappingEnabled() && navDistance < gearFallbackNavDistance)
+                    if ((pitFireTeam.IsLootGearSwappingEnabled() ||
+                         mode == FollowerLootMode.GetWeapon || mode == FollowerLootMode.LootAndGetWeapon) &&
+                        navDistance < gearFallbackNavDistance)
                     {
                         LogLootCandidate(
                             command,

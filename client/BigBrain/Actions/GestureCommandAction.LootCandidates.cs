@@ -301,6 +301,14 @@ namespace pitTeam.BigBrain.Actions
             bool markRejectedAttempt = false)
         {
             Item item = candidate?.Item;
+            // Restrict before any bypass flags or rejected-attempt bookkeeping. Deferred categories
+            // must remain available when a priority pass finishes; only modes also exclude dogtags.
+            if (item != null && ActiveLootRequest?.AllowsCategory(
+                    FollowerLootCategoryService.IsWeaponLoot(item),
+                    FollowerLootCategoryService.IsWearableGear(item)) == false)
+            {
+                return false;
+            }
             if (item == null ||
                 string.IsNullOrEmpty(item.Id) ||
                 attemptedItemIds.Contains(item.Id) ||
@@ -336,7 +344,7 @@ namespace pitTeam.BigBrain.Actions
 
             // Category and price are the main loot gates. Dogtags set bypass flags above; money is
             // handled by the price service so valuables can always take it when enabled.
-            if (!candidate.BypassCategoryFilter && !FollowerLootCategoryService.PassesCategoryFilter(item))
+            if (!candidate.BypassCategoryFilter && !FollowerLootCategoryService.PassesCategoryFilter(item, ActiveLootRequest))
             {
                 if (markRejectedAttempt)
                 {

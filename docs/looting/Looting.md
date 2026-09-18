@@ -70,6 +70,22 @@ A body/container reservation is authoritative through the per-follower target ma
 
 Once body/container searching begins, normal replacement commands are ignored until the loot command finishes. Combat, timeout, target invalidation, player death, or safety cleanup can still interrupt the command.
 
+## Corpse action menu
+
+The native center-screen interaction menu appends follower actions only when the local player targets a corpse and has at least one living follower. Loot This and both gear actions always appear on corpses. The two weapon actions appear only while the corpse inventory contains a weapon (including carried guns, excluding knives); visibility refreshes when its last weapon is removed. Containers do not show these CMD actions; their existing quick loot command and vanilla player Search/Open interactions are unchanged. Assignment retains the existing spawned-squadmate, combat, reservation, and reachable-distance checks.
+
+All five labels have a `CMD:` prefix to distinguish follower commands from player interactions. Every mode uses the player `CheckHim` voice through a corpse-only speech route. The synchronous player phrase event dispatches the captured target and selected mode exactly once; its temporary routing context clears in `finally`, without changing later quick-menu phrases.
+
+- **Loot This** uses the existing normal loot request and saved settings.
+- **Loot & Get Weapon** enables the weapon pickup category for this request, processes it first, then continues normal loot.
+- **Loot & Get Gear** enables the gear pickup category for this request, processes it first, then continues normal loot.
+- **Get Weapon** enables only the weapon category for this request.
+- **Get Gear** enables only the gear category for this request; weapon/ammunition maintenance is skipped.
+
+Category-only requests also exclude food, medicine, valuables and dogtags. Categories retain the existing whole-tree definitions, including weapon supplies and gear contents. Priority defers other categories without marking them rejected. Completed, interrupted, expired or replaced requests discard their override; saved settings and other followers are unaffected. Price, protected equipment, gear-swap permission, readiness and placement rules still apply. Explicit weapon requests can evaluate empty weapon slots even when ordinary cargo space is full.
+
+Normal teammate-corpse recovery is unchanged. The four specialized actions use filtered looting on teammate corpses too, while retaining protected-equipment exclusion.
+
 ## Loose Item Pickup
 
 Inputs:

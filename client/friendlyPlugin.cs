@@ -482,6 +482,8 @@ namespace pitTeam
 
             // command/request patches
             new QuickPanelPatch().Enable();
+            new FollowerLootInteractionPatch().Enable();
+            new FollowerLootInteractionRefreshPatch().Enable();
             new QuickPanelHurtPhrasePatch().Enable();
             new QuickPanelUpdateBackpackInteractionPatch().Enable();
             new GestureMenuPatch().Enable();

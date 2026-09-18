@@ -1530,13 +1530,16 @@ namespace pitTeam.Components
             }
 
             _activeCommand = FollowerCommandType.TakeLootItem;
+            LootRequest = new FollowerLootRequest();
             _commandTarget = Vector3.zero;
             _commandUntilTime = Time.time + Mathf.Max(6f, duration);
             _resumeHoldAfterComeCloser = false;
             BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(SetTakeLootItem));
         }
 
-        public void SetTakeBodyGear(float duration)
+        public FollowerLootRequest LootRequest { get; private set; } = new FollowerLootRequest();
+
+        public void SetTakeBodyGear(float duration, FollowerLootMode mode = FollowerLootMode.Normal)
         {
             if (ShouldIgnoreCommandSet())
             {
@@ -1562,13 +1565,15 @@ namespace pitTeam.Components
             }
 
             _activeCommand = FollowerCommandType.TakeBodyGear;
+            LootRequest = new FollowerLootRequest(mode);
+            Modules.Logger.LogInfo($"[LootCommand] command=body mode={mode} follower={_bot?.ProfileId}");
             _commandTarget = Vector3.zero;
             _commandUntilTime = Time.time + Mathf.Max(12f, duration);
             _resumeHoldAfterComeCloser = false;
             BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(SetTakeBodyGear));
         }
 
-        public void SetTakeContainerLoot(float duration)
+        public void SetTakeContainerLoot(float duration, FollowerLootMode mode = FollowerLootMode.Normal)
         {
             if (ShouldIgnoreCommandSet())
             {
@@ -1594,6 +1599,8 @@ namespace pitTeam.Components
             }
 
             _activeCommand = FollowerCommandType.TakeContainerLoot;
+            LootRequest = new FollowerLootRequest(mode);
+            Modules.Logger.LogInfo($"[LootCommand] command=container mode={mode} follower={_bot?.ProfileId}");
             _commandTarget = Vector3.zero;
             _commandUntilTime = Time.time + Mathf.Max(12f, duration);
             _resumeHoldAfterComeCloser = false;
@@ -1948,6 +1955,7 @@ namespace pitTeam.Components
                 return;
             }
 
+            LootRequest = new FollowerLootRequest();
             if (_resumeHoldAfterTakeLoot)
             {
                 _activeCommand = FollowerCommandType.HoldPosition;
@@ -1971,6 +1979,7 @@ namespace pitTeam.Components
                 return;
             }
 
+            LootRequest = new FollowerLootRequest();
             if (_resumeHoldAfterTakeLoot)
             {
                 _activeCommand = FollowerCommandType.HoldPosition;
@@ -2783,6 +2792,7 @@ namespace pitTeam.Components
             _activeCommand = FollowerCommandType.None;
             _commandTarget = Vector3.zero;
             _commandUntilTime = 0f;
+            LootRequest = new FollowerLootRequest();
             _tightRegroupRequested = false;
             _suppressEnemyRequiresLauncher = false;
             _suppressEnemyForceWeapon = false;

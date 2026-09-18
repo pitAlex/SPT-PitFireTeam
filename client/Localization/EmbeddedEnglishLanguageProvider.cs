@@ -264,6 +264,11 @@ namespace pitTeam.Localization
                 },
                 socialUi = new Dictionary<string, string>
                 {
+                    ["LootActionThis"] = "CMD: Loot This",
+                    ["LootActionAndWeapon"] = "CMD: Loot & Get Weapon",
+                    ["LootActionAndGear"] = "CMD: Loot & Get Gear",
+                    ["LootActionWeapon"] = "CMD: Get Weapon",
+                    ["LootActionGear"] = "CMD: Get Gear",
                     ["AddTeammate"] = "+ Add teammate",
                     ["AddTeammateInProgress"] = "{0} was added to your friends list",
                     ["AddTeammateConfirm"] = "Add Teammate",

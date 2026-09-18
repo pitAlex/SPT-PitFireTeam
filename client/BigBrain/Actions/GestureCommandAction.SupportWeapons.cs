@@ -190,12 +190,12 @@ namespace pitTeam.BigBrain.Actions
                 out magazinePlan);
         }
 
-        private static bool CanAddHolsterWeapon(InventoryEquipment followerEquipment)
+        private bool CanAddHolsterWeapon(InventoryEquipment followerEquipment)
         {
             // The holster is an independent physical slot. A shoulder support weapon keeps
             // vanilla's preferred support role, but it does not prevent adding a usable pistol.
             return pitFireTeam.IsLootGearSwappingEnabled() &&
-                   pitFireTeam.IsLootWeaponPickupEnabled() &&
+                   IsRequestedWeaponPickupEnabled() &&
                    followerEquipment?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem is Weapon &&
                    followerEquipment.GetSlot(EquipmentSlot.Holster)?.ContainedItem == null;
         }

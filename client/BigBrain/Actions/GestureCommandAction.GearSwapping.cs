@@ -1169,7 +1169,7 @@ namespace pitTeam.BigBrain.Actions
             bool primaryOccupied = followerEquipment
                 ?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)
                 ?.ContainedItem is Weapon;
-            if (primaryOccupied && !pitFireTeam.IsLootWeaponPickupEnabled())
+            if (primaryOccupied && !IsRequestedWeaponPickupEnabled())
             {
                 // The current occupied-primary phase can only add a support weapon. A future
                 // better-primary comparison must run before this support-only gate; until then,
@@ -2278,7 +2278,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (!pitFireTeam.IsLootWeaponPickupEnabled())
+            if (!IsRequestedWeaponPickupEnabled())
             {
                 reason = "pickupGearDisabled";
                 return false;
