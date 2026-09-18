@@ -31,7 +31,7 @@ namespace pitTeam.Patches
         {
             if (__0 == null) return true;
             BotOwner owner = _owner(__0);
-            return !BossPlayers.IsFollower(owner) || (SainAddonBridge.HasSquadProvider && SainAddonBridge.IsSainManSelected(owner));
+            return !BossPlayers.IsFollower(owner) || (SainAddonBridge.HasSquadProvider && SainAddonBridge.IsAddonTacticSelected(owner));
         }
     }
 }

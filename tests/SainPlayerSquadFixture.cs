@@ -116,6 +116,7 @@ namespace SAIN.BotController.Classes {
     }
 }
 public static class SelectionChecks {
+    __DEFAULT_AGGRESSION__
     __SERVER_NORMALIZER__
     __UI_AVAILABILITY__
 }
@@ -146,13 +147,28 @@ public static class LeadershipChecks {
         Check(!pitTeam.pitFireTeam.IsSainFollowerCombatAvailable&&!SainAddonBridge.HasRuntimeCallbacks,"leadership does not enable combat");
         Check(BotFollowerPlayer.ParseCombatTactic(" sainMAN ")==FollowerCombatTactic.SainMan&&SelectionChecks.NormalizeCombatTactic(" sainMAN ")=="SainMan","SainMan survives server normalization and client parsing");
         Check(!SelectionChecks.IsUnavailableTactic("SainMan")&&!SelectionChecks.IsUnavailableTactic("Rifleman")&&SelectionChecks.IsUnavailableTactic("Protector"),"profile offers SainMan with both plugins installed");
+        Check(BotFollowerPlayer.ParseCombatTactic(" sainShooter ")==FollowerCombatTactic.SAINShooter && SelectionChecks.NormalizeCombatTactic(" sainShooter ")=="SAINShooter",
+            "Shooter identity survives normalization and client parsing");
+        Check(!SelectionChecks.IsUnavailableTactic("SAINShooter") && SelectionChecks.GetDefaultAggressionForTactic("SAINShooter")==30f,
+            "Shooter is selectable with both plugins and defaults to Marksman aggression");
+        Check(new Follower{CombatTactic=FollowerCombatTactic.SAINShooter}.CoreCombatTactic==FollowerCombatTactic.Marksman,
+            "Shooter falls back to Core Marksman without losing saved tactic");
         pitTeam.pitFireTeam.IsSAINAddonInstalled=false;
         Check(SelectionChecks.IsUnavailableTactic("SainMan")&&SelectionChecks.NormalizeCombatTactic("SainMan")=="SainMan","missing addon hides option without erasing saved selection");
+        Check(SelectionChecks.IsUnavailableTactic("SAINShooter") && SelectionChecks.NormalizeCombatTactic("SAINShooter")=="SAINShooter",
+            "missing addon hides Shooter without changing its saved identity");
         pitTeam.pitFireTeam.IsSAINAddonInstalled=true;pitTeam.pitFireTeam.IsSAINInstalled=false;
         Check(SelectionChecks.IsUnavailableTactic("SainMan"),"missing SAIN hides option");
+        Check(SelectionChecks.IsUnavailableTactic("SAINShooter"),"missing SAIN hides Shooter");
         pitTeam.pitFireTeam.IsSAINInstalled=true;
         var fallback=new Follower{CombatTactic=FollowerCombatTactic.SainMan};
         Check(fallback.CoreCombatTactic==FollowerCombatTactic.Balanced&&fallback.CombatTactic==FollowerCombatTactic.SainMan,"SainMan keeps saved identity for unavailable-addon Rifleman fallback");
+        var shooterBoss=Boss("shooterRole");var shooterMember=Spawn();Recruit(shooterMember,shooterBoss,tactic:FollowerCombatTactic.SAINShooter);
+        Check(SainPlayerSquadBridge.TryGetPlayerLeader(shooterMember.BotOwner,out var shooterLeader) && ReferenceEquals(shooterLeader,shooterBoss.realPlayer),
+            "Shooter binds to the real player-led native SAIN squad");
+        BossPlayers.Instance.GetFollower(shooterMember.BotOwner).CombatTactic=FollowerCombatTactic.Marksman;
+        SainAddonBridge.RaiseBossGroupStaticUpdate(shooterBoss);
+        Check(!SainPlayerSquadBridge.TryGetPlayerLeader(shooterMember.BotOwner,out _),"Shooter opt-out releases addon squad binding");
         var selectionBoss=Boss("selection");var rifleman=Spawn();Recruit(rifleman,selectionBoss,tactic:FollowerCombatTactic.Balanced);
         var marksman=Spawn();Recruit(marksman,selectionBoss,tactic:FollowerCombatTactic.Marksman);
         SainAddonBridge.RaiseBossGroupStaticUpdate(selectionBoss);

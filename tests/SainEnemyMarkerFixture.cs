@@ -14,6 +14,7 @@ namespace EFT {
     public class MarkerTransform {public Vector3 position;}
     public partial class EnemyInfo {public string ProfileId="eftEnemy";public Vector3 CurrPosition;public Player Person;public bool IsVisible;}
     public class GameWorld {
+        public string LocationId;
         public Dictionary<string,Player> Players=new Dictionary<string,Player>();
         public Player GetAlivePlayerByProfileID(string id)=>Players.TryGetValue(id,out var p)&&p.HealthController.IsAlive?p:null;
     }

@@ -5,7 +5,7 @@ Last updated: 2026-08-30
 ## Scope
 
 - This document covers the core follower combat path under `client/BigBrain`.
-- Core is the baseline. See [SAINGrunt combat](../addon/docs/Combat.md) for addon-specific behavior and [Core SAIN compatibility](SAIN-Compatibility.md) for external-plugin integration.
+- Core is the baseline. See [SAIN addon combat](../addon/docs/Combat.md) for addon-specific behavior and [Core SAIN compatibility](SAIN-Compatibility.md) for external-plugin integration.
 - Treat this as current runtime documentation, not a backlog.
 
 
@@ -31,6 +31,7 @@ Enemy acquisition, squad enemy sharing, target commitments, and retained-contact
 
 Acquisition and sharing sources:
 
+- `AIBossPlayer.ReportEnemyToIdleFollowers()` checks every 0.5 seconds for a stable accepted squadmate goal (0.75-second stability gate), then uses the scoped contact path to refill eligible followers whose goal is null. Core and addon followers share this path. `FollowerRecovery.ClearInvalidGoalEnemy` removes dead/removed EFT goal references for every follower brain, allowing those recipients to become eligible without clearing living memory or replacing living goals. Attention suppression and reporter eligibility remain authoritative.
 - `FollowerCalcGoalEnemyAcquire.HandleCalcGoal(...)` is the idle/sibling sync path. It runs from the core `BotCalcGoal.CalcGoalForBot()` postfix for followers that are not attention-suppressed and do not already have an enemy. When one follower sees a valid forward candidate, it promotes that enemy for itself, then tries to create and promote the same enemy for sibling followers that have no current/live goal enemy. This path registers non-prioritized retention after promotion, but `FollowerContactEnemyRetention` does not perform the squad fan-out itself.
 - `AIBossPlayer.RegisterContactEnemyForFollower(...)` is the boss-contact injection path. Contact/OverThere-style cues, NeedHelp fallback, and ordered launcher target resolution can report and create `EnemyInfo` records for followers, optionally promote one contact as the goal, and register retention with the command-priority flag.
 - `FollowerAwareness` is the reaction path. Direct hits and close incoming fire can create/promote the immediate hostile attacker when the current goal is missing, dead, stale/non-shootable, or clearly farther than the incoming threat. When no push mission is active this retarget clears retained contact once before installing the new goal, so a stale far contact cannot immediately restore over the immediate attacker. When a push mission is active, direct-hit interruption is registered as a temporary target instead of cancelling or replacing the mission.
@@ -116,7 +117,7 @@ Out of combat, `HoldPosition` is handled by the request layer as a normal hold c
 
 ### Go Forward / Push Enemy
 
-Combat `GoForward` reaches `SetPushEnemy` when the follower has an active enemy. Core combat uses the durable push below; the readiness-gated addon dispatch is described in [SAINGrunt commands](../addon/docs/Commands.md#go-forward).
+Combat `GoForward` reaches `SetPushEnemy` when the follower has an active enemy. Core combat uses the durable push below; the readiness-gated addon dispatch is described in [SAIN addon commands](../addon/docs/Commands.md#go-forward).
 
 Picked-up follower behavior:
 

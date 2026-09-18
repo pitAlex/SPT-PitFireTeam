@@ -80,6 +80,11 @@ public static partial class CombatChecks {
         Check(p.Exhausted&&!p.OwnsMovement,"repeated same-target Go Forward cannot rearm failed approach");
         b.Memory.IsUnderFire=true;m.Publish(ECombatDecision.Search);b.Memory.IsUnderFire=false;Time.time+=4;m.Publish(ECombatDecision.Search);
         Check(p.Exhausted,"pressure recovery cannot erase exhausted approach");
+        var exhaustedRegroup=SAINFollowerRuntime.GetRegroup(b);
+        Check(exhaustedRegroup.Mode==SAINRegroupMode.Auto&&p.Ordered,"exhausted ordered approach permits distant-player recovery without erasing the order");
+        b.Leader.Position=b.GetPlayer.Position;exhaustedRegroup.Observe();Time.time+=2;exhaustedRegroup.Observe();
+        Check(!exhaustedRegroup.Active&&p.Exhausted,"arrival completes recovery without rearming the failed push");
+        m.Publish(ECombatDecision.SeekCover);
         b.Sain.GoalEnemy.KnownPlaces.LastKnownPosition=new Vector3(60,0,0);m.Publish(ECombatDecision.Search);
         Check(!p.Exhausted&&p.OwnsMovement,"meaningfully changed knowledge permits a fresh approach");
         m.Publish(ECombatDecision.ShootDistantEnemy);
@@ -110,6 +115,24 @@ public static partial class CombatChecks {
         Check(p.Mode==SAINPushMode.Automatic&&p.OwnsMovement,"native automatic Search enters shared approach objective");
         b.Leader.Position=new Vector3(200,0,0);p.Fail("fixture");b.Sain.Decision.Manager.Publish(ECombatDecision.Search);
         Check(SAINFollowerRuntime.GetRegroup(b).Mode==SAINRegroupMode.Auto,"failed automatic push yields through existing regroup safety gates");
+        b=PushBot("failedOrderedSafety");p=SAINFollowerRuntime.GetPush(b);b.Sain.Decision.Manager.Publish(ECombatDecision.Search);
+        b.Leader.Position=new Vector3(200,0,0);p.Fail("approachStepInvalid");
+        b.Follower.CombatIndependent=true;b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
+        Check(!SAINFollowerRuntime.GetRegroup(b).Active&&p.Ordered&&p.Exhausted,"On Your Own prevents exhausted-order automatic regroup");
+        b.Follower.CombatIndependent=false;b.Sain.GoalEnemy.IsVisible=true;b.Sain.GoalEnemy.CanShoot=true;
+        // Fresh contact intentionally reopens the failed attempt; fail again to test fire priority.
+        p.Observe();p.Fail("approachStepInvalid");b.Sain.Decision.Manager.Publish(ECombatDecision.ShootDistantEnemy);
+        Check(!SAINFollowerRuntime.GetRegroup(b).Active,"useful native fire retains priority over exhausted-order recovery");
+        b.Sain.GoalEnemy.IsVisible=false;b.Sain.GoalEnemy.CanShoot=false;p.Fail("approachStepInvalid");
+        b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover,ESquadDecision.None,ESelfActionType.FirstAid);
+        Check(!SAINFollowerRuntime.GetRegroup(b).Active&&p.Exhausted,"medicine retains priority over exhausted-order recovery");
+        b.Sain.Decision.CurrentSelfDecision=ESelfActionType.None;
+        b.Sain.Cover.CoverPoint_MovingTo=CoverAt(5);
+        b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
+        Check(!SAINFollowerRuntime.GetRegroup(b).Active,"exhausted ordered push still preserves assigned native recovery cover");
+        b.Sain.Cover.CoverPoint_MovingTo=null;
+        b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
+        Check(SAINFollowerRuntime.GetRegroup(b).Mode==SAINRegroupMode.Auto&&p.Ordered&&p.Exhausted,"failed ordered advance yields to regroup after survival clears");
         foreach(var decision in new[]{ECombatDecision.RushEnemy,ECombatDecision.None}){
             b=PushBot("objectiveRush"+decision,false);p=SAINFollowerRuntime.GetPush(b);
             b.Sain.Decision.Manager.Publish(decision,decision==ECombatDecision.None?ESquadDecision.PushSuppressedEnemy:ESquadDecision.None);
@@ -214,7 +237,7 @@ public static partial class CombatChecks {
         b.Sain.Decision.Manager.Publish(ECombatDecision.Search);
         Check(p.OwnsMovement&&p.Reason=="routeAdvance"&&p.Destination.Value.x==-5&&p.Destination.Value.z==15,"complete detour advances along route even when initial leg is away from hidden enemy");
         var action=new SAINFollowerMoveToEngageAction(b);action.Start();action.Update(null);
-        Check(b.Sain.Mover.Runs==0&&b.Sain.Mover.Destination.z==15,"route fallback uses controlled walking through existing SAIN movement action");
+        Check(b.Sain.Mover.Runs==1&&b.Sain.Mover.Destination.z==15,"long committed route leg permits native sprint through existing SAIN movement action");
         int probes=UnityEngine.AI.NavMesh.Calculations;for(int i=0;i<8;i++)b.Sain.Decision.Manager.Publish(ECombatDecision.Search);
         Check(UnityEngine.AI.NavMesh.Calculations==probes,"committed route fallback does not recalculate on every decision poll");
         Time.time+=7;action.Update(null);Check(p.Exhausted&&p.Reason=="noProgress","route fallback retains bounded stalled-approach failure");

@@ -12,13 +12,14 @@ public class SAINFollowerSquadRegroupAction(BotOwner bot) : BotAction(bot, nameo
 {
     private float nextMove;
     private object ownedPath;
+    private bool runRequested;
 
     public override void Start()
     {
         base.Start();
         Bot.Mover.Stop();
         Shoot.EndShoot();
-        nextMove = 0f;
+        nextMove = 0f; runRequested = false;
         ownedPath = null;
     }
 
@@ -33,6 +34,8 @@ public class SAINFollowerSquadRegroupAction(BotOwner bot) : BotAction(bot, nameo
         if (!objective.TryGetTarget(out Vector3 target, out bool sprint)) { StopOwnedPath(); return; }
         Bot.Mover.SetTargetPose(1f);
         Bot.Mover.SetTargetMoveSpeed(1f);
+        if (sprint && !runRequested) Shoot.EndShoot();
+        runRequested = sprint;
         bool moved = sprint && Bot.Mover.RunToPoint(target);
         if (!moved) moved = Bot.Mover.WalkToPoint(target);
         if (moved) ownedPath = Bot.Mover.ActivePath;
@@ -41,7 +44,10 @@ public class SAINFollowerSquadRegroupAction(BotOwner bot) : BotAction(bot, nameo
 
     public override void OnSteeringTicked()
     {
-        if (SAINFollowerRuntime.GetRegroup(BotOwner)?.Active != true) return;
+        var objective = SAINFollowerRuntime.GetRegroup(BotOwner);
+        if (objective?.Active != true) return;
+        if (runRequested && !objective.PersonalContactHot(2.5f))
+        { Bot.Steering.LookToMovingDirection(); return; }
         Enemy enemy = Bot.GoalEnemy;
         if (!Shoot.ShootAnyVisibleEnemies(enemy))
             Bot.Suppression.TrySuppressAnyEnemy(enemy, Bot.EnemyController.KnownEnemies);

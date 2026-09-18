@@ -102,7 +102,7 @@ internal sealed class SAINFollowerRecorder : IDisposable
                 medical = CaptureMedical(),
                 coverPolicy = SAINFollowerRuntime.GetCover(bot.BotOwner)?.Snapshot,
                 decisions = new { solo = bot.Decision.CurrentCombatDecision.ToString(), squad = bot.Decision.CurrentSquadDecision.ToString(), self = bot.Decision.CurrentSelfDecision.ToString() },
-                enemy = enemy == null ? null : new { profileId = enemy.EnemyPlayer?.ProfileId, enemy.IsVisible, enemy.CanShoot,
+                enemy = enemy == null ? null : new { profileId = enemy.EnemyPlayer?.ProfileId, enemy.IsVisible, enemy.CanShoot, enemy.InLineOfSight, enemy.Seen, enemy.TimeSinceSeen,
                     knownPosition = Point(enemy.KnownPlaces.LastKnownPosition), enemy.KnownPlaces.TimeSinceLastKnownUpdated,
                     pathStatus = enemy.Path.PathToEnemyStatus.ToString(), pathLength = enemy.Path.PathLength },
                 objectives = SAINFollowerRuntime.GetObjectiveSnapshot(bot.BotOwner),
@@ -116,7 +116,8 @@ internal sealed class SAINFollowerRecorder : IDisposable
                     path.OnLastCorner, sprintStatus = path.CurrentSprintStatus.ToString(), path.SprintReason,
                     points = path.PathPoints?.Take(16).Select(p => Point(p)).ToArray()
                 } },
-                regroup = new { mode = regroup.Mode.ToString(), regroup.Settling, regroup.Tight },
+                regroup = new { mode = regroup.Mode.ToString(), regroup.Settling, regroup.Tight,
+                    regroup.AutoReason, regroup.AutoCheckedAt, regroup.AutoDistance, regroup.AutoTrigger },
                 engageAttempt = new { attempt.EnemyId, destination = Point(attempt.Destination), attempt.Failure, attempt.ActiveSeconds }
             }
         };

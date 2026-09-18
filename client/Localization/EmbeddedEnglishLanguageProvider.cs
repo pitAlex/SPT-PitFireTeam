@@ -323,6 +323,7 @@ namespace pitTeam.Localization
                     ["ProfileTactic"] = "Rifleman",
                     ["ProfileTacticMarksman"] = "Marksman",
                     ["ProfileTacticSainMan"] = "SAINGrunt",
+                    ["ProfileTacticSAINShooter"] = "SAINShooter",
                     ["ProfileTacticProtector"] = "Protector",
                     ["ProfileAdjustProficiency"] = "Proficiency",
                     ["AdjustProficiencyTitleWithName"] = "Proficiency : {0}",

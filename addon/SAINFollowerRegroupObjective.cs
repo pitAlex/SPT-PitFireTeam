@@ -21,6 +21,11 @@ internal sealed class SAINFollowerRegroupObjective(BotComponent bot) : BotBase(b
     internal bool Tight { get; private set; }
     internal bool Settling => settleUntil > 0f;
     internal bool Active => Mode != SAINRegroupMode.None;
+    // Last real policy evaluation only; snapshot readers never run the decision provider.
+    internal string AutoReason { get; private set; } = "notEvaluated";
+    internal float AutoCheckedAt { get; private set; } = -1f;
+    internal float? AutoDistance { get; private set; }
+    internal float? AutoTrigger { get; private set; }
     private float settleUntil, nextDistanceCheck, distance = float.PositiveInfinity, nextTargetAttempt;
     private bool completePath, hasTarget;
     private Vector3 measuredPlayer, measuredBot, target, targetPlayer;
@@ -41,7 +46,7 @@ internal sealed class SAINFollowerRegroupObjective(BotComponent bot) : BotBase(b
     internal void Observe()
     {
         var follower = Follower;
-        if (follower == null || BotOwner.IsDead || !SainAddonBridge.IsSainManSelected(BotOwner) ||
+        if (follower == null || BotOwner.IsDead || !SainAddonBridge.IsAddonTacticSelected(BotOwner) ||
             !SainPlayerSquadBridge.TryGetPlayerLeader(BotOwner, out Player player) || player.HealthController?.IsAlive != true ||
             !SAINFollowerCombatHandoff.HasLiveEnemy(Bot))
         {
@@ -72,13 +77,13 @@ internal sealed class SAINFollowerRegroupObjective(BotComponent bot) : BotBase(b
 
         if (!Active) return;
         Measure(player.Position);
-        if (hasTarget && cover != null && (cover.Spotted || cover.CoverData.IsBad || !HotContact(2.5f) ||
+        if (hasTarget && cover != null && (cover.Spotted || cover.CoverData.IsBad || !PersonalContactHot(2.5f) ||
             (targetPlayer - player.Position).sqrMagnitude > SainRegroupBridge.BossMoveRefreshDistance * SainRegroupBridge.BossMoveRefreshDistance))
             ReleaseTarget();
         if (Settling)
         {
             if (!AtPlayer(player.Position)) { settleUntil = 0f; ReleaseTarget(); }
-            else if (Time.time >= settleUntil || HotContact(2.5f)) Complete("arrived");
+            else if (Time.time >= settleUntil || PersonalContactHot(2.5f)) Complete("arrived");
             return;
         }
         if (AtPlayer(player.Position) && (cover == null || !hasTarget || (target - BotOwner.Position).sqrMagnitude <= 4f))
@@ -86,7 +91,7 @@ internal sealed class SAINFollowerRegroupObjective(BotComponent bot) : BotBase(b
             // A committed cover move must reach cover; entering the player's radius alone
             // is not arrival at that destination. Reached the shared regroup envelope. Return immediately to combat under
             // pressure; otherwise use the core's short arrival think window.
-            if (HotContact(2.5f)) { Complete("arrivedHot"); return; }
+            if (PersonalContactHot(2.5f)) { Complete("arrivedHot"); return; }
             ReleaseTarget();
             settleUntil = Time.time + 1.5f;
             SainRegroupBridge.Record(BotOwner, Mode.ToString(), "arrivalSettle");
@@ -105,48 +110,74 @@ internal sealed class SAINFollowerRegroupObjective(BotComponent bot) : BotBase(b
     // bridge may start Auto, using that tick's result without evaluating SAIN twice.
     internal bool TryBeginAuto(Enemy enemy, ECombatDecision solo, ESquadDecision squad, ESelfActionType self)
     {
-        if (Active || enemy == null || !Enemy.IsEnemyActive(enemy) || enemy.EnemyPlayer?.HealthController?.IsAlive != true ||
-            squad != ESquadDecision.None || self != ESelfActionType.None || Interrupted ||
-            Bot.Decision.CurrentSquadDecision != ESquadDecision.None) return false;
-        if (SAINFollowerRuntime.GetCover(BotOwner)?.HoldsArrival(enemy) == true) return false;
+        AutoCheckedAt = Time.time; AutoDistance = AutoTrigger = null;
+        if (Active) return RejectAuto("active");
+        if (enemy == null || !Enemy.IsEnemyActive(enemy) || enemy.EnemyPlayer?.HealthController?.IsAlive != true)
+            return RejectAuto("enemyUnavailable");
+        if (self != ESelfActionType.None || Interrupted) return RejectAuto("survival");
+        if (squad != ESquadDecision.None || Bot.Decision.CurrentSquadDecision != ESquadDecision.None)
+            return RejectAuto("squadAction");
+        if (SAINFollowerRuntime.GetCover(BotOwner)?.HoldsArrival(enemy) == true) return RejectAuto("arrivalHold");
         var attempt = SAINFollowerRuntime.GetEngageAttempt(BotOwner);
         var push = SAINFollowerRuntime.GetPush(BotOwner);
-        bool failedPush = solo == ECombatDecision.SeekCover && push is { Exhausted: true, Ordered: false } &&
-            push.EnemyId == enemy.EnemyProfileId &&
+        // An unfinished order owns its leg/contact grace. An exhausted same-target order
+        // has no advance left to protect; retain its failure while allowing escort recovery.
+        if (push?.Ordered == true && (!push.Exhausted || push.AwaitingTarget || push.EnemyId != enemy.EnemyProfileId))
+            return RejectAuto("orderedPush");
+        bool failedPush = solo == ECombatDecision.SeekCover && push is { Exhausted: true } &&
+            push.EnemyId == enemy.EnemyProfileId && Bot.Cover.CoverPoint_MovingTo == null &&
             (!Bot.Mover.Moving || Bot.CurrentAction is SAINFollowerMoveToEngageAction);
         bool failedEngage = failedPush || solo == ECombatDecision.MoveToEngage && attempt?.FailedFor(enemy) == true &&
             (Bot.Decision.CurrentCombatDecision == ECombatDecision.MoveToEngage ||
              (!Bot.Mover.Moving && Bot.Cover.CoverPoint_MovingTo == null));
         if (!failedEngage && (solo != ECombatDecision.SeekCover ||
-            Bot.Decision.CurrentCombatDecision != ECombatDecision.SeekCover || Bot.Mover.Moving ||
-            Bot.Cover.CoverPoint_MovingTo != null)) return false;
+            Bot.Decision.CurrentCombatDecision != ECombatDecision.SeekCover)) return RejectAuto("combatAction");
+        if (!failedEngage && (Bot.Mover.Moving || Bot.Cover.CoverPoint_MovingTo != null))
+            return RejectAuto("coverTravel");
 
         // SeekCover also means "find/move to cover". Let the action attempt it first;
         // only an established passive hold or exhausted cover search is a fallback.
         var coverState = Bot.Cover.CoverSeekingState;
-        if (!failedEngage && coverState != ECoverSeekingState.NoCover && coverState != ECoverSeekingState.HoldInCover) return false;
+        if (!failedEngage && coverState != ECoverSeekingState.NoCover && coverState != ECoverSeekingState.HoldInCover)
+            return RejectAuto("coverSelection");
         if (!failedEngage && coverState == ECoverSeekingState.HoldInCover &&
-            (Bot.Cover.CoverInUse == null || Bot.Cover.CoverInUse.Spotted || Bot.Cover.CoverInUse.CoverData.IsBad)) return false;
-        if (enemy.IsVisible || enemy.InLineOfSight) return false;
+            (Bot.Cover.CoverInUse == null || Bot.Cover.CoverInUse.Spotted || Bot.Cover.CoverInUse.CoverData.IsBad))
+            return RejectAuto("coverRecovery");
+        // Native LOS/shoot rays describe geometry, not accepted personal sight. Preserve
+        // real firing opportunities; passive non-shootable sight uses Core's bounded grace.
+        if (enemy.IsVisible && enemy.CanShoot) return RejectAuto("firingOpportunity");
         foreach (Enemy known in Bot.EnemyController.KnownEnemies)
             if (known != null && Enemy.IsEnemyActive(known) && known.EnemyPlayer?.HealthController?.IsAlive == true &&
-                (known.IsVisible || known.InLineOfSight)) return false;
+                known.IsVisible && known.CanShoot) return RejectAuto("knownFiringOpportunity");
         var follower = Follower;
-        if (follower == null || follower.CombatIndependent || Time.time < autoRetryAt ||
-            follower.TryGetActiveCommand(out _, out _) ||
-            !SainPlayerSquadBridge.TryGetPlayerLeader(BotOwner, out Player player) || player.HealthController?.IsAlive != true) return false;
+        if (follower == null) return RejectAuto("followerUnavailable");
+        if (follower.CombatIndependent) return RejectAuto("independent");
+        if (Time.time < autoRetryAt) return RejectAuto("retryDelay");
+        if (follower.TryGetActiveCommand(out _, out _)) return RejectAuto("pendingOrder");
+        if (!SainPlayerSquadBridge.TryGetPlayerLeader(BotOwner, out Player player) || player.HealthController?.IsAlive != true)
+            return RejectAuto("leaderUnavailable");
         Measure(player.Position);
         float trigger = SainRegroupBridge.GetTriggerDistance(BotOwner);
-        if (!completePath || distance <= trigger ||
-            (SainRegroupBridge.SameLevel(BotOwner.Position, player.Position) &&
-             SainRegroupBridge.IsUrbanDetour((player.Position - BotOwner.Position).magnitude, distance))) return false;
+        AutoDistance = completePath ? distance : null; AutoTrigger = trigger;
+        if (!completePath) return RejectAuto("incompletePlayerPath");
+        if (distance <= trigger) return RejectAuto("insidePlayerRadius");
+        if (SainRegroupBridge.SameLevel(BotOwner.Position, player.Position) &&
+            SainRegroupBridge.IsUrbanDetour((player.Position - BotOwner.Position).magnitude, distance))
+            return RejectAuto("urbanDetour");
         // Like core escort regroup, retain four seconds of personal fight grace except
         // beyond the 1.6x extreme-distance boundary. Direct orders bypass this gate.
-        if (distance < trigger * 1.6f && HotContact(4f)) return false;
+        if (distance < trigger * 1.6f && HotContact(4f)) return RejectAuto("recentFight");
         string reason = failedPush ? "pushExhausted" : failedEngage ? "engage." + attempt.Failure :
             coverState == ECoverSeekingState.NoCover ? "passiveNoCover" : "passiveCoverHold";
+        AutoReason = reason;
         Begin(SAINRegroupMode.Auto, false, reason);
         return true;
+    }
+
+    private bool RejectAuto(string reason)
+    {
+        AutoReason = reason;
+        return false;
     }
 
     private void Begin(SAINRegroupMode mode, bool tight, string reason = "activate")
@@ -187,9 +218,22 @@ internal sealed class SAINFollowerRegroupObjective(BotComponent bot) : BotBase(b
     }
 
     private float CompleteDistance => Mode == SAINRegroupMode.Auto
-        ? Mathf.Min(SainRegroupBridge.GetCompleteDistance(false), Mathf.Max(2f, SainRegroupBridge.GetTriggerDistance(BotOwner) - 2f))
-        : SainRegroupBridge.GetCompleteDistance(Tight);
+        ? Mathf.Min(SainRegroupBridge.GetCompleteDistance(BotOwner, false), Mathf.Max(2f, SainRegroupBridge.GetTriggerDistance(BotOwner) - 2f))
+        : SainRegroupBridge.GetCompleteDistance(BotOwner, Tight);
     private bool AtPlayer(Vector3 player) => completePath && distance <= CompleteDistance && SainRegroupBridge.SameLevel(BotOwner.Position, player);
+
+    // Gait follows Core's personal-sight clock and is rechecked during movement.
+    // Native LOS, our own shots and shared knowledge must not renew withdrawal.
+    internal bool PersonalContactHot(float seconds)
+    {
+        if (PersonallySeen(Bot.GoalEnemy, seconds)) return true;
+        foreach (Enemy enemy in Bot.EnemyController.KnownEnemies)
+            if (PersonallySeen(enemy, seconds)) return true;
+        return false;
+    }
+    private static bool PersonallySeen(Enemy enemy, float seconds) => enemy != null &&
+        Enemy.IsEnemyActive(enemy) && enemy.EnemyPlayer?.HealthController?.IsAlive == true &&
+        (enemy.IsVisible || enemy.Seen && enemy.TimeSinceSeen < seconds);
 
     internal bool HotContact(float seconds)
     {
@@ -198,9 +242,10 @@ internal sealed class SAINFollowerRegroupObjective(BotComponent bot) : BotBase(b
         if (lastShot > 0f && Time.time - lastShot <= seconds) return true;
         Enemy enemy = Bot.GoalEnemy;
         if (enemy != null && Enemy.IsEnemyActive(enemy) && enemy.EnemyPlayer?.HealthController?.IsAlive == true &&
-            (enemy.IsVisible || enemy.InLineOfSight || (enemy.Seen && enemy.TimeSinceSeen <= seconds))) return true;
+            (enemy.IsVisible || (enemy.Seen && enemy.TimeSinceSeen <= seconds))) return true;
         foreach (Enemy known in Bot.EnemyController.KnownEnemies)
-            if (known != null && Enemy.IsEnemyActive(known) && known.EnemyPlayer?.HealthController?.IsAlive == true && known.IsVisible) return true;
+            if (known != null && Enemy.IsEnemyActive(known) && known.EnemyPlayer?.HealthController?.IsAlive == true &&
+                (known.IsVisible || known.Seen && known.TimeSinceSeen <= seconds)) return true;
         return false;
     }
 
@@ -209,7 +254,7 @@ internal sealed class SAINFollowerRegroupObjective(BotComponent bot) : BotBase(b
         destination = default; sprint = false;
         Observe();
         if (!Active || Settling || Interrupted || !SainPlayerSquadBridge.TryGetPlayerLeader(BotOwner, out Player player)) return false;
-        bool hot = HotContact(2.5f);
+        bool hot = PersonalContactHot(2.5f);
         float refresh = SainRegroupBridge.BossMoveRefreshDistance;
         if (hasTarget && ((targetPlayer - player.Position).sqrMagnitude > refresh * refresh ||
             (target - BotOwner.Position).sqrMagnitude <= 4f ||

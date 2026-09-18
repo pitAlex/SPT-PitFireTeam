@@ -148,7 +148,7 @@ namespace pitTeam.SAINAddon
         {
             boss = owner?.BotFollower?.BossToFollow as pitAIBossPlayer;
             return IsEnabled && owner != null && !Detaching.Contains(owner) &&
-                SainAddonBridge.IsSainManSelected(owner) && boss?.realPlayer != null && boss.bossGroup != null &&
+                SainAddonBridge.IsAddonTacticSelected(owner) && boss?.realPlayer != null && boss.bossGroup != null &&
                 ReferenceEquals(owner.BotsGroup, boss.bossGroup);
         }
 

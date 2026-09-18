@@ -77,7 +77,7 @@ public class FriendlyTeammateService(
 
     private const string DefaultLoadoutName = "Default";
     private const string DefaultLoadoutId = "000000000000000000000000";
-    private static readonly string[] TacticOptions = ["Rifleman", "Marksman", "SainMan"];
+    private static readonly string[] TacticOptions = ["Rifleman", "Marksman", "SainMan", "SAINShooter"];
     private const int RelativeLevelDelta = 5;
     private const int SecureContainerAmmoStackCount = 10;
     private const string TeammateGenerationLocation = "factory4_day";
@@ -4843,7 +4843,8 @@ public class FriendlyTeammateService(
 
     private static float GetDefaultAggressionForTactic(string tactic)
     {
-        return string.Equals(tactic, "Marksman", StringComparison.OrdinalIgnoreCase)
+        return (string.Equals(tactic, "Marksman", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(tactic, "SAINShooter", StringComparison.OrdinalIgnoreCase))
             ? 30f
             : 50f;
     }
@@ -4859,6 +4860,7 @@ public class FriendlyTeammateService(
         {
             "marksman" => "Marksman",
             "sainman" => "SainMan",
+            "sainshooter" => "SAINShooter",
             "protector" => "Rifleman",
             "guard" => "Rifleman",
             "holder" => "Rifleman",

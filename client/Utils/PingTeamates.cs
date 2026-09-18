@@ -570,6 +570,17 @@ namespace pitTeam.Utils
                         {
                             combatStatus = pitFireTeam.GetBotStatusText("WantToHeal");
                         }
+                        else if (SainAddonBridge.TryGetEnemyContact(bt.Data, out SainEnemyContact? sainContact))
+                        {
+                            // A handled empty SAIN contact must not fall back to retained EFT memory.
+                            if (sainContact.HasValue && !string.IsNullOrEmpty(sainContact.Value.ProfileId) &&
+                                IsPlausibleEnemyMarkerPosition(sainContact.Value.LastKnownPosition))
+                            {
+                                float lastSeenAgo = sainContact.Value.TimeSinceSeen;
+                                bool recentlySeen = IsFinite(lastSeenAgo) && lastSeenAgo >= 0f && lastSeenAgo < 5f;
+                                combatStatus = pitFireTeam.GetBotStatusText(recentlySeen ? "Engaged" : "Alerted");
+                            }
+                        }
                         else if (bt.Data.Memory.HaveEnemy)
                         {
                             EnemyInfo goalEnemy = bt.Data.Memory.GoalEnemy;
@@ -652,6 +663,7 @@ namespace pitTeam.Utils
                                 tactic = followerData.CombatTactic switch
                                 {
                                     FollowerCombatTactic.SainMan => pitFireTeam.GetSocialUiText("ProfileTacticSainMan"),
+                                    FollowerCombatTactic.SAINShooter => pitFireTeam.GetSocialUiText("ProfileTacticSAINShooter"),
                                     FollowerCombatTactic.Marksman => pitFireTeam.GetSocialUiText("ProfileTacticMarksman"),
                                     FollowerCombatTactic.Protector => pitFireTeam.GetSocialUiText("ProfileTacticProtector"),
                                     _ => pitFireTeam.GetTacticOptionText(0),

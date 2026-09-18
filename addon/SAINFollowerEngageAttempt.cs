@@ -1,5 +1,6 @@
 using EFT;
 using pitTeam.Modules;
+using pitTeam.Components;
 using SAIN.Components;
 using SAIN.SAINComponent;
 using SAIN.SAINComponent.Classes.EnemyClasses;
@@ -20,7 +21,14 @@ internal sealed class SAINFollowerEngageAttempt(BotComponent bot) : BotBase(bot)
     private Vector3 anchor, progressPosition;
     private float lastTick = -1f, noProgressSeconds, arrivalSeconds;
 
-    internal bool Independent => BossPlayers.Instance?.GetFollower(BotOwner)?.CombatIndependent == true;
+    internal bool Independent
+    {
+        get
+        {
+            var follower = BossPlayers.Instance?.GetFollower(BotOwner);
+            return follower?.CombatTactic != FollowerCombatTactic.SAINShooter && follower?.CombatIndependent == true;
+        }
+    }
 
     internal void Observe(Enemy enemy)
     {

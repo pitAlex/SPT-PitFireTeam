@@ -3499,7 +3499,7 @@ namespace pitTeam.Components
                     // GoForward in combat is not a movement ping; it becomes PushEnemy for combat objective routing.
                     followerData.ClearTemporaryCombatAggressionOverride("GoForwardPhrase:push");
                     followerData.SetPushEnemy(12f);
-                    if (followerData.CombatTactic != FollowerCombatTactic.Marksman)
+                    if (!FollowerCombatTactics.IsMarksman(followerData.CombatTactic))
                     {
                         follower.BotTalk.TrySay(EPhraseTrigger.Going, false);
                     }
@@ -3574,8 +3574,8 @@ namespace pitTeam.Components
                 BotFollowerPlayer followerData = BossPlayers.Instance?.GetFollower(follower);
                 if (followerData == null) continue;
 
-                bool isMarksman = followerData.CombatTactic == FollowerCombatTactic.Marksman;
-                bool useAutomaticSecondary = isMarksman &&
+                bool isMarksman = FollowerCombatTactics.IsMarksman(followerData.CombatTactic);
+                bool useAutomaticSecondary = isMarksman && !pitFireTeam.UseSainFollowerCombat(follower) &&
                                              (playerFacingEnemy != null || !squadHasRifleman) &&
                                              FollowerCombatCommon.HasLoadedAutomaticMarksmanSupportWeapon(follower);
                 if (isMarksman && !useAutomaticSecondary)
@@ -3977,7 +3977,7 @@ namespace pitTeam.Components
                 }
 
                 BotFollowerPlayer followerData = BossPlayers.Instance?.GetFollower(follower);
-                if (followerData != null && followerData.CombatTactic != FollowerCombatTactic.Marksman)
+                if (followerData != null && !FollowerCombatTactics.IsMarksman(followerData.CombatTactic))
                 {
                     return true;
                 }
@@ -4153,7 +4153,7 @@ namespace pitTeam.Components
                 BotFollowerPlayer? followerData = BossPlayers.Instance?.GetFollower(follower);
                 if (followerData == null ||
                     IsPickedUpFollower(followerData) ||
-                    followerData.CombatTactic != FollowerCombatTactic.Marksman)
+                    !FollowerCombatTactics.IsMarksman(followerData.CombatTactic))
                 {
                     continue;
                 }

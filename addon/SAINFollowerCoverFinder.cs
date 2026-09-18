@@ -32,15 +32,23 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
     internal bool Pending { get; private set; }
     private Comparison<CoverPoint> bossComparison;
     private Vector3 rankBoss;
+    private bool rankNearby;
+    private float nearbyCoverDistance = 25f;
     private bool scanned;
     private string contact;
     private Vector3 bossAnchor, botAnchor, enemyAnchor;
     internal int LastScanCount { get; private set; }
 
-    internal List<CoverPoint> Find(Enemy enemy, Vector3 boss)
+    internal List<CoverPoint> Find(Enemy enemy, Vector3 boss, bool preferNearby = false)
     {
         ranked.Clear(); if (!Pending) validationPass++; Pending = false;
         if (enemy?.LastKnownPosition == null) return ranked;
+        rankNearby = preferNearby;
+        // Mirror Core combat-start ranges without changing its internal configuration API.
+        string location = Comfort.Common.Singleton<GameWorld>.Instance?.LocationId;
+        nearbyCoverDistance = !string.IsNullOrEmpty(location) &&
+            (location.IndexOf("factory", StringComparison.OrdinalIgnoreCase) >= 0 ||
+             string.Equals(location, "laboratory", StringComparison.OrdinalIgnoreCase)) ? 12f : 25f;
         Scan(enemy, boss, SainCoverGeometry.SearchRadius, SainRegroupBridge.BossMoveRefreshDistance);
         foreach (CoverPoint point in candidates) Add(point, boss);
         foreach (CoverPoint point in bot.Cover.CoverPoints) Add(point, boss);
@@ -91,6 +99,15 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
     }
     private int CompareBoss(CoverPoint a, CoverPoint b)
     {
+        if (rankNearby)
+        {
+            bool aNearby = IsNearby(a), bNearby = IsNearby(b);
+            if (aNearby != bNearby) return aNearby ? -1 : 1;
+            int distance = aNearby
+                ? RouteDistance(a).CompareTo(RouteDistance(b))
+                : (a.Position - rankBoss).sqrMagnitude.CompareTo((b.Position - rankBoss).sqrMagnitude);
+            return distance != 0 ? distance : a.PathData.PathLength.CompareTo(b.PathData.PathLength);
+        }
         int tier = Tier(a, rankBoss).CompareTo(Tier(b, rankBoss));
         return tier != 0 ? tier : Score(a, rankBoss).CompareTo(Score(b, rankBoss));
     }
@@ -125,6 +142,13 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
         ranked.Add(point);
     }
 
+    // Use the native validated route: a cover across a wall may be close in space
+    // but require a long trip. No extra path or physics probes for this preference.
+    private float RouteDistance(CoverPoint point) =>
+        Mathf.Max(point.PathData.PathLength, (point.Position - bot.Position).magnitude);
+    internal bool IsNearby(CoverPoint point) => RouteDistance(point) <= nearbyCoverDistance &&
+        SainRegroupBridge.SameLevel(point.Position, bot.Position);
+
     private int Tier(CoverPoint point, Vector3 boss) =>
         (point.Position - boss).magnitude <= SainCoverGeometry.SearchRadius ? 0 : 1;
     private float Score(CoverPoint point, Vector3 boss) =>
@@ -132,12 +156,15 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
     private void Add(CoverPoint point, Vector3 boss)
     {
         if (point == null || point.Spotted || point.CoverData.IsBad || ranked.Contains(point) ||
-            !ValidateCandidate(point, bot.GoalEnemy) || !SainRegroupBridge.SameLevel(point.Position, boss) ||
+            !ValidateCandidate(point, bot.GoalEnemy) ||
             !SainRegroupBridge.IsDestinationAvailable(bot.BotOwner, point.Position)) return;
         float bossDistance = (point.Position - boss).magnitude;
-        // If the player is outside our reachable cover envelope, accept a safe intermediate
-        // step toward them. A cover farther away is left to native survival fallback.
-        if (bossDistance < 2f || (Tier(point, boss) != 0 && bossDistance >= (bot.Position - boss).magnitude - 2f)) return;
+        if (bossDistance < 2f) return;
+        if (rankNearby && IsNearby(point)) { ranked.Add(point); return; }
+        if (!SainRegroupBridge.SameLevel(point.Position, boss)) return;
+        // Ordinary SeekCover tries nearby cover, then player-area cover, then native
+        // fallback. Commanded relocation retains its existing bossward candidates.
+        if (Tier(point, boss) != 0 && (rankNearby || bossDistance >= (bot.Position - boss).magnitude - 2f)) return;
         ranked.Add(point);
     }
     private bool ValidateCandidate(CoverPoint point, Enemy enemy)

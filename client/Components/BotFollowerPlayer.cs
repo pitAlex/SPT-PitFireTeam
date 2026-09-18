@@ -54,6 +54,7 @@ namespace pitTeam.Components
         Marksman = 1,
         Protector = 2,
         SainMan = 3,
+        SAINShooter = 4,
     }
 
     public class BotFollowerPlayer
@@ -291,9 +292,8 @@ namespace pitTeam.Components
             }
         }
 
-        // SainMan keeps its persisted identity while the core brain supplies the test/fallback combat.
-        public FollowerCombatTactic CoreCombatTactic => CombatTactic == FollowerCombatTactic.SainMan
-            ? FollowerCombatTactic.Balanced : CombatTactic;
+        // Addon tactics retain their identity while the matching Core role supplies fallback.
+        public FollowerCombatTactic CoreCombatTactic => FollowerCombatTactics.CoreTactic(CombatTactic);
 
         public FollowerCombatTactic CombatTactic
         {
@@ -2373,6 +2373,9 @@ namespace pitTeam.Components
 
             switch (tactic.Trim().ToLowerInvariant())
             {
+                case "sainshooter":
+                    return FollowerCombatTactic.SAINShooter;
+
                 case "sainman":
                     return FollowerCombatTactic.SainMan;
 

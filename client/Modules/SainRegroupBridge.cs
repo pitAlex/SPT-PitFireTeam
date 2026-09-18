@@ -13,13 +13,20 @@ public static class SainRegroupBridge
     // Synchronous probes reuse a scratch path on the calling thread.
     [System.ThreadStatic] private static NavMeshPath distancePath;
     public static float GetTriggerDistance(BotOwner owner) =>
-        CombatDistanceConfiguration.Instance.GetBossRegroupTriggerDistance(owner) *
+        (SainAddonBridge.IsShooterSelected(owner)
+            ? CombatDistanceConfiguration.Instance.GetRegroupNeededDistanceMarksman(owner)
+            : CombatDistanceConfiguration.Instance.GetBossRegroupTriggerDistance(owner)) *
         Mathf.Lerp(PickupFollowerPersonality.RegroupMaxTriggerMultiplier, 1f,
             BossPlayers.Instance?.GetFollower(owner)?.BossProtectionWillingness01 ?? 1f);
 
     public static float GetCompleteDistance(bool tight) => tight
         ? FollowerCombatRegroupObjective.TightRegroupCompleteDistance
         : FollowerCombatRegroupObjective.GetOrderedRegroupDistance(FollowerCombatTactic.SainMan);
+
+    public static float GetCompleteDistance(BotOwner owner, bool tight) => tight
+        ? FollowerCombatRegroupObjective.TightRegroupCompleteDistance
+        : FollowerCombatRegroupObjective.GetOrderedRegroupDistance(SainAddonBridge.IsShooterSelected(owner)
+            ? FollowerCombatTactic.Marksman : FollowerCombatTactic.SainMan);
 
     public static float BossMoveRefreshDistance => CombatDistanceConfiguration.Instance.GetRegroupBossMoveRefreshDistance();
     public static bool SameLevel(Vector3 first, Vector3 second) => FollowerCombatRegroupObjective.IsSameBossLevel(first, second);

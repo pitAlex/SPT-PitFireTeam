@@ -327,7 +327,7 @@ namespace pitTeam
         public static bool IsSainManTacticAvailable => IsSAINInstalled && IsSAINAddonInstalled;
         public static bool IsSainFollowerCombatAvailable => IsSainManTacticAvailable && SainAddonBridge.HasRuntimeCallbacks;
         public static bool UseSainFollowerCombat(BotOwner? botOwner) =>
-            IsSainFollowerCombatAvailable && SainAddonBridge.IsSainManSelected(botOwner) && SainAddonBridge.IsCombatReady(botOwner);
+            IsSainFollowerCombatAvailable && SainAddonBridge.IsAddonTacticSelected(botOwner) && SainAddonBridge.IsCombatReady(botOwner);
         public static bool ShouldDisableSainForFollower(BotOwner? botOwner) =>
             IsSAINInstalled && !UseSainFollowerCombat(botOwner);
 

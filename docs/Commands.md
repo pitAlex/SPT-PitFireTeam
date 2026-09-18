@@ -1,6 +1,6 @@
 # Core commands
 
-Addon adaptations are in [SAINGrunt commands](../addon/docs/Commands.md). Shared input, command state and peaceful execution stay here.
+Addon adaptations are in [SAIN addon commands](../addon/docs/Commands.md). Shared input, command state and peaceful execution stay here.
 
 ## Scope
 
@@ -56,7 +56,7 @@ There are three execution paths:
 | `MoveToPoint` | sampled world/nav point | infinite | `GestureCommandAction` |
 | `ComeCloser` | boss position snapshot owned by action | timed unless resuming a hold | `GestureCommandAction` |
 | `ContactApproach` | boss position and Contact bearing snapshots | timed | `GestureCommandAction` |
-| `RegroupNearBoss` | normal or tight mode | timed | `GestureCommandAction`, core combat regroup, or the SainMan squad regroup objective |
+| `RegroupNearBoss` | normal or tight mode | timed | `GestureCommandAction`, core combat regroup, or the addon squad regroup objective |
 | `TakeLootItem` | reserved current loot item, not `_commandTarget` | timed | `GestureCommandAction` |
 | `OpenDoor` | reserved current door, not `_commandTarget` | timed | `GestureCommandAction` |
 | `PushEnemy` | current combat enemy | consumed into objective | core ordered-push objective |
@@ -90,7 +90,7 @@ Behavior:
 - Name, distance, combat status, HP, and tactic (`MD`) can each be toggled under `My Squad > Settings > Base Settings`.
 - Disabling every text field while leaving the highlight enabled produces a highlight-only Status Report.
 - Enemy markers are grouped by enemy profile, so multiple followers reporting the same contact produce one marker. During the Status Report display, the active marker set follows each follower's current enemy selection: switching targets adds the newly selected enemy and removes an old contact once no follower targets it. `Auto Display Enemy Marker` keeps this marker set active independently for the full live contact without automatically playing the report sound or voice line. On the core combat path, each new contact starts at the enemy's current position. A reliably visible enemy uses a steady `27x27` red reticle that follows the live position every frame; an enemy that is not reliably visible uses a vertically bobbing `30.6x30.6` yellow `!` whose position refreshes every five seconds; and a killed enemy uses a steady `27x27` grey skull at its remembered death position. `Auto Display Kill Marker` can open the independent skull display immediately, `Kill Display Time` requests its duration, and `Kill Remember Time` caps that duration and disables killed-enemy markers when set to `0`. The spatial location sound and spoken direction use the position captured when Status Report was triggered.
-- Ready SAINGrunt contact/status behavior is documented in [addon status reporting](../addon/docs/Commands.md#status-report-and-enemy-markers).
+- Ready SAIN addon contact/status behavior is documented in [addon status reporting](../addon/docs/Commands.md#status-report-and-enemy-markers).
 - Nearby active followers without enemies play `FriendlyGesture`.
 - When no living teammate exists, Status Report plays `radiobeep.ogg` instead of the normal `radiochat.ogg` response.
 - Does not create `FollowerCommandType` state.
@@ -628,7 +628,7 @@ Behavior:
 - Defensive survival behavior still wins: immediate fire, dogfight, healing, boss protection, and other urgent actions can still run.
 - Picked-up followers may refuse this hold with `Negative`; higher-level and more independent recruits are more likely to ignore the order.
 
-Addon behavior: see [SAINGrunt commands](../addon/docs/Commands.md).
+Addon behavior: see [SAIN addon commands](../addon/docs/Commands.md).
 
 Vanilla handling:
 
@@ -713,7 +713,7 @@ Core behavior:
 - Completion requires the conservative larger of direct and valid NavMesh distance to be inside the boss radius, plus same-level tolerance.
 - Push or suppress orders can end regroup and return to primary/suppression behavior.
 
-Addon behavior: see [SAINGrunt commands](../addon/docs/Commands.md).
+Addon behavior: see [SAIN addon commands](../addon/docs/Commands.md).
 
 ### Suppress Enemy
 

@@ -1,6 +1,8 @@
-# SAINGrunt commands and status
+# SAIN addon commands and status
 
 **Base contract:** [Core commands](../../docs/Commands.md). Core owns phrase/gesture input, targeting, range/visibility checks, command state and peaceful request execution. This document describes how a ready SAINGrunt consumes those commands during addon combat; it does not redefine core input rules.
+
+[SAINShooter](SAINShooter.md#commands-regroup-and-lifecycle) shares gestures, regroup, status and lifecycle. Its Need Sniper, Go Forward, suppression and independent-mode differences are described there; the assault/aggression rules below describe SAINGrunt.
 
 ## Aggression commands
 
@@ -48,3 +50,7 @@ Other tactics and absent/unready addon state use [core status behavior](../../do
 ## Command limits
 
 Do not infer full core command parity from shared input. Dedicated addon protection, ordered suppression and marksman support actions remain separate work; native squad support still operates. Implemented translations are the ones listed above. See [remaining work](Roadmap.md).
+
+## Pending-heal status
+
+Core's `Wants to heal` label means EFT reports pending first aid or surgical work while the follower is not using medicine (or Core has selected movement to heal). It does not claim that SAIN selected FirstAid/Surgery or approved the position. Native treatment still checks item eligibility, recent damage and all known enemies; the addon can admit a stationary, physically protected cover position through its existing medical exception. See [medical cover](Combat.md) and [raid evidence](Validation.md) for the observed delay and limits.

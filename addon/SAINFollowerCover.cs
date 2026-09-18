@@ -13,7 +13,7 @@ using UnityEngine;
 
 namespace pitTeam.SAINAddon;
 
-// Shares the core combat contract: choose boss-oriented cover, reach it, then use it
+// Shares the core cover lifecycle: choose nearby/player cover, reach it, then use it
 // before ordinary movement may be reconsidered. Real combat/orders still interrupt.
 internal sealed class SAINFollowerCover(BotComponent bot)
 {
@@ -39,7 +39,7 @@ internal sealed class SAINFollowerCover(BotComponent bot)
     internal bool WaitingForSelection => finder.Pending && !Independent && !Recovery &&
         bot.Cover.CoverInUse == null && bot.Cover.CoverPoint_MovingTo == null &&
         bot.Decision.CurrentCombatDecision == ECombatDecision.SeekCover &&
-        bot.Decision.CurrentSelfDecision == ESelfActionType.None &&
+        (bot.Decision.CurrentSelfDecision == ESelfActionType.None || bot.Decision.CurrentSelfDecision == ESelfActionType.Reload) &&
         !(bot.GoalEnemy?.IsVisible == true && bot.GoalEnemy.CanShoot);
 
     // Core's reached-heal-cover contract, using SAIN knowledge and native cover ownership.
@@ -82,7 +82,8 @@ internal sealed class SAINFollowerCover(BotComponent bot)
 
     private bool Independent => Follower?.CombatIndependent != false;
     private bool Recovery => bot.BotOwner.Memory.IsUnderFire || bot.Medical?.TimeSinceShot < 0.75f ||
-        bot.Decision.CurrentCombatDecision == ECombatDecision.Retreat || bot.Decision.CurrentSelfDecision != ESelfActionType.None;
+        bot.Decision.CurrentCombatDecision == ECombatDecision.Retreat ||
+        (bot.Decision.CurrentSelfDecision != ESelfActionType.None && bot.Decision.CurrentSelfDecision != ESelfActionType.Reload);
 
     internal bool TrySelect(bool sprint, out CoverPoint point)
     {
@@ -97,17 +98,17 @@ internal sealed class SAINFollowerCover(BotComponent bot)
         if (Time.time < nextSelectionAttempt && attemptedNativeCount == bot.Cover.CoverPoints.Count && attemptedEnemy == enemy?.EnemyProfileId && attemptedRegroup == limitToRegroup &&
             (attemptedBoss - player.Position).sqrMagnitude < 4f && (attemptedBot - bot.Position).sqrMagnitude < 4f &&
             (attemptedThreat - threat).sqrMagnitude < 4f) return limitToRegroup;
-        foreach (CoverPoint candidate in finder.Find(bot.GoalEnemy, player.Position))
+        foreach (CoverPoint candidate in finder.Find(bot.GoalEnemy, player.Position, preferNearby: true))
         {
             if (limitToRegroup && !InsideRegroupArea(candidate.Position, player.Position)) continue;
             if (!bot.Mover.GoToCoverPoint(candidate, sprint, ESprintUrgency.High)) continue;
-            selectionReason = limitToRegroup ? "regroupCover" : "bossCover";
+            selectionReason = limitToRegroup ? "regroupCover" : finder.IsNearby(candidate) ? "nearbyCover" : "bossCover";
             reportedRegroupNoCover = false;
             point = candidate;
             return true;
         }
         // Incomplete work is not a failed search and must not choose an outward fallback.
-        if (finder.Pending) return true;
+        if (finder.Pending) { selectionReason = "searchingCover"; return true; }
         nextSelectionAttempt = Time.time + 0.5f;
         attemptedBoss = player.Position; attemptedBot = bot.Position; attemptedThreat = threat;
         attemptedEnemy = enemy?.EnemyProfileId; attemptedRegroup = limitToRegroup; attemptedNativeCount = bot.Cover.CoverPoints.Count;

@@ -259,7 +259,7 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
             SainRegroupBridge.IsDestinationAvailable(bot.BotOwner, hit.position))
         { Commit(hit.position, "provisionalAdvance"); return; }
         // Core can follow a navigable detour when no forward cover/direct step works.
-        // Bound this to one walking leg toward the remembered location, not a rush.
+        // Bound this to one committed leg toward the remembered location. Gait is selected by its action.
         if (approachRoute.TryStep(bot.Position, known, out Vector3 step, out string failure) &&
             SainRegroupBridge.IsDestinationAvailable(bot.BotOwner, step))
         { Commit(step, "routeAdvance"); return; }

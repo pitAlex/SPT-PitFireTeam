@@ -60,6 +60,14 @@ namespace pitTeam.Modules
             pitFireTeam.IsSainManTacticAvailable && botOwner != null &&
             BossPlayers.Instance?.GetFollower(botOwner)?.CombatTactic == FollowerCombatTactic.SainMan;
 
+        public static bool IsAddonTacticSelected(BotOwner botOwner) =>
+            pitFireTeam.IsSainManTacticAvailable && botOwner != null &&
+            BossPlayers.Instance?.GetFollower(botOwner) is { } follower &&
+            FollowerCombatTactics.UsesSainCombat(follower.CombatTactic);
+
+        public static bool IsShooterSelected(BotOwner botOwner) =>
+            BossPlayers.Instance?.GetFollower(botOwner)?.CombatTactic == FollowerCombatTactic.SAINShooter;
+
         public static bool IsFollowerCombatEnabled(BotOwner botOwner) => pitFireTeam.UseSainFollowerCombat(botOwner);
 
         public static bool HasRuntimeCallbacks =>

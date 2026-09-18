@@ -131,6 +131,7 @@ public static partial class CombatChecks {
         b.Sain.Decision.Manager.Publish(ECombatDecision.Search);
         Check(!SAINFollowerRuntime.GetRegroup(b).Active,"risk-held push preserves initial cover arrival hold");
         Time.time+=3.1f;int pubs=b.Sain.Decision.Manager.Publications;
+        b.Sain.GoalEnemy.IsVisible=false;b.Sain.GoalEnemy.InLineOfSight=true;b.Sain.GoalEnemy.CanShoot=true;
         b.Sain.Decision.Manager.Publish(ECombatDecision.Search);
         Check(SAINFollowerRuntime.GetRegroup(b).Mode==SAINRegroupMode.Auto&&b.Sain.Decision.CurrentSquadDecision==ESquadDecision.Regroup&&b.Sain.Decision.Manager.Publications==pubs+1,"settled risk-held push hands off to automatic regroup in one publication");
         b.Sain.Decision.Manager.Frame();

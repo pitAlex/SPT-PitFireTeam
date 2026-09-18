@@ -27,6 +27,7 @@ namespace pitTeam.SAINAddon
             public BotComponent Bot;
             public readonly SAINFollowerCombatHandoff Handoff = new SAINFollowerCombatHandoff();
             public bool Prepared;
+            public bool Shooter;
             public bool ReportedFailure;
         }
         private static readonly ConditionalWeakTable<BotOwner, State> States = new ConditionalWeakTable<BotOwner, State>();
@@ -95,7 +96,7 @@ namespace pitTeam.SAINAddon
 
         private static bool IsReady(BotOwner owner) =>
             _enabled && owner != null && !owner.IsDead && States.TryGetValue(owner, out State state) &&
-            state.Prepared && state.SoloLayer != null && state.SquadLayer != null && state.Bot != null && !state.Bot.IsDead &&
+            state.Prepared && state.Shooter == SainAddonBridge.IsShooterSelected(owner) && state.SoloLayer != null && state.SquadLayer != null && state.Bot != null && !state.Bot.IsDead &&
             SainPlayerSquadBridge.TryGetPlayerLeader(owner, out _);
 
         private static void UpdateGroup(pitAIBossPlayer boss)
@@ -108,7 +109,7 @@ namespace pitTeam.SAINAddon
         private static void Prepare(BotOwner owner)
         {
             if (owner == null) return;
-            if (!SainAddonBridge.IsSainManSelected(owner) || owner.IsDead) { Cleanup(owner); return; }
+            if (!SainAddonBridge.IsAddonTacticSelected(owner) || owner.IsDead) { Cleanup(owner); return; }
             if (!States.TryGetValue(owner, out State state) || state.SoloLayer == null || state.SquadLayer == null) return;
             try
             {
@@ -116,14 +117,20 @@ namespace pitTeam.SAINAddon
                 state.Prepared = false;
                 if (!SainPlayerSquadBridge.TryGetPlayerLeader(owner, out _) ||
                     !SAINEnableClass.GetSAIN(owner.ProfileId, out BotComponent bot) || bot?.Decision == null || bot.Info == null) return;
-                if (state.Bot != bot || state.SquadDecisions == null)
+                if (state.Bot != bot || state.SquadDecisions == null || state.Shooter != SainAddonBridge.IsShooterSelected(owner))
                 {
+                    if (state.Bot == bot && state.Shooter != SainAddonBridge.IsShooterSelected(owner))
+                    {
+                        state.SoloLayer?.Stop(); state.SquadLayer?.Stop();
+                        bot.Mover.Stop(); bot.Decision.ResetDecisions(false); state.Handoff.Clear();
+                    }
                     state.Recorder?.Dispose();
                     state.Recorder = null;
                     state.Objectives?.Clear("nativeStateReplaced");
                     state.Regroup?.Clear("nativeStateReplaced");
                     state.Cover?.Clear();
                     SainMedicalDecisionBridge.Restore(state.Bot);
+                    state.Shooter = SainAddonBridge.IsShooterSelected(owner);
                     state.Cover = new SAINFollowerCover(bot);
                     state.Personality = new SAINFollowerPersonality();
                     state.EngageAttempt = new SAINFollowerEngageAttempt(bot);
@@ -219,10 +226,17 @@ namespace pitTeam.SAINAddon
 
         private static bool BeginPushObjective(BotOwner owner)
         {
-            if (!IsReady(owner) || !SainAddonBridge.IsSainManSelected(owner) ||
+            if (!IsReady(owner) || !SainAddonBridge.IsAddonTacticSelected(owner) ||
                 !States.TryGetValue(owner, out State state)) return false;
             var follower = BossPlayers.Instance?.GetFollower(owner);
             if (follower == null) return false;
+            if (state.Shooter)
+            {
+                // Core Marksman ignores generic assault push. A handled rejection avoids
+                // creating Grunt intent or applying its 100% aggression override.
+                follower.ClearCommand("SAIN:MarksmanIgnorePush");
+                return true;
+            }
             // The addon objective owns this accepted order; core command state stays clear.
             // Native survival work and the existing failed engagement latch are preserved.
             state.Cover?.EndArrivalHold("GoForwardAggression");
@@ -302,6 +316,9 @@ namespace pitTeam.SAINAddon
         internal static SAINFollowerPushObjective? GetPush(BotOwner owner) =>
             IsReady(owner) && States.TryGetValue(owner, out State state) ? state.Objectives?.Push : null;
 
+        internal static SAINFollowerMarksmanObjective? GetMarksman(BotOwner owner) =>
+            IsReady(owner) && States.TryGetValue(owner, out State state) ? state.Objectives?.Marksman : null;
+
         internal static object? GetObjectiveSnapshot(BotOwner owner) =>
             States.TryGetValue(owner, out State state) ? state.Objectives?.Snapshot : null;
 
@@ -320,7 +337,7 @@ namespace pitTeam.SAINAddon
             IsReady(owner) && States.TryGetValue(owner, out State state) ? state.EngageAttempt : null;
 
         internal static SAINFollowerRecorder? GetRecorder(BotOwner owner) =>
-            _enabled && SainAddonBridge.IsSainManSelected(owner) && States.TryGetValue(owner, out State state) ? state.Recorder : null;
+            _enabled && SainAddonBridge.IsAddonTacticSelected(owner) && States.TryGetValue(owner, out State state) ? state.Recorder : null;
 
         internal static object? GetPersonalitySnapshot(BotOwner owner) =>
             States.TryGetValue(owner, out State state) ? state.Personality?.Snapshot : null;

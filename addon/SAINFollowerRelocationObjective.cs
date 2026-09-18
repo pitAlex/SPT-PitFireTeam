@@ -33,7 +33,7 @@ internal sealed class SAINFollowerRelocationObjective(BotComponent bot)
     internal void Observe()
     {
         if (!Active) return;
-        if (bot.IsDead || !SainAddonBridge.IsSainManSelected(bot.BotOwner) ||
+        if (bot.IsDead || !SainAddonBridge.IsAddonTacticSelected(bot.BotOwner) ||
             !SAINFollowerCombatHandoff.HasLiveEnemy(bot)) { Clear("combatEnded"); return; }
         if (Follower == null || Follower.TryGetActiveCommand(out _, out _))
         { Clear("replacementOrder"); return; }

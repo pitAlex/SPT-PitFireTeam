@@ -54,7 +54,7 @@ namespace pitTeam.SAINAddon
 
         public static bool Apply(BotOwner owner, SAINBotInfoClass info, SAINPresetClass preset, EPersonality personality, PersonalitySettingsClass settings)
         {
-            if (!_ready || !SainAddonBridge.IsSainManSelected(owner) || owner.IsDead || info == null || preset == null || settings == null) return false;
+            if (!_ready || !SainAddonBridge.IsAddonTacticSelected(owner) || owner.IsDead || info == null || preset == null || settings == null) return false;
             if (info.Bot?.Talk?.EnemyTalk == null) return false;
             if (!States.TryGetValue(owner, out State state) || !ReferenceEquals(state.Info, info))
             {

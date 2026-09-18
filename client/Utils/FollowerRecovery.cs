@@ -8,13 +8,14 @@ namespace pitTeam.Utils
     {
         internal static void ClearInvalidGoalEnemy(BotOwner bot)
         {
-            if (pitFireTeam.UseSainFollowerCombat(bot) || bot?.Memory?.GoalEnemy == null ||
+            if (bot?.Memory?.GoalEnemy == null ||
                 Components.BotFollowerPlayer.IsEnemyInfoAlive(bot.Memory.GoalEnemy))
             {
                 return;
             }
 
             // Rejecting a memory-only replacement must not leave a dead goal in EFT forever.
+            // Apply to every follower brain so a dead reference cannot block Core squad reports.
             // Clear only the invalid mirror; live contacts, missions and acquisition gates stay intact.
             using (Modules.FollowerGoalEnemyTracker.Begin(nameof(FollowerRecovery), "deadGoalEnemyCleanup"))
             {

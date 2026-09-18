@@ -70,11 +70,62 @@ public static partial class CombatChecks {
     private static CoverPoint CoverAt(float x,float path=-1)=>new CoverPoint{Position=new Vector3(x,0,0),PathData=new NativeCoverPath{PathLength=path<0?Math.Abs(x):path}};
     private static BotOwner CoverBot(string name){SainBotCoverData.Scene.Clear();return RegroupBot(name);}
     private static void Arrive(BotOwner b,CoverPoint p){b.GetPlayer.Position=p.Position;b.Sain.Mover.Moving=false;b.Sain.Cover.CoverPoint_MovingTo=null;b.Sain.Cover.CoverInUse=p;b.Sain.Cover.CoverSeekingState=ECoverSeekingState.HoldInCover;SAINFollowerRuntime.GetCover(b).Observe();}
+    private static void TestSeekCoverPreference(){
+        Time.time=900;
+        var local=CoverBot("nearbyBeforeBoss");var nearby=CoverAt(-4,4);var boss=CoverAt(35,35);
+        local.Sain.Cover.CoverPoints.Add(boss);local.Sain.Cover.CoverPoints.Add(nearby);
+        Check(local.Sain.Cover.FindForTest()==nearby,"nearby safe cover takes priority over a journey to player cover");
+        var report=Newtonsoft.Json.Linq.JObject.FromObject(SAINFollowerRuntime.GetCover(local).Snapshot);
+        Check((string)report["reason"]=="nearbyCover","recorder identifies nearby-cover preference");
+        var shortest=CoverBot("nearbyShortestRoute");var direct=CoverAt(3,9);var quick=CoverAt(-6,6);
+        shortest.Sain.Cover.CoverPoints.Add(direct);shortest.Sain.Cover.CoverPoints.Add(quick);
+        Check(shortest.Sain.Cover.FindForTest()==quick,"nearby preference chooses the shortest actual route");
+        var detour=CoverBot("nearbyBehindWall");var around=CoverAt(-3,45);
+        detour.Sain.Cover.CoverPoints.Add(around);detour.Sain.Cover.CoverPoints.Add(boss);
+        Check(detour.Sain.Cover.FindForTest()==boss,"a nearby point with a long walking detour cannot outrank player cover");
+        var nearestBoss=CoverBot("closestBossNotWeighted");var shortRoute=CoverAt(26,26);var closest=CoverAt(37,75);
+        nearestBoss.Sain.Cover.CoverPoints.Add(shortRoute);nearestBoss.Sain.Cover.CoverPoints.Add(closest);
+        Check(nearestBoss.Sain.Cover.FindForTest()==closest,"second preference is closest to player rather than the old weighted travel score");
+        var blocked=CoverBot("nearbyMovementRejected");var rejected=CoverAt(-4,4);rejected.MovementAccepted=false;
+        blocked.Sain.Cover.CoverPoints.Add(rejected);blocked.Sain.Cover.CoverPoints.Add(boss);
+        Check(blocked.Sain.Cover.FindForTest()==boss,"rejected nearby movement continues to player cover");
+        var unsafeBot=CoverBot("nearbyUnsafe");var unsafeCover=CoverAt(-3,3);unsafeCover.Valid=false;
+        unsafeBot.Sain.Cover.CoverPoints.Add(unsafeCover);unsafeBot.Sain.Cover.CoverPoints.Add(boss);
+        Check(unsafeBot.Sain.Cover.FindForTest()==boss,"nearby preference never bypasses native safety validation");
+        var occupied=CoverBot("nearbyReserved");var reserved=CoverAt(-3,3);
+        occupied.BotFollower.BossToFollow=new pitAIBossPlayer();
+        ((pitAIBossPlayer)occupied.BotFollower.BossToFollow).CombatEvents.Claims["other"]=reserved.Position;
+        occupied.Sain.Cover.CoverPoints.Add(reserved);occupied.Sain.Cover.CoverPoints.Add(boss);
+        Check(occupied.Sain.Cover.FindForTest()==boss,"nearby preference preserves teammate reservations");
+        var reload=CoverBot("reloadCoverPreference");reload.Sain.Decision.CurrentSelfDecision=ESelfActionType.Reload;
+        reload.Sain.Cover.NativePoint=CoverAt(-45,45);reload.Sain.Cover.CoverPoints.Add(nearby);reload.Sain.Cover.CoverPoints.Add(boss);
+        Check(reload.Sain.Cover.FindForTest()==nearby&&reload.Sain.Cover.NativeCalls==0,"routine reload uses nearby-first cover instead of unconditional native recovery");
+        var reloadBoss=CoverBot("reloadBossPreference");reloadBoss.Sain.Decision.CurrentSelfDecision=ESelfActionType.Reload;
+        reloadBoss.Sain.Cover.NativePoint=CoverAt(-45,45);reloadBoss.Sain.Cover.CoverPoints.Add(boss);
+        Check(reloadBoss.Sain.Cover.FindForTest()==boss,"routine reload uses player cover if no close cover qualifies");
+        reloadBoss.Memory.IsUnderFire=true;
+        Check(reloadBoss.Sain.Cover.FindForTest()==reloadBoss.Sain.Cover.NativePoint,"reload under incoming fire retains native emergency cover");
+        foreach(string map in new[]{"bigmap","Factory4_day","factory4_night","laboratory"}){
+            Comfort.Common.Singleton<GameWorld>.Instance.LocationId=map;
+            float radius=map=="bigmap"?25f:12f;
+            var boundary=CoverBot("nearbyRange"+map);var edge=CoverAt(-radius,radius);
+            boundary.Sain.Cover.CoverPoints.Add(edge);boundary.Sain.Cover.CoverPoints.Add(boss);
+            Check(boundary.Sain.Cover.FindForTest()==edge,"close-cover range includes the Core boundary: "+map);
+            var outside=CoverBot("outsideNearbyRange"+map);var far=CoverAt(-radius-0.1f,radius+0.1f);
+            outside.Sain.Cover.CoverPoints.Add(far);outside.Sain.Cover.CoverPoints.Add(boss);
+            Check(outside.Sain.Cover.FindForTest()==boss,"outside Core close-cover range prefers player cover: "+map);
+        }
+        Comfort.Common.Singleton<GameWorld>.Instance.LocationId=null;
+        var gesture=CoverBot("comeHereKeepsBossRanking");gesture.Sain.Cover.CoverPoints.Add(nearby);gesture.Sain.Cover.CoverPoints.Add(boss);
+        var finder=new SAINFollowerCoverFinder(gesture.Sain);
+        Check(finder.Find(gesture.Sain.GoalEnemy,gesture.Leader.Position)[0]==boss,"Come here finder retains boss-oriented ranking");
+    }
     private static void TestCover(){
+        TestSeekCoverPreference();
         Time.time=1000;
-        var b=CoverBot("coverChoice");var away=CoverAt(-5);var near=CoverAt(35);b.Sain.Cover.CoverPoints.Add(away);b.Sain.Cover.CoverPoints.Add(near);b.Sain.Cover.NativePoint=away;
+        var b=CoverBot("coverChoice");var away=CoverAt(-30);var near=CoverAt(35);b.Sain.Cover.CoverPoints.Add(away);b.Sain.Cover.CoverPoints.Add(near);b.Sain.Cover.NativePoint=away;
         var chosen=b.Sain.Cover.FindForTest();
-        Check(chosen==near&&b.Sain.Cover.NativeCalls==0,"boss-oriented cover beats a shorter route in the opposite direction");
+        Check(chosen==near&&b.Sain.Cover.NativeCalls==0,"boss-oriented cover beats a nonlocal shorter route in the opposite direction");
         Check(b.Sain.Mover.Paths==1&&b.Sain.Mover.Destination.x==35,"preferred cover starts native movement once");
         Check(Math.Abs(SainBotCoverData.LastOrigin.x-40)<0.01f,"candidate discovery is centered on the player");
         var policy=SAINFollowerRuntime.GetCover(b);int queries=SainBotCoverData.Queries;
@@ -130,10 +181,10 @@ public static partial class CombatChecks {
         Check(reject.Sain.Cover.FindForTest()==away,"unsafe boss cover falls back to native selection");
         bad.Valid=true;bad.MovementAccepted=false;
         Check(reject.Sain.Cover.FindForTest()==away,"rejected boss-cover movement falls back instead of stalling");
-        var multi=CoverBot("rankBossCover");var shorter=CoverAt(25,10);var closer=CoverAt(35,20);multi.Sain.Cover.CoverPoints.Add(shorter);multi.Sain.Cover.CoverPoints.Add(closer);
-        Check(multi.Sain.Cover.FindForTest()==closer,"boss cover ranking uses the shared core travel-plus-player-distance score");
-        var step=CoverBot("bosswardStep");step.Leader.Position=new Vector3(100,0,0);var intermediate=CoverAt(20);step.Sain.Cover.CoverPoints.Add(intermediate);step.Sain.Cover.CoverPoints.Add(away);
-        Check(step.Sain.Cover.FindForTest()==intermediate,"safe intermediate cover toward a distant player beats outward fallback");
+        var multi=CoverBot("rankBossCover");var shorter=CoverAt(26,26);var closer=CoverAt(35,20);multi.Sain.Cover.CoverPoints.Add(shorter);multi.Sain.Cover.CoverPoints.Add(closer);
+        Check(multi.Sain.Cover.FindForTest()==closer,"without nearby cover, selection prioritizes distance to the player");
+        var step=CoverBot("bosswardStep");step.Leader.Position=new Vector3(100,0,0);var intermediate=CoverAt(30);step.Sain.Cover.CoverPoints.Add(intermediate);step.Sain.Cover.CoverPoints.Add(away);step.Sain.Cover.NativePoint=away;
+        Check(step.Sain.Cover.FindForTest()==away&&step.Sain.Cover.NativeCalls==1,"without nearby or player-area cover, ordinary selection falls back to native SAIN");
         var order=CoverBot("coverPushOrder");var orderCover=CoverAt(35);order.Sain.Cover.NativePoint=orderCover;order.Sain.Cover.FindForTest();Arrive(order,orderCover);
         order.Follower.SetPushEnemy(20);
         Check(!SAINFollowerRuntime.GetCover(order).HoldsArrival(order.Sain.GoalEnemy),"accepted Go Forward releases arrival hold without resetting cover selection");

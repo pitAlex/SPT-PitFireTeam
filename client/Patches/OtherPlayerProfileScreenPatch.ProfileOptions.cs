@@ -395,7 +395,8 @@ namespace pitTeam.Patches
                     {
                         new FriendlyTeammateTacticOption { Id = "Rifleman", Name = "Rifleman" },
                         new FriendlyTeammateTacticOption { Id = "Marksman", Name = "Marksman" },
-                        new FriendlyTeammateTacticOption { Id = "SainMan", Name = "SainMan" },
+                        new FriendlyTeammateTacticOption { Id = "SainMan", Name = GetSocialUiText("ProfileTacticSainMan") },
+                        new FriendlyTeammateTacticOption { Id = "SAINShooter", Name = GetSocialUiText("ProfileTacticSAINShooter") },
                     };
 
             int tacticIdSeed = 0;
@@ -561,7 +562,8 @@ namespace pitTeam.Patches
         private static bool IsUnavailableTactic(string tactic)
         {
             return string.Equals(tactic, "protector", StringComparison.OrdinalIgnoreCase) ||
-                (string.Equals(tactic, "SainMan", StringComparison.OrdinalIgnoreCase) && !pitFireTeam.IsSainManTacticAvailable);
+                ((string.Equals(tactic, "SainMan", StringComparison.OrdinalIgnoreCase) ||
+                  string.Equals(tactic, "SAINShooter", StringComparison.OrdinalIgnoreCase)) && !pitFireTeam.IsSainManTacticAvailable);
         }
 
         private static void RefreshPlayerVisualization(ResultProfile profile, InventoryController inventoryController, EFT.IEftSession session, InventoryPlayerModelWithStatsWindow window)

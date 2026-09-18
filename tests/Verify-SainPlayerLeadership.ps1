@@ -64,6 +64,9 @@ $availability=[regex]::Match($uiSource,'(?ms)^        private static bool IsUnav
 foreach($match in @($enum,$parse,$coreTactic,$normalize,$availability)){if(!$match.Success){throw 'Missing production tactic policy in harness'}}
 $fixture=$fixture.Replace('__TACTIC_ENUM__',$enum.Value).Replace('__TACTIC_PARSER__',$parse.Value).Replace('__CORE_TACTIC__',$coreTactic.Value)
 $fixture=$fixture.Replace('__SERVER_NORMALIZER__',$normalize.Value.Replace('private static','public static')).Replace('__UI_AVAILABILITY__',$availability.Value.Replace('private static','public static').Replace('pitFireTeam.','pitTeam.pitFireTeam.'))
+$defaultAggression=[regex]::Match($serverSource,'(?ms)^    private static float GetDefaultAggressionForTactic\(.*?^    \}')
+if(!$defaultAggression.Success){throw 'Missing production aggression default'}
+$fixture=$fixture.Replace('__DEFAULT_AGGRESSION__',$defaultAggression.Value.Replace('private static','public static'))
 $coreGuard=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Patches/FollowerSainSquadLeaderPatch.cs')
 $coreGuard=[regex]::Replace($coreGuard,'Type.GetType\("([^"]+), SAIN"(?:, true)?\)','Type.GetType("$1", true)')
 $bridge=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/SainAddonBridge.cs')
@@ -85,7 +88,7 @@ try {
     $exe=Join-Path $temporary 'Leadership.exe'
     $arguments=@($compiler,'/nologo','/target:exe','/langversion:latest','/nullable:disable','/nostdlib+','/nowarn:8632',"/out:$exe","/reference:$harmony")
     foreach ($reference in @('mscorlib.dll','System.dll','System.Core.dll')) {$arguments+='/reference:'+(Join-Path $framework $reference)}
-    $arguments+=@(Join-Path $RepositoryRoot 'addon/SAINAddonPatches.cs'; Join-Path $temporary 'Production.cs'; Join-Path $temporary 'Bridge.cs'; Join-Path $temporary 'Fixture.cs'; Join-Path $temporary 'CoreGuard.cs')
+    $arguments+=@(Join-Path $RepositoryRoot 'client/Components/FollowerCombatTactics.cs'; Join-Path $RepositoryRoot 'addon/SAINAddonPatches.cs'; Join-Path $temporary 'Production.cs'; Join-Path $temporary 'Bridge.cs'; Join-Path $temporary 'Fixture.cs'; Join-Path $temporary 'CoreGuard.cs')
     & dotnet @arguments
     if ($LASTEXITCODE -ne 0) { throw 'Leadership harness compilation failed.' }
     & $exe

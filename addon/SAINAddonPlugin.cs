@@ -25,7 +25,7 @@ namespace pitTeam.SAINAddon
                 BrainManager.AddCustomLayer(typeof(SAINFollowerSquadCombatLayer), brains, SAINFollowerSquadCombatLayer.LayerPriority);
                 BrainManager.AddCustomLayer(typeof(SAINFollowerSoloCombatLayer), brains, SAINFollowerSoloCombatLayer.LayerPriority);
                 SAINFollowerRuntime.Enable();
-                Logger.LogInfo("[Init] SainMan selects addon SAIN solo/squad combat replicas, follower aggression personalities, and player squad leadership. Other tactics retain core combat.");
+                Logger.LogInfo("[Init] SAINGrunt and SAINShooter select addon SAIN solo/squad combat replicas, follower aggression personalities, and player squad leadership. Other tactics retain core combat.");
             }
             catch (Exception ex)
             {

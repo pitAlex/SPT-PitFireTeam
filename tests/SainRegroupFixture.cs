@@ -32,7 +32,7 @@ namespace pitTeam.Components {
 namespace pitTeam.BigBrain {
     public static class FollowerCombatRegroupObjective {
         public const float TightRegroupCompleteDistance=4f;
-        public static float GetOrderedRegroupDistance(FollowerCombatTactic t)=>CombatDistanceConfiguration.Instance.Factory?10f:18f;
+        public static float GetOrderedRegroupDistance(FollowerCombatTactic t)=>CombatDistanceConfiguration.Instance.Factory?10f:t==FollowerCombatTactic.Marksman?24f:18f;
         public static bool IsSameBossLevel(Vector3 a,Vector3 b)=>Math.Abs(a.y-b.y)<=1.75f;
     }
     public sealed partial class FollowerCombatCommon {public static float GetSafeRegroupDistance(float nav,float direct)=>Math.Max(nav,direct);
@@ -44,6 +44,7 @@ namespace pitTeam.Modules {
         public static CombatDistanceConfiguration Instance=new CombatDistanceConfiguration();
         public bool Factory,Urban;public float Trigger=18;
         public float GetBossRegroupTriggerDistance(BotOwner o)=>Trigger;
+        public float GetRegroupNeededDistanceMarksman(BotOwner o)=>Trigger*(Factory?2f:1.5f);
         public float GetRegroupBossMoveRefreshDistance()=>10;
         public float GetBossCoverSearchRadius()=>25;
         public bool IsUrbanDetourRegroup(float direct,float path)=>Urban&&direct<45&&path>75;
@@ -137,9 +138,9 @@ public static partial class CombatChecks {
         manager.Publish(ECombatDecision.SeekCover,ESquadDecision.None,ESelfActionType.Reload);
         Check(!objective.Active&&held.Sain.Decision.CurrentSelfDecision==ESelfActionType.Reload,"fresh recovery decision is published without automatic regroup");
         held.Sain.Decision.CurrentSelfDecision=ESelfActionType.None;
-        held.Sain.GoalEnemy.IsVisible=true;Check(!RegroupDecision(held),"visible contact wins even beyond extreme-distance grace");held.Sain.GoalEnemy.IsVisible=false;
-        held.Sain.GoalEnemy.InLineOfSight=true;Check(!RegroupDecision(held),"live sight lane wins even at extreme distance");held.Sain.GoalEnemy.InLineOfSight=false;
-        var visible=new Enemy{IsVisible=true};held.Sain.EnemyController.KnownEnemies.Add(visible);
+        held.Sain.GoalEnemy.IsVisible=true;held.Sain.GoalEnemy.CanShoot=true;Check(!RegroupDecision(held),"visible shootable contact wins even beyond extreme-distance grace");held.Sain.GoalEnemy.IsVisible=false;held.Sain.GoalEnemy.CanShoot=false;
+
+        var visible=new Enemy{IsVisible=true,CanShoot=true};held.Sain.EnemyController.KnownEnemies.Add(visible);
         Check(!RegroupDecision(held),"another visible enemy prevents automatic passive fallback");held.Sain.EnemyController.KnownEnemies.Clear();
         held.Follower.Command=FollowerCommandType.PushEnemy;
         Check(!RegroupDecision(held)&&held.Follower.Command==FollowerCommandType.PushEnemy,"pending push is retained and prevents automatic regroup");held.Follower.Command=FollowerCommandType.None;
@@ -160,7 +161,35 @@ public static partial class CombatChecks {
         unready.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
         Check(unready.Sain.Decision.CurrentCombatDecision==ECombatDecision.SeekCover,"unready addon preserves native publication");
     }
+    private static void TestPassiveRegroupContact(){
+        foreach(float separation in new[]{25f,100f}){
+            var b=RegroupBot("laneOnly"+separation,separation);
+            b.Sain.GoalEnemy.IsVisible=false;b.Sain.GoalEnemy.CanShoot=true;b.Sain.GoalEnemy.InLineOfSight=true;b.Sain.GoalEnemy.TimeSinceSeen=20;
+            b.Sain.Cover.CoverSeekingState=ECoverSeekingState.HoldInCover;b.Sain.Cover.CoverInUse=new CoverPoint();
+            Check(RegroupDecision(b),"hidden geometric lane cannot pin a cold passive cover hold at "+separation);
+        }
+        var bot=RegroupBot("freshSightGrace",25);var regroup=SAINFollowerRuntime.GetRegroup(bot);
+        bot.Sain.GoalEnemy.IsVisible=true;bot.Sain.GoalEnemy.CanShoot=false;
+        Check(!RegroupDecision(bot),"visible non-shootable contact retains nearby fight grace");
+        bot.Leader.Position=new Vector3(100,0,0);Time.time+=1;
+        Check(RegroupDecision(bot),"extreme separation releases passive non-shootable sight grace");
+        bot=RegroupBot("hiddenLaneRecentFight",25);regroup=SAINFollowerRuntime.GetRegroup(bot);
+        bot.Sain.GoalEnemy.InLineOfSight=true;bot.Sain.GoalEnemy.TimeSinceSeen=2;
+        Check(!RegroupDecision(bot),"real recent personal sight still protects a hidden lane");
+        Check(regroup.AutoReason=="recentFight"&&regroup.AutoDistance==25&&regroup.AutoTrigger==18,"passive diagnostics report the actual grace rejection and evaluated distance");
+        int probes=pitTeam.Utils.Utils.PathCalls;float checkedAt=regroup.AutoCheckedAt;
+        for(int i=0;i<100;i++){var reason=regroup.AutoReason;var d=regroup.AutoDistance;}
+        Check(pitTeam.Utils.Utils.PathCalls==probes&&regroup.AutoCheckedAt==checkedAt,"reading cached regroup diagnostics never reevaluates navigation or policy");
+        Time.time+=3;bot.Sain.GoalEnemy.TimeSinceSeen=5;
+        Check(RegroupDecision(bot),"expired personal sight permits regroup despite geometric lane");
+        bot=RegroupBot("otherEnemyShot",100);
+        var known=new Enemy{IsVisible=true,CanShoot=true};bot.Sain.EnemyController.KnownEnemies.Add(known);
+        Check(!RegroupDecision(bot),"another living visible shootable contact protects useful fire");
+        known.CanShoot=false;
+        Check(RegroupDecision(bot),"another non-shootable contact cannot pin extreme passive regroup");
+    }
     private static void TestRegroup(){
+        TestPassiveRegroupContact();
         TestAutoRegroupPriority();
         var bot=RegroupBot("regroupAuto");var objective=SAINFollowerRuntime.GetRegroup(bot);
         Check(!objective.GetDecision(),"squad provider cannot start auto regroup before native solo evaluation");
@@ -246,6 +275,18 @@ public static partial class CombatChecks {
         Check(!objective.Active&&bot.Follower.Command==FollowerCommandType.RegroupNearBoss,"new regroup order waits while medicine is actually in use");
         bot.UsingMedical=false;bot.Sain.GoalEnemy.EnemyPlayer.HealthController.IsAlive=false;objective.Observe();
         Check(!objective.Active&&bot.Follower.Command==FollowerCommandType.RegroupNearBoss,"peace handoff leaves an unconsumed regroup command intact");
+
+        bot=RegroupBot("regroupSightGait");objective=SAINFollowerRuntime.GetRegroup(bot);
+        bot.Sain.GoalEnemy.Seen=true;bot.Sain.GoalEnemy.TimeSinceSeen=1f;
+        bot.Follower.Command=FollowerCommandType.RegroupNearBoss;objective.Observe();
+        action=new SAINFollowerSquadRegroupAction(bot);action.Start();action.Update(null);
+        Check(bot.Sain.Mover.Runs==0 && bot.Sain.Mover.Paths==1,"recent personal sight starts commanded regroup walking");
+        bot.Sain.GoalEnemy.TimeSinceSeen=3f;bot.Sain.GoalEnemy.InLineOfSight=true;bot.ShootData.LastTriggerPressd=Time.time;
+        Time.time+=.6f;action.Update(null);
+        Check(bot.Sain.Mover.Runs==1 && objective.Active,"same regroup action switches to running when personal sight expires despite native LOS and own shots");
+        bot.Sain.GoalEnemy.IsVisible=true;Time.time+=.6f;int walking=bot.Sain.Mover.Paths;action.Update(null);
+        Check(bot.Sain.Mover.Paths==walking+1 && bot.Sain.Mover.Runs==1,"renewed personal contact returns the running regroup to combat withdrawal");
+        action.Stop();
 
         bot=RegroupBot("regroupCover");objective=SAINFollowerRuntime.GetRegroup(bot);bot.Sain.GoalEnemy.IsVisible=true;
         bot.Follower.Command=FollowerCommandType.RegroupNearBoss;objective.Observe();

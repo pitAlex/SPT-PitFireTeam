@@ -1,12 +1,14 @@
 # SAIN addon integration
 
-**Scope:** the optional SAINGrunt combat brain. Core is the base: read [Core architecture](../../docs/Architecture.md), [Core combat](../../docs/Combat-Tactics.md), and [Core SAIN compatibility](../../docs/SAIN-Compatibility.md) first. This document describes only how the addon takes ownership and extends that base.
+**Scope:** the optional SAINGrunt and SAINShooter combat brains. Core is the base: read [Core architecture](../../docs/Architecture.md), [Core combat](../../docs/Combat-Tactics.md), and [Core SAIN compatibility](../../docs/SAIN-Compatibility.md) first. This document describes only how the addon takes ownership and extends that base.
 
 ## Selection and fallback
 
-The displayed tactic is **SAINGrunt**. The persisted `SainMan` identifier, enum value and `ProfileTacticSainMan` localization key remain unchanged. Saved teammates retain their selected tactic. A recruited bot with a native SAIN component defaults to this tactic when both plugins are installed; other recruits use Rifleman.
+The Grunt tactic is displayed as **SAINGrunt**. The persisted `SainMan` identifier, enum value and `ProfileTacticSainMan` localization key remain unchanged. Saved teammates retain their selected tactic. A recruited bot with a native SAIN component defaults to this tactic when both plugins are installed; other recruits use Rifleman.
 
 `UseSainFollowerCombat(botOwner)` requires the selected tactic, both plugins, both constructed addon layers, native state, a real player leader, and registered readiness callbacks. Missing/unready addon state uses core fallback without erasing the saved selection. Installation alone does not switch combat ownership.
+
+SAINShooter is a separate persisted tactic using these same layers with [Marksman policy](SAINShooter.md). It falls back to Core Marksman; SAINGrunt falls back to Core Rifleman. Shared role/capability mapping preserves existing SainMan identifiers and recruitment defaults.
 
 ## Layers and native publication
 

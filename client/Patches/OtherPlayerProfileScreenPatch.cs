@@ -1043,7 +1043,8 @@ namespace pitTeam.Patches
 
         private static bool IsMarksmanTactic(string tactic)
         {
-            return string.Equals(tactic, "marksman", StringComparison.OrdinalIgnoreCase);
+            return string.Equals(tactic, "marksman", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(tactic, "SAINShooter", StringComparison.OrdinalIgnoreCase);
         }
 
         private static void SetProficiencyAggressionForTactic(string tactic)
@@ -1415,6 +1416,9 @@ namespace pitTeam.Patches
             {
                 return GetSocialUiText("ProfileTactic");
             }
+
+            if (string.Equals(tactic, "SAINShooter", StringComparison.OrdinalIgnoreCase))
+                return GetSocialUiText("ProfileTacticSAINShooter");
 
             if (string.Equals(tactic, "SainMan", StringComparison.OrdinalIgnoreCase))
             {

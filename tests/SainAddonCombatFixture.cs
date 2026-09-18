@@ -147,8 +147,8 @@ namespace SAIN.SAINComponent.Classes {
     }
 }
 namespace pitTeam.Components {
-    public enum FollowerCombatTactic { Balanced,Marksman,SainMan }
-    public enum FollowerCommandType { None,RegroupNearBoss,CombatComeToBossCover,CombatMoveToPointTactical,PushEnemy,SuppressEnemy,HoldPosition }
+    public enum FollowerCombatTactic { Balanced,Marksman,SainMan,SAINShooter }
+    public enum FollowerCommandType { None,RegroupNearBoss,CombatComeToBossCover,CombatMoveToPointTactical,PushEnemy,SuppressEnemy,HoldPosition,NeedSniper }
     public class pitAIBossPlayer {public CombatEvents CombatEvents=new CombatEvents();}
     public class BotFollowerPlayer {
         private string pushCancel;
@@ -305,7 +305,7 @@ public static partial class CombatChecks {
         TestEngageAttempt();
         TestSainRecorder();
         TestPersonality();
-        TestRelocations();TestPushObjectives();TestPushRisk();TestMedicalRecovery();
+        TestRelocations();TestPushObjectives();TestPushRisk();TestMedicalRecovery();TestShooter();
         SAINFollowerRuntime.Disable();
         Check(!SainAddonBridge.HasRuntimeCallbacks&&!pitFireTeam.UseSainFollowerCombat(late),"addon shutdown restores core fallback");
         var addonOwner=new Harmony("xyz.pit.fireteam.sainaddon");
