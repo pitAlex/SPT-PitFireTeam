@@ -15,6 +15,7 @@ namespace pitTeam.SAINAddon
                 SainSquadDecisionBridge.Apply(Harmony);
                 SainCoverSelectionBridge.Apply(Harmony);
                 SainMedicalDecisionBridge.Apply(Harmony);
+                SainSquadSupportBridge.Apply(Harmony);
             }
             catch { Remove(); throw; }
         }
@@ -25,6 +26,7 @@ namespace pitTeam.SAINAddon
             SainSquadDecisionBridge.Reset();
             SainCoverSelectionBridge.Reset();
             SainMedicalDecisionBridge.Reset();
+            SainSquadSupportBridge.Reset();
         }
     }
 }

@@ -98,11 +98,14 @@ internal sealed class SAINFollowerCover(BotComponent bot)
         if (Time.time < nextSelectionAttempt && attemptedNativeCount == bot.Cover.CoverPoints.Count && attemptedEnemy == enemy?.EnemyProfileId && attemptedRegroup == limitToRegroup &&
             (attemptedBoss - player.Position).sqrMagnitude < 4f && (attemptedBot - bot.Position).sqrMagnitude < 4f &&
             (attemptedThreat - threat).sqrMagnitude < 4f) return limitToRegroup;
-        foreach (CoverPoint candidate in finder.Find(bot.GoalEnemy, player.Position, preferNearby: true))
+        foreach (CoverPoint candidate in finder.Find(bot.GoalEnemy, player.Position, preferNearby: true,
+            preferProtective: SainAddonBridge.IsSainManSelected(bot.BotOwner)))
         {
             if (limitToRegroup && !InsideRegroupArea(candidate.Position, player.Position)) continue;
             if (!bot.Mover.GoToCoverPoint(candidate, sprint, ESprintUrgency.High)) continue;
-            selectionReason = limitToRegroup ? "regroupCover" : finder.IsNearby(candidate) ? "nearbyCover" : "bossCover";
+            selectionReason = finder.IsProtective(candidate)
+                ? limitToRegroup ? "regroupProtectiveCover" : "protectiveCover"
+                : limitToRegroup ? "regroupCover" : finder.IsNearby(candidate) ? "nearbyCover" : "bossCover";
             reportedRegroupNoCover = false;
             point = candidate;
             return true;

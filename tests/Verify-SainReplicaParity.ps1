@@ -34,6 +34,9 @@ foreach($kind in @('Solo','Squad')){
         $replica=[regex]::Replace($replica,$pushHold,'')
     }
     if($kind -eq 'Squad'){
+        $support='(?ms)^[ \t]*// BEGIN addon squad support\n.*?^[ \t]*// END addon squad support\n'
+        if([regex]::Matches($replica,$support).Count -ne 2){throw 'Squad support guards changed'}
+        $replica=[regex]::Replace($replica,$support,'')
         $regroupEnd='(?ms)^[ \t]*// BEGIN addon regroup ending\n.*?^[ \t]*// END addon regroup ending\n'
         if([regex]::Matches($replica,$regroupEnd).Count -ne 1){throw 'Squad regroup ending guard changed'}
         $replica=[regex]::Replace($replica,$regroupEnd,'')
@@ -78,4 +81,4 @@ foreach($entry in @(
         $count++;Write-Output ('PASS '+$entry.Replica+' '+$method+' retains native behavior with player leader')
     }
 }
-Write-Output "Passed $count source parity checks. Registration, ownership, internal type resolution, player-leader substitutions, post-combat linger guards, recorder lifecycle wrappers, the bounded MoveToEngage action, the tested push objective and stationary hold, the tested combat relocation objective/action, and the tested two-mode regroup objective/action are intentional differences."
+Write-Output "Passed $count source parity checks. Registration, ownership, internal type resolution, player-leader substitutions, post-combat linger guards, recorder lifecycle wrappers, the bounded MoveToEngage action, the tested push objective and stationary hold, the tested combat relocation objective/action, the tested squad support objective/action, and the tested two-mode regroup objective/action are intentional differences."

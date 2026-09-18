@@ -1,6 +1,88 @@
 # SAIN addon validation and raid evidence
 
+## 2026-09-19 — Bounded visible-fire flicker continuity
+
+- Replaced the open blanket trigger-cutoff proposal with Core-style bounded continuity inside the addon support action. A visible target's `CanShoot` flicker may retain an already-running burst for 0.5 seconds after the last verified native shot. The addon captures its actual aim point/position and rechecks Core direct geometry, target/muzzle friendly lanes, native weapon readiness, 18-degree actual muzzle alignment and 0.75 m stationary tolerance. Grace does not renew itself or restart a finished burst; hidden suppression and support-priority gates are unchanged. No Core source changes or new SAIN patches.
+- **986 production addon checks passed**, including 13 added cases for permitted flicker, fixed remembered aim, passive diagnostics, expiry without renewal, both friendly lanes, hard obstruction versus foliage permission, muzzle alignment, displacement, weapon readiness, ended-burst protection, verified-shot renewal and pause ownership. Installed metadata verifies the Core direct-lane binding and public native weapon-readiness API. Debug addon build: **zero warnings/errors**; whitespace checks passed. Actual in-raid weapon timing remains to be qualified.
+- Deployed addon DLL/PDB only at **2026-09-19 01:35:33 +03:00** after checking Tarkov was closed, with copied hashes verified and no backups. DLL SHA-256: `04238DB7EC82C1C9320A37F4A96070B0B83E24ED9973B187122C481204CC4691`; PDB: `7C8337E3DC0E26343DD1935E10A1EA6E18AF86450CCB417586851E9A4E3ED978`. Installed Core remained `11717BD79D78E296A9465804B172745A7AF455B7A87EDD91829E3FA608AE024E`.
+
+
+## 2026-09-19 — Fresh-report suppression ownership fix
+
+- Fixed the reviewed native-update conflict for `coreRecentReport`: the addon releases native suppression ownership and uses public `ManualShoot.TryShoot` with friendly checking enabled. Native-point suppression keeps `SuppressPosition`. Manual shot/status cleanup follows source changes, loss of permission, command replacement, medical work and completion; point-source changes cannot renew the burst deadline. No new SAIN patches or Core source changes. Existing active-push support gating is unchanged; the separate visible-target `CanShoot` trigger-cleanup finding remains open in [Roadmap](Roadmap.md).
+- **973 production addon checks passed**, including 13 added ownership/transition checks covering absent and rejected native points, intervening native suppression updates, friendly-lane loss, trigger rejection, command cancellation, native/report source handoff, fixed burst expiry and boss-support medical interruption. Installed metadata verifies public manual-fire/reset signatures. Debug addon build: **zero warnings/errors**; addon/test diff whitespace checks passed. Runtime navigation, actual weapon timing and raid AI still need qualification.
+- Deployed addon DLL/PDB only at **2026-09-19 01:24:46 +03:00**, after confirming Tarkov had closed. Source/installed hashes verified; no backups. This also deploys the previously pending Grunt support changes. DLL SHA-256: `0151216E120A064C9C4C6E4D0668A183FEB8822D0A1B281A37B990AB34C374DD`; PDB: `6E2B1ECBB26400661E0C8CE61623C7E75FA6AD242EC79F68916B0D032082051A`. Installed Core remained `11717BD79D78E296A9465804B172745A7AF455B7A87EDD91829E3FA608AE024E`.
+
+
+## 2026-09-19 — SAINGrunt boss and ally support
+
+- Added addon-owned `BossSupport` and `PushSupport` intents, stationary supporting fire, bounded boss-threat suppression, and native cached-cover preference before the existing native firing finder. Boss admission follows Core's hit/willingness/personal-contact/independence gates; push positions reuse Core's existing pure pusher-relative predicate through a cached delegate. No Core source changes or new SAIN patches were introduced by this pass.
+- **960 production addon checks passed**, including 35 added checks for boss cues and known-target admission, exact-target fire, firing/retry budgets, medical/order/movement/cover priorities, On Your Own activation/cancellation, native cover recheck movement, bounded geometry and failed planning, ally fire/cover preference, pusher-relative positioning, helper distance and native Squad Help publication. The installed Core predicate signature is verified; its actual source is extracted into the fixture. Debug addon build: **zero warnings/errors**. Addon/test diff whitespace checks passed.
+- Built DLL SHA-256: `0640E2D1C7B988AFEE18490CC83DC364D1CFBBDB39B024ABB0B1AEDA825839C1`; PDB: `5EC438F809245424B385CBA14F61471AE24FB8128024ECE241CDADE6D5180BA3`.
+- **Deployment pending:** Tarkov was still running at 2026-09-19 01:06:49 +03:00, so no installed files were replaced and no backups were created. Installed addon remained `5AE26BEB72DB99791A432B013F32FEA8D74A2B372DEBA297DFE7072A864A4E40`. Installed Core matches the build reference at `11717BD79D78E296A9465804B172745A7AF455B7A87EDD91829E3FA608AE024E`.
+- Pending raid qualification: real firing-cover availability, native navigation and arrival use, usefulness in mixed Core/addon pushes, boss-threat reactions and frame time. This implements bounded native equivalents, not Core's complete support arbitration or broad geometry search.
+
+
+## 2026-09-18 — SAINShooter weapon-transition review fixes
+
+- Corrected all four reproduced review findings: medical/survival protection now covers primary restoration and cancellation through both incoming publication context and live native state; defensive preparation ends when close danger leaves while retaining late-callback restoration; ordered suppression has a separate bounded selector-settle phase before its accepted draw; and automatic destinations are revalidated once at the readiness-to-movement handoff.
+- Validation: **925 production addon checks passed**, including 20 added transition checks for medical/grenade cleanup and resumption, late defensive draws, selector settling/timeout, separate draw and suppression execution budgets, changed enemy separation, invalidated route, and no repeated handoff path checks during movement. Installed Core binding verification includes the reused selector-settled predicate. Debug addon-only build: zero warnings/errors. Addon/test whitespace checks passed. Core source was not changed in this fix.
+- Deployed DLL/PDB only at **2026-09-18 23:58:13 +03:00** after confirming Tarkov was closed; no backups. DLL SHA-256: `5AE26BEB72DB99791A432B013F32FEA8D74A2B372DEBA297DFE7072A864A4E40`; PDB: `ADBE132E086BE73D8D85E3C93FD9E3D6DBE80DBF725A97BBC6DE46539A75EB8A`. Copied hashes verified. Installed Core stayed `11717BD79D78E296A9465804B172745A7AF455B7A87EDD91829E3FA608AE024E`.
+- Raid qualification remains required for actual hands/medical transitions, secondary versus holster animations and Unity navigation. Fixtures establish state ownership and gates, not runtime animation or frame-time behavior.
+
+
+## 2026-09-18 — SAINShooter automatic secondary/holster support
+
+- Added Core-backed automatic support weapon eligibility, one accepted asynchronous draw, three-second preparation and four-second failed-request retry, readiness-gated native close-search movement, defensive close-threat retention, primary return, and automatic-secondary ordered suppression. Core source was not changed.
+- Validation: 905 addon checks passed, including switch timeout/late callback, shot interruption, no-destination/no-draw, zero-aggression defense, ammo-threat rejection, pending medicine, suppression preparation and scoped candidate-hook tests. All new reflected Core signatures and the single command exclusion were verified against the installed Core assembly. Native replica parity: 13 checks passed. Extracted Core Marksman reference: 37 boundary checks passed. Addon-only Debug build: zero warnings/errors; addon/test diff whitespace check passed.
+- Deployed addon DLL/PDB only at **2026-09-18 22:34:40 +03:00**, after confirming Tarkov was closed. No backups. DLL SHA-256: `1C5A443F75658E77A94E6F4F97D3F2F996BC0B07F11F6D30B3D8C7FCF2D29E63`; PDB: `A6D5FB98425E6B4525A812F21E5E9F4111AB0317A92B8BF3B453DC7F861A902E`.
+- Installed Core remained `11717BD79D78E296A9465804B172745A7AF455B7A87EDD91829E3FA608AE024E`. Existing attribution retained. This deployment also includes the previously built protective Grunt cover preference.
+- Pending raid qualification: second-primary versus automatic-holster hands transitions, native close-search candidate availability, interrupted draws/medical transitions, return to primary, ordered suppression timing and actual navigation/frame time. Defensive movement and autonomous suppression remain native SAIN; Core's broad geometry planner is not copied.
+
+
 This is an evidence ledger, not a live installation status. Entries below preserve previously recorded build/test/deployment results. Recheck hashes and the working tree before deploying; the documentation reorganization itself builds or deploys no binaries. [Combat](Combat.md), [Commands](Commands.md) and [Integration](Integration.md) own current behavior.
+
+## Recorded 2026-09-18 SAINGrunt protective-cover preference
+
+User-reported behavior: ordinary SeekCover could favor a nearby rear position and leave the player in front. This pass changes the requested policy; it does not attribute a specific raid's candidate rejection without a new record. Core was rechecked at the complete cover lifecycle, `TryFindBossCover`, boss-under-attack support, `IsSupportPositionBehindBossLine` and the destination fire-lane geometry. Native `CoverAnalyzer` retains cover validity, enemy separation, complete-path and maximum-path checks.
+
+The addon gives ordinary dependent SAINGrunt cover selection a bounded forward-side preference, using the existing candidate pool and path lengths. It favors cover in the player-to-known-enemy sector, outside the central firing lane and inside the existing player area/route bound. Existing nearby/player ranking breaks ties and supplies fallback. Shooter, explicit Come here/push ranking, independent mode, emergency/medical selection, claims, post-regroup constraints and committed travel/arrival retain their existing contracts. No Core source or native SAIN algorithm was changed. See [Combat](Combat.md#cover-and-arrival) for the exact policy.
+
+Validation: **879 addon combat checks** passed, including 22 new checks for forward versus rear selection, known-position geometry, alternate bearings, shortest route within the preferred group, fire-lane/wide-side/long-detour/boss-line exclusions, beyond-enemy cover, native rejection, reservation/movement failure, regroup limits, Shooter, independence, survival, gestures, stable travel/arrival and unchanged query/probe counts. The addon-only Debug build passed with zero warnings/errors. The fixture retains its existing stand-in compilation warnings; live geometry, useful cover availability and frame time remain raid qualification items.
+
+Deployment was attempted with a process preflight and **not performed because Tarkov was running**. No installed files or backups were written. The validated Debug build is ready for deployment after the game closes; the live install still has the preceding suppression-fallback build from this session.
+
+## Recorded 2026-09-18 suppression report fallback
+
+In `20260918-180049-Shoreline.jsonl`, Nux accepted `SuppressEnemy` at local **18:11:58.815** (seq 1292), consumed it and began the Squad objective at **18:11:58.898** (seq 1301), then ended with `attemptComplete` at **18:12:04.896** (seq 1371). Thirty snapshots during the action show no firing; ammunition was available, with no medical/incoming-fire interruption. Native visibility was false although shoot/LOS flags were true. Core sensed-report age became fresh later in the attempt while SAIN's remembered point stayed old. The old recorder omitted native suppression-point and lane/trigger rejections, so the record alone does not establish foliage as the sole cause.
+
+The addon now resolves an admissible native point first, then reuses Core's exact two-second suppression report policy for the same non-visible EFT contact. Both paths check the Core obstruction mask, foliage-only classifier and friendly lane immediately before native `SuppressPosition`. It preserves global native suppression enablement, zombie exclusion, native alignment/weapon/friendly/trigger safety, target identity and bounded lifetime. Failed alignment/trigger no longer overwrites the admitted point with another native look point. Planning lane checks retain a two-second cadence. Cached `sainSuppressionFire` diagnostics distinguish target source/point, lane result, no fresh report, movement/ammunition gates, alignment and native trigger rejection; snapshot reads perform no additional work. Core source and combat behavior were not changed.
+
+Validation: **857 addon combat checks**, including the production Core report policy, and **13 native-source parity checks** passed. Tests cover fresh sensed/personal/visual report pairing, expiry/future timestamps, no hidden-live fallback, identity/global/zombie gates, foliage/hard/friendly lanes, stable alignment, native trigger rejection, scan cadence and passive recorder reads. Installed Core resolver and native `SuppressPosition` metadata were verified. The addon-only Debug build passed with zero warnings/errors; the fixture retains its existing stand-in compilation warnings. Unity trigger behavior and raid geometry remain unqualified.
+
+Deployed Debug addon DLL/PDB at **2026-09-18 18:27:47 +03:00**, with Tarkov closed and matching installed/output hashes. Core was not rebuilt/copied and retained SHA-256 `11717BD79D78E296A9465804B172745A7AF455B7A87EDD91829E3FA608AE024E`. Existing attribution was retained; no server/resources or backups were written.
+
+| Installed file | SHA-256 |
+| --- | --- |
+| pitFireTeam.SAINAddon.dll | `F029DBE1F935917EF60D3CE9B910CF801A937F41337B517F27B89519FE3D753D` |
+| pitFireTeam.SAINAddon.pdb | `4B00904339F65E4378431FF1D474BCE63656C7B499068972D4CAEC7BFB5CC226` |
+
+Next raid: repeat an ordered suppression against a reported enemy behind foliage, then a hard obstacle and friendly crossing. Inspect the new execution gates if the native trigger still refuses the admitted point.
+
+## Recorded 2026-09-18 squad suppression and ally support
+
+Implemented the bounded [squad support contract](Squad-Support.md): SAINGrunt's firearm suppression orders and both roles' prepared ally firing support. All new intent/action routing lives in the addon Squad layer. The Marksman objective shares its native finder/timer and preserves failed positions across squad interruptions. Core source/combat was not changed for this work.
+
+Validation: **838 production addon combat checks** and **13 native-source parity checks** passed. The runner also verified installed SAIN's private exact-target aiming signature and installed Core's suppression command/weapon/lane bindings. Regressions cover exact target retention, bounded waiting for contact, actual-trigger burst timing, shared lane protection, replacement/death/medical interruption, inert cancelled actions, real Squad action routing, player/Core teammate/Core push/addon push cues, failed positions, independence and the shared Marksman scan budget. The fixture retains its existing stand-in type/unread-parameter warnings. The addon-only Debug build (`BuildProjectReferences=false`) passed with zero warnings/errors; Core output matched installed Core. These are controlled fixtures and source/API checks, not Unity navigation, raid trigger or frame-time qualification.
+
+Deployed only the Debug addon DLL/PDB with Tarkov closed; verified at **2026-09-18 17:43:32 +03:00**. Both installed hashes matched the built outputs. Core was neither rebuilt nor copied and retained SHA-256 `11717BD79D78E296A9465804B172745A7AF455B7A87EDD91829E3FA608AE024E`. No backups were created. Existing installed `SAIN-LICENSE.txt` was retained and verified byte-identical to the native source LICENSE; its missing working-tree/output copy remains the pre-existing packaging issue recorded in [References](References.md). Server/resources were not deployed.
+
+| Installed file | SHA-256 |
+| --- | --- |
+| pitFireTeam.SAINAddon.dll | `2A858C135E27595BDD66BF6E628B194B24099190A6044DEA49080537D2B9B639` |
+| pitFireTeam.SAINAddon.pdb | `4C5946425A662BC963313E241240F765AA56CDC132D86EC72E6BEA1B2D660B98` |
+
+Next raid: suppress visible and hidden known enemies, cancel during firing, block the lane, and test both tactics supporting an engaged player/teammate from settled cover. Check `sainSquadSupport` and its passive objective snapshot for chosen source/target/destination/end reason. Qualify mixed-role navigation and frame time; broad friendly-fire investigation, grenade launchers and Shooter's automatic-secondary ordered suppression remain outside this implementation.
 
 ## Recorded 2026-09-18 nearby-first SeekCover preference
 

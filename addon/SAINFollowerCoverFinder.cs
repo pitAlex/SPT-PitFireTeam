@@ -32,18 +32,27 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
     internal bool Pending { get; private set; }
     private Comparison<CoverPoint> bossComparison;
     private Vector3 rankBoss;
-    private bool rankNearby;
+    private bool rankNearby, rankProtective;
+    private Vector3 rankEnemyDirection;
+    private float rankEnemyDistance, protectiveRange;
     private float nearbyCoverDistance = 25f;
     private bool scanned;
     private string contact;
     private Vector3 bossAnchor, botAnchor, enemyAnchor;
     internal int LastScanCount { get; private set; }
 
-    internal List<CoverPoint> Find(Enemy enemy, Vector3 boss, bool preferNearby = false)
+    internal List<CoverPoint> Find(Enemy enemy, Vector3 boss, bool preferNearby = false, bool preferProtective = false)
     {
         ranked.Clear(); if (!Pending) validationPass++; Pending = false;
         if (enemy?.LastKnownPosition == null) return ranked;
-        rankNearby = preferNearby;
+        rankNearby = preferNearby; rankProtective = preferNearby && preferProtective;
+        rankBoss = boss;
+        if (rankProtective)
+        {
+            Vector3 toEnemy = enemy.LastKnownPosition.Value - boss; toEnemy.y = 0f;
+            rankEnemyDistance = toEnemy.magnitude; rankEnemyDirection = toEnemy.normalized;
+            protectiveRange = SainCoverGeometry.SearchRadius;
+        }
         // Mirror Core combat-start ranges without changing its internal configuration API.
         string location = Comfort.Common.Singleton<GameWorld>.Instance?.LocationId;
         nearbyCoverDistance = !string.IsNullOrEmpty(location) &&
@@ -53,7 +62,6 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
         foreach (CoverPoint point in candidates) Add(point, boss);
         foreach (CoverPoint point in bot.Cover.CoverPoints) Add(point, boss);
         if (Pending) { ranked.Clear(); return ranked; }
-        rankBoss = boss;
         ranked.Sort(bossComparison ??= CompareBoss);
         return ranked;
     }
@@ -101,6 +109,8 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
     {
         if (rankNearby)
         {
+            bool aProtective = IsProtective(a), bProtective = IsProtective(b);
+            if (aProtective != bProtective) return aProtective ? -1 : 1;
             bool aNearby = IsNearby(a), bNearby = IsNearby(b);
             if (aNearby != bNearby) return aNearby ? -1 : 1;
             int distance = aNearby
@@ -148,6 +158,23 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
         Mathf.Max(point.PathData.PathLength, (point.Position - bot.Position).magnitude);
     internal bool IsNearby(CoverPoint point) => RouteDistance(point) <= nearbyCoverDistance &&
         SainRegroupBridge.SameLevel(point.Position, bot.Position);
+
+    // A defensive preference among native-validated candidates, not permission to advance.
+    // Core uses 1.5m for the boss line and a 0.9m destination fire-lane radius.
+    // Keep lateral room on either side and do not promote an expensive route or a flank
+    // beyond the target. Geometry uses native knowledge, never hidden live coordinates.
+    internal bool IsProtective(CoverPoint point)
+    {
+        if (!rankProtective || point == null || rankEnemyDistance <= 1.5f ||
+            !SainRegroupBridge.SameLevel(point.Position, rankBoss) ||
+            RouteDistance(point) > protectiveRange ||
+            (point.Position - rankBoss).sqrMagnitude > protectiveRange * protectiveRange) return false;
+        Vector3 offset = point.Position - rankBoss; offset.y = 0f;
+        float forward = Vector3.Dot(offset, rankEnemyDirection);
+        float lateralSqr = Mathf.Max(0f, offset.sqrMagnitude - forward * forward);
+        return forward > 1.5f && forward < rankEnemyDistance &&
+            lateralSqr > 0.9f * 0.9f && lateralSqr <= forward * forward;
+    }
 
     private int Tier(CoverPoint point, Vector3 boss) =>
         (point.Position - boss).magnitude <= SainCoverGeometry.SearchRadius ? 0 : 1;

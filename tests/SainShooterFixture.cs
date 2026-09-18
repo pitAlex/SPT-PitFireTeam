@@ -14,7 +14,8 @@ namespace SAIN.SAINComponent.Classes.Decision {
     public sealed class FiringPositionFinder(BotComponent bot) {
         public static int Calls; public static Vector3? Candidate;
         public Vector3? Position {get;private set;}
-        public bool Find(Enemy enemy){Calls++;Position=Candidate;return Position.HasValue;}
+        private float nextScan;
+        public bool Find(Enemy enemy){if(Time.time<nextScan)return false;nextScan=Time.time+2f;Calls++;Position=Candidate;return Position.HasValue;}
         public void Clear(){Position=null;}
     }
 }

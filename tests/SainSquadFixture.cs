@@ -18,7 +18,8 @@ namespace UnityEngine {
         public static Vector3 operator *(Vector3 a,float b)=>new Vector3(a.x*b,a.y*b,a.z*b);
         public static float Dot(Vector3 a,Vector3 b)=>a.x*b.x+a.y*b.y+a.z*b.z;
     }
-    public class Transform {public Vector3 Position; public Vector3 WeaponRoot=>Position;}
+    public class SupportWeaponData {public static SupportWeaponData Current=new SupportWeaponData();public Vector3 FirePort=new Vector3(0,1,0),PointDirection=new Vector3(1,0,0);}
+    public class Transform {public SupportWeaponData WeaponData=>SupportWeaponData.Current;public Vector3 Position; public Vector3 WeaponRoot=>Position;}
 }
 namespace UnityEngine.AI {
     public enum NavMeshPathStatus {PathComplete,PathPartial,PathInvalid}
@@ -56,18 +57,18 @@ namespace SAIN.SAINComponent {
 }
 namespace SAIN.SAINComponent.Classes.EnemyClasses {
     public class Path {public float PathLength=20;public UnityEngine.AI.NavMeshPathStatus PathToEnemyStatus=UnityEngine.AI.NavMeshPathStatus.PathComplete;}
-    public class Status {public EEnemyAction VulnerableAction;}
+    public class Status {public EEnemyAction VulnerableAction;public bool EnemyIsSuppressed;}
     public class Places {public float BotDistanceFromLastKnown=100;public Vector3? LastKnownPosition=new Vector3(50,0,0);public float TimeSinceLastKnownUpdated=20;}
     public class Enemy {
         public string EnemyProfileId=>EnemyPlayer.ProfileId;public Vector3? LastKnownPosition=>KnownPlaces.LastKnownPosition;
-        public bool CanShoot,IsVisible,Seen=true,Heard,InLineOfSight,Active=true,Valid=true;
+        public bool IsZombie;public bool CanShoot,IsVisible,Seen=true,Heard,InLineOfSight,Active=true,Valid=true;
         public bool WasValid=>Valid;public bool EnemyKnown=true;
         public float TimeSinceLastKnownUpdated=>KnownPlaces.TimeSinceLastKnownUpdated;
         public string EPathDistance="Far";
         public float TimeSinceSeen=20;
-        public EnemyInfo EnemyInfo => new EnemyInfo { Person=EnemyPlayer };
+        private EnemyInfo enemyInfo;public EnemyInfo EnemyInfo => enemyInfo ?? (enemyInfo=new EnemyInfo { Person=EnemyPlayer,ProfileId=EnemyProfileId });
         public Player EnemyPlayer=new Player();public Path Path=new Path();public Status Status=new Status();
-        public Places KnownPlaces=new Places();public object SuppressionTarget=new object();public Vector3 EnemyPosition;
+        public Places KnownPlaces=new Places();public Vector3? SuppressionTarget=new Vector3(50,1,0);public Vector3 EnemyPosition;
         public static bool IsEnemyActive(Enemy enemy)=>enemy?.Active==true;
         public bool CheckValid()=>Valid;
     }
@@ -103,12 +104,13 @@ namespace SAIN.Components {
     public class Gear {public bool HasEarPiece=true;}
     public class Equipment {public Gear GearInfo=new Gear();}
     public class PlayerComponent {public Equipment Equipment=new Equipment();}
-    public class Shooter {public int Ends; public void EndShoot(){Ends++;} public bool Succeeds;public bool ShootAnyVisibleEnemies(Enemy enemy)=>Succeeds;}
-    public class Suppression {public bool IsHeavySuppressed;public bool TrySuppressAnyEnemy(Enemy enemy,object known)=>false;}
+    public class Shooter : SAIN.SAINComponent.Classes.SAINShootData {}
+    public partial class Suppression {public bool IsHeavySuppressed;public bool TrySuppressAnyEnemy(Enemy enemy,object known)=>false;}
     public class EnemyController {public List<Enemy> KnownEnemies=new List<Enemy>();}
     public class Steering {
         public bool SteerByPriority(Enemy enemy=null,bool allow=true)=>false;
-        public bool LookToMovingDirection()=>true;public void LookToLastKnownEnemyPosition(Enemy enemy){} public int Looks; public Vector3 LookPoint; public void LookToPoint(Vector3 point){Looks++;LookPoint=point;}
+        public bool LookToMovingDirection()=>true;public int FallbackLooks;public void LookToLastKnownEnemyPosition(Enemy enemy){FallbackLooks++;} public int Looks; public Vector3 LookPoint; public void LookToPoint(Vector3 point){Looks++;LookPoint=point;}
+        public float AimAngle;public float AngleToPointFromLookDir(Vector3 point)=>AimAngle;
     }
     public class Search {public Enemy Enemy;public bool Enabled;public void ToggleSearch(bool value,Enemy enemy){Enabled=value;Enemy=enemy;}}
     public partial class Mover {

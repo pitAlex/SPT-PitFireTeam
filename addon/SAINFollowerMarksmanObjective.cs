@@ -12,9 +12,11 @@ namespace pitTeam.SAINAddon;
 
 // Core Marksman intent, using only SAIN's existing firing-position finder and execution.
 // Throttled native replanning with bounded failed positions; no parallel Core planner.
-internal sealed class SAINFollowerMarksmanObjective(BotComponent bot)
+internal sealed class SAINFollowerMarksmanObjective(BotComponent bot, FiringPositionFinder finder)
 {
-    private readonly FiringPositionFinder finder = new(bot);
+    internal SainMarksmanWeaponBridge Weapons { get; } = new(bot);
+    private bool automaticDestination, automaticMovementStarted;
+    internal bool Preparing { get; private set; }
     private string? enemyId;
     private Vector3 anchor;
     private bool attempted;
@@ -41,7 +43,7 @@ internal sealed class SAINFollowerMarksmanObjective(BotComponent bot)
         bool regrouping, out ECombatDecision result, out ESquadDecision squadResult)
     {
         result = solo; squadResult = squad;
-        OwnsMovement = false;
+        OwnsMovement = false; Preparing = false;
         if (enemy == null || !enemy.EnemyKnown || !Enemy.IsEnemyActive(enemy) ||
             enemy.EnemyPlayer?.HealthController?.IsAlive != true || (!enemy.LastKnownPosition.HasValue || !Finite(enemy.LastKnownPosition.Value)))
         { Clear("contactLost"); return false; }
@@ -49,6 +51,7 @@ internal sealed class SAINFollowerMarksmanObjective(BotComponent bot)
         if (enemyId != enemy.EnemyProfileId || (known - anchor).sqrMagnitude >= 64f)
         { Clear("newContact"); enemyId = enemy.EnemyProfileId; anchor = known; }
 
+        Weapons.Maintain(enemy, automaticDestination);
         var follower = Follower;
         FollowerCommandType command = FollowerCommandType.None;
         bool hasOrder = follower?.TryGetActiveCommand(out command, out _) == true;
@@ -68,10 +71,17 @@ internal sealed class SAINFollowerMarksmanObjective(BotComponent bot)
         if (enemy.IsVisible && enemy.CanShoot)
         {
             if (hasOrder) follower!.ClearCommand("SAIN:NeedSniper");
+            Weapons.StopPreparing();
             ReleaseDestination(); attempted = false; ordered = false; failedCount = 0; nextRetryAt = 0f; finder.Clear(); Attempt?.Observe(enemy);
             if (Pursuit(solo, squad))
             { result = ECombatDecision.StandAndShoot; squadResult = ESquadDecision.None; return true; }
             return false;
+        }
+        if (Weapons.IsClose(enemy) && !bot.Mover.Moving && bot.Cover.CoverPoint_MovingTo == null)
+        {
+            int preparation = Weapons.Prepare();
+            if (preparation == 0)
+            { Preparing = true; result = ECombatDecision.StandAndShoot; squadResult = ESquadDecision.None; Attempt?.Pause(); Report("prepareDefensiveWeapon"); return true; }
         }
         if (SAINFollowerRuntime.GetCover(bot.BotOwner)?.HoldsArrival(enemy) == true ||
             (bot.Mover.Moving && !(bot.CurrentAction is SAINFollowerMoveToEngageAction && Destination.HasValue)) ||
@@ -117,16 +127,32 @@ internal sealed class SAINFollowerMarksmanObjective(BotComponent bot)
             }
             attempted = true; nextRetryAt = Time.time + (Ordered ? 2f : 4f);
             lastCandidate = point; rejection = point.HasValue ? null : "nativeFinderEmpty";
-            if (point.HasValue && Allowed(point.Value, known))
+            bool automatic = !Ordered && point.HasValue &&
+                (point.Value - known).magnitude + 1.5f < (bot.Position - known).magnitude && Weapons.CanAdvance(enemy);
+            if (point.HasValue && Allowed(point.Value, known, automatic))
             {
                 // Only an admitted different position resets the per-leg execution budget.
                 Attempt?.Clear("marksmanNewPosition");
+                automaticDestination = automatic;
                 Destination = point; SainRegroupBridge.Claim(bot.BotOwner, point.Value); Report("nativeFiringPosition");
             }
             else Report("noSuitableNativePosition");
         }
         if (Destination.HasValue)
         {
+            if (automaticDestination)
+            {
+                int preparation = Weapons.CanAdvance(enemy) ? Weapons.Prepare() : -1;
+                if (preparation < 0)
+                { RememberFailed(Destination.Value); ReleaseDestination(); nextRetryAt = Time.time + 4f; Report("automaticWeaponRejected"); result = ECombatDecision.SeekCover; squadResult = ESquadDecision.None; return true; }
+                if (preparation == 0)
+                { automaticMovementStarted = false; Preparing = true; result = ECombatDecision.StandAndShoot; squadResult = ESquadDecision.None; Attempt?.Pause(); Report("prepareAutomaticSearch"); return true; }
+                // Recheck once at the readiness handoff, not on every movement tick.
+                // Knowledge can move less than the 8m reset threshold during a draw.
+                if (!automaticMovementStarted && !Allowed(Destination.Value, known, true))
+                { RememberFailed(Destination.Value); ReleaseDestination(); nextRetryAt = Time.time + 4f; Weapons.Cancel(enemy); Report("preparedPositionInvalidated"); result = ECombatDecision.SeekCover; squadResult = ESquadDecision.None; return true; }
+                automaticMovementStarted = true;
+            }
             OwnsMovement = true;
             result = ECombatDecision.MoveToEngage; squadResult = ESquadDecision.None;
             return true;
@@ -149,7 +175,7 @@ internal sealed class SAINFollowerMarksmanObjective(BotComponent bot)
         squad == ESquadDecision.PushSuppressedEnemy;
 
     private bool Reject(string why) { rejection = why; return false; }
-    private bool Allowed(Vector3 point, Vector3 known)
+    private bool Allowed(Vector3 point, Vector3 known, bool automatic)
     {
         if (!Finite(point)) return Reject("nonfinite");
         if ((point - bot.Position).sqrMagnitude <= 4f) return Reject("alreadyAtPosition");
@@ -161,7 +187,7 @@ internal sealed class SAINFollowerMarksmanObjective(BotComponent bot)
         if (path > (Ordered ? 140f : 90f)) return Reject("routeTooLong");
         Vector3 delta = point - known; delta.y = 0f;
         if (delta.sqrMagnitude < 16f * 16f) return Reject("enemyTooClose");
-        if (Ordered) return true;
+        if (Ordered || automatic) return true;
         if (Follower?.CombatIndependent != true && SainPlayerSquadBridge.TryGetPlayerLeader(bot.BotOwner, out Player player))
         {
             float radius = SainRegroupBridge.GetTriggerDistance(bot.BotOwner);
@@ -186,7 +212,7 @@ internal sealed class SAINFollowerMarksmanObjective(BotComponent bot)
     private void ReleaseDestination()
     {
         if (Destination.HasValue) SainRegroupBridge.Release(bot.BotOwner, Destination.Value);
-        Destination = null;
+        Destination = null; automaticDestination = automaticMovementStarted = false;
     }
     internal void Clear(string why)
     {
@@ -197,8 +223,9 @@ internal sealed class SAINFollowerMarksmanObjective(BotComponent bot)
         if (Destination.HasValue && enemyId != null && attempt?.EnemyId == enemyId)
         { attempt.Fail("marksmanCancelled"); RememberFailed(Destination.Value); }
         ReleaseDestination();
-        OwnsMovement = false; ordered = false;
-        if (why == "replacementOrder" || why == "regroup")
+        OwnsMovement = false; Preparing = false; ordered = false;
+        Weapons.Cancel(why == "combatEnded" || why == "release" || why == "nativeStateReplaced" || why == "contactLost" ? null : bot.GoalEnemy);
+        if (why == "replacementOrder" || why == "regroup" || why == "squadSupport" || why == "suppressionOrder")
             nextRetryAt = Time.time + 4f;
         else
         { attempted = false; enemyId = null; failedCount = 0; nextRetryAt = 0f; }
@@ -213,6 +240,7 @@ internal sealed class SAINFollowerMarksmanObjective(BotComponent bot)
             SainCombatRecorderBridge.RecordEvent(bot.BotOwner, "sainMarksman", Snapshot);
     }
     internal object Snapshot => new { reason, enemyId, attempted, ordered = Ordered, moving = OwnsMovement, failure = Attempt?.Failure,
+        automaticDestination, preparing = Preparing, weapon = Weapons.Snapshot,
         destination = SAINFollowerRecorder.Point(Destination), failedPositions = failedCount,
         candidate = SAINFollowerRecorder.Point(lastCandidate), rejection, retryIn = Mathf.Max(0f, nextRetryAt - Time.time) };
 }

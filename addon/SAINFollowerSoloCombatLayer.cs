@@ -26,7 +26,8 @@ public class SAINFollowerSoloCombatLayer : SAINLayer
         _currentSelfDecision == ESelfActionType.None && SAINFollowerRuntime.GetRelocation(BotOwner)?.OwnsAction == true;
     private bool UsePushHold => _currentSelfDecision == ESelfActionType.None &&
         (_currentDecision == ECombatDecision.StandAndShoot || _currentDecision == ECombatDecision.ShootDistantEnemy) &&
-        SAINFollowerRuntime.GetPush(BotOwner)?.HoldsPosition == true;
+        (SAINFollowerRuntime.GetPush(BotOwner)?.HoldsPosition == true ||
+         SAINFollowerRuntime.GetMarksman(BotOwner)?.Preparing == true);
 
     public override Action GetNextAction()
     {
@@ -56,7 +57,7 @@ public class SAINFollowerSoloCombatLayer : SAINLayer
         // END addon relocation
         // BEGIN addon push hold
         pushHoldAction = UsePushHold;
-        if (pushHoldAction) return new Action(typeof(SAINFollowerPushHoldAction), "pushArrivalHold");
+        if (pushHoldAction) return new Action(typeof(SAINFollowerPushHoldAction), SAINFollowerRuntime.GetMarksman(BotOwner)?.Preparing == true ? "marksmanWeaponPrepare" : "pushArrivalHold");
         // END addon push hold
         switch (_lastDecision)
         {

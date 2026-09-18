@@ -26,13 +26,14 @@ namespace UnityEngine {
         public Vector3(float x,float y,float z){this.x=x;this.y=y;this.z=z;}
         public float sqrMagnitude=>x*x+y*y+z*z;
         public float magnitude=>(float)Math.Sqrt(sqrMagnitude);
+        public void Normalize(){this=normalized;}
         public static Vector3 operator -(Vector3 a,Vector3 b)=>new Vector3(a.x-b.x,a.y-b.y,a.z-b.z);
     }
 }
 namespace EFT {
     public partial class Player { public Vector3 Position; }
     public partial class EnemyInfo { public bool Alive=true; }
-    public class Memory { public bool HaveEnemy,DeadGoal,IsUnderFire; public EnemyInfo GoalEnemy=new EnemyInfo(); }
+    public class Memory { public bool AttackImmediately=true; public bool HaveEnemy,DeadGoal,IsUnderFire; public EnemyInfo GoalEnemy=new EnemyInfo(); }
     public class MedicineItem { public string Id="fixture-med"; }
     public class FirstAid { public bool Have2Do,Using,IsBleeding; public MedicineItem CurUsingMeds; public bool HaveSmth2Use=>CurUsingMeds!=null; public string _bodyPartToHeal; }
     public class Medicine { public FirstAid FirstAid=new FirstAid(); }
@@ -149,8 +150,8 @@ namespace SAIN.SAINComponent.Classes {
 namespace pitTeam.Components {
     public enum FollowerCombatTactic { Balanced,Marksman,SainMan,SAINShooter }
     public enum FollowerCommandType { None,RegroupNearBoss,CombatComeToBossCover,CombatMoveToPointTactical,PushEnemy,SuppressEnemy,HoldPosition,NeedSniper }
-    public class pitAIBossPlayer {public CombatEvents CombatEvents=new CombatEvents();}
-    public class BotFollowerPlayer {
+    public partial class pitAIBossPlayer {public CombatEvents CombatEvents=new CombatEvents();}
+    public partial class BotFollowerPlayer {
         private string pushCancel;
         public void RequestOrderedPushCancel(string reason){pushCancel=reason;}
         public bool TryConsumeOrderedPushCancelRequest(out string reason){reason=pushCancel;pushCancel=null;return reason!=null;}
@@ -201,7 +202,7 @@ namespace pitTeam.Utils {
         public static void CompletePostCombatFullHeal(BotOwner owner){owner.RecoveryEnds++;owner.RecoveryActive=false;}
         public static bool IsUsingMedical(BotOwner owner)=>owner.UsingMedical;
     }
-    public static class FollowerShotSafety {public static bool IsFriendlyInShotLane(BotOwner owner,Vector3 origin,Vector3 direction,float distance)=>owner.FriendlyInLane;}
+    public static partial class FollowerShotSafety {public static bool IsFriendlyInShotLane(BotOwner owner,Vector3 origin,Vector3 direction,float distance)=>owner.FriendlyInLane;}
 }
 namespace pitTeam {
     public static class pitFireTeam {
@@ -223,6 +224,7 @@ public static partial class CombatChecks {
         SainSquadDecisionBridge.Apply(new Harmony("xyz.pit.fireteam.sainaddon"));
         SainCoverSelectionBridge.Apply(new Harmony("xyz.pit.fireteam.sainaddon"));
         SainMedicalDecisionBridge.Apply(new Harmony("xyz.pit.fireteam.sainaddon"));
+        SainSquadSupportBridge.Apply(new Harmony("xyz.pit.fireteam.sainaddon"));
         Check(SainCoverSelectionBridge.IsAvailable,"native cover selection bridge installed");
         Check(SainSquadDecisionBridge.IsAvailable,"native squad decision bridge installed");
         var selected=Spawn("selected");var rifle=Spawn("rifle",FollowerCombatTactic.Balanced);var marks=Spawn("marks",FollowerCombatTactic.Marksman);
@@ -305,18 +307,18 @@ public static partial class CombatChecks {
         TestEngageAttempt();
         TestSainRecorder();
         TestPersonality();
-        TestRelocations();TestPushObjectives();TestPushRisk();TestMedicalRecovery();TestShooter();
+        TestRelocations();TestPushObjectives();TestPushRisk();TestMedicalRecovery();TestShooter();TestShooterWeapons();TestShooterWeaponTransitions();TestSquadSupport();TestGruntSupport();TestReportSuppressionOwnership();TestVisibleSupportFlicker();
         SAINFollowerRuntime.Disable();
         Check(!SainAddonBridge.HasRuntimeCallbacks&&!pitFireTeam.UseSainFollowerCombat(late),"addon shutdown restores core fallback");
         var addonOwner=new Harmony("xyz.pit.fireteam.sainaddon");
         var decisionHook=HarmonyLib.AccessTools.Method(typeof(SAIN.SAINComponent.Classes.Decision.BotDecisionManager),"SetDecisions");
         Check(Harmony.GetPatchInfo(decisionHook).Owners.Contains(addonOwner.Id),"typed decision publisher hook belongs to addon");
-        addonOwner.UnpatchSelf();SainSquadDecisionBridge.Reset();SainCoverSelectionBridge.Reset();SainMedicalDecisionBridge.Reset();
+        addonOwner.UnpatchSelf();SainSquadDecisionBridge.Reset();SainCoverSelectionBridge.Reset();SainMedicalDecisionBridge.Reset();SainSquadSupportBridge.Reset();
         Check(!SainSquadDecisionBridge.IsAvailable&&!SainCoverSelectionBridge.IsAvailable,"decision and cover readiness cleared after removal");
         Check(!Harmony.GetAllPatchedMethods().Any(m=>Harmony.GetPatchInfo(m).Owners.Contains(addonOwner.Id)),"typed decision enemy and cover patches fully removed");
-        SainSquadDecisionBridge.Apply(addonOwner);SainCoverSelectionBridge.Apply(addonOwner);SainMedicalDecisionBridge.Apply(addonOwner);
+        SainSquadDecisionBridge.Apply(addonOwner);SainCoverSelectionBridge.Apply(addonOwner);SainMedicalDecisionBridge.Apply(addonOwner);SainSquadSupportBridge.Apply(addonOwner);
         Check(SainSquadDecisionBridge.IsAvailable&&SainCoverSelectionBridge.IsAvailable,"typed hooks reinstall after removal");
-        addonOwner.UnpatchSelf();SainSquadDecisionBridge.Reset();SainCoverSelectionBridge.Reset();SainMedicalDecisionBridge.Reset();
+        addonOwner.UnpatchSelf();SainSquadDecisionBridge.Reset();SainCoverSelectionBridge.Reset();SainMedicalDecisionBridge.Reset();SainSquadSupportBridge.Reset();
         Check(Logger.Errors.Count==0,"no lifecycle errors");
         Console.WriteLine("Passed "+count+" production addon combat checks. Unity movement and raid AI still require in-game validation.");
     }

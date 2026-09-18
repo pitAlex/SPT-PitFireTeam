@@ -21,6 +21,9 @@ public class SAINFollowerSquadCombatLayer : SAINLayer
         SAINFollowerRuntime.RegisterSquadLayer(bot, this);
     }
     private bool lingerAction;
+    private bool supportAction;
+    private bool UseSupport => SAINFollowerRuntime.GetSquadSupport(BotOwner)?.OwnsAction == true &&
+        (Bot.Decision.CurrentSquadDecision == ESquadDecision.Suppress || Bot.Decision.CurrentSquadDecision == ESquadDecision.Help);
 
     public override Action GetNextAction()
     {
@@ -36,6 +39,10 @@ public class SAINFollowerSquadCombatLayer : SAINLayer
         if (lingerAction) return new Action(typeof(SAINFollowerLingerAction), "linger");
         // END addon post-combat handoff
         LastActionDecision = Bot.Decision.CurrentSquadDecision;
+        // BEGIN addon squad support
+        supportAction = UseSupport;
+        if (supportAction) return new Action(typeof(SAINFollowerSquadSupportAction), $"{LastActionDecision}: follower support");
+        // END addon squad support
         switch (LastActionDecision)
         {
             case ESquadDecision.Regroup:
@@ -129,6 +136,9 @@ public class SAINFollowerSquadCombatLayer : SAINLayer
             return false;
         }
         // END addon regroup ending
+        // BEGIN addon squad support
+        if (supportAction != UseSupport) return true;
+        // END addon squad support
         if (base.IsCurrentActionEnding())
         {
             return true;

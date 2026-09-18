@@ -245,6 +245,7 @@ namespace pitTeam.SAINAddon
             follower.ClearOrderedPushTargetLock("SAIN:GoForwardAggression");
             follower.SetTemporaryCombatAggressionOverride(100f, "SAIN:GoForwardAggression");
             state.Objectives.Relocation.Clear("GoForwardAggression");
+            state.Objectives.SquadSupport.Clear("GoForwardAggression");
             state.Objectives.Push.BeginOrdered();
             return true;
         }
@@ -316,6 +317,9 @@ namespace pitTeam.SAINAddon
         internal static SAINFollowerPushObjective? GetPush(BotOwner owner) =>
             IsReady(owner) && States.TryGetValue(owner, out State state) ? state.Objectives?.Push : null;
 
+        internal static SAINFollowerSquadSupportObjective? GetSquadSupport(BotOwner owner) =>
+            IsReady(owner) && States.TryGetValue(owner, out State state) ? state.Objectives?.SquadSupport : null;
+
         internal static SAINFollowerMarksmanObjective? GetMarksman(BotOwner owner) =>
             IsReady(owner) && States.TryGetValue(owner, out State state) ? state.Objectives?.Marksman : null;
 
@@ -324,11 +328,12 @@ namespace pitTeam.SAINAddon
 
         private static Enemy PreferEnemy(BotOwner owner, Enemy native)
         {
-            try { return GetPush(owner)?.PreferEnemy(native) ?? native; }
+            try { return GetSquadSupport(owner)?.PreferEnemy(GetPush(owner)?.PreferEnemy(native) ?? native) ?? native; }
             catch (Exception ex)
             {
                 GetPush(owner)?.Clear("targetPreferenceFailed");
-                Modules.Logger.LogError($"[SAIN] Push target preference failed for {owner.ProfileId}: {ex}");
+                GetSquadSupport(owner)?.Clear("targetPreferenceFailed");
+                Modules.Logger.LogError($"[SAIN] Objective target preference failed for {owner.ProfileId}: {ex}");
                 return native;
             }
         }

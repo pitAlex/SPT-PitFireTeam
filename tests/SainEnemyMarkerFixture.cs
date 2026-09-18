@@ -12,7 +12,7 @@ namespace UnityEngine {public struct Rect {}}
 namespace EFT {
     public partial class Player {public MarkerTransform Transform=>new MarkerTransform{position=Position};}
     public class MarkerTransform {public Vector3 position;}
-    public partial class EnemyInfo {public string ProfileId="eftEnemy";public Vector3 CurrPosition;public Player Person;public bool IsVisible;}
+    public partial class EnemyInfo {public string ProfileId="eftEnemy";public Vector3 CurrPosition;public Player Person;public bool IsVisible,CanShoot;}
     public class GameWorld {
         public string LocationId;
         public Dictionary<string,Player> Players=new Dictionary<string,Player>();

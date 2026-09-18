@@ -25,7 +25,7 @@ SAINShooter is a separate persisted tactic using these same layers with [Marksma
 
 ## Hook ownership and lifecycle
 
-Addon-only hooks live under `addon/` and are installed by `SAINAddonPatches` under the addon Harmony ID. This includes player leadership, squad decisions, publication filtering, push target preference, cover selection and the follower-specific medical extension. Public native APIs/enums are referenced directly; cached reflection is reserved for inaccessible members and action types.
+Addon-only hooks live under `addon/` and are installed by `SAINAddonPatches` under the addon Harmony ID. This includes player leadership, squad decisions, publication filtering, push/support target preference, cover selection, the follower-specific medical extension and ready-addon firearm-only suppression command routing. Public native APIs/enums are referenced directly; cached reflection is reserved for inaccessible members and action types.
 
 Failed installation rolls back the full addon hook set. Shutdown releases follower state and membership before removing hooks. Tactic opt-out, dismissal, combat release and native-component replacement release owned state, paths and reservations without clearing a newer owner's claim or living shared enemy memory. Personality installation/restoration belongs to addon `SainManPersonality`; [personality policy](Personalities-and-Aggression.md) is follower-local.
 
@@ -36,6 +36,7 @@ Core owns compatibility needed without this brain. Do not move proficiency, aim/
 - Core `SainAddonBridge`: readiness, release/reset, lifecycle, player updates and passive enemy-contact callbacks.
 - Addon `SainSquadDecisionBridge`: player-led provider dispatch and filtering before native publication.
 - Core `SainRegroupBridge`, `FollowerPushGeometry`, `FollowerPushRiskPolicy`, `FollowerCombatCommandGeometry` and `Covers`: shared distance, movement, risk, reservation and protection helpers.
+- Addon `SainSquadSupportBridge`: current-firearm command restriction and cached native aiming/Core suppression safety bindings; see [Squad support](Squad-Support.md).
 - Core `SainCombatRecorderBridge`: optional passive Debug recording; it never drives decisions.
 
 General external-SAIN synchronization calls a core service directly; it must not require an addon callback.
@@ -49,6 +50,7 @@ General external-SAIN synchronization calls a core service directly; it must not
 | Player-led squad decisions / search movement | [SAINFollowerSquadDecision](../SAINFollowerSquadDecision.cs), [SAINFollowerFollowSearchPartyAction](../SAINFollowerFollowSearchPartyAction.cs) |
 | Status contact bridge / marker rendering | [SAINFollowerRuntime](../SAINFollowerRuntime.cs), [SainAddonBridge](../../client/Modules/SainAddonBridge.cs), [PingTeamates](../../client/Utils/PingTeamates.cs) |
 | Push objective coordinator / execution | [SAINFollowerObjectives](../SAINFollowerObjectives.cs), [SAINFollowerPushObjective](../SAINFollowerPushObjective.cs), [SAINFollowerMoveToEngageAction](../SAINFollowerMoveToEngageAction.cs), [SAINFollowerPushHoldAction](../SAINFollowerPushHoldAction.cs), [FollowerPushGeometry](../../client/BigBrain/FollowerPushGeometry.cs) |
+| Squad suppression / ally support | [SAINFollowerSquadSupportObjective](../SAINFollowerSquadSupportObjective.cs), [SAINFollowerSquadSupportAction](../SAINFollowerSquadSupportAction.cs), [SainSquadSupportBridge](../SainSquadSupportBridge.cs) |
 | Combat gesture relocation | [SAINFollowerRelocationObjective](../SAINFollowerRelocationObjective.cs), [FollowerCombatCommandGeometry](../../client/BigBrain/FollowerCombatCommandGeometry.cs) |
 | Protected-cover medicine | [SainMedicalDecisionBridge](../SainMedicalDecisionBridge.cs) |
 | Both-layer readiness / lifecycle | [SAINFollowerRuntime](../SAINFollowerRuntime.cs) |

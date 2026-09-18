@@ -16,12 +16,12 @@ namespace UnityEngine {
 }
 namespace EFT {
     public class BotFollower {public object BossToFollow;}
-    public class ShootData {public float LastTriggerPressd;}
+    public class ShootData {public float LastTriggerPressd;public bool Shooting;}
     public partial class BotOwner {public BotFollower BotFollower=new BotFollower();public ShootData ShootData=new ShootData();}
 }
 namespace pitTeam.Components {
     public static class PickupFollowerPersonality {public const float RegroupMaxTriggerMultiplier=2.35f;}
-    public class CombatEvents {
+    public partial class CombatEvents {
         public Dictionary<string,Vector3> Claims=new Dictionary<string,Vector3>();
         public bool TryFindBossSpreadDestination(BotOwner o,Vector3 p,float min,float max,float floor,float spacing,out Vector3 target){target=default;return false;}
         public bool HasDestinationClaimConflict(BotOwner o,Vector3 p,float spacing){foreach(var pair in Claims)if(pair.Key!=o.ProfileId&&(pair.Value-p).magnitude<spacing)return true;return false;}

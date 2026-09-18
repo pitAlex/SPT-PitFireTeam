@@ -11,6 +11,14 @@ try {
         $ctor=@($type.Methods | Where-Object { $_.Name -eq '.ctor' -and $_.IsPublic -and $_.Parameters.Count -eq 1 -and $_.Parameters[0].ParameterType.FullName -eq 'EFT.BotOwner' })
         if($ctor.Count -ne 1){throw "Missing native action constructor: $name"}
     }
+    $shoot=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.SAINComponent.Classes.SAINShootData'
+    if(@($shoot.Methods | Where-Object {$_.Name -eq 'AimAndShootAtEnemy' -and !$_.IsStatic -and $_.ReturnType.FullName -eq 'System.Boolean' -and ($_.Parameters.ParameterType.FullName -join '|') -eq 'SAIN.SAINComponent.Classes.EnemyClasses.Enemy|SAIN.Components.BotComponent'}).Count -ne 1){throw 'Native exact-target aiming boundary changed'}
+    $suppress=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.SAINComponent.Classes.WeaponFunction.SAINBotSuppressClass'
+    if(@($suppress.Methods | Where-Object {$_.Name -eq 'SuppressPosition' -and $_.IsPublic -and !$_.IsStatic -and $_.ReturnType.FullName -eq 'System.Boolean' -and ($_.Parameters.ParameterType.FullName -join '|') -eq 'UnityEngine.Vector3|SAIN.SAINComponent.Classes.EnemyClasses.Enemy'}).Count -ne 1){throw 'Native suppression execution boundary changed'}
+    $manual=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.SAINComponent.Classes.WeaponFunction.ManualShootClass'
+    if(@($manual.Methods | Where-Object {$_.Name -eq 'TryShoot' -and $_.IsPublic -and $_.ReturnType.FullName -eq 'System.Boolean' -and ($_.Parameters.ParameterType.FullName -join '|') -eq 'SAIN.SAINComponent.Classes.EnemyClasses.Enemy|UnityEngine.Vector3|System.Boolean|SAIN.Models.Enums.EShootReason'}).Count -ne 1){throw 'Native manual firing API changed'}
+    if(@($manual.Methods | Where-Object {$_.Name -eq 'Reset' -and $_.IsPublic -and $_.ReturnType.FullName -eq 'System.Void' -and $_.Parameters.Count -eq 0}).Count -ne 1){throw 'Native manual firing reset API changed'}
+    if(@($manual.Methods | Where-Object {$_.Name -eq 'CanShoot' -and $_.IsPublic -and $_.ReturnType.FullName -eq 'System.Boolean' -and ($_.Parameters.ParameterType.FullName -join '|') -eq 'System.Boolean'}).Count -ne 1){throw 'Native manual weapon-readiness API changed'}
     $finder=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.SAINComponent.Classes.Decision.FiringPositionFinder'
     if(!$finder.IsPublic -or @($finder.Methods | Where-Object {$_.Name -eq 'Find' -and $_.IsPublic -and $_.ReturnType.FullName -eq 'System.Boolean' -and $_.Parameters.Count -eq 1 -and $_.Parameters[0].ParameterType.FullName -eq 'SAIN.SAINComponent.Classes.EnemyClasses.Enemy'}).Count -ne 1){throw 'Native firing-position finder API changed'}
     $cover=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.SAINComponent.Classes.SAINCoverClass'
@@ -47,6 +55,38 @@ try {
     if(!$layer.IsPublic -or !$layer.IsAbstract){throw 'SAINLayer extension boundary changed'}
     Write-Output "Installed SAIN 4.5.1 validated: $($actions.Count) action constructors, decision publisher, cover selection, personality API, friendly-fire overloads, public layer base."
 } finally {$assembly.Dispose()}
+
+# Reflection-only addon bindings must exist in the installed Core, not just fixture stand-ins.
+$coreAssembly=[Mono.Cecil.AssemblyDefinition]::ReadAssembly((Join-Path $GameRoot 'BepInEx/plugins/pitFireTeam/pitFireTeam.dll'))
+try {
+    $common=$coreAssembly.MainModule.Types | Where-Object FullName -eq 'pitTeam.BigBrain.FollowerCombatCommon'
+    foreach($name in @('IsSuppressCapableWeapon','IsGrenadeLauncherWeapon')){
+        if(@($common.Methods | Where-Object {$_.Name -eq $name -and $_.IsStatic -and $_.ReturnType.FullName -eq 'System.Boolean' -and ($_.Parameters.ParameterType.FullName -join '|') -eq 'EFT.InventoryLogic.Weapon'}).Count -ne 1){throw "Core suppression predicate changed: $name"}
+    }
+    if(@($common.Methods | Where-Object {$_.Name -eq 'IsSoftObstructedSuppressionLane' -and $_.IsStatic -and $_.ReturnType.FullName -eq 'System.Boolean' -and ($_.Parameters.ParameterType.FullName -join '|') -eq 'UnityEngine.Vector3|UnityEngine.Vector3|UnityEngine.LayerMask'}).Count -ne 1){throw 'Core suppression lane boundary changed'}
+    if(@($common.Methods | Where-Object {$_.Name -eq 'IsTeamSearchSupportPosition' -and $_.IsStatic -and $_.ReturnType.FullName -eq 'System.Boolean' -and ($_.Parameters.ParameterType.FullName -join '|') -eq 'UnityEngine.Vector3|UnityEngine.Vector3|UnityEngine.Vector3'}).Count -ne 1){throw 'Core push support positioning predicate changed'}
+    $firePolicy=$coreAssembly.MainModule.Types | Where-Object FullName -eq 'pitTeam.BigBrain.FollowerImmediateFirePolicy'
+    if(@($firePolicy.Methods | Where-Object {$_.Name -eq 'HasDirectFireLane' -and $_.IsStatic -and $_.ReturnType.FullName -eq 'System.Boolean' -and ($_.Parameters.ParameterType.FullName -join '|') -eq 'EFT.BotOwner|UnityEngine.Vector3'}).Count -ne 1){throw 'Core direct-fire lane predicate changed'}
+    $targetPolicy=$coreAssembly.MainModule.Types | Where-Object FullName -eq 'pitTeam.BigBrain.FollowerSuppressTargetPolicy'
+    if(@($targetPolicy.Methods | Where-Object {$_.Name -eq 'TryGetTarget' -and $_.IsStatic -and $_.ReturnType.FullName -eq 'System.Boolean' -and ($_.Parameters.ParameterType.FullName -join '|') -eq 'EnemyInfo|UnityEngine.Vector3&'}).Count -ne 1){throw 'Core suppression report resolver changed'}
+    $boss=$coreAssembly.MainModule.Types | Where-Object FullName -eq 'pitTeam.Components.pitAIBossPlayer'
+    if(@($boss.Methods | Where-Object {$_.Name -eq 'TryIssueSuppressCommand' -and !$_.IsStatic -and $_.ReturnType.FullName -eq 'System.Boolean' -and ($_.Parameters.ParameterType.FullName -join '|') -eq 'EFT.BotOwner|pitTeam.Components.BotFollowerPlayer|EFT.Player|System.Boolean|System.Boolean|System.Boolean|System.Boolean'}).Count -ne 1){throw 'Core suppression command boundary changed'}
+    $sniper=$coreAssembly.MainModule.Types | Where-Object FullName -eq 'pitTeam.BigBrain.FollowerCombatSniper'
+    foreach($name in @('IsWeaponSelectionSettledForAutomaticMarksmanSupportRequest','HasAutomaticCloseCombatWeaponAvailable','IsAutomaticCloseCombatWeaponReady','TryRequestAutomaticSupportForCloseCombat','IsEligibleAutomaticMarksmanSupportSelectedAndReady','TryRequestEligibleAutomaticMarksmanSupport','HasLoadedAutomaticMarksmanSupportWeapon','TrySwitchBackToPrimaryFromAutomaticMarksmanSupport','IsUsingAutomaticMarksmanSupportOverNonAutomaticPrimary','IsTemporaryHoldPositionAggressionActive','HasReportedHealWorkForPush')){
+        if(@($common.Methods | Where-Object {$_.Name -eq $name -and !$_.IsStatic -and $_.ReturnType.FullName -eq 'System.Boolean' -and $_.Parameters.Count -eq 0}).Count -ne 1){throw "Core support weapon binding changed: $name"}
+    }
+    foreach($name in @('ShouldBlockProactiveAutoPushForWeaponThreat','ShouldUseCautiousWeaponThreatStyle')){
+        if(@($common.Methods | Where-Object {$_.Name -eq $name -and !$_.IsStatic -and $_.ReturnType.FullName -eq 'System.Boolean' -and ($_.Parameters.ParameterType.FullName -join '|') -eq 'EnemyInfo'}).Count -ne 1){throw "Core weapon threat binding changed: $name"}
+    }
+    if(@($common.Methods | Where-Object {$_.Name -eq 'GetAggression01' -and !$_.IsStatic -and $_.ReturnType.FullName -eq 'System.Single' -and $_.Parameters.Count -eq 0}).Count -ne 1){throw 'Core aggression binding changed'}
+    if(@($common.Methods | Where-Object {$_.Name -eq 'GetAllowedLowThreatEnemyCount' -and $_.IsStatic -and $_.ReturnType.FullName -eq 'System.Int32' -and ($_.Parameters.ParameterType.FullName -join '|') -eq 'System.Single'}).Count -ne 1){throw 'Core Marksman count policy changed'}
+    if(@($sniper.Methods | Where-Object {$_.Name -eq 'IsWithinMarksmanAutoSearchDistance' -and !$_.IsStatic -and $_.ReturnType.FullName -eq 'System.Boolean' -and ($_.Parameters.ParameterType.FullName -join '|') -eq 'EnemyInfo|System.Single'}).Count -ne 1){throw 'Core Marksman range policy changed'}
+    if(@($sniper.Methods | Where-Object {$_.Name -eq 'CanUseAutomaticSupportForCloseThreat' -and $_.IsStatic -and $_.ReturnType.FullName -eq 'System.Boolean' -and ($_.Parameters.ParameterType.FullName -join '|') -eq 'EFT.BotOwner|EnemyInfo'}).Count -ne 1){throw 'Core Marksman close-threat policy changed'}
+    $phrase=$boss.Methods | Where-Object Name -eq 'ApplySuppressPhrase'
+    if(@($phrase.Body.Instructions | Where-Object {$_.Operand -is [Mono.Cecil.MethodReference] -and $_.Operand.FullName -eq 'System.Boolean pitTeam.pitFireTeam::UseSainFollowerCombat(EFT.BotOwner)'}).Count -ne 1){throw 'Core suppression candidate exclusion changed'}
+    Write-Output 'Installed Core support weapon, Marksman policy and suppression hook bindings validated.'
+    Write-Output 'Installed Core suppression bindings validated.'
+} finally {$coreAssembly.Dispose()}
 
 $fixture=Get-Content -Raw (Join-Path $PSScriptRoot 'SainAddonCombatFixture.cs')
 $followerSource=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Components/BotFollowerPlayer.cs')
@@ -92,7 +132,7 @@ $framework=Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319'
 $temporary=Join-Path ([IO.Path]::GetTempPath()) ('pitFireTeam-sain-combat-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $temporary | Out-Null
 try {
-    $sources=@('tests/SainShooterFixture.cs','client/Components/FollowerCombatTactics.cs','addon/SAINFollowerMarksmanObjective.cs','tests/SainRelocationFixture.cs','client/BigBrain/FollowerCombatCommandGeometry.cs','addon/SAINFollowerRelocationObjective.cs','addon/SAINFollowerRelocationAction.cs','addon/SAINFollowerApproachRoute.cs','addon/SainMedicalDecisionBridge.cs','tests/SainMedicalFixture.cs','client/Modules/SainBotOwnerAccessor.cs','client/Modules/SainCoverGeometry.cs','tests/SainRegroupChurnFixture.cs','client/BigBrain/FollowerPushRiskPolicy.cs','client/Modules/SainPushRiskBridge.cs','addon/SAINFollowerPushAssessment.cs','tests/SainPushRiskFixture.cs','addon/SAINFollowerPushHoldAction.cs','addon/SAINFollowerObjectives.cs','addon/SAINFollowerPushObjective.cs','client/BigBrain/FollowerPushGeometry.cs','tests/SainPushFixture.cs','tests/SainEnemyMarkerFixture.cs','addon/SAINFollowerCover.cs','addon/SAINFollowerCoverFinder.cs','addon/SainCoverSelectionBridge.cs','tests/SainCoverFixture.cs','addon/SAINFollowerPersonality.cs','tests/SainPersonalityFixture.cs','addon/SAINFollowerEngageAttempt.cs','addon/SAINFollowerMoveToEngageAction.cs','addon/SAINFollowerRecorder.cs','client/Modules/SainCombatRecorderBridge.cs','tests/SainEngageRecorderFixture.cs','addon/SAINFollowerRegroupObjective.cs','client/Modules/SainRegroupBridge.cs','tests/SainRegroupFixture.cs','addon/SAINFollowerCombatHandoff.cs','addon/SAINFollowerLingerAction.cs','tests/SainLingerFixture.cs','addon/SAINActionTypes.cs','addon/SAINFollowerSoloCombatLayer.cs','addon/SAINFollowerSquadCombatLayer.cs','addon/SAINFollowerSquadDecision.cs','addon/SAINFollowerSquadRegroupAction.cs','addon/SAINFollowerFollowSearchPartyAction.cs','addon/SainSquadDecisionBridge.cs','tests/SainSquadFixture.cs','addon/SAINFollowerRuntime.cs','client/Modules/SainAddonBridge.cs','addon/SainManPersonality.cs','client/Patches/FollowerSainFriendlyFirePatch.cs')
+    $sources=@('addon/SainMarksmanWeaponBridge.cs','tests/SainShooterWeaponFixture.cs','client/BigBrain/FollowerSuppressTargetPolicy.cs','addon/SAINFollowerSquadSupportObjective.cs','addon/SAINFollowerSquadSupportAction.cs','addon/SainSquadSupportBridge.cs','tests/SainSquadSupportFixture.cs','tests/SainShooterFixture.cs','client/Components/FollowerCombatTactics.cs','addon/SAINFollowerMarksmanObjective.cs','tests/SainRelocationFixture.cs','client/BigBrain/FollowerCombatCommandGeometry.cs','addon/SAINFollowerRelocationObjective.cs','addon/SAINFollowerRelocationAction.cs','addon/SAINFollowerApproachRoute.cs','addon/SainMedicalDecisionBridge.cs','tests/SainMedicalFixture.cs','client/Modules/SainBotOwnerAccessor.cs','client/Modules/SainCoverGeometry.cs','tests/SainRegroupChurnFixture.cs','client/BigBrain/FollowerPushRiskPolicy.cs','client/Modules/SainPushRiskBridge.cs','addon/SAINFollowerPushAssessment.cs','tests/SainPushRiskFixture.cs','addon/SAINFollowerPushHoldAction.cs','addon/SAINFollowerObjectives.cs','addon/SAINFollowerPushObjective.cs','client/BigBrain/FollowerPushGeometry.cs','tests/SainPushFixture.cs','tests/SainEnemyMarkerFixture.cs','addon/SAINFollowerCover.cs','addon/SAINFollowerCoverFinder.cs','addon/SainCoverSelectionBridge.cs','tests/SainCoverFixture.cs','addon/SAINFollowerPersonality.cs','tests/SainPersonalityFixture.cs','addon/SAINFollowerEngageAttempt.cs','addon/SAINFollowerMoveToEngageAction.cs','addon/SAINFollowerRecorder.cs','client/Modules/SainCombatRecorderBridge.cs','tests/SainEngageRecorderFixture.cs','addon/SAINFollowerRegroupObjective.cs','client/Modules/SainRegroupBridge.cs','tests/SainRegroupFixture.cs','addon/SAINFollowerCombatHandoff.cs','addon/SAINFollowerLingerAction.cs','tests/SainLingerFixture.cs','addon/SAINActionTypes.cs','addon/SAINFollowerSoloCombatLayer.cs','addon/SAINFollowerSquadCombatLayer.cs','addon/SAINFollowerSquadDecision.cs','addon/SAINFollowerSquadRegroupAction.cs','addon/SAINFollowerFollowSearchPartyAction.cs','addon/SainSquadDecisionBridge.cs','tests/SainSquadFixture.cs','addon/SAINFollowerRuntime.cs','client/Modules/SainAddonBridge.cs','addon/SainManPersonality.cs','client/Patches/FollowerSainFriendlyFirePatch.cs')
     $paths=@()
     foreach($sourcePath in $sources){
         $source=Get-Content -Raw -Encoding UTF8 (Join-Path $RepositoryRoot $sourcePath)
@@ -107,6 +147,12 @@ try {
             $end=$ping.IndexOf('    internal sealed class RetainedEnemyDownContact',$begin)
             if($begin -lt 0 -or $end -le $begin){throw 'Marker contact boundaries changed'}
             $source=$source.Replace('__MARKER_CONTACT__',$ping.Substring($begin,$end-$begin))
+        }
+        if($sourcePath -eq 'tests/SainSquadSupportFixture.cs'){
+            $core=Get-Content -Raw (Join-Path $RepositoryRoot 'client/BigBrain/FollowerCombatCommon.cs')
+            $position=[regex]::Match($core,'(?ms)^        private static bool IsTeamSearchSupportPosition\(.*?^        [}]')
+            if(!$position.Success){throw 'Core push support predicate source missing'}
+            $source=$source.Replace('__PUSH_SUPPORT_POSITION__',$position.Value)
         }
         if($sourcePath -eq 'tests/SainMedicalFixture.cs'){
             $covers=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Utils/Covers.cs')

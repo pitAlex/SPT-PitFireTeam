@@ -15,7 +15,7 @@ namespace EFT {
     public partial class Player {public RiskAIData AIData=new RiskAIData();public RiskProfile Profile=new RiskProfile();}
     public class RiskMagazine {public RiskCartridges Cartridges=new RiskCartridges();public int MaxCount=30;}
     public class RiskCartridges {public int Count=30;}
-    public class RiskWeapon {public bool Automatic=true,Shotgun,Precision;public RiskMagazine Magazine=new RiskMagazine();public RiskMagazine GetCurrentMagazine()=>Magazine;}
+    public class RiskWeapon : EFT.InventoryLogic.Weapon {public bool Automatic=true,Shotgun,Precision;public RiskMagazine Magazine=new RiskMagazine();public RiskMagazine GetCurrentMagazine()=>Magazine;}
     public class RiskShootController {public RiskWeapon Item=new RiskWeapon();}
     public class RiskSelector {public bool IsChanging;}
     public class RiskWeaponManager {public RiskShootController ShootController=new RiskShootController();public RiskWeapon CurrentWeapon=>ShootController.Item;public bool IsWeaponReady=true;public RiskSelector Selector=new RiskSelector();}

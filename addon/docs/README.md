@@ -6,6 +6,7 @@ The optional addon implements the **SAINGrunt** and **SAINShooter** follower com
 |---|---|---|
 | [Integration](Integration.md) | [Architecture](../../docs/Architecture.md), [SAIN compatibility](../../docs/SAIN-Compatibility.md) | Readiness, layer ownership, human leadership, hooks and lifecycle |
 | [Combat](Combat.md) | [Combat tactics](../../docs/Combat-Tactics.md) | SAIN knowledge/actions, objectives, cover, risk, medicine and recording |
+| [Squad support](Squad-Support.md) | [Combat tactics](../../docs/Combat-Tactics.md), [commands](../../docs/Commands.md) | Bounded ordered suppression and prepared ally firing support |
 | [Commands and status](Commands.md) | [Commands](../../docs/Commands.md) | Combat translations and passive native-contact reporting |
 | [Personalities and aggression](Personalities-and-Aggression.md) | [Core aggression](../../docs/Combat-Tactics.md), [proficiency](../../docs/Friendly-AI-Performance-Settings.md) | Loaded-preset tactical interpolation and restoration |
 | [Enemy Tracking proposal](Enemy-Tracking.md) | [Common tracking proposal](../../docs/Enemy-Tracking.md) | Native source findings and planned Simple adaptation; not implemented |

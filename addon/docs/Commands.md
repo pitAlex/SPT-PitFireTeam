@@ -16,6 +16,10 @@ Speech, begging, fake death, taunting, assignment and mechanical proficiency are
 
 Accepted orders capture the selected target in `SAINFollowerPushObjective`; no core `PushEnemy` remains pending. The addon replaces prior push/regroup/relocation intent and uses the [shared approach, risk and interruption contract](Combat.md#push-objectives). Core command eligibility and recruit restrictions remain authoritative. Native useful fire, urgent combat and medicine may interrupt execution without deleting the order. Confirmed death, cancellation/replacement, release or expired contact grace end it.
 
+## Suppress
+
+SAINGrunt consumes Core's accepted suppression command into a bounded Squad-layer objective. It retains the requested known target, can use Core's fresh-report fallback when SAIN has no usable suppression point, and uses native firing with shared foliage/hard-cover and friendly-lane safety, and ends after up to two seconds of actual fire or the attempt deadline. It can prepare one native firing position when the current lane is unavailable. Survival, replacement orders and contact loss interrupt it. Grenade launchers are excluded. SAINShooter supports Core's eligible automatic secondary/holster command fallback with bounded weapon preparation. See [squad suppression and ally support](Squad-Support.md) for the full adaptation and limits.
+
 ## Regroup and Exit Located
 
 The addon consumes `RegroupNearBoss` once into its squad objective, including tight Exit Located. It uses the same core arrival distances with native path/floor checks. Survival work can interrupt it without cancelling intent; peaceful regroup stays core-owned. [Combat regroup](Combat.md#regroup) describes automatic admission, movement and publication handling.
@@ -49,7 +53,7 @@ Other tactics and absent/unready addon state use [core status behavior](../../do
 
 ## Command limits
 
-Do not infer full core command parity from shared input. Dedicated addon protection, ordered suppression and marksman support actions remain separate work; native squad support still operates. Implemented translations are the ones listed above. See [remaining work](Roadmap.md).
+Do not infer full core command parity from shared input. Dedicated addon protection remains separate work. SAINShooter automatic support-weapon transactions are described in [SAINShooter](SAINShooter.md#automatic-support-weapons). Ordered suppression and bounded ally support are documented in [Squad support](Squad-Support.md); they do not reproduce all Core support arbitration. Implemented translations are the ones listed above. See [remaining work](Roadmap.md).
 
 ## Pending-heal status
 
