@@ -14,7 +14,7 @@ You are working on a C# Single Player Tarkov mod built with BepInEx, Harmony and
 
 **SAIN plugin / SAIN mod** means the external `me.sol.sain` dependency. **SAIN addon** means our optional `xyz.pit.fireteam.sainaddon` combat brain under `addon/`. **Core** means our main client/server implementation, not unmodified EFT.
 
-Core owns follower lifecycle, peaceful requests, core combat and general external-SAIN compatibility. The addon owns its SAINGrunt combat policies, actions, local state and hooks required only by that brain. Compatibility needed without the addon stays in core. Shared SAIN presets and ordinary-bot state must not be mutated. Core has no typed SAIN/addon dependency; preserve readiness-gated core fallback.
+Core owns follower lifecycle, peaceful requests, core combat and general external-SAIN compatibility. The addon owns its SAINGrunt and SAINShooter combat policies, actions, local state and hooks required only by that brain. Compatibility needed without the addon stays in core. Shared SAIN presets and ordinary-bot state must not be mutated. Core has no typed SAIN/addon dependency; preserve readiness-gated core fallback.
 
 SAINGrunt is the display name; persisted `SainMan` identifiers remain stable. Do not infer a data migration from a display rename.
 
