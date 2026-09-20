@@ -416,6 +416,11 @@ namespace pitTeam.BigBrain.Actions
             out EFT.InventoryLogic.IItemOperationResult? operation)
         {
             operation = null;
+            if (!PreservesEquippedMagazineReloadSpace(inventory?.Inventory?.Equipment, item, address))
+            {
+                return false;
+            }
+
             Diz.LanguageExtensions.OperationResult<EFT.InventoryLogic.MoveResult> moveResult = EFT.InventoryLogic.ItemManipulator.Move(item, address, inventory, true);
             if (moveResult.Failed ||
                 moveResult.Value.ItemsDestroyRequired ||
@@ -490,6 +495,13 @@ namespace pitTeam.BigBrain.Actions
                     {
                         StopLootPickupState(botPlayer);
                         ClearTakeLootState("TakeLoot:itemMoved");
+                        return;
+                    }
+
+                    if (!PreservesEquippedMagazineReloadSpace(inventory.Inventory.Equipment, rootItem, moveAction.To))
+                    {
+                        StopLootPickupState(botPlayer);
+                        ClearTakeLootState("TakeLoot:reloadLandingSpace");
                         return;
                     }
                 }

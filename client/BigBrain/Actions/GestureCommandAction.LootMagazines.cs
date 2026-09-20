@@ -286,7 +286,8 @@ namespace pitTeam.BigBrain.Actions
             EFT.InventoryLogic.SearchableItem simulatedBackpack = CloneSearchableContainer(
                 followerEquipment.GetSlot(EquipmentSlot.Backpack)?.ContainedItem);
             List<EFT.InventoryLogic.Magazine> alternateReloadReserves = NormalizeReloadReserveItems(
-                alternateReloadReserveItems);
+                (alternateReloadReserveItems ?? Enumerable.Empty<EFT.InventoryLogic.Magazine>())
+                    .Concat(GetAlternateReloadReservesForSupportMagazinePlan(inventory, followerEquipment, weapon)));
             HashSet<string> consideredItemIds = new HashSet<string>(StringComparer.Ordinal);
             Modules.Logger.LogInfo(
                 $"[LootCommand][MagDebug] Plan start for '{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}': " +
@@ -1035,7 +1036,8 @@ namespace pitTeam.BigBrain.Actions
             {
                 visited.Add(grid);
                 if (grid.TryFindLocationForItem(magazine, out ItemAddress candidateAddress) &&
-                    !object.Equals(magazine.Parent, candidateAddress))
+                    !object.Equals(magazine.Parent, candidateAddress) &&
+                    PreservesEquippedMagazineReloadSpace(followerEquipment, magazine, candidateAddress))
                 {
                     address = candidateAddress;
                     return true;
@@ -1047,7 +1049,8 @@ namespace pitTeam.BigBrain.Actions
                 if (container != null &&
                     visited.Add(container) &&
                     container.TryFindLocationForItem(magazine, out ItemAddress candidateAddress) &&
-                    !object.Equals(magazine.Parent, candidateAddress))
+                    !object.Equals(magazine.Parent, candidateAddress) &&
+                    PreservesEquippedMagazineReloadSpace(followerEquipment, magazine, candidateAddress))
                 {
                     address = candidateAddress;
                     return true;

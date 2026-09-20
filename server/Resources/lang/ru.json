@@ -74,6 +74,11 @@
   "gestures": { "OverThere": "Туда", "TeamStatus": "Отчет статуса", "ViewBackpack": "Рюкзак", "OnRepeatedContact": "Контакт" },
   "botStatus": { "Dead": "Мертв", "Engaged": "В бою", "Alerted": "Враг обнаружен", "Heal": "Лечится", "WantToHeal": "Хочет лечиться" },
   "socialUi": {
+    "LootActionThis": "CMD: Обыскать",
+    "LootActionAndWeapon": "CMD: Обыскать и взять оружие",
+    "LootActionAndGear": "CMD: Обыскать и взять снаряжение",
+    "LootActionWeapon": "CMD: Взять оружие",
+    "LootActionGear": "CMD: Взять снаряжение",
     "AddTeammate": "+ Добавить бойца",
     "AddTeammateInProgress": "{0} добавлен в список друзей",
     "AddTeammateConfirm": "Добавить бойца",

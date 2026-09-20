@@ -19,6 +19,30 @@ namespace pitTeam.Modules
         public bool CategoryOnly => PriorityPending || Mode == FollowerLootMode.GetWeapon || Mode == FollowerLootMode.GetGear;
         public bool AllowsWeaponWork => !CategoryOnly || WantsWeapons;
         public bool AllowsGearWork => !CategoryOnly || WantsGear;
+        public bool WeaponSelectionInitialized { get; private set; }
+        public bool SelectiveWeapons { get; private set; }
+        public string SelectedLongGunId { get; private set; }
+        public string SelectedPistolId { get; private set; }
+        public bool SelectedLongGunCanEquip { get; private set; }
+
+        public void InitializeWeaponSelection(bool pickupWeaponsEnabled, string primaryId, string secondaryId,
+            string pistolId, bool shoulderSlotAvailable, bool holsterAvailable)
+        {
+            if (WeaponSelectionInitialized) return;
+            WeaponSelectionInitialized = true;
+            SelectiveWeapons = WantsWeapons && !pickupWeaponsEnabled;
+            if (!SelectiveWeapons) return;
+            SelectedLongGunId = !string.IsNullOrEmpty(primaryId) ? primaryId : secondaryId;
+            SelectedPistolId = holsterAvailable ? pistolId : null;
+            SelectedLongGunCanEquip = shoulderSlotAvailable;
+        }
+
+        public bool AllowsSelectedWeapon(string itemId, bool isGun, bool isWeaponLoot)
+        {
+            if (!SelectiveWeapons || !isWeaponLoot) return true;
+            return isGun && !string.IsNullOrEmpty(itemId) &&
+                (itemId == SelectedLongGunId || itemId == SelectedPistolId);
+        }
 
         public FollowerLootRequest(FollowerLootMode mode = FollowerLootMode.Normal)
         {

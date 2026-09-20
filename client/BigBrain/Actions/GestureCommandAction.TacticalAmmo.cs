@@ -455,16 +455,6 @@ namespace pitTeam.BigBrain.Actions
                 return null;
             }
 
-            WeaponPrimaryReadinessSnapshot readiness = FollowerWeaponPrimaryReadiness.EvaluateActual(
-                inventory,
-                weapon);
-            if (readiness?.Threshold > 0 && readiness.InsertedContribution >= readiness.Threshold)
-            {
-                // A high-capacity inserted magazine that satisfies readiness by itself needs no
-                // protected landing slot under the established primary policy.
-                return null;
-            }
-
             EFT.InventoryLogic.Magazine inserted = GetCurrentMagazineSafely(weapon);
             if (inserted != null &&
                 FollowerWeaponPrimaryReadiness.HasMagazineReloadLandingSpace(

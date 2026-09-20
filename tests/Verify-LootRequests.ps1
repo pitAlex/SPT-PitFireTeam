@@ -34,9 +34,17 @@ foreach ($kind in @('Body', 'Container')) {
         throw "Unguarded $kind weapon maintenance"
     }
 }
-$locale = Get-Content -Raw (Join-Path $RepositoryRoot 'server/Resources/lang/en.json') | ConvertFrom-Json
-foreach ($key in @('LootActionThis','LootActionAndWeapon','LootActionAndGear','LootActionWeapon','LootActionGear')) {
-    if (!$locale.socialUi.$key) { throw "Missing locale key $key" }
+$body = Get-Content -Raw (Join-Path $RepositoryRoot 'client/BigBrain/Actions/GestureCommandAction.BodyLoot.cs')
+if ($body -match '(?s)if \(distance > 1\.9f\)\s*\{\s*bodyLootReadyAt = 0f') { throw 'Leaving corpse range erases search deadline' }
+if ($body -notmatch 'InitializeBodyWeaponSelection\(corpseEquipment, followerEquipment\)') { throw 'Body search does not initialize request selection' }
+if ($body -notmatch '"selectiveWeaponCargo"') { throw 'Missing selected long-gun cargo-only path' }
+$candidates = Get-Content -Raw (Join-Path $RepositoryRoot 'client/BigBrain/Actions/GestureCommandAction.LootCandidates.cs')
+if ($candidates -notmatch 'ActiveLootRequest\?\.AllowsSelectedWeapon') { throw 'Missing centralized weapon selection gate' }
+foreach ($localeFile in Get-ChildItem (Join-Path $RepositoryRoot 'server/Resources/lang') -Filter '*.json') {
+    $locale = Get-Content -Raw -Encoding UTF8 $localeFile.FullName | ConvertFrom-Json
+    foreach ($key in @('LootActionThis','LootActionAndWeapon','LootActionAndGear','LootActionWeapon','LootActionGear')) {
+        if ($locale.socialUi.$key -notmatch '^CMD: \S') { throw "Missing CMD label $key in $($localeFile.Name)" }
+    }
 }
 if ($GameRoot) {
     Add-Type -Path (Join-Path $RepositoryRoot 'client/libs/Mono.Cecil.dll')

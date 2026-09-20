@@ -235,6 +235,11 @@
     "WantToHeal": "需要治疗"
   },
   "socialUi": {
+    "LootActionThis": "CMD: 搜刮此处",
+    "LootActionAndWeapon": "CMD: 搜刮并获取武器",
+    "LootActionAndGear": "CMD: 搜刮并获取装备",
+    "LootActionWeapon": "CMD: 获取武器",
+    "LootActionGear": "CMD: 获取装备",
     "AddTeammate": "+ 添加小队成员",
     "AddTeammateInProgress": "{0} 已添加至好友列表",
     "AddTeammateConfirm": "添加小队成员",

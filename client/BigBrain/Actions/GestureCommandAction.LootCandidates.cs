@@ -301,6 +301,11 @@ namespace pitTeam.BigBrain.Actions
             bool markRejectedAttempt = false)
         {
             Item item = candidate?.Item;
+            if (item != null && ActiveLootRequest?.AllowsSelectedWeapon(item.Id, item is Weapon,
+                    FollowerLootCategoryService.IsWeaponLoot(item)) == false)
+            {
+                return false;
+            }
             // Restrict before any bypass flags or rejected-attempt bookkeeping. Deferred categories
             // must remain available when a priority pass finishes; only modes also exclude dogtags.
             if (item != null && ActiveLootRequest?.AllowsCategory(

@@ -86,6 +86,8 @@ Category-only requests also exclude food, medicine, valuables and dogtags. Categ
 
 Normal teammate-corpse recovery is unchanged. The four specialized actions use filtered looting on teammate corpses too, while retaining protected-equipment exclusion.
 
+When saved **Pickup Weapons** is off, **Loot & Get Weapon** and **Get Weapon** use a selective, request-owned choice: the corpse's first-primary gun, or its second-primary gun only when the first is absent, plus its holster pistol only when the follower's holster was empty at search start. The choice stays fixed across transactions and the normal-loot phase; it does not advance to another gun after pickup. Guns carried in the corpse's bags are not extra selections. If both follower shoulder slots are occupied, the selected long gun is backpack cargo with its existing attachments/inserted magazine only, without additional source magazines or ammunition. Equipped selections retain the normal usable-package and reload-space rules. The override does not authorize unrelated weapon supplies, attachments or maintenance of other guns. Saved Pickup Weapons on retains the ordinary broad weapon-looting policy. Gear-swap permission, readiness, price, protection and capacity checks still apply.
+
 ## Loose Item Pickup
 
 Inputs:
@@ -145,6 +147,7 @@ Execution:
 - says `EPhraseTrigger.LootNothing` if no eligible non-dogtag item exists
 - plays the loot-search sound while waiting
 - search delay is based on corpse pockets, backpack, and tactical vest grid cells, with a bounded cap
+- briefly moving outside corpse interaction range preserves an already-started search deadline; returning cannot skip the remaining delay. Debug search-start logs include the deadline and request mode
 - after the search delay, plans and executes one live inventory transaction at a time
 - marks the corpse loot tree searched for the player after normal completion, unless the player is actively viewing/searching that same body
 - says `EPhraseTrigger.Ready` when done after at least one successful non-dogtag move
@@ -433,6 +436,8 @@ Rules:
 - every top-off transaction must settle before the resulting magazine count participates in readiness; failures leave the weapon decision to the actual live counts
 - the same top-off-first order applies when a later body/container search supplies ammunition for a tracked second-primary or backpack-cargo candidate: fill its acquired inserted/source magazines, rerun operational-magazine placement and readiness, then route any remaining accepted loose rounds through reload-safe vest space, pockets, backpack, and finally the secure container
 - reload landing space is selected from the compatible magazines actually available for the weapon, not permanently from the inserted magazine
+- every new-weapon magazine plan also preserves the equipped weapons' reload reserve, even when an inserted magazine alone satisfies ammunition readiness
+- rig/pocket move construction and queued execution check the exact destination against cloned grids: an equipped primary, secondary or holster magazine that can land before the move must still fit afterward. Each shape is checked independently against the same free layout (shared space, not one reserved opening per gun); already-unusable oversized magazines do not block all looting. Moving the inserted magazine itself into storage does not require another opening for that same magazine
 - candidate magazine shapes are tested largest first; a shape qualifies as the reload reserve only when fast access can hold one magazine of that shape and still leave room for another of the same shape to land
 - if a large shape cannot satisfy that pair test, the planner tries the next smaller shape; after finding a valid reserve, it revisits larger magazines and carries each one that individually fits while preserving the selected smaller landing space
 - this permits layouts such as `1x1 magazine | 1x2 magazine | empty 1x1 landing space`: the `1x2` can be used and dropped when it cannot land, while the `1x1` magazine retains a valid reload cycle

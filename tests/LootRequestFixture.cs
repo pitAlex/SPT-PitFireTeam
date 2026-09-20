@@ -53,8 +53,50 @@ internal static class LootRequestFixture
                     "new normal request inherited override");
             }
         }
+        VerifySelectiveWeapons();
         Console.WriteLine($"Loot request fixture passed: {checks} assertions.");
         return 0;
+    }
+
+    private static void VerifySelectiveWeapons()
+    {
+        foreach (FollowerLootMode mode in Enum.GetValues(typeof(FollowerLootMode)))
+        for (int mask = 0; mask < 64; mask++)
+        {
+            bool pickupEnabled = (mask & 1) != 0;
+            bool shoulderAvailable = (mask & 2) != 0;
+            bool holsterAvailable = (mask & 4) != 0;
+            string primary = (mask & 8) != 0 ? "primary" : null;
+            string secondary = (mask & 16) != 0 ? "secondary" : null;
+            string pistol = (mask & 32) != 0 ? "pistol" : null;
+            bool selective = !pickupEnabled && (mode == FollowerLootMode.GetWeapon || mode == FollowerLootMode.LootAndGetWeapon);
+            var request = new FollowerLootRequest(mode);
+            request.InitializeWeaponSelection(pickupEnabled, primary, secondary, pistol, shoulderAvailable, holsterAvailable);
+            string longGun = primary ?? secondary;
+            Check(request.SelectiveWeapons == selective, "selection enabled only for weapon override with pickup off");
+            if (selective)
+            {
+                Check(request.SelectedLongGunId == longGun, "corpse primary preferred; secondary only when absent");
+                Check(request.SelectedPistolId == (holsterAvailable ? pistol : null), "pistol needs empty holster");
+                Check(request.SelectedLongGunCanEquip == shoulderAvailable, "long gun equip versus cargo snapshot");
+            }
+            for (int phase = 0; phase < 2; phase++)
+            {
+                foreach (string id in new[] { "primary", "secondary", "pistol", "backpackGun", "anotherGun" })
+                {
+                    bool expected = !selective || id == longGun || (id == pistol && holsterAvailable);
+                    Check(request.AllowsSelectedWeapon(id, true, true) == expected, "selected gun allowlist across phases");
+                }
+                Check(request.AllowsSelectedWeapon("looseMagazine", false, true) == !selective, "no unrelated magazine cargo");
+                Check(request.AllowsSelectedWeapon("looseAmmo", false, true) == !selective, "no unrelated ammo cargo");
+                Check(request.AllowsSelectedWeapon("weaponMod", false, true) == !selective, "no unrelated attachment cargo");
+                Check(request.AllowsSelectedWeapon("food", false, false), "ordinary nonweapon loot unaffected");
+                request.CompletePriority();
+                request.InitializeWeaponSelection(!pickupEnabled, "replacement", "replacement2", "replacementPistol", true, true);
+                Check(request.SelectiveWeapons == selective, "selection cannot change during a request");
+                if (selective) Check(request.SelectedLongGunId == longGun, "selection cannot advance to another corpse gun");
+            }
+        }
     }
 }
 

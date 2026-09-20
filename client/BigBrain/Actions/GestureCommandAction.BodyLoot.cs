@@ -64,7 +64,7 @@ namespace pitTeam.BigBrain.Actions
             float distance = Vector3.Distance(BotOwner.Position, bodyPosition);
             if (distance > 1.9f)
             {
-                bodyLootReadyAt = 0f;
+                // Moving back into reach must not erase an already-started search deadline.
                 BotOwner.GoToSomePointData.SetPoint(bodyPosition);
                 BotOwner.GoToSomePointData.UpdateToGo(false);
                 BotOwner.Steering.LookToMovingDirection();
@@ -146,11 +146,15 @@ namespace pitTeam.BigBrain.Actions
             InventoryEquipment followerEquipment)
         {
             bodyLootSearchStarted = true;
+            InitializeBodyWeaponSelection(corpseEquipment, followerEquipment);
             followerData?.BeginCommittedLootCommand(FollowerCommandType.TakeBodyGear);
 
             Item? soundSource = GetBestBodyLootSearchSoundSource(corpseEquipment);
             int gridCells = GetBodyLootSearchGridCells(corpseEquipment);
             bodyLootReadyAt = Time.time + CalculateLootSearchDelaySeconds(gridCells);
+
+            Modules.Logger.LogInfo($"[LootCommand][Search] follower='{BotOwner?.Profile?.Nickname}' " +
+                $"phase=start cells={gridCells} readyAt={bodyLootReadyAt:0.000} mode={ActiveLootRequest?.Mode}");
 
             StartLootSearchSound(soundSource, BotOwner?.Position ?? Vector3.zero);
         }
@@ -649,6 +653,34 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
+            if (ActiveLootRequest?.SelectiveWeapons == true && candidate.Item is Weapon selectedWeapon)
+            {
+                if (candidate.Item.Id == ActiveLootRequest.SelectedLongGunId &&
+                    (!ActiveLootRequest.SelectedLongGunCanEquip ||
+                     (followerEquipment.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem != null &&
+                      followerEquipment.GetSlot(EquipmentSlot.SecondPrimaryWeapon)?.ContainedItem != null)))
+                {
+                    // Cargo means the chosen gun's existing tree only, not additional source magazines/ammo.
+                    return TryBuildFilteredLootCarryMove(inventory, followerEquipment, candidate,
+                        EquipmentSlot.Backpack, "selectiveWeaponCargo", out move);
+                }
+
+                if (candidate.Item.Id == ActiveLootRequest.SelectedPistolId)
+                {
+                    if (!CanAddHolsterWeapon(followerEquipment)) return false;
+                    var magazines = operationalMagazineCandidates ?? Enumerable.Empty<BodyGearCandidate>();
+                    var ammo = operationalAmmoCandidates?.ToList() ?? new List<BodyGearCandidate>();
+                    if (!TryBuildPhaseOneHolsterWeaponEquipMove(inventory, followerEquipment, candidate,
+                            magazines, ammo, out move, out OperationalMagazinePlan? magazinePlan)) return false;
+                    if (magazinePlan != null)
+                    {
+                        move = AppendWeaponLooseAmmoSupportFollowUps(move, followerEquipment, selectedWeapon,
+                            ammo, "selectedHolsterWeapon", GetOperationalMagazineCartridgeItems(magazinePlan));
+                    }
+                    return true;
+                }
+            }
+
             // Filtered looting never uses the follower rig for generic cargo. Fast-access writes
             // are tactical magazine moves for an accepted primary/support equipment plan.
             if (ShouldUseFilteredLootEquipmentSlot(candidate))
@@ -810,6 +842,12 @@ namespace pitTeam.BigBrain.Actions
             Item item = candidate?.Item;
             if (item == null)
             {
+                return false;
+            }
+
+            if (!PreservesEquippedMagazineReloadSpace(inventory?.Inventory?.Equipment, item, address))
+            {
+                LogBodyGearMoveBuildRejection(inventory, candidate, address, "reloadLandingSpace", null, null);
                 return false;
             }
 
