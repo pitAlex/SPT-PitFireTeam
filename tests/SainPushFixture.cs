@@ -10,7 +10,7 @@ using SAIN.SAINComponent.Classes.EnemyClasses;
 using SAIN.SAINComponent.SubComponents.CoverFinder;
 using UnityEngine;
 
-namespace UnityEngine { public static partial class Physics { public static bool Blocked; public static bool Linecast(Vector3 from,Vector3 to,int mask)=>Blocked; } }
+namespace UnityEngine { public static partial class Physics { public static bool Blocked; public static int LinecastCalls; public static bool Linecast(Vector3 from,Vector3 to,int mask){LinecastCalls++;return Blocked;} } }
 namespace SAIN.Components {
     public class PushPose {public int Calls;public void SetPoseToCover(Enemy enemy){Calls++;}}
     public class PushLean {public void HoldLean(float seconds){}}

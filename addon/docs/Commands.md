@@ -4,6 +4,12 @@
 
 [SAINShooter](SAINShooter.md#commands-regroup-and-lifecycle) shares gestures, regroup, status and lifecycle. Its Need Sniper, Go Forward, suppression and independent-mode differences are described there; the assault/aggression rules below describe SAINGrunt.
 
+## Explicit Contact and friendly targets
+
+Core owns Contact candidate eligibility, including protected roles, player/teammate exclusions, existing fights and perception. For an accepted prioritized, goal-promoting contact on a ready addon tactic, `SainContactEnemyBridge` changes only that registration's `Enemy.MakeEnemy` call from the ambient cause to Core's existing explicit `addPlayer` cause. This permits a commanded neutral Scav to become an enemy through the normal group API before Core seeds its report and synchronizes SAIN. Non-promoting contacts, automatic/non-prioritized reports, ordinary bots, Core tactics and unready-addon fallback retain the original call.
+
+After confirmed group admission, the adapter removes stale ally/neutral membership for that exact target, including inconsistent pre-existing enemy entries. SAIN's native ally cleanup can therefore no longer discard the commanded contact for that reason. Core target retention, native enemy activity/forgetting, actual sight and shot safety remain intact; no reverse hostility, global preset or SAIN enemy-provider patch is added. The hook runs only during command registration, with no recurring scan. `sainContactOverride` records target identity, prior ally/neutral membership and admission without evaluating decisions. Actual raid qualification remains required.
+
 ## Aggression commands
 
 - **Hold Position:** temporary 0% aggression, mapped to Coward combat policy.

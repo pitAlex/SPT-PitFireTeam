@@ -18,6 +18,7 @@ public class SAINFollowerSquadRegroupAction(BotOwner bot) : BotAction(bot, nameo
     {
         base.Start();
         Bot.Mover.Stop();
+        Bot.Suppression.ResetSuppressing();
         Shoot.EndShoot();
         nextMove = 0f; runRequested = false;
         ownedPath = null;
@@ -25,6 +26,7 @@ public class SAINFollowerSquadRegroupAction(BotOwner bot) : BotAction(bot, nameo
 
     public override void Update(CustomLayer.ActionData data)
     {
+        SainRegroupFireSafety.CheckActiveBurst(Bot);
         var objective = SAINFollowerRuntime.GetRegroup(BotOwner);
         if (objective == null) { StopOwnedPath(); return; }
         objective.Observe();
@@ -34,7 +36,8 @@ public class SAINFollowerSquadRegroupAction(BotOwner bot) : BotAction(bot, nameo
         if (!objective.TryGetTarget(out Vector3 target, out bool sprint)) { StopOwnedPath(); return; }
         Bot.Mover.SetTargetPose(1f);
         Bot.Mover.SetTargetMoveSpeed(1f);
-        if (sprint && !runRequested) Shoot.EndShoot();
+        if (sprint && !runRequested)
+        { Bot.Suppression.ResetSuppressing(); Shoot.EndShoot(); }
         runRequested = sprint;
         bool moved = sprint && Bot.Mover.RunToPoint(target);
         if (!moved) moved = Bot.Mover.WalkToPoint(target);
@@ -56,6 +59,8 @@ public class SAINFollowerSquadRegroupAction(BotOwner bot) : BotAction(bot, nameo
 
     public override void Stop()
     {
+        Bot.Suppression.ResetSuppressing();
+        Shoot.EndShoot();
         StopOwnedPath();
         SAINFollowerRuntime.GetRegroup(BotOwner)?.ReleaseTarget();
         base.Stop();

@@ -60,6 +60,7 @@ namespace SAIN.SAINComponent.Classes.WeaponFunction {
     public class ManualShootClass {
         public BotComponent Bot;public int Calls,Resets;public bool Ready=true;public bool CanShoot(bool checkFF=true)=>Ready;public bool Succeeds=true;public Enemy LastTarget;
         public Vector3 ShootPosition;public bool CheckFriendly;public SAIN.Models.Enums.EShootReason Reason;
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         public bool TryShoot(Enemy enemy,Vector3 point,bool checkFF=true,SAIN.Models.Enums.EShootReason reason=SAIN.Models.Enums.EShootReason.None){
             Calls++;LastTarget=enemy;CheckFriendly=checkFF;
             if(!Succeeds||Bot.BotOwner.FriendlyInLane){Reset();return false;}

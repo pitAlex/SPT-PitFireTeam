@@ -36,6 +36,8 @@ Core owns compatibility needed without this brain. Do not move proficiency, aim/
 - Core `SainAddonBridge`: readiness, release/reset, lifecycle, player updates and passive enemy-contact callbacks.
 - Addon `SainSquadDecisionBridge`: player-led provider dispatch and filtering before native publication.
 - Core `SainRegroupBridge`, `FollowerPushGeometry`, `FollowerPushRiskPolicy`, `FollowerCombatCommandGeometry` and `Covers`: shared distance, movement, risk, reservation and protection helpers.
+- Addon `SainRegroupFireSafety`: regroup-only manual suppression trigger guard; ongoing burst checks run in the action using Core shot-safety helpers.
+- Addon `SainContactEnemyBridge`: accepted Contact relationship conversion before Core/native synchronization; see [Contact](Commands.md#explicit-contact-and-friendly-targets).
 - Addon `SainSquadSupportBridge`: current-firearm command restriction and cached native aiming/Core suppression safety bindings; see [Squad support](Squad-Support.md).
 - Core `SainCombatRecorderBridge`: optional passive Debug recording; it never drives decisions.
 

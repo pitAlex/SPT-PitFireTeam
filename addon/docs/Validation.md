@@ -1,5 +1,54 @@
 # SAIN addon validation and raid evidence
 
+
+
+## 2026-09-20 - General review: bounded cover planning
+
+Addressed the two reproduced addon performance findings without changing Core, external SAIN source, recording, or live firing checks. Forward planning linecasts and post-regroup cover-to-player routes now share the finder's existing four-operation frame budget with discovery/native validation. Positive and negative planning results are cached for one second with endpoint/context invalidation, retained through an unfinished pass, bounded to 128 entries per cache and cleared on finder reset. Route admission compares the current radius with the cached distance; budget exhaustion preserves ranked pending selection.
+
+Controlled production-code harness results for 32 candidates:
+
+| Work | Before | After |
+|---|---|---|
+| Forward firing-lane planning rays across a completed initial scan | 144 across eight polls | 32 across sixteen polls; discovery and rays share the budget |
+| Post-regroup route probes in one poll | 32 | At most 4, sharing the same budget |
+| Routes on the immediate unchanged failed-selection retry | 32 | 0 |
+
+Both 0.05-second and 0.3-second forward polling complete without starvation. Regression checks also cover repeated same-frame polls, cached rejection, expiry/recovery, moved cover/threat/player invalidation, current-radius enforcement and retained pending ownership. Debug addon build: zero warnings/errors. **1,099 addon checks** and **13 source-parity checks** passed; diff whitespace checks passed. These are query-count bounds, not measured Unity frame time. The added dictionaries retain bounded planning results rather than allocating per poll after capacity stabilizes; native query internals retain their existing costs.
+
+After Tarkov closed, deployed the Debug addon DLL/PDB at 2026-09-20 18:05:49 +03:00 and verified SHA-256 against the build: DLL `45CBA162712035E8FA628B2E927098C9E729C594BB56E625BC5C88B89AA6B3D6`, PDB `F72AEC4D2A58C378918DC68933C170CA01093209C1F2D711E1BCEB7730BC74F4`. Installed Core remained `81A06B0A393B00EFFB016F30423FAA65EA1F01AE285C5BB8FA7F6D6086B27979`. This deploy includes the preceding regroup friendly-fire guard and Contact correction. No backups were created. Raid qualification should include dense cover, an unreachable player route, slow decision cadence and moving-player regroup selection.
+
+## 2026-09-20 - Regroup suppression friendly-fire guard
+
+The live `20260920-173238-Interchange.jsonl` captured Brick firing about 14 rounds in automatic regroup at raid time 679.34-680.36 while Medved lost about 33 chest and 34 left-arm health. Player and teammate positions were ahead of Brick near his firing direction. The record has no per-hit attacker attribution or player damage timeline, so it supports a suspected friendly-fire event rather than proving both hits came from Brick.
+
+Regroup now retains native target selection and cadence but adds Core suppression-target and current-muzzle friendly-lane checks before manual suppression starts. Its action checks active bursts before movement throttling and clears suppression at entry, sprint start and stop. The typed trigger hook is scoped to the current addon regroup action and is removed with the addon hook set. Core source is unchanged by this correction.
+
+Validation: Debug addon build passed with zero warnings/errors; 1,018 addon combat checks and 13 native source-parity checks passed. The installed manual-fire method signature was verified. New checks exercise initial target/muzzle rejection, interruption of ongoing bursts, clear-lane recovery, invalid geometry, handoff cleanup, native-action bypass, passive guards, and hook lifecycle.
+
+Performance review: the active-burst guard performs at most two linear passes over the boss/follower list using existing Core geometry. Inactive suppression exits before geometry work; ordinary actions bypass the trigger hook before lane checks. No new physics casts, NavMesh queries, enemy scans, decision/provider calls, logging or clear-lane cache. Compiled hot methods contain no newobj/newarr/box instructions; inspected Core lane helpers use indexed iteration without collections or reflection. This is source/IL evidence, not measured Unity frame time. Crossing allies, moving suppression and safe resumption require raid qualification.
+
+Not deployed during this pass: EscapeFromTarkov was running. The Debug addon output is ready for the next deployment; no backups were created.
+
+## 2026-09-20: prioritized Contact relationship override
+
+User-confirmed friendly Scav in `20260920-052413-bigmap.jsonl`, followed by an explicit Contact order. Medved retained the Scav from raid time 1672.04; Core blocked 665 clears through 1754.09 while SAIN entered/released combat 18 times before normal fighting resumed. That retention reflects the command and is not removed by this fix. The record lacks historical ally/activity flags, so it does not independently establish every native rejection reason.
+
+Source inspection found Contact registering via ambient `checkAddTODO`, which the Core Scav hostile-intent gate may reject even for the explicit command; personal memory/synchronization can still proceed. Native SAIN removes allies from its enemy collection. The addon now supplies Core's existing explicit cause only for prioritized, goal-promoting registration, and reconciles stale ally/neutral membership only after actual group admission. Non-prioritized automatic reports and Core/unready ownership retain the original path. No Core source or SAIN provider is changed.
+
+Validation: **1,004 production addon checks** (18 added Contact checks), **13 source-parity checks**, clean Debug addon build (zero warnings/errors), and scoped whitespace check. The Contact fixture executes the production Harmony adapter with controlled Core/native relationship behavior; installed Core metadata verifies the real registration signature, argument indexes and single enemy-creation call. It covers accepted/repeated Contact, stale ally membership, native cleanup, protected targets, rejected group admission, unchanged ambient/background reports, both addon tactics, fallback and hook removal. This is not proof of Unity raid behaviour or of target activity/standby transitions.
+
+Deployed at **2026-09-20 06:34:12 +03:00**, game closed, addon DLL/PDB only, no backups. Source/destination SHA-256 matched:
+
+| File | SHA-256 |
+|---|---|
+| pitFireTeam.SAINAddon.dll | `2FE3D2DA18414310590C5D941A2862A1DE1DF2320E4E13BDDF19F85234F0C1C0` |
+| pitFireTeam.SAINAddon.pdb | `9F020CC650F18E7E2F04DE3A301F46C122791680C5C8217A112BF9B8B7F684A8` |
+| Existing Core DLL, unchanged | `81A06B0A393B00EFFB016F30423FAA65EA1F01AE285C5BB8FA7F6D6086B27979` |
+
+Fresh-raid qualification: a friendly Scav remains ignored without a command; prioritized Contact admits that exact target (`sainContactOverride`), native combat persists through the next enemy update, and real target death releases into normal follow. Native activity and shot-safety gates remain authoritative.
+
+
 ## 2026-09-19 — Bounded visible-fire flicker continuity
 
 - Replaced the open blanket trigger-cutoff proposal with Core-style bounded continuity inside the addon support action. A visible target's `CanShoot` flicker may retain an already-running burst for 0.5 seconds after the last verified native shot. The addon captures its actual aim point/position and rechecks Core direct geometry, target/muzzle friendly lanes, native weapon readiness, 18-degree actual muzzle alignment and 0.75 m stationary tolerance. Grace does not renew itself or restart a finished burst; hidden suppression and support-priority gates are unchanged. No Core source changes or new SAIN patches.

@@ -101,7 +101,11 @@ internal sealed class SAINFollowerCover(BotComponent bot)
         foreach (CoverPoint candidate in finder.Find(bot.GoalEnemy, player.Position, preferNearby: true,
             preferProtective: SainAddonBridge.IsSainManSelected(bot.BotOwner)))
         {
-            if (limitToRegroup && !InsideRegroupArea(candidate.Position, player.Position)) continue;
+            if (limitToRegroup && !InsideRegroupArea(candidate, player.Position))
+            {
+                if (finder.Pending) break;
+                continue;
+            }
             if (!bot.Mover.GoToCoverPoint(candidate, sprint, ESprintUrgency.High)) continue;
             selectionReason = finder.IsProtective(candidate)
                 ? limitToRegroup ? "regroupProtectiveCover" : "protectiveCover"
@@ -159,12 +163,10 @@ internal sealed class SAINFollowerCover(BotComponent bot)
         return true;
     }
 
-    private bool InsideRegroupArea(Vector3 point, Vector3 player)
+    private bool InsideRegroupArea(CoverPoint point, Vector3 player)
     {
         float radius = Mathf.Min(regroupRadius, Mathf.Max(2f, SainRegroupBridge.GetTriggerDistance(bot.BotOwner) - 2f));
-        return (point - player).sqrMagnitude <= radius * radius &&
-            SainRegroupBridge.SameLevel(point, player) &&
-            SainRegroupBridge.TryGetDistance(point, player, out float distance) && distance <= radius;
+        return finder.InsideBossRoute(point, player, radius);
     }
 
     internal void Selected(CoverPoint point)

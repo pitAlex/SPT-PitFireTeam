@@ -28,6 +28,18 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
         internal Vector3 Bot, Threat, Point;
         internal string Enemy;
     }
+    // Planning geometry only. Cache positive and negative results through a pending
+    // pass so a slow decision cadence cannot endlessly restart its first probes.
+    private readonly Dictionary<CoverPoint, PlanningProbe> firingLanes = new();
+    private readonly Dictionary<CoverPoint, PlanningProbe> bossRoutes = new();
+    private struct PlanningProbe
+    {
+        internal Vector3 Point, Target;
+        internal string Enemy;
+        internal bool Clear;
+        internal float Distance, Until;
+        internal int Pass;
+    }
     private int scanIndex, probeFrame = -1, probes, validationPass;
     internal bool Pending { get; private set; }
     private Comparison<CoverPoint> bossComparison;
@@ -74,7 +86,7 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
         {
             scanned = true; contact = enemy.EnemyProfileId;
             bossAnchor = boss; botAnchor = bot.Position; enemyAnchor = threat;
-            candidates.Clear(); validation.Clear(); LastScanCount = 0; scanIndex = 0;
+            candidates.Clear(); validation.Clear(); firingLanes.Clear(); bossRoutes.Clear(); LastScanCount = 0; scanIndex = 0;
             colliders.OverlapBoxAndFilter(new SainBotCoverData.BotColliderQueryParams {
                 origin = boss + Vector3.up * 0.25f, halfExtents = new Vector3(radius, 5f, radius),
                 mask = LayersMaskController.HighPolyWithTerrainNoGrassMask,
@@ -83,7 +95,7 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
             });
             colliders.HandleLists(boss);
         }
-        // Discovery and validation share a frame budget even if both layers poll.
+        // Discovery, validation, firing lanes and boss routes share one frame budget.
         while (scanIndex < colliders.ValidCollidersList.Count && LastScanCount < 32)
         {
             if (!TakeProbe()) { Pending = true; break; }
@@ -147,9 +159,43 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
         float distance = Mathf.Max(point.PathData.PathLength, (point.Position - bot.Position).magnitude);
         if (!FollowerPushGeometry.IsForwardPosition(bot.Position, threat, point.Position) ||
             distance > FollowerPushGeometry.MaxForwardRoute) return;
-        if (requireFiringLane && Physics.Linecast(point.Position + Vector3.up * 1.5f, threat + Vector3.up * 1.1f,
-            LayersMaskController.HighPolyWithTerrainNoGrassMask)) return;
+        if (requireFiringLane && !HasFiringLane(point, enemy, threat)) return;
         ranked.Add(point);
+    }
+
+    private bool Reuse(PlanningProbe cached, CoverPoint point, Vector3 target, string enemy) =>
+        (Time.time < cached.Until || cached.Pass == validationPass) && cached.Enemy == enemy &&
+        (cached.Point - point.Position).sqrMagnitude < 0.01f && (cached.Target - target).sqrMagnitude < 0.01f;
+
+    private void RememberPlanning(Dictionary<CoverPoint, PlanningProbe> cache, CoverPoint point,
+        Vector3 target, string enemy, bool clear, float distance = 0f)
+    {
+        if (cache.Count >= 128 && !cache.ContainsKey(point)) cache.Clear();
+        cache[point] = new PlanningProbe { Point = point.Position, Target = target, Enemy = enemy,
+            Clear = clear, Distance = distance, Until = Time.time + 1f, Pass = validationPass };
+    }
+
+    private bool HasFiringLane(CoverPoint point, Enemy enemy, Vector3 threat)
+    {
+        if (firingLanes.TryGetValue(point, out var cached) && Reuse(cached, point, threat, enemy.EnemyProfileId)) return cached.Clear;
+        if (!TakeProbe()) { Pending = true; return false; }
+        bool clear = !Physics.Linecast(point.Position + Vector3.up * 1.5f, threat + Vector3.up * 1.1f,
+            LayersMaskController.HighPolyWithTerrainNoGrassMask);
+        RememberPlanning(firingLanes, point, threat, enemy.EnemyProfileId, clear);
+        return clear;
+    }
+
+    // Called in ranked order, after native candidate validation. A depleted budget
+    // is pending work, not a rejected route or permission to select a lower rank.
+    internal bool InsideBossRoute(CoverPoint point, Vector3 boss, float radius)
+    {
+        if ((point.Position - boss).sqrMagnitude > radius * radius || !SainRegroupBridge.SameLevel(point.Position, boss)) return false;
+        if (bossRoutes.TryGetValue(point, out var cached) && Reuse(cached, point, boss, contact))
+            return cached.Clear && cached.Distance <= radius;
+        if (!TakeProbe()) { Pending = true; return false; }
+        bool complete = SainRegroupBridge.TryGetDistance(point.Position, boss, out float distance);
+        RememberPlanning(bossRoutes, point, boss, contact, complete, distance);
+        return complete && distance <= radius;
     }
 
     // Use the native validated route: a cover across a wall may be close in space
@@ -223,6 +269,6 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
     }
     internal void Clear()
     {
-        scanned = false; Pending = false; candidates.Clear(); ranked.Clear(); validation.Clear();
+        scanned = false; Pending = false; candidates.Clear(); ranked.Clear(); validation.Clear(); firingLanes.Clear(); bossRoutes.Clear();
     }
 }
