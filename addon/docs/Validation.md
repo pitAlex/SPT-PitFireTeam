@@ -1,5 +1,19 @@
 # SAIN addon validation and raid evidence
 
+## 2026-09-23 - SAINGrunt emergency backup before reload
+
+Installed SAIN 4.5.1 skips vanilla `FightShallReload` and its empty-gun `ShallChangeIfNoAmmo` path. The addon now admits one explicit loaded second-primary/holster draw from an empty first primary against a visible shootable living known enemy within 10 m. Core loaded-round/launcher helpers are reused; native selector permission, reload/medical/urgent-action protection and decision publication remain in place. Accepted draws wait at most three seconds for actual hands/readiness; accepted and rejected requests reserve 25 seconds before another attempt. See [combat contract](Combat.md#emergency-backup-weapon).
+
+Validation: **52 production Harmony emergency-weapon checks**, **1,169 existing addon combat checks**, and **9 replica parity checks** passed. Focused coverage includes role/readiness/admission, hidden/dead/blocked targets, range boundaries, one remaining round, empty/launcher/malfunctioning backups, loaded pistol fallback, selector capability, busy hands, protected self-actions, accepted/rejected asynchronous draws, actual hands confirmation, timeout and retry, release/medical interruption, independent native-component state and passive accepted-draw events. Installed self-action and Core helper signatures were checked. Debug addon-only build passed with zero warnings/errors against Core output matching the live Core hash. Existing addon fixture warnings remain limited to its stand-in types/unused fields and parameters.
+
+The addon DLL/PDB were deployed with Tarkov closed at 2026-09-23 03:04:33 +03:00 and verified against build SHA-256:
+
+- Addon DLL: `D6BCAA0AC4CE385123D9417A337D1BBA09D936C80BD1C59AABD433BFEB1C640D`
+- Addon PDB: `BB49D727CAA7451EBC0A961C4DEC29C70BAAE339C200BD295DAABCAE1B7AE6F6`
+- Matching existing Core DLL: `3D884631EEC6AD656219137F4BAB7B107600054598BE1AFC6FBBEB05D3F63D00`
+
+Raid qualification remains: physical secondary/pistol draw completion, immediate native firing, normal reloads outside the emergency window, and native/Core return to primary after danger passes. `sainEmergencyWeapon` records accepted draws. No Core/server source changes were required by this change.
+
 ## 2026-09-23 - Peaceful fire-mode and inspection guard
 
 Source inspection of SAIN 4.5.1 `Firemode.CheckSwapFireMode` confirmed idle mode selection from aim distance, followed by optional magazine/chamber inspection. `BotWeaponInfoClass.ManualUpdate` invokes the routine independently of having a goal. The addon now skips that routine for its selected tactics without a living, known, admitted combat goal. [Contract](Combat.md#peaceful-weapon-handling). Combat/native independent combat, ordinary SAIN bots and Core tactics retain their existing behavior; Core combat was not edited.

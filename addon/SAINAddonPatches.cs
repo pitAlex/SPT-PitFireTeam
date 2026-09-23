@@ -19,6 +19,7 @@ namespace pitTeam.SAINAddon
                 SainContactEnemyBridge.Apply(Harmony);
                 SainRegroupFireSafety.Apply(Harmony);
                 SainIdleWeaponGuard.Apply(Harmony);
+                SainEmergencyWeaponBridge.Apply(Harmony);
             }
             catch { Remove(); throw; }
         }
@@ -29,6 +30,7 @@ namespace pitTeam.SAINAddon
             SainSquadDecisionBridge.Reset();
             SainCoverSelectionBridge.Reset();
             SainMedicalDecisionBridge.Reset();
+            SainEmergencyWeaponBridge.Reset();
             SainSquadSupportBridge.Reset();
         }
     }
