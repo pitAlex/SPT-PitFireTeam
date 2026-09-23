@@ -14,6 +14,21 @@ The addon DLL/PDB were deployed with Tarkov closed at 2026-09-23 03:04:33 +03:00
 
 Raid qualification remains: physical secondary/pistol draw completion, immediate native firing, normal reloads outside the emergency window, and native/Core return to primary after danger passes. `sainEmergencyWeapon` records accepted draws. No Core/server source changes were required by this change.
 
+## 2026-09-23 - Shared effect-based stim selection
+
+Core's existing stim item selection and pain predicates were extracted into `FollowerStimulatorPolicy`. The addon extends native `startUseStims` for ready SAINGrunt/SAINShooter followers, using native stim safety or the existing reached hard-cover exception. Core's call order and refresh-on-miss behavior remain; addon misses preserve the native cached item. Native scheduling, execution, cooldowns and publication remain single-owned. See [stimulants](Combat.md#stimulants).
+
+Debug Core/addon build passed with zero warnings/errors. Installed SAIN 4.5.1 stim-selection and static enemy-safety signatures were validated. **1,169 production addon checks**, **9 replica-parity checks** and **25 Core medical lifecycle checks** passed. The stim cases exercise the real shared selector and addon Harmony prefix against simulated inventory/native surfaces: black-stomach/limb pain, active painkillers, positive versus negative regeneration, stale HaveSmt, secure-slot routing, cooldown/reload/active medicine, protected-cover and non-goal-threat gates, native fallback without item mutation, Core/ordinary-bot/unready/accepted-goal exclusions, and addon hook lifecycle. They do not establish actual EFT injection animation or raid outcomes.
+
+With Tarkov closed, deployed matching Debug Core/addon DLLs and PDBs at **2026-09-23 02:52:38 +03:00**. Existing installed SAIN attribution was retained. SHA-256 matches build outputs:
+
+- Core DLL: `3D884631EEC6AD656219137F4BAB7B107600054598BE1AFC6FBBEB05D3F63D00`
+- Core PDB: `2F4693BD690CBC4E304D72C4E65232834FD136F3ADAF3FF885724E8DCCBEB8DE`
+- Addon DLL: `D352CB4640D0724E295649DFF30C55293F5454AF416C2F0A7F4D5995693FD935`
+- Addon PDB: `DF48E2AFE5BAF545EE5FE5F436580DABE251B235160F98428FF0A23B13DA03B3`
+
+Pending raid qualification: Adrenaline pain relief with a blacked stomach/limb, serious-injury regeneration, interruption by real threats, and continuation through native hands/item callbacks. No server changes were required by this fix.
+
 ## 2026-09-23 - Peaceful fire-mode and inspection guard
 
 Source inspection of SAIN 4.5.1 `Firemode.CheckSwapFireMode` confirmed idle mode selection from aim distance, followed by optional magazine/chamber inspection. `BotWeaponInfoClass.ManualUpdate` invokes the routine independently of having a goal. The addon now skips that routine for its selected tactics without a living, known, admitted combat goal. [Contract](Combat.md#peaceful-weapon-handling). Combat/native independent combat, ordinary SAIN bots and Core tactics retain their existing behavior; Core combat was not edited.

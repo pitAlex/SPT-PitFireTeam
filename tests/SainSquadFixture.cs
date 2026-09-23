@@ -100,14 +100,14 @@ namespace SAIN.Layers.Combat.Squad {public class SuppressAction:SAIN.Layers.BotA
 namespace SAIN.Components {
     public class SelfActions {public float AmmoRatio=1;public bool LowOnAmmo(float ratio)=>AmmoRatio<ratio;}
     public partial class Decision {public ESquadDecision CurrentSquadDecision;public SelfActions SelfActionDecisions=new SelfActions();}
-    public class BotHealth {public ETagStatus HealthStatus=ETagStatus.Healthy;}
+    public partial class BotHealth {public ETagStatus HealthStatus=ETagStatus.Healthy;}
     public class BotMemory {public BotHealth Health=new BotHealth();}
     public class Gear {public bool HasEarPiece=true;}
     public class Equipment {public Gear GearInfo=new Gear();}
     public class PlayerComponent {public Equipment Equipment=new Equipment();}
     public class Shooter : SAIN.SAINComponent.Classes.SAINShootData {}
     public partial class Suppression {public bool IsHeavySuppressed;public bool TrySuppressAnyEnemy(Enemy enemy,object known)=>false;}
-    public class EnemyController {public List<Enemy> KnownEnemies=new List<Enemy>();}
+    public partial class EnemyController {public List<Enemy> KnownEnemies=new List<Enemy>();}
     public class Steering {
         public bool SteerByPriority(Enemy enemy=null,bool allow=true)=>false;
         public bool LookToMovingDirection()=>true;public int FallbackLooks;public void LookToLastKnownEnemyPosition(Enemy enemy){FallbackLooks++;} public int Looks; public Vector3 LookPoint; public void LookToPoint(Vector3 point){Looks++;LookPoint=point;}

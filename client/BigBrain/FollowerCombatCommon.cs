@@ -243,7 +243,7 @@ namespace pitTeam.BigBrain
         };
         private static readonly Dictionary<int, CoverCommitIntent> coverCommitIntents = new Dictionary<int, CoverCommitIntent>();
         private readonly BotOwner botOwner;
-        private readonly List<EFT.InventoryLogic.Meds> stimSearchBuffer = new List<EFT.InventoryLogic.Meds>();
+        private readonly FollowerStimulatorPolicy stimulatorPolicy = new FollowerStimulatorPolicy();
         private readonly Collider[] closeSuppressFoliageBuffer = new Collider[8];
 
         // Shared commitment state. Tactics decide why a commitment should break; common only
@@ -11668,14 +11668,14 @@ namespace pitTeam.BigBrain
         private bool TryGetHealCoverStimDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
-            if (!CanUseStimulatorNow(out BotStimulators stims))
+            if (!FollowerStimulatorPolicy.CanUseStimulatorNow(botOwner, out BotStimulators stims))
             {
                 return false;
             }
 
             ETagStatus? healthStatus = botOwner.GetPlayer?.HealthStatus;
             if ((healthStatus == ETagStatus.BadlyInjured || healthStatus == ETagStatus.Dying) &&
-                TrySelectPositiveHealthRateStimulator(stims))
+                stimulatorPolicy.TrySelectPositiveHealthRateStimulator(botOwner, stims))
             {
                 stimStartedAt = Time.time;
                 decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
@@ -11684,8 +11684,8 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
-            if (ShouldUsePainStimForDestroyedPartAtHealCover() &&
-                TrySelectPainStimulator(stims))
+            if (FollowerStimulatorPolicy.ShouldUsePainStimForDestroyedPartAtHealCover(botOwner) &&
+                stimulatorPolicy.TrySelectPainStimulator(botOwner, stims))
             {
                 stimStartedAt = Time.time;
                 decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
@@ -11712,21 +11712,18 @@ namespace pitTeam.BigBrain
         private bool TryGetBlackStomachPainStimDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
-            Player player = botOwner.GetPlayer;
-            if (player == null ||
-                player.ActiveHealthController?.IsBodyPartDestroyed(EBodyPart.Stomach) != true ||
-                player.MovementContext?.PhysicalConditionIs(EPhysicalCondition.OnPainkillers) == true)
+            if (!FollowerStimulatorPolicy.NeedsBlackStomachPainRelief(botOwner))
             {
                 return false;
             }
 
             BotStimulators stims = botOwner.Medecine.Stimulators;
-            if (!CanUseStimulatorNow(out stims))
+            if (!FollowerStimulatorPolicy.CanUseStimulatorNow(botOwner, out stims))
             {
                 return false;
             }
 
-            if (!TrySelectPainStimulator(stims))
+            if (!stimulatorPolicy.TrySelectPainStimulator(botOwner, stims))
             {
                 return false;
             }
@@ -11736,128 +11733,6 @@ namespace pitTeam.BigBrain
                 BotLogicDecision.healStimulators,
                 "blackStomachPainStim");
             return true;
-        }
-
-        private bool CanUseStimulatorNow(out BotStimulators stims)
-        {
-            stims = botOwner.Medecine?.Stimulators;
-            return stims != null &&
-                   !stims.Using &&
-                   Time.time - stims.LastEndUseTime > 3f &&
-                   stims.CanUseNow() &&
-                   botOwner.WeaponManager?.Reload?.Reloading != true;
-        }
-
-        private bool ShouldUsePainStimForDestroyedPartAtHealCover()
-        {
-            Player player = botOwner.GetPlayer;
-            if (player == null ||
-                player.MovementContext?.PhysicalConditionIs(EPhysicalCondition.OnPainkillers) == true ||
-                botOwner.Medecine?.SurgicalKit?.HaveWork != true)
-            {
-                return false;
-            }
-
-            EBodyPart? targetPart = botOwner.Medecine.SurgicalKit._bodyPartToHeal;
-            if (targetPart.HasValue)
-            {
-                return IsDestroyedPainManagedPart(player, targetPart.Value);
-            }
-
-            botOwner.Medecine.SurgicalKit.FindDamagedPart();
-            targetPart = botOwner.Medecine.SurgicalKit._bodyPartToHeal;
-            if (targetPart.HasValue)
-            {
-                return IsDestroyedPainManagedPart(player, targetPart.Value);
-            }
-
-            return HasDestroyedPainManagedPart(player);
-        }
-
-        private static bool HasDestroyedPainManagedPart(Player player)
-        {
-            return IsDestroyedPainManagedPart(player, EBodyPart.Stomach) ||
-                   IsDestroyedPainManagedPart(player, EBodyPart.LeftArm) ||
-                   IsDestroyedPainManagedPart(player, EBodyPart.RightArm) ||
-                   IsDestroyedPainManagedPart(player, EBodyPart.LeftLeg) ||
-                   IsDestroyedPainManagedPart(player, EBodyPart.RightLeg);
-        }
-
-        private static bool IsDestroyedPainManagedPart(Player player, EBodyPart part)
-        {
-            return part != EBodyPart.Head &&
-                   part != EBodyPart.Chest &&
-                   player.ActiveHealthController?.IsBodyPartDestroyed(part) == true;
-        }
-
-        private bool TrySelectPainStimulator(BotStimulators stims)
-        {
-            return TrySelectStimulator(stims, HasPainReliefEffect);
-        }
-
-        private bool TrySelectPositiveHealthRateStimulator(BotStimulators stims)
-        {
-            return TrySelectStimulator(stims, HasPositiveHealthRateBuff);
-        }
-
-        private bool TrySelectStimulator(BotStimulators stims, Func<EFT.InventoryLogic.Stimulator, bool> predicate)
-        {
-            Player player = botOwner.GetPlayer;
-            if (player == null || player.InventoryController == null)
-            {
-                return false;
-            }
-
-            EquipmentSlot[] searchSlots = stims._shallUseInSafe ? BotMedecine.secureSlots : BotMedecine.anySlots;
-            stimSearchBuffer.Clear();
-            player.InventoryController.GetAcceptableItemsNonAlloc<EFT.InventoryLogic.Meds>(searchSlots, stimSearchBuffer, null, null);
-
-            for (int i = 0; i < stimSearchBuffer.Count; i++)
-            {
-                if (stimSearchBuffer[i] is not EFT.InventoryLogic.Stimulator stimulator)
-                {
-                    continue;
-                }
-
-                if (!predicate(stimulator))
-                {
-                    continue;
-                }
-
-                stims._stimulator = stimulator;
-                stims.HaveSmt = true;
-                return true;
-            }
-
-            stims.Refresh();
-            return false;
-        }
-
-        private static bool HasPainReliefEffect(EFT.InventoryLogic.Stimulator stimulator)
-        {
-            HealthEffectsComponent effects = stimulator.HealthEffectsComponent;
-            return effects?.DamageEffects?.ContainsKey(EDamageEffectType.Pain) == true;
-        }
-
-        private static bool HasPositiveHealthRateBuff(EFT.InventoryLogic.Stimulator stimulator)
-        {
-            HealthEffectsComponent effects = stimulator.HealthEffectsComponent;
-            if (effects == null)
-            {
-                return false;
-            }
-
-            EFT.HealthSystem.EffectsSettings.StimulatorSettings.StimulatorBuffSettings[] buffs = effects.BuffSettings;
-            for (int i = 0; i < buffs.Length; i++)
-            {
-                if (buffs[i].BuffType == EStimulatorBuffType.HealthRate &&
-                    buffs[i].Value > 0f)
-                {
-                    return true;
-                }
-            }
-
-            return false;
         }
 
         public AICoreActionResult<BotLogicDecision, CoreActionResultParams>? TryGetImmediateShootDecision(string reason)

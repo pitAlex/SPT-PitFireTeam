@@ -462,7 +462,7 @@ Core combat uses a dedicated `CombatPostCombatLingerAction` for the three-second
 
 ## Healing And Stims
 
-Medical decisions are shared in `FollowerCombatCommon`.
+Medical decisions are shared in `FollowerCombatCommon`. Effect-based stim selection and pain-need predicates live in `FollowerStimulatorPolicy`, reused by the optional addon; each brain retains its own treatment timing and safety.
 
 Current behavior:
 

@@ -35,7 +35,7 @@ namespace SAIN.SAINComponent.Classes.Mover {
     }
 }
 namespace SAIN.SAINComponent.Classes.Decision {
-    public class SelfActionDecisionClass : SAIN.SAINComponent.BotBase {
+    public partial class SelfActionDecisionClass : SAIN.SAINComponent.BotBase {
         public bool ItemEligible=true,NativeSafety;public int ItemChecks,SafetyChecks;
         public SelfActionDecisionClass(BotComponent bot):base(bot){}
         public bool FirstAidForTest(){ItemChecks++;if(!ItemEligible)return false;foreach(var enemy in Bot.EnemyController.KnownEnemies)if(!ShallFirstAidCheckEnemy(enemy))return false;return true;}

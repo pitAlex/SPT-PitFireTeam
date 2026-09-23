@@ -36,7 +36,7 @@ namespace EFT {
     public class Memory { public bool AttackImmediately=true; public bool HaveEnemy,DeadGoal,IsUnderFire; public EnemyInfo GoalEnemy=new EnemyInfo(); }
     public class MedicineItem { public string Id="fixture-med"; }
     public class FirstAid { public bool Have2Do,Using,IsBleeding; public MedicineItem CurUsingMeds; public bool HaveSmth2Use=>CurUsingMeds!=null; public string _bodyPartToHeal; }
-    public class Medicine { public FirstAid FirstAid=new FirstAid(); }
+    public partial class Medicine { public FirstAid FirstAid=new FirstAid(); }
     public class Mind { public float TIME_TO_FORGOR_ABOUT_ENEMY_SEC=60; }
     public class FileSettings { public Mind Mind=new Mind(); }
     public class Settings { public FileSettings FileSettings=new FileSettings(); }
@@ -309,7 +309,7 @@ public static partial class CombatChecks {
         TestEngageAttempt();
         TestSainRecorder();
         TestPersonality();
-        TestRelocations();TestPushObjectives();TestPushRisk();TestMedicalRecovery();TestShooter();TestShooterWeapons();TestShooterWeaponTransitions();TestSquadSupport();TestGruntSupport();TestReportSuppressionOwnership();TestVisibleSupportFlicker();TestContactOverride();TestRegroupFireSafety();TestCoverPlanningBudget();TestIdleWeaponGuard();
+        TestRelocations();TestPushObjectives();TestPushRisk();TestMedicalRecovery();TestStimulators();TestShooter();TestShooterWeapons();TestShooterWeaponTransitions();TestSquadSupport();TestGruntSupport();TestReportSuppressionOwnership();TestVisibleSupportFlicker();TestContactOverride();TestRegroupFireSafety();TestCoverPlanningBudget();TestIdleWeaponGuard();
         SAINFollowerRuntime.Disable();
         Check(!SainAddonBridge.HasRuntimeCallbacks&&!pitFireTeam.UseSainFollowerCombat(late),"addon shutdown restores core fallback");
         var addonOwner=new Harmony("xyz.pit.fireteam.sainaddon");
