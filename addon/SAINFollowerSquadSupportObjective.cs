@@ -78,6 +78,8 @@ internal sealed class SAINFollowerSquadSupportObjective(BotComponent bot, Firing
         if (!Active) return;
         if (bot.IsDead || Follower == null || !SainAddonBridge.IsAddonTacticSelected(bot.BotOwner) ||
             !SAINFollowerCombatHandoff.HasLiveEnemy(bot) || !Valid(target)) { Clear("contactLost"); return; }
+        if (source == "sainSearch" && SAINFollowerRuntime.GetSearchLeader(bot.BotOwner) == null)
+        { Clear("searchEnded"); return; }
         if (Mode == SAINSquadSupportMode.BossSupport && Follower.CombatIndependent) { Clear("independent"); return; }
         if (Follower.TryGetActiveCommand(out _, out _)) { Clear("replacementOrder"); return; }
         if (Time.time >= deadline || burstUntil > 0f && Time.time >= burstUntil || arrivalUntil > 0f && Time.time >= arrivalUntil)
@@ -261,6 +263,9 @@ internal sealed class SAINFollowerSquadSupportObjective(BotComponent bot, Firing
         // Core engagement is a cue for identity only; use the receiver's native known position.
         if (boss.IsPlayerEngaging(out string playerTarget, out _) && Find(playerTarget) is Enemy playerEnemy)
         { why = "playerFight"; return playerEnemy; }
+        var searcher = !Grunt ? SAINFollowerRuntime.GetSearchLeader(bot.BotOwner) : null;
+        if (searcher != null && NearHelper(searcher.BotOwner))
+        { why = "sainSearch"; avoid = searcher.Position; return Find(searcher.GoalEnemy.EnemyProfileId); }
         if (!Grunt && boss.CombatEvents.TryGetActivePushFor(bot.BotOwner, out var push) &&
             bot.GoalEnemy?.EnemyProfileId == push.EnemyProfileId && NearHelper(push.Owner))
         { why = "corePush"; avoid = push.Destination; return Find(push.EnemyProfileId); }

@@ -9,6 +9,7 @@ using SAIN.Components;
 using SAIN.Models.Enums;
 using SAIN.Preset.Shared.Enums;
 using SAIN.SAINComponent.Classes.EnemyClasses;
+using SAIN.SAINComponent.Classes.Decision;
 using UnityEngine;
 namespace UnityEngine {
     public partial struct Vector3 {
@@ -84,7 +85,7 @@ namespace SAIN.SAINComponent.Classes.Info {
         public BotComponent LeaderComponent=>SquadInfo.LeaderComponent;
         public Dictionary<string,BotComponent> Members=new Dictionary<string,BotComponent>();
     }
-    public class Profile {public bool IsBoss;public WildSpawnType WildSpawnType=WildSpawnType.pmc;}
+    public class Profile {public string NickName="Searcher";public bool IsBoss;public WildSpawnType WildSpawnType=WildSpawnType.pmc;}
     public partial class SAINBotInfoClass {public SAIN.Preset.Shared.Personalities.BasePersonality.Categories.PersonalityBehaviorSettings PersonalitySettings=>PersonalitySettingsClass.Behavior;public Profile Profile=new Profile();}
 }
 namespace SAIN.SAINComponent.Classes.Decision {
@@ -141,11 +142,11 @@ public static partial class CombatChecks {
         Check(native.GetDecision(out decision,enemy)&&decision==ESquadDecision.GroupSearch&&native.NativeCalls==0,"player-led squad preserves native group search branch");
         selected.Sain.Decision.CurrentSquadDecision=decision;selected.Sain.Decision.CurrentCombatDecision=ECombatDecision.None;
         Check(layer.IsActive()&&!solo.IsActive(),"published squad decision activates squad and releases solo");
-        Check(layer.GetNextAction().Type==typeof(SAINFollowerFollowSearchPartyAction),"group search follows human leader");
-        selected.Leader.Position=new Vector3(20,0,0);
+        Check(layer.GetNextAction().Type==typeof(SAINFollowerFollowSearchPartyAction)&&layer.GetNextAction().Reason.Contains("Follow Searcher Searcher"),"group search names the retained searcher instead of the player leader");
+        selected.Leader.Position=new Vector3(20,0,0);mate.GetPlayer.Position=new Vector3(30,0,0);
         selected.Sain.Squad.SquadInfo.LeaderComponent=rifle.Sain;rifle.GetPlayer.Position=new Vector3(-100,0,0);
         var search=new SAINFollowerFollowSearchPartyAction(selected);search.Start();search.Update(null);
-        Check(selected.Sain.Mover.Destination.x==18,"search destination uses player rather than arbitrary AI member");
+        Check(selected.Sain.Mover.Destination.x==28,"search destination follows initiator rather than player or arbitrary AI squad leader");
         search.Stop();Check(!selected.Sain.Search.Enabled,"search action releases native search state");
         selected.Leader.Position=new Vector3(40,0,0);
         selected.Leader.Position=Vector3.zero; // Regroup behavior has its own extension checks below.
@@ -177,5 +178,85 @@ public static partial class CombatChecks {
         selected.Sain.Decision.CurrentSquadDecision=ESquadDecision.None;
         Check(layer.IsCurrentActionEnding(),"squad decision change ends its action");
         selected.Sain.Squad.Members.Clear();selected.Sain.GoalEnemy=null;
+        TestSearchParty();
     }
+    private static void AssignSearcher(BotOwner receiver, BotOwner searcher) {
+        searcher.Sain.GoalEnemy=receiver.Sain.GoalEnemy;
+        searcher.Sain.Decision.CurrentCombatDecision=ECombatDecision.Search;
+        searcher.Sain.Decision.CurrentSquadDecision=ESquadDecision.None;
+        receiver.Sain.Squad.Members[searcher.ProfileId]=searcher.Sain;
+        var native=new SAIN.SAINComponent.Classes.Decision.SquadDecisionClass(receiver.Sain);
+        Check(native.GetDecision(out var result,receiver.Sain.GoalEnemy)&&result==ESquadDecision.GroupSearch,"searcher admitted for shared native contact");
+        receiver.Sain.Decision.CurrentSquadDecision=result;
+        receiver.Sain.Decision.CurrentCombatDecision=ECombatDecision.None;
+    }
+    private static void TestSearchParty() {
+        var b=RegroupBot("searchHelper",0);var lead=RegroupBot("searchInitiator",0);
+        b.GetPlayer.Position=new Vector3(-10,0,0);lead.GetPlayer.Position=Vector3.zero;
+        AssignSearcher(b,lead);
+        Check(SAINFollowerRuntime.GetSearchLeader(b)==lead.Sain,"search initiator retained separately from player leadership");
+        var native=new SAIN.SAINComponent.Classes.Decision.SquadDecisionClass(b.Sain);
+        var other=RegroupBot("otherSearcher",0);other.Sain.GoalEnemy=b.Sain.GoalEnemy;other.Sain.Decision.CurrentCombatDecision=ECombatDecision.Search;
+        b.Sain.Squad.Members.Clear();b.Sain.Squad.Members[other.ProfileId]=other.Sain;b.Sain.Squad.Members[lead.ProfileId]=lead.Sain;
+        native.GetDecision(out _,b.Sain.GoalEnemy);
+        Check(SAINFollowerRuntime.GetSearchLeader(b)==lead.Sain,"valid initiator does not churn with squad enumeration order");
+        var action=new SAINFollowerFollowSearchPartyAction(b);action.Start();action.Update(null);
+        Check(b.Sain.Mover.Destination.x==-2,"world-origin searcher receives an initial route");
+        lead.Sain.Decision.CurrentCombatDecision=ECombatDecision.StandAndShoot;action.Update(null);
+        Check(!b.Sain.Mover.Moving&&SAINFollowerRuntime.GetSearchLeader(b)==null,"ending search releases only the helper's movement before next publication");
+        native.GetDecision(out _,b.Sain.GoalEnemy);
+        Check(SAINFollowerRuntime.GetSearchLeader(b)==other.Sain,"remaining real searcher replaces ended initiator");
+        action.Update(null);
+        Check(b.Sain.Mover.Moving,"replacement searcher starts a fresh route even at the old leader position");
+        b.Sain.Mover.WalkToPoint(new Vector3(80,0,0),true);
+        var newerPath=b.Sain.Mover.ActivePath;action.Stop();
+        Check(b.Sain.Mover.Moving&&ReferenceEquals(newerPath,b.Sain.Mover.ActivePath),"search cleanup preserves another action's newer path");
+        b.Sain.Mover.Stop();
+        other.IsDead=true;
+        Check(SAINFollowerRuntime.GetSearchLeader(b)==null,"dead initiator invalidates assignment");other.IsDead=false;
+        other.Sain.Decision.CurrentSquadDecision=ESquadDecision.GroupSearch;
+        Check(!native.GetDecision(out _,b.Sain.GoalEnemy),"group helpers cannot become leaders and form follow loops");
+        other.Sain.Decision.CurrentSquadDecision=ESquadDecision.None;
+        b.Sain.Decision.CurrentSquadDecision=ESquadDecision.None;b.Sain.Decision.CurrentCombatDecision=ECombatDecision.Search;
+        Check(!native.GetDecision(out _,b.Sain.GoalEnemy),"existing initiating Search is never converted to following a peer");
+        b.Sain.Decision.CurrentCombatDecision=ECombatDecision.SeekCover;AssignSearcher(b,other);
+        other.Sain.GoalEnemy=new Enemy{EnemyPlayer=new Player{ProfileId="different"}};
+        Check(SAINFollowerRuntime.GetSearchLeader(b)==null,"changed enemy cannot retain a search assignment");
+        AssignSearcher(b,other);b.Sain.Squad.Members.Remove(other.ProfileId);
+        Check(SAINFollowerRuntime.GetSearchLeader(b)==null,"dismissed squad member cannot remain search leader");
+        AssignSearcher(b,other);other.Follower.CombatTactic=pitTeam.Components.FollowerCombatTactic.Balanced;
+        Check(SAINFollowerRuntime.GetSearchLeader(b)==null,"tactic fallback invalidates native search leadership");
+        other.Follower.CombatTactic=pitTeam.Components.FollowerCombatTactic.SainMan;
+        AssignSearcher(b,other);other.Sain.Decision.CurrentSelfDecision=ESelfActionType.FirstAid;
+        Check(SAINFollowerRuntime.GetSearchLeader(b)==null,"medical interruption ends search-party leadership");
+        other.Sain.Decision.CurrentSelfDecision=ESelfActionType.None;
+        AssignSearcher(b,other);b.Leader.Position=new Vector3(60,0,0);b.Follower.Command=pitTeam.Components.FollowerCommandType.RegroupNearBoss;
+        native.GetDecision(out var regroup,b.Sain.GoalEnemy);
+        Check(regroup==ESquadDecision.Regroup&&SAINFollowerRuntime.GetSearchLeader(b)==null,"command regroup overrides search assignment");
+        action.Stop();
+        b.Follower.Command=pitTeam.Components.FollowerCommandType.None;
+        SAINFollowerRuntime.GetRegroup(b).Clear("test");
+        b.Sain.Decision.CurrentSquadDecision=ESquadDecision.None;b.Sain.Decision.CurrentCombatDecision=ECombatDecision.SeekCover;
+        b.Follower.CombatIndependent=true;AssignSearcher(b,other);
+        Check(SAINFollowerRuntime.GetSearchLeader(b)==other.Sain,"On Your Own retains teammate search cooperation");
+        other.Sain.GoalEnemy.EnemyKnown=false;
+        Check(SAINFollowerRuntime.GetSearchLeader(b)==null,"forgotten native contact ends search cooperation");
+        TestSearchShooterSupport();
+    }
+    private static void TestSearchShooterSupport() {
+        var b=SupportBot("searchShooter");b.Follower.CombatTactic=pitTeam.Components.FollowerCombatTactic.SAINShooter;Tick();
+        var lead=RegroupBot("shooterSearchLead",0);lead.GetPlayer.Position=new Vector3(10,0,0);
+        AssignSearcher(b,lead);
+        var support=SAINFollowerRuntime.GetSquadSupport(b);
+        support.Filter(b.Sain.GoalEnemy,ECombatDecision.None,ESquadDecision.GroupSearch,ESelfActionType.None,out _);
+        Time.time+=1.1f;
+        Check(support.Filter(b.Sain.GoalEnemy,ECombatDecision.None,ESquadDecision.GroupSearch,ESelfActionType.None,out var decision)&&
+            decision==ESquadDecision.Help&&support.Destination.HasValue&&(support.Destination.Value-new Vector3(-10,0,0)).sqrMagnitude<.01f,"Shooter prepares the existing backline firing support for a nearby searcher");
+        int scans=FiringPositionFinder.Calls;
+        for(int i=0;i<20;i++)support.Filter(b.Sain.GoalEnemy,ECombatDecision.None,ESquadDecision.GroupSearch,ESelfActionType.None,out _);
+        Check(FiringPositionFinder.Calls==scans,"committed search support does not repeat native geometry planning");
+        lead.Sain.Decision.CurrentCombatDecision=ECombatDecision.StandAndShoot;support.Observe();
+        Check(!support.Active,"search ending releases Shooter's temporary support intent");
+    }
+
 }

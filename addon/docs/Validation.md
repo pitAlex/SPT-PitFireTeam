@@ -1,5 +1,25 @@
 # SAIN addon validation and raid evidence
 
+## 2026-09-23 - Peaceful fire-mode and inspection guard
+
+Source inspection of SAIN 4.5.1 `Firemode.CheckSwapFireMode` confirmed idle mode selection from aim distance, followed by optional magazine/chamber inspection. `BotWeaponInfoClass.ManualUpdate` invokes the routine independently of having a goal. The addon now skips that routine for its selected tactics without a living, known, admitted combat goal. [Contract](Combat.md#peaceful-weapon-handling). Combat/native independent combat, ordinary SAIN bots and Core tactics retain their existing behavior; Core combat was not edited.
+
+The installed assembly signature was validated. Debug addon build against existing Core output passed with zero warnings/errors. **1,143 production addon checks** passed, including 1,000 repeated idle invocations per tactic, combat re-entry, unaccepted heard contact, independent combat, dead/forgotten targets, Core tactic and ordinary-bot exclusions. The new prefix contains no geometry/enemy scans, provider evaluation or per-call state allocation. Runtime animation and frame time remain pending raid validation.
+
+With Tarkov closed, deployed addon DLL/PDB only at **2026-09-23 02:31:11 +03:00**, without backups. Verified SHA-256: DLL `F4615911996B24CB2E111DEBE25AD341DCB462F7EEB4E9E13248C82B191BE368`, PDB `99C44D58A875EC1253AFC7350757B65905C1E46BC3A65A4C74C29400321A8064`. Installed Core remained `81A06B0A393B00EFFB016F30423FAA65EA1F01AE285C5BB8FA7F6D6086B27979`. This output also retains the preceding search-party changes; the reviewed stale searcher-name display issue remains separate and unfixed.
+
+## 2026-09-21 - Temporary search-party leadership
+
+The Streets record `20260921-180033-TarkovStreets.jsonl` showed Brick following the player under GroupSearch while Nux searched the shared enemy. Between 18:09:24 and 18:09:37 local time, Nux moved from about 52 m to 106 m from the player while Brick stopped about 2.8 m away. The decision detected a searching teammate but the action explicitly targeted the player. The addon now retains that searching bot as a temporary party lead; overall player leadership is unchanged. [Search-party contract](Squad-Support.md#search-party-cooperation).
+
+Debug addon build against the existing Core output passed with zero warnings/errors. **1,127 production addon combat checks** passed, including searcher targeting/naming, stable selection, world-origin movement, ended/replaced/dead/medical/dismissed/tactic-changed/forgotten-contact invalidation, loop prevention, command regroup, independent cooperation, preservation of a newer action's path and prepared Shooter support without repeated scans. **Nine source-parity checks** passed. The changed search assignment/action lifecycle is now behaviorally tested rather than asserted identical to native player/squad-leader following; native steering and nearby-point geometry still compare directly. Diff whitespace checks passed.
+
+No new Harmony hook, decision publisher or broad geometry scan was added. Selection traverses existing squad members at native decision boundaries; movement validates a retained member. Shooter reuses its existing support range checks and shared finder cadence. These checks establish bounded invocation behavior, not measured Unity frame time.
+
+With Tarkov closed, deployed only Debug addon DLL/PDB at **2026-09-21 18:35:25 +03:00**, with no backups. Verified SHA-256: DLL `A665AD541A331A99431D7B53C3B9F7ACFCED8D6BF163B4B9CD4F047614A0AEDE`; PDB `ABD778CD6536ED0E23AAE152191F50BC91389A6CB7221E070953680D345DD9EC`. Installed Core remained `81A06B0A393B00EFFB016F30423FAA65EA1F01AE285C5BB8FA7F6D6086B27979`.
+
+Pending raid qualification: two and three Grunts sharing a hidden target, searcher movement/path completion, interrupted/resumed search, explicit regroup during search, On Your Own and Shooter support from both settled cover and the ordinary native firing-position entry. No claim of in-game navigation or combat outcome validation is made by the fixture results.
+
 
 
 ## 2026-09-20 - General review: bounded cover planning

@@ -41,6 +41,14 @@ foreach($kind in @('Solo','Squad')){
         if([regex]::Matches($replica,$regroupEnd).Count -ne 1){throw 'Squad regroup ending guard changed'}
         $replica=[regex]::Replace($replica,$regroupEnd,'')
     }
+    if($kind -eq 'Squad'){
+        $start=$native.IndexOf('            case ESquadDecision.GroupSearch:')
+        $end=$native.IndexOf('            case ESquadDecision.Help:', $start)
+        $nativeSearch=$native.Substring($start,$end-$start)
+        $start=$replica.IndexOf('            case ESquadDecision.GroupSearch:')
+        $end=$replica.IndexOf('            case ESquadDecision.Help:', $start)
+        $replica=$replica.Substring(0,$start)+$nativeSearch+$replica.Substring($end)
+    }
     $replica=$replica.Replace(' || !pitFireTeam.UseSainFollowerCombat(BotOwner)','')
     $replica=[regex]::Replace($replica,'SAINActionTypes.Get\("(?:Solo|Squad)\.(?:Cover\.)?([^"]+)"\)','typeof($1)')
     $replica=$replica.Replace('SAINFollowerSquadRegroupAction','RegroupAction').Replace('SAINFollowerFollowSearchPartyAction','FollowSearchParty').Replace('SAINFollowerMoveToEngageAction','MoveToEngageAction')
@@ -66,11 +74,17 @@ $native=$native.Replace('SquadDecisionClass','SAINFollowerSquadDecision')
 $native=$native.Replace('!Squad.BotInGroup || Bot.Squad.SquadInfo?.LeaderComponent == null || Squad.LeaderComponent?.IsDead == true','!Squad.BotInGroup || !SainPlayerSquadBridge.TryGetPlayerLeader(BotOwner, out Player leader) || leader.HealthController?.IsAlive != true')
 $native=$native.Replace('Bot.Squad.LeaderComponent != null && shallGroupSearch()','shallGroupSearch()')
 $native=$native.Replace('var lead = squad.LeaderComponent;','SainPlayerSquadBridge.TryGetPlayerLeader(BotOwner, out Player lead);').Replace('lead.Transform.Position','lead.Position')
+$start=$native.IndexOf('    private bool shallGroupSearch(BotComponent member)')
+$end=$native.IndexOf('    float SquadDecision_StartHelpFriendDist', $start)
+$oldSearch=$native.Substring($start,$end-$start)
+$start=$replica.IndexOf('    // BEGIN addon search party')
+$end=$replica.IndexOf('    float SquadDecision_StartHelpFriendDist', $start)
+$replica=$replica.Substring(0,$start)+$oldSearch+$replica.Substring($end)
 if((Normalize $native) -ne (Normalize $replica)){throw 'Squad decision policy/settings diverge beyond player-leader substitutions'}
 $count++;Write-Output 'PASS existing squad policy preserves native branch order and thresholds around the explicit regroup extension'
 
 foreach($entry in @(
-    @{Native='FollowSearchParty';Replica='SAINFollowerFollowSearchPartyAction';Methods=@('Update','OnSteeringTicked','MoveToLead','GetPosNearLead','Start','Stop')}
+    @{Native='FollowSearchParty';Replica='SAINFollowerFollowSearchPartyAction';Methods=@('OnSteeringTicked','GetPosNearLead')}
 )){
     $native=Read-Source (Join-Path $SainSourceRoot ('Layers/Combat/Squad/'+$entry.Native+'.cs'))
     $replica=Read-Source (Join-Path $RepositoryRoot ('addon/'+$entry.Replica+'.cs'))
@@ -78,7 +92,7 @@ foreach($entry in @(
     $native=$native.Replace('var leader = Bot.Squad.SquadInfo?.LeaderComponent;','SainPlayerSquadBridge.TryGetPlayerLeader(BotOwner, out Player leader);').Replace('if (leader == null)','if (leader == null || leader.HealthController?.IsAlive != true)')
     foreach($method in $entry.Methods){
         if((Normalize (Method $native $method)) -ne (Normalize (Method $replica $method))){throw ($entry.Replica+' diverges in '+$method)}
-        $count++;Write-Output ('PASS '+$entry.Replica+' '+$method+' retains native behavior with player leader')
+        $count++;Write-Output ('PASS '+$entry.Replica+' '+$method+' retains native steering/position geometry')
     }
 }
-Write-Output "Passed $count source parity checks. Registration, ownership, internal type resolution, player-leader substitutions, post-combat linger guards, recorder lifecycle wrappers, the bounded MoveToEngage action, the tested push objective and stationary hold, the tested combat relocation objective/action, the tested squad support objective/action, and the tested two-mode regroup objective/action are intentional differences."
+Write-Output "Passed $count source parity checks. Registration, ownership, internal type resolution, player-leader substitutions, post-combat linger guards, recorder lifecycle wrappers, the bounded MoveToEngage action, the tested push objective and stationary hold, the tested combat relocation objective/action, the tested squad support objective/action, and the tested two-mode regroup objective/action and temporary search-party assignment/movement lifecycle are intentional differences."

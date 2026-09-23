@@ -127,7 +127,7 @@ internal sealed class SAINFollowerMarksmanObjective(BotComponent bot, FiringPosi
             }
             attempted = true; nextRetryAt = Time.time + (Ordered ? 2f : 4f);
             lastCandidate = point; rejection = point.HasValue ? null : "nativeFinderEmpty";
-            bool automatic = !Ordered && point.HasValue &&
+            bool automatic = !Ordered && SAINFollowerRuntime.GetSearchLeader(bot.BotOwner) == null && point.HasValue &&
                 (point.Value - known).magnitude + 1.5f < (bot.Position - known).magnitude && Weapons.CanAdvance(enemy);
             if (point.HasValue && Allowed(point.Value, known, automatic))
             {

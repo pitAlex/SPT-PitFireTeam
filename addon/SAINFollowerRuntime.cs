@@ -167,6 +167,7 @@ namespace pitTeam.SAINAddon
             {
                 state.Objectives?.Observe();
                 state.SquadDecisions.GetDecision(out ESquadDecision result, enemy);
+                if (result != ESquadDecision.GroupSearch) state.SquadDecisions.ClearSearchLeader();
                 decision = result;
             }
             catch (Exception ex)
@@ -266,6 +267,7 @@ namespace pitTeam.SAINAddon
                 state.Cover?.Clear();
                 SainMedicalDecisionBridge.Restore(state.Bot);
                 state.Objectives?.Clear("release");
+                state.SquadDecisions?.ClearSearchLeader();
                 state.EngageAttempt?.Clear("release");
                 state.Handoff.Clear();
                 state.Regroup?.Clear("release");
@@ -301,7 +303,7 @@ namespace pitTeam.SAINAddon
                 // Retain ordered intent during bounded initial binding/contact interruption.
                 // This does not activate combat without a living native contact.
                 if (state.Objectives?.Push.AwaitingTarget != true)
-                { state.Objectives?.Clear("combatEnded"); state.EngageAttempt?.Clear("combatEnded"); }
+                { state.Objectives?.Clear("combatEnded"); state.SquadDecisions?.ClearSearchLeader(); state.EngageAttempt?.Clear("combatEnded"); }
                 else state.EngageAttempt?.Pause();
                 state.Cover?.Clear();
                 SainMedicalDecisionBridge.Restore(state.Bot);
@@ -316,6 +318,9 @@ namespace pitTeam.SAINAddon
 
         internal static SAINFollowerPushObjective? GetPush(BotOwner owner) =>
             IsReady(owner) && States.TryGetValue(owner, out State state) ? state.Objectives?.Push : null;
+
+        internal static BotComponent? GetSearchLeader(BotOwner owner) =>
+            IsReady(owner) && States.TryGetValue(owner, out State state) ? state.SquadDecisions?.GetSearchLeader() : null;
 
         internal static SAINFollowerSquadSupportObjective? GetSquadSupport(BotOwner owner) =>
             IsReady(owner) && States.TryGetValue(owner, out State state) ? state.Objectives?.SquadSupport : null;
@@ -362,6 +367,7 @@ namespace pitTeam.SAINAddon
             SainMedicalDecisionBridge.Restore(state.Bot);
             state.Recorder?.ObservePhase(SAINFollowerCombatPhase.Released);
             state.Objectives?.Clear("release");
+            state.SquadDecisions?.ClearSearchLeader();
             state.EngageAttempt?.Clear("release");
             state.Handoff.Release(owner);
             state.Regroup?.Clear("release");

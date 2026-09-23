@@ -226,6 +226,7 @@ public static partial class CombatChecks {
         SainMedicalDecisionBridge.Apply(new Harmony("xyz.pit.fireteam.sainaddon"));
         SainSquadSupportBridge.Apply(new Harmony("xyz.pit.fireteam.sainaddon"));
         SainRegroupFireSafety.Apply(new Harmony("xyz.pit.fireteam.sainaddon"));
+        SainIdleWeaponGuard.Apply(new Harmony("xyz.pit.fireteam.sainaddon"));
         Check(SainCoverSelectionBridge.IsAvailable,"native cover selection bridge installed");
         Check(SainSquadDecisionBridge.IsAvailable,"native squad decision bridge installed");
         var selected=Spawn("selected");var rifle=Spawn("rifle",FollowerCombatTactic.Balanced);var marks=Spawn("marks",FollowerCombatTactic.Marksman);
@@ -308,7 +309,7 @@ public static partial class CombatChecks {
         TestEngageAttempt();
         TestSainRecorder();
         TestPersonality();
-        TestRelocations();TestPushObjectives();TestPushRisk();TestMedicalRecovery();TestShooter();TestShooterWeapons();TestShooterWeaponTransitions();TestSquadSupport();TestGruntSupport();TestReportSuppressionOwnership();TestVisibleSupportFlicker();TestContactOverride();TestRegroupFireSafety();TestCoverPlanningBudget();
+        TestRelocations();TestPushObjectives();TestPushRisk();TestMedicalRecovery();TestShooter();TestShooterWeapons();TestShooterWeaponTransitions();TestSquadSupport();TestGruntSupport();TestReportSuppressionOwnership();TestVisibleSupportFlicker();TestContactOverride();TestRegroupFireSafety();TestCoverPlanningBudget();TestIdleWeaponGuard();
         SAINFollowerRuntime.Disable();
         Check(!SainAddonBridge.HasRuntimeCallbacks&&!pitFireTeam.UseSainFollowerCombat(late),"addon shutdown restores core fallback");
         var addonOwner=new Harmony("xyz.pit.fireteam.sainaddon");
@@ -319,7 +320,7 @@ public static partial class CombatChecks {
         addonOwner.UnpatchSelf();SainSquadDecisionBridge.Reset();SainCoverSelectionBridge.Reset();SainMedicalDecisionBridge.Reset();SainSquadSupportBridge.Reset();
         Check(!SainSquadDecisionBridge.IsAvailable&&!SainCoverSelectionBridge.IsAvailable,"decision and cover readiness cleared after removal");
         Check(!Harmony.GetAllPatchedMethods().Any(m=>Harmony.GetPatchInfo(m).Owners.Contains(addonOwner.Id)),"typed decision enemy and cover patches fully removed");
-        SainSquadDecisionBridge.Apply(addonOwner);SainCoverSelectionBridge.Apply(addonOwner);SainMedicalDecisionBridge.Apply(addonOwner);SainSquadSupportBridge.Apply(addonOwner);SainRegroupFireSafety.Apply(addonOwner);
+        SainSquadDecisionBridge.Apply(addonOwner);SainCoverSelectionBridge.Apply(addonOwner);SainMedicalDecisionBridge.Apply(addonOwner);SainSquadSupportBridge.Apply(addonOwner);SainRegroupFireSafety.Apply(addonOwner);SainIdleWeaponGuard.Apply(addonOwner);
         Check(SainSquadDecisionBridge.IsAvailable&&SainCoverSelectionBridge.IsAvailable,"typed hooks reinstall after removal");
         addonOwner.UnpatchSelf();SainSquadDecisionBridge.Reset();SainCoverSelectionBridge.Reset();SainMedicalDecisionBridge.Reset();SainSquadSupportBridge.Reset();
         Check(Logger.Errors.Count==0,"no lifecycle errors");

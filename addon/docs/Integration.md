@@ -23,6 +23,8 @@ SAINShooter is a separate persisted tactic using these same layers with [Marksma
 
 `SainPlayerSquadBridge` owns real SAIN membership, human leader identity, liveness, distance, election and cleanup. It follows the actual player; it does not create a fake bot leader. `LeaderComponent` stays null because the native component type cannot represent a human. Ordinary AI squad election remains native. Lifecycle and boss-group subscriptions maintain membership independently of combat readiness.
 
+GroupSearch uses a separate temporary [search-party assignment](Squad-Support.md#search-party-cooperation) to follow the initiating bot. It does not change `LeaderComponent`, elect a replacement squad leader or alter player ownership.
+
 ## Hook ownership and lifecycle
 
 Addon-only hooks live under `addon/` and are installed by `SAINAddonPatches` under the addon Harmony ID. This includes player leadership, squad decisions, publication filtering, push/support target preference, cover selection, the follower-specific medical extension and ready-addon firearm-only suppression command routing. Public native APIs/enums are referenced directly; cached reflection is reserved for inaccessible members and action types.
@@ -30,6 +32,8 @@ Addon-only hooks live under `addon/` and are installed by `SAINAddonPatches` und
 Failed installation rolls back the full addon hook set. Shutdown releases follower state and membership before removing hooks. Tactic opt-out, dismissal, combat release and native-component replacement release owned state, paths and reservations without clearing a newer owner's claim or living shared enemy memory. Personality installation/restoration belongs to addon `SainManPersonality`; [personality policy](Personalities-and-Aggression.md) is follower-local.
 
 Core owns compatibility needed without this brain. Do not move proficiency, aim/recoil, perception, relationships, enemy synchronization, speech or general friendly-fire safety into the addon. Never mutate shared SAIN presets or ordinary-bot state. `UseSainFollowerCombat` is a combat ownership gate, not a general compatibility gate.
+
+The addon also owns the [peaceful weapon guard](Combat.md#peaceful-weapon-handling), which suppresses idle SAIN fire-mode changes/inspections only for its selected tactics.
 
 ## Bridges
 

@@ -55,11 +55,10 @@ public class SAINFollowerSquadCombatLayer : SAINLayer
                 return new Action(SAINActionTypes.Get("Solo.SearchAction"), $"{LastActionDecision}");
 
             case ESquadDecision.GroupSearch:
-                if (Bot.Squad.IAmLeader)
-                {
-                    return new Action(SAINActionTypes.Get("Solo.SearchAction"), $"{LastActionDecision} : Lead Search Party");
-                }
-                return new Action(typeof(SAINFollowerFollowSearchPartyAction), $"{LastActionDecision} : Follow Squad Leader");
+                // BEGIN addon search party
+                return new Action(typeof(SAINFollowerFollowSearchPartyAction),
+                    $"{LastActionDecision} : Follow Searcher {SAINFollowerRuntime.GetSearchLeader(BotOwner)?.Info.Profile.NickName}");
+                // END addon search party
 
             case ESquadDecision.Help:
                 return new Action(SAINActionTypes.Get("Solo.SearchAction"), $"{LastActionDecision}");

@@ -194,44 +194,51 @@ public class SAINFollowerSquadDecision : BotBase
         return memberDistance <= SquadDecision_SuppressFriendlyDistStart && ammo >= 0.5f;
     }
 
-    private bool shallGroupSearch(BotComponent member)
+    // BEGIN addon search party
+    private BotComponent searchLeader;
+    internal void ClearSearchLeader() => searchLeader = null;
+
+    // Read/validate the retained assignment only; callers must not run a decision provider.
+    internal BotComponent? GetSearchLeader()
     {
-        bool squadSearching =
-            member.Decision.CurrentCombatDecision == ECombatDecision.Search
-            || member.Decision.CurrentSquadDecision == ESquadDecision.Search;
-        if (squadSearching)
-        {
-            return true;
-        }
-        return false;
+        if (!IsSearchLeader(searchLeader)) searchLeader = null;
+        return searchLeader;
+    }
+
+    private bool IsSearchLeader(BotComponent member)
+    {
+        if (member == null || member == Bot || member.BotOwner == null || member.IsDead || !member.BotActive ||
+            !Squad.Members.TryGetValue(member.ProfileId, out var current) || current != member ||
+            !pitFireTeam.UseSainFollowerCombat(member.BotOwner) ||
+            !SAINFollowerCombatHandoff.AllowsEnemyCombat(member.BotOwner) ||
+            !SAINFollowerSquadSupportObjective.Valid(Bot.GoalEnemy) ||
+            !SAINFollowerSquadSupportObjective.Valid(member.GoalEnemy) ||
+            member.GoalEnemy.EnemyProfileId != Bot.GoalEnemy.EnemyProfileId ||
+            member.Decision.CurrentSelfDecision != ESelfActionType.None) return false;
+        // A helper is never another helper's leader, even during a publication transition.
+        return member.Decision.CurrentSquadDecision == ESquadDecision.Search ||
+            member.Decision.CurrentSquadDecision == ESquadDecision.None &&
+            member.Decision.CurrentCombatDecision == ECombatDecision.Search;
     }
 
     private bool shallGroupSearch()
     {
-        if (Bot.Info.Profile.IsBoss && Bot.Info.Profile.WildSpawnType != WildSpawnType.bossKnight)
+        // Preserve an initiating search. Otherwise two searchers can abandon their
+        // searches to follow one another as their providers update in sequence.
+        if (Bot.Decision.CurrentSquadDecision == ESquadDecision.Search ||
+            Bot.Decision.CurrentSquadDecision == ESquadDecision.None &&
+            Bot.Decision.CurrentCombatDecision == ECombatDecision.Search)
+        { ClearSearchLeader(); return false; }
+        if (GetSearchLeader() != null) return true;
+        foreach (var member in Squad.Members.Values)
         {
-            //return false;
-        }
-
-        foreach (var member in Bot.Squad.Members.Values)
-        {
-            if (member.Decision.CurrentCombatDecision == ECombatDecision.Search && Bot.GoalEnemy != null && doesMemberShareEnemy(member))
-            {
-                return true;
-            }
+            if (!IsSearchLeader(member)) continue;
+            searchLeader = member;
+            return true;
         }
         return false;
     }
-
-    private bool doesMemberShareEnemy(BotComponent member)
-    {
-        if (member == null || member.ProfileId == Bot.ProfileId || member.BotOwner?.IsDead == true)
-        {
-            return false;
-        }
-
-        return member.GoalEnemy != null && member.GoalEnemy.EnemyPlayer.ProfileId == Bot.GoalEnemy.EnemyPlayer.ProfileId;
-    }
+    // END addon search party
 
     float SquadDecision_StartHelpFriendDist = 30f;
     float SquadDecision_EndHelpFriendDist = 45f;

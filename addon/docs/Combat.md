@@ -4,6 +4,12 @@
 
 SAINShooter uses the same admission/lifecycle infrastructure with a distinct [native Marksman policy](SAINShooter.md). The Rifleman push policy below is SAINGrunt-only.
 
+## Peaceful weapon handling
+
+For selected SAINGrunt and SAINShooter followers, `SainIdleWeaponGuard` skips SAIN 4.5.1's `Firemode.CheckSwapFireMode` routine unless the bot has a living, known native goal and the existing follower combat-admission gate permits combat. This stops idle distance-based fire-mode changes and the routine's magazine/chamber inspection animations. Native combat mode selection, reloads, recoil updates and weapon-info calculation remain unchanged. Independent admitted combat retains native selection; an unaccepted heard contact during peaceful following does not enable it.
+
+The typed prefix belongs to the addon and uses its existing installation/rollback owner. Core tactics, ordinary SAIN bots and the human player retain their existing behavior. The guard reads current goal/admission state only; it does not run decision or medical providers, enumerate enemies, query geometry, allocate per-call state or alter shared presets/native timers.
+
 ## Admission and recovery
 
 SAINGrunt and SAINShooter use Core's dead/removed EFT goal cleanup and stable squad enemy reports. A stale dead goal no longer excludes an addon follower from Core's idle-recipient synchronization after its own enemy dies. Cleanup changes only the invalid EFT reference; native living contacts, accepted-goal admission, visibility and fire permission retain their existing owners.

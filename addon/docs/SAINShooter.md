@@ -24,6 +24,8 @@ Default aggression is **30%**. Core's existing Marksman proficiency baseline, in
 
 The native finder searches at 10/20/32 m radii with 12 directions per radius. Its scan is synchronous; this adaptation bounds invocation count rather than rewriting SAIN's finder. No second Core support scan or local adjustment scan is added. Runtime frame time and navigation still require raid qualification.
 
+Search-party cooperation supplies a nearby searching teammate as a prepared support cue, like push support. Shooter keeps its firing-position role; see [search-party cooperation](Squad-Support.md#search-party-cooperation) for assignment lifetime and native-finder boundaries.
+
 ## Automatic support weapons
 
 `SainMarksmanWeaponBridge` binds Core's existing cached weapon eligibility, loaded-ammo/penetration selection, accepted slot request, asynchronous readiness and return helpers once per Shooter. Both second primary and holster are supported. Core's existing external-SAIN weapon-selection guard remains authoritative; no second native weapon-selection hook is added.
