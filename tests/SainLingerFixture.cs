@@ -93,6 +93,7 @@ public static partial class CombatChecks {
         Check(!solo.IsActive()&&bot.Sain.Steering.Looks==looks,"tactic opt-out cancels linger ownership");
         bot.Follower.CombatTactic=FollowerCombatTactic.SainMan;Tick();
         Check(!solo.IsActive(),"reselecting SainMan does not resurrect old linger");
+        TestPreparation();
         TestInvestigationGate();
         TestMedicalLingerDeadline();
     }
@@ -107,6 +108,43 @@ public static partial class CombatChecks {
         Check(bot.Sain.Decision.CurrentCombatDecision==ECombatDecision.None&&!solo.IsActive()&&!squad.IsActive(),"heard-only investigation cannot publish combat or take over either layer without accepted goal");
         Check(!SainCombatRecorderBridge.IsActive(bot),"rejected investigation cannot open a recorder combat episode");
         Check(bot.Sain.GoalEnemy==enemy&&bot.Sain.EnemyController.KnownEnemies.Contains(enemy),"investigation gate preserves native perception and living enemy memory");
+        enemy.Hearing.EnemyHeardFromPeace=true;
+        enemy.KnownPlaces.LastKnownPosition=new Vector3(10,0,0);
+        enemy.KnownPlaces.LastHeardPlace=enemy.KnownPlaces.LastKnownPlace=
+            new SAIN.SAINComponent.Classes.EnemyClasses.EnemyPlace{SoundType=SAINSoundType.FootStep,Position=new Vector3(10,0,0)};
+        bot.BotsGroup.Enemies[enemy.EnemyPlayer]=new BotGroupEnemyInfo();
+        int recoveryBeforeFreeze=bot.RecoveryStarts;
+        bot.Sain.Decision.Manager.Publish(ECombatDecision.Freeze);
+        Check(solo.IsActive()&&solo.GetNextAction().Type==typeof(SAINFollowerPreparationAction)&&!squad.IsActive()&&
+            SAINFollowerRuntime.GetCombatPhase(bot)==SAINFollowerCombatPhase.Ambush,
+            "hostile heard-from-peace Freeze owns only the defensive solo preparation action");
+        Check(!SAINFollowerRuntime.HasEnteredCombat(bot)&&!bot.Follower.CombatIndependent,
+            "pre-combat Freeze does not start combat or independence");
+        SainAddonBridge.TryIsReadyForPatrolAfterCombat(bot,out bool ambushReady);
+        Check(!ambushReady,"patrol yields while ambush Freeze is active");
+        bot.Follower.Command=FollowerCommandType.RegroupNearBoss;
+        Check(solo.IsCurrentActionEnding()&&!solo.IsActive()&&
+            bot.Follower.Command==FollowerCommandType.RegroupNearBoss,
+            "new player command interrupts an already-running Freeze without consuming it");
+        bot.Follower.Command=FollowerCommandType.None;
+        bot.Sain.Decision.Manager.Publish(ECombatDecision.Freeze);
+        Check(solo.IsActive()&&solo.GetNextAction().Type==typeof(SAINFollowerPreparationAction),
+            "a fresh native Freeze may resume after command cancellation");
+        bot.Sain.Decision.Manager.Publish(ECombatDecision.Search);
+        Check(!solo.IsActive()&&SAINFollowerRuntime.GetCombatPhase(bot)==SAINFollowerCombatPhase.Released&&
+            bot.RecoveryStarts==recoveryBeforeFreeze,"heard-only Search ends ambush without linger or post-combat heal");
+        bot.BotsGroup.Enemies.Remove(enemy.EnemyPlayer);
+        bot.Sain.Decision.Manager.Publish(ECombatDecision.Freeze);
+        Check(!solo.IsActive(),"native Freeze cannot wait on a contact Core does not mark hostile");
+        bot.BotsGroup.Enemies[enemy.EnemyPlayer]=new BotGroupEnemyInfo();
+        bot.Follower.Command=FollowerCommandType.RegroupNearBoss;
+        bot.Sain.Decision.Manager.Publish(ECombatDecision.Freeze);
+        Check(!solo.IsActive()&&bot.Follower.Command==FollowerCommandType.RegroupNearBoss,
+            "player command retains ownership over heard-only Freeze");
+        bot.Follower.Command=FollowerCommandType.None;
+        enemy.Hearing.EnemyHeardFromPeace=false;
+        bot.Sain.Decision.Manager.Publish(ECombatDecision.Freeze);
+        Check(!solo.IsActive(),"non-peace hearing cannot claim the ambush exception");
         bot.Follower.Command=FollowerCommandType.RegroupNearBoss;
         bot.Sain.Decision.Manager.Frame();
         Check(bot.Follower.Command==FollowerCommandType.RegroupNearBoss&&!SAINFollowerRuntime.GetRegroup(bot).Active,"rejected investigation leaves peaceful command for core request layer");

@@ -12,13 +12,36 @@ using UnityEngine;
 
 namespace UnityEngine { public static partial class Physics { public static bool Blocked; public static int LinecastCalls; public static bool Linecast(Vector3 from,Vector3 to,int mask){LinecastCalls++;return Blocked;} } }
 namespace SAIN.Components {
+    public partial class EnemyController {
+        public Enemy Candidate;
+        public Enemy CheckAddEnemy(Player player) {
+            Enemy found=KnownEnemies.Find(enemy=>enemy.EnemyProfileId==player.ProfileId);
+            if(found!=null)return found;
+            if(Candidate?.EnemyProfileId==player.ProfileId){KnownEnemies.Add(Candidate);return Candidate;}
+            return null;
+        }
+    }
     public class PushPose {public int Calls;public void SetPoseToCover(Enemy enemy){Calls++;}}
     public class PushLean {public void HoldLean(float seconds){}}
     public partial class Mover {public PushPose Pose=new PushPose();public PushLean Lean=new PushLean();}
     public class DogFightDecision { public bool DogFightActive; }
     public partial class Decision { public DogFightDecision DogFightDecision=new DogFightDecision(); }
 }
+namespace SAIN.Models.Structs {
+    public struct SAINHearingReport {
+        public Vector3 position; public SAINSoundType soundType;
+        public SAIN.SAINComponent.Classes.EnemyClasses.EEnemyPlaceType placeType;
+        public bool isDanger,shallReportToSquad;
+    }
+}
 namespace SAIN.SAINComponent.Classes.EnemyClasses {
+    public enum EEnemyPlaceType { Vision,Hearing }
+    public partial class Places {
+        public int CommandReports;
+        public void UpdatePersonalHeardPosition(SAIN.Models.Structs.SAINHearingReport report,float time) {
+            CommandReports++;LastKnownPosition=report.position;
+        }
+    }
     public class SAINEnemyController : SAIN.SAINComponent.BotBase {
         private Enemy candidate; public int NativeCalls,Publications;
         public SAINEnemyController(BotComponent bot):base(bot){}
@@ -108,6 +131,18 @@ public static partial class CombatChecks {
         b=PushBot("objectiveForget");p=SAINFollowerRuntime.GetPush(b);b.Sain.GoalEnemy.EnemyKnown=false;p.Observe();
         Check(p.AwaitingTarget&&!b.Sain.GoalEnemy.EnemyKnown,"contact grace does not resurrect native memory");
         Time.time+=3;p.Observe();Check(!p.Active,"sustained native forgetting releases ordered target");
+        b=PushBot("directedForgot",false);var directed=b.Sain.GoalEnemy;
+        b.Memory.GoalEnemy.Person=directed.EnemyPlayer;
+        directed.EnemyKnown=false;directed.KnownPlaces.LastKnownPosition=null;
+        var squadOrder=new SainPushOrder(b.Memory.GoalEnemy.ProfileId,new Vector3(41,0,6));
+        Check(SainAddonBridge.TryPushEnemy(b,squadOrder)&&directed.KnownPlaces.CommandReports==1&&
+            directed.KnownPlaces.LastKnownPosition.Value.x==41,"new directed order reports only the selected remembered position");
+        p=SAINFollowerRuntime.GetPush(b);
+        Check(p.Ordered&&p.AwaitingTarget&&!directed.EnemyKnown,"command report waits for native known-state update");
+        SainAddonBridge.TryPushEnemy(b,squadOrder);
+        Check(directed.KnownPlaces.CommandReports==1,"same-target repeated order cannot refresh native report");
+        directed.EnemyKnown=true;p.Observe();
+        Check(p.Ordered&&!p.AwaitingTarget&&p.EnemyId==squadOrder.EnemyProfileId,"native report binds the exact directed push target");
         b=PushBot("objectivePathFailure");p=SAINFollowerRuntime.GetPush(b);b.Sain.Decision.Manager.Publish(ECombatDecision.Search);b.Sain.Mover.Complete=false;
         action=new SAINFollowerMoveToEngageAction(b);action.Start();action.Update(new DrakiaXYZ.BigBrain.Brains.CustomLayer.ActionData());
         Check(p.Exhausted&&p.Reason=="pathRejected","rejected native movement exhausts the approach");

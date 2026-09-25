@@ -31,8 +31,8 @@ internal sealed class SAINFollowerRecorder : IDisposable
     internal void ObservePhase(SAINFollowerCombatPhase value)
     {
         if (!SainCombatRecorderBridge.IsRecording) { Active = false; return; }
-        phase = value switch { SAINFollowerCombatPhase.Combat => "Combat", SAINFollowerCombatPhase.Linger => "Linger", _ => "Released" };
-        Active = value == SAINFollowerCombatPhase.Linger ||
+        phase = value switch { SAINFollowerCombatPhase.Combat => "Combat", SAINFollowerCombatPhase.Ambush => "Ambush", SAINFollowerCombatPhase.Linger => "Linger", _ => "Released" };
+        Active = value == SAINFollowerCombatPhase.Linger || value == SAINFollowerCombatPhase.Ambush ||
             (value == SAINFollowerCombatPhase.Combat && (bot.Decision.HasDecision || SainAddonBridge.IsUsingMedical(bot.BotOwner)));
         SainCombatRecorderBridge.RecordState(bot.BotOwner, Active, phase);
     }
@@ -42,7 +42,7 @@ internal sealed class SAINFollowerRecorder : IDisposable
         try
         {
             if ((solo != ECombatDecision.None || squad != ESquadDecision.None || self != ESelfActionType.None) &&
-                SAINFollowerCombatHandoff.AllowsDecision(bot, solo, self))
+                SAINFollowerCombatHandoff.AllowsDecision(bot, solo, self, enemy, squad))
             { Active = true; SainCombatRecorderBridge.RecordState(bot.BotOwner, true, "nativeDecision"); }
             if (SainCombatRecorderBridge.IsRecording)
                 SainCombatRecorderBridge.RecordEvent(bot.BotOwner, "sainDecision", new {

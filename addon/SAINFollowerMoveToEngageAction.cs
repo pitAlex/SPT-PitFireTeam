@@ -1,6 +1,7 @@
 // Adapted from SAIN 4.5.1 MoveToEngageAction (Solarint, MIT; SAIN-LICENSE.txt).
 using DrakiaXYZ.BigBrain.Brains;
 using EFT;
+using pitTeam.Modules;
 using SAIN.Layers;
 using SAIN.Models.Enums;
 using SAIN.SAINComponent.Classes.EnemyClasses;
@@ -67,7 +68,21 @@ internal sealed class SAINFollowerMoveToEngageAction(BotOwner bot) : BotAction(b
         bool moved = sprint && Bot.Mover.RunToPoint(destination.Value, true, -1f, ESprintUrgency.Middle);
         if (!moved) moved = Bot.Mover.WalkToPoint(destination.Value, true);
         if (moved) ownedPath = Bot.Mover.ActivePath;
-        else { if (pushing) Push.Fail("pathRejected"); else attempt?.Fail("pathRejected"); StopOwnedPath(); }
+        else
+        {
+            if (SainCombatRecorderBridge.IsRecording)
+                SainCombatRecorderBridge.RecordEvent(BotOwner, "sainPathRejected", new
+                {
+                    push = pushing,
+                    sprintAttempted = sprint,
+                    position = SAINFollowerRecorder.Point(Bot.Position),
+                    navPosition = SAINFollowerRecorder.Point(Bot.Transform.NavData.Position),
+                    onNavMesh = Bot.Transform.NavData.IsOnNavMesh,
+                    destination = SAINFollowerRecorder.Point(destination),
+                });
+            if (pushing) Push.Fail("pathRejected"); else attempt?.Fail("pathRejected");
+            StopOwnedPath();
+        }
     }
     private void StopOwnedPath()
     {

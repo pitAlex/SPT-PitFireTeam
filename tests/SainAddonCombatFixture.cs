@@ -179,6 +179,7 @@ namespace pitTeam.Components {
         public void SetCombatRegroupBossAnchor(bool value){CombatRegroupUsesBossAnchor=value;}
         public void ClearOrderedPushTargetLock(string reason){}
         public BotOwner GetBot()=>Owner;public bool HasCombatHandoffSignal()=>Owner.Memory.HaveEnemy&&!Owner.Memory.DeadGoal;
+        public bool TryPeekActiveCommand(out FollowerCommandType command,out Vector3 target,out float untilTime){command=Command;target=Target;untilTime=_commandUntilTime;return command!=FollowerCommandType.None;}
         public bool TryGetActiveCommand(out FollowerCommandType command,out Vector3 target){if(Command==FollowerCommandType.CombatComeToBossCover||Command==FollowerCommandType.CombatMoveToPointTactical)return ReadGestureCommand(out command,out target);command=Command;target=Target;return command!=FollowerCommandType.None;}
         public void ClearCommand(string reason){Command=FollowerCommandType.None;EndReason=reason;}
     }

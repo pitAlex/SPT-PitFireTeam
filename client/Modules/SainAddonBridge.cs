@@ -149,15 +149,23 @@ namespace pitTeam.Modules
         }
 
         private static Func<BotOwner, bool>? _tryPushEnemy;
+        private static Func<BotOwner, SainPushOrder, bool>? _tryDirectedPushEnemy;
         public static void RegisterPushEnemyHandler(Func<BotOwner, bool> handler) => _tryPushEnemy = handler;
+        public static void RegisterDirectedPushEnemyHandler(Func<BotOwner, SainPushOrder, bool> handler) => _tryDirectedPushEnemy = handler;
         public static void UnregisterPushEnemyHandler(Func<BotOwner, bool> handler)
         {
             if (_tryPushEnemy == handler) _tryPushEnemy = null;
+        }
+        public static void UnregisterDirectedPushEnemyHandler(Func<BotOwner, SainPushOrder, bool> handler)
+        {
+            if (_tryDirectedPushEnemy == handler) _tryDirectedPushEnemy = null;
         }
 
         // Called after core command acceptance; the ready addon owns its interpretation.
         public static bool TryPushEnemy(BotOwner owner) =>
             IsFollowerCombatEnabled(owner) && _tryPushEnemy?.Invoke(owner) == true;
+        public static bool TryPushEnemy(BotOwner owner, SainPushOrder order) =>
+            IsFollowerCombatEnabled(owner) && _tryDirectedPushEnemy?.Invoke(owner, order) == true;
 
         // Generic event that addon can hook into for follower lifecycle changes.
         public static event Action<BotOwner, FollowerLifecycleEvent>? OnFollowerLifecycleEvent;
@@ -185,6 +193,13 @@ namespace pitTeam.Modules
 
             OnBossGroupStaticUpdate?.Invoke(boss);
         }
+    }
+
+    // One command-time remembered point; no native SAIN references cross into core.
+    public readonly struct SainPushOrder(string enemyProfileId, Vector3 lastKnownPosition)
+    {
+        public string EnemyProfileId { get; } = enemyProfileId;
+        public Vector3 LastKnownPosition { get; } = lastKnownPosition;
     }
 
     // Passive status-report data; no native SAIN references cross into core.

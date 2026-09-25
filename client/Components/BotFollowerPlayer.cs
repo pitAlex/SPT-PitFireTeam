@@ -1628,6 +1628,47 @@ namespace pitTeam.Components
             BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(SetOpenDoor));
         }
 
+        // A ready SAINGrunt may receive an already admitted squad target. A different
+        // visible personal threat remains the current fight until it is resolved.
+        public bool TrySetSainPushEnemy(SainPushOrder order, EnemyInfo target)
+        {
+            if (ShouldIgnoreCommandSet() || target?.ProfileId != order.EnemyProfileId ||
+                target.Person?.HealthController?.IsAlive != true || _bot.Memory == null)
+                return false;
+            EnemyInfo? previous = _bot.Memory.GoalEnemy;
+            if (previous != target && previous?.Person?.HealthController?.IsAlive == true &&
+                (previous.IsVisible || previous.CanShoot)) return false;
+            bool changed = previous != target;
+            bool wasPeace = _bot.Memory.IsPeace;
+            int oldPriority = target.PriorityIndex;
+            bool oldIgnore = target.IgnoreUntilAggression;
+            if (changed)
+            {
+                _bot.Memory.IsPeace = false;
+                target.PriorityIndex = 0;
+                target.IgnoreUntilAggression = false;
+                using (FollowerGoalEnemyTracker.Begin("BotFollowerPlayer.TrySetSainPushEnemy", "directedSquadPush"))
+                    _bot.Memory.GoalEnemy = target;
+                if (_bot.Memory.GoalEnemy != target)
+                {
+                    _bot.Memory.IsPeace = wasPeace;
+                    target.PriorityIndex = oldPriority;
+                    target.IgnoreUntilAggression = oldIgnore;
+                    return false;
+                }
+            }
+            if (SainAddonBridge.TryPushEnemy(_bot, order)) return true;
+            if (changed)
+            {
+                using (FollowerGoalEnemyTracker.Begin("BotFollowerPlayer.TrySetSainPushEnemy", "directedSquadPushRejected"))
+                    _bot.Memory.GoalEnemy = previous;
+                _bot.Memory.IsPeace = wasPeace;
+                target.PriorityIndex = oldPriority;
+                target.IgnoreUntilAggression = oldIgnore;
+            }
+            return false;
+        }
+
         public void SetPushEnemy(float duration)
         {
             if (ShouldIgnoreCommandSet())

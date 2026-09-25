@@ -20,6 +20,7 @@ public class SAINFollowerSoloCombatLayer : SAINLayer
         SAINFollowerRuntime.RegisterSoloLayer(bot, this);
     }
     private bool lingerAction;
+    private bool preparationAction;
     private bool pushHoldAction;
     private bool relocationAction;
     private bool UseRelocation => _currentDecision == ECombatDecision.MoveToEngage &&
@@ -39,8 +40,15 @@ public class SAINFollowerSoloCombatLayer : SAINLayer
     private Action SelectAction()
     {
         // BEGIN addon post-combat handoff
-        lingerAction = SAINFollowerRuntime.GetCombatPhase(BotOwner) != SAINFollowerCombatPhase.Combat;
+        SAINFollowerCombatPhase phase = SAINFollowerRuntime.GetCombatPhase(BotOwner);
+        lingerAction = phase != SAINFollowerCombatPhase.Combat && phase != SAINFollowerCombatPhase.Ambush;
         if (lingerAction) return new Action(typeof(SAINFollowerLingerAction), "linger");
+        preparationAction = phase == SAINFollowerCombatPhase.Ambush;
+        if (preparationAction)
+        {
+            _doSurgeryAction = false;
+            return new Action(typeof(SAINFollowerPreparationAction), $"heardPreparation + {_currentDecision}");
+        }
         // END addon post-combat handoff
         _lastSelfDecision = _currentSelfDecision;
         _lastDecision = _currentDecision;
@@ -57,7 +65,7 @@ public class SAINFollowerSoloCombatLayer : SAINLayer
         // END addon relocation
         // BEGIN addon push hold
         pushHoldAction = UsePushHold;
-        if (pushHoldAction) return new Action(typeof(SAINFollowerPushHoldAction), SAINFollowerRuntime.GetMarksman(BotOwner)?.Preparing == true ? "marksmanWeaponPrepare" : "pushArrivalHold");
+        if (pushHoldAction) return new Action(typeof(SAINFollowerPushHoldAction), SAINFollowerRuntime.GetMarksman(BotOwner)?.Preparing == true ? "marksmanWeaponPrepare" : SAINFollowerRuntime.GetPush(BotOwner)?.Phase == SAINPushPhase.Pressure ? "pushArrivalHold" : "pushPlanningHold");
         // END addon push hold
         switch (_lastDecision)
         {
@@ -120,7 +128,7 @@ public class SAINFollowerSoloCombatLayer : SAINLayer
         if (GetBotComponent())
         {
             SAINFollowerCombatPhase phase = SAINFollowerRuntime.GetCombatPhase(BotOwner);
-            if (phase != SAINFollowerCombatPhase.Combat)
+            if (phase != SAINFollowerCombatPhase.Combat && phase != SAINFollowerCombatPhase.Ambush)
             {
                 _doSurgeryAction = false;
                 CheckActiveChanged(phase == SAINFollowerCombatPhase.Linger);
@@ -143,12 +151,18 @@ public class SAINFollowerSoloCombatLayer : SAINLayer
     private bool ShouldEndAction()
     {
         // BEGIN addon post-combat handoff
-        if (SAINFollowerRuntime.GetCombatPhase(BotOwner) != SAINFollowerCombatPhase.Combat)
+        SAINFollowerCombatPhase phase = SAINFollowerRuntime.GetCombatPhase(BotOwner);
+        if (phase is not (SAINFollowerCombatPhase.Combat or SAINFollowerCombatPhase.Ambush))
         {
             base.IsCurrentActionEnding(); // Drain decision events without restarting linger.
             return !lingerAction;
         }
-        if (lingerAction) return true;
+        if (lingerAction || preparationAction != (phase == SAINFollowerCombatPhase.Ambush)) return true;
+        if (preparationAction)
+        {
+            base.IsCurrentActionEnding(); // Drain publications; retain the local cover commitment.
+            return false;
+        }
         // END addon post-combat handoff
         // BEGIN addon relocation
         if (relocationAction != UseRelocation) return true;
@@ -193,6 +207,7 @@ public class SAINFollowerSoloCombatLayer : SAINLayer
     {
         SAINFollowerRuntime.GetRecorder(BotOwner)?.Ended(Name, "layerStopped");
         lingerAction = false;
+        preparationAction = false;
         pushHoldAction = false;
         relocationAction = false;
         _doSurgeryAction = false;

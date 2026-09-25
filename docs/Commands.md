@@ -351,7 +351,7 @@ Targeting:
 
 Combat variant:
 
-- Becomes `PushEnemy` when the follower has active combat enemy state.
+- Becomes `PushEnemy` when the follower has active combat enemy state. Ready SAINGrunts also accept a squad-selected, already-admitted target; see [addon Go Forward](../addon/docs/Commands.md#go-forward). Core tactics keep their per-follower target.
 
 ### Regroup Phrase Outside Combat
 

@@ -17,6 +17,7 @@ namespace pitTeam.SAINAddon
                 SainMedicalDecisionBridge.Apply(Harmony);
                 SainSquadSupportBridge.Apply(Harmony);
                 SainContactEnemyBridge.Apply(Harmony);
+                SainAttentionBridge.Apply(Harmony);
                 SainRegroupFireSafety.Apply(Harmony);
                 SainIdleWeaponGuard.Apply(Harmony);
                 SainEmergencyWeaponBridge.Apply(Harmony);

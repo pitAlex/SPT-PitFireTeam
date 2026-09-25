@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace pitTeam.SAINAddon;
 
-internal enum SAINFollowerCombatPhase { Combat, Linger, Released }
+internal enum SAINFollowerCombatPhase { Combat, Ambush, Linger, Released }
 
 // One handoff per follower, shared by the solo and squad layers. Layer switches must
 // not restart the timer or carry a dead enemy's native action into peaceful follow.
@@ -48,10 +48,20 @@ internal sealed class SAINFollowerCombatHandoff
              (SainAddonBridge.IsUsingMedical(bot.BotOwner) || IsMedical(bot.Decision.CurrentSelfDecision))))
             return SAINFollowerCombatPhase.Combat;
 
+        if (lingerUntil > Time.time)
+        {
+            if (bot.Decision.HasDecision) bot.Decision.ResetDecisions(false);
+            return SAINFollowerCombatPhase.Linger;
+        }
+        // Native defensive hearing decisions may prepare contact before Core has a
+        // goal. They never start a combat/medical linger episode.
+        if (AllowsAmbushPreparation(bot, bot.GoalEnemy, bot.Decision.CurrentCombatDecision,
+            bot.Decision.CurrentSquadDecision, bot.Decision.CurrentSelfDecision))
+            return SAINFollowerCombatPhase.Ambush;
+
         // Reset this follower through SAIN's publisher, never its private decision fields
         // or living enemy memory. A stale decision must not reactivate either replica.
         if (bot.Decision.HasDecision) bot.Decision.ResetDecisions(false);
-        if (lingerUntil > Time.time) return SAINFollowerCombatPhase.Linger;
         if (lingerUntil > 0f)
         {
             lingerUntil = 0f;
@@ -73,7 +83,7 @@ internal sealed class SAINFollowerCombatHandoff
     }
 
     // Native heard contacts can have a SAIN goal while core deliberately rejects the
-    // EFT goal. They may steer this follower's combat brain only in independent mode.
+    // EFT goal. Full combat still requires Core admission or independent mode.
     internal static bool AllowsEnemyCombat(BotOwner owner)
     {
         var follower = BossPlayers.Instance?.GetFollower(owner);
@@ -82,8 +92,61 @@ internal sealed class SAINFollowerCombatHandoff
             SainAddonBridge.HasAcceptedGoalEnemy(owner);
     }
 
-    internal static bool AllowsDecision(BotComponent bot, ECombatDecision solo, ESelfActionType self) =>
-        AllowsEnemyCombat(bot.BotOwner) || solo == ECombatDecision.AvoidGrenade ||
+    internal static bool AllowsAmbushPreparation(BotComponent bot, Enemy enemy, ECombatDecision solo,
+        ESquadDecision squad, ESelfActionType self)
+    {
+        if (bot == null || enemy == null || !ReferenceEquals(bot.GoalEnemy, enemy) ||
+            (solo != ECombatDecision.Freeze && solo != ECombatDecision.SeekCover && solo != ECombatDecision.ShiftCover) ||
+            squad != ESquadDecision.None || self != ESelfActionType.None ||
+            AllowsEnemyCombat(bot.BotOwner) || !IsLive(enemy) || !enemy.WasValid || !enemy.EnemyKnown ||
+            enemy.Hearing?.EnemyHeardFromPeace != true || !AllowsLocalHeardSound(bot, enemy))
+            return false;
+        BotOwner owner = bot.BotOwner;
+        var follower = BossPlayers.Instance?.GetFollower(owner);
+        if (follower == null || SAINFollowerRuntime.IsAttentionContactIgnored(owner, enemy) ||
+            SainAddonBridge.IsUsingMedical(owner) ||
+            follower.TryPeekActiveCommand(out _, out _, out _) ||
+            SAINFollowerRuntime.HasOrderedPush(owner)) return false;
+        Player player = enemy.EnemyPlayer;
+        return owner.BotsGroup != null &&
+            (owner.BotsGroup.IsEnemy(player) || owner.BotsGroup.IsPlayerEnemy(player));
+    }
+
+    // Core turns for nearby steps and voices. SAIN records the personal report's
+    // sound type on its remembered place; the unused LastSoundHeard field is never
+    // populated in 4.5.1. Use that place, not the hidden player's live position.
+    internal static bool AllowsLocalHeardSound(BotComponent bot, Enemy enemy)
+    {
+        var places = enemy?.KnownPlaces;
+        var heard = places?.LastHeardPlace;
+        if (bot == null || heard == null || !ReferenceEquals(places.LastKnownPlace, heard)) return false;
+        float range;
+        switch (heard.SoundType)
+        {
+            case SAINSoundType.Conversation:
+            case SAINSoundType.Pain:
+            case SAINSoundType.Breathing:
+                range = 25f; // Local preparation cap for voice and movement.
+                break;
+            case SAINSoundType.FootStep:
+            case SAINSoundType.Sprint:
+            case SAINSoundType.Prone:
+            case SAINSoundType.Jump:
+            case SAINSoundType.Land:
+            case SAINSoundType.GearSound:
+            case SAINSoundType.Bush:
+                range = 25f; // Core FootstepSoundPatch's capped movement range.
+                break;
+            default:
+                return false;
+        }
+        return (heard.Position - bot.Position).sqrMagnitude <= range * range;
+    }
+
+    internal static bool AllowsDecision(BotComponent bot, ECombatDecision solo, ESelfActionType self,
+        Enemy enemy = null, ESquadDecision squad = ESquadDecision.None) =>
+        AllowsEnemyCombat(bot.BotOwner) || AllowsAmbushPreparation(bot, enemy, solo, squad, self) ||
+        solo == ECombatDecision.AvoidGrenade ||
         (SAINFollowerRuntime.AllowsMedicalContinuation(bot.BotOwner) &&
          (SainAddonBridge.IsUsingMedical(bot.BotOwner) || IsMedical(self)));
 

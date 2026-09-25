@@ -17,6 +17,8 @@ public class BotsGroup {
     public readonly Dictionary<Player,BotGroupEnemyInfo> Neutrals=new Dictionary<Player,BotGroupEnemyInfo>();
     public readonly Dictionary<Player,BotGroupEnemyInfo> Enemies=new Dictionary<Player,BotGroupEnemyInfo>();
     public bool RejectEnemy;public int Adds;
+    public bool IsEnemy(Player p)=>Enemies.ContainsKey(p);
+    public bool IsPlayerEnemy(Player p)=>Enemies.ContainsKey(p);
     public bool AddEnemy(Player p,EBotEnemyCause cause) {
         Adds++;
         if(RejectEnemy || p.FriendlyScav && cause==EBotEnemyCause.checkAddTODO)return false;

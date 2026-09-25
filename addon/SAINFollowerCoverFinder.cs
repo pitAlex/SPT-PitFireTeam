@@ -65,17 +65,35 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
             rankEnemyDistance = toEnemy.magnitude; rankEnemyDirection = toEnemy.normalized;
             protectiveRange = SainCoverGeometry.SearchRadius;
         }
-        // Mirror Core combat-start ranges without changing its internal configuration API.
-        string location = Comfort.Common.Singleton<GameWorld>.Instance?.LocationId;
-        nearbyCoverDistance = !string.IsNullOrEmpty(location) &&
-            (location.IndexOf("factory", StringComparison.OrdinalIgnoreCase) >= 0 ||
-             string.Equals(location, "laboratory", StringComparison.OrdinalIgnoreCase)) ? 12f : 25f;
+        nearbyCoverDistance = NearbyCoverRange;
         Scan(enemy, boss, SainCoverGeometry.SearchRadius, SainRegroupBridge.BossMoveRefreshDistance);
         foreach (CoverPoint point in candidates) Add(point, boss);
         foreach (CoverPoint point in bot.Cover.CoverPoints) Add(point, boss);
         if (Pending) { ranked.Clear(); return ranked; }
         ranked.Sort(bossComparison ??= CompareBoss);
         return ranked;
+    }
+
+    // Mirror Core combat-start ranges without changing its internal configuration API.
+    internal static float NearbyCoverRange
+    {
+        get
+        {
+            string location = Comfort.Common.Singleton<GameWorld>.Instance?.LocationId;
+            return !string.IsNullOrEmpty(location) &&
+                (location.IndexOf("factory", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 string.Equals(location, "laboratory", StringComparison.OrdinalIgnoreCase)) ? 12f : 25f;
+        }
+    }
+
+    internal List<CoverPoint> FindPreparation(Enemy enemy)
+    {
+        // Reuse the native validator, route ranking and four-probe frame budget.
+        // No player-area or unrestricted native fallback before combat admission.
+        List<CoverPoint> points = Find(enemy, bot.Position, preferNearby: true);
+        for (int i = points.Count - 1; i >= 0; i--)
+            if (!IsNearby(points[i])) points.RemoveAt(i);
+        return points;
     }
 
     private void Scan(Enemy enemy, Vector3 boss, float radius, float refresh)

@@ -35,6 +35,11 @@ internal sealed class SAINFollowerApproachRoute
             if (length >= remaining) { step += segment.normalized * remaining; break; }
             step = corners[i]; remaining -= length;
         }
+        failure = "approachStepUnsampled";
+        // Native RunToPoint/WalkToPoint samples its destination within 0.5m.
+        // A point interpolated between path corners may be outside that radius.
+        if (!NavMesh.SamplePosition(step, out NavMeshHit accepted, 0.5f, NavMesh.AllAreas)) return false;
+        step = accepted.position;
         failure = "approachStepInvalid";
         // Progress is along the complete route: a necessary detour may initially
         // increase straight-line distance. Recheck the bounded leg before committing it.

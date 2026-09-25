@@ -3450,6 +3450,101 @@ namespace pitTeam.Components
             }
         }
 
+        private sealed class SainPushTargetCandidate
+        {
+            public Player Enemy;
+            public Vector3 LastKnownPosition;
+        }
+
+        // Resolve the spoken squad order once. Hidden targets use existing follower
+        // reports; their live transforms never become command-time evidence.
+        private SainPushTargetCandidate? SelectSainPushTarget(IPlayer requester, BotOwner? focusedFollower)
+        {
+            List<SainPushTargetCandidate> candidates = new List<SainPushTargetCandidate>();
+            List<Player> visible = GetSuppressionVisibleEnemies(requester);
+            foreach (Player enemy in visible)
+            {
+                if (enemy?.HealthController?.IsAlive != true ||
+                    bossGroup?.IsEnemy(enemy) != true && bossGroup?.IsPlayerEnemy(enemy) != true)
+                    continue;
+                candidates.Add(new SainPushTargetCandidate { Enemy = enemy, LastKnownPosition = enemy.Position });
+            }
+
+            foreach (BotOwner follower in Followers)
+            {
+                if (follower == null || follower.IsDead || follower.BotState != EBotState.Active ||
+                    focusedFollower != null && follower != focusedFollower) continue;
+                EnemyInfo? goal = follower.Memory?.GoalEnemy;
+                if (goal?.Person is not Player enemy || enemy.HealthController?.IsAlive != true ||
+                    candidates.Any(candidate => candidate.Enemy.ProfileId == enemy.ProfileId) ||
+                    !IsEligibleBossDirectedContactTarget(requester, enemy) ||
+                    !TryGetSainPushKnownPosition(goal, out Vector3 known)) continue;
+                candidates.Add(new SainPushTargetCandidate { Enemy = enemy, LastKnownPosition = known });
+            }
+
+            if (candidates.Count == 0) return null;
+            Vector3 look = requester.LookDirection;
+            look.y = 0f;
+            if (look.sqrMagnitude <= 0.001f) look = requester.Transform.forward;
+            look.y = 0f;
+            look.Normalize();
+            float bestDot = Mathf.Cos(30f * Mathf.Deg2Rad);
+            SainPushTargetCandidate? selected = null;
+            foreach (SainPushTargetCandidate candidate in candidates)
+            {
+                Vector3 direction = candidate.LastKnownPosition - requester.Position;
+                direction.y = 0f;
+                if (direction.sqrMagnitude <= 0.01f) continue;
+                float dot = Vector3.Dot(look, direction.normalized);
+                if (dot > bestDot) { bestDot = dot; selected = candidate; }
+            }
+            return selected ?? (candidates.Count == 1 ? candidates[0] : null);
+        }
+
+        private static bool TryGetSainPushKnownPosition(EnemyInfo goal, out Vector3 position)
+        {
+            position = Vector3.zero;
+            if (goal.IsVisible && IsUsableSainPushPoint(goal.CurrPosition))
+                position = goal.CurrPosition;
+            else if (goal.HaveSeen && IsUsableSainPushPoint(goal.EnemyLastPositionReal))
+                position = goal.EnemyLastPositionReal;
+            else if (goal.PersonalLastSeenTime > 0f && IsUsableSainPushPoint(goal.PersonalLastPos))
+                position = goal.PersonalLastPos;
+            return IsUsableSainPushPoint(position);
+        }
+
+        private static bool IsUsableSainPushPoint(Vector3 point) =>
+            !float.IsNaN(point.x) && !float.IsInfinity(point.x) &&
+            !float.IsNaN(point.y) && !float.IsInfinity(point.y) &&
+            !float.IsNaN(point.z) && !float.IsInfinity(point.z) &&
+            point.sqrMagnitude > 0.01f;
+
+        private static EnemyInfo? GetSainPushTargetInfo(BotOwner follower, Player enemy)
+        {
+            if (follower?.BotsGroup == null || follower.EnemiesController == null ||
+                enemy?.HealthController?.IsAlive != true) return null;
+            EnemyInfo? current = follower.Memory?.GoalEnemy;
+            if (current?.ProfileId == enemy.ProfileId && current.Person?.HealthController?.IsAlive == true)
+                return current;
+            if (follower.BotsGroup.IsEnemy(enemy) != true &&
+                follower.BotsGroup.IsPlayerEnemy(enemy) != true) return null;
+            EnemyInfo? tracked = GetTrackedEnemyInfo(follower, enemy.ProfileId);
+            if (tracked != null) return tracked;
+            if (!follower.BotsGroup.Enemies.TryGetValue(enemy, out BotGroupEnemyInfo groupInfo) ||
+                groupInfo == null || !IsUsableSainPushPoint(groupInfo.EnemyLastPosition)) return null;
+            try
+            {
+                tracked = follower.EnemiesController.AddNew(follower.BotsGroup, enemy, groupInfo);
+                if (tracked != null) follower.EnemiesController.SetInfo(enemy, tracked);
+                return tracked;
+            }
+            catch (Exception ex)
+            {
+                Modules.Logger.LogError(ex);
+                return null;
+            }
+        }
+
         private void ApplyGoForwardPhrase(IPlayer requester)
         {
             if (requester == null) return;
@@ -3462,6 +3557,12 @@ namespace pitTeam.Components
                 focusedFollower = FindLookedAtFollower(requesterPlayer, PhraseCommandDistance);
             }
 
+            SainPushTargetCandidate? squadTarget = null;
+            if (Followers.Any(follower => follower != null &&
+                (focusedFollower == null || follower == focusedFollower) &&
+                SainAddonBridge.IsSainManSelected(follower) &&
+                SainAddonBridge.IsFollowerCombatEnabled(follower)))
+                squadTarget = SelectSainPushTarget(requester, focusedFollower);
             foreach (BotOwner follower in Followers)
             {
                 if (follower == null || follower.IsDead || follower.BotState != EBotState.Active) continue;
@@ -3472,20 +3573,30 @@ namespace pitTeam.Components
                 if (followerData == null) continue;
 
                 EnemyInfo? goalEnemy = follower.Memory?.GoalEnemy;
+                bool directedGrunt = squadTarget != null &&
+                    SainAddonBridge.IsSainManSelected(follower) &&
+                    SainAddonBridge.IsFollowerCombatEnabled(follower);
+                EnemyInfo? directedInfo = directedGrunt
+                    ? GetSainPushTargetInfo(follower, squadTarget!.Enemy) : null;
                 bool hasCombatEnemy =
                     follower.Memory?.HaveEnemy == true ||
                     (goalEnemy != null && goalEnemy.Person?.HealthController?.IsAlive == true);
 
-                if (hasCombatEnemy)
+                if (hasCombatEnemy || directedGrunt)
                 {
                     if (IsPickedUpFollower(followerData))
                     {
-                        if (RollPickupFollowerPushAcceptance(follower, followerData, requester, goalEnemy))
+                        if (RollPickupFollowerPushAcceptance(follower, followerData, requester, directedInfo ?? goalEnemy))
                         {
                             followerData.ClearTemporaryCombatAggressionOverride("GoForwardPhrase:pickupPush");
-                            followerData.SetPushEnemy(12f);
-                            follower.BotTalk.TrySay(EPhraseTrigger.Going, false);
-                            follower.Gesture.TryGestus(EInteraction.OkGesture, false);
+                            bool issued = directedGrunt
+                                ? directedInfo != null && followerData.TrySetSainPushEnemy(
+                                    new SainPushOrder(squadTarget!.Enemy.ProfileId, squadTarget.LastKnownPosition),
+                                    directedInfo)
+                                : hasCombatEnemy;
+                            if (!directedGrunt && issued) followerData.SetPushEnemy(12f);
+                            follower.BotTalk.TrySay(issued ? EPhraseTrigger.Going : EPhraseTrigger.Negative, false);
+                            follower.Gesture.TryGestus(issued ? EInteraction.OkGesture : EInteraction.NoGesture, false);
                         }
                         else
                         {
@@ -3496,14 +3607,19 @@ namespace pitTeam.Components
                         continue;
                     }
 
-                    // GoForward in combat is not a movement ping; it becomes PushEnemy for combat objective routing.
+                    // Core tactics keep their existing per-follower push. Only a ready
+                    // SAINGrunt consumes the command-time squad target.
                     followerData.ClearTemporaryCombatAggressionOverride("GoForwardPhrase:push");
-                    followerData.SetPushEnemy(12f);
-                    if (!FollowerCombatTactics.IsMarksman(followerData.CombatTactic))
-                    {
+                    bool accepted = directedGrunt
+                        ? directedInfo != null && followerData.TrySetSainPushEnemy(
+                            new SainPushOrder(squadTarget!.Enemy.ProfileId, squadTarget.LastKnownPosition),
+                            directedInfo)
+                        : hasCombatEnemy;
+                    if (!directedGrunt && accepted) followerData.SetPushEnemy(12f);
+                    if (!accepted) follower.BotTalk.TrySay(EPhraseTrigger.Negative, false);
+                    else if (!FollowerCombatTactics.IsMarksman(followerData.CombatTactic))
                         follower.BotTalk.TrySay(EPhraseTrigger.Going, false);
-                    }
-                    follower.Gesture.TryGestus(EInteraction.OkGesture, false);
+                    follower.Gesture.TryGestus(accepted ? EInteraction.OkGesture : EInteraction.NoGesture, false);
                     continue;
                 }
 

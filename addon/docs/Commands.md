@@ -20,7 +20,7 @@ Speech, begging, fake death, taunting, assignment and mechanical proficiency are
 
 ## Go Forward
 
-Accepted orders capture the selected target in `SAINFollowerPushObjective`; no core `PushEnemy` remains pending. The addon replaces prior push/regroup/relocation intent and uses the [shared approach, risk and interruption contract](Combat.md#push-objectives). Core command eligibility and recruit restrictions remain authoritative. Native useful fire, urgent combat and medicine may interrupt execution without deleting the order. Confirmed death, cancellation/replacement, release or expired contact grace end it.
+Core resolves one target for ready SAINGrunts at the spoken order: prefer an eligible enemy in the player's facing direction, using actual player visibility or existing follower last-known reports; if exactly one known enemy remains, use it for every eligible Grunt. A focused-follower order stays focused. Different visible personal threats keep priority. A shared target must be a follower's accepted EFT goal or already admitted by its group. Core tactics retain their own per-follower command behavior. Accepted orders capture that target in `SAINFollowerPushObjective`; no core `PushEnemy` remains pending. If SAIN has forgotten this accepted target, the addon supplies one command-time report at the selected remembered point, never the hidden live transform; decision polls and same-target orders during the active objective do not refresh it. The addon replaces prior push/regroup/relocation intent and uses the [shared approach, risk and interruption contract](Combat.md#push-objectives). Core command eligibility and recruit restrictions remain authoritative. Native useful fire, urgent combat and medicine may interrupt execution without deleting the order. Confirmed death, cancellation/replacement, release or expired contact grace end it.
 
 ## Suppress
 
@@ -44,6 +44,10 @@ Ready SAINGrunt followers now consume the existing `CombatMoveToPointTactical` a
 ## On Your Own and Attention
 
 On Your Own retains native automatic investigation/approach, disables automatic regroup and removes boss-oriented ordinary cover constraints. Explicit combat orders can still act while independent. Core owns the saved patrol/request intent and Attention routing; addon force-release/reset callbacks clean up only addon-owned state. See [admission and recovery](Combat.md#admission-and-recovery).
+
+For ready addon followers, accepted Attention captures each follower's current/known native contact identities **before** Core removes shared group contacts. Those dismissed identities cannot restart nearby voice/movement-driven Freeze/SeekCover/ShiftCover preparation in the same player sector, even if SAIN recreates the contact or hears it again. Gunshots and impacts do not initiate this preparation at all. The anchor is the player's position when Attention is accepted; moving more than Core's regroup refresh distance (10 m normally, 8 m on Factory/Labs) releases the ignore. Follower movement and elapsed time cannot release it. The normal half-second addon refresh observes sector changes even without another hearing decision, so returning later does not restore an expired ignore.
+
+The hook runs after Core's debounce accepts the command. Repeated accepted Attention preserves previously dismissed identities and updates the anchor; rejected duplicate input does not. Core's immediate cleanup and two-second enforcement suppression still execute normally. Native perception/memory are not disabled or repeatedly erased. New identities remain eligible, and normally admitted combat (including sight/damage responses), explicit independent combat and urgent grenade avoidance retain their normal gates. Addon release/reset preserves this latch; tactic opt-out, dismissal and native-component replacement clear it. The hook and latch are addon-owned; Core command implementation is unchanged.
 
 ## Status Report and enemy markers
 

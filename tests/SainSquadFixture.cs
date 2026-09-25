@@ -20,7 +20,8 @@ namespace UnityEngine {
         public static float Dot(Vector3 a,Vector3 b)=>a.x*b.x+a.y*b.y+a.z*b.z;
     }
     public class SupportWeaponData {public static SupportWeaponData Current=new SupportWeaponData();public Vector3 FirePort=new Vector3(0,1,0),PointDirection=new Vector3(1,0,0);}
-    public class Transform {public SupportWeaponData WeaponData=>SupportWeaponData.Current;public Vector3 Position; public Vector3 WeaponRoot=>Position;}
+    public class NavData {public bool IsOnNavMesh=true;public Vector3 Position;}
+    public class Transform {public SupportWeaponData WeaponData=>SupportWeaponData.Current;public Vector3 Position; public Vector3 WeaponRoot=>Position;public NavData NavData=new NavData();}
 }
 namespace UnityEngine.AI {
     public enum NavMeshPathStatus {PathComplete,PathPartial,PathInvalid}
@@ -48,7 +49,7 @@ namespace EFT {
     }
     public partial class BotOwner {public Vector3 Position=>GetPlayer.Position;public bool CanSprintPlayer=true;}
 }
-namespace SAIN.Models.Enums {public enum EEnemyAction{None,UsingSurgery,Reload} public enum ESprintUrgency{Middle,High}}
+namespace SAIN.Models.Enums {public enum EEnemyAction{None,UsingSurgery,Reload} public enum ESprintUrgency{Low,Middle,High}}
 
 namespace SAIN.SAINComponent {
     public abstract class BotBase {
@@ -59,7 +60,9 @@ namespace SAIN.SAINComponent {
 namespace SAIN.SAINComponent.Classes.EnemyClasses {
     public class Path {public float PathLength=20;public UnityEngine.AI.NavMeshPathStatus PathToEnemyStatus=UnityEngine.AI.NavMeshPathStatus.PathComplete;}
     public class Status {public EEnemyAction VulnerableAction;public bool EnemyIsSuppressed;}
-    public class Places {public float BotDistanceFromLastKnown=100;public Vector3? LastKnownPosition=new Vector3(50,0,0);public float TimeSinceLastKnownUpdated=20;}
+    public class EnemyPlace {public SAINSoundType SoundType;public Vector3 Position;}
+    public partial class Places {public float BotDistanceFromLastKnown=100;public Vector3? LastKnownPosition=new Vector3(50,0,0);public float TimeSinceLastKnownUpdated=20;public EnemyPlace LastKnownPlace,LastHeardPlace;}
+    public class EnemyHearing {public bool EnemyHeardFromPeace;}
     public class Enemy {
         public string EnemyProfileId=>EnemyPlayer.ProfileId;public Vector3? LastKnownPosition=>KnownPlaces.LastKnownPosition;
         public bool IsZombie;public bool CanShoot,IsVisible,Seen=true,Heard,InLineOfSight,Active=true,Valid=true;
@@ -68,7 +71,7 @@ namespace SAIN.SAINComponent.Classes.EnemyClasses {
         public string EPathDistance="Far";
         public float TimeSinceSeen=20;
         private EnemyInfo enemyInfo;public EnemyInfo EnemyInfo => enemyInfo ?? (enemyInfo=new EnemyInfo { Person=EnemyPlayer,ProfileId=EnemyProfileId });
-        public Player EnemyPlayer=new Player();public Path Path=new Path();public Status Status=new Status();
+        public Player EnemyPlayer=new Player();public Path Path=new Path();public Status Status=new Status();public EnemyHearing Hearing=new EnemyHearing();
         public Places KnownPlaces=new Places();public Vector3? SuppressionTarget=new Vector3(50,1,0);public Vector3 EnemyPosition;
         public static bool IsEnemyActive(Enemy enemy)=>enemy?.Active==true;
         public bool CheckValid()=>Valid;
@@ -106,7 +109,7 @@ namespace SAIN.Components {
     public class Equipment {public Gear GearInfo=new Gear();}
     public class PlayerComponent {public Equipment Equipment=new Equipment();}
     public class Shooter : SAIN.SAINComponent.Classes.SAINShootData {}
-    public partial class Suppression {public bool IsHeavySuppressed;public bool TrySuppressAnyEnemy(Enemy enemy,object known)=>false;}
+    public partial class Suppression {public bool IsHeavySuppressed;public bool TrySuppressAnyEnemy(Enemy enemy,object known){Calls++;return false;}}
     public partial class EnemyController {public List<Enemy> KnownEnemies=new List<Enemy>();}
     public class Steering {
         public bool SteerByPriority(Enemy enemy=null,bool allow=true)=>false;

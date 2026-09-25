@@ -3,6 +3,7 @@ using pitTeam.Components;
 using pitTeam.BigBrain;
 using pitTeam.Modules;
 using SAIN.Components;
+using SAIN.Models.Structs;
 using SAIN.Preset.Shared.Enums;
 using SAIN.SAINComponent.Classes.EnemyClasses;
 using SAIN.SAINComponent.SubComponents.CoverFinder;
@@ -51,13 +52,41 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
     private float bindUntil;
     private BotFollowerPlayer? Follower => BossPlayers.Instance?.GetFollower(bot.BotOwner);
 
-    internal void BeginOrdered()
+    internal void BeginOrdered(SainPushOrder? order = null)
     {
         Follower?.TryConsumeOrderedPushCancelRequest(out _);
-        string id = bot.BotOwner.Memory?.GoalEnemy?.ProfileId;
-        if (string.IsNullOrEmpty(id)) return;
+        string id = order?.EnemyProfileId ?? bot.BotOwner.Memory?.GoalEnemy?.ProfileId;
+        if (string.IsNullOrEmpty(id) || bot.BotOwner.Memory?.GoalEnemy?.ProfileId != id) return;
         if (Active && EnemyId == id) { Mode = SAINPushMode.Ordered; Record("orderedAgain"); return; }
+        bool reported = order.HasValue && TryReportCommandedPosition(order.Value);
         Begin(SAINPushMode.Ordered, id);
+        if (reported && SainCombatRecorderBridge.IsRecording)
+            SainCombatRecorderBridge.RecordEvent(bot.BotOwner, "sainPushCommandReport",
+                new { enemyId = id, position = SAINFollowerRecorder.Point(order!.Value.LastKnownPosition) });
+    }
+
+    // The player's explicit push is one new squad report at an already remembered
+    // point. Never report the target's hidden transform or refresh it from polls.
+    private bool TryReportCommandedPosition(SainPushOrder order)
+    {
+        Vector3 known = order.LastKnownPosition;
+        if (!Finite(known) || known.sqrMagnitude <= 0.01f ||
+            bot.BotOwner.Memory?.GoalEnemy?.Person is not Player player ||
+            player.HealthController?.IsAlive != true) return false;
+        Enemy? enemy = bot.EnemyController.CheckAddEnemy(player);
+        if (enemy?.WasValid != true || !Enemy.IsEnemyActive(enemy) ||
+            enemy.EnemyInfo?.ProfileId != order.EnemyProfileId) return false;
+        if (enemy.EnemyKnown && enemy.LastKnownPosition.HasValue &&
+            Finite(enemy.LastKnownPosition.Value)) return false;
+        enemy.KnownPlaces.UpdatePersonalHeardPosition(new SAINHearingReport
+        {
+            position = known,
+            soundType = SAINSoundType.None,
+            placeType = EEnemyPlaceType.Hearing,
+            isDanger = false,
+            shallReportToSquad = false,
+        }, Time.time);
+        return true;
     }
     private void Begin(SAINPushMode mode, string id)
     {

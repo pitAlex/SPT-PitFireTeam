@@ -45,7 +45,7 @@ namespace pitTeam.Modules {
         public bool Factory,Urban;public float Trigger=18;
         public float GetBossRegroupTriggerDistance(BotOwner o)=>Trigger;
         public float GetRegroupNeededDistanceMarksman(BotOwner o)=>Trigger*(Factory?2f:1.5f);
-        public float GetRegroupBossMoveRefreshDistance()=>10;
+        public float GetRegroupBossMoveRefreshDistance()=>Factory?8:10;
         public float GetBossCoverSearchRadius()=>25;
         public bool IsUrbanDetourRegroup(float direct,float path)=>Urban&&direct<45&&path>75;
     }

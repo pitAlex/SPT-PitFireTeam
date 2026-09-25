@@ -49,9 +49,9 @@ namespace pitTeam.Utils {
 }
 namespace SAIN.SAINComponent.Classes {
     public class SAINShootData {
-        public BotComponent Bot;public int Ends;public bool Succeeds;public Enemy LastTarget;public bool Trigger=true;
+        public BotComponent Bot;public int Ends,Calls;public bool Succeeds;public Enemy LastTarget;public bool Trigger=true;
         public void EndShoot(){Ends++;if(Bot!=null)Bot.BotOwner.ShootData.Shooting=false;}
-        public bool ShootAnyVisibleEnemies(Enemy enemy)=>Succeeds;
+        public bool ShootAnyVisibleEnemies(Enemy enemy){Calls++;return Succeeds;}
         private bool AimAndShootAtEnemy(Enemy enemy,BotComponent bot){LastTarget=enemy;bot.BotOwner.AimingManager.CurrentAiming.RealTargetPoint=enemy.LastKnownPosition.Value+Vector3.up;bot.BotOwner.ShootData.Shooting=Succeeds&&Trigger;return Succeeds;}
     }
 }

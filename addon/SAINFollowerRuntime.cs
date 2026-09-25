@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.CompilerServices;
 using EFT;
+using SAIN.Extensions;
 using pitTeam.Components;
 using pitTeam.Modules;
 using SAIN;
@@ -26,6 +27,7 @@ namespace pitTeam.SAINAddon
             public SAINFollowerCover Cover;
             public BotComponent Bot;
             public readonly SAINFollowerCombatHandoff Handoff = new SAINFollowerCombatHandoff();
+            public readonly SAINFollowerAttentionIgnore AttentionIgnore = new();
             public bool Prepared;
             public bool Shooter;
             public bool ReportedFailure;
@@ -54,6 +56,7 @@ namespace pitTeam.SAINAddon
             SainCoverSelectionBridge.Register(SelectCover, CoverSelected);
             SainManPersonality.Initialize();
             SainAddonBridge.RegisterPushEnemyHandler(BeginPushObjective);
+            SainAddonBridge.RegisterDirectedPushEnemyHandler(BeginDirectedPushObjective);
             SainSquadDecisionBridge.RegisterEnemyPreference(PreferEnemy);
             SainSquadDecisionBridge.Register(GetSquadDecision, TryCombatFallback);
             _enabled = true;
@@ -70,6 +73,7 @@ namespace pitTeam.SAINAddon
             SainAddonBridge.UnregisterEnemyContactProvider(GetEnemyContact);
             SainCoverSelectionBridge.Unregister(SelectCover, CoverSelected);
             SainAddonBridge.UnregisterPushEnemyHandler(BeginPushObjective);
+            SainAddonBridge.UnregisterDirectedPushEnemyHandler(BeginDirectedPushObjective);
             SainSquadDecisionBridge.UnregisterEnemyPreference(PreferEnemy);
             SainSquadDecisionBridge.Unregister(GetSquadDecision, TryCombatFallback);
             SainAddonBridge.UnregisterRuntimeCallbacks(ReadyForPatrol, Release, Reset, IsReady);
@@ -115,8 +119,9 @@ namespace pitTeam.SAINAddon
             {
                 bool wasReady = state.Prepared;
                 state.Prepared = false;
-                if (!SainPlayerSquadBridge.TryGetPlayerLeader(owner, out _) ||
+                if (!SainPlayerSquadBridge.TryGetPlayerLeader(owner, out Player player) ||
                     !SAINEnableClass.GetSAIN(owner.ProfileId, out BotComponent bot) || bot?.Decision == null || bot.Info == null) return;
+                state.AttentionIgnore.Refresh(player.Position);
                 if (state.Bot != bot || state.SquadDecisions == null || state.Shooter != SainAddonBridge.IsShooterSelected(owner))
                 {
                     if (state.Bot == bot && state.Shooter != SainAddonBridge.IsShooterSelected(owner))
@@ -124,6 +129,7 @@ namespace pitTeam.SAINAddon
                         state.SoloLayer?.Stop(); state.SquadLayer?.Stop();
                         bot.Mover.Stop(); bot.Decision.ResetDecisions(false); state.Handoff.Clear();
                     }
+                    state.AttentionIgnore.Clear();
                     state.Recorder?.Dispose();
                     state.Recorder = null;
                     state.Objectives?.Clear("nativeStateReplaced");
@@ -189,12 +195,14 @@ namespace pitTeam.SAINAddon
             if (!States.TryGetValue(owner, out State state) || state.Regroup == null) return false;
             try
             {
-                if (!SAINFollowerCombatHandoff.AllowsDecision(state.Bot, solo, self))
+                if (!SAINFollowerCombatHandoff.AllowsDecision(state.Bot, solo, self, enemy, squad))
                 {
                     nextSolo = ECombatDecision.None;
                     nextSquad = ESquadDecision.None;
                     return true;
                 }
+                if (SAINFollowerCombatHandoff.AllowsAmbushPreparation(state.Bot, enemy, solo, squad, self))
+                    return false; // Preserve defensive preparation; no regroup or push before Core contact.
                 bool handled = state.Objectives.Filter(enemy, solo,
                     squad, self, out ECombatDecision result, out ESquadDecision squadResult);
                 nextSolo = result; nextSquad = squadResult;
@@ -225,12 +233,18 @@ namespace pitTeam.SAINAddon
         internal static SAINFollowerCover? GetCover(BotOwner owner) =>
             IsReady(owner) && States.TryGetValue(owner, out State state) ? state.Cover : null;
 
-        private static bool BeginPushObjective(BotOwner owner)
+        private static bool BeginPushObjective(BotOwner owner) => BeginPushObjective(owner, null);
+
+        private static bool BeginDirectedPushObjective(BotOwner owner, SainPushOrder order) =>
+            BeginPushObjective(owner, order);
+
+        private static bool BeginPushObjective(BotOwner owner, SainPushOrder? order)
         {
             if (!IsReady(owner) || !SainAddonBridge.IsAddonTacticSelected(owner) ||
                 !States.TryGetValue(owner, out State state)) return false;
             var follower = BossPlayers.Instance?.GetFollower(owner);
-            if (follower == null) return false;
+            if (follower == null || order.HasValue &&
+                owner.Memory?.GoalEnemy?.ProfileId != order.Value.EnemyProfileId) return false;
             if (state.Shooter)
             {
                 // Core Marksman ignores generic assault push. A handled rejection avoids
@@ -247,8 +261,9 @@ namespace pitTeam.SAINAddon
             follower.SetTemporaryCombatAggressionOverride(100f, "SAIN:GoForwardAggression");
             state.Objectives.Relocation.Clear("GoForwardAggression");
             state.Objectives.SquadSupport.Clear("GoForwardAggression");
-            state.Objectives.Push.BeginOrdered();
-            return true;
+            state.Objectives.Push.BeginOrdered(order);
+            return !order.HasValue || state.Objectives.Push.Ordered &&
+                state.Objectives.Push.EnemyId == order.Value.EnemyProfileId;
         }
 
         private static void Lifecycle(BotOwner owner, FollowerLifecycleEvent kind)
@@ -270,6 +285,7 @@ namespace pitTeam.SAINAddon
                 state.SquadDecisions?.ClearSearchLeader();
                 state.EngageAttempt?.Clear("release");
                 state.Handoff.Clear();
+                state.AttentionIgnore.Clear();
                 state.Regroup?.Clear("release");
                 bool wasPrepared = state.Prepared;
                 state.Prepared = false;
@@ -315,6 +331,22 @@ namespace pitTeam.SAINAddon
 
         internal static SAINFollowerRelocationObjective? GetRelocation(BotOwner owner) =>
             IsReady(owner) && States.TryGetValue(owner, out State state) ? state.Objectives?.Relocation : null;
+
+        internal static void RememberAttentionContacts(BotOwner owner)
+        {
+            if (owner == null || !owner.IsBotActive() || !pitFireTeam.UseSainFollowerCombat(owner) ||
+                !States.TryGetValue(owner, out State state) ||
+                !SainPlayerSquadBridge.TryGetPlayerLeader(owner, out Player player)) return;
+            state.AttentionIgnore.Remember(state.Bot, player.Position);
+        }
+
+        internal static bool IsAttentionContactIgnored(BotOwner owner, Enemy enemy) =>
+            owner != null && States.TryGetValue(owner, out State state) &&
+            SainPlayerSquadBridge.TryGetPlayerLeader(owner, out Player player) &&
+            state.AttentionIgnore.Contains(enemy, player.Position);
+
+        internal static bool HasOrderedPush(BotOwner owner) =>
+            owner != null && States.TryGetValue(owner, out State state) && state.Objectives?.Push.Ordered == true;
 
         internal static SAINFollowerPushObjective? GetPush(BotOwner owner) =>
             IsReady(owner) && States.TryGetValue(owner, out State state) ? state.Objectives?.Push : null;

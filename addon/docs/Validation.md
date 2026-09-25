@@ -1,5 +1,22 @@
 # SAIN addon validation and raid evidence
 
+## 2026-09-25 - Attention ignores dismissed hearing contacts until sector change
+
+Accepted Attention snapshots native current/known contacts for all ready followers before Core clears the shared enemy list. The addon keeps those identities ineligible for heard-only preparation until the player moves more than the shared regroup-sector distance (10 m normally / 8 m on Factory-Labs). Native perception and normal combat admission remain unchanged. See [Attention contract](Commands.md#on-your-own-and-attention).
+
+Debug Core/addon build passed with zero warnings/errors. **1,282 production addon combat checks** passed, including the production Harmony hook on accepted/debounced Attention, both-follower capture before cleanup, recreated contact identities and all three defensive choices, no time-based expiry, player-versus-follower movement, exact sector boundaries, periodic release before another hearing decision, new enemy eligibility, normal combat/independence/urgent-action admission, repeated Attention, opt-out and dismissal cleanup; voice and movement sound-type admission at the requested shared 25 m boundary; gunshot, impact and other-sound exclusion; and rejection of stale steps after a newer sound. The installed Core IL was checked for one acceptance timestamp assignment before enemy cleanup; source/fixture success does not establish raid behavior.
+
+Deployed matching current-working-tree Debug Core/addon DLLs and PDBs at **2026-09-25 00:19:35 +03:00**, with Tarkov and SPT.Server closed and all four installed SHA-256 hashes matching the build outputs. Core DLL: `C4FA95197FDC5A04730AF2F3B9F69C01987D9416A11A5239A1193AB705B8B1F2`; addon DLL: `4830187AEC86BB9CD16D40B53F54EC6EFA8429AFEB0A606C642DD40F5AC1996C`. No backups were created; server/resources were not deployed. Raid qualification remains: Attention during heard preparation, repeated footsteps in the same sector, genuine contact/damage interruptions, and resuming preparation after player movement.
+
+## 2026-09-24 - Heard-contact preparation before accepted combat
+
+The addon admits SAIN 4.5.1's published Freeze, SeekCover and ShiftCover for an eligible hostile heard-from-peace contact without a Core goal enemy. A dedicated solo preparation action faces native knowledge and can make one local cover move. Distant/incomplete cross-floor routes retain a stationary wait. Native combat executors, heard-only Search and suppression remain excluded until normal admission. See [combat contract](Combat.md#admission-and-recovery).
+
+The Debug Core/addon build passed with zero warnings/errors against installed game/SAIN references. **1,230 production addon combat checks** and **9 native replica parity checks** passed, including preparation admission and noncombat release, no hidden-position tracking or firing/suppression, empty-search stability, one committed move across defensive decision changes, exact arrival, stall fallback, command/medical/accepted-goal interruption, distant/incomplete and short complete floor connections, new-floor knowledge, same-floor local cover, path length limits, destination reservation cleanup, unrelated-path preservation and the four-probe planning budget. Existing fixture-only warnings remain.
+
+This source/fixture pass does not establish Unity hearing, navigation, facing during movement, or frame time. The current changes are not deployed; in-raid qualification remains for heard enemies separated by distant stairs/ramps, nearby connected floors, cover arrival and command handoff.
+
+
 ## 2026-09-23 - SAINGrunt emergency backup before reload
 
 Installed SAIN 4.5.1 skips vanilla `FightShallReload` and its empty-gun `ShallChangeIfNoAmmo` path. The addon now admits one explicit loaded second-primary/holster draw from an empty first primary against a visible shootable living known enemy within 10 m. Core loaded-round/launcher helpers are reused; native selector permission, reload/medical/urgent-action protection and decision publication remain in place. Accepted draws wait at most three seconds for actual hands/readiness; accepted and rejected requests reserve 25 seconds before another attempt. See [combat contract](Combat.md#emergency-backup-weapon).
@@ -48,8 +65,6 @@ No new Harmony hook, decision publisher or broad geometry scan was added. Select
 With Tarkov closed, deployed only Debug addon DLL/PDB at **2026-09-21 18:35:25 +03:00**, with no backups. Verified SHA-256: DLL `A665AD541A331A99431D7B53C3B9F7ACFCED8D6BF163B4B9CD4F047614A0AEDE`; PDB `ABD778CD6536ED0E23AAE152191F50BC91389A6CB7221E070953680D345DD9EC`. Installed Core remained `81A06B0A393B00EFFB016F30423FAA65EA1F01AE285C5BB8FA7F6D6086B27979`.
 
 Pending raid qualification: two and three Grunts sharing a hidden target, searcher movement/path completion, interrupted/resumed search, explicit regroup during search, On Your Own and Shooter support from both settled cover and the ordinary native firing-position entry. No claim of in-game navigation or combat outcome validation is made by the fixture results.
-
-
 
 ## 2026-09-20 - General review: bounded cover planning
 
