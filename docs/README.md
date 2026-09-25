@@ -32,12 +32,12 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 | [My Squad](My-Squad-Screen.md) | Roster/settings/profile UI and current editor state |
 | [Buy Screen](Buy%20Screen.md) | Purchase UI ownership and restore flow |
 | [Loadout Management](Loadout-Management.md) | Equipment modes, transactions, spawn and extraction |
+| [Follower Insurance](Follower-Insurance.md) | Purchase, policy transfers, raid evidence, settlement and stock trader returns |
 | [Teammate Storage](Teammate-Storage.md) | Database representation, migration and recovery |
 
 ## Proposals and unfinished work
 
 - [Enemy Tracking](Enemy-Tracking.md): common/core proposal; the setting is **not implemented**. Native SAIN findings and addon adaptation live in [addon tracking](../addon/docs/Enemy-Tracking.md).
-- [Follower Insurance](Follower-Insurance.md): current diagnostic phase and proposed settlement work; do not confuse the plan with a complete insurance feature.
 - [Core roadmap](../TASKS.md): retained product proposals and future work.
 - [Addon roadmap](../addon/docs/Roadmap.md): addon-specific gaps and raid qualification.
 

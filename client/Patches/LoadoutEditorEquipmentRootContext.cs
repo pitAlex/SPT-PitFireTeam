@@ -4,8 +4,11 @@ using EFT;
 using EFT.Communications;
 using EFT.InventoryLogic;
 using EFT.UI;
+using EFT.UI.Insurance;
 using HarmonyLib;
 using SPT.Reflection.Patching;
+using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 
@@ -120,7 +123,10 @@ namespace pitTeam.Patches
             // visible action state for teammate editor equipment.
             if (button == EItemInfoButton.Insure)
             {
-                __result = false;
+                InsuranceCompany insurance = OtherPlayerProfileScreenPatch.ActiveProfileSession?.InsuranceCompany;
+                __result = pitFireTeam.IsFollowerLoadoutLootableMode()
+                    && insurance != null
+                    && insurance.ItemTypeAvailableForInsurance(item);
                 return;
             }
 
@@ -128,6 +134,27 @@ namespace pitTeam.Patches
             {
                 __result = true;
             }
+        }
+    }
+
+    internal sealed class LoadoutEditorInsurancePurchasePatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+        {
+            return AccessTools.Method(typeof(InsuranceCompany), nameof(InsuranceCompany.InsureItems));
+        }
+
+        [PatchPrefix]
+        private static bool PatchPrefix(InsuranceCompany __instance, List<InsuredItem> items, Callback callback)
+        {
+            if (__instance == null || items == null || items.Count == 0
+                || OtherPlayerProfileScreenPatch.LoadoutEditorOverlayRoot == null
+                || !items.Any(item => item?.Item != null && OtherPlayerProfileScreenPatch.IsLoadoutEditorEquipmentItem(item.Item)))
+                return true;
+
+            // Never fall through to stock purchase with follower-owned IDs.
+            _ = OtherPlayerProfileScreenPatch.PurchaseFollowerInsuranceAsync(__instance, items, callback);
+            return false;
         }
     }
 
@@ -175,6 +202,19 @@ namespace pitTeam.Patches
             if (item == null || OtherPlayerProfileScreenPatch.LoadoutEditorOverlayRoot == null)
             {
                 return true;
+            }
+
+            if (interaction == EItemInfoButton.Insure
+                && OtherPlayerProfileScreenPatch.IsLoadoutEditorEquipmentItem(item))
+            {
+                if (!pitFireTeam.IsFollowerLoadoutLootableMode())
+                {
+                    return false;
+                }
+
+                pitFireTeam.Log.LogInfo(
+                    $"[FollowerInsurance:Open] teammateAid='{OtherPlayerProfileScreenPatch.ViewedProfile?.AccountId ?? "unknown"}' " +
+                    $"itemId='{item.Id}' templateId='{item.TemplateId}' name='{item.Name.Localized(null)}'");
             }
 
             if (interaction == EItemInfoButton.Open && OtherPlayerProfileScreenPatch.ShouldBlockLoadoutEditorContainerOpen(item))

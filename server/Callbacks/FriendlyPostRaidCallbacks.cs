@@ -12,6 +12,7 @@ public class FriendlyPostRaidCallbacks(
     HttpResponseUtil httpResponse,
     FriendlyPostRaidService postRaidService,
     FriendlyRecruitService recruitService,
+    FollowerInsuranceRaidDiagnostics insuranceDiagnostics,
     FriendlyTeammateService teammateService
 )
 {
@@ -45,10 +46,17 @@ public class FriendlyPostRaidCallbacks(
         return new ValueTask<string>(httpResponse.NullResponse());
     }
 
+    public ValueTask<string> StartLocalRaid(string url, StartLocalRaidRequestData request, MongoId sessionId, string? output)
+    {
+        insuranceDiagnostics.BeginRaid(sessionId, request, output);
+        return new ValueTask<string>(output ?? httpResponse.NullResponse());
+    }
+
     public ValueTask<string> EndLocalRaid(string url, EndLocalRaidRequestData request, MongoId sessionId, string? output)
     {
         postRaidService.RemoveProtectedTeammateItemsFromExtractedProfile(sessionId, request);
         postRaidService.HandleEndLocalRaidKillMessages(sessionId, request);
+        insuranceDiagnostics.EndRaid(sessionId, request);
         return new ValueTask<string>(output ?? httpResponse.NullResponse());
     }
 
@@ -68,6 +76,7 @@ public class FriendlyPostRaidCallbacks(
         }
 
         FriendlyTeammateDeathEscapeSummary summary = teammateService.PersistDeathEscapeOutcomes(sessionId, entries);
+        insuranceDiagnostics.ObserveOutcomes(sessionId, entries, request.InsuranceServerId, request.InsuranceReportId);
         if (request.Notify)
         {
             postRaidService.HandleDeathEscapeSummary(sessionId, summary);
@@ -79,5 +88,17 @@ public class FriendlyPostRaidCallbacks(
     public ValueTask<string> DeathEscape(string url, FriendlyTeammateDeathEscapeRequest request, MongoId sessionId)
     {
         return RaidOutcomes(url, request, sessionId);
+    }
+
+    public ValueTask<string> InsuranceReportsComplete(string url, FollowerInsuranceRaidCompletionRequest request, MongoId sessionId)
+    {
+        insuranceDiagnostics.CompleteReports(sessionId, request);
+        return new ValueTask<string>(httpResponse.NullResponse());
+    }
+
+    public ValueTask<string> InsuranceRaidDisplay(string url, FollowerInsuranceRaidDisplayRequest request, MongoId sessionId)
+    {
+        return new ValueTask<string>(httpResponse.GetBody(
+            insuranceDiagnostics.GetDisplayPolicies(sessionId, request?.InsuranceServerId)));
     }
 }

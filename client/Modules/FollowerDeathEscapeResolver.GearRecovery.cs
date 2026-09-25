@@ -60,6 +60,7 @@ namespace pitTeam.Modules
 
                 int recovered = 0;
                 List<Item> gearToReturn = new List<Item>();
+                var returnSourceItemIds = new Dictionary<string, string[]>(StringComparer.Ordinal);
                 HashSet<string> recoveredGearIds = new HashSet<string>(StringComparer.Ordinal);
                 HashSet<string> coveredByRecoveredTreeIds = new HashSet<string>(StringComparer.Ordinal);
                 RecoveryAttemptStats stats = new RecoveryAttemptStats();
@@ -90,7 +91,7 @@ namespace pitTeam.Modules
                     if (TryRecoverDeathGearCandidate(candidate, escapedBots, carrierStates, stats))
                     {
                         recovered++;
-                        gearToReturn.Add(CloneRecoveredItemForMail(candidate));
+                        gearToReturn.Add(CloneRecoveredItemForMail(candidate, returnSourceItemIds));
                         recoveredGearIds.Add(candidate.Item.Id);
                     }
                 }
@@ -123,7 +124,7 @@ namespace pitTeam.Modules
                         RemoveAlreadyMailedCoveredItems(candidate.Item, gearToReturn, recoveredGearIds);
                         TrackRecoveredContainerTree(candidate.Item, candidate.Slot, coveredByRecoveredTreeIds);
                         recovered++;
-                        gearToReturn.Add(CloneRecoveredItemForMail(candidate));
+                        gearToReturn.Add(CloneRecoveredItemForMail(candidate, returnSourceItemIds));
                         recoveredGearIds.Add(candidate.Item.Id);
                     }
                 }
@@ -136,7 +137,7 @@ namespace pitTeam.Modules
                     if (TryRecoverDeathGearCandidate(candidate, escapedBots, carrierStates, stats))
                     {
                         recovered++;
-                        gearToReturn.Add(CloneRecoveredItemForMail(candidate));
+                        gearToReturn.Add(CloneRecoveredItemForMail(candidate, returnSourceItemIds));
                         recoveredGearIds.Add(candidate.Item.Id);
                     }
                 }
@@ -176,12 +177,13 @@ namespace pitTeam.Modules
                 if (gearToReturn.Count > 0)
                 {
                     Logger.LogInfo($"[DeathEscape] Sending {gearToReturn.Count} recovered death-gear item(s) through return mail.");
-                    InteractableObjects.SendDeathEscapeRecoveredGear(gearToReturn);
+                    InteractableObjects.SendDeathEscapeRecoveredGear(gearToReturn, returnSourceItemIds);
                 }
             }
             catch (Exception ex)
             {
                 Logger.LogError("[DeathEscape] Failed to apply nearby death gear recovery.");
+                FollowerInsuranceRaidReports.Fail();
                 Logger.LogError(ex);
 
                 foreach (FollowerDeathEscapeOutcomeEntry entry in entries.Where(entry => entry.Escaped))
@@ -718,11 +720,24 @@ namespace pitTeam.Modules
             return $"{itemName}/{candidate.Slot}";
         }
 
-        private static Item CloneRecoveredItemForMail(RecoverableGearCandidate candidate)
+        private static Item CloneRecoveredItemForMail(RecoverableGearCandidate candidate, Dictionary<string, string[]> sourceItemIdsByRoot)
         {
-            return candidate.CloneReturnWithNewIds
+            Item returnedItem = candidate.CloneReturnWithNewIds
                 ? candidate.Item.CloneItem()
                 : candidate.Item.CloneItemWithSameId();
+            try
+            {
+                sourceItemIdsByRoot[returnedItem.Id] = candidate.Item.GetAllItems()
+                    .Where(item => item != null).Select(item => item.Id)
+                    .Concat(new[] { candidate.Item.Id }).Distinct(StringComparer.Ordinal).ToArray();
+            }
+            catch (Exception ex)
+            {
+                // Diagnostic provenance must never prevent an existing recovery delivery.
+                Logger.LogError($"[FollowerInsurance:CourierSource] Could not snapshot source IDs: {ex.Message}");
+                FollowerInsuranceRaidReports.Fail();
+            }
+            return returnedItem;
         }
 
         private static JsonType.FlatItem[] SerializeFollowerEquipment(BotOwner bot)

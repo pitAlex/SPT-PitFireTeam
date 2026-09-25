@@ -19,6 +19,8 @@ See `docs/Buy Screen.md` for the current stock `EquipmentBuildsScreen` reuse, bu
 
 See `docs/Team-Escape.md` for the player-death squad escape, recovered death-gear mail, and escape outcome persistence behavior.
 
+See [Follower Insurance](Follower-Insurance.md) for real purchases, persistent exact-item policies, transfer safety, and stock trader returns for verified raid losses. Insurance confirmation commits pending loadout changes like repair and keeps the editor open after refreshing live and staged payment state.
+
 ## UI Behavior
 
 `Loadout Management` is a dedicated settings group in the `My Squad` settings tab, placed after `Combat Settings`.

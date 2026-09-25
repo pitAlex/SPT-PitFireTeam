@@ -26,6 +26,7 @@ public class FriendlyPostRaidService(
     DialogueHelper dialogueHelper,
     FriendlyLanguageService languageService,
     FriendlyTeammateService teammateService,
+    FollowerInsuranceRaidDiagnostics insuranceDiagnostics,
     TimeUtil timeUtil,
     SaveServer saveServer,
     InventoryHelper inventoryHelper,
@@ -74,6 +75,7 @@ public class FriendlyPostRaidService(
         StripProtectedTeammateItemsFromReturnItems(sessionId, items);
         if (items.Count == 0)
         {
+            insuranceDiagnostics.ObserveCourier(sessionId, [], request.InsuranceServerId, request.InsuranceReportId);
             return;
         }
 
@@ -92,7 +94,11 @@ public class FriendlyPostRaidService(
             ItemsMaxStorageLifetimeSeconds = 86400,
         };
 
+        string[] returnedIds = items.Where(item => item != null).Select(item => item.Id.ToString()).ToArray();
+        // Only accept provenance attached to a tree that survived the existing delivery filters.
+        var sourceIds = FollowerInsuranceRaidClassifier.DeliveredSourceIds(returnedIds, request.InsuranceSourceItemIdsByRoot);
         mailSendService.SendMessageToPlayer(details);
+        insuranceDiagnostics.ObserveCourier(sessionId, sourceIds, request.InsuranceServerId, request.InsuranceReportId);
         EnsureDialogHasSender(sessionId, sender);
     }
 

@@ -4,6 +4,7 @@ using pitTeam.Server.Models;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.DI;
 using SPTarkov.Server.Core.Models.Eft.Common;
+using SPTarkov.Server.Core.Models.Eft.Insurance;
 using SPTarkov.Server.Core.Models.Eft.Profile;
 using SPTarkov.Server.Core.Utils;
 
@@ -21,6 +22,11 @@ public class FriendlyTeammateStaticRouter(JsonUtil jsonUtil, FriendlyTeammateCal
                     storage.InitializeProfile(sessionId);
                     return new ValueTask<string>(output!);
                 }
+            ),
+            new RouteAction<GetInsuranceCostRequestData>(
+                "/client/insurance/items/list/cost",
+                async (url, info, sessionId, output, cancellationToken) =>
+                    await callbacks.AugmentInsuranceCosts(url, info, sessionId, output)
             ),
             new RouteAction<FriendlyTeammateCreateRequest>(
                 "/singleplayer/pitfireteam/teammate/create",
@@ -81,6 +87,10 @@ public class FriendlyTeammateStaticRouter(JsonUtil jsonUtil, FriendlyTeammateCal
             new RouteAction<FriendlyTeammateRepairEquipmentRequest>(
                 "/singleplayer/pitfireteam/teammate/profile/repair-equipment",
                 async (url, info, sessionId, output, cancellationToken) => await callbacks.RepairDefaultEquipment(url, info, sessionId)
+            ),
+            new RouteAction<FriendlyTeammateInsuranceRequest>(
+                "/singleplayer/pitfireteam/teammate/profile/insurance",
+                async (url, info, sessionId, output, cancellationToken) => await callbacks.InsureEquipment(url, info, sessionId)
             ),
             new RouteAction<FriendlyTeammateAggressionRequest>(
                 "/singleplayer/pitfireteam/teammate/profile/aggression",

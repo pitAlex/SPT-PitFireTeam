@@ -6,6 +6,8 @@ namespace pitTeam.Server.Models;
 
 public record FriendlyTeammateDeathEscapeRequest : IRequestData
 {
+    public string? InsuranceServerId { get; set; }
+    public string? InsuranceReportId { get; set; }
     public bool Notify { get; set; } = true;
 
     public bool ResolveOnly { get; set; }

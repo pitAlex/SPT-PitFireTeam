@@ -557,6 +557,8 @@ namespace pitTeam
             new OtherPlayerProfileScreenClosePatch().Enable();
             new LoadoutEditorUnloadAmmoPatch().Enable();
             new LoadoutEditorRepairContextInteractionPatch().Enable();
+            new LoadoutEditorInsurancePurchasePatch().Enable();
+            new FollowerInsuranceRaidIconPatch().Enable();
             new LoadoutEditorRepairByKitPatch().Enable();
             new LoadoutEditorRepairByTraderPatch().Enable();
             new LoadoutEditorLockContextInteractionPatch().Enable();

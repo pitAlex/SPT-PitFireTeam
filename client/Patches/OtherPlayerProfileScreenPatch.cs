@@ -59,6 +59,8 @@ namespace pitTeam.Patches
 
     internal class FriendlyTeammateProfileOptions
     {
+        public List<FriendlyTeammateInsuredItem> InsuredItems { get; set; }
+        public List<FriendlyTeammateInsuredItem> PlayerInsuredItems { get; set; }
         public string CurrentLoadoutId { get; set; }
         public string CurrentTactic { get; set; }
         public float Aggression { get; set; } = 50f;
@@ -1658,6 +1660,7 @@ namespace pitTeam.Patches
 
         private static void ResetTeammateProfileUi(InventoryPlayerModelWithStatsWindow playerModelWindow)
         {
+            CloseLoadoutEditorInsurance();
             CloseProfileRecoveryOverlay();
             ResetProficiencyUi();
             playerModelWindow.OnCustomizationChanged -= PlayerModelWithStatsWindow_OnCustomizationChanged;

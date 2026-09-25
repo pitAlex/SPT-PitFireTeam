@@ -12,6 +12,14 @@ public class FriendlyPostRaidRouter(JsonUtil jsonUtil, FriendlyPostRaidCallbacks
     : StaticRouter(
         jsonUtil,
         [
+            new RouteAction<FollowerInsuranceRaidDisplayRequest>(
+                "/singleplayer/pitfireteam/insurance/raid-display",
+                async (url, info, sessionId, output, cancellationToken) => await callbacks.InsuranceRaidDisplay(url, info, sessionId)
+            ),
+            new RouteAction<FollowerInsuranceRaidCompletionRequest>(
+                "/singleplayer/pitfireteam/insurance/raid-reports-complete",
+                async (url, info, sessionId, output, cancellationToken) => await callbacks.InsuranceReportsComplete(url, info, sessionId)
+            ),
             new RouteAction<FriendlyPostRaidReturnItemsRequest>(
                 "/singleplayer/returnitems",
                 async (url, info, sessionId, output, cancellationToken) => await callbacks.ReturnItems(url, info, sessionId)
@@ -31,6 +39,10 @@ public class FriendlyPostRaidRouter(JsonUtil jsonUtil, FriendlyPostRaidCallbacks
             new RouteAction<FriendlyPostRaidProtectedItemsRequest>(
                 "/singleplayer/pitfireteam/postraid/protected-items",
                 async (url, info, sessionId, output, cancellationToken) => await callbacks.RegisterProtectedItems(url, info, sessionId)
+            ),
+            new RouteAction<StartLocalRaidRequestData>(
+                "/client/match/local/start",
+                async (url, info, sessionId, output, cancellationToken) => await callbacks.StartLocalRaid(url, info, sessionId, output)
             ),
             new RouteAction<EndLocalRaidRequestData>(
                 "/client/match/local/end",

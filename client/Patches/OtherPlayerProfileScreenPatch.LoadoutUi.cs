@@ -304,6 +304,8 @@ namespace pitTeam.Patches
             LoadoutEditorInventoryController = editorInventoryController;
             RebuildLoadoutEditorItemIndexes();
 
+            OpenLoadoutEditorInsurance(profile.AccountId);
+
             itemUiContext.Configure(
                 editorInventoryController,
                 editorProfile,
@@ -768,6 +770,7 @@ namespace pitTeam.Patches
                 LoadoutEditorOverlayRoot = null;
             }
 
+            CloseLoadoutEditorInsurance();
             LoadoutEditorProfile = null;
             LoadoutEditorInventoryController = null;
             LoadoutEditorInitialEquipmentItems = null;
@@ -952,6 +955,8 @@ namespace pitTeam.Patches
         {
             try
             {
+                if (InsurancePurchaseBusy || InsuranceRefreshRequiredForAid != null)
+                    throw new InvalidOperationException(GetSocialUiText("FollowerInsuranceRefreshRequired"));
                 CloseLoadoutEditorChildWindows();
                 await SaveLoadoutEditorAsync(profile);
             }
@@ -1366,6 +1371,8 @@ namespace pitTeam.Patches
 
         private static async Task<IResult> PrepareLoadoutEditorRepairTargetAsync(string targetItemId)
         {
+            if (InsurancePurchaseBusy || InsuranceRefreshRequiredForAid != null)
+                return new FailedResult(GetSocialUiText("FollowerInsuranceRefreshRequired"), 0);
             if (!TryGetLoadoutEditorEquipmentItem(targetItemId, out Item itemToRepair)
                 || !CanRepairLoadoutEditorEquipmentItem(itemToRepair))
             {
@@ -1377,7 +1384,7 @@ namespace pitTeam.Patches
                 return SuccessfulResult.New;
             }
 
-            IResult commitResult = await CommitLoadoutEditorStateBeforeRepairAsync(ViewedProfile);
+            IResult commitResult = await CommitLoadoutEditorStateBeforeServiceAsync(ViewedProfile);
             if (commitResult.Failed)
             {
                 return commitResult;
@@ -1399,7 +1406,7 @@ namespace pitTeam.Patches
                 || HasPendingLoadoutEditorRealChanges();
         }
 
-        private static async Task<IResult> CommitLoadoutEditorStateBeforeRepairAsync(ResultProfile profile)
+        private static async Task<IResult> CommitLoadoutEditorStateBeforeServiceAsync(ResultProfile profile)
         {
             if (profile == null || LoadoutEditorProfile?.Inventory?.Equipment == null)
             {
@@ -1417,7 +1424,7 @@ namespace pitTeam.Patches
 
                 JsonType.FlatItem[] serializedPlayerStash = CreateLoadoutEditorSaveStashItems();
 
-                Modules.Logger.LogInfo("[UI] Saving pending teammate loadout editor changes before repair.");
+                Modules.Logger.LogInfo("[UI] Saving pending teammate loadout editor changes before a paid service.");
                 string responseJson = await Task.Run(() => RequestHandler.PostJson(
                     DefaultEquipmentRoute,
                     SerializeBody(new FriendlyTeammateDefaultEquipmentRequest
@@ -1449,7 +1456,7 @@ namespace pitTeam.Patches
             }
             catch (Exception ex)
             {
-                pitFireTeam.Log.LogError("[UI] Failed to save pending teammate loadout editor changes before repair.");
+                pitFireTeam.Log.LogError("[UI] Failed to save pending teammate loadout editor changes before a paid service.");
                 pitFireTeam.Log.LogError(ex);
                 return new FailedResult(ex.Message ?? GetSocialUiText("LoadoutEditorSaveFailed"), 0);
             }
@@ -1474,6 +1481,7 @@ namespace pitTeam.Patches
             if (response?.playerStashItems != null && response.playerStashItems.Length > 0)
             {
                 ApplyServerSavedPlayerStash(response.playerStashItems);
+                ApplyCommittedInsurance(response);
                 return true;
             }
 
@@ -1484,6 +1492,7 @@ namespace pitTeam.Patches
                     response?.playerDeletedStashItemIds,
                     "real loadout commit"))
             {
+                ApplyCommittedInsurance(response);
                 return true;
             }
 
@@ -1592,7 +1601,7 @@ namespace pitTeam.Patches
             return deletedItems.ToArray();
         }
 
-        private static void ApplyServerRepairLoadoutEditorStashChanges(FriendlyTeammateRepairEquipmentResponse response)
+        private static void ApplyServerRepairLoadoutEditorStashChanges(FriendlyTeammateRepairEquipmentResponse response, bool requireInPlace = false)
         {
             if (response == null || LoadoutEditorProfile?.Inventory == null)
             {
@@ -1650,6 +1659,8 @@ namespace pitTeam.Patches
                     }
                     else
                     {
+                        if (requireInPlace)
+                            throw new InvalidOperationException("FollowerInsuranceRefreshRequired");
                         pitFireTeam.Log.LogWarning($"[UI] Failed to remove consumed repair stash item '{deletedItemId}' from loadout editor stash: {removeResult.Error}");
                     }
                 }
@@ -1659,6 +1670,8 @@ namespace pitTeam.Patches
             }
             catch (Exception ex)
             {
+                // Insurance must retain its save guard if a visible editor stack could not be refreshed.
+                if (requireInPlace) throw;
                 pitFireTeam.Log.LogWarning($"[UI] Teammate repair editor stash delta refresh failed; falling back to full refresh when available. {ex.Message}");
                 if (response.playerStashItems != null && response.playerStashItems.Length > 0)
                 {
@@ -2224,6 +2237,12 @@ namespace pitTeam.Patches
 
         private sealed class FriendlyTeammateDefaultEquipmentResponse
         {
+            public int insurancePaid { get; set; }
+            public JsonType.FlatItem[] insurancePlayerRoubles { get; set; }
+            public EFT.SkillsDescriptor insurancePlayerSkills { get; set; }
+            public Dictionary<string, EFT.TraderData> insurancePlayerTraders { get; set; }
+            public List<FriendlyTeammateInsuredItem> playerInsuredItems { get; set; }
+            public List<FriendlyTeammateInsuredItem> followerInsuredItems { get; set; }
             public bool realItemCommit { get; set; }
             public JsonType.FlatItem[] playerStashItems { get; set; }
             public JsonType.FlatItem[] playerNewStashItems { get; set; }

@@ -1,8 +1,10 @@
 using pitTeam.Server.Models;
 using pitTeam.Server.Services;
+using SPTarkov.Common.Models.Logging;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Common;
+using SPTarkov.Server.Core.Models.Eft.Insurance;
 using SPTarkov.Server.Core.Models.Eft.Profile;
 using SPTarkov.Server.Core.Models.Enums;
 using SPTarkov.Server.Core.Utils;
@@ -13,9 +15,47 @@ namespace pitTeam.Server.Callbacks;
 public class FriendlyTeammateCallbacks(
     HttpResponseUtil httpResponse,
     FriendlyTeammateService teammateService,
-    FriendlyServerSettingsService settingsService
+    FriendlyServerSettingsService settingsService,
+    FriendlyTeammateInsuranceService teammateInsuranceService,
+    JsonUtil jsonUtil,
+    ISptLogger<FriendlyTeammateCallbacks> logger
 )
 {
+    public ValueTask<string> InsureEquipment(string url, FriendlyTeammateInsuranceRequest request, MongoId sessionId)
+    {
+        try
+        {
+            return new ValueTask<string>(httpResponse.GetBody(teammateService.InsureTeammateEquipment(sessionId, request)));
+        }
+        catch (Exception ex)
+        {
+            logger.Warning($"[FollowerInsurance:Purchase] teammateAid='{request.Aid}' failed: {ex}");
+            string key = ex is FriendlyTeammateException ? ex.Message : "FollowerInsurancePurchaseFailed";
+            return new ValueTask<string>(httpResponse.GetBody<object?>(null, err: BackendErrorCodes.UnknownTradingError, errmsg: key));
+        }
+    }
+
+    public ValueTask<string> AugmentInsuranceCosts(
+        string url,
+        GetInsuranceCostRequestData request,
+        MongoId sessionId,
+        string? previousOutput)
+    {
+        if (string.IsNullOrWhiteSpace(previousOutput))
+        {
+            return new ValueTask<string>(httpResponse.NullResponse());
+        }
+
+        var body = jsonUtil.Deserialize<FriendlyTeammateBodyResponse<GetInsuranceCostResponseData>>(previousOutput);
+        if (body?.Data == null || body.Err is not (null or 0))
+        {
+            return new ValueTask<string>(previousOutput);
+        }
+
+        teammateInsuranceService.AugmentInsuranceCosts(sessionId, request, body.Data);
+        return new ValueTask<string>(httpResponse.GetBody(body.Data, body.Err ?? 0, body.ErrMsg));
+    }
+
     public ValueTask<string> Create(string url, FriendlyTeammateCreateRequest request, MongoId sessionId)
     {
         try

@@ -259,11 +259,12 @@ namespace pitTeam.Modules
 
             Instance._matesLostMembers.Clear();
 
+            var insuranceReport = FollowerInsuranceRaidReports.Prepare(json);
             Task.Run(() =>
             {
                 try
                 {
-                    RequestHandler.PostJson("/singleplayer/pitfireteam/teammate/raid-outcomes", json);
+                    insuranceReport.Send("/singleplayer/pitfireteam/teammate/raid-outcomes");
                 }
                 catch (Exception ex)
                 {

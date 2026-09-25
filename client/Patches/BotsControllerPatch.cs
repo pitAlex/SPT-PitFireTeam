@@ -385,6 +385,7 @@ namespace pitTeam.Patches
         {
             if (FollowerTransitStateCache.TryConsumeProfile(aid, role, out Profile transitProfile))
             {
+                _ = Task.Run(() => FollowerInsuranceRaidDisplay.Refresh()); // Cosmetic lookup must not delay follower spawn.
                 await LoadFollowerProfileBundles(transitProfile);
                 return transitProfile;
             }
@@ -444,6 +445,7 @@ namespace pitTeam.Patches
             }
 
             Profile profile = result.Select(descriptor => new Profile(descriptor)).ToList().PickRandom();
+            _ = Task.Run(() => FollowerInsuranceRaidDisplay.Refresh()); // Cosmetic lookup must not delay follower spawn.
             // process backend result
             await LoadFollowerProfileBundles(profile);
 
@@ -1580,6 +1582,8 @@ namespace pitTeam.Patches
         public static void Postfix(LocalGame __instance)
         {
             Instance = __instance;
+            FollowerInsuranceRaidReports.Reset();
+            FollowerInsuranceRaidDisplay.Clear();
         }
     }
 
@@ -1592,6 +1596,7 @@ namespace pitTeam.Patches
         [PatchPostfix]
         private static void PatchPostfix(BotsEventsController __instance)
         {
+            FollowerInsuranceRaidReports.Begin(LocalGameCtorPatch.Instance);
             Utils.Utils.FlagSet("RaidTransit", false);
             try
             {
@@ -1716,6 +1721,9 @@ namespace pitTeam.Patches
             InteractableObjects.Dispose();
             NpcMessage.Dispose();
             BossPlayers.Dispose();
+
+            FollowerInsuranceRaidReports.Complete();
+            FollowerInsuranceRaidDisplay.Clear();
 
             BotsControllerPatch.spawnedPlayers.Clear();
             BotsControllerPatch.followerCreationTask.Clear();

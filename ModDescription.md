@@ -131,6 +131,10 @@ When a kit is purchased or equipped, the teammate's current kit is returned thro
 
 **Realistic** is the only mode where teammate secure containers are fully player-managed. In other modes, secure containers are managed automatically and are not counted as part of kit purchase or loadout editing. The auto-managed secure container gives saved teammates a Grizzly and a surgery kit for raid use, unless they already carry equivalent supplies in their backpack.
 
+In **Immersive** and **Realistic**, you can insure eligible teammate gear from **Edit Loadout** using the game's normal insurance window and traders. The price is paid from your roubles, and coverage stays with each exact item as you move it between your stash and the teammate. An insured item you take from a teammate during a raid stays insured if you keep it after the raid.
+
+If insured teammate gear is truly lost, the trader handles the return chance, timing, and mail as with your own gear. Gear you or another teammate bring out does not generate an insurance copy. Returned items need to be insured again before another loss. Insurance is unavailable in **Restricted**.
+
 ## Squad Commands
 
 ![Gestures Menu](https://iili.io/BQdlFv1.md.png)

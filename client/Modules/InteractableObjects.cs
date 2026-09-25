@@ -53,6 +53,7 @@ namespace pitTeam.Modules
         private Dictionary<string, Dictionary<string, HashSet<string>>>? _lootedWeaponMagazineIds;
         private Dictionary<string, HashSet<string>>? _strictCargoItemIds;
         private List<Item>? _toSendItems;
+        private readonly Dictionary<string, string[]> _returnSourceItemIds = new Dictionary<string, string[]>(StringComparer.Ordinal);
         private Dictionary<string, Dictionary<string, object>>? _followersWithLoot;
 
         private Dictionary<string, List<string>>? _followersEquipment;
@@ -127,7 +128,8 @@ namespace pitTeam.Modules
             // Raid cleanup can unload the request owner immediately after this object is disposed.
             // Send the return payload now so temporary Restricted gear cannot be stripped
             // from teammate persistence before the mail request has actually reached the server.
-            return SendReturnItems(_toSendItems, member, "post-raid returned follower items", synchronous: true);
+            return SendReturnItems(_toSendItems, member, "post-raid returned follower items", synchronous: true,
+                sourceItemIdsByRoot: _returnSourceItemIds);
         }
         /** Gather what items where given to followers and which is still alive to count */
         private void GatherItems()
@@ -139,6 +141,7 @@ namespace pitTeam.Modules
             }
 
             _toSendItems.Clear();
+            _returnSourceItemIds.Clear();
             List<string> gathered = new List<string>();
 
             foreach (var player in bossPlayers)
@@ -155,9 +158,9 @@ namespace pitTeam.Modules
             }
         }
 
-        public static void SendDeathEscapeRecoveredGear(IEnumerable<Item> recoveredItems)
+        public static void SendDeathEscapeRecoveredGear(IEnumerable<Item> recoveredItems, Dictionary<string, string[]> sourceItemIdsByRoot = null)
         {
-            SendReturnItems(recoveredItems, null, "recovered death-escape gear");
+            SendReturnItems(recoveredItems, null, "recovered death-escape gear", sourceItemIdsByRoot: sourceItemIdsByRoot);
         }
 
         public static List<Item> GetTrackedReturnItemRoots(BotOwner bot)
@@ -222,7 +225,9 @@ namespace pitTeam.Modules
                     continue;
                 }
 
-                _toSendItems.Add(item.CloneItem());
+                Item returnedItem = item.CloneItem();
+                _toSendItems.Add(returnedItem);
+                _returnSourceItemIds[returnedItem.Id] = GetItemTreeIds(item).ToArray();
                 gathered.Add(stored);
             }
         }
@@ -384,6 +389,7 @@ namespace pitTeam.Modules
             }
             catch
             {
+                FollowerInsuranceRaidReports.Fail();
                 ids.Add(item.Id);
             }
 
@@ -495,7 +501,8 @@ namespace pitTeam.Modules
             IEnumerable<Item> items,
             Dictionary<string, object>? member,
             string context,
-            bool synchronous = false)
+            bool synchronous = false,
+            Dictionary<string, string[]> sourceItemIdsByRoot = null)
         {
             if (!EnableBackendItemReturn || items == null)
             {
@@ -529,13 +536,18 @@ namespace pitTeam.Modules
                 {
                     items = flatItems,
                     member,
+                    // Diagnostic provenance only: mail keeps its existing clone/ID behavior.
+                    insuranceSourceItemIdsByRoot = rootItems
+                        .Where(root => sourceItemIdsByRoot?.ContainsKey(root.Id) == true)
+                        .ToDictionary(root => root.Id, root => sourceItemIdsByRoot[root.Id]),
                 }.ToJson(defaultJsonConverters);
 
+                var insuranceReport = FollowerInsuranceRaidReports.Prepare(returnItemsJson);
                 bool Send()
                 {
                     try
                     {
-                        RequestHandler.PostJson("/singleplayer/returnitems", returnItemsJson);
+                        insuranceReport.Send("/singleplayer/returnitems");
                         return true;
                     }
                     catch (Exception ex)
@@ -557,6 +569,7 @@ namespace pitTeam.Modules
             catch (Exception ex)
             {
                 Logger.LogError($"Failed to prepare {context}");
+                FollowerInsuranceRaidReports.Fail();
                 Logger.LogError(ex);
                 return false;
             }
@@ -621,6 +634,7 @@ namespace pitTeam.Modules
             catch (Exception e)
             {
                 Logger.LogError("Error sending stored loot");
+                FollowerInsuranceRaidReports.Fail();
                 Logger.LogError(e);
             }
 
@@ -637,6 +651,7 @@ namespace pitTeam.Modules
             _lootedWeaponMagazineIds?.Clear();
             _strictCargoItemIds?.Clear();
             _toSendItems?.Clear();
+            _returnSourceItemIds.Clear();
             _followersWithLoot?.Clear();
             _enemiesSeen?.Clear();
 
@@ -743,11 +758,12 @@ namespace pitTeam.Modules
                     Entries = entries
                 }.ToJson(defaultJsonConverters);
 
+                var insuranceReport = FollowerInsuranceRaidReports.Prepare(json);
                 Task.Run(() =>
                 {
                     try
                     {
-                        RequestHandler.PostJson("/singleplayer/pitfireteam/teammate/raid-outcomes", json);
+                        insuranceReport.Send("/singleplayer/pitfireteam/teammate/raid-outcomes");
                     }
                     catch (Exception ex)
                     {
@@ -759,6 +775,7 @@ namespace pitTeam.Modules
             catch (Exception ex)
             {
                 Logger.LogError("Failed to prepare escaped teammate loadout outcomes");
+                FollowerInsuranceRaidReports.Fail();
                 Logger.LogError(ex);
             }
         }

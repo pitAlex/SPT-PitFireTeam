@@ -38,7 +38,7 @@ The server owns mod teammate profiles, persistence, customization, social/group 
 | Group/ready/spawn flow | [match routes](../server/Routers/Static/FriendlyTeammateMatchRouter.cs) |
 | Post-raid results and returned equipment | [FriendlyPostRaidService](../server/Services/FriendlyPostRaidService.cs), [Team Escape](Team-Escape.md), [Loadout Management](Loadout-Management.md) |
 | Recruit requests | [FriendlyRecruitService](../server/Services/FriendlyRecruitService.cs) |
-| Insurance work in progress | [Follower Insurance](Follower-Insurance.md) |
+| Follower insurance | [Follower Insurance](Follower-Insurance.md) |
 
 Use the current router declarations as the authority for method/route signatures. Older task notes claiming all tactics were hardcoded to Default or profile customization was unimplemented are superseded by the feature documents and current source.
 

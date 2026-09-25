@@ -259,6 +259,7 @@ namespace pitTeam.Modules
             catch (Exception ex)
             {
                 Logger.LogError("Failed to resolve follower death escape outcomes");
+                FollowerInsuranceRaidReports.Fail();
                 Logger.LogError(ex);
             }
             finally
@@ -505,11 +506,12 @@ namespace pitTeam.Modules
                 Entries = entries
             }.ToJson(defaultJsonConverters);
 
+            var insuranceReport = FollowerInsuranceRaidReports.Prepare(json);
             Task.Run(() =>
             {
                 try
                 {
-                    RequestHandler.PostJson(OutcomeRoute, json);
+                    insuranceReport.Send(OutcomeRoute);
                 }
                 catch (Exception ex)
                 {

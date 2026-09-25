@@ -45,6 +45,7 @@ public class FriendlyTeammateService(
     ProfileActivityService profileActivityService,
     RepairService repairService,
     FriendlyServerSettingsService settingsService,
+    FriendlyTeammateInsuranceService teammateInsuranceService,
     FriendlyLanguageService languageService,
     SaveServer saveServer,
     ICloner cloner,
@@ -76,6 +77,63 @@ public class FriendlyTeammateService(
     ];
 
     private const string DefaultLoadoutName = "Default";
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, object> InsurancePurchaseLocks = new();
+
+    public FriendlyTeammateDefaultEquipmentResponse InsureTeammateEquipment(MongoId sessionId, FriendlyTeammateInsuranceRequest request)
+    {
+        lock (InsurancePurchaseLocks.GetOrAdd(sessionId.ToString(), _ => new object()))
+        {
+            var teammate = FindByAccountId(sessionId, request.Aid);
+            var player = GetPlayerProfile(sessionId);
+            var settings = GetTeammateSettings(sessionId, teammate);
+            FriendlyTeammateDefaultEquipmentResponse Snapshot(int paid = 0) => new()
+            {
+                InsurancePaid = paid,
+                InsurancePlayerRoubles = player.Inventory?.Items?.Where(item => item.Template == Money.ROUBLES).ToList(),
+                InsurancePlayerSkills = player.Skills,
+                InsurancePlayerTraders = player.TradersInfo,
+                PlayerStashItems = GetPlayerStashItems(player),
+                PlayerInsuredItems = FriendlyTeammateInsuranceService.GetPlayerPolicies(player),
+                FollowerInsuredItems = settings.InsuredItems.ToList(),
+            };
+            if (request.ReadOnly) return Snapshot();
+
+            var paymentProfile = cloner.Clone(player) ?? throw new FriendlyTeammateException("FollowerInsurancePurchaseFailed");
+            var purchasedSettings = cloner.Clone(settings) ?? throw new FriendlyTeammateException("FollowerInsurancePurchaseFailed");
+            int paid = teammateInsuranceService.Purchase(sessionId, paymentProfile, teammate, purchasedSettings,
+                request, CreateEmptyRepairOutput(sessionId, paymentProfile));
+            if (paid == 0) return Snapshot();
+
+            var oldInventory = player.Inventory;
+            var oldTraders = player.TradersInfo;
+            var oldSkills = player.Skills;
+            var oldInsurance = player.InsuredItems;
+            var oldSettings = settings;
+            try
+            {
+                player.Inventory = paymentProfile.Inventory;
+                player.TradersInfo = paymentProfile.TradersInfo;
+                player.Skills = paymentProfile.Skills;
+                player.InsuredItems = paymentProfile.InsuredItems;
+                // Persist payment before granting coverage. A caught failure compensates both stores.
+                saveServer.SaveProfileAsync(sessionId).GetAwaiter().GetResult();
+                SaveTeammateSettings(sessionId, teammate, purchasedSettings);
+                settings = purchasedSettings;
+                logger.Info($"[FollowerInsurance:Purchase] teammateAid='{teammate.Aid}' traderId='{request.TraderId}' paidRoubles={paid} requested={request.ItemIds.Count} policies={settings.InsuredItems.Count}");
+                return Snapshot(paid);
+            }
+            catch
+            {
+                player.Inventory = oldInventory;
+                player.TradersInfo = oldTraders;
+                player.Skills = oldSkills;
+                player.InsuredItems = oldInsurance;
+                SaveTeammateSettings(sessionId, teammate, oldSettings);
+                saveServer.SaveProfileAsync(sessionId).GetAwaiter().GetResult();
+                throw;
+            }
+        }
+    }
     private const string DefaultLoadoutId = "000000000000000000000000";
     private static readonly string[] TacticOptions = ["Rifleman", "Marksman", "SainMan", "SAINShooter"];
     private const int RelativeLevelDelta = 5;
@@ -542,6 +600,8 @@ public class FriendlyTeammateService(
                 {
                     SaveTeammate(sessionId, teammate);
                 }
+                // Also persists mode clears and secure-container policy pruning.
+                GetTeammateSettings(sessionId, teammate);
             }
             catch (Exception ex)
             {
@@ -800,6 +860,8 @@ public class FriendlyTeammateService(
 
         var response = new FriendlyTeammateProfileOptionsResponse
         {
+            InsuredItems = settings.InsuredItems.ToList(),
+            PlayerInsuredItems = FriendlyTeammateInsuranceService.GetPlayerPolicies(GetPlayerProfile(sessionId)),
             CurrentLoadoutId = DefaultLoadoutId,
             CurrentTactic = NormalizeCombatTactic(settings.CombatTactic),
             Aggression = NormalizeAggression(settings.Aggression),
@@ -1163,12 +1225,12 @@ public class FriendlyTeammateService(
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var allowedMovedItemIds = new HashSet<string>(currentPlayerStashIds, StringComparer.OrdinalIgnoreCase);
         allowedMovedItemIds.UnionWith(currentTeammateItemIds);
-        HashSet<string> remappedTeammateItemIds = RemapReplacementEquipmentPlayerEquippedIdCollisions(
+        Dictionary<string, string> remappedTeammateItemIds = RemapReplacementEquipmentPlayerEquippedIdCollisions(
             playerPmc,
             replacementEquipmentItems,
             currentPlayerStashIds,
             currentTeammateItemIds);
-        allowedMovedItemIds.UnionWith(remappedTeammateItemIds);
+        allowedMovedItemIds.UnionWith(remappedTeammateItemIds.Values);
 
         // Validate the staged final state before mutating either profile. This prevents partial transfer
         // corruption and lets the catch block restore both inventories if persistence fails later.
@@ -1198,6 +1260,10 @@ public class FriendlyTeammateService(
         var originalPlayerItems = cloner.Clone(playerPmc.Inventory.Items) ?? playerPmc.Inventory.Items.ToList();
         var originalTeammateItems = cloner.Clone(teammate.Inventory.Items) ?? teammate.Inventory.Items.ToList();
         var originalTeammateEquipment = teammate.Inventory.Equipment;
+        var originalPlayerInsurance = playerPmc.InsuredItems;
+        var settings = GetTeammateSettings(sessionId, teammate);
+        var originalSettings = cloner.Clone(settings) ?? throw new InvalidOperationException("Unable to snapshot teammate settings");
+        bool teammateSaved = false;
 
         try
         {
@@ -1219,10 +1285,13 @@ public class FriendlyTeammateService(
             teammate.Inventory.Items = mergedEquipment;
             teammate.Inventory.Equipment = teammate.Inventory.Items.First().Id;
 
-            var settings = GetTeammateSettings(sessionId, teammate);
             settings.SelectedLoadoutId = DefaultLoadoutId;
+            teammateInsuranceService.ReconcileEquipmentCommit(playerPmc, teammate, settings,
+                originalPlayerItems.Select(item => item.Id.ToString()).ToHashSet(StringComparer.OrdinalIgnoreCase),
+                currentTeammateItemIds, remappedTeammateItemIds);
 
             SaveTeammateWithDefaultEquipment(sessionId, teammate, IsExtremeLoadoutManagementMode(mode), settings);
+            teammateSaved = true;
             saveServer.SaveProfileAsync(sessionId).GetAwaiter().GetResult();
 
             var playerStashDelta = BuildPlayerStashDelta(playerPmc, originalPlayerItems);
@@ -1231,6 +1300,8 @@ public class FriendlyTeammateService(
             return new FriendlyTeammateDefaultEquipmentResponse
             {
                 RealItemCommit = true,
+                PlayerInsuredItems = FriendlyTeammateInsuranceService.GetPlayerPolicies(playerPmc),
+                FollowerInsuredItems = settings.InsuredItems.ToList(),
                 PlayerStashItems = cloner.Clone(replacementStashItems) ?? replacementStashItems,
                 PlayerNewStashItems = playerStashDelta.NewItems,
                 PlayerChangedStashItems = playerStashDelta.ChangedItems,
@@ -1242,6 +1313,9 @@ public class FriendlyTeammateService(
             playerPmc.Inventory.Items = originalPlayerItems;
             teammate.Inventory.Items = originalTeammateItems;
             teammate.Inventory.Equipment = originalTeammateEquipment;
+            playerPmc.InsuredItems = originalPlayerInsurance;
+            if (teammateSaved)
+                SaveTeammateWithDefaultEquipment(sessionId, teammate, IsExtremeLoadoutManagementMode(mode), originalSettings);
             throw;
         }
     }
@@ -2770,13 +2844,12 @@ public class FriendlyTeammateService(
         }
     }
 
-    private HashSet<string> RemapReplacementEquipmentPlayerEquippedIdCollisions(
+    private Dictionary<string, string> RemapReplacementEquipmentPlayerEquippedIdCollisions(
         PmcData playerPmc,
         List<Item> replacementEquipmentItems,
         HashSet<string> currentPlayerStashIds,
         HashSet<string> currentTeammateItemIds)
     {
-        var remappedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var nonStashPlayerItemIds = (playerPmc.Inventory?.Items ?? [])
             .Select(item => item.Id.ToString())
             .Where(id => !currentPlayerStashIds.Contains(id))
@@ -2798,12 +2871,11 @@ public class FriendlyTeammateService(
 
             string newId = new MongoId().ToString();
             idMap[id] = newId;
-            remappedIds.Add(newId);
         }
 
         if (idMap.Count == 0)
         {
-            return remappedIds;
+            return idMap;
         }
 
         // Some old/legacy defaults can contain generated teammate items whose ids collide with the
@@ -2824,7 +2896,7 @@ public class FriendlyTeammateService(
         }
 
         logger.Warning($"Remapped {idMap.Count} teammate-owned item id collision(s) with currently equipped player gear during real loadout commit.");
-        return remappedIds;
+        return idMap;
     }
 
     private static string NormalizeLoadoutManagementMode(string? mode)
@@ -4675,6 +4747,8 @@ public class FriendlyTeammateService(
         loadedSettings.Aggression = NormalizeAggression(loadedSettings.Aggression);
         loadedSettings.Proficiency = NormalizeProficiency(loadedSettings.Proficiency);
         loadedSettings.CombatTactic = NormalizeCombatTactic(loadedSettings.CombatTactic);
+        if (teammateInsuranceService.PrunePolicies(teammate, loadedSettings))
+            SaveTeammateSettings(sessionId, teammate, loadedSettings);
         return loadedSettings;
     }
 
@@ -4776,6 +4850,8 @@ public class FriendlyTeammateService(
     private void SaveTeammateWithDefaultEquipment(
         MongoId sessionId, BotBase teammate, bool includeSecureContainer, FriendlyTeammateSettings? settings = null)
     {
+        settings ??= GetTeammateSettings(sessionId, teammate);
+        teammateInsuranceService.PrunePolicies(teammate, settings);
         var items = CreateDefaultEquipmentSnapshot(teammate, includeSecureContainer);
         var documents = new Dictionary<string, string>
         {
