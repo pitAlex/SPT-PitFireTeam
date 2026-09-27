@@ -1,5 +1,13 @@
 # SAIN addon validation and raid evidence
 
+## 2026-09-26 - SAINShooter initialization fallback in two Reserve raids
+
+Records `20260926-063032-RezervBase.jsonl` and `20260926-072342-RezervBase.jsonl` both selected `SAINShooter` for Zero, but every recorded Zero combat snapshot was owned by Core (`FollowerCombatSniperObjective`); no `sainMarksman` or addon action was recorded for him. Brick used the ready addon in those same raids. This was a regression, not an original limitation: the 2026-09-17 Shoreline record has 43 `sainMarksman` events and 3,973 Zero snapshots owned by `sainAddon`; Git shows the failing weapon-helper call was introduced on 2026-09-19 with support-weapon handling. Core chose `sniper.startPosition.runToCover`, reposition/recovery cover and repeated `sniper.NeedSniper.retry.noLane` holds. The records therefore cannot qualify the SAINShooter firing-position policy or attribute Zero's indoor/underground route to it.
+
+The live log reported `MissingMethodException: Default constructor not found for type pitTeam.BigBrain.FollowerCombatCommon` while preparing Zero in both raids. Installed addon IL showed `Activator.CreateInstance(Type, Boolean)` for the first Marksman weapon-helper construction because EFT `BotOwner` converts to `bool`; Core exposes only `FollowerCombatCommon(BotOwner)`. The addon now passes `new object[] { bot.BotOwner }`. Rebuilt IL calls `Activator.CreateInstance(Type, Object[])` for both helper constructors. Debug Core/addon build passed with zero warnings/errors; installed SAIN 4.5.1 boundary checks and 1,282 production addon combat fixture checks passed with the BotOwner Boolean conversion reproduced in the fixture. Raid confirmation is still required: Zero should log SAINShooter combat ready, record `combatOwner=sainAddon` and `sainMarksman` events, then the native finder/cover behavior can be judged.
+
+Deployed the Debug addon DLL/PDB only at **2026-09-26 08:01:55 +03:00** with Tarkov closed, installed Core matching the built Core, and both installed addon hashes matching build output. DLL: `39AC18437D4E783F40035D3574977A1F6FAD63309852E6D9E9FC29A1671E0B63`; PDB: `3E172AB0CE587F7F30C80A81ECE6E88DC84AD36B1A9B28EC40C9BC59451D5052`. No backup was created.
+
 ## 2026-09-25 - Attention ignores dismissed hearing contacts until sector change
 
 Accepted Attention snapshots native current/known contacts for all ready followers before Core clears the shared enemy list. The addon keeps those identities ineligible for heard-only preparation until the player moves more than the shared regroup-sector distance (10 m normally / 8 m on Factory-Labs). Native perception and normal combat admission remain unchanged. See [Attention contract](Commands.md#on-your-own-and-attention).

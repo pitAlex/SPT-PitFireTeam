@@ -35,7 +35,9 @@ internal sealed class SainMarksmanWeaponBridge
         this.bot = bot;
         var assembly = typeof(pitFireTeam).Assembly;
         Type commonType = assembly.GetType("pitTeam.BigBrain.FollowerCombatCommon", true);
-        object common = Activator.CreateInstance(commonType, bot.BotOwner);
+        // BotOwner converts to bool in EFT; pass an explicit argument array so this
+        // cannot bind Activator.CreateInstance(Type, bool) and request a default ctor.
+        object common = Activator.CreateInstance(commonType, new object[] { bot.BotOwner });
         Type sniperType = assembly.GetType("pitTeam.BigBrain.FollowerCombatSniper", true);
         object sniper = Activator.CreateInstance(sniperType, bot.BotOwner, common);
         available = Bind<Func<bool>>(common, "HasAutomaticCloseCombatWeaponAvailable");

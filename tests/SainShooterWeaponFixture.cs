@@ -8,6 +8,8 @@ using UnityEngine;
 namespace EFT {
     public partial class EnemyInfo {public float Distance=60;}
     public partial class BotOwner {
+        // EFT exposes this conversion; it once made Activator choose (Type, bool).
+        public static implicit operator bool(BotOwner owner) => owner != null;
         public bool AutoAvailable,AutoReady,SupportSelected,AutoRequestAccepted=true,AutoAdvanceAllowed=true;
         public int AutoRequests,PrimaryReturns;
     }
