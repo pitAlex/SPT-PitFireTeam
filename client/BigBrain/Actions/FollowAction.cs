@@ -20,6 +20,7 @@ namespace pitTeam.BigBrain.Actions
         private const float FallbackFollowDistance = 12f;
         private const bool EnableFollowDebug = false;
         private const float MaxBossSpeedForSettle = 0.35f;
+        private const float SameLevelTolerance = 1.75f; // Match peaceful Regroup.
         private const float SettleSpacing = 2.5f;
         private const float SettleSpacingSqr = SettleSpacing * SettleSpacing;
         private const float SettlePathSpacing = 1.5f;
@@ -260,7 +261,8 @@ namespace pitTeam.BigBrain.Actions
                 : Mathf.Abs((leaderPosition - BotOwner.Position).magnitude);
 
             float followDistance = GetEffectiveFollowDistance();
-            bool inRange = distance < followDistance;
+            bool inRange = distance < followDistance &&
+                           Mathf.Abs(leaderPosition.y - BotOwner.Position.y) <= SameLevelTolerance;
 
             if (nextFollowUpdateAt > Time.time && !forceFollow)
             {
@@ -297,11 +299,14 @@ namespace pitTeam.BigBrain.Actions
                 }
 
                 // Validate committed cover; clear if no longer valid
-                if (coverCommitment.IsCommitted && !coverCommitment.IsCoverStillValid(BotOwner, leaderPosition))
+                if (coverCommitment.IsCommitted &&
+                    (!IsSettlePositionOnSameLevel(coverCommitment.CommittedCover!.Position) ||
+                     !coverCommitment.IsCoverStillValid(BotOwner, leaderPosition)))
                 {
                     coverCommitment.ClearCommitment();
                     movingToSettlePoint = false;
                     ReleaseSettleDestinationClaim();
+                    BotOwner.StopMove();
                 }
 
                 // Determine current strategy
@@ -597,8 +602,21 @@ namespace pitTeam.BigBrain.Actions
             return false;
         }
 
+        private bool IsSettlePositionOnSameLevel(Vector3 position)
+        {
+            // Settling is local positioning; changing floors belongs to following the boss.
+            return bossPlayer != null &&
+                   Mathf.Abs(position.y - bossPlayer.Transform.position.y) <= SameLevelTolerance &&
+                   Mathf.Abs(position.y - BotOwner.Position.y) <= SameLevelTolerance;
+        }
+
         private bool IsSettlePositionClear(Vector3 position)
         {
+            if (!IsSettlePositionOnSameLevel(position))
+            {
+                return false;
+            }
+
             if (bossPlayer != null && (bossPlayer.Transform.position - position).sqrMagnitude < SettleSpacingSqr)
             {
                 return false;

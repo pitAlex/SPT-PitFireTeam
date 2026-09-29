@@ -1484,7 +1484,8 @@ public partial class FriendlyTeammateService(
                 // Escape rolls are server-owned by the time outcomes are persisted. Client-provided
                 // live raid state is only input data for ResolveRaidOutcomes().
                 ApplyFollowerRaidOutcomeStats(teammate, entry.Escaped);
-                ApplyDeathEscapeOutcome(teammate, entry);
+                // Raid outcomes do not persist health. Ordinary follower activation restores full
+                // health; saving a failed escape as zero only left a misleading dead profile.
 
                 // Eligible surviving Default loadouts keep the in-raid state here. Immersive/Realistic
                 // always qualify; Restricted only qualifies when Field Upkeep is enabled.
@@ -3789,54 +3790,6 @@ public partial class FriendlyTeammateService(
         teammate.Stats.Eft.OverallCounters ??= new OverallCounters { Items = [] };
         teammate.Stats.Eft.OverallCounters.Items ??= [];
         teammate.Stats.Eft.TotalInGameTime ??= 0;
-    }
-
-    private static void ApplyDeathEscapeOutcome(BotBase teammate, FriendlyTeammateDeathEscapeEntry entry)
-    {
-        var bodyParts = teammate.Health?.BodyParts;
-        if (bodyParts == null || bodyParts.Count == 0)
-        {
-            return;
-        }
-
-        double healthRatio = Math.Clamp(entry.HealthRatio, 0.05d, 1d);
-        foreach (var (partName, bodyPart) in bodyParts)
-        {
-            var health = bodyPart?.Health;
-            if (health == null)
-            {
-                continue;
-            }
-
-            double maximum = Math.Max(1d, health.Maximum ?? health.Current ?? 1d);
-            health.Maximum = maximum;
-
-            if (!entry.Escaped)
-            {
-                // Failed escape means the teammate remains dead for later roster/spawn logic.
-                health.Current = 0d;
-                continue;
-            }
-
-            // Successful escape preserves the raid-end health ratio while forcing vital parts above
-            // zero so the teammate is considered alive by subsequent profile fetch/spawn paths.
-            double minimumAlive = IsVitalBodyPart(partName) ? 1d : 0d;
-            health.Current = Math.Clamp(maximum * healthRatio, minimumAlive, maximum);
-        }
-
-        if (entry.Escaped)
-        {
-            teammate.Health!.Hydration ??= new CurrentMinMax { Current = 100d, Maximum = 100d, Minimum = 0d };
-            teammate.Health.Energy ??= new CurrentMinMax { Current = 100d, Maximum = 100d, Minimum = 0d };
-            teammate.Health.Hydration.Current = Math.Max(teammate.Health.Hydration.Current ?? 0d, 1d);
-            teammate.Health.Energy.Current = Math.Max(teammate.Health.Energy.Current ?? 0d, 1d);
-        }
-    }
-
-    private static bool IsVitalBodyPart(string partName)
-    {
-        return string.Equals(partName, "Head", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(partName, "Chest", StringComparison.OrdinalIgnoreCase);
     }
 
     private void ApplyPmcFollowerSkillBaseline(BotBase teammate)

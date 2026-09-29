@@ -207,6 +207,7 @@ Execution:
 
 - `FollowAction` checks `followerData.CanPatrol` every update.
 - When disabled, the action uses normal close follow/settle behavior.
+- Normal automatic settling accepts cover and sampled fallback points only within `1.75m` vertically of both the boss and follower, matching peaceful Regroup's same-level tolerance. A follower on another floor keeps following toward the boss even inside the straight-line follow radius; a committed settle cover on the wrong level is released before selecting another point.
 - When enabled, `CanPatrol` is treated as patrol intent, not immediate patrol ownership:
   - before patrol arms, boss/player movement resets the patrol runtime gate and the follower behaves like normal follow
   - if the follower is outside normal follow range, the follower catches up with normal follow behavior before patrol can arm

@@ -8,8 +8,7 @@ This document tracks the player-death squad escape system.
 
 The feature exists for the specific case where the player dies before raid end. In that case, surviving squadmates can independently escape the raid and keep the post-raid systems usable:
 
-- escaped squadmates are marked alive in their teammate profile
-- lost squadmates stay dead for roster/spawn logic
+- escaped and lost outcomes update teammate raid stats without writing raid-end health into saved profiles
 - player-given tracked follower loot can still be returned if an escaped squadmate has room after higher-priority death gear
 - recoverable player gear can be carried out by escaped squadmates and returned by mail
 - in `Immersive` and `Realistic` / internal `Extreme`, fallen teammate gear can also be carried out and returned by mail
@@ -311,7 +310,7 @@ This behavior only applies to the player-death escape situation. If the player e
 
 ## Escaped Teammate State
 
-Escaped teammates are marked alive by server persistence.
+Escape and loss outcomes do not change saved teammate health, hydration, or energy. The live health ratio affects the escape roll, but is not persisted into the next raid; ordinary non-transit follower activation restores full health. Survived/death stats and the equipment consequences below still follow the outcome.
 
 In `Immersive` and `Realistic`, escaped teammates using `Default` can save their live raid equipment state back to their saved `Default` loadout. This preserves their own durability, ammo, and consumed-med state.
 
@@ -340,8 +339,7 @@ The message text must use the language system. Hardcoded English should not be a
 
 Death escape can mutate teammate profiles after raid end:
 
-- escaped teammates may be marked alive
-- lost teammates may stay dead
+- escaped/lost teammates gain the corresponding survived/death raid stats, without rewriting saved health
 - `Immersive` / `Realistic` dead teammates may have their saved gear stripped
 - escaped teammates may persist their own updated `Default` equipment state
 
