@@ -1,18 +1,15 @@
-# Friendly AI Performance Settings Investigation
+# Follower proficiency and external SAIN calculations
 
 **Status:** implemented per-follower proficiency controls; gameplay calibration pending
 
-**Target:** SPT 4.1.3, SAIN 4.5.0, pitFireTeam `0.10.1`
+**Source baseline:** initial investigation used SPT 4.1.3 / SAIN 4.5.0. Current core compatibility also validates SAIN 4.5.1; see [SAIN compatibility](SAIN-Compatibility.md).
 
 **Investigated:** 2026-08-24
 
 This document identifies the settings and runtime calculations that determine follower vision and firearm performance. It also documents the implemented user-control boundary, which changes execution proficiency without changing combat tactics or reintroducing action churn.
 
-For frame-time cost, multi-follower scaling, and Battle Recorder A/B settings, see `docs/Runtime-Performance-Testing.md`.
 
-For the inherited-difficulty finding and the hard + 100% calibration reset, see [Follower Difficulty Baseline: Two-Phase Test Plan](Follower-Difficulty-Baseline-Testing.md). Phase 1 is saved-data preparation and testing; recruitment normalization and a runtime baseline override remain deferred to Phase 2.
-
-The SAIN Default baseline, follower-local values model, persistent per-teammate percentages, profile UI, runtime modifier, and final aim-time patch are implemented. Runtime gameplay calibration across the validation matrix remains pending. `docs/SAIN-Integration.md` is authoritative for the addon boundary.
+The SAIN Default baseline, follower-local values model, persistent per-teammate percentages, profile UI, runtime modifier, and final aim-time patch are implemented. Runtime gameplay calibration across the validation matrix remains pending. `addon/docs/Integration.md` is authoritative for the addon boundary.
 
 ## Executive conclusions
 
@@ -45,12 +42,10 @@ pitFireTeam:
 - `client/Components/BossFollowerPlayer.cs`
 - `client/Modules/SainAddonBridge.cs`
 - `client/Modules/BattleRecorder.cs`
-- `addon/SAINFollowerPersonalityPatch.cs`
-- `addon/SAINFollowerAimSwayPatch.cs`
-- `addon/SAINFollowerHitAccuracyPatch.cs`
-- `addon/SAINFollowerRecoilPatch.cs`
-- `addon/SAINFollowerLowLightVisionPatch.cs`
-- `addon/SAINFollowerBushVisionPatch.cs`
+- `client/Modules/FollowerSainProficiency.cs`
+- `client/Modules/FollowerSainEftCoreProjection.cs`
+- `client/Modules/FollowerAimTargetPolicy.cs`
+- `client/Patches/FollowerAimTargetPatch.cs`
 
 SPT 4.1.3 `Assembly-CSharp`:
 
@@ -82,7 +77,7 @@ SAIN 4.5.0:
 - `SAIN/Classes/Bot/Info/BotDifficultyClass.cs`
 - `SAINServerMod/Extensions/PresetTunerExtensions.cs`
 
-The earlier SAIN 4.4 personality and weather reports were used as leads and rechecked against the 4.5.0 source. The weather conclusions remain valid. The personality report is now stale in material ways; current pitFireTeam code forces some spawned-follower personalities and wires several follower shooting patches that were not active in the older report.
+The external source paths describe the initial 4.5.0 investigation. Current hook ownership and the 4.5.1-specific boundaries are maintained in [Core SAIN compatibility](SAIN-Compatibility.md).
 
 ## Runtime ownership matrix
 
@@ -90,13 +85,13 @@ The earlier SAIN 4.4 personality and weather reports were used as leads and rech
 |---|---|---|
 | No SAIN | pitFireTeam core BigBrain | EFT calculations |
 | SAIN installed, addon missing | pitFireTeam core BigBrain for followers | Mixed: SAIN `GetSAIN` patches still replace aim time, fire rate, body-part choice, vision speed, and vision distance |
-| SAIN plus addon | pitFireTeam custom SAIN Squad-derived follower combat layer | The same core-owned proficiency and external-SAIN compatibility boundary; addon differences come only from its combat decisions/actions |
+| Ready SAINGrunt addon selected | Addon solo/squad replicas; otherwise core fallback | The same core-owned proficiency and external-SAIN compatibility boundary; addon differences come only from its combat decisions/actions |
 
 This is the central compatibility constraint. A control that works only by changing the pre-SAIN EFT file settings can be clamped, overwritten, or replaced later.
 
 ### SAIN addon boundary
 
-The optional addon exists solely to replace pitFireTeam core/vanilla BigBrain combat with a custom follower combat layer based on SAIN's Squad model, making the human player the leader and allowing custom SAIN actions. Vision, Precision, Reaction, SAIN Default normalization, and compensation for external SAIN calculation conflicts belong to core and must work with or without the addon. The addon must not tune these calculations through general SAIN patches or shared settings-object mutation.
+The addon consumes this core-owned proficiency contract. Its tactical personality/lifecycle differences are in [addon personalities](../addon/docs/Personalities-and-Aggression.md); its hooks and fallback rules are in [addon integration](../addon/docs/Integration.md).
 
 ## Current follower baseline
 
@@ -183,38 +178,9 @@ The normalization is follower-local and applies in both runtime configurations: 
 
 For a hard PMC under stock SAIN 4.5 Default data, the important normalized values include global scatter `0.75`, accuracy-speed coefficient `0.8`, precision/vision/hearing coefficients `1.0`, global recoil `0.5`, field of view `170`, semiautomatic fire-rate multiplier `1.5`, strafe speed `0.8`, and enabled faster-CQB reactions. The typed object's initializers document both vanilla and SAIN fallback numbers in one file, while SAIN's generated Default bundle hydrates the SAIN section and each follower's exact role/difficulty overrides at runtime.
 
-### Legacy nonconforming addon patch inventory
+### External settings application
 
-The current addon source still gives saved squadmates a cloned `followerBigPipe` SAIN template, rebuilds SAIN difficulty state, and sets a role-based personality:
-
-- PMC-like followers and BigPipe: `Chad`
-- Knight: `GigaChad`
-- BirdEye: `Normal`
-- recruited non-squad followers: preserve SAIN's assigned personality
-
-SAIN's stock 4.5 personality defaults leave shooting-related `DifficultySettings` multipliers at neutral `1.0`; their default differences are primarily behavior/search policy. Custom SAIN presets may change those multipliers.
-
-It also currently applies strong final shooting assistance:
-
-- disables SAIN random aim sway while a follower has a visible, shootable target,
-- skips SAIN's aim-hit displacement for followers,
-- reduces SAIN recoil after it is calculated:
-  - automatic fire uses a tuning denominator of `7`,
-  - single/semi fire uses a tuning denominator of `10`,
-- reduces only SAIN's low-light **gain-sight time** penalty to 40% of its original distance from neutral,
-- restores vanilla foliage fields during follower look checks.
-
-These entries describe legacy source, not permitted addon ownership. General proficiency, aim, recoil, vision, foliage, personality, and difficulty compatibility must move to a core-owned boundary or be removed. If the alternate brain needs different tactics, express that difference through `SAINFollowerCombatLayer`, its decision calculator, or a custom SAIN action without patching general SAIN methods or rewriting shared/general settings objects.
-
-### Legacy SAIN template overwrite details
-
-`SainSettingsExtensions.SetConfigValues()` currently overwrites selected EFT categories after the core follower baseline is installed. It applies SAIN Aiming, Look, Mind, Scattering, Shoot, Grenade, and Boss settings. This describes legacy code only; settings/proficiency application is not a valid addon responsibility and must be core-owned if still required.
-
-Material examples:
-
-- SAIN can replace `MAX_AIMING_UPGRADE_BY_TIME`, `COEF_IF_MOVE`, `MAX_AIM_TIME`, first-contact delay, and hit-recovery fields.
-- `SetConfigValues()` does **not** call the existing `SAINCoreSettings.Apply()` helper. Base `VisibleDistance`, `GainSightCoef`, `AccuratySpeed`, and base per-meter scattering therefore continue to come from the EFT settings object; SAIN modifies them mainly through stacked `BotSettingsInGameModif` difficulty layers.
-- The legacy addon explicitly reruns the difficulty modifier stack after core replaces `bot.Settings`. This behavior must move to core follower initialization or be removed; it may not remain as addon-owned settings rewriting.
+SAIN config application can overwrite EFT Aiming, Look, Mind, Scattering, Shoot, Grenade and Boss categories. Core owns follower-local normalization and the final calculation hooks. `FollowerSainEftCoreProjection` also applies finalized Core vision/scatter values because native SAIN config application omits those fields. See [compatibility ownership](SAIN-Compatibility.md). Removed addon template/role-personality patches are historical, not the current implementation.
 
 ## Vision distance
 
@@ -264,7 +230,7 @@ Exceptions and clamps still matter:
 - NVG and light logic can impose their own results,
 - AI-vs-AI range limiting can restrict non-current enemies.
 
-### Recommended control
+### Control boundary
 
 **Vision Distance** should multiply the existing follower `VisibleDistCoef` at spawn.
 
@@ -372,7 +338,7 @@ SAIN's replacement still uses `CurrentAccuratySpeed`, then adds or applies:
 
 A pre-calculation coefficient can therefore be attenuated by CQB logic or erased by the min/max clamps.
 
-### Recommended control
+### Control boundary
 
 **Aim Speed** is an authoritative follower-only postfix on the final regular-firearm aim time. Its factor is derived equally from Precision and Reaction:
 
@@ -433,15 +399,11 @@ EndTargetPoint = RealTargetPoint + standard aim offset * time coefficient
 
 It intentionally omits EFT's bad-shot offset and vanilla `RecoilData.RecoilOffset`. SAIN then rotates bot look direction with its separate recoil system, and can add movement-controller random sway.
 
-For addon followers today:
-
-- visible-target random sway is disabled,
-- SAIN hit displacement is disabled,
-- SAIN recoil is reduced after calculation by the follower tuning ratio.
+Core owns the follower-only final accuracy/recoil compensation in both combat modes. Historical addon sway, hit-displacement and fixed-denominator tuning is not the current proficiency contract.
 
 This means an EFT-only scattering slider is effective for the standard aim offset, but it does not fully own final SAIN recoil.
 
-### Recommended control
+### Control boundary
 
 **Accuracy** should centrally control:
 
@@ -472,7 +434,7 @@ Do not map Accuracy to:
 
 Core sets `AIMING_TYPE = 6`, but SAIN's `BodyPartToShootPatch` replaces EFT body-part selection and uses `AimForHead` plus `AimForHeadChance`. SAIN's actual target point can also be limited by the global center-mass setting.
 
-Precision deliberately owns one conservative target enhancement in addition to firearm execution: head preference is `10%` at Precision `0`, `40%` at `100`, and `70%` at `200`, with piecewise-linear interpolation between those points. EFT or SAIN always selects its native target first. A native head choice is preserved without another roll. When the native choice is not the head, the follower rolls once per normal retarget window to promote it to the head, but only when the shared correction verifies that the head is visible and shootable. If the head is hidden, the native non-head point is left unchanged. If the head is the sole verified firing lane, it replaces an invalid non-head fallback without a probability gate.
+Precision deliberately owns one conservative target enhancement in addition to firearm execution: head preference is `10%` at Precision `0`, `40%` at `100`, and `70%` at `200`, with piecewise-linear interpolation between those points. EFT selects its native target first. Core compatibility prefers an eligible body point after native SAIN selection, then applies the same Precision enhancement. With no eligible body, native exposed-part selection remains the baseline; an already selected head is preserved without another roll. When the native choice is not the head, the follower rolls once per normal retarget window to promote it to the head, but only when the shared correction verifies that the head is visible and shootable. If the head is hidden, the native non-head point is left unchanged. If the head is the sole verified firing lane, it replaces an invalid non-head fallback without a probability gate.
 
 The enhancement retains a promoted head for EFT's normal body-part retarget interval while that head remains shootable. One weak per-enemy state object owns this cadence; the repeated aiming path does not allocate or reroll every shot. A promoted head uses EFT's existing `GetPartPositionWithOffset()` point, preserving the collider-relative point validated by the shoot-lane check instead of substituting the raw body-part transform. Core direct fire invokes EFT's native `GetVisiblePartToShoot()` selector instead of the body-only `CurrentEnemyTargetPosition(false)` helper, so the same native-first enhancement runs afterward. On SAIN 4.5.0, an already native-selected head is restored after the older global center-mass height clamp so the native body-part decision remains a head decision.
 
@@ -636,9 +598,7 @@ SAIN global minimum aim time, per-template maximum aim time, faster-CQB minimum,
 
 ### Personality ordering
 
-The current addon rebuilds difficulty modifiers, then forces the spawned follower personality and recalculates search/hold timing. It does not rerun the difficulty modifier stack after that personality change. Stock 4.5 personality shooting modifiers are neutral, so this is harmless with defaults, but custom presets can make effective personality stat ownership ambiguous.
-
-The proposed final performance layer must not depend on personality ordering.
+Mechanical coefficients remain core-owned and neutral across addon aggression anchors. Tactical personality installation, cache refresh and lifecycle are documented in [addon personalities](../addon/docs/Personalities-and-Aggression.md).
 
 ### Headshots and perceived accuracy
 
