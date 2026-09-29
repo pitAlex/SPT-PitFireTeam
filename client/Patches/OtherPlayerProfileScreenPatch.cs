@@ -950,6 +950,8 @@ namespace pitTeam.Patches
 
             RestoreHideoutButtonVisuals(__instance, profile);
 
+            if (TeammateHiringPreview.TryShow(__instance, profile, inventoryController, session)) return;
+
             if (ConsumePendingRecruitProfileView(profile.AccountId))
             {
                 HideProfileActions(__instance);
@@ -1809,6 +1811,7 @@ namespace pitTeam.Patches
         [PatchPostfix]
         private static void PatchPostfix(OtherPlayerProfileScreen __instance)
         {
+            TeammateHiringPreview.RestoreScreen(__instance);
             Action callback = OtherPlayerProfileScreenPatch.ActiveBackOverrideAction;
             OtherPlayerProfileScreenPatch.ActiveBackOverrideAction = null;
             OtherPlayerProfileScreenPatch.PendingBackOverrideAction = null;

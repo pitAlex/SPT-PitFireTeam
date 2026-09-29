@@ -188,6 +188,8 @@ namespace pitTeam.Components
                                 SocialMemberId = socialMemberId,
                                 Nickname = nickname,
                                 Level = level,
+                                Side = teammate?["Info"]?["Side"]?.ToString() ?? teammate?["info"]?["side"]?.ToString() ?? string.Empty,
+                                RecruitmentGearPrice = (teammate?["RecruitmentGearPrice"] ?? teammate?["recruitmentGearPrice"])?.Value<int?>(),
                                 AutoJoinEnabled = ParseBool(teammate?["AutoJoinEnabled"]?.ToString() ?? teammate?["autoJoinEnabled"]?.ToString()),
                                 HasProperRaidKit = ParseBool(teammate?["HasProperRaidKit"]?.ToString() ?? teammate?["hasProperRaidKit"]?.ToString(), defaultValue: true)
                             });
@@ -320,7 +322,11 @@ namespace pitTeam.Components
             layoutElement.flexibleHeight = 0f;
 
             Image tileBackground = tileObject.GetComponent<Image>();
-            Color normalColor = new Color(0.045f, 0.045f, 0.045f, 0.97f);
+            Color normalColor = entry.RecruitmentGearPrice.HasValue && string.Equals(entry.Side, "Usec", StringComparison.OrdinalIgnoreCase)
+                ? new Color(0.025f, 0.547f, 1f, 0.408f)
+                : entry.RecruitmentGearPrice.HasValue && string.Equals(entry.Side, "Bear", StringComparison.OrdinalIgnoreCase)
+                    ? new Color(1f, 0.287f, 0f, 0.408f)
+                    : new Color(0.045f, 0.045f, 0.045f, 0.97f);
             Color hoverColor = new Color(0.6235f, 0.6157f, 0.5647f, 1f);
             Color pressedColor = new Color(0.16f, 0.16f, 0.16f, 0.99f);
             tileBackground.color = normalColor;
@@ -564,7 +570,7 @@ namespace pitTeam.Components
             panelRect.anchorMin = new Vector2(0.5f, 0.5f);
             panelRect.anchorMax = new Vector2(0.5f, 0.5f);
             panelRect.pivot = new Vector2(0.5f, 0.5f);
-            panelRect.sizeDelta = new Vector2(620f, 188f);
+            panelRect.sizeDelta = new Vector2(620f, entry.RecruitmentGearPrice.HasValue ? 238f : 188f);
 
             Image panelImage = panel.GetComponent<Image>();
             panelImage.color = new Color(0.02f, 0.02f, 0.02f, 0.98f);
@@ -608,9 +614,7 @@ namespace pitTeam.Components
 
             GameObject bodyObject = CreateText(
                 "pitFireTeam_RemoveBody",
-                string.Format(
-                    GetSocialUiText("RemoveTeammatePrompt"),
-                    entry.Nickname),
+                TeammateDeletion.ConfirmationText(entry.Nickname, entry.RecruitmentGearPrice),
                 24f,
                 TextAlignmentOptions.Center);
             RectTransform bodyRect = bodyObject.GetComponent<RectTransform>();
@@ -632,47 +636,13 @@ namespace pitTeam.Components
             removeConfirmOverlay = overlayRoot;
         }
 
-        private void RemoveTeammate(SquadRosterEntry entry)
+        private async void RemoveTeammate(SquadRosterEntry entry)
         {
-            if (entry == null)
+            if (entry == null) return;
+            if (await TeammateDeletion.DeleteAsync(entry.AccountId))
             {
-                return;
-            }
-
-            try
-            {
-                EFT.ISocial chatInteractions = ItemUiContext.Instance?.Session;
-                EFT.SocialNetwork socialNetwork = chatInteractions?.SocialNetwork;
-                if (socialNetwork?.FriendsList == null)
-                {
-                    pitFireTeam.Log.LogError("[UI] Failed to delete teammate: social network is unavailable.");
-                    return;
-                }
-
-                UpdatableChatMember member = socialNetwork.FriendsList
-                    .FirstOrDefault(candidate =>
-                        candidate != null &&
-                        (!string.IsNullOrWhiteSpace(candidate.AccountId)
-                            ? string.Equals(candidate.AccountId, entry.AccountId, StringComparison.Ordinal)
-                            : string.Equals(candidate.Id, entry.SocialMemberId, StringComparison.Ordinal)));
-
-                if (member == null)
-                {
-                    pitFireTeam.Log.LogError($"[UI] Failed to delete teammate '{entry.AccountId}': social member was not found.");
-                    return;
-                }
-
-                socialNetwork.RemoveFromFriendsList(member, new Callback(_ =>
-                {
-                    CloseRemoveConfirmOverlay();
-                    SocialNetworkClassPatch.RefreshFriendsList();
-                    RebuildRosterTiles();
-                }));
-            }
-            catch (Exception ex)
-            {
-                pitFireTeam.Log.LogError($"[UI] Failed to delete teammate '{entry.AccountId}'.");
-                pitFireTeam.Log.LogError(ex);
+                CloseRemoveConfirmOverlay();
+                RebuildRosterTiles();
             }
         }
 

@@ -64,6 +64,8 @@ Current phase behavior:
 - spawned follower gear is protected from raid loss and cannot be extracted with
 - when `Field Upkeep` is off, raid outcome does not persist durability damage, consumable use, or death loss
 - when `Field Upkeep` is on, escaped `Default` teammates persist their live in-raid equipment state like `Immersive`, with tracked follower-loot/player-given item ids, other teammates' protected gear ids, and the non-Realistic managed secure-container tree stripped before saving
+- original saved magazines remain protected during upkeep after extraction or death: missing magazine shells are restored empty, while surviving magazines retain their live cartridges; acquired loot magazines are not restored
+- magazine recovery uses free compatible grid space or the magazine's original empty weapon slot; if recovery cannot fit safely, maintenance retains the previous saved equipment and logs the failure instead of committing magazine loss
 - `Field Upkeep` does not enable death gear loss; dead teammates are not stripped down like `Immersive`
 - if a `Default` teammate dies while `Field Upkeep` is on, the server saves that teammate's death-time equipment state so durability/resource changes at death are preserved, but later corpse looting cannot consume or move the fallen teammate's saved gear
 
@@ -157,6 +159,84 @@ The server is authoritative for the commit:
 8. save the player profile, teammate profile, teammate settings, and default snapshot
 
 After the save succeeds, the server returns the saved player stash snapshot to the client.
+
+## Teammate Addition Cost
+
+Manual addition quotes the candidate's equipment; there is no separate recruitment fee. Raid-recruit acceptance remains separate. See [My Squad's hiring preview](My-Squad-Screen.md#hiring-preview) for navigation, loading and button behavior.
+
+### Candidate and quote lifecycle
+
+All routes below use the `/singleplayer/pitfireteam` prefix:
+
+| Route | Effect |
+|---|---|
+| `/teammate/prepare` | Generates a candidate, normalizes its knife, calculates the gear price and persists a pending quote. Returns `quoteToken`, `aid`, `price` and `supportsWithoutKit`. |
+| `/teammate/create` | Confirms the current `quoteToken`; optional `withoutKit: true` selects the free no-gear path. Tokenless calls cannot create free teammates. |
+| `/teammate/cancel` | Cancels the matching pending token without payment or roster changes. A stale token cannot cancel a replacement quote. |
+
+Regenerate repeats preparation while retaining the chosen nickname, head and voice. Each successful preparation replaces the pending candidate and invalidates its old token without payment. Confirmation saves the exact quoted profile instead of generating another teammate. Pending candidates can be previewed but are not friends or roster members.
+
+The quote lasts 30 minutes. Confirmation rejects an expired quote, a changed loadout mode or an older pricing version, and rechecks nickname uniqueness. Pricing version `2` covers the corrected unit-price calculation and knife exclusion. Completed receipts and interrupted payments remain recoverable across pricing-version changes.
+
+### Charged equipment
+
+Only eligible items directly equipped under the equipment root start a priced tree:
+
+| Equipment slots | Charged items |
+|---|---|
+| `FirstPrimaryWeapon`, `SecondPrimaryWeapon`, `Holster` | Each weapon with installed attachments and magazines; no ammunition |
+| `Headwear` | Helmet/headwear with installed accessories, including mounted devices |
+| `FaceCover`, `Eyewear`, `Earpiece` | Face cover, eyewear and headset, plus any eligible installed attachments |
+| `TacticalVest`, `ArmorVest` | The vest/armor item and installed removable armor plates |
+| `Backpack` | The backpack item itself |
+
+Traversal follows template attachment `Slots`, never container grids. Each item ID is charged at most once. Loaded/chambered ammunition, integral armor inserts, carried supplies, pocket contents, dogtags, armbands, secure-container trees and knives are excluded. Exclusion from the price does not remove an item from a paid candidate's inventory.
+
+After every manual generation, the equipped `Scabbard` knife tree is replaced with one fresh **6Kh5 Bayonet** (`5bffdc370db834001d23eca8`) before preview and pricing. This also applies to regeneration. The knife costs nothing in either purchase option. Dogtags and other slots are preserved; existing saved teammates and raid recruits are unaffected.
+
+### Unit-price calculation
+
+When SPT's `Dynamic.GenerateBaseFleaPrices.UseHandbookPrice` is enabled and the item has a positive handbook value:
+
+1. Start with `PriceMultiplier`; a template-specific override takes precedence, otherwise use the first matching base-class override.
+2. If the enabled crafting adjustment applies to an item required by a hideout production recipe, add `HideoutCraftMultiplier` to that multiplier once.
+3. Multiply the handbook value by the resulting multiplier.
+4. When `PreventPriceBeingBelowTraderBuyPrice` is enabled, floor the result at the highest amount a trader would pay the player for that item.
+
+Hiring computes this value once per template per quote. It bypasses the additive generated flea table observed in SPT 4.1 and does not change the shared economy. When handbook generation is disabled or the item has no positive handbook entry, use a positive dynamic flea-table value, falling back to the handbook value.
+
+This is a configured equipment valuation, not a lookup of the cheapest live flea offer or a trader's selling price. Local SPT data and economy settings can differ substantially from official-game prices; official prices must not be substituted when auditing a local quote. There are no kit, assembled-weapon or condition discounts. Sum eligible individual item prices, then round the total upward to whole roubles once. Missing, non-positive, non-finite or overflowing prices reject preparation rather than silently making equipment free.
+
+### Add With No Gear
+
+`withoutKit: true` confirms the same candidate for **zero roubles**, with no player-money save. The shared permanent-equipment retention helper keeps the equipment root, dogtag, knife, armband and special-slot trees, plus the pockets and secure-container shells. Ordinary kit and ordinary pocket/secure-container cargo are removed. Special-slot trees are preserved separately, including when attached to pockets.
+
+The stripped profile, stripped `Default` snapshot and completion receipt are saved in one teammate-database transaction, so the discarded kit cannot return through Default restoration. A failed save retains the original pending candidate and price. The client offers this action only when preparation advertises `supportsWithoutKit`, preventing an older server from ignoring the flag and treating the request as a paid hire.
+
+### Payment and recovery
+
+Paid confirmation checks and deducts unlocked stash roubles. Insufficient funds leave the quote available, with no partial debit or new teammate; the client displays the localized message in the vanilla message window.
+
+The player's SPT save and teammate database are separate stores. Before saving player money, a persistent `paying` journal records the before/after rouble item identities, counts and locations. The teammate, Default equipment, settings and `complete` receipt then commit together in the teammate database. Retrying the current completed token returns the saved stash without another charge; switching between paid/no-gear buttons cannot create a second teammate or change a completed purchase.
+
+Recovery runs when listing the roster or preparing, confirming or cancelling a hire. Money matching the journal's after-state completes the hire without another debit; matching the before-state restores the pending quote. Ambiguous money changes stop recovery rather than guessing. See [Teammate Storage](Teammate-Storage.md) for the database boundary.
+
+### Source and verification
+
+- [Creation service](../server/Services/FriendlyTeammateService.Creation.cs): prepare/confirm/cancel, bayonet replacement and payment recovery.
+- [Equipment selector](../server/Services/TeammateEquipmentPrice.cs) and [unit-price lookup](../server/Services/FriendlyTeammateService.HiringPrices.cs): charged trees and valuation.
+- [Permanent-equipment retention](../server/Services/FriendlyTeammateService.EquipmentRetention.cs): no-gear stripping, also shared with existing equipment-loss behavior.
+- [Hiring fixtures](../tests/TeammateHiring/Program.cs): run `dotnet run --project tests/TeammateHiring/TeammateHiring.csproj` from the repository root. Covers selection/exclusions, duplicate prevention, price overrides/fallbacks, knife replacement, regeneration, no-gear retention, insufficient funds, retries, rollback and interrupted-payment recovery. These fixtures do not establish Unity layout, navigation or model-loading behavior.
+
+## Raid-Recruit Deletion Fee
+
+An in-raid pickup who later sends a friend invite joins for free when accepted. The server records the gear value from the captured post-raid profile when creating that invite. It uses the same [charged equipment and unit-price rules](#charged-equipment) as manual hiring, including the knife exclusion, but keeps the recruit's actual knife rather than replacing it with a bayonet.
+
+`FriendlyRecruitRequestEntry.RecruitmentGearPrice` stores the server-calculated amount in `recruit-requests.json`; it is not accepted from the client pickup payload. Acceptance copies it into `FriendlyTeammateSettings.RecruitmentGearPrice` with the teammate and Default equipment. Legacy pending invites without a price are valued at acceptance, before loadout-mode preparation. Existing roster members without this metadata remain free to delete because their recruitment origin and original equipment value cannot be reconstructed reliably. Manual hires, including Add With No Gear, also remain free to delete.
+
+The recorded amount is fixed: changing equipment, moving gear into the player's stash, buying a kit, losing equipment or changing economy settings does not reprice or erase the fee. Deleting a recorded recruit requires that amount in unlocked stash roubles. Insufficient funds preserve the member, settings, Default equipment and player money. The roster and native social deletion paths display the fee in confirmation and wait for the server before removing the member; they refresh the live stash after success. In-raid dismissal and declining an unaccepted invite do not charge this fee.
+
+`FriendlyTeammateService.Deletion.cs` owns both deletion entry points. A `pending-deletion.json` journal records before/after money state before the SPT player save, and profile/settings/Default deletion commits atomically with the completion receipt. Repeating the completed request returns the stash without charging again. Roster reads reconcile interrupted deletion: a matching after-state completes removal, a matching before-state keeps the member, and an ambiguous state blocks further deletion. The hiring fixture project also covers fee snapshots, paid/free deletion, insufficient funds, failure rollback and recovery.
 
 ## Kit Purchase
 

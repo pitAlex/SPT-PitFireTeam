@@ -82,6 +82,7 @@ public class FriendlyRecruitService(
         }
 
         EnsureRecruitRequestAccountId(sessionId, pending, picked);
+        teammateService.CaptureRecruitmentGearPrice(picked);
         pending.Add(picked);
         SaveRecruitRequests(sessionId, pending);
         logger.Info($"Queued recruit pickup request '{picked.Nickname}' for session '{sessionId}'");

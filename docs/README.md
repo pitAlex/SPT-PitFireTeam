@@ -29,9 +29,9 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 
 | Document | Purpose |
 |---|---|
-| [My Squad](My-Squad-Screen.md) | Roster/settings/profile UI and current editor state |
+| [My Squad](My-Squad-Screen.md) | Roster/settings/profile UI, teammate hiring preview and current editor state |
 | [Buy Screen](Buy%20Screen.md) | Purchase UI ownership and restore flow |
-| [Loadout Management](Loadout-Management.md) | Equipment modes, transactions, spawn and extraction |
+| [Loadout Management](Loadout-Management.md) | Equipment modes, teammate hiring prices/payment, transactions, spawn and extraction |
 | [Follower Insurance](Follower-Insurance.md) | Purchase, policy transfers, raid evidence, settlement and stock trader returns |
 | [Teammate Storage](Teammate-Storage.md) | Database representation, migration and recovery |
 

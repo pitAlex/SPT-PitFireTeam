@@ -51,6 +51,20 @@ separate: the teammate database cannot make a transaction atomic with SPT's inde
 Recovery snapshots are encrypted documents inside the same database, saved with the correction.
 Global mod settings and language resources remain normal configuration files.
 
+Manual hiring stores its pending candidate, quote and payment journal under `pending-creation.json`
+in the same encrypted database. This document is excluded from roster profile enumeration.
+Confirmation commits the teammate, settings, Default equipment and completion receipt together;
+the journal reconciles the separate SPT player-money save after an interruption. The no-gear path
+commits the stripped profile and Default snapshot without saving player money. See
+[teammate addition cost](Loadout-Management.md#teammate-addition-cost) for quote lifetime,
+pricing-version checks, duplicate-request handling and recovery rules.
+
+Raid-recruit invites store `RecruitmentGearPrice`; acceptance preserves this value in the member's
+settings. A missing value on an existing member means no deletion fee. Paid deletion uses a separate
+`pending-deletion.json` money journal. Removing the profile/settings/Default documents and writing
+its completion receipt happen in one database transaction. Both payment journals are excluded from
+roster profile enumeration. See [raid-recruit deletion fees](Loadout-Management.md#raid-recruit-deletion-fee).
+
 LiteDB uses a write-ahead log and checkpoints on closing the database after each operation. Back up or
 move the database with the server stopped. Runtime reads/writes do not create a missing database
 mid-session; they fail instead of silently recreating an empty roster.

@@ -476,6 +476,7 @@ namespace pitTeam
             new AddTeammateNicknameValueChangedPatch().Enable();
             new AddTeammateHeadSelectionOptionsPatch().Enable();
             new AddTeammateFinishPatch().Enable();
+            new TeammateHiringPreviewInputPatch().Enable();
 
             // AIBossPlayer class patch
             new AIDataContructPatch().Enable();
@@ -536,6 +537,7 @@ namespace pitTeam
 
             // social / teammate management patches
             new SocialNetworkClassPatch().Enable();
+            new TeammateSocialDeletionPatch().Enable();
             new FriendListInvitePlayerPanelPatch().Enable();
             new TeammateContextMenuButtonsPatch().Enable();
             new TeammateGroupContextMenuButtonsPatch().Enable();

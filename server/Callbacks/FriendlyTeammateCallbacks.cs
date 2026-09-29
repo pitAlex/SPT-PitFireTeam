@@ -66,10 +66,33 @@ public class FriendlyTeammateCallbacks(
         {
             return new ValueTask<string>(httpResponse.GetBody<object?>(null, err: BackendErrorCodes.UnknownTradingError, errmsg: ex.Message));
         }
+        catch (Exception ex)
+        {
+            logger.Error($"Teammate purchase failed: {ex}");
+            return new ValueTask<string>(httpResponse.GetBody<object?>(null, err: BackendErrorCodes.UnknownTradingError, errmsg: "TeammateHirePurchaseFailed"));
+        }
+    }
+
+    public ValueTask<string> PrepareCreation(string url, FriendlyTeammateCreateRequest request, MongoId sessionId)
+    {
+        try { return new(httpResponse.GetBody(teammateService.PrepareTeammateCreation(sessionId, request))); }
+        catch (Exception ex)
+        {
+            logger.Warning($"Teammate quote failed: {ex}");
+            return new(httpResponse.GetBody<object?>(null, err: BackendErrorCodes.UnknownTradingError,
+                errmsg: ex is FriendlyTeammateException ? ex.Message : "TeammateHirePriceFailed"));
+        }
+    }
+
+    public ValueTask<string> CancelCreation(string url, FriendlyTeammateCreateRequest request, MongoId sessionId)
+    {
+        teammateService.CancelTeammateCreation(sessionId, request);
+        return new(httpResponse.NullResponse());
     }
 
     public ValueTask<string> List(string url, EmptyRequestData _, MongoId sessionId)
     {
+        teammateService.RecoverTeammateCreation(sessionId);
         return new ValueTask<string>(httpResponse.GetBody(teammateService.ListTeammates(sessionId)));
     }
 
@@ -271,12 +294,14 @@ public class FriendlyTeammateCallbacks(
         try
         {
             return new ValueTask<string>(
-                httpResponse.GetBody(new FriendlyTeammateDeleteResponse { Deleted = teammateService.DeleteTeammate(sessionId, request) })
+                httpResponse.GetBody(teammateService.DeleteTeammateWithPayment(sessionId, request))
             );
         }
-        catch (FriendlyTeammateException ex)
+        catch (Exception ex)
         {
-            return new ValueTask<string>(httpResponse.GetBody<object?>(null, err: BackendErrorCodes.UnknownTradingError, errmsg: ex.Message));
+            logger.Warning($"Teammate deletion failed: {ex}");
+            return new ValueTask<string>(httpResponse.GetBody<object?>(null, err: BackendErrorCodes.UnknownTradingError,
+                errmsg: ex is FriendlyTeammateException ? ex.Message : "TeammateDeleteFailed"));
         }
     }
 }

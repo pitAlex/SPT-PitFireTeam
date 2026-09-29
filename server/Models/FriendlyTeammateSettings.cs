@@ -2,6 +2,9 @@ namespace pitTeam.Server.Models;
 
 public record FriendlyTeammateSettings
 {
+    // Null means no recruitment debt (manual hires and legacy members).
+    public int? RecruitmentGearPrice { get; set; }
+
     public List<FriendlyTeammateInsuredItem> InsuredItems { get; set; } = [];
     public string SelectedLoadoutId { get; set; } = string.Empty;
     public bool AutoJoinEnabled { get; set; }

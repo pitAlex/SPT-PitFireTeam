@@ -131,7 +131,7 @@ public sealed class TeammateDatabase
         }
     }
 
-    public bool DeleteTeammate(int aid)
+    public bool DeleteTeammate(int aid, IReadOnlyDictionary<string, string>? receipt = null)
     {
         lock (sync)
         {
@@ -143,6 +143,9 @@ public sealed class TeammateDatabase
                 collection.Delete($"{aid}.json");
                 collection.Delete($"{aid}-settings.json");
                 collection.Delete($"{aid}-equipment.json");
+                if (receipt != null)
+                    foreach (var document in receipt)
+                        Write(collection, document.Key, document.Value);
                 return true;
             });
         }

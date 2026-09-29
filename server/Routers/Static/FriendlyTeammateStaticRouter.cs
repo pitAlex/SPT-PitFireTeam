@@ -29,6 +29,14 @@ public class FriendlyTeammateStaticRouter(JsonUtil jsonUtil, FriendlyTeammateCal
                     await callbacks.AugmentInsuranceCosts(url, info, sessionId, output)
             ),
             new RouteAction<FriendlyTeammateCreateRequest>(
+                "/singleplayer/pitfireteam/teammate/prepare",
+                async (url, info, sessionId, output, cancellationToken) => await callbacks.PrepareCreation(url, info, sessionId)
+            ),
+            new RouteAction<FriendlyTeammateCreateRequest>(
+                "/singleplayer/pitfireteam/teammate/cancel",
+                async (url, info, sessionId, output, cancellationToken) => await callbacks.CancelCreation(url, info, sessionId)
+            ),
+            new RouteAction<FriendlyTeammateCreateRequest>(
                 "/singleplayer/pitfireteam/teammate/create",
                 async (url, info, sessionId, output, cancellationToken) => await callbacks.Create(url, info, sessionId)
             ),

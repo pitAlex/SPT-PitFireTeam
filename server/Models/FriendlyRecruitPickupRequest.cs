@@ -41,6 +41,9 @@ public record FriendlyRecruitPickupCandidate
 
 public record FriendlyRecruitRequestEntry : FriendlyRecruitPickupCandidate
 {
+    // Server-owned snapshot; deliberately absent from the client pickup request model.
+    public int? RecruitmentGearPrice { get; set; }
+
     [JsonPropertyName("createdAt")]
     public long CreatedAt { get; set; }
 }

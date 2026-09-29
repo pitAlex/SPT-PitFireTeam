@@ -97,8 +97,22 @@ namespace pitTeam.Patches
             __instance._headTemplates = CollectAllHeads(solver);
             __instance._voiceTemplates = CollectAllVoices(solver);
             __instance._voices.Clear();
+            string previousHead = AddTeammateCreationFlow.PreviousHead;
+            if (!string.IsNullOrEmpty(previousHead) && __instance._headTemplates.Any(entry => entry.Key.ToString() == previousHead))
+            {
+                Profile previewProfile = AccessTools.Field(typeof(HeadSelectionState), "_previewProfile").GetValue(__instance) as Profile;
+                if (previewProfile != null) previewProfile.Customization[EBodyModelPart.Head] = new MongoID(previousHead);
+            }
             __instance.PrepareFaceSelector();
             __instance.PrepareVoiceSelector();
+            int previousVoice = __instance._voiceTemplates.FindIndex(entry => entry.Key.ToString() == AddTeammateCreationFlow.PreviousVoice);
+            if (previousVoice >= 0)
+            {
+                AccessTools.Field(typeof(HeadSelectionState), "_selectedVoiceIndex").SetValue(__instance, previousVoice);
+                var selector = AccessTools.Field(typeof(HeadSelectionState), "_voiceSelector").GetValue(__instance) as DropDownBox;
+                selector?.UpdateValue(previousVoice, false, null, null);
+                __instance._profileData.VoiceId = __instance._voiceTemplates[previousVoice].Key;
+            }
             return false;
         }
 

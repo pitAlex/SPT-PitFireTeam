@@ -154,6 +154,8 @@ Each roster entry is a runtime-created tile containing:
 - auto-join badge
 - in-group badge
 
+For raid-recruited members with recorded `RecruitmentGearPrice` metadata (including a zero value), the root `UI.Image` on `pitFireTeam_RosterTile_<accountId>` uses faction RGBA colors: USEC `(0.025, 0.547, 1, 0.408)` and BEAR `(1, 0.287, 0, 0.408)`. Manually added members, legacy unmarked members and other sides keep the original neutral background. Existing hover/press styling restores the appropriate background when the pointer leaves.
+
 Portraits are loaded asynchronously and sequentially. The queue fetches `GetOtherPlayerProfile(accountId)` and then uses `PlayerIconImage.SetPresetIcon(...)`.
 
 Important implementation details:
@@ -174,6 +176,40 @@ The add button calls:
 - `AddTeammateCreationFlow.Start(SquadSideSelectionFlow.Open)`
 
 So teammate creation still reuses the stock account appearance flow, and successful completion returns back into `My Squad`.
+
+#### Hiring preview
+
+After choosing a head, voice and nickname, `NEXT` prepares a server-owned candidate and opens `OtherPlayerProfileScreen` in hiring-preview mode. This is the final step before the teammate is added. The layout is:
+
+```text
+                                               BACK
+                    REGENERATE
+              [rotatable character preview]
+                [nickname and experience]
+                 GEAR PRICE: … ₽
+              CANCEL     ADD TEAMMATE
+                  ADD WITH NO GEAR
+```
+
+The native faction emblem, nickname and experience remain with the model. Prestige, level and account-category icons are hidden. The former standalone nickname above the model is replaced by `REGENERATE`. Price and action rows use compact spacing, with the no-gear button centered beneath the first two buttons.
+
+| Action | Behavior |
+|---|---|
+| `REGENERATE` | Generates another profile and gear quote while retaining the chosen nickname, head and voice. Successful preparation replaces the previous pending candidate without charging or adding anyone. |
+| `BACK` | Returns to head/voice/name selection with the choices retained. |
+| `CANCEL` | Cancels the pending addition and returns to My Squad without payment. |
+| `ADD TEAMMATE` | Pays the quoted gear price from unlocked stash roubles and saves the exact previewed candidate. Refreshes the live stash and roster. |
+| `ADD WITH NO GEAR` | Adds the same candidate for free, preserving the knife and permanent equipment/identity slots while removing the kit and ordinary pocket/secure-container supplies. |
+
+Each manually generated candidate receives a fresh 6Kh5 Bayonet; knives are never charged. The no-gear action is shown only when the server advertises support. Both addition actions wait until the displayed model has loaded, and a failed regeneration keeps them disabled until another preview succeeds. Controls are disabled while requests are in progress.
+
+If the server finds insufficient spendable stash roubles, the vanilla message-window popup shows the localized insufficient-funds message. No payment or teammate is created, and the preview stays open. Pending candidates are not friends or squad members. Quotes expire after 30 minutes; confirmation also rejects a changed loadout mode or outdated pricing version.
+
+The server owns the price, candidate, funds check and receipt. See [Loadout Management](Loadout-Management.md#teammate-addition-cost) for the complete charged-slot list, price formula, no-gear retention and payment-recovery contract.
+
+The preview retains the stock drag-rotation input and model-loading spinner. Fetching the quote/profile uses the normal preloader. The closed appearance controller is removed from the preview's return history so Back can open a fresh appearance session without first reopening and closing the stale faction-selection state.
+
+Source: [AddTeammateCreationFlow](../client/Modules/AddTeammateCreationFlow.cs), [AddTeammateHeadSelectionPatch](../client/Patches/AddTeammateHeadSelectionPatch.cs) and [TeammateHiringPreview](../client/Modules/TeammateHiringPreview.cs). Hiring state and temporary profile-screen changes are restored when the preview closes.
 
 ### Tile interactions
 
@@ -217,17 +253,17 @@ On success the roster updates the badge immediately and also updates `TeammateAu
 
 Delete is a modal confirmation overlay on top of the roster tab.
 
-Confirmed behavior:
+The confirmation includes the stored deletion fee for raid recruits. Manual hires and legacy unmarked members keep the ordinary free-deletion prompt. See [Raid-Recruit Deletion Fee](Loadout-Management.md#raid-recruit-deletion-fee) for how this amount is recorded and preserved.
 
-- the delete action resolves the live social member first
-- it then removes the teammate through stock social/friends removal flow
-- on success it refreshes the social list and rebuilds the roster
+The roster posts to `/singleplayer/pitfireteam/teammate/delete` and removes the tile only after server success and live stash refresh. The native social `RemoveFromFriendsList` path is intercepted for teammates to use the same payment flow and fee confirmation; ordinary friends retain native removal. Insufficient funds use the vanilla message window and leave the member present. A shared client busy guard prevents duplicate in-flight submissions, and the server receipt prevents repeat charges after a lost response.
+
+Source: [TeammateDeletion](../client/Modules/TeammateDeletion.cs) and [server deletion service](../server/Services/FriendlyTeammateService.Deletion.cs).
 
 ### Current roster limitations
 
 - the roster itself does not contain a right-side detail pane; teammate detail still jumps into `OtherPlayerProfileScreen`
 - portrait loading is sequential and intentionally delayed, so large rosters are stable but not instant
-- delete still depends on social-list presence being valid at the moment of the action
+- paid deletion needs the active player inventory controller to refresh the live stash
 
 ## Part 2: Settings
 

@@ -1,3 +1,4 @@
+using SPTarkov.Server.Core.Models.Enums;
 using pitTeam.Server.Models;
 using pitTeam.Server.Services;
 using SPTarkov.DI.Annotations;
@@ -66,6 +67,9 @@ public class FriendlyTeammateSocialCallbacks(
     {
         var body = DeserializeBody<GetOtherProfileResponse>(previousOutput);
 
+        if (teammateService.TryGetPendingTeammateProfile(sessionId, request.AccountId, out var pendingProfile))
+            return new ValueTask<string>(httpResponseUtil.GetBody(pendingProfile));
+
         if (teammateService.TryGetTeammateProfile(sessionId, request.AccountId, out var teammateProfile)
             && teammateProfile != null)
         {
@@ -88,8 +92,16 @@ public class FriendlyTeammateSocialCallbacks(
 
     public ValueTask<string> DeleteFriend(string url, DeleteFriendRequest request, MongoId sessionId, string? previousOutput)
     {
-        teammateService.DeleteTeammateByProfileId(sessionId, request.FriendId);
-        return new ValueTask<string>(previousOutput ?? httpResponseUtil.NullResponse());
+        try
+        {
+            teammateService.DeleteTeammateByProfileId(sessionId, request.FriendId);
+            return new ValueTask<string>(previousOutput ?? httpResponseUtil.NullResponse());
+        }
+        catch (Exception ex)
+        {
+            return new(httpResponseUtil.GetBody<object?>(null, err: BackendErrorCodes.UnknownTradingError,
+                errmsg: ex is FriendlyTeammateException ? ex.Message : "TeammateDeleteFailed"));
+        }
     }
 
     public ValueTask<string> AcceptFriendRequest(string url, AcceptFriendRequestData request, MongoId sessionId, string? previousOutput)

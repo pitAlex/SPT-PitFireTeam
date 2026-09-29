@@ -71,7 +71,8 @@ public class FriendlyTeammateStorage(FileUtil fileUtil, JsonUtil jsonUtil, ISptL
     public void WriteBatch(MongoId sessionId, IReadOnlyDictionary<string, string> documents) =>
         GetDatabase(sessionId).WriteBatch(documents);
 
-    public bool DeleteTeammate(MongoId sessionId, int aid) => GetDatabase(sessionId).DeleteTeammate(aid);
+    public bool DeleteTeammate(MongoId sessionId, int aid, IReadOnlyDictionary<string, string>? receipt = null) =>
+        GetDatabase(sessionId).DeleteTeammate(aid, receipt);
 
     private TeammateDatabase GetDatabase(MongoId sessionId)
     {

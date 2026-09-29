@@ -6,6 +6,8 @@ using SPTarkov.Server.Core.Constants;
 using SPTarkov.Server.Core.Generators.Bot;
 using SPTarkov.Server.Core.Helpers.Items;
 using SPTarkov.Server.Core.Helpers.Profile;
+using SPTarkov.Server.Core.Helpers.Traders;
+using SPTarkov.Server.Core.Models.Spt.Config;
 using SPTarkov.Server.Core.Models.Eft.Match;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Common;
@@ -33,13 +35,17 @@ using System.Text.Json;
 namespace pitTeam.Server.Services;
 
 [Injectable]
-public class FriendlyTeammateService(
+public partial class FriendlyTeammateService(
     BotGenerator botGenerator,
     GlobalTable globalTable,
     FriendlyTeammateStorage storage,
     HashUtil hashUtil,
     JsonUtil jsonUtil,
     ItemHelper itemHelper,
+    TraderHelper traderHelper,
+    RagfairConfig ragfairConfig,
+    HideoutTable hideoutTable,
+    InventoryHelper inventoryHelper,
     MailSendService mailSendService,
     ProfileHelper profileHelper,
     ProfileActivityService profileActivityService,
@@ -220,7 +226,7 @@ public class FriendlyTeammateService(
         public int Remaining { get; set; } = remaining;
     }
 
-    public SearchFriendResponse CreateTeammate(MongoId sessionId, FriendlyTeammateCreateRequest request)
+    private BotBase GenerateNewTeammate(MongoId sessionId, FriendlyTeammateCreateRequest request)
     {
         var playerPmc = GetPlayerProfile(sessionId);
         var nickname = NormalizeRequiredValue(request.Nickname, "nickname");
@@ -264,12 +270,7 @@ public class FriendlyTeammateService(
         // Temporarily disabled: this floor baseline can over-inflate teammate skills.
         // ApplyPmcFollowerSkillBaseline(teammate);
         PrepareNewTeammateDefaultForCurrentLoadoutMode(teammate);
-        SaveTeammateWithDefaultEquipment(sessionId, teammate, IsCurrentLoadoutManagementModeExtreme(),
-            CreateDefaultTeammateSettings(teammate.Customization));
-
-        logger.Info($"Created teammate '{nickname}' for session '{sessionId}' with aid '{teammate.Aid}'");
-
-        return ToFriendSummary(teammate);
+        return teammate;
     }
 
     public SearchFriendResponse CreateTeammateFromRecruitCandidate(MongoId sessionId, FriendlyRecruitPickupCandidate candidate)
@@ -327,9 +328,13 @@ public class FriendlyTeammateService(
 
         NormalizeTeammateSkillsForCreation(teammate, playerPmc);
         InitializeRecruitRaidStats(teammate, targetLevel, GetRecruitStatsSeed(candidate));
+        var recruitSettings = CreateDefaultTeammateSettings(teammate.Customization);
+        recruitSettings.RecruitmentGearPrice = candidate is FriendlyRecruitRequestEntry entry
+            && entry.RecruitmentGearPrice.HasValue
+                ? entry.RecruitmentGearPrice.Value : CalculateRecruitmentGearPrice(teammate);
         PrepareNewTeammateDefaultForCurrentLoadoutMode(teammate);
         SaveTeammateWithDefaultEquipment(sessionId, teammate, IsCurrentLoadoutManagementModeExtreme(),
-            CreateDefaultTeammateSettings(teammate.Customization));
+            recruitSettings);
 
         logger.Info($"Accepted recruit pickup '{nickname}' for session '{sessionId}' with aid '{teammate.Aid}' capturedProfile={usedCapturedProfile}");
 
@@ -703,42 +708,6 @@ public class FriendlyTeammateService(
         }
 
         var removeIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { secureContainer.Id.ToString() };
-        bool foundChild = true;
-        while (foundChild)
-        {
-            foundChild = false;
-            foreach (var item in inventoryItems)
-            {
-                if (item?.Id == null || string.IsNullOrWhiteSpace(item.ParentId) || !removeIds.Contains(item.ParentId))
-                {
-                    continue;
-                }
-
-                if (removeIds.Add(item.Id.ToString()))
-                {
-                    foundChild = true;
-                }
-            }
-        }
-
-        return inventoryItems.RemoveAll(item => item?.Id != null && removeIds.Contains(item.Id.ToString())) > 0;
-    }
-
-    private static bool RemoveItemTreesById(List<Item>? inventoryItems, IEnumerable<string>? rootItemIds)
-    {
-        if (inventoryItems == null || inventoryItems.Count == 0 || rootItemIds == null)
-        {
-            return false;
-        }
-
-        var removeIds = rootItemIds
-            .Where(id => !string.IsNullOrWhiteSpace(id))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        if (removeIds.Count == 0)
-        {
-            return false;
-        }
-
         bool foundChild = true;
         while (foundChild)
         {
@@ -1740,11 +1709,17 @@ public class FriendlyTeammateService(
             return;
         }
 
-        teammate.Inventory ??= new BotBaseInventory { Items = [] };
-        teammate.Inventory.Items = MergeEquipmentWithPreservedSpecialItems(
-            teammate.Inventory.Items,
+        var mergedItems = MergeEquipmentWithPreservedSpecialItems(
+            teammate.Inventory?.Items,
             replacementItems,
             useReplacementSecureContainer: IsExtremeLoadoutManagementMode(mode));
+        if (IsRestrictedLoadoutManagementMode(mode) && !TryRestoreRestrictedMagazines(teammate, mergedItems))
+        {
+            return;
+        }
+
+        teammate.Inventory ??= new BotBaseInventory { Items = [] };
+        teammate.Inventory.Items = mergedItems;
         teammate.Inventory.Equipment = teammate.Inventory.Items.First().Id;
 
         bool keepSecureContainer = IsExtremeLoadoutManagementMode(mode);
@@ -1801,17 +1776,56 @@ public class FriendlyTeammateService(
             return;
         }
 
-        teammate.Inventory ??= new BotBaseInventory { Items = [] };
-        teammate.Inventory.Items = MergeEquipmentWithPreservedSpecialItems(
-            teammate.Inventory.Items,
+        var mergedItems = MergeEquipmentWithPreservedSpecialItems(
+            teammate.Inventory?.Items,
             replacementItems,
             useReplacementSecureContainer: false);
+        if (!TryRestoreRestrictedMagazines(teammate, mergedItems))
+        {
+            return;
+        }
+
+        teammate.Inventory ??= new BotBaseInventory { Items = [] };
+        teammate.Inventory.Items = mergedItems;
         teammate.Inventory.Equipment = teammate.Inventory.Items.First().Id;
 
         RemoveSecureContainerTree(teammate);
         EnsureFollowerHasScabbardKnife(teammate);
         SaveDefaultEquipmentSnapshot(sessionId, teammate, overwrite: true, includeSecureContainer: false);
         logger.Info($"Persisted fallen Default equipment maintenance state for teammate '{teammate.Aid}' in loadout management mode '{mode}'.");
+    }
+
+    private bool TryRestoreRestrictedMagazines(BotBase teammate, List<Item> replacementItems)
+    {
+        // Recovery must run after ownership/secure-container filtering and orphan pruning.
+        RemoveSecureContainerTree(replacementItems);
+        try
+        {
+            if (!RestrictedMagazineRecovery.TryRestore(
+                    teammate.Inventory?.Items ?? [],
+                    replacementItems,
+                    item => itemHelper.IsOfBaseclass(item.Template, BaseClasses.MAGAZINE),
+                    item => cloner.Clone(item) ?? throw new InvalidOperationException("Cannot clone protected magazine."),
+                    (items, magazine) => RestrictedMagazineRecovery.TryPlace(items, magazine, itemHelper, inventoryHelper),
+                    out int restored,
+                    out string? unplacedId))
+            {
+                logger.Warning($"Skipped Restricted equipment maintenance for teammate '{teammate.Aid}': protected magazine '{unplacedId}' could not be placed safely. Retained the previous saved equipment.");
+                return false;
+            }
+
+            if (restored > 0)
+            {
+                logger.Info($"Restored {restored} missing protected magazine(s), without pre-raid ammunition, for teammate '{teammate.Aid}' during Restricted equipment maintenance.");
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.Warning($"Skipped Restricted magazine recovery for teammate '{teammate.Aid}'; retained the previous saved equipment: {ex.Message}");
+            return false;
+        }
     }
 
     private void ApplyImmersiveDefaultGearLoss(MongoId sessionId, BotBase teammate, FriendlyTeammateDeathEscapeEntry entry)
@@ -1842,64 +1856,9 @@ public class FriendlyTeammateService(
         // sees the loss instead of silently restoring the pre-raid gear. Permanent bot identity
         // slots are kept, but the secure-container tree is only persisted for Realistic/Extreme.
         bool keepSecureContainer = IsExtremeLoadoutManagementMode(mode);
-        StripDefaultEquipmentAfterDeath(teammate, keepSecureContainer);
+        StripToPermanentEquipment(teammate, keepSecureContainer);
         SaveDefaultEquipmentSnapshot(sessionId, teammate, overwrite: true, includeSecureContainer: keepSecureContainer);
         logger.Info($"Stripped teammate '{teammate.Aid}' default equipment after death in loadout management mode '{mode}'.");
-    }
-
-    private void StripDefaultEquipmentAfterDeath(BotBase teammate, bool keepSecureContainer)
-    {
-        teammate.Inventory ??= new BotBaseInventory { Items = [] };
-        teammate.Inventory.Items ??= [];
-        if (teammate.Inventory.Items.Count == 0)
-        {
-            return;
-        }
-
-        // Keep or inject a scabbard knife before stripping. EFT already prevents knife looting, and
-        // this gives later spawn/preview validation a stable legal melee slot to work with.
-        EnsureFollowerHasPockets(teammate);
-        EnsureFollowerHasScabbardKnife(teammate);
-
-        string rootId = GetEquipmentRootId(teammate);
-        var keepIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { rootId };
-        foreach (var preservedItem in teammate.Inventory.Items.Where(item =>
-                     !string.IsNullOrWhiteSpace(item?.SlotId) &&
-                     IsPermanentTeammateEquipmentSlot(item.SlotId, keepSecureContainer)).ToList())
-        {
-            // Pockets are a permanent equipment container, but pocket contents are normal loot
-            // and should still be lost on teammate death. Keep the container itself so special
-            // slots under it remain anchored, then preserve special-slot trees separately.
-            if (IsPocketsSlotItem(preservedItem))
-            {
-                keepIds.Add(preservedItem.Id.ToString());
-                continue;
-            }
-
-            // Preserve descendants for kept equipment items so attached child items are not orphaned.
-            AddItemAndDescendantsToKeepSet(teammate.Inventory.Items, preservedItem.Id.ToString(), keepIds);
-        }
-
-        // The filter is the actual loss operation: anything outside the keep set is removed from
-        // the teammate profile before the Default snapshot is saved.
-        teammate.Inventory.Items = teammate.Inventory.Items
-            .Where(item => keepIds.Contains(item.Id.ToString()))
-            .ToList();
-        teammate.Inventory.Equipment = new MongoId(rootId);
-    }
-
-    private static void AddItemAndDescendantsToKeepSet(List<Item> inventoryItems, string itemId, HashSet<string> keepIds)
-    {
-        if (!keepIds.Add(itemId))
-        {
-            return;
-        }
-
-        foreach (var child in inventoryItems.Where(item =>
-                     string.Equals(item.ParentId, itemId, StringComparison.OrdinalIgnoreCase)).ToList())
-        {
-            AddItemAndDescendantsToKeepSet(inventoryItems, child.Id.ToString(), keepIds);
-        }
     }
 
     private void EnsureFollowerHasScabbardKnife(BotBase profile)
@@ -2208,23 +2167,6 @@ public class FriendlyTeammateService(
     {
         return slotId.Contains("Dogtag", StringComparison.OrdinalIgnoreCase)
             || (!includeSecureContainer && slotId.Contains("SecuredContainer", StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static bool IsPocketsSlotItem(Item item)
-    {
-        return string.Equals(item?.SlotId, nameof(EquipmentSlots.Pockets), StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsPermanentTeammateEquipmentSlot(string? slotId, bool keepSecureContainer)
-    {
-        return !string.IsNullOrWhiteSpace(slotId)
-            && (slotId.Contains("Dogtag", StringComparison.OrdinalIgnoreCase)
-                || slotId.Contains("SpecialSlot", StringComparison.OrdinalIgnoreCase)
-                || (keepSecureContainer && slotId.Contains("SecuredContainer", StringComparison.OrdinalIgnoreCase))
-                || string.Equals(slotId, nameof(EquipmentSlots.Pockets), StringComparison.OrdinalIgnoreCase)
-                || string.Equals(slotId, nameof(EquipmentSlots.Scabbard), StringComparison.OrdinalIgnoreCase)
-                || string.Equals(slotId, "ArmBand", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(slotId, "Armband", StringComparison.OrdinalIgnoreCase));
     }
 
     private void ConsumeStashItemsForKit(
@@ -3448,8 +3390,7 @@ public class FriendlyTeammateService(
 
     public bool DeleteTeammate(MongoId sessionId, FriendlyTeammateDeleteRequest request)
     {
-        var teammate = FindByAccountId(sessionId, request.AccountId);
-        return DeleteTeammate(sessionId, teammate);
+        return DeleteTeammateWithPayment(sessionId, request).Deleted;
     }
 
     public bool DeleteTeammateByProfileId(MongoId sessionId, MongoId teammateId)
@@ -3479,17 +3420,6 @@ public class FriendlyTeammateService(
         return LoadTeammates(sessionId).Any(profile =>
             (profileId is not null && profile.Id == profileId)
             || (aid is not null && profile.Aid == aid.Value));
-    }
-
-    private bool DeleteTeammate(MongoId sessionId, BotBase teammate)
-    {
-        var deleted = storage.DeleteTeammate(sessionId, teammate.Aid ?? throw new FriendlyTeammateException("Missing teammate account id"));
-        if (deleted)
-        {
-            logger.Info($"Deleted teammate '{teammate.Info?.Nickname}' for session '{sessionId}'");
-        }
-
-        return deleted;
     }
 
     private string GetPmcRole(string? side)
@@ -4382,6 +4312,7 @@ public class FriendlyTeammateService(
 
     private List<BotBase> LoadTeammates(MongoId sessionId)
     {
+        RecoverTeammateDeletion(sessionId);
         var teammates = storage.ReadProfiles(sessionId);
         foreach (var teammate in teammates)
         {
@@ -4577,6 +4508,7 @@ public class FriendlyTeammateService(
                 SelectedMemberCategory = MemberCategory.Unheard,
             },
             AutoJoinEnabled = settings.AutoJoinEnabled,
+            RecruitmentGearPrice = settings.RecruitmentGearPrice,
             HasProperRaidKit = HasProperRaidKit(PrepareTeammateForFetch(teammate)),
         };
     }
@@ -4848,7 +4780,8 @@ public class FriendlyTeammateService(
     }
 
     private void SaveTeammateWithDefaultEquipment(
-        MongoId sessionId, BotBase teammate, bool includeSecureContainer, FriendlyTeammateSettings? settings = null)
+        MongoId sessionId, BotBase teammate, bool includeSecureContainer, FriendlyTeammateSettings? settings = null,
+        IReadOnlyDictionary<string, string>? additionalDocuments = null)
     {
         settings ??= GetTeammateSettings(sessionId, teammate);
         teammateInsuranceService.PrunePolicies(teammate, settings);
@@ -4863,6 +4796,10 @@ public class FriendlyTeammateService(
         {
             documents[GetTeammateSettingsDocumentKey(teammate)] = jsonUtil.Serialize(settings)
                 ?? throw new FriendlyTeammateException("Unable to serialize teammate settings");
+        }
+        if (additionalDocuments != null)
+        {
+            foreach (var document in additionalDocuments) documents.Add(document.Key, document.Value);
         }
         storage.WriteBatch(sessionId, documents);
     }

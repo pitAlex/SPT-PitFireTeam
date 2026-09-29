@@ -51,9 +51,12 @@ namespace pitTeam.Modules
         private static UnityAction nextButtonAction;
         private static UnityAction backButtonAction;
         private static Action pendingReturnAction;
+        private static FriendlyTeammateCreateRequest resumeSelection;
 
         public static bool IsActive => activeController != null;
         public static bool SuppressSkippedSideSelectionModelView => suppressSkippedSideSelectionModelView;
+        internal static string PreviousHead => resumeSelection?.head;
+        internal static string PreviousVoice => resumeSelection?.voice;
 
         public static void Start(Action onReturn = null)
         {
@@ -64,6 +67,14 @@ namespace pitTeam.Modules
             }
 
             pendingReturnAction = onReturn;
+            resumeSelection = null;
+            StartInternal().HandleExceptions();
+        }
+
+        internal static void Resume(FriendlyTeammateCreateRequest selection, Action onReturn)
+        {
+            pendingReturnAction = onReturn;
+            resumeSelection = selection;
             StartInternal().HandleExceptions();
         }
 
@@ -215,7 +226,10 @@ namespace pitTeam.Modules
 
                 EFT.CreateProfileOperation.PreliminaryProfileData profileData = new EFT.CreateProfileOperation.PreliminaryProfileData
                 {
-                    Side = playerSide
+                    Side = playerSide,
+                    Nickname = resumeSelection?.nickname,
+                    HeadId = resumeSelection?.head,
+                    VoiceId = resumeSelection?.voice
                 };
 
                 var controller = new EftAccountSideSelectionScreen.EftAccountSideSelectionScreenController(
@@ -345,6 +359,7 @@ namespace pitTeam.Modules
             if (submitCoroutine != null && pitFireTeam.Instance != null)
             {
                 pitFireTeam.Instance.StopCoroutine(submitCoroutine);
+                TeammateHiringPreview.SetTransitionLoader(false);
             }
 
             advanceCoroutine = null;
@@ -524,7 +539,7 @@ namespace pitTeam.Modules
                 PrepareNicknameField(headSelectionState);
                 headSelectionState.StateReady = true;
                 nextButton.gameObject.SetActive(true);
-                nextButton.SetRawText(GetLocalizedSocialUi("AddTeammateConfirm"), nextButton.HeaderSize);
+                nextButton.SetRawText(GetLocalizedSocialUi("AddTeammateNext"), nextButton.HeaderSize);
                 bool nicknameValid = headSelectionState._nicknameField != null &&
                     headSelectionState._nicknameField.ValidationError(GetNicknameText(headSelectionState)) == ENicknameError.ValidNickname;
                 nextButton.Interactable = !submitInProgress && nicknameValid;
@@ -547,7 +562,7 @@ namespace pitTeam.Modules
 
             if (headSelectionState._profileData != null)
             {
-                headSelectionState._profileData.Nickname = string.Empty;
+                headSelectionState._profileData.Nickname = resumeSelection?.nickname ?? string.Empty;
             }
 
             TMP_InputField inputField = headSelectionState._nicknameField != null
@@ -558,7 +573,7 @@ namespace pitTeam.Modules
             {
                 inputField.interactable = true;
                 inputField.readOnly = false;
-                inputField.SetTextWithoutNotify(string.Empty);
+                inputField.SetTextWithoutNotify(resumeSelection?.nickname ?? string.Empty);
                 inputField.Select();
                 inputField.ActivateInputField();
             }
@@ -618,8 +633,9 @@ namespace pitTeam.Modules
 
         private static IEnumerator SubmitTeammateCoroutine(FriendlyTeammateCreateRequest payload)
         {
+            TeammateHiringPreview.SetTransitionLoader(true);
             Task<string> requestTask = Task.Run(() => RequestHandler.PostJson(
-                "/singleplayer/pitfireteam/teammate/create",
+                "/singleplayer/pitfireteam/teammate/prepare",
                 SerializeRequest(payload)));
 
             while (!requestTask.IsCompleted)
@@ -631,6 +647,7 @@ namespace pitTeam.Modules
 
             if (requestTask.IsFaulted)
             {
+                TeammateHiringPreview.SetTransitionLoader(false);
                 submitInProgress = false;
                 pitFireTeam.Log.LogError("[UI] Failed to create teammate in backend.");
                 pitFireTeam.Log.LogError(requestTask.Exception);
@@ -645,6 +662,7 @@ namespace pitTeam.Modules
             }
             catch (Exception ex)
             {
+                TeammateHiringPreview.SetTransitionLoader(false);
                 submitInProgress = false;
                 pitFireTeam.Log.LogError("[UI] Failed to process teammate create response.");
                 pitFireTeam.Log.LogError(ex);
@@ -655,25 +673,24 @@ namespace pitTeam.Modules
 
         private static void HandleCreateTeammateResponse(FriendlyTeammateCreateRequest payload, string responseJson)
         {
-            FriendlyTeammateBackendResponse response = JsonConvert.DeserializeObject<FriendlyTeammateBackendResponse>(responseJson);
+            FriendlyTeammateBodyResponse<TeammateHiringPreview.Quote> response = JsonConvert.DeserializeObject<FriendlyTeammateBodyResponse<TeammateHiringPreview.Quote>>(responseJson);
             if (response == null || response.err != 0)
             {
+                TeammateHiringPreview.SetTransitionLoader(false);
                 string backendError = response?.errmsg;
-                throw new Exception(string.IsNullOrEmpty(backendError) ? GetLocalizedSocialUi("AddTeammateCreateFailed") : backendError);
+                ShowToast(string.IsNullOrEmpty(backendError) ? GetLocalizedSocialUi("AddTeammateCreateFailed") : GetLocalizedSocialUi(backendError));
+                submitInProgress = false;
+                RefreshSubmitButton();
+                return;
             }
-
-            Logger.LogInfo($"[UI] Add teammate created in backend: {responseJson}");
-            pitFireTeam.Instance.StartCoroutine(ShowSuccessAndReturn(payload.nickname));
+            Action onReturn = pendingReturnAction;
+            TeammateHiringPreview.OpenAsync(response.data, payload, onReturn).HandleExceptions();
         }
 
-        private static IEnumerator ShowSuccessAndReturn(string nickname)
+        internal static void PreviewOpenFailed()
         {
-            string messageTemplate = GetLocalizedSocialUi("AddTeammateInProgress");
-            ShowToast(string.Format(messageTemplate, nickname ?? string.Empty));
-            SocialNetworkClassPatch.RefreshFriendsList();
-            Components.SquadControlMenuUi.RequestRosterRefreshOnNextInject();
-            yield return null;
-            ReturnToMainScreen();
+            submitInProgress = false;
+            RefreshSubmitButton();
         }
 
         private static void InvokePendingReturnAction()
@@ -733,18 +750,12 @@ namespace pitTeam.Modules
             return defaultJsonConverters;
         }
 
-        private sealed class FriendlyTeammateCreateRequest
+        internal sealed class FriendlyTeammateCreateRequest
         {
             public string nickname;
             public string voice;
             public string head;
         }
 
-        private sealed class FriendlyTeammateBackendResponse
-        {
-            public int err;
-            public string errmsg;
-            public object data;
-        }
     }
 }

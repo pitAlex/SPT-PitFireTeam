@@ -40,6 +40,7 @@ namespace pitTeam.Patches
         {
             socialNetworkClass = __instance;
             iChatInteractions = session;
+            Modules.TeammateDeletion.InventoryController = inventoryController;
         }
 
         private static float delay = 0;
