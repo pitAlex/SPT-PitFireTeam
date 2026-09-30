@@ -45,9 +45,10 @@ namespace pitTeam.Modules
                 if (response == null || response.err != 0 || response.data == null)
                 {
                     string key = response?.errmsg ?? "TeammateDeleteFailed";
-                    await ItemUiContext.Instance.ShowMessageWindow(out _, pitFireTeam.GetSocialUiText(key),
-                        key == "TeammateDeleteInsufficientFunds" ? "ragfair/Not enough money".Localized()
-                            : pitFireTeam.GetSocialUiText("RemoveTeammateTitle"), true);
+                    await ItemUiContext.Instance.ShowMessageWindow(pitFireTeam.GetSocialUiText(key),
+                        acceptAction: null, cancelAction: null,
+                        caption: key == "TeammateDeleteInsufficientFunds" ? "ragfair/Not enough money".Localized()
+                            : pitFireTeam.GetSocialUiText("RemoveTeammateTitle"), forceShow: true).WindowResult;
                     return false;
                 }
                 OtherPlayerProfileScreenPatch.ApplyServerSavedPlayerStash(session.Profile, InventoryController,

@@ -141,6 +141,8 @@ Each tile is built from backend teammate data:
 
 The roster is rebuilt on first injection and on explicit refresh requests. It also supports lighter tile-only refreshes for specific account ids after profile-side edits.
 
+Roster entries use ascending profile registration time, then account id. Newly accepted raid recruits receive the acceptance timestamp so their captured bot registration date cannot place them ahead of existing squadmates. Opening a pending recruit preview does not change this timestamp. Previously accepted profiles retain their saved ordering.
+
 ### Tile composition
 
 Each roster entry is a runtime-created tile containing:

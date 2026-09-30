@@ -310,8 +310,9 @@ namespace pitTeam.Modules
                     {
                         // Reuse vanilla's modal message window and insufficient-money caption.
                         // The server checks spendable stash roubles before mutating either profile.
-                        await ItemUiContext.Instance.ShowMessageWindow(out _, Text("TeammateHireInsufficientFunds"),
-                            "ragfair/Not enough money".Localized(), true);
+                        await ItemUiContext.Instance.ShowMessageWindow(Text("TeammateHireInsufficientFunds"),
+                            acceptAction: null, cancelAction: null,
+                            caption: "ragfair/Not enough money".Localized(), forceShow: true).WindowResult;
                     }
                     else AddTeammateCreationFlow.ShowToast(Text(response?.errmsg ?? "TeammateHirePurchaseFailed"));
                     return;

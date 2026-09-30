@@ -326,6 +326,9 @@ public partial class FriendlyTeammateService(
             NormalizeTeammateProfile(teammate, playerPmc);
         }
 
+        // Roster ordering uses registration time; a captured bot's original date
+        // predates joining this squad. Stamp acceptance here, not in preview normalization.
+        teammate.Info.RegistrationDate = GetCurrentUnixTimestampSeconds();
         NormalizeTeammateSkillsForCreation(teammate, playerPmc);
         InitializeRecruitRaidStats(teammate, targetLevel, GetRecruitStatsSeed(candidate));
         var recruitSettings = CreateDefaultTeammateSettings(teammate.Customization);
