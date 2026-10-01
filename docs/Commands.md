@@ -6,7 +6,7 @@ Addon adaptations are in [SAIN addon commands](../addon/docs/Commands.md). Share
 
 This document summarizes boss-issued follower commands as implemented in the client runtime.
 
-Detailed looting behavior, the five corpse action-menu requests, filtered-loot rules, and gear-swap design constraints are tracked in [Looting](looting/Looting.md).
+Detailed looting behavior, the five corpse action-menu requests, container `CMD: Loot This`, loose-item `CMD: Take This`, filtered-loot rules, and gear-swap design constraints are tracked in [Looting](looting/Looting.md). The container and loose-item menu actions use the same existing loot/pickup commands, with the displayed target captured before player speech.
 
 Authoritative files:
 

@@ -86,6 +86,7 @@
 	"botStatus": { "Dead": "Dead", "Engaged": "In Combat", "Alerted": "Enemy Detected", "Heal": "Healing", "WantToHeal": "Wants to heal" },
 	"socialUi": {
 		"LootActionThis": "CMD: Loot This",
+		"LootActionTakeThis": "CMD: Take This",
 		"LootActionAndWeapon": "CMD: Loot & Get Weapon",
 		"LootActionAndGear": "CMD: Loot & Get Gear",
 		"LootActionWeapon": "CMD: Get Weapon",

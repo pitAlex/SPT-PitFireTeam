@@ -162,31 +162,56 @@ namespace pitTeam.Components
         // OpenDoor/Loot: situational request-layer work.
         // FollowMe/Cooperation: recruit or clear follower commands back to normal follow.
         private Action? _lootInteractionDispatch;
+        private EPhraseTrigger? _lootInteractionPhrase;
 
         internal void SayLootInteraction(Player requester, IInteractive target, FollowerLootMode mode)
         {
             if (requester == null || requester.ProfileId != realPlayer?.ProfileId ||
-                _lootInteractionDispatch != null || target is not Corpse corpse)
+                _lootInteractionDispatch != null)
+            {
+                return;
+            }
+
+            Action dispatch;
+            EPhraseTrigger phrase;
+            if (target is Corpse corpse)
+            {
+                phrase = EPhraseTrigger.CheckHim;
+                dispatch = () => ApplyTakeBodyGearCommand(requester, corpse, mode);
+            }
+            else if (mode == FollowerLootMode.Normal && target is LootableContainer container)
+            {
+                phrase = EPhraseTrigger.LootContainer;
+                dispatch = () => ApplyTakeContainerLootCommand(requester, container);
+            }
+            else if (mode == FollowerLootMode.Normal && target is LootItem lootItem)
+            {
+                phrase = QuickPanelPatch.GetLootItemPhrase(lootItem);
+                dispatch = () => ApplyTakeLootCommand(requester, lootItem);
+            }
+            else
             {
                 return;
             }
 
             bool dispatched = false;
+            _lootInteractionPhrase = phrase;
             _lootInteractionDispatch = () =>
             {
                 if (dispatched) return;
                 dispatched = true;
-                ApplyTakeBodyGearCommand(requester, corpse, mode);
+                dispatch();
             };
             try
             {
                 // Same demand/tags/probability as the normal quick-menu phrase. Say publishes
                 // OnPhraseSay synchronously before playing the voice; that event owns dispatch.
-                requester.Say(EPhraseTrigger.CheckHim, true, 0f, (ETagStatus)0, 100, false);
+                requester.Say(phrase, true, 0f, (ETagStatus)0, 100, false);
             }
             finally
             {
                 _lootInteractionDispatch = null;
+                _lootInteractionPhrase = null;
             }
         }
 
@@ -210,7 +235,7 @@ namespace pitTeam.Components
 
             if (info.PlayerRequester != null && info.PlayerRequester.ProfileId == realPlayer.ProfileId)
             {
-                if (_lootInteractionDispatch != null && info.phrase == EPhraseTrigger.CheckHim)
+                if (_lootInteractionDispatch != null && info.phrase == _lootInteractionPhrase)
                 {
                     _lootInteractionDispatch();
                     return;
@@ -2144,14 +2169,14 @@ namespace pitTeam.Components
             }
         }
 
-        private void ApplyTakeLootCommand(IPlayer requester)
+        private void ApplyTakeLootCommand(IPlayer requester, LootItem target = null)
         {
             if (requester == null)
             {
                 return;
             }
 
-            LootItem lootItem = InteractableObjects.GetCurLootItem();
+            LootItem lootItem = target ?? InteractableObjects.GetCurLootItem();
             if (lootItem == null)
             {
                 return;

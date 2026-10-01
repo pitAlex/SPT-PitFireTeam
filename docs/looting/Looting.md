@@ -70,11 +70,11 @@ A body/container reservation is authoritative through the per-follower target ma
 
 Once body/container searching begins, normal replacement commands are ignored until the loot command finishes. Combat, timeout, target invalidation, player death, or safety cleanup can still interrupt the command.
 
-## Corpse action menu
+## Loot action menu
 
-The native center-screen interaction menu appends follower actions only when the local player targets a corpse and has at least one living follower. Loot This and both gear actions always appear on corpses. The two weapon actions appear only while the corpse inventory contains a weapon (including carried guns, excluding knives); visibility refreshes when its last weapon is removed. Containers do not show these CMD actions; their existing quick loot command and vanilla player Search/Open interactions are unchanged. Assignment retains the existing spawned-squadmate, combat, reservation, and reachable-distance checks.
+The native center-screen interaction menu appends follower actions when the local player has at least one living follower. On corpses, Loot This and both gear actions always appear, while the two weapon actions appear only while the corpse inventory contains a weapon (including carried guns, excluding knives). Active unlocked containers offer only **CMD: Loot This**, using normal container looting and saved filters. Loose items, including weapons, offer only **CMD: Take This**, using existing direct-item pickup. Upgrade-based Get Weapon on loose weapons remains proposed and is not part of this menu implementation. Vanilla player interactions and existing quick commands remain available. Visibility refreshes when the target, follower availability, container state, or corpse weapon availability changes. Assignment retains existing follower eligibility, combat, reservation, and reachable-distance checks.
 
-All five labels have a `CMD:` prefix to distinguish follower commands from player interactions. Every mode uses the player `CheckHim` voice through a corpse-only speech route. The synchronous player phrase event dispatches the captured target and selected mode exactly once; its temporary routing context clears in `finally`, without changing later quick-menu phrases.
+All labels have a `CMD:` prefix to distinguish follower commands from player interactions. Every corpse mode uses the player `CheckHim` voice; containers use `LootContainer`, and loose items use the same key/money/weapon/generic phrase as the existing quick panel. The synchronous player phrase event dispatches the captured target and selected mode exactly once; its temporary routing context clears in `finally`, without changing later quick-menu phrases.
 
 - **Loot This** uses the existing normal loot request and saved settings.
 - **Loot & Get Weapon** enables the weapon pickup category for this request, processes it first, then continues normal loot.

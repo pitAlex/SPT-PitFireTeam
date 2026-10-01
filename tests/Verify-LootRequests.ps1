@@ -42,7 +42,7 @@ $candidates = Get-Content -Raw (Join-Path $RepositoryRoot 'client/BigBrain/Actio
 if ($candidates -notmatch 'ActiveLootRequest\?\.AllowsSelectedWeapon') { throw 'Missing centralized weapon selection gate' }
 foreach ($localeFile in Get-ChildItem (Join-Path $RepositoryRoot 'server/Resources/lang') -Filter '*.json') {
     $locale = Get-Content -Raw -Encoding UTF8 $localeFile.FullName | ConvertFrom-Json
-    foreach ($key in @('LootActionThis','LootActionAndWeapon','LootActionAndGear','LootActionWeapon','LootActionGear')) {
+    foreach ($key in @('LootActionThis','LootActionTakeThis','LootActionAndWeapon','LootActionAndGear','LootActionWeapon','LootActionGear')) {
         if ($locale.socialUi.$key -notmatch '^CMD: \S') { throw "Missing CMD label $key in $($localeFile.Name)" }
     }
 }

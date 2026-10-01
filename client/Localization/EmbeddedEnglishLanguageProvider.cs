@@ -265,6 +265,7 @@ namespace pitTeam.Localization
                 socialUi = new Dictionary<string, string>
                 {
                     ["LootActionThis"] = "CMD: Loot This",
+                    ["LootActionTakeThis"] = "CMD: Take This",
                     ["LootActionAndWeapon"] = "CMD: Loot & Get Weapon",
                     ["LootActionAndGear"] = "CMD: Loot & Get Gear",
                     ["LootActionWeapon"] = "CMD: Get Weapon",

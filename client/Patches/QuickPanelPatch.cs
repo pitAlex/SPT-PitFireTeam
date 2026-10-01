@@ -48,6 +48,15 @@ namespace pitTeam.Patches
         private static readonly FieldInfo QuickPanelAvailablePhrasesField = AccessTools.Field(typeof(GesturesQuickPanel), "_availablePhrases");
         private static readonly FieldInfo QuickPanelPlayerField = AccessTools.Field(typeof(GesturesQuickPanel), "_player");
 
+        internal static EPhraseTrigger GetLootItemPhrase(LootItem lootItem)
+        {
+            Item item = lootItem?.ItemOwner?.RootItem ?? lootItem?.Item;
+            if (item?.GetItemComponent<KeyComponent>() != null) return EPhraseTrigger.LootKey;
+            if (item is EFT.InventoryLogic.Money) return EPhraseTrigger.LootMoney;
+            if (item is Weapon || item?.GetItemComponent<KnifeComponent>() != null) return EPhraseTrigger.LootWeapon;
+            return EPhraseTrigger.LootGeneric;
+        }
+
         protected override MethodBase GetTargetMethod()
         {
             return AccessTools.Method(typeof(GesturesQuickPanel), nameof(GesturesQuickPanel.OnPossibleInteractionChangedHandler));
@@ -66,9 +75,10 @@ namespace pitTeam.Patches
                 {
                     // original
                     LootItem? lootItem = player.InteractableObject as LootItem;
-                    bool flag = lootItem != null && lootItem.ItemOwner.RootItem.GetItemComponent<KeyComponent>() != null;
-                    bool flag2 = lootItem != null && lootItem.ItemOwner.RootItem is EFT.InventoryLogic.Money;
-                    bool flag3 = lootItem != null && (lootItem.ItemOwner.RootItem is Weapon || lootItem.ItemOwner.RootItem.GetItemComponent<KnifeComponent>() != null);
+                    EPhraseTrigger lootPhrase = GetLootItemPhrase(lootItem);
+                    bool flag = lootItem != null && lootPhrase == EPhraseTrigger.LootKey;
+                    bool flag2 = lootItem != null && lootPhrase == EPhraseTrigger.LootMoney;
+                    bool flag3 = lootItem != null && lootPhrase == EPhraseTrigger.LootWeapon;
                     Corpse? corpse = player.InteractableObject as Corpse;
                     LootableContainer? lootContainer = player.InteractableObject as LootableContainer;
                     bool canLootContainer = lootContainer != null &&

@@ -24,12 +24,21 @@ namespace pitTeam.Patches
             try
             {
                 if (__result?.Actions == null || !CanShow(owner, interactive)) return;
-                bool hasWeapon = HasWeapon(interactive as Corpse);
-                Add(FollowerLootMode.Normal, "LootActionThis");
-                if (hasWeapon) Add(FollowerLootMode.LootAndGetWeapon, "LootActionAndWeapon");
-                Add(FollowerLootMode.LootAndGetGear, "LootActionAndGear");
-                if (hasWeapon) Add(FollowerLootMode.GetWeapon, "LootActionWeapon");
-                Add(FollowerLootMode.GetGear, "LootActionGear");
+                if (interactive is Corpse corpse)
+                {
+                    bool hasWeapon = HasWeapon(corpse);
+                    Add(FollowerLootMode.Normal, "LootActionThis");
+                    if (hasWeapon) Add(FollowerLootMode.LootAndGetWeapon, "LootActionAndWeapon");
+                    Add(FollowerLootMode.LootAndGetGear, "LootActionAndGear");
+                    if (hasWeapon) Add(FollowerLootMode.GetWeapon, "LootActionWeapon");
+                    Add(FollowerLootMode.GetGear, "LootActionGear");
+                }
+                else
+                {
+                    Add(FollowerLootMode.Normal, interactive is LootableContainer
+                        ? "LootActionThis"
+                        : "LootActionTakeThis");
+                }
 
                 void Add(FollowerLootMode mode, string key)
                 {
@@ -50,7 +59,15 @@ namespace pitTeam.Patches
         {
             if (owner?.Player?.IsYourPlayer != true || owner.Player.HealthController?.IsAlive != true)
                 return false;
-            if (target is not Corpse) return false;
+            if (target is LootableContainer container)
+            {
+                if (!container.isActiveAndEnabled || container.DoorState == EDoorState.Locked) return false;
+            }
+            else if (target is not Corpse &&
+                (target is not LootItem lootItem || !lootItem.isActiveAndEnabled || lootItem.Item == null))
+            {
+                return false;
+            }
             return BossPlayers.GetBoss(owner.Player.ProfileId)?.Followers
                 .Any(bot => bot != null && !bot.IsDead) == true;
         }
@@ -87,6 +104,7 @@ namespace pitTeam.Patches
             public float NextCheck;
             public bool Visible;
             public bool HasWeapon;
+            public IInteractive? Target;
         }
 
         private static readonly ConditionalWeakTable<ActionPanel, VisibilityState> States = new();
@@ -103,11 +121,14 @@ namespace pitTeam.Patches
                 if (UnityEngine.Time.unscaledTime < state.NextCheck) return;
                 state.NextCheck = UnityEngine.Time.unscaledTime + 0.25f;
                 var owner = OwnerField.GetValue(__instance) as GamePlayerOwner;
-                bool visible = FollowerLootInteractionPatch.CanShow(owner, owner?.Player?.InteractableObject);
-                bool hasWeapon = visible && FollowerLootInteractionPatch.HasWeapon(owner.Player.InteractableObject as Corpse);
-                if (state.Visible == visible && state.HasWeapon == hasWeapon) return;
+                IInteractive? target = owner?.Player?.InteractableObject;
+                bool visible = FollowerLootInteractionPatch.CanShow(owner, target);
+                bool hasWeapon = visible && FollowerLootInteractionPatch.HasWeapon(target as Corpse);
+                if (state.Visible == visible && state.HasWeapon == hasWeapon &&
+                    ReferenceEquals(state.Target, target)) return;
                 state.Visible = visible;
                 state.HasWeapon = hasWeapon;
+                state.Target = target;
                 owner?.InteractionsChangedHandler();
             }
             catch (Exception ex)
