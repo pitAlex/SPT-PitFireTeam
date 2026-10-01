@@ -181,7 +181,7 @@ Commands influence teammate behavior but do not force exact actions. Teammates w
 - **Over There Gesture** - gesture-based contact/attention toward the pointed direction.
 - **Open Door** - the closest eligible teammate opens the targeted door.
 - **Loot This** - the closest eligible teammate picks up the targeted loot item.
-- **Check Him / Loot Body** - the closest eligible saved teammate checks the targeted body. Fallen teammates use the recovery rules, while other bodies use your Looting Settings and the limited gear-swapping rules described below.
+- **Check Him / Loot Body** - the closest eligible saved teammate checks the targeted body. Fallen teammates use the recovery rules, while other bodies use your Looting Settings.
 
 Saved teammates and recruited allies share the basic follower system once they are following you, but saved teammates have the full squad feature set. Saved teammates keep their customization, loadouts, tactics, aggression, progression, backpack access, and post-raid handling. Recruited allies are temporary raid pickups that use the default combat tactic with moderate aggression, rely on their current bot profile and gear, and have a simpler combat command set: they do not use **Need Sniper**, combat **There**, combat **Open Door**, or combat **Go Forward** push orders. If a recruited ally was told **Hold Position** in combat, **Go Forward** only clears that temporary aggression hold.
 
@@ -195,6 +195,7 @@ Looting is currently command-driven. Teammates do not wander away to loot on the
 
 - Look at a loose item and use **Loot This**. Any available follower can collect it if they can reach it and have somewhere suitable to put it.
 - Look at a body and use **Check Him / Loot Body**, or use the loot command while looking at a container. Body and container searches are handled only by saved teammates who spawned into the raid with you.
+- With a living follower, a corpse also offers **CMD: Loot This**, **CMD: Loot & Get Weapon**, **CMD: Loot & Get Gear**, **CMD: Get Weapon**, and **CMD: Get Gear**. The two weapon actions appear only when the corpse has a gun. The `Loot &` actions prioritize that category and then continue normal looting; `Get` takes only that category for this request.
 - The closest available teammate by walking route, within roughly 22 meters, takes the job. A teammate who is fighting or already carrying out another loot order is skipped.
 - Different teammates can search different targets when you issue several orders quickly. A target already being handled cannot be assigned to a second teammate.
 
@@ -221,17 +222,17 @@ When **Pickup Gear** is enabled, a helmet, armor vest, armored rig, or tactical 
 
 **Weapons and gear:**
 
-**Allow Gear Swapping** enables the current weapon-readiness system. Despite the setting name, it is currently focused mainly on filling missing weapon slots safely; it does not yet compare every found weapon, armor, helmet, or rig against a teammate's complete loadout.
+There is no separate empty-slot toggle. **Pickup Weapons**, **CMD: Get Weapon**, or **CMD: Loot & Get Weapon** enables weapon acquisition into available slots, subject to weapon readiness. The matching gear setting or command enables existing empty-vest acquisition. Occupied equipment is never replaced. Equipment replacement is outside core; a future optional addon may integrate that behavior from other mods.
 
 - A teammate with no primary weapon checks the weapon, its magazines, and available ammunition before deciding whether it is ready for combat.
 - A usable weapon becomes the active primary on the right shoulder. The weapon-specific voice response tells you that the teammate intends to fight with it.
 - An under-supplied weapon may be kept on the left shoulder or in the backpack while the teammate waits for compatible magazines or ammunition. A later loot order can make that weapon ready.
 - Detachable magazines must fit in the tactical rig or pockets before the bot can rely on them. Magazines left in a backpack are cargo and are not used by the game's normal bot reload behavior. Leave enough suitable rig space if you want a found weapon to become dependable.
-- A teammate who already has a working primary may add a usable long gun to an empty secondary slot or a usable pistol to an empty holster when **Pickup Weapons** allows it. Looting never replaces an occupied secondary weapon or holster.
+- A teammate who already has a working primary may add a usable long gun to an empty secondary slot or a usable pistol to an empty holster when **Pickup Weapons** or the current weapon command allows it. Looting never replaces an occupied secondary weapon or holster.
 - Later body and container searches maintain the working primary first, followed by the second long gun and holstered pistol. Teammates can collect compatible loaded magazines and useful loose ammunition, top off eligible magazines, and feed internal-magazine or chamber-fed weapons.
 - The primary stays selected while support weapons remain in their existing slots. Ammo that is redundant or significantly worse can be left behind, fast-access pickups preserve reload space, and overflow magazines remain at the source.
 - Grenade launchers prefer the secondary slot when a conventional primary weapon is available.
-- Tactical-vest changes are currently limited to filling an empty slot or making a narrow protection upgrade in Immersive and Realistic. Broad armor and equipment optimization is planned for a later phase.
+- A tactical vest may fill an empty compatible slot. An already-equipped vest is retained in every loadout mode.
 
 You can inspect a teammate's backpack while out of combat using the lower-left interaction prompt. Items placed there manually remain ordinary cargo. To have a weapon or magazine reconsidered for combat use, take it back out and order the teammate to use **Loot This** on it.
 

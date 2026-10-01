@@ -18,10 +18,10 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 |---|---|
 | [Combat tactics](Combat-Tactics.md) | Core Rifleman/Marksman decisions, cover, push, healing, regroup and recording |
 | [Commands](Commands.md) | Shared inputs, peaceful execution, core combat orders and status rendering |
-| [Looting](looting/Looting.md) | Commanded loot, filters, gear swaps, ownership and return bookkeeping |
-| [Primary weapon pickup](Weapon-Pickup-Primary-Slot-Available.md) | Readiness/placement contract and recorded qualification matrix |
-| [Secondary weapon support](Weapon-Pickup-Secondary-Slot.md) | Ammo/magazine maintenance and outstanding verification |
-| [Holster support](Weapon-Pickup-Holster-Slot.md) | Shared support planner and pistol qualification |
+| [Looting](looting/Looting.md) | Commanded loot, filters, ownership and return bookkeeping |
+| [Primary weapon pickup](looting/Weapon-Pickup-Primary-Slot-Available.md) | Primary readiness, empty-slot acquisition and qualification matrix |
+| [Secondary weapon support](looting/Weapon-Pickup-Secondary-Slot.md) | Secondary acquisition, ammunition maintenance and qualification |
+| [Holster support](looting/Weapon-Pickup-Holster-Slot.md) | Shared support planner and pistol qualification |
 | [Suppression](Suppression.md) | Core player-facing suppression guide |
 | [Team Escape](Team-Escape.md) | Escape rolls, recovery, results and notifications |
 
@@ -43,6 +43,6 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 
 ## Maintenance
 
-Keep current contracts, source evidence and planned behavior distinct. Completed phase-one/rework handoffs and repeated release diaries have been consolidated into the addon topics; Git retains their history. Detailed weapon-pickup contracts and test matrices remain useful, while their completed session progress log has been removed. Existing local deletions and unrelated code changes are outside this reorganization.
+Keep current contracts, source evidence and planned behavior distinct. Existing empty-slot pickup, ammunition support and qualification ledgers remain current. Abandoned occupied-equipment replacement proposals are removed; Git retains their history.
 
 [AGENTS.md](../AGENTS.md) contains engineering rules; [LOCAL.md](../LOCAL.md) contains machine-local paths. Public feature copy stays in [ModDescription.md](../ModDescription.md).

@@ -20,6 +20,17 @@ if ($LASTEXITCODE -ne 0) { throw 'Loot fixture compilation failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Loot request fixture failed' }
 
 # These are source-boundary checks, not a substitute for inventory/Unity raid qualification.
+$plugin = Get-Content -Raw (Join-Path $RepositoryRoot 'client/friendlyPlugin.cs')
+if ($plugin -match 'lootAllowGearSwapping|IsLootGearSwappingEnabled') { throw 'Obsolete equipment toggle remains active' }
+$requestPolicy = Get-Content -Raw (Join-Path $RepositoryRoot 'client/BigBrain/Actions/GestureCommandAction.LootRequest.cs')
+if ($requestPolicy -notmatch 'ActiveLootRequest\?\.EnablesWeaponPickup' -or
+    $requestPolicy -notmatch 'ActiveLootRequest\?\.EnablesGearPickup') { throw 'Acquisition must use category/request policy' }
+$gearPlanner = Get-Content -Raw (Join-Path $RepositoryRoot 'client/BigBrain/Actions/GestureCommandAction.GearSwapping.cs')
+if ($gearPlanner -notmatch '(?s)private bool TryBuildEasyWeaponEquipMove\(.*?if \(!IsRequestedWeaponPickupEnabled\(\)' -or
+    $gearPlanner -notmatch '(?s)private bool TryBuildTacticalVestEquipMove\(.*?if \(!IsRequestedGearPickupEnabled\(\)') {
+    throw 'Missing category acquisition gate'
+}
+if ($gearPlanner -match 'CanReplaceOccupiedGearSlot|TacticalVest.PreserveOld') { throw 'Occupied vest replacement must remain disabled' }
 $follower = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Components/BotFollowerPlayer.cs')
 if ($follower -notmatch '(?s)public void ClearCommand\(.*?LootRequest = new FollowerLootRequest\(\)') { throw 'Missing command cleanup' }
 foreach ($completion in @('CompleteTakeBodyGear', 'CompleteTakeContainerLoot')) {

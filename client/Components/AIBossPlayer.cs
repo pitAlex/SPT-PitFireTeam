@@ -2480,6 +2480,9 @@ namespace pitTeam.Components
             float bestNavDistance = float.MaxValue;
             float gearFallbackNavDistance = float.MaxValue;
             NavMeshPath navMeshPath = new NavMeshPath();
+            var lootRequest = new FollowerLootRequest(mode);
+            bool canAcquireEquipment = lootRequest.EnablesWeaponPickup(pitFireTeam.IsLootWeaponPickupEnabled()) ||
+                lootRequest.EnablesGearPickup(pitFireTeam.lootFilterGear?.Value ?? true);
 
             foreach (BotOwner follower in Followers)
             {
@@ -2551,12 +2554,10 @@ namespace pitTeam.Components
                     follower.GetPlayer?.InventoryController?.Inventory?.Equipment);
                 if (freeArea <= 0)
                 {
-                    // General body/container cargo is limited to backpack and pockets. Gear-enabled
+                    // General body/container cargo is limited to backpack and pockets. Category-enabled
                     // looting can still produce a valid move with empty weapon slots or vest space,
                     // so retain the closest such follower only as a fallback for the real planner.
-                    if ((pitFireTeam.IsLootGearSwappingEnabled() ||
-                         mode == FollowerLootMode.GetWeapon || mode == FollowerLootMode.LootAndGetWeapon) &&
-                        navDistance < gearFallbackNavDistance)
+                    if (canAcquireEquipment && navDistance < gearFallbackNavDistance)
                     {
                         LogLootCandidate(
                             command,

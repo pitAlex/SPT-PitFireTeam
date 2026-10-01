@@ -6,8 +6,7 @@ Phase 1 is implemented for adding a pistol to an empty holster. The follower mus
 
 - a working weapon in `FirstPrimaryWeapon`
 - an empty `Holster`
-- `Allow Gear Swapping` enabled
-- `Pickup Weapons` enabled
+- `Pickup Weapons` enabled or a one-shot weapon request
 
 The candidate must be a pistol or a pistol-class revolver. An occupied holster
 is never replaced.
@@ -57,5 +56,4 @@ the largest shared reload landing opening required by the equipped weapons.
 ## Deferred
 
 - choosing which support weapon receives shared compatible ammunition
-- holster replacement or pistol comparison
 - revolver cylinder cases not handled by the shared internal-feed path

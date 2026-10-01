@@ -34,6 +34,12 @@ internal static class LootRequestFixture
                     Check(request.CategoryOnly == restricted, "category phase");
                     Check(request.AllowsWeaponWork == (!restricted || weapon), "weapon maintenance gate");
                     Check(request.AllowsGearWork == (!restricted || gear), "gear planner gate");
+                    Check(request.EnablesWeaponPickup((settings & 8) != 0) ==
+                        ((!restricted || weapon) && (weapon || (settings & 8) != 0)),
+                        "weapon acquisition uses request or pickup setting without a second toggle");
+                    Check(request.EnablesGearPickup((settings & 16) != 0) ==
+                        ((!restricted || gear) && (gear || (settings & 16) != 0)),
+                        "gear acquisition uses its own category request or pickup setting");
                     for (int i = 0; i < items.Length; i++)
                     {
                         bool selected = (weapon && categories[i] == 3) || (gear && categories[i] == 4);

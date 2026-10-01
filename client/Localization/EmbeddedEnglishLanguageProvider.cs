@@ -111,9 +111,6 @@ namespace pitTeam.Localization
                 lootFilterGear = Entry(
                     "Pickup Gear",
                     "Allow helmets, body armor, armored rigs, and tactical rigs to be taken from bodies and containers."),
-                lootAllowGearSwapping = Entry(
-                    "Allow Gear Swapping",
-                    "Allow followers to equip eligible gear while looting. Restricted only adds into empty slots and returns that gear as cargo; Immersive and Realistic may also swap eligible gear into the teammate kit."),
                 memberTactic = Entry(
                     "Squad Member {0} Tactic",
                     "Set Squad member fight tactic."),

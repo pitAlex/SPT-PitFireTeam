@@ -28,7 +28,7 @@ namespace pitTeam.BigBrain.Actions
             InventoryEquipment followerEquipment,
             bool requirePrimaryCue = false)
         {
-            if (!pitFireTeam.IsLootGearSwappingEnabled())
+            if (!IsRequestedWeaponPickupEnabled())
             {
                 return false;
             }
@@ -129,7 +129,7 @@ namespace pitTeam.BigBrain.Actions
             InventoryEquipment corpseEquipment,
             InventoryEquipment followerEquipment)
         {
-            if (!pitFireTeam.IsLootGearSwappingEnabled())
+            if (!IsRequestedGearPickupEnabled())
             {
                 return false;
             }
@@ -143,7 +143,7 @@ namespace pitTeam.BigBrain.Actions
             BodyGearCandidate cargoCandidate = new BodyGearCandidate(
                 vest,
                 EquipmentSlot.TacticalVest,
-                "TacticalVest.EquipmentUpgrade",
+                "TacticalVest.EmptySlot",
                 2);
             BodyGearCandidate swapCandidate = CreateGearSwapCandidate(cargoCandidate);
             if (!CanConsiderFilteredLootCandidate(swapCandidate, bodyLootAttemptedItemIds) ||
@@ -168,22 +168,6 @@ namespace pitTeam.BigBrain.Actions
                 return true;
             }
 
-            // If the found vest is a real protection upgrade but cannot be safely equipped without
-            // disturbing current rig contents, treat it as cargo instead of throwing the old vest.
-            if (CanConsiderFilteredLootCandidate(cargoCandidate, bodyLootAttemptedItemIds) &&
-                IsPotentialTacticalVestProtectionUpgrade(followerEquipment, vest) &&
-                TryBuildFilteredLootMove(inventory, followerEquipment, corpseEquipment, cargoCandidate, null, null, out BodyGearMove? cargoMove))
-            {
-                bodyLootAttemptedItemIds.Add(cargoCandidate.Item.Id);
-                if (TryQueueBodyLootMoveAfterPickupSuccess(cargoMove))
-                {
-                    return true;
-                }
-
-                StartBodyGearMove(inventory, cargoMove);
-                return true;
-            }
-
             return false;
         }
 
@@ -193,7 +177,7 @@ namespace pitTeam.BigBrain.Actions
             InventoryEquipment followerEquipment,
             bool requirePrimaryCue = false)
         {
-            if (!pitFireTeam.IsLootGearSwappingEnabled())
+            if (!IsRequestedWeaponPickupEnabled())
             {
                 return false;
             }
@@ -363,7 +347,7 @@ namespace pitTeam.BigBrain.Actions
             Weapon supportWeapon = followerEquipment
                 ?.GetSlot(EquipmentSlot.SecondPrimaryWeapon)
                 ?.ContainedItem as Weapon;
-            if (!pitFireTeam.IsLootGearSwappingEnabled() ||
+            if (!IsRequestedWeaponPickupEnabled() ||
                 inventory == null ||
                 followerEquipment == null ||
                 sourceRoot == null ||
@@ -595,7 +579,7 @@ namespace pitTeam.BigBrain.Actions
             out BodyGearMove? move)
         {
             move = null;
-            if (!pitFireTeam.IsLootGearSwappingEnabled() ||
+            if (!IsRequestedWeaponPickupEnabled() ||
                 inventory == null ||
                 followerEquipment == null ||
                 sourceRoot == null ||
@@ -780,7 +764,7 @@ namespace pitTeam.BigBrain.Actions
             EFT.InventoryLogic.SearchableItem containerRoot,
             InventoryEquipment followerEquipment)
         {
-            if (!pitFireTeam.IsLootGearSwappingEnabled())
+            if (!IsRequestedGearPickupEnabled())
             {
                 return false;
             }
@@ -1002,8 +986,8 @@ namespace pitTeam.BigBrain.Actions
         private static BodyGearCandidate CreateGearSwapCandidate(BodyGearCandidate candidate)
         {
             // Let the equipment planner inspect this tree without ordinary cargo price/category
-            // filters. Weapon policy separately reapplies Pickup Weapons to an optional support add;
-            // missing-primary acquisition and future true primary swaps remain equipment decisions.
+            // filters after the matching pickup category or one-shot request authorizes acquisition.
+            // Only empty equipment slots are eligible.
             // Protection checks and executable inventory placement still apply downstream.
             return new BodyGearCandidate(
                 item: candidate.Item,
@@ -1025,37 +1009,14 @@ namespace pitTeam.BigBrain.Actions
             out BodyGearMove? move)
         {
             move = null;
-            if (!pitFireTeam.IsLootGearSwappingEnabled() ||
-                candidate?.Item is not EFT.InventoryLogic.Vest foundVest)
+            if (!IsRequestedGearPickupEnabled() ||
+                candidate?.Item is not EFT.InventoryLogic.Vest)
             {
                 return false;
             }
 
-            if (TryBuildTacticalVestEquipIntoEmptySlot(inventory, followerEquipment, candidate, out move))
-            {
-                return true;
-            }
-
-            if (!CanReplaceOccupiedGearSlot())
-            {
-                return false;
-            }
-
-            Item currentVest = followerEquipment?.GetSlot(EquipmentSlot.TacticalVest)?.ContainedItem;
-            if (!IsSafeTacticalVestSwapCandidate(followerEquipment, currentVest, foundVest) ||
-                !TryFindBackpackAddressForItem(followerEquipment, currentVest, out ItemAddress? preserveAddress) ||
-                !TryCreateBodyGearMove(
-                    inventory,
-                    new BodyGearCandidate(currentVest, EquipmentSlot.TacticalVest, "TacticalVest.PreserveOld", 0, reportAsLootNothing: true),
-                    preserveAddress,
-                    out BodyGearMove? preserveMove,
-                    storeAsLoot: false))
-            {
-                return false;
-            }
-
-            move = preserveMove.WithFollowUps(new[] { candidate });
-            return true;
+            // Acquisition may fill a vacant slot; equipped gear is never displaced.
+            return TryBuildTacticalVestEquipIntoEmptySlot(inventory, followerEquipment, candidate, out move);
         }
 
         private bool TryBuildTacticalVestEquipIntoEmptySlot(
@@ -1067,67 +1028,6 @@ namespace pitTeam.BigBrain.Actions
             move = null;
             return TryFindEquipmentSlotAddress(followerEquipment, EquipmentSlot.TacticalVest, candidate.Item, out ItemAddress? vestAddress) &&
                    TryCreateBodyGearMove(inventory, candidate, vestAddress, out move, storeAsLoot: ShouldReturnGearSwapAsCargo());
-        }
-
-        private static bool IsSafeTacticalVestSwapCandidate(InventoryEquipment followerEquipment, Item currentVest, Item foundVest)
-        {
-            if (followerEquipment == null ||
-                currentVest == null ||
-                foundVest == null ||
-                HasOperationalTacticalVestContents(currentVest))
-            {
-                return false;
-            }
-
-            return IsPotentialTacticalVestProtectionUpgrade(followerEquipment, foundVest);
-        }
-
-        private static bool IsPotentialTacticalVestProtectionUpgrade(InventoryEquipment followerEquipment, Item foundVest)
-        {
-            if (followerEquipment == null ||
-                foundVest == null ||
-                !TryGetTacticalVestProtectionScore(foundVest, out float foundScore))
-            {
-                return false;
-            }
-
-            Item armorVest = followerEquipment.GetSlot(EquipmentSlot.ArmorVest)?.ContainedItem;
-            Item currentVest = followerEquipment.GetSlot(EquipmentSlot.TacticalVest)?.ContainedItem;
-            bool currentProtected = TryGetTacticalVestProtectionScore(currentVest, out float currentScore);
-            if (!currentProtected && armorVest == null)
-            {
-                return true;
-            }
-
-            return currentProtected && foundScore > currentScore + 25f;
-        }
-
-        private static bool HasOperationalTacticalVestContents(Item vest)
-        {
-            return GetDirectLootChildren(vest).Any(item => item is not EFT.InventoryLogic.ArmorPlate);
-        }
-
-        private static bool TryGetTacticalVestProtectionScore(Item vest, out float score)
-        {
-            score = 0f;
-            if (vest == null)
-            {
-                return false;
-            }
-
-            foreach (ArmorComponent armor in vest.GetItemComponentsInChildren<ArmorComponent>(true))
-            {
-                RepairableComponent repairable = armor?.Repairable;
-                if (repairable == null || repairable.TemplateDurability <= 0 || repairable.Durability <= 1f)
-                {
-                    continue;
-                }
-
-                float durabilityRatio = Mathf.Clamp01(repairable.Durability / repairable.TemplateDurability);
-                score = Mathf.Max(score, armor.ArmorClass * 100f + durabilityRatio * 100f);
-            }
-
-            return score > 0f;
         }
 
         private bool TryBuildEasyWeaponEquipMove(
@@ -1142,7 +1042,7 @@ namespace pitTeam.BigBrain.Actions
         {
             move = null;
             handledByGearPolicy = false;
-            if (!pitFireTeam.IsLootGearSwappingEnabled() ||
+            if (!IsRequestedWeaponPickupEnabled() ||
                 candidate?.Item is not Weapon weapon ||
                 !IsEasyWeaponEquipCandidate(candidate))
             {
@@ -1152,6 +1052,7 @@ namespace pitTeam.BigBrain.Actions
             Weapon equippedPrimary = followerEquipment
                 ?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)
                 ?.ContainedItem as Weapon;
+            bool primaryOccupied = equippedPrimary != null;
             if (FollowerCombatCommon.IsGrenadeLauncherWeapon(weapon) &&
                 equippedPrimary != null &&
                 !FollowerCombatCommon.IsGrenadeLauncherWeapon(equippedPrimary) &&
@@ -1164,21 +1065,6 @@ namespace pitTeam.BigBrain.Actions
                     candidate,
                     operationalAmmoCandidates,
                     out move);
-            }
-
-            bool primaryOccupied = followerEquipment
-                ?.GetSlot(EquipmentSlot.FirstPrimaryWeapon)
-                ?.ContainedItem is Weapon;
-            if (primaryOccupied && !IsRequestedWeaponPickupEnabled())
-            {
-                // The current occupied-primary phase can only add a support weapon. A future
-                // better-primary comparison must run before this support-only gate; until then,
-                // Pickup Weapons remains authoritative even when second primary is empty.
-                Modules.Logger.LogInfo(
-                    $"[LootCommand][Readiness] follower='{BotOwner?.Profile?.Nickname ?? BotOwner?.ProfileId ?? "unknown"}' " +
-                    $"weapon={DescribeLootDebugItem(weapon)} evaluation=secondaryAddRejected " +
-                    $"destination=Source decisionReason=pickupGearDisabled");
-                return false;
             }
 
             if (FollowerWeaponLooseFeedReadiness.IsSupported(weapon))
@@ -1224,8 +1110,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            // The current primary phase only fills an empty slot. Replacing an existing primary is
-            // deferred because vanilla bot weapon/reload state is cached beyond the physical item.
+            // Primary acquisition only fills an empty slot. Existing primaries are retained.
             if (!TryFindEquipmentSlotAddress(followerEquipment, EquipmentSlot.FirstPrimaryWeapon, weapon, out _))
             {
                 return false;
@@ -3106,13 +2991,6 @@ namespace pitTeam.BigBrain.Actions
             // like normal follower cargo. Immersive/Realistic leave them untracked so the escaped
             // teammate's live equipment snapshot can persist the new kit.
             return !pitFireTeam.IsFollowerLoadoutLootableMode();
-        }
-
-        private static bool CanReplaceOccupiedGearSlot()
-        {
-            // Restricted can add into empty equipment slots, but cannot replace spawned kit.
-            // Actual occupied-slot swapping is reserved for the lootable Immersive/Realistic modes.
-            return pitFireTeam.IsFollowerLoadoutLootableMode();
         }
     }
 }

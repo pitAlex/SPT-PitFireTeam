@@ -19,6 +19,8 @@ namespace pitTeam.Modules
         public bool CategoryOnly => PriorityPending || Mode == FollowerLootMode.GetWeapon || Mode == FollowerLootMode.GetGear;
         public bool AllowsWeaponWork => !CategoryOnly || WantsWeapons;
         public bool AllowsGearWork => !CategoryOnly || WantsGear;
+        public bool EnablesWeaponPickup(bool configured) => AllowsWeaponWork && (WantsWeapons || configured);
+        public bool EnablesGearPickup(bool configured) => AllowsGearWork && (WantsGear || configured);
         public bool WeaponSelectionInitialized { get; private set; }
         public bool SelectiveWeapons { get; private set; }
         public string SelectedLongGunId { get; private set; }

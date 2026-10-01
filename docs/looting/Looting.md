@@ -13,7 +13,7 @@ It covers:
 - container looting from `LootContainer`
 - the `Looting Settings` price and category filters
 - tracked follower-loot bookkeeping and post-raid implications
-- gear-swapping phase 1 constraints
+- empty-slot acquisition and weapon-readiness rules
 
 It does not cover:
 
@@ -52,7 +52,7 @@ Related summaries:
 
 `Tracked follower loot` means follower loot registered through `InteractableObjects.StoreItem(...)`. Tracked loot is eligible for the mod's return/recovery flows when the owning squadmate survives the relevant flow.
 
-`Equipped gear loot` means loot moved into an equipment slot as part of `Allow Gear Swapping`. In `Restricted`, this is add-only: empty slots may be filled, but occupied gear slots are not replaced, and added gear is tracked so it returns as cargo. In `Immersive` and `Realistic`, eligible equipped gear is not tracked as return cargo so an escaped teammate can keep it in the saved kit snapshot.
+`Equipped gear loot` means loot moved into an equipment slot as part of category-authorized empty-slot acquisition. In every mode, this is add-only: empty slots may be filled, but occupied gear slots are not replaced. In `Restricted`, added gear is tracked so it returns as cargo. In `Immersive` and `Realistic`, eligible equipped gear is not tracked as return cargo so an escaped teammate can keep it in the saved kit snapshot.
 
 `Protected teammate gear` means saved teammate equipment that should not become free player gear under `Restricted` loadout management. Protected gear cleanup is owned by the loadout-management and escape/recovery systems, not by the looting planner alone.
 
@@ -72,7 +72,7 @@ Once body/container searching begins, normal replacement commands are ignored un
 
 ## Loot action menu
 
-The native center-screen interaction menu appends follower actions when the local player has at least one living follower. On corpses, Loot This and both gear actions always appear, while the two weapon actions appear only while the corpse inventory contains a weapon (including carried guns, excluding knives). Active unlocked containers offer only **CMD: Loot This**, using normal container looting and saved filters. Loose items, including weapons, offer only **CMD: Take This**, using existing direct-item pickup. Upgrade-based Get Weapon on loose weapons remains proposed and is not part of this menu implementation. Vanilla player interactions and existing quick commands remain available. Visibility refreshes when the target, follower availability, container state, or corpse weapon availability changes. Assignment retains existing follower eligibility, combat, reservation, and reachable-distance checks.
+The native center-screen interaction menu appends follower actions when the local player has at least one living follower. On corpses, Loot This and both gear actions always appear, while the two weapon actions appear only while the corpse inventory contains a weapon (including carried guns, excluding knives). Active unlocked containers offer only **CMD: Loot This**, using normal container looting and saved filters. Loose items, including weapons, offer only **CMD: Take This**, using existing direct-item pickup. Upgrade-based Get Weapon is not planned for core; these commands do not replace equipped gear. Vanilla player interactions and existing quick commands remain available. Visibility refreshes when the target, follower availability, container state, or corpse weapon availability changes. Assignment retains existing follower eligibility, combat, reservation, and reachable-distance checks.
 
 All labels have a `CMD:` prefix to distinguish follower commands from player interactions. Every corpse mode uses the player `CheckHim` voice; containers use `LootContainer`, and loose items use the same key/money/weapon/generic phrase as the existing quick panel. The synchronous player phrase event dispatches the captured target and selected mode exactly once; its temporary routing context clears in `finally`, without changing later quick-menu phrases.
 
@@ -82,11 +82,11 @@ All labels have a `CMD:` prefix to distinguish follower commands from player int
 - **Get Weapon** enables only the weapon category for this request.
 - **Get Gear** enables only the gear category for this request; weapon/ammunition maintenance is skipped.
 
-Category-only requests also exclude food, medicine, valuables and dogtags. Categories retain the existing whole-tree definitions, including weapon supplies and gear contents. Priority defers other categories without marking them rejected. Completed, interrupted, expired or replaced requests discard their override; saved settings and other followers are unaffected. Price, protected equipment, gear-swap permission, readiness and placement rules still apply. Explicit weapon requests can evaluate empty weapon slots even when ordinary cargo space is full.
+Category-only requests also exclude food, medicine, valuables and dogtags. Categories retain the existing whole-tree definitions, including weapon supplies and gear contents. Priority defers other categories without marking them rejected. Completed, interrupted, expired or replaced requests discard their override; saved settings and other followers are unaffected. Price, protected equipment, empty-slot acquisition permission, readiness and placement rules still apply. Explicit weapon requests can evaluate empty weapon slots even when ordinary cargo space is full.
 
 Normal teammate-corpse recovery is unchanged. The four specialized actions use filtered looting on teammate corpses too, while retaining protected-equipment exclusion.
 
-When saved **Pickup Weapons** is off, **Loot & Get Weapon** and **Get Weapon** use a selective, request-owned choice: the corpse's first-primary gun, or its second-primary gun only when the first is absent, plus its holster pistol only when the follower's holster was empty at search start. The choice stays fixed across transactions and the normal-loot phase; it does not advance to another gun after pickup. Guns carried in the corpse's bags are not extra selections. If both follower shoulder slots are occupied, the selected long gun is backpack cargo with its existing attachments/inserted magazine only, without additional source magazines or ammunition. Equipped selections retain the normal usable-package and reload-space rules. The override does not authorize unrelated weapon supplies, attachments or maintenance of other guns. Saved Pickup Weapons on retains the ordinary broad weapon-looting policy. Gear-swap permission, readiness, price, protection and capacity checks still apply.
+When saved **Pickup Weapons** is off, **Loot & Get Weapon** and **Get Weapon** use a selective, request-owned choice: the corpse's first-primary gun, or its second-primary gun only when the first is absent, plus its holster pistol only when the follower's holster was empty at search start. The choice stays fixed across transactions and the normal-loot phase; it does not advance to another gun after pickup. Guns carried in the corpse's bags are not extra selections. If both follower shoulder slots are occupied, the selected long gun is backpack cargo with its existing attachments/inserted magazine only, without additional source magazines or ammunition. Equipped selections retain the normal usable-package and reload-space rules. The override does not authorize unrelated weapon supplies, attachments or maintenance of other guns. Saved Pickup Weapons on retains the ordinary broad weapon-looting policy. Empty-slot acquisition permission, readiness, price, protection and capacity checks still apply.
 
 ## Loose Item Pickup
 
@@ -103,7 +103,7 @@ Current behavior:
 - sets `FollowerCommandType.TakeLootItem` for 35 seconds
 - moves to the item, checks inventory destination, and runs one pickup transaction
 - keeps EFT's normal destination selection for non-weapons and pistols
-- evaluates commanded loose long guns with the same primary-readiness model, independently of `Allow Gear Swapping`
+- evaluates commanded loose long guns with the same primary-readiness model, independently of saved pickup filters
 - sends a primary-ready long gun to an empty `FirstPrimaryWeapon` slot
 - sends an under-ready long gun to empty `SecondPrimaryWeapon`, then backpack cargo
 - if support and backpack are unavailable while first primary is empty, permits a last-resort first-primary placement only when the inserted magazine has at least half of the smaller of its capacity and the weapon's ordinary magazine reference
@@ -127,7 +127,7 @@ Current assignment:
 - only saved teammates spawned through the raid squad flow can be assigned; recruited/picked-up followers are ignored even if they are otherwise squad-managed
 - teammate corpses choose the eligible squadmate with the shortest complete NavMesh path
 - non-teammate corpses prefer the eligible loot carrier within a 22m complete NavMesh path that has free backpack/pocket grid area
-- when no follower in range has ordinary cargo room and `Allow Gear Swapping` is enabled, assignment falls back to the reachable eligible follower with the shortest path so the real planner can still use an empty weapon slot or operational vest space
+- when no follower in range has ordinary cargo room and weapon or gear acquisition is enabled by the matching pickup setting or request, assignment falls back to the reachable eligible follower with the shortest path so the real planner can still use an empty weapon slot or operational vest space
 - ownership is reserved through `InteractableObjects.SetBodyLootTaker(...)`
 - an explicit player `Check Him` / `Loot Body` order may revisit a corpse that a follower already completed
 - checked-body history is retained for autonomous `Go loot` selection, which skips completed corpses
@@ -215,7 +215,7 @@ Current assignment:
 - only saved teammates spawned through the raid squad flow can be assigned; recruited/picked-up followers are ignored even if they are otherwise squad-managed
 - locked or inactive containers are ignored
 - prefers the eligible loot carrier within a 22m complete NavMesh path that has free backpack/pocket grid area
-- when no follower in range has ordinary cargo room and `Allow Gear Swapping` is enabled, assignment falls back to the reachable eligible follower with the shortest path so the real planner can still use an empty weapon slot or operational vest space
+- when no follower in range has ordinary cargo room and weapon or gear acquisition is enabled by the matching pickup setting or request, assignment falls back to the reachable eligible follower with the shortest path so the real planner can still use an empty weapon slot or operational vest space
 - ownership is reserved through `InteractableObjects.SetContainerLootTaker(...)`
 - command timeout is 75 seconds
 
@@ -259,9 +259,8 @@ Category controls:
 - `Pickup Valuables`
 - `Pickup Weapons`
 - `Pickup Gear`
-- `Allow Gear Swapping`
 
-The five pickup category checkboxes default on. `Allow Gear Swapping` defaults off.
+The five pickup category checkboxes default on. There is no separate equipment-acquisition toggle.
 
 Category mapping:
 
@@ -273,11 +272,11 @@ Category mapping:
 
 Whole wearable trees are considered before their contents. A qualifying helmet moves with all installed devices. A qualifying armor vest, armored rig, or tactical rig moves with installed plates and carried contents. If armor or a rig cannot be taken as a whole, eligible contents are considered separately. An installed plate is eligible only through this fallback, only when `Pickup Gear` is enabled, only when it passes price, and only when current durability is at least 50 percent of current maximum durability. Loose plates remain excluded.
 
-`Allow Gear Swapping` defaults off. It is the explicit gate for gear equip/swap behavior in every loadout mode; post-raid ownership follows the active loadout management mode.
+Empty-slot acquisition has no separate toggle. The obsolete `10 LootAllowGearSwapping` value is no longer read or bound. Post-raid ownership still follows the active loadout management mode.
 
-`Pickup Weapons` controls ordinary weapon cargo and optional weapon additions beyond the combat primary. With `Allow Gear Swapping` enabled, acquiring a missing primary and future accepted better-primary swaps remain independent of `Pickup Weapons` and min/max price. Adding a weapon to second primary or holster requires `Pickup Weapons`; any ordinary weapon cargo fallback also requires `Pickup Weapons` and must pass min/max price.
+`Pickup Weapons` enables ordinary weapon cargo, empty-primary acquisition and optional secondary/holster additions. `CMD: Get Weapon` and `CMD: Loot & Get Weapon` enable that same acquisition policy for their request even when the saved checkbox is off, retaining the selective-weapon rules above. Missing-primary equipment plans retain their price bypass; ordinary weapon cargo still passes min/max price. Occupied slots are never replaced.
 
-`Pickup Gear` controls wearable cargo independently of `Pickup Weapons`. It does not authorize an equip or replacement by itself. Implemented equipment plans remain gated by `Allow Gear Swapping` and retain their protection, loadout-mode, and executable-placement checks.
+`Pickup Gear` or the matching one-request gear command enables existing empty-vest acquisition as well as wearable cargo. Other readiness, protection, loadout-mode and executable-placement checks remain unchanged.
 
 ## Price Checks
 
@@ -329,7 +328,7 @@ Equipped gear moves use a mode-specific rule:
 
 - `Restricted`: only add into empty equipment slots, then store the added loot through `StoreItem(...)` so the weapon and supporting magazines return by mail like normal cargo.
 - The seated magazine is also retained as a fallback tracked root. If combat reload ejects it from the tracked weapon tree, it remains temporary cargo instead of leaking into the teammate's persisted kit; while it stays seated, return-root ancestor checks prevent duplicate delivery.
-- `Immersive` and `Realistic`: allow the implemented occupied-slot swap cases and do not store equipped loot as return cargo, so the escaped teammate's live equipment snapshot can keep it as the new kit.
+- `Immersive` and `Realistic`: fill only empty equipment slots and do not store equipped loot as return cargo, so the escaped teammate's live equipment snapshot can keep it as the new kit.
 
 Weapon trees are also registered through `RegisterLootedWeaponTree(...)` so patrol reload maintenance can treat picked-up weapons as carried loot and avoid wasting spawned magazines on them.
 
@@ -341,7 +340,7 @@ Tracked follower loot is not the same thing as protected teammate gear:
 - protected teammate gear belongs to the loadout-management/extraction cleanup flow
 - an item tree can pass through real inventory space, so code touching loot movement must keep physical inventory state and tracking caches aligned
 
-Any future gear-swap implementation must update both physical item state and bookkeeping together.
+Optional external replacement integrations must preserve physical item state and bookkeeping together; core does not implement occupied-equipment replacement.
 
 ## Reference Behavior
 
@@ -376,28 +375,25 @@ LootingBots uses a richer policy layer:
 
 This is useful as a reference but does not match pitFireTeam's current constraints. pitFireTeam should keep whole-tree handling and should not inherit weapon stripping, plate stripping, or broad throw-first gear replacement.
 
-## Gear Swapping Phase 1 Contract
+## Empty-Slot Acquisition Contract
 
-Gear swapping is partially live. This section records the implemented slices and the remaining constraints for later swap work.
-
-Gear swapping phase 1 starts with easy weapon opportunities and a narrow tactical-vest protection swap. Primary weapon replacement is intentionally deferred because vanilla bot weapon state is cached beyond the physical inventory slots.
+Existing acquisition, readiness, promotion into an empty primary slot, and ammunition maintenance remain supported. Core never replaces an occupied equipment slot. Primary, helmet, armor, vest and backpack replacement plans are cancelled; a future optional addon may integrate other mods' replacement behavior.
 
 General rules:
 
-- expose gear equip/swap through `Allow Gear Swapping`, separate from the `Pickup Weapons`, `Pickup Gear`, and min/max price filters
-- allow additive gear equip behavior in any loadout management mode when the setting is enabled
-- bypass `Pickup Weapons` and min/max price for missing-primary acquisition and implemented true swap decisions, but require `Pickup Weapons` for optional second-primary or holster weapon additions and keep ordinary weapon cargo under both category and price filters
+- use the matching pickup category or one-shot request for empty-slot acquisition; no additional setting is required
+- allow additive equipment acquisition in any loadout management mode when the matching category is enabled
+- require weapon pickup authorization for all empty weapon slots; retain the existing missing-primary price bypass and ordinary cargo price filters
 - in `Restricted`, only add gear into empty equipment slots and treat that added gear as return cargo instead of saved kit
-- in `Immersive` and `Realistic`, allow implemented occupied-slot swaps and leave equipped gear untracked so it can persist as teammate kit
+- in `Immersive` and `Realistic`, fill only empty equipment slots and leave equipped gear untracked so it can persist as teammate kit
 - add easy gear equip as an explicit planner before the current carry-space planner
-- keep destructive throw/drop swaps disabled; the narrow tactical-vest upgrade path below only runs when the old vest can be preserved first
-- preflight the full swap before executing any destructive transaction
+- never displace occupied gear or throw it away to equip found loot
 - compare whole item trees; do not compare a weapon by disassembling it
 - do not strip weapons for attachments
 - do not strip helmets for accessories
-- do not strip plates as part of an equip/swap decision; the separate filtered-cargo fallback may take an eligible installed plate after its parent gear remains at the source
+- do not strip plates as part of an equipment acquisition decision; the separate filtered-cargo fallback may take an eligible installed plate after its parent gear remains at the source
 - do not use the follower's tactical vest as cargo
-- operational magazine moves into the follower's tactical vest are allowed only as part of an accepted weapon equip or vest upgrade plan
+- operational magazine moves into the follower's tactical vest are allowed only as part of an accepted weapon equip or ammunition-maintenance plan
 - preserve tracked-loot and protected-gear bookkeeping on every successful move/drop
 - keep body/container command assignment squadmate-only
 
@@ -469,7 +465,7 @@ Rules:
 - while first primary is empty, if second primary is occupied and a new candidate remains unready, `Pickup Weapons` and the weapon's whole-tree minimum/maximum price decide whether it may become potential-weapon cargo
 - after the weapon passes those ordinary cargo filters, compatible loaded source magazines join its backpack package when space permits; magazines move first and the weapon moves last
 - if the package cannot fit, leave its magazines at the source and try the weapon alone; if the weapon cannot fit, leave it too
-- if `Pickup Weapons` is disabled or the weapon fails price, leave both the weapon and its package magazines at the source
+- if weapon pickup is disabled for this request or the weapon fails price, leave both the weapon and its package magazines at the source
 - compatible bundle magazines that do not fit in the backpack remain at the source
 - if `FirstPrimaryWeapon` is occupied, `Pickup Weapons` is enabled, and `SecondPrimaryWeapon` is empty, a long gun with an inserted magazine and usable ammunition may be added as a real vanilla support weapon
 - compatible loaded source magazines for that support add bypass price only while they fit in vest/pockets and preserve landing space for the inserted magazine; because the weapon remains second-primary support, overflow magazines remain loaded at the source
@@ -477,7 +473,7 @@ Rules:
 - once first and second primary are occupied, another long gun is ordinary filtered cargo; it cannot recruit a potential-weapon magazine package
 - when holster is occupied, a found pistol is likewise ordinary filtered cargo and its compatible magazines do not inherit a package bypass
 - if `Pickup Weapons` is enabled and `Holster` is empty, a valid pistol may be equipped there as a non-primary `EPhraseTrigger.LootGeneric` result
-- if the matching slot is occupied, do not replace it in the empty-slot phase
+- if the matching slot is occupied, do not replace it
 - still register the moved weapon tree as looted so patrol reload maintenance does not feed spawned magazines into cargo/support weapons
 - when an accepted looted weapon becomes first primary, patrol reload may use its originally inserted magazine and magazines successfully acquired for that weapon package; mechanically compatible spawned magazines remain excluded
 - body/container looting records a newly equipped primary but does not select it while more loot transactions or the request-layer interaction remain active
@@ -487,16 +483,16 @@ Rules:
 - do not pre-gate that request with `CanChangeHands()`: the check includes interaction/controller states that vanilla's scheduled weapon process owns and may not clear until the transition is requested
 - if selector state remains mid-transition, retry through the bot delayed-task manager and use a bounded current-state fast-forward only after the ordinary draw window; stop immediately if the follower dies or leaves the active bot state
 
-Missing-primary weapon acquisition ignores min/max price and bypasses the `Pickup Weapons` category filter because it is an explicit primary-equipment plan rather than ordinary weapon cargo. A working-primary follower only adds an optional second-primary or holster weapon when `Pickup Weapons` is enabled. Supporting spare magazines bypass the normal loot filters only after the corresponding primary or Pickup-Weapons-authorized support plan is accepted.
+Missing-primary weapon acquisition ignores min/max price once `Pickup Weapons` or the current weapon request authorizes acquisition. The same authorization applies to optional second-primary or holster additions. Supporting spare magazines bypass the normal loot filters only after the corresponding primary or Pickup-Weapons-authorized support plan is accepted.
 
 ### Grenade-Launcher Slot Preference
 
-Standalone grenade and rocket launchers are the exception to the ordinary missing-primary destination policy. `Allow Gear Swapping` treats them as tactical support weapons and prefers `SecondPrimaryWeapon` whenever a conventional shoulder weapon can occupy `FirstPrimaryWeapon`.
+Standalone grenade and rocket launchers are the exception to the ordinary missing-primary destination policy. The acquisition planner treats them as tactical support weapons and prefers `SecondPrimaryWeapon` whenever a conventional shoulder weapon can occupy `FirstPrimaryWeapon`.
 
 - when the same body/container contains a launcher and a conventional long gun, plan the conventional weapon first, force it into first primary even when it is empty or below the normal readiness threshold, and place the launcher in second primary
 - when the follower currently has a launcher in first primary and finds a conventional long gun, move the launcher to empty second primary before processing the new weapon; the conventional weapon then becomes first primary
 - when first primary is empty and a conventional weapon is being held in second primary for insufficient ammunition, finding a launcher promotes that conventional weapon to first primary without a readiness gate, then places the launcher in second primary
-- when the follower already has a conventional first primary and empty second primary, a found launcher may fill second primary as an equipment decision even if `Pickup Weapons` is disabled; this support-only result uses `LootGeneric`
+- when the follower already has a conventional first primary and empty second primary, a found launcher may fill second primary when `Pickup Weapons` or the current weapon request enables acquisition; this support-only result uses `LootGeneric`
 - loose-ammunition support is planned in weapon-role order: finish the accepted conventional primary package first, then plan compatible ammunition for the accepted secondary launcher
 - accepted launcher grenades use the shared loose-ammunition order of tactical vest, pockets, backpack, then secure container; each follow-up rechecks the settled inventory before choosing its destination
 - when no conventional shoulder weapon is carried or found, a launcher may still use first primary through the existing missing-primary path
@@ -518,7 +514,7 @@ Once a body/container weapon has been accepted as equipment or as filtered weapo
 
 ### Tactical Primary Ammunition
 
-With `Allow Gear Swapping` enabled, loose ammunition on a searched body/container is evaluated against the equipped detachable-magazine primary before ordinary filtered pickup:
+When `Pickup Weapons` enables normal weapon work, loose ammunition on a searched body/container is evaluated against the equipped detachable-magazine primary before ordinary filtered pickup:
 
 - secure-container room removes the quantity cap, but not ammunition-quality
   judgment: equal ammunition, an already-carried ammunition type, and stronger
@@ -527,7 +523,7 @@ With `Allow Gear Swapping` enabled, loose ammunition on a searched body/containe
 - materially worse ammunition still requires the normal shortage justification;
   once secure storage cannot accept the complete stack, all need, quality,
   reserve, and general-inventory-space rules apply normally
-- magazine top-off is readiness maintenance and does not depend on `Pickup Weapons` or ordinary price/category filters
+- magazine top-off uses weapon pickup authorization but bypasses ordinary price filters; selective weapon requests prepare only their chosen package, not unrelated equipped weapons
 - if the primary is not ready, compatible empty or partial magazines already in vest/pockets are filled before source-ammo acquisition is considered; the inserted magazine is not modified by this phase
 - carried loose ammunition is preferred as the top-off supply; this includes the managed primary-ammo stacks injected into the secure container in every non-Realistic mode
 - `Immersive`/`Realistic` may use compatible searched-source ammunition after carried supply; `Restricted` do not merge searched rounds into protected spawned magazines and may only carry accepted source ammunition as returnable cargo
@@ -549,7 +545,7 @@ An already-equipped detachable-magazine secondary receives ammunition maintenanc
 
 - when `SecondPrimaryWeapon` is empty, an executable shoulder-weapon package
   receives the remaining fast-access space before holster maintenance begins
-- secondary maintenance requires `Allow Gear Swapping` but does not require `Pickup Weapons`, because it maintains an equipped weapon rather than acquiring another one
+- secondary maintenance follows weapon pickup authorization; selective requests do not maintain unrelated weapons
 - the secondary remains in `SecondPrimaryWeapon`, the primary remains selected, and this phase performs no promotion or replacement
 - maintenance tops off the magazine inserted in the equipped support weapon
   before collecting compatible spare magazines or carrying remaining loose rounds
@@ -609,119 +605,15 @@ Supported non-launcher `OnlyBarrel` weapons, including single-shot and double-ba
 
 Still deferred weapon-feed cases:
 
-- launcher-versus-launcher comparison and replacement, and any case requiring displacement of an occupied second-primary slot
 - holster-revolver cylinder transactions that cannot use the shared internal-magazine path
 - equipped-primary donor-magazine consolidation remains separate from the acquired-weapon package path
 - keep each feed system separate from detachable-magazine handling and implement/test it as its own scenario
 
-### Narrow Tactical-Vest Upgrade
+### Empty Tactical-Vest Slot
 
-Tactical-vest replacement is an early gear-swap candidate, but only under strict preflight because it touches operational magazine space and, for plate carriers, protection.
+With `Pickup Gear` or a gear request enabled, a found tactical vest may equip into an empty compatible vest slot in any loadout mode. An occupied vest is retained, regardless of protection or capacity. There is no old-vest transfer, content migration or replacement transaction. Ordinary gear cargo still follows its category, price and capacity filters.
 
-This path is active in a conservative phase 1 form.
-
-Eligible cases:
-
-- empty follower tactical vest slot: equip a found tactical vest directly
-- `Immersive`/`Realistic` only: current tactical vest has no plate-carrier capability, the found vest has plate-carrier capability, the found vest can end the transaction with usable protection, and the follower is not wearing separate armor
-- `Immersive`/`Realistic` only: current tactical vest is a plate carrier, and the found plate carrier is meaningfully better
-
-Plate-carrier comparison rules:
-
-- compare the found vest as a whole equipment tree, including installed plates
-- phase 1 does not move current plates into the found vest; it preserves the old vest tree instead
-- require the found protection score to be higher when replacing an existing armored vest
-- do not strip plates during the vest-upgrade transaction; filtered cargo may later consider an installed plate only if the whole vest remains at the source
-
-Vest-upgrade transaction rules:
-
-- preflight current vest contents and magazine positions before changing anything
-- `Restricted` stop after the empty-slot add case; they never replace an occupied tactical vest
-- phase 1 refuses occupied-vest replacement when the old vest has any non-plate contents, preserving operational magazines in the current vest instead of moving them
-- do not use the tactical vest as general cargo during the swap; its purpose is operational space
-- move the old vest tree into the follower's backpack first; only then equip the found vest as a follow-up move
-- if the old vest cannot fit in the backpack, do not throw it down in phase 1
-- if any step cannot be simulated or executed safely, skip the vest upgrade and leave the current vest untouched
-
-If the found vest is superior for protection but cannot preserve the current vest contents, it is not an equipment upgrade. Treat it as cargo: pick up the found vest into the backpack only if it fits there. If it cannot be carried as cargo, leave it.
-
-### Weapon Replacement Complexity
-
-Primary replacement is not a simple inventory move.
-
-Vanilla `BotWeaponSelector` caches `FirstPrimaryWeaponItem`, `SecondPrimaryWeaponItem`, `HolsterItem`, and slot availability. `BotWeaponManager` also owns a per-slot `BotWeaponInfo` dictionary, and each `BotWeaponInfo` creates a `BotReload` instance for the weapon that was present when the info was built. Replacing the physical `FirstPrimaryWeapon` item without rebuilding that slot's weapon info can leave reload, fire-mode, selector, or current-weapon state pointing at the old weapon.
-
-Because of that, primary replacement needs a controlled rebind flow:
-
-1. require out-of-combat, not reloading, and hands-change safe state
-2. move hands away from primary, preferring secondary, then holster, then scabbard/knife
-3. atomically swap or move the candidate into `FirstPrimaryWeapon`
-4. refresh selector slot caches
-5. rebuild `WeaponManager.Info[FirstPrimaryWeapon]` for the new weapon
-6. change back to main
-7. verify `CurrentWeapon`, `MainWeaponInfo.weapon`, and `MainWeaponInfo.Reload.Weapon` all match the new primary
-
-If any step cannot be proven safe, skip the replacement and leave follower gear untouched.
-
-### Restricted Weapon Replacement
-
-If primary replacement is later enabled, keep it narrow:
-
-- empty compatible slots are still preferred before replacing an equipped weapon
-- only `FirstPrimaryWeapon` may be displaced
-- `SecondPrimaryWeapon` is never displaced and is never used as a rotation slot
-- `Holster` is never displaced; a usable pistol may fill an empty holster when
-  primary is working, regardless of whether second primary is occupied
-- secondary, holster, and scabbard/knife may be used only as temporary hands state before rebinding primary
-- replacement must compare whole looted weapon tree value against the current primary weapon tree
-- compatible magazines belonging to the follower's secondary/support weapon must not be consumed by the new primary
-- patrol reload must not blindly search every reachable magazine/ammo stack for acquired weapons
-
-Primary replacement ammo cases:
-
-- same caliber plus compatible current primary magazines is the cleanest replacement case
-- same caliber but incompatible current magazines requires compatible new magazines from the loot source
-- same caliber with incompatible current magazines and empty/partial new magazines is a mag-migration case, not an easy swap
-- different caliber requires loaded compatible magazines from the loot source
-- no compatible magazines means no replacement, even if the weapon value is better
-
-Mag-migration preflight:
-
-- confirm backpack space for the old incompatible magazines
-- confirm tactical-vest slots for the new compatible magazines
-- move old magazines from vest to backpack only if all old mags can be preserved
-- move new compatible magazines into vest only if they fit without disturbing support-weapon magazines
-- transfer ammo from old magazines into new magazines only after the EFT transaction path is verified
-- if any migration step cannot be simulated or executed safely, skip the replacement
-
-Mag migration should not be part of gear swapping phase 1.
-
-Backpack swaps:
-
-- only consider a backpack swap when the looted backpack gives a meaningful capacity improvement
-- account for the old backpack contents before throwing or replacing it
-- do not lose tracked follower loot that is inside the old backpack
-- do not use the follower's tactical vest as temporary cargo unless a later explicit design changes the rig rule
-
-Additional armor and armored-rig swaps:
-
-- broader armor/rig swapping remains high risk because it touches protection, plate systems, reload space, and protected gear cleanup
-- if implemented beyond the narrow tactical-vest upgrade above, compare the worn item as a whole tree
-- do not use plate stripping as an armor-swap shortcut; filtered cargo fallback remains separate from replacement policy
-- do not replace body armor or armored rigs beyond the narrow vest path unless current contents, protection policy, and magazine-space policy are explicitly preserved
-
-Headwear swaps:
-
-- compare the helmet/headwear tree as a whole, including face shield, mounts, and night vision devices
-- do not strip attached devices as separate loot
-- avoid replacing special-purpose headgear without a clear improvement rule
-
-Transaction rules:
-
-- avoid vanilla-style throw-first unless the destination and old-item handling are already proven valid
-- prefer a planned sequence that can fail before altering the follower's current kit
-- after every successful transaction, update stored-loot and weapon-tree tracking immediately
-- cleanup must clear taker ownership and active command state even after failure
+Occupied primary, secondary, holster, headgear, armor, vest and backpack replacement is outside core. The proposed upgrade-evaluation version of `CMD: Get Weapon` is abandoned; existing CMD weapon requests remain category-specific loot requests.
 
 ## Test Checklist
 
@@ -756,15 +648,15 @@ Filtered body/container rules:
 - backpack magazines can be looted if eligible
 - pocket and vest magazines are skipped
 - loose armor plates are ignored; installed plates may be taken as price-qualified, 50-percent-durability fallbacks after their parent armor/rig stays behind
-- tactical vest is not used as follower carry space, except operational magazine placement during an accepted weapon equip or vest upgrade
+- tactical vest is not used as follower carry space, except operational magazine placement during an accepted weapon equip or ammunition maintenance
 - ordinary cargo price minimum and maximum apply to whole item trees
 - ordinary cargo category filters apply before price
-- missing-primary acquisition and implemented true swaps are controlled by `Allow Gear Swapping`; optional support/holster weapon additions additionally require `Pickup Weapons`
+- missing-primary and optional support/holster acquisition require `Pickup Weapons` or the matching one-shot weapon request; there is no extra toggle
 - support acquisition shares one planner, but slot ownership remains explicit:
   shoulder weapons use second primary and pistols may independently use an
   empty holster after the shoulder package has had first claim on fast access
 
-Gear swapping phase 1 tests:
+Empty-slot acquisition and weapon-support tests:
 
 - missing-primary weapon equip uses the centralized two-ordinary-magazine readiness formula after all planned fast-access transfers settle
 - tube-fed/internal-magazine weapons load the attached magazine first, then count only settled loaded rounds and fitting loose reserves toward two-load readiness
@@ -778,7 +670,7 @@ Gear swapping phase 1 tests:
 - a later donor-consolidation test exposed two ordering gaps now awaiting retest: loot-time `handsBusy` discarded a ready promotion until combat ended, and a refillable empty source magazine was rejected before top-off; both are now preserved through command-owned post-loot promotion and provisional empty-mag placement
 - after magazine maintenance, remaining source-ammo pickup uses the shared need/power model against the follower's complete compatible cartridge stock; top-off itself is driven by missing operational magazine capacity
 - an equipped primary with a critical shortage accepts weaker compatible ammunition; a small shortage can reject a large penetration downgrade; sufficient stock rejects equal/weaker ammunition
-- equipped-primary top-off works with `Pickup Weapons` disabled, uses carried loose supply before searched rounds, and never removes existing magazine cartridges
+- normal equipped-primary top-off follows `Pickup Weapons`, uses carried loose supply before searched rounds, and never removes existing magazine cartridges
 - large compatible spare magazines that do not fit the vest/pocket grids while preserving reload landing space do not count as operational spares
 - a usable pistol package with working primary and empty holster uses the same
   support magazine/readiness planner, then registers the
@@ -787,8 +679,8 @@ Gear swapping phase 1 tests:
   vanilla's preferred support role, and its ammunition is maintained before
   the holstered weapon receives compatible source supplies
 - an under-threshold weapon uses empty secondary; with secondary occupied, only ordinary filtered cargo rules may move it into the backpack
-- with a working primary and `Pickup Weapons` disabled, an optional support weapon and its magazines/ammunition remain at the source
-- with a working primary and `Pickup Weapons` enabled, an accepted second-primary support weapon uses `LootGeneric` and does not take the current primary out of hand
+- with `Pickup Weapons` disabled and no weapon request, no new primary/support weapon package is acquired
+- with a working primary and weapon pickup authorized by setting or request, an accepted second-primary support weapon uses `LootGeneric` and does not take the current primary out of hand
 - a ready second-primary package may take every compatible loaded source magazine that fits operational fast access while preserving reload reserve; the runtime `50/50 + 50/50 + 20/20 + 20/20` package registered successfully as support
 - equipped detachable-magazine secondary maintenance runs only after primary maintenance, preserves both weapon slots and current hands, and limits a looted secondary to its registered package magazines
 - commanded fast-access magazine pickup registers primary-first, and later body/container searches may add cartridge-compatible secondary magazines only while preserving the shared largest-magazine reload opening
@@ -798,12 +690,12 @@ Gear swapping phase 1 tests:
 - a tracked under-threshold secondary weapon promotes into empty primary after later compatible fast-access ammunition makes it ready
 - newly found weapons recruit compatible backpack cargo only when the executable combined fast-access plan reaches readiness
 - a later source spare can recruit the backpack spare for a tracked secondary, then promote that weapon from settled live state
-- narrow vest upgrade can fill an empty tactical vest slot or replace a worn vest only after preserving the old vest tree in the backpack
-- `Restricted` narrow vest behavior stops at empty-slot add; occupied vest replacement is refused
+- a found vest can fill an empty compatible tactical vest slot
+- occupied vest replacement is refused in every loadout mode
 - looted weapon does not trigger patrol reload maintenance with spawned magazines
 - after a looted primary reloads, follower death/raid-end cleanup does not leave its ejected original magazine in the teammate's persisted `Restricted` kit
 - loose weapon pickup into `FirstPrimaryWeapon` registers as the combat primary, and a pending weapon-taken callback cannot fault after that follower dies
 - a looted launcher in `FirstPrimaryWeapon` remains the follower's real primary and enters the grenadier objective for eligible combat targets; only a launcher used from `SecondPrimaryWeapon` returns to another main weapon after the attempt
-- rejected swap leaves current follower gear untouched
-- accepted swap updates tracking and does not duplicate or orphan old gear
+- rejected acquisition leaves current follower gear untouched
+- accepted acquisition updates tracking and does not duplicate or orphan gear
 - rig magazine space remains stable

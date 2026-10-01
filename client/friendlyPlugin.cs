@@ -106,7 +106,6 @@ namespace pitTeam
         public Dictionary<string, string> lootFilterValuables { get; set; }
         public Dictionary<string, string> lootFilterWeapons { get; set; }
         public Dictionary<string, string> lootFilterGear { get; set; }
-        public Dictionary<string, string> lootAllowGearSwapping { get; set; }
 
         public Dictionary<string, string> memberTactic { get; set; }
         public Dictionary<string, string> memberEquipment { get; set; }
@@ -249,7 +248,6 @@ namespace pitTeam
         public static ConfigEntry<bool> lootFilterValuables;
         public static ConfigEntry<bool> lootFilterWeapons;
         public static ConfigEntry<bool> lootFilterGear;
-        public static ConfigEntry<bool> lootAllowGearSwapping;
 
         public static ConfigEntry<bool> pitFireTeamFLAG;
         public static ConfigEntry<bool> badGuy;
@@ -1161,8 +1159,6 @@ namespace pitTeam
                 (lootFilterGear?.Value ?? true);
             lootFilterWeapons = Config.Bind("", "10 LootFilterWeapons", defaultWeaponPickup, new ConfigDescription(optionsLang.lootFilterWeapons["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootFilterWeapons)));
 
-            lootAllowGearSwapping = Config.Bind("", "10 LootAllowGearSwapping", false, new ConfigDescription(optionsLang.lootAllowGearSwapping["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootAllowGearSwapping)));
-
             npcSendMessage = Config.Bind("", "11 NpcSendMessage", true, new ConfigDescription(optionsLang.npcSendMessage["Description"], null, CreateConfigAttributes(-1003, false, optionsLang.npcSendMessage)));
 
             pitFireTeamFLAG = Config.Bind("", "12 PitFireTeam", true, new ConfigDescription(optionsLang.pitFireTeam["Description"], null, CreateConfigAttributes(-1004, false, optionsLang.pitFireTeam)));
@@ -1272,11 +1268,6 @@ namespace pitTeam
         internal static bool IsFollowerLoadoutRealisticMode()
         {
             return (loadoutManagementMode?.Value ?? DefaultLoadoutManagementMode) == LoadoutManagementMode.Extreme;
-        }
-
-        internal static bool IsLootGearSwappingEnabled()
-        {
-            return lootAllowGearSwapping?.Value == true;
         }
 
         internal static bool IsLootWeaponPickupEnabled()

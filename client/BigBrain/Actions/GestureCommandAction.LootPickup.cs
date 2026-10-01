@@ -258,8 +258,8 @@ namespace pitTeam.BigBrain.Actions
 
             if (rootItem is Weapon weapon && IsShoulderWeaponCandidate(weapon))
             {
-                // A direct player order owns its physical destination even when automatic gear
-                // swapping is disabled. The shoulder used must truthfully communicate whether the
+                // A direct player order owns its physical destination regardless of pickup settings.
+                // The shoulder used must truthfully communicate whether the
                 // bot considers this weapon usable or merely held for later.
                 return TryBuildLooseWeaponPickupOperation(
                     weapon,
@@ -270,7 +270,6 @@ namespace pitTeam.BigBrain.Actions
             }
 
             if (rootItem is EFT.InventoryLogic.Magazine commandedMagazine &&
-                pitFireTeam.IsLootGearSwappingEnabled() &&
                 TryResolveCommandedMagazineOwner(
                     inventory.Inventory.Equipment,
                     commandedMagazine,
@@ -617,8 +616,7 @@ namespace pitTeam.BigBrain.Actions
 
         private void RegisterCommandedLooseMagazineForEquippedWeapon(Item item)
         {
-            if (!pitFireTeam.IsLootGearSwappingEnabled() ||
-                item is not EFT.InventoryLogic.Magazine magazine ||
+            if (item is not EFT.InventoryLogic.Magazine magazine ||
                 magazine.Parent == null)
             {
                 return;

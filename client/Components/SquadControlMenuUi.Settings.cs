@@ -398,8 +398,7 @@ namespace pitTeam.Components
                 pitFireTeam.lootFilterMeds,
                 pitFireTeam.lootFilterValuables,
                 pitFireTeam.lootFilterWeapons,
-                pitFireTeam.lootFilterGear,
-                pitFireTeam.lootAllowGearSwapping))
+                pitFireTeam.lootFilterGear))
             {
                 yield return setting;
             }
@@ -2559,7 +2558,6 @@ namespace pitTeam.Components
             if (entry == pitFireTeam.lootFilterValuables) return language.lootFilterValuables;
             if (entry == pitFireTeam.lootFilterWeapons) return language.lootFilterWeapons;
             if (entry == pitFireTeam.lootFilterGear) return language.lootFilterGear;
-            if (entry == pitFireTeam.lootAllowGearSwapping) return language.lootAllowGearSwapping;
             if (entry == pitFireTeam.npcSendMessage) return language.npcSendMessage;
             if (entry == pitFireTeam.pitFireTeamFLAG) return language.pitFireTeam;
             if (entry == pitFireTeam.badGuy) return language.badGuy;

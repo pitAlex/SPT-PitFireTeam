@@ -74,7 +74,7 @@ namespace pitTeam.BigBrain.Actions
         {
             move = null;
             Weapon support = GetEligibleSupportAmmoMaintenanceWeapon(followerEquipment, supportSlot);
-            if (!pitFireTeam.IsLootGearSwappingEnabled() ||
+            if (!IsRequestedWeaponPickupEnabled() ||
                 inventory == null ||
                 sourceRoot == null ||
                 sourceAmmoFactory == null ||

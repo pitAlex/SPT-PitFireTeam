@@ -12,7 +12,7 @@ Document the current verified implementation of the `My Squad` experience as it 
 
 This is a current-state review, not a target design doc. It should be read alongside:
 
-- `docs/team-management-ui-investigation-2026-03-19.md` for the earlier stock-UI investigation and target direction
+- [Core architecture](Architecture.md) for current ownership and entry points
 - `docs/Loadout-Management.md` for the dedicated loadout-management mode behavior and implementation status
 - `docs/Team-Escape.md` for player-death squad escape and roster refresh behavior after escape outcomes
 
@@ -367,7 +367,6 @@ Verified entry groups:
     - `Pickup Valuables`
     - `Pickup Weapons`
     - `Pickup Gear`
-    - `Allow Gear Swapping`
 - `Loadout Management`
     - `Restricted`
     - `Field Upkeep` (visible only while `Restricted` is active)
@@ -453,7 +452,7 @@ The category checkboxes default on and are applied before price:
 - `Pickup Valuables` covers barter items, keys, special items, info items, money, and other non-gear loot.
 - `Pickup Weapons` covers weapons, ammunition, magazines, weapon mods, and grenades.
 - `Pickup Gear` covers helmets, body armor, armored rigs, and tactical rigs.
-- `Allow Gear Swapping` is the explicit gate for gear equip/swap behavior. `Restricted` only add gear into empty slots and return that added gear as tracked cargo, while `Immersive` and `Realistic` can also swap eligible gear into the teammate kit.
+- Empty-slot acquisition needs no separate toggle: `Pickup Weapons` or a weapon request enables weapon acquisition, and `Pickup Gear` or a gear request enables existing empty-vest acquisition. Occupied equipment is never replaced. Restricted tracks acquired equipment for return as cargo; Immersive/Realistic can keep it in the escaped teammate's kit.
 
 Crossing into or out of `Realistic` also strips the secure-container tree from saved teammate `Default` loadouts before the next profile/edit view can expose it.
 
@@ -632,9 +631,9 @@ Meaning of each percentage:
 - `Precision`: multiplies shot-execution accuracy, tightening scatter, accelerating precision convergence, and reducing external-SAIN recoil at the core compatibility boundary. It supplies half of the combined aim-speed value and maps piecewise to a `10%` / `40%` / `70%` chance to promote a native non-head target to a verified head target at slider values `0` / `100` / `200`.
 - `Reaction`: multiplies the visual visibility-gain rate and supplies the other half of combined aim speed. On the core combat path it also scales the `0.2s` close-dogfight direct-fire gate; this gate is `0.2s` at `100`, `0.1s` at `200`, and never delays the normal aim/shoot worker once that worker is independently ready.
 
-Vision, Precision, Reaction, and general compatibility with the external SAIN plugin are core-owned and must work in all three runtime modes: no SAIN, SAIN installed without the addon, and SAIN with the addon. The optional addon only replaces core combat with its custom SAIN Squad-derived follower layer and custom actions; it does not own calculation tuning, mutate shared SAIN settings, or change the percentage contract. The combined Precision/Reaction aim-speed factor is applied after the final EFT-or-SAIN aim-time calculation, and Precision's Accuracy factor is applied to SAIN's final calculated recoil by the main plugin rather than the addon.
+Vision, Precision, Reaction, and general compatibility with the external SAIN plugin are core-owned and must work in all three runtime modes: no SAIN, SAIN installed without the addon, and SAIN with the addon. The optional addon consumes this base proficiency contract; its [combat ownership](../addon/docs/Integration.md) does not change these percentages or shared presets. The combined Precision/Reaction aim-speed factor is applied after the final EFT-or-SAIN aim-time calculation, and Precision's Accuracy factor is applied to SAIN's final calculated recoil by the main plugin rather than the addon.
 
-EFT or SAIN chooses the body part first. If that native choice is the head, pitFireTeam leaves it as the head without applying another probability roll. If it is not the head, Precision gets one opportunity per normal retarget interval to promote the choice to the head, and only when the shared correction verifies a visible, shootable head lane. A hidden head leaves the native target untouched; a sole exposed head can still replace an invalid covered-body fallback. The core direct-fire overlay calls EFT's native `GetVisiblePartToShoot()` selector rather than the body-only `CurrentEnemyTargetPosition(false)` helper, then receives the same enhancement. A promoted head stays selected for the retarget interval while it remains shootable, so this does not reroll on every shot. The older SAIN 4.5.0 global center-mass height clamp is corrected only when it lowers a head that SAIN already selected for a pitFireTeam follower.
+EFT chooses the body part first. External-SAIN compatibility first prefers an eligible body point after native selection, retaining exposed-part fallback if the body is blocked. Precision then operates on that baseline; an already selected head is preserved without another probability roll. If it is not the head, Precision gets one opportunity per normal retarget interval to promote the choice to the head, and only when the shared correction verifies a visible, shootable head lane. A hidden head leaves the native target untouched; a sole exposed head can still replace an invalid covered-body fallback. The core direct-fire overlay calls EFT's native `GetVisiblePartToShoot()` selector rather than the body-only `CurrentEnemyTargetPosition(false)` helper, then receives the same enhancement. A promoted head stays selected for the retarget interval while it remains shootable, so this does not reroll on every shot. The older SAIN 4.5.0 global center-mass height clamp is corrected only when it lowers a head that SAIN already selected for a pitFireTeam follower.
 
 Reaction does **not** change EFT's `WAIT_NEW_SENSOR` or `WAIT_NEW__LOOK_SENSOR`. Those remain the game's independent ambient look/hearing refresh and stationary-cover look-switch timers.
 

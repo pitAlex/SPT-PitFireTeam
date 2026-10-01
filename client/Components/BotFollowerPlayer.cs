@@ -3068,8 +3068,9 @@ namespace pitTeam.Components
             }
 
             _nextLootedWeaponPromotionCheckAt = Time.time + LootedWeaponPromotionCheckInterval;
-            if (!pitFireTeam.IsLootGearSwappingEnabled() ||
-                _backpackInspectionActive ||
+            // Finish readiness for already accepted loot, including a one-shot weapon request
+            // after its override has ended. This does not authorize new source-item pickup.
+            if (_backpackInspectionActive ||
                 owner == null ||
                 owner.IsDead ||
                 owner.BotState != EBotState.Active ||

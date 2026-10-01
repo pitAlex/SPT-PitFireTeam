@@ -305,7 +305,7 @@ namespace pitTeam.BigBrain.Actions
             move = null;
             hadCompatibleMagazine = false;
             Weapon weapon = GetEligibleDetachableWeaponForSlot(followerEquipment, weaponSlot);
-            if (!pitFireTeam.IsLootGearSwappingEnabled() ||
+            if (!IsRequestedWeaponPickupEnabled() ||
                 inventory == null ||
                 followerEquipment == null ||
                 sourceMagazineFactory == null ||
@@ -507,7 +507,7 @@ namespace pitTeam.BigBrain.Actions
             bool allowLooseAmmoCarry)
         {
             move = null;
-            if (!pitFireTeam.IsLootGearSwappingEnabled() ||
+            if (!IsRequestedWeaponPickupEnabled() ||
                 inventory == null ||
                 followerEquipment == null ||
                 sourceRoot == null ||

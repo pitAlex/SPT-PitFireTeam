@@ -10,11 +10,15 @@ namespace pitTeam.BigBrain.Actions
         private FollowerLootRequest ActiveLootRequest => followerData?.LootRequest;
         // Selective requests build only the chosen weapon packages in the ordinary candidate loop.
         // Do not spend their one-shot override on unrelated equipped-weapon maintenance/promotions.
-        private bool AllowsRequestedWeaponWork => (ActiveLootRequest?.AllowsWeaponWork ?? true) &&
+        private bool AllowsRequestedWeaponWork => IsRequestedWeaponPickupEnabled() &&
             ActiveLootRequest?.SelectiveWeapons != true;
-        private bool AllowsRequestedGearWork => ActiveLootRequest?.AllowsGearWork ?? true;
+        private bool AllowsRequestedGearWork => IsRequestedGearPickupEnabled();
         private bool IsRequestedWeaponPickupEnabled() =>
-            ActiveLootRequest?.WantsWeapons == true || pitFireTeam.IsLootWeaponPickupEnabled();
+            ActiveLootRequest?.EnablesWeaponPickup(pitFireTeam.IsLootWeaponPickupEnabled()) ??
+            pitFireTeam.IsLootWeaponPickupEnabled();
+        private bool IsRequestedGearPickupEnabled() =>
+            ActiveLootRequest?.EnablesGearPickup(pitFireTeam.lootFilterGear?.Value ?? true) ??
+            (pitFireTeam.lootFilterGear?.Value ?? true);
 
         private IEnumerable<BodyGearCandidate> OrderRequestedLoot(IEnumerable<BodyGearCandidate> candidates)
         {

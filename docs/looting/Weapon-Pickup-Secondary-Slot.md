@@ -99,8 +99,8 @@ magazines from later commands:
   reload sequentially, so simultaneous openings are not required
 - magazines that cannot satisfy the combined fast-access and reload-space check remain
   at the source; they do not fall through into ordinary container cargo
-- the operation is controlled by `Allow Gear Swapping` and bypasses `Pickup Weapons`,
-  category, and price filters because it maintains an equipped weapon
+- normal maintenance requires weapon pickup authorization and bypasses price filters;
+  selective weapon requests prepare only their selected package
 
 ## S2 Test Matrix
 
@@ -139,8 +139,8 @@ primary:
   stack, so the command does not incorrectly finish with `LootNothing`
 - the secondary remains equipped, the working primary remains selected, and no
   weapon replacement or promotion is attempted
-- maintenance requires `Allow Gear Swapping` and bypasses ordinary pickup and
-  price filters; rejected tactical ammunition cannot fall through into cargo
+- maintenance follows weapon pickup authorization and bypasses ordinary price
+  filters; rejected tactical ammunition cannot fall through into cargo
 
 ## S3 Test Matrix
 
