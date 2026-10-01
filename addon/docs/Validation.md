@@ -1,5 +1,11 @@
 # SAIN addon validation and raid evidence
 
+## 2026-09-30 - Post-combat SAIN lean during Core healing movement
+
+A newly recruited SAINGrunt was observed leaning left through post-combat `runToHeal`, then straightening later. The live log confirms its addon combat readiness, but the new battle-record file was empty, so it does not establish the exact lean value or action transition. Source inspection shows Core patrol resets EFT tilt once on entry, while SAIN 4.5.1 keeps updating native lean with a retained active native enemy even when its own layers have yielded; SAIN's running check does not see Core `runToHeal` movement. The addon now routes selected followers through SAIN's normal lean reset while native layers are inactive, without changing Core, enemy retention or ordinary SAIN bots. See [post-combat posture handoff](Combat.md#post-combat-posture-handoff).
+
+Debug Core/addon build passed with zero warnings/errors. Installed SAIN 4.5.1 `LeanClass.CheckCanLeanByState(out bool)` metadata matched the hook. **1,287 production addon combat checks** passed, including inactive Grunt/Shooter reset, active Grunt native behavior, Core tactic and ordinary SAIN bot exclusions, and hook lifecycle. The game was running, and the current Core build differs from the installed Core because of unrelated local changes, so no binaries were deployed. A later raid must confirm the visual lean releases during Core healing movement.
+
 ## 2026-09-26 - SAINShooter initialization fallback in two Reserve raids
 
 Records `20260926-063032-RezervBase.jsonl` and `20260926-072342-RezervBase.jsonl` both selected `SAINShooter` for Zero, but every recorded Zero combat snapshot was owned by Core (`FollowerCombatSniperObjective`); no `sainMarksman` or addon action was recorded for him. Brick used the ready addon in those same raids. This was a regression, not an original limitation: the 2026-09-17 Shoreline record has 43 `sainMarksman` events and 3,973 Zero snapshots owned by `sainAddon`; Git shows the failing weapon-helper call was introduced on 2026-09-19 with support-weapon handling. Core chose `sniper.startPosition.runToCover`, reposition/recovery cover and repeated `sniper.NeedSniper.retry.noLane` holds. The records therefore cannot qualify the SAINShooter firing-position policy or attribute Zero's indoor/underground route to it.

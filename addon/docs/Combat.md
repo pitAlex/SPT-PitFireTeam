@@ -10,6 +10,10 @@ For selected SAINGrunt and SAINShooter followers, `SainIdleWeaponGuard` skips SA
 
 The typed prefix belongs to the addon and uses its existing installation/rollback owner. Core tactics, ordinary SAIN bots and the human player retain their existing behavior. The guard reads current goal/admission state only; it does not run decision or medical providers, enumerate enemies, query geometry, allocate per-call state or alter shared presets/native timers.
 
+## Post-combat posture handoff
+
+Core owns patrol and post-combat `runToHeal` movement after addon combat releases. SAIN 4.5.1 continues updating its native `LeanClass` outside active SAIN layers while it retains a live native enemy, and its running check reads the SAIN mover rather than Core's healing mover. This can reapply a combat lean after Core's one-time patrol tilt reset. The addon makes SAIN's existing lean-state check return its normal reset path for selected SAINGrunt/SAINShooter followers only while no SAIN layer is active. Native smoothing releases the angle; active SAIN combat, Core tactics, ordinary SAIN bots, enemy memory and movement selection are unchanged. The guard runs only on SAIN's existing 20 Hz lean check and does not query geometry or evaluate combat decisions.
+
 ## Admission and recovery
 
 SAINGrunt and SAINShooter use Core's dead/removed EFT goal cleanup and stable squad enemy reports. A stale dead goal no longer excludes an addon follower from Core's idle-recipient synchronization after its own enemy dies. Cleanup changes only the invalid EFT reference; native living contacts, accepted-goal admission, visibility and fire permission retain their existing owners.
