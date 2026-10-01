@@ -9,7 +9,11 @@
     <Compile Include="../../server/Services/TeammateEquipmentPrice.cs" Link="TeammateEquipmentPrice.cs" />
     <Compile Include="../../server/Services/FriendlyTeammateService.Creation.cs" Link="Creation.cs" />
     <Compile Include="../../server/Services/FriendlyTeammateService.HiringPrices.cs" Link="HiringPrices.cs" />
+    <Compile Include="../../server/Services/FriendlyTeammateService.Recruitment.cs" Link="Recruitment.cs" />
+    <Compile Include="../../server/Services/FriendlyTeammateService.PaymentPersistence.cs" Link="PaymentPersistence.cs" />
     <Compile Include="../../server/Services/FriendlyTeammateService.Deletion.cs" Link="Deletion.cs" />
+    <Compile Include="../../server/Services/FriendlyTeammateService.EquipmentDelivery.cs" Link="EquipmentDelivery.cs" />
+    <Compile Include="../../server/Services/FriendlyTeammateService.RemovalDelivery.cs" Link="RemovalDelivery.cs" />
     <Compile Include="../../server/Models/FriendlyTeammateDeletionJournal.cs" Link="DeletionJournal.cs" />
     <Compile Include="../../server/Models/FriendlyTeammateDeleteRequest.cs" Link="DeleteRequest.cs" />
     <Compile Include="../../server/Models/FriendlyTeammateDeleteResponse.cs" Link="DeleteResponse.cs" />

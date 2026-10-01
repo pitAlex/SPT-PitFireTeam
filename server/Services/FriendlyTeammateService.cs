@@ -6,6 +6,7 @@ using SPTarkov.Server.Core.Constants;
 using SPTarkov.Server.Core.Generators.Bot;
 using SPTarkov.Server.Core.Helpers.Items;
 using SPTarkov.Server.Core.Helpers.Profile;
+using SPTarkov.Server.Core.Helpers.Server;
 using SPTarkov.Server.Core.Helpers.Traders;
 using SPTarkov.Server.Core.Models.Spt.Config;
 using SPTarkov.Server.Core.Models.Eft.Match;
@@ -47,6 +48,9 @@ public partial class FriendlyTeammateService(
     HideoutTable hideoutTable,
     InventoryHelper inventoryHelper,
     MailSendService mailSendService,
+    NotifierHelper notifierHelper,
+    NotificationSendHelper notificationSendHelper,
+    FollowerInsuranceRaidDiagnostics insuranceDiagnostics,
     ProfileHelper profileHelper,
     ProfileActivityService profileActivityService,
     RepairService repairService,
@@ -54,6 +58,7 @@ public partial class FriendlyTeammateService(
     FriendlyTeammateInsuranceService teammateInsuranceService,
     FriendlyLanguageService languageService,
     SaveServer saveServer,
+    FileUtil fileUtil,
     ICloner cloner,
     ISptLogger<FriendlyTeammateService> logger
 )
@@ -273,7 +278,8 @@ public partial class FriendlyTeammateService(
         return teammate;
     }
 
-    public SearchFriendResponse CreateTeammateFromRecruitCandidate(MongoId sessionId, FriendlyRecruitPickupCandidate candidate)
+    public SearchFriendResponse CreateTeammateFromRecruitCandidate(MongoId sessionId, FriendlyRecruitPickupCandidate candidate,
+        IReadOnlyDictionary<string, string>? additionalDocuments = null)
     {
         var playerPmc = GetPlayerProfile(sessionId);
         var nickname = EnsureUniqueRecruitNickname(sessionId, NormalizeRequiredValue(candidate.Nickname, "nickname"));
@@ -337,7 +343,7 @@ public partial class FriendlyTeammateService(
                 ? entry.RecruitmentGearPrice.Value : CalculateRecruitmentGearPrice(teammate);
         PrepareNewTeammateDefaultForCurrentLoadoutMode(teammate);
         SaveTeammateWithDefaultEquipment(sessionId, teammate, IsCurrentLoadoutManagementModeExtreme(),
-            recruitSettings);
+            recruitSettings, additionalDocuments);
 
         logger.Info($"Accepted recruit pickup '{nickname}' for session '{sessionId}' with aid '{teammate.Aid}' capturedProfile={usedCapturedProfile}");
 
@@ -2083,69 +2089,6 @@ public partial class FriendlyTeammateService(
             && JsonValueEquals(left.Location, right.Location);
     }
 
-    private List<Item> BuildCurrentTeammateKitDeliveryItems(BotBase teammate, bool includeSecureContainer)
-    {
-        var items = teammate.Inventory?.Items;
-        if (items == null || items.Count == 0)
-        {
-            return [];
-        }
-
-        string equipmentRootId = GetEquipmentRootId(teammate);
-        var deliveryItems = new List<Item>();
-        foreach (var slotItem in items.Where(item =>
-                     item?.ParentId != null
-                     && string.Equals(item.ParentId, equipmentRootId, StringComparison.OrdinalIgnoreCase)).ToList())
-        {
-            if (slotItem?.Id == null || string.IsNullOrWhiteSpace(slotItem.SlotId))
-            {
-                continue;
-            }
-
-            if (IsIgnoredReturnedEquipmentSlot(slotItem.SlotId, includeSecureContainer))
-            {
-                continue;
-            }
-
-            if (IsPocketsSlotItem(slotItem))
-            {
-                foreach (var pocketChild in items.Where(item =>
-                             item?.ParentId != null
-                             && string.Equals(item.ParentId, slotItem.Id.ToString(), StringComparison.OrdinalIgnoreCase)).ToList())
-                {
-                    AddDeliveryItemTree(items, pocketChild, deliveryItems);
-                }
-
-                continue;
-            }
-
-            AddDeliveryItemTree(items, slotItem, deliveryItems);
-        }
-
-        return deliveryItems;
-    }
-
-    private void AddDeliveryItemTree(List<Item> sourceItems, Item rootItem, List<Item> deliveryItems)
-    {
-        if (rootItem?.Id == null || IsIgnoredKitRequirementItem(rootItem))
-        {
-            return;
-        }
-
-        var treeIds = GetItemTreeIds(sourceItems, rootItem.Id.ToString());
-        var tree = cloner.Clone(sourceItems.Where(item => treeIds.Contains(item.Id.ToString())).ToList())
-            ?? sourceItems.Where(item => treeIds.Contains(item.Id.ToString())).ToList();
-        if (tree.Count == 0)
-        {
-            return;
-        }
-
-        tree[0].ParentId = null;
-        tree[0].SlotId = null;
-        tree[0].Location = null;
-        deliveryItems.AddRange(tree);
-    }
-
     private void SendPreviousTeammateKitDelivery(MongoId sessionId, BotBase teammate, List<Item> deliveryItems)
     {
         if (deliveryItems.Count == 0)
@@ -2165,12 +2108,6 @@ public partial class FriendlyTeammateService(
         });
 
         logger.Info($"Sent {deliveryItems.Count} previous teammate kit items by delivery for '{teammate.Aid}'.");
-    }
-
-    private static bool IsIgnoredReturnedEquipmentSlot(string slotId, bool includeSecureContainer)
-    {
-        return slotId.Contains("Dogtag", StringComparison.OrdinalIgnoreCase)
-            || (!includeSecureContainer && slotId.Contains("SecuredContainer", StringComparison.OrdinalIgnoreCase));
     }
 
     private void ConsumeStashItemsForKit(

@@ -371,5 +371,250 @@ foreach (int balance in new[] { 1000, 900, 950 })
         Check(recovery.DeleteTeammateWithPayment(session, removalRequest).Deleted && Money(recovery) == 900,
             "Recovered deletion remains safe to retry");
 }
+// Payment rollback is not complete until the player's file contains the refund.
+foreach (bool deletion in new[] { false, true })
+{
+    var refund = Service("refund-double-failure-" + deletion);
+    string document = deletion ? "pending-deletion.json" : "pending-creation.json";
+    string? token = null;
+    if (deletion) { SaveMember(refund, 100); refund.storage.FailDeletion = true; }
+    else { token = refund.PrepareTeammateCreation(session, new() { Nickname = "Refund" }).QuoteToken; refund.FailTeammateSave = true; }
+    refund.saveServer.SkipCachedWrites = true;
+    refund.saveServer.FailOnSaves.Add(2);
+    Reject(() => { if (deletion) refund.DeleteTeammateWithPayment(session, removalRequest); else refund.CreateTeammate(session, new() { QuoteToken = token }); },
+        "Database failure followed by refund-file failure propagates");
+    Check(Money(refund) == 1000 && refund.saveServer.DiskMoney == 900, "Failed refund leaves differing memory/disk balances for reproduction");
+    string State() => System.Text.Json.JsonDocument.Parse(refund.storage.Database.Read(document)!).RootElement.GetProperty("State").GetString()!;
+    Check(State() == "refunding", "Refund intent and money snapshot survive the failed save");
+    Reject(() => { if (deletion) refund.RecoverTeammateDeletion(session); else refund.RecoverTeammateCreation(session); },
+        "SPT cached-write skip cannot falsely acknowledge a refund");
+    Check(State() == "refunding" && refund.saveServer.DiskMoney == 900, "Recovery remains blocked while disk still holds the debit");
+    refund.saveServer.Restart();
+    if (deletion) refund.RecoverTeammateDeletion(session); else refund.RecoverTeammateCreation(session);
+    Check(State() == "pending" && Money(refund) == 1000 && refund.saveServer.DiskMoney == 1000,
+        "Restart recovery refunds persistently before enabling retry");
+    Check(refund.storage.Database.ReadProfiles().Count == (deletion ? 1 : 0), "Refund recovery preserves the intended roster state");
+    refund.storage.FailDeletion = false; refund.FailTeammateSave = false;
+    if (deletion) refund.DeleteTeammateWithPayment(session, removalRequest); else refund.CreateTeammate(session, new() { QuoteToken = token });
+    Check(Money(refund) == 900 && refund.saveServer.DiskMoney == 900, "Retry after recovered refund charges exactly once on disk");
+}
+
+var refundInventory = Service("refund-preserves-unrelated-items");
+SaveMember(refundInventory, 100);
+refundInventory.storage.FailDeletion = true;
+refundInventory.saveServer.FailOnSaves.Add(2);
+Reject(() => refundInventory.DeleteTeammateWithPayment(session, removalRequest), "Prepare unresolved refund for ownership checks");
+refundInventory.saveServer.Restart();
+refundInventory.Player.Inventory.Items.Add(I("new-cargo", "scope", "stash", "grid"));
+refundInventory.RecoverTeammateDeletion(session);
+Check(refundInventory.Player.Inventory.Items.Any(item => item.Id == "new-cargo") && refundInventory.saveServer.DiskMoney == 1000,
+    "Refund recovery preserves unrelated items added after the payment failure");
+
+var refundAmbiguous = Service("refund-ambiguous-money");
+SaveMember(refundAmbiguous, 100); refundAmbiguous.storage.FailDeletion = true; refundAmbiguous.saveServer.FailOnSaves.Add(2);
+Reject(() => refundAmbiguous.DeleteTeammateWithPayment(session, removalRequest), "Prepare unresolved refund for ambiguous-money checks");
+refundAmbiguous.Player.Inventory.Items[0].Upd!.StackObjectsCount = 950;
+Reject(() => refundAmbiguous.RecoverTeammateDeletion(session), "Changed money cannot be overwritten by a refund snapshot");
+Check(Money(refundAmbiguous) == 950 && refundAmbiguous.storage.Read<FriendlyTeammateDeletionJournal>(session, "pending-deletion.json")!.State == "refunding",
+    "Ambiguous refund retains the journal and live balance");
+
+FriendlyRecruitRequestEntry Invite(string id, int aid) => new() { ProfileId = id, AccountId = aid.ToString(), RecruitmentGearPrice = 100 };
+var acceptance = Service("acceptance-retry");
+acceptance.storage.Write(session, "recruit-requests.json", new[] { Invite("recruit-one", 801) });
+acceptance.FailRecruitCreationOn = 1;
+Reject(() => acceptance.AcceptRecruitInvitation(session, "recruit-one"), "Acceptance commit failure propagates");
+Check(acceptance.storage.Database.ReadProfiles().Count == 0 && acceptance.storage.Read<List<FriendlyRecruitRequestEntry>>(session, "recruit-requests.json")!.Count == 1
+    && acceptance.storage.Read<Dictionary<string, int>>(session, "accepted-recruits.json") == null, "Failed acceptance preserves invite and publishes neither member nor receipt");
+acceptance.FailRecruitCreationOn = 0;
+Check(acceptance.AcceptRecruitInvitation(session, "recruit-one"), "Acceptance succeeds after failed commit");
+Check(acceptance.storage.Database.ReadProfiles().Count == 1 && acceptance.storage.Read<List<FriendlyRecruitRequestEntry>>(session, "recruit-requests.json")!.Count == 0
+    && acceptance.storage.Exists(session, "801-settings.json") && acceptance.storage.Exists(session, "801-equipment.json"), "Member, settings, Default, receipt and invite consumption commit together");
+int creations = acceptance.RecruitCreations;
+Check(acceptance.AcceptRecruitInvitation(session, "recruit-one") && acceptance.RecruitCreations == creations, "Lost-response retry uses the acceptance receipt");
+acceptance.storage.DeleteTeammate(session, 801);
+Check(acceptance.AcceptRecruitInvitation(session, "recruit-one") && acceptance.storage.Database.ReadProfiles().Count == 0,
+    "Acceptance replay after member deletion cannot resurrect the member");
+
+var overlapping = Service("acceptance-overlap");
+overlapping.storage.Write(session, "recruit-requests.json", new[] { Invite("recruit-parallel", 802) });
+var accepts = Enumerable.Range(0, 8).Select(_ => Task.Run(() => overlapping.AcceptRecruitInvitation(session, "recruit-parallel"))).ToArray();
+Task.WaitAll(accepts);
+Check(accepts.All(task => task.Result) && overlapping.RecruitCreations == 1 && overlapping.storage.Database.ReadProfiles().Count == 1,
+    "Overlapping acceptance requests create exactly one member");
+
+var acceptAll = Service("accept-all-partial-failure");
+acceptAll.storage.Write(session, "recruit-requests.json", new[] { Invite("all-one", 810), Invite("all-two", 811), Invite("all-three", 812) });
+acceptAll.FailRecruitCreationOn = 2;
+Reject(() => acceptAll.AcceptAllRecruitInvitations(session), "Accept All partial failure propagates");
+Check(acceptAll.storage.Database.ReadProfiles().Count == 1 && acceptAll.storage.Read<List<FriendlyRecruitRequestEntry>>(session, "recruit-requests.json")!.Select(i => i.ProfileId)
+    .SequenceEqual(new[] { "all-two", "all-three" }), "Accept All leaves only unfinished invites pending");
+acceptAll.FailRecruitCreationOn = 0;
+Check(acceptAll.AcceptAllRecruitInvitations(session) && acceptAll.storage.Database.ReadProfiles().Count == 3
+    && acceptAll.RecruitCreations == 4, "Accept All retry resumes without duplicating the first member");
+
+var legacyAcceptance = Service("acceptance-legacy-window");
+legacyAcceptance.storage.Write(session, "recruit-requests.json", new[] { Invite("legacy-recruit", 820) });
+legacyAcceptance.storage.Write(session, "820.json", new BotBase { Id = new("legacy-recruit"), Aid = 820 });
+Check(legacyAcceptance.AcceptRecruitInvitation(session, "legacy-recruit") && legacyAcceptance.RecruitCreations == 0
+    && legacyAcceptance.storage.Database.ReadProfiles().Count == 1, "Old member-saved/invite-pending window consumes the invite without duplicating gear");
+Check(!TeammateDatabase.IsProfileDocument("accepted-recruits.json"), "Acceptance receipts never enter the roster");
+
 Check(!TeammateDatabase.IsProfileDocument("pending-deletion.json"), "Deletion journal never enters the roster");
-Console.WriteLine($"PASS: {checks} pricing, recruitment, purchase/deletion, rollback, replay and recovery checks. Fixture database: {root}");
+
+// Courier returns use actual saved equipment, never the stored Default copy or a generation pass.
+List<Item> RemovalKit() => [
+    I("scope", "scope", "gun", "mod_scope"), // Child deliberately precedes its root in the saved array.
+    I("ammo", "ammo", "mag", "cartridges") with { Upd = new() { StackObjectsCount = 17 } },
+    I("gun", "gun", "equipment", "FirstPrimaryWeapon") with { Upd = new() { Durability = 42 }, Location = new { x = 4, y = 1 } },
+    I("mag", "mag", "gun", "mod_magazine"),
+    I("rig", "rig", "equipment", "TacticalVest"), I("plate", "plate", "rig", "Front_plate"),
+    I("med", "med", "rig", "main"),
+    I("pack", "pack", "equipment", "Backpack"), I("loot", "loot", "pack", "main"),
+    I("armor", "armor", "equipment", "ArmorVest"), I("insert", "insert", "armor", "soft_armor_front"),
+    I("pockets", "pockets", "equipment", "Pockets"), I("pocket", "pocket", "pockets", "pocket1"),
+    I("special", "special", "pockets", "SpecialSlot1"),
+    I("knife", "knife", "equipment", "Scabbard"), I("band", "band", "equipment", "ArmBand"),
+    I("tag", "tag", "equipment", "Dogtag"),
+    I("secure", "secure", "equipment", "SecuredContainer"), I("secureLoot", "secureLoot", "secure", "main"),
+    I("equipment", "equipment", "", "hideout")
+];
+void SaveEquippedMember(FriendlyTeammateService service, int? fee)
+{
+    SaveMember(service, fee);
+    service.storage.Write(session, "701.json", new BotBase { Aid = 701,
+        Inventory = new() { Equipment = new("equipment"), Items = RemovalKit() } });
+}
+List<SPTarkov.Server.Core.Models.Eft.Profile.Message> Mail(FriendlyTeammateService service) =>
+    service.saveServer.Profile.DialogueRecords?.Values.SelectMany(dialogue => dialogue.Messages ?? []).ToList() ?? [];
+FriendlyTeammateDeletionJournal RemovalReceipt(FriendlyTeammateService service) =>
+    service.storage.Read<FriendlyTeammateDeletionJournal>(session, "pending-deletion.json")!;
+foreach (string mode in new[] { "Restricted", "Immersive", "Extreme" })
+foreach (int? fee in new int?[] { null, 0, 100 })
+{
+    var courier = Service($"courier-{mode}-{fee?.ToString() ?? "manual"}");
+    courier.settingsService.LoadoutManagementMode = mode;
+    SaveEquippedMember(courier, fee);
+    courier.DeleteTeammateWithPayment(session, removalRequest);
+    var receipt = RemovalReceipt(courier);
+    var mail = Mail(courier).Single();
+    var returnedItems = mail.Items!.Data!;
+    var expected = RemovalKit().Select(item => item.Id).Except(new[] { "equipment", "pockets", "tag" })
+        .Except(mode == "Extreme" ? [] : new[] { "secure", "secureLoot" }).ToHashSet();
+    Check(receipt.State == "complete" && receipt.DeliverySourceIds.ToHashSet().SetEquals(expected),
+        $"{mode}/{fee}: all actual gear, ammo, consumables, cargo and permanent usable items return; shells and dogtag do not");
+    Check(returnedItems.Count == expected.Count && !returnedItems.Any(item => expected.Contains(item.Id) || item.Id == "gear"),
+        "Return uses fresh IDs and never the separate stored Default snapshot");
+    Check(returnedItems.All(item => item.ParentId == mail.Items.Stash!.ToString() || returnedItems.Any(parent => parent.Id == item.ParentId)),
+        "Returned trees retain their parent links, including children stored before their root");
+    Check(returnedItems.Where(item => item.ParentId == mail.Items.Stash!.ToString()).All(item => item.SlotId == "main" && item.Location == null),
+        "Only mail roots lose their previous equipment/grid location");
+    Check(returnedItems.Single(item => item.Template == "gun").Upd!.Durability == 42
+        && returnedItems.Single(item => item.Template == "ammo").Upd!.StackObjectsCount == 17,
+        "Return preserves durability and remaining ammunition quantities");
+    Check(courier.saveServer.DiskProfile.DialogueRecords!.Values.Single().Messages!.Single().Id == mail.Id
+        && Money(courier) == 1000 - (fee ?? 0) && courier.notificationSendHelper.Messages.Count == 1,
+        "Mail is saved before notification and recruit fee stays fixed");
+    courier.DeleteTeammateWithPayment(session, removalRequest);
+    Check(Mail(courier).Count == 1 && Money(courier) == 1000 - (fee ?? 0), "Completed removal replay neither mails nor charges again");
+    Check(courier.insuranceDiagnostics.CourierIds.SetEquals(expected), "Future insurance claims receive every source ownership ID");
+}
+var courierPoor = Service("courier-insufficient");
+SaveEquippedMember(courierPoor, 1001);
+Reject(() => courierPoor.DeleteTeammateWithPayment(session, removalRequest), "Equipped recruit still requires the complete stored fee");
+Check(Mail(courierPoor).Count == 0 && !courierPoor.storage.Exists(session, "pending-deletion.json")
+    && courierPoor.storage.Exists(session, "701.json"), "Insufficient funds do not stage, mail or remove equipment");
+foreach (bool playerFails in new[] { false, true })
+{
+    var courierRollback = Service("courier-rollback-" + playerFails);
+    SaveEquippedMember(courierRollback, 100);
+    courierRollback.storage.FailDeletion = !playerFails;
+    courierRollback.saveServer.FailNext = playerFails;
+    Reject(() => courierRollback.DeleteTeammateWithPayment(session, removalRequest), "Failure before committed deletion is reported");
+    Check(Mail(courierRollback).Count == 0 && courierRollback.storage.Exists(session, "701.json") && Money(courierRollback) == 1000,
+        "Uncommitted deletion retains the kit, refunds the fee and sends nothing");
+}
+foreach (int? fee in new int?[] { null, 100 })
+{
+    var courierFailure = Service("courier-save-failure-" + (fee?.ToString() ?? "manual"));
+    SaveEquippedMember(courierFailure, fee);
+    courierFailure.saveServer.SkipCachedWrites = true;
+    courierFailure.saveServer.FailOnSaves.Add(fee > 0 ? 2 : 1);
+    Reject(() => courierFailure.DeleteTeammateWithPayment(session, removalRequest), "Mail save failure retains a durable outbox");
+    var staged = RemovalReceipt(courierFailure);
+    Check(staged.State == "delivering" && !courierFailure.storage.Exists(session, "701.json")
+        && Money(courierFailure) == 1000 - (fee ?? 0) && courierFailure.notificationSendHelper.Messages.Count == 0,
+        "Committed removal is never refunded or notified before mail persistence");
+    Reject(() => courierFailure.RecoverTeammateDeletion(session), "Cached save success cannot falsely acknowledge mail persistence");
+    courierFailure.saveServer.Restart();
+    courierFailure.RecoverTeammateDeletion(session);
+    Check(RemovalReceipt(courierFailure).State == "complete" && Mail(courierFailure).Single().Id == staged.Delivery!.Id,
+        "Restart resumes the exact prepared message, with no reroll or changed attachment IDs");
+    Check(courierFailure.saveServer.DiskMoney == 1000 - (fee ?? 0) && Mail(courierFailure).Count == 1,
+        "Restart recovery preserves paid/free removal balance and one delivery");
+}
+foreach (bool collected in new[] { false, true })
+{
+    var completionFailure = Service("courier-receipt-failure-" + collected);
+    SaveEquippedMember(completionFailure, 100);
+    completionFailure.storage.FailDeliveryCompletion = true;
+    Reject(() => completionFailure.DeleteTeammateWithPayment(session, removalRequest), "Receipt failure leaves the outbox recoverable after saved mail");
+    Check(completionFailure.saveServer.DiskProfile.SptData!.Migrations!.ContainsKey("pitFireTeam/removal-courier"),
+        "Player receipt is durable before marking the teammate outbox complete");
+    if (collected)
+    {
+        completionFailure.saveServer.Profile.DialogueRecords!.Clear(); // Simulate collect + delete dialogue.
+        completionFailure.saveServer.SaveProfileAsync(session).GetAwaiter().GetResult();
+    }
+    completionFailure.saveServer.Restart();
+    completionFailure.storage.FailDeliveryCompletion = false;
+    completionFailure.RecoverTeammateDeletion(session);
+    Check(Mail(completionFailure).Count == (collected ? 0 : 1) && Money(completionFailure) == 900
+        && RemovalReceipt(completionFailure).State == "complete", "Receipt recovery cannot remail a collected/deleted kit or recharge its fee");
+}
+var evidenceFailure = Service("courier-evidence-failure");
+SaveEquippedMember(evidenceFailure, null);
+evidenceFailure.insuranceDiagnostics.FailNext = true;
+Reject(() => evidenceFailure.DeleteTeammateWithPayment(session, removalRequest), "Insurance ownership failure preserves pending delivery");
+Check(RemovalReceipt(evidenceFailure).State == "delivering" && evidenceFailure.saveServer.DiskProfile.DialogueRecords == null,
+    "Mail cannot be saved ahead of durable insurance suppression evidence");
+evidenceFailure.RecoverTeammateDeletion(session);
+Check(RemovalReceipt(evidenceFailure).State == "complete" && Mail(evidenceFailure).Count == 1, "Ownership evidence failure recovers without losing the kit");
+
+var oldJournal = Service("courier-old-payment-journal");
+SaveEquippedMember(oldJournal, 100);
+oldJournal.Player.Inventory.Items[0].Upd!.StackObjectsCount = 900;
+oldJournal.storage.Write(session, "pending-deletion.json", new FriendlyTeammateDeletionJournal
+{
+    Aid = 701, Price = 100, State = "paying", MoneyBefore = "money:1000:stash:grid", MoneyAfter = "money:900:stash:grid"
+});
+oldJournal.RecoverTeammateDeletion(session);
+Check(Mail(oldJournal).Count == 1 && Money(oldJournal) == 900 && RemovalReceipt(oldJournal).State == "complete",
+    "Unfinished payment journals predating returns capture the member's saved kit before completing removal");
+
+var insuranceReturn = Service("courier-insurance-cleanup");
+SaveEquippedMember(insuranceReturn, null);
+insuranceReturn.Player.InsuredItems = [new() { ItemId = new("gun") }, new() { ItemId = new("unrelated") }];
+insuranceReturn.saveServer.Profile.InsuranceList = [new() { Items = [
+    I("gun", "gun", "mailstash", "main"), I("insurance-child", "part", "gun", "mod_scope"),
+    I("unrelated", "unrelated", "mailstash", "main") ] }];
+insuranceReturn.DeleteTeammateWithPayment(session, removalRequest);
+Check(insuranceReturn.Player.InsuredItems.Single().ItemId!.ToString() == "unrelated"
+    && insuranceReturn.saveServer.Profile.InsuranceList.Single().Items!.Single().Id == "unrelated",
+    "Courier cancels matching active policies and pending insurance trees while preserving unrelated coverage");
+foreach (bool otherMember in new[] { false, true })
+{
+    var collisionReturn = Service("courier-ownership-collision-" + otherMember);
+    SaveEquippedMember(collisionReturn, 100);
+    if (otherMember) collisionReturn.storage.Write(session, "702.json", new BotBase { Aid = 702, Inventory = new() { Items = [I("gun", "gun", "equipment", "FirstPrimaryWeapon")] } });
+    else collisionReturn.Player.Inventory.Items.Add(I("gun", "gun", "stash", "main"));
+    Reject(() => collisionReturn.DeleteTeammateWithPayment(session, removalRequest), "Shared source ownership is rejected before courier cloning");
+    Check(Mail(collisionReturn).Count == 0 && collisionReturn.storage.Exists(session, "701.json") && Money(collisionReturn) == 1000,
+        "Ownership conflict cannot create a duplicate item or charge a fee");
+}
+var notificationFailure = Service("courier-notification-failure");
+SaveEquippedMember(notificationFailure, null);
+notificationFailure.notificationSendHelper.FailNext = true;
+Check(notificationFailure.DeleteTeammateWithPayment(session, removalRequest).Deleted
+    && Mail(notificationFailure).Count == 1 && RemovalReceipt(notificationFailure).State == "complete",
+    "Websocket notification failure cannot undo a saved removal or remail the package");
+Console.WriteLine($"PASS: {checks} pricing, recruitment, purchase/deletion, courier, rollback, replay and recovery checks. Fixture database: {root}");

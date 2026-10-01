@@ -60,10 +60,22 @@ commits the stripped profile and Default snapshot without saving player money. S
 pricing-version checks, duplicate-request handling and recovery rules.
 
 Raid-recruit invites store `RecruitmentGearPrice`; acceptance preserves this value in the member's
-settings. A missing value on an existing member means no deletion fee. Paid deletion uses a separate
-`pending-deletion.json` money journal. Removing the profile/settings/Default documents and writing
-its completion receipt happen in one database transaction. Both payment journals are excluded from
-roster profile enumeration. See [raid-recruit deletion fees](Loadout-Management.md#raid-recruit-deletion-fee).
+settings. Acceptance commits the member/profile, Default equipment, settings, remaining invitations
+and `accepted-recruits.json` receipt together under the shared lifecycle lock. Repeated acceptance
+returns the receipt without creating another member, including after that member is removed.
+Accept All commits one invitation at a time; after a failure only unfinished invitations remain.
+An old captured member already saved with its invitation still pending is recognized by profile ID. A missing value on an existing member means no deletion fee. Paid deletion uses a separate
+`pending-deletion.json` money journal and prepared courier outbox. Removing the profile/settings/Default documents and writing
+the `delivering` outbox happen in one database transaction. Both normal and recruited removals return current equipment.
+The prepared native message and attachment IDs survive restarts. The SPT player profile saves a namespaced
+`SptData.Migrations["pitFireTeam/removal-courier"]` receipt alongside the mail before the outbox becomes `complete`;
+collecting or deleting that mail does not clear the receipt. A delivery failure keeps the outbox pending and the
+committed removal paid, so recovery cannot refund a delivered kit or create another one. Both payment journals and acceptance receipts are excluded from
+roster profile enumeration. A failed payment commit records `refunding` and the original rouble
+item snapshot before refund persistence. Recovery preserves unrelated inventory, rejects ambiguous
+money changes, and verifies the saved player JSON before marking payment/refund state resolved.
+A save-hash cache left by a failed SPT write can skip a retry; a mismatched file keeps recovery
+blocked, and a server restart permits a fresh verified save. See [raid-recruit deletion fees](Loadout-Management.md#raid-recruit-deletion-fee).
 
 LiteDB uses a write-ahead log and checkpoints on closing the database after each operation. Back up or
 move the database with the server stopped. Runtime reads/writes do not create a missing database

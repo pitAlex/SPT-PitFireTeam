@@ -24,7 +24,7 @@ public partial class FriendlyTeammateService
             RecoverTeammateDeletion(sessionId);
             if (!int.TryParse(request.AccountId, out int aid) || aid <= 0)
                 throw new FriendlyTeammateException("TeammateDeleteFailed");
-            var teammate = storage.ReadProfiles(sessionId).FirstOrDefault(profile => profile.Aid == aid);
+            var teammate = LoadTeammates(sessionId).FirstOrDefault(profile => profile.Aid == aid);
             var receipt = storage.Read<FriendlyTeammateDeletionJournal>(sessionId, DeletionDocument);
             bool deleted = teammate != null ? DeleteTeammate(sessionId, teammate)
                 : receipt?.Aid == aid && receipt.State == "complete";
@@ -46,7 +46,7 @@ public partial class FriendlyTeammateService
             var player = GetPlayerProfile(sessionId);
             if (saveServer.IsProfileInvalidOrUnloadable(sessionId))
                 throw new FriendlyTeammateException("TeammateDeleteFailed");
-            var journal = new FriendlyTeammateDeletionJournal { Aid = aid, Price = price };
+            var journal = PrepareTeammateRemovalDelivery(sessionId, teammate, price);
             if (price == 0) return CompleteTeammateDeletion(sessionId, journal);
 
             var originalItems = cloner.Clone(player.Inventory!.Items)!;
@@ -58,17 +58,21 @@ public partial class FriendlyTeammateService
             try
             {
                 storage.Write(sessionId, DeletionDocument, journal);
-                saveServer.SaveProfileAsync(sessionId).GetAwaiter().GetResult();
+                SavePlayerMoneyVerified(sessionId, journal.MoneyAfter, "TeammateDeleteRecoveryFailed");
                 return CompleteTeammateDeletion(sessionId, journal);
             }
             catch
             {
                 var saved = storage.Read<FriendlyTeammateDeletionJournal>(sessionId, DeletionDocument);
-                if (saved?.Aid != aid || saved.State != "complete")
+                if (saved?.Aid != aid || saved.State is not ("complete" or "delivering"))
                 {
-                    player.Inventory.Items = originalItems;
-                    saveServer.SaveProfileAsync(sessionId).GetAwaiter().GetResult();
+                    journal.State = "refunding";
+                    journal.RefundMoneyItems = SnapshotRefundMoney(originalItems);
+                    try { storage.Write(sessionId, DeletionDocument, journal); }
+                    finally { player.Inventory.Items = originalItems; }
+                    SavePlayerMoneyVerified(sessionId, journal.MoneyBefore, "TeammateDeleteRecoveryFailed");
                     journal.State = "pending";
+                    journal.RefundMoneyItems = null;
                     storage.Write(sessionId, DeletionDocument, journal);
                 }
                 throw;
@@ -81,12 +85,26 @@ public partial class FriendlyTeammateService
         lock (CreationLock)
         {
             var journal = storage.Read<FriendlyTeammateDeletionJournal>(sessionId, DeletionDocument);
-            if (journal?.State != "paying") return;
-            string money = CreationMoneySignature(GetPlayerProfile(sessionId));
-            if (money == journal.MoneyAfter) CompleteTeammateDeletion(sessionId, journal);
+            if (journal?.State == "delivering")
+            {
+                FinishTeammateRemovalDelivery(sessionId, journal);
+                return;
+            }
+            if (journal?.State is not ("paying" or "refunding")) return;
+            var player = GetPlayerProfile(sessionId);
+            if (journal.State == "refunding")
+                RestoreRefundMoney(player, journal.RefundMoneyItems, journal.MoneyBefore, journal.MoneyAfter, "TeammateDeleteRecoveryFailed");
+            string money = CreationMoneySignature(player);
+            if (money == journal.MoneyAfter)
+            {
+                SavePlayerMoneyVerified(sessionId, journal.MoneyAfter, "TeammateDeleteRecoveryFailed");
+                CompleteTeammateDeletion(sessionId, journal);
+            }
             else if (money == journal.MoneyBefore)
             {
+                SavePlayerMoneyVerified(sessionId, journal.MoneyBefore, "TeammateDeleteRecoveryFailed");
                 journal.State = "pending";
+                journal.RefundMoneyItems = null;
                 storage.Write(sessionId, DeletionDocument, journal);
             }
             else throw new FriendlyTeammateException("TeammateDeleteRecoveryFailed");
@@ -95,10 +113,23 @@ public partial class FriendlyTeammateService
 
     private bool CompleteTeammateDeletion(MongoId sessionId, FriendlyTeammateDeletionJournal journal)
     {
-        journal.State = "complete";
+        // Payment journals written before courier returns did not contain a prepared message.
+        if (journal.Delivery == null)
+        {
+            var teammate = storage.ReadProfiles(sessionId).FirstOrDefault(profile => profile.Aid == journal.Aid);
+            if (teammate != null)
+            {
+                var delivery = PrepareTeammateRemovalDelivery(sessionId, teammate, journal.Price);
+                journal.Delivery = delivery.Delivery;
+                journal.DeliveryReceipt = delivery.DeliveryReceipt;
+                journal.DeliverySourceIds = delivery.DeliverySourceIds;
+            }
+        }
+        journal.State = journal.Delivery == null ? "complete" : "delivering";
         bool deleted = storage.DeleteTeammate(sessionId, journal.Aid,
             new Dictionary<string, string> { [DeletionDocument] = jsonUtil.Serialize(journal)! });
         if (!deleted) throw new FriendlyTeammateException("TeammateDeleteRecoveryFailed");
+        if (journal.Delivery != null) FinishTeammateRemovalDelivery(sessionId, journal);
         logger.Info($"Deleted teammate '{journal.Aid}' recruitmentGearPrice={journal.Price}");
         return true;
     }

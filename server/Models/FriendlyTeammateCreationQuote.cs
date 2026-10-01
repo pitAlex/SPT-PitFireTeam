@@ -15,6 +15,7 @@ public record FriendlyTeammateCreationQuote
     public string State { get; set; } = "pending";
     public string? MoneyBefore { get; set; }
     public string? MoneyAfter { get; set; }
+    public List<Item>? RefundMoneyItems { get; set; }
 }
 
 public record FriendlyTeammateCreationPreview

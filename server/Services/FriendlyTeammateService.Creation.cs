@@ -12,7 +12,7 @@ public partial class FriendlyTeammateService
     private const string CreationDocument = "pending-creation.json";
     private const int HiringPricingVersion = 2;
     // The service can be resolved by multiple routes; serialize quote/payment transitions across instances.
-    private static readonly object CreationLock = new();
+    internal static readonly object CreationLock = new();
 
     public FriendlyTeammateCreationPreview PrepareTeammateCreation(MongoId sessionId, FriendlyTeammateCreateRequest request)
     {
@@ -90,7 +90,7 @@ public partial class FriendlyTeammateService
             {
                 // Journal first: a restart between the player save and teammate save is recoverable.
                 storage.Write(sessionId, CreationDocument, quote);
-                saveServer.SaveProfileAsync(sessionId).GetAwaiter().GetResult();
+                SavePlayerMoneyVerified(sessionId, quote.MoneyAfter!, "TeammateHireRecoveryFailed");
                 CompleteTeammateCreation(sessionId, quote);
             }
             catch
@@ -98,9 +98,13 @@ public partial class FriendlyTeammateService
                 // Never restore money after the receipt and teammate were atomically committed.
                 if (storage.Read<FriendlyTeammateCreationQuote>(sessionId, CreationDocument)?.State != "complete")
                 {
-                    player.Inventory.Items = originalItems;
-                    saveServer.SaveProfileAsync(sessionId).GetAwaiter().GetResult();
+                    quote.State = "refunding";
+                    quote.RefundMoneyItems = SnapshotRefundMoney(originalItems);
+                    try { storage.Write(sessionId, CreationDocument, quote); }
+                    finally { player.Inventory.Items = originalItems; }
+                    SavePlayerMoneyVerified(sessionId, quote.MoneyBefore!, "TeammateHireRecoveryFailed");
                     quote.State = "pending";
+                    quote.RefundMoneyItems = null;
                     storage.Write(sessionId, CreationDocument, quote);
                 }
                 throw;
@@ -134,12 +138,21 @@ public partial class FriendlyTeammateService
         lock (CreationLock)
         {
             var quote = storage.Read<FriendlyTeammateCreationQuote>(sessionId, CreationDocument);
-            if (quote?.State != "paying") return;
-            string money = CreationMoneySignature(GetPlayerProfile(sessionId));
-            if (money == quote.MoneyAfter) CompleteTeammateCreation(sessionId, quote);
+            if (quote?.State is not ("paying" or "refunding")) return;
+            var player = GetPlayerProfile(sessionId);
+            if (quote.State == "refunding")
+                RestoreRefundMoney(player, quote.RefundMoneyItems, quote.MoneyBefore, quote.MoneyAfter, "TeammateHireRecoveryFailed");
+            string money = CreationMoneySignature(player);
+            if (money == quote.MoneyAfter)
+            {
+                SavePlayerMoneyVerified(sessionId, quote.MoneyAfter!, "TeammateHireRecoveryFailed");
+                CompleteTeammateCreation(sessionId, quote);
+            }
             else if (money == quote.MoneyBefore)
             {
+                SavePlayerMoneyVerified(sessionId, quote.MoneyBefore!, "TeammateHireRecoveryFailed");
                 quote.State = "pending";
+                quote.RefundMoneyItems = null;
                 storage.Write(sessionId, CreationDocument, quote);
             }
             else throw new FriendlyTeammateException("TeammateHireRecoveryFailed");

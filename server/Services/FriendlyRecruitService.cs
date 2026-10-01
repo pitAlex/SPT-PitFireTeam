@@ -28,165 +28,149 @@ public class FriendlyRecruitService(
 
     public void QueueRecruitPickups(MongoId sessionId, List<FriendlyRecruitPickupCandidate>? candidates)
     {
-        if (candidates == null || candidates.Count == 0)
+        lock (FriendlyTeammateService.CreationLock)
         {
-            logger.Warning($"Recruit pickup request for session '{sessionId}' contained no candidates.");
-            return;
-        }
-
-        var playerLevel = profileHelper.GetPmcProfile(sessionId)?.Info?.Level ?? 1;
-        var successfulCandidates = new List<FriendlyRecruitRequestEntry>();
-        foreach (var candidate in candidates)
-        {
-            if (!IsValidCandidate(candidate))
+            if (candidates == null || candidates.Count == 0)
             {
-                logger.Warning(
-                    $"Skipped invalid recruit pickup candidate for session '{sessionId}'. " +
-                    $"profileId='{candidate?.ProfileId ?? string.Empty}' nickname='{candidate?.Nickname ?? string.Empty}' " +
-                    $"voice='{candidate?.Voice ?? string.Empty}' head='{candidate?.Head ?? string.Empty}'");
-                continue;
+                logger.Warning($"Recruit pickup request for session '{sessionId}' contained no candidates.");
+                return;
             }
 
-            if (!ForceRecruitPickupInviteForTesting &&
-                Random.Shared.Next(0, 101) > CalculateRecruitChance(playerLevel, Math.Max(1, candidate.Level)))
+            var playerLevel = profileHelper.GetPmcProfile(sessionId)?.Info?.Level ?? 1;
+            var successfulCandidates = new List<FriendlyRecruitRequestEntry>();
+            foreach (var candidate in candidates)
             {
-                continue;
+                if (!IsValidCandidate(candidate))
+                {
+                    logger.Warning(
+                        $"Skipped invalid recruit pickup candidate for session '{sessionId}'. " +
+                        $"profileId='{candidate?.ProfileId ?? string.Empty}' nickname='{candidate?.Nickname ?? string.Empty}' " +
+                        $"voice='{candidate?.Voice ?? string.Empty}' head='{candidate?.Head ?? string.Empty}'");
+                    continue;
+                }
+
+                if (!ForceRecruitPickupInviteForTesting &&
+                    Random.Shared.Next(0, 101) > CalculateRecruitChance(playerLevel, Math.Max(1, candidate.Level)))
+                {
+                    continue;
+                }
+
+                successfulCandidates.Add(new FriendlyRecruitRequestEntry
+                {
+                    ProfileId = candidate.ProfileId,
+                    AccountId = candidate.AccountId?.Trim() ?? string.Empty,
+                    Nickname = candidate.Nickname.Trim(),
+                    Level = Math.Max(1, candidate.Level),
+                    Side = candidate.Side?.Trim() ?? string.Empty,
+                    Voice = candidate.Voice.Trim(),
+                    Head = candidate.Head.Trim(),
+                    ProfileJson = candidate.ProfileJson?.Trim() ?? string.Empty,
+                    CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                });
             }
 
-            successfulCandidates.Add(new FriendlyRecruitRequestEntry
+            if (successfulCandidates.Count == 0)
             {
-                ProfileId = candidate.ProfileId,
-                AccountId = candidate.AccountId?.Trim() ?? string.Empty,
-                Nickname = candidate.Nickname.Trim(),
-                Level = Math.Max(1, candidate.Level),
-                Side = candidate.Side?.Trim() ?? string.Empty,
-                Voice = candidate.Voice.Trim(),
-                Head = candidate.Head.Trim(),
-                ProfileJson = candidate.ProfileJson?.Trim() ?? string.Empty,
-                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-            });
-        }
+                logger.Warning($"Recruit pickup request for session '{sessionId}' had {candidates.Count} candidate(s), but none passed validation/chance.");
+                return;
+            }
 
-        if (successfulCandidates.Count == 0)
-        {
-            logger.Warning($"Recruit pickup request for session '{sessionId}' had {candidates.Count} candidate(s), but none passed validation/chance.");
-            return;
-        }
+            var pending = LoadRecruitRequests(sessionId);
+            var picked = successfulCandidates[Random.Shared.Next(successfulCandidates.Count)];
+            var accepted = storage.Read<Dictionary<string, int>>(sessionId, "accepted-recruits.json");
+            if (accepted?.ContainsKey(picked.ProfileId) == true
+                || pending.Any(entry => string.Equals(entry.ProfileId, picked.ProfileId, StringComparison.Ordinal)))
+            {
+                logger.Info($"Skipped duplicate recruit pickup request '{picked.Nickname}' for session '{sessionId}'");
+                return;
+            }
 
-        var pending = LoadRecruitRequests(sessionId);
-        var picked = successfulCandidates[Random.Shared.Next(successfulCandidates.Count)];
-        if (pending.Any(entry => string.Equals(entry.ProfileId, picked.ProfileId, StringComparison.Ordinal)))
-        {
-            logger.Info($"Skipped duplicate recruit pickup request '{picked.Nickname}' for session '{sessionId}'");
-            return;
+            EnsureRecruitRequestAccountId(sessionId, pending, picked);
+            teammateService.CaptureRecruitmentGearPrice(picked);
+            pending.Add(picked);
+            SaveRecruitRequests(sessionId, pending);
+            logger.Info($"Queued recruit pickup request '{picked.Nickname}' for session '{sessionId}'");
         }
-
-        EnsureRecruitRequestAccountId(sessionId, pending, picked);
-        teammateService.CaptureRecruitmentGearPrice(picked);
-        pending.Add(picked);
-        SaveRecruitRequests(sessionId, pending);
-        logger.Info($"Queued recruit pickup request '{picked.Nickname}' for session '{sessionId}'");
     }
 
     public List<FriendlySocialFriendRequestEntry> ListRecruitFriendRequests(MongoId sessionId)
     {
-        var pending = LoadRecruitRequests(sessionId);
-        if (pending.Count == 0)
+        lock (FriendlyTeammateService.CreationLock)
         {
-            return [];
-        }
+            var pending = LoadRecruitRequests(sessionId);
+            if (pending.Count == 0)
+            {
+                return [];
+            }
 
-        if (EnsureRecruitRequestAccountIds(sessionId, pending))
-        {
-            SaveRecruitRequests(sessionId, pending);
-        }
+            if (EnsureRecruitRequestAccountIds(sessionId, pending))
+            {
+                SaveRecruitRequests(sessionId, pending);
+            }
 
-        var toId = sessionId.ToString();
-        return pending.Select(entry => new FriendlySocialFriendRequestEntry
-        {
-            Id = $"pitfireteam-recruit-{entry.ProfileId}",
-            From = entry.ProfileId,
-            To = toId,
-            Date = entry.CreatedAt,
-            Profile = CreateRecruitRequestMember(entry),
-        }).ToList();
+            var toId = sessionId.ToString();
+            return pending.Select(entry => new FriendlySocialFriendRequestEntry
+            {
+                Id = $"pitfireteam-recruit-{entry.ProfileId}",
+                From = entry.ProfileId,
+                To = toId,
+                Date = entry.CreatedAt,
+                Profile = CreateRecruitRequestMember(entry),
+            }).ToList();
+        }
     }
 
     public bool TryGetRecruitProfile(MongoId sessionId, string? accountId, out GetOtherProfileResponse? profile)
     {
-        profile = null;
-        if (string.IsNullOrWhiteSpace(accountId))
+        lock (FriendlyTeammateService.CreationLock)
         {
-            return false;
-        }
+            profile = null;
+            if (string.IsNullOrWhiteSpace(accountId))
+            {
+                return false;
+            }
 
-        var pending = LoadRecruitRequests(sessionId);
-        if (EnsureRecruitRequestAccountIds(sessionId, pending))
-        {
-            SaveRecruitRequests(sessionId, pending);
-        }
+            var pending = LoadRecruitRequests(sessionId);
+            if (EnsureRecruitRequestAccountIds(sessionId, pending))
+            {
+                SaveRecruitRequests(sessionId, pending);
+            }
 
-        var request = pending.FirstOrDefault(entry => IsRecruitIdentityMatch(entry, accountId));
-        if (request == null)
-        {
-            return false;
-        }
+            var request = pending.FirstOrDefault(entry => IsRecruitIdentityMatch(entry, accountId));
+            if (request == null)
+            {
+                return false;
+            }
 
-        return teammateService.TryGetRecruitCandidateProfile(sessionId, request, out profile);
+            return teammateService.TryGetRecruitCandidateProfile(sessionId, request, out profile);
+        }
     }
 
-    public bool AcceptRecruitRequest(MongoId sessionId, string? profileId)
-    {
-        if (string.IsNullOrWhiteSpace(profileId))
-        {
-            return false;
-        }
+    public bool AcceptRecruitRequest(MongoId sessionId, string? profileId) =>
+        teammateService.AcceptRecruitInvitation(sessionId, profileId);
 
-        var pending = LoadRecruitRequests(sessionId);
-        var request = pending.FirstOrDefault(entry => string.Equals(entry.ProfileId, profileId, StringComparison.Ordinal));
-        if (request == null)
-        {
-            return false;
-        }
-
-        teammateService.CreateTeammateFromRecruitCandidate(sessionId, request);
-        pending.Remove(request);
-        SaveRecruitRequests(sessionId, pending);
-        return true;
-    }
-
-    public bool AcceptAllRecruitRequests(MongoId sessionId)
-    {
-        var pending = LoadRecruitRequests(sessionId);
-        if (pending.Count == 0)
-        {
-            return false;
-        }
-
-        foreach (var request in pending.ToList())
-        {
-            teammateService.CreateTeammateFromRecruitCandidate(sessionId, request);
-        }
-
-        SaveRecruitRequests(sessionId, []);
-        return true;
-    }
+    public bool AcceptAllRecruitRequests(MongoId sessionId) =>
+        teammateService.AcceptAllRecruitInvitations(sessionId);
 
     public bool DeclineRecruitRequest(MongoId sessionId, string? profileId)
     {
-        if (string.IsNullOrWhiteSpace(profileId))
+        lock (FriendlyTeammateService.CreationLock)
         {
-            return false;
-        }
+            if (string.IsNullOrWhiteSpace(profileId))
+            {
+                return false;
+            }
 
-        var pending = LoadRecruitRequests(sessionId);
-        var removed = pending.RemoveAll(entry => string.Equals(entry.ProfileId, profileId, StringComparison.Ordinal)) > 0;
-        if (removed)
-        {
-            SaveRecruitRequests(sessionId, pending);
-        }
+            var pending = LoadRecruitRequests(sessionId);
+            var removed = pending.RemoveAll(entry => string.Equals(entry.ProfileId, profileId, StringComparison.Ordinal)) > 0;
+            if (removed)
+            {
+                SaveRecruitRequests(sessionId, pending);
+            }
 
-        return removed;
+            return removed;
+
+        }
     }
 
     private List<FriendlyRecruitRequestEntry> LoadRecruitRequests(MongoId sessionId) =>

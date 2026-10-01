@@ -21,15 +21,25 @@ internal static class Program
     {
         if (args.Length == 3 && args[0] == "--convert-sqlite-snapshot")
             return TrialDatabaseConversion.Run(args[1], args[2]);
-        if (args.Length != 2) throw new ArgumentException("Usage: <SPT runtime root> <legacy profile directory>");
-        string runtime = Path.GetFullPath(args[0]);
-        string legacy = Path.GetFullPath(args[1]);
+        if (args.Length != 2) throw new ArgumentException("Usage: <SPT runtime root> <legacy profile directory>, or --courier-smoke <SPT runtime root>");
+        bool courierOnly = args[0] == "--courier-smoke";
+        string runtime = Path.GetFullPath(courierOnly ? args[1] : args[0]);
         AssemblyLoadContext.Default.Resolving += (_, name) =>
         {
             string path = Path.Combine(runtime, name.Name + ".dll");
             return File.Exists(path) ? AssemblyLoadContext.Default.LoadFromAssemblyPath(path) : null;
         };
-        return Run(legacy);
+        return courierOnly ? RunCourier() : Run(Path.GetFullPath(args[1]));
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static int RunCourier()
+    {
+        string work = Path.GetFullPath(Path.Combine("tests", "artifacts", "removal-courier", Guid.NewGuid().ToString("N")));
+        Directory.CreateDirectory(work);
+        RemovalCourierTests.Run(work, Check);
+        Console.WriteLine($"PASS: {checks} native removal courier checks. Test artifacts: {work}");
+        return 0;
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]

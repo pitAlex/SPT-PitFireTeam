@@ -28,6 +28,25 @@ public sealed class FollowerInsuranceRaidDiagnostics(
     private const string PreviousDocument = "insurance-previous-raid-diagnostic.json";
     private readonly ConcurrentDictionary<string, object> locks = new();
 
+    // Server-owned removal returns are authoritative ownership changes, independent of raid reports.
+    public void ObserveMemberRemovalCourier(MongoId sessionId, IEnumerable<string> itemIds)
+    {
+        var ids = itemIds.ToArray();
+        if (ids.Length == 0) return;
+        lock (locks.GetOrAdd(sessionId.ToString(), _ => new object()))
+        {
+            foreach (var document in new[] { Document, PreviousDocument })
+            {
+                var raid = storage.Read<FollowerInsuranceRaidDiagnostic>(sessionId, document);
+                if (raid == null) continue;
+                var updated = raid.CourierItemIds.Concat(ids).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                if (updated.Count == raid.CourierItemIds.Count) continue;
+                raid.CourierItemIds = updated;
+                storage.Write(sessionId, document, raid);
+            }
+        }
+    }
+
     public List<FollowerInsuranceRaidItem> GetDisplayPolicies(MongoId sessionId, string? serverId)
     {
         try

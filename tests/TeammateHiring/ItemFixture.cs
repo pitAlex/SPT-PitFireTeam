@@ -2,10 +2,13 @@ namespace SPTarkov.Server.Core.Models.Eft.Common.Tables;
 
 public record Item(string Id, string Template, string? ParentId, string? SlotId)
 {
+    public string? ParentId { get; set; } = ParentId;
+    public string? SlotId { get; set; } = SlotId;
     public Item() : this("", "", null, null) { }
     public Upd? Upd { get; set; }
+    public object? Location { get; set; }
 }
-public record Upd { public int StackObjectsCount { get; set; } = 1; public bool SpawnedInSession { get; set; } }
+public record Upd { public int StackObjectsCount { get; set; } = 1; public bool SpawnedInSession { get; set; } public double? Durability { get; set; } }
 public record Inventory { public List<Item> Items { get; set; } = []; }
 public record BotBaseInventory : Inventory
 {
@@ -13,6 +16,7 @@ public record BotBaseInventory : Inventory
 }
 public record BotBase
 {
+    public SPTarkov.Server.Core.Models.Common.MongoId? Id { get; set; }
     public int? Aid { get; set; }
     public Info Info { get; set; } = new();
     public BotBaseInventory Inventory { get; set; } = new();

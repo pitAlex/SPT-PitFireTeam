@@ -570,7 +570,7 @@ namespace pitTeam.Components
             panelRect.anchorMin = new Vector2(0.5f, 0.5f);
             panelRect.anchorMax = new Vector2(0.5f, 0.5f);
             panelRect.pivot = new Vector2(0.5f, 0.5f);
-            panelRect.sizeDelta = new Vector2(620f, entry.RecruitmentGearPrice.HasValue ? 238f : 188f);
+            panelRect.sizeDelta = new Vector2(620f, entry.RecruitmentGearPrice.HasValue ? 286f : 236f);
 
             Image panelImage = panel.GetComponent<Image>();
             panelImage.color = new Color(0.02f, 0.02f, 0.02f, 0.98f);
