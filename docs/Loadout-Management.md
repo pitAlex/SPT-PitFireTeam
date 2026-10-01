@@ -37,6 +37,8 @@ The UI uses cloned Ragfair `UIAnimatedToggleSpawner` controls under a Unity `Tog
 
 Selecting a different mode saves the config, syncs it to the server, and refreshes the visible toggle and roster. All modes use `Default`, so there is no preset-selection confirmation.
 
+Opening `EDIT LOADOUT` resets the cloned player-stash panel to the top after its grid and viewport layout is built, stopping inherited scroll momentum. The reset runs only on opening; scrolling within the editor works normally.
+
 ## Modes
 
 ### Restricted

@@ -50,6 +50,33 @@ namespace pitTeam.Modules
             public bool LookingAtFollower;
         }
 
+        // Recruitment reads native combat state before a bot becomes a follower. An EFT goal
+        // is not required, and this must not select or synchronize a SAIN enemy.
+        public static bool HasEnemy(BotOwner owner)
+        {
+            if (!pitFireTeam.IsSAINInstalled || owner == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                object? sainBot = TryGetSainBot(owner);
+                if (sainBot == null)
+                {
+                    return false;
+                }
+
+                ResolveSainBotAccessors(sainBot.GetType());
+                return sainBotHasEnemyProperty?.GetValue(sainBot) is bool hasEnemy && hasEnemy;
+            }
+            catch (Exception ex)
+            {
+                LogAccessorFailureOnce(ex);
+                return false;
+            }
+        }
+
         // Diagnostics only: read the actual SAIN goal even when it differs from EFT's mirror.
         internal static string DescribeGoalEnemy(BotOwner owner)
         {

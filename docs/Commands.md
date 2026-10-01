@@ -164,6 +164,7 @@ Behavior:
 - Disables patrol-radius mode by setting `CanPatrol` false.
 - Does not otherwise change combat objective state directly.
 - For a same-side non-follower, the receiver path instead attempts in-raid recruitment.
+- Recruitment during combat answers `EPhraseTrigger.DontKnow` without rolling or remembering a refusal. Combat means EFT `Memory.HaveEnemy` or the external SAIN plugin's native `HasEnemy`, even without an EFT goal and with the addon absent. The initial request and deferred conversion checks give combat priority over an existing cached refusal; that earlier level refusal still applies after combat ends.
 - When tiered PMC recruitment rejects that bot because of the level-based acceptance decision, the refusal is remembered for the rest of the raid. Repeating `Follow Me` or `Cooperation` cannot reroll that bot's decision.
 
 ### On Your Own

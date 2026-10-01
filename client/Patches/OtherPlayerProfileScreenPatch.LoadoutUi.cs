@@ -442,6 +442,15 @@ namespace pitTeam.Patches
                     null,
                     ItemsPanel.EItemsTab.Gear);
 
+                // The template may retain a previous screen's offset. Reset only this clone,
+                // after the stash grid and viewport have their final layout bounds.
+                if (stashPanel._stashScroll != null)
+                {
+                    Canvas.ForceUpdateCanvases();
+                    stashPanel._stashScroll.StopMovement();
+                    stashPanel._stashScroll.normalizedPosition = Vector2.up;
+                }
+
                 LoadoutEditorStashPanel = stashPanel;
             }
             catch (Exception ex)

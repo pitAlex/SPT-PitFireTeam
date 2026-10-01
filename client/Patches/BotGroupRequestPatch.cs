@@ -63,8 +63,9 @@ namespace pitTeam.Patches
                 if (player.Side == posibleExecuter.Side)
                 {
                     // Do not allow recruiting bots that are already in combat.
-                    // Visibility does not matter; any active enemy memory means deny.
-                    if (posibleExecuter.Memory?.HaveEnemy == true)
+                    // SAIN can own an active enemy without an EFT goal. Combat is a temporary
+                    // refusal and must precede the raid-scoped level decision.
+                    if (HasRecruitmentCombatEnemy(posibleExecuter))
                     {
                         posibleExecuter.BotTalk.TrySay(EPhraseTrigger.DontKnow);
                         posibleExecuter.Gesture.TryGestus(EInteraction.NoGesture, true);
@@ -185,6 +186,13 @@ namespace pitTeam.Patches
                                     return;
                                 }
 
+                                if (HasRecruitmentCombatEnemy(me))
+                                {
+                                    me.BotTalk.TrySay(EPhraseTrigger.DontKnow, false);
+                                    me.Gesture.TryGestus(EInteraction.NoGesture, true);
+                                    return;
+                                }
+
                                 if (BossPlayers.HasDeniedRecruitment(me.ProfileId))
                                 {
                                     me.BotTalk.TrySay(EPhraseTrigger.Negative, false);
@@ -212,13 +220,6 @@ namespace pitTeam.Patches
                                 if (deferredCurrentPickups >= deferredHardPickupLimit)
                                 {
                                     me.BotTalk.TrySay(EPhraseTrigger.Negative, false);
-                                    me.Gesture.TryGestus(EInteraction.NoGesture, true);
-                                    return;
-                                }
-
-                                if (me.Memory?.HaveEnemy == true)
-                                {
-                                    me.BotTalk.TrySay(EPhraseTrigger.DontKnow, false);
                                     me.Gesture.TryGestus(EInteraction.NoGesture, true);
                                     return;
                                 }
@@ -268,10 +269,25 @@ namespace pitTeam.Patches
             return true;
         }
 
+        private static bool HasRecruitmentCombatEnemy(BotOwner bot)
+        {
+            return bot.Memory?.HaveEnemy == true || SainGoalEnemyBridge.HasEnemy(bot);
+        }
+
         private static void CompleteRecruitConversion(BotOwner bot, pitAIBossPlayer playerBoss)
         {
             if (bot == null || playerBoss == null || bot.IsDead || bot.BotState != EBotState.Active || bot.GetPlayer == null || !bot.GetPlayer.HealthController.IsAlive)
             {
+                return;
+            }
+
+            if (HasRecruitmentCombatEnemy(bot))
+            {
+                FollowerForcedPhraseGate.Arm(bot, EPhraseTrigger.DontKnow, 1.5f);
+                bot.BotTalk.SetSilence(0f);
+                bot.BotTalk.DropNextSayPeriod();
+                bot.BotTalk.Say(EPhraseTrigger.DontKnow, true);
+                bot.Gesture.TryGestus(EInteraction.NoGesture, true);
                 return;
             }
 
@@ -281,16 +297,6 @@ namespace pitTeam.Patches
                 bot.BotTalk.SetSilence(0f);
                 bot.BotTalk.DropNextSayPeriod();
                 bot.BotTalk.Say(EPhraseTrigger.Negative, true);
-                bot.Gesture.TryGestus(EInteraction.NoGesture, true);
-                return;
-            }
-
-            if (bot.Memory?.HaveEnemy == true)
-            {
-                FollowerForcedPhraseGate.Arm(bot, EPhraseTrigger.DontKnow, 1.5f);
-                bot.BotTalk.SetSilence(0f);
-                bot.BotTalk.DropNextSayPeriod();
-                bot.BotTalk.Say(EPhraseTrigger.DontKnow, true);
                 bot.Gesture.TryGestus(EInteraction.NoGesture, true);
                 return;
             }

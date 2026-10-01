@@ -13,6 +13,8 @@
 
 External SAIN may patch low-level EFT calculations even when core owns combat. General compatibility is gated by external-SAIN presence, not by `UseSainFollowerCombat`. Core has no typed SAIN dependency. Ordinary bots retain native SAIN behavior except for the shared vision-loop recovery below.
 
+Before recruiting an allied bot, Core passively reads native `HasEnemy` through `SainGoalEnemyBridge`, alongside EFT `Memory.HaveEnemy`. A native active enemy can block recruitment even without an EFT goal or the addon. Initial and deferred checks answer `DontKnow` before checking cached level refusals, without selecting/synchronizing an enemy or creating a refusal. See [recruitment commands](Commands.md#follow-me--cooperation).
+
 ## Core ownership while SAIN is installed
 
 General external-SAIN compatibility belongs to the main plugin and is gated by `IsSAINInstalled`, not addon presence. It must behave consistently in both configurations:
