@@ -195,7 +195,7 @@ Looting is currently command-driven. Teammates do not wander away to loot on the
 
 - Look at a loose item and use **Loot This**. Any available follower can collect it if they can reach it and have somewhere suitable to put it.
 - Look at a body and use **Check Him / Loot Body**, or use the loot command while looking at a container. Body and container searches are handled only by saved teammates who spawned into the raid with you.
-- With a living follower, a corpse also offers **CMD: Loot This**, **CMD: Loot & Get Weapon**, **CMD: Loot & Get Gear**, **CMD: Get Weapon**, and **CMD: Get Gear**. The two weapon actions appear only when the corpse has a gun. The `Loot &` actions prioritize that category and then continue normal looting; `Get` takes only that category for this request.
+- With a living follower, a corpse also offers **CMD : Check Him**, **CMD: Loot & Get Weapon**, **CMD: Loot & Get Gear**, **CMD: Get Weapon**, and **CMD: Get Gear**. The two weapon actions appear only when the corpse has a gun. The `Loot &` actions prioritize that category and then continue normal looting; `Get` takes only that category for this request.
 - The closest available teammate by walking route, within roughly 22 meters, takes the job. A teammate who is fighting or already carrying out another loot order is skipped.
 - Different teammates can search different targets when you issue several orders quickly. A target already being handled cannot be assigned to a second teammate.
 

@@ -236,6 +236,7 @@
   },
   "socialUi": {
     "LootActionThis": "CMD: 搜刮此处",
+    "LootActionCheckHim": "CMD : 搜查他",
     "LootActionTakeThis": "CMD: 拿取此物",
     "LootActionAndWeapon": "CMD: 搜刮并获取武器",
     "LootActionAndGear": "CMD: 搜刮并获取装备",

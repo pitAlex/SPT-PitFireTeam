@@ -75,6 +75,7 @@
   "botStatus": { "Dead": "Мертв", "Engaged": "В бою", "Alerted": "Враг обнаружен", "Heal": "Лечится", "WantToHeal": "Хочет лечиться" },
   "socialUi": {
     "LootActionThis": "CMD: Обыскать",
+    "LootActionCheckHim": "CMD : Обыщи его",
     "LootActionTakeThis": "CMD: Взять это",
     "LootActionAndWeapon": "CMD: Обыскать и взять оружие",
     "LootActionAndGear": "CMD: Обыскать и взять снаряжение",

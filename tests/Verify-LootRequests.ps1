@@ -53,9 +53,14 @@ $candidates = Get-Content -Raw (Join-Path $RepositoryRoot 'client/BigBrain/Actio
 if ($candidates -notmatch 'ActiveLootRequest\?\.AllowsSelectedWeapon') { throw 'Missing centralized weapon selection gate' }
 foreach ($localeFile in Get-ChildItem (Join-Path $RepositoryRoot 'server/Resources/lang') -Filter '*.json') {
     $locale = Get-Content -Raw -Encoding UTF8 $localeFile.FullName | ConvertFrom-Json
-    foreach ($key in @('LootActionThis','LootActionTakeThis','LootActionAndWeapon','LootActionAndGear','LootActionWeapon','LootActionGear')) {
-        if ($locale.socialUi.$key -notmatch '^CMD: \S') { throw "Missing CMD label $key in $($localeFile.Name)" }
+    foreach ($key in @('LootActionThis','LootActionCheckHim','LootActionTakeThis','LootActionAndWeapon','LootActionAndGear','LootActionWeapon','LootActionGear')) {
+        if ($locale.socialUi.$key -notmatch '^CMD ?: \S') { throw "Missing CMD label $key in $($localeFile.Name)" }
     }
+}
+$interaction = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Patches/FollowerLootInteractionPatch.cs')
+if ($interaction -notmatch '(?s)if \(interactive is Corpse corpse\).*?Add\(FollowerLootMode.Normal, "LootActionCheckHim"\)' -or
+    $interaction -notmatch '(?s)interactive is LootableContainer\s*\? "LootActionThis"\s*: "LootActionTakeThis"') {
+    throw 'Corpse, container and loose-item labels must remain target-specific'
 }
 if ($GameRoot) {
     Add-Type -Path (Join-Path $RepositoryRoot 'client/libs/Mono.Cecil.dll')

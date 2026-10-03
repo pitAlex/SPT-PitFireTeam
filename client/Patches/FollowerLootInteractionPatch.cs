@@ -27,7 +27,7 @@ namespace pitTeam.Patches
                 if (interactive is Corpse corpse)
                 {
                     bool hasWeapon = HasWeapon(corpse);
-                    Add(FollowerLootMode.Normal, "LootActionThis");
+                    Add(FollowerLootMode.Normal, "LootActionCheckHim");
                     if (hasWeapon) Add(FollowerLootMode.LootAndGetWeapon, "LootActionAndWeapon");
                     Add(FollowerLootMode.LootAndGetGear, "LootActionAndGear");
                     if (hasWeapon) Add(FollowerLootMode.GetWeapon, "LootActionWeapon");
