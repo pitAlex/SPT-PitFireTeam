@@ -16,7 +16,7 @@ using UnityEngine;
 
 namespace pitTeam.Modules
 {
-    internal static class BattleRecorder
+    internal static partial class BattleRecorder
     {
         private const string UpdateHubSubscriptionId = "pitTeam.BattleRecorder";
         private const float FollowerWeaponActivityProbeSeconds = 0.1f;
@@ -117,7 +117,7 @@ namespace pitTeam.Modules
                     raidId = currentRaidId,
                     locationId = currentLocationId,
                     file = currentFilePath,
-                    schemaVersion = 13,
+                    schemaVersion = 14,
                     snapshotIntervalMs = GetSnapshotIntervalMs(),
                     followerWeaponActivityProbeMs = Mathf.RoundToInt(FollowerWeaponActivityProbeSeconds * 1000f),
                     goalEnemyTransitionCoalesceMs = Mathf.RoundToInt(GoalEnemyTransitionCoalesceSeconds * 1000f)
@@ -1062,6 +1062,7 @@ namespace pitTeam.Modules
                 }
 
                 RecorderFollowerState state = GetOrCreateState(owner);
+                RecordPatrolWait(owner, state);
                 FlushExpiredGoalEnemyTransitionRepeats(owner, state);
                 bool sainActive = SainCombatRecorderBridge.IsActive(owner);
                 RecordAddonCombatState(owner, sainActive, "sainSnapshotSync");
@@ -1377,6 +1378,7 @@ namespace pitTeam.Modules
                 health = CreateLimbStatusSnapshot(bot),
                 cover = sainMovement ? sain.Cover : CreateCoverSnapshot(bot),
                 enemy = enemySnapshot,
+                enemyTracking = FollowerEnemyTracking.Snapshot(bot, goalEnemy),
                 boss = bossSnapshot,
                 targetCommitment = CreateTargetCommitmentSnapshot(bot, followerData, goalEnemy),
                 tactic = followerData?.CombatTactic.ToString(),
@@ -2580,6 +2582,11 @@ namespace pitTeam.Modules
 
         private sealed class RecorderFollowerState
         {
+            public float NextPatrolWaitProbe;
+            public float NextPatrolWaitRecord;
+            public float PatrolWaitStarted;
+            public bool PatrolWaiting;
+            public string? PatrolWaitBlock;
             public bool InCombat;
             public string? CombatOwner;
             public int CombatEpisodeId;

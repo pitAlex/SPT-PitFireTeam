@@ -917,7 +917,7 @@ namespace pitTeam.BigBrain.Actions
             EnemyInfo goalEnemy = BotOwner.Memory?.GoalEnemy;
             if (goalEnemy == null ||
                 !goalEnemy.IsVisible ||
-                goalEnemy.Distance > CloseThreatSuppressFireAlignmentDistance)
+                pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) > CloseThreatSuppressFireAlignmentDistance)
             {
                 return false;
             }

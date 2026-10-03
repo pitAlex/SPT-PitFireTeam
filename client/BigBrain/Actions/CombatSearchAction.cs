@@ -23,6 +23,8 @@ namespace pitTeam.BigBrain.Actions
         private string memorySearchEnemyProfileId = string.Empty;
         private Vector3 memorySearchPoint;
         private float memorySearchRealReportTime;
+        private float inspectUntil;
+        private Vector3 inspectForward;
 
         public CombatSearchAction(BotOwner botOwner) : base(botOwner)
         {
@@ -36,6 +38,7 @@ namespace pitTeam.BigBrain.Actions
             memorySearchEnemyProfileId = string.Empty;
             memorySearchPoint = Vector3.zero;
             memorySearchRealReportTime = 0f;
+            inspectUntil = 0f;
         }
 
         public override void Update(CustomLayer.ActionData data)
@@ -43,15 +46,18 @@ namespace pitTeam.BigBrain.Actions
             string? reason = GetReason(data);
             if (TryStopForPointBlankContact(reason))
             {
+                FollowerEnemyTracking.EndSearch(BotOwner, memorySearchEnemyProfileId);
                 return;
             }
 
-            if (FollowerCombatPush.IsMemoryOnlySearchReason(reason))
+            if (FollowerCombatPush.IsMemoryOnlySearchReason(reason) ||
+                (FollowerEnemyTracking.IsRealistic(BotOwner.Memory?.GoalEnemy) && !BotOwner.Memory.GoalEnemy.IsVisible))
             {
-                UpdateMemoryOnlySearch(reason!);
+                UpdateMemoryOnlySearch(reason ?? "memoryOnlyAutoSearch.tracking");
                 return;
             }
 
+            FollowerEnemyTracking.EndSearch(BotOwner, memorySearchEnemyProfileId);
             baseLogic.UpdateNodeByBrain(GetRawData(data));
             EnforceCloseThreatStandingPose("search", reason);
             EnsureSearchMove();
@@ -62,11 +68,18 @@ namespace pitTeam.BigBrain.Actions
             LookSimple();
         }
 
+        public override void Stop()
+        {
+            FollowerEnemyTracking.EndSearch(BotOwner, memorySearchEnemyProfileId);
+            base.Stop();
+        }
+
         private void UpdateMemoryOnlySearch(string reason)
         {
             EnemyInfo? goalEnemy = BotOwner.Memory?.GoalEnemy;
             if (goalEnemy == null)
             {
+                FollowerEnemyTracking.EndSearch(BotOwner, memorySearchEnemyProfileId);
                 ClearSearchPointAndStop();
                 return;
             }
@@ -78,6 +91,7 @@ namespace pitTeam.BigBrain.Actions
                                     System.StringComparison.Ordinal);
             if (!memorySearchInitialized || enemyChanged)
             {
+                if (enemyChanged) FollowerEnemyTracking.EndSearch(BotOwner, memorySearchEnemyProfileId);
                 BotSearchPoint? selectedPoint = BotOwner.SearchData?.SearchPoint;
                 if (selectedPoint == null || !IsFinite(selectedPoint.Position))
                 {
@@ -86,9 +100,13 @@ namespace pitTeam.BigBrain.Actions
                 }
 
                 memorySearchInitialized = true;
+                inspectUntil = 0f;
                 memorySearchEnemyProfileId = goalEnemy.ProfileId;
                 memorySearchPoint = selectedPoint.Position;
                 memorySearchRealReportTime = goalEnemy.GroupInfo?.EnemyLastSeenTimeReal ?? 0f;
+                if (FollowerEnemyTracking.IsRealistic(goalEnemy) &&
+                    FollowerEnemyTracking.TryGetKnownPosition(goalEnemy, out _, out float observedAt))
+                    memorySearchRealReportTime = observedAt;
                 BattleRecorder.RecordCommitmentEvent(
                     BotOwner,
                     "memorySearch",
@@ -100,13 +118,41 @@ namespace pitTeam.BigBrain.Actions
             TryRefreshMemorySearchPoint(goalEnemy, reason);
 
             Vector3 toSearchPoint = memorySearchPoint - BotOwner.Position;
-            if (toSearchPoint.y < BotOwner.Settings.FileSettings.Move.Y_APPROXIMATION)
+            if (Mathf.Abs(toSearchPoint.y) < BotOwner.Settings.FileSettings.Move.Y_APPROXIMATION)
             {
                 toSearchPoint.y = 0f;
             }
 
-            if (toSearchPoint.sqrMagnitude < MemorySearchArrivalDistanceSqr)
+            if (toSearchPoint.sqrMagnitude < MemorySearchArrivalDistanceSqr &&
+                (!FollowerEnemyTracking.IsRealistic(goalEnemy) ||
+                 (Mathf.Abs(BotOwner.Position.y - memorySearchPoint.y) <= 1.75f &&
+                  (inspectUntil > 0f || FollowerEnemyTracking.HasArrived(BotOwner, memorySearchPoint)))))
             {
+                if (FollowerEnemyTracking.IsRealistic(goalEnemy))
+                {
+                    if (inspectUntil <= 0f)
+                    {
+                        inspectUntil = Time.time + 3f;
+                        inspectForward = BotOwner.LookDirection;
+                        inspectForward.y = 0f;
+                        if (inspectForward.sqrMagnitude < 0.01f) inspectForward = Vector3.forward;
+                        BattleRecorder.RecordCommitmentEvent(BotOwner, "memorySearch", "inspect", reason, target: memorySearchPoint);
+                    }
+                    FollowerEnemyTracking.SearchTick(goalEnemy);
+                    BotOwner.Mover.Stop();
+                    SetCombatSprint(false);
+                    StopCombatShooting();
+                    if (Time.time < inspectUntil)
+                    {
+                        float elapsed = 3f - (inspectUntil - Time.time);
+                        float angle = elapsed < 1f ? -65f : elapsed < 2f ? 65f : 160f;
+                        BotOwner.Steering.LookToPoint(BotOwner.Position + Vector3.up +
+                            Quaternion.Euler(0f, angle, 0f) * inspectForward.normalized * 8f);
+                        return;
+                    }
+                }
+                FollowerEnemyTracking.CompleteSearch(goalEnemy, memorySearchRealReportTime);
+                FollowerEnemyTracking.EndSearch(BotOwner, memorySearchEnemyProfileId);
                 ClearSearchPointAndStop();
                 BattleRecorder.RecordCommitmentEvent(
                     BotOwner,
@@ -117,9 +163,12 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
+            inspectUntil = 0f;
             StopCombatShooting();
             EnforceCloseThreatStandingPose("memorySearch", reason);
             EnsureSearchMove();
+            if (BotOwner.SearchData?.isReachableLast == true) FollowerEnemyTracking.SearchTick(goalEnemy);
+            else FollowerEnemyTracking.EndSearch(BotOwner, memorySearchEnemyProfileId);
             EnforceDistantCombatMovementStandingPose(
                 "memorySearch",
                 reason,
@@ -132,16 +181,20 @@ namespace pitTeam.BigBrain.Actions
         {
             float reportTime = goalEnemy.GroupInfo?.EnemyLastSeenTimeReal ?? 0f;
             Vector3 reportedPoint = goalEnemy.EnemyLastPositionReal;
+            bool realistic = FollowerEnemyTracking.IsRealistic(goalEnemy);
+            if (realistic && !FollowerEnemyTracking.TryGetKnownPosition(goalEnemy, out reportedPoint, out reportTime)) return;
             if (reportTime <= memorySearchRealReportTime ||
                 !IsFinite(reportedPoint) ||
                 reportedPoint.sqrMagnitude <= 0.01f ||
-                (reportedPoint - memorySearchPoint).sqrMagnitude < MemorySearchRefreshDistanceSqr ||
-                !NavMesh.SamplePosition(reportedPoint, out NavMeshHit hit, 8f, NavMesh.AllAreas))
+                (!realistic && (reportedPoint - memorySearchPoint).sqrMagnitude < MemorySearchRefreshDistanceSqr) ||
+                !NavMesh.SamplePosition(reportedPoint, out NavMeshHit hit, realistic ? 1.5f : 8f, NavMesh.AllAreas) ||
+                (realistic && Mathf.Abs(hit.position.y - reportedPoint.y) > 1.75f))
             {
                 return;
             }
 
             memorySearchRealReportTime = reportTime;
+            inspectUntil = 0f;
             memorySearchPoint = hit.position;
             BotOwner.SearchData.SearchPoint = new BotSearchPoint(memorySearchPoint, EBotSearchPoint.playerPosition);
             BotOwner.SearchData._lastSearchPoint = null;
@@ -201,12 +254,14 @@ namespace pitTeam.BigBrain.Actions
             }
 
             Vector3 toSearchPoint = searchPoint.Position - BotOwner.Position;
-            if (toSearchPoint.y < BotOwner.Settings.FileSettings.Move.Y_APPROXIMATION)
+            if (Mathf.Abs(toSearchPoint.y) < BotOwner.Settings.FileSettings.Move.Y_APPROXIMATION)
             {
                 toSearchPoint.y = 0f;
             }
 
-            if (toSearchPoint.sqrMagnitude < 4f)
+            if (toSearchPoint.sqrMagnitude < 4f &&
+                (!FollowerEnemyTracking.IsRealistic(BotOwner.Memory?.GoalEnemy) ||
+                 FollowerEnemyTracking.HasArrived(BotOwner, searchPoint.Position)))
             {
                 return;
             }
@@ -239,12 +294,14 @@ namespace pitTeam.BigBrain.Actions
             }
 
             Vector3 toSearchPoint = searchPoint.Position - BotOwner.Position;
-            if (toSearchPoint.y < BotOwner.Settings.FileSettings.Move.Y_APPROXIMATION)
+            if (Mathf.Abs(toSearchPoint.y) < BotOwner.Settings.FileSettings.Move.Y_APPROXIMATION)
             {
                 toSearchPoint.y = 0f;
             }
 
-            return toSearchPoint.sqrMagnitude >= 4f;
+            return toSearchPoint.sqrMagnitude >= 4f ||
+                (FollowerEnemyTracking.IsRealistic(BotOwner.Memory?.GoalEnemy) &&
+                 !FollowerEnemyTracking.HasArrived(BotOwner, searchPoint.Position));
         }
 
         public void LookSimple(Vector3? committedDestination = null)

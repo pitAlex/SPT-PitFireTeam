@@ -315,7 +315,7 @@ namespace pitTeam.BigBrain.Actions
 
             if (enemyDistance <= 0f)
             {
-                enemyDistance = Vector3.Distance(BotOwner.Position, goalEnemy.CurrPosition);
+                enemyDistance = Vector3.Distance(BotOwner.Position, pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy));
             }
 
             if (enemyDistance < DistantCombatMovementStandingDistance)

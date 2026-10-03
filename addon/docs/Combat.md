@@ -14,6 +14,16 @@ The typed prefix belongs to the addon and uses its existing installation/rollbac
 
 Core owns patrol and post-combat `runToHeal` movement after addon combat releases. SAIN 4.5.1 continues updating its native `LeanClass` outside active SAIN layers while it retains a live native enemy, and its running check reads the SAIN mover rather than Core's healing mover. This can reapply a combat lean after Core's one-time patrol tilt reset. The addon makes SAIN's existing lean-state check return its normal reset path for selected SAINGrunt/SAINShooter followers only while no SAIN layer is active. Native smoothing releases the angle; active SAIN combat, Core tactics, ordinary SAIN bots, enemy memory and movement selection are unchanged. The guard runs only on SAIN's existing 20 Hz lean check and does not query geometry or evaluate combat decisions.
 
+## Sound awareness during peaceful actions
+
+Selected, ready SAINGrunt and SAINShooter followers observe SAIN 4.5.1's actual `HearingAnalysis.CheckIfSoundHeard` result. SAIN bypasses EFT's ordinary gunshot dispatcher, so the existing Core dispatcher hook alone cannot deliver those shots. The addon observes the native result before the separate gunshot-chasing policy; it never invokes hearing/decision providers again or modifies their results.
+
+A personally audible movement/bush/voice sound within 25 m creates a three-second facing hold at the emitted position. An audible gunshot instead requires the shooter to face the player or a living squadmate within a 30-degree half cone, including elevation. Facing is sampled only at sound acceptance; the retained bearing never tracks the hidden actor. Directed shots outrank incidental movement, and farther unrelated sounds cannot repeatedly pull the follower away from a closer held sound. Native audibility remains authoritative at every distance.
+
+Addon postfixes on Core's peaceful Follow and Gesture action updates preserve this bearing against idle scanning, including HoldPosition. Explicit player look, actual sprint, medical/backpack/loot interactions, admitted combat and active native layers retain ownership. No goal, sight, fire permission, movement, search, cover route or combat episode is created by this facing hold. Existing preparation below retains its same-floor/short-route restrictions. Attention clears the hold and ignores dismissed local sounds until sector change; fresh directed gunfire can restore orientation after Core's immediate Attention suppression ends. Lifecycle/tactic/native-component replacement clears the hold.
+
+Debug `sainSoundReaction` events report accepted/rejected audibility, response reason, sound kind, identity and emitted position, bounded to one event per follower per second. Recording is passive and is also available outside combat. The hot path adds no physics or navigation queries, world scans, or per-frame allocations.
+
 ## Admission and recovery
 
 SAINGrunt and SAINShooter use Core's dead/removed EFT goal cleanup and stable squad enemy reports. A stale dead goal no longer excludes an addon follower from Core's idle-recipient synchronization after its own enemy dies. Cleanup changes only the invalid EFT reference; native living contacts, accepted-goal admission, visibility and fire permission retain their existing owners.

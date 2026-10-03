@@ -1318,6 +1318,9 @@ namespace pitTeam.Utils
             currentEnemyPosition = Vector3.zero;
             try
             {
+                if (FollowerEnemyTracking.IsRealistic(goalEnemy))
+                    return FollowerEnemyTracking.TryGetKnownPosition(goalEnemy, out currentEnemyPosition, out _) &&
+                        IsPlausibleEnemyMarkerPosition(currentEnemyPosition);
                 currentEnemyPosition = liveEnemy?.Transform != null
                     ? liveEnemy.Transform.position
                     : goalEnemy.CurrPosition;

@@ -25,6 +25,7 @@ namespace pitTeam.SAINAddon
             public SAINFollowerRecorder Recorder;
             public SAINFollowerPersonality Personality;
             public SAINFollowerCover Cover;
+            public SainFollowerSoundAwareness SoundAwareness;
             public BotComponent Bot;
             public readonly SAINFollowerCombatHandoff Handoff = new SAINFollowerCombatHandoff();
             public readonly SAINFollowerAttentionIgnore AttentionIgnore = new();
@@ -89,11 +90,11 @@ namespace pitTeam.SAINAddon
                 !States.TryGetValue(owner, out State state)) return null;
             Enemy enemy = state.Bot.GoalEnemy;
             if (enemy == null || !enemy.WasValid || !enemy.EnemyKnown || !Enemy.IsEnemyActive(enemy) ||
-                enemy.EnemyPlayer?.HealthController?.IsAlive != true || !enemy.LastKnownPosition.HasValue)
+                enemy.EnemyPlayer?.HealthController?.IsAlive != true || !SainEnemyTracking.Position(enemy).HasValue)
                 return null;
 
-            // Do not select/refresh an enemy or read a hidden target's real position for the UI.
-            return new SainEnemyContact(enemy.EnemyProfileId, enemy.LastKnownPosition.Value,
+            // Display the mode-permitted position without selecting enemies or refreshing evidence.
+            return new SainEnemyContact(enemy.EnemyProfileId, SainEnemyTracking.Position(enemy).GetValueOrDefault(),
                 enemy.IsVisible && enemy.CanShoot ? enemy.EnemyPosition : (UnityEngine.Vector3?)null,
                 enemy.TimeSinceSeen);
         }
@@ -130,6 +131,8 @@ namespace pitTeam.SAINAddon
                         bot.Mover.Stop(); bot.Decision.ResetDecisions(false); state.Handoff.Clear();
                     }
                     state.AttentionIgnore.Clear();
+                    state.SoundAwareness?.Clear();
+                    state.SoundAwareness = new SainFollowerSoundAwareness(bot);
                     state.Recorder?.Dispose();
                     state.Recorder = null;
                     state.Objectives?.Clear("nativeStateReplaced");
@@ -286,6 +289,7 @@ namespace pitTeam.SAINAddon
                 state.EngageAttempt?.Clear("release");
                 state.Handoff.Clear();
                 state.AttentionIgnore.Clear();
+                state.SoundAwareness?.Clear();
                 state.Regroup?.Clear("release");
                 bool wasPrepared = state.Prepared;
                 state.Prepared = false;
@@ -337,8 +341,13 @@ namespace pitTeam.SAINAddon
             if (owner == null || !owner.IsBotActive() || !pitFireTeam.UseSainFollowerCombat(owner) ||
                 !States.TryGetValue(owner, out State state) ||
                 !SainPlayerSquadBridge.TryGetPlayerLeader(owner, out Player player)) return;
-            state.AttentionIgnore.Remember(state.Bot, player.Position);
+            state.AttentionIgnore.Remember(state.Bot, player.Position, state.SoundAwareness?.Contact);
+            state.SoundAwareness?.Clear();
         }
+
+        internal static SainFollowerSoundAwareness? GetSoundAwareness(BotOwner owner) =>
+            owner != null && States.TryGetValue(owner, out State state) && IsReady(owner) &&
+            SainAddonBridge.IsAddonTacticSelected(owner) ? state.SoundAwareness : null;
 
         internal static bool IsAttentionContactIgnored(BotOwner owner, Enemy enemy) =>
             owner != null && States.TryGetValue(owner, out State state) &&
@@ -365,7 +374,12 @@ namespace pitTeam.SAINAddon
 
         private static Enemy PreferEnemy(BotOwner owner, Enemy native)
         {
-            try { return GetSquadSupport(owner)?.PreferEnemy(GetPush(owner)?.PreferEnemy(native) ?? native) ?? native; }
+            try
+            {
+                Enemy preferred = GetSquadSupport(owner)?.PreferEnemy(GetPush(owner)?.PreferEnemy(native) ?? native) ?? native;
+                if (preferred != native || !States.TryGetValue(owner, out State state)) return preferred;
+                return SainContactEnemyBridge.PreferRetainedContact(state.Bot, native);
+            }
             catch (Exception ex)
             {
                 GetPush(owner)?.Clear("targetPreferenceFailed");

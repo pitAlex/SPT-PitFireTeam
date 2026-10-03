@@ -818,8 +818,8 @@ namespace pitTeam.BigBrain
                 return;
             }
 
-            Vector3 enemyPosition = IsFinite(goalEnemy.CurrPosition)
-                ? goalEnemy.CurrPosition
+            Vector3 enemyPosition = IsFinite(pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy))
+                ? pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy)
                 : goalEnemy.PersonalLastPos;
 
             if (!IsFinite(enemyPosition) || enemyPosition.sqrMagnitude <= 0.01f)
@@ -1302,7 +1302,7 @@ namespace pitTeam.BigBrain
 
             if (goalEnemy!.IsVisible &&
                 goalEnemy.CanShoot &&
-                goalEnemy.Distance <= ReloadRetreatThreatDistance)
+                pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= ReloadRetreatThreatDistance)
             {
                 return true;
             }
@@ -1311,7 +1311,7 @@ namespace pitTeam.BigBrain
                                    owner.WeaponManager?.CurrentWeapon;
             int loadedRounds = CountLoadedRounds(activeWeapon);
             return loadedRounds <= GrenadeLauncherEmergencyLowLoadedRounds &&
-                   goalEnemy.Distance <= GrenadeLauncherArmingDistance &&
+                   pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= GrenadeLauncherArmingDistance &&
                    (goalEnemy.IsVisible || goalEnemy.CanShoot);
         }
 
@@ -2384,7 +2384,7 @@ namespace pitTeam.BigBrain
             }
 
             if (goalEnemy.IsVisible &&
-                goalEnemy.Distance <= CombatDistanceConfiguration.Instance.GetClosePushDistance())
+                pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= CombatDistanceConfiguration.Instance.GetClosePushDistance())
             {
                 return true;
             }
@@ -2754,7 +2754,7 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
-            if (goalEnemy.IsVisible && goalEnemy.Distance <= CloseVisibleThreatBreakDistance)
+            if (goalEnemy.IsVisible && pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= CloseVisibleThreatBreakDistance)
             {
                 return true;
             }
@@ -2937,7 +2937,7 @@ namespace pitTeam.BigBrain
 
         public bool HasActiveCombatEnemy(EnemyInfo? goalEnemy)
         {
-            if (!botOwner.Memory.HaveEnemy || goalEnemy == null)
+            if (!botOwner.Memory.HaveEnemy || goalEnemy == null || !FollowerEnemyTracking.IsEligible(goalEnemy))
             {
                 return false;
             }
@@ -3335,7 +3335,7 @@ namespace pitTeam.BigBrain
 
         internal static bool HasActiveCombatEnemy(BotOwner botOwner, EnemyInfo? goalEnemy)
         {
-            if (botOwner?.Memory?.HaveEnemy != true || goalEnemy == null)
+            if (botOwner?.Memory?.HaveEnemy != true || goalEnemy == null || !FollowerEnemyTracking.IsEligible(goalEnemy))
             {
                 return false;
             }
@@ -3793,7 +3793,7 @@ namespace pitTeam.BigBrain
 
             float aggression = aggressionOverride01 ?? GetAggression01();
             float standAndTradeDistance = botOwner.LookSensor.MaxShootDist * 0.5f;
-            return aggression < 0.45f && goalEnemy.Distance > standAndTradeDistance && PointToShoot != null;
+            return aggression < 0.45f && pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) > standAndTradeDistance && PointToShoot != null;
         }
 
         /// <summary>
@@ -3869,7 +3869,7 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
-            return aggression >= pushThreshold && ProtectWantKill(goalEnemy.Distance * 1.2f);
+            return aggression >= pushThreshold && ProtectWantKill(pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) * 1.2f);
         }
 
         public FollowerCombatRiflemanEngagement.Evaluation EvaluateAutonomousEngagement(EnemyInfo goalEnemy)
@@ -3942,7 +3942,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            Vector3 enemyPosition = goalEnemy.CurrPosition;
+            Vector3 enemyPosition = pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy);
             float currentEnemyDistanceSqr = (botOwner.Position - enemyPosition).sqrMagnitude;
             float coverEnemyDistanceSqr = (targetCover.Position - enemyPosition).sqrMagnitude;
             return coverEnemyDistanceSqr > currentEnemyDistanceSqr + 2f * 2f;
@@ -4633,7 +4633,7 @@ namespace pitTeam.BigBrain
         {
             bool actionableVisible = HasFreshVisibleShootableContact(goalEnemy, CloseThreatRecentSeenSeconds);
             bool closeVisible = HasFreshVisibleContact(goalEnemy, CloseThreatRecentSeenSeconds) &&
-                                goalEnemy.Distance <= CombatDistanceConfiguration.Instance.GetClosePushDistance();
+                                pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= CombatDistanceConfiguration.Instance.GetClosePushDistance();
             if (!actionableVisible && !closeVisible)
             {
                 actionableVisibleSince = 0f;
@@ -7945,7 +7945,7 @@ namespace pitTeam.BigBrain
             }
 
             targetDirection.Normalize();
-            ShootToPoint? shootPoint = botOwner.CurrentEnemyTargetPosition(true);
+            ShootToPoint? shootPoint = FollowerEnemyTracking.CoverTarget(botOwner);
             LayerMask mask = botOwner.LookSensor.Mask;
             CoverSearchType searchType = SetCoverTacticAndGetSearchType(
                 BotsGroup.BotCurrentTactic.Attack,
@@ -7990,7 +7990,7 @@ namespace pitTeam.BigBrain
             bool avoidCrossingEnemyFront = false,
             bool avoidBossFireLane = false)
         {
-            ShootToPoint shootPointClass = botOwner.CurrentEnemyTargetPosition(true);
+            ShootToPoint shootPointClass = FollowerEnemyTracking.CoverTarget(botOwner);
             if (shootPointClass == null)
             {
                 cachedClosestShootCover = null;
@@ -8093,7 +8093,7 @@ namespace pitTeam.BigBrain
 
             Vector3 enemyPosition = IsFinite(goalEnemy.EnemyLastPositionReal)
                 ? goalEnemy.EnemyLastPositionReal
-                : goalEnemy.CurrPosition;
+                : pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy);
 
             Vector3 midpoint = (botOwner.Position + enemyPosition) * 0.5f;
             return GetClosestShootCover(
@@ -8141,7 +8141,7 @@ namespace pitTeam.BigBrain
 
             Vector3 enemyPosition = IsFinite(goalEnemy.EnemyLastPositionReal)
                 ? goalEnemy.EnemyLastPositionReal
-                : goalEnemy.CurrPosition;
+                : pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy);
 
             Vector3 midpoint = (botOwner.Position + enemyPosition) * 0.5f;
             return GetClosestShootCover(
@@ -8488,7 +8488,7 @@ namespace pitTeam.BigBrain
             }
 
             Vector3 enemyAnchor = GetEnemyAnchor(goalEnemy);
-            ShootToPoint? shootPoint = requireShootLane ? botOwner.CurrentEnemyTargetPosition(true) : null;
+            ShootToPoint? shootPoint = requireShootLane ? FollowerEnemyTracking.CoverTarget(botOwner) : null;
             LayerMask mask = botOwner.LookSensor.Mask;
             BotsGroup.BotCurrentTactic tactic = requireShootLane
                 ? BotsGroup.BotCurrentTactic.Attack
@@ -8949,7 +8949,7 @@ namespace pitTeam.BigBrain
                     return null;
                 }
 
-                supportEnemyPosition = goalEnemy.CurrPosition;
+                supportEnemyPosition = pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy);
                 supportEnemyProfileId = goalEnemy.ProfileId;
             }
             else if (!TryGetAllyEngagementEnemy(out supportEnemyProfileId, out supportEnemyPosition))
@@ -9508,7 +9508,7 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
-            Vector3 enemyAnchor = GetEnemyAnchorOrFallback(goalEnemy, goalEnemy.CurrPosition);
+            Vector3 enemyAnchor = GetEnemyAnchorOrFallback(goalEnemy, pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy));
             if (!IsFinite(position) || !IsFinite(enemyAnchor))
             {
                 return false;
@@ -9869,8 +9869,8 @@ namespace pitTeam.BigBrain
             }
 
             if (HasFreshVisibleContact(goalEnemy, CloseThreatRecentSeenSeconds) &&
-                goalEnemy.Distance < 18f &&
-                goalEnemy.Distance > botOwner.Settings.FileSettings.Mind.DOG_FIGHT_IN)
+                pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) < 18f &&
+                pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) > botOwner.Settings.FileSettings.Mind.DOG_FIGHT_IN)
             {
                 return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.shootFromPlace, "cdgNoPlace");
             }
@@ -10002,7 +10002,7 @@ namespace pitTeam.BigBrain
                 botOwner.Memory.IsInCover ||
                 !goalEnemy.IsVisible ||
                 !goalEnemy.CanShoot ||
-                goalEnemy.Distance <= ExposedFirePointBlankDistance)
+                pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= ExposedFirePointBlankDistance)
             {
                 return false;
             }
@@ -10301,7 +10301,7 @@ namespace pitTeam.BigBrain
             if (dogFightOpeningStartedAt <= 0f ||
                 !string.Equals(dogFightOpeningEnemyProfileId, goalEnemy.ProfileId, StringComparison.Ordinal) ||
                 Time.time - dogFightOpeningStartedAt >= DogFightOpeningCommitmentSeconds ||
-                goalEnemy.Distance > CloseVisibleDogFightEndDistance ||
+                pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) > CloseVisibleDogFightEndDistance ||
                 !ShouldPreserveLoadedWeaponFire(goalEnemy))
             {
                 return false;
@@ -11006,7 +11006,7 @@ namespace pitTeam.BigBrain
         {
             if (goalEnemy.IsVisible &&
                 goalEnemy.CanShoot &&
-                goalEnemy.Distance <= ReloadRetreatThreatDistance)
+                pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= ReloadRetreatThreatDistance)
             {
                 return true;
             }
@@ -11256,7 +11256,7 @@ namespace pitTeam.BigBrain
         {
             if (!HasActiveCombatEnemy(goalEnemy) ||
                 goalEnemy == null ||
-                goalEnemy.Distance > ReloadRetreatThreatDistance)
+                pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) > ReloadRetreatThreatDistance)
             {
                 return false;
             }
@@ -11305,7 +11305,7 @@ namespace pitTeam.BigBrain
 
         private bool CanUseDogFightNow(EnemyInfo goalEnemy)
         {
-            return goalEnemy.Distance <= botOwner.Settings.FileSettings.Mind.DOG_FIGHT_OUT ||
+            return pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= botOwner.Settings.FileSettings.Mind.DOG_FIGHT_OUT ||
                    botOwner.Memory.BotCurrentCoverInfo.UseDogFight(botOwner.Settings.FileSettings.Cover.DOG_FIGHT_AFTER_LEAVE);
         }
 
@@ -11319,7 +11319,7 @@ namespace pitTeam.BigBrain
             float maxDistance = dogFightState == BotDogFightStatus.dogFight
                 ? CloseVisibleDogFightEndDistance
                 : CloseVisibleDogFightStartDistance;
-            return goalEnemy.Distance <= maxDistance;
+            return pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= maxDistance;
         }
 
         private static bool HasFreshVisibleContact(EnemyInfo? goalEnemy, float recentSeconds)
@@ -12477,7 +12477,7 @@ namespace pitTeam.BigBrain
         {
             lastAssignedRetreatCoverWasWeak = false;
             Vector3 bossPosition = GetBossPosition();
-            Vector3 enemyPosition = IsFinite(goalEnemy.CurrPosition) ? goalEnemy.CurrPosition : goalEnemy.EnemyLastPositionReal;
+            Vector3 enemyPosition = IsFinite(pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy)) ? pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy) : goalEnemy.EnemyLastPositionReal;
             Vector3 awayFromEnemy = bossPosition - enemyPosition;
             if (awayFromEnemy.sqrMagnitude < 0.25f)
             {
@@ -12490,7 +12490,7 @@ namespace pitTeam.BigBrain
             }
 
             Vector3 retreatAnchor = bossPosition + awayFromEnemy.normalized * 6f;
-            ShootToPoint? shootPoint = requireShootLane ? botOwner.CurrentEnemyTargetPosition(true) : null;
+            ShootToPoint? shootPoint = requireShootLane ? FollowerEnemyTracking.CoverTarget(botOwner) : null;
             BotsGroup.BotCurrentTactic tactic = requireShootLane
                 ? BotsGroup.BotCurrentTactic.Attack
                 : BotsGroup.BotCurrentTactic.Ambush;
@@ -12745,7 +12745,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            Vector3 enemyPosition = goalEnemy.CurrPosition;
+            Vector3 enemyPosition = pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy);
             if (!IsFinite(enemyPosition))
             {
                 enemyPosition = goalEnemy.EnemyLastPositionReal;
@@ -12889,9 +12889,10 @@ namespace pitTeam.BigBrain
         /// </summary>
         public static Vector3 GetEnemyAnchor(EnemyInfo goalEnemy)
         {
-            if (IsFinite(goalEnemy.CurrPosition) && goalEnemy.CurrPosition.sqrMagnitude > 0.01f)
+            if (FollowerEnemyTracking.IsRealistic(goalEnemy)) return FollowerEnemyTracking.Position(goalEnemy);
+            if (IsFinite(pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy)) && pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy).sqrMagnitude > 0.01f)
             {
-                return goalEnemy.CurrPosition;
+                return pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy);
             }
 
             return goalEnemy.EnemyLastPositionReal;
@@ -12899,6 +12900,7 @@ namespace pitTeam.BigBrain
 
         public static Vector3 GetEnemyCurrentPosition(EnemyInfo goalEnemy)
         {
+            if (FollowerEnemyTracking.IsRealistic(goalEnemy)) return FollowerEnemyTracking.Position(goalEnemy);
             if (goalEnemy.Person != null &&
                 IsFinite(goalEnemy.Person.Position) &&
                 goalEnemy.Person.Position.sqrMagnitude > 0.01f)
@@ -12919,6 +12921,9 @@ namespace pitTeam.BigBrain
             {
                 return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.holdPosition, "enemySearchNoEnemy");
             }
+
+            if (FollowerEnemyTracking.IsRealistic(goalEnemy) && !goalEnemy.IsVisible)
+                return CreateMemoryOnlyEnemySearchDecision(goalEnemy, "memoryOnlyAutoSearch." + reason);
 
             Vector3 enemyAnchor = GetEnemyAnchor(goalEnemy);
             Vector3 searchPoint = enemyAnchor;
@@ -12948,6 +12953,8 @@ namespace pitTeam.BigBrain
         public AICoreActionResult<BotLogicDecision, CoreActionResultParams> EnemySimpleSearch(string reason = "enemySearch")
         {
             EnemyInfo? goalEnemy = botOwner.Memory.GoalEnemy;
+            if (FollowerEnemyTracking.IsRealistic(goalEnemy) && !goalEnemy.IsVisible)
+                return CreateMemoryOnlyEnemySearchDecision(goalEnemy, "memoryOnlyAutoSearch." + reason);
             return EnemySimpleSearchAt(GetEnemyAnchor(goalEnemy), reason);
         }
 
@@ -12957,7 +12964,9 @@ namespace pitTeam.BigBrain
         {
             Vector3 searchPoint = enemyAnchor;
 
-            if (NavMesh.SamplePosition(enemyAnchor, out NavMeshHit hit, 8f, -1))
+            bool realistic = FollowerEnemyTracking.IsRealistic(botOwner.Memory?.GoalEnemy);
+            if (NavMesh.SamplePosition(enemyAnchor, out NavMeshHit hit, realistic ? 1.5f : 8f, -1) &&
+                (!realistic || Mathf.Abs(hit.position.y - enemyAnchor.y) <= 1.75f))
             {
                 ShootToPoint shootPoint = new ShootToPoint(enemyAnchor + Vector3.up * 1.1f, 1f);
                 Vector3 firePos = hit.position + Vector3.up * 1.2f;
@@ -12985,6 +12994,12 @@ namespace pitTeam.BigBrain
             EnemyInfo goalEnemy,
             string reason)
         {
+            if (FollowerEnemyTracking.IsRealistic(goalEnemy))
+            {
+                if (FollowerEnemyTracking.TryGetKnownPosition(goalEnemy, out var point, out float observedAt))
+                    return CreateMemoryOnlyEnemySearchDecisionAt(goalEnemy, point, observedAt, reason, true);
+                return CreateBlockedEnemySearchDecision(reason + ".noKnownPosition");
+            }
             if (Utils.Enemy.TryGetReliableKnownPosition(botOwner, goalEnemy, out Vector3 knownPosition))
             {
                 float reportTime = goalEnemy.GroupInfo?.EnemyLastSeenTimeReal ?? 0f;
@@ -13059,19 +13074,21 @@ namespace pitTeam.BigBrain
             }
 
             Vector3 toKnownPosition = knownPosition - botOwner.Position;
-            if (toKnownPosition.y < botOwner.Settings.FileSettings.Move.Y_APPROXIMATION)
+            if (Mathf.Abs(toKnownPosition.y) < botOwner.Settings.FileSettings.Move.Y_APPROXIMATION)
             {
                 toKnownPosition.y = 0f;
             }
 
-            if (toKnownPosition.sqrMagnitude < MemoryOnlySearchArrivalDistanceSqr)
+            // Realistic search owns a short inspection on arrival before exhausting the report.
+            if (!FollowerEnemyTracking.IsRealistic(goalEnemy) &&
+                toKnownPosition.sqrMagnitude < MemoryOnlySearchArrivalDistanceSqr)
             {
                 MarkMemorySearchCompleted(goalEnemy, knownPosition, reportTime, reason);
                 return CreateBlockedEnemySearchDecision($"{reason}.completed", allowRegroupFallback);
             }
 
             float knownDistance = Vector3.Distance(botOwner.Position, knownPosition);
-            if (!IsUsableDistance(knownDistance) || knownDistance >= 55f)
+            if (!IsUsableDistance(knownDistance) || (!FollowerEnemyTracking.IsRealistic(goalEnemy) && knownDistance >= 55f))
             {
                 return CreateBlockedEnemySearchDecision($"{reason}.farHold", allowRegroupFallback);
             }
@@ -13087,6 +13104,7 @@ namespace pitTeam.BigBrain
             Vector3 knownPosition,
             float reportTime)
         {
+            if (FollowerEnemyTracking.IsRealistic(goalEnemy)) return FollowerEnemyTracking.IsSearched(goalEnemy);
             if (!hasCompletedMemorySearch ||
                 !string.Equals(completedMemorySearchEnemyProfileId, goalEnemy.ProfileId, StringComparison.Ordinal))
             {
@@ -13105,6 +13123,7 @@ namespace pitTeam.BigBrain
             float reportTime,
             string reason)
         {
+            FollowerEnemyTracking.CompleteSearch(goalEnemy, reportTime);
             completedMemorySearchEnemyProfileId = goalEnemy.ProfileId ?? string.Empty;
             completedMemorySearchPoint = knownPosition;
             completedMemorySearchReportTime = reportTime;
@@ -13136,6 +13155,9 @@ namespace pitTeam.BigBrain
             {
                 return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.holdPosition, "enemySearchNoEnemy");
             }
+
+            if (FollowerEnemyTracking.IsRealistic(goalEnemy) && !goalEnemy.IsVisible)
+                return CreateMemoryOnlyEnemySearchDecision(goalEnemy, "memoryOnlyAutoSearch." + reason);
 
             if (!pushOrdered && GetFollowerTactic() == FollowerCombatTactic.Balanced)
             {
@@ -13380,7 +13402,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            if (!IsUsableDistance(goalEnemy.Distance))
+            if (!IsUsableDistance(pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy)))
             {
                 return true;
             }
@@ -13653,7 +13675,7 @@ namespace pitTeam.BigBrain
                 }
 
                 enemyProfileId = followerEnemy.ProfileId;
-                enemyPosition = followerEnemy.CurrPosition;
+                enemyPosition = pitTeam.Modules.FollowerEnemyTracking.Position(followerEnemy);
                 return IsFinite(enemyPosition);
             }
 
@@ -13692,7 +13714,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            if (goalEnemy.Distance >= 18f)
+            if (pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) >= 18f)
             {
                 return false;
             }
@@ -13891,7 +13913,7 @@ namespace pitTeam.BigBrain
                 goalEnemy.IsVisible &&
                 goalEnemy.CanShoot &&
                 Time.time - goalEnemy.PersonalSeenTime < 1.5f;
-            bool shootNow = ((goalEnemy != null && goalEnemy.Distance < botOwner.Settings.FileSettings.Shoot.SHOOT_IMMEDIATELY_DIST) ||
+            bool shootNow = ((goalEnemy != null && pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) < botOwner.Settings.FileSettings.Shoot.SHOOT_IMMEDIATELY_DIST) ||
                              botOwner.BotsGroup.AnyBodyShootImmediately) &&
                             goalEnemy != null &&
                             goalEnemy.IsVisible &&
@@ -14631,7 +14653,7 @@ namespace pitTeam.BigBrain
             }
 
             if (requireCloseQuarter &&
-                goalEnemy.Distance > CombatDistanceConfiguration.Instance.GetCloseQuarterDistance())
+                pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) > CombatDistanceConfiguration.Instance.GetCloseQuarterDistance())
             {
                 return false;
             }
@@ -14996,7 +15018,7 @@ namespace pitTeam.BigBrain
         {
             if (!HasActiveCombatEnemy(goalEnemy) ||
                 goalEnemy == null ||
-                goalEnemy.Distance > maxDistance ||
+                pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) > maxDistance ||
                 !SainGoalEnemyBridge.IsEnemyLookingAtFollower(botOwner, goalEnemy))
             {
                 return false;
@@ -15009,10 +15031,13 @@ namespace pitTeam.BigBrain
 
         internal static bool IsPointBlankContactWithoutHardSeparation(BotOwner? botOwner, EnemyInfo? goalEnemy)
         {
+            // Proximity to a remembered location is not personal point-blank contact.
+            if (FollowerEnemyTracking.IsRealistic(goalEnemy) && !goalEnemy.IsVisible && !goalEnemy.CanShoot)
+                return false;
             if (botOwner == null ||
                 !HasActiveCombatEnemy(botOwner, goalEnemy) ||
                 goalEnemy == null ||
-                goalEnemy.Distance > PointBlankContactDogFightDistance)
+                pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) > PointBlankContactDogFightDistance)
             {
                 return false;
             }
@@ -15047,7 +15072,7 @@ namespace pitTeam.BigBrain
             if (botOwner == null ||
                 !HasActiveCombatEnemy(botOwner, goalEnemy) ||
                 goalEnemy == null ||
-                goalEnemy.Distance > PointBlankContactDogFightDistance)
+                pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) > PointBlankContactDogFightDistance)
             {
                 return false;
             }
@@ -15084,7 +15109,7 @@ namespace pitTeam.BigBrain
             if (botOwner == null ||
                 !HasActiveCombatEnemy(botOwner, goalEnemy) ||
                 goalEnemy == null ||
-                goalEnemy.Distance > CloseVisibleThreatBreakDistance ||
+                pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) > CloseVisibleThreatBreakDistance ||
                 !HasRecentPersonalContact(goalEnemy, CloseRecentContactFireSeconds))
             {
                 return false;
@@ -15397,7 +15422,7 @@ namespace pitTeam.BigBrain
             }
 
             Vector3 from = botOwner.Transform.position;
-            Vector3 to = enemy.CurrPosition;
+            Vector3 to = pitTeam.Modules.FollowerEnemyTracking.Position(enemy);
             SegmentPoints segment = new SegmentPoints(from, to);
             Vector3 delta = nearestDoor.SegmentOpen.b - nearestDoor.SegmentOpen.a;
             Vector3 a = nearestDoor.SegmentOpen.a - delta * 0.1f;
@@ -15426,14 +15451,14 @@ namespace pitTeam.BigBrain
             if (!ignoreEquip)
             {
                 dangerTimer = Time.time + 1f;
-                dangerResult = botOwner.Memory.AttackImmediately && Utils.Enemy.GetEnemiesAtLocation(botOwner, goalEnemy, goalEnemy.CurrPosition) <= maximumEnemies;
+                dangerResult = botOwner.Memory.AttackImmediately && Utils.Enemy.GetEnemiesAtLocation(botOwner, goalEnemy, pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy)) <= maximumEnemies;
 
                 return dangerResult;
             }
             else
             {
                 dangerIgnoreEquipTimer = Time.time + 1f;
-                dangerIgnoreEquipResult = Utils.Enemy.GetEnemiesAtLocation(botOwner, goalEnemy, goalEnemy.CurrPosition) < 3;
+                dangerIgnoreEquipResult = Utils.Enemy.GetEnemiesAtLocation(botOwner, goalEnemy, pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy)) < 3;
 
                 return dangerIgnoreEquipResult;
             }
@@ -15599,7 +15624,7 @@ namespace pitTeam.BigBrain
                 hasCommittedHealPoint ||
                 goalEnemy == null ||
                 !HasActiveCombatEnemy(goalEnemy) ||
-                goalEnemy.Distance > MinorFirstAidFightDeferDistance ||
+                pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) > MinorFirstAidFightDeferDistance ||
                 goalEnemy.PersonalLastSeenTime <= 0f ||
                 Time.time - goalEnemy.PersonalLastSeenTime > MinorFirstAidFightDeferRecentContactSeconds ||
                 (!botOwner.Memory.IsUnderFire && !WasHitRecently(botOwner, MinorFirstAidFightDeferRecentContactSeconds)) ||
@@ -15798,7 +15823,7 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEnd("pointBlankContactLost", true);
             }
 
-            if ((goalEnemy == null || goalEnemy.Distance > botOwner.Settings.FileSettings.Mind.DOG_FIGHT_OUT) &&
+            if ((goalEnemy == null || pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) > botOwner.Settings.FileSettings.Mind.DOG_FIGHT_OUT) &&
                 !botOwner.WeaponManager.Reload.Reloading &&
                 !botOwner.Memory.BotCurrentCoverInfo.UseDogFight(botOwner.Settings.FileSettings.Cover.DOG_FIGHT_AFTER_LEAVE))
             {
@@ -16391,7 +16416,7 @@ namespace pitTeam.BigBrain
             return goalEnemy != null &&
                    goalEnemy.IsVisible &&
                    goalEnemy.CanShoot &&
-                   goalEnemy.Distance <= PointBlankRetreatBlockDistance;
+                   pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= PointBlankRetreatBlockDistance;
         }
 
         private static bool IsCloseVisibleHealThreat(EnemyInfo? goalEnemy)
@@ -16399,7 +16424,7 @@ namespace pitTeam.BigBrain
             return goalEnemy != null &&
                    goalEnemy.IsVisible &&
                    goalEnemy.CanShoot &&
-                   goalEnemy.Distance <= HealContactThreatDistance;
+                   pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= HealContactThreatDistance;
         }
 
         private static bool IsCloseVisibleShootableThreat(EnemyInfo? goalEnemy)
@@ -16407,7 +16432,7 @@ namespace pitTeam.BigBrain
             return goalEnemy != null &&
                    goalEnemy.IsVisible &&
                    goalEnemy.CanShoot &&
-                   goalEnemy.Distance <= CloseVisibleThreatBreakDistance;
+                   pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= CloseVisibleThreatBreakDistance;
         }
 
         public bool CanRunToEnemyNow()
@@ -16473,7 +16498,7 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEnd("dogFightStarted", true);
             }
 
-            if (goalEnemy.Distance < 1f)
+            if (pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) < 1f)
             {
                 return new AICoreActionEnd("enemyTooClose", true);
             }
@@ -18103,7 +18128,7 @@ namespace pitTeam.BigBrain
             }
 
             if (goalEnemy.IsVisible &&
-                goalEnemy.Distance < botOwner.Settings.FileSettings.Cover.END_HOLD_IF_ENEMY_CLOSE_AND_VISIBLE)
+                pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) < botOwner.Settings.FileSettings.Cover.END_HOLD_IF_ENEMY_CLOSE_AND_VISIBLE)
             {
                 return new AICoreActionEnd("enemyCloseAndVisible", true);
             }
@@ -18239,7 +18264,7 @@ namespace pitTeam.BigBrain
 
             if (IsDogFightActive() ||
                 (goalEnemy!.IsVisible &&
-                 (goalEnemy.CanShoot || goalEnemy.Distance <= RecoveryNoCoverPointBlankBreakDistance)))
+                 (goalEnemy.CanShoot || pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= RecoveryNoCoverPointBlankBreakDistance)))
             {
                 return new AICoreActionEnd("recoveryFightAvailable", true);
             }
@@ -18327,7 +18352,7 @@ namespace pitTeam.BigBrain
             // Exit if enemy pushed closer (cover ineffective against new threat)
             if (goalEnemy != null && goalEnemy.IsVisible)
             {
-                float enemyDist = Vector3.Distance(botOwner.Position, goalEnemy.CurrPosition);
+                float enemyDist = Vector3.Distance(botOwner.Position, pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy));
                 if (enemyDist < CombatDistanceConfiguration.Instance.GetHealCoverRetreatDistance() * 0.6f)  // Enemy too close relative to retreat distance
                 {
                     clearReason = "enemyClose";

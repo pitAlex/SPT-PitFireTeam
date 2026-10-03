@@ -72,7 +72,7 @@ namespace pitTeam.BigBrain.Actions
             // no real shot lane, especially when cover/vegetation blocks the lower weapon origin.
             bool allowProne = allowCrouch &&
                               goalEnemy != null &&
-                              goalEnemy.Distance >= MinEnemyDistanceForProne &&
+                              pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) >= MinEnemyDistanceForProne &&
                               CanUseFirePose(goalEnemy, ProneFireProbeHeight);
             baseLogic.CanLay = allowProne;
 

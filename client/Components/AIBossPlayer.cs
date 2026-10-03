@@ -1029,16 +1029,25 @@ namespace pitTeam.Components
             bool followerSeesEnemy = playerVisualContact
                 ? followerWasActuallySeeingEnemy
                 : followerWasActuallySeeingEnemy || CanFollowerSeeEnemyForContact(follower, enemy);
+            Vector3 contactPosition = enemy.Position;
+            bool rememberedReport = _sharedTrackingReport != null && FollowerEnemyTracking.Mode == EnemyTrackingMode.Realistic &&
+                !followerSeesEnemy && !playerVisualContact;
+            if (rememberedReport && !FollowerEnemyTracking.TryGetKnownPosition(_sharedTrackingReport, out contactPosition, out contactTime)) return;
             EEnemyPartVisibleType reportVisibleType = playerVisualContact || followerSeesEnemy
                 ? EEnemyPartVisibleType.Visible
                 : EEnemyPartVisibleType.Sence;
             string goalPromotionReason = prioritizeAsGoal ? "contactEnemy:prioritized" : "contactEnemy:fillEmpty";
 
+            // Only an accepted explicit target overrides the player's neutral relationship.
+            // Background sibling reports use this method too and must not declare a war.
+            if (prioritizeAsGoal && allowGoalPromotion)
+                FollowerGroupHostility.DeclareContact(follower, enemy);
+
             try
             {
                 follower.BotsGroup?.AddEnemy(enemy, EBotEnemyCause.checkAddTODO);
 
-                follower.BotsGroup?.ReportAboutEnemy(enemy, reportVisibleType, follower);
+                if (!rememberedReport) follower.BotsGroup?.ReportAboutEnemy(enemy, reportVisibleType, follower);
             }
             catch (Exception ex)
             {
@@ -1057,16 +1066,18 @@ namespace pitTeam.Components
             if (trackedEnemy != null)
             {
                 BotGroupEnemyInfo botSettings = GetOrCreateContactEnemyGroupInfo(follower, enemy, trackedEnemy);
-                botSettings.EnemyLastPosition = enemy.Position;
+                botSettings.EnemyLastPosition = contactPosition;
                 botSettings.IsHaveSeen = playerVisualContact || followerSeesEnemy;
                 botSettings.EnemyLastSeenTimeSense = contactTime;
                 if (playerVisualContact || followerSeesEnemy)
                 {
-                    botSettings.EnemyLastVisiblePosition = enemy.Position;
+                    botSettings.EnemyLastVisiblePosition = contactPosition;
                     botSettings.EnemyLastSeenTimeReal = contactTime;
                 }
 
-                botSettings.EnemyWeaponRootLastPos = enemy.PlayerBones?.WeaponRoot?.position ?? (enemy.Position + Vector3.up * 1.2f);
+                botSettings.EnemyWeaponRootLastPos = rememberedReport ? contactPosition + Vector3.up * 1.2f
+                    : enemy.PlayerBones?.WeaponRoot?.position ?? (contactPosition + Vector3.up * 1.2f);
+                FollowerEnemyTracking.Report(trackedEnemy, contactPosition, contactTime, rememberedReport ? "squadReport" : "contactReport");
 
                 follower.Memory.AddEnemy(enemy, botSettings, false);
 
@@ -1087,8 +1098,8 @@ namespace pitTeam.Components
                 }
                 else
                 {
-                    trackedEnemy.PersonalLastPos = enemy.Position;
-                    Enemy.RepairPersonalMemory(trackedEnemy, enemy.Position, followerSeesEnemy);
+                    trackedEnemy.PersonalLastPos = contactPosition;
+                    Enemy.RepairPersonalMemory(trackedEnemy, contactPosition, followerSeesEnemy);
                 }
             }
 
@@ -1145,7 +1156,9 @@ namespace pitTeam.Components
             }
 
 
-            TrySyncSainEnemyState(follower, enemy, prioritizeAsGoal);
+            if (rememberedReport)
+                SainGoalEnemyBridge.TrySyncEnemyState(follower, enemy, prioritizeAsGoal, contactPosition, contactTime);
+            else TrySyncSainEnemyState(follower, enemy, prioritizeAsGoal);
 
 
             // Entering combat should break request commands
@@ -1803,6 +1816,7 @@ namespace pitTeam.Components
                     followerData?.ClearOrderedPushTargetLock("Attention");
                     FollowerCombatTargetCommitments.ClearMission(follower, null, "Attention");
 
+                    FollowerSoundAwareness.Attention(follower);
                     FollowerEnemyEnforceSuppression.Suppress(follower, enforceBlockSeconds);
 
                     ClearEnemyStateForAttention(follower, clearedGroupIds);
@@ -1853,6 +1867,7 @@ namespace pitTeam.Components
             }
 
             FollowerAwareness.ClearTransientState(follower);
+            FollowerEnemyTracking.Clear(follower);
             FollowerContactEnemyRetention.ClearAndAllowNextGoalClear(follower);
 
             // Clear current goal enemy flags first.
@@ -5064,6 +5079,8 @@ namespace pitTeam.Components
             }
         }
 
+        private EnemyInfo? _sharedTrackingReport;
+
         private void ReportEnemyToIdleFollowers()
         {
             if (bossGroup == null || Followers == null || Followers.Count < 2)
@@ -5125,12 +5142,17 @@ namespace pitTeam.Components
 
                 // Only refill idle followers with no current goal. Do not replace or refresh an
                 // existing GoalEnemy here; the follower's own combat state owns that.
-                RegisterContactEnemyForFollower(
-                    follower,
-                    enemyPlayer,
-                    prioritizeAsGoal: false,
-                    allowGoalPromotion: true,
-                    playerVisualContact: false);
+                _sharedTrackingReport = bestReporter.Memory.GoalEnemy;
+                try
+                {
+                    RegisterContactEnemyForFollower(
+                        follower,
+                        enemyPlayer,
+                        prioritizeAsGoal: false,
+                        allowGoalPromotion: true,
+                        playerVisualContact: false);
+                }
+                finally { _sharedTrackingReport = null; }
             }
         }
 

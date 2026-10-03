@@ -52,33 +52,7 @@ namespace pitTeam.Patches
 
         private static bool RequiresAwarenessGate(EBotEnemyCause cause)
         {
-            switch (cause)
-            {
-                // Direct/aggressive causes: let these pass immediately.
-                case EBotEnemyCause.byKill:
-                case EBotEnemyCause.followGetHit:
-                case EBotEnemyCause.addPlayer:
-                case EBotEnemyCause.callBot:
-                case EBotEnemyCause.gifterKill:
-                case EBotEnemyCause.bossKillArena:
-                case EBotEnemyCause.KillaSyncTagilla:
-                case EBotEnemyCause.tagillaFindENemy:
-                case EBotEnemyCause.fuckGestus:
-                case EBotEnemyCause.pmcBossKill:
-                case EBotEnemyCause.christmas:
-                case EBotEnemyCause.synWithKilla:
-                case EBotEnemyCause.ravangeZryachiy:
-                case EBotEnemyCause.partisanBadKarma:
-                case EBotEnemyCause.attackBTR:
-                case EBotEnemyCause.tagillaAlarm:
-                case EBotEnemyCause.MarkOfUnknowsDist:
-                case EBotEnemyCause.zryachiyLogic:
-                case EBotEnemyCause.pairLogic:
-                    return false;
-            }
-
-            // Soft/ambient/group propagation causes must pass awareness check.
-            return true;
+            return !FollowerGroupHostility.IsExplicitHostility(cause);
         }
 
         private static bool HasGroupEnemyContact(BotsGroup group, IPlayer enemy)
@@ -138,6 +112,12 @@ namespace pitTeam.Patches
             if (person == null || (person.IsAI && person.AIData?.BotOwner?.GetPlayer == null)) return true;
             if (person.Profile?.Info == null) return true;
             bool isBossPlayerGroup = __instance is BotsGroupPlayer;
+
+            if (FollowerGroupHostility.ShouldBlockAmbientAddition(__instance, person, cause))
+            {
+                __result = false;
+                return false;
+            }
 
             // Propagated non-Scav relationships keep their existing fast path. A Scav being
             // propagated into the follower group must still prove hostile intent against the
@@ -321,10 +301,14 @@ namespace pitTeam.Patches
             if (__result && __instance is BotsGroupPlayer)
             {
                 Utils.Enemy.ForceIgnoreUntilAggressionOff(__instance);
+                if (!FollowerGroupHostility.IsSharing && FollowerGroupHostility.IsExplicitHostility(cause) &&
+                    person?.AIData?.BotOwner?.BotsGroup is BotsGroup attackerGroup)
+                    FollowerGroupHostility.ShareHostility(attackerGroup, ((BotsGroupPlayer)__instance).Boss, cause);
             }
 
             if (
                 person == null ||
+                FollowerGroupHostility.IsSharing ||
                 (person.IsAI && person.AIData?.BotOwner?.GetPlayer == null) ||
                 cause == EBotEnemyCause.warn ||
                 __instance is BotsGroupPlayer
@@ -357,12 +341,7 @@ namespace pitTeam.Patches
 
             if (isFriend) return;
 
-            var plBoss = BossPlayers.GetBoss(person.ProfileId);
-
-            if (plBoss == null && person.IsAI && person.AIData?.BotOwner != null && BossPlayers.IsFollower(person.AIData.BotOwner))
-            {
-                plBoss = BossPlayers.GetBossByGroup(person.AIData.BotOwner.BotsGroup.Id);
-            }
+            var plBoss = FollowerGroupHostility.FindBoss(person);
 
             if (plBoss == null) return;
 
@@ -391,19 +370,7 @@ namespace pitTeam.Patches
 
             try
             {
-                BotsGroup bossGroup = plBoss.bossGroup;
-
-                if (bossGroup != null)
-                    for (int i = 0; i < __instance.MembersCount; i++)
-                    {
-                        var item = __instance.Member(i);
-                        if (cause == EBotEnemyCause.AddNewMember)
-                        {
-                            bossGroup.AddEnemy(item, cause);
-                        }
-                        else
-                            bossGroup.AddEnemy(item, EBotEnemyCause.addPlayerToBoss);
-                    }
+                FollowerGroupHostility.ShareHostility(__instance, plBoss, cause);
             }
             catch (Exception ex)
             {
@@ -501,7 +468,7 @@ namespace pitTeam.Patches
                     FactionHostility.IsScavFaction(candidate) &&
                     !FollowerCalcGoalEnemyAcquire.CandidateHasBossOrFollowerAsEnemy(player, candidate) &&
                     !FollowerCalcGoalEnemyAcquire.CandidateHasGoalEnemyBossOrFollower(player, candidate);
-                if (protectedFriendlyRole || neutralScav)
+                if (protectedFriendlyRole || neutralScav || FollowerGroupHostility.ShouldBlockCandidate(player, inheritedEnemy))
                 {
                     RemoveEnemy(inheritedEnemy);
                 }

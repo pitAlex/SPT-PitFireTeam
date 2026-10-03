@@ -17,6 +17,8 @@ Before recruiting an allied bot, Core passively reads native `HasEnemy` through 
 
 ## Core ownership while SAIN is installed
 
+Core tactics observe the native `HearingAnalysis.CheckIfSoundHeard` result for peaceful sound orientation through `FollowerSainHearingPatch`. This covers SAIN gunshots that bypass the game's original sound dispatcher. Cached compiled accessors keep Core free of typed SAIN references, and the hook never reruns hearing or changes native results. Ready addon tactics are excluded because they retain their own native hearing/preparation owner. See [Core sound policy](Combat-Tactics.md#peaceful-sound-orientation).
+
 General external-SAIN compatibility belongs to the main plugin and is gated by `IsSAINInstalled`, not addon presence. It must behave consistently in both configurations:
 
 - SAIN installed, addon absent;

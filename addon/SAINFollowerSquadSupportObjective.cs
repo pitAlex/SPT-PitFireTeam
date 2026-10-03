@@ -56,7 +56,7 @@ internal sealed class SAINFollowerSquadSupportObjective(BotComponent bot, Firing
 
     internal static bool Valid(Enemy enemy) => enemy != null && enemy.WasValid && enemy.EnemyKnown &&
         Enemy.IsEnemyActive(enemy) && enemy.EnemyPlayer?.HealthController?.IsAlive == true &&
-        enemy.LastKnownPosition.HasValue && Finite(enemy.LastKnownPosition.GetValueOrDefault());
+        SainEnemyTracking.Position(enemy).HasValue && Finite(SainEnemyTracking.Position(enemy).GetValueOrDefault());
     private static bool Finite(Vector3 p) => !float.IsNaN(p.x) && !float.IsInfinity(p.x) &&
         !float.IsNaN(p.y) && !float.IsInfinity(p.y) && !float.IsNaN(p.z) && !float.IsInfinity(p.z);
     private Enemy? Find(string id)
@@ -238,8 +238,8 @@ internal sealed class SAINFollowerSquadSupportObjective(BotComponent bot, Firing
     {
         result = ESquadDecision.None;
         if (!Valid(enemy) || health.Read(enemy.EnemyInfo).Medical) return false;
-        if (failedEnemy != enemy.EnemyProfileId || (failedAnchor - enemy.LastKnownPosition.GetValueOrDefault()).sqrMagnitude >= 64f)
-        { failedCount = 0; failedUntil = 0f; failedEnemy = enemy.EnemyProfileId; failedAnchor = enemy.LastKnownPosition.GetValueOrDefault(); }
+        if (failedEnemy != enemy.EnemyProfileId || (failedAnchor - SainEnemyTracking.Position(enemy).GetValueOrDefault()).sqrMagnitude >= 64f)
+        { failedCount = 0; failedUntil = 0f; failedEnemy = enemy.EnemyProfileId; failedAnchor = SainEnemyTracking.Position(enemy).GetValueOrDefault(); }
         if (Time.time < failedUntil) return false;
         bool fire = enemy.IsVisible && enemy.CanShoot;
         bool suppress = !fire && mode == SAINSquadSupportMode.BossSupport && !bot.Mover.Running &&
@@ -297,7 +297,7 @@ internal sealed class SAINFollowerSquadSupportObjective(BotComponent bot, Firing
             {
                 if (++probes > 4) break;
                 if (cover == null || cover == bot.Cover.CoverInUse || cover.Spotted || cover.CoverData.IsBad) continue;
-                Vector3 known = enemy.LastKnownPosition.GetValueOrDefault();
+                Vector3 known = SainEnemyTracking.Position(enemy).GetValueOrDefault();
                 if (!coverAnalyzer.RecheckCoverPoint(cover, known, (known - bot.NavMeshPosition).normalized, bot.NavMeshPosition, out _)) continue;
                 // Native recheck can move the point: admit its final position, not the cached one.
                 if (!Allowed(cover.Position, enemy, ordered, avoid, pusher, bossSupport)) continue;
@@ -319,7 +319,7 @@ internal sealed class SAINFollowerSquadSupportObjective(BotComponent bot, Firing
         if (avoid.HasValue && (point - avoid.Value).sqrMagnitude < 16f) return false;
         if (!ordered && failedEnemy == enemy.EnemyProfileId)
             for (int i = 0; i < failedCount; i++) if ((point - failedPoints[i]).sqrMagnitude < 16f) return false;
-        Vector3 known = enemy.LastKnownPosition.GetValueOrDefault();
+        Vector3 known = SainEnemyTracking.Position(enemy).GetValueOrDefault();
         if (!ordered)
         {
             // Supporting fire must not silently become another assault.
@@ -335,7 +335,7 @@ internal sealed class SAINFollowerSquadSupportObjective(BotComponent bot, Firing
     }
     private void Begin(Enemy enemy, SAINSquadSupportMode mode, string why, bool stationary = false)
     {
-        Clear("replaced"); target = enemy; Mode = mode; source = why; anchor = enemy.LastKnownPosition.GetValueOrDefault();
+        Clear("replaced"); target = enemy; Mode = mode; source = why; anchor = SainEnemyTracking.Position(enemy).GetValueOrDefault();
         suppressionAim = default; fireState = "notChecked"; fireCheckedAt = -1f;
         stationarySupport = stationary;
         deadline = Time.time + (StationaryFire ? 6f : 20f); burstUntil = arrivalUntil = 0f;
@@ -374,7 +374,7 @@ internal sealed class SAINFollowerSquadSupportObjective(BotComponent bot, Firing
         {
             nextValidation = Time.time + 1f;
             if (!SainRegroupBridge.IsDestinationAvailable(bot.BotOwner, destination) ||
-                (anchor - target.LastKnownPosition.GetValueOrDefault()).sqrMagnitude >= 64f) { Finish("positionInvalidated", Ordered); return; }
+                (anchor - SainEnemyTracking.Position(target).GetValueOrDefault()).sqrMagnitude >= 64f) { Finish("positionInvalidated", Ordered); return; }
             SainRegroupBridge.Claim(bot.BotOwner, destination);
         }
         float distance = (destination - bot.Position).magnitude;

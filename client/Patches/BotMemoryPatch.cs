@@ -38,6 +38,11 @@ namespace pitTeam.Patches
 
                 if (damageInfo.Player == null) return;
 
+                // Native AI retaliation may use checkAddTODO, the same cause as a sight
+                // scan. Establish real damage intent before applying ambient neutrality.
+                if (damageInfo.Damage > 0f)
+                    FollowerGroupHostility.OnDamage(botOwner_0, damageInfo.Player.iPlayer);
+
                 bool isfollower = BossPlayers.IsFollower(botOwner_0);
                 if (!isfollower) return;
 
@@ -83,6 +88,12 @@ namespace pitTeam.Patches
 
                 if (value != null)
                 {
+                    if (botOwner != null && BossPlayers.IsFollower(botOwner) &&
+                        !FollowerEnemyTracking.IsEligible(value))
+                    {
+                        FollowerGoalEnemyTracker.RecordSetter(botOwner, previous, value, false, "trackingExpired");
+                        return false;
+                    }
                     if (ShouldBlockUnscopedMemoryOnlyGoal(botOwner, value, reason, out string? acquisitionBlockedReason))
                     {
                         FollowerGoalEnemyTracker.RecordSetter(
@@ -126,10 +137,18 @@ namespace pitTeam.Patches
 
                 // A dead/removed goal never owns a retention veto. A different living retained
                 // contact can still be restored by its normal owner on the next decision pass.
-                bool previousIsAlive = Components.BotFollowerPlayer.IsEnemyInfoAlive(previous);
+                bool previousIsAlive = Components.BotFollowerPlayer.IsEnemyInfoAlive(previous) &&
+                    FollowerEnemyTracking.IsEligible(previous);
                 bool shouldBlockClear = FollowerContactEnemyRetention.ShouldBlockGoalEnemyClear(botOwner, previous) &&
                     previousIsAlive;
                 string? clearBlockedReason = shouldBlockClear ? "retentionBlockedClear" : null;
+                if (!shouldBlockClear && previousIsAlive &&
+                    string.Equals(reason, "unscopedSetter", System.StringComparison.Ordinal) &&
+                    FollowerEnemyTracking.ShouldRetainSearch(previous))
+                {
+                    shouldBlockClear = true;
+                    clearBlockedReason = "trackingUnfinishedSearch";
+                }
                 if (!shouldBlockClear &&
                     previousIsAlive &&
                     string.Equals(reason, "unscopedSetter", System.StringComparison.Ordinal) &&

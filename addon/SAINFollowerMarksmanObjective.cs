@@ -45,9 +45,9 @@ internal sealed class SAINFollowerMarksmanObjective(BotComponent bot, FiringPosi
         result = solo; squadResult = squad;
         OwnsMovement = false; Preparing = false;
         if (enemy == null || !enemy.EnemyKnown || !Enemy.IsEnemyActive(enemy) ||
-            enemy.EnemyPlayer?.HealthController?.IsAlive != true || (!enemy.LastKnownPosition.HasValue || !Finite(enemy.LastKnownPosition.Value)))
+            enemy.EnemyPlayer?.HealthController?.IsAlive != true || (!SainEnemyTracking.Position(enemy).HasValue || !Finite(SainEnemyTracking.Position(enemy).GetValueOrDefault())))
         { Clear("contactLost"); return false; }
-        Vector3 known = enemy.LastKnownPosition.Value;
+        Vector3 known = SainEnemyTracking.Position(enemy).GetValueOrDefault();
         if (enemyId != enemy.EnemyProfileId || (known - anchor).sqrMagnitude >= 64f)
         { Clear("newContact"); enemyId = enemy.EnemyProfileId; anchor = known; }
 

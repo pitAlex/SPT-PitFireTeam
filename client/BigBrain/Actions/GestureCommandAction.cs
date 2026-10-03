@@ -393,6 +393,7 @@ namespace pitTeam.BigBrain.Actions
                     BotOwner.Steering.LookToMovingDirection();
                 }
             }
+            FollowerSoundAwareness.ApplyLook(BotOwner);
         }
 
         public override void Stop()

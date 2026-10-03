@@ -74,6 +74,7 @@ namespace pitTeam.BigBrain
             }
 
             FollowerRecovery.CheckReloadTimeout(BotOwner);
+            FollowerEnemyTracking.Update(BotOwner);
             if (pitFireTeam.UseSainFollowerCombat(BotOwner))
             {
                 return false;
@@ -678,6 +679,7 @@ namespace pitTeam.BigBrain
             }
 
             Player? target = Singleton<GameWorld>.Instance?.GetAlivePlayerByProfileID(targetProfileId);
+            if (!FollowerEnemyTracking.CanRestore(BotOwner, targetProfileId)) return false;
             if (target?.HealthController?.IsAlive != true)
             {
                 followerData.ClearOrderedPushTargetLock("OrderedPushTargetDead");
@@ -693,6 +695,8 @@ namespace pitTeam.BigBrain
             {
                 return false;
             }
+
+            if (!FollowerEnemyTracking.IsEligible(restored)) return false;
 
             restored.PriorityIndex = 0;
             restored.IgnoreUntilAggression = false;

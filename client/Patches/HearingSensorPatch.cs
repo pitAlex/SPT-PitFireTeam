@@ -251,7 +251,8 @@ namespace pitTeam.Patches
                 }
 
                 Trace(bot, $"FootstepPatch pass src={__instance.ProfileId} dist={distance:F1} power={power:F1}");
-                FollowerAwareness.SoundHeard(bot, __instance, position, distance, AISoundType.step);
+                if (!FollowerSoundAwareness.Owns(bot) || bot.HearingSensor?.IsSoundHeard(position, power, out _) == true)
+                    FollowerAwareness.SoundHeard(bot, __instance, position, distance, AISoundType.step);
 
             }
         }
@@ -267,7 +268,7 @@ namespace pitTeam.Patches
     internal class PlayerSayPatch : ModulePatch
     {
         private const bool EnableReactionTrace = false;
-        private const float VoiceReactDistance = 40f;
+        private const float VoiceReactDistance = 25f;
         private const float VoiceReactionCooldownSeconds = 0.3f;
         private static float reported = 0f;
         private static float freq = 0;
@@ -331,6 +332,11 @@ namespace pitTeam.Patches
                 }
 
                 bool heardVoice = bot.HearingSensor.IsSoundHeard(__instance.Transform.position, VoiceReactDistance, out var distance);
+                if (FollowerSoundAwareness.Owns(bot))
+                {
+                    FollowerSoundAwareness.Observe(bot, __instance, __instance.Transform.position, false, heardVoice);
+                    return;
+                }
                 bool speakerHasLosToFollower = EnemySpeakerHasLineOfSightToFollower(__instance, bot, out float losDistance);
                 bool shouldReact = heardVoice || (speakerHasLosToFollower && losDistance <= VoiceReactDistance);
                 bool followerHasLosToSpeaker = FollowerHasLineOfSightToSpeaker(bot, __instance);

@@ -6,6 +6,20 @@ using HarmonyLib;
 using pitTeam.Components;
 using pitTeam.SAINAddon;
 using NativeEnemy = SAIN.SAINComponent.Classes.EnemyClasses.Enemy;
+using pitTeam.Modules;
+using UnityEngine;
+
+namespace pitTeam.Modules {
+    // The native adapter consumes Core's finite retention service; its implementation
+    // is not part of this native selector fixture.
+    public static class FollowerContactEnemyRetention {
+        public static BotOwner Owner;public static Player Target;public static float Until;public static bool Prioritized;
+        public static bool TryGetActiveRetainedEnemy(BotOwner owner,out Player enemy,out bool prioritized) {
+            enemy=Target;prioritized=Prioritized;
+            return owner==Owner&&Target?.HealthController.IsAlive==true&&Time.time<=Until;
+        }
+    }
+}
 
 namespace EFT {
     public enum EBotEnemyCause { checkAddTODO, addPlayer }
@@ -61,6 +75,7 @@ public static partial class CombatChecks {
         }
     }
     private static void TestContactOverride() {
+        TestContactSelection();
         var harmony=new Harmony("xyz.pit.fireteam.sainaddon");SainContactEnemyBridge.Apply(harmony);
         var command=new pitAIBossPlayer();var b=SupportBot("contactOverride");
         var scav=new Player{ProfileId="friendlyScav"};var untouched=new Player{ProfileId="otherFriendly"};
@@ -96,5 +111,44 @@ public static partial class CombatChecks {
         harmony.Unpatch(AccessTools.Method(typeof(pitAIBossPlayer),"RegisterContactEnemyForFollower"),HarmonyPatchType.All,harmony.Id);
         command.ContactFixture(b,scav);Check(pitTeam.Utils.Enemy.LastCause==EBotEnemyCause.checkAddTODO,"addon removal restores original Contact call");
         SainContactEnemyBridge.Apply(harmony);
+    }
+
+    private static void TestContactSelection() {
+        var b=SupportBot("retainedContact");var contact=b.Sain.GoalEnemy;
+        b.Memory.GoalEnemy=contact.EnemyInfo;b.Memory.HaveEnemy=true;
+        contact.IsVisible=contact.CanShoot=false;contact.TimeSinceSeen=999;
+        contact.KnownPlaces.LastKnownPosition=new Vector3(31,1,36);
+        contact.KnownPlaces.TimeLastKnownUpdated=Time.time;
+        var heard=new NativeEnemy();heard.EnemyPlayer.ProfileId="olderNearbyContact";
+        heard.IsVisible=heard.CanShoot=false;heard.KnownPlaces.LastKnownPosition=new Vector3(9,0,41);
+        b.Sain.EnemyController.KnownEnemies.Add(heard);
+        FollowerContactEnemyRetention.Owner=b;FollowerContactEnemyRetention.Target=contact.EnemyPlayer;
+        FollowerContactEnemyRetention.Prioritized=true;FollowerContactEnemyRetention.Until=Time.time+10;
+        var selector=new SAIN.SAINComponent.Classes.EnemyClasses.SAINEnemyController(b.Sain);
+        float observed=contact.KnownPlaces.TimeLastKnownUpdated;
+        Check(selector.ChooseForTest(heard)==contact,"prioritized Contact wins over a nearer hidden native candidate before publication");
+        Check(selector.NativeCalls==1&&selector.Publications==1,"Contact preference preserves one native selection and publication");
+        b.Sain.GoalEnemy=selector.ChooseForTest(heard);
+        var markers=new MarkerHarness(b);markers.Update();
+        Check(markers.Contact(contact.EnemyProfileId)?.WorldPosition.x==31&&markers.Contact(heard.EnemyProfileId)==null,"Contact marker stays at the reported target instead of jumping to nearby hidden enemy");
+        Check(contact.KnownPlaces.TimeLastKnownUpdated==observed&&contact.TimeSinceSeen==999&&!contact.IsVisible&&!contact.CanShoot,"selection does not refresh knowledge or grant sight and firing permission");
+        heard.IsVisible=true;Check(selector.ChooseForTest(heard)==heard,"visible threat interrupts Contact preference");heard.IsVisible=false;
+        heard.CanShoot=true;Check(selector.ChooseForTest(heard)==heard,"shootable threat interrupts Contact preference");heard.CanShoot=false;
+        b.Sain.Decision.DogFightDecision.DogFightActive=true;Check(selector.ChooseForTest(heard)==heard,"dogfight interrupts Contact preference");b.Sain.Decision.DogFightDecision.DogFightActive=false;
+        b.Sain.Medical.TimeSinceShot=.5f;Check(selector.ChooseForTest(heard)==heard,"recent damage interrupts Contact preference");b.Sain.Medical.TimeSinceShot=999;
+        b.Memory.IsUnderFire=true;Check(selector.ChooseForTest(heard)==heard,"incoming fire interrupts Contact preference");b.Memory.IsUnderFire=false;
+        b.UsingMedical=true;Check(selector.ChooseForTest(heard)==heard,"active medicine interrupts Contact preference");b.UsingMedical=false;
+        FollowerContactEnemyRetention.Prioritized=false;Check(selector.ChooseForTest(heard)==heard,"ordinary reports cannot pin native selection");FollowerContactEnemyRetention.Prioritized=true;
+        contact.EnemyKnown=false;Check(selector.ChooseForTest(heard)==heard,"Contact preference cannot revive forgotten native knowledge");contact.EnemyKnown=true;
+        contact.Valid=false;Check(selector.ChooseForTest(heard)==heard,"invalid native contact cannot be selected");contact.Valid=true;
+        var known=contact.KnownPlaces.LastKnownPosition;contact.KnownPlaces.LastKnownPosition=null;Check(selector.ChooseForTest(heard)==heard,"Contact preference cannot manufacture a known position");contact.KnownPlaces.LastKnownPosition=known;
+        FollowerEnemyTracking.Eligible=false;Check(selector.ChooseForTest(heard)==heard,"expired Core knowledge cannot authorize preference");FollowerEnemyTracking.Eligible=true;
+        b.Memory.GoalEnemy=new EnemyInfo{ProfileId=contact.EnemyProfileId,Person=contact.EnemyPlayer};Check(selector.ChooseForTest(heard)==heard,"stale native record with matching id cannot replace the accepted record");b.Memory.GoalEnemy=contact.EnemyInfo;
+        b.Memory.GoalEnemy=null;Check(selector.ChooseForTest(heard)==heard,"Contact retention cannot bypass accepted-goal admission");b.Memory.GoalEnemy=contact.EnemyInfo;
+        contact.EnemyPlayer.HealthController.IsAlive=false;Check(selector.ChooseForTest(heard)==heard,"dead Contact is not retained");contact.EnemyPlayer.HealthController.IsAlive=true;
+        FollowerContactEnemyRetention.Until=Time.time-.01f;Check(selector.ChooseForTest(heard)==heard,"expired priority restores ordinary native selection");
+        FollowerContactEnemyRetention.Until=Time.time+10;b.IsFollower=false;Check(selector.ChooseForTest(heard)==heard,"ordinary bots retain native selection");b.IsFollower=true;
+        b.Follower.CombatTactic=FollowerCombatTactic.SAINShooter;Tick();Check(selector.ChooseForTest(heard)==contact,"SAINShooter uses the same prioritized Contact selection");
+        FollowerContactEnemyRetention.Owner=null;FollowerContactEnemyRetention.Target=null;
     }
 }

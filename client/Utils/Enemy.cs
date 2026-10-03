@@ -129,6 +129,9 @@ namespace pitTeam.Utils
                 return false;
             }
 
+            if (FollowerEnemyTracking.IsRealistic(goalEnemy))
+                return FollowerEnemyTracking.TryGetKnownPosition(goalEnemy, out position, out _);
+
             Vector3 currentPosition = goalEnemy.CurrPosition;
             if (IsVisible(bot, goalEnemy) &&
                 IsFinitePosition(currentPosition) &&
@@ -163,7 +166,7 @@ namespace pitTeam.Utils
         public static ProxyDistance DistanceProxy(BotOwner bot, Vector3 position)
         {
             if (!bot.Memory.HaveEnemy) return ProxyDistance.Far;
-            Vector3 enemyPosition = bot.Memory.GoalEnemy.CurrPosition;
+            Vector3 enemyPosition = FollowerEnemyTracking.Position(bot.Memory.GoalEnemy);
 
             float distance = Vector3.Distance(position, enemyPosition);
 
@@ -194,7 +197,7 @@ namespace pitTeam.Utils
                 return EnemyDistance.Far;
             }
 
-            float distance = goalEnemy.Distance;
+            float distance = FollowerEnemyTracking.Distance(goalEnemy);
 
             if (distance < 18f) return EnemyDistance.VeryClose;
 
@@ -227,6 +230,15 @@ namespace pitTeam.Utils
                 }
 
                 string enemyId = enemy.ProfileId;
+                if (FollowerEnemyTracking.IsRealistic(enemy))
+                {
+                    int knownCount = 0;
+                    foreach (var known in bot.EnemiesController.EnemyInfos.Values)
+                        if (known?.Person?.HealthController?.IsAlive == true && FollowerEnemyTracking.IsEligible(known) &&
+                            FollowerEnemyTracking.TryGetKnownPosition(known, out var knownPoint, out _) &&
+                            (knownPoint - position).sqrMagnitude <= radius * radius) knownCount++;
+                    return Mathf.Max(1, knownCount);
+                }
                 nearbyGroupMembers = GetNearbyLivingGroupMemberCount(enemy, position, radius);
 
                 // Register cleanup exactly once for this enemy. The previous bag check never added
@@ -504,6 +516,9 @@ namespace pitTeam.Utils
                 return;
             }
 
+            // Recover broken vanilla memory in both tracking modes. The guards below
+            // fill missing/invalid fields; valid memory must not follow hidden movement.
+
             Vector3 enemyPosition = IsFinite(info.CurrPosition)
                 ? info.CurrPosition
                 : fallbackPosition;
@@ -578,6 +593,7 @@ namespace pitTeam.Utils
                 ? contactTime
                 : Time.time;
             Vector3 direction = enemyPosition - follower.Position;
+            FollowerEnemyTracking.Report(info, enemyPosition, observedAt, "playerReport");
 
             info.HaveSeenPersonal = true;
             if (!IsFinite(info.FirstTimeSeen) || info.FirstTimeSeen <= 0f)
@@ -674,7 +690,7 @@ namespace pitTeam.Utils
             EnemyInfo enemyInfo = botOwner_0.Memory.GoalEnemy;
             foreach (EnemyInfo enemy in botOwner_0.EnemiesController.EnemyInfos.Values)
             {
-                if (enemy.Distance < enemyInfo.Distance)
+                if (FollowerEnemyTracking.Distance(enemy) < FollowerEnemyTracking.Distance(enemyInfo))
                 {
                     result = false;
                     break;

@@ -304,7 +304,7 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
-            if (goalEnemy.Distance <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance())
+            if (pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance())
             {
                 return false;
             }
@@ -1243,7 +1243,7 @@ namespace pitTeam.BigBrain
             // while the enemy is still visible.
             if (!combatCommon.HasActiveOrPendingHealWork() &&
                 combatCommon.ShouldAdvance(goalEnemy) &&
-                goalEnemy.Distance <= CombatDistanceConfiguration.Instance.GetVisiblePushDistance())
+                pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= CombatDistanceConfiguration.Instance.GetVisiblePushDistance())
             {
                 // Once local logic decides a visible enemy should be pushed, hand off to the old-plugin
                 // engage helper so it can choose rush/walk/approach behavior from its richer threat checks.
@@ -1583,7 +1583,7 @@ namespace pitTeam.BigBrain
 
         private bool ShouldForceVisibleAlignedFire(EnemyInfo goalEnemy)
         {
-            Vector3 enemyPosition = goalEnemy.CurrPosition;
+            Vector3 enemyPosition = pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy);
             Vector3 toEnemy = enemyPosition - botOwner.Position;
             toEnemy.y = 0f;
             if (toEnemy.sqrMagnitude <= 0.01f)
@@ -2337,13 +2337,13 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
-            if (goalEnemy.IsVisible && goalEnemy.Distance <= 18f)
+            if (goalEnemy.IsVisible && pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= 18f)
             {
                 return true;
             }
 
             return Enemy.IsVisible(botOwner, goalEnemy) &&
-                   (goalEnemy.CanShoot || goalEnemy.Distance <= VisibleAlignedFireMaxDistance);
+                   (goalEnemy.CanShoot || pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= VisibleAlignedFireMaxDistance);
         }
 
         private static bool IsCoverHoldReason(string? reason)
@@ -2944,7 +2944,7 @@ namespace pitTeam.BigBrain
             MarkCoverIntentScanned();
             return goalEnemy.IsVisible ||
                    combatCommon.ShouldAdvance(goalEnemy) ||
-                   (goalEnemy.Distance <= CombatDistanceConfiguration.Instance.GetClosePushDistance() &&
+                   (pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= CombatDistanceConfiguration.Instance.GetClosePushDistance() &&
                     combatCommon.IsAutonomousEngagementLowThreat(goalEnemy));
         }
 

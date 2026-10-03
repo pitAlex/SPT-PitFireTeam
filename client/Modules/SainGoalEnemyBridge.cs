@@ -36,6 +36,10 @@ namespace pitTeam.Modules
         private static PropertyInfo? enemyProfileIdProperty;
         private static PropertyInfo? enemyKnownProperty;
         private static PropertyInfo? enemyLastKnownPositionProperty;
+        private static PropertyInfo? enemyKnownPlacesProperty;
+        private static PropertyInfo? placesLastKnownProperty;
+        private static PropertyInfo? placesTimeProperty;
+        private static PropertyInfo? placePositionProperty;
         private static PropertyInfo? enemyInfoProperty;
         private static PropertyInfo? enemyLookingAtMeProperty;
         private static MethodInfo? enemyUpdateLastSeenPositionMethod;
@@ -102,6 +106,9 @@ namespace pitTeam.Modules
         }
 
         public static bool TrySyncEnemyState(BotOwner owner, Player enemyPlayer, bool prioritizeAsGoal)
+            => TrySyncEnemyState(owner, enemyPlayer, prioritizeAsGoal, enemyPlayer?.Position ?? default, Time.time);
+
+        public static bool TrySyncEnemyState(BotOwner owner, Player enemyPlayer, bool prioritizeAsGoal, Vector3 reportPosition, float observedAt)
         {
             if (!pitFireTeam.IsSAINInstalled ||
                 owner == null ||
@@ -148,7 +155,7 @@ namespace pitTeam.Modules
 
                 enemyUpdateLastSeenPositionMethod.Invoke(
                     sainEnemy,
-                    new object[] { enemyPlayer.Position, Time.time });
+                    new object[] { reportPosition, observedAt });
 
                 object? currentGoal = controllerGoalEnemyProperty?.GetValue(enemyController) ??
                                       controllerGoalEnemyField?.GetValue(enemyController);
@@ -223,6 +230,27 @@ namespace pitTeam.Modules
                 LogAccessorFailureOnce(ex);
                 return false;
             }
+        }
+
+        public static bool TryGetTrackingReport(BotOwner owner, EnemyInfo enemy, out Vector3 position, out float observedAt)
+        {
+            position = default; observedAt = -1f;
+            if (!pitFireTeam.IsSAINInstalled) return false;
+            try
+            {
+                if (!TryGetExactSainGoalEnemy(owner, enemy, out var native)) return false;
+                var places = enemyKnownPlacesProperty?.GetValue(native);
+                if (places == null) return false;
+                placesLastKnownProperty ??= AccessTools.Property(places.GetType(), "LastKnownPlace");
+                placesTimeProperty ??= AccessTools.Property(places.GetType(), "TimeLastKnownUpdated");
+                var place = placesLastKnownProperty?.GetValue(places);
+                if (place == null || placesTimeProperty?.GetValue(places) is not float time) return false;
+                placePositionProperty ??= AccessTools.Property(place.GetType(), "Position");
+                if (placePositionProperty?.GetValue(place) is not Vector3 point || !IsFinite(point)) return false;
+                position = point; observedAt = time;
+                return true;
+            }
+            catch (Exception ex) { LogAccessorFailureOnce(ex); return false; }
         }
 
         public static bool TryGetRetainedSameGoalEnemy(
@@ -424,6 +452,7 @@ namespace pitTeam.Modules
             enemyProfileIdProperty = AccessTools.Property(runtimeType, "EnemyProfileId");
             enemyKnownProperty = AccessTools.Property(runtimeType, "EnemyKnown");
             enemyLastKnownPositionProperty = AccessTools.Property(runtimeType, "LastKnownPosition");
+            enemyKnownPlacesProperty = AccessTools.Property(runtimeType, "KnownPlaces");
             enemyInfoProperty = AccessTools.Property(runtimeType, "EnemyInfo");
             enemyLookingAtMeProperty = AccessTools.Property(runtimeType, "EnemyLookingAtMe");
             enemyUpdateLastSeenPositionMethod = AccessTools.Method(

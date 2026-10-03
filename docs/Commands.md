@@ -89,13 +89,16 @@ Behavior:
 - The outline color is configurable with a `#RRGGBB` value and defaults to green (`#00FF00`).
 - Name, distance, combat status, HP, and tactic (`MD`) can each be toggled under `My Squad > Settings > Base Settings`.
 - Disabling every text field while leaving the highlight enabled produces a highlight-only Status Report.
-- Enemy markers are grouped by enemy profile, so multiple followers reporting the same contact produce one marker. During the Status Report display, the active marker set follows each follower's current enemy selection: switching targets adds the newly selected enemy and removes an old contact once no follower targets it. `Auto Display Enemy Marker` keeps this marker set active independently for the full live contact without automatically playing the report sound or voice line. On the core combat path, each new contact starts at the enemy's current position. A reliably visible enemy uses a steady `27x27` red reticle that follows the live position every frame; an enemy that is not reliably visible uses a vertically bobbing `30.6x30.6` yellow `!` whose position refreshes every five seconds; and a killed enemy uses a steady `27x27` grey skull at its remembered death position. `Auto Display Kill Marker` can open the independent skull display immediately, `Kill Display Time` requests its duration, and `Kill Remember Time` caps that duration and disables killed-enemy markers when set to `0`. The spatial location sound and spoken direction use the position captured when Status Report was triggered.
+- Enemy markers are grouped by enemy profile, so multiple followers reporting the same contact produce one marker. During the Status Report display, the active marker set follows each follower's current enemy selection: switching targets adds the newly selected enemy and removes an old contact once no follower targets it. `Auto Display Enemy Marker` keeps this marker set active independently for the full live contact without automatically playing the report sound or voice line. On the core combat path, contacts use the permitted [Enemy Tracking](Enemy-Tracking.md) position: the last accepted report in Realistic (default), or live accepted-enemy coordinates in Simple. A reliably visible enemy uses a steady `27x27` red reticle that follows the live position every frame; an enemy that is not reliably visible uses a vertically bobbing `30.6x30.6` yellow `!` whose position refreshes every five seconds; and a killed enemy uses a steady `27x27` grey skull at its remembered death position. `Auto Display Kill Marker` can open the independent skull display immediately, `Kill Display Time` requests its duration, and `Kill Remember Time` caps that duration and disables killed-enemy markers when set to `0`. The spatial location sound and spoken direction use the position captured when Status Report was triggered.
 - Ready SAIN addon contact/status behavior is documented in [addon status reporting](../addon/docs/Commands.md#status-report-and-enemy-markers).
 - Nearby active followers without enemies play `FriendlyGesture`.
 - When no living teammate exists, Status Report plays `radiobeep.ogg` instead of the normal `radiochat.ogg` response.
 - Does not create `FollowerCommandType` state.
 
 ### Contact / Over There
+
+An accepted prioritized Contact target overrides a neutral relationship for all tactics. The target's group then recognizes the player and living followers as enemies; ordinary shared contact reports do not perform this override. Relationship changes do not grant visibility or firing permission.
+
 
 Input:
 
@@ -134,6 +137,8 @@ Behavior:
 - Does not create `FollowerCommandType` state.
 
 ### Attention / Look
+
+Core also remembers dismissed local-sound identities until the player moves into a new sector (10 m, or 8 m on Factory/Labs). Repeated nearby movement/voice from those identities cannot restart peaceful facing in that sector. Directed gunfire can turn followers again after the immediate command suppression expires; real sight and damage remain separate combat inputs. See [peaceful sound orientation](Combat-Tactics.md#peaceful-sound-orientation).
 
 Input:
 

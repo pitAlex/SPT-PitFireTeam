@@ -74,7 +74,7 @@ internal sealed class SainMarksmanWeaponBridge
         counted.Clear(); counted.Add(enemy.EnemyProfileId);
         foreach (Enemy contact in bot.EnemyController.KnownEnemies)
             if (SAINFollowerSquadSupportObjective.Valid(contact) &&
-                (contact.LastKnownPosition.GetValueOrDefault() - enemy.LastKnownPosition.GetValueOrDefault()).sqrMagnitude <= 35f * 35f)
+                (SainEnemyTracking.Position(contact).GetValueOrDefault() - SainEnemyTracking.Position(enemy).GetValueOrDefault()).sqrMagnitude <= 35f * 35f)
                 counted.Add(contact.EnemyProfileId);
         return eligible = counted.Count <= allowedCount(value) && (value < 0.4f || counted.Count < 3);
     }

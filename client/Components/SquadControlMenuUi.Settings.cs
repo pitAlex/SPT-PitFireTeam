@@ -367,6 +367,7 @@ namespace pitTeam.Components
                 pitFireTeam.enemyKilledRetainTime,
                 pitFireTeam.statusSound,
                 pitFireTeam.enemyRemember,
+                pitFireTeam.enemyTracking,
                 pitFireTeam.scanDistance,
                 pitFireTeam.botTalk))
             {
@@ -621,6 +622,41 @@ namespace pitTeam.Components
             controlRect.sizeDelta = new Vector2(360f, 72f);
             controlRect.anchoredPosition = new Vector2(-1 * (SettingsControlRightInset + controlRect.sizeDelta.x), 0f);
 
+            if (entry == pitFireTeam.enemyTracking)
+            {
+                controlRect.anchorMin = controlRect.anchorMax = new Vector2(1f, 0.5f);
+                controlRect.pivot = new Vector2(1f, 0.5f);
+                controlRect.anchoredPosition = new Vector2(-SettingsControlRightInset, 0f);
+                var choices = new List<(EnemyTrackingMode mode, Button button, TextMeshProUGUI label)>();
+                void RefreshChoices()
+                {
+                    foreach (var choice in choices)
+                    {
+                        choice.button.interactable = !disabledDuringRaid;
+                        choice.label.color = pitFireTeam.enemyTracking.Value == choice.mode
+                            ? new Color(1f, 0.8f, 0.35f) : new Color(0.7f, 0.7f, 0.7f);
+                    }
+                }
+                foreach (EnemyTrackingMode mode in new[] { EnemyTrackingMode.Simple, EnemyTrackingMode.Realistic })
+                {
+                    Button button = CreateActionButton(controlRect, out TextMeshProUGUI label);
+                    RectTransform buttonRect = button.transform as RectTransform;
+                    buttonRect.sizeDelta = new Vector2(165f, 36f);
+                    buttonRect.anchoredPosition = new Vector2(mode == EnemyTrackingMode.Simple ? -175f : 0f, 0f);
+                    label.text = pitFireTeam.GetSocialUiText(mode == EnemyTrackingMode.Simple ? "EnemyTrackingSimple" : "EnemyTrackingRealistic");
+                    choices.Add((mode, button, label));
+                    button.onClick.AddListener(() =>
+                    {
+                        pitFireTeam.enemyTracking.Value = mode;
+                        pitFireTeam.Instance?.Config.Save();
+                        RefreshChoices();
+                    });
+                }
+                RefreshChoices();
+                AddRaidDisabledTooltipOverlay(rowObject, disabledDuringRaid);
+                return;
+            }
+
             if (entry.SettingType == typeof(bool))
             {
                 controlRect.anchorMin = new Vector2(1f, 0.5f);
@@ -803,6 +839,7 @@ namespace pitTeam.Components
             return entry == pitFireTeam.spawnPoint
                 || entry == pitFireTeam.englishBear
                 || entry == pitFireTeam.enemyRemember
+                || entry == pitFireTeam.enemyTracking
                 || entry == pitFireTeam.heatlhMultiplier
                 || entry == pitFireTeam.pitFireTeamFLAG
                 || entry == pitFireTeam.badGuy
@@ -2538,6 +2575,7 @@ namespace pitTeam.Components
             if (entry == pitFireTeam.followDistance) return language.followDistance;
             if (entry == pitFireTeam.regroupRadius) return language.regroupRadius;
             if (entry == pitFireTeam.enemyRemember) return language.enemyRemember;
+            if (entry == pitFireTeam.enemyTracking) return language.enemyTracking;
             if (entry == pitFireTeam.heatlhMultiplier) return language.healthMultiplier;
             if (entry == pitFireTeam.statusSound) return language.statusSound;
             if (entry == pitFireTeam.enemyMarker) return language.enemyMarker;

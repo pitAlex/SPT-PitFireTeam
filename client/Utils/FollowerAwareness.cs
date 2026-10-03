@@ -360,6 +360,12 @@ namespace pitTeam.Utils
         public static void SoundHeard(BotOwner bot, Player enemy, Vector3 position, float distance, AISoundType type)
         {
             if (bot == null || enemy == null || bot.IsDead || bot.BotState != EBotState.Active) return;
+            if (FollowerSoundAwareness.Owns(bot) && !SainAddonBridge.HasAcceptedGoalEnemy(bot))
+            {
+                if (type == AISoundType.step || type == AISoundType.gun || type == AISoundType.silencedGun)
+                    FollowerSoundAwareness.Observe(bot, enemy, position, type != AISoundType.step, true);
+                return;
+            }
             if (FollowerEnemyEnforceSuppression.IsSuppressed(bot)) return;
             var state = GetState(bot);
             if (state == null) return;
@@ -672,6 +678,7 @@ namespace pitTeam.Utils
             }
 
             enemyInfo.PriorityIndex = 0;
+            FollowerEnemyTracking.Report(enemyInfo, enemy.Position, Time.time, reason);
             enemyInfo.IgnoreUntilAggression = false;
             Enemy.RepairPersonalMemory(
                 enemyInfo,

@@ -974,7 +974,7 @@ namespace pitTeam.BigBrain
                    FollowerCombatCommon.WasHitRecently(BotOwner, 0.75f) ||
                    (goalEnemy.IsVisible &&
                     goalEnemy.CanShoot &&
-                    goalEnemy.Distance <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance());
+                    pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance());
         }
 
         protected void ActivatePrimaryObjectiveForStart()

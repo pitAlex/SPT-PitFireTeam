@@ -735,7 +735,7 @@ namespace pitTeam.Components
             settings.FileSettings.Mind.DIST_TO_ENEMY_YO_CAN_HEAL = 15f;
 
             settings.FileSettings.Mind.DIST_TO_STOP_RUN_ENEMY = 15f;
-            settings.FileSettings.Mind.TIME_TO_FORGOR_ABOUT_ENEMY_SEC = pitFireTeam.enemyRemember.Value;
+            settings.FileSettings.Mind.TIME_TO_FORGOR_ABOUT_ENEMY_SEC = FollowerEnemyTracking.RememberSeconds;
             settings.FileSettings.Mind.TIME_TO_FIND_ENEMY = 10f;
             settings.FileSettings.Mind.ATTACK_IMMEDIATLY_CHANCE_0_100 = 50f;
             settings.FileSettings.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 = 50f;
@@ -1001,7 +1001,7 @@ namespace pitTeam.Components
             // AddFollower postfix fires since GetSainBot falls back gracefully when SAIN is absent.
             if (pitFireTeam.IsSAINInstalled)
             {
-                TryOverrideSainForgetEnemyTime(bot, pitFireTeam.enemyRemember.Value);
+                TryOverrideSainForgetEnemyTime(bot, FollowerEnemyTracking.RememberSeconds);
             }
         }
 
@@ -1180,6 +1180,7 @@ namespace pitTeam.Components
 
                 ClearCommand("Dismiss:finally");
                 UnhookManualUpdate();
+                FollowerEnemyTracking.Clear(_bot);
                 UnhookPeaceChange();
             }
             // @TODO : see what else can be reverted
@@ -2347,7 +2348,7 @@ namespace pitTeam.Components
                 return;
             }
 
-            if (IsFinite(target.Position) && target.Position.sqrMagnitude > 0.01f)
+            if (FollowerEnemyTracking.Mode == EnemyTrackingMode.Simple && IsFinite(target.Position) && target.Position.sqrMagnitude > 0.01f)
             {
                 _orderedPushTargetPosition = target.Position;
             }
@@ -2372,6 +2373,7 @@ namespace pitTeam.Components
 
         private static Vector3 GetOrderedPushTargetPosition(EnemyInfo goalEnemy)
         {
+            if (FollowerEnemyTracking.IsRealistic(goalEnemy)) return FollowerEnemyTracking.Position(goalEnemy);
             if (IsFinite(goalEnemy.CurrPosition) && goalEnemy.CurrPosition.sqrMagnitude > 0.01f)
             {
                 return goalEnemy.CurrPosition;
@@ -2701,7 +2703,8 @@ namespace pitTeam.Components
 
                 if (info.IsVisible ||
                     info.CanShoot ||
-                    Time.time - info.PersonalLastSeenTime <= TemporaryCombatAggressionRecentEnemySeconds)
+                    (Time.time - info.PersonalLastSeenTime <= TemporaryCombatAggressionRecentEnemySeconds &&
+                     (pitFireTeam.UseSainFollowerCombat(owner) || !FollowerEnemyTracking.IsSearched(info))))
                 {
                     return true;
                 }
@@ -2721,6 +2724,10 @@ namespace pitTeam.Components
 
             foreach (IPlayer enemy in owner.BotsGroup.Enemies.Keys)
             {
+                if (!pitFireTeam.UseSainFollowerCombat(owner) &&
+                    owner.EnemiesController?.EnemyInfos != null &&
+                    owner.EnemiesController.EnemyInfos.TryGetValue(enemy, out var searched) &&
+                    FollowerEnemyTracking.IsSearched(searched) && !searched.IsVisible) continue;
                 if (IsLiveEnemyPlayer(enemy))
                 {
                     return true;
@@ -3034,6 +3041,7 @@ namespace pitTeam.Components
                 if (owner == null || owner != _bot) return;
 
                 Utils.FollowerRecovery.ClearInvalidGoalEnemy(owner);
+                FollowerEnemyTracking.Update(owner);
                 Utils.FollowerMedical.UpdateMedicalHandsWatchdog(owner);
                 postCombatDiagnostics.Update(owner, this);
                 UpdateTemporaryCombatAggressionClearDelay();

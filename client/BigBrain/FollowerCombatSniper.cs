@@ -351,7 +351,7 @@ namespace pitTeam.BigBrain
         {
             decision = default;
 
-            bool closeEnoughForSecondary = goalEnemy.Distance <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance();
+            bool closeEnoughForSecondary = pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance();
             bool offensiveSearchAllowed = ShouldUseOffensiveAutoSearch(goalEnemy);
             if (!closeEnoughForSecondary && !offensiveSearchAllowed)
             {
@@ -607,7 +607,7 @@ namespace pitTeam.BigBrain
         /// </summary>
         private bool ShouldPreserveCloseQuarterWeaponFlow(EnemyInfo goalEnemy)
         {
-            if (goalEnemy == null || goalEnemy.Distance > CombatDistanceConfiguration.Instance.GetCloseQuarterDistance())
+            if (goalEnemy == null || pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) > CombatDistanceConfiguration.Instance.GetCloseQuarterDistance())
             {
                 return false;
             }
@@ -686,7 +686,7 @@ namespace pitTeam.BigBrain
         {
             return FollowerCombatCommon.HasActiveCombatEnemy(botOwner, goalEnemy) &&
                    goalEnemy != null &&
-                   goalEnemy.Distance <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance();
+                   pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance();
         }
 
         private void TrySwitchToPrimaryForSniperDecision()
@@ -944,7 +944,7 @@ namespace pitTeam.BigBrain
         {
             if (!CombatCommon.HasActiveCombatEnemy(goalEnemy) ||
                 goalEnemy.IsVisible ||
-                goalEnemy.Distance > IndirectThreatSuppressMaxDistance ||
+                pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) > IndirectThreatSuppressMaxDistance ||
                 !CombatCommon.HasReliablePersonalEnemyLocation(goalEnemy))
             {
                 return false;
@@ -1409,7 +1409,7 @@ namespace pitTeam.BigBrain
             }
 
             if (pushEvent.IsSearchPush &&
-                goalEnemy.Distance <= MarksmanTeamSearchAutoMaxEnemyDistance &&
+                pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= MarksmanTeamSearchAutoMaxEnemyDistance &&
                 (BotOwner.Position - pushEvent.Owner.Position).sqrMagnitude <= 20f * 20f)
             {
                 if (CombatCommon.TryCreateTeamSearchSupportDecision(
@@ -2258,7 +2258,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            return goalEnemy.Distance <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance() ||
+            return pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance() ||
                    BotOwner.Memory.IsUnderFire ||
                    FollowerCombatCommon.WasHitRecently(BotOwner, 0.75f);
         }
@@ -2616,7 +2616,7 @@ namespace pitTeam.BigBrain
             EnemyInfo? goalEnemy = BotOwner.Memory.GoalEnemy;
             if (!CombatCommon.HasActiveCombatEnemy(goalEnemy) ||
                 goalEnemy == null ||
-                (goalEnemy.Distance > CombatDistanceConfiguration.Instance.GetCloseQuarterDistance() &&
+                (pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) > CombatDistanceConfiguration.Instance.GetCloseQuarterDistance() &&
                  (!preparedCloseSearchDecision.HasValue || !ShouldUseOffensiveAutoSearch(goalEnemy))))
             {
                 ClearCloseWeaponPreparation();

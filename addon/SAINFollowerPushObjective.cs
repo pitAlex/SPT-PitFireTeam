@@ -76,8 +76,8 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
         Enemy? enemy = bot.EnemyController.CheckAddEnemy(player);
         if (enemy?.WasValid != true || !Enemy.IsEnemyActive(enemy) ||
             enemy.EnemyInfo?.ProfileId != order.EnemyProfileId) return false;
-        if (enemy.EnemyKnown && enemy.LastKnownPosition.HasValue &&
-            Finite(enemy.LastKnownPosition.Value)) return false;
+        if (enemy.EnemyKnown && SainEnemyTracking.Position(enemy).HasValue &&
+            Finite(SainEnemyTracking.Position(enemy).GetValueOrDefault())) return false;
         enemy.KnownPlaces.UpdatePersonalHeardPosition(new SAINHearingReport
         {
             position = known,
@@ -93,7 +93,7 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
         Clear("replaced"); Mode = mode; EnemyId = id; nextPlan = 0f;
         target = FindTarget(); targetBound = target != null; bindUntil = Time.time + 3f;
         lastBoundTarget = target;
-        anchor = target?.LastKnownPosition ?? bot.Position;
+        anchor = SainEnemyTracking.Position(target) ?? bot.Position;
         Phase = SAINPushPhase.Approach; Record("begin");
     }
     private Enemy? FindTarget()
@@ -104,7 +104,7 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
         return null;
     }
     private static bool Valid(Enemy? enemy) => enemy != null && enemy.WasValid && enemy.EnemyKnown &&
-        Enemy.IsEnemyActive(enemy) && enemy.EnemyPlayer?.HealthController?.IsAlive == true && enemy.LastKnownPosition.HasValue && Finite(enemy.LastKnownPosition.Value);
+        Enemy.IsEnemyActive(enemy) && enemy.EnemyPlayer?.HealthController?.IsAlive == true && SainEnemyTracking.Position(enemy).HasValue && Finite(SainEnemyTracking.Position(enemy).GetValueOrDefault());
     private static bool Finite(Vector3 p) => !float.IsNaN(p.x) && !float.IsInfinity(p.x) &&
         !float.IsNaN(p.y) && !float.IsInfinity(p.y) && !float.IsNaN(p.z) && !float.IsInfinity(p.z);
 
@@ -147,8 +147,8 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
             contactLostUntil = -1f; nextValidation = 0f;
             Record("contactRestored");
         }
-        if (!targetBound) { targetBound = true; anchor = target.LastKnownPosition.GetValueOrDefault(); }
-        Vector3 known = target.LastKnownPosition.GetValueOrDefault();
+        if (!targetBound) { targetBound = true; anchor = SainEnemyTracking.Position(target).GetValueOrDefault(); }
+        Vector3 known = SainEnemyTracking.Position(target).GetValueOrDefault();
         if ((known - anchor).sqrMagnitude >= 64f || (Exhausted && target.IsVisible && target.CanShoot))
         {
             ReleaseDestination(); anchor = known; Phase = SAINPushPhase.Approach; nextPlan = 0f; Record("newContact");
@@ -245,7 +245,7 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
         if (Phase == SAINPushPhase.Pressure)
         {
             if (Time.time < holdUntil) { result = ECombatDecision.StandAndShoot; return true; }
-            if ((enemy.LastKnownPosition.GetValueOrDefault() - bot.Position).sqrMagnitude <= 9f)
+            if ((SainEnemyTracking.Position(enemy).GetValueOrDefault() - bot.Position).sqrMagnitude <= 9f)
             { Fail("lastKnownReached"); result = ECombatDecision.SeekCover; return true; }
             ReleaseDestination(); Phase = SAINPushPhase.Approach;
         }
@@ -279,7 +279,7 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
             if (finder.Pending) { nextPlan = Time.time; return; }
             if (!Ordered && !enemy.IsVisible) { HoldForAssessment("noCoveredApproach"); return; }
         }
-        Vector3 known = enemy.LastKnownPosition.GetValueOrDefault();
+        Vector3 known = SainEnemyTracking.Position(enemy).GetValueOrDefault();
         Vector3 direction = known - bot.Position;
         Vector3 provisional = bot.Position + direction.normalized * Mathf.Min(20f, direction.magnitude);
         if (NavMesh.SamplePosition(provisional, out NavMeshHit hit, 2f, NavMesh.AllAreas) &&

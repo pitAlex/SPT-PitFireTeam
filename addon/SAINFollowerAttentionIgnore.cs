@@ -14,11 +14,12 @@ internal sealed class SAINFollowerAttentionIgnore
     private readonly HashSet<string> enemies = new();
     private Vector3 anchor;
 
-    internal void Remember(BotComponent bot, Vector3 player)
+    internal void Remember(BotComponent bot, Vector3 player, Enemy soundContact = null)
     {
         Refresh(player);
         anchor = player;
         Add(bot.GoalEnemy);
+        Add(soundContact);
         if (bot.EnemyController?.KnownEnemies != null)
             foreach (Enemy enemy in bot.EnemyController.KnownEnemies) Add(enemy);
     }

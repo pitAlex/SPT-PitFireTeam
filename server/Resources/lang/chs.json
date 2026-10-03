@@ -62,7 +62,11 @@
   },
   "enemyRemember": {
     "Name": "遗忘敌方人员时间（秒）",
-    "Description": "队员关注敌方人员的最长时间。修改后从下一战局开始时生效。"
+    "Description": "敌方接触信息的正常记忆时间。真实模式下，正在进行且未完成的搜索可延长记忆，但最长不超过最后一次报告后的400秒。从下一战局开始生效。"
+  },
+  "enemyTracking": {
+    "Name": "敌人追踪",
+    "Description": "真实模式使用最后看到、听到或报告的位置。简单模式可隔墙追踪已接纳的敌人。适用于所有队员战术，从下一战局开始生效；视野和安全射击规则保持不变。"
   },
   "healthMultiplier": {
     "Name": "小队生命倍率",
@@ -235,6 +239,8 @@
     "WantToHeal": "需要治疗"
   },
   "socialUi": {
+    "EnemyTrackingSimple": "简单",
+    "EnemyTrackingRealistic": "真实",
     "LootActionThis": "CMD: 搜刮此处",
     "LootActionCheckHim": "CMD : 搜查他",
     "LootActionTakeThis": "CMD: 拿取此物",

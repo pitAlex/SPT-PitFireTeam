@@ -218,7 +218,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             ClearCommittedAdvancePoint();
-            TryMoveToEnemy(BotOwner.Memory.GoalEnemy.CurrPosition);
+            TryMoveToEnemy(pitTeam.Modules.FollowerEnemyTracking.Position(BotOwner.Memory.GoalEnemy));
         }
 
         private void AimAndMove(CustomLayer.ActionData data)
@@ -230,12 +230,12 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            Vector3 enemyPos = BotOwner.Memory.GoalEnemy.EnemyLastPosition;
+            Vector3 enemyPos = pitTeam.Modules.FollowerEnemyTracking.Position(BotOwner.Memory.GoalEnemy);
             Vector3 centerPos = BotOwner.Memory.IsInCover && !BotOwner.LookSensor.EnoughDistToShoot(out _)
                 ? (BotOwner.Transform.position + enemyPos) / 2f
                 : enemyPos;
 
-            ShootToPoint shootPoint = BotOwner.CurrentEnemyTargetPosition(true);
+            ShootToPoint shootPoint = pitTeam.Modules.FollowerEnemyTracking.CoverTarget(BotOwner);
             CoverSearchType searchType = SetAttackCoverSearchType(CoverShootType.shoot);
             CustomNavigationPoint point = Covers.GetClosestCoverPoint(BotOwner, centerPos, 50f, cover =>
             {
@@ -777,7 +777,7 @@ namespace pitTeam.BigBrain.Actions
                 return true;
             }
 
-            enemyAnchor = goalEnemy.CurrPosition;
+            enemyAnchor = pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy);
             return IsFinite(enemyAnchor);
         }
 
@@ -801,7 +801,7 @@ namespace pitTeam.BigBrain.Actions
                 return true;
             }
 
-            if (goalEnemy == null || goalEnemy.Distance < TacticalReloadSafeDistance)
+            if (goalEnemy == null || pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) < TacticalReloadSafeDistance)
             {
                 return false;
             }

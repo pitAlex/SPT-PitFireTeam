@@ -21,6 +21,8 @@ namespace pitTeam.SAINAddon
                 SainRegroupFireSafety.Apply(Harmony);
                 SainIdleWeaponGuard.Apply(Harmony);
                 SainFollowerLeanGuard.Apply(Harmony);
+                SainFollowerSoundAwareness.Install(Harmony);
+                SainEnemyTracking.Apply(Harmony);
                 SainEmergencyWeaponBridge.Apply(Harmony);
             }
             catch { Remove(); throw; }

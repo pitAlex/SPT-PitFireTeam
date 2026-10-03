@@ -98,6 +98,8 @@ namespace pitTeam.Patches
             FollowerSainVisionRaycastPatch.Apply(harmony);
             SainVisionRecoveryPatch.Apply(harmony);
             FollowerSainProficiency.ApplyPatches(harmony);
+            FollowerSainTrackingTimerPatch.Apply(harmony);
+            FollowerSainHearingPatch.Apply(harmony);
             FollowerSainSquadLeaderPatch.Apply(harmony);
         }
 

@@ -56,12 +56,12 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
     internal List<CoverPoint> Find(Enemy enemy, Vector3 boss, bool preferNearby = false, bool preferProtective = false)
     {
         ranked.Clear(); if (!Pending) validationPass++; Pending = false;
-        if (enemy?.LastKnownPosition == null) return ranked;
+        if (SainEnemyTracking.Position(enemy) == null) return ranked;
         rankNearby = preferNearby; rankProtective = preferNearby && preferProtective;
         rankBoss = boss;
         if (rankProtective)
         {
-            Vector3 toEnemy = enemy.LastKnownPosition.Value - boss; toEnemy.y = 0f;
+            Vector3 toEnemy = SainEnemyTracking.Position(enemy).GetValueOrDefault() - boss; toEnemy.y = 0f;
             rankEnemyDistance = toEnemy.magnitude; rankEnemyDirection = toEnemy.normalized;
             protectiveRange = SainCoverGeometry.SearchRadius;
         }
@@ -98,7 +98,7 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
 
     private void Scan(Enemy enemy, Vector3 boss, float radius, float refresh)
     {
-        Vector3 threat = enemy.LastKnownPosition.GetValueOrDefault();
+        Vector3 threat = SainEnemyTracking.Position(enemy).GetValueOrDefault();
         if (!scanned || contact != enemy.EnemyProfileId || (boss - bossAnchor).sqrMagnitude >= refresh * refresh ||
             (bot.Position - botAnchor).sqrMagnitude >= refresh * refresh || (threat - enemyAnchor).sqrMagnitude >= 64f)
         {
@@ -158,8 +158,8 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
     internal List<CoverPoint> FindForward(Enemy enemy, bool requireFiringLane = true)
     {
         ranked.Clear(); if (!Pending) validationPass++; Pending = false;
-        if (enemy?.LastKnownPosition == null) return ranked;
-        Vector3 threat = enemy.LastKnownPosition.Value;
+        if (SainEnemyTracking.Position(enemy) == null) return ranked;
+        Vector3 threat = SainEnemyTracking.Position(enemy).GetValueOrDefault();
         Vector3 direction = threat - bot.Position; direction.y = 0f;
         Scan(enemy, bot.Position + direction.normalized * 15f, 20f, 8f);
         foreach (CoverPoint point in candidates) AddForward(point, enemy, threat, requireFiringLane);
@@ -260,10 +260,10 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
     }
     private bool ValidateCandidate(CoverPoint point, Enemy enemy)
     {
-        if (point == null || point.Spotted || point.CoverData.IsBad || enemy?.LastKnownPosition == null) return false;
+        if (point == null || point.Spotted || point.CoverData.IsBad || SainEnemyTracking.Position(enemy) == null) return false;
         if (validation.TryGetValue(point, out Validation cached) && (Time.time < cached.Until || cached.Pass == validationPass) &&
             cached.Enemy == enemy.EnemyProfileId && (cached.Bot - bot.NavMeshPosition).sqrMagnitude < 64f &&
-            (cached.Threat - enemy.LastKnownPosition.Value).sqrMagnitude < 64f &&
+            (cached.Threat - SainEnemyTracking.Position(enemy).GetValueOrDefault()).sqrMagnitude < 64f &&
             (cached.Point - point.Position).sqrMagnitude < 0.01f) return cached.Valid;
         if (!TakeProbe()) { Pending = true; return false; }
         return Validate(point, enemy);
@@ -272,8 +272,8 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
     // rechecked immediately when that observer asks, independently of selection.
     internal bool Validate(CoverPoint point, Enemy enemy)
     {
-        if (point == null || point.Spotted || point.CoverData.IsBad || enemy?.LastKnownPosition == null) return false;
-        Vector3 threat = enemy.LastKnownPosition.Value;
+        if (point == null || point.Spotted || point.CoverData.IsBad || SainEnemyTracking.Position(enemy) == null) return false;
+        Vector3 threat = SainEnemyTracking.Position(enemy).GetValueOrDefault();
         bool valid = analyzer.RecheckCoverPoint(point, threat, (threat - bot.NavMeshPosition).normalized,
             bot.NavMeshPosition, out _);
         Remember(point, enemy, valid);
@@ -283,7 +283,7 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
     {
         if (validation.Count >= 128 && !validation.ContainsKey(point)) validation.Clear();
         validation[point] = new Validation { Valid = valid, Until = Time.time + 1f, Pass = validationPass, Bot = bot.NavMeshPosition,
-            Threat = enemy.LastKnownPosition.GetValueOrDefault(), Point = point.Position, Enemy = enemy.EnemyProfileId };
+            Threat = SainEnemyTracking.Position(enemy).GetValueOrDefault(), Point = point.Position, Enemy = enemy.EnemyProfileId };
     }
     internal void Clear()
     {

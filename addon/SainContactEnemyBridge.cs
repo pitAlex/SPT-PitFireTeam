@@ -6,6 +6,8 @@ using HarmonyLib;
 using pitTeam.Components;
 using pitTeam.Modules;
 using CoreEnemy = pitTeam.Utils.Enemy;
+using NativeEnemy = SAIN.SAINComponent.Classes.EnemyClasses.Enemy;
+using SAIN.Components;
 
 namespace pitTeam.SAINAddon;
 
@@ -13,6 +15,27 @@ namespace pitTeam.SAINAddon;
 // command on a ready addon follower may convert a neutral relationship explicitly.
 internal static class SainContactEnemyBridge
 {
+    // Core already owns Contact's identity and finite priority window. Apply it at
+    // native selection, before SAIN publishes a decision or the UI reads its goal.
+    internal static NativeEnemy PreferRetainedContact(BotComponent bot, NativeEnemy native)
+    {
+        var owner = bot?.BotOwner;
+        if (native == null || owner == null || !pitFireTeam.UseSainFollowerCombat(owner) ||
+            !SainAddonBridge.HasAcceptedGoalEnemy(owner) || native.IsVisible || native.CanShoot ||
+            bot.Decision.DogFightDecision.DogFightActive || bot.Medical.TimeSinceShot < 2f ||
+            SainRegroupBridge.IsUnderFire(owner) || SainAddonBridge.IsUsingMedical(owner) ||
+            !FollowerContactEnemyRetention.TryGetActiveRetainedEnemy(owner, out Player? retained, out bool prioritized) ||
+            !prioritized || retained == null || retained.ProfileId != owner.Memory.GoalEnemy.ProfileId ||
+            !FollowerEnemyTracking.IsEligible(owner.Memory.GoalEnemy)) return native!;
+
+        foreach (NativeEnemy candidate in bot.EnemyController.KnownEnemies)
+            if (candidate.EnemyProfileId == retained.ProfileId &&
+                ReferenceEquals(candidate.EnemyInfo, owner.Memory.GoalEnemy) && candidate.WasValid &&
+                candidate.EnemyKnown && NativeEnemy.IsEnemyActive(candidate) && candidate.LastKnownPosition.HasValue)
+                return candidate;
+        return native;
+    }
+
     internal static void Apply(Harmony harmony)
     {
         var target = AccessTools.Method(typeof(pitAIBossPlayer), "RegisterContactEnemyForFollower",

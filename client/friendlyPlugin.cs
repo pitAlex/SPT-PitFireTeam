@@ -92,6 +92,7 @@ namespace pitTeam
         public Dictionary<string, string> enemyKilledRetainTime { get; set; }
         public Dictionary<string, string> scanDistance { get; set; }
         public Dictionary<string, string> enemyRemember { get; set; }
+        public Dictionary<string, string> enemyTracking { get; set; }
         public Dictionary<string, string> healthMultiplier { get; set; }
         public Dictionary<string, string> pickup { get; set; }
         public Dictionary<string, string> tieredPickup { get; set; }
@@ -223,6 +224,7 @@ namespace pitTeam
         public static LanguageOptions optionsLang;
 
         public static ConfigEntry<int> enemyRemember;
+        public static ConfigEntry<EnemyTrackingMode> enemyTracking;
 
         public static ConfigEntry<int> heatlhMultiplier;
 
@@ -389,6 +391,8 @@ namespace pitTeam
 
 #if DEBUG
             new AICoreAgentUpdatePatch().Enable();
+            RuntimeFailureDiagnostics.Apply(harmony);
+            GroupSightRecorderPatch.Apply(harmony);
 #endif
 
             // recruit/request patches
@@ -1033,6 +1037,7 @@ namespace pitTeam
             followDistance = Config.Bind("", "02 FollowDistance", 12, new ConfigDescription(optionsLang.followDistance["Description"], new AcceptableValueRange<int>(8, 30), CreateConfigAttributes(-201, false, optionsLang.followDistance)));
 
             enemyRemember = Config.Bind("", "03 EnemyRemember", 20, new ConfigDescription(optionsLang.enemyRemember["Description"], new AcceptableValueRange<int>(5, 60), CreateConfigAttributes(-300, false, optionsLang.enemyRemember)));
+            enemyTracking = Config.Bind("", "03 EnemyTracking", EnemyTrackingMode.Realistic, new ConfigDescription(optionsLang.enemyTracking["Description"], null, CreateConfigAttributes(-299, false, optionsLang.enemyTracking)));
 
             heatlhMultiplier = Config.Bind("", "04 HealthMultiplier", 1, new ConfigDescription(optionsLang.healthMultiplier["Description"], new AcceptableValueRange<int>(1, 10), CreateConfigAttributes(-400, false, optionsLang.healthMultiplier)));
 

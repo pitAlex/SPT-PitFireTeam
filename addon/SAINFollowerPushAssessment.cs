@@ -32,15 +32,15 @@ internal sealed class SAINFollowerPushAssessment(BotComponent bot)
     internal void Evaluate(Enemy enemy, float effectiveAggression, bool independent)
     {
         var data = inputs.Read(enemy.EnemyInfo);
-        Vector3 known = enemy.LastKnownPosition.GetValueOrDefault();
+        Vector3 known = SainEnemyTracking.Position(enemy).GetValueOrDefault();
         counted.Clear(); counted.Add(enemy.EnemyProfileId);
         foreach (Enemy contact in bot.EnemyController.KnownEnemies)
         {
             if (contact == null || !contact.WasValid || !contact.EnemyKnown || string.IsNullOrEmpty(contact.EnemyProfileId) || !Enemy.IsEnemyActive(contact) ||
-                contact.EnemyPlayer?.HealthController?.IsAlive != true || !contact.LastKnownPosition.HasValue) continue;
+                contact.EnemyPlayer?.HealthController?.IsAlive != true || !SainEnemyTracking.Position(contact).HasValue) continue;
             // Count hostile contacts at this location, never hidden live positions or
             // unseen squad members obtained through a world-space overlap.
-            if ((contact.LastKnownPosition.Value - known).sqrMagnitude <= FollowerPushRiskPolicy.ClusterRadius * FollowerPushRiskPolicy.ClusterRadius)
+            if ((SainEnemyTracking.Position(contact).GetValueOrDefault() - known).sqrMagnitude <= FollowerPushRiskPolicy.ClusterRadius * FollowerPushRiskPolicy.ClusterRadius)
                 counted.Add(contact.EnemyProfileId);
         }
         EnemyCount = counted.Count;

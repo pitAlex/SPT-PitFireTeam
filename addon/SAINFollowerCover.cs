@@ -60,8 +60,8 @@ internal sealed class SAINFollowerCover(BotComponent bot)
                 (!enemy.Seen && !enemy.Heard)) continue;
             medicalReason = "activeOrUncertainThreat";
             if (++checkedEnemies > 32 || !enemy.WasValid || !enemy.EnemyKnown || enemy.IsVisible || enemy.CanShoot ||
-                (enemy.Seen && enemy.TimeSinceSeen < 3f) || !enemy.LastKnownPosition.HasValue) return false;
-            Vector3 threat = enemy.LastKnownPosition.Value;
+                (enemy.Seen && enemy.TimeSinceSeen < 3f) || !SainEnemyTracking.Position(enemy).HasValue) return false;
+            Vector3 threat = SainEnemyTracking.Position(enemy).GetValueOrDefault();
             // Match core's very-close exclusion; hearing does not require a fictitious sight age.
             medicalReason = "closeThreat";
             if ((threat - bot.Position).sqrMagnitude < 17f * 17f) return false;
@@ -94,7 +94,7 @@ internal sealed class SAINFollowerCover(BotComponent bot)
         if (!SainPlayerSquadBridge.TryGetPlayerLeader(bot.BotOwner, out Player player) || player.HealthController?.IsAlive != true) return false;
         bool limitToRegroup = RetainRegroupArea();
         Enemy enemy = bot.GoalEnemy;
-        Vector3 threat = enemy?.LastKnownPosition ?? default;
+        Vector3 threat = SainEnemyTracking.Position(enemy) ?? default;
         if (Time.time < nextSelectionAttempt && attemptedNativeCount == bot.Cover.CoverPoints.Count && attemptedEnemy == enemy?.EnemyProfileId && attemptedRegroup == limitToRegroup &&
             (attemptedBoss - player.Position).sqrMagnitude < 4f && (attemptedBot - bot.Position).sqrMagnitude < 4f &&
             (attemptedThreat - threat).sqrMagnitude < 4f) return limitToRegroup;
@@ -136,10 +136,10 @@ internal sealed class SAINFollowerCover(BotComponent bot)
         // Native SeekCover otherwise reuses CoverInUse before asking for a new point.
         bot.Cover.StopSeekingCover();
         Enemy enemy = bot.GoalEnemy;
-        if (enemy?.LastKnownPosition == null) return;
+        if (SainEnemyTracking.Position(enemy) == null) return;
         regroupRadius = radius;
         regroupEnemy = enemy.EnemyProfileId;
-        regroupEnemyAnchor = enemy.LastKnownPosition.Value;
+        regroupEnemyAnchor = SainEnemyTracking.Position(enemy).GetValueOrDefault();
         Record("regroupCompleted");
     }
 
@@ -147,9 +147,9 @@ internal sealed class SAINFollowerCover(BotComponent bot)
     {
         if (regroupRadius <= 0f) return false;
         Enemy enemy = bot.GoalEnemy;
-        if (enemy?.LastKnownPosition == null || enemy.EnemyProfileId != regroupEnemy ||
+        if (SainEnemyTracking.Position(enemy) == null || enemy.EnemyProfileId != regroupEnemy ||
             (enemy.IsVisible && enemy.CanShoot) ||
-            (enemy.LastKnownPosition.Value - regroupEnemyAnchor).sqrMagnitude >= 64f)
+            (SainEnemyTracking.Position(enemy).GetValueOrDefault() - regroupEnemyAnchor).sqrMagnitude >= 64f)
         {
             regroupRadius = 0f;
             return false;

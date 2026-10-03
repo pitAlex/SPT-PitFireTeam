@@ -252,6 +252,9 @@ namespace pitTeam.BigBrain
             }
 
             bool pushOrdered = source == PushActivationSource.Ordered;
+            if (FollowerEnemyTracking.IsRealistic(goalEnemy) && !goalEnemy.IsVisible)
+                return combatCommon.CreateMemoryOnlyEnemySearchDecision(goalEnemy, "memoryOnlyAutoSearch.tracking");
+
             if (!pushOrdered &&
                 Utils.Enemy.IsMemoryOnlyAcquisitionWithoutPersonalContact(goalEnemy))
             {
@@ -280,7 +283,7 @@ namespace pitTeam.BigBrain
             Utils.Enemy.EnemyDistance distanceToEnemy = Utils.Enemy.Distance(goalEnemy);
             float enemiesAtLocation = enemyLowThreat && !pushOrdered || string.IsNullOrEmpty(goalEnemy.ProfileId)
                 ? 1f
-                : Utils.Enemy.GetEnemiesAtLocation(botOwner, goalEnemy, goalEnemy.CurrPosition);
+                : Utils.Enemy.GetEnemiesAtLocation(botOwner, goalEnemy, pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy));
             bool cautiousPush = ShouldUseCautiousPushStyle(goalEnemy, pushOrdered, enemyLowThreat, enemiesAtLocation);
             cautiousPush |= combatCommon.ShouldUseCautiousWeaponThreatStyle(goalEnemy);
 
@@ -864,7 +867,7 @@ namespace pitTeam.BigBrain
                     targetPersonalSeenTime = goalEnemy.PersonalSeenTime,
                     targetPersonalLastSeenTime = goalEnemy.PersonalLastSeenTime,
                     targetCause = goalEnemy.GroupInfo?.Cause.ToString(),
-                    targetDistance = goalEnemy.Distance
+                    targetDistance = pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy)
                 });
 #endif
         }

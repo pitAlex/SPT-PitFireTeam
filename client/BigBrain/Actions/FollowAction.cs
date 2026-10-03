@@ -167,6 +167,7 @@ namespace pitTeam.BigBrain.Actions
                 Modules.Logger.LogError(ex);
                 BotOwner.StopMove();
             }
+            FollowerSoundAwareness.ApplyLook(BotOwner);
         }
 
         public override void Stop()

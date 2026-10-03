@@ -18,6 +18,7 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 |---|---|
 | [Combat tactics](Combat-Tactics.md) | Core Rifleman/Marksman decisions, cover, push, healing, regroup and recording |
 | [Commands](Commands.md) | Shared inputs, peaceful execution, core combat orders and status rendering |
+| [Enemy Tracking](Enemy-Tracking.md) | Shared Simple/Realistic modes, remembered search and bounded contact lifetime |
 | [Looting](looting/Looting.md) | Commanded loot, filters, ownership and return bookkeeping |
 | [Primary weapon pickup](looting/Weapon-Pickup-Primary-Slot-Available.md) | Primary readiness, empty-slot acquisition and qualification matrix |
 | [Secondary weapon support](looting/Weapon-Pickup-Secondary-Slot.md) | Secondary acquisition, ammunition maintenance and qualification |
@@ -37,7 +38,6 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 
 ## Proposals and unfinished work
 
-- [Enemy Tracking](Enemy-Tracking.md): common/core proposal; the setting is **not implemented**. Native SAIN findings and addon adaptation live in [addon tracking](../addon/docs/Enemy-Tracking.md).
 - [Core roadmap](../TASKS.md): retained product proposals and future work.
 - [Addon roadmap](../addon/docs/Roadmap.md): addon-specific gaps and raid qualification.
 

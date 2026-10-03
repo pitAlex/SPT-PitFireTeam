@@ -218,39 +218,15 @@ namespace pitTeam.Patches
                     if(
                         fl != null && !fl.IsDead &&
                         (
-                            fl.Side != bot.Side || Utils.Props.ZombieTypes.Contains(role) ||
-                            ( Utils.Utils.FlagGet("isBadGuy") && fl.Side != EPlayerSide.Savage )
+                            FollowerGroupHostility.IsHostileToPlayer(bot.BotsGroup, bossPlayer) ||
+                            Utils.Props.ZombieTypes.Contains(role)
                         )
                     )
                     {
 
-                        if(!bot.BotsGroup.AddEnemy(fl,EBotEnemyCause.initial))
-                        {
-
-                            bool isInEnemyList = false;
-                            bool isInNeutralList = false;
-
-                            if(bot.BotsGroup.Enemies.TryGetValue(fl,out var enemy))
-                            {
-                                isInEnemyList = true;
-                            }
-
-                            if(bot.BotsGroup.Neutrals.TryGetValue(fl, out var neutral))
-                            {
-                                isInNeutralList = true;
-                            }
-
-                            if(isInEnemyList) return;
-
-                            var botSettingsClass = new BotGroupEnemyInfo(fl.GetPlayer, bot.BotsGroup, EBotEnemyCause.initial);
-
-                            bot.BotsGroup.Enemies.Add(fl,botSettingsClass);
-                            if(isInNeutralList)
-                            {
-                                bot.BotsGroup.Neutrals.Remove(fl);
-                            }
-                            bot.Memory.AddEnemy(fl, botSettingsClass, false);
-                        }
+                        // Respect the player's relationship and native rejection/deferred
+                        // construction. Never bypass AddEnemy by editing its dictionaries.
+                        bot.BotsGroup.AddEnemy(fl, EBotEnemyCause.initial);
                         // - ensure followers see zombies as enemies
                         if(Utils.Props.ZombieTypes.Contains(role))
                         {

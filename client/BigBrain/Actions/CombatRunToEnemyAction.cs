@@ -577,13 +577,16 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
+            if (FollowerEnemyTracking.IsRealistic(goalEnemy) && !goalEnemy.IsVisible)
+                return TryMoveToPoint(FollowerEnemyTracking.Position(goalEnemy));
+
             if (TryFindEnemyRunPoint(goalEnemy, out Vector3 attackPoint) &&
                 TryMoveToPoint(attackPoint))
             {
                 return true;
             }
 
-            return TryMoveToEnemyFallback(goalEnemy.CurrPosition);
+            return TryMoveToEnemyFallback(pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy));
         }
 
         private bool TryMoveToEnemyFallback(Vector3 targetPoint)
@@ -721,7 +724,7 @@ namespace pitTeam.BigBrain.Actions
         private bool TryFindEnemyRunPoint(EnemyInfo goalEnemy, out Vector3 point)
         {
             point = Vector3.zero;
-            Vector3 enemyPosition = goalEnemy.CurrPosition;
+            Vector3 enemyPosition = pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy);
             if (!IsFinite(enemyPosition))
             {
                 return false;

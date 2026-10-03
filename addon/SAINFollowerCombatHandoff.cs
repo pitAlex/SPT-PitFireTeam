@@ -120,27 +120,9 @@ internal sealed class SAINFollowerCombatHandoff
         var places = enemy?.KnownPlaces;
         var heard = places?.LastHeardPlace;
         if (bot == null || heard == null || !ReferenceEquals(places.LastKnownPlace, heard)) return false;
-        float range;
-        switch (heard.SoundType)
-        {
-            case SAINSoundType.Conversation:
-            case SAINSoundType.Pain:
-            case SAINSoundType.Breathing:
-                range = 25f; // Local preparation cap for voice and movement.
-                break;
-            case SAINSoundType.FootStep:
-            case SAINSoundType.Sprint:
-            case SAINSoundType.Prone:
-            case SAINSoundType.Jump:
-            case SAINSoundType.Land:
-            case SAINSoundType.GearSound:
-            case SAINSoundType.Bush:
-                range = 25f; // Core FootstepSoundPatch's capped movement range.
-                break;
-            default:
-                return false;
-        }
-        return (heard.Position - bot.Position).sqrMagnitude <= range * range;
+        return SainFollowerSoundAwareness.IsLocalSound(heard.SoundType) &&
+            (heard.Position - bot.Position).sqrMagnitude <=
+                SainFollowerSoundAwareness.LocalRange * SainFollowerSoundAwareness.LocalRange;
     }
 
     internal static bool AllowsDecision(BotComponent bot, ECombatDecision solo, ESelfActionType self,

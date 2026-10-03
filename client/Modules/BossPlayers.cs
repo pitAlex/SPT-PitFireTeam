@@ -61,6 +61,8 @@ namespace pitTeam.Modules
 
         public BossPlayers()
         {
+            FollowerEnemyTracking.BeginRaid();
+            FollowerSoundAwareness.ClearRaid();
             if (Instance == null)
             {
                 Instance = this;
@@ -228,6 +230,8 @@ namespace pitTeam.Modules
             FollowerGrenadeCooldowns.ClearAll();
             FollowerGrenadeRuntimeGate.ClearAll();
             FollowerDeathEscapeResolver.ClearFallenSquadmateSnapshots();
+            FollowerEnemyTracking.EndRaid();
+            FollowerSoundAwareness.ClearRaid();
 
             IsDisposed = true;
             Instance = null;

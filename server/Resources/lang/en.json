@@ -21,7 +21,8 @@
 	"followDistance": { "Name": "Follow Distance", "Description": "Distance followers keep from the player while following." },
 	"regroupRadius": { "Name": "Regroup Radius", "Description": "Distance from the player at which followers automatically regroup during combat.\nMarksman followers use about 1.5x this radius." },
 	"goToDistance": { "Name": "Maximum 'Go To' Distance", "Description": "Maximum distance followers will move when 'There' or 'GoForward' is issued." },
-	"enemyRemember": { "Name": "Time to forget about the enemy (in sec.)", "Description": "Maximum time a follower will remember an enemy. This is applied only at the beginning of a raid" },
+	"enemyRemember": { "Name": "Time to forget about the enemy (in sec.)", "Description": "Contact memory duration. Realistic tracking can extend memory during active unfinished search, up to 400 seconds. Applied at raid start." },
+	"enemyTracking": { "Name": "Enemy Tracking", "Description": "Realistic follows the last sight, sound or reported position. Simple tracks accepted enemies through walls. Applies to every follower tactic at raid start; sight and shooting safety remain unchanged." },
 	"healthMultiplier": { "Name": "Squad Health Multiplier", "Description": "Health multiplier for the followers you spawn with. This is applied per each body part." },
 	"pickup": { "Name": "Pickup", "Description": "Enable or disable the ability to recruit same-side bots during a raid." },
 	"tieredPickup": { "Name": "Tiered Pickup", "Description": "Use the player-vs-bot level difference rules when deciding whether a bot accepts a pickup request." },
@@ -84,6 +85,8 @@
 	"gestures": { "OverThere": "Over There", "TeamStatus": "Status Report", "ViewBackpack": "View Backpack", "OnRepeatedContact": "Contact" },
 	"botStatus": { "Dead": "Dead", "Engaged": "In Combat", "Alerted": "Enemy Detected", "Heal": "Healing", "WantToHeal": "Wants to heal" },
 	"socialUi": {
+		"EnemyTrackingSimple": "Simple",
+		"EnemyTrackingRealistic": "Realistic",
 		"LootActionThis": "CMD: Loot This",
 		"LootActionCheckHim": "CMD : Check Him",
 		"LootActionTakeThis": "CMD: Take This",

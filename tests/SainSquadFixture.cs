@@ -64,6 +64,7 @@ namespace SAIN.SAINComponent.Classes.EnemyClasses {
     public partial class Places {public float BotDistanceFromLastKnown=100;public Vector3? LastKnownPosition=new Vector3(50,0,0);public float TimeSinceLastKnownUpdated=20;public EnemyPlace LastKnownPlace,LastHeardPlace;}
     public class EnemyHearing {public bool EnemyHeardFromPeace;}
     public class Enemy {
+        public BotOwner BotOwner;
         public string EnemyProfileId=>EnemyPlayer.ProfileId;public Vector3? LastKnownPosition=>KnownPlaces.LastKnownPosition;
         public bool IsZombie;public bool CanShoot,IsVisible,Seen=true,Heard,InLineOfSight,Active=true,Valid=true;
         public bool WasValid=>Valid;public bool EnemyKnown=true;

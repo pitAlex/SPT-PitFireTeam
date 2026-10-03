@@ -68,7 +68,10 @@ namespace pitTeam.Localization
                     "Maximum distance followers will move when 'There' or 'GoForward' is issued."),
                 enemyRemember = Entry(
                     "Time to forget about the enemy (in sec.)",
-                    "Maximum time a follower will remember an enemy. This is applied only at the beginning of a raid"),
+                    "Contact memory duration. Realistic tracking can extend memory during active unfinished search, up to 400 seconds. Applied at raid start."),
+                enemyTracking = Entry(
+                    "Enemy Tracking",
+                    "Realistic follows the last sight, sound or reported position. Simple tracks accepted enemies through walls. Applies to every follower tactic at raid start; sight and shooting safety remain unchanged."),
                 healthMultiplier = Entry(
                     "Squad Health Multiplier",
                     "Health multiplier for the followers you spawn with. This is applied per each body part."),
@@ -261,6 +264,8 @@ namespace pitTeam.Localization
                 },
                 socialUi = new Dictionary<string, string>
                 {
+                    ["EnemyTrackingSimple"] = "Simple",
+                    ["EnemyTrackingRealistic"] = "Realistic",
                     ["LootActionThis"] = "CMD: Loot This",
                     ["LootActionCheckHim"] = "CMD : Check Him",
                     ["LootActionTakeThis"] = "CMD: Take This",

@@ -227,14 +227,14 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            if (goalEnemy.Distance <= CloseContactFireDistance &&
+            if (pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= CloseContactFireDistance &&
                 immediateFireReactionReady &&
                 GetLookAngleToPoint(shootPoint) <= CloseContactFireAngle)
             {
                 BotOwner.ShootData.Shoot();
             }
 
-            if (goalEnemy.Distance <= FastFireDistance &&
+            if (pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= FastFireDistance &&
                 immediateFireReactionReady &&
                 CombatAttackMoveLook.GetThreatLookAngle(BotOwner, goalEnemy) <= FastFireAngle)
             {
@@ -342,7 +342,7 @@ namespace pitTeam.BigBrain.Actions
             // unavailable. At ordinary dogfight ranges, retain the normal mobile standing posture.
             bool preserveCloseSettledPose = !hasAcceptedMovement &&
                                              goalEnemy != null &&
-                                             goalEnemy.Distance <= UnsafeCloseThreatDistance;
+                                             pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= UnsafeCloseThreatDistance;
             if (!preserveCloseSettledPose)
             {
                 BotOwner.SetPose(1f);
@@ -366,7 +366,7 @@ namespace pitTeam.BigBrain.Actions
         private bool TryMoveTowardEnemy(EnemyInfo goalEnemy)
         {
             Vector3 moveTarget = goalEnemy.IsVisible
-                ? goalEnemy.CurrPosition
+                ? pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy)
                 : goalEnemy.EnemyLastPositionReal;
 
             if (!NavMesh.SamplePosition(moveTarget, out NavMeshHit navMeshHit, 1.5f, -1))
@@ -475,13 +475,13 @@ namespace pitTeam.BigBrain.Actions
                     enemyBot.Medecine?.Using == true ||
                     (goalEnemy.IsVisible && Time.time - goalEnemy.PersonalSeenTime < RecentSeenThreshold))
                 {
-                    return goalEnemy.CurrPosition;
+                    return pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy);
                 }
             }
 
             if (goalEnemy.IsVisible && Time.time - goalEnemy.PersonalSeenTime < RecentSeenThreshold)
             {
-                return goalEnemy.CurrPosition;
+                return pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy);
             }
 
             return goalEnemy.EnemyLastPositionReal;
@@ -490,7 +490,7 @@ namespace pitTeam.BigBrain.Actions
         private bool IsUnsafeCloseThreatFacing(EnemyInfo? goalEnemy)
         {
             return goalEnemy != null &&
-                   goalEnemy.Distance <= UnsafeCloseThreatDistance &&
+                   pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= UnsafeCloseThreatDistance &&
                    CombatAttackMoveLook.GetThreatLookAngle(BotOwner, goalEnemy) > UnsafeCloseThreatLookAngle;
         }
 

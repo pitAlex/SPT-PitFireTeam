@@ -12,6 +12,8 @@ SAINShooter is a separate persisted tactic using these same layers with [Marksma
 
 ## Layers and native publication
 
+[Enemy Tracking](Enemy-Tracking.md) adapts the shared Simple/Realistic setting for ready Grunt/Shooter followers without changing tactic ownership. Native tactical projection hooks belong in the addon; follower forget-duration compatibility remains in Core.
+
 - `SAINFollowerSoloCombatLayer` uses priority 74 and `ESAINLayer.Combat`.
 - `SAINFollowerSquadCombatLayer` uses priority 75 and `ESAINLayer.Squad`.
 - Both derive from public `SAINLayer`; SAIN 4.5.1's concrete layers are internal. Internal native action types are resolved and constructor-validated once by `SAINActionTypes`.
@@ -35,6 +37,8 @@ Core owns compatibility needed without this brain. Do not move proficiency, aim/
 
 The addon also owns the [peaceful weapon guard](Combat.md#peaceful-weapon-handling), which suppresses idle SAIN fire-mode changes/inspections only for its selected tactics.
 
+`SainFollowerSoundAwareness` observes native personal audibility and applies an orientation-only hold after Core peaceful action updates for ready addon tactics. Its hooks, state and cleanup live entirely in the addon; it does not change Core source or SAIN hearing results. See [sound awareness](Combat.md#sound-awareness-during-peaceful-actions).
+
 ## Bridges
 
 - Core `SainAddonBridge`: readiness, release/reset, lifecycle, player updates and passive enemy-contact callbacks.
@@ -46,7 +50,7 @@ The addon also owns the [peaceful weapon guard](Combat.md#peaceful-weapon-handli
 - Addon `SainSquadSupportBridge`: current-firearm command restriction and cached native aiming/Core suppression safety bindings; see [Squad support](Squad-Support.md).
 - Core `SainCombatRecorderBridge`: optional passive Debug recording; it never drives decisions.
 
-General external-SAIN synchronization calls a core service directly; it must not require an addon callback.
+General external-SAIN synchronization calls a core service directly; it must not require an addon callback. Player-based neutral/hostile relationships, explicit Contact overrides and reciprocal squad hostility are also Core-owned for every tactic; see [shared acquisition](../../docs/Combat-Tactics.md#enemy-acquisition-and-retention).
 
 ## Source map
 

@@ -334,7 +334,7 @@ namespace pitTeam.BigBrain.Actions
             private bool IsCloseActiveThreat(EnemyInfo goalEnemy, float maxDistance, float recentSeenWindow)
             {
                 return goalEnemy != null &&
-                       goalEnemy.Distance <= maxDistance &&
+                       pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= maxDistance &&
                        SainGoalEnemyBridge.IsEnemyLookingAtFollower(_owner, goalEnemy) &&
                        (goalEnemy.IsVisible ||
                         Time.time - goalEnemy.PersonalSeenTime <= recentSeenWindow ||

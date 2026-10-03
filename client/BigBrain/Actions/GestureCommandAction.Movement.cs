@@ -235,7 +235,7 @@ namespace pitTeam.BigBrain.Actions
             bool visibleFightNow = goalEnemy.IsVisible &&
                                   goalEnemy.CanShoot &&
                                   BotOwner.LookSensor.EnoughDistToShoot(out _);
-            bool closeVisibleThreat = goalEnemy.IsVisible && goalEnemy.Distance <= 18f;
+            bool closeVisibleThreat = goalEnemy.IsVisible && pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= 18f;
             bool urgentCombatAction = currentDecision == BotLogicDecision.dogFight ||
                                       currentDecision == BotLogicDecision.shootFromPlace ||
                                       currentDecision == BotLogicDecision.shootFromCover ||
