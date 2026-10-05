@@ -52,7 +52,7 @@ namespace pitTeam.Patches
                         }
                         else
                         {
-                            posibleExecuter.BotTalk.TrySay(EPhraseTrigger.Negative);
+                            TrySayRecruitmentResponse(posibleExecuter, EPhraseTrigger.Negative);
                             posibleExecuter.Gesture.TryGestus(EInteraction.NoGesture, true);
                             __result = false;
                             return false;
@@ -67,7 +67,7 @@ namespace pitTeam.Patches
                     // refusal and must precede the raid-scoped level decision.
                     if (HasRecruitmentCombatEnemy(posibleExecuter))
                     {
-                        posibleExecuter.BotTalk.TrySay(EPhraseTrigger.DontKnow);
+                        TrySayRecruitmentResponse(posibleExecuter, EPhraseTrigger.DontKnow);
                         posibleExecuter.Gesture.TryGestus(EInteraction.NoGesture, true);
                         __result = false;
                         return false;
@@ -75,7 +75,7 @@ namespace pitTeam.Patches
 
                     if (!pitFireTeam.pickupEnabled.Value)
                     {
-                        posibleExecuter.BotTalk.TrySay(EPhraseTrigger.Negative);
+                        TrySayRecruitmentResponse(posibleExecuter, EPhraseTrigger.Negative);
                         posibleExecuter.Gesture.TryGestus(EInteraction.NoGesture, true);
                         __result = false;
                         return false;
@@ -188,14 +188,14 @@ namespace pitTeam.Patches
 
                                 if (HasRecruitmentCombatEnemy(me))
                                 {
-                                    me.BotTalk.TrySay(EPhraseTrigger.DontKnow, false);
+                                    TrySayRecruitmentResponse(me, EPhraseTrigger.DontKnow, false);
                                     me.Gesture.TryGestus(EInteraction.NoGesture, true);
                                     return;
                                 }
 
                                 if (BossPlayers.HasDeniedRecruitment(me.ProfileId))
                                 {
-                                    me.BotTalk.TrySay(EPhraseTrigger.Negative, false);
+                                    TrySayRecruitmentResponse(me, EPhraseTrigger.Negative, false);
                                     me.Gesture.TryGestus(EInteraction.NoGesture, true);
                                     return;
                                 }
@@ -219,13 +219,13 @@ namespace pitTeam.Patches
                                 int deferredCurrentPickups = deferredActiveFollowers.FindAll(f => !f.IsSquadMate).Count;
                                 if (deferredCurrentPickups >= deferredHardPickupLimit)
                                 {
-                                    me.BotTalk.TrySay(EPhraseTrigger.Negative, false);
+                                    TrySayRecruitmentResponse(me, EPhraseTrigger.Negative, false);
                                     me.Gesture.TryGestus(EInteraction.NoGesture, true);
                                     return;
                                 }
 
                                 me.BotTalk.SetSilence(2f);
-                                FollowerForcedPhraseGate.Arm(me, EPhraseTrigger.Roger, RecruitForcedPhraseSeconds);
+                                FollowerForcedPhraseGate.ArmRecruitmentResponse(me, EPhraseTrigger.Roger, RecruitForcedPhraseSeconds);
 
                                 int conversionDelayMs = playerBoss.bossGroup == null ? FirstPickupConversionDelayMs : 0;
                                 Action completeRecruit = () => CompleteRecruitConversion(me, playerBoss);
@@ -248,7 +248,7 @@ namespace pitTeam.Patches
                     else
                     {
                         // bot signals "NO"
-                        posibleExecuter.BotTalk.TrySay(EPhraseTrigger.Negative);
+                        TrySayRecruitmentResponse(posibleExecuter, EPhraseTrigger.Negative);
                         posibleExecuter.Gesture.TryGestus(EInteraction.NoGesture, true);
                     }
 
@@ -258,7 +258,7 @@ namespace pitTeam.Patches
                 else
                 {
                     // bot signals "NO"
-                    posibleExecuter.BotTalk.TrySay(EPhraseTrigger.Toxic);
+                    TrySayRecruitmentResponse(posibleExecuter, EPhraseTrigger.Toxic);
                     posibleExecuter.Gesture.TryGestus(EInteraction.GetOffGesture, true);
                     __result = false;
                     return false;
@@ -283,7 +283,7 @@ namespace pitTeam.Patches
 
             if (HasRecruitmentCombatEnemy(bot))
             {
-                FollowerForcedPhraseGate.Arm(bot, EPhraseTrigger.DontKnow, 1.5f);
+                FollowerForcedPhraseGate.ArmRecruitmentResponse(bot, EPhraseTrigger.DontKnow, 1.5f);
                 bot.BotTalk.SetSilence(0f);
                 bot.BotTalk.DropNextSayPeriod();
                 bot.BotTalk.Say(EPhraseTrigger.DontKnow, true);
@@ -293,7 +293,7 @@ namespace pitTeam.Patches
 
             if (BossPlayers.HasDeniedRecruitment(bot.ProfileId))
             {
-                FollowerForcedPhraseGate.Arm(bot, EPhraseTrigger.Negative, 1.5f);
+                FollowerForcedPhraseGate.ArmRecruitmentResponse(bot, EPhraseTrigger.Negative, 1.5f);
                 bot.BotTalk.SetSilence(0f);
                 bot.BotTalk.DropNextSayPeriod();
                 bot.BotTalk.Say(EPhraseTrigger.Negative, true);
@@ -311,10 +311,27 @@ namespace pitTeam.Patches
                 return;
             }
 
-            FollowerForcedPhraseGate.Arm(bot, EPhraseTrigger.DontKnow, 1.5f);
+            FollowerForcedPhraseGate.ArmRecruitmentResponse(bot, EPhraseTrigger.DontKnow, 1.5f);
             bot.BotTalk.SetSilence(0f);
             bot.BotTalk.DropNextSayPeriod();
             bot.BotTalk.Say(EPhraseTrigger.DontKnow, true);
+        }
+
+        private static void TrySayRecruitmentResponse(BotOwner bot, EPhraseTrigger phrase, bool? withGroupDelay = null)
+        {
+            if (!pitFireTeam.IsSAINInstalled)
+            {
+                if (withGroupDelay.HasValue) bot.BotTalk.TrySay(phrase, withGroupDelay.Value);
+                else bot.BotTalk.TrySay(phrase);
+                return;
+            }
+
+            // Native SAIN suppresses both queued EFT speech and BotTalk.Say before
+            // this candidate is a follower. Keep only this command reply Core-owned.
+            FollowerForcedPhraseGate.ArmRecruitmentResponse(bot, phrase, 1.5f);
+            bot.BotTalk.SetSilence(0f);
+            bot.BotTalk.DropNextSayPeriod();
+            bot.BotTalk.Say(phrase, true);
         }
 
         private static void TrySayControlledFollowerPhrase(

@@ -306,12 +306,15 @@ namespace pitTeam.Patches
                     botOwner = botTalk._owner;
                 }
 
-                if (botOwner == null || !BossPlayers.IsFollower(botOwner))
+                if (botOwner == null || (!BossPlayers.IsFollower(botOwner) &&
+                    !(__args.Length > 1 && __args[1] is EPhraseTrigger response &&
+                        FollowerForcedPhraseGate.IsRecruitmentResponse(botOwner, response))))
                 {
                     return true;
                 }
 
-                // Skip SAIN talk-patch logic for followers so EFT/plugin talk behavior can run.
+                // Followers and the candidate's exact timed recruitment reply use EFT speech.
+                // Candidate ManualUpdate and unrelated phrases retain native SAIN ownership.
                 __result = true;
                 return false;
             }
@@ -339,13 +342,14 @@ namespace pitTeam.Patches
         }
 
         [HarmonyPrefix]
-        private static bool UseVanillaTalkForFollower(object __instance, ref bool __result)
+        private static bool UseVanillaTalkForFollower(object __instance, EPhraseTrigger phrase, ref bool __result)
         {
             try
             {
                 Player? player = sainPlayerComponentPlayerProperty?.GetValue(__instance) as Player;
                 BotOwner? botOwner = player?.AIData?.BotOwner;
-                if (botOwner == null || !BossPlayers.IsFollower(botOwner))
+                if (botOwner == null || (!BossPlayers.IsFollower(botOwner) &&
+                    !FollowerForcedPhraseGate.ShouldBlockRecruitmentChatter(botOwner, phrase)))
                 {
                     return true;
                 }
@@ -377,11 +381,13 @@ namespace pitTeam.Patches
         }
 
         [HarmonyPrefix]
-        private static bool DisableSainTalkSayForFollower(object __instance, ref bool __result)
+        private static bool DisableSainTalkSayForFollower(object __instance, EPhraseTrigger phrase, ref bool __result)
         {
             try
             {
-                if (!IsSainTalkOwnerFollower(__instance))
+                BotOwner? botOwner = SainBotOwnerAccessor.Get(__instance);
+                if (botOwner == null || (!BossPlayers.IsFollower(botOwner) &&
+                    !FollowerForcedPhraseGate.ShouldBlockRecruitmentChatter(botOwner, phrase)))
                 {
                     return true;
                 }

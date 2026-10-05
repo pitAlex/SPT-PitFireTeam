@@ -1,5 +1,13 @@
 # SAIN addon validation and raid evidence
 
+## 2026-10-06 - Core Cooperation response compatibility
+
+Source and installed SAIN 4.5.1 metadata confirm that native `BotTalk.Say`/`Player.Say` prefixes suppress recruitment replies before the candidate becomes a follower, while native friendly conversation can generate mumbling. Core's existing timed phrase gate now marks recruitment replies separately: only the exact candidate reply bypasses those blockers, and candidate EFT `ManualUpdate` remains SAIN-owned. Initial/deferred replies use immediate EFT speech with SAIN installed; no-SAIN requests retain their original `TrySay` path. Native chatter generation and final output suppress only mumbling/taunting during the candidate's scope, preserving native warnings and injury speech. Existing conversion, eligibility, combat refusal and raid-scoped level refusal policies are unchanged. This is [Core SAIN compatibility](../../docs/SAIN-Compatibility.md#runtime-ownership), independent of addon installation.
+
+Validation: installed signatures verified; 30 production recruitment-policy checks and 32 production voice-gate checks with real Harmony passed. Voice checks cover both native blockers, queue avoidance, newly generated/already-pending chatter, other-bot isolation, warning/injury output, expiry, conversion, scope replacement/clearing and SAIN absence. Matching Debug Core/addon builds passed with zero warnings/errors; scoped whitespace checks passed. Reuses the existing gate/cache and speech hooks; no new subscriptions, frame loops, world scans or navigation/physics probes. Actual audible replies during recruitment still require raid confirmation.
+
+With Tarkov closed, deployed matching DLLs/symbols without backups and verified SHA-256: Core DLL `CAA6301CC7DE36231A4E9849E4AE1462B97F7AF648C7E168D1E411F10F36996D`; Core PDB `757827D69420B45E7CEB330FB30BF5375BE6F699EDAA0861CEC133D066501ABD`; addon DLL `EC93B38752861FDEB799289556B11132F93DDC27A1793CB47193968A07D92D40`; addon PDB `72726DA5741D14B31B2007C4BBB2DF6E41D5F027C93B562215094E71FB8A310F`.
+
 ## 2026-10-05 - Core Need Sniper arrival commitment
 
 `20261005-180256-Woods.jsonl` records Zero running **Core Marksman**, with Brick on SAINGrunt. The second recorded Need Sniper order selected cover 5824 at raid time 401.76 and reached it at 409.00. The objective armed its two-second arrival hold, immediately selected `sniper.NeedSniper.immediateShoot` and marked itself complete. At 409.14 the firing action ended with `enemyCannotShoot` before aim completed, the arrival hold was cleared, and automatic regroup took over at roughly 43 m from the player.

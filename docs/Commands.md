@@ -171,6 +171,7 @@ Behavior:
 - For a same-side non-follower, the receiver path instead attempts in-raid recruitment.
 - Recruitment during combat answers `EPhraseTrigger.DontKnow` without rolling or remembering a refusal. Combat means EFT `Memory.HaveEnemy` or the external SAIN plugin's native `HasEnemy`, even without an EFT goal and with the addon absent. The initial request and deferred conversion checks give combat priority over an existing cached refusal; that earlier level refusal still applies after combat ends.
 - When tiered PMC recruitment rejects that bot because of the level-based acceptance decision, the refusal is remembered for the rest of the raid. Repeating `Follow Me` or `Cooperation` cannot reroll that bot's decision.
+- With external SAIN installed, the candidate's exact recruitment reply uses immediate EFT speech rather than SAIN's suppressed EFT queue. A timed scope protects refusal replies for 1.5 seconds and pending acceptance for the existing 2.5-second conversion window, including before follower registration. Only that candidate's SAIN mumbling/taunting is suppressed during the scope; other bots, native warnings and recruitment eligibility remain unchanged.
 
 ### On Your Own
 

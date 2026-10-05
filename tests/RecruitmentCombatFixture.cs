@@ -18,7 +18,7 @@ namespace UnityEngine
 namespace EFT.Interactive { public enum EInteraction { NoGesture, GetOffGesture, OkGesture } }
 namespace EFT
 {
-    public enum EPhraseTrigger { None, Negative, DontKnow, Roger, Toxic }
+    public enum EPhraseTrigger { None, Negative, DontKnow, Roger, Toxic, MumblePhrase, OnMutter, OnFight, OnBeingHurt, OnEnemyGrenade }
     public enum ETagStatus { Coop, Solo, Unaware }
     public enum EPlayerSide { Usec, Savage }
     public enum EBotState { Active, Inactive }
@@ -34,18 +34,35 @@ namespace EFT
     }
     public class Player : IPlayer
     {
+        public bool IsAI = true;
+        public AIData AIData = new();
+        public EPhraseTrigger Spoken;
         public string ProfileId { get; set; } = "boss";
         public EPlayerSide Side { get; set; }
         public Profile Profile { get; } = new();
         public Health HealthController = new(); public Speaker Speaker = new(); public Vector3 Position;
+        public void Say(EPhraseTrigger phrase) { if (NativeSpeech.PlayerPrefix(this, phrase)) Spoken = phrase; }
     }
+    public class AIData { public BotOwner BotOwner; }
     public class EnemyInfo { public string ProfileId; public Player Person; }
     public class Memory { public EnemyInfo GoalEnemy; public bool HaveEnemy => GoalEnemy != null; }
     public class BotTalk
     {
+        public BotOwner _owner;
+        public int Queued;
+        public bool QueueRequests;
         public EPhraseTrigger Last;
-        public void TrySay(EPhraseTrigger phrase, bool withGroupDelay = true) => Last = phrase;
-        public void Say(EPhraseTrigger phrase, bool immediately) => Last = phrase;
+        public void TrySay(EPhraseTrigger phrase, bool withGroupDelay = true)
+        {
+            if (QueueRequests) Queued++;
+            else Say(phrase, false);
+        }
+        public void Say(EPhraseTrigger phrase, bool immediately)
+        {
+            if (!NativeSpeech.BotPrefix(this, phrase)) return;
+            Last = phrase;
+            _owner.GetPlayer.Say(phrase);
+        }
         public void SetSilence(float seconds) { }
         public void DropNextSayPeriod() { }
     }
@@ -55,6 +72,7 @@ namespace EFT
     public class Group { public int MembersCount; }
     public class BotOwner
     {
+        public BotOwner() { BotTalk._owner = this; GetPlayer.AIData.BotOwner = this; }
         public string ProfileId = "candidate"; public EPlayerSide Side; public Profile Profile = new();
         public bool IsDead, IsFollower; public EBotState BotState = EBotState.Active;
         public Player GetPlayer = new(); public Memory Memory = new(); public BotTalk BotTalk = new();
@@ -109,7 +127,6 @@ namespace pitTeam.Modules
 namespace pitTeam.Patches
 {
     public static class BotOwnerManualUpdatePatch { public static Dictionary<string, Action<BotOwner>> BotOwnerUpdate = new(); }
-    public static class FollowerForcedPhraseGate { public static void Arm(BotOwner bot, EPhraseTrigger phrase, float duration) { } }
 }
 namespace pitTeam.Utils
 {
