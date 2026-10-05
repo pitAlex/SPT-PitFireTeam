@@ -1,5 +1,29 @@
 # SAIN addon validation and raid evidence
 
+## 2026-10-05 - Single Enemy Tracking row and requested description
+
+Corrected the previous two-row interpretation: one Enemy Tracking name/description on the left, with Simple above Realistic on the right. Both controls retain the shared Loadout Management styling and click handling. Their vertical placement accounts for the native 42px control at 0.86 scale, leaving a 15px gap. The tracking row alone is 136px tall to fit the description and choices. Updated the centralized English description to the user's corrected wording and synchronized Russian/Chinese translations. Full Debug solution build passed with zero warnings/errors; locale JSON, scoped whitespace checks and localization callsite checks passed. In-game visual/interaction confirmation remains pending.
+
+With Tarkov closed, deployed matching Core/addon DLLs and symbols plus the three language resources and verified hashes. Core DLL `8841767F0EFE3B599629349DB60D099F0D556E6E23F6F1ABBB805F65B47AA084`; Core PDB `D1F884E88DC7E00E1206E25DC164DFBDA77479B8776E8BB8357CDBF2A56E192F`; addon DLL `7D9318F72EF41EBF393D1125CEC9342877A33F572A0230ACE68F9179A95980F7`; addon PDB `387F15B0AF75E2BBF1A397856B412A426321ADA7FEDCABA6815ED16E55E97235`. Server code was built for validation but no server binary was deployed.
+
+## 2026-10-05 - Tracking uses the Loadout Management control
+
+After the user supplied the desired Loadout Management appearance, replaced the compact tracking selector with separate Simple/Realistic rows. Both settings now call shared `CreateModeSelectionEntryRow`, `CreateModeRadioControl` and `CreateModeClickOverlay` builders, preserving the existing loadout dimensions, native selected-state styling, CanvasGroup binding and hover/click handling. The abandoned tracking-specific compact implementation was removed. Localized labels, enum persistence, exclusive selection and raid restrictions remain. Matching Debug builds passed with zero warnings/errors and scoped whitespace validation passed; live visual/interaction verification remains pending.
+
+With Tarkov closed, deployed both DLLs and symbols and verified SHA-256: Core DLL `EB04C162FD261AC4473B8381C84FEC46476024586EDC06C4E9B8EC73D975281E`; Core PDB `B2B30BD038523F34B1D641EAE7BB5C88923503F7AE02BE2ED22026B355A846AE`; addon DLL `30C0C8ED1ADA425B34D95909EFC34AA8536DB19E6C352AAA1D2DD6D5A49A88CC`; addon PDB `206BA25019D317B0E7C58B6DBA471616F7A1D6DDEC965F42D3580E7CCA15508E`.
+
+## 2026-10-05 - Enemy Tracking radio layout
+
+Replaced My Squad's side-by-side tracking buttons with vertically stacked Simple/Realistic choices using the existing native radio template and a local exclusive `ToggleGroup`. Selection still saves the same enum; raid disabling and localized labels are retained. Matching Debug Core/addon builds passed with zero warnings/errors and the scoped whitespace check passed. With Tarkov closed, deployed both DLLs and symbols and verified hashes: Core DLL `4BFC573A9E71E5018E131B81D4E97DF869E4F1B176395A902E1C27598C5B673B`; Core PDB `FB5B1AF3B3298E206F4290A829AEF03D0E47D52F2E3837170E29C23833C7CCD2`; addon DLL `1F2E8958B3CA48EEBFA7F4433815E6FCD600DD0957A952E909EED99E51440DCC`; addon PDB `15F8921C224C83A93DBC6D6AC849AEC86157901B024A292B1730D5A65E27B093`. In-game visual/interaction verification remains pending; tactical tracking was not changed.
+
+## 2026-10-05 - Simple marker refresh cadence
+
+Deployment follow-up **2026-10-05**: after the user closed Tarkov, copied the validated Debug Core/addon DLLs and PDBs into the live plugin directory and verified all four SHA-256 hashes. Core DLL `ABECA2901776C6083A5E0918247DD65430208DA4948931D8BC10ECC50FA33021`; Core PDB `A668EF20AC5D41A7949B90C13D0E5310F0D8762719E181DC0ABD378B450F78A7`; addon DLL `A4D6B616E3D6A05E0D551BBE1889567D02076444E0A7C68324C17AE245B5568E`; addon PDB `4E44F80D64C5F1E56BD197036780F5E91BC59A9E9D139774F618EE0E88F0B323`. This resolves the deployment pending below; raid verification remains pending.
+
+Restricted `PingTeamates.RefreshEnemyMarkerContacts`' SAIN-knowledge refresh bypass to Realistic mode. Simple addon contacts now retain the Core ping/first-display/five-second hidden-marker cadence; visible-marker updates and tactical position reads are unchanged. Core and addon Realistic refresh paths are unchanged.
+
+`Verify-EnemyTracking.ps1` passed 56 behavior checks, including nine checks against the extracted production marker condition, plus installed native metadata/hearing-accessor checks and production IL validation (14 methods, 25 replacements). Matching Core/addon Debug builds passed with zero warnings/errors, and `git diff --check` passed. Deployment was stopped before copying because `EscapeFromTarkov` was running. Built outputs include the existing unrelated working-tree UI changes. Deployment and raid verification remain pending.
+
 ## 2026-10-04 - User testing checkpoint
 
 The user reports that **Core Realistic tracking appears good so far** with the deployed build. This is positive raid feedback, not exhaustive qualification of perception, navigation or every command combination. **SAIN Simple tracking still requires user raid testing**; its existing fixture/metadata checks do not establish in-game behavior. Continue qualification from the deployment hashes and checks recorded below.

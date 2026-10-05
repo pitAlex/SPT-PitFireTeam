@@ -553,6 +553,11 @@ namespace pitTeam.Components
                 return;
             }
 
+            if (entry == pitFireTeam.enemyTracking)
+            {
+                CreateEnemyTrackingEntryRow();
+                return;
+            }
             bool disabledDuringRaid = ShouldDisableSettingDuringRaid(entry);
             GameObject rowObject = new GameObject(
                 $"pitFireTeam_Setting_{SanitizeName(entry.Definition.Key)}",
@@ -621,41 +626,6 @@ namespace pitTeam.Components
             controlRect.SetParent(rowObject.transform, false);
             controlRect.sizeDelta = new Vector2(360f, 72f);
             controlRect.anchoredPosition = new Vector2(-1 * (SettingsControlRightInset + controlRect.sizeDelta.x), 0f);
-
-            if (entry == pitFireTeam.enemyTracking)
-            {
-                controlRect.anchorMin = controlRect.anchorMax = new Vector2(1f, 0.5f);
-                controlRect.pivot = new Vector2(1f, 0.5f);
-                controlRect.anchoredPosition = new Vector2(-SettingsControlRightInset, 0f);
-                var choices = new List<(EnemyTrackingMode mode, Button button, TextMeshProUGUI label)>();
-                void RefreshChoices()
-                {
-                    foreach (var choice in choices)
-                    {
-                        choice.button.interactable = !disabledDuringRaid;
-                        choice.label.color = pitFireTeam.enemyTracking.Value == choice.mode
-                            ? new Color(1f, 0.8f, 0.35f) : new Color(0.7f, 0.7f, 0.7f);
-                    }
-                }
-                foreach (EnemyTrackingMode mode in new[] { EnemyTrackingMode.Simple, EnemyTrackingMode.Realistic })
-                {
-                    Button button = CreateActionButton(controlRect, out TextMeshProUGUI label);
-                    RectTransform buttonRect = button.transform as RectTransform;
-                    buttonRect.sizeDelta = new Vector2(165f, 36f);
-                    buttonRect.anchoredPosition = new Vector2(mode == EnemyTrackingMode.Simple ? -175f : 0f, 0f);
-                    label.text = pitFireTeam.GetSocialUiText(mode == EnemyTrackingMode.Simple ? "EnemyTrackingSimple" : "EnemyTrackingRealistic");
-                    choices.Add((mode, button, label));
-                    button.onClick.AddListener(() =>
-                    {
-                        pitFireTeam.enemyTracking.Value = mode;
-                        pitFireTeam.Instance?.Config.Save();
-                        RefreshChoices();
-                    });
-                }
-                RefreshChoices();
-                AddRaidDisabledTooltipOverlay(rowObject, disabledDuringRaid);
-                return;
-            }
 
             if (entry.SettingType == typeof(bool))
             {
@@ -727,16 +697,75 @@ namespace pitTeam.Components
 
         private void CreateLoadoutManagementEntryRow(LoadoutManagementMode mode)
         {
-            bool disabledDuringRaid = IsRaidActive();
+            Dictionary<string, string> languageEntry = GetLoadoutManagementLanguageEntry(mode);
+            string displayName = GetLoadoutManagementDisplayName(mode, languageEntry);
+            CreateModeSelectionEntryRow(
+                $"pitFireTeam_Setting_LoadoutManagement_{mode}", displayName,
+                GetLoadoutManagementDescription(languageEntry), IsRaidActive(),
+                control => CreateLoadoutManagementRadioControl(control, mode, displayName, !IsRaidActive()));
+        }
+
+        private void CreateEnemyTrackingEntryRow()
+        {
+            bool disabledDuringRaid = ShouldDisableSettingDuringRaid(pitFireTeam.enemyTracking);
+            CreateModeSelectionEntryRow(
+                "pitFireTeam_Setting_EnemyTracking",
+                GetSettingDisplayName(pitFireTeam.enemyTracking),
+                GetSettingDescription(pitFireTeam.enemyTracking), disabledDuringRaid,
+                control =>
+                {
+                    // Match the shared native toggle's 42px height at its 0.86 scale.
+                    const float choiceHeight = 42f * 0.86f;
+                    const float choiceGap = 15f;
+                    control.sizeDelta = new Vector2(control.sizeDelta.x, choiceHeight * 2f + choiceGap);
+                    ToggleGroup group = control.gameObject.AddComponent<ToggleGroup>();
+                    group.allowSwitchOff = false;
+                    var refreshChoices = new List<System.Action>();
+                    foreach (EnemyTrackingMode mode in new[] { EnemyTrackingMode.Simple, EnemyTrackingMode.Realistic })
+                    {
+                        string displayName = pitFireTeam.GetSocialUiText(
+                            mode == EnemyTrackingMode.Simple ? "EnemyTrackingSimple" : "EnemyTrackingRealistic");
+                        RectTransform choice = new GameObject(mode.ToString(), typeof(RectTransform)).GetComponent<RectTransform>();
+                        choice.SetParent(control, false);
+                        choice.anchorMin = choice.anchorMax = new Vector2(0.5f, 0.5f);
+                        choice.pivot = new Vector2(0.5f, 0.5f);
+                        choice.sizeDelta = new Vector2(control.sizeDelta.x, choiceHeight);
+                        choice.anchoredPosition = new Vector2(0f,
+                            (mode == EnemyTrackingMode.Simple ? 1f : -1f) * (choiceHeight + choiceGap) * 0.5f);
+                        void SelectMode()
+                        {
+                            if (disabledDuringRaid) return;
+                            pitFireTeam.enemyTracking.Value = mode;
+                            pitFireTeam.Instance?.Config.Save();
+                            foreach (var refresh in refreshChoices) refresh();
+                        }
+                        CreateModeRadioControl(choice, displayName, !disabledDuringRaid, group,
+                            pitFireTeam.enemyTracking.Value == mode, SelectMode,
+                            out UIAnimatedToggleSpawner toggle, out Toggle fallback);
+                        refreshChoices.Add(() =>
+                        {
+                            bool selected = pitFireTeam.enemyTracking.Value == mode;
+                            if (toggle != null) toggle.ToggleSilently(selected);
+                            else fallback.SetIsOnWithoutNotify(selected);
+                        });
+                    }
+                    foreach (var refresh in refreshChoices) refresh();
+                }, rowHeight: 136f);
+        }
+
+        private void CreateModeSelectionEntryRow(
+            string rowName, string displayName, string description, bool disabledDuringRaid,
+            System.Action<RectTransform> createControl, float rowHeight = SettingsRowHeight)
+        {
             GameObject rowObject = new GameObject(
-                $"pitFireTeam_Setting_LoadoutManagement_{mode}",
+                rowName,
                 typeof(RectTransform),
                 typeof(Image),
                 typeof(LayoutElement));
             rowObject.transform.SetParent(settingsContentRoot, false);
 
             LayoutElement layout = rowObject.GetComponent<LayoutElement>();
-            layout.preferredHeight = SettingsRowHeight;
+            layout.preferredHeight = rowHeight;
             layout.flexibleWidth = 1f;
 
             Image background = rowObject.GetComponent<Image>();
@@ -744,13 +773,9 @@ namespace pitTeam.Components
             background.raycastTarget = true;
 
             RectTransform rowRect = rowObject.GetComponent<RectTransform>();
-            rowRect.sizeDelta = new Vector2(0f, SettingsRowHeight);
+            rowRect.sizeDelta = new Vector2(0f, rowHeight);
 
             CreateSettingsRowChrome(rowObject.transform);
-
-            Dictionary<string, string> languageEntry = GetLoadoutManagementLanguageEntry(mode);
-            string displayName = GetLoadoutManagementDisplayName(mode, languageEntry);
-            string description = GetLoadoutManagementDescription(languageEntry);
 
             GameObject nameObject = CreateText("Name", displayName, 22f, TextAlignmentOptions.MidlineLeft);
             nameObject.transform.SetParent(rowObject.transform, false);
@@ -794,7 +819,7 @@ namespace pitTeam.Components
             controlRect.sizeDelta = new Vector2(186f, 48f);
             controlRect.anchoredPosition = new Vector2(-SettingsControlRightInset, 0f);
 
-            CreateLoadoutManagementRadioControl(controlRect, mode, displayName, !disabledDuringRaid);
+            createControl(controlRect);
             AddRaidDisabledTooltipOverlay(rowObject, disabledDuringRaid);
         }
 
@@ -1035,15 +1060,32 @@ namespace pitTeam.Components
 
         private void CreateLoadoutManagementRadioControl(RectTransform parent, LoadoutManagementMode mode, string label, bool interactable)
         {
+            void SelectMode()
+            {
+                Modules.Logger.LogInfo($"[UI] Loadout management toggle clicked: {mode}");
+                RequestLoadoutManagementModeChange(mode);
+            }
+            CreateModeRadioControl(parent, label, interactable, EnsureLoadoutManagementToggleGroup(),
+                pitFireTeam.loadoutManagementMode?.Value == mode, SelectMode,
+                out UIAnimatedToggleSpawner toggle, out Toggle fallbackToggle);
+            if (toggle != null) loadoutManagementToggleSpawners[mode] = toggle;
+            else loadoutManagementFallbackToggles[mode] = fallbackToggle;
+        }
+
+        private void CreateModeRadioControl(
+            RectTransform parent, string label, bool interactable, ToggleGroup group,
+            bool selected, System.Action onSelect,
+            out UIAnimatedToggleSpawner toggle, out Toggle fallbackToggle)
+        {
             Image hoverBackground = CreateLoadoutManagementHoverBackground(parent);
-            UIAnimatedToggleSpawner toggle = CloneLoadoutManagementToggle(parent);
+            toggle = CloneLoadoutManagementToggle(parent);
+            fallbackToggle = null;
             if (toggle == null)
             {
-                Toggle fallbackToggle = CreateBasicToggle(parent);
-                fallbackToggle.SetIsOnWithoutNotify(pitFireTeam.loadoutManagementMode?.Value == mode);
-                loadoutManagementFallbackToggles[mode] = fallbackToggle;
+                fallbackToggle = CreateBasicToggle(parent);
+                fallbackToggle.SetIsOnWithoutNotify(selected);
                 SetSettingsControlInteractable(fallbackToggle.transform, interactable);
-                CreateLoadoutManagementClickOverlay(parent, fallbackToggle.transform as RectTransform, hoverBackground, mode, interactable);
+                CreateModeClickOverlay(parent, fallbackToggle.transform as RectTransform, hoverBackground, onSelect, interactable);
                 return;
             }
 
@@ -1064,7 +1106,6 @@ namespace pitTeam.Components
             canvasGroup.blocksRaycasts = interactable;
             AnimatedToggleCanvasGroupField?.SetValue(toggle, canvasGroup);
 
-            ToggleGroup group = EnsureLoadoutManagementToggleGroup();
             toggle.SpawnableToggle.Init(group);
 
             foreach (TextMeshProUGUI text in toggle.GetComponentsInChildren<TextMeshProUGUI>(true))
@@ -1082,25 +1123,16 @@ namespace pitTeam.Components
                 toggle.SpawnedObject.interactable = interactable;
                 if (interactable)
                 {
-                    toggle.SpawnedObject.OnMouseDown += () =>
-                    {
-                        Modules.Logger.LogInfo($"[UI] Loadout management toggle clicked: {mode}");
-                        RequestLoadoutManagementModeChange(mode);
-                    };
-                    toggle.SpawnedObject.onValueChanged.AddListener(isOn =>
-                    {
-                        Modules.Logger.LogInfo($"[UI] Loadout management toggle value changed: {mode}={isOn}");
-                    });
+                    toggle.SpawnedObject.OnMouseDown += onSelect;
                 }
             }
 
-            toggle.ToggleSilently(pitFireTeam.loadoutManagementMode?.Value == mode);
-            loadoutManagementToggleSpawners[mode] = toggle;
+            toggle.ToggleSilently(selected);
             SetSettingsControlInteractable(toggle.transform, interactable);
-            CreateLoadoutManagementClickOverlay(parent, toggle.transform as RectTransform, hoverBackground, mode, interactable);
+            CreateModeClickOverlay(parent, toggle.transform as RectTransform, hoverBackground, onSelect, interactable);
         }
 
-        private void CreateLoadoutManagementClickOverlay(RectTransform parent, RectTransform hoverTarget, Image hoverBackground, LoadoutManagementMode mode, bool interactable)
+        private void CreateModeClickOverlay(RectTransform parent, RectTransform hoverTarget, Image hoverBackground, System.Action onSelect, bool interactable)
         {
             GameObject overlayObject = new GameObject("pitFireTeam_LoadoutManagementClickOverlay", typeof(RectTransform), typeof(Image));
             overlayObject.transform.SetParent(parent, false);
@@ -1117,11 +1149,7 @@ namespace pitTeam.Components
             hoverController.Configure(hoverTarget, hoverBackground);
             if (interactable)
             {
-                hoverController.OnClick = _ =>
-                {
-                    Modules.Logger.LogInfo($"[UI] Loadout management toggle clicked: {mode}");
-                    RequestLoadoutManagementModeChange(mode);
-                };
+                hoverController.OnClick = _ => onSelect();
             }
         }
 

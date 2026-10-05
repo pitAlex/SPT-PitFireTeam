@@ -71,7 +71,7 @@ namespace pitTeam.Localization
                     "Contact memory duration. Realistic tracking can extend memory during active unfinished search, up to 400 seconds. Applied at raid start."),
                 enemyTracking = Entry(
                     "Enemy Tracking",
-                    "Realistic follows the last sight, sound or reported position. Simple tracks accepted enemies through walls. Applies to every follower tactic at raid start; sight and shooting safety remain unchanged."),
+                    "Switch between Simple and Realistic enemy tracking. Simple tracks the enemy’s current position regardless of when they were last seen or reported. Realistic uses positions reported through sight or sound, or the enemy’s last known position."),
                 healthMultiplier = Entry(
                     "Squad Health Multiplier",
                     "Health multiplier for the followers you spawn with. This is applied per each body part."),

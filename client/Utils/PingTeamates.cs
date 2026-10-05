@@ -1134,7 +1134,7 @@ namespace pitTeam.Utils
                 {
                     bool shouldRefreshPosition =
                         resolution.IsVisible ||
-                        resolution.UsesSainKnowledge ||
+                        (resolution.UsesSainKnowledge && FollowerEnemyTracking.Mode == EnemyTrackingMode.Realistic) ||
                         captureHiddenPosition ||
                         !contact.HasCapturedPosition ||
                         Time.time >= contact.NextHiddenPositionRefreshTime;

@@ -134,6 +134,7 @@ public static class TrackingChecks {
             "null group and invalid live coordinates recover from the supplied fallback");
     }
     public static void Main() {
+        CheckMarkerCadence();
         CheckMemoryRepair();
         FollowerEnemyTracking.BeginRaid();Tick(1);
         var owner=new BotOwner();var enemy=Contact(owner,"a",10);
@@ -206,5 +207,22 @@ public static class TrackingChecks {
         FollowerEnemyTracking.EndRaid();
         Check(FollowerEnemyTracking.Snapshot(owner,enemy)==null,"raid teardown releases tracking state");
         Console.WriteLine($"Enemy Tracking: {count} behavior checks passed.");
+    }
+
+    private static void CheckMarkerCadence() {
+        pitFireTeam.enemyTracking.Value=EnemyTrackingMode.Simple;
+        FollowerEnemyTracking.BeginRaid();Tick(11);
+        Check(!MarkerRefresh.Check(false,true,false,true,15),"Simple addon hidden marker stays captured between refreshes");
+        Check(!MarkerRefresh.Check(false,false,false,true,15),"Simple Core hidden marker keeps its cadence");
+        Check(MarkerRefresh.Check(false,true,true,true,15),"Simple addon ping immediately captures the current position");
+        Check(MarkerRefresh.Check(false,true,false,false,15),"Simple addon first marker captures immediately");
+        Check(MarkerRefresh.Check(true,true,false,true,15),"Simple visible marker still updates immediately");
+        Tick(15);
+        Check(MarkerRefresh.Check(false,true,false,true,15),"Simple addon hidden marker refreshes when its timer expires");
+        pitFireTeam.enemyTracking.Value=EnemyTrackingMode.Realistic;
+        FollowerEnemyTracking.BeginRaid();Tick(11);
+        Check(MarkerRefresh.Check(false,true,false,true,15),"Realistic addon remembered-position updates still bypass the timer");
+        Check(!MarkerRefresh.Check(false,false,false,true,15),"Realistic Core hidden marker cadence remains unchanged");
+        Check(MarkerRefresh.Check(false,false,true,true,15),"Realistic Core ping still refreshes immediately");
     }
 }

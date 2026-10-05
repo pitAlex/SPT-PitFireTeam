@@ -22,7 +22,7 @@
 	"regroupRadius": { "Name": "Regroup Radius", "Description": "Distance from the player at which followers automatically regroup during combat.\nMarksman followers use about 1.5x this radius." },
 	"goToDistance": { "Name": "Maximum 'Go To' Distance", "Description": "Maximum distance followers will move when 'There' or 'GoForward' is issued." },
 	"enemyRemember": { "Name": "Time to forget about the enemy (in sec.)", "Description": "Contact memory duration. Realistic tracking can extend memory during active unfinished search, up to 400 seconds. Applied at raid start." },
-	"enemyTracking": { "Name": "Enemy Tracking", "Description": "Realistic follows the last sight, sound or reported position. Simple tracks accepted enemies through walls. Applies to every follower tactic at raid start; sight and shooting safety remain unchanged." },
+	"enemyTracking": { "Name": "Enemy Tracking", "Description": "Switch between Simple and Realistic enemy tracking. Simple tracks the enemy’s current position regardless of when they were last seen or reported. Realistic uses positions reported through sight or sound, or the enemy’s last known position." },
 	"healthMultiplier": { "Name": "Squad Health Multiplier", "Description": "Health multiplier for the followers you spawn with. This is applied per each body part." },
 	"pickup": { "Name": "Pickup", "Description": "Enable or disable the ability to recruit same-side bots during a raid." },
 	"tieredPickup": { "Name": "Tiered Pickup", "Description": "Use the player-vs-bot level difference rules when deciding whether a bot accepts a pickup request." },

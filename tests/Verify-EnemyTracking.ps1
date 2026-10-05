@@ -48,6 +48,13 @@ try {
     foreach($reference in @('mscorlib.dll','System.dll','System.Core.dll')){$argsList+='/reference:'+(Join-Path $framework $reference)}
     foreach($source in @('client/Modules/FollowerEnemyTracking.cs','addon/SainEnemyTrackingPolicy.cs','tests/EnemyTrackingFixture.cs')){$argsList+=(Join-Path $RepositoryRoot $source)}
     $argsList+=$repairSource
+    # Exercise the production marker refresh condition, including the addon cadence bypass.
+    $markerSource=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Utils/PingTeamates.cs')
+    $refreshMatch=[regex]::Match($markerSource,'bool shouldRefreshPosition\s*=\s*([^;]+);')
+    if(!$refreshMatch.Success){throw 'Marker refresh condition missing'}
+    $markerFixture=Join-Path $temporary 'MarkerRefresh.cs'
+    [IO.File]::WriteAllText($markerFixture, 'using pitTeam.Modules; using UnityEngine; public static class MarkerRefresh { public static bool Check(bool visible, bool sain, bool captureHiddenPosition, bool captured, float due) { var resolution = new { IsVisible = visible, UsesSainKnowledge = sain }; var contact = new { HasCapturedPosition = captured, NextHiddenPositionRefreshTime = due }; return ' + $refreshMatch.Groups[1].Value + '; } }')
+    $argsList+=$markerFixture
     & dotnet @argsList
     if($LASTEXITCODE -ne 0){throw 'Tracking fixture compilation failed'}
     & $exe

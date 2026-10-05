@@ -15,7 +15,7 @@ Core means our follower implementation, not unmodified EFT. Read [Core combat](C
 | Visibility/fire | Existing perception, aim and shot-safety gates | Same gates |
 | Tactic/commands | Existing ownership and admission | Same rules |
 
-Mode and Enemy Remember Time are captured at raid start. My Squad provides explicit Simple/Realistic choices, disabled during a raid; ConfigurationManager exposes the enum. Persisted `03 EnemyTracking` defaults to Realistic. Existing tactic identifiers and `03 EnemyRemember` remain stable. English fallback and Russian/Chinese translations use the central language model.
+Mode and Enemy Remember Time are captured at raid start. My Squad provides one Enemy Tracking row with its description on the left and Simple above Realistic on the right, separated by 15 pixels. Both choices use the same selection controls as Loadout Management, with its selected styling, hover/click overlay and mutual exclusion. Choices are disabled during a raid; ConfigurationManager exposes the enum. Persisted `03 EnemyTracking` defaults to Realistic. Existing tactic identifiers and `03 EnemyRemember` remain stable. English fallback and Russian/Chinese translations use the central language model.
 
 Ordinary SAIN bots are excluded. Tracking does not admit heard-but-unaccepted enemies, grant permission to fire, or bypass On Your Own, regroup, Attention or explicit-order acceptance.
 
@@ -38,6 +38,8 @@ Selected expired contacts release their matching retention/mission authority. Re
 Central anchors/distances and tactical pursuit, push, cover and markers resolve the permitted position. Hidden Realistic pursuit enters the existing committed memory-search action. Completion requires proximity, compatible height and a short complete route, avoiding arrival across walls or on another floor. Nearby NavMesh sampling is restricted to the remembered floor. Fresh evidence at the same point can reopen search.
 
 Sensors, immediate-fire and suppression target policies retain real geometry and existing safety gates. No global enemy/player position getter is overridden. Hidden cover planning uses remembered target geometry. Core markers use remembered coordinates in Realistic and live coordinates in Simple, keeping existing cadence and visibility colors.
+
+Simple markers for both Core and SAIN addon contacts capture the current position on each ping and on first display; hidden markers otherwise refresh every five seconds while displayed. Visible markers refresh continuously. Realistic addon markers retain immediate updates from native remembered knowledge. Marker cadence does not throttle the live positions used by Simple tactical decisions/actions.
 
 [SainGoalEnemyBridge](../client/Modules/SainGoalEnemyBridge.cs) remains a soft dependency. [FollowerSainTrackingTimerPatch](../client/Patches/FollowerSainTrackingTimerPatch.cs) restores the captured follower duration after native search-delay recalculation, which otherwise rewrites native/EFT forget time. Shared presets and ordinary-bot timers are untouched. Absent/unready addon state uses Core fallback.
 
