@@ -29,6 +29,7 @@ namespace pitTeam.Patches
         private static GameObject tabsOverlayRoot;
         private static Coroutine tabsOverlayCoroutine;
         private static UIAnimatedToggleSpawner tabsRosterInstance;
+        private static UIAnimatedToggleSpawner tabsModeInstance;
         private static UIAnimatedToggleSpawner tabsSettingsInstance;
         private static ToggleGroup overlayToggleGroup;
 
@@ -194,29 +195,34 @@ namespace pitTeam.Patches
 
             tabsRosterInstance = UnityEngine.Object.Instantiate(rosterTemplate, screen.transform, false);
             tabsRosterInstance.name = "pitFireTeam_SideSelTab_Roster";
-            ConfigureTabForOverlay(tabsRosterInstance, new Vector2(-135f, -112f), GetSocialUiText("SquadControlRosterTab"), selected: true,
-                onSelected: () =>
-                {
-                    tabsRosterInstance?.ToggleSilently(true);
-                    tabsSettingsInstance?.ToggleSilently(false);
-                    Components.SquadControlMenuUi.FindInstance()?.ShowTab(true);
-                });
+            ConfigureTabForOverlay(tabsRosterInstance, new Vector2(-270f, -112f), GetSocialUiText("SquadControlRosterTab"), selected: true,
+                onSelected: () => SelectTab(Components.SquadControlMenuUi.Tab.Roster));
+
+            tabsModeInstance = UnityEngine.Object.Instantiate(rosterTemplate, screen.transform, false);
+            tabsModeInstance.name = "pitFireTeam_SideSelTab_Mode";
+            ConfigureTabForOverlay(tabsModeInstance, new Vector2(0f, -112f), GetSocialUiText("SquadControlModeTab"), selected: false,
+                onSelected: () => SelectTab(Components.SquadControlMenuUi.Tab.Mode));
 
             tabsSettingsInstance = UnityEngine.Object.Instantiate(settingsTemplate, screen.transform, false);
             tabsSettingsInstance.name = "pitFireTeam_SideSelTab_Settings";
-            ConfigureTabForOverlay(tabsSettingsInstance, new Vector2(135f, -112f), GetSocialUiText("SquadControlSettingsTab"), selected: false,
-                onSelected: () =>
-                {
-                    tabsRosterInstance?.ToggleSilently(false);
-                    tabsSettingsInstance?.ToggleSilently(true);
-                    Components.SquadControlMenuUi.FindInstance()?.ShowTab(false);
-                });
+            ConfigureTabForOverlay(tabsSettingsInstance, new Vector2(270f, -112f), GetSocialUiText("SquadControlSettingsTab"), selected: false,
+                onSelected: () => SelectTab(Components.SquadControlMenuUi.Tab.Settings));
 
             Components.SquadControlMenuUi.FindInstance()?.InjectPanelsIntoScreen(screen.transform);
+            SelectTab(Components.SquadControlMenuUi.Tab.Roster);
             tabsRosterInstance.transform.SetAsLastSibling();
+            tabsModeInstance.transform.SetAsLastSibling();
             tabsSettingsInstance.transform.SetAsLastSibling();
 
             tabsOverlayCoroutine = null;
+        }
+
+        private static void SelectTab(Components.SquadControlMenuUi.Tab tab)
+        {
+            tabsRosterInstance?.ToggleSilently(tab == Components.SquadControlMenuUi.Tab.Roster);
+            tabsModeInstance?.ToggleSilently(tab == Components.SquadControlMenuUi.Tab.Mode);
+            tabsSettingsInstance?.ToggleSilently(tab == Components.SquadControlMenuUi.Tab.Settings);
+            Components.SquadControlMenuUi.FindInstance()?.ShowTab(tab);
         }
 
         private static UIAnimatedToggleSpawner ResolveRagfairToggle(bool primary)
@@ -333,6 +339,12 @@ namespace pitTeam.Patches
             {
                 UnityEngine.Object.Destroy(tabsSettingsInstance.gameObject);
                 tabsSettingsInstance = null;
+            }
+
+            if (tabsModeInstance != null)
+            {
+                UnityEngine.Object.Destroy(tabsModeInstance.gameObject);
+                tabsModeInstance = null;
             }
         }
     }

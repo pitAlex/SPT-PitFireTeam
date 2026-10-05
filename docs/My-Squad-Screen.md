@@ -7,8 +7,9 @@ Date: 2026-07-30
 Document the current verified implementation of the `My Squad` experience as it exists today in `pitFireTeam`, split into:
 
 1. `Roster`
-2. `Settings`
-3. `Profile Screen`
+2. `Mode`
+3. `Settings`
+4. `Profile Screen`
 
 This is a current-state review, not a target design doc. It should be read alongside:
 
@@ -22,7 +23,7 @@ This is a current-state review, not a target design doc. It should be read along
 
 Today it is split across two UI hosts:
 
-- `MatchMakerSideSelectionScreen` in a custom "squad mode" for the `Roster` and `Settings` tabs
+- `MatchMakerSideSelectionScreen` in a custom "squad mode" for the `Roster`, `Mode` and `Settings` tabs
 - `OtherPlayerProfileScreen` for the selected teammate `Profile Screen`
 
 That means the current flow is:
@@ -30,7 +31,7 @@ That means the current flow is:
 1. main menu `My Squad` button
 2. open stock side-selection screen in squad mode
 3. hide native PMC/Scav selection widgets
-4. inject pitFireTeam roster/settings panels
+4. inject pitFireTeam roster/mode/settings panels
 5. open teammate profile from roster tile
 6. patch stock other-player profile into teammate management UI
 7. return back into `My Squad`
@@ -42,6 +43,7 @@ Authoritative files:
 - `client/Patches/MatchMakerSideSelectionScreenPatch.cs`
 - `client/Components/SquadControlMenuUi.cs`
 - `client/Components/SquadControlMenuUi.Roster.cs`
+- `client/Components/SquadControlMenuUi.Mode.cs`
 - `client/Components/SquadControlMenuUi.Settings.cs`
 - `client/Components/SquadControlMenuUi.ContextMenu.cs`
 - `client/Components/SquadControlMenuUi.Backend.cs`
@@ -91,8 +93,9 @@ In squad mode it:
 
 - hides native side-selection widgets such as PMC/Scav panels, health/random controls, descriptions, and stock model views
 - rewrites the main caption to `My Squad`
-- spawns two stock-style animated tabs by cloning Ragfair toggles:
+- spawns three stock-style animated tabs by cloning Ragfair toggles, ordered left to right:
     - `Roster`
+    - `Mode`
     - `Settings`
 - injects the pitFireTeam panels into the live side-selection screen transform
 - rewires the stock back button so squad-mode back always exits to root and disables squad mode
@@ -267,7 +270,26 @@ Source: [TeammateDeletion](../client/Modules/TeammateDeletion.cs) and [server de
 - portrait loading is sequential and intentionally delayed, so large rosters are stable but not instant
 - paid deletion needs the active player inventory controller to refresh the live stash
 
-## Part 2: Settings
+## Part 2: Mode
+
+The `Mode` tab sits between `Roster` and `Settings` and uses its own panel in the same side-selection host. Its shell matches the settings panel dimensions. Opening My Squad still starts on `Roster`; switching tabs shows only the selected panel. All three panels are retracted when the host closes, and all three cloned tab controls are cleaned up.
+
+The panel contains two mutually exclusive, vertically arranged options:
+
+- `Guns for Hire` (initial selection)
+- `Allegiance`
+
+These are UI options only. Selecting one updates local state on the current `SquadControlMenuUi` instance, retained when switching tabs or reopening that same UI instance. It is not saved across a game restart and has no config entry, server request or gameplay effect. Existing roster, hiring, allegiance relationships and settings behavior remain unchanged. The in-raid `Squad Settings` overlay continues to show only Settings.
+
+Each option uses the same row presentation as Loadout Management: a dark full-width row with a gold divider, its name and description on the left, and the compact radio-style selection control on the right. Selecting either control highlights it and clears the other.
+
+The Guns for Hire description is: "Build and equip your squad before deploying. Customize and play by your own rules."
+
+The Allegiance description is: "Play by Tushonka's rules. Alliances are formed, not bought. Settings are locked, and relationships are determined in the field." This describes the intended mode; selection is still UI-only and does not yet lock settings or change relationships.
+
+Controls reuse the existing cloned Ragfair radio-style toggle helper, right-side control dimensions and click/hover behavior with a basic-toggle fallback. Names and descriptions use the central `socialUi` language entries and embedded English fallback.
+
+## Part 3: Settings
 
 ### What the settings tab is
 
@@ -482,7 +504,7 @@ The completed settings hierarchy is retained while its menu/raid restriction con
 - no per-setting dependency/disable logic beyond what each control directly supports
 - still tightly coupled to BepInEx config entries rather than a dedicated persisted UI model
 
-## Part 3: Profile Screen
+## Part 4: Profile Screen
 
 ### What the profile screen is
 

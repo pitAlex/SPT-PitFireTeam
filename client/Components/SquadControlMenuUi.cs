@@ -33,6 +33,13 @@ namespace pitTeam.Components
 {
     internal partial class SquadControlMenuUi : MonoBehaviour
     {
+        internal enum Tab
+        {
+            Roster,
+            Mode,
+            Settings
+        }
+
         private const string SquadButtonName = "pitFireTeam_SquadControlButton";
         private const string ScreenRootName = "pitFireTeam_SquadControlScreen";
         private const float RosterTileWidth = 190f;
@@ -226,6 +233,7 @@ namespace pitTeam.Components
         private RectTransform cachedSettingsSliderContainerTemplate;
         private NumberSlider cachedSettingsSliderTemplate;
         private GameObject rosterPanel;
+        private GameObject modePanel;
         private GameObject settingsPanel;
         private DefaultUIButton addTeammateButton;
         private TextMeshProUGUI emptyRosterLabel;
@@ -1051,6 +1059,11 @@ namespace pitTeam.Components
                 settingsPanel.transform.SetParent(newParent, false);
             }
 
+            if (modePanel != null && modePanel.transform.parent == rootRect)
+            {
+                modePanel.transform.SetParent(newParent, false);
+            }
+
             DefaultUIButton sideSelectionBackButton = ResolveSideSelectionBackButton(newParent);
             if (sideSelectionBackButton != null && rosterPanelRect != null)
             {
@@ -1058,7 +1071,7 @@ namespace pitTeam.Components
                 UpdateRosterPanelLayout(emptyRosterLabel != null && emptyRosterLabel.gameObject.activeSelf);
             }
 
-            ShowTab(true);
+            ShowTab(Tab.Roster);
 
             // Rebuild roster only on first open or when explicitly requested by add-teammate flow.
             bool shouldForceRosterRefresh = forceRosterRefreshOnNextInject;
@@ -1118,6 +1131,11 @@ namespace pitTeam.Components
             {
                 settingsPanel.transform.SetParent(rootRect, false);
             }
+
+            if (modePanel != null && modePanel.transform.parent != rootRect)
+            {
+                modePanel.transform.SetParent(rootRect, false);
+            }
         }
 
         private void EnsureScreen()
@@ -1165,7 +1183,9 @@ namespace pitTeam.Components
                 BuildSettingsPanel();
             }
 
-            ShowTab(true);
+            modePanel = CreateFallbackContentPanel("pitFireTeam_SquadControlModePanel", GetSocialUiText("SquadControlModeTab"));
+            BuildModePanel();
+            ShowTab(Tab.Roster);
         }
 
         private void CreateHeader(RectTransform rootRect)
@@ -1307,19 +1327,24 @@ namespace pitTeam.Components
             return true;
         }
 
-        internal void ShowTab(bool showRoster)
+        internal void ShowTab(Tab tab)
         {
             if (rosterPanel != null)
             {
-                rosterPanel.SetActive(showRoster);
+                rosterPanel.SetActive(tab == Tab.Roster);
             }
 
             if (settingsPanel != null)
             {
-                settingsPanel.SetActive(!showRoster);
+                settingsPanel.SetActive(tab == Tab.Settings);
             }
 
-            if (showRoster)
+            if (modePanel != null)
+            {
+                modePanel.SetActive(tab == Tab.Mode);
+            }
+
+            if (tab != Tab.Settings)
             {
                 CancelShortcutCapture(false);
             }
@@ -1338,7 +1363,7 @@ namespace pitTeam.Components
             RetractPanels();
             raidSettingsOverlayActive = true;
             SetStandaloneTitle(GetSocialUiText("SquadControlRaidSettingsTitle"));
-            ShowTab(false);
+            ShowTab(Tab.Settings);
             EnsureSettingsEntriesForCurrentContext();
             screenRoot.SetActive(true);
 
@@ -1398,7 +1423,8 @@ namespace pitTeam.Components
             panelRect.anchoredPosition = Vector2.zero;
 
             Image panelImage = panel.GetComponent<Image>();
-            panelImage.color = string.Equals(name, "pitFireTeam_SquadControlSettingsPanel", StringComparison.Ordinal)
+            panelImage.color = (string.Equals(name, "pitFireTeam_SquadControlSettingsPanel", StringComparison.Ordinal)
+                || string.Equals(name, "pitFireTeam_SquadControlModePanel", StringComparison.Ordinal))
                 ? new Color(0f, 0f, 0f, 0.702f)
                 : new Color(0.09f, 0.11f, 0.12f, 0.94f);
 
