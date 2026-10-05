@@ -303,7 +303,8 @@ namespace pitTeam.Modules
             {
                 string json = await Task.Run(() => RequestHandler.PostJson("/singleplayer/pitfireteam/teammate/create",
                     JsonConvert.SerializeObject(new { quoteToken = quote.quoteToken, withoutKit })));
-                var response = JsonConvert.DeserializeObject<FriendlyTeammateBodyResponse<PurchaseResponse>>(json);
+                var response = JsonConvert.DeserializeObject<FriendlyTeammateBodyResponse<PurchaseResponse>>(json,
+                    OtherPlayerProfileScreenPatch.GetDefaultJsonConverters());
                 if (response == null || response.err != 0)
                 {
                     if (response?.errmsg == "TeammateHireInsufficientFunds")

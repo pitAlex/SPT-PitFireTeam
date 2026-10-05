@@ -41,7 +41,8 @@ namespace pitTeam.Modules
                     throw new InvalidOperationException("Player inventory is unavailable for deletion payment refresh");
                 string json = await Task.Run(() => RequestHandler.PostJson("/singleplayer/pitfireteam/teammate/delete",
                     JsonConvert.SerializeObject(new { accountId })));
-                var response = JsonConvert.DeserializeObject<FriendlyTeammateBodyResponse<DeleteResponse>>(json);
+                var response = JsonConvert.DeserializeObject<FriendlyTeammateBodyResponse<DeleteResponse>>(json,
+                    OtherPlayerProfileScreenPatch.GetDefaultJsonConverters());
                 if (response == null || response.err != 0 || response.data == null)
                 {
                     string key = response?.errmsg ?? "TeammateDeleteFailed";
@@ -51,10 +52,23 @@ namespace pitTeam.Modules
                             : pitFireTeam.GetSocialUiText("RemoveTeammateTitle"), forceShow: true).WindowResult;
                     return false;
                 }
-                OtherPlayerProfileScreenPatch.ApplyServerSavedPlayerStash(session.Profile, InventoryController,
-                    session.RagFair, response.data.playerStashItems);
-                SocialNetworkClassPatch.RefreshFriendsList(true);
-                return response.data.deleted;
+                if (!response.data.deleted) return false;
+
+                // The server has already committed removal/payment/delivery. A presentation failure
+                // must not report that removal failed or leave the confirmation and roster stale.
+                try
+                {
+                    OtherPlayerProfileScreenPatch.ApplyServerSavedPlayerStash(session.Profile, InventoryController,
+                        session.RagFair, response.data.playerStashItems);
+                }
+                catch (Exception ex)
+                {
+                    pitFireTeam.Log.LogError($"[UI] Teammate '{accountId}' was removed, but live stash refresh failed: {ex}");
+                    AddTeammateCreationFlow.ShowToast(pitFireTeam.GetSocialUiText("LiveStashRefreshFailed"));
+                }
+                try { SocialNetworkClassPatch.RefreshFriendsList(true); }
+                catch (Exception ex) { pitFireTeam.Log.LogError($"[UI] Removed teammate '{accountId}' could not be refreshed in the friends list: {ex}"); }
+                return true;
             }
             catch (Exception ex)
             {
