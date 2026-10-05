@@ -176,6 +176,24 @@ namespace pitTeam.Patches
             }
         }
 
+        [PatchPostfix]
+        private static void PatchPostfix(EFT.BotMemory __instance, EnemyInfo value, bool __runOriginal)
+        {
+            // Prefix admission and the native setter must both succeed. In particular,
+            // a rejected reassignment of the current goal must not wake its target.
+            if (!__runOriginal || value == null || !pitFireTeam.IsSAINInstalled) return;
+            try
+            {
+                BotOwner owner = value.Owner;
+                if (ReferenceEquals(owner?.Memory, __instance))
+                    FollowerAcceptedContactActivation.TryActivate(owner, value);
+            }
+            catch (System.Exception e)
+            {
+                Modules.Logger.LogError(e);
+            }
+        }
+
         private static bool ShouldBlockUnscopedMemoryOnlyGoal(
             BotOwner botOwner,
             EnemyInfo value,

@@ -776,7 +776,8 @@ Core behavior:
 - Accepted orders activate `FollowerCombatNeedSniperObjective`.
 - Objective tries immediate shoot, current cover fire, support firing cover, or firing-position movement.
 - Arrival arms a short `sniper.NeedSniper.positionHold`.
-- Completes/rejects when enemy disappears, no lane exists after retry, direct shot is available, or stronger survival interrupts.
+- An arrival's original two-second deadline survives a temporary shot action. If the firing lane is lost before that deadline, shared firing safety stops the shot and the objective resumes its committed arrival hold; renewed shots do not extend the deadline. Distance regroup cannot take ownership merely because a short firing opportunity appeared. Immediate fire before arrival still completes the order normally.
+- Completes/rejects when enemy disappears, no lane exists after retry, the arrival window finishes, a direct shot is available outside that window, or stronger survival interrupts.
 
 ### Need Help
 

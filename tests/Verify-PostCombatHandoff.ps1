@@ -47,7 +47,7 @@ namespace EFT {
     public class GroupInfo { public object Cause; }
     public class BotMemory { public BotOwner Owner; public EnemyInfo GoalEnemy; public bool HaveEnemy=>GoalEnemy!=null; public bool IsUnderFire; public float LastTimeHit; }
     public class Memory:BotMemory {}
-    public class Enemies { public Dictionary<string,EnemyInfo> EnemyInfos=new Dictionary<string,EnemyInfo>(); }
+    public class Enemies { public Dictionary<IPlayer,EnemyInfo> EnemyInfos=new Dictionary<IPlayer,EnemyInfo>(); }
     public class Follower { public bool HaveBoss=true; public object BossToFollow=new pitAIBossPlayer(); }
     public class Result { public BotLogicDecision Action=BotLogicDecision.other; }
     public class Agent { public Result Result=new Result(); public Result LastResult()=>Result; }
@@ -118,6 +118,13 @@ namespace pitTeam.Modules {
     }
     public static class SainGoalEnemyBridge { public static bool Retain; public static bool TryGetRetainedSameGoalEnemy(BotOwner b,EnemyInfo e,out object position){position=null;return Retain;} }
     public static class FollowerEnemyInfoCorrection { public static bool IsInsideLookCheck; }
+    // Tracking behavior has its own production fixture. Keep these handoff checks
+    // on eligible, unexhausted contacts after the shared tracking service was added.
+    public static class FollowerEnemyTracking {
+        public static bool IsEligible(EnemyInfo e)=>true;
+        public static bool ShouldRetainSearch(EnemyInfo e)=>false;
+        public static bool IsSearched(EnemyInfo e)=>false;
+    }
 }
 namespace pitTeam.Patches {
     public static class BotMemoryOwnerAccessor { public static BotOwner Get(BotMemory m)=>m.Owner; }
@@ -172,7 +179,7 @@ public static class HandoffChecks {
         Check(pitTeam.Utils.FollowerMedical.CanTopOff(bot),"DeadGoal_DoesNotBlockMedicalTopOff");
         follower.HasKnownEnemy();Time.time+=2;
         Check(!follower.HasKnownEnemy(),"DeadGoal_DoesNotBecomeKnownAfterAcquireDelay");
-        bot.EnemiesController.EnemyInfos[dead.ProfileId]=dead;dead.IsVisible=true;dead.CanShoot=true;
+        bot.EnemiesController.EnemyInfos[dead.Person]=dead;dead.IsVisible=true;dead.CanShoot=true;
         Check(patrol.IsActive(),"DeadVisibleKnownEnemy_DoesNotBlockPatrol");
         Check(pitTeam.Utils.FollowerMedical.CanTopOff(bot),"DeadVisibleKnownEnemy_DoesNotBlockTopOff");
         patrol.selectedAction=new pitTeam.BigBrain.SelectedAction{Type=typeof(HealAction)};
@@ -187,7 +194,7 @@ public static class HandoffChecks {
         Check(patrol.IsActive(),"KilledLatchedEnemy_AllowsPatrol");
         live.Person.HealthController.IsAlive=true;live.IsVisible=false;
         Check(!patrol.IsActive(),"LiveHiddenGoal_StillBlocksPatrol");
-        bot.Memory.GoalEnemy=null;bot.EnemiesController.EnemyInfos[live.ProfileId]=live;live.IsVisible=true;
+        bot.Memory.GoalEnemy=null;bot.EnemiesController.EnemyInfos[live.Person]=live;live.IsVisible=true;
         Check(!patrol.IsActive(),"OtherLiveVisibleEnemy_StillBlocksPatrol");
         Check(!pitTeam.Utils.FollowerMedical.CanTopOff(bot),"OtherLiveVisibleEnemy_StillBlocksTopOff");
         live.IsVisible=false;
@@ -201,7 +208,7 @@ public static class HandoffChecks {
         patrol.patrolHealCoverFallback=true;
         Check(patrol.Waiting(),"AbandonedPatrolCoverDoesNotBypassReadiness");
         patrol.patrolHealCover=null;patrol.patrolHealCoverFallback=false;
-        squadBot.Memory.GoalEnemy=null;squadBot.EnemiesController.EnemyInfos[live.ProfileId]=live;live.PersonalLastSeenTime=Time.time;
+        squadBot.Memory.GoalEnemy=null;squadBot.EnemiesController.EnemyInfos[live.Person]=live;live.PersonalLastSeenTime=Time.time;
         Check(patrol.Waiting(),"FreshSquadContact_RetainsWait");
         Time.time+=3.1f;
         Check(!patrol.Waiting(),"ExpiredSquadContact_ReleasesWait");
@@ -253,12 +260,12 @@ public static class HandoffChecks {
         pitTeam.Modules.SainAddonBridge.Ready=true;
         Check(patrol.IsActive(),"AddonReady_StillAllowsPatrol");
         bot.Memory.GoalEnemy=dead;squadBot.Memory.GoalEnemy=live;
-        bot.EnemiesController.EnemyInfos[live.ProfileId]=live;
+        bot.EnemiesController.EnemyInfos[live.Person]=live;
         Check(!pitAIBossPlayer.CanReceiveReport(bot,squadBot,live.Person),"StaleDeadGoal_BlocksExistingSquadSync");
         pitTeam.Utils.FollowerRecovery.ClearInvalidGoalEnemy(bot);
         Check(bot.Memory.GoalEnemy==null,"AddonDeadGoal_ClearedWithoutReplacement");
         Check(pitAIBossPlayer.CanReceiveReport(bot,squadBot,live.Person),"AddonDeadGoalCleanup_ReopensExistingSquadSync");
-        Check(bot.EnemiesController.EnemyInfos[live.ProfileId]==live&&squadBot.Memory.GoalEnemy==live,"AddonCleanup_PreservesLivingMemoryAndReporterGoal");
+        Check(bot.EnemiesController.EnemyInfos[live.Person]==live&&squadBot.Memory.GoalEnemy==live,"AddonCleanup_PreservesLivingMemoryAndReporterGoal");
         FollowerEnemyEnforceSuppression.Suppressed=true;
         Check(!pitAIBossPlayer.CanReceiveReport(bot,squadBot,live.Person),"AddonSquadSync_PreservesAttentionSuppression");
         FollowerEnemyEnforceSuppression.Suppressed=false;

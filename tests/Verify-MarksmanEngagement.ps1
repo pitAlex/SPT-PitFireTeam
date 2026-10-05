@@ -43,6 +43,7 @@ public class PointData { public Vector3 Point; public bool Target=true; public b
 public class BotMemory { public Cover? CurCustomCoverPoint; public EnemyInfo? GoalEnemy; }
 public class BotOwner { public Vector3 Position; public BotMemory Memory=new BotMemory(); public PointData GoToSomePointData=new PointData(); }
 public class EnemyInfo { public bool IsVisible,CanShoot,Valid=true; public float Distance=32f; public string ProfileId="woods-enemy"; public Vector3 Anchor=new Vector3(32,0,0); }
+namespace pitTeam.Modules { public static class FollowerEnemyTracking { public static float Distance(EnemyInfo e)=>e.Distance; } }
 public class CombatDistanceConfiguration { public static CombatDistanceConfiguration Instance=new CombatDistanceConfiguration(); public float GetCloseQuarterDistance()=>25f; }
 namespace Utils { public static class Utils { public static bool Complete=true; public static float NavDistance=10f; public static bool TryGetCompletePathDistance(Vector3 a,Vector3 b,out float distance){distance=NavDistance;return Complete;} } }
 public static class BattleRecorder { public static void RecordObjectiveDiagnostic(BotOwner b,string o,string a,string r){} }

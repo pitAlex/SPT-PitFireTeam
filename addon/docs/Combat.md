@@ -4,6 +4,8 @@
 
 SAINShooter uses the same admission/lifecycle infrastructure with a distinct [native Marksman policy](SAINShooter.md). The Rifleman push policy below is SAINGrunt-only.
 
+Accepted-contact standby activation is [Core external-SAIN compatibility](../../docs/SAIN-Compatibility.md#runtime-ownership). Both addon replicas continue to require native `Enemy.IsEnemyActive`; Core wakes an admitted sleeping hostile through EFT so SAIN can expose the same target to its actions. The addon does not bypass activity checks or treat a raw remembered target as an executable combat goal.
+
 ## Peaceful weapon handling
 
 For selected SAINGrunt and SAINShooter followers, `SainIdleWeaponGuard` skips SAIN 4.5.1's `Firemode.CheckSwapFireMode` routine unless the bot has a living, known native goal and the existing follower combat-admission gate permits combat. This stops idle distance-based fire-mode changes and the routine's magazine/chamber inspection animations. Native combat mode selection, reloads, recoil updates and weapon-info calculation remain unchanged. Independent admitted combat retains native selection; an unaccepted heard contact during peaceful following does not enable it.
