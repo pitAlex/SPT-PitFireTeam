@@ -19,6 +19,26 @@ if ($LASTEXITCODE -ne 0) { throw 'Loot fixture compilation failed' }
 & $exe
 if ($LASTEXITCODE -ne 0) { throw 'Loot request fixture failed' }
 
+# Exercise the production eligibility getters across recruit-only, mixed, death and transit cases.
+$followerSource = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Components/BotFollowerPlayer.cs')
+$eligibilityStart = $followerSource.IndexOf('        public bool CanHandleBodyContainerLootCommands')
+$eligibilityEnd = $followerSource.IndexOf('        protected WildSpawnType _botRole;', $eligibilityStart)
+if ($eligibilityStart -lt 0 -or $eligibilityEnd -le $eligibilityStart) { throw 'Missing loot eligibility boundary' }
+$eligibilityFixture = Get-Content -Raw (Join-Path $PSScriptRoot 'LootFollowerEligibilityFixture.cs')
+$eligibilityCode = $eligibilityFixture.Replace('/* LOOT_ELIGIBILITY_MEMBERS */',
+    $followerSource.Substring($eligibilityStart, $eligibilityEnd - $eligibilityStart))
+$eligibilitySource = Join-Path $temporary 'LootFollowerEligibility.cs'
+$eligibilityExe = Join-Path $temporary 'LootFollowerEligibility.exe'
+[IO.File]::WriteAllText($eligibilitySource, $eligibilityCode)
+$eligibilityArguments = @($compiler, '/nologo', '/target:exe', '/langversion:latest', '/nostdlib+', "/out:$eligibilityExe")
+foreach ($reference in @('mscorlib.dll', 'System.dll', 'System.Core.dll')) {
+    $eligibilityArguments += "/reference:$(Join-Path $framework $reference)"
+}
+& dotnet @eligibilityArguments $eligibilitySource
+if ($LASTEXITCODE -ne 0) { throw 'Loot eligibility fixture compilation failed' }
+& $eligibilityExe
+if ($LASTEXITCODE -ne 0) { throw 'Loot eligibility fixture failed' }
+
 # These are source-boundary checks, not a substitute for inventory/Unity raid qualification.
 $plugin = Get-Content -Raw (Join-Path $RepositoryRoot 'client/friendlyPlugin.cs')
 if ($plugin -match 'lootAllowGearSwapping|IsLootGearSwappingEnabled') { throw 'Obsolete equipment toggle remains active' }

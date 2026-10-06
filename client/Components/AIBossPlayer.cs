@@ -2444,7 +2444,7 @@ namespace pitTeam.Components
 
                 if (requireSquadMate && !followerData.CanHandleBodyContainerLootCommands)
                 {
-                    LogLootCandidate(command, follower, "rejected", "notSpawnedSquadmate");
+                    LogLootCandidate(command, follower, "rejected", "spawnedTeammateAlive");
                     continue;
                 }
 
@@ -2532,7 +2532,7 @@ namespace pitTeam.Components
 
                 if (requireSquadMate && !followerData.CanHandleBodyContainerLootCommands)
                 {
-                    LogLootCandidate(command, follower, "rejected", "notSpawnedSquadmate");
+                    LogLootCandidate(command, follower, "rejected", "spawnedTeammateAlive");
                     continue;
                 }
 

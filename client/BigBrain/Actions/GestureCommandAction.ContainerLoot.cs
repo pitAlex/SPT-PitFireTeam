@@ -202,7 +202,7 @@ namespace pitTeam.BigBrain.Actions
 
             if (followerData?.CanHandleBodyContainerLootCommands != true)
             {
-                reason = "TakeContainerLoot:notSquadMate";
+                reason = "TakeContainerLoot:spawnedTeammateAlive";
                 return false;
             }
 

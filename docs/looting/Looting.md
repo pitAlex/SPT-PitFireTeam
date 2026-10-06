@@ -112,7 +112,7 @@ Current behavior:
 - releases pickup animation/hand ownership before rebuilding a first-primary weapon's bot-manager state and requesting selection
 - stores the item through `StoreItem(...)` only when the follower is a spawned squadmate
 
-Current selection does not require spawned-teammate eligibility for loose item pickup. Body and container looting do.
+Loose-item pickup can use any eligible follower. Body/container looting is reserved for spawned teammates while any spawned teammate under the same boss is alive; recruits become eligible when none remain alive, including raids started without spawned teammates. Busy, distant or inactive living spawned teammates still block recruit assignment.
 
 ## Body Looting
 
@@ -124,8 +124,8 @@ Inputs:
 Current assignment:
 
 - requires `InteractableObjects.GetCurBodyLootTarget()`
-- only saved teammates spawned through the raid squad flow can be assigned; recruited/picked-up followers are ignored even if they are otherwise squad-managed
-- teammate corpses choose the eligible squadmate with the shortest complete NavMesh path
+- spawned teammates receive these orders while any spawned teammate is alive; when none remain alive, recruited/picked-up followers may be assigned
+- teammate corpses choose the eligible follower with the shortest complete NavMesh path
 - non-teammate corpses prefer the eligible loot carrier within a 22m complete NavMesh path that has free backpack/pocket grid area
 - when no follower in range has ordinary cargo room and weapon or gear acquisition is enabled by the matching pickup setting or request, assignment falls back to the reachable eligible follower with the shortest path so the real planner can still use an empty weapon slot or operational vest space
 - ownership is reserved through `InteractableObjects.SetBodyLootTaker(...)`
@@ -212,7 +212,7 @@ Current assignment:
 - an explicit player `Loot Container` order may revisit a container that a follower already completed
 - checked-container history is retained for autonomous `Go loot` selection, which skips completed containers
 - an active reservation still prevents two followers from searching the same container
-- only saved teammates spawned through the raid squad flow can be assigned; recruited/picked-up followers are ignored even if they are otherwise squad-managed
+- spawned teammates receive these orders while any spawned teammate is alive; when none remain alive, recruited/picked-up followers may be assigned
 - locked or inactive containers are ignored
 - prefers the eligible loot carrier within a 22m complete NavMesh path that has free backpack/pocket grid area
 - when no follower in range has ordinary cargo room and weapon or gear acquisition is enabled by the matching pickup setting or request, assignment falls back to the reachable eligible follower with the shortest path so the real planner can still use an empty weapon slot or operational vest space
@@ -310,7 +310,7 @@ This preserves tactical vest space for magazines and avoids destabilizing combat
 
 ## Tracking And Return Bookkeeping
 
-Successful squadmate cargo moves call `InteractableObjects.StoreItem(...)`.
+Successful squadmate cargo moves call `InteractableObjects.StoreItem(...)`. Recruit fallback permits searching and physical pickup without turning the recruit into a saved squadmate or enabling saved-squad loot-return tracking.
 
 Items transferred through `View Backpack` have a separate strict-cargo provenance:
 
@@ -395,7 +395,7 @@ General rules:
 - do not use the follower's tactical vest as cargo
 - operational magazine moves into the follower's tactical vest are allowed only as part of an accepted weapon equip or ammunition-maintenance plan
 - preserve tracked-loot and protected-gear bookkeeping on every successful move/drop
-- keep body/container command assignment squadmate-only
+- apply the shared spawned-teammate/recruit eligibility rule at assignment, reservation and execution
 
 ### Easy Weapon Equip
 
@@ -632,7 +632,7 @@ Body/container basics:
 
 Assignment:
 
-- body/container commands only assign saved teammates spawned through the raid squad flow
+- body/container commands exclude recruits while any spawned teammate is alive, then enable recruits after the last spawned death or in a recruit-only raid
 - non-teammate body/container assignment only picks followers with a complete NavMesh path of 22m or less
 - followers with active/pending loot commands are skipped so rapid commands split across followers
 - an assigned pickup/body/container looter is command-locked until cleanup; later boss commands skip that follower and select another eligible teammate

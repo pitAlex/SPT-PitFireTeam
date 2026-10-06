@@ -182,7 +182,7 @@ Commands influence teammate behavior but do not force exact actions. Teammates w
 - **Over There Gesture** - gesture-based contact/attention toward the pointed direction.
 - **Open Door** - the closest eligible teammate opens the targeted door.
 - **Loot This** - the closest eligible teammate picks up the targeted loot item.
-- **Check Him / Loot Body** - the closest eligible saved teammate checks the targeted body. Fallen teammates use the recovery rules, while other bodies use your Looting Settings.
+- **Check Him / Loot Body** - the closest eligible follower checks the targeted body. Spawned teammates handle these orders while any is alive; otherwise recruited followers may take them. Fallen teammates use the recovery rules, while other bodies use your Looting Settings.
 
 Saved teammates and recruited allies share the basic follower system once they are following you, but saved teammates have the full squad feature set. Saved teammates keep their customization, loadouts, tactics, aggression, progression, backpack access, and post-raid handling. Recruited allies are temporary raid pickups that use the default combat tactic with moderate aggression, rely on their current bot profile and gear, and have a simpler combat command set: they do not use **Need Sniper**, combat **There**, combat **Open Door**, or combat **Go Forward** push orders. If a recruited ally was told **Hold Position** in combat, **Go Forward** only clears that temporary aggression hold.
 
@@ -195,7 +195,7 @@ Looting is currently command-driven. Teammates do not wander away to loot on the
 **Giving an order:**
 
 - Look at a loose item and use **Loot This**. Any available follower can collect it if they can reach it and have somewhere suitable to put it.
-- Look at a body and use **Check Him / Loot Body**, or use the loot command while looking at a container. Body and container searches are handled only by saved teammates who spawned into the raid with you.
+- Look at a body and use **Check Him / Loot Body**, or use the loot command while looking at a container. Body and container searches go to spawned teammates while any remains alive. If you started with none, or all have died, recruited followers can take those orders.
 - With a living follower, a corpse also offers **CMD : Check Him**, **CMD: Loot & Get Weapon**, **CMD: Loot & Get Gear**, **CMD: Get Weapon**, and **CMD: Get Gear**. The two weapon actions appear only when the corpse has a gun. The `Loot &` actions prioritize that category and then continue normal looting; `Get` takes only that category for this request.
 - The closest available teammate by walking route, within roughly 22 meters, takes the job. A teammate who is fighting or already carrying out another loot order is skipped.
 - Different teammates can search different targets when you issue several orders quickly. A target already being handled cannot be assigned to a second teammate.

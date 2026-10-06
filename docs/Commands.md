@@ -464,7 +464,7 @@ Command state:
 Targeting:
 
 - Requires `InteractableObjects.GetCurBodyLootTarget()`.
-- Only saved teammates spawned through the raid squad flow can be assigned to body-loot commands; recruited/picked-up followers are ignored.
+- While any spawned teammate is alive, only spawned teammates can receive body-loot commands. If none remain alive, including raids started without spawned teammates, recruited/picked-up followers may receive them. Busy or distant living spawned teammates still block recruit assignment.
 - Chooses the active follower with the shortest complete NavMesh path for teammate corpses.
 - Chooses the active follower with the shortest complete NavMesh path of 22m or less for non-teammate corpses, ignoring followers with no free backpack/pocket grid space.
 - Ignores followers with enemies or active loot/pickup commands.
@@ -534,7 +534,7 @@ Targeting:
 - Direct `Loot Container` orders may revisit a container after a previous follower search completed.
 - Autonomous `Go loot` selection skips containers marked completed by a follower.
 - A live container reservation still blocks duplicate assignment while another follower is approaching or looting it.
-- Only saved teammates spawned through the raid squad flow can be assigned to container-loot commands; recruited/picked-up followers are ignored.
+- Container-loot commands follow the same roster rule as body-loot commands: spawned teammates only while any is alive; recruits are eligible once none remain alive.
 - Chooses the active follower with the shortest complete NavMesh path of 22m or less, ignoring followers with no free backpack/pocket grid space.
 - Ignores followers with enemies or active loot/pickup commands.
 - Reserves container ownership through `InteractableObjects.SetContainerLootTaker(...)`.

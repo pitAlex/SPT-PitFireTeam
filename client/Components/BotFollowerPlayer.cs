@@ -84,6 +84,23 @@ namespace pitTeam.Components
         {
             get
             {
+                if (IsSpawnedSquadMate)
+                {
+                    return true;
+                }
+
+                // Recruits take over body/container orders only after the boss has no living
+                // spawned teammate. Busy, distant or inactive living teammates still count.
+                return _player?.Followers != null && BossPlayers.Instance != null &&
+                       !_player.Followers.Any(bot => bot != null && !bot.IsDead &&
+                           BossPlayers.Instance.GetFollower(bot)?.IsSpawnedSquadMate == true);
+            }
+        }
+
+        internal bool IsSpawnedSquadMate
+        {
+            get
+            {
                 if (!_IsSquadMate)
                 {
                     return false;
@@ -92,9 +109,7 @@ namespace pitTeam.Components
                 string profileId = _bot?.ProfileId ?? _bot?.Profile?.ProfileId ?? _bot?.Profile?.Id ?? string.Empty;
                 string accountId = _bot?.Profile?.AccountId ?? string.Empty;
 
-                // Body/container looting is reserved for saved teammates that were generated
-                // through the raid squad flow. Recruited/picked-up allies can still be followers,
-                // but they should not satisfy these command assignments.
+                // Saved squad identity also covers teammates carried across a map transition.
                 return IsSpawnedSquadMemberId(profileId) ||
                        IsSpawnedSquadMemberId(accountId) ||
                        FollowerTransitStateCache.IsTransitSpawnProfile(profileId);
