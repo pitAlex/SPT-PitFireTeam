@@ -22,6 +22,17 @@ try {
         }
     }
     Write-Output 'Installed SAIN recruitment speech signatures verified.'
+    $nativeBot=$installedSain.MainModule.GetType('SAIN.Components.BotComponent')
+    $info=$nativeBot.Properties | Where-Object Name -eq 'Info'
+    $nativeInfo=$installedSain.MainModule.GetType($info.PropertyType.FullName)
+    $personality=$nativeInfo.Properties | Where-Object Name -eq 'Personality'
+    $personalityAssembly=[Mono.Cecil.AssemblyDefinition]::ReadAssembly((Join-Path $GameRoot ('BepInEx/plugins/SAIN/'+$personality.PropertyType.Scope.Name+'.dll')))
+    try {
+        $nativePersonality=$personalityAssembly.MainModule.GetType($personality.PropertyType.FullName)
+        foreach ($name in @('Coward','Rat','Normal','Chad','GigaChad','Wreckless','SnappingTurtle','Timmy')) {
+            if (!($nativePersonality.Fields | Where-Object {$_.Name -eq $name -and $_.HasConstant})) {throw "Missing native personality: $name"}
+        }
+    } finally {$personalityAssembly.Dispose()}
 }
 finally { $installedSain.Dispose() }
 $request = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Patches/BotGroupRequestPatch.cs')
@@ -30,6 +41,9 @@ if ($boundary -lt 0) { throw 'Missing recruitment class boundary' }
 $request = $request.Substring(0, $boundary) + '}'
 $bridge = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/SainGoalEnemyBridge.cs')
 $talk = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Patches/BotTalkPatch.cs')
+$sayGateStart = $talk.IndexOf('    internal class BotTalkSayPatch')
+if ($sayGateStart -lt 0) { throw 'Missing production immediate speech gate' }
+$sayGate = 'namespace pitTeam.Patches {' + $talk.Substring($sayGateStart)
 $talk = $talk.Substring(0, $talk.IndexOf('    public static class FollowerContactPhraseGate')) + '}'
 $sainSource = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Patches/SAINPatches.cs')
 $sainMethods = foreach ($name in @('BypassSainTalkPatchForFollower', 'UseVanillaTalkForFollower',
@@ -46,15 +60,44 @@ namespace pitTeam.Patches { internal static class SAINPatch {
 internal static PropertyInfo sainPlayerComponentPlayerProperty = typeof(NativeSpeechPlayer).GetProperty("Player");' +
     ($sainMethods -join "`n") + '}}'
 $fixture = Get-Content -Raw (Join-Path $PSScriptRoot 'RecruitmentCombatFixture.cs')
+$inputFixture = Get-Content -Raw (Join-Path $PSScriptRoot 'RecruitmentInputFixture.cs')
+foreach($boundary in @(
+    @{File='client/Patches/QuickPanelPatch.cs';Name='CanShowCooperation';Placeholder='__COOPERATION_AVAILABILITY__'},
+    @{File='client/Patches/GestureMenuPatch.cs';Name='AddCooperationToHelpGroup';Placeholder='__HELP_GROUP_METHOD__'})) {
+    $source=Get-Content -Raw (Join-Path $RepositoryRoot $boundary.File)
+    $method=[regex]::Match($source,'(?ms)^        internal static [^\r\n]*\b'+$boundary.Name+'\(.*?^        \}').Value
+    if(!$method){throw "Recruitment input boundary changed: $($boundary.Name)"}
+    $inputFixture=$inputFixture.Replace($boundary.Placeholder,$method)
+}
+$inputPatch=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Patches/BotRecruitPatch.cs')
+$followerSource = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Components/BotFollowerPlayer.cs')
+$captureMethods = foreach ($name in @('TryGetNativeSainPersonality','GetSainBot')) {
+    $methods=[regex]::Matches($followerSource,'(?ms)^        (?:internal|private) static [^\r\n]*\b'+$name+'\(.*?^        \}')
+    if ($methods.Count -ne 1) {throw "Native recruitment reader boundary changed: $name"}
+    $methods[0].Value
+}
+$fixture=$fixture.Replace('__NATIVE_PERSONALITY_CAPTURE__',($captureMethods -join "`n"))
+$bossSource = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/BossPlayers.cs')
+$constants = [regex]::Matches($bossSource,'(?m)^        private (?:const float|static readonly Random|static readonly object) Recruit[^\r\n]+;') | ForEach-Object Value
+$constants = @($constants | ForEach-Object {$_.Replace('readonly Random','readonly System.Random').Replace('new Random()','new System.Random()')})
+$create = [regex]::Match($bossSource,'(?ms)^        private static float CreateRecruitCombatAggression\(.*?^        \}').Value
+if ($constants.Count -ne 4 -or !$create) {throw 'Recruit aggression creation boundary changed'}
+$fixture += 'namespace pitTeam.Modules { public partial class BossPlayers {' + ($constants -join "`n") + $create + '}}'
+$fixture += Get-Content -Raw (Join-Path $PSScriptRoot 'RecruitmentPersonalityFixture.cs')
+$spawnSource = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Patches/BotsControllerPatch.cs')
+$spawnSide = [regex]::Match($spawnSource,'(?ms)^        internal static EPlayerSide ResolveFollowerSpawnSide\(.*?^        \}').Value
+if (!$spawnSide) {throw 'Saved follower faction boundary changed'}
+$fixture += 'namespace pitTeam.Patches { internal class BotsControllerPatch {' + $spawnSide + '}}'
+$mapping = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/RecruitCombatAggression.cs')
 $voiceFixture = Get-Content -Raw (Join-Path $PSScriptRoot 'RecruitmentSpeechFixture.cs')
-$imports = foreach ($source in @($request, $bridge, $talk, $sainHooks, $fixture, $voiceFixture)) {
+$imports = foreach ($source in @($request, $bridge, $talk, $sayGate, $sainHooks, $fixture, $voiceFixture,$inputFixture,$inputPatch)) {
     [regex]::Matches($source, '(?m)^using [^\r\n]+;') | ForEach-Object Value
 }
-$sources = foreach ($source in @($request, $bridge, $talk, $sainHooks, $fixture, $voiceFixture)) {
+$sources = foreach ($source in @($request, $bridge, $talk, $sayGate, $sainHooks, $fixture, $voiceFixture, $mapping,$inputFixture,$inputPatch)) {
     [regex]::Replace($source, '(?m)^using [^\r\n]+;\r?\n', '')
 }
 $code = '#nullable disable' + "`n#pragma warning disable CS8632`n" + (($imports | Select-Object -Unique) -join "`n") + "`n" + ($sources -join "`n")
-$code += "`npublic static class Entry { public static int Main() { try { RecruitmentSpeechChecks.Install(); Console.WriteLine(RecruitmentCombatChecks.Run() + "" recruitment combat checks passed.""); Console.WriteLine(RecruitmentSpeechChecks.Run() + "" recruitment speech checks passed with real Harmony.""); return 0; } catch (Exception e) { Console.Error.WriteLine(e); return 1; } } }"
+$code += "`npublic static class Entry { public static int Main() { try { RecruitmentSpeechChecks.Install(); Console.WriteLine(RecruitmentCombatChecks.Run() + "" recruitment combat checks passed.""); Console.WriteLine(RecruitmentSpeechChecks.Run() + "" recruitment speech checks passed with real Harmony.""); Console.WriteLine(RecruitmentPersonalityChecks.Run() + "" recruitment personality checks passed.""); Console.WriteLine(RecruitmentInputChecks.Run() + "" recruitment input checks passed.""); return 0; } catch (Exception e) { Console.Error.WriteLine(e); return 1; } } }"
 $framework = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319'
 $sdk = dotnet --list-sdks | Select-Object -Last 1
 if ($sdk -notmatch '^(\S+) \[(.+)\]$') { throw 'Cannot find SDK compiler' }

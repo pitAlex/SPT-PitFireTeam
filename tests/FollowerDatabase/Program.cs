@@ -22,14 +22,23 @@ internal static class Program
         if (args.Length == 3 && args[0] == "--convert-sqlite-snapshot")
             return TrialDatabaseConversion.Run(args[1], args[2]);
         if (args.Length != 2) throw new ArgumentException("Usage: <SPT runtime root> <legacy profile directory>, or --courier-smoke <SPT runtime root>");
+        bool modeOnly = args[0] == "--mode-smoke";
         bool courierOnly = args[0] == "--courier-smoke";
-        string runtime = Path.GetFullPath(courierOnly ? args[1] : args[0]);
+        string runtime = Path.GetFullPath((courierOnly || modeOnly) ? args[1] : args[0]);
         AssemblyLoadContext.Default.Resolving += (_, name) =>
         {
             string path = Path.Combine(runtime, name.Name + ".dll");
             return File.Exists(path) ? AssemblyLoadContext.Default.LoadFromAssemblyPath(path) : null;
         };
-        return courierOnly ? RunCourier() : Run(Path.GetFullPath(args[1]));
+        return modeOnly ? RunModes() : courierOnly ? RunCourier() : Run(Path.GetFullPath(args[1]));
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static int RunModes()
+    {
+        ModeStorageTests.Run(Check).GetAwaiter().GetResult();
+        Console.WriteLine($"PASS: {checks} gameplay storage checks.");
+        return 0;
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
@@ -174,7 +183,7 @@ internal static class Program
         Directory.CreateDirectory(Path.Combine(importedDirectory, "recovery"));
         File.WriteAllText(Path.Combine(importedDirectory, "recovery", "note.txt"), "keep this backup");
         Environment.CurrentDirectory = sandbox;
-        var storage = new FriendlyTeammateStorage(new FileUtil(), jsonUtil, logger);
+        var storage = new FriendlyTeammateStorage(new FileUtil(), jsonUtil, logger, ModeStorageTests.CreateSettings());
         storage.InitializeAllProfiles([session]);
         Check(!Directory.Exists(importedDirectory) && Directory.Exists(backupDirectory),
             "successful import renames the original folder to .backup");
@@ -196,7 +205,7 @@ internal static class Program
         }
         var pending = storage.Read<List<FriendlyRecruitRequestEntry>>(session, "recruit-requests.json") ?? [];
         storage.Write(session, "recruit-requests.json", pending);
-        storage = new FriendlyTeammateStorage(new FileUtil(), jsonUtil, logger);
+        storage = new FriendlyTeammateStorage(new FileUtil(), jsonUtil, logger, ModeStorageTests.CreateSettings());
         foreach (var teammate in storage.ReadProfiles(session))
             Check(storage.Read<FriendlyTeammateSettings>(session, $"{teammate.Aid}-settings.json")!.Aggression == 17f, "old JSON did not overwrite edited setting");
         Check(storage.GetAllAccountIds().SetEquals(profiles.Select(profile => profile.Aid!.Value)), "account allocation scans databases");
@@ -206,7 +215,7 @@ internal static class Program
         Check(Path.GetFullPath(backupDirectory).StartsWith(work + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
             && Path.GetFullPath(movedDirectory).StartsWith(work + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase), "test move contained");
         Directory.Move(backupDirectory, movedDirectory);
-        storage = new FriendlyTeammateStorage(new FileUtil(), jsonUtil, logger);
+        storage = new FriendlyTeammateStorage(new FileUtil(), jsonUtil, logger, ModeStorageTests.CreateSettings());
         Check(storage.ReadProfiles(session).Count == profiles.Count, "roster works without JSON folder");
         foreach (var teammate in profiles)
             Check(storage.Read<FriendlyTeammateSettings>(session, $"{teammate.Aid}-settings.json")!.Aggression == 17f, "settings work without JSON folder");
@@ -225,7 +234,7 @@ internal static class Program
         int deletedAid = profiles[0].Aid!.Value;
         Check(storage.DeleteTeammate(session, deletedAid), "delete migrated teammate");
         Directory.Move(movedDirectory, importedDirectory);
-        storage = new FriendlyTeammateStorage(new FileUtil(), jsonUtil, logger);
+        storage = new FriendlyTeammateStorage(new FileUtil(), jsonUtil, logger, ModeStorageTests.CreateSettings());
         Check(storage.ReadProfiles(session).All(profile => profile.Aid != deletedAid), "restored JSON cannot resurrect deleted teammate");
         Check(storage.ReadProfiles(session).Any(profile => profile.Aid == 987654), "new teammate retained with restored JSON");
         Check(!Directory.Exists(importedDirectory) && Directory.Exists(backupDirectory),
@@ -271,13 +280,13 @@ internal static class Program
             && Path.GetFullPath(savedCollisionBackup).StartsWith(work + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase),
             "test backup collision move contained");
         File.Move(collisionBackup, savedCollisionBackup);
-        storage = new FriendlyTeammateStorage(new FileUtil(), jsonUtil, logger);
+        storage = new FriendlyTeammateStorage(new FileUtil(), jsonUtil, logger, ModeStorageTests.CreateSettings());
         storage.InitializeProfile(new MongoId(collisionId));
         Check(!Directory.Exists(collisionDirectory) && Directory.Exists(collisionBackup),
             "next startup retries backup rename after its destination becomes available");
         Directory.CreateDirectory(collisionDirectory);
         File.WriteAllText(Path.Combine(collisionDirectory, "keep.txt"), "restored folder");
-        storage = new FriendlyTeammateStorage(new FileUtil(), jsonUtil, logger);
+        storage = new FriendlyTeammateStorage(new FileUtil(), jsonUtil, logger, ModeStorageTests.CreateSettings());
         storage.InitializeProfile(new MongoId(collisionId));
         Check(File.ReadAllText(Path.Combine(collisionDirectory, "keep.txt")) == "restored folder"
             && File.Exists(Path.Combine(collisionBackup, $"{profiles[0].Aid}.json")),

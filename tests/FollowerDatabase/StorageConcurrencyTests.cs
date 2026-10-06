@@ -20,6 +20,7 @@ internal static class StorageConcurrencyTests
         {
             var services = new ServiceCollection();
             services.AddSingleton(new FileUtil());
+            services.AddSingleton(ModeStorageTests.CreateSettings());
             services.AddSingleton(new JsonUtil([new SptJsonConverterRegistrator()]));
             services.AddSingleton(DispatchProxy.Create<ISptLogger<FriendlyTeammateStorage>, TestLogger>());
             // Use SPT's actual registration path, including the production Injectable lifetime.

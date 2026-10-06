@@ -186,7 +186,7 @@ namespace pitTeam.Modules
                 member = info,
             }.ToJson(_defaultJsonConverters);
 
-            Task.Run(() =>
+            GameplayModeRuntime.RunRosterRequest(() =>
             {
                 try
                 {

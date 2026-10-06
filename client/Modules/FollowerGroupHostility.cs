@@ -68,6 +68,13 @@ namespace pitTeam.Modules
             ShareHostility(group, boss, EBotEnemyCause.addPlayer);
         }
 
+        internal static void OnBossDamage(pitAIBossPlayer boss, IPlayer attacker)
+        {
+            if (boss?.realPlayer == null || attacker?.IsAI != true || FindBoss(attacker) != null ||
+                IsProtected(attacker.Profile.Info.Settings.Role)) return;
+            ShareHostility(attacker.AIData?.BotOwner?.BotsGroup, boss, EBotEnemyCause.followGetHit);
+        }
+
         internal static void OnDamage(BotOwner victim, IPlayer attacker)
         {
             if (victim?.GetPlayer == null || attacker == null) return;
@@ -88,6 +95,7 @@ namespace pitTeam.Modules
         {
             if (sharing || group == null || group is BotsGroupPlayer || boss?.realPlayer == null ||
                 group == boss.bossGroup || group.MembersCount == 0 || IsProtected(group.InitialBotType)) return;
+            AllegiancePmcFriendship.RevokeGroup(group, cause);
             sharing = true;
             try
             {

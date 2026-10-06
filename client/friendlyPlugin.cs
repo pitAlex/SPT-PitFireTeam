@@ -396,7 +396,7 @@ namespace pitTeam
 #endif
 
             // recruit/request patches
-            new BotReceiverFollowMeRecruitPatch().Enable();
+            new BotReceiverRecruitPatch().Enable();
             new FollowRequestPatch().Enable();
             new HoldRequestPatch().Enable();
             new OpenDoorRequestPatch().Enable();
@@ -1244,6 +1244,7 @@ namespace pitTeam
             battleRecorderSnapshotIntervalMs = Config.Bind("Miscellaneous", "28 BattleRecorderSnapshotIntervalMs", 200, new ConfigDescription(optionsLang.battleRecorderSnapshotIntervalMs["Description"], new AcceptableValueRange<int>(50, 1000), CreateConfigAttributes(-9999, showBattleRecorderSettings, optionsLang.battleRecorderSnapshotIntervalMs)));
 
 
+            GameplayModeRuntime.Initialize(Config);
             Config.SaveOnConfigSet = true;
             Config.Save();
             SyncServerSettings();
@@ -1285,35 +1286,11 @@ namespace pitTeam
             _ = SyncServerSettingsAsync();
         }
 
-        private static Task SyncServerSettingsAsync()
+        private static async Task SyncServerSettingsAsync()
         {
-            try
-            {
-                string requestBody = JsonConvert.SerializeObject(new
-                {
-                    pmcArmbands = pmcArmbands?.Value ?? true,
-                    loadoutManagementMode = (loadoutManagementMode?.Value ?? DefaultLoadoutManagementMode).ToString(),
-                    restrictedGearMaintenance = restrictedGearMaintenance?.Value ?? false
-                });
-                return Task.Run(() =>
-                {
-                    try
-                    {
-                        RequestHandler.PostJson("/singleplayer/pitfireteam/settings", requestBody);
-                    }
-                    catch (Exception ex)
-                    {
-                        Modules.Logger.LogInfo($"Failed to sync pitFireTeam server settings: {ex.Message}");
-                    }
-                });
-            }
-            catch (Exception ex)
-            {
-                Modules.Logger.LogInfo($"Failed to sync pitFireTeam server settings: {ex.Message}");
-                return Task.CompletedTask;
-            }
+            try { await GameplayModeRuntime.SynchronizeAsync(); }
+            catch (Exception ex) { Modules.Logger.LogInfo($"Failed to sync pitFireTeam server settings: {ex.Message}"); }
         }
-
         private static ConfigurationManagerAttributes CreateConfigAttributes(int order, bool browsable, Dictionary<string, string> languageEntry)
         {
             string displayName = null;
@@ -1410,6 +1387,7 @@ namespace pitTeam
 
         private void _BotHeal()
         {
+            if (GameplayModeRuntime.IsAllegiance) return;
             Modules.Logger.LogInfo("Followers fix heal");
 
             if (GamePlayerOwner.MyPlayer.HealthController == null || !GamePlayerOwner.MyPlayer.HealthController.IsAlive)

@@ -5305,6 +5305,8 @@ namespace pitTeam.Components
             {
                 _lastTimeHit = Time.time;
                 BotOwner enemyBot = arg1.Player.AIData.BotOwner;
+                if (arg1.Damage > 0f)
+                    FollowerGroupHostility.OnBossDamage(_aiplayer, enemyBot.GetPlayer);
                 _aiplayer.MarkPlayerEngagement(enemyBot.GetPlayer as Player, "bossHit");
 
                 foreach (BotOwner follower in _aiplayer.Followers)

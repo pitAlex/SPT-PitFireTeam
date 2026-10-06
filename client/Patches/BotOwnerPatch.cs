@@ -235,7 +235,8 @@ namespace pitTeam.Patches
                     }
                 });
             }),
-            new Action<BotOwner>(FactionHostility.Apply)
+            new Action<BotOwner>(FactionHostility.Apply),
+            new Action<BotOwner>(AllegiancePmcFriendship.Apply)
         };
         protected override MethodBase GetTargetMethod()
         {

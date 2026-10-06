@@ -193,7 +193,17 @@ namespace pitTeam.Patches
 
             }
 
+            AddCooperationToHelpGroup(localizationKey, ref phrases);
             return true;
+        }
+
+        internal static void AddCooperationToHelpGroup(string localizationKey, ref EPhraseTrigger[] phrases)
+        {
+            if (localizationKey != "HELP" || phrases == null || Array.IndexOf(phrases, EPhraseTrigger.Cooperation) >= 0) return;
+            var expanded = new EPhraseTrigger[phrases.Length + 1];
+            Array.Copy(phrases, expanded, phrases.Length);
+            expanded[phrases.Length] = EPhraseTrigger.Cooperation;
+            phrases = expanded;
         }
     }
 

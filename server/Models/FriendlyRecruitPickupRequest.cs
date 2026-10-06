@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using SPTarkov.Server.Core.Constants;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Dialog;
 using SPTarkov.Server.Core.Models.Enums;
@@ -37,6 +38,16 @@ public record FriendlyRecruitPickupCandidate
 
     [JsonPropertyName("ProfileJson")]
     public string ProfileJson { get; set; } = string.Empty;
+
+    [JsonPropertyName("Aggression")]
+    public float? Aggression { get; set; }
+
+    public float GetSavedAggression() => Aggression is float value && float.IsFinite(value)
+        ? Math.Clamp(value, 0f, 100f) : 50f;
+
+    public string? GetSavedSide(string? fallbackSide) =>
+        string.Equals(Side, Sides.Bear, StringComparison.OrdinalIgnoreCase) ? Sides.Bear :
+        string.Equals(Side, Sides.Usec, StringComparison.OrdinalIgnoreCase) ? Sides.Usec : fallbackSide;
 }
 
 public record FriendlyRecruitRequestEntry : FriendlyRecruitPickupCandidate

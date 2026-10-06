@@ -16,6 +16,7 @@ public class FriendlyTeammateCallbacks(
     HttpResponseUtil httpResponse,
     FriendlyTeammateService teammateService,
     FriendlyServerSettingsService settingsService,
+    FriendlyTeammateStorage storage,
     FriendlyTeammateInsuranceService teammateInsuranceService,
     JsonUtil jsonUtil,
     ISptLogger<FriendlyTeammateCallbacks> logger
@@ -101,24 +102,42 @@ public class FriendlyTeammateCallbacks(
         return new ValueTask<string>(httpResponse.GetBody(teammateService.GetAutoJoinTeammateAccountIds(sessionId)));
     }
 
+    public ValueTask<string> GetGameplayMode(string url, EmptyRequestData request, MongoId sessionId)
+        => new(httpResponse.GetBody(new { gameplayMode = settingsService.LoadSettings().GameplayMode }));
+
     public ValueTask<string> SetServerSettings(string url, FriendlyServerSettingsRequest request, MongoId sessionId)
     {
-        string previousMode =
-            settingsService.LoadSettings().LoadoutManagementMode ??
-            FriendlyServerSettingsRequest.DefaultLoadoutManagementMode;
-        settingsService.SaveAndApply(request);
-        string nextMode =
-            request?.LoadoutManagementMode ??
-            FriendlyServerSettingsRequest.DefaultLoadoutManagementMode;
-        if (!string.Equals(previousMode, nextMode, StringComparison.OrdinalIgnoreCase))
+        try
         {
-            teammateService.LogLoadoutManagementModeChange(sessionId, previousMode, nextMode);
-            teammateService.ApplyLoadoutManagementModeChange(sessionId, previousMode, nextMode);
+            if (request.GameplayMode is not ("GunsForHire" or "Allegiance"))
+                throw new FriendlyTeammateException("GameplayModeSwitchFailed");
+            var previous = settingsService.LoadSettings();
+            bool changingMode = previous.GameplayMode != request.GameplayMode;
+            if (changingMode && FriendlyModeRequestGate.HasActiveRaid)
+                throw new FriendlyTeammateException("SettingsUnavailableDuringRaid");
+            if (changingMode)
+            {
+                teammateService.RecoverTeammateCreation(sessionId);
+                teammateService.RecoverTeammateDeletion(sessionId);
+                storage.PrepareMode(sessionId, request.IsAllegiance);
+            }
+              settingsService.SaveAndApply(request);
+              if (changingMode) FriendlyModeRequestGate.ModeChanged();
+            // A gameplay switch selects a different roster, not a loadout conversion of either roster.
+            if (!changingMode && previous.LoadoutManagementMode != request.LoadoutManagementMode)
+            {
+                teammateService.LogLoadoutManagementModeChange(sessionId, previous.LoadoutManagementMode, request.LoadoutManagementMode);
+                teammateService.ApplyLoadoutManagementModeChange(sessionId, previous.LoadoutManagementMode, request.LoadoutManagementMode);
+            }
+            return new(httpResponse.NullResponse());
         }
-
-        return new ValueTask<string>(httpResponse.NullResponse());
+        catch (Exception ex)
+        {
+            logger.Error($"Gameplay/settings update failed: {ex}");
+            return new(httpResponse.GetBody<object?>(null, err: BackendErrorCodes.UnknownTradingError,
+                errmsg: ex is FriendlyTeammateException ? ex.Message : "GameplayModeSwitchFailed"));
+        }
     }
-
     public ValueTask<string> GetLostOnDeathSettings(string url, EmptyRequestData _, MongoId sessionId)
     {
         return new ValueTask<string>(httpResponse.GetBody(settingsService.GetLostOnDeathSettings()));

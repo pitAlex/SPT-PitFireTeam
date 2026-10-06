@@ -33,13 +33,16 @@ public class FriendlyServerSettingsService(
             }
 
             string json = File.ReadAllText(path);
-            return JsonSerializer.Deserialize<FriendlyServerSettingsRequest>(json, JsonOptions)
-                ?? new FriendlyServerSettingsRequest();
+            var settings = JsonSerializer.Deserialize<FriendlyServerSettingsRequest>(json, JsonOptions)
+                ?? throw new InvalidDataException("Empty gameplay settings.");
+            if (settings.GameplayMode is not ("GunsForHire" or "Allegiance"))
+                throw new InvalidDataException("Invalid gameplay mode.");
+            return settings;
         }
         catch (Exception ex)
         {
             logger.Warning($"Failed to load pitFireTeam server settings: {ex.Message}");
-            return new FriendlyServerSettingsRequest();
+            throw;
         }
     }
 
@@ -184,11 +187,14 @@ public class FriendlyServerSettingsService(
         {
             string path = GetSettingsPath();
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllText(path, JsonSerializer.Serialize(settings, JsonOptions));
+            string temporary = path + ".tmp";
+            File.WriteAllText(temporary, JsonSerializer.Serialize(settings, JsonOptions));
+            File.Move(temporary, path, true);
         }
         catch (Exception ex)
         {
             logger.Warning($"Failed to save pitFireTeam server settings: {ex.Message}");
+            throw;
         }
     }
 

@@ -85,7 +85,7 @@ namespace pitTeam.Patches
             return body.ToJson(GetDefaultJsonConverters());
         }
 
-        private static JsonConverter[] GetDefaultJsonConverters()
+        internal static JsonConverter[] GetDefaultJsonConverters()
         {
             Type converterClass = typeof(AbstractGame).Assembly
                 .GetTypes()

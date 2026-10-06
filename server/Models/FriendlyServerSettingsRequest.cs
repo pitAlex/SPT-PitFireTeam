@@ -7,6 +7,12 @@ public record FriendlyServerSettingsRequest : IRequestData
 {
     public const string DefaultLoadoutManagementMode = "Restricted";
 
+    [JsonPropertyName("gameplayMode")]
+    public string GameplayMode { get; set; } = "GunsForHire";
+
+    [JsonIgnore]
+    public bool IsAllegiance => GameplayMode == "Allegiance";
+
     [JsonPropertyName("pmcArmbands")]
     public bool PmcArmbands { get; set; } = true;
 
@@ -15,7 +21,7 @@ public record FriendlyServerSettingsRequest : IRequestData
     [JsonPropertyName("loadoutManagementMode")]
     public string LoadoutManagementMode
     {
-        get => loadoutManagementMode;
+        get => IsAllegiance ? "Immersive" : loadoutManagementMode;
         set => loadoutManagementMode = NormalizeLoadoutManagementMode(value);
     }
 

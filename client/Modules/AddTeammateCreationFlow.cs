@@ -60,6 +60,11 @@ namespace pitTeam.Modules
 
         public static void Start(Action onReturn = null)
         {
+            if (GameplayModeRuntime.IsAllegiance || GameplayModeRuntime.IsSwitching)
+            {
+                ShowToast(GetLocalizedSocialUi("SettingsUnavailableInAllegiance"));
+                return;
+            }
             if (activeController != null)
             {
                 ShowToast(GetLocalizedSocialUi("AddTeammateFlowActive"));

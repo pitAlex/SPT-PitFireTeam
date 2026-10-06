@@ -4,7 +4,9 @@ Current policy (2026-09-09): import once and retain the original JSON folder wit
 
 ## Location and lifecycle
 
-Each player profile owns `Resources/teammates/<profileId>.db` in the server mod directory.
+Each player profile owns `Resources/teammates/<profileId>.db` for Guns for Hire and `Resources/teammates-allegiance/<profileId>.db` for Allegiance in the server mod directory. Database caches include the mode root. Allegiance starts empty and never imports the Guns for Hire legacy files. All teammate documents, including equipment, settings, and recruitment requests, follow the active database. Account-id allocation checks both roots to keep identities distinct. Mode changes and teammate route operations share a request gate so an operation cannot cross database roots while it runs.
+
+Captured recruits preserve their BEAR/USEC side. If a captured profile is missing or its side is absent, recruitment uses the invitation's validated side before falling back to the player's side. Allegiance raid spawns retain the saved PMC faction; follower loyalty and group relations use the human leader independently of that faction.
 For example, `Resources/teammates/6a875d350ecfc1eccbd6fad0.db` replaces the active use of
 the adjacent `6a875d350ecfc1eccbd6fad0/` folder.
 
@@ -38,6 +40,8 @@ The normal startup log reports only that the database is ready; it does not anno
 status or repeat an import count on every launch.
 
 ## Representation and protection
+
+Recruit invitations carry nullable `Aggression` captured from the follower's base combat aggression after native SAIN personality mapping. Acceptance writes it into the teammate settings in the existing profile/default-equipment/receipt transaction. It remains stable through invitation storage, acceptance and roster reload; temporary raid command overrides are never saved here. Missing legacy values and non-finite values use 50%, and finite values are clamped to 0–100%.
 
 The LiteDB documents collection holds encrypted JSON payloads, retaining the existing SPT models and
 client API. AES-GCM authenticates each payload against its profile ID and document key, with a

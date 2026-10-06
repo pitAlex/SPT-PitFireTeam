@@ -13,11 +13,14 @@ namespace pitTeam.Server.Services;
 /// <summary>All follower persistence goes through here; loose JSON is read only by the one-time importer.</summary>
 // All routes must share the per-profile database cache and its operation locks.
 [Injectable(InjectionType.Singleton)]
-public class FriendlyTeammateStorage(FileUtil fileUtil, JsonUtil jsonUtil, ISptLogger<FriendlyTeammateStorage> logger)
+public class FriendlyTeammateStorage(FileUtil fileUtil, JsonUtil jsonUtil, ISptLogger<FriendlyTeammateStorage> logger, FriendlyServerSettingsService settingsService)
 {
     private readonly object sync = new();
     private readonly Dictionary<string, TeammateDatabase> databases = new(StringComparer.Ordinal);
-    private string RootDirectory => Path.Combine(fileUtil.GetModPath("pitFireTeam-ServerMod"), "Resources", "teammates");
+    private string GetRoot(bool allegiance) => Path.Combine(fileUtil.GetModPath("pitFireTeam-ServerMod"), "Resources", allegiance ? "teammates-allegiance" : "teammates");
+    private string RootDirectory => GetRoot(settingsService.LoadSettings().IsAllegiance);
+
+    public void PrepareMode(MongoId sessionId, bool allegiance) => GetDatabase(sessionId, allegiance);
 
     public void InitializeAllProfiles(IEnumerable<MongoId> profileIds)
     {
@@ -44,10 +47,12 @@ public class FriendlyTeammateStorage(FileUtil fileUtil, JsonUtil jsonUtil, ISptL
     public HashSet<int> GetAllAccountIds()
     {
         var result = new HashSet<int>();
-        foreach (string profileId in GetStoredProfileIds())
+        foreach (bool allegiance in new[] { false, true })
+        foreach (string profileId in GetStoredProfileIds(GetRoot(allegiance)))
         {
-            foreach (var teammate in ReadProfiles(new MongoId(profileId)))
+            foreach (var entry in GetDatabase(new MongoId(profileId), allegiance).ReadProfiles())
             {
+                var teammate = Deserialize<BotBase>(entry.Value, entry.Key);
                 if (teammate.Aid is > 0) result.Add(teammate.Aid.Value);
             }
         }
@@ -74,18 +79,22 @@ public class FriendlyTeammateStorage(FileUtil fileUtil, JsonUtil jsonUtil, ISptL
     public bool DeleteTeammate(MongoId sessionId, int aid, IReadOnlyDictionary<string, string>? receipt = null) =>
         GetDatabase(sessionId).DeleteTeammate(aid, receipt);
 
-    private TeammateDatabase GetDatabase(MongoId sessionId)
+    private TeammateDatabase GetDatabase(MongoId sessionId) => GetDatabase(sessionId, settingsService.LoadSettings().IsAllegiance);
+
+    private TeammateDatabase GetDatabase(MongoId sessionId, bool allegiance)
     {
         string profileId = sessionId.ToString();
+        string root = GetRoot(allegiance);
+        string cacheKey = root + "/" + profileId;
         lock (sync)
         {
-            if (databases.TryGetValue(profileId, out var existing)) return existing;
-            var database = new TeammateDatabase(RootDirectory, profileId);
+            if (databases.TryGetValue(cacheKey, out var existing)) return existing;
+            var database = new TeammateDatabase(root, profileId);
             try
             {
-                database.Initialize(() => LoadLegacyDocuments(profileId));
-                databases.Add(profileId, database);
-                TryBackupImportedDirectory(database);
+                database.Initialize(() => allegiance ? new Dictionary<string, string>() : LoadLegacyDocuments(profileId));
+                databases.Add(cacheKey, database);
+                if (!allegiance) TryBackupImportedDirectory(database);
                 logger.Info($"Teammate database ready: '{database.DatabasePath}'.");
                 return database;
             }
@@ -120,18 +129,20 @@ public class FriendlyTeammateStorage(FileUtil fileUtil, JsonUtil jsonUtil, ISptL
         }
     }
 
-    private IEnumerable<string> GetStoredProfileIds()
+    private IEnumerable<string> GetStoredProfileIds() => GetStoredProfileIds(RootDirectory);
+
+    private IEnumerable<string> GetStoredProfileIds(string root)
     {
-        if (!Directory.Exists(RootDirectory)) return [];
-        return Directory.GetDirectories(RootDirectory).Select(Path.GetFileName)
-            .Concat(Directory.GetFiles(RootDirectory, "*.db").Select(Path.GetFileNameWithoutExtension))
+        if (!Directory.Exists(root)) return [];
+        return Directory.GetDirectories(root).Select(Path.GetFileName)
+            .Concat(Directory.GetFiles(root, "*.db").Select(Path.GetFileNameWithoutExtension))
             .Where(name => name != null && TeammateDatabase.IsProfileId(name))
             .Select(name => name!).Distinct().ToArray();
     }
 
     private IReadOnlyDictionary<string, string> LoadLegacyDocuments(string profileId)
     {
-        string directory = Path.Combine(RootDirectory, profileId);
+        string directory = Path.Combine(GetRoot(false), profileId);
         var documents = new Dictionary<string, string>(StringComparer.Ordinal);
         if (!Directory.Exists(directory)) return documents;
         foreach (string file in Directory.GetFiles(directory).Order(StringComparer.Ordinal))

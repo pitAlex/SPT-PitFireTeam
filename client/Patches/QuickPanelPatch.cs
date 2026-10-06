@@ -141,8 +141,7 @@ namespace pitTeam.Patches
 
                     if (player.InteractablePlayer != null && player.InteractablePlayer.IsAI && player.InteractablePlayer.HealthController.IsAlive)
                     {
-                        BotOwner targetBot = player.InteractablePlayer.AIData?.BotOwner;
-                        if (targetBot == null || BossPlayers.IsFollower(targetBot) || player.InteractablePlayer.Side != player.Side)
+                        if (!CanShowCooperation(player))
                         {
                             __instance.SetPhraseActive(EPhraseTrigger.Cooperation, false);
 
@@ -168,6 +167,16 @@ namespace pitTeam.Patches
             }
 
             return true;
+        }
+
+        internal static bool CanShowCooperation(Player player)
+        {
+            var target = player?.InteractablePlayer;
+            var bot = target?.AIData?.BotOwner;
+            return pitFireTeam.pickupEnabled.Value && target?.IsAI == true &&
+                target.HealthController?.IsAlive == true && bot != null &&
+                !BossPlayers.IsFollower(bot) && FollowRequestPatch.IsRecruitmentSideAllowed(player, bot) &&
+                AllegiancePmcFriendship.CanRecruit(bot, player);
         }
 
         private static void EnsureViewBackpackQuickCommand(GesturesQuickPanel panel)

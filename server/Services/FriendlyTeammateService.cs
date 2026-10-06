@@ -203,7 +203,7 @@ public partial class FriendlyTeammateService(
     {
         RecoverDuplicateTeammateItemsForSession(sessionId);
 
-        string key = sessionId.ToString();
+        string key = settingsService.LoadSettings().GameplayMode + "/" + sessionId;
         if (!startupRecoveryNotices.TryGetValue(key, out var notice))
         {
             return new FriendlyTeammateStartupRecoveryNotice();
@@ -215,7 +215,7 @@ public partial class FriendlyTeammateService(
 
     public void AcknowledgeStartupRecoveryNotice(MongoId sessionId)
     {
-        string key = sessionId.ToString();
+        string key = settingsService.LoadSettings().GameplayMode + "/" + sessionId;
         startupRecoveryNotices.Remove(key);
     }
 
@@ -286,6 +286,7 @@ public partial class FriendlyTeammateService(
         var voice = NormalizeRequiredValue(candidate.Voice, "voice");
         var head = NormalizeRequiredValue(candidate.Head, "head");
         var targetLevel = Math.Max(1, candidate.Level);
+        string? recruitSide = candidate.GetSavedSide(playerPmc.Info?.Side);
 
         bool usedCapturedProfile = TryDeserializeRecruitProfile(candidate, out var teammate);
         if (!usedCapturedProfile)
@@ -295,10 +296,10 @@ public partial class FriendlyTeammateService(
                 new BotGenerationDetails
                 {
                     IsPmc = true,
-                    Side = playerPmc.Info!.Side!,
-                    Role = GetPmcRole(playerPmc.Info.Side),
+                    Side = recruitSide!,
+                    Role = GetPmcRole(recruitSide),
                     PlayerLevel = targetLevel,
-                    PlayerName = playerPmc.Info.Nickname,
+                    PlayerName = playerPmc.Info!.Nickname,
                     BotRelativeLevelDeltaMax = 0,
                     BotRelativeLevelDeltaMin = 0,
                     BotCountToGenerate = 1,
@@ -330,6 +331,7 @@ public partial class FriendlyTeammateService(
         else
         {
             NormalizeTeammateProfile(teammate, playerPmc);
+            teammate.Info!.Side = recruitSide;
         }
 
         // Roster ordering uses registration time; a captured bot's original date
@@ -338,6 +340,7 @@ public partial class FriendlyTeammateService(
         NormalizeTeammateSkillsForCreation(teammate, playerPmc);
         InitializeRecruitRaidStats(teammate, targetLevel, GetRecruitStatsSeed(candidate));
         var recruitSettings = CreateDefaultTeammateSettings(teammate.Customization);
+        recruitSettings.Aggression = candidate.GetSavedAggression();
         recruitSettings.RecruitmentGearPrice = candidate is FriendlyRecruitRequestEntry entry
             && entry.RecruitmentGearPrice.HasValue
                 ? entry.RecruitmentGearPrice.Value : CalculateRecruitmentGearPrice(teammate);
@@ -441,7 +444,7 @@ public partial class FriendlyTeammateService(
             teammate.Id = new MongoId(candidate.ProfileId);
         }
 
-        teammate.Info.Side ??= playerPmc.Info?.Side;
+        teammate.Info.Side ??= candidate.GetSavedSide(playerPmc.Info?.Side);
         teammate.Info.LowerNickname = teammate.Info.Nickname?.ToLowerInvariant();
         teammate.Info.MemberCategory = MemberCategory.Unheard;
         teammate.Info.SelectedMemberCategory = MemberCategory.Unheard;
@@ -3851,7 +3854,7 @@ public partial class FriendlyTeammateService(
 
     private void RecoverDuplicateTeammateItemsForSession(MongoId sessionId)
     {
-        string sessionKey = sessionId.ToString();
+        string sessionKey = settingsService.LoadSettings().GameplayMode + "/" + sessionId;
         if (duplicateRecoveryCheckedSessions.Contains(sessionKey))
         {
             return;

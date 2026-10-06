@@ -10,7 +10,7 @@ This is the source map for pitFireTeam's main plugin. Detailed behavior belongs 
 | Player commands and follower state | [AIBossPlayer](../client/Components/AIBossPlayer.cs), [BotFollowerPlayer](../client/Components/BotFollowerPlayer.cs), [BossPlayers](../client/Modules/BossPlayers.cs) |
 | Peaceful follow and requests | [FollowerPatrolLayer](../client/BigBrain/FollowerPatrolLayer.cs), [FollowerRequestLayer](../client/BigBrain/FollowerRequestLayer.cs), [FollowAction](../client/BigBrain/Actions/FollowAction.cs), [GestureCommandAction](../client/BigBrain/Actions/GestureCommandAction.cs) |
 | Core combat | [FollowerCombatLayer](../client/BigBrain/FollowerCombatLayer.cs), [FollowerCombatLogicBase](../client/BigBrain/FollowerCombatLogicBase.cs), [FollowerCombatCommon](../client/BigBrain/FollowerCombatCommon.cs) |
-| Recruitment and group conversion | [BotGroupRequestPatch](../client/Patches/BotGroupRequestPatch.cs), [BossPlayers](../client/Modules/BossPlayers.cs) |
+| Recruitment and group conversion | [BotGroupRequestPatch](../client/Patches/BotGroupRequestPatch.cs), [BossPlayers](../client/Modules/BossPlayers.cs), [Allegiance solo friendship](../client/Modules/AllegiancePmcFriendship.cs) |
 | Acquisition and reaction | [FollowerCalcGoalEnemyAcquire](../client/Modules/FollowerCalcGoalEnemyAcquire.cs), [FollowerAwareness](../client/Utils/FollowerAwareness.cs), [Enemy](../client/Utils/Enemy.cs) |
 | UI and status | [SquadControlMenuUi](../client/Components/SquadControlMenuUi.cs), [PingTeamates](../client/Utils/PingTeamates.cs), [My Squad](My-Squad-Screen.md) |
 | Optional external-SAIN compatibility | [SAINPatches](../client/Patches/SAINPatches.cs), [compatibility contract](SAIN-Compatibility.md) |

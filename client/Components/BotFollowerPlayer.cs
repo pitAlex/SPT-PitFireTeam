@@ -3313,6 +3313,27 @@ namespace pitTeam.Components
             }
         }
 
+        internal static bool TryGetNativeSainPersonality(BotOwner owner, out string personality)
+        {
+            personality = null;
+            if (owner == null || !pitFireTeam.IsSAINInstalled) return false;
+            try
+            {
+                object native = GetSainBot(owner);
+                if (native == null) return false;
+                object info = AccessTools.Property(native.GetType(), "Info")?.GetValue(native);
+                object value = info == null ? null : AccessTools.Property(info.GetType(), "Personality")?.GetValue(info);
+                if (value == null || !value.GetType().IsEnum) return false;
+                personality = value.ToString();
+                return !string.IsNullOrEmpty(personality);
+            }
+            catch (Exception ex)
+            {
+                Modules.Logger.LogError($"[SAIN] Could not capture recruit personality for {owner.ProfileId}; retaining fallback aggression. {ex}");
+                return false;
+            }
+        }
+
         private static object GetSainBot(BotOwner owner)
         {
             if (owner == null) return null;

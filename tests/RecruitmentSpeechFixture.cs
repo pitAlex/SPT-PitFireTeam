@@ -51,6 +51,7 @@ public static class RecruitmentSpeechChecks
     public static void Install()
     {
         var harmony = new Harmony("pitFireTeam.tests.recruitment-speech");
+        harmony.Patch(typeof(BotTalk).GetMethod("Say"), prefix: new HarmonyMethod(typeof(BotTalkSayPatch).GetMethod("PatchPrefix", BindingFlags.NonPublic | BindingFlags.Static)));
         foreach (string name in new[] { "BotPrefix", "PlayerPrefix", "ManualPrefix" })
             harmony.Patch(typeof(NativeSpeech).GetMethod(name), prefix: new HarmonyMethod(Hook("BypassSainTalkPatchForFollower")));
         harmony.Patch(typeof(NativeSpeechPlayer).GetMethod("PlayVoiceLine"), prefix: new HarmonyMethod(Hook("UseVanillaTalkForFollower")));
@@ -66,6 +67,9 @@ public static class RecruitmentSpeechChecks
         var output = new NativeSpeechPlayer { Player = candidate.GetPlayer };
         var talk = new NativeSpeechTalk { Owner = candidate, Output = output };
         Check(!NativeSpeech.BotPrefix(candidate.BotTalk, EPhraseTrigger.Negative), "Ordinary SAIN bot keeps native speech suppression");
+        FollowerForcedPhraseGate.ArmRecruitmentResponse(candidate, EPhraseTrigger.Negative, 1.5f);
+        candidate.BotTalk.SetSilence(0f);candidate.BotTalk.Say(EPhraseTrigger.Negative,true);
+        Check(candidate.BotTalk.IsSilenced && candidate.GetPlayer.Spoken==EPhraseTrigger.None, "EFT zero-duration silence blocks same-frame immediate speech at the production gate");
         foreach (var phrase in new[] { EPhraseTrigger.Negative, EPhraseTrigger.DontKnow, EPhraseTrigger.Toxic })
         {
             candidate.BotTalk.QueueRequests = true;
@@ -96,6 +100,10 @@ public static class RecruitmentSpeechChecks
         FollowerForcedPhraseGate.ArmRecruitmentResponse(candidate, EPhraseTrigger.Roger, 2.5f);
         candidate.BotTalk.Say(EPhraseTrigger.Roger, true);
         Check(candidate.GetPlayer.Spoken == EPhraseTrigger.Roger, "Pending acceptance can speak before follower registration");
+        candidate.GetPlayer.Spoken=EPhraseTrigger.None;candidate.BotTalk.SetSilence(2f);
+        typeof(FollowRequestPatch).GetMethod("TrySayControlledFollowerPhrase",BindingFlags.NonPublic|BindingFlags.Static).Invoke(null,new object[]{candidate,EPhraseTrigger.Roger,EFT.Interactive.EInteraction.OkGesture,300});
+        pitTeam.Utils.Utils.Pending();
+        Check(candidate.GetPlayer.Spoken==EPhraseTrigger.Roger && !candidate.BotTalk.IsSilenced,"Delayed affirmative clears the pending-conversion silence before the same-frame production speech gate");
         candidate.IsFollower = true;
         FollowerForcedPhraseGate.Clear(candidate);
         Check(NativeSpeech.BotPrefix(candidate.BotTalk, EPhraseTrigger.Roger) && NativeSpeech.ManualPrefix(candidate.BotTalk), "Conversion retains existing follower EFT speech ownership");

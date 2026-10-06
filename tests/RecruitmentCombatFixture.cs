@@ -11,20 +11,20 @@ using pitTeam.Patches;
 
 namespace UnityEngine
 {
-    public struct Vector3 { public float x, y, z; public static Vector3 zero => default; }
+    public struct Vector3 { public float x, y, z; public static Vector3 zero => default; public float sqrMagnitude => x*x+y*y+z*z; public static Vector3 operator -(Vector3 a,Vector3 b) => new Vector3{x=a.x-b.x,y=a.y-b.y,z=a.z-b.z}; }
     public static class Time { public static float time; }
     public static class Random { public static int Range(int min, int max) => min; }
 }
 namespace EFT.Interactive { public enum EInteraction { NoGesture, GetOffGesture, OkGesture } }
 namespace EFT
 {
-    public enum EPhraseTrigger { None, Negative, DontKnow, Roger, Toxic, MumblePhrase, OnMutter, OnFight, OnBeingHurt, OnEnemyGrenade }
+    public enum EPhraseTrigger { None, Negative, DontKnow, Roger, Toxic, MumblePhrase, OnMutter, OnFight, OnBeingHurt, OnEnemyGrenade, Cooperation, FollowMe, NeedHelp, OnRepeatedContact }
     public enum ETagStatus { Coop, Solo, Unaware }
-    public enum EPlayerSide { Usec, Savage }
+    public enum EPlayerSide { Usec, Bear, Savage }
     public enum EBotState { Active, Inactive }
-    public interface IPlayer { string ProfileId { get; } EPlayerSide Side { get; } Profile Profile { get; } }
-    public class Profile { public Info Info = new(); public FenceInfo FenceInfo = new(); }
-    public class Info { public int Level = 20; }
+    public interface IPlayer { string ProfileId { get; } EPlayerSide Side { get; } Profile Profile { get; } Vector3 Position { get; } }
+    public class Profile { public string Nickname="candidate"; public Info Info = new(); public FenceInfo FenceInfo = new(); }
+    public class Info { public int Level = 20; public EPlayerSide Side; }
     public class FenceInfo { public double Standing = 6; }
     public class Health { public bool IsAlive = true; }
     public class Speaker
@@ -40,7 +40,8 @@ namespace EFT
         public string ProfileId { get; set; } = "boss";
         public EPlayerSide Side { get; set; }
         public Profile Profile { get; } = new();
-        public Health HealthController = new(); public Speaker Speaker = new(); public Vector3 Position;
+        public Health HealthController = new(); public Speaker Speaker = new(); public Vector3 Position {get;set;}
+        public Player InteractablePlayer;
         public void Say(EPhraseTrigger phrase) { if (NativeSpeech.PlayerPrefix(this, phrase)) Spoken = phrase; }
     }
     public class AIData { public BotOwner BotOwner; }
@@ -52,24 +53,28 @@ namespace EFT
         public int Queued;
         public bool QueueRequests;
         public EPhraseTrigger Last;
+        private bool silenced;
+        private float silenceEnds;
+        public bool IsSilenced { get { if (silenced && silenceEnds < Time.time) silenced=false; return silenced; } }
         public void TrySay(EPhraseTrigger phrase, bool withGroupDelay = true)
         {
             if (QueueRequests) Queued++;
             else Say(phrase, false);
         }
-        public void Say(EPhraseTrigger phrase, bool immediately)
+        public void Say(EPhraseTrigger type, bool sayImmediately, ETagStatus? additionalMask = null)
         {
-            if (!NativeSpeech.BotPrefix(this, phrase)) return;
-            Last = phrase;
-            _owner.GetPlayer.Say(phrase);
+            if (!NativeSpeech.BotPrefix(this, type)) return;
+            Last = type;
+            _owner.GetPlayer.Say(type);
         }
-        public void SetSilence(float seconds) { }
+        public void SetSilence(float seconds) { silenced=true; silenceEnds=Time.time+seconds; }
         public void DropNextSayPeriod() { }
     }
     public class Gesture { public void TryGestus(EFT.Interactive.EInteraction interaction, bool force) { } }
     public class Boss { public bool IsMe(Player player) => true; }
     public class BotFollower { public bool HaveBoss; public Boss BossToFollow = new(); }
-    public class Group { public int MembersCount; }
+    public class Group { public int MembersCount; public BotGroupRequestController RequestsController=new(); }
+    public class BotReceiver { public BotOwner _owner; public void OnPhraseSay(GlobalEventDispatcher.PhraseDelegateInfo info) {} }
     public class BotOwner
     {
         public BotOwner() { BotTalk._owner = this; GetPlayer.AIData.BotOwner = this; }
@@ -77,10 +82,12 @@ namespace EFT
         public bool IsDead, IsFollower; public EBotState BotState = EBotState.Active;
         public Player GetPlayer = new(); public Memory Memory = new(); public BotTalk BotTalk = new();
         public Gesture Gesture = new(); public BotFollower BotFollower = new(); public Group BotsGroup;
+        public Vector3 Position => GetPlayer.Position;
         public bool IsEnemyLookingAtMe(EnemyInfo enemy) => false;
     }
-    public class BotGroupRequestController { }
+    public class BotGroupRequestController { public int Calls; public bool TryAskFollowMeRequest(IPlayer player,BotOwner bot) {Calls++;return true;} }
 }
+public class GlobalEventDispatcher { public class PhraseDelegateInfo { public EPhraseTrigger phrase;public IPlayer PlayerRequester; } }
 namespace SPT.Reflection.Patching
 {
     public abstract class ModulePatch { protected abstract MethodBase GetTargetMethod(); }
@@ -90,7 +97,12 @@ namespace pitTeam.BigBrain { }
 namespace pitTeam.Components
 {
     public class pitAIBossPlayer { public Group bossGroup; public Player Value = new(); public Player Player() => Value; }
-    public class BotFollowerPlayer { public bool IsSquadMate; public BotOwner Bot; public BotOwner GetBot() => Bot; }
+    public class BotFollowerPlayer {
+        public bool IsSquadMate; public BotOwner Bot; public BotOwner GetBot() => Bot;
+        private static Type _sainEnableType;
+        private static MethodInfo _getSainByBotOwnerMethod, _getSainByProfileMethod;
+        __NATIVE_PERSONALITY_CAPTURE__
+    }
 }
 namespace pitTeam
 {
@@ -106,26 +118,39 @@ namespace pitTeam
 }
 namespace pitTeam.Modules
 {
+    public static class GameplayModeRuntime { public static bool IsAllegiance; }
+    public static class AllegiancePmcFriendship { public static bool Allowed=true; public static bool CanRecruit(BotOwner bot, IPlayer player) => Allowed; }
     public class Logger
     {
+        public static void LogInfo(string message) { }
         public static int Warnings;
         public void LogWarning(string message) => Warnings++;
         public static void LogError(object error) => throw new Exception("Unexpected recruitment failure", error as Exception);
     }
-    public class BossPlayers
+    public partial class BossPlayers
     {
         public static BossPlayers Instance = new(); public static pitAIBossPlayer Boss = new();
         public static HashSet<string> Denied = new(); public static int Added;
         public pitAIBossPlayer GetBossPlayer(string id) => Boss;
         public static bool IsFollower(BotOwner bot) => bot.IsFollower;
+        public static bool IsPlayerBoss(string id) => Boss.Value.ProfileId==id;
         public static bool HasDeniedRecruitment(string id) => Denied.Contains(id);
         public static void RememberRecruitmentDenial(string id) => Denied.Add(id);
-        public static List<BotFollowerPlayer> GetFollowersByBoss(string id) => new();
-        public static object AddFollower(BotOwner bot, pitAIBossPlayer boss) { Added++; return new(); }
+        public static List<BotFollowerPlayer> Active = new();
+        public static List<BotFollowerPlayer> GetFollowersByBoss(string id) => Active;
+        public static object AddFollower(BotOwner bot, pitAIBossPlayer boss) {
+            Added++;bot.IsFollower=true;Active.Add(new BotFollowerPlayer {Bot=bot});return new();
+        }
     }
 }
 namespace pitTeam.Patches
 {
+    public static class FollowerReloadPhraseRemap { public static EPhraseTrigger Remap(BotOwner owner, EPhraseTrigger phrase) => phrase; }
+    public static class FollowerMutedCombatPhraseGate { public static bool ShouldBlock(BotOwner owner, EPhraseTrigger phrase) => false; }
+    public static class FollowerContactPhraseGate {
+        public static bool IsContactPhrase(EPhraseTrigger phrase) => false;
+        public static bool ShouldAllowOrSchedule(BotOwner owner, EPhraseTrigger phrase, ETagStatus? mask) => true;
+    }
     public static class BotOwnerManualUpdatePatch { public static Dictionary<string, Action<BotOwner>> BotOwnerUpdate = new(); }
 }
 namespace pitTeam.Utils
@@ -138,8 +163,15 @@ namespace pitTeam.Utils
 }
 namespace SAIN.Plugin
 {
+    public enum EPersonality { Coward, Rat, Normal, Chad, GigaChad, Wreckless, SnappingTurtle, Timmy, FuturePersonality }
+    public class NativeInfo {
+        public bool Throw;
+        public EPersonality Value=EPersonality.Normal;
+        public EPersonality Personality => Throw ? throw new Exception("native personality probe failed") : Value;
+    }
     public class NativeBot
     {
+        public NativeInfo Info { get; set; } = new();
         public bool ActiveEnemy, Throw;
         public bool HasEnemy => Throw ? throw new InvalidOperationException("native probe failed") : ActiveEnemy;
     }
@@ -157,13 +189,15 @@ public static class RecruitmentCombatChecks
     private static void Check(bool value, string name) { if (!value) throw new Exception(name); count++; }
     private static BotOwner Fresh()
     {
-        BossPlayers.Denied.Clear(); BossPlayers.Added = 0; BossPlayers.Boss = new();
+        AllegiancePmcFriendship.Allowed = true;
+        GameplayModeRuntime.IsAllegiance = false;
+        BossPlayers.Denied.Clear(); BossPlayers.Active.Clear(); BossPlayers.Added = 0; BossPlayers.Boss = new();
         BotOwnerManualUpdatePatch.BotOwnerUpdate.Clear(); pitTeam.Utils.Utils.Pending = null;
         pitFireTeam.IsSAINInstalled = true; pitFireTeam.pickupEnabled.Value = true;
         pitFireTeam.tieredPickup.Value = true; pitFireTeam.maximumPickup.Value = 10;
         SAIN.Plugin.SAINEnableClass.Bot = new();
         Logger.Warnings = 0;
-        return new();
+        var bot=new BotOwner();FollowerForcedPhraseGate.Clear(bot);return bot;
     }
     private static void Ask(BotOwner bot)
     {
@@ -173,6 +207,67 @@ public static class RecruitmentCombatChecks
     private static void Deferred(BotOwner bot) => BotOwnerManualUpdatePatch.BotOwnerUpdate[bot.ProfileId](bot);
     public static int Run()
     {
+        foreach(bool allegiance in new[]{false,true}) {
+            foreach(var side in new[]{EPlayerSide.Usec,EPlayerSide.Bear}) {
+                var scav=Fresh();GameplayModeRuntime.IsAllegiance=allegiance;
+                BossPlayers.Boss.Value.Side=EPlayerSide.Savage;scav.Side=side;Ask(scav);
+                Check(BotOwnerManualUpdatePatch.BotOwnerUpdate.Count==0 && BossPlayers.Added==0,"Player Scav cannot recruit PMC in either mode");
+            }
+            var friendlyScav=Fresh();GameplayModeRuntime.IsAllegiance=allegiance;
+            BossPlayers.Boss.Value.Side=EPlayerSide.Savage;friendlyScav.Side=EPlayerSide.Savage;
+            Ask(friendlyScav);Deferred(friendlyScav);pitTeam.Utils.Utils.Pending();
+            Check(BossPlayers.Added==1,"Same-side Scav recruitment preserves Fence path in either mode");
+        }
+        foreach(bool allegiance in new[]{false,true}) {
+            Fresh();GameplayModeRuntime.IsAllegiance=allegiance;pitFireTeam.maximumPickup.Value=2;
+            var queued=new List<Action>();var candidates=new List<BotOwner>();
+            for(int i=0;i<3;i++) {
+                var queuedCandidate=new BotOwner {ProfileId="queued-"+i,Side=allegiance && i%2==0 ? EPlayerSide.Bear : EPlayerSide.Usec};
+                queuedCandidate.Profile.Info.Level=1;candidates.Add(queuedCandidate);
+                Ask(queuedCandidate);Deferred(queuedCandidate);queued.Add(pitTeam.Utils.Utils.Pending);
+            }
+            foreach(var conversion in queued) conversion();
+            Check(BossPlayers.Added==2 && candidates[2].BotTalk.Last==EPhraseTrigger.Negative && BossPlayers.Denied.Count==0,"First-group delay cannot exceed pickup limit or cache capacity refusal");
+        }
+        var duplicate=Fresh();duplicate.Profile.Info.Level=1;Ask(duplicate);Deferred(duplicate);
+        var firstConversion=pitTeam.Utils.Utils.Pending;Ask(duplicate);Deferred(duplicate);
+        var secondConversion=pitTeam.Utils.Utils.Pending;firstConversion();secondConversion();
+        Check(BossPlayers.Added==1,"Duplicate delayed callbacks cannot convert the same bot twice");
+        var freed=Fresh();freed.Profile.Info.Level=1;pitFireTeam.maximumPickup.Value=1;
+        BossPlayers.Active.Add(new BotFollowerPlayer {Bot=new BotOwner(),IsSquadMate=true});
+        BossPlayers.Active.Add(new BotFollowerPlayer {Bot=new BotOwner {IsDead=true}});
+        BossPlayers.Active.Add(new BotFollowerPlayer {Bot=new BotOwner {BotState=EBotState.Inactive}});
+        Ask(freed);Deferred(freed);pitTeam.Utils.Utils.Pending();
+        Check(BossPlayers.Added==1,"Saved squadmates, dead and inactive pickups do not consume pickup capacity");
+        var cross=Fresh();cross.Side=EPlayerSide.Bear;cross.Profile.Info.Level=1;Ask(cross);
+        Check(cross.BotTalk.Last==EPhraseTrigger.Toxic && BotOwnerManualUpdatePatch.BotOwnerUpdate.Count==0,"Guns for Hire keeps its same-side recruitment rule");
+        cross=Fresh();GameplayModeRuntime.IsAllegiance=true;cross.Side=EPlayerSide.Bear;cross.Profile.Info.Level=1;Ask(cross);Deferred(cross);pitTeam.Utils.Utils.Pending();
+        Check(BossPlayers.Added==1 && cross.Side==EPlayerSide.Bear,"Selected BEAR passes USEC request and both deferred conversion gates");
+        cross=Fresh();GameplayModeRuntime.IsAllegiance=true;cross.Side=EPlayerSide.Bear;cross.Profile.Info.Level=1;AllegiancePmcFriendship.Allowed=false;Ask(cross);
+        Check(BotOwnerManualUpdatePatch.BotOwnerUpdate.Count==0,"Unselected opposite faction cannot queue conversion");
+        cross=Fresh();GameplayModeRuntime.IsAllegiance=true;cross.Side=EPlayerSide.Bear;cross.Profile.Info.Level=40;Ask(cross);cross.Profile.Info.Level=1;Ask(cross);
+        Check(BossPlayers.HasDeniedRecruitment(cross.ProfileId) && BotOwnerManualUpdatePatch.BotOwnerUpdate.Count==0,"Cross-faction tiered refusal stays sticky");
+        cross=Fresh();GameplayModeRuntime.IsAllegiance=true;cross.Side=EPlayerSide.Bear;cross.Profile.Info.Level=1;SAIN.Plugin.SAINEnableClass.Bot.ActiveEnemy=true;Ask(cross);
+        Check(cross.BotTalk.Last==EPhraseTrigger.DontKnow && BossPlayers.Denied.Count==0,"Opposite-faction SAIN combat refusal stays temporary");
+        cross=Fresh();GameplayModeRuntime.IsAllegiance=true;cross.Side=EPlayerSide.Bear;cross.Profile.Info.Level=1;Ask(cross);Deferred(cross);AllegiancePmcFriendship.Allowed=false;pitTeam.Utils.Utils.Pending();
+        Check(BossPlayers.Added==0,"Opposite-faction revocation during conversion delay prevents pickup");
+        cross=Fresh();GameplayModeRuntime.IsAllegiance=true;cross.Side=EPlayerSide.Bear;cross.Profile.Info.Level=1;pitFireTeam.maximumPickup.Value=0;Ask(cross);
+        Check(BotOwnerManualUpdatePatch.BotOwnerUpdate.Count==0 && BossPlayers.Denied.Count==0,"Opposite-faction pickup cap refuses without caching a tiered denial");
+        GameplayModeRuntime.IsAllegiance=true;
+        var saved=new Profile();saved.Info.Side=EPlayerSide.Bear;
+        Check(BotsControllerPatch.ResolveFollowerSpawnSide(saved,EPlayerSide.Usec)==EPlayerSide.Bear,"Allegiance spawn preserves saved BEAR faction");
+        saved.Info.Side=EPlayerSide.Usec;
+        Check(BotsControllerPatch.ResolveFollowerSpawnSide(saved,EPlayerSide.Bear)==EPlayerSide.Usec,"Allegiance spawn preserves saved USEC faction");
+        saved.Info.Side=EPlayerSide.Savage;
+        Check(BotsControllerPatch.ResolveFollowerSpawnSide(saved,EPlayerSide.Usec)==EPlayerSide.Usec && BotsControllerPatch.ResolveFollowerSpawnSide(null,EPlayerSide.Bear)==EPlayerSide.Bear,"Invalid or missing saved PMC faction uses leader fallback");
+        GameplayModeRuntime.IsAllegiance=false;saved.Info.Side=EPlayerSide.Bear;
+        Check(BotsControllerPatch.ResolveFollowerSpawnSide(saved,EPlayerSide.Usec)==EPlayerSide.Usec,"Guns for Hire spawn retains existing leader-side behavior");
+        var candidate=Fresh(); candidate.Profile.Info.Level=1; AllegiancePmcFriendship.Allowed=false; Ask(candidate);
+        Check(BotOwnerManualUpdatePatch.BotOwnerUpdate.Count==0 && BossPlayers.Denied.Count==0, "Unselected Allegiance candidate refused without a level roll");
+        candidate=Fresh(); candidate.Profile.Info.Level=1; Ask(candidate); AllegiancePmcFriendship.Allowed=false; Deferred(candidate);
+        Check(BossPlayers.Added==0 && pitTeam.Utils.Utils.Pending==null, "Revocation before manual update prevents recruitment");
+        candidate=Fresh(); candidate.Profile.Info.Level=1; Ask(candidate); Deferred(candidate); AllegiancePmcFriendship.Allowed=false; pitTeam.Utils.Utils.Pending();
+        Check(BossPlayers.Added==0, "Revocation during delayed conversion prevents recruitment");
         var bot = Fresh(); bot.Memory.GoalEnemy = new(); bot.Profile.Info.Level = 40; Ask(bot);
         Check(bot.BotTalk.Last == EPhraseTrigger.DontKnow && !BossPlayers.HasDeniedRecruitment(bot.ProfileId), "EFT combat does not cache a level refusal");
         bot = Fresh(); bot.Profile.Info.Level = 40; SAIN.Plugin.SAINEnableClass.Bot.ActiveEnemy = true; Ask(bot); Ask(bot);

@@ -18,6 +18,13 @@ namespace pitTeam.Patches
         private const int FirstPickupConversionDelayMs = 75;
         private const float RecruitForcedPhraseSeconds = 2.5f;
 
+        internal static bool IsRecruitmentSideAllowed(IPlayer player, BotOwner bot) =>
+            player != null && bot != null &&
+            (player.Side == bot.Side ||
+             (GameplayModeRuntime.IsAllegiance &&
+              (player.Side == EPlayerSide.Usec || player.Side == EPlayerSide.Bear) &&
+              AllegiancePmcFriendship.CanRecruit(bot, player)));
+
         private static double MathClamp(double value, double min, double max)
         {
             if (value < min) return min;
@@ -60,8 +67,16 @@ namespace pitTeam.Patches
                     }
                 }
                 // allow player to request a BOT to follow him
-                if (player.Side == posibleExecuter.Side)
+                if (IsRecruitmentSideAllowed(player, posibleExecuter))
                 {
+                    if (!AllegiancePmcFriendship.CanRecruit(posibleExecuter, player))
+                    {
+                        TrySayRecruitmentResponse(posibleExecuter, EPhraseTrigger.Negative);
+                        posibleExecuter.Gesture.TryGestus(EInteraction.NoGesture, true);
+                        __result = false;
+                        return false;
+                    }
+
                     // Do not allow recruiting bots that are already in combat.
                     // SAIN can own an active enemy without an EFT goal. Combat is a temporary
                     // refusal and must precede the raid-scoped level decision.
@@ -82,21 +97,8 @@ namespace pitTeam.Patches
                     }
 
                     bool canPickup = false;
-                    List<Components.BotFollowerPlayer> followers = BossPlayers.GetFollowersByBoss(player.ProfileId);
-                    List<Components.BotFollowerPlayer> activeFollowers = followers.FindAll(f =>
-                    {
-                        if (f == null) return false;
-                        BotOwner bot = f.GetBot();
-                        return bot != null &&
-                               !bot.IsDead &&
-                               bot.BotState == EBotState.Active &&
-                               bot.GetPlayer != null &&
-                               bot.GetPlayer.HealthController != null &&
-                               bot.GetPlayer.HealthController.IsAlive;
-                    });
-                    int configuredPickups = Math.Max(0, pitFireTeam.maximumPickup.Value);
-                    int hardPickupLimit = Math.Min(10, configuredPickups);
-                    int currentPickups = activeFollowers.FindAll(f => !f.IsSquadMate).Count;
+                    int hardPickupLimit = GetHardPickupLimit();
+                    int currentPickups = GetActivePickupCount(player.ProfileId);
                     if (BossPlayers.HasDeniedRecruitment(posibleExecuter.ProfileId))
                     {
                         // A tiered level-based refusal is final for this bot for the current raid.
@@ -193,7 +195,7 @@ namespace pitTeam.Patches
                                     return;
                                 }
 
-                                if (BossPlayers.HasDeniedRecruitment(me.ProfileId))
+                                if (!AllegiancePmcFriendship.CanRecruit(me, player) || BossPlayers.HasDeniedRecruitment(me.ProfileId))
                                 {
                                     TrySayRecruitmentResponse(me, EPhraseTrigger.Negative, false);
                                     me.Gesture.TryGestus(EInteraction.NoGesture, true);
@@ -202,22 +204,7 @@ namespace pitTeam.Patches
 
                                 // Re-check pickup cap at execution time because this runs deferred and
                                 // multiple recruit requests can be queued in the same window.
-                                List<Components.BotFollowerPlayer> deferredFollowers = BossPlayers.GetFollowersByBoss(player.ProfileId);
-                                List<Components.BotFollowerPlayer> deferredActiveFollowers = deferredFollowers.FindAll(f =>
-                                {
-                                    if (f == null) return false;
-                                    BotOwner bot = f.GetBot();
-                                    return bot != null &&
-                                           !bot.IsDead &&
-                                           bot.BotState == EBotState.Active &&
-                                           bot.GetPlayer != null &&
-                                           bot.GetPlayer.HealthController != null &&
-                                           bot.GetPlayer.HealthController.IsAlive;
-                                });
-                                int deferredConfiguredPickups = Math.Max(0, pitFireTeam.maximumPickup.Value);
-                                int deferredHardPickupLimit = Math.Min(10, deferredConfiguredPickups);
-                                int deferredCurrentPickups = deferredActiveFollowers.FindAll(f => !f.IsSquadMate).Count;
-                                if (deferredCurrentPickups >= deferredHardPickupLimit)
+                                if (GetActivePickupCount(player.ProfileId) >= GetHardPickupLimit())
                                 {
                                     TrySayRecruitmentResponse(me, EPhraseTrigger.Negative, false);
                                     me.Gesture.TryGestus(EInteraction.NoGesture, true);
@@ -274,6 +261,16 @@ namespace pitTeam.Patches
             return bot.Memory?.HaveEnemy == true || SainGoalEnemyBridge.HasEnemy(bot);
         }
 
+        private static int GetHardPickupLimit() => Math.Min(10, Math.Max(0, pitFireTeam.maximumPickup.Value));
+
+        private static int GetActivePickupCount(string bossProfileId) =>
+            BossPlayers.GetFollowersByBoss(bossProfileId).FindAll(f =>
+            {
+                BotOwner member = f?.GetBot();
+                return f != null && !f.IsSquadMate && member != null && !member.IsDead &&
+                       member.BotState == EBotState.Active && member.GetPlayer?.HealthController?.IsAlive == true;
+            }).Count;
+
         private static void CompleteRecruitConversion(BotOwner bot, pitAIBossPlayer playerBoss)
         {
             if (bot == null || playerBoss == null || bot.IsDead || bot.BotState != EBotState.Active || bot.GetPlayer == null || !bot.GetPlayer.HealthController.IsAlive)
@@ -281,21 +278,23 @@ namespace pitTeam.Patches
                 return;
             }
 
+            // Repeated requests can queue this same candidate during the first-group delay.
+            if (BossPlayers.IsFollower(bot)) return;
+
             if (HasRecruitmentCombatEnemy(bot))
             {
                 FollowerForcedPhraseGate.ArmRecruitmentResponse(bot, EPhraseTrigger.DontKnow, 1.5f);
-                bot.BotTalk.SetSilence(0f);
-                bot.BotTalk.DropNextSayPeriod();
+                PrepareImmediateRecruitmentSpeech(bot);
                 bot.BotTalk.Say(EPhraseTrigger.DontKnow, true);
                 bot.Gesture.TryGestus(EInteraction.NoGesture, true);
                 return;
             }
 
-            if (BossPlayers.HasDeniedRecruitment(bot.ProfileId))
+            if (!AllegiancePmcFriendship.CanRecruit(bot, playerBoss.Player()) || BossPlayers.HasDeniedRecruitment(bot.ProfileId) ||
+                GetActivePickupCount(playerBoss.Player().ProfileId) >= GetHardPickupLimit())
             {
                 FollowerForcedPhraseGate.ArmRecruitmentResponse(bot, EPhraseTrigger.Negative, 1.5f);
-                bot.BotTalk.SetSilence(0f);
-                bot.BotTalk.DropNextSayPeriod();
+                PrepareImmediateRecruitmentSpeech(bot);
                 bot.BotTalk.Say(EPhraseTrigger.Negative, true);
                 bot.Gesture.TryGestus(EInteraction.NoGesture, true);
                 return;
@@ -312,9 +311,16 @@ namespace pitTeam.Patches
             }
 
             FollowerForcedPhraseGate.ArmRecruitmentResponse(bot, EPhraseTrigger.DontKnow, 1.5f);
-            bot.BotTalk.SetSilence(0f);
-            bot.BotTalk.DropNextSayPeriod();
+            PrepareImmediateRecruitmentSpeech(bot);
             bot.BotTalk.Say(EPhraseTrigger.DontKnow, true);
+        }
+
+        private static void PrepareImmediateRecruitmentSpeech(BotOwner bot)
+        {
+            // EFT expires silence only when silenceEnds < Time.time. Zero duration
+            // still blocks Say in this frame, so expire it before sending the reply.
+            bot.BotTalk.SetSilence(-1f);
+            bot.BotTalk.DropNextSayPeriod();
         }
 
         private static void TrySayRecruitmentResponse(BotOwner bot, EPhraseTrigger phrase, bool? withGroupDelay = null)
@@ -329,8 +335,7 @@ namespace pitTeam.Patches
             // Native SAIN suppresses both queued EFT speech and BotTalk.Say before
             // this candidate is a follower. Keep only this command reply Core-owned.
             FollowerForcedPhraseGate.ArmRecruitmentResponse(bot, phrase, 1.5f);
-            bot.BotTalk.SetSilence(0f);
-            bot.BotTalk.DropNextSayPeriod();
+            PrepareImmediateRecruitmentSpeech(bot);
             bot.BotTalk.Say(phrase, true);
         }
 
@@ -351,8 +356,7 @@ namespace pitTeam.Patches
                 {
                     return;
                 }
-                bot.BotTalk.SetSilence(0f);
-                bot.BotTalk.DropNextSayPeriod();
+                PrepareImmediateRecruitmentSpeech(bot);
                 bool saidPhrase = false;
                 if (pitFireTeam.ShouldDisableSainForFollower(bot))
                 {

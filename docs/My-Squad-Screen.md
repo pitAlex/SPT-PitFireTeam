@@ -279,13 +279,42 @@ The panel contains two mutually exclusive, vertically arranged options:
 - `Guns for Hire` (initial selection)
 - `Allegiance`
 
-These are UI options only. Selecting one updates local state on the current `SquadControlMenuUi` instance, retained when switching tabs or reopening that same UI instance. It is not saved across a game restart and has no config entry, server request or gameplay effect. Existing roster, hiring, allegiance relationships and settings behavior remain unchanged. The in-raid `Squad Settings` overlay continues to show only Settings.
+Guns for Hire preserves existing gameplay. Allegiance hides Add Teammate and rejects manual hiring on the server; teammates must be recruited in the field. Each mode has its own roster database, including equipment, teammate settings, and pending recruitment requests. Switching clears the outgoing squad selection and refreshes roster/social data. Switching is unavailable during raids. The in-raid `Squad Settings` overlay continues to show only Settings.
+
+Allegiance selects solo BEAR and USEC PMCs regardless of the human PMC's side, after `FactionHostility.Apply` in the activation hook. Each profile has one raid-local decision, with at most three lifetime friendly selections shared across both factions; deaths, recruitment and dismissal never release a slot. Current groups, original multi-bot spawn groups and groups awaiting additional members are excluded, including their later survivors. A selected solo joining a group loses this individual friendship. The intended chance is 25%, temporarily hardcoded to 100% for testing. Player-Scav/Fence behavior remains unchanged.
+
+Selected candidates become neutral to the player and squad without changing shared bot settings, visibility or shot permission. Ambient enemy scans cannot undo this relationship, but real aggression or explicit Contact permanently revokes it for the raid. Recruitment requires a selected, unrevoked candidate at request and deferred conversion time; existing temporary combat refusals, raid-sticky tiered acceptance refusals and the two-active-pickup limit still apply. Selection diagnostics use the `[Allegiance]` log prefix.
+
+Neutrality repair removes enemy keys for both EFT representations of the same profile (`BotOwner` and `Player`). It publishes the native group enemy-removal event even when the group entry is already absent, allowing external SAIN to discard its separate cached contact. Other profiles keep their relationships and memories.
+
+Opposite-faction recruits retain their original side and PMC role in the invitation, saved roster and subsequent Allegiance raid spawns. Their request permissions and squad hostility follow the human leader through the existing follower conversion and shared relationship policy. Guns for Hire keeps its existing same-side recruitment and leader-side spawn behavior.
+
+Positive damage from an outside AI to the human leader explicitly revokes that candidate's friendship, even with no followers present and before initial activation. The existing squad hostility helper shares the relationship without selecting goals or granting sight/fire permission. Zero-damage notifications and friendly fire from squadmates do not revoke it. Player Scavs retain same-side recruitment and Fence limits in either mode.
+
+The selected mode persists in the hidden `00 GameplayMode` config entry. Before entering Allegiance, `GameplayModeRuntime` atomically saves all currently bound mod settings except the mode in `<config path>.guns-for-hire.json`. Returning restores that snapshot, including after restarting the game. A missing or invalid snapshot fails restoration without overwriting it. Mode transitions wait for registered post-raid reports, serialize server settings requests, and invalidate delayed invitations from the outgoing mode. The server serializes teammate operations with database selection; switching databases does not convert the inactive roster's loadouts.
+
+Allegiance disables these controls, with the tooltip `this option is not available in Allegiance Mode`, and enforces their values at the config boundary:
+
+| Setting | Allegiance value |
+| --- | --- |
+| Bad Guy | Off |
+| Friendly PMC Side | Off |
+| Enemy Tracking | Realistic |
+| Pickup | On |
+| Tiered Pickup | On |
+| Maximum Pickup | 2 |
+| Recruit Pickup | On |
+| Team Escape | On |
+| Team Escape: Use Any Extraction Point | Off |
+| Loadout Management | Immersive |
+| Heal Followers | Disabled |
+| Squad Health Multiplier | 1 |
 
 Each option uses the same row presentation as Loadout Management: a dark full-width row with a gold divider, its name and description on the left, and the compact radio-style selection control on the right. Selecting either control highlights it and clears the other.
 
 The Guns for Hire description is: "Build and equip your squad before deploying. Customize and play by your own rules."
 
-The Allegiance description is: "Play by Tushonka's rules. Alliances are formed, not bought. Settings are locked, and relationships are determined in the field." This describes the intended mode; selection is still UI-only and does not yet lock settings or change relationships.
+The Allegiance description is: "Play by Tushonka's rules. Alliances are formed, not bought. Settings are locked, and relationships are determined in the field." Relationships continue to use the existing recruitment and contact rules with the enforced settings above.
 
 Controls reuse the existing cloned Ragfair radio-style toggle helper, right-side control dimensions and click/hover behavior with a basic-toggle fallback. Names and descriptions use the central `socialUi` language entries and embedded English fallback.
 

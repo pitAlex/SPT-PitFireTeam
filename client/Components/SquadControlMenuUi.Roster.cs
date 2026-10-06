@@ -239,6 +239,7 @@ namespace pitTeam.Components
             addTeammateButton.Interactable = true;
             addTeammateButton.OnClick.RemoveAllListeners();
             addTeammateButton.OnClick.AddListener(OnAddTeammateClicked);
+            addTeammateButton.gameObject.SetActive(!GameplayModeRuntime.IsAllegiance);
 
             RectTransform buttonRect = addTeammateButton.transform as RectTransform;
             if (buttonRect != null)
@@ -253,6 +254,7 @@ namespace pitTeam.Components
 
         private void OnAddTeammateClicked()
         {
+            if (GameplayModeRuntime.IsAllegiance || GameplayModeRuntime.IsSwitching) return;
             AddTeammateCreationFlow.Start(SquadSideSelectionFlow.Open);
         }
 
@@ -296,7 +298,7 @@ namespace pitTeam.Components
                 return;
             }
 
-            emptyRosterLabel.text = GetSocialUiText("SquadControlEmptyRoster");
+            emptyRosterLabel.text = GetSocialUiText(GameplayModeRuntime.IsAllegiance ? "SquadControlEmptyAllegianceRoster" : "SquadControlEmptyRoster");
             emptyRosterLabel.gameObject.SetActive(isEmpty);
 
             UpdateRosterPanelLayout(isEmpty);

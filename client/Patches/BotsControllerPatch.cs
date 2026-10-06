@@ -899,6 +899,14 @@ namespace pitTeam.Patches
             }
         }
 
+        internal static EPlayerSide ResolveFollowerSpawnSide(Profile profile, EPlayerSide leaderSide)
+        {
+            EPlayerSide? savedSide = profile?.Info?.Side;
+            return GameplayModeRuntime.IsAllegiance &&
+                   (savedSide == EPlayerSide.Bear || savedSide == EPlayerSide.Usec)
+                ? savedSide.Value : leaderSide;
+        }
+
         public async Task SpawnGroupBots(pitAIBossPlayer player)
         {
 
@@ -1047,6 +1055,7 @@ namespace pitTeam.Patches
             botsData.Profiles.ForEach(async profile =>
             {
                 InteractableObjects.StoreEquipment(profile);
+                EPlayerSide followerSide = ResolveFollowerSpawnSide(profile, side);
 
                 Action<BotOwner> OnActivate = new Action<BotOwner>((BotOwner owner) =>
                 {
@@ -1108,10 +1117,10 @@ namespace pitTeam.Patches
 
                     BotOwnerManualUpdatePatch.BotOwnerUpdate.Add(owner.ProfileId, OnBotState);
 
-                    // force player side on the bot
-                    if (owner.Side != side)
+                    // Allegiance squadmates retain their recruited faction.
+                    if (owner.Side != followerSide)
                     {
-                        owner.GetPlayer.Profile.Info.Side = side;
+                        owner.GetPlayer.Profile.Info.Side = followerSide;
                     }
 
                     botSpawnerClass.ActivateBotCallback(owner, botsData, new Action<BotOwner>((BotOwner follower) =>
@@ -1433,6 +1442,7 @@ namespace pitTeam.Patches
             {
                 if (Controller == null)
                 {
+                    AllegiancePmcFriendship.Reset();
                     PlayerKilledPatch.ResetKillMessageRaidState();
                     SquadRaidKillReport.BeginRaid(Utils.Utils.FlagGet("RaidTransit"));
                     new BossPlayers();

@@ -65,6 +65,7 @@ public class FriendlyRecruitService(
                     Voice = candidate.Voice.Trim(),
                     Head = candidate.Head.Trim(),
                     ProfileJson = candidate.ProfileJson?.Trim() ?? string.Empty,
+                    Aggression = candidate.GetSavedAggression(),
                     CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                 });
             }

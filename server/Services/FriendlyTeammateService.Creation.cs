@@ -16,6 +16,7 @@ public partial class FriendlyTeammateService
 
     public FriendlyTeammateCreationPreview PrepareTeammateCreation(MongoId sessionId, FriendlyTeammateCreateRequest request)
     {
+        if (settingsService.LoadSettings().IsAllegiance) throw new FriendlyTeammateException("SettingsUnavailableInAllegiance");
         lock (CreationLock)
         {
             RecoverTeammateCreation(sessionId);
@@ -57,6 +58,7 @@ public partial class FriendlyTeammateService
 
     public FriendlyTeammateBuyKitResponse CreateTeammate(MongoId sessionId, FriendlyTeammateCreateRequest request)
     {
+        if (settingsService.LoadSettings().IsAllegiance) throw new FriendlyTeammateException("SettingsUnavailableInAllegiance");
         lock (CreationLock)
         {
             var quote = RequireCreationQuote(sessionId, request.QuoteToken);

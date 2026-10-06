@@ -27,6 +27,7 @@ namespace pitTeam.Modules
         public string Voice { get; set; } = string.Empty;
         public string Head { get; set; } = string.Empty;
         public string ProfileJson { get; set; } = string.Empty;
+        public float? Aggression { get; set; }
     }
 
     internal class RecruitPickupRequest
@@ -79,6 +80,7 @@ namespace pitTeam.Modules
 
         public static void Dispose()
         {
+            AllegiancePmcFriendship.Reset();
             if (Instance != null)
             {
                 Instance.Destroy();
@@ -267,7 +269,7 @@ namespace pitTeam.Modules
                 // Capture native ownership before conversion/Init changes the bot's brain.
                 tactic = pitFireTeam.IsSainManTacticAvailable && BotFollowerPlayer.HasNativeSainBot(bot)
                     ? "SainMan" : "Default";
-                aggression = CreateRecruitCombatAggression();
+                aggression = CreateRecruitCombatAggression(bot);
                 proficiency = null;
             }
 
@@ -326,8 +328,14 @@ namespace pitTeam.Modules
             return _follower;
         }
 
-        private static float CreateRecruitCombatAggression()
+        private static float CreateRecruitCombatAggression(BotOwner bot)
         {
+            if (BotFollowerPlayer.TryGetNativeSainPersonality(bot, out string personality) &&
+                RecruitCombatAggression.TryMap(personality, out float mapped))
+            {
+                Modules.Logger.LogInfo($"[Recruitment] bot={bot.ProfileId} name={bot.Profile?.Nickname} nativePersonality={personality} savedAggression={mapped}");
+                return mapped;
+            }
             lock (RecruitAggressionRandomLock)
             {
                 return RecruitMinCombatAggression +
@@ -402,6 +410,7 @@ namespace pitTeam.Modules
                                     Voice = voiceId,
                                     Head = headId,
                                     ProfileJson = CreateRecruitProfileJson(pr, _defaultJsonConverters),
+                                    Aggression = item.CombatAggression,
                                 });
                             }
                             else
@@ -894,7 +903,7 @@ namespace pitTeam.Modules
 
         private static void PostRaidRequestAsync(string route, string json, string description)
         {
-            Task.Run(() =>
+            GameplayModeRuntime.RunRosterRequest(() =>
             {
                 try
                 {

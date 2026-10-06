@@ -157,6 +157,8 @@ Behavior:
 
 ### Follow Me / Cooperation
 
+In Allegiance, a BEAR or USEC candidate must first pass the raid's solo friendship selection, regardless of the human PMC's faction. Requests cannot reroll friendship; group exclusions, the shared three-selection lifetime cap and aggression revocations remain fixed for the raid. The guard is repeated before deferred conversion. Existing combat, tiered acceptance and pickup limits below still apply. Guns for Hire and player-Scav/Fence recruitment retain their existing eligibility rules. See [My Squad modes](My-Squad-Screen.md) for the selection contract and temporary 100% test chance.
+
 Input:
 
 - `EPhraseTrigger.FollowMe`
@@ -168,10 +170,14 @@ Behavior:
 - Clears active `FollowerCommandType` state on all active followers.
 - Disables patrol-radius mode by setting `CanPatrol` false.
 - Does not otherwise change combat objective state directly.
-- For a same-side non-follower, the receiver path instead attempts in-raid recruitment.
+- Only Cooperation attempts in-raid recruitment for a same-side non-follower or a selected opposite-faction solo in Allegiance. Follow Me resumes squad following and never requests recruitment, including through the native receiver fallback.
+- Cooperation is available in the gesture menu's Help category with either setting of Hide Unsupported Commands. The contextual quick command uses the same faction eligibility as recruitment, including selected opposite-faction Allegiance candidates. An interacted bot is the exclusive target; without an interacted bot, nearby listeners within 15m can receive the Cooperation request. Need Help retains its combat-support behavior.
 - Recruitment during combat answers `EPhraseTrigger.DontKnow` without rolling or remembering a refusal. Combat means EFT `Memory.HaveEnemy` or the external SAIN plugin's native `HasEnemy`, even without an EFT goal and with the addon absent. The initial request and deferred conversion checks give combat priority over an existing cached refusal; that earlier level refusal still applies after combat ends.
-- When tiered PMC recruitment rejects that bot because of the level-based acceptance decision, the refusal is remembered for the rest of the raid. Repeating `Follow Me` or `Cooperation` cannot reroll that bot's decision.
+- When tiered PMC recruitment rejects that bot because of the level-based acceptance decision, the refusal is remembered for the rest of the raid. Repeating `Cooperation` cannot reroll that bot's decision.
+- Active pickup capacity is counted consistently at request, manual update and final conversion, including after the first-group delay. Queued requests cannot exceed the limit or convert the same bot twice; capacity refusal is not cached as a tiered denial. Cross-faction recruitment is restricted to human PMC players, preserving same-side Scav/Fence eligibility.
+- Successful pickup captures native SAIN personality before follower conversion or addon initialization. Saved aggression is Coward 0%, Timmy 20%, Rat 30%, SnappingTurtle 40%, Normal 50%, Chad 70%, GigaChad/Wreckless 100%. Without a recognized native personality, recruitment retains the 20–60% random fallback. These values affect combat willingness, not tiered recruitment acceptance. The base aggression travels with the post-raid invitation and becomes the accepted teammate's saved aggression; command overrides are excluded.
 - With external SAIN installed, the candidate's exact recruitment reply uses immediate EFT speech rather than SAIN's suppressed EFT queue. A timed scope protects refusal replies for 1.5 seconds and pending acceptance for the existing 2.5-second conversion window, including before follower registration. Only that candidate's SAIN mumbling/taunting is suppressed during the scope; other bots, native warnings and recruitment eligibility remain unchanged.
+- Immediate recruitment replies expire the native silence deadline before calling `Say`. EFT's zero-duration silence remains active in the current frame, so `SetSilence(0)` cannot unmute an immediate negative or affirmative reply. Delayed acceptance uses the same preparation after the conversion silence.
 
 ### On Your Own
 

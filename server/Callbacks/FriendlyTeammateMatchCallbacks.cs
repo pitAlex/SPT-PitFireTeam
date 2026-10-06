@@ -27,6 +27,7 @@ public class FriendlyTeammateMatchCallbacks(
         MongoId sessionId,
         string? previousOutput)
     {
+        long modeGeneration = FriendlyModeRequestGate.Generation;
         if (!teammateService.TryGetRaidGroupCharacter(sessionId, request.To, out var teammate, out var rejectionReason))
         {
             if (teammate != null && !string.IsNullOrWhiteSpace(rejectionReason))
@@ -34,19 +35,21 @@ public class FriendlyTeammateMatchCallbacks(
                 _ = Task.Run(async () =>
                 {
                     await Task.Delay(1000);
+                    await FriendlyModeRequestGate.RunIfCurrent(modeGeneration, async () =>
+                    {
+                        await notificationSendHelper.SendMessageAsync(
+                            sessionId,
+                            new FriendlyGroupMatchInviteDecline
+                            {
+                                EventType = NotificationEventType.groupMatchInviteDecline,
+                                EventIdentifier = new MongoId(),
+                                Aid = teammate.Aid?.ToString(),
+                                Nickname = teammate.Info?.Nickname ?? teammate.Aid?.ToString(),
+                            }
+                        );
 
-                    await notificationSendHelper.SendMessageAsync(
-                        sessionId,
-                        new FriendlyGroupMatchInviteDecline
-                        {
-                            EventType = NotificationEventType.groupMatchInviteDecline,
-                            EventIdentifier = new MongoId(),
-                            Aid = teammate.Aid?.ToString(),
-                            Nickname = teammate.Info?.Nickname ?? teammate.Aid?.ToString(),
-                        }
-                    );
-
-                    mailSendService.SendSystemMessageToPlayer(sessionId, rejectionReason, null);
+                        mailSendService.SendSystemMessageToPlayer(sessionId, rejectionReason, null);
+                    });
                 });
 
                 return new ValueTask<string>(previousOutput ?? httpResponseUtil.GetBody("pitfireteam-teammate-invite"));
@@ -58,21 +61,24 @@ public class FriendlyTeammateMatchCallbacks(
         _ = Task.Run(async () =>
         {
             await Task.Delay(1000);
-            var acceptedTeammate = teammate!;
+            await FriendlyModeRequestGate.RunIfCurrent(modeGeneration, async () =>
+            {
+                var acceptedTeammate = teammate!;
 
-            await notificationSendHelper.SendMessageAsync(
-                sessionId,
-                new FriendlyGroupMatchInviteAccept
-                {
-                    EventType = NotificationEventType.groupMatchInviteAccept,
-                    EventIdentifier = new MongoId(),
-                    Id = acceptedTeammate.Id,
-                    Aid = acceptedTeammate.Aid?.ToString(),
-                    Info = acceptedTeammate.Info,
-                    VisualRepresentation = acceptedTeammate.VisualRepresentation,
-                    IsReady = true,
-                }
-            );
+                await notificationSendHelper.SendMessageAsync(
+                    sessionId,
+                    new FriendlyGroupMatchInviteAccept
+                    {
+                        EventType = NotificationEventType.groupMatchInviteAccept,
+                        EventIdentifier = new MongoId(),
+                        Id = acceptedTeammate.Id,
+                        Aid = acceptedTeammate.Aid?.ToString(),
+                        Info = acceptedTeammate.Info,
+                        VisualRepresentation = acceptedTeammate.VisualRepresentation,
+                        IsReady = true,
+                    }
+                );
+            });
         });
 
         return new ValueTask<string>(previousOutput ?? httpResponseUtil.GetBody("pitfireteam-teammate-invite"));

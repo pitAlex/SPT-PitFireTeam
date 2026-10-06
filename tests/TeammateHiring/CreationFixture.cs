@@ -251,7 +251,7 @@ namespace pitTeam.Server.Services
     {
         public string ReadFile(string _) => File.ReadAllText(save.SavePath);
     }
-    public sealed class FixtureSettings { public string LoadoutManagementMode { get; set; } = "Restricted"; public FixtureSettings LoadSettings() => this; }
+    public sealed class FixtureSettings { public bool IsAllegiance { get; set; } public string LoadoutManagementMode { get; set; } = "Restricted"; public FixtureSettings LoadSettings() => this; }
     public sealed class FixtureItemHelper
     {
         public Dictionary<string, double> Handbook = new();

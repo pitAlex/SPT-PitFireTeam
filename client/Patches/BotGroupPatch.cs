@@ -113,6 +113,12 @@ namespace pitTeam.Patches
             if (person.Profile?.Info == null) return true;
             bool isBossPlayerGroup = __instance is BotsGroupPlayer;
 
+            if (AllegiancePmcFriendship.ShouldBlockEnemyAddition(__instance, person, cause))
+            {
+                __result = false;
+                return false;
+            }
+
             if (FollowerGroupHostility.ShouldBlockAmbientAddition(__instance, person, cause))
             {
                 __result = false;

@@ -1,3 +1,7 @@
+using pitTeam.Modules;
+using pitTeam.Patches;
+using EFT;
+using System.Linq;
 using EFT.UI;
 using System;
 using System.Collections.Generic;
@@ -9,14 +13,6 @@ namespace pitTeam.Components
 {
     internal partial class SquadControlMenuUi
     {
-        private enum PreviewSquadMode
-        {
-            GunsForHire,
-            Allegiance
-        }
-
-        // UI-only selection: no config, server synchronization or gameplay consumer.
-        private PreviewSquadMode previewSquadMode = PreviewSquadMode.GunsForHire;
         private readonly List<Action> modeChoiceRefreshers = new List<Action>();
 
         private void BuildModePanel()
@@ -36,12 +32,12 @@ namespace pitTeam.Components
             group.allowSwitchOff = false;
             modeChoiceRefreshers.Clear();
             float firstRowY = -86f;
-            CreateModeChoice(panelRect, group, PreviewSquadMode.GunsForHire, "SquadControlModeGunsForHire", "SquadControlModeGunsForHireDescription", firstRowY);
-            CreateModeChoice(panelRect, group, PreviewSquadMode.Allegiance, "SquadControlModeAllegiance", "SquadControlModeAllegianceDescription", firstRowY - SettingsRowHeight - SettingsSpacing);
+            CreateModeChoice(panelRect, group, GameplayMode.GunsForHire, "SquadControlModeGunsForHire", "SquadControlModeGunsForHireDescription", firstRowY);
+            CreateModeChoice(panelRect, group, GameplayMode.Allegiance, "SquadControlModeAllegiance", "SquadControlModeAllegianceDescription", firstRowY - SettingsRowHeight - SettingsSpacing);
             RefreshModeChoices();
         }
 
-        private void CreateModeChoice(RectTransform parent, ToggleGroup group, PreviewSquadMode mode, string labelKey, string descriptionKey, float y)
+        private void CreateModeChoice(RectTransform parent, ToggleGroup group, GameplayMode mode, string labelKey, string descriptionKey, float y)
         {
             RectTransform choiceRect = new GameObject($"pitFireTeam_SquadMode_{mode}", typeof(RectTransform), typeof(Image)).GetComponent<RectTransform>();
             choiceRect.SetParent(parent, false);
@@ -92,8 +88,7 @@ namespace pitTeam.Components
             void SelectMode(bool isOn)
             {
                 if (!isOn) return;
-                previewSquadMode = mode;
-                RefreshModeChoices();
+                ChangeGameplayMode(mode);
             }
 
             Image hoverBackground = CreateLoadoutManagementHoverBackground(controlRect);
@@ -131,7 +126,7 @@ namespace pitTeam.Components
                     radio.SpawnedObject.onValueChanged.RemoveAllListeners();
                     radio.SpawnedObject.onValueChanged.AddListener(SelectMode);
                 }
-                modeChoiceRefreshers.Add(() => radio.ToggleSilently(previewSquadMode == mode));
+                modeChoiceRefreshers.Add(() => radio.ToggleSilently(GameplayModeRuntime.Current == mode));
                 SetSettingsControlInteractable(radio.transform, true);
             }
             else
@@ -140,7 +135,7 @@ namespace pitTeam.Components
                 hoverTarget = fallback.transform as RectTransform;
                 fallback.group = group;
                 fallback.onValueChanged.AddListener(SelectMode);
-                modeChoiceRefreshers.Add(() => fallback.SetIsOnWithoutNotify(previewSquadMode == mode));
+                modeChoiceRefreshers.Add(() => fallback.SetIsOnWithoutNotify(GameplayModeRuntime.Current == mode));
             }
 
             // Reuse the stock-radio click surface so the full choice responds like loadout modes.
@@ -153,6 +148,50 @@ namespace pitTeam.Components
             LoadoutModeToggleHoverController hover = clickObject.AddComponent<LoadoutModeToggleHoverController>();
             hover.Configure(hoverTarget, hoverBackground);
             hover.OnClick = _ => SelectMode(true);
+        }
+
+        private async void ChangeGameplayMode(GameplayMode next)
+        {
+            if (GameplayModeRuntime.IsSwitching || next == GameplayModeRuntime.Current) { RefreshModeChoices(); return; }
+            if (IsRaidActive()) { AddTeammateCreationFlow.ShowToast(GetSocialUiText("SettingsUnavailableDuringRaid")); RefreshModeChoices(); return; }
+            var outgoingMembers = MainMenuControllerPatch.GroupPlayers.Where(player => player != null).Select(player => player.AccountId).ToArray();
+            GameObject blocker = new GameObject("pitFireTeam_ModeSwitchBusy", typeof(RectTransform), typeof(Image));
+            blocker.transform.SetParent(modePanel.transform.parent, false);
+            Stretch(blocker.GetComponent<RectTransform>());
+            blocker.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.25f);
+            CancelPortraitQueue();
+            try
+            {
+                await GameplayModeRuntime.ChangeAsync(next);
+                foreach (string id in outgoingMembers)
+                {
+                    MainMenuControllerPatch.GroupPlayers.RemoveFirst(player => player?.AccountId == id);
+                    if (TryGetMatchmakerController(out var controller))
+                    {
+                        controller.GroupPlayers.RemoveFirst(player => player?.AccountId == id);
+                        if (controller.GroupPlayers.Count <= 1) controller.Group?.RemoveOwner();
+                    }
+                }
+                TeammateAutoJoinRuntime.ClearAllSuppression();
+                SquadSideSelectionFlow.ClearOpeningGroupSnapshot();
+                SocialNetworkClassPatch.RefreshFriendsList(true);
+                RebuildRosterTiles();
+            }
+            catch (Exception ex)
+            {
+                pitFireTeam.Log.LogError($"[UI] Gameplay mode switch failed: {ex}");
+                AddTeammateCreationFlow.ShowToast(GetSocialUiText("GameplayModeSwitchFailed"));
+            }
+            finally
+            {
+                if (blocker != null) Destroy(blocker);
+                if (this != null)
+                {
+                    if (addTeammateButton != null) addTeammateButton.gameObject.SetActive(!GameplayModeRuntime.IsAllegiance);
+                    RebuildSettingsEntries();
+                    RefreshModeChoices();
+                }
+            }
         }
 
         private void RefreshModeChoices()

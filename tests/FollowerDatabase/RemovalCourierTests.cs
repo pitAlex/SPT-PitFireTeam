@@ -23,7 +23,7 @@ internal static class RemovalCourierTests
             var json = new JsonUtil([new SptJsonConverterRegistrator()]);
             var session = new MongoId("eeeeeeeeeeeeeeeeeeeeeeee");
             var storage = new FriendlyTeammateStorage(new FileUtil(), json,
-                DispatchProxy.Create<ISptLogger<FriendlyTeammateStorage>, TestLogger>());
+                DispatchProxy.Create<ISptLogger<FriendlyTeammateStorage>, TestLogger>(), ModeStorageTests.CreateSettings());
             storage.InitializeProfile(session);
             var cloner = new FastCloner();
             var constructor = typeof(FriendlyTeammateService).GetConstructors().Single();

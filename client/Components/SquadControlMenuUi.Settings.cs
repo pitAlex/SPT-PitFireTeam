@@ -635,7 +635,7 @@ namespace pitTeam.Components
                 controlRect.sizeDelta = new Vector2(120f, 72f);
                 controlRect.anchoredPosition = new Vector2(-1 * (SettingsControlRightInset - 20f), 0f);
                 CreateBoolSettingControl(controlRect, entry, !disabledDuringRaid);
-                AddRaidDisabledTooltipOverlay(rowObject, disabledDuringRaid);
+                AddRaidDisabledTooltipOverlay(rowObject, disabledDuringRaid, entry);
                 return;
             }
 
@@ -650,7 +650,7 @@ namespace pitTeam.Components
 
                 controlRect.anchoredPosition = new Vector2(-SettingsControlRightInset, SettingsSliderVerticalOffset);
                 CreateIntSliderSettingControl(controlRect, entry, acceptableRange, !disabledDuringRaid);
-                AddRaidDisabledTooltipOverlay(rowObject, disabledDuringRaid);
+                AddRaidDisabledTooltipOverlay(rowObject, disabledDuringRaid, entry);
                 return;
             }
 
@@ -666,7 +666,7 @@ namespace pitTeam.Components
                     entry as ConfigEntry<string>,
                     defaultHex,
                     !disabledDuringRaid);
-                AddRaidDisabledTooltipOverlay(rowObject, disabledDuringRaid);
+                AddRaidDisabledTooltipOverlay(rowObject, disabledDuringRaid, entry);
                 return;
             }
 
@@ -677,12 +677,12 @@ namespace pitTeam.Components
                 controlRect.pivot = new Vector2(1f, 0.5f);
                 controlRect.anchoredPosition = new Vector2(-SettingsShortcutRightInset, 0f);
                 CreateShortcutSettingControl(controlRect, entry as ConfigEntry<KeyboardShortcut>, !disabledDuringRaid);
-                AddRaidDisabledTooltipOverlay(rowObject, disabledDuringRaid);
+                AddRaidDisabledTooltipOverlay(rowObject, disabledDuringRaid, entry);
                 return;
             }
 
             CreateReadOnlySettingControl(controlRect, entry.BoxedValue?.ToString() ?? string.Empty);
-            AddRaidDisabledTooltipOverlay(rowObject, disabledDuringRaid);
+            AddRaidDisabledTooltipOverlay(rowObject, disabledDuringRaid, entry);
         }
 
         private static bool IsNestedSettingsEntry(ConfigEntryBase entry)
@@ -701,8 +701,8 @@ namespace pitTeam.Components
             string displayName = GetLoadoutManagementDisplayName(mode, languageEntry);
             CreateModeSelectionEntryRow(
                 $"pitFireTeam_Setting_LoadoutManagement_{mode}", displayName,
-                GetLoadoutManagementDescription(languageEntry), IsRaidActive(),
-                control => CreateLoadoutManagementRadioControl(control, mode, displayName, !IsRaidActive()));
+                GetLoadoutManagementDescription(languageEntry), IsRaidActive() || GameplayModeRuntime.IsAllegiance,
+                control => CreateLoadoutManagementRadioControl(control, mode, displayName, !IsRaidActive() && !GameplayModeRuntime.IsAllegiance), entry: pitFireTeam.loadoutManagementMode);
         }
 
         private void CreateEnemyTrackingEntryRow()
@@ -750,12 +750,12 @@ namespace pitTeam.Components
                         });
                     }
                     foreach (var refresh in refreshChoices) refresh();
-                }, rowHeight: 136f);
+                }, rowHeight: 136f, entry: pitFireTeam.enemyTracking);
         }
 
         private void CreateModeSelectionEntryRow(
             string rowName, string displayName, string description, bool disabledDuringRaid,
-            System.Action<RectTransform> createControl, float rowHeight = SettingsRowHeight)
+            System.Action<RectTransform> createControl, float rowHeight = SettingsRowHeight, ConfigEntryBase entry = null)
         {
             GameObject rowObject = new GameObject(
                 rowName,
@@ -820,7 +820,7 @@ namespace pitTeam.Components
             controlRect.anchoredPosition = new Vector2(-SettingsControlRightInset, 0f);
 
             createControl(controlRect);
-            AddRaidDisabledTooltipOverlay(rowObject, disabledDuringRaid);
+            AddRaidDisabledTooltipOverlay(rowObject, disabledDuringRaid, entry);
         }
 
         private static void CreateSettingsRowChrome(Transform rowTransform)
@@ -856,7 +856,7 @@ namespace pitTeam.Components
 
         private bool ShouldDisableSettingDuringRaid(ConfigEntryBase entry)
         {
-            return IsRaidRestrictedSettingsContext() && RequiresRaidRestart(entry);
+            return GameplayModeRuntime.IsLocked(entry) || (IsRaidRestrictedSettingsContext() && RequiresRaidRestart(entry));
         }
 
         private static bool RequiresRaidRestart(ConfigEntryBase entry)
@@ -954,7 +954,7 @@ namespace pitTeam.Components
             return IsRaidActive();
         }
 
-        private void AddRaidDisabledTooltipOverlay(GameObject rowObject, bool disabledDuringRaid)
+        private void AddRaidDisabledTooltipOverlay(GameObject rowObject, bool disabledDuringRaid, ConfigEntryBase entry = null)
         {
             if (!disabledDuringRaid || rowObject == null)
             {
@@ -976,7 +976,7 @@ namespace pitTeam.Components
             tooltipAreaImage.raycastTarget = true;
 
             ProfileTooltipHoverController tooltipHover = tooltipAreaObject.AddComponent<ProfileTooltipHoverController>();
-            tooltipHover.Configure(GetSocialUiText("SettingsUnavailableDuringRaid"));
+            tooltipHover.Configure(GetSocialUiText(GameplayModeRuntime.IsLocked(entry) ? "SettingsUnavailableInAllegiance" : "SettingsUnavailableDuringRaid"));
         }
 
         private static void SetSettingsControlInteractable(Transform controlRoot, bool interactable)
@@ -1218,6 +1218,7 @@ namespace pitTeam.Components
                 return;
             }
 
+            if (GameplayModeRuntime.IsAllegiance || GameplayModeRuntime.IsSwitching) return;
             LoadoutManagementMode previousMode = pitFireTeam.loadoutManagementMode.Value;
             if (previousMode == mode)
             {

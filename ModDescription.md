@@ -145,7 +145,8 @@ Commands influence teammate behavior but do not force exact actions. Teammates w
 
 **In COMMAND:**
 
-- **Follow Me / Cooperative** - recruit an eligible same-side bot or tell existing teammates to resume following.
+- **Follow Me** - tell existing teammates to resume following; this command does not recruit bots.
+- **Cooperative** - recruit an eligible bot. Available through the contextual interaction and the gesture menu's **Help** category. Guns for Hire keeps same-side recruitment; Allegiance also permits selected friendly solo PMCs from the opposite faction.
 - **Attention / Look** - clears command pressure and makes teammates focus on the boss or indicated direction.
 - **Regroup** - tells teammates to converge near the boss. In combat, this becomes a combat regroup objective (within a 18-meter radius of the boss, Marksman within 24m).
 - **Exit Located** - calls eligible teammates into a tight extraction formation around you without detouring to normal regroup cover.

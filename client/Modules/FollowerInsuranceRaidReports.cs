@@ -18,6 +18,10 @@ namespace pitTeam.Modules
         private static RaidReports Current;
 
         internal static string CurrentServerId { get { lock (Gate) return Current?.ServerId; } }
+        internal static Task WaitForPendingReportsAsync()
+        {
+            lock (Gate) return Task.WhenAll(Current?.Reports.Select(report => report.Finished.Task).ToArray() ?? Array.Empty<Task<bool>>());
+        }
 
         internal sealed class RaidReports
         {
