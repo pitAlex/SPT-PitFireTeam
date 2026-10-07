@@ -27,6 +27,7 @@ public class FriendlyPostRaidService(
     FriendlyLanguageService languageService,
     FriendlyTeammateService teammateService,
     FollowerInsuranceRaidDiagnostics insuranceDiagnostics,
+    FollowerInsuranceCourierTransferService insuranceCourierTransfers,
     TimeUtil timeUtil,
     SaveServer saveServer,
     InventoryHelper inventoryHelper,
@@ -98,6 +99,18 @@ public class FriendlyPostRaidService(
         // Only accept provenance attached to a tree that survived the existing delivery filters.
         var sourceIds = FollowerInsuranceRaidClassifier.DeliveredSourceIds(returnedIds, request.InsuranceSourceItemIdsByRoot);
         mailSendService.SendMessageToPlayer(details);
+        try
+        {
+            var acceptedMailIds = saveServer.GetProfile(sessionId)?.DialogueRecords?
+                .Where(pair => pair.Key.ToString() == FriendlyCourierTraderProfile.CourierTraderIdValue)
+                .SelectMany(pair => pair.Value.Messages?.LastOrDefault()?.Items?.Data ?? [])
+                .Select(item => item.Id.ToString()).ToHashSet(StringComparer.OrdinalIgnoreCase) ?? [];
+            insuranceCourierTransfers.ObserveDelivered(sessionId, request, items, details.Items, sourceIds, acceptedMailIds);
+        }
+        catch (Exception ex)
+        {
+            logger.Warning($"[FollowerInsurance:CourierTransfer] Unable to record mail lineage; delivery remains valid: {ex}");
+        }
         insuranceDiagnostics.ObserveCourier(sessionId, sourceIds, request.InsuranceServerId, request.InsuranceReportId);
         EnsureDialogHasSender(sessionId, sender);
     }

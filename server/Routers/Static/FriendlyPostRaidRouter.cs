@@ -4,6 +4,7 @@ using pitTeam.Server.Models;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.DI;
 using SPTarkov.Server.Core.Models.Eft.Match;
+using SPTarkov.Server.Core.Models.Eft.ItemEvent;
 using SPTarkov.Server.Core.Utils;
 
 namespace pitTeam.Server.Routers.Static;
@@ -13,6 +14,10 @@ public class FriendlyPostRaidRouter(JsonUtil jsonUtil, FriendlyPostRaidCallbacks
     : StaticRouter(
         jsonUtil,
         [
+            new RouteAction<ItemEventRouterRequest>(
+                "/client/game/profile/items/moving",
+                async (url, info, sessionId, output, cancellationToken) => await FriendlyModeRequestGate.Run(() => callbacks.InsuranceMailClaim(info, sessionId, output))
+            ),
             new RouteAction<FollowerInsuranceRaidDisplayRequest>(
                 "/singleplayer/pitfireteam/insurance/raid-display",
                 async (url, info, sessionId, output, cancellationToken) => await FriendlyModeRequestGate.Run(() => callbacks.InsuranceRaidDisplay(url, info, sessionId))

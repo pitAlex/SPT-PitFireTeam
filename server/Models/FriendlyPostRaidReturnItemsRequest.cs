@@ -11,9 +11,13 @@ public record FriendlyPostRaidReturnItemsRequest : IRequestData
     [JsonPropertyName("items")]
     public List<Item>? Items { get; set; }
 
-    // Passive original-ID evidence for client paths that clone return trees with new IDs.
+    // Original IDs for loss exclusion when a client path clones return trees.
     [JsonPropertyName("insuranceSourceItemIdsByRoot")]
     public Dictionary<string, List<string>>? InsuranceSourceItemIdsByRoot { get; set; }
+
+    // Exact original ID for each cloned item ID in the delivered flat tree.
+    [JsonPropertyName("insuranceSourceItemIdByReturnId")]
+    public Dictionary<string, string>? InsuranceSourceItemIdByReturnId { get; set; }
 
     [JsonPropertyName("member")]
     public FriendlyPostRaidMember? Member { get; set; }

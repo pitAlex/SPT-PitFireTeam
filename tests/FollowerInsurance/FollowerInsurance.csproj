@@ -9,6 +9,8 @@
     <Compile Include="../../server/Services/FollowerInsuranceRaidBarrier.cs" Link="FollowerInsuranceRaidBarrier.cs" />
     <Compile Include="../../server/Services/FollowerInsuranceRaidClassifier.cs" Link="FollowerInsuranceRaidClassifier.cs" />
     <Compile Include="../../server/Services/FollowerInsuranceSettlementPlanner.cs" Link="FollowerInsuranceSettlementPlanner.cs" />
+    <Compile Include="../../server/Services/FollowerInsuranceCourierPolicyPlanner.cs" Link="FollowerInsuranceCourierPolicyPlanner.cs" />
+    <Compile Include="../../server/Models/FollowerInsuranceCourierTransfer.cs" Link="FollowerInsuranceCourierTransfer.cs" />
     <Compile Include="../../server/Models/FollowerInsuranceRaidDiagnostic.cs" Link="FollowerInsuranceRaidDiagnostic.cs" />
     <Compile Include="../../server/Services/FollowerInsurancePurchasePlanner.cs" Link="FollowerInsurancePurchasePlanner.cs" />
     <Compile Include="../../server/Services/FollowerInsuranceReconciler.cs" Link="FollowerInsuranceReconciler.cs" />

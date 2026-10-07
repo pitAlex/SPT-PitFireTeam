@@ -54,6 +54,7 @@ namespace pitTeam.Modules
         private Dictionary<string, HashSet<string>>? _strictCargoItemIds;
         private List<Item>? _toSendItems;
         private readonly Dictionary<string, string[]> _returnSourceItemIds = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _returnOriginalIdByReturnId = new Dictionary<string, string>(StringComparer.Ordinal);
         private Dictionary<string, Dictionary<string, object>>? _followersWithLoot;
 
         private Dictionary<string, List<string>>? _followersEquipment;
@@ -129,7 +130,7 @@ namespace pitTeam.Modules
             // Send the return payload now so temporary Restricted gear cannot be stripped
             // from teammate persistence before the mail request has actually reached the server.
             return SendReturnItems(_toSendItems, member, "post-raid returned follower items", synchronous: true,
-                sourceItemIdsByRoot: _returnSourceItemIds);
+                sourceItemIdsByRoot: _returnSourceItemIds, sourceIdByReturnId: _returnOriginalIdByReturnId);
         }
         /** Gather what items where given to followers and which is still alive to count */
         private void GatherItems()
@@ -142,6 +143,7 @@ namespace pitTeam.Modules
 
             _toSendItems.Clear();
             _returnSourceItemIds.Clear();
+            _returnOriginalIdByReturnId.Clear();
             List<string> gathered = new List<string>();
 
             foreach (var player in bossPlayers)
@@ -228,6 +230,7 @@ namespace pitTeam.Modules
                 Item returnedItem = item.CloneItem();
                 _toSendItems.Add(returnedItem);
                 _returnSourceItemIds[returnedItem.Id] = GetItemTreeIds(item).ToArray();
+                RecordReturnItemLineage(item, returnedItem, _returnOriginalIdByReturnId);
                 gathered.Add(stored);
             }
         }
@@ -396,6 +399,31 @@ namespace pitTeam.Modules
             return ids;
         }
 
+        private static void RecordReturnItemLineage(Item source, Item clone, Dictionary<string, string> destination)
+        {
+            try
+            {
+                Item[] originals = new[] { source }.Concat(source.GetAllItems()).Where(i => i != null)
+                    .GroupBy(i => i.Id, StringComparer.Ordinal).Select(g => g.First()).ToArray();
+                Item[] copies = new[] { clone }.Concat(clone.GetAllItems()).Where(i => i != null)
+                    .GroupBy(i => i.Id, StringComparer.Ordinal).Select(g => g.First()).ToArray();
+                if (originals.Length != copies.Length || originals.Length == 0
+                    || originals[0].Id != source.Id || copies[0].Id != clone.Id
+                    || originals.Where((item, index) => item.TemplateId != copies[index].TemplateId).Any())
+                {
+                    Logger.LogInfo($"[FollowerInsurance:CourierMap] Ambiguous cloned tree root='{source.Id}'; coverage handoff disabled for this tree.");
+                    return;
+                }
+
+                for (int i = 0; i < originals.Length; i++)
+                    destination[copies[i].Id] = originals[i].Id;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogInfo($"[FollowerInsurance:CourierMap] Unable to map cloned tree root='{source.Id}': {ex.Message}");
+            }
+        }
+
         // In Restricted modes teammate gear is lootable during the raid for interaction
         // parity, but those exact item ids must not survive player extraction. The server also
         // derives saved teammate gear from profile JSON; this client route covers live-only
@@ -502,7 +530,8 @@ namespace pitTeam.Modules
             Dictionary<string, object>? member,
             string context,
             bool synchronous = false,
-            Dictionary<string, string[]> sourceItemIdsByRoot = null)
+            Dictionary<string, string[]> sourceItemIdsByRoot = null,
+            Dictionary<string, string> sourceIdByReturnId = null)
         {
             if (!EnableBackendItemReturn || items == null)
             {
@@ -532,14 +561,42 @@ namespace pitTeam.Modules
                     .First(t => t.GetField("Converters", BindingFlags.Static | BindingFlags.Public) != null);
                 var defaultJsonConverters = Traverse.Create(converterClass).Field<JsonConverter[]>("Converters").Value;
 
+                // Insurance lineage is optional. A bad mapping must never prevent the ordinary
+                // return package from reaching the server. MongoID is a value type; do not compare
+                // FlatItem._id to null (that invokes its string-to-ID conversion and can throw).
+                var insuranceLineage = new Dictionary<string, string>(StringComparer.Ordinal);
+                if (sourceIdByReturnId != null)
+                {
+                    try
+                    {
+                        foreach (var flatItem in flatItems)
+                        {
+                            string returnedId = flatItem._id.ToString();
+                            if (string.IsNullOrWhiteSpace(returnedId)
+                                || !sourceIdByReturnId.TryGetValue(returnedId, out string originalId)
+                                || string.IsNullOrWhiteSpace(originalId))
+                                continue;
+                            if (insuranceLineage.ContainsKey(returnedId))
+                                throw new InvalidOperationException($"Duplicate returned item ID '{returnedId}'.");
+                            insuranceLineage.Add(returnedId, originalId);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        insuranceLineage.Clear();
+                        Logger.LogInfo($"[FollowerInsurance:CourierMap] Skipped optional lineage; normal item return continues: {ex.Message}");
+                    }
+                }
+
                 string returnItemsJson = new
                 {
                     items = flatItems,
                     member,
-                    // Diagnostic provenance only: mail keeps its existing clone/ID behavior.
+                    // Loss provenance and optional policy handoff; mail keeps its clone/ID behavior.
                     insuranceSourceItemIdsByRoot = rootItems
                         .Where(root => sourceItemIdsByRoot?.ContainsKey(root.Id) == true)
                         .ToDictionary(root => root.Id, root => sourceItemIdsByRoot[root.Id]),
+                    insuranceSourceItemIdByReturnId = insuranceLineage,
                 }.ToJson(defaultJsonConverters);
 
                 var insuranceReport = FollowerInsuranceRaidReports.Prepare(returnItemsJson);
@@ -652,6 +709,7 @@ namespace pitTeam.Modules
             _strictCargoItemIds?.Clear();
             _toSendItems?.Clear();
             _returnSourceItemIds.Clear();
+            _returnOriginalIdByReturnId.Clear();
             _followersWithLoot?.Clear();
             _enemiesSeen?.Clear();
 

@@ -40,7 +40,7 @@ public static class FollowerInsuranceSettlementPlanner
         return policies;
     }
 
-    private static bool HasCompleteFinalEvidence(FollowerInsuranceRaidDiagnostic raid) =>
+    public static bool HasCompleteFinalEvidence(FollowerInsuranceRaidDiagnostic raid) =>
         raid.Enabled && raid.SettlementEligible && raid.EndReceived && !raid.AwaitingTransit && !raid.IncompleteTransit
         && raid.PlayerInventoryKnown && FollowerInsuranceRaidBarrier.IsComplete(raid)
         && raid.Participants.Count > 0

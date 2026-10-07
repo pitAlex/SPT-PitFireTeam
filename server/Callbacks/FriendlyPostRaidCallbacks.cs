@@ -3,7 +3,10 @@ using pitTeam.Server.Services;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Match;
+using SPTarkov.Server.Core.Models.Eft.ItemEvent;
 using SPTarkov.Server.Core.Utils;
+using SPTarkov.Common.Models.Logging;
+using System.Text.Json;
 
 namespace pitTeam.Server.Callbacks;
 
@@ -13,7 +16,9 @@ public class FriendlyPostRaidCallbacks(
     FriendlyPostRaidService postRaidService,
     FriendlyRecruitService recruitService,
     FollowerInsuranceRaidDiagnostics insuranceDiagnostics,
-    FriendlyTeammateService teammateService
+    FollowerInsuranceCourierTransferService courierTransfers,
+    FriendlyTeammateService teammateService,
+    ISptLogger<FriendlyPostRaidCallbacks> logger
 )
 {
     public ValueTask<string> ReturnItems(string url, FriendlyPostRaidReturnItemsRequest request, MongoId sessionId)
@@ -94,6 +99,20 @@ public class FriendlyPostRaidCallbacks(
     {
         insuranceDiagnostics.CompleteReports(sessionId, request);
         return new ValueTask<string>(httpResponse.NullResponse());
+    }
+
+    public ValueTask<string> InsuranceMailClaim(ItemEventRouterRequest request, MongoId sessionId, string? output)
+    {
+        if (request.Data?.Any(body => body.ValueKind == JsonValueKind.Object
+            && body.TryGetProperty("fromOwner", out var owner)
+            && owner.ValueKind == JsonValueKind.Object
+            && owner.TryGetProperty("type", out var type)
+            && string.Equals(type.GetString(), "Mail", StringComparison.OrdinalIgnoreCase)) == true)
+        {
+            try { courierTransfers.TryApplyClaimed(sessionId); }
+            catch (Exception ex) { logger.Warning($"[FollowerInsurance:CourierTransfer] Claim observation failed: {ex}"); }
+        }
+        return new ValueTask<string>(output ?? httpResponse.NullResponse());
     }
 
     public ValueTask<string> InsuranceRaidDisplay(string url, FollowerInsuranceRaidDisplayRequest request, MongoId sessionId)

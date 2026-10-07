@@ -22,6 +22,7 @@ public sealed class FollowerInsuranceRaidDiagnostics(
     ProfileHelper profileHelper,
     JsonUtil jsonUtil,
     FollowerInsuranceSettlementService settlementService,
+    FollowerInsuranceCourierTransferService courierTransfers,
     ISptLogger<FollowerInsuranceRaidDiagnostics> logger)
 {
     private const string Document = "insurance-raid-diagnostic.json";
@@ -215,6 +216,7 @@ public sealed class FollowerInsuranceRaidDiagnostics(
             logger.Info($"[FollowerInsurance:RaidReport] raidId='{raid.RaidId}' revision={raid.Revision} insured={findings.Count} retained={findings.Count(f => f.Status == "retained")} recovered={findings.Count(f => f.Status == "recovered")} lostCandidates={findings.Count(f => f.Status == "lost-candidate")} unresolved={findings.Count(f => f.Status == "unresolved")} deferred={raid.AwaitingTransit}");
         }
         settlementService.TryTransferRetainedPlayerPolicies(sessionId, raid, Document);
+        courierTransfers.TryAuthorize(sessionId, raid);
         settlementService.TrySettle(sessionId, raid, Document);
     }
 

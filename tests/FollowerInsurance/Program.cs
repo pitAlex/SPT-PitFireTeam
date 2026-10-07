@@ -241,4 +241,49 @@ Check(FollowerInsuranceRaidClassifier.DisplayPolicies(settlement).Count == 0, "r
 settlement.EndReceived = false;
 settlement.Enabled = false;
 Check(FollowerInsuranceRaidClassifier.DisplayPolicies(settlement).Count == 0, "disabled insurance mode shows no follower shields");
+var courierReportId = Guid.NewGuid().ToString("N");
+var courierRaid = new FollowerInsuranceRaidDiagnostic
+{
+    ServerId = "courier-raid", Enabled = true, SettlementEligible = true, EndReceived = true,
+    PlayerInventoryKnown = true, ReportsComplete = true,
+    ExpectedReportIds = [courierReportId], ReceivedReportIds = [courierReportId],
+    Participants =
+    [
+        new() { Aid = "fallen", ProfileId = "fallen-profile", OutcomeReceived = true },
+        new() { Aid = "carrier", ProfileId = "carrier-profile", OutcomeReceived = true,
+            Escaped = true, EquipmentSnapshotKnown = true, EscapedItemIds = ["insured-scope"] },
+    ],
+    InsuredItems = [new("insured-scope", "scope-template", "prapor", "fallen", "gun", "mod_scope")],
+    CourierItemIds = ["insured-scope"],
+};
+var mailed = new FollowerInsuranceCourierTransfer
+{
+    ServerId = courierRaid.ServerId, ReportId = courierReportId, SourceItemId = "insured-scope",
+    MailItemId = "mail-scope", TemplateId = "scope-template",
+};
+Check(FollowerInsuranceCourierPolicyPlanner.Authorize(courierRaid, mailed)?.TraderId == "prapor",
+    "fallen follower insured gear carried out by another follower authorizes exact courier handoff");
+courierRaid.Participants[1].SavedItemIds = ["insured-scope"];
+Check(FollowerInsuranceCourierPolicyPlanner.Authorize(courierRaid, mailed) == null,
+    "gear still saved on carrier cannot also receive a mailed policy");
+courierRaid.Participants[1].SavedItemIds.Clear();
+courierRaid.Participants[1].EscapedItemIds.Clear();
+Check(FollowerInsuranceCourierPolicyPlanner.Authorize(courierRaid, mailed) == null,
+    "courier provenance alone cannot authorize another follower's extraction");
+courierRaid.Participants[1].EscapedItemIds = ["insured-scope"];
+courierRaid.ReportsComplete = false;
+Check(FollowerInsuranceCourierPolicyPlanner.Authorize(courierRaid, mailed) == null,
+    "incomplete report cannot authorize mailed coverage");
+courierRaid.ReportsComplete = true;
+mailed.TemplateId = "replacement-template";
+Check(FollowerInsuranceCourierPolicyPlanner.Authorize(courierRaid, mailed) == null,
+    "different same-slot item cannot inherit source coverage");
+mailed.TemplateId = "scope-template";
+mailed.State = "complete";
+Check(FollowerInsuranceCourierPolicyPlanner.Authorize(courierRaid, mailed) == null,
+    "completed courier handoff cannot authorize again");
+var persistedMail = JsonSerializer.Deserialize<FollowerInsuranceCourierTransfers>(
+    JsonSerializer.Serialize(new FollowerInsuranceCourierTransfers { Items = [mailed] }))!;
+Check(persistedMail.Items.Single().State == "complete" && persistedMail.Items[0].MailItemId == "mail-scope",
+    "courier handoff state and remapped mail item ID survive restart");
 Console.WriteLine($"PASS: {checks} follower insurance checks");

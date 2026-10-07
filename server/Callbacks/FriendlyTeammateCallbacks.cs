@@ -18,6 +18,7 @@ public class FriendlyTeammateCallbacks(
     FriendlyServerSettingsService settingsService,
     FriendlyTeammateStorage storage,
     FriendlyTeammateInsuranceService teammateInsuranceService,
+    FollowerInsuranceCourierTransferService courierTransfers,
     JsonUtil jsonUtil,
     ISptLogger<FriendlyTeammateCallbacks> logger
 )
@@ -126,6 +127,9 @@ public class FriendlyTeammateCallbacks(
             // A gameplay switch selects a different roster, not a loadout conversion of either roster.
             if (!changingMode && previous.LoadoutManagementMode != request.LoadoutManagementMode)
             {
+                if (previous.LoadoutManagementMode is "Immersive" or "Extreme"
+                    && request.LoadoutManagementMode is not ("Immersive" or "Extreme"))
+                    courierTransfers.CancelUnclaimed(sessionId);
                 teammateService.LogLoadoutManagementModeChange(sessionId, previous.LoadoutManagementMode, request.LoadoutManagementMode);
                 teammateService.ApplyLoadoutManagementModeChange(sessionId, previous.LoadoutManagementMode, request.LoadoutManagementMode);
             }
