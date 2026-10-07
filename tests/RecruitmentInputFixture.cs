@@ -5,6 +5,11 @@ using pitTeam.Modules;
 using pitTeam.Patches;
 using UnityEngine;
 
+public enum BodyPartType { head, body }
+public class BodyPart { public Vector3 Position; }
+public class ShootToPoint { public Vector3 Point; public ShootToPoint(Vector3 point, int coefficient) { Point = point; } }
+public static class LayersMaskController { public const int HighPolyWithTerrainMask = 1; }
+
 namespace pitTeam.Patches {
     public enum CustomPhrases { TeamStatus=1000 }
     internal class QuickPanelPatch { __COOPERATION_AVAILABILITY__ }
@@ -22,6 +27,7 @@ public static class RecruitmentInputChecks {
         foreach(bool sain in new[]{false,true}) foreach(bool allegiance in new[]{false,true}) {
             pitTeam.pitFireTeam.IsSAINInstalled=sain;GameplayModeRuntime.IsAllegiance=allegiance;
             pitTeam.pitFireTeam.pickupEnabled.Value=true;AllegiancePmcFriendship.Allowed=true;
+            pitTeam.Utils.Utils.HeadVisible=true;pitTeam.Utils.Utils.BodyVisible=true;
             var player=BossPlayers.Boss.Value;player.Side=EPlayerSide.Usec;player.Position=default;player.InteractablePlayer=null;
             var bear=new BotOwner{Side=EPlayerSide.Bear,BotsGroup=new Group()};
             bear.GetPlayer.Side=EPlayerSide.Bear;player.InteractablePlayer=bear.GetPlayer;
@@ -34,7 +40,7 @@ public static class RecruitmentInputChecks {
             bear.GetPlayer.HealthController.IsAlive=false;
             Check(!QuickPanelPatch.CanShowCooperation(player),"Dead target has no Cooperation interaction");bear.GetPlayer.HealthController.IsAlive=true;
             bear.IsFollower=true;Check(!QuickPanelPatch.CanShowCooperation(player),"Existing follower has no recruitment interaction");bear.IsFollower=false;
-            pitTeam.pitFireTeam.pickupEnabled.Value=false;Check(!QuickPanelPatch.CanShowCooperation(player),"Disabled pickup hides Cooperation");pitTeam.pitFireTeam.pickupEnabled.Value=true;
+            pitTeam.pitFireTeam.pickupEnabled.Value=false;Check(QuickPanelPatch.CanShowCooperation(player)==allegiance,"Pickup preference cannot hide Allegiance Cooperation");pitTeam.pitFireTeam.pickupEnabled.Value=true;
             player.Side=EPlayerSide.Savage;bear.Side=EPlayerSide.Bear;
             Check(!QuickPanelPatch.CanShowCooperation(player),"Player Scav cannot expose cross-faction PMC recruitment");player.Side=EPlayerSide.Usec;
             Check(!Receive(bear,player,EPhraseTrigger.FollowMe) && bear.BotsGroup.RequestsController.Calls==0,"Follow Me blocks native and mod recruitment for non-followers");
@@ -45,8 +51,27 @@ public static class RecruitmentInputChecks {
             Check(!Receive(other,player,EPhraseTrigger.Cooperation) && other.BotsGroup.RequestsController.Calls==0,"Targeted Cooperation excludes other listeners");
             player.InteractablePlayer=null;
             Check(!Receive(other,player,EPhraseTrigger.Cooperation) && other.BotsGroup.RequestsController.Calls==1,"Help-menu Cooperation without a selected target reaches nearby candidates");
-            other.GetPlayer.Position=new Vector3{x=16};
-            Check(Receive(other,player,EPhraseTrigger.Cooperation) && other.BotsGroup.RequestsController.Calls==1,"Recruitment phrase respects existing fifteen metre radius");
+            pitTeam.Utils.Utils.HeadVisible=false;pitTeam.Utils.Utils.BodyVisible=false;
+            Check(!Receive(other,player,EPhraseTrigger.Cooperation) && other.BotsGroup.RequestsController.Calls==1,"Help-menu Cooperation cannot recruit through an obstruction");
+            player.InteractablePlayer=other.GetPlayer;
+            Check(!Receive(other,player,EPhraseTrigger.Cooperation) && other.BotsGroup.RequestsController.Calls==1,"Contextual target cannot bypass the shared sight gate");
+            pitTeam.Utils.Utils.BodyVisible=true;
+            Check(!Receive(other,player,EPhraseTrigger.Cooperation) && other.BotsGroup.RequestsController.Calls==2,"Visible body is enough when the head is obstructed");
+            pitTeam.Utils.Utils.BodyVisible=false;pitTeam.Utils.Utils.HeadVisible=true;
+            Check(!Receive(other,player,EPhraseTrigger.Cooperation) && other.BotsGroup.RequestsController.Calls==3,"Visible head is enough when the body is obstructed");
+            other.IsDead=true;
+            Check(!Receive(other,player,EPhraseTrigger.Cooperation) && other.BotsGroup.RequestsController.Calls==3,"Dead listener cannot receive Cooperation");other.IsDead=false;
+            other.BotState=EBotState.Inactive;
+            Check(!Receive(other,player,EPhraseTrigger.Cooperation) && other.BotsGroup.RequestsController.Calls==3,"Inactive listener cannot receive Cooperation");other.BotState=EBotState.Active;
+            var parts=player.MainParts;player.MainParts=null;
+            Check(!Receive(other,player,EPhraseTrigger.Cooperation) && other.BotsGroup.RequestsController.Calls==3,"Unavailable player sight targets fail closed");player.MainParts=parts;
+            player.InteractablePlayer=null;
+            other.GetPlayer.Position=new Vector3{x=5};
+            Check(!Receive(other,player,EPhraseTrigger.Cooperation) && other.BotsGroup.RequestsController.Calls==4,"Visible candidate at exactly five metres remains eligible");
+            int sightChecks=pitTeam.Utils.Utils.SightChecks;
+            other.GetPlayer.Position=new Vector3{x=5.01f};
+            Check(Receive(other,player,EPhraseTrigger.Cooperation) && other.BotsGroup.RequestsController.Calls==4,"Recruitment phrase rejects candidates just beyond five metres");
+            Check(pitTeam.Utils.Utils.SightChecks==sightChecks,"Out-of-range listeners do not perform sight checks");
             Check(Receive(bear,player,EPhraseTrigger.NeedHelp) && bear.BotsGroup.RequestsController.Calls==1,"Need Help keeps its existing support behavior");
         }
         var help=new[]{EPhraseTrigger.NeedHelp};CreatePhraseGroupPatch.AddCooperationToHelpGroup("HELP",ref help);

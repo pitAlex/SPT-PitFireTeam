@@ -408,7 +408,7 @@ namespace pitTeam.Components
             {
                 string loadoutSection = pitFireTeam.GetLanguageText(language => language.loadoutManagementSettings);
                 yield return new SquadSettingEntry { SectionTitle = loadoutSection, LoadoutMode = LoadoutManagementMode.Restricted };
-                if (pitFireTeam.loadoutManagementMode?.Value == LoadoutManagementMode.Restricted &&
+                if (GameplayModeRuntime.GetEffectiveValue(pitFireTeam.loadoutManagementMode) == LoadoutManagementMode.Restricted &&
                     pitFireTeam.restrictedGearMaintenance != null)
                 {
                     yield return new SquadSettingEntry
@@ -436,6 +436,7 @@ namespace pitTeam.Components
                 pitFireTeam.GetLanguageText(language => language.miscSettings),
                 pitFireTeam.teleportKey,
                 pitFireTeam.healKey,
+                pitFireTeam.friendlyChanceMultiplier,
                 pitFireTeam.heatlhMultiplier,
                 pitFireTeam.botPrefetch))
             {
@@ -445,6 +446,7 @@ namespace pitTeam.Components
 
         internal void RefreshLocalizedText()
         {
+            UpdateRosterPenaltyLabel(true);
             EnsureSquadButton();
             EnsureRaidSettingsButton();
 
@@ -681,7 +683,7 @@ namespace pitTeam.Components
                 return;
             }
 
-            CreateReadOnlySettingControl(controlRect, entry.BoxedValue?.ToString() ?? string.Empty);
+            CreateReadOnlySettingControl(controlRect, GameplayModeRuntime.GetEffectiveValue(entry)?.ToString() ?? string.Empty);
             AddRaidDisabledTooltipOverlay(rowObject, disabledDuringRaid, entry);
         }
 
@@ -740,11 +742,11 @@ namespace pitTeam.Components
                             foreach (var refresh in refreshChoices) refresh();
                         }
                         CreateModeRadioControl(choice, displayName, !disabledDuringRaid, group,
-                            pitFireTeam.enemyTracking.Value == mode, SelectMode,
+                            GameplayModeRuntime.GetEffectiveValue(pitFireTeam.enemyTracking) == mode, SelectMode,
                             out UIAnimatedToggleSpawner toggle, out Toggle fallback);
                         refreshChoices.Add(() =>
                         {
-                            bool selected = pitFireTeam.enemyTracking.Value == mode;
+                            bool selected = GameplayModeRuntime.GetEffectiveValue(pitFireTeam.enemyTracking) == mode;
                             if (toggle != null) toggle.ToggleSilently(selected);
                             else fallback.SetIsOnWithoutNotify(selected);
                         });
@@ -856,7 +858,7 @@ namespace pitTeam.Components
 
         private bool ShouldDisableSettingDuringRaid(ConfigEntryBase entry)
         {
-            return GameplayModeRuntime.IsLocked(entry) || (IsRaidRestrictedSettingsContext() && RequiresRaidRestart(entry));
+            return GameplayModeRuntime.IsSettingUnavailableInCurrentMode(entry) || (IsRaidRestrictedSettingsContext() && RequiresRaidRestart(entry));
         }
 
         private static bool RequiresRaidRestart(ConfigEntryBase entry)
@@ -976,7 +978,10 @@ namespace pitTeam.Components
             tooltipAreaImage.raycastTarget = true;
 
             ProfileTooltipHoverController tooltipHover = tooltipAreaObject.AddComponent<ProfileTooltipHoverController>();
-            tooltipHover.Configure(GetSocialUiText(GameplayModeRuntime.IsLocked(entry) ? "SettingsUnavailableInAllegiance" : "SettingsUnavailableDuringRaid"));
+            string tooltipKey = GameplayModeRuntime.IsSettingUnavailableInCurrentMode(entry)
+                ? GameplayModeRuntime.IsAllegiance ? "SettingsUnavailableInAllegiance" : "SettingsUnavailableInGunsForHire"
+                : "SettingsUnavailableDuringRaid";
+            tooltipHover.Configure(GetSocialUiText(tooltipKey));
         }
 
         private static void SetSettingsControlInteractable(Transform controlRoot, bool interactable)
@@ -1014,7 +1019,7 @@ namespace pitTeam.Components
             if (toggle == null)
             {
                 Toggle fallbackToggle = CreateBasicToggle(parent);
-                bool fallbackValue = entry.BoxedValue is bool fallbackBool && fallbackBool;
+                bool fallbackValue = GameplayModeRuntime.GetEffectiveValue(entry) is bool fallbackBool && fallbackBool;
                 fallbackToggle.isOn = fallbackValue;
                 SetSettingsControlInteractable(fallbackToggle.transform, interactable);
                 if (interactable)
@@ -1028,7 +1033,7 @@ namespace pitTeam.Components
                 return;
             }
 
-            bool currentValue = entry.BoxedValue is bool boolValue && boolValue;
+            bool currentValue = GameplayModeRuntime.GetEffectiveValue(entry) is bool boolValue && boolValue;
             toggle.UpdateValue(currentValue, false, null, null);
             SetSettingsControlInteractable(toggle.transform, interactable);
             toggle.enabled = interactable;
@@ -1066,7 +1071,7 @@ namespace pitTeam.Components
                 RequestLoadoutManagementModeChange(mode);
             }
             CreateModeRadioControl(parent, label, interactable, EnsureLoadoutManagementToggleGroup(),
-                pitFireTeam.loadoutManagementMode?.Value == mode, SelectMode,
+                GameplayModeRuntime.GetEffectiveValue(pitFireTeam.loadoutManagementMode) == mode, SelectMode,
                 out UIAnimatedToggleSpawner toggle, out Toggle fallbackToggle);
             if (toggle != null) loadoutManagementToggleSpawners[mode] = toggle;
             else loadoutManagementFallbackToggles[mode] = fallbackToggle;
@@ -1219,7 +1224,7 @@ namespace pitTeam.Components
             }
 
             if (GameplayModeRuntime.IsAllegiance || GameplayModeRuntime.IsSwitching) return;
-            LoadoutManagementMode previousMode = pitFireTeam.loadoutManagementMode.Value;
+            LoadoutManagementMode previousMode = GameplayModeRuntime.GetEffectiveValue(pitFireTeam.loadoutManagementMode);
             if (previousMode == mode)
             {
                 Modules.Logger.LogInfo($"[UI] Loadout management mode '{mode}' is already selected.");
@@ -1288,8 +1293,7 @@ namespace pitTeam.Components
         private void UpdateLoadoutManagementRadioStates()
         {
             LoadoutManagementMode current =
-                pitFireTeam.loadoutManagementMode?.Value ??
-                pitFireTeam.DefaultLoadoutManagementMode;
+                GameplayModeRuntime.GetEffectiveValue(pitFireTeam.loadoutManagementMode, pitFireTeam.DefaultLoadoutManagementMode);
 
             foreach (KeyValuePair<LoadoutManagementMode, UIAnimatedToggleSpawner> pair in loadoutManagementToggleSpawners)
             {
@@ -1327,8 +1331,8 @@ namespace pitTeam.Components
                 fallbackSlider.minValue = acceptableRange.MinValue;
                 fallbackSlider.maxValue = acceptableRange.MaxValue;
                 fallbackSlider.wholeNumbers = true;
-                fallbackSlider.value = Convert.ToSingle(entry.BoxedValue);
-                valueLabel.text = entry.BoxedValue?.ToString() ?? "0";
+                fallbackSlider.value = Convert.ToSingle(GameplayModeRuntime.GetEffectiveValue(entry));
+                valueLabel.text = GameplayModeRuntime.GetEffectiveValue(entry)?.ToString() ?? "0";
                 SetSettingsControlInteractable(sliderRoot, interactable);
 
                 if (interactable)
@@ -1336,7 +1340,7 @@ namespace pitTeam.Components
                     fallbackSlider.onValueChanged.AddListener(value =>
                     {
                         int boxed = Mathf.RoundToInt(value);
-                        if (Equals(entry.BoxedValue, boxed))
+                        if (Equals(GameplayModeRuntime.GetEffectiveValue(entry), boxed))
                         {
                             return;
                         }
@@ -1350,7 +1354,7 @@ namespace pitTeam.Components
             }
 
             slider.Show(acceptableRange.MinValue, acceptableRange.MaxValue, "0");
-            slider.UpdateValue(Convert.ToSingle(entry.BoxedValue), false, acceptableRange.MinValue, acceptableRange.MaxValue);
+            slider.UpdateValue(Convert.ToSingle(GameplayModeRuntime.GetEffectiveValue(entry)), false, acceptableRange.MinValue, acceptableRange.MaxValue);
             SetSettingsControlInteractable(slider.transform, interactable);
             slider.enabled = interactable;
             if (interactable)
@@ -1358,7 +1362,7 @@ namespace pitTeam.Components
                 slider.Bind(value =>
                 {
                     int boxed = Mathf.RoundToInt(value);
-                    if (Equals(entry.BoxedValue, boxed))
+                    if (Equals(GameplayModeRuntime.GetEffectiveValue(entry), boxed))
                     {
                         return;
                     }
@@ -1374,7 +1378,7 @@ namespace pitTeam.Components
             TMP_InputField input = CloneStockNumberInput(parent) ?? CreateBasicNumberInput(parent);
             if (input == null)
             {
-                CreateReadOnlySettingControl(parent, entry.BoxedValue?.ToString() ?? string.Empty);
+                CreateReadOnlySettingControl(parent, GameplayModeRuntime.GetEffectiveValue(entry)?.ToString() ?? string.Empty);
                 return;
             }
 
@@ -1668,7 +1672,7 @@ namespace pitTeam.Components
 
             ConfigureNumberInputText(input);
 
-            int currentValue = Convert.ToInt32(entry.BoxedValue);
+            int currentValue = Convert.ToInt32(GameplayModeRuntime.GetEffectiveValue(entry));
             input.SetTextWithoutNotify(currentValue.ToString());
             SetSettingsControlInteractable(input.transform, interactable);
 
@@ -1682,7 +1686,7 @@ namespace pitTeam.Components
             {
                 int boxed = ParseClampedSettingInt(value, currentValue, acceptableRange);
                 input.SetTextWithoutNotify(boxed.ToString());
-                if (Equals(entry.BoxedValue, boxed))
+                if (Equals(GameplayModeRuntime.GetEffectiveValue(entry), boxed))
                 {
                     return;
                 }
@@ -1813,7 +1817,7 @@ namespace pitTeam.Components
             }
 
             Button button = CreateActionButton(parent, out TextMeshProUGUI label);
-            label.text = FormatShortcut(entry.Value);
+            label.text = FormatShortcut(GameplayModeRuntime.GetEffectiveValue(entry));
             SetSettingsControlInteractable(button.transform, interactable);
             if (interactable)
             {
@@ -1942,7 +1946,7 @@ namespace pitTeam.Components
 
             ApplyStockSettingsLabelText(rowTemplate, clonedRow.transform, template.transform, GetSettingDisplayName(entry));
             clonedToggle.group = null;
-            clonedToggle.UpdateValue(entry.BoxedValue is bool boolValue && boolValue, false, null, null);
+            clonedToggle.UpdateValue(GameplayModeRuntime.GetEffectiveValue(entry) is bool boolValue && boolValue, false, null, null);
             clonedToggle.Bind(isOn =>
             {
                 entry.BoxedValue = isOn;
@@ -1980,11 +1984,11 @@ namespace pitTeam.Components
             ApplyStockSettingsLabelText(rowTemplate, clonedRow.transform, template.transform, GetSettingDisplayName(entry));
             ConfigureSliderValueInputChrome(NumberSliderValueInputField?.GetValue(clonedSlider) as TMP_InputField);
             clonedSlider.Show(acceptableRange.MinValue, acceptableRange.MaxValue, "0");
-            clonedSlider.UpdateValue(Convert.ToSingle(entry.BoxedValue), false, acceptableRange.MinValue, acceptableRange.MaxValue);
+            clonedSlider.UpdateValue(Convert.ToSingle(GameplayModeRuntime.GetEffectiveValue(entry)), false, acceptableRange.MinValue, acceptableRange.MaxValue);
             clonedSlider.Bind(value =>
             {
                 int boxed = Mathf.RoundToInt(value);
-                if (Equals(entry.BoxedValue, boxed))
+                if (Equals(GameplayModeRuntime.GetEffectiveValue(entry), boxed))
                 {
                     return;
                 }
@@ -2605,6 +2609,7 @@ namespace pitTeam.Components
             if (entry == pitFireTeam.regroupRadius) return language.regroupRadius;
             if (entry == pitFireTeam.enemyRemember) return language.enemyRemember;
             if (entry == pitFireTeam.enemyTracking) return language.enemyTracking;
+            if (entry == pitFireTeam.friendlyChanceMultiplier) return language.friendlyChanceMultiplier;
             if (entry == pitFireTeam.heatlhMultiplier) return language.healthMultiplier;
             if (entry == pitFireTeam.statusSound) return language.statusSound;
             if (entry == pitFireTeam.enemyMarker) return language.enemyMarker;

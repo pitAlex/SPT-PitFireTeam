@@ -390,7 +390,7 @@ namespace pitTeam.Modules
 
                     if (!item.IsSquadMate)
                     {
-                        if (pitFireTeam.recruitPickup.Value && item.GetBoss()?.realPlayer?.Side != EPlayerSide.Savage)
+                        if (GameplayModeRuntime.GetEffectiveValue(pitFireTeam.recruitPickup) && item.GetBoss()?.realPlayer?.Side != EPlayerSide.Savage)
                         {
                             string voiceId = pr.Customization != null && pr.Customization.TryGetValue(EBodyModelPart.Voice, out MongoID voice) ? voice.ToString() : string.Empty;
                             string headId = pr.Customization != null && pr.Customization.TryGetValue(EBodyModelPart.Head, out MongoID head) ? head.ToString() : string.Empty;

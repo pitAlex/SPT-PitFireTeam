@@ -77,7 +77,7 @@ internal static class RemovalCourierTests
                 "native player save round trip retains the mod receipt alongside a valid courier dialogue");
             var notification = new NotifierHelper(null!).CreateNewMessageNotification(message);
             check(notification.Message!.Id == message.Id, "native notification refers to the saved courier message");
-            var diagnostics = new FollowerInsuranceRaidDiagnostics(storage, null!, null!, json, null!,
+            var diagnostics = new FollowerInsuranceRaidDiagnostics(storage, null!, null!, json, null!, null!,
                 DispatchProxy.Create<ISptLogger<FollowerInsuranceRaidDiagnostics>, TestLogger>());
             foreach (var document in new[] { "insurance-raid-diagnostic.json", "insurance-previous-raid-diagnostic.json" })
             {

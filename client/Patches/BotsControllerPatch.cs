@@ -395,7 +395,7 @@ namespace pitTeam.Patches
             Dictionary<string, dynamic> customization = new Dictionary<string, dynamic>();
 
             // send health multiplier
-            customization["Health"] = pitFireTeam.heatlhMultiplier.Value;
+            customization["Health"] = GameplayModeRuntime.GetEffectiveValue(pitFireTeam.heatlhMultiplier);
             customization["English"] = pitFireTeam.englishBear.Value;
 
             var botPresets = botCreator?._creatorProfile as BotProfileClient;
@@ -1443,6 +1443,7 @@ namespace pitTeam.Patches
                 if (Controller == null)
                 {
                     AllegiancePmcFriendship.Reset();
+                    FriendlyEncounterPenaltyRuntime.BeginRaid();
                     PlayerKilledPatch.ResetKillMessageRaidState();
                     SquadRaidKillReport.BeginRaid(Utils.Utils.FlagGet("RaidTransit"));
                     new BossPlayers();
@@ -1773,8 +1774,8 @@ namespace pitTeam.Patches
             if (raidTransit)
             {
                 Utils.Utils.FlagSet("RaidTransit", true);
-                Utils.Utils.FlagSet("isBadGuy", pitFireTeam.badGuy.Value || SpawnHelper.spawnMemberIdsBoss.Count > 0);
-                Utils.Utils.FlagSet("pitFireTeam", pitFireTeam.pitFireTeamFLAG.Value);
+                Utils.Utils.FlagSet("isBadGuy", GameplayModeRuntime.GetEffectiveValue(pitFireTeam.badGuy) || SpawnHelper.spawnMemberIdsBoss.Count > 0);
+                Utils.Utils.FlagSet("pitFireTeam", GameplayModeRuntime.GetEffectiveValue(pitFireTeam.pitFireTeamFLAG));
             }
 
             return true;

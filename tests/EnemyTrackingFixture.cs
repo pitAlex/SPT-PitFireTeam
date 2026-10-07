@@ -55,6 +55,9 @@ namespace pitTeam.Utils {public static class Utils {
     public static bool TryGetCompletePathDistance(Vector3 a,Vector3 b,out float distance){distance=Route;return Reachable;}
 }}
 namespace pitTeam.Modules {
+    public static class GameplayModeRuntime {
+        public static T GetEffectiveValue<T>(pitTeam.ConfigValue<T> entry,T fallback=default(T)) => entry==null ? fallback : entry.Value;
+    }
     public class Follower {public void ClearOrderedPushTargetLock(string _){} }
     public class BossPlayers {
         public static BossPlayers Instance=new BossPlayers();public static bool IsFollower(BotOwner o)=>o.Follower;

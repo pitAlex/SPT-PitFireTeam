@@ -60,6 +60,10 @@ namespace pitTeam.Patches { internal static class SAINPatch {
 internal static PropertyInfo sainPlayerComponentPlayerProperty = typeof(NativeSpeechPlayer).GetProperty("Player");' +
     ($sainMethods -join "`n") + '}}'
 $fixture = Get-Content -Raw (Join-Path $PSScriptRoot 'RecruitmentCombatFixture.cs')
+$bossCommandSource = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Components/AIBossPlayer.cs')
+$gestureVisibility = [regex]::Match($bossCommandSource, '(?ms)^        internal bool CanReactToBossGesture\(.*?^        \}').Value
+if (!$gestureVisibility) { throw 'Shared gesture visibility boundary changed' }
+$fixture = $fixture.Replace('__GESTURE_VISIBILITY__', $gestureVisibility)
 $inputFixture = Get-Content -Raw (Join-Path $PSScriptRoot 'RecruitmentInputFixture.cs')
 foreach($boundary in @(
     @{File='client/Patches/QuickPanelPatch.cs';Name='CanShowCooperation';Placeholder='__COOPERATION_AVAILABILITY__'},

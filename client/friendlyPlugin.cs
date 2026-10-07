@@ -94,6 +94,7 @@ namespace pitTeam
         public Dictionary<string, string> enemyRemember { get; set; }
         public Dictionary<string, string> enemyTracking { get; set; }
         public Dictionary<string, string> healthMultiplier { get; set; }
+        public Dictionary<string, string> friendlyChanceMultiplier { get; set; }
         public Dictionary<string, string> pickup { get; set; }
         public Dictionary<string, string> tieredPickup { get; set; }
         public Dictionary<string, string> maximumPickup { get; set; }
@@ -227,6 +228,7 @@ namespace pitTeam
         public static ConfigEntry<EnemyTrackingMode> enemyTracking;
 
         public static ConfigEntry<int> heatlhMultiplier;
+        public static ConfigEntry<int> friendlyChanceMultiplier;
 
         public static ConfigEntry<int> scanDistance;
 
@@ -1039,6 +1041,8 @@ namespace pitTeam
             enemyRemember = Config.Bind("", "03 EnemyRemember", 20, new ConfigDescription(optionsLang.enemyRemember["Description"], new AcceptableValueRange<int>(5, 60), CreateConfigAttributes(-300, false, optionsLang.enemyRemember)));
             enemyTracking = Config.Bind("", "03 EnemyTracking", EnemyTrackingMode.Realistic, new ConfigDescription(optionsLang.enemyTracking["Description"], null, CreateConfigAttributes(-299, false, optionsLang.enemyTracking)));
 
+            friendlyChanceMultiplier = Config.Bind("", "04 FriendlyChanceMultiplier", 1, new ConfigDescription(optionsLang.friendlyChanceMultiplier["Description"], new AcceptableValueRange<int>(1, 5), CreateConfigAttributes(-399, false, optionsLang.friendlyChanceMultiplier)));
+
             heatlhMultiplier = Config.Bind("", "04 HealthMultiplier", 1, new ConfigDescription(optionsLang.healthMultiplier["Description"], new AcceptableValueRange<int>(1, 10), CreateConfigAttributes(-400, false, optionsLang.healthMultiplier)));
 
             statusSound = Config.Bind("", "05 StatusSound", 100, new ConfigDescription(optionsLang.statusSound["Description"], new AcceptableValueRange<int>(0, 100), CreateConfigAttributes(-500, false, optionsLang.statusSound)));
@@ -1267,13 +1271,13 @@ namespace pitTeam
 
         internal static bool IsFollowerLoadoutLootableMode()
         {
-            LoadoutManagementMode mode = loadoutManagementMode?.Value ?? DefaultLoadoutManagementMode;
+            LoadoutManagementMode mode = GameplayModeRuntime.GetEffectiveValue(loadoutManagementMode, DefaultLoadoutManagementMode);
             return mode == LoadoutManagementMode.Immersive || mode == LoadoutManagementMode.Extreme;
         }
 
         internal static bool IsFollowerLoadoutRealisticMode()
         {
-            return (loadoutManagementMode?.Value ?? DefaultLoadoutManagementMode) == LoadoutManagementMode.Extreme;
+            return GameplayModeRuntime.GetEffectiveValue(loadoutManagementMode, DefaultLoadoutManagementMode) == LoadoutManagementMode.Extreme;
         }
 
         internal static bool IsLootWeaponPickupEnabled()
@@ -1779,7 +1783,7 @@ namespace pitTeam
                 _BotTeleport();
             }
 
-            else if (healKey.Value.IsUp())
+            else if (GameplayModeRuntime.GetEffectiveValue(healKey).IsUp())
             {
                 _BotHeal();
             }

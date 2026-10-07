@@ -13,6 +13,7 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <Compile Include="../shared/FriendlyEncounterPenaltyPolicy.cs" Link="Shared/FriendlyEncounterPenaltyPolicy.cs" />
         <Reference Include="0Harmony">
             <HintPath>libs\0Harmony.dll</HintPath>
         </Reference>

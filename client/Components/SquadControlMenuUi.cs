@@ -36,8 +36,8 @@ namespace pitTeam.Components
         internal enum Tab
         {
             Roster,
-            Mode,
-            Settings
+            Settings,
+            Mode
         }
 
         private const string SquadButtonName = "pitFireTeam_SquadControlButton";
@@ -659,6 +659,7 @@ namespace pitTeam.Components
 
         private void Update()
         {
+            UpdateRosterPenaltyLabel();
             if (raidSettingsOverlayActive && UnityEngine.Input.GetKeyDown(KeyCode.Escape))
             {
                 HideRaidSettingsOverlay();
@@ -1179,6 +1180,7 @@ namespace pitTeam.Components
             if (!TryCreateStockTraderChrome(rootRect))
             {
                 rosterPanel = CreateFallbackContentPanel("pitFireTeam_SquadControlRosterPanel", GetSocialUiText("SquadControlRosterTab"));
+                CreateRosterPenaltyLabel(rosterPanel.GetComponent<RectTransform>());
                 settingsPanel = CreateFallbackContentPanel("pitFireTeam_SquadControlSettingsPanel", GetSocialUiText("SquadControlSettingsTab"));
                 BuildSettingsPanel();
             }
@@ -1317,6 +1319,7 @@ namespace pitTeam.Components
             stockCardsContainer.pivot = new Vector2(0.5f, 0.5f);
             stockCardsContainer.sizeDelta = new Vector2(1180f, rosterShellHeight);
             CreateScrollableRosterArea(stockCardsContainer);
+            CreateRosterPenaltyLabel(stockCardsContainer);
             CreateEmptyRosterLabel(rosterRect);
             CreateAddTeammateButton(rosterRect);
             UpdateRosterPanelLayout(false);
@@ -1347,6 +1350,11 @@ namespace pitTeam.Components
             if (tab != Tab.Settings)
             {
                 CancelShortcutCapture(false);
+            }
+            if (tab == Tab.Roster)
+            {
+                UpdateRosterPenaltyLabel(true);
+                _ = FriendlyEncounterPenaltyRuntime.ReloadAsync();
             }
         }
 

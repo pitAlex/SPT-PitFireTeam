@@ -133,7 +133,7 @@ namespace pitTeam.Patches
                 // Show cooperation for any alive non-follower AI target.
                 try
                 {
-                    if (!pitFireTeam.pickupEnabled.Value)
+                    if (!GameplayModeRuntime.GetEffectiveValue(pitFireTeam.pickupEnabled))
                     {
                         __instance.SetPhraseActive(EPhraseTrigger.Cooperation, false);
                         return false;
@@ -173,7 +173,7 @@ namespace pitTeam.Patches
         {
             var target = player?.InteractablePlayer;
             var bot = target?.AIData?.BotOwner;
-            return pitFireTeam.pickupEnabled.Value && target?.IsAI == true &&
+            return GameplayModeRuntime.GetEffectiveValue(pitFireTeam.pickupEnabled) && target?.IsAI == true &&
                 target.HealthController?.IsAlive == true && bot != null &&
                 !BossPlayers.IsFollower(bot) && FollowRequestPatch.IsRecruitmentSideAllowed(player, bot) &&
                 AllegiancePmcFriendship.CanRecruit(bot, player);

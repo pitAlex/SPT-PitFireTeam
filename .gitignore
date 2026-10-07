@@ -68,3 +68,5 @@ types
 /addon/obj/
 /tests/RestrictedMagazineRecovery/bin/
 /tests/RestrictedMagazineRecovery/obj/
+/tests/GameplayModes/bin/
+/tests/GameplayModes/obj/

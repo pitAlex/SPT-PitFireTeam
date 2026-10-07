@@ -16,4 +16,10 @@ public record FriendlyPostRaidKillMessageRequest : IRequestData
 
     [JsonPropertyName("messageText")]
     public string? MessageText { get; set; }
+
+    [JsonPropertyName("raidId")]
+    public string? RaidId { get; set; }
+
+    [JsonPropertyName("killedAtUnixMs")]
+    public long KilledAtUnixMs { get; set; }
 }

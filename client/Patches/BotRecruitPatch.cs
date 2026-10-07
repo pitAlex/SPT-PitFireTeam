@@ -13,7 +13,7 @@ namespace pitTeam.Patches
     // Route recruitment separately from the squad's Follow Me command.
     internal class BotReceiverRecruitPatch : ModulePatch
     {
-        private const float RecruitPhraseDistance = 15f;
+        private const float RecruitPhraseDistance = 5f;
 
         protected override MethodBase GetTargetMethod()
         {
@@ -76,6 +76,11 @@ namespace pitTeam.Patches
 
             // Keep vanilla behavior at longer range.
             if ((botOwner.Position - requester.Position).sqrMagnitude > RecruitPhraseDistance * RecruitPhraseDistance) return true;
+
+            // Reuse the gesture sight gate for contextual and Help-menu recruitment.
+            // Nearby listeners behind walls must not receive a recruitment request.
+            var boss = BossPlayers.Instance?.GetBossPlayer(requester.ProfileId);
+            if (boss?.CanReactToBossGesture(botOwner, requester, RecruitPhraseDistance) != true) return false;
 
             botOwner.BotsGroup?.RequestsController?.TryAskFollowMeRequest(requester, botOwner);
 

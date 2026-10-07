@@ -55,6 +55,12 @@ separate: the teammate database cannot make a transaction atomic with SPT's inde
 Recovery snapshots are encrypted documents inside the same database, saved with the correction.
 Global mod settings and language resources remain normal configuration files.
 
+The Allegiance database also stores `friendly-encounter-penalties.json` per player user ID.
+Each recruited-follower `traitor` kill report adds one five-point friendship penalty, keyed by
+raid and victim to make retries idempotent. Each entry expires 24 real hours after its kill;
+the server prunes expired entries on access. This document never enters roster enumeration
+or the Guns for Hire database. See [My Squad modes](My-Squad-Screen.md#part-3-mode).
+
 Manual hiring stores its pending candidate, quote and payment journal under `pending-creation.json`
 in the same encrypted database. This document is excluded from roster profile enumeration.
 Confirmation commits the teammate, settings, Default equipment and completion receipt together;

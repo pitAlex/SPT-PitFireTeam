@@ -46,6 +46,7 @@ internal static class ModeStorageTests
             settings.SaveAndApply(new() { GameplayMode = "Allegiance", LoadoutManagementMode = "Restricted" });
             check(settings.LoadSettings().LoadoutManagementMode == "Immersive", "server enforces Immersive");
             check(storage.ReadProfiles(session).Count == 0 && !storage.Exists(session, "recruit-requests.json"), "Allegiance starts with a separate empty database");
+            EncounterPenaltyStorageTests.Run(storage, settings, check);
             storage.WriteBatch(session, new Dictionary<string, string>
             {
                 ["456.json"] = "{\"aid\":456}",

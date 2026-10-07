@@ -198,21 +198,21 @@ namespace pitTeam.Patches
             ConfigureTabForOverlay(tabsRosterInstance, new Vector2(-270f, -112f), GetSocialUiText("SquadControlRosterTab"), selected: true,
                 onSelected: () => SelectTab(Components.SquadControlMenuUi.Tab.Roster));
 
-            tabsModeInstance = UnityEngine.Object.Instantiate(rosterTemplate, screen.transform, false);
-            tabsModeInstance.name = "pitFireTeam_SideSelTab_Mode";
-            ConfigureTabForOverlay(tabsModeInstance, new Vector2(0f, -112f), GetSocialUiText("SquadControlModeTab"), selected: false,
-                onSelected: () => SelectTab(Components.SquadControlMenuUi.Tab.Mode));
-
             tabsSettingsInstance = UnityEngine.Object.Instantiate(settingsTemplate, screen.transform, false);
             tabsSettingsInstance.name = "pitFireTeam_SideSelTab_Settings";
-            ConfigureTabForOverlay(tabsSettingsInstance, new Vector2(270f, -112f), GetSocialUiText("SquadControlSettingsTab"), selected: false,
+            ConfigureTabForOverlay(tabsSettingsInstance, new Vector2(0f, -112f), GetSocialUiText("SquadControlSettingsTab"), selected: false,
                 onSelected: () => SelectTab(Components.SquadControlMenuUi.Tab.Settings));
+
+            tabsModeInstance = UnityEngine.Object.Instantiate(rosterTemplate, screen.transform, false);
+            tabsModeInstance.name = "pitFireTeam_SideSelTab_Mode";
+            ConfigureTabForOverlay(tabsModeInstance, new Vector2(270f, -112f), GetSocialUiText("SquadControlModeTab"), selected: false,
+                onSelected: () => SelectTab(Components.SquadControlMenuUi.Tab.Mode));
 
             Components.SquadControlMenuUi.FindInstance()?.InjectPanelsIntoScreen(screen.transform);
             SelectTab(Components.SquadControlMenuUi.Tab.Roster);
             tabsRosterInstance.transform.SetAsLastSibling();
-            tabsModeInstance.transform.SetAsLastSibling();
             tabsSettingsInstance.transform.SetAsLastSibling();
+            tabsModeInstance.transform.SetAsLastSibling();
 
             tabsOverlayCoroutine = null;
         }

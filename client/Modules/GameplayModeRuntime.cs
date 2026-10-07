@@ -77,38 +77,38 @@ namespace pitTeam.Modules
                 [pitFireTeam.healKey] = new KeyboardShortcut(KeyCode.None),
                 [pitFireTeam.heatlhMultiplier] = 1
             };
-            config.SettingChanged -= EnforceLockedValues;
-            config.SettingChanged += EnforceLockedValues;
             modeEntry.SettingChanged -= RejectUncoordinatedModeChange;
             modeEntry.SettingChanged += RejectUncoordinatedModeChange;
             if (IsAllegiance)
             {
-                // Never replace a missing/damaged original snapshot with already-forced values.
+                // Older builds persisted forced values; a missing original snapshot
+                // still cannot be recreated safely from the current cfg.
                 if (!File.Exists(SnapshotPath))
                     pitFireTeam.Log.LogError("Guns for Hire snapshot is missing; mode restoration is unavailable until it is recovered.");
-                Apply(() => ForceAllegianceValues());
             }
         }
 
-        public static bool IsLocked(ConfigEntryBase entry) => IsAllegiance && entry != null && lockedValues.ContainsKey(entry);
+        public static bool IsLocked(ConfigEntryBase entry) => IsAllegiance && entry != null && lockedValues?.ContainsKey(entry) == true;
+
+        internal static bool IsSettingUnavailableInCurrentMode(ConfigEntryBase entry) =>
+            entry != null && (IsLocked(entry) || (!IsAllegiance && entry == pitFireTeam.friendlyChanceMultiplier));
+
+        // Config entries are saved preferences. Gameplay and UI read the active
+        // policy here, so editing/reloading the cfg cannot change Allegiance rules.
+        internal static object GetEffectiveValue(ConfigEntryBase entry) =>
+            IsLocked(entry) ? lockedValues[entry] : entry?.BoxedValue;
+
+        internal static T GetEffectiveValue<T>(ConfigEntry<T> entry, T fallback = default(T)) =>
+            entry == null ? fallback : (T)GetEffectiveValue((ConfigEntryBase)entry);
 
         private static void RejectUncoordinatedModeChange(object sender, EventArgs args)
         {
             if (!IsApplying && modeEntry.Value != Current) Apply(() => modeEntry.Value = Current);
         }
 
-        private static void EnforceLockedValues(object sender, SettingChangedEventArgs args)
-        {
-            if (IsAllegiance && !IsApplying && lockedValues.ContainsKey(args.ChangedSetting)) Apply(ForceAllegianceValues);
-        }
-
-        private static void ForceAllegianceValues()
-        {
-            foreach (var pair in lockedValues) pair.Key.BoxedValue = pair.Value;
-        }
-
         private static List<SavedValue> Capture() => config
-            .Where(pair => pair.Value != modeEntry)
+            // Allegiance-only preferences have no Guns for Hire state to restore.
+            .Where(pair => pair.Value != modeEntry && pair.Value != pitFireTeam.friendlyChanceMultiplier)
             .Select(pair => new SavedValue { Section = pair.Key.Section, Key = pair.Key.Key, Value = pair.Value.GetSerializedValue() }).ToList();
 
         private static List<SavedValue> ReadSnapshot()
@@ -170,7 +170,7 @@ namespace pitTeam.Modules
                 Apply(() =>
                 {
                     Current = next;
-                    if (IsAllegiance) ForceAllegianceValues(); else Restore(restored);
+                    if (!IsAllegiance) Restore(restored);
                     modeEntry.Value = Current;
                 });
                 try { await SendSettingsAsync(); }
@@ -182,6 +182,7 @@ namespace pitTeam.Modules
                     string actual = (root["data"] ?? root)["gameplayMode"]?.ToString();
                     if (!string.Equals(actual, Current.ToString(), StringComparison.Ordinal)) throw;
                 }
+                await FriendlyEncounterPenaltyRuntime.ReloadAsync();
             }
             catch
             {
@@ -201,7 +202,7 @@ namespace pitTeam.Modules
         {
             if (IsApplying || IsSwitching || config == null) return;
             await SyncGate.WaitAsync();
-            try { await SendSettingsAsync(); }
+            try { await SendSettingsAsync(); await FriendlyEncounterPenaltyRuntime.ReloadAsync(); }
             finally { SyncGate.Release(); }
         }
 
@@ -211,7 +212,7 @@ namespace pitTeam.Modules
             {
                 gameplayMode = Current.ToString(),
                 pmcArmbands = pitFireTeam.pmcArmbands.Value,
-                loadoutManagementMode = pitFireTeam.loadoutManagementMode.Value.ToString(),
+                loadoutManagementMode = GetEffectiveValue(pitFireTeam.loadoutManagementMode).ToString(),
                 restrictedGearMaintenance = pitFireTeam.restrictedGearMaintenance.Value
             });
             return Task.Run(() =>

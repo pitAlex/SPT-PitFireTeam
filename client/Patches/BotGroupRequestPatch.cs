@@ -88,7 +88,7 @@ namespace pitTeam.Patches
                         return false;
                     }
 
-                    if (!pitFireTeam.pickupEnabled.Value)
+                    if (!GameplayModeRuntime.GetEffectiveValue(pitFireTeam.pickupEnabled))
                     {
                         TrySayRecruitmentResponse(posibleExecuter, EPhraseTrigger.Negative);
                         posibleExecuter.Gesture.TryGestus(EInteraction.NoGesture, true);
@@ -105,7 +105,7 @@ namespace pitTeam.Patches
                         canPickup = false;
                     }
                     // Tiered pickup uses the old player-vs-bot acceptance rules.
-                    else if (pitFireTeam.tieredPickup.Value)
+                    else if (GameplayModeRuntime.GetEffectiveValue(pitFireTeam.tieredPickup))
                     {
                         // - SCAV : based on fence level
                         if (player.Side == EPlayerSide.Savage)
@@ -261,7 +261,7 @@ namespace pitTeam.Patches
             return bot.Memory?.HaveEnemy == true || SainGoalEnemyBridge.HasEnemy(bot);
         }
 
-        private static int GetHardPickupLimit() => Math.Min(10, Math.Max(0, pitFireTeam.maximumPickup.Value));
+        private static int GetHardPickupLimit() => Math.Min(10, Math.Max(0, GameplayModeRuntime.GetEffectiveValue(pitFireTeam.maximumPickup)));
 
         private static int GetActivePickupCount(string bossProfileId) =>
             BossPlayers.GetFollowersByBoss(bossProfileId).FindAll(f =>

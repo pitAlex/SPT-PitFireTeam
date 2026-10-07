@@ -15,6 +15,7 @@ public class FriendlyPostRaidCallbacks(
     HttpResponseUtil httpResponse,
     FriendlyPostRaidService postRaidService,
     FriendlyRecruitService recruitService,
+    FriendlyEncounterPenaltyService encounterPenalties,
     FollowerInsuranceRaidDiagnostics insuranceDiagnostics,
     FollowerInsuranceCourierTransferService courierTransfers,
     FriendlyTeammateService teammateService,
@@ -42,6 +43,8 @@ public class FriendlyPostRaidCallbacks(
     public ValueTask<string> RecordKillMessage(string url, FriendlyPostRaidKillMessageRequest request, MongoId sessionId)
     {
         postRaidService.RecordKillMessage(sessionId, request);
+        if (request.MessageKind == "traitor" && request.KilledAtUnixMs > 0)
+            return new ValueTask<string>(httpResponse.GetBody(encounterPenalties.Record(sessionId, request)));
         return new ValueTask<string>(httpResponse.NullResponse());
     }
 

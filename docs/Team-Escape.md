@@ -27,7 +27,7 @@ The player-death outcome system runs when the player boss dies and `BossPlayers.
 
 The `Team Escape` raid setting controls whether surviving teammates roll for escape after player death. It is enabled by default. If disabled, player death skips survivor escape rolls, tracked follower loot recovery, and death-gear recovery. Live and already-dead teammates are still posted as lost outcomes so raid stats, roster death state, and `Immersive` / `Realistic` Default gear loss are persisted.
 
-In Allegiance mode, `Team Escape` is locked on and `Team Escape: Use Any Extraction Point` is locked off, restricting escape routes to player-assigned extraction points. Both controls show the Allegiance restriction tooltip. Returning to Guns for Hire restores their snapshotted values; see [My Squad modes](My-Squad-Screen.md#part-2-mode).
+In Allegiance mode, `Team Escape` is locked on and `Team Escape: Use Any Extraction Point` is locked off, restricting escape routes to player-assigned extraction points. Both controls show the Allegiance restriction tooltip. Returning to Guns for Hire restores their snapshotted values; see [My Squad modes](My-Squad-Screen.md#part-3-mode).
 
 Authoritative client files:
 

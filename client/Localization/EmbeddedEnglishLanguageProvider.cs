@@ -72,6 +72,9 @@ namespace pitTeam.Localization
                 enemyTracking = Entry(
                     "Enemy Tracking",
                     "Switch between Simple and Realistic enemy tracking. Simple tracks the enemy’s current position regardless of when they were last seen or reported. Realistic uses positions reported through sight or sound, or the enemy’s last known position."),
+                friendlyChanceMultiplier = Entry(
+                    "Friendly Chance Multiplier",
+                    "Improve your odds of crossing paths with a potential ally."),
                 healthMultiplier = Entry(
                     "Squad Health Multiplier",
                     "Health multiplier for the followers you spawn with. This is applied per each body part."),
@@ -390,6 +393,10 @@ namespace pitTeam.Localization
                     ["SquadControlRosterTab"] = "Roster",
                     ["SquadControlModeTab"] = "Mode",
                     ["SettingsUnavailableInAllegiance"] = "this option is not available in Allegiance Mode",
+                    ["SettingsUnavailableInGunsForHire"] = "this option is not available in Guns for Hire Mode",
+                    ["FriendlyEncounterPenaltyLabel"] = "-{0}pts in Friendly Encounters ({1})",
+                    ["FriendlyEncounterPenaltyHours"] = "{0}h",
+                    ["FriendlyEncounterPenaltyMinutes"] = "{0}min",
                     ["SquadControlEmptyAllegianceRoster"] = "Recruit teammates in the field to build your squad.",
                     ["GameplayModeSwitchFailed"] = "Unable to complete the mode switch. Please reconnect before deploying.",
                     ["SquadControlModeGunsForHire"] = "Guns for Hire",

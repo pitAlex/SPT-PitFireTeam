@@ -14,6 +14,7 @@ namespace UnityEngine
     public struct Vector3 { public float x, y, z; public static Vector3 zero => default; public float sqrMagnitude => x*x+y*y+z*z; public static Vector3 operator -(Vector3 a,Vector3 b) => new Vector3{x=a.x-b.x,y=a.y-b.y,z=a.z-b.z}; }
     public static class Time { public static float time; }
     public static class Random { public static int Range(int min, int max) => min; }
+    public class Transform { public Vector3 position; }
 }
 namespace EFT.Interactive { public enum EInteraction { NoGesture, GetOffGesture, OkGesture } }
 namespace EFT
@@ -42,6 +43,10 @@ namespace EFT
         public Profile Profile { get; } = new();
         public Health HealthController = new(); public Speaker Speaker = new(); public Vector3 Position {get;set;}
         public Player InteractablePlayer;
+        public Dictionary<BodyPartType, BodyPart> MainParts = new() {
+            [BodyPartType.head] = new BodyPart { Position = new Vector3 { y = 2 } },
+            [BodyPartType.body] = new BodyPart { Position = new Vector3 { y = 1 } }
+        };
         public void Say(EPhraseTrigger phrase) { if (NativeSpeech.PlayerPrefix(this, phrase)) Spoken = phrase; }
     }
     public class AIData { public BotOwner BotOwner; }
@@ -83,6 +88,7 @@ namespace EFT
         public Player GetPlayer = new(); public Memory Memory = new(); public BotTalk BotTalk = new();
         public Gesture Gesture = new(); public BotFollower BotFollower = new(); public Group BotsGroup;
         public Vector3 Position => GetPlayer.Position;
+        public Transform WeaponRoot = new();
         public bool IsEnemyLookingAtMe(EnemyInfo enemy) => false;
     }
     public class BotGroupRequestController { public int Calls; public bool TryAskFollowMeRequest(IPlayer player,BotOwner bot) {Calls++;return true;} }
@@ -96,7 +102,11 @@ namespace SPT.Reflection.Patching
 namespace pitTeam.BigBrain { }
 namespace pitTeam.Components
 {
-    public class pitAIBossPlayer { public Group bossGroup; public Player Value = new(); public Player Player() => Value; }
+    public class pitAIBossPlayer {
+        public Group bossGroup; public Player Value = new(); public Player Player() => Value;
+        private Player realPlayer => Value;
+        __GESTURE_VISIBILITY__
+    }
     public class BotFollowerPlayer {
         public bool IsSquadMate; public BotOwner Bot; public BotOwner GetBot() => Bot;
         private static Type _sainEnableType;
@@ -118,7 +128,14 @@ namespace pitTeam
 }
 namespace pitTeam.Modules
 {
-    public static class GameplayModeRuntime { public static bool IsAllegiance; }
+    public static class GameplayModeRuntime {
+        public static bool IsAllegiance;
+        public static T GetEffectiveValue<T>(Setting<T> entry) {
+            if (IsAllegiance && ReferenceEquals(entry,pitFireTeam.maximumPickup)) return (T)(object)2;
+            if (IsAllegiance && (ReferenceEquals(entry,pitFireTeam.pickupEnabled) || ReferenceEquals(entry,pitFireTeam.tieredPickup))) return (T)(object)true;
+            return entry.Value;
+        }
+    }
     public static class AllegiancePmcFriendship { public static bool Allowed=true; public static bool CanRecruit(BotOwner bot, IPlayer player) => Allowed; }
     public class Logger
     {
@@ -158,6 +175,12 @@ namespace pitTeam.Utils
     public static class Utils
     {
         public static Action Pending;
+        public static bool HeadVisible = true, BodyVisible = true;
+        public static int SightChecks;
+        public static bool CanShootToTarget(ShootToPoint target, Vector3 origin, int mask, bool doubleSide) {
+            SightChecks++;
+            return target.Point.y == 2 ? HeadVisible : BodyVisible;
+        }
         public static void SetTimeout(Action callback, int delayMs) => Pending = callback;
     }
 }
@@ -252,7 +275,7 @@ public static class RecruitmentCombatChecks
         cross=Fresh();GameplayModeRuntime.IsAllegiance=true;cross.Side=EPlayerSide.Bear;cross.Profile.Info.Level=1;Ask(cross);Deferred(cross);AllegiancePmcFriendship.Allowed=false;pitTeam.Utils.Utils.Pending();
         Check(BossPlayers.Added==0,"Opposite-faction revocation during conversion delay prevents pickup");
         cross=Fresh();GameplayModeRuntime.IsAllegiance=true;cross.Side=EPlayerSide.Bear;cross.Profile.Info.Level=1;pitFireTeam.maximumPickup.Value=0;Ask(cross);
-        Check(BotOwnerManualUpdatePatch.BotOwnerUpdate.Count==0 && BossPlayers.Denied.Count==0,"Opposite-faction pickup cap refuses without caching a tiered denial");
+        Check(BotOwnerManualUpdatePatch.BotOwnerUpdate.Count==1 && BossPlayers.Denied.Count==0,"Raw cfg capacity cannot disable Allegiance pickup");
         GameplayModeRuntime.IsAllegiance=true;
         var saved=new Profile();saved.Info.Side=EPlayerSide.Bear;
         Check(BotsControllerPatch.ResolveFollowerSpawnSide(saved,EPlayerSide.Usec)==EPlayerSide.Bear,"Allegiance spawn preserves saved BEAR faction");

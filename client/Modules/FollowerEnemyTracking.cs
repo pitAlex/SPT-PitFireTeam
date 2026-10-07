@@ -28,7 +28,7 @@ namespace pitTeam.Modules
         public static void BeginRaid()
         {
             Contacts.Clear();
-            Mode = pitFireTeam.enemyTracking?.Value ?? EnemyTrackingMode.Realistic;
+            Mode = GameplayModeRuntime.GetEffectiveValue(pitFireTeam.enemyTracking, EnemyTrackingMode.Realistic);
             RememberSeconds = pitFireTeam.enemyRemember?.Value ?? 20;
         }
 

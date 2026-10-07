@@ -10,9 +10,8 @@ namespace pitTeam.Modules
     internal static class AllegiancePmcFriendship
     {
         internal const int RaidLimit = 3;
-        internal const float IntendedChance = 0.25f;
-        // Temporary test override: every eligible solo is selected, up to RaidLimit.
-        internal const float SelectionChance = 1f;
+        internal const float SameSideChance = 0.30f;
+        internal const float OppositeSideChance = 0.15f;
         private sealed class Decision
         {
             internal BotOwner Bot;
@@ -24,6 +23,14 @@ namespace pitTeam.Modules
         private static readonly Dictionary<string, Decision> Decisions = new Dictionary<string, Decision>(StringComparer.Ordinal);
         private static int selectedCount;
         private static Player Human => Singleton<GameWorld>.Instance?.MainPlayer;
+
+        private static float GetSelectionChance(EPlayerSide botSide, EPlayerSide playerSide)
+        {
+            int multiplier = Math.Max(1, Math.Min(5, pitFireTeam.friendlyChanceMultiplier?.Value ?? 1));
+            float baseChance = botSide == playerSide ? SameSideChance : OppositeSideChance;
+            float chance = baseChance + (1f - baseChance) * ((multiplier - 1) / 4f);
+            return Shared.FriendlyEncounterPenaltyPolicy.Apply(chance, FriendlyEncounterPenaltyRuntime.GetPoints());
+        }
 
         internal static void Reset()
         {
@@ -67,7 +74,8 @@ namespace pitTeam.Modules
                     return;
                 }
                 float roll = UnityEngine.Random.value;
-                decision.Friendly = SelectionChance >= 1f || roll < SelectionChance;
+                float chance = GetSelectionChance(bot.Side, human.Side);
+                decision.Friendly = chance >= 1f || roll < chance;
                 if (decision.Friendly)
                 {
                     selectedCount++;
@@ -88,7 +96,7 @@ namespace pitTeam.Modules
                     };
                     decision.Group.OnMemberAdd += decision.MemberAdded;
                 }
-                Logger.LogInfo($"[Allegiance] candidate={bot.ProfileId} side={bot.Side} roll={roll:F3} chance={SelectionChance:F2} friendly={decision.Friendly} selected={selectedCount}/{RaidLimit}");
+                Logger.LogInfo($"[Allegiance] candidate={bot.ProfileId} side={bot.Side} playerSide={human.Side} roll={roll:F3} chance={chance:F2} friendly={decision.Friendly} selected={selectedCount}/{RaidLimit}");
             }
             if (!IsFriendly(bot)) return;
 

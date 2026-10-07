@@ -250,6 +250,8 @@ namespace pitTeam.Patches
         [PatchPrefix]
         private static void PatchPrefix(Player __instance, IPlayer aggressor)
         {
+            // Capture recruit identity before native death callbacks remove followers.
+            TryRecordPlayerKillMessage(__instance, aggressor);
             try
             {
                 global::pitTeam.Utils.PingTeamates.TryRememberEnemyDown(__instance, aggressor);
@@ -491,7 +493,8 @@ namespace pitTeam.Patches
 
                 bool messagesEnabled = pitFireTeam.npcSendMessage?.Value == true;
                 string messageText = messagesEnabled ? GetKillMessageText(messageKind) : string.Empty;
-                if (messagesEnabled && string.IsNullOrWhiteSpace(messageText))
+                bool encounterPenalty = GameplayModeRuntime.IsAllegiance && messageKind == "traitor";
+                if (!encounterPenalty && messagesEnabled && string.IsNullOrWhiteSpace(messageText))
                 {
                     return;
                 }
@@ -510,26 +513,19 @@ namespace pitTeam.Patches
                     }
                 }
 
+                long killedAtUnixMs = encounterPenalty ? FriendlyEncounterPenaltyRuntime.NowUnixMs : 0;
+                string raidId = FriendlyEncounterPenaltyRuntime.RaidId;
                 string json = JsonConvert.SerializeObject(new
                 {
                     victimProfileId,
                     victimAccountId = victim.AccountId,
                     messageKind,
                     messageText,
+                    raidId,
+                    killedAtUnixMs,
                 });
 
-                Task.Run(() =>
-                {
-                    try
-                    {
-                        RequestHandler.PostJson(KillMessageRoute, json);
-                    }
-                    catch (Exception ex)
-                    {
-                        Modules.Logger.LogError($"Failed to record post-raid kill message for {victim.Profile?.Info?.Nickname}");
-                        Modules.Logger.LogError(ex);
-                    }
-                });
+                _ = FriendlyEncounterPenaltyRuntime.SendKillReport(KillMessageRoute, json, victimProfileId, killedAtUnixMs, raidId);
             }
             catch (Exception ex)
             {
@@ -540,13 +536,17 @@ namespace pitTeam.Patches
 
         private static string GetKillMessageKind(Player victim, IPlayer aggressor)
         {
+            BotFollowerPlayer follower = BossPlayers.GetFollowerByProfileId(victim.ProfileId);
+            if (GameplayModeRuntime.IsAllegiance && follower != null)
+                return !follower.IsSquadMate && follower.GetBoss()?.realPlayer?.ProfileId == aggressor.ProfileId
+                    ? "traitor" : string.Empty;
+
             if (!IsFriendlyPmcKillMessageContextEnabled() ||
                 !WasFriendlyBeforePlayerDamage(victim.ProfileId))
             {
                 return string.Empty;
             }
 
-            BotFollowerPlayer follower = BossPlayers.GetFollowerByProfileId(victim.ProfileId);
             if (follower != null)
             {
                 return follower.IsSquadMate ? string.Empty : "traitor";
@@ -570,7 +570,7 @@ namespace pitTeam.Patches
 
         private static bool IsFriendlyPmcKillMessageContextEnabled()
         {
-            return pitFireTeam.pitFireTeamFLAG?.Value == true && pitFireTeam.badGuy?.Value != true;
+            return GameplayModeRuntime.GetEffectiveValue(pitFireTeam.pitFireTeamFLAG) && !GameplayModeRuntime.GetEffectiveValue(pitFireTeam.badGuy);
         }
 
         private static bool IsPmc(EPlayerSide side)

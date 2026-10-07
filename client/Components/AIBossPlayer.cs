@@ -1722,7 +1722,7 @@ namespace pitTeam.Components
             return CanReactToBossGesture(follower, requester, TeamStatusGestureDistance);
         }
 
-        private bool CanReactToBossGesture(BotOwner follower, IPlayer requester, float maxDistance)
+        internal bool CanReactToBossGesture(BotOwner follower, IPlayer requester, float maxDistance)
         {
             if (follower == null || requester == null) return false;
             if (follower.IsDead || follower.BotState != EBotState.Active) return false;

@@ -14,7 +14,7 @@ namespace Comfort.Common { public static class Singleton<T> { public static T In
 namespace UnityEngine {
     public struct Vector3 { public float sqrMagnitude; public static Vector3 operator -(Vector3 a, Vector3 b) => new Vector3(); }
     public static class Time { public static float time; }
-    public static class Random { public static int Rolls; public static float value { get { Rolls++; return 1f; } } }
+    public static class Random { public static int Rolls; public static float NextValue; public static float value { get { Rolls++; return NextValue; } } }
 }
 namespace SPT.Reflection.Patching {
     public abstract class ModulePatch { protected abstract MethodBase GetTargetMethod(); }
@@ -113,6 +113,7 @@ namespace pitTeam.Utils {
     }
 }
 namespace pitTeam.Modules {
+    public static class FriendlyEncounterPenaltyRuntime { public static int Points; public static int GetPoints() => Points; }
     public static class Logger { public static int Errors; public static void LogError(object s) { Errors++; } public static void LogInfo(string s) { } }
     public static class GameplayModeRuntime { public static bool IsAllegiance; }
     public static class BossPlayers {
@@ -138,13 +139,21 @@ namespace pitTeam.Modules {
         public static bool CandidateHasGoalEnemyBossOrFollower(pitAIBossPlayer b, Player p) => false;
     }
 }
+namespace pitTeam {
+    public static class pitFireTeam {
+        public sealed class IntSetting { public int Value=1; }
+        public static IntSetting friendlyChanceMultiplier=new IntSetting();
+    }
+}
 namespace pitTeam.Utils { public static class FollowerAwareness { public static void RegisterBossRangedThreatWatch(BotOwner follower,BotOwner enemy) {} } }
 public static class HostilityChecks {
     private static int checks;
     private static pitAIBossPlayer boss; private static BotsGroup outside; private static BotOwner rogue, first, second;
     private static void Check(bool value, string name) { checks++; if (!value) throw new Exception(name); }
     private static void Setup() {
-        AllegiancePmcFriendship.Reset(); GameplayModeRuntime.IsAllegiance=false; UnityEngine.Random.Rolls=0;
+        AllegiancePmcFriendship.Reset(); GameplayModeRuntime.IsAllegiance=false; UnityEngine.Random.Rolls=0; UnityEngine.Random.NextValue=0f;
+        pitTeam.pitFireTeam.friendlyChanceMultiplier.Value=1;
+        FriendlyEncounterPenaltyRuntime.Points=0;
         pitTeam.Utils.Utils.Friendly = pitTeam.Utils.Utils.Bad = false;
         boss = new pitAIBossPlayer { realPlayer = new Player {ProfileId="boss"} };
         var own = new BotsGroupPlayer {Boss=boss,Side=EPlayerSide.Usec,InitialBotType=WildSpawnType.pmcUSEC};boss.bossGroup=own;BossPlayers.Boss=boss;
@@ -176,7 +185,7 @@ public static class HostilityChecks {
         bot.BotsGroup.Enemies[boss.realPlayer]=new BotGroupEnemyInfo();bot.BotsGroup.Enemies[first]=new BotGroupEnemyInfo();bot.Memory.GoalEnemy=new EnemyInfo {ProfileId=boss.realPlayer.ProfileId};
         boss.bossGroup.Enemies[bot]=new BotGroupEnemyInfo();first.Memory.GoalEnemy=new EnemyInfo {ProfileId=bot.ProfileId};bot.BotsGroup._enemyPlayerGroups.Add(boss.realPlayer.GroupId);
         AllegiancePmcFriendship.Apply(bot);
-        Check(AllegiancePmcFriendship.CanRecruit(bot,boss.realPlayer) && UnityEngine.Random.Rolls==1,"100 percent test override includes endpoint roll=1");
+        Check(AllegiancePmcFriendship.CanRecruit(bot,boss.realPlayer) && UnityEngine.Random.Rolls==1,"Successful friendship roll makes solo recruitable");
         Check(bot.BotsGroup.Neutrals.ContainsKey(boss.realPlayer) && bot.BotsGroup.Neutrals.ContainsKey(first) && boss.bossGroup.Neutrals.ContainsKey(bot),"Selection repairs setup relationships both ways");
         Check(bot.Memory.GoalEnemy==null && first.Memory.GoalEnemy==null && !bot.BotsGroup._enemyPlayerGroups.Contains(boss.realPlayer.GroupId),"Only selected squad setup memories and hostile group cache are removed");
         AllegiancePmcFriendship.Apply(bot);Check(UnityEngine.Random.Rolls==1,"Repeated activation does not reroll");
@@ -257,7 +266,74 @@ public static class HostilityChecks {
         Check(AllegiancePmcFriendship.CanRecruit(usec,boss.realPlayer) && usec.Side==EPlayerSide.Usec,"BEAR may recruit selected USEC without changing its faction");
         AllegiancePmcFriendship.Reset();
     }
+    private static void FriendshipChanceChecks() {
+        foreach(var playerSide in new[]{EPlayerSide.Usec,EPlayerSide.Bear})
+        foreach(bool sameSide in new[]{true,false})
+        foreach(float roll in new[]{0f,0.149f,0.15f,0.20f,0.299f,0.30f,1f}) {
+            Setup();GameplayModeRuntime.IsAllegiance=true;boss.realPlayer.Profile.Info.Side=playerSide;
+            var botSide=sameSide ? playerSide : playerSide==EPlayerSide.Usec ? EPlayerSide.Bear : EPlayerSide.Usec;
+            var candidate=Solo("chance-candidate",botSide);UnityEngine.Random.NextValue=roll;
+            AllegiancePmcFriendship.Apply(candidate);
+            bool expected=roll<(sameSide ? 0.30f : 0.15f);
+            Check(AllegiancePmcFriendship.CanRecruit(candidate,boss.realPlayer)==expected,"Faction chance boundary: player="+playerSide+" bot="+botSide+" roll="+roll);
+            pitTeam.pitFireTeam.friendlyChanceMultiplier.Value=5;
+            UnityEngine.Random.NextValue=expected ? 1f : 0f;AllegiancePmcFriendship.Apply(candidate);
+            Check(UnityEngine.Random.Rolls==1 && AllegiancePmcFriendship.CanRecruit(candidate,boss.realPlayer)==expected,"Success and failure remain sticky without rerolling");
+        }
+        Setup();GameplayModeRuntime.IsAllegiance=true;UnityEngine.Random.NextValue=1f;
+        AllegiancePmcFriendship.Apply(Solo("failed-own"));AllegiancePmcFriendship.Apply(Solo("failed-other",EPlayerSide.Bear));
+        UnityEngine.Random.NextValue=0f;
+        foreach(var id in new[]{"selected-one","selected-two","selected-three"}) {
+            var candidate=Solo(id);AllegiancePmcFriendship.Apply(candidate);
+            Check(AllegiancePmcFriendship.CanRecruit(candidate,boss.realPlayer),"Failed rolls do not consume a friendly selection slot");
+        }
+        var capped=Solo("chance-capped",EPlayerSide.Bear);AllegiancePmcFriendship.Apply(capped);
+        Check(UnityEngine.Random.Rolls==5 && !AllegiancePmcFriendship.CanRecruit(capped,boss.realPlayer),"Faction-dependent chances retain shared three-selection cap");
+        AllegiancePmcFriendship.Reset();
+    }
+    private static void FriendshipMultiplierChecks() {
+        float[] sameChances={0.30f,0.475f,0.65f,0.825f,1f};
+        float[] oppositeChances={0.15f,0.3625f,0.575f,0.7875f,1f};
+        foreach(var playerSide in new[]{EPlayerSide.Usec,EPlayerSide.Bear})
+        foreach(bool sameSide in new[]{true,false})
+        foreach(int multiplier in new[]{1,2,3,4,5}) {
+            float chance=(sameSide ? sameChances : oppositeChances)[multiplier-1];
+            foreach(float roll in new[]{chance-0.0001f,chance+0.0001f,1f}) {
+                Setup();GameplayModeRuntime.IsAllegiance=true;boss.realPlayer.Profile.Info.Side=playerSide;
+                pitTeam.pitFireTeam.friendlyChanceMultiplier.Value=multiplier;
+                var botSide=sameSide ? playerSide : playerSide==EPlayerSide.Usec ? EPlayerSide.Bear : EPlayerSide.Usec;
+                var candidate=Solo("multiplier-candidate",botSide);UnityEngine.Random.NextValue=Math.Min(1f,roll);
+                AllegiancePmcFriendship.Apply(candidate);
+                Check(AllegiancePmcFriendship.CanRecruit(candidate,boss.realPlayer)==(multiplier==5 || roll<chance),"Multiplier chance: player="+playerSide+" same="+sameSide+" multiplier="+multiplier+" roll="+roll);
+            }
+        }
+        Setup();pitTeam.pitFireTeam.friendlyChanceMultiplier.Value=5;AllegiancePmcFriendship.Apply(Solo("guns-for-hire"));
+        Check(UnityEngine.Random.Rolls==0,"Multiplier cannot add friendship rolls in Guns for Hire");
+        Setup();GameplayModeRuntime.IsAllegiance=true;pitTeam.pitFireTeam.friendlyChanceMultiplier.Value=5;UnityEngine.Random.NextValue=1f;
+        foreach(var id in new[]{"guaranteed-one","guaranteed-two","guaranteed-three"}) {
+            var candidate=Solo(id,EPlayerSide.Bear);AllegiancePmcFriendship.Apply(candidate);
+            Check(AllegiancePmcFriendship.CanRecruit(candidate,boss.realPlayer),"Multiplier 5 guarantees eligible candidates even at endpoint roll=1");
+        }
+        var capped=Solo("multiplier-capped");AllegiancePmcFriendship.Apply(capped);
+        Check(UnityEngine.Random.Rolls==3 && !AllegiancePmcFriendship.CanRecruit(capped,boss.realPlayer),"100 percent multiplier preserves three-selection cap");
+        AllegiancePmcFriendship.Reset();
+    }
     private static void BossDamageChecks() {
+        foreach(bool sameSide in new[]{true,false})
+        foreach(int multiplier in new[]{1,5}) {
+            Setup();GameplayModeRuntime.IsAllegiance=true;FriendlyEncounterPenaltyRuntime.Points=5;
+            pitTeam.pitFireTeam.friendlyChanceMultiplier.Value=multiplier;
+            UnityEngine.Random.NextValue=multiplier==5 ? 0.96f : sameSide ? 0.26f : 0.11f;
+            var penalizedCandidate=Solo("penalized",sameSide ? EPlayerSide.Usec : EPlayerSide.Bear);
+            AllegiancePmcFriendship.Apply(penalizedCandidate);
+            Check(!AllegiancePmcFriendship.CanRecruit(penalizedCandidate,boss.realPlayer),"Penalty subtracts five points after multiplier for both factions");
+            FriendlyEncounterPenaltyRuntime.Points=0;AllegiancePmcFriendship.Apply(penalizedCandidate);
+            Check(UnityEngine.Random.Rolls==1 && !AllegiancePmcFriendship.CanRecruit(penalizedCandidate,boss.realPlayer),"Penalty expiry does not reroll an existing bot");
+        }
+        Setup();GameplayModeRuntime.IsAllegiance=true;FriendlyEncounterPenaltyRuntime.Points=100;
+        pitTeam.pitFireTeam.friendlyChanceMultiplier.Value=5;UnityEngine.Random.NextValue=0f;
+        var clamped=Solo("zero-chance");AllegiancePmcFriendship.Apply(clamped);
+        Check(!AllegiancePmcFriendship.CanRecruit(clamped,boss.realPlayer),"Stacked penalties clamp to zero chance");
         foreach(bool emptySquad in new[]{false,true}) {
             Setup();GameplayModeRuntime.IsAllegiance=true;
             var bear=Solo("bear-attacker",EPlayerSide.Bear);AllegiancePmcFriendship.Apply(bear);
@@ -354,6 +430,8 @@ public static class HostilityChecks {
         Setup();FollowerGroupHostility.OnDamage(rogue,new BotOwner{ProfileId="stranger"});
         Check(outside.Enemies.Count==0&&boss.bossGroup.Enemies.Count==0,"ordinary AI damage remains native");
         AllegianceChecks();
+        FriendshipChanceChecks();
+        FriendshipMultiplierChecks();
         CrossFactionChecks();
         BossDamageChecks();
         h.UnpatchSelf();Console.WriteLine("Passed "+checks+" production hostility checks (including Allegiance selection).");
