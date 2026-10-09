@@ -37,9 +37,17 @@ internal static class Program
             "Allegiance enables Team Escape and restricts it to player extraction points");
         Check(GameplayModeRuntime.IsLocked(pitFireTeam.teamEscape) && GameplayModeRuntime.IsLocked(pitFireTeam.teamEscapeUseAnyExtract),
             "both Team Escape controls use the Allegiance disabled-control path");
-        Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.maximumPickup) == 2 && GameplayModeRuntime.GetEffectiveValue(pitFireTeam.heatlhMultiplier) == 1, "numeric locks");
-        Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.loadoutManagementMode) == LoadoutManagementMode.Immersive && GameplayModeRuntime.GetEffectiveValue(pitFireTeam.healKey).MainKey == KeyCode.None, "loadout and healing locks");
-        Check(GameplayModeRuntime.IsLocked(pitFireTeam.healKey) && !GameplayModeRuntime.IsLocked(custom), "only required controls locked");
+        Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.maximumPickup) == 2, "pickup capacity lock");
+        Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.heatlhMultiplier) == 3 &&
+            !GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.heatlhMultiplier), "Allegiance uses the saved health multiplier and enables its control");
+        pitFireTeam.heatlhMultiplier.Value = 4;
+        Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.heatlhMultiplier) == 4, "Allegiance uses the edited health multiplier");
+        Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.loadoutManagementMode) == LoadoutManagementMode.Immersive, "loadout lock");
+        Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.healKey).MainKey == KeyCode.H &&
+            !GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.healKey), "manual healing key remains usable and editable in Allegiance");
+        Check(!GameplayModeRuntime.IsLocked(custom), "unrelated controls remain unlocked");
+        pitFireTeam.healKey.Value = new KeyboardShortcut(KeyCode.J);
+        Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.healKey).MainKey == KeyCode.J, "Allegiance uses the current manual healing binding");
         pitFireTeam.maximumPickup.Value = 6;
         pitFireTeam.loadoutManagementMode.Value = LoadoutManagementMode.Restricted;
         pitFireTeam.teamEscape.Value = false;
@@ -55,9 +63,10 @@ internal static class Program
         Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.enemyTracking) == EnemyTrackingMode.Realistic &&
             GameplayModeRuntime.GetEffectiveValue(pitFireTeam.pickupEnabled) && GameplayModeRuntime.GetEffectiveValue(pitFireTeam.tieredPickup) &&
             GameplayModeRuntime.GetEffectiveValue(pitFireTeam.recruitPickup), "cfg reload cannot change tracking or recruitment rules");
-        Check(!GameplayModeRuntime.GetEffectiveValue(pitFireTeam.badGuy) && !GameplayModeRuntime.GetEffectiveValue(pitFireTeam.pitFireTeamFLAG) &&
-            GameplayModeRuntime.GetEffectiveValue(pitFireTeam.heatlhMultiplier) == 1 && GameplayModeRuntime.GetEffectiveValue(pitFireTeam.healKey).MainKey == KeyCode.None,
-            "cfg reload cannot change friendliness, health or healing rules");
+        Check(!GameplayModeRuntime.GetEffectiveValue(pitFireTeam.badGuy) && !GameplayModeRuntime.GetEffectiveValue(pitFireTeam.pitFireTeamFLAG),
+            "cfg reload cannot change friendliness rules");
+        Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.heatlhMultiplier) == 4, "cfg reload retains the editable Allegiance health multiplier");
+        Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.healKey).MainKey == KeyCode.J, "cfg reload retains the manual healing binding in Allegiance");
         Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.teamEscape) && !GameplayModeRuntime.GetEffectiveValue(pitFireTeam.teamEscapeUseAnyExtract) &&
             GameplayModeRuntime.GetEffectiveValue(pitFireTeam.loadoutManagementMode) == LoadoutManagementMode.Immersive, "cfg reload cannot change escape or loadout rules");
         config.Save();
@@ -73,6 +82,10 @@ internal static class Program
         custom = config.Bind("Other", "Untouched", 17);
         GameplayModeRuntime.Initialize(config);
         Check(GameplayModeRuntime.IsAllegiance && GameplayModeRuntime.GetEffectiveValue(pitFireTeam.maximumPickup) == 2, "restart preserves mode and locks");
+        Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.heatlhMultiplier) == 4 &&
+            !GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.heatlhMultiplier), "restart preserves the unlocked Allegiance health multiplier");
+        Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.healKey).MainKey == KeyCode.J &&
+            !GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.healKey), "restart preserves the usable Allegiance healing binding");
         Check(pitFireTeam.friendlyChanceMultiplier.Value == 4, "restart preserves Allegiance friendly chance preference");
         Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.teamEscape) && !GameplayModeRuntime.GetEffectiveValue(pitFireTeam.teamEscapeUseAnyExtract), "restart preserves Team Escape locks");
         await GameplayModeRuntime.ChangeAsync(GameplayMode.GunsForHire);

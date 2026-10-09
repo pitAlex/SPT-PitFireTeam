@@ -510,9 +510,9 @@ Allegiance selects solo BEAR and USEC PMCs after `FactionHostility.Apply` in the
 
 Killing one of your current raid recruits in Allegiance subtracts five percentage points from both friendship chances, after Friendly Chance Multiplier, with a minimum of zero. Spawned squadmates, ordinary friendly bots, kills by another aggressor and Guns for Hire kills do not trigger this penalty. The existing `traitor` kill report records it independently of Raid End Messages, including opposite-faction recruits. Reports are deduplicated by raid and victim, and stored per user ID in the Allegiance database. Each kill expires independently after 24 real hours, including time spent outside the game; the mode/config snapshot cannot reset it. Existing bots retain their one-roll decision.
 
-While a penalty is active, Roster displays a small red label in the same upper-right area as the Settings version label: `-5pts in Friendly Encounters (24h)`. Multiple penalties show their total reduction and the countdown to the next expiry; the total then drops by five points. The displayed time rounds up in half-hour steps above two hours, 0.1-hour steps from two hours to one hour, and one-minute steps below one hour. Actual expiry is exact and the label disappears when no penalties remain. The countdown updates while Roster is open without per-frame string formatting or HTTP polling.
+While a penalty is active, Roster displays a small red label beneath the Roster tab, aligned with its left edge: `-5 points in Friendly Encounters (24h)`. The label belongs to the roster panel rather than the moving card shell. Multiple penalties show their total reduction and the countdown to the next expiry; the total then drops by five points. The displayed time rounds up in half-hour steps above two hours, 0.1-hour steps from two hours to one hour, and one-minute steps below one hour. Actual expiry is exact and the label disappears when no penalties remain. The countdown updates while Roster is open without per-frame string formatting or HTTP polling.
 
-Selected candidates become neutral to the player and squad without changing shared bot settings, visibility or shot permission. Ambient enemy scans cannot undo this relationship, but real aggression or explicit Contact permanently revokes it for the raid. Recruitment requires a selected, unrevoked candidate at request and deferred conversion time; existing temporary combat refusals, raid-sticky tiered acceptance refusals and the two-active-pickup limit still apply. Selection diagnostics use the `[Allegiance]` log prefix.
+Selected candidates become neutral to the player and squad without changing shared bot settings, visibility or shot permission. After each follower finishes group reassignment and registration, Allegiance refreshes neutrality in both directions between that follower and every living, still-friendly selected candidate. This covers BEAR and USEC equally, including the first recruit forming a squad. The existing profile-alias cleanup removes stale BotOwner/Player enemy keys, clears only those friendly-pair memories and publishes native enemy-removal notifications for external SAIN caches. It never rerolls selection, restores revoked friendship or removes unrelated enemies. Ambient enemy scans cannot undo this relationship, but real aggression or explicit Contact permanently revokes it for the raid. Recruitment requires a selected, unrevoked candidate at request and deferred conversion time; existing temporary combat refusals, raid-sticky tiered acceptance refusals and the two-active-pickup limit still apply. Selection and recruitment-refresh diagnostics use the `[Allegiance]` log prefix.
 
 Neutrality repair removes enemy keys for both EFT representations of the same profile (`BotOwner` and `Player`). It publishes the native group enemy-removal event even when the group entry is already absent, allowing external SAIN to discard its separate cached contact. Other profiles keep their relationships and memories.
 
@@ -536,8 +536,10 @@ Allegiance disables these controls, with the tooltip `this option is not availab
 | Team Escape | On |
 | Team Escape: Use Any Extraction Point | Off |
 | Loadout Management | Immersive |
-| Heal Followers | Disabled |
-| Squad Health Multiplier | 1 |
+
+Heal Followers remains available as a manual emergency shortcut in Allegiance. Its key can be configured normally; ordinary follower healing behavior is unchanged.
+
+Squad Health Multiplier is also editable in Allegiance and uses the saved value through the existing follower-spawn customization path. Its range remains 1–10 and its existing in-raid editing restriction still applies.
 
 Each option uses the same row presentation as Loadout Management: a dark full-width row with a gold divider, its name and description on the left, and the compact radio-style selection control on the right. Selecting either control highlights it and clears the other.
 

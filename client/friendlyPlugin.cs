@@ -514,6 +514,8 @@ namespace pitTeam
             new CustomPlayerGestureInteractionPatch().Enable();
             new GestureCommandNamePatch().Enable();
             new GestureMenuAvailablePhrasesPatch().Enable();
+            new GestureMenuCooperationVisibilityPatch().Enable();
+            new GestureMenuCooperationPhrasePatch().Enable();
             new ViewBackpackQuickPanelTextPatch().Enable();
             new ViewBackpackQuickPanelItemTextPatch().Enable();
             new EPhraseTriggerPatch().Enable();
@@ -1408,7 +1410,6 @@ namespace pitTeam
 
         private void _BotHeal()
         {
-            if (GameplayModeRuntime.IsAllegiance) return;
             Modules.Logger.LogInfo("Followers fix heal");
 
             if (GamePlayerOwner.MyPlayer.HealthController == null || !GamePlayerOwner.MyPlayer.HealthController.IsAlive)

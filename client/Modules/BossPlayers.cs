@@ -322,6 +322,10 @@ namespace pitTeam.Modules
                 }
             }
 
+            // Group reassignment and follower lookup must be complete before repairing
+            // relationships with already-selected Allegiance candidates.
+            AllegiancePmcFriendship.OnFollowerAdded(bot, player.realPlayer);
+
             // Fire lifecycle event for addon integration (cache registration, etc).
             SainAddonBridge.RaiseFollowerLifecycleEvent(bot, FollowerLifecycleEvent.OnRecruited);
 

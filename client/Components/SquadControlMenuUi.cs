@@ -1319,7 +1319,7 @@ namespace pitTeam.Components
             stockCardsContainer.pivot = new Vector2(0.5f, 0.5f);
             stockCardsContainer.sizeDelta = new Vector2(1180f, rosterShellHeight);
             CreateScrollableRosterArea(stockCardsContainer);
-            CreateRosterPenaltyLabel(stockCardsContainer);
+            CreateRosterPenaltyLabel(rosterRect);
             CreateEmptyRosterLabel(rosterRect);
             CreateAddTeammateButton(rosterRect);
             UpdateRosterPanelLayout(false);

@@ -209,6 +209,8 @@ namespace pitTeam.Patches
                 onSelected: () => SelectTab(Components.SquadControlMenuUi.Tab.Mode));
 
             Components.SquadControlMenuUi.FindInstance()?.InjectPanelsIntoScreen(screen.transform);
+            LayoutRebuilder.ForceRebuildLayoutImmediate(tabsRosterInstance.transform as RectTransform);
+            Components.SquadControlMenuUi.FindInstance()?.AlignRosterPenaltyLabel(tabsRosterInstance.SpawnedObject.transform as RectTransform);
             SelectTab(Components.SquadControlMenuUi.Tab.Roster);
             tabsRosterInstance.transform.SetAsLastSibling();
             tabsSettingsInstance.transform.SetAsLastSibling();

@@ -295,9 +295,43 @@ namespace pitTeam.Patches
         {
             GestureMenuUnsupportedCommandVisibility.Track(__instance);
             var hashSet_1 = (HashSet<EPhraseTrigger>)AccessTools.Field(typeof(GesturesMenu), "_availablePhrases").GetValue(__instance);
+            hashSet_1.Add(EPhraseTrigger.Cooperation);
             hashSet_1.Add((EPhraseTrigger)CustomPhrases.TeamStatus);
             hashSet_1.Add((EPhraseTrigger)CustomPhrases.ViewBackpack);
             hashSet_1.Add((EPhraseTrigger)CustomPhrases.SwapGear);
+        }
+    }
+
+    internal class GestureMenuCooperationPhrasePatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+        {
+            return AccessTools.Method(typeof(GesturesQuickPanel), nameof(GesturesQuickPanel.IsSituationalPhrase));
+        }
+
+        [PatchPrefix]
+        private static bool PatchPrefix(EPhraseTrigger phrase, ref bool __result)
+        {
+            // Native classification controls assignment, the marker and playback availability.
+            // Player.Say already pairs Cooperation with the Hello/Friendly gesture.
+            if (phrase != EPhraseTrigger.Cooperation) return true;
+            __result = false;
+            return false;
+        }
+    }
+
+    internal class GestureMenuCooperationVisibilityPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+        {
+            return AccessTools.Method(typeof(GesturesMenu), nameof(GesturesMenu.SetPhraseActive));
+        }
+
+        [PatchPrefix]
+        private static void PatchPrefix(EPhraseTrigger phrase, ref bool active)
+        {
+            // Quick-panel targeting must not hide the recruitment command in HELP.
+            if (phrase == EPhraseTrigger.Cooperation) active = true;
         }
     }
 

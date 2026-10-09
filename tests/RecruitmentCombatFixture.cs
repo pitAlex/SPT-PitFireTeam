@@ -11,7 +11,12 @@ using pitTeam.Patches;
 
 namespace UnityEngine
 {
-    public struct Vector3 { public float x, y, z; public static Vector3 zero => default; public float sqrMagnitude => x*x+y*y+z*z; public static Vector3 operator -(Vector3 a,Vector3 b) => new Vector3{x=a.x-b.x,y=a.y-b.y,z=a.z-b.z}; }
+    public struct Vector3 {
+        public float x, y, z; public static Vector3 zero => default; public float sqrMagnitude => x*x+y*y+z*z;
+        public static Vector3 operator -(Vector3 a,Vector3 b) => new Vector3{x=a.x-b.x,y=a.y-b.y,z=a.z-b.z};
+        public static float Angle(Vector3 a,Vector3 b) => (float)(Math.Acos(Math.Max(-1,Math.Min(1,(a.x*b.x+a.y*b.y+a.z*b.z)/Math.Sqrt(a.sqrMagnitude*b.sqrMagnitude))))*180/Math.PI);
+    }
+    public struct Ray { public Vector3 origin, direction; }
     public static class Time { public static float time; }
     public static class Random { public static int Range(int min, int max) => min; }
     public class Transform { public Vector3 position; }
@@ -19,6 +24,7 @@ namespace UnityEngine
 namespace EFT.Interactive { public enum EInteraction { NoGesture, GetOffGesture, OkGesture } }
 namespace EFT
 {
+    public class GameWorld { public List<Player> AllAlivePlayersList = new(); }
     public enum EPhraseTrigger { None, Negative, DontKnow, Roger, Toxic, MumblePhrase, OnMutter, OnFight, OnBeingHurt, OnEnemyGrenade, Cooperation, FollowMe, NeedHelp, OnRepeatedContact }
     public enum ETagStatus { Coop, Solo, Unaware }
     public enum EPlayerSide { Usec, Bear, Savage }
@@ -43,6 +49,7 @@ namespace EFT
         public Profile Profile { get; } = new();
         public Health HealthController = new(); public Speaker Speaker = new(); public Vector3 Position {get;set;}
         public Player InteractablePlayer;
+        public Ray InteractionRay;
         public Dictionary<BodyPartType, BodyPart> MainParts = new() {
             [BodyPartType.head] = new BodyPart { Position = new Vector3 { y = 2 } },
             [BodyPartType.body] = new BodyPart { Position = new Vector3 { y = 1 } }
@@ -106,6 +113,7 @@ namespace pitTeam.Components
         public Group bossGroup; public Player Value = new(); public Player Player() => Value;
         private Player realPlayer => Value;
         __GESTURE_VISIBILITY__
+        __COOPERATION_RECEIVER__
     }
     public class BotFollowerPlayer {
         public bool IsSquadMate; public BotOwner Bot; public BotOwner GetBot() => Bot;

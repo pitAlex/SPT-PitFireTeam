@@ -160,7 +160,7 @@ Commands influence teammate behavior but do not force exact actions. Teammates w
 
 **In HELP:**
 
-- **Cooperative** - invite a friendly bot to join you. Get within 5 metres and keep a clear line of sight.
+- **Cooperative** - say hello and invite a friendly bot to join you. Look at them within 5 metres with a clear line of sight. Right-click to assign a key.
 - **Need Sniper** - urge Marksman to provide sniper support against the closest enemy to you. He will say "negative" if no suitable spot is found.
 - **Need Help** - urge your teammates to provide combat support against the closest enemy to you.
 

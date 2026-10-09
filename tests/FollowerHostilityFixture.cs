@@ -218,6 +218,70 @@ public static class HostilityChecks {
         Check(UnityEngine.Random.Rolls==0 && AllegiancePmcFriendship.CanRecruit(rogue,boss.realPlayer),"Player Scav faction and Fence recruitment remain native");
         AllegiancePmcFriendship.Reset();
     }
+    private static void RecruitedFriendshipChecks() {
+        foreach (bool existingSquad in new[]{false,true})
+        foreach (var playerSide in new[]{EPlayerSide.Usec,EPlayerSide.Bear})
+        foreach (var recruitSide in new[]{EPlayerSide.Usec,EPlayerSide.Bear})
+        foreach (var candidateSide in new[]{EPlayerSide.Usec,EPlayerSide.Bear})
+        foreach (bool cacheOnly in new[]{false,true}) {
+            Setup();GameplayModeRuntime.IsAllegiance=true;boss.realPlayer.Profile.Info.Side=playerSide;
+            if (!existingSquad) { boss.Followers.Clear();boss.bossGroup=null; }
+            var recruit=Solo("new-recruit",recruitSide);var candidate=Solo("remaining-friendly",candidateSide);
+            foreach (var bot in new[]{recruit,candidate})
+                bot.PlayerObject=new Player {ProfileId=bot.ProfileId,IsAI=true,Profile=bot.Profile,AIData=bot.AIData};
+            // Both decisions predate recruitment; they may still regard each other as enemies.
+            candidate.BotsGroup.Enemies[recruit]=new BotGroupEnemyInfo();
+            candidate.BotsGroup.Enemies[recruit.GetPlayer]=new BotGroupEnemyInfo();
+            candidate.BotsGroup._enemyPlayerGroups.Add(recruit.GetPlayer.GroupId);
+            AllegiancePmcFriendship.Apply(candidate);AllegiancePmcFriendship.Apply(recruit);
+            Check(candidate.BotsGroup.IsEnemy(recruit),"Initial selection does not neutralize an unrelated future recruit");
+            recruit.BotsGroup.Members.Remove(recruit);
+            if (boss.bossGroup==null) boss.bossGroup=new BotsGroupPlayer {Boss=boss,Side=playerSide};
+            recruit.BotsGroup=boss.bossGroup;recruit.BotFollower.BossToFollow=boss;
+            boss.Followers.Add(recruit);boss.bossGroup.Members.Add(recruit);
+            boss.bossGroup.Enemies[candidate]=new BotGroupEnemyInfo();
+            boss.bossGroup.Enemies[candidate.GetPlayer]=new BotGroupEnemyInfo();
+            candidate.Memory.GoalEnemy=new EnemyInfo {ProfileId=recruit.ProfileId};
+            recruit.Memory.GoalEnemy=new EnemyInfo {ProfileId=candidate.ProfileId};
+            var hostile=Solo("ordinary-hostile");
+            candidate.BotsGroup.Enemies[hostile]=new BotGroupEnemyInfo();boss.bossGroup.Enemies[hostile]=new BotGroupEnemyInfo();
+            var candidateCache=new HashSet<string>{recruit.ProfileId};var recruitCache=new HashSet<string>{candidate.ProfileId};
+            candidate.BotsGroup.OnEnemyRemove+=person=>candidateCache.Remove(person.ProfileId);
+            boss.bossGroup.OnEnemyRemove+=person=>recruitCache.Remove(person.ProfileId);
+            if (cacheOnly) { candidate.BotsGroup.Enemies.Clear();boss.bossGroup.Enemies.Clear(); }
+            AllegiancePmcFriendship.OnFollowerAdded(recruit,boss.realPlayer);
+            Check(!candidate.BotsGroup.IsEnemy(recruit) && !candidate.BotsGroup.IsEnemy(recruit.GetPlayer),"Remaining friendly drops new recruit's BotOwner and Player enemy aliases");
+            Check(!boss.bossGroup.IsEnemy(candidate) && !boss.bossGroup.IsEnemy(candidate.GetPlayer),"New recruit's group drops remaining friendly in the reverse direction");
+            Check(candidate.BotsGroup.Neutrals.ContainsKey(recruit.GetPlayer) && boss.bossGroup.Neutrals.ContainsKey(candidate.GetPlayer),"Recruitment establishes reciprocal neutrality for either faction");
+            Check(candidate.Memory.GoalEnemy==null && recruit.Memory.GoalEnemy==null,"Only stale friendly-pair combat targets are cleared");
+            Check(candidateCache.Count==0 && recruitCache.Count==0,"Native removal notifications clear both external enemy caches even without dictionary entries");
+            Check(!candidate.BotsGroup._enemyPlayerGroups.Contains(recruit.GetPlayer.GroupId),"Remaining friendly drops recruit's hostile group cache");
+            if (!cacheOnly) Check(candidate.BotsGroup.IsEnemy(hostile) && boss.bossGroup.IsEnemy(hostile),"Ordinary hostile relationships survive the recruitment refresh");
+            Check(UnityEngine.Random.Rolls==2 && AllegiancePmcFriendship.CanRecruit(candidate,boss.realPlayer),"Recruitment refresh neither rolls again nor revokes remaining friendship");
+            Check(!candidate.BotsGroup.AddEnemy(recruit.GetPlayer,EBotEnemyCause.initial) && !boss.bossGroup.AddEnemy(candidate.GetPlayer,EBotEnemyCause.initial),"Ambient faction scans cannot restore repaired hostility");
+            Check(recruit.Side==recruitSide && candidate.Side==candidateSide,"Recruitment refresh preserves both native factions");
+        }
+
+        Setup();GameplayModeRuntime.IsAllegiance=true;
+        var friendly=Solo("revoked-friendly");AllegiancePmcFriendship.Apply(friendly);
+        FollowerGroupHostility.OnDamage(first,friendly);
+        AllegiancePmcFriendship.OnFollowerAdded(second,boss.realPlayer);
+        Check(!AllegiancePmcFriendship.CanRecruit(friendly,boss.realPlayer) && friendly.BotsGroup.IsEnemy(second) && boss.bossGroup.IsEnemy(friendly),"Recruitment cannot restore friendship revoked by actual aggression");
+        Setup();GameplayModeRuntime.IsAllegiance=true;
+        friendly=Solo("selected-friendly");AllegiancePmcFriendship.Apply(friendly);
+        friendly.BotsGroup.Enemies[second]=new BotGroupEnemyInfo();boss.bossGroup.Enemies[friendly]=new BotGroupEnemyInfo();
+        GameplayModeRuntime.IsAllegiance=false;
+        AllegiancePmcFriendship.OnFollowerAdded(second,boss.realPlayer);
+        Check(friendly.BotsGroup.IsEnemy(second) && boss.bossGroup.IsEnemy(friendly),"Guns for Hire does not apply Allegiance relationship repair");
+        GameplayModeRuntime.IsAllegiance=true;
+        var stranger=new Player {ProfileId="other-leader"};
+        AllegiancePmcFriendship.OnFollowerAdded(second,stranger);
+        Check(friendly.BotsGroup.IsEnemy(second),"Another leader cannot trigger local Allegiance repair");
+        boss.realPlayer.Profile.Info.Side=EPlayerSide.Savage;
+        AllegiancePmcFriendship.OnFollowerAdded(second,boss.realPlayer);
+        Check(friendly.BotsGroup.IsEnemy(second),"Player Scav relationships remain outside Allegiance repair");
+        AllegiancePmcFriendship.Reset();
+    }
     private static void CrossFactionChecks() {
         Setup();GameplayModeRuntime.IsAllegiance=true;
         var aliasedBear=Solo("aliased-bear",EPlayerSide.Bear);
@@ -433,6 +497,7 @@ public static class HostilityChecks {
         FriendshipChanceChecks();
         FriendshipMultiplierChecks();
         CrossFactionChecks();
+        RecruitedFriendshipChecks();
         BossDamageChecks();
         h.UnpatchSelf();Console.WriteLine("Passed "+checks+" production hostility checks (including Allegiance selection).");
     }

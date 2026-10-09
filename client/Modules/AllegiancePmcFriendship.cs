@@ -113,6 +113,29 @@ namespace pitTeam.Modules
             }
         }
 
+        internal static void OnFollowerAdded(BotOwner follower, IPlayer leader)
+        {
+            var human = Human;
+            if (!GameplayModeRuntime.IsAllegiance || human == null || human.Side == EPlayerSide.Savage ||
+                leader?.ProfileId != human.ProfileId || follower == null || follower.IsDead ||
+                follower.BotsGroup == null || follower.GetPlayer?.HealthController?.IsAlive != true ||
+                !BossPlayers.IsFollower(follower)) return;
+
+            // Selection may predate this follower. Ambient AddEnemy guards cannot remove
+            // the pair's existing hostility, including SAIN's separately cached contact.
+            foreach (var decision in Decisions.Values)
+            {
+                var candidate = decision.Bot;
+                if (!decision.Friendly || candidate == null || candidate.IsDead ||
+                    candidate.GetPlayer?.HealthController?.IsAlive != true ||
+                    BossPlayers.IsFollower(candidate) || !IsFriendly(candidate)) continue;
+
+                Neutralize(candidate, follower.GetPlayer);
+                Neutralize(follower, candidate.GetPlayer);
+                Logger.LogInfo($"[Allegiance] follower={follower.ProfileId} candidate={candidate.ProfileId} friendship-refreshed=both-directions");
+            }
+        }
+
         private static void Neutralize(BotOwner bot, IPlayer person)
         {
             FactionHostility.EnsureNeutral(bot.BotsGroup, person);

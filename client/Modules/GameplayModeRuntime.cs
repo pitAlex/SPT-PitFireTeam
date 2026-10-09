@@ -73,9 +73,7 @@ namespace pitTeam.Modules
                 [pitFireTeam.recruitPickup] = true,
                 [pitFireTeam.teamEscape] = true,
                 [pitFireTeam.teamEscapeUseAnyExtract] = false,
-                [pitFireTeam.loadoutManagementMode] = LoadoutManagementMode.Immersive,
-                [pitFireTeam.healKey] = new KeyboardShortcut(KeyCode.None),
-                [pitFireTeam.heatlhMultiplier] = 1
+                [pitFireTeam.loadoutManagementMode] = LoadoutManagementMode.Immersive
             };
             modeEntry.SettingChanged -= RejectUncoordinatedModeChange;
             modeEntry.SettingChanged += RejectUncoordinatedModeChange;

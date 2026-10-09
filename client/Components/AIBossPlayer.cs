@@ -375,6 +375,8 @@ namespace pitTeam.Components
                 }
                 else if (info.phrase == EPhraseTrigger.FollowMe || info.phrase == EPhraseTrigger.Cooperation)
                 {
+                    if (info.phrase == EPhraseTrigger.Cooperation)
+                        ApplyCooperationCommand(info.PlayerRequester);
                     // Follow Me / Cooperation: normal follow mode and command cleanup.
                     ClearFollowerCommands(info.PlayerRequester);
                     return;
@@ -385,6 +387,43 @@ namespace pitTeam.Components
             {
                 item?.Receiver?.OnPhraseSay(info);
             }
+        }
+
+        private void ApplyCooperationCommand(IPlayer requester)
+        {
+            if (requester is not Player player || requester.ProfileId != realPlayer.ProfileId) return;
+
+            if (player.InteractablePlayer != null)
+            {
+                TryRecruitFromCooperation(player.InteractablePlayer.AIData?.BotOwner, player);
+                return;
+            }
+
+            var alivePlayers = Singleton<GameWorld>.Instance?.AllAlivePlayersList;
+            if (alivePlayers == null) return;
+            foreach (Player candidate in alivePlayers.ToArray())
+                TryRecruitFromCooperation(candidate?.AIData?.BotOwner, player);
+        }
+
+        private void TryRecruitFromCooperation(BotOwner bot, Player requester)
+        {
+            const float recruitDistance = 5f;
+            const float recruitLookAngle = 18f;
+            if (bot == null || BossPlayers.IsFollower(bot)) return;
+            if (requester.InteractablePlayer != null && requester.InteractablePlayer.AIData?.BotOwner != bot) return;
+            if ((bot.Position - requester.Position).sqrMagnitude > recruitDistance * recruitDistance) return;
+
+            Ray ray = requester.InteractionRay;
+            var parts = bot.GetPlayer?.MainParts;
+            Vector3 target = parts != null && parts.TryGetValue(BodyPartType.body, out var body)
+                ? body.Position : bot.Position;
+            Vector3 toTarget = target - ray.origin;
+            if (toTarget.sqrMagnitude < 0.01f || ray.direction.sqrMagnitude < 0.01f ||
+                Vector3.Angle(ray.direction, toTarget) > recruitLookAngle) return;
+            if (!CanReactToBossGesture(bot, requester, recruitDistance)) return;
+
+            // Eligibility, tiered refusal, capacity and conversion remain request-owned.
+            bot.BotsGroup?.RequestsController?.TryAskFollowMeRequest(requester, bot);
         }
 
         private static bool IsLootCommandPhrase(EPhraseTrigger phrase)

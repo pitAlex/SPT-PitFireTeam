@@ -55,6 +55,11 @@ try {
     if($start -lt 0 -or $end -le $start){throw 'Neutral relationship extraction boundary changed'}
     $fixture=$fixture.Replace('__NEUTRAL_METHOD__',$faction.Substring($start,$end-$start))
     $bossSource=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Components/AIBossPlayer.cs')
+    $registration=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/BossPlayers.cs')
+    $registerIndex=$registration.IndexOf('_followersByProfileId[bot.ProfileId] = _follower;')
+    $repairIndex=$registration.IndexOf('AllegiancePmcFriendship.OnFollowerAdded(bot, player.realPlayer);')
+    $addonIndex=$registration.IndexOf('SainAddonBridge.RaiseFollowerLifecycleEvent(bot, FollowerLifecycleEvent.OnRecruited);')
+    if ($registerIndex -lt 0 -or $repairIndex -le $registerIndex -or $addonIndex -le $repairIndex) { throw 'Allegiance repair must run after follower registration and before addon recruitment notification' }
     $hit=[regex]::Match($bossSource,'(?ms)^        public void OnHit\(.*?^        \}').Value
     if(!$hit){throw 'Human damage entry point boundary changed'}
     $fixture=$fixture.Replace('__BOSS_HIT_METHOD__',$hit)

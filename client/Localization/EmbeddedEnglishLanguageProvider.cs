@@ -403,7 +403,7 @@ namespace pitTeam.Localization
                     ["SquadControlModeTab"] = "Mode",
                     ["SettingsUnavailableInAllegiance"] = "this option is not available in Allegiance Mode",
                     ["SettingsUnavailableInGunsForHire"] = "this option is not available in Guns for Hire Mode",
-                    ["FriendlyEncounterPenaltyLabel"] = "-{0}pts in Friendly Encounters ({1})",
+                    ["FriendlyEncounterPenaltyLabel"] = "-{0} points in Friendly Encounters ({1})",
                     ["FriendlyEncounterPenaltyHours"] = "{0}h",
                     ["FriendlyEncounterPenaltyMinutes"] = "{0}min",
                     ["SquadControlEmptyAllegianceRoster"] = "Recruit teammates in the field to build your squad.",

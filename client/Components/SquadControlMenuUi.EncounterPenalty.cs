@@ -16,18 +16,26 @@ namespace pitTeam.Components
 
         private void CreateRosterPenaltyLabel(RectTransform parent)
         {
-            GameObject labelObject = CreateText("pitFireTeam_RosterEncounterPenalty", string.Empty, 17f, TextAlignmentOptions.MidlineRight);
+            GameObject labelObject = CreateText("pitFireTeam_RosterEncounterPenalty", string.Empty, 17f, TextAlignmentOptions.MidlineLeft);
             labelObject.transform.SetParent(parent, false);
             RectTransform rect = labelObject.GetComponent<RectTransform>();
-            rect.anchorMin = rect.anchorMax = rect.pivot = Vector2.one;
+            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0f, 1f);
             rect.sizeDelta = new Vector2(580f, 24f);
-            rect.anchoredPosition = new Vector2(-SettingsViewportSideInset - 28f, -12f);
+            rect.anchoredPosition = new Vector2(SettingsViewportSideInset, -12f);
             encounterPenaltyLabel = labelObject.GetComponent<TextMeshProUGUI>();
             encounterPenaltyLabel.color = new Color(0.92f, 0.25f, 0.22f, 0.96f);
             encounterPenaltyLabel.fontWeight = FontWeight.Regular;
             encounterPenaltyLabel.raycastTarget = false;
             labelObject.SetActive(false);
             encounterPenaltyVersion = -1;
+        }
+
+        internal void AlignRosterPenaltyLabel(RectTransform rosterTab)
+        {
+            if (encounterPenaltyLabel == null || rosterTab == null) return;
+            // The label stays owned by Roster, but follows the tab rather than the moving card shell.
+            encounterPenaltyLabel.rectTransform.position = rosterTab.TransformPoint(
+                new Vector3(rosterTab.rect.xMin, rosterTab.rect.yMin - 16f, 0f));
         }
 
         private void UpdateRosterPenaltyLabel(bool force = false)
