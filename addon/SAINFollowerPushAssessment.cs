@@ -68,7 +68,7 @@ internal sealed class SAINFollowerPushAssessment(BotComponent bot)
         ratio = data.EquipmentRatio; role = data.RoleMultiplier; weaponPolicy = data.WeaponPolicy;
         threat = FollowerPushRiskPolicy.Threat(ratio, role, EnemyCount, weaponPolicy);
         pull = independent || !complete ? 0f : FollowerPushRiskPolicy.PlayerPull(enemyRoute, currentBossRoute, projectedBossRoute);
-        RequiredAggression = FollowerPushRiskPolicy.Required(enemyRoute, threat, pull);
+        RequiredAggression = FollowerPushRiskPolicy.Required(enemyRoute, threat, pull, role, weaponPolicy);
         aggression = effectiveAggression;
         SafetyBlocked = data.Medical || bot.Memory.Health.HealthStatus == ETagStatus.BadlyInjured ||
             bot.Memory.Health.HealthStatus == ETagStatus.Dying || SainRegroupBridge.IsUnderFire(bot.BotOwner) ||
@@ -86,5 +86,5 @@ internal sealed class SAINFollowerPushAssessment(BotComponent bot)
     internal object Snapshot => new { reason = Reason, enemiesAtLocation = EnemyCount, equipmentRatio = ratio,
         roleMultiplier = role, weaponPolicy, magazineRestricted, safetyBlocked = SafetyBlocked, weaponBlocked = WeaponBlocked,
         cautious = Cautious, allowsAutomatic = AllowsAutomatic, aggression, requiredAggression = RequiredAggression,
-        threat, playerPull = pull, enemyRoute, currentBossRoute, projectedBossRoute, pathsComplete = effectivePathsComplete };
+        threat, threatRangeMultiplier = FollowerPushRiskPolicy.ThreatRangeMultiplier(threat, role, weaponPolicy), playerPull = pull, enemyRoute, currentBossRoute, projectedBossRoute, pathsComplete = effectivePathsComplete };
 }

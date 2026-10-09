@@ -6,6 +6,7 @@ using pitTeam.Components;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using UnityEngine;
 
 namespace pitTeam.Utils
@@ -24,7 +25,6 @@ namespace pitTeam.Utils
         private const float RecentMedicalWindow = 8f;
         private const float FirstAidMinVisibleNormalizedHealth = 0.06f;
         private const float EmergencySurgeryHealthPenalty = 0.5f;
-        private const float FirstAidTopOffMinMissingHealth = 0.5f;
         private const float PostCombatFullHealRestoreDelay = 12f;
 
         private static readonly EBodyPart[] SurgeryRecoveryParts =
@@ -83,6 +83,19 @@ namespace pitTeam.Utils
 
         private static readonly Dictionary<string, MedicalHandsWatchState> HandsWatchStates = new Dictionary<string, MedicalHandsWatchState>();
         private static readonly Dictionary<string, PostCombatFullHealState> PostCombatFullHealStates = new Dictionary<string, PostCombatFullHealState>();
+
+        private sealed class FirstAidTopOffState
+        {
+            public readonly FollowerFirstAidTopOffPolicy Policy = new FollowerFirstAidTopOffPolicy();
+            public readonly List<EFT.InventoryLogic.Meds> Meds = new List<EFT.InventoryLogic.Meds>();
+            public float NextScanAt;
+            public float Supplies;
+            public bool SafeSlots;
+            public EBodyPart Target;
+            public EFT.InventoryLogic.Meds? Med;
+        }
+
+        private static readonly ConditionalWeakTable<Player, FirstAidTopOffState> FirstAidTopOffStates = new ConditionalWeakTable<Player, FirstAidTopOffState>();
 
         public static void ForceHeal(BotOwner bot)
         {
@@ -802,7 +815,8 @@ namespace pitTeam.Utils
             try
             {
                 return CanAttemptFirstAidTopOff(bot) &&
-                       TryFindFirstAidTopOffTarget(bot, out _, out _);
+                       TryFindFirstAidTopOffTarget(bot, out EBodyPart part, out _) &&
+                       CanAttemptSelectedFirstAidTopOff(bot, part);
             }
             catch
             {
@@ -824,13 +838,29 @@ namespace pitTeam.Utils
                     return false;
                 }
 
+                if (!CanAttemptSelectedFirstAidTopOff(bot, bodyPart)) return false;
+
                 BotFirstAid firstAid = bot.Medecine.FirstAid;
+                bool peacefulTopOff = !IsPostCombatFullHealActive(bot);
+                FirstAidTopOffState state = null;
+                if (peacefulTopOff)
+                {
+                    state = FirstAidTopOffStates.GetValue(bot.GetPlayer, _ => new FirstAidTopOffState());
+                    state.Policy.BeginAttempt(bodyPart, bot.GetPlayer.HealthController.GetBodyPartHealth(bodyPart, false).Current, state.Supplies);
+                    state.Med = null;
+                    state.NextScanAt = 0f;
+                }
                 firstAid.CurUsingMeds = med;
                 firstAid._bodyPartToHeal = bodyPart;
                 firstAid._isBleedingLight = false;
                 firstAid._isBleedingHeavy = false;
                 firstAid.Damaged = true;
-                firstAid.TryApplyToCurrentPart();
+                try { firstAid.TryApplyToCurrentPart(); }
+                finally
+                {
+                    if (state != null && !firstAid.Using)
+                        state.Policy.Observe(bodyPart, bot.GetPlayer.HealthController.GetBodyPartHealth(bodyPart, false).Current, state.Supplies, Time.time);
+                }
                 return firstAid.Using;
             }
             catch
@@ -849,6 +879,13 @@ namespace pitTeam.Utils
                    bot.WeaponManager?.Grenades?.ThrowindNow != true &&
                    bot.WeaponManager?.Reload?.Reloading != true &&
                    bot.Medecine.FirstAid.CanUseByTime();
+        }
+
+        private static bool CanAttemptSelectedFirstAidTopOff(BotOwner bot, EBodyPart part)
+        {
+            return IsPostCombatFullHealActive(bot) ||
+                   (FirstAidTopOffStates.TryGetValue(bot.GetPlayer, out FirstAidTopOffState state) &&
+                    state.Policy.CanAttempt(part, Time.time));
         }
 
         private static bool TryFindFirstAidTopOffTarget(BotOwner bot, out EBodyPart bodyPart, out EFT.InventoryLogic.Meds med)
@@ -874,20 +911,21 @@ namespace pitTeam.Utils
                 return false;
             }
 
-            return TryFindFirstAidTopOffTargetCore(player, firstAid, out bodyPart, out med);
+            return TryFindFirstAidTopOffTargetCore(player, firstAid, out bodyPart, out med,
+                fullRecovery: IsPostCombatFullHealActive(bot));
         }
 
         private static bool ShouldAllowManualFirstAidTopOff(BotOwner bot)
         {
-            return IsPostCombatFullHealActive(bot) &&
-                   !IsPostCombatFullHealRestoreWindowElapsed(bot);
+            return !IsPostCombatFullHealActive(bot) || !IsPostCombatFullHealRestoreWindowElapsed(bot);
         }
 
         private static bool TryFindFirstAidTopOffTargetCore(
             Player player,
             BotFirstAid firstAid,
             out EBodyPart bodyPart,
-            out EFT.InventoryLogic.Meds med)
+            out EFT.InventoryLogic.Meds med,
+            bool fullRecovery = true)
         {
             bodyPart = default;
             med = null;
@@ -900,9 +938,44 @@ namespace pitTeam.Utils
                 return false;
             }
 
+            FirstAidTopOffState state = fullRecovery ? null : FirstAidTopOffStates.GetValue(player, _ => new FirstAidTopOffState());
+            if (state != null && state.SafeSlots == firstAid._shallUseInSafe && Time.time < state.NextScanAt)
+            {
+                bodyPart = state.Target;
+                med = state.Med;
+                ValueStruct cachedHealth = player.HealthController.GetBodyPartHealth(bodyPart, false);
+                return med != null && ReferenceEquals(med.Owner, player.InventoryController) && state.Policy.HasWork(bodyPart) &&
+                       !player.ActiveHealthController.IsBodyPartDestroyed(bodyPart) &&
+                       FollowerFirstAidTopOffPolicy.NeedsTreatment(bodyPart, cachedHealth.Current, cachedHealth.Maximum, false) &&
+                       med.TryGetItemComponent<MedKitComponent>(out MedKitComponent cachedKit) && cachedKit.HpResource > 0f &&
+                       player.HealthController.CanApplyItem(med, bodyPart);
+            }
+            if (state != null)
+            {
+                state.Med = null;
+                state.NextScanAt = Time.time + 0.5f;
+                state.SafeSlots = firstAid._shallUseInSafe;
+                bool needsTreatment = false;
+                foreach (EBodyPart part in EFT.HealthSystem.HealthHelper.RealBodyParts)
+                {
+                    ValueStruct health = player.HealthController.GetBodyPartHealth(part, false);
+                    state.Policy.Observe(part, health.Current, state.Supplies, Time.time);
+                    if (!player.ActiveHealthController.IsBodyPartDestroyed(part) &&
+                        FollowerFirstAidTopOffPolicy.NeedsTreatment(part, health.Current, health.Maximum, false)) needsTreatment = true;
+                }
+                if (!needsTreatment) return false;
+            }
             EquipmentSlot[] searchSlots = firstAid._shallUseInSafe ? BotMedecine.secureSlots : BotMedecine.anySlots;
-            List<EFT.InventoryLogic.Meds> meds = new List<EFT.InventoryLogic.Meds>();
+            List<EFT.InventoryLogic.Meds> meds = state?.Meds ?? new List<EFT.InventoryLogic.Meds>();
+            meds.Clear();
             player.InventoryController.GetAcceptableItemsNonAlloc<EFT.InventoryLogic.Meds>(searchSlots, meds, null, null);
+            if (state != null)
+            {
+                state.Supplies = 0f;
+                foreach (EFT.InventoryLogic.Meds item in meds)
+                    if (item != null && item.TryGetItemComponent<MedKitComponent>(out MedKitComponent kit) && kit.HpResource > 0f)
+                        state.Supplies += kit.HpResource;
+            }
             if (meds.Count == 0)
             {
                 return false;
@@ -911,6 +984,7 @@ namespace pitTeam.Utils
             float bestNormalized = float.MaxValue;
             float bestMissing = 0f;
             float bestMedScore = float.MaxValue;
+            bool bestVital = false;
             foreach (EBodyPart part in EFT.HealthSystem.HealthHelper.RealBodyParts)
             {
                 if (player.ActiveHealthController.IsBodyPartDestroyed(part))
@@ -920,9 +994,15 @@ namespace pitTeam.Utils
 
                 ValueStruct health = player.HealthController.GetBodyPartHealth(part, false);
                 float missing = health.Maximum - health.Current;
-                if (health.Maximum <= 0f || missing <= FirstAidTopOffMinMissingHealth)
+                if (!FollowerFirstAidTopOffPolicy.NeedsTreatment(part, health.Current, health.Maximum, fullRecovery))
                 {
                     continue;
+                }
+
+                if (state != null)
+                {
+                    state.Policy.Observe(part, health.Current, state.Supplies, Time.time);
+                    if (!state.Policy.HasWork(part)) continue;
                 }
 
                 if (!TrySelectTopOffMed(player, meds, part, missing, out EFT.InventoryLogic.Meds candidateMed, out float medScore))
@@ -931,9 +1011,11 @@ namespace pitTeam.Utils
                 }
 
                 float normalized = health.Current / health.Maximum;
-                bool betterPart = normalized < bestNormalized - 0.001f ||
-                                  (Mathf.Abs(normalized - bestNormalized) <= 0.001f && missing > bestMissing + 0.1f);
-                bool samePartBetterMed = Mathf.Abs(normalized - bestNormalized) <= 0.001f &&
+                bool vital = !fullRecovery && FollowerFirstAidTopOffPolicy.IsVital(part);
+                bool samePriority = vital == bestVital;
+                bool betterPart = (vital && !bestVital) || (samePriority && (normalized < bestNormalized - 0.001f ||
+                                  (Mathf.Abs(normalized - bestNormalized) <= 0.001f && missing > bestMissing + 0.1f)));
+                bool samePartBetterMed = samePriority && Mathf.Abs(normalized - bestNormalized) <= 0.001f &&
                                          Mathf.Abs(missing - bestMissing) <= 0.1f &&
                                          medScore < bestMedScore;
 
@@ -947,7 +1029,10 @@ namespace pitTeam.Utils
                 bestNormalized = normalized;
                 bestMissing = missing;
                 bestMedScore = medScore;
+                bestVital = vital;
             }
+
+            if (state != null) { state.Target = bodyPart; state.Med = med; }
 
             return med != null;
         }

@@ -14,12 +14,11 @@ namespace pitTeam.BigBrain
     /// </summary>
     internal sealed class FollowerCombatRiflemanEngagement
     {
-        private const float ReferenceDistance = FollowerPushRiskPolicy.ReferenceDistance;
         private const float CacheSeconds = 0.5f;
         private const float PositionToleranceSqr = 4f;
         private const float EnemyGroupRadius = FollowerPushRiskPolicy.ClusterRadius;
         private const float MaxRequiredAggression = FollowerPushRiskPolicy.MaxRequiredAggression;
-        private const float LowThreatStyleThreshold = -2f;
+        private const float LowThreatStyleThreshold = FollowerPushRiskPolicy.LowThreatThreshold;
         private const float NavMeshSampleRadius = 2f;
 
         private readonly BotOwner botOwner;
@@ -280,18 +279,19 @@ namespace pitTeam.BigBrain
                     Vector3.Distance(enemyPosition, bossPosition));
             }
 
-            float distanceRequirement = enemyRouteDistance / ReferenceDistance * 100f;
             float threatAdjustment = CalculateThreatAdjustment(
                 goalEnemy,
                 out int enemyGroupSize,
                 out float equipmentPowerRatio,
                 out float roleThreatMultiplier,
                 out FollowerCombatCommon.AutoPushWeaponThreatPolicy weaponThreatPolicy);
+            float distanceRequirement = FollowerPushRiskPolicy.DistanceRequirement(
+                enemyRouteDistance, threatAdjustment, roleThreatMultiplier, (int)weaponThreatPolicy);
             float playerPullAdjustment = combatIndependent || !pathsComplete
                 ? 0f
                 : CalculatePlayerPullAdjustment(enemyRouteDistance, currentBossDistance, projectedBossPathDistance);
             float requiredAggression = FollowerPushRiskPolicy.Required(
-                enemyRouteDistance, threatAdjustment, playerPullAdjustment);
+                enemyRouteDistance, threatAdjustment, playerPullAdjustment, roleThreatMultiplier, (int)weaponThreatPolicy);
 
             string blockReason = GetBlockReason(
                 goalEnemy,
@@ -498,6 +498,8 @@ namespace pitTeam.BigBrain
                     enemyRouteDistance = evaluation.EnemyRouteDistance,
                     distanceRequirement = evaluation.DistanceRequirement,
                     threatAdjustment = evaluation.ThreatAdjustment,
+                    threatRangeMultiplier = FollowerPushRiskPolicy.ThreatRangeMultiplier(
+                        evaluation.ThreatAdjustment, evaluation.RoleThreatMultiplier, (int)evaluation.WeaponThreatPolicy),
                     playerPullAdjustment = evaluation.PlayerPullAdjustment,
                     currentPlayerDistance = evaluation.CurrentBossDistance,
                     projectedPlayerDistance = evaluation.ProjectedBossDistance,

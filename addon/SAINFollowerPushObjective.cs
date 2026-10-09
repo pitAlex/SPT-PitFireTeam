@@ -37,7 +37,8 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
     private readonly SAINFollowerCoverFinder finder = new(bot);
     private readonly SAINFollowerPushAssessment assessment = new(bot);
     private readonly SAINFollowerApproachRoute approachRoute = new();
-    private bool riskHeld;
+    private bool riskHeld, localFiringCover, localFiringAttempted;
+    private Vector3 localFiringBoss;
     private float riskRetryAt;
     private string lastRiskReason;
     private int lastRiskCount;
@@ -151,8 +152,13 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
         Vector3 known = SainEnemyTracking.Position(target).GetValueOrDefault();
         if ((known - anchor).sqrMagnitude >= 64f || (Exhausted && target.IsVisible && target.CanShoot))
         {
-            ReleaseDestination(); anchor = known; Phase = SAINPushPhase.Approach; nextPlan = 0f; Record("newContact");
+            ReleaseDestination(); localFiringAttempted = false; anchor = known; Phase = SAINPushPhase.Approach; nextPlan = 0f; Record("newContact");
         }
+        if (localFiringAttempted && !Destination.HasValue &&
+            SainPlayerSquadBridge.TryGetPlayerLeader(bot.BotOwner, out Player leader) &&
+            (leader.Position - localFiringBoss).sqrMagnitude >=
+                SainRegroupBridge.BossMoveRefreshDistance * SainRegroupBridge.BossMoveRefreshDistance)
+        { localFiringAttempted = false; finder.Clear(); }
     }
 
     // Runs at SelectEnemy's result boundary, before SAIN publishes the chosen enemy.
@@ -220,7 +226,12 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
         bool betweenLegs = !Destination.HasValue || Phase == SAINPushPhase.Pressure && Time.time >= holdUntil;
         if (!Ordered && betweenLegs && !assessment.AllowsAutomatic)
         {
-            HoldForAssessment(assessment.Reason); result = ECombatDecision.SeekCover; return true;
+            // Full pursuit was rejected; a nearby firing cover is a separate, bounded
+            // option. Preserve its committed leg and arrival hold before falling back.
+            if (localFiringCover) ReleaseDestination();
+            HoldForAssessment(assessment.Reason);
+            result = RejectedAdvanceDecision(enemy);
+            return true;
         }
         if (riskHeld)
         {
@@ -228,7 +239,7 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
                 SAINFollowerRuntime.GetCover(bot.BotOwner)?.HoldsArrival(enemy) == true)
             { Pause(); result = ECombatDecision.SeekCover; return true; }
             if (Time.time < riskRetryAt) { Pause(); result = ECombatDecision.SeekCover; return true; }
-            riskHeld = false; Phase = SAINPushPhase.Approach; nextPlan = 0f;
+            riskHeld = false; localFiringAttempted = false; Phase = SAINPushPhase.Approach; nextPlan = 0f;
         }
         // Preserve the separate native unreachable/sniper attempt and its failure latch.
         if (SAINFollowerRuntime.GetEngageAttempt(bot.BotOwner)?.FailedFor(enemy) == true)
@@ -277,8 +288,9 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
             foreach (CoverPoint candidate in finder.FindForward(enemy, requireFiringLane: false))
             { cover = candidate; Commit(candidate.Position, "cautiousApproachCover"); return; }
             if (finder.Pending) { nextPlan = Time.time; return; }
-            if (!Ordered && !enemy.IsVisible) { HoldForAssessment("noCoveredApproach"); return; }
         }
+        // An admitted cautious push still gets the bounded remembered-position approach
+        // when protected forward cover is unavailable, as Core's cautious search does.
         Vector3 known = SainEnemyTracking.Position(enemy).GetValueOrDefault();
         Vector3 direction = known - bot.Position;
         Vector3 provisional = bot.Position + direction.normalized * Mathf.Min(20f, direction.magnitude);
@@ -294,6 +306,32 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
         { Commit(step, "routeAdvance"); return; }
         Fail(failure ?? "approachReserved");
     }
+    private ECombatDecision RejectedAdvanceDecision(Enemy enemy)
+    {
+        if (!localFiringAttempted && assessment.Reason != "unreliableEnemyLocation" &&
+            SainPlayerSquadBridge.TryGetPlayerLeader(bot.BotOwner, out Player leader))
+        {
+            localFiringBoss = leader.Position;
+            float radius = Mathf.Max(2f, SainRegroupBridge.GetTriggerDistance(bot.BotOwner) - 2f);
+            foreach (CoverPoint candidate in finder.FindNearbyFiring(enemy, leader.Position, radius))
+            {
+                cover = candidate; localFiringAttempted = localFiringCover = true; riskHeld = false;
+                Commit(candidate.Position, "localFiringCover");
+                OwnsMovement = true;
+                return ECombatDecision.MoveToEngage;
+            }
+            if (finder.Pending)
+            {
+                Phase = SAINPushPhase.Approach;
+                if (Reason != "searchingLocalFiringCover") Record("searchingLocalFiringCover");
+                return ECombatDecision.StandAndShoot;
+            }
+            localFiringAttempted = true;
+        }
+        Phase = SAINPushPhase.Assessing;
+        return ECombatDecision.SeekCover;
+    }
+
     private void HoldForAssessment(string reason)
     {
         if (!riskHeld)
@@ -330,14 +368,14 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
     private void ReleaseDestination()
     {
         if (Destination.HasValue) SainRegroupBridge.Release(bot.BotOwner, Destination.Value);
-        Destination = null; cover = null; OwnsMovement = false; Pause(); finder.Clear();
+        Destination = null; cover = null; localFiringCover = false; OwnsMovement = false; Pause(); finder.Clear();
     }
     internal void Clear(string reason)
     {
         if (Active) Record(reason);
         ReleaseDestination(); Mode = SAINPushMode.None; Phase = SAINPushPhase.None; EnemyId = null; target = null;
         holdUntil = recoveryUntil = riskRetryAt = 0f; riskHeld = false; lastRiskReason = null;
-        pressureLatch = targetBound = false; NativeEngagementAllowed = false;
+        pressureLatch = targetBound = localFiringAttempted = false; NativeEngagementAllowed = false;
         lastBoundTarget = null; contactLostUntil = -1f;
     }
     internal object Snapshot => new { mode = Mode.ToString(), phase = Phase.ToString(), enemyId = EnemyId,

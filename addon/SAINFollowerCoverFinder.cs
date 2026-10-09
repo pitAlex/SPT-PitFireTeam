@@ -168,6 +168,25 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
         ranked.Sort((a,b) => a.PathData.PathLength.CompareTo(b.PathData.PathLength));
         return ranked;
     }
+    // A rejected pursuit may still reposition locally for a potential shot. Unlike a
+    // push leg, this need not move toward the enemy. Reuse native cover/path validation
+    // and the existing shared probe budget; knowledge never grants firing permission.
+    internal List<CoverPoint> FindNearbyFiring(Enemy enemy, Vector3 boss, float bossRadius)
+    {
+        Find(enemy, bot.Position, preferNearby: true);
+        if (Pending) return ranked;
+        Vector3 threat = SainEnemyTracking.Position(enemy).GetValueOrDefault();
+        for (int i = ranked.Count - 1; i >= 0; i--)
+        {
+            CoverPoint point = ranked[i];
+            if (!IsNearby(point) || (point.Position - bot.Position).sqrMagnitude <= 4f ||
+                !InsideBossRoute(point, boss, bossRadius) || !HasFiringLane(point, enemy, threat))
+                ranked.RemoveAt(i);
+            if (Pending) { ranked.Clear(); break; }
+        }
+        return ranked;
+    }
+
     private void AddForward(CoverPoint point, Enemy enemy, Vector3 threat, bool requireFiringLane)
     {
         if (point == null || ranked.Contains(point) || !ValidateCandidate(point, enemy) ||

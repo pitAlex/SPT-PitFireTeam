@@ -13,7 +13,6 @@ namespace pitTeam.BigBrain
     {
         private const float RepositionCooldownSeconds = 4f;
         private const float RegroupSameLevelTolerance = 1.75f;
-        private const float MarksmanDefaultAutoSearchAggression = 0.3f;
         private const float FireSupportSettleSeconds = 2.5f;
         private const string FireSupportHoldReason = "sniper.fireSupportHold";
         private const string NoActionHoldReason = "sniper.noActionHold";
@@ -50,6 +49,9 @@ namespace pitTeam.BigBrain
         private AICoreActionResult<BotLogicDecision, CoreActionResultParams>? preparedCloseSearchDecision;
         private Vector3 preparedCloseSearchPoint;
         private float closeSearchRetryUntil;
+        private EnemyInfo? rangeThreatEnemy;
+        private Vector3 rangeThreatAnchor;
+        private float rangeThreatUntil, rangeThreatMultiplier = 1f;
 
         public FollowerCombatSniper(BotOwner botOwner, FollowerCombatCommon combatCommon)
         {
@@ -567,16 +569,19 @@ namespace pitTeam.BigBrain
 
         private bool IsWithinMarksmanAutoSearchDistance(EnemyInfo goalEnemy, float aggression)
         {
-            Enemy.EnemyDistance distance = Enemy.Distance(goalEnemy);
-            if (aggression <= MarksmanDefaultAutoSearchAggression + 0.01f)
+            if (goalEnemy == null || aggression <= 0.01f) return false;
+            Vector3 anchor = FollowerCombatCommon.GetEnemyAnchor(goalEnemy);
+            if (rangeThreatEnemy != goalEnemy || Time.time >= rangeThreatUntil ||
+                (anchor - rangeThreatAnchor).sqrMagnitude > 4f)
             {
-                return distance <= Enemy.EnemyDistance.Close;
+                rangeThreatEnemy = goalEnemy; rangeThreatAnchor = anchor; rangeThreatUntil = Time.time + 0.5f;
+                int localEnemies = Enemy.GetNearbyLivingGroupMemberCount(goalEnemy, anchor, MarksmanCloseSearchClusterRadius);
+                rangeThreatMultiplier = CombatCommon.GetApproachThreatRangeMultiplier(goalEnemy, localEnemies);
             }
-
-            Enemy.EnemyDistance maxDistance = CombatCommon.GetMaxPushDistance(
-                aggression,
-                FollowerCombatTactic.Balanced);
-            return distance <= maxDistance;
+            // Apply threat to the final distance, not to aggression or the route cap.
+            float maxDistance = FollowerPushRiskPolicy.MarksmanRange(aggression) * rangeThreatMultiplier;
+            float distance = FollowerEnemyTracking.Distance(goalEnemy);
+            return distance >= 0f && distance < maxDistance;
         }
 
         /// <summary>

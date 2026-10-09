@@ -17,12 +17,15 @@ $sniperMethods = @(
     'TryGetCloseQuarterDecision', 'IsMarksmanCloseSearchDestinationSafe', 'TryCreateSafeCloseSearchDecision',
     'TryPrepareAutomaticCloseWeapon', 'BeginCloseWeaponPreparation', 'BlockCloseWeaponPreparationRetry',
     'ClearCloseWeaponPreparation', 'EndCloseWeaponPreparationHold', 'IsCloseIntentDecisionReason',
-    'IsAutomaticSupportIntentReason'
+    'IsAutomaticSupportIntentReason', 'IsWithinMarksmanAutoSearchDistance'
 ) | ForEach-Object { Get-CombatMethod $sniperSource $_ }
 $harness = @'
 #nullable enable
 #pragma warning disable CS0649, CS0414
 using System;
+using pitTeam.Modules;
+using pitTeam.BigBrain;
+using Enemy = Utils.Enemy;
 using UnityEngine;
 using Decision = AICoreActionResult<BotLogicDecision, CoreActionResultParams>;
 namespace UnityEngine {
@@ -45,11 +48,13 @@ public class BotOwner { public Vector3 Position; public BotMemory Memory=new Bot
 public class EnemyInfo { public bool IsVisible,CanShoot,Valid=true; public float Distance=32f; public string ProfileId="woods-enemy"; public Vector3 Anchor=new Vector3(32,0,0); }
 namespace pitTeam.Modules { public static class FollowerEnemyTracking { public static float Distance(EnemyInfo e)=>e.Distance; } }
 public class CombatDistanceConfiguration { public static CombatDistanceConfiguration Instance=new CombatDistanceConfiguration(); public float GetCloseQuarterDistance()=>25f; }
-namespace Utils { public static class Utils { public static bool Complete=true; public static float NavDistance=10f; public static bool TryGetCompletePathDistance(Vector3 a,Vector3 b,out float distance){distance=NavDistance;return Complete;} } }
+namespace Utils { public static class Enemy { public static int Count=1,Calls;public static int GetNearbyLivingGroupMemberCount(EnemyInfo e,Vector3 a,float radius){Calls++;return Count;} } public static class Utils { public static bool Complete=true; public static float NavDistance=10f; public static bool TryGetCompletePathDistance(Vector3 a,Vector3 b,out float distance){distance=NavDistance;return Complete;} } }
 public static class BattleRecorder { public static void RecordObjectiveDiagnostic(BotOwner b,string o,string a,string r){} }
 public static class FollowerCombatCommon { public const float SupportWeaponPrepareTimeoutSeconds=3f; public static Vector3 GetEnemyAnchor(EnemyInfo e)=>e.Anchor; public static AICoreActionEnd Continue()=>default; }
 public static class FollowerCombatSuppressionObjective { public static bool IsAutomaticSupportIntentReason(string? reason)=>reason=="ordered.automaticSupport"; }
 public class CommonFake {
+    public float ThreatMultiplier=1f;public int ThreatReads;
+    public float GetApproachThreatRangeMultiplier(EnemyInfo e,int count){ThreatReads++;return ThreatMultiplier;}
     public bool Ready,AcceptSwitch=true,SearchAvailable=true; public int SwitchRequests,DefensiveSuppressRequests;
     public bool IsAutomaticCloseCombatWeaponReady()=>Ready;
     public bool TryRequestAutomaticSupportForCloseCombat(){SwitchRequests++;return AcceptSwitch;}
@@ -72,6 +77,8 @@ public class CoverHarness {
 __COMMON_METHODS__
 }
 public class SniperHarness {
+    private const float MarksmanCloseSearchClusterRadius=35f;
+    private EnemyInfo? rangeThreatEnemy;private Vector3 rangeThreatAnchor;private float rangeThreatUntil,rangeThreatMultiplier=1f;
     private const string CloseWeaponPrepareHoldReason="sniper.closeWeaponPrepare";
     private const float CloseWeaponPrepareRetryCooldownSeconds=1f,FiringPositionCooldownSeconds=4f,MarksmanCloseSearchMinEnemyDistance=16f;
     public BotOwner BotOwner=new BotOwner(); public CommonFake CombatCommon=new CommonFake();
@@ -88,6 +95,7 @@ public class SniperHarness {
     private static bool IsFinite(Vector3 v)=>IsFinite(v.x)&&IsFinite(v.y)&&IsFinite(v.z);
     public bool Select(out Decision d)=>TryGetCloseQuarterDecision(BotOwner.Memory.GoalEnemy!,out d);
     public AICoreActionEnd EndPrepare()=>EndCloseWeaponPreparationHold();
+    public bool InRange(EnemyInfo? enemy,float aggression)=>IsWithinMarksmanAutoSearchDistance(enemy!,aggression);
 __SNIPER_METHODS__
 }
 public static class MarksmanBoundaryChecks {
@@ -95,6 +103,46 @@ public static class MarksmanBoundaryChecks {
     private static void Check(bool condition,string name){if(!condition)throw new Exception(name);checks++;}
     private static SniperHarness Fresh(){Time.time=100f;Utils.Utils.Complete=true;Utils.Utils.NavDistance=10f;return new SniperHarness();}
     public static int Run(){
+        var range = Fresh(); var enemy = new EnemyInfo();
+        foreach (int percent in new[]{0,1}) {
+            enemy.Distance=0; Check(!range.InRange(enemy,percent/100f),"Range_ZeroAggressionStillDisabled_"+percent);
+        }
+        for (int percent=2;percent<=100;percent++) {
+            double fraction=percent/100d;
+            float expected=(float)(100d*fraction+20d*fraction*fraction);
+            enemy.Distance=expected-.001f;
+            Check(range.InRange(enemy,percent/100f),"Range_JustInsideContinuousLimit_"+percent);
+            enemy.Distance=expected+.001f;
+            Check(!range.InRange(enemy,percent/100f),"Range_JustOutsideContinuousLimit_"+percent);
+        }
+        foreach (var anchor in new[]{(.5f,55f),(1f,120f)}) {
+            enemy.Distance=anchor.Item2;
+            Check(!range.InRange(enemy,anchor.Item1),"Range_ExactLimitExcluded_"+anchor.Item2);
+            enemy.Distance=anchor.Item2-.01f;
+            Check(range.InRange(enemy,anchor.Item1),"Range_RequestedAnchor_"+anchor.Item2);
+        }
+        foreach (float invalid in new[]{-1f,float.NaN,float.PositiveInfinity}) {
+            enemy.Distance=invalid; Check(!range.InRange(enemy,1f),"Range_InvalidDistance_"+invalid);
+        }
+        enemy.Distance=1;
+        Check(!range.InRange(null,1f)&&!range.InRange(enemy,-1f)&&!range.InRange(enemy,float.NaN),"Range_InvalidContextRejected");
+        enemy.Distance=120;Check(!range.InRange(enemy,2f),"Range_AggressionAbove100CannotExtendLimit");
+        foreach(float multiplier in new[]{.75f,1f,1.2f}) {
+            range=Fresh();range.CombatCommon.ThreatMultiplier=multiplier;
+            enemy=new EnemyInfo{Distance=55*multiplier-.001f};
+            Check(range.InRange(enemy,.5f),"Range_ThreatMultiplierAppliesToFinalDistance_"+multiplier);
+            enemy.Distance=55*multiplier+.001f;
+            Check(!range.InRange(enemy,.5f),"Range_ThreatMultiplierRejectsBeyondFinalDistance_"+multiplier);
+        }
+        range=Fresh();enemy=new EnemyInfo{Distance=10};int groupCalls=Utils.Enemy.Calls;
+        for(int i=0;i<100;i++)range.InRange(enemy,.5f);
+        Check(range.CombatCommon.ThreatReads==1&&Utils.Enemy.Calls==groupCalls+1,"Range_RepeatedPollsReuseThreatWithoutGroupWalks");
+        range.CombatCommon.ThreatMultiplier=.75f;Time.time+=.51f;range.InRange(enemy,.5f);
+        Check(range.CombatCommon.ThreatReads==2,"Range_ThreatRechecksOnHalfSecondCadence");
+        enemy.Anchor=new Vector3(36,0,0);range.InRange(enemy,.5f);
+        Check(range.CombatCommon.ThreatReads==3,"Range_ChangedKnownAnchorInvalidatesThreatCache");
+        range.InRange(new EnemyInfo{Distance=10},.5f);
+        Check(range.CombatCommon.ThreatReads==4,"Range_ChangedEnemyInvalidatesThreatCache");
         var hold=new Decision(BotLogicDecision.holdPosition,"committedCoverHold.sniper.reposition");
         Time.time=951.6476f;
         var cover=new CoverHarness{committedCoverPoint=new Cover{Id=9629},committedHoldCoverPoint=new Cover{Id=9629},committedPositionDecision=hold,committedCoverUntil=948.627f,committedPointTimer=Time.time+3f};
@@ -154,9 +202,13 @@ public static class MarksmanBoundaryChecks {
         return checks;
     }
 }
+__PUSH_POLICY__
 __PHASE_SOURCE__
 '@
 $harness = $harness.Replace('__COMMON_METHODS__', ($commonMethods -join "`n")).Replace('__SNIPER_METHODS__', ($sniperMethods -join "`n")).Replace('__PHASE_SOURCE__', $phaseSource.Replace('using UnityEngine;', ''))
+$rangePolicy=Get-Content -Raw (Join-Path $RepositoryRoot 'client/BigBrain/FollowerPushRiskPolicy.cs')
+$rangePolicy=$rangePolicy.Replace('using System;','').Replace('namespace pitTeam.BigBrain;','namespace pitTeam.BigBrain {') + "`n}"
+$harness=$harness.Replace('__PUSH_POLICY__',$rangePolicy)
 Add-Type -TypeDefinition $harness -Language CSharp
 $count = [MarksmanBoundaryChecks]::Run()
 Write-Output "Passed $count marksman boundary checks against extracted production methods. Unity/NavMesh/weapon-animation behavior still requires a raid test."

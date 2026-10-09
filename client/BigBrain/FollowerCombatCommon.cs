@@ -3534,6 +3534,20 @@ namespace pitTeam.BigBrain
             return IsEnemyLowThreat(goalEnemy, ignoreEquip, maximumEnemies);
         }
 
+        // Caller supplies its own local enemy count. In particular, the addon must
+        // not import Core's world/group enumeration to classify SAIN-known contacts.
+        public float GetApproachThreatRangeMultiplier(EnemyInfo goalEnemy, int localEnemies)
+        {
+            if (goalEnemy == null) return 1f;
+            float ratio = FollowerPushRiskPolicy.EquipmentRatio(botOwner.AIData?.PowerOfEquipment ?? 0f,
+                goalEnemy.Person?.AIData?.PowerOfEquipment ?? 0f);
+            float role = FollowerCombatRiflemanEngagement.GetCombatRoleThreatMultiplier(
+                goalEnemy.Person?.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault);
+            int weapon = (int)GetAutoPushWeaponThreatPolicy(goalEnemy, activeWeaponOnly: false);
+            float threat = FollowerPushRiskPolicy.Threat(ratio, role, localEnemies, weapon);
+            return FollowerPushRiskPolicy.ThreatRangeMultiplier(threat, role, weapon);
+        }
+
         public AutoPushWeaponThreatPolicy GetAutoPushWeaponThreatPolicy(EnemyInfo goalEnemy) =>
             GetAutoPushWeaponThreatPolicy(goalEnemy, activeWeaponOnly: false);
 

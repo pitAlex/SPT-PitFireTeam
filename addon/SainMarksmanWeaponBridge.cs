@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using EFT;
 using HarmonyLib;
 using pitTeam.Modules;
+using pitTeam.BigBrain;
 using SAIN.Preset.Shared.Enums;
 using SAIN.Components;
 using SAIN.SAINComponent.Classes.EnemyClasses;
@@ -19,7 +20,8 @@ internal sealed class SainMarksmanWeaponBridge
     private readonly Func<bool> hold, medical;
     private readonly Func<float> aggression;
     private readonly Func<EnemyInfo, bool> blocked, cautious;
-    private readonly Func<EnemyInfo, float, bool> inRange;
+    private readonly Func<EnemyInfo, int, float> threatRange;
+    internal float RangeMultiplier { get; private set; } = 1f;
     private readonly Func<BotOwner, EnemyInfo, bool> close;
     private readonly Func<float, int> allowedCount;
     private readonly HashSet<string> counted = new();
@@ -39,7 +41,6 @@ internal sealed class SainMarksmanWeaponBridge
         // cannot bind Activator.CreateInstance(Type, bool) and request a default ctor.
         object common = Activator.CreateInstance(commonType, new object[] { bot.BotOwner });
         Type sniperType = assembly.GetType("pitTeam.BigBrain.FollowerCombatSniper", true);
-        object sniper = Activator.CreateInstance(sniperType, bot.BotOwner, common);
         available = Bind<Func<bool>>(common, "HasAutomaticCloseCombatWeaponAvailable");
         ready = Bind<Func<bool>>(common, "IsAutomaticCloseCombatWeaponReady");
         request = Bind<Func<bool>>(common, "TryRequestAutomaticSupportForCloseCombat");
@@ -49,12 +50,12 @@ internal sealed class SainMarksmanWeaponBridge
         supportAvailable = Bind<Func<bool>>(common, "HasLoadedAutomaticMarksmanSupportWeapon");
         restore = Bind<Func<bool>>(common, "TrySwitchBackToPrimaryFromAutomaticMarksmanSupport");
         usingSupport = Bind<Func<bool>>(common, "IsUsingAutomaticMarksmanSupportOverNonAutomaticPrimary");
+        threatRange = Bind<Func<EnemyInfo, int, float>>(common, "GetApproachThreatRangeMultiplier", typeof(EnemyInfo), typeof(int));
         hold = Bind<Func<bool>>(common, "IsTemporaryHoldPositionAggressionActive");
         medical = Bind<Func<bool>>(common, "HasReportedHealWorkForPush");
         aggression = Bind<Func<float>>(common, "GetAggression01");
         blocked = Bind<Func<EnemyInfo, bool>>(common, "ShouldBlockProactiveAutoPushForWeaponThreat", typeof(EnemyInfo));
         cautious = Bind<Func<EnemyInfo, bool>>(common, "ShouldUseCautiousWeaponThreatStyle", typeof(EnemyInfo));
-        inRange = Bind<Func<EnemyInfo, float, bool>>(sniper, "IsWithinMarksmanAutoSearchDistance", typeof(EnemyInfo), typeof(float));
         close = (Func<BotOwner, EnemyInfo, bool>)AccessTools.Method(sniperType, "CanUseAutomaticSupportForCloseThreat").CreateDelegate(typeof(Func<BotOwner, EnemyInfo, bool>));
         allowedCount = (Func<float, int>)AccessTools.Method(commonType, "GetAllowedLowThreatEnemyCount").CreateDelegate(typeof(Func<float, int>));
     }
@@ -69,14 +70,18 @@ internal sealed class SainMarksmanWeaponBridge
         float value = aggression();
         eligible = false;
         if (value <= 0.01f || !available() || blocked(enemy.EnemyInfo) || cautious(enemy.EnemyInfo) ||
-            !inRange(enemy.EnemyInfo, value) || value < 0.4f && !bot.BotOwner.Memory.AttackImmediately) return false;
+            value < 0.4f && !bot.BotOwner.Memory.AttackImmediately) return false;
         // Same 35m Marksman cluster and aggression count; locations are SAIN knowledge.
         counted.Clear(); counted.Add(enemy.EnemyProfileId);
         foreach (Enemy contact in bot.EnemyController.KnownEnemies)
             if (SAINFollowerSquadSupportObjective.Valid(contact) &&
                 (SainEnemyTracking.Position(contact).GetValueOrDefault() - SainEnemyTracking.Position(enemy).GetValueOrDefault()).sqrMagnitude <= 35f * 35f)
                 counted.Add(contact.EnemyProfileId);
-        return eligible = counted.Count <= allowedCount(value) && (value < 0.4f || counted.Count < 3);
+        if (counted.Count > allowedCount(value) || value >= 0.4f && counted.Count >= 3) return false;
+        RangeMultiplier = threatRange(enemy.EnemyInfo, counted.Count);
+        Vector3? known = SainEnemyTracking.Position(enemy);
+        return eligible = known.HasValue && (known.Value - bot.Position).magnitude <
+            FollowerPushRiskPolicy.MarksmanRange(value) * RangeMultiplier;
     }
     internal void SetDecisionContext(ECombatDecision solo, ESelfActionType self) => decisionProtected = Protected(solo, self);
     internal void ClearDecisionContext() => decisionProtected = false;
@@ -120,5 +125,5 @@ internal sealed class SainMarksmanWeaponBridge
     }
     internal void StopPreparing() { pending = false; settleUntil = 0f; }
     internal void Cancel(Enemy enemy = null) { StopPreparing(); Maintain(enemy, false); }
-    internal object Snapshot => new { state = State, pending, owned, eligible, settleRemaining = Mathf.Max(0f, settleUntil - Time.time), prepareRemaining = Mathf.Max(0f, prepareUntil - Time.time) };
+    internal object Snapshot => new { state = State, pending, owned, eligible, threatRangeMultiplier = RangeMultiplier, settleRemaining = Mathf.Max(0f, settleUntil - Time.time), prepareRemaining = Mathf.Max(0f, prepareUntil - Time.time) };
 }

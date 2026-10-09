@@ -10,7 +10,7 @@ namespace EFT {
     public partial class BotOwner {
         // EFT exposes this conversion; it once made Activator choose (Type, bool).
         public static implicit operator bool(BotOwner owner) => owner != null;
-        public bool AutoAvailable,AutoReady,SupportSelected,AutoRequestAccepted=true,AutoAdvanceAllowed=true;
+        public bool AutoAvailable,AutoReady,SupportSelected,AutoRequestAccepted=true;
         public int AutoRequests,PrimaryReturns;
     }
 }
@@ -32,14 +32,38 @@ namespace pitTeam.BigBrain {
         public bool ShouldUseCautiousWeaponThreatStyle(EnemyInfo e)=>riskOwner.RiskWeaponPolicy==1;
         private static int GetAllowedLowThreatEnemyCount(float a)=>a>=.7f?3:a>=.4f?2:1;
     }
-    public sealed class FollowerCombatSniper(BotOwner owner,FollowerCombatCommon common) {
-        private bool IsWithinMarksmanAutoSearchDistance(EnemyInfo e,float aggression)=>owner.AutoAdvanceAllowed;
+    public static class FollowerCombatSniper {
         internal static bool CanUseAutomaticSupportForCloseThreat(BotOwner owner,EnemyInfo e)=>e!=null&&e.Distance<=20;
     }
 }
 public static partial class CombatChecks {
     private static void AutoReady(BotOwner b){b.AutoReady=true;b.SupportSelected=true;b.WeaponManager.Selector.IsChanging=false;}
+    private static void TestShooterThreatRange(){
+        var b=ShooterBot("rangeThreat");b.AutoAvailable=true;b.Follower.CombatAggression=50;
+        var e=b.Sain.GoalEnemy;var w=SAINFollowerRuntime.GetMarksman(b).Weapons;
+        e.KnownPlaces.LastKnownPosition=new Vector3(65,0,0);
+        Check(w.CanAdvance(e)&&w.RangeMultiplier==1.2f,"Shooter low threat applies 1.2 to final fifty-percent range");
+        Check(!b.LastActiveWeaponPolicyRead,"Shooter range reads prospective support ammunition policy");
+        Time.time+=.51f;e.KnownPlaces.LastKnownPosition=new Vector3(67,0,0);
+        Check(!w.CanAdvance(e),"Shooter low threat does not exceed sixty-six metre range");
+        e.EnemyPlayer.Profile.Info.Settings.Role=WildSpawnType.bossKnight;e.EnemyPlayer.AIData.PowerOfEquipment=10;
+        Time.time+=.51f;e.KnownPlaces.LastKnownPosition=new Vector3(40,0,0);
+        Check(w.CanAdvance(e)&&w.RangeMultiplier==.75f,"Shooter dangerous role outranks weak equipment bonus");
+        Time.time+=.51f;e.KnownPlaces.LastKnownPosition=new Vector3(42,0,0);
+        Check(!w.CanAdvance(e),"Shooter dangerous role restricts fifty-percent range to forty-one point two-five metres");
+        e.EnemyPlayer.Profile.Info.Settings.Role=WildSpawnType.assault;e.EnemyPlayer.AIData.PowerOfEquipment=100;
+        var other=new SAIN.SAINComponent.Classes.EnemyClasses.Enemy();other.EnemyPlayer.ProfileId="rangeThreatOther";
+        other.KnownPlaces.LastKnownPosition=new Vector3(45,0,0);other.EnemyPosition=new Vector3(1000,0,0);
+        b.Sain.EnemyController.KnownEnemies.Add(other);Time.time+=.51f;
+        e.KnownPlaces.LastKnownPosition=new Vector3(40,0,0);
+        Check(w.CanAdvance(e)&&w.RangeMultiplier==.75f,"Shooter known local numbers reduce range despite hidden live location");
+        other.KnownPlaces.LastKnownPosition=new Vector3(200,0,0);other.EnemyPosition=new Vector3(40,0,0);
+        Time.time+=.51f;e.KnownPlaces.LastKnownPosition=new Vector3(65,0,0);
+        Check(w.CanAdvance(e)&&w.RangeMultiplier==1.2f,"Shooter distant known contact cannot use live position to increase threat");
+        b.RiskMedical=true;Check(!w.CanAdvance(e),"medical work still interrupts cached range admission immediately");
+    }
     private static void TestShooterWeaponTransitions(){
+        TestShooterThreatRange();
         var b=ShooterBot("weaponLeavesClose");b.AutoAvailable=true;b.Follower.CombatAggression=0;
         b.Sain.GoalEnemy.EnemyInfo.Distance=10;FiringPositionFinder.Candidate=null;
         var m=b.Sain.Decision.Manager;var p=SAINFollowerRuntime.GetMarksman(b);

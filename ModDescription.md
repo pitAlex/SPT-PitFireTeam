@@ -107,6 +107,8 @@ Teammates can be customized from their profile screen.
 
 - **`Rifleman`** - the default balanced combat style. Riflemen stay useful near the boss when there is no good attack opportunity, but can push, search, and pressure when the enemy state and aggression allow it.
 - **`Marksman`** - ranged-focused behavior for sniper-style teammates. Marksmen prefer firing positions and distance, avoid generic assault pushes, and can switch to an automatic secondary for close fights when appropriate.
+- **`SAINGrunt`** - requires the **SAIN Addon** and **SAIN** installed. An all-purpose fighter using SAIN combat, adapted to support your squad, pressure enemies, and regroup around you.
+- **`SAINShooter`** - requires the **SAIN Addon** and **SAIN** installed. A ranged-support fighter using SAIN combat, adapted to seek firing positions and cover teammates rather than make assault pushes.
 
 **Proficiency:**
 
@@ -134,6 +136,20 @@ When a kit is purchased or equipped, the teammate's current kit is returned thro
 In **Immersive** and **Realistic**, you can insure eligible teammate gear from **Edit Loadout** using the game's normal insurance window and traders. The price is paid from your roubles, and coverage stays with each exact item as you move it between your stash and the teammate. An insured item you take from a teammate during a raid stays insured if you keep it after the raid.
 
 If insured teammate gear is truly lost, the trader handles the return chance, timing, and mail as with your own gear. Gear you or another teammate bring out does not generate an insurance copy. Returned items need to be insured again before another loss. Insurance is unavailable in **Restricted**.
+
+## SAIN Tactics
+
+**Requires the optional pitFireTeam SAIN Addon and SAIN 4.5.1.**
+
+The addon adapts SAIN's individual and squad combat for your player-led team. Select **SAINGrunt** or **SAINShooter** from a teammate's profile to use it. Installing SAIN alone does not unlock these tactics; **Rifleman** and **Marksman** remain available with pitFireTeam's own combat behavior.
+
+**SAINGrunt** fills the Rifleman role: an all-purpose fighter who supports the squad, seeks cover, suppresses, and advances when there is a suitable opening. Use **Go Forward** to give him an enemy to pressure, or **Regroup** to call him back toward you.
+
+**SAINShooter** fills the Marksman role: ranged support built around firing opportunities and useful sightlines. Use **Need Sniper** to request a firing position. He can support a teammate's advance and use a suitable secondary or holster weapon when close combat calls for it.
+
+You remain the squad leader. Commands guide combat priorities, while each teammate still responds to danger, healing needs, and available routes. **On Your Own** gives them more independence during combat. Following, looting, customization, and progression continue through pitFireTeam's shared follower system.
+
+The addon adapts the two roles using SAIN's available actions; their behavior will differ from Rifleman and Marksman. Addon suppression uses firearms and does not support grenade launchers.
 
 ## Squad Commands
 
@@ -545,8 +561,9 @@ Addons are standalone features that extend the mod’s core functionality. They 
 
 - **Scavs for hire** - being able to play with teammates as a Scav
 - **Going Rogue** - being able to recruit and command Goons along with the Rogues in raids
-For the implemented optional **SAINGrunt** combat brain, see the [SAIN addon documentation](addon/docs/README.md). Further addon work is tracked in its [roadmap](addon/docs/Roadmap.md).
 - **Expanded looting** - expanding the looting capabilities through existing mods (such as Looting Bots mod)
+
+For the implemented optional SAIN Addon, see [SAIN Tactics](#sain-tactics).
 
 ## Known Issues and Conflicts
 

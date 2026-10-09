@@ -157,8 +157,9 @@ namespace pitTeam.Utils {
         public static bool Using;
         public static bool IsUsingMedical(BotOwner b)=>Using;
         private static bool ShouldAllowManualFirstAidTopOff(BotOwner b)=>true;
+        private static bool IsPostCombatFullHealActive(BotOwner b)=>true;
         private static bool TryGetActiveBleeding(Player p,out object bleed){bleed=null;return false;}
-        private static bool TryFindFirstAidTopOffTargetCore(Player p,BotFirstAid f,out EBodyPart b,out EFT.InventoryLogic.Meds m){b=default;m=new EFT.InventoryLogic.Meds();return true;}
+        private static bool TryFindFirstAidTopOffTargetCore(Player p,BotFirstAid f,out EBodyPart b,out EFT.InventoryLogic.Meds m,bool fullRecovery=true){b=default;m=new EFT.InventoryLogic.Meds();return true;}
         public static bool CanTopOff(BotOwner b)=>TryFindFirstAidTopOffTarget(b,out _,out _);
 __MEDICAL__
     }

@@ -103,7 +103,6 @@ try {
     }
     if(@($common.Methods | Where-Object {$_.Name -eq 'GetAggression01' -and !$_.IsStatic -and $_.ReturnType.FullName -eq 'System.Single' -and $_.Parameters.Count -eq 0}).Count -ne 1){throw 'Core aggression binding changed'}
     if(@($common.Methods | Where-Object {$_.Name -eq 'GetAllowedLowThreatEnemyCount' -and $_.IsStatic -and $_.ReturnType.FullName -eq 'System.Int32' -and ($_.Parameters.ParameterType.FullName -join '|') -eq 'System.Single'}).Count -ne 1){throw 'Core Marksman count policy changed'}
-    if(@($sniper.Methods | Where-Object {$_.Name -eq 'IsWithinMarksmanAutoSearchDistance' -and !$_.IsStatic -and $_.ReturnType.FullName -eq 'System.Boolean' -and ($_.Parameters.ParameterType.FullName -join '|') -eq 'EnemyInfo|System.Single'}).Count -ne 1){throw 'Core Marksman range policy changed'}
     if(@($sniper.Methods | Where-Object {$_.Name -eq 'CanUseAutomaticSupportForCloseThreat' -and $_.IsStatic -and $_.ReturnType.FullName -eq 'System.Boolean' -and ($_.Parameters.ParameterType.FullName -join '|') -eq 'EFT.BotOwner|EnemyInfo'}).Count -ne 1){throw 'Core Marksman close-threat policy changed'}
     $phrase=$boss.Methods | Where-Object Name -eq 'ApplySuppressPhrase'
     if(@($phrase.Body.Instructions | Where-Object {$_.Operand -is [Mono.Cecil.MethodReference] -and $_.Operand.FullName -eq 'System.Boolean pitTeam.pitFireTeam::UseSainFollowerCombat(EFT.BotOwner)'}).Count -ne 1){throw 'Core suppression candidate exclusion changed'}
@@ -171,6 +170,12 @@ try {
             $end=$ping.IndexOf('    internal sealed class RetainedEnemyDownContact',$begin)
             if($begin -lt 0 -or $end -le $begin){throw 'Marker contact boundaries changed'}
             $source=$source.Replace('__MARKER_CONTACT__',$ping.Substring($begin,$end-$begin))
+        }
+        if($sourcePath -eq 'tests/SainPushRiskFixture.cs'){
+            $core=Get-Content -Raw -Encoding UTF8 (Join-Path $RepositoryRoot 'client/BigBrain/FollowerCombatCommon.cs')
+            $reader=[regex]::Match($core,'(?ms)^        public float GetApproachThreatRangeMultiplier\(.*?^        [}]')
+            if(!$reader.Success){throw 'Core passive threat range reader missing'}
+            $source=$source.Replace('__THREAT_RANGE_READER__',$reader.Value)
         }
         if($sourcePath -eq 'tests/SainSquadSupportFixture.cs'){
             $core=Get-Content -Raw (Join-Path $RepositoryRoot 'client/BigBrain/FollowerCombatCommon.cs')
