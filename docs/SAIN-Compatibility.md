@@ -70,6 +70,8 @@ Finalized follower vision and scatter baselines are projected into follower-loca
 
 ## Cost boundaries
 
+Manual [Swap Gear](Swap-Gear.md) refreshes only the edited follower's external-SAIN weapon cache after native hands restoration. `SainEquipmentBridge` disposes old per-slot `WeaponInfo` entries, rebuilds from actual slots and invokes native equipped-weapon refresh. This also removes stale entries for emptied slots, which native `getAllWeapons` does not do. Native `GearInfo` continues its two-second armor/headset/plate update loop. No shared presets or ordinary-bot caches are changed.
+
 Core route probes reuse a thread-local NavMeshPath. The optional native hooks cache compiled BotOwner access and bind aim/friendly-fire parameters directly, avoiding repeated reflection and Harmony argument-array boxing. These are source-level reductions; measured frame-time improvement requires comparable raids.
 
 ## Deferred friendly-fire investigation

@@ -55,6 +55,7 @@ namespace pitTeam
     {
         TeamStatus = 10001,
         ViewBackpack = 10002,
+        SwapGear = 10003,
     }
 
     public enum CustomGestures
@@ -405,6 +406,21 @@ namespace pitTeam
             new FollowerDoorAutoClosePatch().Enable();
             new FollowerBotRequestTakePatch().Enable();
             new TeammateBackpackInspectionUpdatePatch().Enable();
+            new GearSwapPanelPatch().Enable();
+            new GearSwapPanelClosePatch().Enable();
+            new GearSwapBackpackSlotContentsPatch().Enable();
+            new GearSwapBackpackContentsPatch().Enable();
+            new GearSwapBackpackOpenPatch().Enable();
+            new GearSwapArmorSlotPatch().Enable();
+            new GearSwapArmorSlotUiPatch().Enable();
+            new GearSwapContextPatch().Enable();
+            new GearSwapExecuteInteractionPatch().Enable();
+            new GearSwapDiscardPatch().Enable();
+            new GearSwapModifyPatch().Enable();
+            new GearSwapDestinationPatch().Enable();
+            new GearSwapWeaponUpdatePatch().Enable();
+            new GearSwapHealthUsePatch().Enable();
+            new GearSwapTabPatch().Enable();
             new TeammateBackpackChangedContainerPatch().Enable();
             new TeammateBackpackObserverStatePatch().Enable();
             new TeammateBackpackExaminedPatch().Enable();
@@ -503,6 +519,7 @@ namespace pitTeam
             new EPhraseTriggerPatch().Enable();
             new PlayPhraseOrGesturePatch().Enable();
             new QuickMumbleStartViewBackpackPatch().Enable();
+            new FollowerQuickInteractionDropdownPatch().Enable();
             new BotReceiverGestureOverridePatch().Enable();
             new RaidStartPatch().Enable();
             new MainMenuControllerPatch().Enable();

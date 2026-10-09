@@ -18,9 +18,10 @@ namespace pitTeam.Patches
 {
     internal static class CustomGestureText
     {
-        public static string ViewBackpackTextUpper()
+        public static string FollowerInteractionTextUpper(EPhraseTrigger phrase)
         {
-            return pitFireTeam.GetGestureText("ViewBackpack").ToUpperInvariant();
+            return pitFireTeam.GetGestureText(phrase == (EPhraseTrigger)CustomPhrases.SwapGear
+                ? "SwapGear" : "ViewBackpack").ToUpperInvariant();
         }
 
         public static void FitViewBackpackQuickText(CustomTextMeshProUGUI textField, GameObject? quickCommandObject = null)
@@ -296,6 +297,7 @@ namespace pitTeam.Patches
             var hashSet_1 = (HashSet<EPhraseTrigger>)AccessTools.Field(typeof(GesturesMenu), "_availablePhrases").GetValue(__instance);
             hashSet_1.Add((EPhraseTrigger)CustomPhrases.TeamStatus);
             hashSet_1.Add((EPhraseTrigger)CustomPhrases.ViewBackpack);
+            hashSet_1.Add((EPhraseTrigger)CustomPhrases.SwapGear);
         }
     }
 
@@ -409,14 +411,14 @@ namespace pitTeam.Patches
         [PatchPostfix]
         private static void PatchPostfix(GesturesQuickPanel __instance)
         {
-            if (__instance.PrioritizedCommand != (EPhraseTrigger)CustomPhrases.ViewBackpack)
+            if (!FollowerQuickInteractionRouter.IsHandledPhrase(__instance.PrioritizedCommand))
             {
                 return;
             }
 
             if (TextField.GetValue(__instance) is CustomTextMeshProUGUI textField)
             {
-                textField.text = CustomGestureText.ViewBackpackTextUpper();
+                textField.text = CustomGestureText.FollowerInteractionTextUpper(__instance.PrioritizedCommand);
                 CustomGestureText.FitViewBackpackQuickText(textField, QuickCommandObjectField.GetValue(__instance) as GameObject);
             }
         }
@@ -434,14 +436,14 @@ namespace pitTeam.Patches
         [PatchPostfix]
         private static void PatchPostfix(GesturesQuickPanelItem __instance, EPhraseTrigger trigger)
         {
-            if (trigger != (EPhraseTrigger)CustomPhrases.ViewBackpack)
+            if (!FollowerQuickInteractionRouter.IsHandledPhrase(trigger))
             {
                 return;
             }
 
             if (LabelField.GetValue(__instance) is CustomTextMeshProUGUI label)
             {
-                label.text = CustomGestureText.ViewBackpackTextUpper();
+                label.text = CustomGestureText.FollowerInteractionTextUpper(trigger);
                 CustomGestureText.FitViewBackpackQuickText(label, __instance.gameObject);
             }
         }
@@ -515,6 +517,12 @@ namespace pitTeam.Patches
                 return false;
             }
 
+            if (index == (int)(EPhraseTrigger)CustomPhrases.SwapGear)
+            {
+                __result = GetGestureText("SwapGear");
+                return false;
+            }
+
             if (index == (int)(EInteraction)CustomGestures.OverThere)
             {
                 __result = GetGestureText("OverThere");
@@ -555,6 +563,11 @@ namespace pitTeam.Patches
                 else if (trigger == (EPhraseTrigger)CustomPhrases.ViewBackpack)
                 {
                     __result = pitFireTeam.GetGestureText("ViewBackpack");
+                    return false;
+                }
+                else if (trigger == (EPhraseTrigger)CustomPhrases.SwapGear)
+                {
+                    __result = pitFireTeam.GetGestureText("SwapGear");
                     return false;
                 }
             }

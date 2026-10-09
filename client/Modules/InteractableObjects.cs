@@ -2346,6 +2346,18 @@ namespace pitTeam.Modules
             RemoveStrictCargoItemIds(bot, new[] { itemId });
         }
 
+        // Gear exchange permits later plate/mod removal and magazine ejection. Keep descendant
+        // fallback IDs as well as roots; GatherStoredItemsFromBot deduplicates nested return trees.
+        internal static void StoreGearSwapReturnItems(BotOwner bot, IEnumerable<Item> items)
+        {
+            Item[] returnable = items.Where(item => item != null && !IsProtectedFollowerEquipment(item)).ToArray();
+            foreach (Item item in returnable) StoreItem(bot, item);
+            List<string> tracked = GetStoredItems(bot.ProfileId);
+            if (tracked == null) return;
+            foreach (Item item in returnable)
+                if (!tracked.Contains(item.Id)) tracked.Add(item.Id);
+        }
+
         public static List<string>? GetStoredItems(string bot)
         {
             if (Instance?._lootedItems != null && Instance._lootedItems.ContainsKey(bot))

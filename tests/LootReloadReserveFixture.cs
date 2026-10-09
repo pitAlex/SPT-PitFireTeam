@@ -7,7 +7,12 @@ using EFT.InventoryLogic;
 namespace EFT.InventoryLogic
 {
     public enum EquipmentSlot { TacticalVest, Pockets, FirstPrimaryWeapon, SecondPrimaryWeapon, Holster }
-    public class Item { public string Id = Guid.NewGuid().ToString(); public int Width = 1, Height = 1; public ItemAddress CurrentAddress; }
+    public struct IntVec2 { public int X, Y; }
+    public class Item
+    {
+        public string Id = Guid.NewGuid().ToString(); public int Width = 1, Height = 1; public ItemAddress CurrentAddress;
+        public IntVec2 CalculateCellSize() => new IntVec2 { X = Width, Y = Height };
+    }
     public class Magazine : Item { public int Count = 60; }
     public class Weapon : Item
     {
@@ -41,6 +46,8 @@ namespace EFT.InventoryLogic
     public class Grid
     {
         public string ID; public SearchableItem ParentItem; public int Width, Height;
+        public int GridWidth => Width;
+        public int GridHeight => Height;
         public Dictionary<Item, LocationInGrid> Placed = new Dictionary<Item, LocationInGrid>();
         public IEnumerable<Item> Items => Placed.Keys;
         private bool Fits(Item item, LocationInGrid location)
@@ -144,6 +151,47 @@ namespace pitTeam.BigBrain.Actions
             relocation.Grids[0].Add(carried, At(relocation, 0).LocationInGrid, false);
             Check(PreservesEquippedMagazineReloadSpace(equipment, carried, At(relocation, 0, 0, 4)), "Relocation credits vacated cells");
             Check(relocation.Grids[0].Placed[carried].Y == 0, "Relocation simulation leaves original position alone");
+
+            // Manual Swap Gear checks the production native-location boundary independently
+            // for each seated magazine, including a partially occupied larger grid.
+            var draft = new InventoryEquipment();
+            var partial = Rig(2);
+            partial.Grids[0].Width = 2;
+            var occupiedColumn = new Item { Height = 2 };
+            partial.Grids[0].Add(occupiedColumn, At(partial, 0).LocationInGrid, false);
+            draft.Set(EquipmentSlot.TacticalVest, partial);
+            draft.Set(EquipmentSlot.FirstPrimaryWeapon, Gun(1, 2));
+            draft.Set(EquipmentSlot.Holster, Gun(1, 2));
+            Check(CanFitGearSwapReloadReserves(draft, out var detail), "Rifle and pistol share remaining 1x2 column in 2x2 grid");
+            Check(detail.Contains("size=1x2:fits=True"), "Diagnostics include tested magazine geometry");
+            Check(partial.Grids[0].Items.Count() == 1, "Manual validation leaves draft cells untouched");
+            draft.Set(EquipmentSlot.SecondPrimaryWeapon, Gun(1, 2));
+            Check(CanFitGearSwapReloadReserves(draft, out detail), "All three weapons share the same remaining 1x2 column");
+            draft.Set(EquipmentSlot.SecondPrimaryWeapon, Gun(2, 2));
+            Check(!CanFitGearSwapReloadReserves(draft, out detail), "Secondary drum still requires actual 2x2 opening");
+            Check(detail.Contains("SecondPrimaryWeapon") && detail.Contains("size=2x2:fits=False"), "Failure identifies blocked secondary magazine");
+            var pocketLanding = Rig(2);
+            pocketLanding.Grids[0].Width = 2;
+            draft.Set(EquipmentSlot.Pockets, pocketLanding);
+            Check(CanFitGearSwapReloadReserves(draft, out detail), "Unchanged pockets count as native fast-access landing space");
+            Check(!pocketLanding.Grids[0].Items.Any(), "Pocket validation is passive");
+            draft.Set(EquipmentSlot.Pockets, null);
+            draft.Set(EquipmentSlot.SecondPrimaryWeapon, null);
+            partial.Grids[0].Add(new Item { Height = 2 }, At(partial, 0, 1).LocationInGrid, false);
+            Check(!CanFitGearSwapReloadReserves(draft, out detail), "Truly full fast-access grids remain rejected");
+            draft.Set(EquipmentSlot.FirstPrimaryWeapon, new Weapon());
+            draft.Set(EquipmentSlot.Holster, null);
+            Check(CanFitGearSwapReloadReserves(draft, out detail), "Gun without inserted magazine needs no ejection space");
+            var internalGun = Gun(1, 2);
+            internalGun.ReloadMode = Weapon.EReloadMode.InternalMagazine;
+            draft.Set(EquipmentSlot.FirstPrimaryWeapon, internalGun);
+            Check(CanFitGearSwapReloadReserves(draft, out detail), "Internal magazine does not need a removable-magazine landing space");
+            draft.Set(EquipmentSlot.FirstPrimaryWeapon, Gun(1, 2));
+            draft.Set(EquipmentSlot.TacticalVest, null);
+            draft.Set(EquipmentSlot.Pockets, Rig(2));
+            Check(CanFitGearSwapReloadReserves(draft, out detail), "No rig is required when pockets can stow the magazine");
+            draft.Set(EquipmentSlot.Pockets, null);
+            Check(!CanFitGearSwapReloadReserves(draft, out detail), "No fast-access landing space is rejected rather than silently bypassed");
             Console.WriteLine($"Loot reload reserve fixture passed: {assertions} assertions.");
         }
     }

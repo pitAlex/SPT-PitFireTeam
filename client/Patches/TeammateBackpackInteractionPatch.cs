@@ -20,6 +20,7 @@ namespace pitTeam.Patches
         private static void PatchPostfix(GamePlayerOwner __instance)
         {
             TeammateBackpackInspection.Update(__instance);
+            TeammateGearSwap.Update(__instance);
         }
     }
 
@@ -37,7 +38,8 @@ namespace pitTeam.Patches
             // searched. Teammate backpacks and fallen teammate corpse equipment are presented as already-searched.
             if (!__result ||
                 (!TeammateBackpackInspection.ShouldTreatAddressSearched(address) &&
-                 !TeammateCorpseLootGuard.ShouldTreatAddressSearched(address)))
+                 !TeammateCorpseLootGuard.ShouldTreatAddressSearched(address) &&
+                 !TeammateGearSwap.TreatCommitAddressKnown(address)))
             {
                 return;
             }
@@ -61,7 +63,8 @@ namespace pitTeam.Patches
             // Without this, visible backpack items can still behave like unknown search results.
             if (__result == EObserverItemState.Known ||
                 (!TeammateBackpackInspection.ShouldTreatObservedItemKnown(item, address) &&
-                 !TeammateCorpseLootGuard.ShouldTreatObservedItemKnown(item, address)))
+                 !TeammateCorpseLootGuard.ShouldTreatObservedItemKnown(item, address) &&
+                 !TeammateGearSwap.TreatCommitItemKnown(item, address)))
             {
                 return;
             }
@@ -84,7 +87,8 @@ namespace pitTeam.Patches
             // answer only; it intentionally does not mutate the player's encyclopedia.
             if (__result ||
                 (!TeammateBackpackInspection.ShouldTreatItemExamined(__instance, item) &&
-                 !TeammateCorpseLootGuard.ShouldTreatItemExamined(__instance, item)))
+                 !TeammateCorpseLootGuard.ShouldTreatItemExamined(__instance, item) &&
+                 !TeammateGearSwap.TreatCommitItemKnown(item)))
             {
                 return;
             }
@@ -105,7 +109,8 @@ namespace pitTeam.Patches
         {
             if (__result ||
                 (!TeammateBackpackInspection.ShouldTreatObservedItemKnown(item, itemAddress) &&
-                 !TeammateCorpseLootGuard.ShouldTreatItemKnown(__instance, item)))
+                 !TeammateCorpseLootGuard.ShouldTreatItemKnown(__instance, item) &&
+                 !TeammateGearSwap.TreatCommitItemKnown(item, itemAddress)))
             {
                 return;
             }
@@ -126,7 +131,8 @@ namespace pitTeam.Patches
         {
             if (__result ||
                 (!TeammateBackpackInspection.IsActiveBackpack(item) &&
-                 !TeammateCorpseLootGuard.ShouldTreatSearchableSearched(__instance, item)))
+                 !TeammateCorpseLootGuard.ShouldTreatSearchableSearched(__instance, item) &&
+                 !TeammateGearSwap.TreatCommitItemKnown(item)))
             {
                 return;
             }
@@ -147,7 +153,8 @@ namespace pitTeam.Patches
         {
             if (!__result ||
                 (!TeammateBackpackInspection.IsActiveBackpack(item) &&
-                 !TeammateCorpseLootGuard.ShouldTreatSearchableContentsKnown(__instance, item)))
+                 !TeammateCorpseLootGuard.ShouldTreatSearchableContentsKnown(__instance, item) &&
+                 !TeammateGearSwap.TreatCommitItemKnown(item)))
             {
                 return;
             }

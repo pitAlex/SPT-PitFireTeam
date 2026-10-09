@@ -113,6 +113,14 @@ namespace pitTeam.Modules
             return TryGetInspectableBackpack(player, out _, out _, out _);
         }
 
+        public static bool CanShowSwapGearInteraction(Player player)
+        {
+            Player target = ResolveInteractionTargetPlayer(player, false);
+            BotOwner bot = target?.AIData?.BotOwner;
+            return bot != null && bot.BotState == EBotState.Active && !bot.IsDead &&
+                   BossPlayers.Instance?.GetFollower(bot)?.GetBoss()?.realPlayer == player;
+        }
+
         public static bool TryOpenFromQuickInteraction(GamePlayerOwner owner)
         {
             try
@@ -230,7 +238,7 @@ namespace pitTeam.Modules
             return backpack != null;
         }
 
-        private static Player ResolveInteractionTargetPlayer(Player player)
+        internal static Player ResolveInteractionTargetPlayer(Player player, bool spawnedOnly = true)
         {
             if (player == null)
             {
@@ -240,7 +248,8 @@ namespace pitTeam.Modules
             // EFT's InteractablePlayer is updated by a narrow collider raycast and can stay stale until the
             // next stock interaction event. Keep it only if the player is still really looking at that follower.
             Player stockTarget = player.InteractablePlayer;
-            if (IsLookedAtCandidate(player, stockTarget))
+            if (IsLookedAtCandidate(player, stockTarget) &&
+                (spawnedOnly || BossPlayers.Instance?.GetFollower(stockTarget.AIData?.BotOwner)?.GetBoss()?.realPlayer == player))
             {
                 return stockTarget;
             }
@@ -253,7 +262,8 @@ namespace pitTeam.Modules
             float bestAngle = float.MaxValue;
             foreach (BotFollowerPlayer follower in BossPlayers.GetFollowers())
             {
-                if (follower?.IsSquadMate != true)
+                if (follower == null || (spawnedOnly && !follower.IsSquadMate) ||
+                    (!spawnedOnly && follower.GetBoss()?.realPlayer != player))
                 {
                     continue;
                 }
@@ -325,7 +335,7 @@ namespace pitTeam.Modules
                    bot.GetPlayer.HealthController?.IsAlive == true;
         }
 
-        private static bool HasActiveOrPendingHealWork(BotOwner bot)
+        internal static bool HasActiveOrPendingHealWork(BotOwner bot)
         {
             if (bot?.Medecine == null)
             {
@@ -342,7 +352,7 @@ namespace pitTeam.Modules
                    currentDecision == BotLogicDecision.healStimulators;
         }
 
-        private static bool HasActiveOrPendingPickupWork(BotOwner bot, BotFollowerPlayer follower)
+        internal static bool HasActiveOrPendingPickupWork(BotOwner bot, BotFollowerPlayer follower)
         {
             if (bot == null)
             {
@@ -422,7 +432,7 @@ namespace pitTeam.Modules
             }
         }
 
-        private static void MarkItemTreeVisible(IPlayerSearchController searchController, Item rootItem)
+        internal static void MarkItemTreeVisible(IPlayerSearchController searchController, Item rootItem)
         {
             if (searchController == null || rootItem == null)
             {

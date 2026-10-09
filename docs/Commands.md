@@ -6,7 +6,7 @@ Addon adaptations are in [SAIN addon commands](../addon/docs/Commands.md). Share
 
 This document summarizes boss-issued follower commands as implemented in the client runtime.
 
-Detailed looting behavior, the five corpse action-menu requests, container `CMD: Loot This`, loose-item `CMD: Take This`, filtered-loot rules, and empty-slot acquisition rules are tracked in [Looting](looting/Looting.md). The container and loose-item menu actions use the same existing loot/pickup commands, with the displayed target captured before player speech.
+Detailed looting behavior, the five corpse-only CMD action-menu requests, filtered-loot rules, and empty-slot acquisition rules are tracked in [Looting](looting/Looting.md). Containers and loose items retain their normal player interactions and existing follower quick/voice commands; no CMD actions are appended to their interaction menus.
 
 Authoritative files:
 
@@ -585,7 +585,8 @@ Targeting:
 Execution:
 
 - `QuickPanelPatch` keeps the custom phrase available and refreshes whether it can be shown.
-- `QuickMumbleStartViewBackpackPatch` and `PlayerPatch.PlayPhraseOrGesture` route the phrase to `TeammateBackpackInspection.TryOpenFromQuickInteraction(...)`.
+- `QuickMumbleStartViewBackpackPatch`, the native dropdown selection callback, and `PlayerPatch.PlayPhraseOrGesture` share `FollowerQuickInteractionRouter`, routing the phrase to `TeammateBackpackInspection.TryOpenFromQuickInteraction(...)` without voice playback.
+- Keybindings and press/release/continuous configuration belong to EFT's Controls settings. No shared-key customization is added; the existing custom quick-action dispatch is retained.
 - Opens the target follower's live backpack through `GamePlayerOwner.ShowInventoryScreenLoot(...)`.
 - Marks the backpack tree searched/known for the local raid session, without permanently examining unknown templates for the player.
 - Persists raid-local searched/known state for item trees moved into the open backpack, so a nested container keeps its revealed contents if it is later moved back to the player.
@@ -596,6 +597,16 @@ Loot tracking:
 
 - On close, new items placed into the follower backpack are registered through `InteractableObjects.StoreItem(...)` so they behave like handed-over follower loot.
 - Previously tracked items removed from the backpack are unregistered through `InteractableObjects.RemoveStoredItem(...)` so post-raid return handling does not duplicate items the player already took back.
+
+### Swap Gear Quick Interaction
+
+- Custom `EPhraseTrigger` value `CustomPhrases.SwapGear` appears in the lower-left quick interaction dropdown when looking at a living active follower within View Backpack's 2.5m range and 18-degree look cone.
+- Both spawned squadmates and recruited followers belonging to the player are eligible; a backpack is not required.
+- View Backpack remains the prioritized quick action when both are available. Recruits retain their existing View Backpack exclusion.
+- Selecting Swap Gear silently opens a staged equipment exchange, with Apply Changes centered above the helmet slot between LOOT and the follower's name. Both inventories are cloned; only Apply can transfer original items and refresh the bot. Closing without Apply discards the draft.
+- The follower exposes both shoulder weapon slots, tactical vest and all contents, body armor and individual plates, helmet, face cover, eyewear and earpiece. Spawned squadmates also expose the whole backpack slot without its contents; recruited followers do not. All other follower slots stay hidden/inaccessible. Player inventory visibility remains normal. Discard is disabled, including its shortcut.
+- This is manual equipment exchange, independent of loot pickup settings and automatic upgrade comparison. Whole armored-rig to separate armor/vest arrangements are supported. See [Swap Gear](Swap-Gear.md) for transaction, ownership and pending runtime qualification.
+- The quick tap, native dropdown selection, and menu/bound-action routes consume the custom interaction through the same router instead of sending an unknown phrase to EFT speech.
 
 ### Open Door Phrase
 

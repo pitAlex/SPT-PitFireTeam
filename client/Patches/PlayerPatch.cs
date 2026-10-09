@@ -21,6 +21,31 @@ using EventInfo = GlobalEventDispatcher.PhraseDelegateInfo;
 
 namespace pitTeam.Patches
 {
+    internal static class FollowerQuickInteractionRouter
+    {
+        public static bool IsHandledPhrase(EPhraseTrigger phrase)
+        {
+            return phrase == (EPhraseTrigger)CustomPhrases.ViewBackpack ||
+                   phrase == (EPhraseTrigger)CustomPhrases.SwapGear;
+        }
+
+        public static bool TryHandle(GamePlayerOwner owner, EPhraseTrigger phrase)
+        {
+            if (phrase == (EPhraseTrigger)CustomPhrases.ViewBackpack)
+            {
+                TeammateBackpackInspection.TryOpenFromQuickInteraction(owner);
+                return true;
+            }
+
+            if (phrase == (EPhraseTrigger)CustomPhrases.SwapGear)
+            {
+                TeammateGearSwap.Open(owner);
+                return true;
+            }
+            return false;
+        }
+    }
+
     internal static class BossGestureCommandRouter
     {
         public static bool IsBossCommandGesture(EInteraction gesture)
@@ -122,9 +147,8 @@ namespace pitTeam.Patches
         [PatchPrefix]
         private static bool PatchPrefix(GamePlayerOwner __instance, int actionId, bool aggressive)
         {
-            if ((EPhraseTrigger)actionId == (EPhraseTrigger)CustomPhrases.ViewBackpack)
+            if (FollowerQuickInteractionRouter.TryHandle(__instance, (EPhraseTrigger)actionId))
             {
-                TeammateBackpackInspection.TryOpenFromQuickInteraction(__instance);
                 return false;
             }
 
@@ -216,16 +240,40 @@ namespace pitTeam.Patches
         [PatchPrefix]
         private static bool PatchPrefix(GamePlayerOwner __instance)
         {
-            EPhraseTrigger viewBackpackPhrase = (EPhraseTrigger)CustomPhrases.ViewBackpack;
             EFT.UI.IBattleUIScreenController battleUi = BattleUiControllerField.GetValue(__instance) as EFT.UI.IBattleUIScreenController;
-            if (battleUi?.GesturesQuickPanel?.PrioritizedCommand != viewBackpackPhrase)
+            var panel = battleUi?.GesturesQuickPanel;
+            if (panel == null || !FollowerQuickInteractionRouter.IsHandledPhrase(panel.PrioritizedCommand))
             {
                 return true;
             }
 
-            battleUi.GesturesQuickPanel.ActivateCommand();
-            TeammateBackpackInspection.TryOpenFromQuickInteraction(__instance);
+            // Keep the existing custom quick-action dispatch; input configuration belongs to EFT.
+            EPhraseTrigger phrase = panel.PrioritizedCommand;
+            panel.ActivateCommand();
+            FollowerQuickInteractionRouter.TryHandle(__instance, phrase);
             return false;
+        }
+    }
+
+    internal class FollowerQuickInteractionDropdownPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+        {
+            return AccessTools.Method(typeof(EFT.UI.Gestures.GesturesQuickPanel), "CloseDropdown",
+                new[] { typeof(Action<EPhraseTrigger>) });
+        }
+
+        [PatchPrefix]
+        private static void PatchPrefix(ref Action<EPhraseTrigger> onPhraseSelected)
+        {
+            // The native GamePlayerOwner callback calls Player.Say directly. Custom interactions
+            // have no voice bank, so route them before that callback while preserving stock phrases.
+            if (onPhraseSelected?.Target is not GamePlayerOwner owner) return;
+            Action<EPhraseTrigger> original = onPhraseSelected;
+            onPhraseSelected = phrase =>
+            {
+                if (!FollowerQuickInteractionRouter.TryHandle(owner, phrase)) original(phrase);
+            };
         }
     }
 

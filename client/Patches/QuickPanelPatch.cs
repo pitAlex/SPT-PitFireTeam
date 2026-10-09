@@ -45,6 +45,7 @@ namespace pitTeam.Patches
     internal class QuickPanelPatch : ModulePatch
     {
         private static readonly EPhraseTrigger ViewBackpackPhrase = (EPhraseTrigger)CustomPhrases.ViewBackpack;
+        private static readonly EPhraseTrigger SwapGearPhrase = (EPhraseTrigger)CustomPhrases.SwapGear;
         private static readonly FieldInfo QuickPanelAvailablePhrasesField = AccessTools.Field(typeof(GesturesQuickPanel), "_availablePhrases");
         private static readonly FieldInfo QuickPanelPlayerField = AccessTools.Field(typeof(GesturesQuickPanel), "_player");
 
@@ -69,7 +70,7 @@ namespace pitTeam.Patches
             if (player != null)
             {
                 QuickPanelHurtPhraseFilter.RemoveBlockedCommands(__instance);
-                RefreshViewBackpackQuickCommand(__instance, player);
+                RefreshFollowerQuickCommands(__instance, player);
 
                 try
                 {
@@ -179,21 +180,23 @@ namespace pitTeam.Patches
                 AllegiancePmcFriendship.CanRecruit(bot, player);
         }
 
-        private static void EnsureViewBackpackQuickCommand(GesturesQuickPanel panel)
+        internal static void RefreshFollowerQuickCommands(GesturesQuickPanel panel, Player player)
         {
             if (!GesturesQuickPanel.PhrasePriorities.ContainsKey(ViewBackpackPhrase))
             {
                 GesturesQuickPanel.PhrasePriorities.Add(ViewBackpackPhrase, 84);
             }
+            if (!GesturesQuickPanel.PhrasePriorities.ContainsKey(SwapGearPhrase))
+            {
+                // Keep View Backpack as the default when both interactions are available.
+                GesturesQuickPanel.PhrasePriorities.Add(SwapGearPhrase, 83);
+            }
 
             HashSet<EPhraseTrigger> availablePhrases = QuickPanelAvailablePhrasesField.GetValue(panel) as HashSet<EPhraseTrigger>;
             availablePhrases?.Add(ViewBackpackPhrase);
-        }
-
-        private static void RefreshViewBackpackQuickCommand(GesturesQuickPanel panel, Player player)
-        {
-            EnsureViewBackpackQuickCommand(panel);
+            availablePhrases?.Add(SwapGearPhrase);
             panel.SetPhraseActive(ViewBackpackPhrase, TeammateBackpackInspection.CanShowQuickInteraction(player));
+            panel.SetPhraseActive(SwapGearPhrase, TeammateBackpackInspection.CanShowSwapGearInteraction(player));
         }
     }
 
@@ -241,16 +244,7 @@ namespace pitTeam.Patches
 
             QuickPanelHurtPhraseFilter.RemoveBlockedCommands(__instance);
 
-            EPhraseTrigger viewBackpackPhrase = (EPhraseTrigger)CustomPhrases.ViewBackpack;
-            HashSet<EPhraseTrigger> availablePhrases = AccessTools.Field(typeof(GesturesQuickPanel), "_availablePhrases").GetValue(__instance) as HashSet<EPhraseTrigger>;
-            availablePhrases?.Add(viewBackpackPhrase);
-
-            if (!GesturesQuickPanel.PhrasePriorities.ContainsKey(viewBackpackPhrase))
-            {
-                GesturesQuickPanel.PhrasePriorities.Add(viewBackpackPhrase, 84);
-            }
-
-            __instance.SetPhraseActive(viewBackpackPhrase, TeammateBackpackInspection.CanShowQuickInteraction(player));
+            QuickPanelPatch.RefreshFollowerQuickCommands(__instance, player);
         }
     }
 }

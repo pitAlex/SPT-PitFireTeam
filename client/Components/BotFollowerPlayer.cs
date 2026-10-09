@@ -264,7 +264,7 @@ namespace pitTeam.Components
         {
             get
             {
-                return _backpackInspectionActive;
+                return _backpackInspectionActive || TeammateGearSwap.Holds(this);
             }
         }
 
