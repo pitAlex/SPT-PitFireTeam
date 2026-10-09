@@ -20,6 +20,7 @@ namespace pitTeam.Modules
         private static int version;
         internal static string RaidId { get; private set; } = Guid.NewGuid().ToString("N");
         internal static int Version { get { lock (Sync) return version; } }
+        internal static int ChanceMultiplier => Math.Max(1, Math.Min(5, pitFireTeam.friendlyChanceMultiplier?.Value ?? 1));
         internal static long NowUnixMs { get { lock (Sync) return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + clockOffsetMs; } }
 
         internal static void BeginRaid()
@@ -31,7 +32,9 @@ namespace pitTeam.Modules
         internal static int GetPoints()
         {
             if (!GameplayModeRuntime.IsAllegiance) return 0;
-            lock (Sync) return FriendlyEncounterPenaltyPolicy.GetPoints(entries, NowUnixMs);
+            // Scale the live ledger, rather than saving the multiplier at kill time.
+            // Raising the setting also raises every still-active penalty.
+            lock (Sync) return FriendlyEncounterPenaltyPolicy.GetPoints(entries, NowUnixMs, ChanceMultiplier);
         }
 
         internal static List<FriendlyEncounterPenaltyEntry> GetActiveEntries()

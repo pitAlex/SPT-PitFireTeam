@@ -18,14 +18,14 @@ namespace UnityEngine
     }
     public struct Ray { public Vector3 origin, direction; }
     public static class Time { public static float time; }
-    public static class Random { public static int Range(int min, int max) => min; }
+    public static class Random { public static int Range(int min, int max) => min; public static float Fraction, ValueFraction; public static int Rolls; public static float value { get { Rolls++; return ValueFraction; } } public static float Range(float min, float max) => min + (max-min)*Fraction; }
     public class Transform { public Vector3 position; }
 }
 namespace EFT.Interactive { public enum EInteraction { NoGesture, GetOffGesture, OkGesture } }
 namespace EFT
 {
     public class GameWorld { public List<Player> AllAlivePlayersList = new(); }
-    public enum EPhraseTrigger { None, Negative, DontKnow, Roger, Toxic, MumblePhrase, OnMutter, OnFight, OnBeingHurt, OnEnemyGrenade, Cooperation, FollowMe, NeedHelp, OnRepeatedContact }
+    public enum EPhraseTrigger { None, Negative, DontKnow, Roger, Toxic, MumblePhrase, OnMutter, OnFight, OnBeingHurt, OnEnemyGrenade, Cooperation, FollowMe, NeedHelp, OnRepeatedContact, HoldFire }
     public enum ETagStatus { Coop, Solo, Unaware }
     public enum EPlayerSide { Usec, Bear, Savage }
     public enum EBotState { Active, Inactive }
@@ -49,12 +49,13 @@ namespace EFT
         public Profile Profile { get; } = new();
         public Health HealthController = new(); public Speaker Speaker = new(); public Vector3 Position {get;set;}
         public Player InteractablePlayer;
+        public bool MarkSpeaking; public int VoiceCalls;
         public Ray InteractionRay;
         public Dictionary<BodyPartType, BodyPart> MainParts = new() {
             [BodyPartType.head] = new BodyPart { Position = new Vector3 { y = 2 } },
             [BodyPartType.body] = new BodyPart { Position = new Vector3 { y = 1 } }
         };
-        public void Say(EPhraseTrigger phrase) { if (NativeSpeech.PlayerPrefix(this, phrase)) Spoken = phrase; }
+        public void Say(EPhraseTrigger phrase) { if (NativeSpeech.PlayerPrefix(this, phrase)) { Spoken = phrase; VoiceCalls++; if(MarkSpeaking) Speaker.Speaking=true; } }
     }
     public class AIData { public BotOwner BotOwner; }
     public class EnemyInfo { public string ProfileId; public Player Person; }
@@ -96,9 +97,15 @@ namespace EFT
         public Gesture Gesture = new(); public BotFollower BotFollower = new(); public Group BotsGroup;
         public Vector3 Position => GetPlayer.Position;
         public Transform WeaponRoot = new();
+        public LookSensor LookSensor = new();
         public bool IsEnemyLookingAtMe(EnemyInfo enemy) => false;
     }
     public class BotGroupRequestController { public int Calls; public bool TryAskFollowMeRequest(IPlayer player,BotOwner bot) {Calls++;return true;} }
+}
+public class LookSensor {
+    public float VisibleDist = 100; public bool InSector = true, Clear = true;
+    public bool IsPointInVisibleSector(Vector3 point) => InSector;
+    public bool CheckLookSimple(Player from, Player to) => Clear;
 }
 public class GlobalEventDispatcher { public class PhraseDelegateInfo { public EPhraseTrigger phrase;public IPlayer PlayerRequester; } }
 namespace SPT.Reflection.Patching
@@ -136,6 +143,7 @@ namespace pitTeam
 }
 namespace pitTeam.Modules
 {
+    internal static class PmcKarmaRuntime { internal static void NoteRecruitment(BotOwner bot, IPlayer leader, bool squadMate) { } }
     public static class GameplayModeRuntime {
         public static bool IsAllegiance;
         public static T GetEffectiveValue<T>(Setting<T> entry) {

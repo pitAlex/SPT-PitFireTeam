@@ -42,7 +42,7 @@ namespace pitTeam.Patches
             FriendlyTeammateBodyResponse<T> body = null;
             try
             {
-                body = JsonConvert.DeserializeObject<FriendlyTeammateBodyResponse<T>>(responseJson);
+                body = JsonConvert.DeserializeObject<FriendlyTeammateBodyResponse<T>>(responseJson, GetDefaultJsonConverters());
             }
             catch
             {

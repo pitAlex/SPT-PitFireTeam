@@ -113,7 +113,9 @@ namespace pitTeam.Utils {
     }
 }
 namespace pitTeam.Modules {
-    public static class FriendlyEncounterPenaltyRuntime { public static int Points; public static int GetPoints() => Points; }
+    internal static class PmcKarmaRuntime { internal static void NoteFriendly(BotOwner bot) { } }
+    internal sealed class AllegianceFriendlyGreeting { internal static int Calls; internal void Update(BotOwner bot, Player human) { Calls++; } }
+    public static class FriendlyEncounterPenaltyRuntime { public static int Points; public static int GetPoints() => pitTeam.Shared.FriendlyEncounterPenaltyPolicy.ScalePoints(Points,pitTeam.pitFireTeam.friendlyChanceMultiplier.Value); }
     public static class Logger { public static int Errors; public static void LogError(object s) { Errors++; } public static void LogInfo(string s) { } }
     public static class GameplayModeRuntime { public static bool IsAllegiance; }
     public static class BossPlayers {
@@ -384,15 +386,21 @@ public static class HostilityChecks {
     }
     private static void BossDamageChecks() {
         foreach(bool sameSide in new[]{true,false})
-        foreach(int multiplier in new[]{1,5}) {
+        foreach(int multiplier in new[]{1,2,3,4,5}) {
             Setup();GameplayModeRuntime.IsAllegiance=true;FriendlyEncounterPenaltyRuntime.Points=5;
             pitTeam.pitFireTeam.friendlyChanceMultiplier.Value=multiplier;
-            UnityEngine.Random.NextValue=multiplier==5 ? 0.96f : sameSide ? 0.26f : 0.11f;
+            float baseChance=sameSide ? 0.30f : 0.15f;
+            float scaledChance=baseChance+(1f-baseChance)*((multiplier-1)/4f)-0.05f*multiplier;
+            UnityEngine.Random.NextValue=scaledChance+0.001f;
             var penalizedCandidate=Solo("penalized",sameSide ? EPlayerSide.Usec : EPlayerSide.Bear);
             AllegiancePmcFriendship.Apply(penalizedCandidate);
-            Check(!AllegiancePmcFriendship.CanRecruit(penalizedCandidate,boss.realPlayer),"Penalty subtracts five points after multiplier for both factions");
+            Check(!AllegiancePmcFriendship.CanRecruit(penalizedCandidate,boss.realPlayer),"Penalty scales with chance multiplier before subtraction for both factions");
+            var acceptedCandidate=Solo("below-penalty-threshold",sameSide ? EPlayerSide.Usec : EPlayerSide.Bear);
+            UnityEngine.Random.NextValue=scaledChance-0.001f;
+            AllegiancePmcFriendship.Apply(acceptedCandidate);
+            Check(AllegiancePmcFriendship.CanRecruit(acceptedCandidate,boss.realPlayer),"Roll below the scaled penalty threshold still permits friendship");
             FriendlyEncounterPenaltyRuntime.Points=0;AllegiancePmcFriendship.Apply(penalizedCandidate);
-            Check(UnityEngine.Random.Rolls==1 && !AllegiancePmcFriendship.CanRecruit(penalizedCandidate,boss.realPlayer),"Penalty expiry does not reroll an existing bot");
+            Check(UnityEngine.Random.Rolls==2 && !AllegiancePmcFriendship.CanRecruit(penalizedCandidate,boss.realPlayer),"Penalty expiry does not reroll an existing bot");
         }
         Setup();GameplayModeRuntime.IsAllegiance=true;FriendlyEncounterPenaltyRuntime.Points=100;
         pitTeam.pitFireTeam.friendlyChanceMultiplier.Value=5;UnityEngine.Random.NextValue=0f;
@@ -422,6 +430,28 @@ public static class HostilityChecks {
         Setup();GameplayModeRuntime.IsAllegiance=true;var protectedBot=Solo("protected");protectedBot.Profile.Info.Settings.Role=WildSpawnType.shooterBTR;
         FollowerGroupHostility.OnBossDamage(boss,protectedBot);
         Check(!protectedBot.BotsGroup.IsEnemy(boss.realPlayer),"Protected roles retain existing hostility exclusion");
+        AllegiancePmcFriendship.Reset();
+    }
+    private static void GreetingLifecycleChecks() {
+        Setup(); GameplayModeRuntime.IsAllegiance=true;
+        var friendly=Solo("greeting"); var rejected=Solo("rejected");
+        AllegiancePmcFriendship.Apply(friendly);
+        UnityEngine.Random.NextValue=0.99f; AllegiancePmcFriendship.Apply(rejected);
+        AllegianceFriendlyGreeting.Calls=0;
+        BotOwnerUpdateHub.Invoke(rejected); BotOwnerUpdateHub.Invoke(rogue);
+        Check(AllegianceFriendlyGreeting.Calls==0,"Only selected friendlies reach greeting");
+        BotOwnerUpdateHub.Invoke(friendly);
+        Check(AllegianceFriendlyGreeting.Calls==1,"Selected friendly reaches greeting through production hub");
+        boss.Followers.Add(friendly); BotOwnerUpdateHub.Invoke(friendly);
+        Check(AllegianceFriendlyGreeting.Calls==1,"Recruitment removes candidate from greeting dispatch");
+        boss.Followers.Remove(friendly);
+        AllegiancePmcFriendship.RevokeGroup(friendly.BotsGroup,EBotEnemyCause.byKill);
+        BotOwnerUpdateHub.Invoke(friendly);
+        Check(AllegianceFriendlyGreeting.Calls==1,"Revoked friendship cannot greet");
+        AllegiancePmcFriendship.Reset();
+        Check(!BotOwnerUpdateHub.HasSubscribers,"Raid teardown unregisters greeting callback");
+        AllegiancePmcFriendship.Apply(friendly); BotOwnerUpdateHub.Invoke(friendly);
+        Check(AllegianceFriendlyGreeting.Calls==1,"New raid rejection cannot reuse previous friendly state");
         AllegiancePmcFriendship.Reset();
     }
     public static void Main() {
@@ -499,6 +529,7 @@ public static class HostilityChecks {
         CrossFactionChecks();
         RecruitedFriendshipChecks();
         BossDamageChecks();
+        GreetingLifecycleChecks();
         h.UnpatchSelf();Console.WriteLine("Passed "+checks+" production hostility checks (including Allegiance selection).");
     }
 }

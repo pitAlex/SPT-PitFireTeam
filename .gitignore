@@ -70,3 +70,5 @@ types
 /tests/RestrictedMagazineRecovery/obj/
 /tests/GameplayModes/bin/
 /tests/GameplayModes/obj/
+/tests/PmcKarma/bin/
+/tests/PmcKarma/obj/

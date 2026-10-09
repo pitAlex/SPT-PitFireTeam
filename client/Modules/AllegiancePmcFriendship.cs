@@ -12,12 +12,14 @@ namespace pitTeam.Modules
         internal const int RaidLimit = 3;
         internal const float SameSideChance = 0.30f;
         internal const float OppositeSideChance = 0.15f;
+        private const string GreetingSubscriber = "AllegianceFriendlyGreeting";
         private sealed class Decision
         {
             internal BotOwner Bot;
             internal BotsGroup Group;
             internal bool Friendly;
             internal Action<BotOwner> MemberAdded;
+            internal readonly AllegianceFriendlyGreeting Greeting = new AllegianceFriendlyGreeting();
         }
 
         private static readonly Dictionary<string, Decision> Decisions = new Dictionary<string, Decision>(StringComparer.Ordinal);
@@ -34,6 +36,7 @@ namespace pitTeam.Modules
 
         internal static void Reset()
         {
+            BotOwnerUpdateHub.Unregister(GreetingSubscriber);
             foreach (var decision in Decisions.Values)
                 if (decision.MemberAdded != null) decision.Group.OnMemberAdd -= decision.MemberAdded;
             Decisions.Clear();
@@ -79,6 +82,7 @@ namespace pitTeam.Modules
                 if (decision.Friendly)
                 {
                     selectedCount++;
+                    BotOwnerUpdateHub.Register(GreetingSubscriber, UpdateGreeting);
                     decision.MemberAdded = member =>
                     {
                         if (BossPlayers.IsFollower(decision.Bot) || decision.Bot.BotsGroup != decision.Group)
@@ -101,6 +105,7 @@ namespace pitTeam.Modules
             if (!IsFriendly(bot)) return;
 
             Neutralize(bot, human);
+            PmcKarmaRuntime.NoteFriendly(bot);
             foreach (var follower in BossPlayers.GetFollowersByBoss(human.ProfileId))
             {
                 var member = follower?.GetBot();
@@ -111,6 +116,14 @@ namespace pitTeam.Modules
                     member.Memory?.DeleteInfoAboutEnemy(bot.GetPlayer);
                 }
             }
+        }
+
+        private static void UpdateGreeting(BotOwner bot)
+        {
+            if (bot == null || string.IsNullOrEmpty(bot.ProfileId) || BossPlayers.IsFollower(bot) ||
+                !Decisions.TryGetValue(bot.ProfileId, out var decision) || decision.Bot != bot ||
+                !IsFriendly(bot)) return;
+            decision.Greeting.Update(bot, Human);
         }
 
         internal static void OnFollowerAdded(BotOwner follower, IPlayer leader)

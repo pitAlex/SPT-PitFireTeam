@@ -442,6 +442,7 @@ namespace pitTeam
             // spawn patches
             new BotsControllerPatch().Enable();
             new BotsControllerStopPatch().Enable();
+            new PmcKarmaRaidEndPatch().Enable();
             new LocalGameCleanupPatch().Enable();
 
             // Only patch LocalGame ctor here; avoid broad PatchAll side effects at menu/hideout time.
@@ -462,6 +463,7 @@ namespace pitTeam
             new FollowerWeaponSelectorManualUpdatePatch().Enable();
             new FollowerSupportNoAmmoMainSwitchPolicyPatch().Enable();
             new FollowerHoldLingerReloadSuppressPatch().Enable();
+            new FollowerMagazineReloadStartPatch().Enable();
             new FollowerCombatReloadPermissionPatch().Enable();
             new FollowerLauncherNoAmmoSwitchPatch().Enable();
             new FollowerCombatReloadFallbackSuppressPatch().Enable();

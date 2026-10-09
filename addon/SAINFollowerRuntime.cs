@@ -139,6 +139,7 @@ namespace pitTeam.SAINAddon
                     state.Regroup?.Clear("nativeStateReplaced");
                     state.Cover?.Clear();
                     SainMedicalDecisionBridge.Restore(state.Bot);
+                    SainGrenadeThrowBridge.Release(owner);
                     state.Shooter = SainAddonBridge.IsShooterSelected(owner);
                     state.Cover = new SAINFollowerCover(bot);
                     state.Personality = new SAINFollowerPersonality();
@@ -278,6 +279,7 @@ namespace pitTeam.SAINAddon
         private static void Cleanup(BotOwner owner)
         {
             if (owner == null) return;
+            SainGrenadeThrowBridge.Release(owner);
             if (States.TryGetValue(owner, out State state))
             {
                 state.Recorder?.Dispose();
@@ -327,6 +329,7 @@ namespace pitTeam.SAINAddon
                 else state.EngageAttempt?.Pause();
                 state.Cover?.Clear();
                 SainMedicalDecisionBridge.Restore(state.Bot);
+                SainGrenadeThrowBridge.Release(owner);
             }
             else state.EngageAttempt?.Observe(state.Bot.GoalEnemy);
             state.Recorder?.ObservePhase(phase);
@@ -411,6 +414,7 @@ namespace pitTeam.SAINAddon
             if (!States.TryGetValue(owner, out State state) || state.SoloLayer == null || state.SquadLayer == null) return;
             state.Cover?.Clear();
             SainMedicalDecisionBridge.Restore(state.Bot);
+            SainGrenadeThrowBridge.Release(owner);
             state.Recorder?.ObservePhase(SAINFollowerCombatPhase.Released);
             state.Objectives?.Clear("release");
             state.SquadDecisions?.ClearSearchLeader();

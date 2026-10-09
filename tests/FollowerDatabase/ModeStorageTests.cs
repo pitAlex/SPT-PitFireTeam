@@ -15,6 +15,7 @@ internal static class ModeStorageTests
 
     public static async Task Run(Action<bool, string> check)
     {
+        EquippedGearRetentionTests.Run(check);
         string initialDirectory = Environment.CurrentDirectory;
         string work = Path.GetFullPath(Path.Combine("tests", "artifacts", "mode-storage", Guid.NewGuid().ToString("N")));
         Directory.CreateDirectory(work);

@@ -52,7 +52,7 @@ Related summaries:
 
 `Tracked follower loot` means follower loot registered through `InteractableObjects.StoreItem(...)`. Tracked loot is eligible for the mod's return/recovery flows when the owning squadmate survives the relevant flow.
 
-`Equipped gear loot` means loot moved into an equipment slot as part of category-authorized empty-slot acquisition. In every mode, this is add-only: empty slots may be filled, but occupied gear slots are not replaced. In `Restricted`, added gear is tracked so it returns as cargo. In `Immersive` and `Realistic`, eligible equipped gear is not tracked as return cargo so an escaped teammate can keep it in the saved kit snapshot.
+`Equipped gear loot` means loot moved into an equipment slot as part of category-authorized empty-slot acquisition. In every mode, this is add-only: empty slots may be filled, but occupied gear slots are not replaced. Equipment filling those slots is kept in every loadout mode even if earlier registered as player-owned return cargo. Slotted attachments and seated magazines/ammunition stay with the equipment; loose grid/pocket cargo remains separately returnable. Only saved squad members participate in the return-item flow; field recruits do not.
 
 `Protected teammate gear` means saved teammate equipment that should not become free player gear under `Restricted` loadout management. Protected gear cleanup is owned by the loadout-management and escape/recovery systems, not by the looting planner alone.
 
@@ -324,11 +324,11 @@ Items transferred through `View Backpack` have a separate strict-cargo provenanc
 - this exception settles magazine top-off or insertion and reload-safe fast-access moves before the existing live-readiness evaluator selects first primary or second primary
 - backpack inspection remains active until this provenance is recorded, preventing the idle weapon evaluator from racing the close callback
 
-Equipped gear moves use a mode-specific rule:
+Equipped gear is kept in every mode:
 
-- `Restricted`: only add into empty equipment slots, then store the added loot through `StoreItem(...)` so the weapon and supporting magazines return by mail like normal cargo.
-- The seated magazine is also retained as a fallback tracked root. If combat reload ejects it from the tracked weapon tree, it remains temporary cargo instead of leaking into the teammate's persisted kit; while it stays seated, return-root ancestor checks prevent duplicate delivery.
-- `Immersive` and `Realistic`: fill only empty equipment slots and do not store equipped loot as return cargo, so the escaped teammate's live equipment snapshot can keep it as the new kit.
+- Only add into empty equipment slots. Raw Restricted acquisition tracking remains available if the item later becomes cargo; final return filtering excludes equipment still occupying a gear slot.
+- A seated magazine and its loaded ammunition stay with the weapon. Tracked magazines that are later ejected into grid/pocket cargo remain separately returnable; nested-root checks prevent duplicate delivery.
+- Saved squad members persist retained equipment through the escaped Default snapshot. Restricted without Field Upkeep merges acquired equipment without updating unchanged baseline state. Field recruits do not enter the mail-return path.
 
 Weapon trees are also registered through `RegisterLootedWeaponTree(...)` so patrol reload maintenance can treat picked-up weapons as carried loot and avoid wasting spawned magazines on them.
 
@@ -384,8 +384,7 @@ General rules:
 - use the matching pickup category or one-shot request for empty-slot acquisition; no additional setting is required
 - allow additive equipment acquisition in any loadout management mode when the matching category is enabled
 - require weapon pickup authorization for all empty weapon slots; retain the existing missing-primary price bypass and ordinary cargo price filters
-- in `Restricted`, only add gear into empty equipment slots and treat that added gear as return cargo instead of saved kit
-- in `Immersive` and `Realistic`, fill only empty equipment slots and leave equipped gear untracked so it can persist as teammate kit
+- in every mode, fill only empty equipment slots and keep gear that still occupies those slots; tracked loose cargo remains separately returnable
 - add easy gear equip as an explicit planner before the current carry-space planner
 - never displace occupied gear or throw it away to equip found loot
 - compare whole item trees; do not compare a weapon by disassembling it

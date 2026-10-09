@@ -22,6 +22,8 @@ Core converts/recruits followers, assigns player ownership, reconciles groups/ho
 
 Allegiance recruited-follower kills reuse the existing `traitor` report. [FriendlyEncounterPenaltyService](../server/Services/FriendlyEncounterPenaltyService.cs) persists independent 24-hour penalties per user in the Allegiance database; [FriendlyEncounterPenaltyRuntime](../client/Modules/FriendlyEncounterPenaltyRuntime.cs) mirrors them for friendship rolls and the Roster label. Shared expiry/countdown arithmetic lives in [FriendlyEncounterPenaltyPolicy](../shared/FriendlyEncounterPenaltyPolicy.cs). See [My Squad modes](My-Squad-Screen.md#part-3-mode).
 
+[PMC karma](PMC-Karma.md) independently observes friendly kills, actual recruitment and raid completion. Core captures eligible bot identities before retaliation/cleanup; the server persists native PMC karma with deduplication receipts in the player profile, shared across modes. Spawned/saved squadmates and player-Scav/Fence standing remain outside this feature.
+
 Config entries hold saved preferences. Gameplay consumers, Settings controls and server settings synchronization resolve mode-locked values through [GameplayModeRuntime.GetEffectiveValue](../client/Modules/GameplayModeRuntime.cs), independently of cfg edits/reloads. The [My Squad mode contract](My-Squad-Screen.md#part-3-mode) owns the fixed Allegiance values and Guns for Hire snapshot restoration.
 
 Core owns peaceful follow/request execution and post-combat recovery. Combat has one owner at a time; an absent/unready optional brain falls back to core. Optional callbacks may provide readiness, release/reset and passive data, but general compatibility cannot depend on the addon being loaded.

@@ -384,11 +384,13 @@ When an `Immersive`, `Realistic` / internal `Extreme`, or `Restricted` teammate 
 
 - the client sends the teammate's live equipment snapshot to the server
 - follower progress and live-equipment persistence are serialized on the server so their independent post-raid requests cannot overwrite each other
-- tracked follower-loot/player-given item ids are sent with the snapshot
+- returnable cargo item ids are sent with the snapshot; equipped gear and its slotted attachments are excluded regardless of earlier player-owned tracking
 - the server removes those tracked item trees before saving the new `Default`
 - the server also removes protected gear ids owned by other teammates before saving, so gear looted from a fallen or different squadmate cannot be permanently saved onto the survivor
 - durability, remaining ammo, and consumed meds from the teammate's actual raid equipment are preserved
 - non-Realistic modes still strip the secure-container tree before saving; Realistic keeps it
+
+Restricted teammates without Field Upkeep also keep newly equipped gear. The server merges changed/new equipment-slot roots and slotted attachments from the filtered live snapshot into Default, preserving the baseline state of unchanged gear rather than enabling durability/ammunition/medical upkeep. Loose cargo and pocket contents do not become donated equipment. Return admission checks saved squad membership first; field recruits send no loot returns, avoiding duplication with their later invitation profile.
 
 When a `Restricted` teammate with `Field Upkeep` enabled dies while using `Default`:
 

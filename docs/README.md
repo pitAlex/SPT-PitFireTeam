@@ -25,6 +25,7 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 | [Holster support](looting/Weapon-Pickup-Holster-Slot.md) | Shared support planner and pistol qualification |
 | [Suppression](Suppression.md) | Core player-facing suppression guide |
 | [Team Escape](Team-Escape.md) | Escape rolls, recovery, results and notifications |
+| [PMC karma](PMC-Karma.md) | Independent friendly-kill, recruited extraction and peaceful Allegiance recovery rules |
 
 ## Squad UI and persistence
 

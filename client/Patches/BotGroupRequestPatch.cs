@@ -302,6 +302,7 @@ namespace pitTeam.Patches
 
             if (BossPlayers.AddFollower(bot, playerBoss) != null)
             {
+                PmcKarmaRuntime.NoteRecruitment(bot, playerBoss.Player(), false);
                 TrySayControlledFollowerPhrase(
                     bot,
                     EPhraseTrigger.Roger,

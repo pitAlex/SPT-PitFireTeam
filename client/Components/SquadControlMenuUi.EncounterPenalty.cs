@@ -13,6 +13,7 @@ namespace pitTeam.Components
         private TextMeshProUGUI encounterPenaltyLabel;
         private long encounterPenaltyNextUpdate;
         private int encounterPenaltyVersion = -1;
+        private int encounterPenaltyMultiplier = -1;
 
         private void CreateRosterPenaltyLabel(RectTransform parent)
         {
@@ -49,8 +50,10 @@ namespace pitTeam.Components
             }
             long now = FriendlyEncounterPenaltyRuntime.NowUnixMs;
             int version = FriendlyEncounterPenaltyRuntime.Version;
-            if (!force && version == encounterPenaltyVersion && now < encounterPenaltyNextUpdate) return;
+            int multiplier = FriendlyEncounterPenaltyRuntime.ChanceMultiplier;
+            if (!force && version == encounterPenaltyVersion && multiplier == encounterPenaltyMultiplier && now < encounterPenaltyNextUpdate) return;
             encounterPenaltyVersion = version;
+            encounterPenaltyMultiplier = multiplier;
             var active = FriendlyEncounterPenaltyRuntime.GetActiveEntries();
             encounterPenaltyLabel.gameObject.SetActive(active.Count > 0);
             if (active.Count == 0) { encounterPenaltyNextUpdate = long.MaxValue; return; }
@@ -59,7 +62,7 @@ namespace pitTeam.Components
             string time = string.Format(CultureInfo.InvariantCulture,
                 GetSocialUiText(hours ? "FriendlyEncounterPenaltyHours" : "FriendlyEncounterPenaltyMinutes"), value);
             encounterPenaltyLabel.text = string.Format(CultureInfo.InvariantCulture, GetSocialUiText("FriendlyEncounterPenaltyLabel"),
-                active.Count * FriendlyEncounterPenaltyPolicy.PointsPerKill, time);
+                FriendlyEncounterPenaltyPolicy.GetPoints(active, now, multiplier), time);
         }
     }
 }

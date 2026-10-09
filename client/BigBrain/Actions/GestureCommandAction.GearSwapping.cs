@@ -2987,9 +2987,9 @@ namespace pitTeam.BigBrain.Actions
 
         private static bool ShouldReturnGearSwapAsCargo()
         {
-            // Restricted gear additions are temporary combat upgrades and must return by mail
-            // like normal follower cargo. Immersive/Realistic leave them untracked so the escaped
-            // teammate's live equipment snapshot can persist the new kit.
+            // Keep Restricted acquisition lineage available if an item later becomes cargo.
+            // Final return filtering retains equipped gear in every mode; raw tracking
+            // is not a decision to mail an item that still occupies an equipment slot.
             return !pitFireTeam.IsFollowerLoadoutLootableMode();
         }
     }

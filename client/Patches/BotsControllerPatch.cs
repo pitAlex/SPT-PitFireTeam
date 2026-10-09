@@ -1444,6 +1444,7 @@ namespace pitTeam.Patches
                 {
                     AllegiancePmcFriendship.Reset();
                     FriendlyEncounterPenaltyRuntime.BeginRaid();
+                    PmcKarmaRuntime.BeginRaid(Utils.Utils.FlagGet("RaidTransit"));
                     PlayerKilledPatch.ResetKillMessageRaidState();
                     SquadRaidKillReport.BeginRaid(Utils.Utils.FlagGet("RaidTransit"));
                     new BossPlayers();

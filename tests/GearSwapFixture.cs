@@ -79,7 +79,15 @@ static class GearSwapFixture
             Check(AccessPolicy.CanEdit(item, player, bot) == AccessPolicy.VisibleSlots.Contains(slot), "exact follower slot policy " + slot);
             Check(AccessPolicy.CanEdit(Child(player, slot.ToString()), player, bot), "player layout unaffected " + slot);
         }
-        Check(AccessPolicy.VisibleSlots.Count == 8, "exactly eight editable follower slots");
+        Check(AccessPolicy.VisibleSlots.Count == 9, "exactly nine editable follower slots including holster");
+        foreach (bool spawned in new[] { false, true })
+        {
+            var pistol = Child(bot, "Holster");
+            Check(AccessPolicy.IsVisibleFollowerSlot(EquipmentSlot.Holster, spawned), "holster visible for spawned=" + spawned);
+            Check(AccessPolicy.CanEdit(pistol, player, bot, spawned), "equipped pistol removable for spawned=" + spawned);
+            Check(AccessPolicy.CanPlace(Address(bot, "Holster"), player, bot, spawned), "empty holster accepts replacement for spawned=" + spawned);
+            Check(AccessPolicy.CanEdit(Child(pistol, "mod_magazine"), player, bot, spawned), "pistol magazine editable for spawned=" + spawned);
+        }
         foreach (EquipmentSlot slot in Enum.GetValues(typeof(EquipmentSlot)))
             Check(AccessPolicy.IsVisibleFollowerSlot(slot, true) ==
                 (AccessPolicy.VisibleSlots.Contains(slot) || slot == EquipmentSlot.Backpack),

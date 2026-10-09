@@ -196,6 +196,10 @@ try {
         $path=Join-Path $temporary ([IO.Path]::GetFileName($sourcePath))
         [IO.File]::WriteAllText($path,$source);$paths+=$path
     }
+    # Grenade hooks have a dedicated production/native-source fixture in Verify-SainGrenades.ps1.
+    $fixture += '
+namespace pitTeam.SAINAddon { internal static class SainGrenadeThrowBridge { internal static void Apply(HarmonyLib.Harmony h) {} internal static void Reset() {} internal static void Release(EFT.BotOwner b) {} } }
+'
     $path=Join-Path $temporary 'Fixture.cs';[IO.File]::WriteAllText($path,$fixture);$paths+=$path
     $harmony=Join-Path $RepositoryRoot 'client/libs/0Harmony.dll';Copy-Item -LiteralPath $harmony -Destination $temporary
     Get-ChildItem (Join-Path $GameRoot 'BepInEx/core') -Filter '*.dll' |

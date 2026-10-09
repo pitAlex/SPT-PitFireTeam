@@ -9,6 +9,10 @@ Add-Type -Path (Join-Path $GameRoot 'BepInEx/core/Mono.Cecil.dll')
 $installedGame = [Mono.Cecil.AssemblyDefinition]::ReadAssembly((Join-Path $GameRoot 'EscapeFromTarkov_Data/Managed/Assembly-CSharp.dll'))
 try {
     $module=$installedGame.MainModule
+    foreach ($name in @('CheckLookSimple','IsPointInVisibleSector')) {
+        if (!($module.GetType('LookSensor').Methods | Where-Object { $_.Name -eq $name -and $_.IsPublic -and $_.ReturnType.FullName -eq 'System.Boolean' })) { throw "Missing greeting sight API: $name" }
+    }
+    if (!($module.GetType('EPhraseTrigger').Fields | Where-Object Name -eq 'HoldFire')) { throw 'Missing HoldFire phrase' }
     $quick=$module.GetType('EFT.UI.Gestures.GesturesQuickPanel')
     $classifier=@($quick.Methods | Where-Object Name -eq 'IsSituationalPhrase')
     if ($classifier.Count -ne 1 -or !$classifier[0].IsStatic -or $classifier[0].ReturnType.FullName -ne 'System.Boolean' -or
@@ -135,6 +139,8 @@ if (!$spawnSide) {throw 'Saved follower faction boundary changed'}
 $fixture += 'namespace pitTeam.Patches { internal class BotsControllerPatch {' + $spawnSide + '}}'
 $mapping = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/RecruitCombatAggression.cs')
 $voiceFixture = Get-Content -Raw (Join-Path $PSScriptRoot 'RecruitmentSpeechFixture.cs')
+$voiceFixture += Get-Content -Raw (Join-Path $PSScriptRoot 'AllegianceGreetingFixture.cs')
+$voiceFixture += Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/AllegianceFriendlyGreeting.cs')
 $imports = foreach ($source in @($request, $bridge, $talk, $sayGate, $sainHooks, $fixture, $voiceFixture,$inputFixture,$inputPatch)) {
     [regex]::Matches($source, '(?m)^using [^\r\n]+;') | ForEach-Object Value
 }
@@ -142,7 +148,7 @@ $sources = foreach ($source in @($request, $bridge, $talk, $sayGate, $sainHooks,
     [regex]::Replace($source, '(?m)^using [^\r\n]+;\r?\n', '')
 }
 $code = '#nullable disable' + "`n#pragma warning disable CS8632`nusing Comfort.Common;`n" + (($imports | Select-Object -Unique) -join "`n") + "`n" + ($sources -join "`n")
-$code += "`npublic static class Entry { public static int Main() { try { RecruitmentSpeechChecks.Install(); Console.WriteLine(RecruitmentCombatChecks.Run() + "" recruitment combat checks passed.""); Console.WriteLine(RecruitmentSpeechChecks.Run() + "" recruitment speech checks passed with real Harmony.""); Console.WriteLine(RecruitmentPersonalityChecks.Run() + "" recruitment personality checks passed.""); Console.WriteLine(RecruitmentInputChecks.Run() + "" recruitment input checks passed.""); return 0; } catch (Exception e) { Console.Error.WriteLine(e); return 1; } } }"
+$code += "`npublic static class Entry { public static int Main() { try { RecruitmentSpeechChecks.Install(); Console.WriteLine(RecruitmentCombatChecks.Run() + "" recruitment combat checks passed.""); Console.WriteLine(RecruitmentSpeechChecks.Run() + "" recruitment speech checks passed with real Harmony.""); Console.WriteLine(RecruitmentPersonalityChecks.Run() + "" recruitment personality checks passed.""); Console.WriteLine(RecruitmentInputChecks.Run() + "" recruitment input checks passed.""); Console.WriteLine(AllegianceGreetingChecks.Run() + "" Allegiance greeting checks passed with real Harmony.""); return 0; } catch (Exception e) { Console.Error.WriteLine(e); return 1; } } }"
 $framework = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319'
 $sdk = dotnet --list-sdks | Select-Object -Last 1
 if ($sdk -notmatch '^(\S+) \[(.+)\]$') { throw 'Cannot find SDK compiler' }

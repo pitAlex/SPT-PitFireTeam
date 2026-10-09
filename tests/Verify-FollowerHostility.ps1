@@ -71,7 +71,7 @@ try {
         Where-Object Name -ne '0Harmony.dll' | Copy-Item -Destination $temporary
     $arguments=@($compiler,'/nologo','/target:exe','/langversion:latest','/nullable:annotations','/nostdlib+',"/out:$exe","/reference:$harmony")
     foreach($reference in @('mscorlib.dll','System.dll','System.Core.dll')){$arguments+='/reference:'+(Join-Path $framework $reference)}
-    $arguments+=@((Join-Path $temporary 'GroupPatch.cs'),(Join-Path $temporary 'Fixture.cs'),(Join-Path $RepositoryRoot 'client/Modules/FollowerGroupHostility.cs'),(Join-Path $RepositoryRoot 'client/Modules/AllegiancePmcFriendship.cs'),(Join-Path $RepositoryRoot 'shared/FriendlyEncounterPenaltyPolicy.cs'))
+    $arguments+=@((Join-Path $temporary 'GroupPatch.cs'),(Join-Path $temporary 'Fixture.cs'),(Join-Path $RepositoryRoot 'client/Modules/FollowerGroupHostility.cs'),(Join-Path $RepositoryRoot 'client/Modules/AllegiancePmcFriendship.cs'),(Join-Path $RepositoryRoot 'client/Modules/BotOwnerUpdateHub.cs'),(Join-Path $RepositoryRoot 'shared/FriendlyEncounterPenaltyPolicy.cs'))
     & dotnet @arguments
     if($LASTEXITCODE -ne 0){throw 'Hostility fixture compilation failed'}
     & $exe

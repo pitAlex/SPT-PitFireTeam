@@ -300,6 +300,7 @@ namespace pitTeam.Patches
         {
             // Capture recruit identity before native death callbacks remove followers.
             TryRecordPlayerKillMessage(__instance, aggressor);
+            PmcKarmaRuntime.RecordKill(__instance, aggressor);
             try
             {
                 global::pitTeam.Utils.PingTeamates.TryRememberEnemyDown(__instance, aggressor);

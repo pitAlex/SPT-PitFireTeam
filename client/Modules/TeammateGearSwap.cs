@@ -17,7 +17,7 @@ namespace pitTeam.Modules
     {
         internal static readonly HashSet<EquipmentSlot> VisibleSlots = new HashSet<EquipmentSlot>
         {
-            EquipmentSlot.FirstPrimaryWeapon, EquipmentSlot.SecondPrimaryWeapon,
+            EquipmentSlot.FirstPrimaryWeapon, EquipmentSlot.SecondPrimaryWeapon, EquipmentSlot.Holster,
             EquipmentSlot.TacticalVest, EquipmentSlot.ArmorVest, EquipmentSlot.Headwear,
             EquipmentSlot.FaceCover, EquipmentSlot.Eyewear, EquipmentSlot.Earpiece
         };
@@ -89,7 +89,13 @@ namespace pitTeam.Modules
                 !EftScreenManager.Instance.CheckCurrentScreen(EEftScreenType.BattleUI)) return;
             BotOwner bot = TeammateBackpackInspection.ResolveInteractionTargetPlayer(owner.Player, false)?.AIData?.BotOwner;
             BotFollowerPlayer follower = BossPlayers.Instance?.GetFollower(bot);
-            if (!Safe(owner, bot, follower)) { Warn("SwapGearUnavailable"); return; }
+            string rejection = UnsafeReason(owner, bot, follower, false);
+            if (rejection != null)
+            {
+                GearSwapDiagnostics.OpenRejected(owner.Player, bot, rejection);
+                Warn("SwapGearUnavailable");
+                return;
+            }
             try
             {
                 var session = new TeammateGearSwap(eftOwner, bot, follower);
@@ -156,9 +162,6 @@ namespace pitTeam.Modules
             _diagnostics.State("cancel");
         }
 
-        private static bool Safe(GamePlayerOwner owner, BotOwner bot, BotFollowerPlayer follower, bool applying = false) =>
-            UnsafeReason(owner, bot, follower, applying) == null;
-
         private static string UnsafeReason(GamePlayerOwner owner, BotOwner bot, BotFollowerPlayer follower, bool applying)
         {
             // This is the safety gate itself, evaluated once; diagnostics never repeat medical/AI queries.
@@ -177,7 +180,9 @@ namespace pitTeam.Modules
             if (applying) return null;
             if (bot.WeaponManager?.Selector?.IsChanging == true) return "followerWeaponChanging";
             if (bot.WeaponManager?.Grenades?.ThrowindNow == true) return "throwingGrenade";
-            if (bot.WeaponManager?.info?.Values.Any(i => i?.Reload?.Reloading == true) == true) return "reloading";
+            // EFT polls only the active reload record. A stale flag on a stowed
+            // weapon is not an in-flight hands operation; native hands safety still follows.
+            if (bot.WeaponManager?._currentWeaponInfo?.Reload?.Reloading == true) return "reloading";
             if (owner.Player.InventoryController.IsChangingWeapon) return "playerWeaponChanging";
             return bot.WeaponManager?.CanChangeHands() == true ? null : "followerHandsBusy";
         }

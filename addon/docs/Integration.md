@@ -42,6 +42,7 @@ The addon also owns the [peaceful weapon guard](Combat.md#peaceful-weapon-handli
 ## Bridges
 
 - Core `SainAddonBridge`: readiness, release/reset, lifecycle, player updates and passive enemy-contact callbacks.
+- Addon `SainGrenadeThrowBridge`: follower-only native grenade enable projection and existing Core throw-window/cooldown coordination; see [grenade throwing](Combat.md#grenade-throwing).
 - Addon `SainSquadDecisionBridge`: player-led provider dispatch and filtering before native publication.
 - Core `SainRegroupBridge`, `FollowerPushGeometry`, `FollowerPushRiskPolicy`, `FollowerCombatCommandGeometry` and `Covers`: shared distance, movement, risk, reservation and protection helpers.
 - Addon `SainRegroupFireSafety`: regroup-only manual suppression trigger guard; ongoing burst checks run in the action using Core shot-safety helpers.
@@ -63,6 +64,7 @@ General external-SAIN synchronization calls a core service directly; it must not
 | Push objective coordinator / execution | [SAINFollowerObjectives](../SAINFollowerObjectives.cs), [SAINFollowerPushObjective](../SAINFollowerPushObjective.cs), [SAINFollowerMoveToEngageAction](../SAINFollowerMoveToEngageAction.cs), [SAINFollowerPushHoldAction](../SAINFollowerPushHoldAction.cs), [FollowerPushGeometry](../../client/BigBrain/FollowerPushGeometry.cs) |
 | Squad suppression / ally support | [SAINFollowerSquadSupportObjective](../SAINFollowerSquadSupportObjective.cs), [SAINFollowerSquadSupportAction](../SAINFollowerSquadSupportAction.cs), [SainSquadSupportBridge](../SainSquadSupportBridge.cs) |
 | Combat gesture relocation | [SAINFollowerRelocationObjective](../SAINFollowerRelocationObjective.cs), [FollowerCombatCommandGeometry](../../client/BigBrain/FollowerCombatCommandGeometry.cs) |
+| Native hand-grenade toggle / throw permission | [SainGrenadeThrowBridge](../SainGrenadeThrowBridge.cs) |
 | Protected-cover medicine | [SainMedicalDecisionBridge](../SainMedicalDecisionBridge.cs) |
 | Both-layer readiness / lifecycle | [SAINFollowerRuntime](../SAINFollowerRuntime.cs) |
 | Linger / aggregate combat handoff | [SAINFollowerCombatHandoff](../SAINFollowerCombatHandoff.cs), [SAINFollowerLingerAction](../SAINFollowerLingerAction.cs) |

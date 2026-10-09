@@ -783,7 +783,7 @@ namespace pitTeam.Modules
                 return Array.Empty<string>();
             }
 
-            return InteractableObjects.GetStoredItems(bot.ProfileId)?.ToArray() ?? Array.Empty<string>();
+            return InteractableObjects.GetReturnItemIds(bot).ToArray();
         }
     }
 }

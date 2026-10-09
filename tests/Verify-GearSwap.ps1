@@ -78,6 +78,16 @@ foreach ($phase in @('apply-start', 'replay-complete', 'events-published', 'weap
     if (!$session.Contains('"' + $phase + '"')) { throw "Missing Swap Gear diagnostic boundary: $phase" }
 }
 $diagnostics = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/GearSwapDiagnostics.cs')
+$open = Get-Region $session '        internal static void Open(GamePlayerOwner owner)' '        internal static bool Holds('
+if ([regex]::Matches($open, 'UnsafeReason\(').Count -ne 1 -or
+    !$open.Contains('GearSwapDiagnostics.OpenRejected(owner.Player, bot, rejection)') -or
+    $open.IndexOf('GearSwapDiagnostics.OpenRejected(') -gt $open.IndexOf('Warn("SwapGearUnavailable")')) {
+    throw 'Opening must log the single safety evaluation before displaying its generic warning'
+}
+foreach ($provider in @('HasKnownEnemy(', 'CanChangeHands(', 'CanRemove(', 'IsInInteractionStrictCheck(',
+    'HasActiveOrPendingHealWork(', 'HasActiveOrPendingPickupWork(')) {
+    if ($diagnostics.Contains($provider)) { throw "Rejection diagnostics must not re-query providers: $provider" }
+}
 $restore = Get-Region $session '        private Task RestoreHands(Player player, Item preferred)' '        private Task RestoreHandsCore(Player player, Item preferred)'
 foreach ($boundary in @('GearSwapBodyRefresh.Run(', 'player.PlayerBody.SlotViews.Where(view => view.LoadingJob != null).Select(view => view.LoadingJob)',
     '() => RestoreHandsCore(player, preferred)', '() => VerifyHeldWeaponBody(player)',

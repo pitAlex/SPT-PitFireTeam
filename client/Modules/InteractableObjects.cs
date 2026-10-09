@@ -117,17 +117,19 @@ namespace pitTeam.Modules
 
             if (trackedItemCount > 0 && _toSendItems.Count == 0)
             {
-                Logger.LogInfo($"[Loot] Raid-end follower return had {trackedItemCount} tracked item id(s), but no readable return roots were found.");
+                Logger.LogInfo($"[Loot] Raid-end follower return had {trackedItemCount} tracked item id(s), but no returnable cargo roots remained after membership/equipment filtering.");
             }
 
             Dictionary<string, object>? member = null;
             if (_followersWithLoot != null && _followersWithLoot.Count > 0)
             {
-                member = _followersWithLoot.Values.FirstOrDefault();
+                member = _followersWithLoot.FirstOrDefault(pair =>
+                    BossPlayers.GetFollowers()?.Any(follower =>
+                        follower?.IsSquadMate == true && follower.GetBot()?.ProfileId == pair.Key) == true).Value;
             }
 
             // Raid cleanup can unload the request owner immediately after this object is disposed.
-            // Send the return payload now so temporary Restricted gear cannot be stripped
+            // Send the return payload now so returned cargo cannot be stripped
             // from teammate persistence before the mail request has actually reached the server.
             return SendReturnItems(_toSendItems, member, "post-raid returned follower items", synchronous: true,
                 sourceItemIdsByRoot: _returnSourceItemIds, sourceIdByReturnId: _returnOriginalIdByReturnId);
@@ -168,12 +170,12 @@ namespace pitTeam.Modules
         public static List<Item> GetTrackedReturnItemRoots(BotOwner bot)
         {
             List<Item> roots = new List<Item>();
-            if (bot?.GetPlayer?.InventoryController == null)
+            if (!IsReturnSquadMember(bot) || bot.GetPlayer?.InventoryController == null)
             {
                 return roots;
             }
 
-            List<string>? storedItems = GetStoredItems(bot.ProfileId);
+            List<string> storedItems = GetReturnItemIds(bot);
             if (storedItems == null || storedItems.Count == 0)
             {
                 return roots;
@@ -196,12 +198,14 @@ namespace pitTeam.Modules
 
         private void GatherStoredItemsFromBot(BotOwner bot, List<string> gathered)
         {
-            if (_toSendItems == null || bot?.GetPlayer?.InventoryController == null)
+            if (!IsReturnSquadMember(bot) || _toSendItems == null || bot.GetPlayer?.InventoryController == null)
             {
                 return;
             }
 
-            var storedItems = GetStoredItems(bot.ProfileId);
+            var storedItems = GetReturnItemIds(bot);
+            Logger.LogInfo($"[Loot] Squadmate '{bot.Profile?.Nickname ?? bot.ProfileId}' return policy: " +
+                $"tracked={GetStoredItems(bot.ProfileId)?.Count ?? 0}, cargoIds={storedItems.Count}; equipped gear stays in kit.");
             if (storedItems == null)
             {
                 return;
@@ -796,7 +800,7 @@ namespace pitTeam.Modules
                             AliveSquadmates = 0,
                             HasSecureMeds = false,
                             EquipmentItems = equipmentItems,
-                            TrackedItemIds = GetStoredItems(bot.ProfileId)?.ToArray() ?? Array.Empty<string>()
+                            TrackedItemIds = GetReturnItemIds(bot).ToArray()
                         });
                     }
                 }
@@ -866,7 +870,7 @@ namespace pitTeam.Modules
 
         private static bool ShouldGatherRaidEndFollowerInventory(BotOwner bot)
         {
-            if (bot == null ||
+            if (!IsReturnSquadMember(bot) ||
                 bot.IsDead ||
                 bot.HealthController?.IsAlive != true ||
                 bot.GetPlayer?.InventoryController?.Inventory?.Equipment == null)
@@ -1834,6 +1838,7 @@ namespace pitTeam.Modules
         /** Store the item that was given to a follower */
         public static void StoreItem(BotOwner bot, Item item)
         {
+            if (!IsReturnSquadMember(bot)) return;
             SquadRaidKillReport.RecordCollectedDogtags(item);
 
             if (Instance == null || Instance._lootedItems == null || Instance._followersWithLoot == null)
@@ -2350,12 +2355,29 @@ namespace pitTeam.Modules
         // fallback IDs as well as roots; GatherStoredItemsFromBot deduplicates nested return trees.
         internal static void StoreGearSwapReturnItems(BotOwner bot, IEnumerable<Item> items)
         {
+            if (!IsReturnSquadMember(bot))
+            {
+                Logger.LogInfo($"[Loot] Gear exchange return tracking skipped for non-squad follower '{bot?.Profile?.Nickname ?? bot?.ProfileId}'.");
+                return;
+            }
             Item[] returnable = items.Where(item => item != null && !IsProtectedFollowerEquipment(item)).ToArray();
             foreach (Item item in returnable) StoreItem(bot, item);
             List<string> tracked = GetStoredItems(bot.ProfileId);
             if (tracked == null) return;
             foreach (Item item in returnable)
                 if (!tracked.Contains(item.Id)) tracked.Add(item.Id);
+        }
+
+        private static bool IsReturnSquadMember(BotOwner bot) =>
+            bot != null && BossPlayers.Instance?.GetFollower(bot)?.IsSquadMate == true;
+
+        internal static List<string> GetReturnItemIds(BotOwner bot)
+        {
+            // Membership is the admission gate, before inventory or ownership checks.
+            if (!IsReturnSquadMember(bot)) return new List<string>();
+            var controller = bot.GetPlayer?.InventoryController;
+            return FollowerReturnPolicy.GetReturnIds(true, controller?.Inventory?.Equipment,
+                GetStoredItems(bot.ProfileId), id => FindStoredReturnItem(controller, id));
         }
 
         public static List<string>? GetStoredItems(string bot)

@@ -14,6 +14,7 @@
 
     <ItemGroup>
         <Compile Include="../shared/FriendlyEncounterPenaltyPolicy.cs" Link="Shared/FriendlyEncounterPenaltyPolicy.cs" />
+        <Compile Include="../shared/PmcKarmaPolicy.cs" Link="Shared/PmcKarmaPolicy.cs" />
         <Reference Include="0Harmony">
             <HintPath>libs\0Harmony.dll</HintPath>
         </Reference>

@@ -23,13 +23,16 @@ namespace pitTeam.Shared
         public const long DurationMs = 24 * 60 * 60 * 1000L;
         private const long HourMs = 60 * 60 * 1000L;
 
-        public static int GetPoints(IEnumerable<FriendlyEncounterPenaltyEntry> entries, long nowUnixMs)
+        public static int GetPoints(IEnumerable<FriendlyEncounterPenaltyEntry> entries, long nowUnixMs, int chanceMultiplier = 1)
         {
             int points = 0;
             foreach (var entry in entries)
                 if (entry.ExpiresAtUnixMs > nowUnixMs) points += PointsPerKill;
-            return points;
+            return ScalePoints(points, chanceMultiplier);
         }
+
+        public static int ScalePoints(int basePoints, int chanceMultiplier) =>
+            basePoints * Math.Max(1, Math.Min(5, chanceMultiplier));
 
         public static float Apply(float chance, int penaltyPoints) =>
             Math.Max(0f, Math.Min(1f, chance - penaltyPoints / 100f));

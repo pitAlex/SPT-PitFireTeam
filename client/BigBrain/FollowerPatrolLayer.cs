@@ -1263,6 +1263,7 @@ namespace pitTeam.BigBrain
             if (BotOwner?.WeaponManager == null) return;
             Utils.FollowerRecovery.CheckReloadTimeout(BotOwner);
             if (Time.time < nextReloadCheckAt) return;
+            if (TryHandleSkippedReloadStart()) return;
 
             // The post-combat hold-linger patch deliberately suppresses vanilla TryReload for
             // three seconds after GoalEnemy clears. Do not consume this patrol weapon's retry
@@ -1399,6 +1400,33 @@ namespace pitTeam.BigBrain
             reloadSlotsTried.Clear();
             returnAfterTopOffSlot = null;
             nextReloadCheckAt = Time.time + OutOfCombatReloadFullCycleCooldown;
+        }
+
+        private bool TryHandleSkippedReloadStart()
+        {
+            if (BotOwner.WeaponManager.Reload.Reloading) return false;
+            Weapon weapon = BotOwner.WeaponManager.CurrentWeapon;
+            if (weapon == null || !FollowerReloadStartRecovery.TryConsume(BotOwner, weapon.Id, out string reason))
+                return false;
+
+            EquipmentSlot slot = BotOwner.WeaponManager.Selector.LastEquipmentSlot;
+            reloadingInProgress = false;
+            reloadingWeaponId = null;
+            RecordOutOfCombatReloadFailure(slot, weapon, "nativeStartSkipped:" + reason);
+            if (IsOutOfCombatReloadGiveUpActive(slot, weapon))
+            {
+                forcedTopOffSlot = null;
+                TryCompleteReturnAfterTopOffSwitch(BotOwner.WeaponManager.Selector);
+            }
+            else
+            {
+                // One stationary retry, using the existing two-failure budget.
+                // TryReload returning true does not prove its animation started.
+                reloadSlotsTried.Remove(slot);
+                forcedTopOffSlot = slot;
+            }
+            nextReloadCheckAt = Time.time + OutOfCombatReloadSlotCooldown;
+            return true;
         }
 
         private bool ShouldReloadCurrentWeaponOutOfCombat()

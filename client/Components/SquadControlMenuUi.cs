@@ -368,6 +368,17 @@ namespace pitTeam.Components
 
             public void OnPointerExit(PointerEventData eventData)
             {
+                ResetHover();
+            }
+
+            private void OnDisable()
+            {
+                // Cached roster cards can be hidden before Unity sends a pointer exit.
+                ResetHover();
+            }
+
+            private void ResetHover()
+            {
                 isHovered = false;
                 Apply(normalColor);
                 ApplyText(normalTextColor);

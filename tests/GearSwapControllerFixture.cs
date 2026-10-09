@@ -28,7 +28,7 @@ namespace EFT
 }
 namespace EFT.InventoryLogic
 {
-    public enum EquipmentSlot { FirstPrimaryWeapon, Backpack }
+    public enum EquipmentSlot { FirstPrimaryWeapon, Holster, Backpack }
     public class Slot { public object ParentItem; public bool Deleted; }
     public class Inventory { public object Equipment = new object(); }
     public interface IOperationResult { }
@@ -84,13 +84,14 @@ namespace pitTeam.Modules
     {
         internal bool Applying;
         internal object FollowerEquipment = new object();
-        internal static HashSet<EquipmentSlot> VisibleSlots = new HashSet<EquipmentSlot> { EquipmentSlot.FirstPrimaryWeapon };
+        internal static HashSet<EquipmentSlot> VisibleSlots = new HashSet<EquipmentSlot> { EquipmentSlot.FirstPrimaryWeapon, EquipmentSlot.Holster };
         internal bool AllowBackpackSwap;
         internal bool CanSeeFollowerSlot(EquipmentSlot slot) => VisibleSlots.Contains(slot) ||
             (AllowBackpackSwap && slot == EquipmentSlot.Backpack);
         internal Dictionary<string, string> Slots = new Dictionary<string, string>
         {
-            ["botPrimary"] = "botGun", ["botSecondary"] = "botSpare", ["playerSecondary"] = "playerGun"
+            ["botPrimary"] = "botGun", ["botSecondary"] = "botSpare", ["playerSecondary"] = "playerGun",
+            ["botHolster"] = "botPistol", ["playerHolster"] = "playerPistol"
         };
         internal void Stage(GearSwapEdit edit, InventoryController controller)
         {
@@ -142,6 +143,13 @@ static class GearSwapControllerFixture
         Move(controller, "botPrimary", "backpack");
         Move(controller, "backpack", "botPrimary");
         Check(controller.Session.Slots["botPrimary"] == "botGun", "original gun can return to primary");
+        controller = New();
+        Move(controller, "botHolster", "backpack");
+        Move(controller, "playerHolster", "botHolster");
+        Check(controller.Session.Slots["botHolster"] == "playerPistol", "player pistol replaces bot holster pistol");
+        Move(controller, "botHolster", "playerHolster");
+        Move(controller, "backpack", "botHolster");
+        Check(controller.Session.Slots["botHolster"] == "botPistol", "original pistol returns to holster without stale busy markers");
         var rejected = controller.ConvertOperationResultToOperation(new UnsupportedEdit());
         bool failed = false;
         controller.Execute(rejected, result => failed = !result.Succeed);
@@ -155,12 +163,18 @@ static class GearSwapControllerFixture
         controller.Execute(duringApply, result => failed = !result.Succeed);
         Check(failed && controller.ActiveEvents == 0, "Apply-time edit rejected without busy event");
         var followerSlot = new Slot { ParentItem = controller.Session.FollowerEquipment };
+        Check(controller.IsAllowedToSeeSlot(followerSlot, EquipmentSlot.Holster), "recruited container holster visible");
+        Check(controller.IsAllowedToSeeEquipmentSlot(followerSlot, EquipmentSlot.Holster), "recruited equipment holster visible");
         Check(!controller.IsAllowedToSeeSlot(followerSlot, EquipmentSlot.Backpack), "recruited container backpack hidden");
         Check(!controller.IsAllowedToSeeEquipmentSlot(followerSlot, EquipmentSlot.Backpack), "recruited equipment backpack hidden");
         controller.Session.AllowBackpackSwap = true;
+        Check(controller.IsAllowedToSeeSlot(followerSlot, EquipmentSlot.Holster), "spawned container holster visible");
+        Check(controller.IsAllowedToSeeEquipmentSlot(followerSlot, EquipmentSlot.Holster), "spawned equipment holster visible");
         Check(controller.IsAllowedToSeeSlot(followerSlot, EquipmentSlot.Backpack), "spawned container backpack visible");
         Check(controller.IsAllowedToSeeEquipmentSlot(followerSlot, EquipmentSlot.Backpack), "spawned equipment backpack visible");
         followerSlot.Deleted = true;
+        Check(!controller.IsAllowedToSeeSlot(followerSlot, EquipmentSlot.Holster), "deleted container holster remains hidden");
+        Check(!controller.IsAllowedToSeeEquipmentSlot(followerSlot, EquipmentSlot.Holster), "deleted equipment holster remains hidden");
         Check(!controller.IsAllowedToSeeSlot(followerSlot, EquipmentSlot.Backpack), "deleted backpack slots remain hidden");
         Check(controller.IsAllowedToSeeSlot(new Slot(), EquipmentSlot.Backpack), "player backpack visibility unaffected");
         controller.Session = null;

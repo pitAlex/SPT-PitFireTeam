@@ -1105,6 +1105,7 @@ namespace pitTeam.Patches
                 throw new InvalidOperationException("Active player profile was unavailable for live stash refresh.");
             }
 
+            savedStashItems = NormalizePlayerStashSnapshot(savedStashItems, activeProfile.Inventory.Stash.Id);
             JsonType.FlatItem[] liveStashItems = Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(
                 new Item[] { activeProfile.Inventory.Stash });
             if (liveStashItems == null || liveStashItems.Length == 0)
@@ -1152,6 +1153,18 @@ namespace pitTeam.Patches
             }
 
             ApplyServerSavedPlayerStashSnapshot(activeProfile, activeInventoryController, savedStashItems);
+        }
+
+        // Server inventory arrays can put nested items before their stash root. The delta builder
+        // and snapshot/editor paths require root-first order, as produced by EFT.TreeToFlatItems.
+        private static JsonType.FlatItem[] NormalizePlayerStashSnapshot(JsonType.FlatItem[] items, string stashRootId)
+        {
+            int rootIndex = Array.FindIndex(items, item => item != null
+                && string.Equals(item._id.ToString(), stashRootId, StringComparison.OrdinalIgnoreCase));
+            if (rootIndex < 0)
+                throw CreateLiveStashRefreshException("Server-saved player stash did not contain the active stash root.");
+            if (rootIndex == 0) return items;
+            return new[] { items[rootIndex] }.Concat(items.Where((item, index) => index != rootIndex)).ToArray();
         }
 
         private static void ApplyServerSavedPlayerStashSnapshot(
@@ -1700,6 +1713,7 @@ namespace pitTeam.Patches
 
             try
             {
+                savedStashItems = NormalizePlayerStashSnapshot(savedStashItems, LoadoutEditorProfile.Inventory.Stash.Id);
                 JsonType.FlatItem[] editorStashItems = RemoveLoadoutEditorEquipmentItemsFromSavedStash(savedStashItems);
                 EFT.ItemFactory.FlatItemsToResultTree tree = Singleton<EFT.ItemFactory>.Instance.FlatItemsToTree(editorStashItems, false, null);
                 string stashRootId = editorStashItems[0]._id.ToString();

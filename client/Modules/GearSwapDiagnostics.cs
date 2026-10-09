@@ -20,6 +20,39 @@ namespace pitTeam.Modules
 
         internal GearSwapDiagnostics(Player player, BotOwner bot) { _player = player; _bot = bot; }
 
+        internal static void OpenRejected(Player player, BotOwner bot, string reason)
+        {
+            try
+            {
+                Player target = bot?.GetPlayer;
+                var follower = BossPlayers.Instance?.GetFollower(bot);
+                Logger.LogInfo($"[SwapGear][OpenRejected] reason={reason} follower='{bot?.Profile?.Nickname ?? "none"}' " +
+                    $"profile='{bot?.ProfileId ?? "none"}' squadMember={follower?.IsSquadMate} spawned={follower?.IsSpawnedSquadMate} " +
+                    $"stockTarget='{player?.InteractablePlayer?.ProfileId ?? "none"}' botState={bot?.BotState} " +
+                    $"nativeEnemy={bot?.Memory?.HaveEnemy} underFire={bot?.Memory?.IsUnderFire} " +
+                    $"request={bot?.BotRequestController?.CurRequest?.GetType().Name ?? "none"} " +
+                    $"playerProcess={player?.ProcessStatus} playerChanging={player?.InventoryController?.IsChangingWeapon} " +
+                    $"followerProcess={target?.ProcessStatus} followerChanging={target?.InventoryController?.IsChangingWeapon} " +
+                    $"inventoryOpened={target?.IsInventoryOpened} suitableForHands={target?.StateIsSuitableForHandInput} " +
+                    $"hands={target?.HandsController?.GetType().Name ?? "none"} handsDestroyed={target?.HandsController?.Destroyed} " +
+                    $"handsOperation={(target?.HandsController as Player.FirearmController)?.CurrentOperation?.GetType().Name ?? "none"} " +
+                    $"interactionPlaying={target?.MovementContext?.PlayerAnimator?.AnimatedInteractions?.IsInteractionPlaying} " +
+                    $"activeReloadWeapon={bot?.WeaponManager?._currentWeaponInfo?.weapon?.Id} " +
+                    $"activeReloading={bot?.WeaponManager?._currentWeaponInfo?.Reload?.Reloading} " +
+                    "cachedReloadFlags=[" + string.Join(",", bot?.WeaponManager?.info?.Take(12)
+                        .Select(pair => $"{pair.Key}:{pair.Value?.Reload?.Reloading}") ?? Enumerable.Empty<string>()) + "]");
+                // A missing target can be a range/aim mismatch, not danger. Capture the
+                // owned candidates without re-running safety, medical or hands providers.
+                if (player != null)
+                    Logger.LogInfo("[SwapGear][OpenRejected] candidates=[" + string.Join(" | ",
+                        BossPlayers.GetFollowers().Where(f => f?.GetBoss()?.realPlayer == player).Take(12)
+                            .Select(f => $"{f.GetBot()?.ProfileId}/{f.GetBot()?.Profile?.Nickname}:distance=" +
+                                (f.GetBot()?.GetPlayer == null ? "unavailable" :
+                                    Vector3.Distance(player.Position, f.GetBot().GetPlayer.Position).ToString("0.00")))) + "]");
+            }
+            catch (Exception ex) { Logger.LogInfo($"[SwapGear][OpenRejected] reason={reason} detailUnavailable={ex.GetType().Name}"); }
+        }
+
         internal void Write(string phase, string detail)
         {
             Logger.LogInfo($"[SwapGear][Trace] exchange={_trace} follower='{_bot.ProfileId}' phase={phase} {detail}");

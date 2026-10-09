@@ -149,6 +149,16 @@ The recorder captures the last actual automatic-regroup evaluation (`autoReason`
 
 Core's Rifleman boss-protection decision requires eligible protection intent and fresh personal contact, while useful personal fire and active orders retain priority. Its `bossRangedThreatWatch` is only a frozen orientation cue, not permission to acquire or shoot. The addon still has no full copy of Core's player-hit support planner. This regroup correction lets an otherwise passive distant follower recover toward the player; it does not create a forced push, grant sight, or retarget from that hit cue.
 
+## Grenade throwing
+
+**Core base:** [Grenades](../../docs/Combat-Tactics.md#grenades).
+
+For ready SAINGrunt and SAINShooter, Core's **Followers use grenades** toggle is authoritative over SAIN's master grenade enable, per-bot capability and bot-versus-bot enable switches. `SainGrenadeThrowBridge` projects only those three reads in native `GrenadeThrowDecider.GetDecision`; it never modifies cached flags or shared presets. Core tactics, ordinary bots and unready addon followers retain their existing behavior. Real combat admission or existing independence permission and a living active native enemy remain required; heard-only ambush preparation alone cannot authorize a grenade.
+
+SAIN plans and starts the physical throw inside its decision method. The addon opens Core's existing explicit throw window before native evaluation, respects individual/group cooldowns and competing throw ownership, and closes failed planning or exception paths immediately. A started asynchronous throw retains its window until native `EndAll`; tactic/lifecycle cleanup and addon removal release owned permission. Actual grenade release still starts Core cooldowns and runs its existing trajectory/friendly-impact checks.
+
+Native target knowledge, friendly distance, trajectory, weapon transitions, busy hands, sprint restrictions and attempt timing remain SAIN-owned. The toggle permits consideration; it does not force a throw. This concerns hand grenades, not grenade-launcher suppression. Hooks and per-sequence ownership live in the addon, with Core helpers bound once. No new navigation/physics scans or decision publication are added.
+
 ## Emergency backup weapon
 
 Ready SAINGrunt followers may draw a loaded second primary, then a loaded holster fallback, before SAIN's self-action reload decision when their first primary is completely empty and a living known enemy is visible, shootable and within 10 m. One remaining round keeps the current gun. Launchers and malfunctioning backups are excluded; native selector capability and cooldown checks still apply. SAINShooter and ordinary SAIN bots retain their policies.

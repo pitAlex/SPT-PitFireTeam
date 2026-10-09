@@ -24,6 +24,7 @@ namespace pitTeam.SAINAddon
                 SainFollowerSoundAwareness.Install(Harmony);
                 SainEnemyTracking.Apply(Harmony);
                 SainEmergencyWeaponBridge.Apply(Harmony);
+                SainGrenadeThrowBridge.Apply(Harmony);
             }
             catch { Remove(); throw; }
         }
@@ -35,6 +36,7 @@ namespace pitTeam.SAINAddon
             SainCoverSelectionBridge.Reset();
             SainMedicalDecisionBridge.Reset();
             SainEmergencyWeaponBridge.Reset();
+            SainGrenadeThrowBridge.Reset();
             SainSquadSupportBridge.Reset();
         }
     }

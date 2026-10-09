@@ -6,6 +6,48 @@ namespace pitTeam.Server.Services;
 
 public partial class FriendlyTeammateService
 {
+    private static List<Item> MergeAcquiredEquipment(List<Item>? existingItems, List<Item> liveItems)
+    {
+        if (existingItems == null || existingItems.Count == 0) return liveItems;
+        string savedRoot = existingItems[0].Id.ToString();
+        string liveRoot = liveItems[0].Id.ToString();
+        string[] gearSlots = ["FirstPrimaryWeapon", "SecondPrimaryWeapon", "Holster", "Backpack",
+            "TacticalVest", "ArmorVest", "Headwear", "Earpiece", "FaceCover", "Eyewear"];
+        var equippedIds = liveItems.Where(item => item.ParentId == liveRoot &&
+            gearSlots.Contains(item.SlotId, StringComparer.OrdinalIgnoreCase))
+            .Select(item => item.Id.ToString()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        bool added;
+        do
+        {
+            added = false;
+            // Native flat items use null location for ordinary slots; grid coordinates
+            // and cartridge-stack indexes have locations. Do not donate loose cargo.
+            foreach (Item item in liveItems.Where(item => item.Location == null && item.ParentId != null &&
+                equippedIds.Contains(item.ParentId))) added |= equippedIds.Add(item.Id.ToString());
+        } while (added);
+        var incoming = liveItems.Where(item => equippedIds.Contains(item.Id.ToString()) &&
+            !existingItems.Any(saved => saved.ParentId == (item.ParentId == liveRoot ? savedRoot : item.ParentId) &&
+                string.Equals(saved.SlotId, item.SlotId, StringComparison.OrdinalIgnoreCase) &&
+                saved.Id == item.Id)).ToList();
+        var merged = existingItems.ToList();
+        var incomingIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (Item root in incoming) AddItemAndDescendantsToKeepSet(liveItems, root.Id.ToString(), incomingIds);
+
+        // Remove all displaced roots before inserting anything: moving the old primary
+        // to secondary must not delete it again when the new primary is inserted.
+        var displaced = existingItems.Where(item => incoming.Any(root =>
+            item.ParentId == (root.ParentId == liveRoot ? savedRoot : root.ParentId) &&
+            string.Equals(root.SlotId, item.SlotId, StringComparison.OrdinalIgnoreCase)))
+            .Select(item => item.Id.ToString()).Concat(incomingIds).ToList();
+        RemoveItemTreesById(merged, displaced);
+        foreach (Item item in liveItems.Where(item => incomingIds.Contains(item.Id.ToString())))
+        {
+            if (item.ParentId == liveRoot) item.ParentId = savedRoot;
+            merged.Add(item);
+        }
+        return merged;
+    }
+
     private void StripToPermanentEquipment(BotBase teammate, bool keepSecureContainer, bool clearSecureContents = false)
     {
         teammate.Inventory ??= new BotBaseInventory { Items = [] };

@@ -1692,10 +1692,7 @@ public partial class FriendlyTeammateService(
 
         FriendlyServerSettingsRequest serverSettings = settingsService.LoadSettings();
         string mode = NormalizeLoadoutManagementMode(serverSettings.LoadoutManagementMode);
-        if (!ShouldPersistEscapedDefaultEquipmentState(mode, serverSettings))
-        {
-            return;
-        }
+        bool persistFieldState = ShouldPersistEscapedDefaultEquipmentState(mode, serverSettings);
 
         var settings = GetTeammateSettings(sessionId, teammate);
         if (!string.Equals(settings.SelectedLoadoutId, DefaultLoadoutId, StringComparison.OrdinalIgnoreCase))
@@ -1722,11 +1719,18 @@ public partial class FriendlyTeammateService(
             return;
         }
 
+        if (!persistFieldState)
+        {
+            // Empty-slot acquisitions are permanent in every mode. Do not turn on
+            // Field Upkeep for unchanged baseline gear merely to save a new item.
+            replacementItems = MergeAcquiredEquipment(teammate.Inventory?.Items, replacementItems);
+        }
+
         var mergedItems = MergeEquipmentWithPreservedSpecialItems(
             teammate.Inventory?.Items,
             replacementItems,
             useReplacementSecureContainer: IsExtremeLoadoutManagementMode(mode));
-        if (IsRestrictedLoadoutManagementMode(mode) && !TryRestoreRestrictedMagazines(teammate, mergedItems))
+        if (persistFieldState && IsRestrictedLoadoutManagementMode(mode) && !TryRestoreRestrictedMagazines(teammate, mergedItems))
         {
             return;
         }
@@ -1743,7 +1747,8 @@ public partial class FriendlyTeammateService(
 
         EnsureFollowerHasScabbardKnife(teammate);
         SaveDefaultEquipmentSnapshot(sessionId, teammate, overwrite: true, includeSecureContainer: keepSecureContainer);
-        logger.Info($"Persisted escaped Default equipment state for teammate '{teammate.Aid}' in loadout management mode '{mode}'.");
+        logger.Info($"Persisted escaped Default equipment state for teammate '{teammate.Aid}' in loadout management mode '{mode}' " +
+            $"(state={(persistFieldState ? "live" : "acquired-equipment-only")}).");
     }
 
     private void ApplyRestrictedGearMaintenanceDeathEquipmentState(

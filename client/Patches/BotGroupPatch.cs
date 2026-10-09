@@ -561,6 +561,7 @@ namespace pitTeam.Patches
             {
                 // Capture the relation before EFT's OnBeingHit handler adds the player as an enemy.
                 PlayerKilledPatch.TryRememberFriendlyPmcBeforePlayerDamage(damageInfo, target);
+                PmcKarmaRuntime.RememberBeforePlayerDamage(damageInfo, target);
             }
             catch (Exception ex)
             {
