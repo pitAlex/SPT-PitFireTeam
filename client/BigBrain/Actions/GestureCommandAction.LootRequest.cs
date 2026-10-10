@@ -44,9 +44,6 @@ namespace pitTeam.BigBrain.Actions
                 follower.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem == null ||
                 follower.GetSlot(EquipmentSlot.SecondPrimaryWeapon)?.ContainedItem == null,
                 follower.GetSlot(EquipmentSlot.Holster)?.ContainedItem == null);
-            Modules.Logger.LogInfo($"[LootCommand][WeaponSelection] follower='{BotOwner?.Profile?.Nickname}' " +
-                $"selective={ActiveLootRequest.SelectiveWeapons} longGun={ActiveLootRequest.SelectedLongGunId ?? "none"} " +
-                $"pistol={ActiveLootRequest.SelectedPistolId ?? "none"} equipLongGun={ActiveLootRequest.SelectedLongGunCanEquip}");
         }
     }
 }

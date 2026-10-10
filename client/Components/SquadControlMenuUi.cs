@@ -1111,23 +1111,28 @@ namespace pitTeam.Components
 
             if (needsRoster || needsSettings)
             {
-                pitFireTeam.Instance.StartCoroutine(RebuildAfterTransitionCoroutine(needsRoster, needsSettings));
+                pitFireTeam.Instance.StartCoroutine(RebuildAfterTransitionCoroutine(needsRoster, needsSettings, squadVisitVersion));
             }
+            else NotifySquadScreenRefreshed();
         }
 
-        private IEnumerator RebuildAfterTransitionCoroutine(bool roster, bool settings)
+        private IEnumerator RebuildAfterTransitionCoroutine(bool roster, bool settings, int visitVersion)
         {
             // Wait for the matchmaker screen open animation to finish before doing any heavy work.
             // Time-based is more reliable than frame-counting across different frame rates.
             yield return new WaitForSeconds(1.2f);
 
+            if (visitVersion != squadVisitVersion || !IsSquadVisitCurrent(visitVersion)) yield break;
+
             if (settings) RebuildSettingsEntries();
 
             if (roster) RebuildRosterTiles();
+            NotifySquadScreenRefreshed();
         }
 
         internal void RetractPanels()
         {
+            CancelSquadVisit();
             if (screenRoot == null)
             {
                 return;
@@ -1343,6 +1348,7 @@ namespace pitTeam.Components
 
         internal void ShowTab(Tab tab)
         {
+            if (onboardingVisible) return;
             if (rosterPanel != null)
             {
                 rosterPanel.SetActive(tab == Tab.Roster);

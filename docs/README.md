@@ -16,6 +16,9 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 
 | Document | Purpose |
 |---|---|
+| [Gameplay modes](Gameplay-Modes.md) | Guns for Hire/Allegiance comparison, switching, roster separation and settings restoration |
+| [Guns for Hire](Guns-for-Hire.md) | Configurable squad hiring, equipment, recruitment and mode-specific boundaries |
+| [Allegiance](Allegiance.md) | Field recruitment, friendship rolls, locked settings, greetings and encounter penalties |
 | [Combat tactics](Combat-Tactics.md) | Core Rifleman/Marksman decisions, cover, push, healing, regroup and recording |
 | [Commands](Commands.md) | Shared inputs, peaceful execution, core combat orders and status rendering |
 | [Enemy Tracking](Enemy-Tracking.md) | Shared Simple/Realistic modes, remembered search and bounded contact lifetime |
@@ -40,6 +43,7 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 
 ## Proposals and unfinished work
 
+- [Self Determination specification](Self-Determination-Proposal.md): proposed Core/shared setting, command overrides, calibration and churn safeguards, with a separate addon adaptation.
 - [Core roadmap](../TASKS.md): retained product proposals and future work.
 - [Addon roadmap](../addon/docs/Roadmap.md): addon-specific gaps and raid qualification.
 

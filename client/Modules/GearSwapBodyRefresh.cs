@@ -10,7 +10,7 @@ namespace pitTeam.Modules
     internal static class GearSwapBodyRefresh
     {
         internal static async Task Run(Func<bool> alive, Func<Task[]> loadingJobs,
-            Func<Task> restoreHands, Action verify, Action<string> trace, int timeoutMs = 10000)
+            Func<Task> restoreHands, Action verify, Action<string> trace = null, int timeoutMs = 10000)
         {
             Exception loadingError = null;
             trace?.Invoke("body-refresh-wait");

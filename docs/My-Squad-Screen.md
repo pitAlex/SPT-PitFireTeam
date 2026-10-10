@@ -44,6 +44,7 @@ Authoritative files:
 - `client/Components/SquadControlMenuUi.cs`
 - `client/Components/SquadControlMenuUi.Roster.cs`
 - `client/Components/SquadControlMenuUi.Mode.cs`
+- `client/Components/SquadControlMenuUi.Onboarding.cs`
 - `client/Components/SquadControlMenuUi.Settings.cs`
 - `client/Components/SquadControlMenuUi.ContextMenu.cs`
 - `client/Components/SquadControlMenuUi.Backend.cs`
@@ -53,6 +54,16 @@ Authoritative files:
 - `server/Services/FriendlyLanguageService.cs`
 
 ## Entry Flow
+
+### Initial gameplay-mode choice
+
+The first My Squad visit for each player profile, including an existing account, shows only Guns for Hire and Allegiance cards until a choice succeeds. The ordinary panels, Roster/Settings/Mode tabs, Add Teammate and roster feedback remain hidden. The native My Squad caption and Back action remain available. A loading/error-and-retry state keeps the normal controls hidden if onboarding cannot be read.
+
+Each card is nominally 380 × 535 UI units, twice the roster-card width and 2.5 times its height. Its inset artwork is 284 × 355, loaded from `resources/guns-for-hire-card.png` or `resources/allegiance-card.png` (568 × 710 source images). Both cards fit uniformly into smaller screens without changing the artwork aspect ratio. They reuse roster background/corner decoration, portrait border, hover color/name-color feedback and hover sound. The bottom name label displays the localized mode name. Hover uses the same localized description as the normal Mode panel. Cards have a left-click choice action and no context menu, profile action, level, delete, auto-join or group controls.
+
+Choice controls are disabled while the coordinated mode transition and server-owned onboarding completion run. Successful completion refreshes My Squad into the selected mode's normal Roster view. Choosing the already-active default also completes the flow. Back before choosing leaves the choice pending. Late callbacks from a closed or replaced screen cannot paint its successor.
+
+Accounts with no roster in either mode receive one same-faction level-1 welcome friend invitation, with a random level-1 kit and fixed zero starting skill progress. The normal screen's completed refresh acknowledges readiness, then delivery waits two seconds. Existing squads receive no welcome invitation. [Gameplay modes](Gameplay-Modes.md#first-my-squad-visit) owns eligibility and switching; [storage](Teammate-Storage.md#first-visit-and-welcome-invitation) owns persistence/recovery. The screen has not yet been qualified in EFT for layout, pointer interaction or native invitation display.
 
 ### Main menu entry
 
@@ -487,69 +498,28 @@ The completed settings hierarchy is retained while its menu/raid restriction con
 
 ## Part 3: Mode
 
-The `Mode` tab follows `Settings` (Roster, Settings, Mode) and uses its own panel in the same side-selection host. Its shell matches the settings panel dimensions. Opening My Squad still starts on `Roster`; switching tabs shows only the selected panel. All three panels are retracted when the host closes, and all three cloned tab controls are cleaned up.
+The `Mode` tab follows `Settings` (Roster, Settings, Mode) and uses its own panel in the same side-selection host. Its shell matches the settings panel dimensions. After the initial mode choice, opening My Squad starts on `Roster`; switching tabs shows only the selected panel. All three panels are retracted when the host closes, and all three cloned tab controls are cleaned up.
 
 The panel contains two mutually exclusive, vertically arranged options:
 
 - `Guns for Hire` (initial selection)
 - `Allegiance`
 
-Guns for Hire preserves existing gameplay. Allegiance hides Add Teammate and rejects manual hiring on the server; teammates must be recruited in the field. Each mode has its own roster database, including equipment, teammate settings, and pending recruitment requests. Switching clears the outgoing squad selection and refreshes roster/social data. Switching is unavailable during raids. The in-raid `Squad Settings` overlay continues to show only Settings.
+Gameplay behavior is documented separately in [Guns for Hire](Guns-for-Hire.md) and [Allegiance](Allegiance.md). [Gameplay modes](Gameplay-Modes.md) owns coordinated switching, separate rosters and settings restoration. Guns for Hire exposes Add Teammate; Allegiance hides it. Switching clears the outgoing squad selection and refreshes roster/social data, without deleting either roster. Switching is unavailable during raids; the in-raid Squad Settings overlay continues to show only Settings.
 
-Allegiance selects solo BEAR and USEC PMCs after `FactionHostility.Apply` in the activation hook. At the default Friendly Chance Multiplier of 1, same-faction candidates have a 30% friendship chance and opposite-faction candidates have a 15% chance, relative to the human PMC's side. Each profile has one raid-local decision, with at most three lifetime friendly selections shared across both factions; deaths, recruitment and dismissal never release a slot. Failed rolls do not consume a friendly selection slot and cannot be retried. Current groups, original multi-bot spawn groups and groups awaiting additional members are excluded, including their later survivors. A selected solo joining a group loses this individual friendship. Player-Scav/Fence behavior remains unchanged.
-
-`Miscellaneous > Friendly Chance Multiplier` appears immediately before Squad Health Multiplier. It is an integer BepInEx setting from 1 to 5, enabled only in Allegiance; Guns for Hire displays it disabled with the mode-unavailable tooltip. Each step adds 17.5 percentage points for the player's faction and 21.25 for the opposite faction. Changes affect future candidate rolls only, without resetting existing decisions or the raid cap. Its saved value survives restarts and mode switches independently of the Guns for Hire snapshot.
-
-| Friendly Chance Multiplier | Same faction | Opposite faction |
-|---|---|---|
-| 1 (default) | 30% | 15% |
-| 2 | 47.5% | 36.25% |
-| 3 | 65% | 57.5% |
-| 4 | 82.5% | 78.75% |
-| 5 | 100% | 100% |
-
-Killing one of your current raid recruits in Allegiance subtracts `5 × current Friendly Chance Multiplier` percentage points from both friendship chances, after calculating the multiplier's chance boost, with a minimum chance of zero. Each active kill costs 5, 10, 15, 20 or 25 points at multipliers 1 through 5. Scaling uses the current setting whenever chances or the Roster label are evaluated, so killing at a lower multiplier then raising it cannot preserve a smaller penalty. The stored ledger retains kill identity and expiry, including older entries; no database migration is needed. Spawned squadmates, ordinary friendly bots, kills by another aggressor and Guns for Hire kills do not trigger this penalty. The existing `traitor` kill report records it independently of Raid End Messages, including opposite-faction recruits. Reports are deduplicated by raid and victim, and stored per user ID in the Allegiance database. Each kill expires independently after 24 real hours, including time spent outside the game; the mode/config snapshot cannot reset it. Existing bots retain their one-roll decision.
-
-While a penalty is active, Roster displays a small red label beneath the Roster tab, aligned with its left edge: `-5 points in Friendly Encounters (24h)` at multiplier 1, or `-25 points in Friendly Encounters (24h)` at multiplier 5. The label belongs to the roster panel rather than the moving card shell. Multiple penalties show their scaled total reduction and the countdown to the next expiry; the total then drops by `5 × current multiplier` points. Changing the multiplier refreshes the displayed total immediately, without resetting any expiry. The displayed time rounds up in half-hour steps above two hours, 0.1-hour steps from two hours to one hour, and one-minute steps below one hour. Actual expiry is exact and the label disappears when no penalties remain. The countdown updates while Roster is open without per-frame string formatting or HTTP polling.
-
-Selected candidates become neutral to the player and squad without changing shared bot settings, visibility or shot permission. After each follower finishes group reassignment and registration, Allegiance refreshes neutrality in both directions between that follower and every living, still-friendly selected candidate. This covers BEAR and USEC equally, including the first recruit forming a squad. The existing profile-alias cleanup removes stale BotOwner/Player enemy keys, clears only those friendly-pair memories and publishes native enemy-removal notifications for external SAIN caches. It never rerolls selection, restores revoked friendship or removes unrelated enemies. Ambient enemy scans cannot undo this relationship, but real aggression or explicit Contact permanently revokes it for the raid. Recruitment requires a selected, unrevoked candidate at request and deferred conversion time; existing temporary combat refusals, raid-sticky tiered acceptance refusals and the two-active-pickup limit still apply. Selection and recruitment-refresh diagnostics use the `[Allegiance]` log prefix.
-
-Neutrality repair removes enemy keys for both EFT representations of the same profile (`BotOwner` and `Player`). It publishes the native group enemy-removal event even when the group entry is already absent, allowing external SAIN to discard its separate cached contact. Other profiles keep their relationships and memories.
-
-Each selected, unrevoked Allegiance friendly can say `HoldFire` up to twice per raid before recruitment. The first clear sight of the living human PMC within 50 m starts a distance-based delay: `0.2 + 1.8 × distance / 50` seconds, sampled at first sight. This gives 0.38 seconds at 5 m, 1.1 seconds at 25 m and a maximum scheduled delay of 2 seconds at 50 m. The second line is scheduled a random 1–3 seconds after the first starts, then gets one chance roll when contact and speech are eligible: `current distance / 50`, giving 10% at 5 m, 50% at 25 m and 100% at 50 m. A failed roll permanently skips the second line for that raid; moving farther away or meeting again cannot reroll it. A successful roll survives a playback failure without rolling again. Both lines require current range, native view sector, visible distance and an unobstructed head-to-head sight ray. Losing sight or busy speech defers the line without restarting the sequence. Recruitment, hostility revocation and raid teardown stop further greetings. The existing exact pre-recruitment speech scope routes these lines through EFT with or without external SAIN; shared talk settings remain untouched. `AllegianceFriendlyGreeting` runs through `BotOwnerUpdateHub`, normally checking sight twice per second and checking earlier when a phrase deadline falls between those checks. Only actual speaker activation spends a line.
-
-Opposite-faction recruits retain their original side and PMC role in the invitation, saved roster and subsequent Allegiance raid spawns. Their request permissions and squad hostility follow the human leader through the existing follower conversion and shared relationship policy. Guns for Hire keeps its existing same-side recruitment and leader-side spawn behavior.
-
-Positive damage from an outside AI to the human leader explicitly revokes that candidate's friendship, even with no followers present and before initial activation. The existing squad hostility helper shares the relationship without selecting goals or granting sight/fire permission. Zero-damage notifications and friendly fire from squadmates do not revoke it. Player Scavs retain same-side recruitment and Fence limits in either mode.
-
-The selected mode persists in the hidden `00 GameplayMode` config entry. Before entering Allegiance, `GameplayModeRuntime` atomically saves all currently bound mod settings except the mode and Allegiance-only Friendly Chance Multiplier in `<config path>.guns-for-hire.json`. Returning restores that snapshot, including after restarting the game. Allegiance now leaves the saved config preferences intact: gameplay consumers, the Settings UI, and server synchronization resolve the fixed values through `GameplayModeRuntime.GetEffectiveValue`. Editing or reloading the BepInEx cfg cannot override these rules while Allegiance is active. The selected mode remains a separate coordinated transition; reloading a different mode value during the session is rejected. A missing or invalid snapshot fails restoration without overwriting it. Mode transitions wait for registered post-raid reports, serialize server settings requests, and invalidate delayed invitations from the outgoing mode. The server serializes teammate operations with database selection; switching databases does not convert the inactive roster's loadouts.
-
-Allegiance disables these controls, with the tooltip `this option is not available in Allegiance Mode`, and enforces their values through the runtime policy:
-
-| Setting | Allegiance value |
-| --- | --- |
-| Bad Guy | Off |
-| Friendly PMC Side | Off |
-| Enemy Tracking | Realistic |
-| Pickup | On |
-| Tiered Pickup | On |
-| Maximum Pickup | 2 |
-| Recruit Pickup | On |
-| Team Escape | On |
-| Team Escape: Use Any Extraction Point | Off |
-| Loadout Management | Immersive |
-
-Heal Followers remains available as a manual emergency shortcut in Allegiance. Its key can be configured normally; ordinary follower healing behavior is unchanged.
-
-Squad Health Multiplier is also editable in Allegiance and uses the saved value through the existing follower-spawn customization path. Its range remains 1–10 and its existing in-raid editing restriction still applies.
-
-Each option uses the same row presentation as Loadout Management: a dark full-width row with a gold divider, its name and description on the left, and the compact radio-style selection control on the right. Selecting either control highlights it and clears the other.
+The two options are stacked vertically in dark full-width rows with gold dividers. Each row has a location-screen radio indicator to the left of its name and description. Clicking the indicator or row selects that option and clears the other.
 
 The Guns for Hire description is: "Build and equip your squad before deploying. Customize and play by your own rules."
 
-The Allegiance description is: "Play by Tushonka's rules. Alliances are formed, not bought. Settings are locked, and relationships are determined in the field." Relationships continue to use the existing recruitment and contact rules with the enforced settings above.
+The Allegiance description is: "Play by Tarkov's rules. Alliances are formed, not bought. Settings are locked, and relationships are determined in the field."
 
-Controls reuse the existing cloned Ragfair radio-style toggle helper, right-side control dimensions and click/hover behavior with a basic-toggle fallback. Names and descriptions use the central `socialUi` language entries and embedded English fallback.
+Gameplay Mode and Enemy Tracking reuse the native location-time `Toggle` through [the shared radio helper](../client/Components/SquadControlMenuUi.RadioControls.cs). Each selector has its own `ToggleGroup`, with the cloned raid-time events replaced before activation. A circular radio fallback is used if the native prefab has not loaded. Names and descriptions use the central `socialUi` language entries and embedded English fallback. Existing raid restrictions and Allegiance setting locks remain enforced.
+
+### Friendly Encounters label
+
+The penalty amounts, triggers and real-time expiry are owned by [Allegiance](Allegiance.md#friendly-encounters-penalties).
+
+While a penalty is active, Roster displays a small red label beneath the Roster tab, aligned with its left edge: `-5 points in Friendly Encounters (24h)` at multiplier 1, or `-25 points in Friendly Encounters (24h)` at multiplier 5. The label belongs to the roster panel rather than the moving card shell. Multiple penalties show their scaled total reduction and the countdown to the next expiry; the total then drops by `5 × current multiplier` points. Changing the multiplier refreshes the displayed total immediately, without resetting any expiry. The displayed time rounds up in half-hour steps above two hours, 0.1-hour steps from two hours to one hour, and one-minute steps below one hour. Actual expiry is exact and the label disappears when no penalties remain. The countdown updates while Roster is open without per-frame string formatting or HTTP polling.
 
 ## Part 4: Profile Screen
 

@@ -153,9 +153,6 @@ namespace pitTeam.BigBrain.Actions
             int gridCells = GetBodyLootSearchGridCells(corpseEquipment);
             bodyLootReadyAt = Time.time + CalculateLootSearchDelaySeconds(gridCells);
 
-            Modules.Logger.LogInfo($"[LootCommand][Search] follower='{BotOwner?.Profile?.Nickname}' " +
-                $"phase=start cells={gridCells} readyAt={bodyLootReadyAt:0.000} mode={ActiveLootRequest?.Mode}");
-
             StartLootSearchSound(soundSource, BotOwner?.Position ?? Vector3.zero);
         }
 

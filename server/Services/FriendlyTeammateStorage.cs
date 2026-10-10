@@ -41,8 +41,43 @@ public class FriendlyTeammateStorage(FileUtil fileUtil, JsonUtil jsonUtil, ISptL
 
     public void InitializeProfile(MongoId sessionId) => GetDatabase(sessionId);
 
+    public void WipeProfile(MongoId sessionId)
+    {
+        lock (sync)
+        {
+            // Initialize both before clearing either. Keep cached owners and migration markers.
+            var hired = GetDatabase(sessionId, false);
+            var allegiance = GetDatabase(sessionId, true);
+            allegiance.Wipe();
+            hired.Wipe();
+        }
+    }
+
     public List<BotBase> ReadProfiles(MongoId sessionId) => GetDatabase(sessionId).ReadProfiles()
         .Select(entry => Deserialize<BotBase>(entry.Value, entry.Key)).ToList();
+
+    // Account-wide mod state lives in the canonical Guns for Hire database, independently
+    // of the active roster. Explicit mode access never changes the global mode selection.
+    public T? ReadSharedDocument<T>(MongoId sessionId, string name) where T : class =>
+        ReadModeDocument<T>(sessionId, name, false);
+
+    public void WriteSharedDocument<T>(MongoId sessionId, string name, T value) =>
+        WriteModeDocuments(sessionId, false, new Dictionary<string, string>
+        {
+            [name] = jsonUtil.Serialize(value) ?? throw new InvalidDataException($"Unable to serialize shared document: {name}")
+        });
+
+    public bool HasTeammatesInEitherMode(MongoId sessionId) =>
+        GetDatabase(sessionId, false).ReadProfiles().Count > 0 || GetDatabase(sessionId, true).ReadProfiles().Count > 0;
+
+    public T? ReadModeDocument<T>(MongoId sessionId, string name, bool allegiance) where T : class
+    {
+        string? json = GetDatabase(sessionId, allegiance).Read(name);
+        return json == null ? null : Deserialize<T>(json, name);
+    }
+
+    public void WriteModeDocuments(MongoId sessionId, bool allegiance, IReadOnlyDictionary<string, string> documents) =>
+        GetDatabase(sessionId, allegiance).WriteBatch(documents);
 
     public HashSet<int> GetAllAccountIds()
     {

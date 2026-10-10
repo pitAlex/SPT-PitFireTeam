@@ -15,7 +15,7 @@ namespace pitTeam.Modules
         }
 
         internal static async Task Run<T>(Func<bool> alive, Func<bool> idle,
-            Action<Action<T, bool, string>> begin, Func<T, bool> matches, Action<int> mismatch,
+            Action<Action<T, bool, string>> begin, Func<T, bool> matches, Action<int> mismatch = null,
             int attempts = 3, int timeoutMs = 10000)
         {
             var elapsed = Stopwatch.StartNew();

@@ -48,9 +48,8 @@ namespace pitTeam.Modules
                 Session.Stage(edit, this);
                 callback?.Invoke(SuccessfulResult.New);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                Logger.LogInfo("[SwapGear] Draft edit rejected: " + ex.Message);
                 callback?.Invoke(new FailedResult(pitFireTeam.GetSocialUiText("SwapGearActionBlocked"), 0));
             }
         }

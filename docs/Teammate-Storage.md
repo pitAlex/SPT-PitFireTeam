@@ -18,6 +18,14 @@ The storage service is registered as an SPT singleton. Startup, social, recruit,
 routes share one per-profile database cache and its operation locks, so overlapping requests
 wait for the active operation to close its database connection.
 
+### Launcher profile wipe
+
+[FriendlyProfileWipeRouter](../server/Routers/Static/FriendlyProfileWipeRouter.cs) runs after SPT's `/launcher/v2/wipe` handler. Only a successful native response and confirmed `IsWiped` account trigger cleanup. The request username resolves the account; the launcher HTTP session does not select the squad to wipe.
+
+Under the teammate request gate, the reset clears all documents in both mode databases for that account: roster profiles, equipment, settings, recruitment inbox/receipts, payment journals, encounter penalties, recovery snapshots and shared onboarding/welcome state. Each database clears in one transaction; Allegiance clears before the canonical Guns for Hire database. Cached database owners remain usable, and account-local recovery notices/raid state are cleared. Other profiles and global client/server mode preferences stay unchanged.
+
+The completed legacy import marker and its provenance remain in each database. Existing JSON source/backup folders are retained and cannot resurrect the wiped squad on restart. The next My Squad visit requires a new mode choice and is eligible for the ordinary one-time welcome flow. Rejected native wipes leave mod data untouched; delayed welcome callbacks reread the cleared state and cannot restore an old invitation.
+
 The importer reads numeric teammate profile JSONs, settings, default equipment, and
 `recruit-requests.json`. It validates the original documents using SPT's serializer and commits
 them with an import marker in one transaction, verifying each imported value. Malformed active
@@ -41,6 +49,18 @@ status or repeat an import count on every launch.
 
 ## Representation and protection
 
+### First visit and welcome invitation
+
+`squad-onboarding.json` is encrypted account-wide state in the canonical Guns for Hire database, accessed explicitly regardless of the active mode. It stores `firstTimeVisit`, the initially selected mode, a prepared welcome candidate and its delivery state/deadline. Both mode rosters are checked before preparing and before delivering the one-time gift. None of these documents are roster profiles, and there is no config-file flag or automatic regrant after decline/deletion.
+
+Completion stores either `skipped` for an existing squad or the exact candidate in `waiting-refresh`. Only a completed screen-refresh acknowledgment advances it to `scheduled`, with a UTC deadline two seconds later. Repeated acknowledgments retain the original deadline. The server's delayed callback runs outside the mode gate, then reacquires it and validates the active mode/raid state. A client delivery request and native friend-inbox access also reconcile due intents after lost responses or restart. An inactive-mode or in-raid gift remains deferred rather than being rerouted.
+
+Delivery commits `recruit-requests.json` and `welcome-invitation-delivery.json` together in the selected mode's database, then marks the shared state `delivered` and releases the candidate payload. The target receipt survives acceptance and decline. If the server stops between these two database commits, recovery observes that receipt and completes the shared outcome without recreating the invitation. Acceptance reuses the existing recruit transaction. The invitation's server-owned `IsWelcomeTeammate` marker selects fixed level-1/zero-XP/zero-skill normalization in both preview and acceptance; incoming raid candidates cannot set that marker. Ordinary recruits retain their existing skill/stat policy.
+
+The mode-storage fixture covers shared first-visit state, existing/late squad suppression, refresh deadlines, early/wrong-mode/in-raid delivery rejection, duplicate delivery and recovery after invitation consumption. It also exercises the production starter normalization. Native bot generation, UI layout and invitation display still require an EFT pass.
+
+### Teammate documents
+
 Recruit invitations carry nullable `Aggression` captured from the follower's base combat aggression after native SAIN personality mapping. Acceptance writes it into the teammate settings in the existing profile/default-equipment/receipt transaction. It remains stable through invitation storage, acceptance and roster reload; temporary raid command overrides are never saved here. Missing legacy values and non-finite values use 50%, and finite values are clamped to 0–100%.
 
 The LiteDB documents collection holds encrypted JSON payloads, retaining the existing SPT models and
@@ -59,7 +79,7 @@ The Allegiance database also stores `friendly-encounter-penalties.json` per play
 Each recruited-follower `traitor` kill report adds one five-point friendship penalty, keyed by
 raid and victim to make retries idempotent. Each entry expires 24 real hours after its kill;
 the server prunes expired entries on access. This document never enters roster enumeration
-or the Guns for Hire database. See [My Squad modes](My-Squad-Screen.md#part-3-mode).
+or the Guns for Hire database. See [Allegiance penalties](Allegiance.md#friendly-encounters-penalties).
 
 Manual hiring stores its pending candidate, quote and payment journal under `pending-creation.json`
 in the same encrypted database. This document is excluded from roster profile enumeration.

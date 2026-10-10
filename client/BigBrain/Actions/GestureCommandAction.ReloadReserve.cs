@@ -6,14 +6,13 @@ namespace pitTeam.BigBrain.Actions
 {
     internal partial class GestureCommandAction
     {
-        internal static bool CanFitGearSwapReloadReserves(InventoryEquipment equipment, out string detail)
+        internal static bool CanFitGearSwapReloadReserves(InventoryEquipment equipment)
         {
             var roots = new[]
             {
                 equipment?.GetSlot(EquipmentSlot.TacticalVest)?.ContainedItem as SearchableItem,
                 equipment?.GetSlot(EquipmentSlot.Pockets)?.ContainedItem as SearchableItem
             };
-            var checks = new System.Collections.Generic.List<string>();
             bool fits = true;
             foreach (var slot in new[] { EquipmentSlot.FirstPrimaryWeapon, EquipmentSlot.SecondPrimaryWeapon, EquipmentSlot.Holster })
             {
@@ -24,15 +23,8 @@ namespace pitTeam.BigBrain.Actions
                 // Reloads are sequential. Test every seated magazine's shape against the same
                 // actual free cells; do not consume an extra opening for the holster magazine.
                 bool room = HasReloadSpaceInRoots(roots, magazine);
-                var size = magazine.CalculateCellSize();
-                checks.Add($"{slot}:mag={magazine.Id}:size={size.X}x{size.Y}:fits={room}");
                 fits &= room;
             }
-            detail = string.Join(" | ", checks) + " grids=[" + string.Join(" | ",
-                roots.Where(root => root?.Grids != null).SelectMany(root => root.Grids)
-                    .Where(grid => grid != null).Select(grid =>
-                        $"{grid.ID}:{grid.GridWidth}x{grid.GridHeight}:items=[" + string.Join(",",
-                            grid.Items.Take(64).Select(item => $"{item.Id}@{item.CurrentAddress}")) + "]")) + "]";
             return fits;
         }
 

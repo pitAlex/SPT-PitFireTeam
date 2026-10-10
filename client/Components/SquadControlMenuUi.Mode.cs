@@ -5,6 +5,7 @@ using System.Linq;
 using EFT.UI;
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -58,8 +59,8 @@ namespace pitTeam.Components
             nameRect.anchorMin = new Vector2(0f, 1f);
             nameRect.anchorMax = new Vector2(1f, 1f);
             nameRect.pivot = new Vector2(0f, 1f);
-            nameRect.offsetMin = new Vector2(22f, -34f);
-            nameRect.offsetMax = new Vector2(-418f, -8f);
+            nameRect.offsetMin = new Vector2(60f, -34f);
+            nameRect.offsetMax = new Vector2(-22f, -8f);
             TextMeshProUGUI nameLabel = nameObject.GetComponent<TextMeshProUGUI>();
             nameLabel.fontWeight = FontWeight.SemiBold;
             nameLabel.fontSize = 20f;
@@ -70,8 +71,8 @@ namespace pitTeam.Components
             descriptionRect.anchorMin = Vector2.zero;
             descriptionRect.anchorMax = Vector2.one;
             descriptionRect.pivot = new Vector2(0f, 1f);
-            descriptionRect.offsetMin = new Vector2(22f, 16f);
-            descriptionRect.offsetMax = new Vector2(-418f, -38f);
+            descriptionRect.offsetMin = new Vector2(60f, 16f);
+            descriptionRect.offsetMax = new Vector2(-22f, -38f);
             TextMeshProUGUI descriptionLabel = descriptionObject.GetComponent<TextMeshProUGUI>();
             descriptionLabel.fontSize = 14f;
             descriptionLabel.color = new Color(0.72f, 0.72f, 0.72f, 1f);
@@ -80,81 +81,21 @@ namespace pitTeam.Components
 
             RectTransform controlRect = new GameObject("Control", typeof(RectTransform)).GetComponent<RectTransform>();
             controlRect.SetParent(choiceRect, false);
-            controlRect.anchorMin = controlRect.anchorMax = new Vector2(1f, 0.5f);
-            controlRect.pivot = new Vector2(1f, 0.5f);
-            controlRect.sizeDelta = new Vector2(186f, 48f);
-            controlRect.anchoredPosition = new Vector2(-SettingsControlRightInset, 0f);
+            controlRect.anchorMin = controlRect.anchorMax = new Vector2(0f, 1f);
+            controlRect.pivot = new Vector2(0f, 1f);
+            controlRect.sizeDelta = new Vector2(28f, 28f);
+            controlRect.anchoredPosition = new Vector2(20f, -8f);
 
-            void SelectMode(bool isOn)
-            {
-                if (!isOn) return;
-                ChangeGameplayMode(mode);
-            }
-
-            Image hoverBackground = CreateLoadoutManagementHoverBackground(controlRect);
-            RectTransform hoverTarget;
-            UIAnimatedToggleSpawner radio = CloneLoadoutManagementToggle(controlRect);
-            if (radio != null)
-            {
-                radio.name = "pitFireTeam_SquadModeRadio";
-                RectTransform radioRect = radio.transform as RectTransform;
-                radioRect.anchorMin = new Vector2(0f, 0.5f);
-                radioRect.anchorMax = new Vector2(1f, 0.5f);
-                radioRect.pivot = new Vector2(0.5f, 0.5f);
-                radioRect.anchoredPosition = Vector2.zero;
-                radioRect.sizeDelta = new Vector2(0f, 42f);
-                radioRect.localScale = Vector3.one * 0.86f;
-                hoverTarget = radioRect;
-
-                CanvasGroup canvasGroup = radio.GetComponent<CanvasGroup>() ?? radio.gameObject.AddComponent<CanvasGroup>();
-                canvasGroup.alpha = 1f;
-                canvasGroup.interactable = true;
-                canvasGroup.blocksRaycasts = true;
-                AnimatedToggleCanvasGroupField?.SetValue(radio, canvasGroup);
-                radio.SpawnableToggle.Init(group);
-                foreach (TextMeshProUGUI text in radio.GetComponentsInChildren<TextMeshProUGUI>(true))
-                {
-                    text.text = label.ToUpperInvariant();
-                    text.overflowMode = TextOverflowModes.Ellipsis;
-                }
-                radio.SetActive(true);
-                radio.SpawnableToggle.Interactable = true;
-                if (radio.SpawnedObject != null)
-                {
-                    radio.SpawnedObject.group = group;
-                    radio.SpawnedObject.interactable = true;
-                    radio.SpawnedObject.onValueChanged.RemoveAllListeners();
-                    radio.SpawnedObject.onValueChanged.AddListener(SelectMode);
-                }
-                modeChoiceRefreshers.Add(() => radio.ToggleSilently(GameplayModeRuntime.Current == mode));
-                SetSettingsControlInteractable(radio.transform, true);
-            }
-            else
-            {
-                Toggle fallback = CreateBasicToggle(controlRect);
-                hoverTarget = fallback.transform as RectTransform;
-                fallback.group = group;
-                fallback.onValueChanged.AddListener(SelectMode);
-                modeChoiceRefreshers.Add(() => fallback.SetIsOnWithoutNotify(GameplayModeRuntime.Current == mode));
-            }
-
-            // Reuse the stock-radio click surface so the full choice responds like loadout modes.
-            GameObject clickObject = new GameObject("pitFireTeam_SquadModeClickOverlay", typeof(RectTransform), typeof(Image));
-            clickObject.transform.SetParent(controlRect, false);
-            Stretch(clickObject.GetComponent<RectTransform>());
-            Image clickImage = clickObject.GetComponent<Image>();
-            clickImage.color = new Color(0f, 0f, 0f, 0.001f);
-            clickImage.raycastTarget = true;
-            LoadoutModeToggleHoverController hover = clickObject.AddComponent<LoadoutModeToggleHoverController>();
-            hover.Configure(hoverTarget, hoverBackground);
-            hover.OnClick = _ => SelectMode(true);
+            Toggle radio = CreateLocationRadioControl(controlRect, string.Empty, true, group,
+                GameplayModeRuntime.Current == mode, () => ChangeGameplayMode(mode));
+            choiceRect.gameObject.AddComponent<LocationRadioClickController>().Radio = radio;
+            modeChoiceRefreshers.Add(() => SetLocationRadioSelected(radio, GameplayModeRuntime.Current == mode));
         }
 
         private async void ChangeGameplayMode(GameplayMode next)
         {
             if (GameplayModeRuntime.IsSwitching || next == GameplayModeRuntime.Current) { RefreshModeChoices(); return; }
             if (IsRaidActive()) { AddTeammateCreationFlow.ShowToast(GetSocialUiText("SettingsUnavailableDuringRaid")); RefreshModeChoices(); return; }
-            var outgoingMembers = MainMenuControllerPatch.GroupPlayers.Where(player => player != null).Select(player => player.AccountId).ToArray();
             GameObject blocker = new GameObject("pitFireTeam_ModeSwitchBusy", typeof(RectTransform), typeof(Image));
             blocker.transform.SetParent(modePanel.transform.parent, false);
             Stretch(blocker.GetComponent<RectTransform>());
@@ -162,19 +103,7 @@ namespace pitTeam.Components
             CancelPortraitQueue();
             try
             {
-                await GameplayModeRuntime.ChangeAsync(next);
-                foreach (string id in outgoingMembers)
-                {
-                    MainMenuControllerPatch.GroupPlayers.RemoveFirst(player => player?.AccountId == id);
-                    if (TryGetMatchmakerController(out var controller))
-                    {
-                        controller.GroupPlayers.RemoveFirst(player => player?.AccountId == id);
-                        if (controller.GroupPlayers.Count <= 1) controller.Group?.RemoveOwner();
-                    }
-                }
-                TeammateAutoJoinRuntime.ClearAllSuppression();
-                SquadSideSelectionFlow.ClearOpeningGroupSnapshot();
-                SocialNetworkClassPatch.RefreshFriendsList(true);
+                await ApplyGameplayModeAsync(next);
                 RebuildRosterTiles();
             }
             catch (Exception ex)
@@ -190,8 +119,36 @@ namespace pitTeam.Components
                     if (addTeammateButton != null) addTeammateButton.gameObject.SetActive(!GameplayModeRuntime.IsAllegiance);
                     RebuildSettingsEntries();
                     RefreshModeChoices();
+                    NotifySquadScreenRefreshed();
                 }
             }
+        }
+
+        private async Task ApplyGameplayModeAsync(GameplayMode next)
+        {
+            if (IsRaidActive() || GameplayModeRuntime.IsSwitching)
+                throw new InvalidOperationException("Gameplay mode selection is unavailable.");
+            if (next == GameplayModeRuntime.Current)
+            {
+                // Initial Guns for Hire selection still needs server confirmation.
+                await GameplayModeRuntime.SynchronizeAsync();
+                return;
+            }
+            var outgoingMembers = MainMenuControllerPatch.GroupPlayers.Where(player => player != null).Select(player => player.AccountId).ToArray();
+            await GameplayModeRuntime.ChangeAsync(next);
+            welcomeDeliveryVisit = -1;
+            foreach (string id in outgoingMembers)
+            {
+                MainMenuControllerPatch.GroupPlayers.RemoveFirst(player => player?.AccountId == id);
+                if (TryGetMatchmakerController(out var controller))
+                {
+                    controller.GroupPlayers.RemoveFirst(player => player?.AccountId == id);
+                    if (controller.GroupPlayers.Count <= 1) controller.Group?.RemoveOwner();
+                }
+            }
+            TeammateAutoJoinRuntime.ClearAllSuppression();
+            SquadSideSelectionFlow.ClearOpeningGroupSnapshot();
+            SocialNetworkClassPatch.RefreshFriendsList(true);
         }
 
         private void RefreshModeChoices()

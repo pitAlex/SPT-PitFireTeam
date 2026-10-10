@@ -67,6 +67,7 @@ namespace EFT
     {
         public EBotState BotState = EBotState.Active;
         public bool IsDead = false;
+        public bool HealPending;
         public Player GetPlayer;
     }
     public sealed class GamePlayerOwner
@@ -103,6 +104,7 @@ namespace pitTeam.Components
     public sealed class BotFollowerPlayer
     {
         public bool IsSquadMate;
+        public bool IsSpawnedSquadMate;
         public BotOwner Bot;
         public Boss Boss;
         public BotOwner GetBot() => Bot;
@@ -129,6 +131,7 @@ namespace pitTeam.Modules
         private const float QuickInteractionMaxAngle = 18f;
         public static int OpenCalls;
         public static bool TryOpenFromQuickInteraction(GamePlayerOwner owner) { OpenCalls++; return true; }
+        public static bool HasActiveOrPendingHealWork(BotOwner bot) => bot.HealPending;
         /* SWAP_TARGET */
         /* TARGET_RESOLUTION */
     }
@@ -183,9 +186,23 @@ internal static class QuickInteractionFixture
         target.AIData = new AIData { BotOwner = bot };
         var follower = new BotFollowerPlayer { Bot = bot, Boss = new Boss { realPlayer = player }, IsSquadMate = false };
         BossPlayers.Followers.Add(follower);
-        Check(TeammateBackpackInspection.CanShowSwapGearInteraction(player), "recruit without backpack found by roster fallback");
+        Check(!TeammateBackpackInspection.CanShowSwapGearInteraction(player), "field recruit has no Swap Gear prompt through roster fallback");
+        player.InteractablePlayer = target;
+        Check(!TeammateBackpackInspection.CanShowSwapGearInteraction(player), "field recruit has no Swap Gear prompt through native target");
         follower.IsSquadMate = true;
+        Check(!TeammateBackpackInspection.CanShowSwapGearInteraction(player), "membership alone does not grant spawned gear access");
+        follower.IsSpawnedSquadMate = true;
         Check(TeammateBackpackInspection.CanShowSwapGearInteraction(player), "spawned follower eligible");
+        player.InteractablePlayer = null;
+        Check(TeammateBackpackInspection.CanShowSwapGearInteraction(player), "spawned follower without backpack found by roster fallback");
+        bot.HealPending = true;
+        Check(!TeammateBackpackInspection.CanShowSwapGearInteraction(player), "active or pending healing hides Swap Gear through roster fallback");
+        player.InteractablePlayer = target;
+        Check(!TeammateBackpackInspection.CanShowSwapGearInteraction(player), "active or pending healing hides Swap Gear through native target");
+        bot.HealPending = false;
+        Check(TeammateBackpackInspection.CanShowSwapGearInteraction(player), "Swap Gear returns after healing ends through native target");
+        player.InteractablePlayer = null;
+        Check(TeammateBackpackInspection.CanShowSwapGearInteraction(player), "Swap Gear returns after healing ends through roster fallback");
         target.Position = new Vector3(0, 0, 2.5f);
         Check(TeammateBackpackInspection.CanShowSwapGearInteraction(player), "range boundary included");
         target.Position = new Vector3(0, 0, 2.51f);

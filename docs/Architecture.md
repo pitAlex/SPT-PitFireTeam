@@ -20,11 +20,11 @@ This is the source map for pitFireTeam's main plugin. Detailed behavior belongs 
 
 Core converts/recruits followers, assigns player ownership, reconciles groups/hostility, installs follower layers and releases state on dismissal/raid teardown. Saved squadmates and raid pickups share the follower framework, but differ in profile persistence and command eligibility; [Commands](Commands.md) owns those distinctions.
 
-Allegiance recruited-follower kills reuse the existing `traitor` report. [FriendlyEncounterPenaltyService](../server/Services/FriendlyEncounterPenaltyService.cs) persists independent 24-hour penalties per user in the Allegiance database; [FriendlyEncounterPenaltyRuntime](../client/Modules/FriendlyEncounterPenaltyRuntime.cs) mirrors them for friendship rolls and the Roster label. Shared expiry/countdown arithmetic lives in [FriendlyEncounterPenaltyPolicy](../shared/FriendlyEncounterPenaltyPolicy.cs). See [My Squad modes](My-Squad-Screen.md#part-3-mode).
+Allegiance recruited-follower kills reuse the existing `traitor` report. [FriendlyEncounterPenaltyService](../server/Services/FriendlyEncounterPenaltyService.cs) persists independent 24-hour penalties per user in the Allegiance database; [FriendlyEncounterPenaltyRuntime](../client/Modules/FriendlyEncounterPenaltyRuntime.cs) mirrors them for friendship rolls and the Roster label. Shared expiry/countdown arithmetic lives in [FriendlyEncounterPenaltyPolicy](../shared/FriendlyEncounterPenaltyPolicy.cs). See [Allegiance penalties](Allegiance.md#friendly-encounters-penalties).
 
 [PMC karma](PMC-Karma.md) independently observes friendly kills, actual recruitment and raid completion. Core captures eligible bot identities before retaliation/cleanup; the server persists native PMC karma with deduplication receipts in the player profile, shared across modes. Spawned/saved squadmates and player-Scav/Fence standing remain outside this feature.
 
-Config entries hold saved preferences. Gameplay consumers, Settings controls and server settings synchronization resolve mode-locked values through [GameplayModeRuntime.GetEffectiveValue](../client/Modules/GameplayModeRuntime.cs), independently of cfg edits/reloads. The [My Squad mode contract](My-Squad-Screen.md#part-3-mode) owns the fixed Allegiance values and Guns for Hire snapshot restoration.
+Config entries hold saved preferences. Gameplay consumers, Settings controls and server settings synchronization resolve mode-locked values through [GameplayModeRuntime.GetEffectiveValue](../client/Modules/GameplayModeRuntime.cs), independently of cfg edits/reloads. [Allegiance](Allegiance.md#settings-policy) owns its fixed values; [Gameplay modes](Gameplay-Modes.md#saved-settings-and-restoration) owns Guns for Hire snapshot restoration.
 
 Core owns peaceful follow/request execution and post-combat recovery. Combat has one owner at a time; an absent/unready optional brain falls back to core. Optional callbacks may provide readiness, release/reset and passive data, but general compatibility cannot depend on the addon being loaded.
 
@@ -40,6 +40,7 @@ The server owns mod teammate profiles, persistence, customization, social/group 
 |---|---|
 | Teammate CRUD, equipment and profile state | [FriendlyTeammateService](../server/Services/FriendlyTeammateService.cs), [callbacks](../server/Callbacks/FriendlyTeammateCallbacks.cs), [static routes](../server/Routers/Static/FriendlyTeammateStaticRouter.cs) |
 | Encrypted database and recovery | [FriendlyTeammateStorage](../server/Services/FriendlyTeammateStorage.cs), [storage contract](Teammate-Storage.md) |
+| Launcher account wipe | [wipe routes](../server/Routers/Static/FriendlyProfileWipeRouter.cs), [storage reset contract](Teammate-Storage.md#launcher-profile-wipe) |
 | Social list/profile integration | [social routes](../server/Routers/Static/FriendlyTeammateSocialRouter.cs) |
 | Group/ready/spawn flow | [match routes](../server/Routers/Static/FriendlyTeammateMatchRouter.cs) |
 | Post-raid results and returned equipment | [FriendlyPostRaidService](../server/Services/FriendlyPostRaidService.cs), [Team Escape](Team-Escape.md), [Loadout Management](Loadout-Management.md) |

@@ -15,7 +15,7 @@ Core means our follower implementation, not unmodified EFT. Read [Core combat](C
 | Visibility/fire | Existing perception, aim and shot-safety gates | Same gates |
 | Tactic/commands | Existing ownership and admission | Same rules |
 
-Mode and Enemy Remember Time are captured at raid start. My Squad provides one Enemy Tracking row with its description on the left and Simple above Realistic on the right, separated by 15 pixels. Both choices use the same selection controls as Loadout Management, with its selected styling, hover/click overlay and mutual exclusion. Choices are disabled during a raid; ConfigurationManager exposes the enum. Persisted `03 EnemyTracking` defaults to Realistic. Existing tactic identifiers and `03 EnemyRemember` remain stable. English fallback and Russian/Chinese translations use the central language model.
+Mode and Enemy Remember Time are captured at raid start. My Squad provides one Enemy Tracking row with its description on the left and Simple above Realistic on the right, separated by 15 pixels. Both choices use native location-time radio controls, with a circular fallback if the prefab has not loaded. Their separate `ToggleGroup` enforces mutual exclusion, and cloned raid-time events are replaced before activation. Choices are disabled during a raid and locked to Realistic in Allegiance; ConfigurationManager exposes the enum. Persisted `03 EnemyTracking` defaults to Realistic. Existing tactic identifiers and `03 EnemyRemember` remain stable. English fallback and Russian/Chinese translations use the central language model.
 
 Ordinary SAIN bots are excluded. Tracking does not admit heard-but-unaccepted enemies, grant permission to fire, or bypass On Your Own, regroup, Attention or explicit-order acceptance.
 

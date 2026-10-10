@@ -193,7 +193,9 @@
     "SquadControlRosterMemberA": "БОЕЦ 01",
     "SquadControlRosterMemberB": "БОЕЦ 02",
     "SquadControlRosterRole": "Боец отряда",
-    "SquadControlEmptyRoster": "Вы еще не создали бойцов отряда.",
+    "SquadControlEmptyRoster": "Некому прикрыть вашу спину. Наймите бойца или завербуйте его в рейде и сделайте Тарков своим.",
+    "SquadControlEmptyAllegianceRoster": "Некому прикрыть вашу спину. Отправляйтесь в рейд, заключайте союзы и выбирайтесь вместе.",
+    "SquadControlModeAllegianceDescription": "Играй по правилам Таркова. Союзы создаются, а не покупаются. Настройки заблокированы, а отношения складываются в рейде.",
     "SettingsPressKey": "Нажмите клавишу...",
     "SettingsNotBound": "Не назначено",
     "SettingsUnavailableDuringRaid": "Недоступно во время рейда"

@@ -29,7 +29,7 @@ class BotOwner
 class Boss { public Player realPlayer; }
 class BotFollowerPlayer
 {
-    public Boss Boss = new Boss(); public bool KnownEnemy;
+    public Boss Boss = new Boss(); public bool KnownEnemy; public bool IsSpawnedSquadMate = true;
     public Boss GetBoss() => Boss; public bool HasKnownEnemy() => KnownEnemy;
 }
 static class TeammateBackpackInspection
@@ -40,7 +40,7 @@ static class TeammateBackpackInspection
 static class Admission
 {
     /* GATE */
-    public static string Check(GamePlayerOwner o, BotOwner b, BotFollowerPlayer f) => UnsafeReason(o, b, f, false);
+    public static string Check(GamePlayerOwner o, BotOwner b, BotFollowerPlayer f, bool applying = false) => UnsafeReason(o, b, f, applying);
 }
 static class GearSwapAdmissionFixture
 {
@@ -60,6 +60,13 @@ static class GearSwapAdmissionFixture
             Check(Admission.Check(owner, bot, follower) == "reloading", "old production gate reproduces stale stowed reload rejection");
             Console.WriteLine("Original stale-stowed reload rejection reproduced."); return;
         }
+        follower.IsSpawnedSquadMate = false;
+        int recruitHandsChecks = bot.WeaponManager.HandsChecks;
+        Check(Admission.Check(owner, bot, follower) == "followerNotSpawnedSquadMate", "field recruit cannot open via direct or bound command");
+        Check(Admission.Check(owner, bot, follower, true) == "followerNotSpawnedSquadMate", "field recruit remains denied during Apply revalidation");
+        Check(bot.WeaponManager.HandsChecks == recruitHandsChecks, "recruit rejected before native hands query");
+        follower.IsSpawnedSquadMate = true;
+        Check(Admission.Check(owner, bot, follower, true) == null, "spawned follower Apply transition remains admitted");
         Check(Admission.Check(owner, bot, follower) == null, "stale holster flag does not block idle hands");
         secondary.Reload.Reloading = true;
         Check(Admission.Check(owner, bot, follower) == null, "both stowed flags ignored");

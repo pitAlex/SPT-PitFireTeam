@@ -117,8 +117,10 @@ namespace pitTeam.Modules
         {
             Player target = ResolveInteractionTargetPlayer(player, false);
             BotOwner bot = target?.AIData?.BotOwner;
+            BotFollowerPlayer follower = BossPlayers.Instance?.GetFollower(bot);
             return bot != null && bot.BotState == EBotState.Active && !bot.IsDead &&
-                   BossPlayers.Instance?.GetFollower(bot)?.GetBoss()?.realPlayer == player;
+                   follower?.IsSpawnedSquadMate == true && follower.GetBoss()?.realPlayer == player &&
+                   !HasActiveOrPendingHealWork(bot);
         }
 
         public static bool TryOpenFromQuickInteraction(GamePlayerOwner owner)

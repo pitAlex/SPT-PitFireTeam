@@ -15,6 +15,7 @@ namespace pitTeam.Server.Callbacks;
 public class FriendlyTeammateSocialCallbacks(
     FriendlyTeammateService teammateService,
     FriendlyRecruitService recruitService,
+    FriendlySquadOnboardingService onboarding,
     HttpResponseUtil httpResponseUtil,
     JsonUtil jsonUtil
 )
@@ -47,6 +48,8 @@ public class FriendlyTeammateSocialCallbacks(
 
     public ValueTask<string> MergeFriendRequestInbox(string url, EmptyRequestData _, MongoId sessionId, string? previousOutput)
     {
+        // Recover a due welcome delivery after restart or a lost client response.
+        onboarding.DeliverWelcomeInvitation(sessionId);
         var body = DeserializeBody<List<FriendlySocialFriendRequestEntry>>(previousOutput);
         var response = body?.Data ?? [];
 

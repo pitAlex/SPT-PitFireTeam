@@ -24,22 +24,8 @@ namespace pitTeam.Patches
             internal void Complete(IResult result)
             {
                 CallbackObserved = true;
-                Trace(this, null, "callback", result);
                 Original(result);
             }
-        }
-
-        private static void Trace(Attempt attempt, Player.FirearmController controller, string phase,
-            IResult completion = null, string reason = null)
-        {
-            try
-            {
-                if (!pitFireTeam.IsDebugBuild) return;
-                Logger.LogInfo($"[ReloadStart] follower='{attempt.Bot.Profile?.Nickname}' weapon={controller?.Item?.Id} " +
-                    $"result={phase} success={completion?.Succeed} reason={reason} " +
-                    $"operation={controller?.CurrentOperation?.GetType().Name}");
-            }
-            catch { } // Logging must not suppress native completion or affect a genuine start.
         }
 
         protected override MethodBase GetTargetMethod() => AccessTools.Method(
@@ -66,7 +52,6 @@ namespace pitTeam.Patches
             if (!ReferenceEquals(__state.Operation, __instance.CurrentOperation))
             {
                 FollowerReloadStartRecovery.Clear(__state.Bot); // A genuine start supersedes an older skipped attempt.
-                Trace(__state, __instance, "started");
                 return;
             }
             if (__state.CallbackObserved) return;
@@ -80,7 +65,6 @@ namespace pitTeam.Patches
                 string reason = blindfire ? "blindfire" : "interactionPlaying";
                 if (__state.Bot.Memory?.HaveEnemy != true)
                     FollowerReloadStartRecovery.Record(__state.Bot, __instance.Item.Id, reason);
-                Trace(__state, __instance, "skipped", reason: reason);
                 // Native BotReload's completion callback clears its own flag and applies
                 // its cooldown. Never clear Reloading, fast-forward hands or cancel a live operation.
                 __state.Wrapped.Fail("Follower magazine reload did not start: " + reason);

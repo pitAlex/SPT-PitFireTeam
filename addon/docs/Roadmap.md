@@ -17,6 +17,7 @@
 
 ## Unimplemented extensions
 
+- [Self Determination adaptation](Self-Determination-Proposal.md): proposed shared setting integration, productive-commitment arbitration and the independently identified blocked-push/no-cover fallback faults.
 - [Enemy Tracking](Enemy-Tracking.md): addon Simple adaptation of the common planned mode contract. No setting is implemented.
 - Grenade-launcher support is excluded from the current suppression scope at the user's request.
 - Core's complete support arbitration and broad support-position sampling are not replicated. Implemented Grunt boss protection/ally support and Shooter automatic support-weapon transactions use the bounded native capabilities described in their topic documents; they do not establish full Core parity.

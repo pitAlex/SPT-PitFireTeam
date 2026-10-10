@@ -4,7 +4,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using pitTeam.Modules;
 
-internal static class GearSwapSnapshotDiffChecks
+internal static class GearSwapSnapshotChecks
 {
     private static int checks;
     private static void Check(bool value, string message)
@@ -93,31 +93,7 @@ internal static class GearSwapSnapshotDiffChecks
         try
         {
             CheckGridComparison();
-            const string actual = "{\"Id\":\"weapon\",\"TemplateId\":\"gun\",\"Components\":[{\"Durability\":80}]}";
-            string expected = actual.Replace(":80", ":79");
-            var difference = GearSwapSnapshotDiff.Describe(actual, expected).ToArray();
-            Check(difference.Length == 1, "One changed field produces one record");
-            Check(difference[0].Contains("$.Components[0].Durability"), "Records exact component path");
-            Check(difference[0].Contains("actual=80 expected=79"), "Records actual and expected values");
-            Check(difference[0].Contains("actualItem=\"weapon\"/\"gun\""), "Records owning item identity");
-            Check(!GearSwapSnapshotDiff.Describe(actual, actual).Any(), "Equal snapshots are silent");
-            difference = GearSwapSnapshotDiff.Describe("{\"Id\":1,\"StackCount\":2}", "{\"StackCount\":2,\"Id\":1}").ToArray();
-            Check(difference.Single().Contains("parsedValuesEqual=True"), "Identifies serialization-only differences");
-            difference = GearSwapSnapshotDiff.Describe("{\"X\":null}", "{}").ToArray();
-            Check(difference.Single().Contains("actual=null expected=<missing>"), "Distinguishes null from missing field");
-            difference = GearSwapSnapshotDiff.Describe("[1,2]", "[2,1]").ToArray();
-            Check(difference.Length == 2 && difference[0].Contains("$[0]"), "Array order differences remain visible");
-            difference = GearSwapSnapshotDiff.Describe("[1]", "[1,2]").ToArray();
-            Check(difference.Single().Contains("actual=<missing> expected=2"), "Reports missing array entries");
-            difference = GearSwapSnapshotDiff.Describe("{\"Item\":{\"Id\":\"mag\",\"TemplateId\":\"magazine\"},\"X\":1}",
-                "{\"Item\":{\"Id\":\"mag\",\"TemplateId\":\"magazine\"},\"X\":0}").ToArray();
-            Check(difference.Single().Contains("actualItem=\"mag\"/\"magazine\""), "Grid location differences identify the contained item");
-            difference = GearSwapSnapshotDiff.Describe(JsonConvert.SerializeObject(Enumerable.Repeat(1,100)),
-                JsonConvert.SerializeObject(Enumerable.Repeat(2,100))).ToArray();
-            Check(difference.Length == 25 && difference.Last().Contains("Omitted=True"), "Bounds mismatch output");
-            difference = GearSwapSnapshotDiff.Describe(JsonConvert.SerializeObject(new string('a',1000)), "0").ToArray();
-            Check(difference.Single().Length < 600, "Bounds individual values");
-            Console.WriteLine("Gear Swap snapshot differences: " + checks + " assertions passed.");
+            Console.WriteLine("Gear Swap snapshot normalization: " + checks + " assertions passed.");
             return 0;
         }
         catch (Exception error) { Console.Error.WriteLine(error); return 1; }

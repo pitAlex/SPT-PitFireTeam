@@ -161,6 +161,7 @@ namespace pitTeam.Components
         private IEnumerable<SquadRosterEntry> BuildRosterEntries()
         {
             List<SquadRosterEntry> entries = new List<SquadRosterEntry>();
+            rosterLoadSucceeded = false;
 
             try
             {
@@ -168,9 +169,12 @@ namespace pitTeam.Components
                 if (!string.IsNullOrWhiteSpace(response))
                 {
                     JToken root = JToken.Parse(response);
+                    if (root.Type == JTokenType.Object && root["err"]?.Value<int>() != 0)
+                        throw new InvalidOperationException(root["errmsg"]?.ToString());
                     JToken dataToken = root.Type == JTokenType.Array ? root : root["data"];
                     if (dataToken is JArray teammates)
                     {
+                        rosterLoadSucceeded = true;
                         foreach (JToken teammate in teammates)
                         {
                             string accountId = teammate?["Aid"]?.ToString() ?? teammate?["aid"]?.ToString() ?? string.Empty;

@@ -16,16 +16,6 @@ namespace pitTeam.Modules
         private int _count;
         private bool _fold;
 
-        internal string ToDiagnosticString(Dictionary<string, Item> items)
-        {
-            items.TryGetValue(_item, out Item item);
-            Item other = null;
-            if (_other != null) items.TryGetValue(_other, out other);
-            return $"kind={_kind} item={GearSwapDiagnostics.Item(item)} other={GearSwapDiagnostics.Item(other)} " +
-                $"to={GearSwapDiagnostics.Address(_to?.Resolve(items))} " +
-                $"otherTo={GearSwapDiagnostics.Address(_toOther?.Resolve(items))} created={_created} count={_count} fold={_fold}";
-        }
-
         internal void ValidateProvenance(HashSet<string> playerOwned)
         {
             // A single merged item ID cannot express two different post-raid ownership rules.

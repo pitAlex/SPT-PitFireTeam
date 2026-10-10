@@ -151,6 +151,24 @@ public sealed class TeammateDatabase
         }
     }
 
+    public void Wipe()
+    {
+        lock (sync)
+        {
+            using var database = Open();
+            var collection = database.GetCollection("documents");
+            InTransaction(database, () =>
+            {
+                // Keep migration complete so preserved legacy JSONs cannot restore the old squad.
+                string import = Read(collection, ImportKey)
+                    ?? throw new InvalidDataException($"Teammate database migration marker is missing: {DatabasePath}");
+                collection.DeleteAll();
+                Write(collection, ImportKey, import);
+                return true;
+            });
+        }
+    }
+
     private LiteDatabase Open(bool create = false)
     {
         if (!File.Exists(DatabasePath))

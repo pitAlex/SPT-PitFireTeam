@@ -52,6 +52,8 @@ public record FriendlyRecruitPickupCandidate
 
 public record FriendlyRecruitRequestEntry : FriendlyRecruitPickupCandidate
 {
+    // Server-owned origin. Client raid candidates cannot request this skill policy.
+    public bool IsWelcomeTeammate { get; set; }
     // Server-owned snapshot; deliberately absent from the client pickup request model.
     public int? RecruitmentGearPrice { get; set; }
 

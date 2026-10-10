@@ -362,7 +362,9 @@
     "SquadControlRosterMemberA": "小队成员 01",
     "SquadControlRosterMemberB": "小队成员 02",
     "SquadControlRosterRole": "小队成员",
-    "SquadControlEmptyRoster": "你还没有创建任何小队成员，请按下方的添加按钮开始。",
+    "SquadControlEmptyRoster": "背后无人掩护。雇佣队友，或在战场上招募队友，让塔科夫由你掌控。",
+    "SquadControlEmptyAllegianceRoster": "背后无人掩护。投身一场突袭，结成同盟，一起逃离塔科夫。",
+    "SquadControlModeAllegianceDescription": "遵循塔科夫的规则。盟友靠结交，而非购买。设置已锁定，彼此的关系由战场上的行动决定。",
     "SettingsPressKey": "按下按键……",
     "SettingsNotBound": "未绑定",
     "SettingsUnavailableDuringRaid": "战局中不可用"

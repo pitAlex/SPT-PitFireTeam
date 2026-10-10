@@ -4,21 +4,21 @@ Core owns the manual in-raid editor. This is separate from add-only commanded [l
 
 ## Interaction and draft
 
-- Same 2.5 m / 18-degree targeting as View Backpack; eligible targets are the player's living active spawned or recruited followers. No backpack required.
-- Opens only from battle UI while the follower is peaceful and neither inventory is busy. Healing, loot work, combat, invalidation, distance or player death interrupt the draft.
+- Same 2.5 m / 18-degree targeting as View Backpack; eligible targets are the player's living active spawned squad followers. No backpack required. Field recruits cannot use Swap Gear: this prevents stripping a recruited friendly's kit before abandoning them. The existing saved/transit-aware `IsSpawnedSquadMate` identity gates both the prompt and session safety checks, including direct/bound commands and Apply revalidation. Recruitment or a later squad invitation alone does not grant access during the recruitment raid; accepted roster members become eligible when spawned as teammates in a later raid.
+- Opens only from battle UI while the follower is peaceful and neither inventory is busy. The prompt hides during active or pending healing, using the same check as View Backpack. Healing, loot work, combat, invalidation, distance or player death interrupt the draft.
 - Opening checks the active native weapon record's reload state, not every cached weapon record. EFT updates the active record; a stale reload flag on a stowed weapon cannot by itself block the editor. Native hands/interaction, weapon-change, grenade and danger gates still apply.
-- Rejected openings log `[SwapGear][OpenRejected]` with the exact first safety reason, resolved/native target, membership, request and raw hands/inventory state plus bounded owned-candidate distances. The generic user warning is unchanged. Diagnostics do not repeat safety, medical or hands-provider calls and never clear enemy or inventory state.
+- Rejected openings show the existing generic warning. Temporary rejection/state dumps are removed; admission still evaluates the same safety checks once without changing enemy or inventory state.
 - Two independent cloned inventories preserve item IDs and state. The editor rejects any clone that shares a live item reference. Changes to clones cannot affect either actor's live equipment, item provenance, armor effects or weapon bindings.
 - Apply Changes is centered horizontally above the helmet slot, between LOOT and the follower's name in the header row. It clones the inventory Back button's native textured hover/pressed artwork, text animation and hover/click sounds, using the name's font size with bold text. The native name and LOOT layout stay unchanged. Closing/escape before Apply discards the draft. No custom shared-key/voice timing behavior is added.
 - Follow/patrol uses its existing inspection hold; native weapon-manager ticks are held while editing so automatic reload/repacking cannot race the draft. Combat interrupts the session rather than freezing the world.
 
 ## Access policy
 
-Backpack contents suppression preserves the equipment row when the native searchable-content component shares its root. Closing content UI must not disable the backpack header/icon/drop target. `[SwapGear][BackpackUI]` reports eligibility, deleted/allowed state, row creation/activity/layout and shared-root suppression for runtime diagnosis.
+Backpack contents suppression preserves the equipment row when the native searchable-content component shares its root. Closing content UI must not disable the backpack header/icon/drop target.
 
 2026-10-08 missing-backpack follow-up: the deployed DLL matched the build and Newt/Boris openings reported `backpackSwap=True`; that confirms eligibility, not row rendering. Native `UIElement.Close` deactivates its GameObject. Suppression now reactivates a shared row root without creating contents grids. Seven production-helper fixture assertions cover shared/separate/ancestor/standalone objects and direct content hooks; 235 total Gear Swap/quick interaction/reload assertions pass. The actual runtime object hierarchy and cause remain unconfirmed until the new row diagnostics are captured in raid.
 
-Visible follower slots: FirstPrimaryWeapon, SecondPrimaryWeapon, Holster, TacticalVest, ArmorVest, Headwear, FaceCover, Eyewear and Earpiece. The holster can be emptied, filled or exchanged for both spawned and recruited followers, including pistol attachments and seated magazines. Spawned squad followers additionally expose Backpack, including an empty backpack slot. Eligibility uses the existing saved/transit-aware `IsSpawnedSquadMate` identity; recruited followers use the same nine-slot base policy without Backpack. Scabbard, pockets, secure container, armband, dogtag and special slots remain unavailable, even when empty. Filtering is per cloned controller/root, never a global slot-list change. The player's normal slot layout is preserved.
+Visible follower slots: FirstPrimaryWeapon, SecondPrimaryWeapon, Holster, TacticalVest, ArmorVest, Headwear, FaceCover, Eyewear, Earpiece and Backpack, including an empty backpack slot. The holster can be emptied, filled or exchanged, including pistol attachments and seated magazines. Only spawned squad followers are eligible for the editor. Scabbard, pockets, secure container, armband, dogtag and special slots remain unavailable, even when empty. Filtering is per cloned controller/root, never a global slot-list change. The player's normal slot layout is preserved.
 
 The spawned follower's backpack can be removed or exchanged only as a whole item tree, retaining every contained item. Its grid and any special child slots are not created in the editor. Open/double-click is blocked; source/destination ancestry checks reject adding, removing or rearranging contents, including nested containers and shortcuts. A backpack that occupied the follower slot stays sealed for the rest of this draft even after moving to the player's side, preventing a remove/open bypass. Unrelated player backpack contents remain editable. Replacement bags become sealed after handover; Apply replays this sealing in operation order so preparing a player backpack before handover remains valid. Existing ownership/protection/return tracking includes the full transferred tree. Backpack contents retain their existing cargo classification.
 
@@ -48,7 +48,7 @@ The global examination hook checks the active commit scope before reading item a
 
 All opening, stale-live and accepted-draft/replay snapshots canonicalize only each grid descriptor's `ContainedItems` collection by ordinal item ID. EFT serializes dictionary enumeration order, which can differ between a compact clone and a live grid with removed-entry holes. This order is not inventory state. Every item's identity, template, stack, components, child tree, grid, coordinates and rotation remain checked; slot, cartridge/stack and component array ordering is unchanged. Missing or duplicate grid IDs fail closed. Normalization touches serialized descriptors only, never live items or grid collections.
 
-If replay differs from the accepted draft, passive `replay-mismatch` diagnostics capture both canonical equipment states before rollback. Each affected actor logs the exact JSON path, owning item ID/template and actual/expected values, bounded to 24 differences plus an omission marker and 384 characters per value. Parsed equality with different serialized text is identified separately. These diagnostics do not alter comparison, transfer or rollback behavior.
+If replay differs from the accepted draft, the exchange fails and rolls back with the existing error and user warning. Detailed item/JSON mismatch dumps are no longer emitted; the canonical comparison and rollback policy remain unchanged.
 
 ## Ownership
 
@@ -61,8 +61,6 @@ Return tracking includes descendant fallback IDs for plates, attachments and mag
 - `client/Modules/TeammateGearSwap.cs`: session, clones, validation, Apply and cleanup.
 - `client/Modules/GearSwapInventoryController.cs`: local-only draft execution and slot visibility.
 - `client/Modules/GearSwapEdit.cs`: ID/address-based operation journal.
-- `client/Modules/GearSwapDiagnostics.cs`: passive, exchange-correlated weapon/slot/hands/model and event snapshots.
-- `client/Modules/GearSwapSnapshotDiff.cs`: failure-only, bounded differences between replayed equipment and the accepted draft.
 - `client/Modules/GearSwapSnapshot.cs`: grid-order-only normalization for all equipment snapshot comparisons.
 - `client/Modules/GearSwapHandsTransition.cs`: bounded native-unlock/callback/result verification, retaining Unity's synchronization context.
 - `client/Modules/GearSwapBodyRefresh.cs`: bounded native model-loading barriers before/after hands restoration and final visual verification.
@@ -74,6 +72,12 @@ Return tracking includes descendant fallback IDs for plates, attachments and mag
 - `client/Modules/InteractableObjects.cs`: existing return/protection ownership.
 
 ## Qualification
+
+2026-10-11 diagnostic cleanup: temporary Swap Gear opening/state/edit/JSON/hands/body probes and backpack-row logging are retired, along with verbose reload-start callback logs and body-loot search/selection traces. Magazine validation no longer formats inventory/grid dumps. Ordinary failure logs, user warnings, canonical snapshot checks, rollback, model-loading barriers, native callback recovery and battle recording remain. Older dated investigations below describe the instrumentation present at the time, not the current logging contract.
+
+Cleanup qualification: Debug core build passes with zero warnings/errors; Gear Swap, quick-interaction, admission/reload-start and reload-reserve suites pass 378 assertions. Diagnostic-only difference/formatting assertions are retired; 28 canonical snapshot checks remain. Native boundary metadata and source guards pass. These checks do not replace in-raid verification.
+
+2026-10-10 field-recruit exploit prevention: Swap Gear now uses `IsSpawnedSquadMate` for prompt visibility and session admission/revalidation, including during Apply. Quick-interaction and admission fixtures cover native/roster target rejection, membership without spawned identity, direct opening, Apply exclusion and unchanged spawned access. Gear Swap, quick-interaction, admission/reload-start and reload-reserve suites pass 388 assertions; Debug core build passes with zero warnings/errors. In-raid prompt exclusion and normal spawned exchange still require runtime confirmation. Other recruit commands and return policies are unchanged.
 
 2026-10-09 recruited-follower opening investigation: latest Woods raid recruited Mattdokn (`6ac8f623b086212b0c96e908`) at game time 611.4861. His five recorded combat episodes ended by 1390.23877; eight snapshots near the player at raid exit had no enemy/under-fire, healing or reload flags. There were no successful editor openings for him, but failed opening attempts were not logged, and the record cannot establish which gate blocked the user's attempts or when they occurred. First-rejection diagnostics now include native hands operation, interaction state, active reload and bounded cached reload flags. Offline auditing subsequently reproduced and corrected an independent false block: an otherwise idle follower with a stale holster reload flag was rejected by the all-records check. The production admission fixture checks 21 cases, including active primary/pistol reloads and all existing safety gates, and reproduces the old predicate separately. This does not identify Mattdokn's unrecorded rejection as that defect.
 
@@ -100,11 +104,11 @@ Source fixtures and metadata checks are not raid verification. Runtime qualifica
 - Armored rig to armor + separate vest and the reverse, including full destinations and incompatible equipment.
 - Plate-only replacement with exact durability and unchanged unrelated plates.
 - Primary/secondary/holster replacement, weapon activation, firing, reloading, large-magazine landing space and grenades.
-- Spawned and recruited followers, Core and external-SAIN/addon paths.
+- Spawned followers across Core and external-SAIN/addon paths; field recruits excluded from both prompt and direct/bound opening.
 - Danger/death/dismissal/raid exit during editing or hands transitions; injected operation failures and rollback.
 - Restricted with and without Field Upkeep, Immersive and Realistic persistence; original protected gear taken by the player, retained equipped player gear, detached plates and ejected magazines; extraction and death-escape returns. Field recruits must not mail equipment/cargo alongside an invitation containing those items.
 
-Use `tests/Verify-GearSwap.ps1`, `tests/Verify-FollowerQuickInteractions.ps1` and `tests/Verify-LootReloadReserve.ps1` for reproducible source/native boundary checks. Diagnostics are prefixed `[SwapGear]`.
+Use `tests/Verify-GearSwap.ps1`, `tests/Verify-FollowerQuickInteractions.ps1` and `tests/Verify-LootReloadReserve.ps1` for reproducible source/native boundary checks. Swap Gear failure logs retain the `[SwapGear]` prefix.
 
 2026-10-09 return-policy regression: `tests/Verify-FollowerReturnPolicy.ps1` covers squad admission before inventory lookup, retained equipment/attachments/loaded ammunition, separately returned grid/pocket cargo, restored backpacks, duplicate IDs and bounded ancestry (28 assertions). `tests/FollowerDatabase` mode smoke checks additionally exercise acquired-equipment merging without Field Upkeep, unchanged baseline state, slot uniqueness, moving the old primary to secondary and attachment replacement. These source/fixture checks do not establish post-raid mail and invitation behavior; fresh extraction testing remains required.
 

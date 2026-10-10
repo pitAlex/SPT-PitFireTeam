@@ -72,21 +72,14 @@ if (!$apply.Contains('keepDraft = !handsStarted && ex is GearSwapValidationExcep
 if ($apply.LastIndexOf('Close();') -lt $apply.LastIndexOf('await RestoreHands(Owner.Player, playerHands)')) {
     throw 'Swap Gear must close automatically after player hands restoration'
 }
-foreach ($phase in @('apply-start', 'replay-complete', 'events-published', 'weapon-cache-refreshed',
-    'before-hands-restore', 'after-follower-hands-restore', 'native-hands-bound', 'sain-cache-refreshed',
-    'after-player-hands-restore', 'empty-hands-callback', 'restore-hands-callback')) {
-    if (!$session.Contains('"' + $phase + '"')) { throw "Missing Swap Gear diagnostic boundary: $phase" }
-}
-$diagnostics = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/GearSwapDiagnostics.cs')
 $open = Get-Region $session '        internal static void Open(GamePlayerOwner owner)' '        internal static bool Holds('
-if ([regex]::Matches($open, 'UnsafeReason\(').Count -ne 1 -or
-    !$open.Contains('GearSwapDiagnostics.OpenRejected(owner.Player, bot, rejection)') -or
-    $open.IndexOf('GearSwapDiagnostics.OpenRejected(') -gt $open.IndexOf('Warn("SwapGearUnavailable")')) {
-    throw 'Opening must log the single safety evaluation before displaying its generic warning'
+if ([regex]::Matches($open, 'UnsafeReason\(').Count -ne 1) {
+    throw 'Opening must evaluate safety once before displaying its generic warning'
 }
-foreach ($provider in @('HasKnownEnemy(', 'CanChangeHands(', 'CanRemove(', 'IsInInteractionStrictCheck(',
-    'HasActiveOrPendingHealWork(', 'HasActiveOrPendingPickupWork(')) {
-    if ($diagnostics.Contains($provider)) { throw "Rejection diagnostics must not re-query providers: $provider" }
+foreach ($temporaryTrace in @('_diagnostics', 'GearSwapDiagnostics', '[SwapGear][Trace]', '[SwapGear][BackpackUI]')) {
+    if ($session.Contains($temporaryTrace) -or $panel.Contains($temporaryTrace)) {
+        throw "Temporary Swap Gear diagnostics must remain removed: $temporaryTrace"
+    }
 }
 $restore = Get-Region $session '        private Task RestoreHands(Player player, Item preferred)' '        private Task RestoreHandsCore(Player player, Item preferred)'
 foreach ($boundary in @('GearSwapBodyRefresh.Run(', 'player.PlayerBody.SlotViews.Where(view => view.LoadingJob != null).Select(view => view.LoadingJob)',
@@ -94,10 +87,7 @@ foreach ($boundary in @('GearSwapBodyRefresh.Run(', 'player.PlayerBody.SlotViews
     'view._item != null || view.Model != null')) {
     if (!$restore.Contains($boundary)) { throw "Missing synchronized body/hands boundary: $boundary" }
 }
-foreach ($mutation in @('SetInHands(', 'SetEmptyHands(', 'RaiseEvents(', 'ManualUpdate(', 'UpdateWeaponsList(', 'ReconcileExchangedEquipment(')) {
-    if ($diagnostics.Contains($mutation)) { throw "Swap Gear diagnostics must be passive: $mutation" }
-}
-Write-Output 'Swap Gear header and passive trace source guards verified (not a Unity visual test).'
+Write-Output 'Swap Gear header, safety and diagnostic-cleanup source guards verified (not a Unity visual test).'
 $fixture = Get-Content -Raw (Join-Path $PSScriptRoot 'GearSwapFixture.cs')
 $fixture = $fixture.Replace('/* SLOTS */', (Get-Region $session '        internal static readonly HashSet<EquipmentSlot> VisibleSlots' '        internal static readonly EquipmentSlot[] FirearmSlots'))
 $fixture = $fixture.Replace('/* ACCESS */', (Get-Region $session '        internal static bool CanEdit(' '        internal bool IsDraft('))
@@ -167,13 +157,13 @@ if ($LASTEXITCODE -ne 0) { throw 'Gear Swap body refresh fixture failed' }
 
 $newtonsoft = Join-Path $RepositoryRoot 'client/libs4.1/Newtonsoft.Json.dll'
 Copy-Item -LiteralPath $newtonsoft -Destination $temporary
-$diffExe = Join-Path $temporary 'GearSwapSnapshotDiff.exe'
-$diffArgs = @($arguments | Where-Object { $_ -notlike '/out:*' }) + "/out:$diffExe" +
+$snapshotExe = Join-Path $temporary 'GearSwapSnapshot.exe'
+$snapshotArgs = @($arguments | Where-Object { $_ -notlike '/out:*' }) + "/out:$snapshotExe" +
     "/reference:$newtonsoft" + "/reference:$(Join-Path $framework 'netstandard.dll')"
-& dotnet @diffArgs (Join-Path $PSScriptRoot 'GearSwapSnapshotDiffFixture.cs') (Join-Path $RepositoryRoot 'client/Modules/GearSwapSnapshotDiff.cs') (Join-Path $RepositoryRoot 'client/Modules/GearSwapSnapshot.cs')
-if ($LASTEXITCODE -ne 0) { throw 'Gear Swap snapshot difference fixture compilation failed' }
-& $diffExe
-if ($LASTEXITCODE -ne 0) { throw 'Gear Swap snapshot difference fixture failed' }
+& dotnet @snapshotArgs (Join-Path $PSScriptRoot 'GearSwapSnapshotFixture.cs') (Join-Path $RepositoryRoot 'client/Modules/GearSwapSnapshot.cs')
+if ($LASTEXITCODE -ne 0) { throw 'Gear Swap snapshot normalization fixture compilation failed' }
+& $snapshotExe
+if ($LASTEXITCODE -ne 0) { throw 'Gear Swap snapshot normalization fixture failed' }
 
 # Reproduce the original constructor-side event leak with the same fixture and old conversion call.
 $oldWrapperSource = Join-Path $temporary 'OldGearSwapInventoryController.cs'
@@ -193,8 +183,6 @@ Add-Type -Path (Join-Path $RepositoryRoot 'client/libs/Mono.Cecil.dll')
 $module = [Mono.Cecil.ModuleDefinition]::ReadModule((Join-Path $GameRoot 'EscapeFromTarkov_Data/Managed/Assembly-CSharp.dll'))
 try {
     foreach ($fieldContract in @(
-        @('EFT.Player', '_itemInHands'),
-        @('EFT.Player/ItemHandsController', '_controllerObject'),
         @('EFT.PlayerBody/SlotView', '_item'),
         @('EFT.PlayerBody/SlotView', 'LoadingJob'),
         @('EFT.UI.InventoryScreen', '_backButton'),
@@ -206,9 +194,9 @@ try {
         @('EFT.UI.DragAndDrop.SearchableSlotView', '_searchableItemView'),
         @('EFT.UI.DragAndDrop.SearchableSlotView', '_specSlotsPanel')
     )) {
-        $diagnosticType = $module.GetType($fieldContract[0])
-        if (!$diagnosticType -or !($diagnosticType.Fields | Where-Object Name -eq $fieldContract[1])) {
-            throw "Installed diagnostic field missing: $($fieldContract -join ' / ')"
+        $nativeType = $module.GetType($fieldContract[0])
+        if (!$nativeType -or !($nativeType.Fields | Where-Object Name -eq $fieldContract[1])) {
+            throw "Installed native field missing: $($fieldContract -join ' / ')"
         }
     }
     foreach ($contract in @(

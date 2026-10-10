@@ -98,6 +98,8 @@ internal static class ModeStorageTests
             check(FriendlyModeRequestGate.HasActiveRaid, "server records active raid");
             FriendlyModeRequestGate.EndRaid(session.ToString());
             check(!FriendlyModeRequestGate.HasActiveRaid, "server releases raid restriction");
+            SquadOnboardingTests.Run(storage, settings, new JsonUtil([new SptJsonConverterRegistrator()]), check);
+            await ProfileWipeTests.Run(storage, settings, new JsonUtil([new SptJsonConverterRegistrator()]), check);
         }
         finally
         {

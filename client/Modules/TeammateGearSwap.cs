@@ -43,7 +43,6 @@ namespace pitTeam.Modules
         private readonly HashSet<string> _botIds, _returnIds;
         private readonly HashSet<string> _playerOwnedIds;
         private readonly InventoryScreen.RaidInventoryScreenController _screen;
-        private readonly GearSwapDiagnostics _diagnostics;
         private bool _closed, _cancelled, _committed;
         private string _cancelReason;
         private float _openedAt;
@@ -53,7 +52,6 @@ namespace pitTeam.Modules
         {
             Owner = owner; Bot = bot; Follower = follower;
             AllowBackpackSwap = follower.IsSpawnedSquadMate;
-            _diagnostics = new GearSwapDiagnostics(owner.Player, bot);
             _playerBefore = Snapshot(owner.Player.InventoryController.Inventory.Equipment);
             _botBefore = Snapshot(bot.GetPlayer.InventoryController.Inventory.Equipment);
             _botIds = new HashSet<string>(Tree(bot.GetPlayer.InventoryController.Inventory.Equipment).Select(i => (string)i.Id));
@@ -92,7 +90,6 @@ namespace pitTeam.Modules
             string rejection = UnsafeReason(owner, bot, follower, false);
             if (rejection != null)
             {
-                GearSwapDiagnostics.OpenRejected(owner.Player, bot, rejection);
                 Warn("SwapGearUnavailable");
                 return;
             }
@@ -103,9 +100,6 @@ namespace pitTeam.Modules
                 session._openedAt = Time.time;
                 owner.Player.SetInventoryOpened(true);
                 session._screen.ShowScreen(EScreenState.Queued);
-                Logger.LogInfo($"[SwapGear] Open follower='{bot.Profile.Nickname}' draftOnly=true backpackSwap={session.AllowBackpackSwap}");
-                session._diagnostics.State("open");
-                session._diagnostics.Draft("open", session.PlayerEquipment, session.FollowerEquipment);
             }
             catch (Exception ex)
             {
@@ -158,16 +152,17 @@ namespace pitTeam.Modules
             if (_cancelled) return;
             _cancelled = true;
             _cancelReason = reason;
-            _diagnostics.Write("cancel", $"reason={reason} applying={Applying} committed={_committed}");
-            _diagnostics.State("cancel");
         }
 
         private static string UnsafeReason(GamePlayerOwner owner, BotOwner bot, BotFollowerPlayer follower, bool applying)
         {
-            // This is the safety gate itself, evaluated once; diagnostics never repeat medical/AI queries.
+            // Evaluate the safety gate once without changing medical/AI state.
             if (owner?.Player?.HealthController?.IsAlive != true) return "playerDeadOrUnavailable";
             if (bot == null || follower == null) return "followerUnavailable";
             if (follower.GetBoss()?.realPlayer != owner.Player) return "followerOwnershipChanged";
+            // Field recruitment must not grant access to strip a friendly bot's kit.
+            // Keep this before the Apply hands-transition exception as well as at opening.
+            if (!follower.IsSpawnedSquadMate) return "followerNotSpawnedSquadMate";
             if (bot.IsDead || bot.BotState != EBotState.Active || bot.GetPlayer?.HealthController?.IsAlive != true)
                 return "followerDeadOrInactive";
             float distance = Vector3.Distance(owner.Player.Position, bot.GetPlayer.Position);
@@ -261,7 +256,6 @@ namespace pitTeam.Modules
         {
             if (_closed || _cancelled || Applying) throw new InvalidOperationException("Draft is closed.");
             edit.ValidateProvenance(_playerOwnedIds);
-            _diagnostics.Edit("stage", _edits.Count + 1, edit, _draftItems);
             IOperationResult applied = edit.Execute(_draftItems, controller, CanEditDraft, CanPlaceDraft);
             if (AllowBackpackSwap) RememberBackpack(FollowerEquipment, _opaqueBackpackIds);
             _edits.Add(edit);
@@ -269,8 +263,6 @@ namespace pitTeam.Modules
             // UI notifications affect only owners of the cloned items.
             applied.RaiseEvents(controller, CommandStatus.Begin);
             applied.RaiseEvents(controller, CommandStatus.Succeed);
-            Logger.LogInfo($"[SwapGear] Staged edit={_edits.Count} playerEvents={PlayerDraft.ActiveEvents.Count} followerEvents={BotDraft.ActiveEvents.Count}");
-            _diagnostics.Draft("staged", PlayerEquipment, FollowerEquipment);
         }
 
         private void ValidateLive()
@@ -284,7 +276,6 @@ namespace pitTeam.Modules
             if (_playerBefore != Snapshot(Owner.Player.InventoryController.Inventory.Equipment) ||
                 _botBefore != Snapshot(Bot.GetPlayer.InventoryController.Inventory.Equipment))
             {
-                _diagnostics.Write("stale", "live equipment differs from opening snapshot");
                 throw new GearSwapValidationException("SwapGearStale");
             }
         }
@@ -295,14 +286,11 @@ namespace pitTeam.Modules
             if (_edits.Count == 0) { Close(); return; }
             bool committed = false;
             bool handsStarted = false;
-            bool refreshFailed = false;
             bool keepDraft = false;
             Item playerHands = Owner.Player.HandsController?.Item;
             Item botHands = Bot.GetPlayer.HandsController?.Item;
             try
             {
-                _diagnostics.State("apply-start");
-                _diagnostics.Draft("accepted-draft", PlayerEquipment, FollowerEquipment);
                 ValidateLive();
                 ValidateFinalEquipment();
                 Applying = true;
@@ -310,7 +298,6 @@ namespace pitTeam.Modules
                 // Hands must release original item references before any equipment changes.
                 await EmptyHands(Owner.Player);
                 await EmptyHands(Bot.GetPlayer);
-                _diagnostics.State("hands-released");
                 ValidateLive();
                 var player = Owner.Player.InventoryController;
                 var bot = Bot.GetPlayer.InventoryController;
@@ -320,9 +307,8 @@ namespace pitTeam.Modules
                 Mutating = true;
                 try
                 {
-                    applied = GearSwapTransaction.Execute(_edits.Select((edit, index) => (Func<IOperationResult>)(() =>
+                    applied = GearSwapTransaction.Execute(_edits.Select(edit => (Func<IOperationResult>)(() =>
                     {
-                        _diagnostics.Edit("replay", index + 1, edit, items);
                         var result = edit.Execute(items, player,
                             i => CanEdit(i, player.Inventory.Equipment, bot.Inventory.Equipment, AllowBackpackSwap, replayOpaqueBackpacks),
                             a => CanPlace(a, player.Inventory.Equipment, bot.Inventory.Equipment, AllowBackpackSwap, replayOpaqueBackpacks));
@@ -337,9 +323,6 @@ namespace pitTeam.Modules
                             string followerActual = Snapshot(bot.Inventory.Equipment), followerExpected = Snapshot(FollowerEquipment);
                             if (playerActual != playerExpected || followerActual != followerExpected)
                             {
-                                // Capture the difference before rollback restores the original equipment.
-                                _diagnostics.SnapshotMismatch("player", playerActual, playerExpected);
-                                _diagnostics.SnapshotMismatch("follower", followerActual, followerExpected);
                                 throw new InvalidOperationException("Replay did not match the accepted draft.");
                             }
                         });
@@ -347,7 +330,6 @@ namespace pitTeam.Modules
                 finally { Mutating = false; }
                 committed = true;
                 _committed = true;
-                _diagnostics.State("replay-complete");
                 // Establish provenance first: a visual/event subscriber failing must not lose returns.
                 var publicationErrors = new List<Exception>();
                 try { TrackOwnership(); }
@@ -360,25 +342,20 @@ namespace pitTeam.Modules
                     try { result.RaiseEvents(player, CommandStatus.Succeed); }
                     catch (Exception ex) { publicationErrors.Add(ex); }
                 }
-                _diagnostics.State("events-published");
                 foreach (Item item in Tree(player.Inventory.Equipment).Where(i => _botIds.Contains(i.Id)))
                     TeammateBackpackInspection.MarkItemTreeVisible(Owner.Player.SearchController, item);
                 RefreshWeapons();
-                _diagnostics.State("weapon-cache-refreshed");
                 Bot.WeaponManager.Grenades.SetDirty();
                 Bot.WeaponManager.Grenades.UpdateCheck();
                 if (publicationErrors.Count > 0) throw new AggregateException("Equipment event publication failed.", publicationErrors);
             }
             catch (Exception ex)
             {
-                refreshFailed = true;
                 // Correctable draft errors occur before any hands or live inventory changes.
                 // Preserve all staged edits so the player can fix the arrangement and retry.
                 keepDraft = !handsStarted && ex is GearSwapValidationException draftError &&
                     (draftError.Key == "SwapGearMagazineSpace" || draftError.Key == "SwapGearNeedsWeapon");
-                _diagnostics.State(committed ? "apply-refresh-error" : "apply-rejected");
-                if (keepDraft) Logger.LogInfo($"[SwapGear] Draft needs correction; kept open: {ex.Message}");
-                else Logger.LogError("[SwapGear] Apply " + (committed ? "committed; refresh failed" : "rejected/rolled back") + ": " + ex);
+                if (!keepDraft) Logger.LogError("[SwapGear] Apply " + (committed ? "committed; refresh failed" : "rejected/rolled back") + ": " + ex);
                 Warn(committed ? "SwapGearRefreshFailed" : ex is AggregateException ? "SwapGearRecoveryFailed" :
                     ex is GearSwapValidationException validation ? validation.Key : "SwapGearApplyFailed");
             }
@@ -389,42 +366,31 @@ namespace pitTeam.Modules
                     if (Applying)
                     {
                         if (committed) RefreshWeapons();
-                        _diagnostics.State("before-hands-restore");
                         await RestoreHands(Bot.GetPlayer, committed ? null : botHands);
-                        _diagnostics.State("after-follower-hands-restore");
                         if (Bot.GetPlayer.HealthController.IsAlive && Bot.GetPlayer.HandsController != null)
                         {
                             Bot.WeaponManager.UpdateHandsController(Bot.GetPlayer.HandsController, out bool allFine);
-                            _diagnostics.Write("native-hands-binding", $"allFine={allFine}");
-                            _diagnostics.State("native-hands-bound");
                             if (!allFine) throw new InvalidOperationException("Native follower hands binding was rejected.");
                             if (committed) SainEquipmentBridge.RefreshAfterExchange(Bot);
-                            _diagnostics.State("sain-cache-refreshed");
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    refreshFailed = true;
                     Logger.LogError("[SwapGear] Hands/equipment refresh failed: " + ex);
                     Warn("SwapGearRefreshFailed");
                 }
                 try
                 {
                     if (Applying) await RestoreHands(Owner.Player, playerHands);
-                    _diagnostics.State("after-player-hands-restore");
                 }
                 catch (Exception ex)
                 {
-                    refreshFailed = true;
                     Logger.LogError("[SwapGear] Player hands restore failed: " + ex);
                     Warn("SwapGearRefreshFailed");
                 }
-                if (committed && !refreshFailed)
-                    Logger.LogInfo($"[SwapGear] Applied follower='{Bot.Profile.Nickname}' edits={_edits.Count}; hands verified");
                 Applying = false;
                 if (!keepDraft) Close();
-                if (handsStarted) _diagnostics.Settled();
             }
         }
 
@@ -434,8 +400,7 @@ namespace pitTeam.Modules
             if (!FirearmSlots.Select(s => FollowerEquipment.GetSlot(s).ContainedItem).OfType<Weapon>()
                 .Any(w => !w.MissingVitalParts.Any()))
                 throw new GearSwapValidationException("SwapGearNeedsWeapon");
-            bool magazineRoom = pitTeam.BigBrain.Actions.GestureCommandAction.CanFitGearSwapReloadReserves(FollowerEquipment, out string reserveDetail);
-            _diagnostics.Write("reload-space", $"fits={magazineRoom} {reserveDetail}");
+            bool magazineRoom = pitTeam.BigBrain.Actions.GestureCommandAction.CanFitGearSwapReloadReserves(FollowerEquipment);
             if (!magazineRoom)
                 throw new GearSwapValidationException("SwapGearMagazineSpace");
         }
@@ -482,17 +447,13 @@ namespace pitTeam.Modules
                 () => HandsIdle(player),
                 complete =>
                 {
-                    _diagnostics.Actor("empty-hands-request", player);
                     player.SetEmptyHands(result =>
                     {
-                        _diagnostics.Hands("empty-hands-callback", player, null, result.Value, result.Succeed, result.Error);
                         complete(result.Value, result.Succeed, result.Error);
-                        _diagnostics.Actor("empty-hands-callback-exit", player);
                     });
                 },
                 returned => returned != null && player.HandsController is Player.EmptyHandsController &&
-                    !player.HandsController.Destroyed,
-                attempt => _diagnostics.Write("empty-hands-mismatch", $"attempt={attempt}"));
+                    !player.HandsController.Destroyed);
         }
         private Task RestoreHands(Player player, Item preferred)
         {
@@ -501,8 +462,7 @@ namespace pitTeam.Modules
                 () => player?.HealthController?.IsAlive == true,
                 () => player.PlayerBody.SlotViews.Where(view => view.LoadingJob != null).Select(view => view.LoadingJob).ToArray(),
                 () => RestoreHandsCore(player, preferred),
-                () => VerifyHeldWeaponBody(player),
-                phase => _diagnostics.Actor(phase, player));
+                () => VerifyHeldWeaponBody(player));
         }
 
         private static void VerifyHeldWeaponBody(Player player)
@@ -538,18 +498,14 @@ namespace pitTeam.Modules
                 () => HandsIdle(player),
                 complete =>
                 {
-                    _diagnostics.Hands("restore-hands-request", player, item, null, false, null);
                     player.SetInHands(item, result =>
                     {
-                        _diagnostics.Hands("restore-hands-callback", player, item, result.Value, result.Succeed, result.Error);
                         complete(result.Value, result.Succeed, result.Error);
-                        _diagnostics.Actor("restore-hands-callback-exit", player);
                     });
                 },
                 returned => returned?.Item?.Id == item.Id && player.HandsController?.Item?.Id == item.Id &&
                     player.HandsController?.Destroyed == false &&
-                    (!(item is Weapon) || returned is IFirearmHandsController),
-                attempt => _diagnostics.Write("restore-hands-mismatch", $"attempt={attempt} requested={GearSwapDiagnostics.Item(item)}"));
+                    (!(item is Weapon) || returned is IFirearmHandsController));
         }
         private static bool HandsIdle(Player player) => player.ProcessStatus == Player.EProcessStatus.None &&
             !player.InventoryController.IsChangingWeapon;
@@ -575,8 +531,6 @@ namespace pitTeam.Modules
                 if (tab.Key != null) tab.Key.SetActive(tab.Value);
             _hiddenTabs.Clear();
             if (ReferenceEquals(Current, this)) Current = null;
-            _diagnostics.State("closed");
-            Logger.LogInfo($"[SwapGear] Closed; {(_committed ? "exchange committed" : "draft discarded")}; stagedEdits={_edits.Count}.");
         }
         private static void Warn(string key) => EFT.Communications.NotificationManager.DisplayWarningNotification(
             pitFireTeam.GetSocialUiText(key), EFT.Communications.ENotificationDurationType.Default);

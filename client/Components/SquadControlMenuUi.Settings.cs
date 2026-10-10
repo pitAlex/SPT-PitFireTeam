@@ -716,8 +716,7 @@ namespace pitTeam.Components
                 GetSettingDescription(pitFireTeam.enemyTracking), disabledDuringRaid,
                 control =>
                 {
-                    // Match the shared native toggle's 42px height at its 0.86 scale.
-                    const float choiceHeight = 42f * 0.86f;
+                    const float choiceHeight = 28f;
                     const float choiceGap = 15f;
                     control.sizeDelta = new Vector2(control.sizeDelta.x, choiceHeight * 2f + choiceGap);
                     ToggleGroup group = control.gameObject.AddComponent<ToggleGroup>();
@@ -741,15 +740,10 @@ namespace pitTeam.Components
                             pitFireTeam.Instance?.Config.Save();
                             foreach (var refresh in refreshChoices) refresh();
                         }
-                        CreateModeRadioControl(choice, displayName, !disabledDuringRaid, group,
-                            GameplayModeRuntime.GetEffectiveValue(pitFireTeam.enemyTracking) == mode, SelectMode,
-                            out UIAnimatedToggleSpawner toggle, out Toggle fallback);
-                        refreshChoices.Add(() =>
-                        {
-                            bool selected = GameplayModeRuntime.GetEffectiveValue(pitFireTeam.enemyTracking) == mode;
-                            if (toggle != null) toggle.ToggleSilently(selected);
-                            else fallback.SetIsOnWithoutNotify(selected);
-                        });
+                        Toggle radio = CreateLocationRadioControl(choice, displayName, !disabledDuringRaid, group,
+                            GameplayModeRuntime.GetEffectiveValue(pitFireTeam.enemyTracking) == mode, SelectMode);
+                        refreshChoices.Add(() => SetLocationRadioSelected(radio,
+                            GameplayModeRuntime.GetEffectiveValue(pitFireTeam.enemyTracking) == mode));
                     }
                     foreach (var refresh in refreshChoices) refresh();
                 }, rowHeight: 136f, entry: pitFireTeam.enemyTracking);

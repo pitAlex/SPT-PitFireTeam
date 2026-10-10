@@ -28,11 +28,10 @@ namespace pitTeam.Patches
         }
         protected override MethodBase GetTargetMethod() => AccessTools.Method(typeof(ComplexStashPanel), nameof(ComplexStashPanel.Show));
         [PatchPostfix]
-        private static void Postfix(ComplexStashPanel __instance, InventoryEquipment equipment, InventoryController inventoryController)
+        private static void Postfix(ComplexStashPanel __instance, InventoryEquipment equipment)
         {
             var session = TeammateGearSwap.Current;
             if (session == null || !ReferenceEquals(equipment, session.FollowerEquipment)) return;
-            TraceBackpack(__instance, session, inventoryController);
             try { BuildPanel(__instance, session); }
             catch (Exception ex)
             {
@@ -40,25 +39,6 @@ namespace pitTeam.Patches
                 Restore(__instance);
                 session.Close();
             }
-        }
-
-        private static void TraceBackpack(ComplexStashPanel panel, TeammateGearSwap session, InventoryController controller)
-        {
-            // Observe the rendered boundary, not just the session's eligibility flag.
-            try
-            {
-                Slot slot = session.FollowerEquipment.GetSlot(EquipmentSlot.Backpack);
-                SlotView view = panel._containersPanel?.GetComponentsInChildren<SlotView>(true)
-                    .FirstOrDefault(candidate => ReferenceEquals(candidate.Slot, slot));
-                RectTransform rect = view?.transform as RectTransform;
-                pitTeam.Modules.Logger.LogInfo($"[SwapGear][BackpackUI] follower='{session.Bot.Profile.Nickname}' " +
-                    $"eligible={session.AllowBackpackSwap} deleted={slot?.Deleted} " +
-                    $"controller={controller?.GetType().Name} allowed={controller?.IsAllowedToSeeSlot(slot, EquipmentSlot.Backpack)} " +
-                    $"item={slot?.ContainedItem?.Id.ToString() ?? "none"} rowCreated={view != null} " +
-                    $"activeSelf={view?.gameObject.activeSelf} activeHierarchy={view?.gameObject.activeInHierarchy} " +
-                    $"rect={rect?.rect.ToString()} position={rect?.position.ToString()}");
-            }
-            catch (Exception ex) { pitTeam.Modules.Logger.LogInfo("[SwapGear][BackpackUI] Trace failed: " + ex.Message); }
         }
 
         private static void BuildPanel(ComplexStashPanel panel, TeammateGearSwap session)
@@ -226,9 +206,6 @@ namespace pitTeam.Patches
                 contents.ShowGameObject();
                 slot.ShowGameObject();
             }
-            pitTeam.Modules.Logger.LogInfo($"[SwapGear][BackpackUI] contentsSuppressed=true " +
-                $"contentsObject='{contents.name}' slot='{slot?.name ?? "none"}' sharedRoot={containsSlot} " +
-                $"rowActive={slot?.gameObject.activeSelf}");
         }
     }
     internal sealed class GearSwapBackpackContentsPatch : ModulePatch

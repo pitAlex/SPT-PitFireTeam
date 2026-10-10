@@ -289,6 +289,8 @@ public partial class FriendlyTeammateService(
         string? recruitSide = candidate.GetSavedSide(playerPmc.Info?.Side);
 
         bool usedCapturedProfile = TryDeserializeRecruitProfile(candidate, out var teammate);
+        bool welcome = candidate is FriendlyRecruitRequestEntry { IsWelcomeTeammate: true };
+        if (welcome && !usedCapturedProfile) throw new InvalidDataException("Welcome teammate profile is missing or invalid.");
         if (!usedCapturedProfile)
         {
             teammate = GenerateTeammateBot(
@@ -337,8 +339,12 @@ public partial class FriendlyTeammateService(
         // Roster ordering uses registration time; a captured bot's original date
         // predates joining this squad. Stamp acceptance here, not in preview normalization.
         teammate.Info.RegistrationDate = GetCurrentUnixTimestampSeconds();
-        NormalizeTeammateSkillsForCreation(teammate, playerPmc);
-        InitializeRecruitRaidStats(teammate, targetLevel, GetRecruitStatsSeed(candidate));
+        if (welcome) NormalizeWelcomeProfile(teammate);
+        else
+        {
+            NormalizeTeammateSkillsForCreation(teammate, playerPmc);
+            InitializeRecruitRaidStats(teammate, targetLevel, GetRecruitStatsSeed(candidate));
+        }
         var recruitSettings = CreateDefaultTeammateSettings(teammate.Customization);
         recruitSettings.Aggression = candidate.GetSavedAggression();
         recruitSettings.RecruitmentGearPrice = candidate is FriendlyRecruitRequestEntry entry
@@ -387,8 +393,12 @@ public partial class FriendlyTeammateService(
         }
 
         NormalizeCapturedRecruitProfile(recruit, playerPmc, candidate);
-        NormalizeTeammateSkillsForCreation(recruit, playerPmc);
-        InitializeRecruitRaidStats(recruit, Math.Max(1, candidate.Level), GetRecruitStatsSeed(candidate));
+        if (candidate is FriendlyRecruitRequestEntry { IsWelcomeTeammate: true }) NormalizeWelcomeProfile(recruit);
+        else
+        {
+            NormalizeTeammateSkillsForCreation(recruit, playerPmc);
+            InitializeRecruitRaidStats(recruit, Math.Max(1, candidate.Level), GetRecruitStatsSeed(candidate));
+        }
         profile = ToOtherProfileResponse(recruit);
 
         // Pending recruits are bot profiles, not player hideouts. Let the stock other-profile

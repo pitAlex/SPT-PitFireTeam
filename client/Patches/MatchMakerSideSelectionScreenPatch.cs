@@ -164,6 +164,12 @@ namespace pitTeam.Patches
             tabsOverlayCoroutine = pitFireTeam.Instance.StartCoroutine(ShowTabsOverlayDeferred(screen));
         }
 
+        internal static void RefreshSquadScreen(Transform host)
+        {
+            if (host != null && SquadSideSelectionFlow.SquadModeActive)
+                ScheduleTabsOverlay(host.GetComponent<MatchMakerSideSelectionScreen>());
+        }
+
         private static IEnumerator ShowTabsOverlayDeferred(MatchMakerSideSelectionScreen screen)
         {
             // Defer one frame so side screen can finish its own Show path first.
@@ -175,7 +181,19 @@ namespace pitTeam.Patches
                 yield break;
             }
 
-            CleanupTabsOverlay();
+            CleanupTabsOverlay(false);
+
+            var ui = Components.SquadControlMenuUi.FindInstance();
+            if (ui == null) { tabsOverlayCoroutine = null; yield break; }
+            Task<bool> visit = ui.PrepareSquadVisitAsync(screen.transform);
+            while (!visit.IsCompleted)
+            {
+                if (screen == null || !screen.gameObject.activeInHierarchy || !SquadSideSelectionFlow.SquadModeActive)
+                { tabsOverlayCoroutine = null; yield break; }
+                yield return null;
+            }
+            if (visit.IsFaulted || visit.IsCanceled || visit.Result)
+            { tabsOverlayCoroutine = null; yield break; }
 
             UIAnimatedToggleSpawner rosterTemplate = ResolveRagfairToggle(primary: true);
             UIAnimatedToggleSpawner settingsTemplate = ResolveRagfairToggle(primary: false);
@@ -313,14 +331,14 @@ namespace pitTeam.Patches
             backButton.OnClick.AddListener(BackExitAction);
         }
 
-        internal static void CleanupTabsOverlay()
+        internal static void CleanupTabsOverlay(bool cancelPending = true)
         {
-            if (pitFireTeam.Instance != null && tabsOverlayCoroutine != null)
+            if (cancelPending && pitFireTeam.Instance != null && tabsOverlayCoroutine != null)
             {
                 pitFireTeam.Instance.StopCoroutine(tabsOverlayCoroutine);
             }
 
-            tabsOverlayCoroutine = null;
+            if (cancelPending) tabsOverlayCoroutine = null;
             overlayToggleGroup = null;
 
             Components.SquadControlMenuUi.FindInstance()?.RetractPanels();
@@ -333,18 +351,21 @@ namespace pitTeam.Patches
 
             if (tabsRosterInstance != null)
             {
+                tabsRosterInstance.gameObject.SetActive(false);
                 UnityEngine.Object.Destroy(tabsRosterInstance.gameObject);
                 tabsRosterInstance = null;
             }
 
             if (tabsSettingsInstance != null)
             {
+                tabsSettingsInstance.gameObject.SetActive(false);
                 UnityEngine.Object.Destroy(tabsSettingsInstance.gameObject);
                 tabsSettingsInstance = null;
             }
 
             if (tabsModeInstance != null)
             {
+                tabsModeInstance.gameObject.SetActive(false);
                 UnityEngine.Object.Destroy(tabsModeInstance.gameObject);
                 tabsModeInstance = null;
             }
