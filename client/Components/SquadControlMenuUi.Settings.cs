@@ -703,8 +703,8 @@ namespace pitTeam.Components
             string displayName = GetLoadoutManagementDisplayName(mode, languageEntry);
             CreateModeSelectionEntryRow(
                 $"pitFireTeam_Setting_LoadoutManagement_{mode}", displayName,
-                GetLoadoutManagementDescription(languageEntry), IsRaidActive() || GameplayModeRuntime.IsAllegiance,
-                control => CreateLoadoutManagementRadioControl(control, mode, displayName, !IsRaidActive() && !GameplayModeRuntime.IsAllegiance), entry: pitFireTeam.loadoutManagementMode);
+                GetLoadoutManagementDescription(languageEntry), IsRaidActive(),
+                control => CreateLoadoutManagementRadioControl(control, mode, displayName, !IsRaidActive()), entry: pitFireTeam.loadoutManagementMode);
         }
 
         private void CreateEnemyTrackingEntryRow()
@@ -1217,7 +1217,7 @@ namespace pitTeam.Components
                 return;
             }
 
-            if (GameplayModeRuntime.IsAllegiance || GameplayModeRuntime.IsSwitching) return;
+            if (IsRaidActive() || GameplayModeRuntime.IsSwitching) return;
             LoadoutManagementMode previousMode = GameplayModeRuntime.GetEffectiveValue(pitFireTeam.loadoutManagementMode);
             if (previousMode == mode)
             {

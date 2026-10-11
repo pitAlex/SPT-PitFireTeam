@@ -22,6 +22,10 @@ public class FriendlyPostRaidRouter(JsonUtil jsonUtil, FriendlyPostRaidCallbacks
                 "/singleplayer/pitfireteam/insurance/raid-display",
                 async (url, info, sessionId, output, cancellationToken) => await FriendlyModeRequestGate.Run(() => callbacks.InsuranceRaidDisplay(url, info, sessionId))
             ),
+            new RouteAction<FollowerInsuranceMailClaimRequest>(
+                "/singleplayer/pitfireteam/insurance/mail-claimed",
+                async (url, info, sessionId, output, cancellationToken) => await FriendlyModeRequestGate.Run(() => callbacks.InsuranceMailClaimPolicies(url, info, sessionId))
+            ),
             new RouteAction<FollowerInsuranceRaidCompletionRequest>(
                 "/singleplayer/pitfireteam/insurance/raid-reports-complete",
                 async (url, info, sessionId, output, cancellationToken) => await FriendlyModeRequestGate.Run(() => callbacks.InsuranceReportsComplete(url, info, sessionId))

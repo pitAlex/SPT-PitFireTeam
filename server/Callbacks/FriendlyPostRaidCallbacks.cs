@@ -123,4 +123,9 @@ public class FriendlyPostRaidCallbacks(
         return new ValueTask<string>(httpResponse.GetBody(
             insuranceDiagnostics.GetDisplayPolicies(sessionId, request?.InsuranceServerId)));
     }
+
+    public ValueTask<string> InsuranceMailClaimPolicies(string url, FollowerInsuranceMailClaimRequest request, MongoId sessionId)
+    {
+        return new ValueTask<string>(httpResponse.GetBody(courierTransfers.GetClaimedPolicies(sessionId, request?.ItemIds ?? [])));
+    }
 }

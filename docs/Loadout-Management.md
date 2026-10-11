@@ -37,13 +37,15 @@ The UI uses cloned Ragfair `UIAnimatedToggleSpawner` controls under a Unity `Tog
 
 Selecting a different mode saves the config, syncs it to the server, and refreshes the visible toggle and roster. All modes use `Default`, so there is no preset-selection confirmation.
 
+The setting is editable in both Guns for Hire and Allegiance and has one shared saved value. Immersive is the default for both gameplay modes; existing valid saved choices remain unchanged. Switching gameplay mode keeps the current selection, including when an older mode snapshot contains a different Loadout Management value.
+
 Opening `EDIT LOADOUT` resets the cloned player-stash panel to the top after its grid and viewport layout is built, stopping inherited scroll momentum. The reset runs only on opening; scrolling within the editor works normally.
 
 ## Modes
 
 ### Restricted
 
-`Restricted` is the default. Legacy `Simple`, missing, and invalid settings resolve to `Restricted`; existing `Immersive` and `Realistic` settings retain their behavior.
+`Restricted` is an optional equipment policy. The server retains legacy `Simple` as `Restricted`; missing and invalid settings use the Immersive default. Existing valid Restricted, Immersive and Realistic settings retain their behavior.
 
 Target behavior:
 

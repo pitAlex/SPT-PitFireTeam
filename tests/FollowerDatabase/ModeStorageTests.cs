@@ -26,6 +26,13 @@ internal static class ModeStorageTests
         try
         {
             var settings = CreateSettings();
+            check(new FriendlyServerSettingsRequest().LoadoutManagementMode == "Immersive" &&
+                new FriendlyServerSettingsRequest { GameplayMode = "Allegiance" }.LoadoutManagementMode == "Immersive",
+                "both gameplay modes default to Immersive");
+            check(FriendlyServerSettingsRequest.NormalizeLoadoutManagementMode(null) == "Immersive" &&
+                FriendlyServerSettingsRequest.NormalizeLoadoutManagementMode("invalid") == "Immersive" &&
+                FriendlyServerSettingsRequest.NormalizeLoadoutManagementMode("Simple") == "Restricted",
+                "missing and invalid loadouts use the default while legacy Simple remains Restricted");
             settings.SaveAndApply(new());
             StorageConcurrencyTests.Run(work, check);
             var storage = new FriendlyTeammateStorage(new FileUtil(), new JsonUtil([new SptJsonConverterRegistrator()]),
@@ -45,7 +52,11 @@ internal static class ModeStorageTests
             byte[] hiredBytes = File.ReadAllBytes(hiredDatabase);
             storage.PrepareMode(session, true);
             settings.SaveAndApply(new() { GameplayMode = "Allegiance", LoadoutManagementMode = "Restricted" });
-            check(settings.LoadSettings().LoadoutManagementMode == "Immersive", "server enforces Immersive");
+            check(settings.LoadSettings().LoadoutManagementMode == "Restricted", "server persists the Allegiance Restricted choice");
+            settings.SaveAndApply(new() { GameplayMode = "Allegiance", LoadoutManagementMode = "Realistic" });
+            check(settings.LoadSettings().LoadoutManagementMode == "Extreme", "server persists the Allegiance Realistic choice");
+            settings.SaveAndApply(new() { GameplayMode = "Allegiance", LoadoutManagementMode = "Immersive" });
+            check(settings.LoadSettings().LoadoutManagementMode == "Immersive", "server persists the Allegiance Immersive choice");
             check(storage.ReadProfiles(session).Count == 0 && !storage.Exists(session, "recruit-requests.json"), "Allegiance starts with a separate empty database");
             EncounterPenaltyStorageTests.Run(storage, settings, check);
             storage.WriteBatch(session, new Dictionary<string, string>

@@ -394,6 +394,7 @@ Verified entry groups:
 - `Miscellaneous`
     - `teleportKey`
     - `healKey`
+    - `friendlyChanceMultiplier` (editable in both gameplay modes; no effect in Guns for Hire while Friendly PMC Side or Bad Guy is on)
     - `heatlhMultiplier`
     - `botPrefetch`
     - debug builds also show `battleRecorderEnabled` and `battleRecorderSnapshotIntervalMs`
@@ -423,7 +424,7 @@ Fresh configurations and Reset to Defaults use:
 - Maximum Price: `5000000`
 - Pickup Food, Pickup Meds, and Pickup Gear: disabled
 - Pickup Weapons and Pickup Valuables: enabled
-- Loadout Management: `Restricted`
+- Loadout Management: `Immersive`
 - Field Upkeep: disabled
 
 ### Raid faction hostility setting
@@ -445,7 +446,7 @@ The rows are intentionally vertical: each row shows the mode description on the 
 
 When `Restricted` is the active mode, a `Field Upkeep` checkbox row appears between `Restricted` and `Immersive`. It defaults off and uses the same settings-row layout as other checkbox settings instead of joining the radio `ToggleGroup`.
 
-Changing modes applies immediately and syncs to the server. `Restricted` is the default; all three modes edit real `Default` equipment. Legacy preset selections restore the saved `Default` automatically.
+Changing modes applies immediately and syncs to the server. `Immersive` is the default in both Guns for Hire and Allegiance, and Loadout Management is editable outside raids in either mode. Both use one shared saved selection that persists across gameplay-mode switches. Existing saved choices are retained; all three modes edit real `Default` equipment. Legacy preset selections restore the saved `Default` automatically.
 
 When a mode change is applied, the client saves the BepInEx setting, syncs the new mode to the server, and rebuilds the settings entries so conditional rows such as `Field Upkeep` appear or disappear immediately. The settings scroll position is captured before this rebuild and restored after Unity finishes recalculating the layout, so the view does not jump back to the top.
 
@@ -509,9 +510,9 @@ Gameplay behavior is documented separately in [Guns for Hire](Guns-for-Hire.md) 
 
 The two options are stacked vertically in dark full-width rows with gold dividers. Each row has a location-screen radio indicator to the left of its name and description. Clicking the indicator or row selects that option and clears the other.
 
-The Guns for Hire description is: "Build and equip your squad before deploying. Customize and play by your own rules."
+The Guns for Hire description is: "Hire and equip your squad before deploying. Make Tarkov yours, and play by your own rules."
 
-The Allegiance description is: "Play by Tarkov's rules. Alliances are formed, not bought. Settings are locked, and relationships are determined in the field."
+The Allegiance description is: "Play by Tarkov's rules. Alliances are formed, not bought. Find your allies in the field, and escape together."
 
 Gameplay Mode and Enemy Tracking reuse the native location-time `Toggle` through [the shared radio helper](../client/Components/SquadControlMenuUi.RadioControls.cs). Each selector has its own `ToggleGroup`, with the cloned raid-time events replaced before activation. A circular radio fallback is used if the native prefab has not loaded. Names and descriptions use the central `socialUi` language entries and embedded English fallback. Existing raid restrictions and Allegiance setting locks remain enforced.
 

@@ -604,9 +604,7 @@ namespace pitTeam.BigBrain.Actions
             Vector3 suppressTarget,
             bool launcherSuppress = false)
         {
-            Vector3 aimDirection = BotOwner.LookDirection;
-            aimDirection.y = 0f;
-            if (aimDirection.sqrMagnitude <= 0.0001f)
+            if (!TryGetCurrentShotVector(BotOwner, out fireOrigin, out Vector3 aimDirection))
             {
                 return true;
             }
@@ -614,6 +612,9 @@ namespace pitTeam.BigBrain.Actions
             float distance = Vector3.Distance(fireOrigin, suppressTarget);
             if (launcherSuppress)
             {
+                // Launcher alignment is a horizontal steering policy, independent
+                // of the three-dimensional firearm lane used for bullet safety.
+                aimDirection.y = 0f;
                 return IsLauncherAimNotAligned(fireOrigin, suppressTarget, aimDirection);
             }
 

@@ -46,7 +46,7 @@ namespace pitTeam.Modules {
         public static bool GetEffectiveValue(pitTeam.Flag flag)=>flag.Value;
         public static Task RunRosterRequest(Action action){var hold=HoldNext;HoldNext=null;var task=Task.Run(()=>{Interlocked.Increment(ref WorkersStarted);hold?.WaitOne();action();});Tasks.Add(task);return task;}
     }
-    public static class AllegiancePmcFriendship {public static HashSet<string> Allowed=new HashSet<string>();public static bool CanRecruit(BotOwner bot,IPlayer p)=>Allowed.Contains(bot.ProfileId);}
+    public static class AllegiancePmcFriendship {public static HashSet<string> Allowed=new HashSet<string>();public static bool CanRecruit(BotOwner bot,IPlayer p)=>Allowed.Contains(bot.ProfileId);public static bool IsSelectedFriendly(BotOwner bot,IPlayer p)=>Allowed.Contains(bot.ProfileId);}
     public static class BossPlayers {
         public static List<pitTeam.Components.BotFollowerPlayer> Followers=new List<pitTeam.Components.BotFollowerPlayer>();
         public static pitTeam.Components.BotFollowerPlayer GetFollowerByProfileId(string id)=>Followers.FirstOrDefault(f=>f.Bot.ProfileId==id);
@@ -120,6 +120,12 @@ public static class KarmaClientChecks {
         }
         Check(SPT.Common.Http.RequestHandler.Reports.Select(r=>r.Kind).SequenceEqual(new[]{"kill","end"}) && SPT.Common.Http.RequestHandler.Karma==0.995,"Kill then extraction retain capture order even when first worker starts late near the karma cap");
         Check(Comfort.Common.Singleton<EFT.UI.GUISounds>.Instance.Sounds.SequenceEqual(new[]{false,true}),"Ordered kill and extraction feedback uses both native sounds");
+        Reset();pitTeam.pitFireTeam.pitFireTeamFLAG.Value=false;var encounter=Bot("same-side-encounter");
+        AllegiancePmcFriendship.Allowed.Add(encounter.ProfileId);PmcKarmaRuntime.NoteFriendly(encounter);Hit(encounter);
+        encounter.BotsGroup.Hostile=true;AllegiancePmcFriendship.Allowed.Clear();PmcKarmaRuntime.RecordKill(encounter.GetPlayer,human);Complete();
+        Check(SPT.Common.Http.RequestHandler.Karma==0.175 && Comfort.Common.Singleton<EFT.UI.GUISounds>.Instance.Sounds.SequenceEqual(new[]{false}),"Killing a selected Guns for Hire encounter costs karma with Friendly PMC Side off");
+        Reset();PmcKarmaRuntime.NoteFriendly(Bot("peaceful-hired-mode"));PmcKarmaRuntime.EndRaid(human.ProfileId,ExitStatus.Survived);Complete();
+        Check(SPT.Common.Http.RequestHandler.Karma==0.2,"Guns for Hire encounters do not enable Allegiance quiet recovery");
         Console.WriteLine("PASS: "+count+" PMC karma client checks.");
     }
 }

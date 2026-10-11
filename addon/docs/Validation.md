@@ -1,5 +1,14 @@
 # SAIN addon validation and raid evidence
 
+## 2026-10-11 - Shared normal and suppression firing safety
+
+Core now owns shared burst admission, direct trigger, active firearm update and pre-ammunition automatic/fixed-burst guards. Native SAIN manual-fire attempts use a Core soft-dependency guard across all follower actions; the addon regroup-only manual hook was removed, retaining its action-local early hold. Actual-vector checks include vertical direction, underbarrel/eye-origin modes and allies behind the aim point. HarmonyX permits SAIN's replacement prefix after a veto, so confirmed rejections are reconciled after all prefixes and unsafe trigger requests are independently blocked.
+
+Validation: **34** production firing-safety checks, **26** existing damage-reduction checks, **1,521** production addon combat checks, **51** rifle suppression checks and **30** launcher suppression checks passed. The focused harness uses production lane geometry/vector calculation and real Harmony interception, and verifies compile-reference/installed EFT admission/idle transitions plus installed SAIN manual accessors. Blocked automatic rounds preserve ammunition; safe rounds consume exactly one cartridge; SAIN lookup faults retain the muzzle guard. Existing addon fixture stand-in compiler warnings remain; matching Core/addon Debug builds passed with zero warnings/errors. Source/fixture results do not prove Unity animation, live raid safety or frame time. Already-prepared single shots, released projectiles, later ally movement, spread and ricochets remain qualification limits. No new shot-recording events were added.
+
+Matching local Debug DLL SHA-256: Core `27C1A149A8292F742A2782EBC14AD0ED20D3CAA25226598D224D5AD4D056B6A0`, addon `B91380974B3BA275CEE30A0E6EBFFA370EDCD5FA789C473452703549C6529787`. Deployment remains pending at the player's request while Tarkov is running; no installed files were changed. These builds include the existing working-tree changes.
+
+Contracts: [Core prevention](../../docs/Combat-Tactics.md#friendly-fire-prevention), [external SAIN compatibility](../../docs/SAIN-Compatibility.md#friendly-fire-analysis), [addon regroup](Combat.md#regroup).
 
 ## 2026-10-09 - Follower grenade toggle owns native SAIN enable switches
 

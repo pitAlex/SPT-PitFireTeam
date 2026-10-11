@@ -64,6 +64,7 @@ namespace pitTeam.Modules
             var bot = target.AIData?.BotOwner;
             if (bot?.BotsGroup == null || !IsPmc(target)) return false;
             if (GameplayModeRuntime.IsAllegiance) return AllegiancePmcFriendship.CanRecruit(bot, player);
+            if (AllegiancePmcFriendship.IsSelectedFriendly(bot, player)) return true;
             return target.Side == player.Side && GameplayModeRuntime.GetEffectiveValue(pitFireTeam.pitFireTeamFLAG) &&
                 !GameplayModeRuntime.GetEffectiveValue(pitFireTeam.badGuy) &&
                 !bot.BotsGroup.IsEnemy(player) && bot.EnemiesController?.IsEnemy(player) != true &&

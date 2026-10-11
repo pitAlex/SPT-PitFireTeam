@@ -68,6 +68,7 @@
     "Name": "敌人追踪",
     "Description": "在简单和真实敌人追踪模式之间切换。简单模式追踪敌人的当前位置，不受最后一次目击或报告时间的影响。真实模式使用通过目击或声音报告的位置，或敌人的最后已知位置。"
   },
+  "friendlyChanceMultiplier": { "Name": "友好相遇概率倍率", "Description": "提高你遇到潜在盟友的机会。在 Guns for Hire 中，只有同阵营的战士可能成为友军。开启「同阵营 PMC 友好」或「恶人」后，此设置不生效。" },
   "healthMultiplier": {
     "Name": "小队生命倍率",
     "Description": "战局开始时，您的队员的每个身体部位的生命值会分别和本生命倍率相乘。"
@@ -364,7 +365,8 @@
     "SquadControlRosterRole": "小队成员",
     "SquadControlEmptyRoster": "背后无人掩护。雇佣队友，或在战场上招募队友，让塔科夫由你掌控。",
     "SquadControlEmptyAllegianceRoster": "背后无人掩护。投身一场突袭，结成同盟，一起逃离塔科夫。",
-    "SquadControlModeAllegianceDescription": "遵循塔科夫的规则。盟友靠结交，而非购买。设置已锁定，彼此的关系由战场上的行动决定。",
+    "SquadControlModeGunsForHireDescription": "出发前雇佣并武装你的小队。让塔科夫由你掌控，按自己的规则游玩。",
+    "SquadControlModeAllegianceDescription": "遵循塔科夫的规则。盟友靠结交，而非购买。在战场上找到盟友，一起逃离。",
     "SettingsPressKey": "按下按键……",
     "SettingsNotBound": "未绑定",
     "SettingsUnavailableDuringRaid": "战局中不可用"

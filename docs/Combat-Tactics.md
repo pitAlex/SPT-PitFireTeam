@@ -1,6 +1,6 @@
 # Combat Tactics Notes
 
-Last updated: 2026-08-30
+Last updated: 2026-10-11
 
 ## Scope
 
@@ -25,6 +25,24 @@ Core combat is objective-routed.
 - Push selection and push commitment live in `FollowerCombatPush`.
 
 Objective ownership matters: heal, dogfight, grenade, and immediate fire can interrupt the current objective, but they do not automatically change the owning objective. Explicit combat regroup activates the regroup objective. Explicit suppression activates the suppression objective for eligible followers: Rifleman/default followers by default, and Marksman followers only for the automatic-secondary fallback case. Explicit Need Sniper activates the marksman support objective for Marksman followers. Explicit push returns control to the active tactic's primary objective and lets that tactic build a push plan.
+
+## Friendly-fire prevention
+
+Core owns shared follower firing safety for ordinary fire and suppression, including the optional SAIN brain. `FollowerShootDataSafetyPatch` checks the actual muzzle lane before burst admission and reconciles blocked results after other HarmonyX prefixes run. `FollowerFirearmTriggerSafetyPatch` also guards direct trigger requests. `FollowerFirearmUpdateSafetyPatch` rechecks held fire before the current weapon operation updates, using the live SAIN manual target when available or the ready native aiming endpoint. These guards release fire through the native stop path; ordinary bots and human firing remain outside their scope.
+
+`FollowerAutomaticFireSafetyPatch` additionally checks each automatic/fixed-burst round at `AutomaticFireOperation.InternalOnFireEvent`, before inventory operations consume ammunition. Unsafe rounds use the operation's native `SwitchToIdling` transition. This covers internally reasserted burst triggers and multiple rounds within one update without skipping a late ballistic call or a pending chamber/ejection update. Single-shot operations that already consumed/prepared their cartridge are allowed to complete; projectiles already released cannot be recalled.
+
+The shared vector helper uses the current main/underbarrel fireport or native eye-origin mode, applies `AdjustShotVectors`, and retains vertical direction. The actual muzzle lane checks all forward squad members rather than stopping at the intended target distance. Existing intended-target, wider suppression and launcher-impact policies remain. `FollowerSainManualFireSafety` applies ordinary/wide intended-lane checks before every follower manual-fire attempt and clears native manual/suppression state on rejection; it has no addon dependency or repeated reflection. See [SAIN compatibility](SAIN-Compatibility.md#friendly-fire-analysis).
+
+Qualification: `tests/Verify-FollowerFireSafety.ps1` checks installed/reference entry points and runs production hooks, vector calculation and lane geometry with real Harmony interception. Coverage includes competing SAIN-style prefixes, ordinary/manual/automatic/fixed-burst firing, moving squadmates, target changes, vertical and underbarrel directions, ammunition preservation, scope/lifecycle and no new recording events. Current-position geometry does not guarantee safety against later ally movement, arbitrary spread or ricochets. Raid behavior and frame time still require qualification.
+
+## Friendly-fire damage
+
+Core halves direct damage between the human leader and that player's currently registered followers in both directions, including saved squadmates and field recruits. This applies to every tactic, with or without the external SAIN plugin or addon. `FollowerFriendlyFireDamagePatch` intercepts `Player.ApplyDamageInfo` after native armor processing and multiplies only that call's `DamageInfo.Damage` by `0.5` before native health processing. Attributed bullets, fragments, explosions and melee use the same boundary. A reused explosion payload remains unchanged for subsequent victims because `DamageInfo` is a value type.
+
+The exact registered bot/player and live boss ownership must match. Unrecruited friendlies, dismissed followers, another player's followers, follower-to-follower hits, self damage and unattributed/environmental damage do not receive this reduction. Native armor durability/penetration, attacker attribution, injury rules and later bleeding remain native. Health overflow is calculated from the reduced hit without applying the multiplier again; this is not a promise to halve all eventual health loss from secondary effects.
+
+2026-10-11 source qualification: `tests/Verify-FriendlyFireDamage.ps1` validates the compile-reference and installed damage signatures, armor-before-health ordering and nonrecursive health boundary, then runs 26 checks using the production patch and real Harmony argument interception. Scope, both directions, per-victim value copies, lookup failures and lifecycle exclusions pass. In-raid health/armor/effect behavior still requires qualification. See [external SAIN firing safety](SAIN-Compatibility.md#friendly-fire-analysis) for the separate prevention analysis.
 
 ## Enemy Acquisition And Retention
 

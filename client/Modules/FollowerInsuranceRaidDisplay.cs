@@ -21,6 +21,7 @@ namespace pitTeam.Modules
                 raidServerId = null;
                 InsuredIds.Clear();
             }
+            GearSwapInsuranceDiagnostics.Clear();
         }
 
         internal static bool IsInsured(string itemId)
@@ -31,10 +32,22 @@ namespace pitTeam.Modules
                 return currentServerId != null && currentServerId == raidServerId && InsuredIds.Contains(itemId);
         }
 
+        internal static string DiagnosticState()
+        {
+            string currentServerId = FollowerInsuranceRaidReports.CurrentServerId;
+            lock (Gate)
+                return $"currentRaid='{currentServerId ?? "<none>"}' cachedRaid='{raidServerId ?? "<none>"}' " +
+                    $"cacheMatches={currentServerId != null && currentServerId == raidServerId} cachedIds={InsuredIds.Count}";
+        }
+
         internal static void Refresh()
         {
             string serverId = FollowerInsuranceRaidReports.CurrentServerId;
-            if (string.IsNullOrWhiteSpace(serverId)) return;
+            if (string.IsNullOrWhiteSpace(serverId))
+            {
+                Logger.LogInfo("[FollowerInsurance:RaidDisplay] Refresh skipped: current raid identity unavailable.");
+                return;
+            }
             try
             {
                 string response = RequestHandler.PostJson(Route, JsonConvert.SerializeObject(new { InsuranceServerId = serverId }));

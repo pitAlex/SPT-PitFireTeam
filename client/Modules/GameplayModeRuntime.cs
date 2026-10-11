@@ -72,8 +72,7 @@ namespace pitTeam.Modules
                 [pitFireTeam.maximumPickup] = 2,
                 [pitFireTeam.recruitPickup] = true,
                 [pitFireTeam.teamEscape] = true,
-                [pitFireTeam.teamEscapeUseAnyExtract] = false,
-                [pitFireTeam.loadoutManagementMode] = LoadoutManagementMode.Immersive
+                [pitFireTeam.teamEscapeUseAnyExtract] = false
             };
             modeEntry.SettingChanged -= RejectUncoordinatedModeChange;
             modeEntry.SettingChanged += RejectUncoordinatedModeChange;
@@ -89,7 +88,7 @@ namespace pitTeam.Modules
         public static bool IsLocked(ConfigEntryBase entry) => IsAllegiance && entry != null && lockedValues?.ContainsKey(entry) == true;
 
         internal static bool IsSettingUnavailableInCurrentMode(ConfigEntryBase entry) =>
-            entry != null && (IsLocked(entry) || (!IsAllegiance && entry == pitFireTeam.friendlyChanceMultiplier));
+            entry != null && IsLocked(entry);
 
         // Config entries are saved preferences. Gameplay and UI read the active
         // policy here, so editing/reloading the cfg cannot change Allegiance rules.
@@ -104,9 +103,14 @@ namespace pitTeam.Modules
             if (!IsApplying && modeEntry.Value != Current) Apply(() => modeEntry.Value = Current);
         }
 
+        private static bool IsModeSnapshotEntry(ConfigEntryBase entry) =>
+            // Use the fixed-value policy regardless of the currently active mode.
+            // Everything outside it is shared, including entries in older snapshots.
+            entry != null && lockedValues?.ContainsKey(entry) == true;
+
         private static List<SavedValue> Capture() => config
-            // Allegiance-only preferences have no Guns for Hire state to restore.
-            .Where(pair => pair.Value != modeEntry && pair.Value != pitFireTeam.friendlyChanceMultiplier)
+            // Shared preferences never participate in mode-specific restoration.
+            .Where(pair => IsModeSnapshotEntry(pair.Value))
             .Select(pair => new SavedValue { Section = pair.Key.Section, Key = pair.Key.Key, Value = pair.Value.GetSerializedValue() }).ToList();
 
         private static List<SavedValue> ReadSnapshot()
@@ -117,7 +121,7 @@ namespace pitTeam.Modules
             foreach (var value in values)
             {
                 var definition = new ConfigDefinition(value.Section, value.Key);
-                if (config.ContainsKey(definition) && config[definition] != modeEntry)
+                if (config.ContainsKey(definition) && IsModeSnapshotEntry(config[definition]))
                     TomlTypeConverter.ConvertToValue(value.Value, config[definition].SettingType);
             }
             return values;
@@ -128,7 +132,7 @@ namespace pitTeam.Modules
             foreach (var value in values)
             {
                 var definition = new ConfigDefinition(value.Section, value.Key);
-                if (config.ContainsKey(definition) && config[definition] != modeEntry)
+                if (config.ContainsKey(definition) && IsModeSnapshotEntry(config[definition]))
                     config[definition].SetSerializedValue(value.Value);
             }
         }

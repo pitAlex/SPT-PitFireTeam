@@ -15,7 +15,7 @@ namespace pitTeam.Modules
 
         internal void Update(BotOwner bot, Player human)
         {
-            if (spokenCount >= 2 || secondSkipped || !GameplayModeRuntime.IsAllegiance || bot == null ||
+            if (spokenCount >= 2 || secondSkipped || !AllegiancePmcFriendship.IsEnabled || bot == null ||
                 bot.IsDead || bot.BotState != EBotState.Active || BossPlayers.IsFollower(bot) ||
                 bot.GetPlayer?.HealthController?.IsAlive != true || human?.HealthController?.IsAlive != true)
                 return;

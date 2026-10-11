@@ -212,7 +212,7 @@ namespace pitTeam
         public const string SainAddonPluginId = "xyz.pit.fireteam.sainaddon";
         public const string SeparateHostilityPluginId = "dk.sptplugins.separatehostility";
         public const string MenuOverhaulPluginId = "com.moxopixel.menuoverhaul";
-        internal const LoadoutManagementMode DefaultLoadoutManagementMode = LoadoutManagementMode.Restricted;
+        internal const LoadoutManagementMode DefaultLoadoutManagementMode = LoadoutManagementMode.Immersive;
         private const string StartupRecoveryNoticeRoute = "/singleplayer/pitfireteam/recovery-notice";
         private const string StartupRecoveryNoticeAckRoute = "/singleplayer/pitfireteam/recovery-notice/ack";
         private const int DefaultLootMinimumPriceRoubles = 20_000;
@@ -365,6 +365,7 @@ namespace pitTeam
             new PmcFriendlyFireRetaliationBridgePatch().Enable();
 
             new BotMemoryDamagePatch().Enable();
+            new FollowerFriendlyFireDamagePatch().Enable();
             new FollowerGoalEnemyClearRetentionPatch().Enable();
             new ExUsecBrainHitPatch().Enable();
 
@@ -470,6 +471,9 @@ namespace pitTeam
             new FollowerAimTimeProficiencyPatch().Enable();
             new FollowerAimTargetPatch().Enable();
             new FollowerShootDataSafetyPatch().Enable();
+            new FollowerFirearmTriggerSafetyPatch().Enable();
+            new FollowerFirearmUpdateSafetyPatch().Enable();
+            new FollowerAutomaticFireSafetyPatch().Enable();
             new FollowerShootFromPlaceCrouchPatch().Enable();
             new FollowerGrenadeAvailabilityPatch().Enable();
             new FollowerGrenadeCooldownPatch().Enable();
@@ -586,6 +590,7 @@ namespace pitTeam
             new LoadoutEditorRepairContextInteractionPatch().Enable();
             new LoadoutEditorInsurancePurchasePatch().Enable();
             new FollowerInsuranceRaidIconPatch().Enable();
+            new FollowerInsuranceMailClaimPatch().Enable();
             new LoadoutEditorRepairByKitPatch().Enable();
             new LoadoutEditorRepairByTraderPatch().Enable();
             new LoadoutEditorLockContextInteractionPatch().Enable();

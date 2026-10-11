@@ -171,7 +171,8 @@ public static class HostilityChecks {
     }
     private static void AllegianceChecks() {
         Setup();var bot=Solo("solo");AllegiancePmcFriendship.Apply(bot);
-        Check(UnityEngine.Random.Rolls==0 && AllegiancePmcFriendship.CanRecruit(bot,boss.realPlayer),"Guns for Hire does not roll or gate recruitment");
+        Check(UnityEngine.Random.Rolls==1 && AllegiancePmcFriendship.IsSelectedFriendly(bot,boss.realPlayer) && AllegiancePmcFriendship.CanRecruit(bot,boss.realPlayer),"Guns for Hire rolls same-faction encounters without changing recruitment admission");
+        Setup();bot=Solo("solo");
         GameplayModeRuntime.IsAllegiance=true;
         AllegiancePmcFriendship.Apply(rogue);AllegiancePmcFriendship.Apply(first);
         Check(UnityEngine.Random.Rolls==0,"Rogues and owned followers never roll");
@@ -273,8 +274,9 @@ public static class HostilityChecks {
         friendly=Solo("selected-friendly");AllegiancePmcFriendship.Apply(friendly);
         friendly.BotsGroup.Enemies[second]=new BotGroupEnemyInfo();boss.bossGroup.Enemies[friendly]=new BotGroupEnemyInfo();
         GameplayModeRuntime.IsAllegiance=false;
+        pitTeam.Utils.Utils.Friendly=true;
         AllegiancePmcFriendship.OnFollowerAdded(second,boss.realPlayer);
-        Check(friendly.BotsGroup.IsEnemy(second) && boss.bossGroup.IsEnemy(friendly),"Guns for Hire does not apply Allegiance relationship repair");
+        Check(friendly.BotsGroup.IsEnemy(second) && boss.bossGroup.IsEnemy(friendly),"Disabled Guns for Hire encounters do not apply selected-candidate relationship repair");
         GameplayModeRuntime.IsAllegiance=true;
         var stranger=new Player {ProfileId="other-leader"};
         AllegiancePmcFriendship.OnFollowerAdded(second,stranger);
@@ -357,6 +359,56 @@ public static class HostilityChecks {
         Check(UnityEngine.Random.Rolls==5 && !AllegiancePmcFriendship.CanRecruit(capped,boss.realPlayer),"Faction-dependent chances retain shared three-selection cap");
         AllegiancePmcFriendship.Reset();
     }
+    private static void GunsForHireEncounterChecks() {
+        float[] chances={0.30f,0.475f,0.65f,0.825f,1f};
+        foreach(var playerSide in new[]{EPlayerSide.Usec,EPlayerSide.Bear})
+        foreach(int multiplier in new[]{1,2,3,4,5}) {
+            float chance=chances[multiplier-1];
+            foreach(float roll in new[]{chance-0.0001f,Math.Min(1f,chance+0.0001f),1f}) {
+                Setup();boss.realPlayer.Profile.Info.Side=playerSide;
+                pitTeam.pitFireTeam.friendlyChanceMultiplier.Value=multiplier;
+                FriendlyEncounterPenaltyRuntime.Points=100; // Allegiance penalties cannot leak into this mode.
+                var candidate=Solo("hired-mode-chance");UnityEngine.Random.NextValue=roll;
+                AllegiancePmcFriendship.Apply(candidate);
+                Check(AllegiancePmcFriendship.IsSelectedFriendly(candidate,boss.realPlayer)==(multiplier==5 || roll<chance),"Guns for Hire uses same-side multiplier without Allegiance penalties");
+                AllegiancePmcFriendship.Apply(candidate);
+                Check(UnityEngine.Random.Rolls==1,"Guns for Hire never rerolls a candidate");
+            }
+            Setup();boss.realPlayer.Profile.Info.Side=playerSide;
+            pitTeam.pitFireTeam.friendlyChanceMultiplier.Value=multiplier;
+            var opposite=Solo("opposite",playerSide==EPlayerSide.Usec ? EPlayerSide.Bear : EPlayerSide.Usec);
+            AllegiancePmcFriendship.Apply(opposite);
+            Check(UnityEngine.Random.Rolls==0 && !AllegiancePmcFriendship.IsSelectedFriendly(opposite,boss.realPlayer),"Opposite faction never rolls in Guns for Hire, including multiplier 5");
+        }
+        foreach(bool friendlyPmc in new[]{false,true}) {
+            Setup();pitTeam.Utils.Utils.Friendly=friendlyPmc;pitTeam.Utils.Utils.Bad=!friendlyPmc;
+            pitTeam.pitFireTeam.friendlyChanceMultiplier.Value=5;
+            AllegiancePmcFriendship.Apply(Solo("disabled"));
+            Check(UnityEngine.Random.Rolls==0 && !AllegiancePmcFriendship.IsEnabled,"Friendly PMC Side and Bad Guy take precedence over encounter rolls");
+        }
+        Setup();var grouped=Solo("grouped");grouped.BotsGroup.AddMember(Solo("group-member"));
+        AllegiancePmcFriendship.Apply(grouped);
+        Check(UnityEngine.Random.Rolls==0,"Guns for Hire excludes grouped candidates");
+        foreach(var id in new[]{"one","two","three"}) AllegiancePmcFriendship.Apply(Solo(id));
+        var capped=Solo("capped");AllegiancePmcFriendship.Apply(capped);
+        Check(UnityEngine.Random.Rolls==3 && !AllegiancePmcFriendship.IsSelectedFriendly(capped,boss.realPlayer),"Guns for Hire retains the three-selection lifetime raid cap");
+        Setup();var candidateBot=Solo("friendly");AllegiancePmcFriendship.Apply(candidateBot);
+        Check(!candidateBot.BotsGroup.AddEnemy(boss.realPlayer,EBotEnemyCause.initial),"Ambient enemy scans preserve Guns for Hire encounters");
+        AllegianceFriendlyGreeting.Calls=0;BotOwnerUpdateHub.Invoke(candidateBot);
+        Check(AllegianceFriendlyGreeting.Calls==1,"Selected Guns for Hire friendly receives greetings");
+        var recruit=Solo("new-recruit");candidateBot.BotsGroup.Enemies[recruit]=new BotGroupEnemyInfo();
+        recruit.BotsGroup=boss.bossGroup;recruit.BotFollower.BossToFollow=boss;
+        boss.Followers.Add(recruit);boss.bossGroup.Members.Add(recruit);boss.bossGroup.Enemies[candidateBot]=new BotGroupEnemyInfo();
+        AllegiancePmcFriendship.OnFollowerAdded(recruit,boss.realPlayer);
+        Check(!candidateBot.BotsGroup.IsEnemy(recruit) && !boss.bossGroup.IsEnemy(candidateBot),"New Guns for Hire follower and remaining encounter are neutral in both directions");
+        FollowerGroupHostility.DeclareContact(first,candidateBot);
+        AllegiancePmcFriendship.Apply(candidateBot);
+        Check(!AllegiancePmcFriendship.IsSelectedFriendly(candidateBot,boss.realPlayer) && candidateBot.BotsGroup.IsEnemy(boss.realPlayer) && UnityEngine.Random.Rolls==1,"Explicit aggression revokes Guns for Hire friendship without reroll");
+        Setup();candidateBot=Solo("before-selection");FollowerGroupHostility.DeclareContact(first,candidateBot);
+        AllegiancePmcFriendship.Apply(candidateBot);
+        Check(UnityEngine.Random.Rolls==0,"Guns for Hire cannot clear hostility declared before selection");
+        AllegiancePmcFriendship.Reset();
+    }
     private static void FriendshipMultiplierChecks() {
         float[] sameChances={0.30f,0.475f,0.65f,0.825f,1f};
         float[] oppositeChances={0.15f,0.3625f,0.575f,0.7875f,1f};
@@ -374,7 +426,7 @@ public static class HostilityChecks {
             }
         }
         Setup();pitTeam.pitFireTeam.friendlyChanceMultiplier.Value=5;AllegiancePmcFriendship.Apply(Solo("guns-for-hire"));
-        Check(UnityEngine.Random.Rolls==0,"Multiplier cannot add friendship rolls in Guns for Hire");
+        Check(UnityEngine.Random.Rolls==1,"Multiplier affects same-faction encounters in Guns for Hire");
         Setup();GameplayModeRuntime.IsAllegiance=true;pitTeam.pitFireTeam.friendlyChanceMultiplier.Value=5;UnityEngine.Random.NextValue=1f;
         foreach(var id in new[]{"guaranteed-one","guaranteed-two","guaranteed-three"}) {
             var candidate=Solo(id,EPlayerSide.Bear);AllegiancePmcFriendship.Apply(candidate);
@@ -526,6 +578,7 @@ public static class HostilityChecks {
         AllegianceChecks();
         FriendshipChanceChecks();
         FriendshipMultiplierChecks();
+        GunsForHireEncounterChecks();
         CrossFactionChecks();
         RecruitedFriendshipChecks();
         BossDamageChecks();

@@ -286,4 +286,36 @@ var persistedMail = JsonSerializer.Deserialize<FollowerInsuranceCourierTransfers
     JsonSerializer.Serialize(new FollowerInsuranceCourierTransfers { Items = [mailed] }))!;
 Check(persistedMail.Items.Single().State == "complete" && persistedMail.Items[0].MailItemId == "mail-scope",
     "courier handoff state and remapped mail item ID survive restart");
+var claim = new FollowerInsuranceCourierTransfer
+{
+    MailItemId = "claimed", TemplateId = "plate", TraderId = "prapor", State = "complete",
+};
+var claimTemplates = new Dictionary<string, string> { ["claimed"] = "plate" };
+var claimPolicies = new[] { Policy("claimed"), Policy("unrelated", "therapist") };
+List<FriendlyTeammateInsuredItem> SyncClaims() => FollowerInsuranceCourierPolicyPlanner.ClaimedPolicies(
+    [claim], claimPolicies, claimTemplates, ["claimed", "unrelated", "claimed"]);
+Check(SyncClaims().Single().ItemId == "claimed", "claim display sync returns only completed exact courier policy");
+Check(SyncClaims().Single().TraderId == "prapor", "claim display sync preserves original insurer");
+Check(claimPolicies.Length == 2 && claim.State == "complete", "claim display lookup does not mutate coverage or transfer state");
+claim.State = "authorized";
+Check(SyncClaims().Count == 0, "authorized but unclaimed policy is not synchronized");
+claim.State = "reserved";
+Check(SyncClaims().Count == 0, "uncertain reserved handoff is not synchronized");
+claim.State = "complete";
+claimTemplates.Clear();
+Check(SyncClaims().Count == 0, "sold or removed claimed item cannot regain insurance");
+claimTemplates["claimed"] = "other-plate";
+Check(SyncClaims().Count == 0, "replacement template cannot gain claim coverage");
+claimTemplates["claimed"] = "plate";
+claim.TraderId = "therapist";
+Check(SyncClaims().Count == 0, "conflicting current insurer is not synchronized");
+claim.TraderId = "prapor";
+Check(FollowerInsuranceCourierPolicyPlanner.ClaimedPolicies([claim], [], claimTemplates, ["claimed"]).Count == 0,
+    "removed insurance is not recreated from transfer history");
+Check(FollowerInsuranceCourierPolicyPlanner.ClaimedPolicies([claim, claim], claimPolicies, claimTemplates, ["claimed"]).Count == 0,
+    "duplicate mail identity is rejected");
+Check(FollowerInsuranceCourierPolicyPlanner.ClaimedPolicies([claim], [Policy("claimed"), Policy("claimed")], claimTemplates,
+    ["claimed"]).Count == 0, "duplicate current policy is rejected");
+Check(FollowerInsuranceCourierPolicyPlanner.ClaimedPolicies([claim], claimPolicies, claimTemplates, []).Count == 0,
+    "unrequested courier policies are not synchronized");
 Console.WriteLine($"PASS: {checks} follower insurance checks");

@@ -529,6 +529,10 @@ These are especially useful before enemies become fully visible.
 
 Your teammates can still successfully extract after your death and return any loot they were carrying for you. The escape chance is calculated based on the distance to extraction, how many teammates are still alive, their equipment quality, the estimated threat level of enemies between them and the extraction, as well as their current health and available medical supplies. The amount of gear they will be able to return upon escaping depends on their available inventory space as well as their strength level.
 
+## Friendly Encounters
+
+Guns for Hire brings potential allies from your own faction; Allegiance can bring allies from either side. **Friendly Chance Multiplier** improves your odds of meeting one, but has no effect while **Friendly PMC Side** or **Bad Guy** is on.
+
 ## Loadout Management
 
 Found in My Squad → Settings
@@ -537,12 +541,14 @@ Before editing teammate loadouts, check **Known Issues and Conflicts** for curre
 
 ![Loadout Management](https://iili.io/BpKDP4I.md.png)
 
-- **Restricted (default)** — Teammate loadouts must use gear from your stash or be purchased through **Kit Loadouts**. Gear is still protected: it is not lost on death and cannot be extracted with.
+- **Restricted** — Teammate loadouts must use gear from your stash or be purchased through **Kit Loadouts**. Gear is still protected: it is not lost on death and cannot be extracted with.
     - **Field Upkeep** — Track raid wear and spent supplies for teammates while their gear remains protected from death loss and extraction.
-- **Immersive** — Same as Restricted, but teammate gear behaves like real raid equipment. Equipment can become damaged, dead teammates lose their gear, and their bodies can be looted.
+- **Immersive (default)** — Same as Restricted, but teammate gear behaves like real raid equipment. Equipment can become damaged, dead teammates lose their gear, and their bodies can be looted.
 - **Realistic** — Same as Immersive, but secure containers are no longer automatically managed for teammates. You are fully responsible for configuring them yourself.
 
 All modes use **Edit Loadout** for the current kit and **Kit Loadouts** to price, purchase, or equip saved player equipment builds using selected stash items. Secure containers are only included in **Realistic** mode.
+
+Choose your Loadout Management style in either **Guns for Hire** or **Allegiance**. Both start with **Immersive**.
 
 In non-Realistic modes, the automatically managed secure container provides basic medical support, including a Grizzly and surgery kit. For long raids or repeated fights, supplement this by putting extra meds in the teammate's backpack or giving them useful meds you find in the raid.
 

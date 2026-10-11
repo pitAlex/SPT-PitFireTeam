@@ -171,6 +171,18 @@ public sealed class FollowerInsuranceCourierTransferService(
         }
     }
 
+    // Read-only client synchronization. Claim authorization/persistence stays in TryApplyClaimed.
+    public List<FriendlyTeammateInsuredItem> GetClaimedPolicies(MongoId sessionId, IEnumerable<string> itemIds)
+    {
+        var transfers = storage.Read<FollowerInsuranceCourierTransfers>(sessionId, Document);
+        var pmc = profileHelper.GetPmcProfile(sessionId);
+        if (transfers == null || pmc?.Inventory?.Items == null || pmc.InsuredItems == null) return [];
+        var templates = pmc.Inventory.Items.GroupBy(item => item.Id.ToString())
+            .Where(group => group.Count() == 1).ToDictionary(group => group.Key, group => group.Single().Template.ToString());
+        return FollowerInsuranceCourierPolicyPlanner.ClaimedPolicies(transfers.Items,
+            FriendlyTeammateInsuranceService.GetPlayerPolicies(pmc), templates, itemIds.Take(4096));
+    }
+
     private bool InsuranceModeEnabled()
     {
         string mode = settingsService.LoadSettings().LoadoutManagementMode;

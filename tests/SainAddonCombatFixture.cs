@@ -226,7 +226,6 @@ public static partial class CombatChecks {
         SainCoverSelectionBridge.Apply(new Harmony("xyz.pit.fireteam.sainaddon"));
         SainMedicalDecisionBridge.Apply(new Harmony("xyz.pit.fireteam.sainaddon"));
         SainSquadSupportBridge.Apply(new Harmony("xyz.pit.fireteam.sainaddon"));
-        SainRegroupFireSafety.Apply(new Harmony("xyz.pit.fireteam.sainaddon"));
         SainIdleWeaponGuard.Apply(new Harmony("xyz.pit.fireteam.sainaddon"));
         SainFollowerLeanGuard.Apply(new Harmony("xyz.pit.fireteam.sainaddon"));
         SainFollowerSoundAwareness.Install(new Harmony("xyz.pit.fireteam.sainaddon"));
@@ -319,13 +318,13 @@ public static partial class CombatChecks {
         var addonOwner=new Harmony("xyz.pit.fireteam.sainaddon");
         var decisionHook=HarmonyLib.AccessTools.Method(typeof(SAIN.SAINComponent.Classes.Decision.BotDecisionManager),"SetDecisions");
         Check(Harmony.GetPatchInfo(decisionHook).Owners.Contains(addonOwner.Id),"typed decision publisher hook belongs to addon");
-        var fireHook=AccessTools.Method(typeof(SAIN.SAINComponent.Classes.WeaponFunction.ManualShootClass), "TryShoot");
-        Check(Harmony.GetPatchInfo(fireHook).Owners.Contains(addonOwner.Id), "regroup fire hook belongs to addon lifecycle");
         addonOwner.UnpatchSelf();SainSquadDecisionBridge.Reset();SainCoverSelectionBridge.Reset();SainMedicalDecisionBridge.Reset();SainSquadSupportBridge.Reset();
+        var fireHook=AccessTools.Method(typeof(SAIN.SAINComponent.Classes.SAINFriendlyFireClass), "CheckFriendlyFireStatus",new[]{typeof(float),typeof(Vector3),typeof(Vector3),typeof(BotComponent)});
+        Check(Harmony.GetPatchInfo(fireHook).Owners.Contains(harmony.Id), "Core friendly-fire compatibility remains installed after addon removal");
         Check(!SainSquadDecisionBridge.IsAvailable&&!SainCoverSelectionBridge.IsAvailable,"decision and cover readiness cleared after removal");
         Check(!Harmony.GetAllPatchedMethods().Any(m=>Harmony.GetPatchInfo(m).Owners.Contains(addonOwner.Id)),"typed decision enemy and cover patches fully removed");
         SainFollowerSoundAwareness.Install(addonOwner);
-        SainSquadDecisionBridge.Apply(addonOwner);SainCoverSelectionBridge.Apply(addonOwner);SainMedicalDecisionBridge.Apply(addonOwner);SainSquadSupportBridge.Apply(addonOwner);SainRegroupFireSafety.Apply(addonOwner);SainIdleWeaponGuard.Apply(addonOwner);SainFollowerLeanGuard.Apply(addonOwner);
+        SainSquadDecisionBridge.Apply(addonOwner);SainCoverSelectionBridge.Apply(addonOwner);SainMedicalDecisionBridge.Apply(addonOwner);SainSquadSupportBridge.Apply(addonOwner);SainIdleWeaponGuard.Apply(addonOwner);SainFollowerLeanGuard.Apply(addonOwner);
         Check(SainSquadDecisionBridge.IsAvailable&&SainCoverSelectionBridge.IsAvailable,"typed hooks reinstall after removal");
         addonOwner.UnpatchSelf();SainSquadDecisionBridge.Reset();SainCoverSelectionBridge.Reset();SainMedicalDecisionBridge.Reset();SainSquadSupportBridge.Reset();
         Check(Logger.Errors.Count==0,"no lifecycle errors");

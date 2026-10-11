@@ -92,6 +92,7 @@ namespace pitTeam.Patches
             PatchFollowerWeaponSelectionGuard(harmony);
             FollowerSainAimTargetPatch.Apply(harmony);
             FollowerSainFriendlyFirePatch.Apply(harmony);
+            FollowerSainManualFireSafety.Apply(harmony);
             PatchSainTalkPrefixesForFollowers(harmony);
             PatchSainTalkGenerationForFollowers(harmony);
             PatchSainPlayerVoiceLineForFollowers(harmony);

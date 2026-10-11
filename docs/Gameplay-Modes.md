@@ -7,8 +7,9 @@ pitFireTeam has two gameplay modes. Each player profile chooses one on its first
 | Starting mode | Chosen on first My Squad visit | Chosen on first My Squad visit |
 | Building the roster | Manual hiring and eligible field recruitment | Field recruitment only |
 | Settings | Saved preferences and ordinary restrictions | Fixed values for the settings listed in its guide |
-| PMC recruitment | Existing same-side rules | Selected solo friendlies from either faction |
-| Friendly Chance Multiplier | Disabled | 1–5, affecting future friendship rolls |
+| Loadout Management | Editable outside raids; Immersive default | Editable outside raids; Immersive default |
+| PMC recruitment | Existing same-side rules; encounter rolls only for same-faction solos | Selected solo friendlies from either faction |
+| Friendly Chance Multiplier | 1–5; no effect while Friendly PMC Side or Bad Guy is on | 1–5, affecting future friendship rolls |
 | Friendly Encounters penalties | No new penalties or effect | Independent 24-hour recruited-friendly kill penalties |
 | PMC karma | Shared kill/extraction rules | Shared rules plus quiet peaceful-raid recovery |
 
@@ -34,9 +35,11 @@ Switching clears the outgoing squad selection, refreshes roster/social data and 
 
 ## Saved settings and restoration
 
-The selected mode persists in the hidden `00 GameplayMode` config entry. Before entering Allegiance, [GameplayModeRuntime](../client/Modules/GameplayModeRuntime.cs) atomically snapshots all currently bound mod settings except the mode and Allegiance-only Friendly Chance Multiplier to `<config path>.guns-for-hire.json`. Returning to Guns for Hire restores that snapshot, including after restarting the game. The multiplier retains its separate saved Allegiance preference.
+The selected mode persists in the hidden `00 GameplayMode` config entry. Before entering Allegiance, [GameplayModeRuntime](../client/Modules/GameplayModeRuntime.cs) atomically snapshots only the nine settings in [Allegiance's fixed-value policy](Allegiance.md#settings-policy) to `<config path>.guns-for-hire.json`. Returning to Guns for Hire restores those preferences, including after restarting the game. Every setting outside that policy is shared: changing it in either mode keeps the latest saved value in the other mode. Shared settings and the mode itself are never captured or restored; shared entries in older, broader snapshots are ignored during validation and restoration.
 
 Allegiance leaves saved config preferences intact. Gameplay consumers, the Settings UI and server synchronization resolve its fixed values through `GameplayModeRuntime.GetEffectiveValue`. Editing or reloading the BepInEx cfg cannot override those values while Allegiance is active. The fixed-value table belongs to [Allegiance](Allegiance.md#settings-policy).
+
+Loadout Management is not mode-locked. Both modes default to Immersive and use one shared saved Restricted, Immersive or Realistic choice. Changing it in either gameplay mode persists across restarts and mode switches; switching never restores a separate loadout policy.
 
 Mode changes use the coordinated transition rather than a live cfg reload. Reloading a different mode value during the session is rejected. A missing or invalid Guns for Hire snapshot fails restoration without overwriting it or recreating it from potentially forced values left by older builds.
 

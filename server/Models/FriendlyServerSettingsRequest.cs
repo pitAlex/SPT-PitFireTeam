@@ -5,7 +5,7 @@ namespace pitTeam.Server.Models;
 
 public record FriendlyServerSettingsRequest : IRequestData
 {
-    public const string DefaultLoadoutManagementMode = "Restricted";
+    public const string DefaultLoadoutManagementMode = "Immersive";
 
     [JsonPropertyName("gameplayMode")]
     public string GameplayMode { get; set; } = "GunsForHire";
@@ -21,7 +21,7 @@ public record FriendlyServerSettingsRequest : IRequestData
     [JsonPropertyName("loadoutManagementMode")]
     public string LoadoutManagementMode
     {
-        get => IsAllegiance ? "Immersive" : loadoutManagementMode;
+        get => loadoutManagementMode;
         set => loadoutManagementMode = NormalizeLoadoutManagementMode(value);
     }
 
@@ -29,6 +29,7 @@ public record FriendlyServerSettingsRequest : IRequestData
     {
         return mode?.Trim().ToLowerInvariant() switch
         {
+            "restricted" or "simple" => "Restricted",
             "immersive" => "Immersive",
             "extreme" or "realistic" => "Extreme",
             _ => DefaultLoadoutManagementMode,

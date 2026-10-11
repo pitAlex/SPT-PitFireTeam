@@ -15,7 +15,6 @@ namespace pitTeam.Patches
     {
         private static Func<object, BotOwner> _getOwner;
         private static object _friendlyBlock;
-
         internal static void Apply(Harmony harmony)
         {
             Type type = Type.GetType("SAIN.SAINComponent.Classes.SAINFriendlyFireClass, SAIN");
@@ -42,6 +41,7 @@ namespace pitTeam.Patches
         {
             BotOwner owner = _getOwner(__3);
             if (owner == null || !BossPlayers.IsFollower(owner)) return;
+            if (FollowerShotSafety.IsFriendlyInShotLane(owner, __1, __0)) __result = (T)_friendlyBlock;
             CheckFollowerLane(owner, __1, __2, (__0 - __1).magnitude, ref __result);
         }
         private static void CheckFollowerDistanceLane<T>(float __0, Vector3 __1, Vector3 __2, object __3, ref T __result)

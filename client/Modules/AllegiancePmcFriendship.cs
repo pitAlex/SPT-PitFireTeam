@@ -6,7 +6,7 @@ using pitTeam.Patches;
 
 namespace pitTeam.Modules
 {
-    // Raid-local, individual relationships. Never changes shared bot settings or factions.
+    // Raid-local encounters in both modes. Never changes shared bot settings or factions.
     internal static class AllegiancePmcFriendship
     {
         internal const int RaidLimit = 3;
@@ -25,13 +25,17 @@ namespace pitTeam.Modules
         private static readonly Dictionary<string, Decision> Decisions = new Dictionary<string, Decision>(StringComparer.Ordinal);
         private static int selectedCount;
         private static Player Human => Singleton<GameWorld>.Instance?.MainPlayer;
+        private static string LogPrefix => GameplayModeRuntime.IsAllegiance ? "[Allegiance]" : "[GunsForHire]";
+        internal static bool IsEnabled => GameplayModeRuntime.IsAllegiance ||
+            (!Utils.Utils.FlagGet("pitFireTeam") && !Utils.Utils.FlagGet("isBadGuy"));
 
         private static float GetSelectionChance(EPlayerSide botSide, EPlayerSide playerSide)
         {
             int multiplier = Math.Max(1, Math.Min(5, pitFireTeam.friendlyChanceMultiplier?.Value ?? 1));
             float baseChance = botSide == playerSide ? SameSideChance : OppositeSideChance;
             float chance = baseChance + (1f - baseChance) * ((multiplier - 1) / 4f);
-            return Shared.FriendlyEncounterPenaltyPolicy.Apply(chance, FriendlyEncounterPenaltyRuntime.GetPoints());
+            return Shared.FriendlyEncounterPenaltyPolicy.Apply(chance,
+                GameplayModeRuntime.IsAllegiance ? FriendlyEncounterPenaltyRuntime.GetPoints() : 0);
         }
 
         internal static void Reset()
@@ -58,9 +62,10 @@ namespace pitTeam.Modules
         internal static void Apply(BotOwner bot)
         {
             var human = Human;
-            if (!GameplayModeRuntime.IsAllegiance || human == null || human.Side == EPlayerSide.Savage ||
+            if (!IsEnabled || human == null || human.Side == EPlayerSide.Savage ||
                 !IsPmc(bot) || bot.IsDead || bot.GetPlayer?.HealthController?.IsAlive != true ||
                 BossPlayers.IsFollower(bot) || string.IsNullOrEmpty(bot.ProfileId)) return;
+            if (!GameplayModeRuntime.IsAllegiance && bot.Side != human.Side) return;
 
             if (!Decisions.TryGetValue(bot.ProfileId, out var decision))
             {
@@ -68,12 +73,12 @@ namespace pitTeam.Modules
                 Decisions.Add(bot.ProfileId, decision);
                 if (IsGrouped(bot))
                 {
-                    Logger.LogInfo($"[Allegiance] candidate={bot.ProfileId} decision=excluded-group");
+                    Logger.LogInfo($"{LogPrefix} candidate={bot.ProfileId} decision=excluded-group");
                     return;
                 }
                 if (selectedCount >= RaidLimit)
                 {
-                    Logger.LogInfo($"[Allegiance] candidate={bot.ProfileId} decision=raid-cap");
+                    Logger.LogInfo($"{LogPrefix} candidate={bot.ProfileId} decision=raid-cap");
                     return;
                 }
                 float roll = UnityEngine.Random.value;
@@ -100,7 +105,7 @@ namespace pitTeam.Modules
                     };
                     decision.Group.OnMemberAdd += decision.MemberAdded;
                 }
-                Logger.LogInfo($"[Allegiance] candidate={bot.ProfileId} side={bot.Side} playerSide={human.Side} roll={roll:F3} chance={chance:F2} friendly={decision.Friendly} selected={selectedCount}/{RaidLimit}");
+                Logger.LogInfo($"{LogPrefix} candidate={bot.ProfileId} side={bot.Side} playerSide={human.Side} roll={roll:F3} chance={chance:F2} friendly={decision.Friendly} selected={selectedCount}/{RaidLimit}");
             }
             if (!IsFriendly(bot)) return;
 
@@ -129,7 +134,7 @@ namespace pitTeam.Modules
         internal static void OnFollowerAdded(BotOwner follower, IPlayer leader)
         {
             var human = Human;
-            if (!GameplayModeRuntime.IsAllegiance || human == null || human.Side == EPlayerSide.Savage ||
+            if (!IsEnabled || human == null || human.Side == EPlayerSide.Savage ||
                 leader?.ProfileId != human.ProfileId || follower == null || follower.IsDead ||
                 follower.BotsGroup == null || follower.GetPlayer?.HealthController?.IsAlive != true ||
                 !BossPlayers.IsFollower(follower)) return;
@@ -145,7 +150,7 @@ namespace pitTeam.Modules
 
                 Neutralize(candidate, follower.GetPlayer);
                 Neutralize(follower, candidate.GetPlayer);
-                Logger.LogInfo($"[Allegiance] follower={follower.ProfileId} candidate={candidate.ProfileId} friendship-refreshed=both-directions");
+                Logger.LogInfo($"{LogPrefix} follower={follower.ProfileId} candidate={candidate.ProfileId} friendship-refreshed=both-directions");
             }
         }
 
@@ -164,11 +169,14 @@ namespace pitTeam.Modules
 
         internal static bool CanRecruit(BotOwner bot, IPlayer player) =>
             !GameplayModeRuntime.IsAllegiance || player?.Side == EPlayerSide.Savage ||
-            (player != null && player.ProfileId == Human?.ProfileId && IsPmc(bot) && IsFriendly(bot));
+            IsSelectedFriendly(bot, player);
+
+        internal static bool IsSelectedFriendly(BotOwner bot, IPlayer player) =>
+            IsEnabled && player != null && player.ProfileId == Human?.ProfileId && IsPmc(bot) && IsFriendly(bot);
 
         internal static bool ShouldBlockEnemyAddition(BotsGroup group, IPlayer person, EBotEnemyCause cause)
         {
-            if (!GameplayModeRuntime.IsAllegiance || group == null || person == null) return false;
+            if (!IsEnabled || group == null || person == null) return false;
             var human = Human;
             if (human == null) return false;
             Decision matched = null;
@@ -192,7 +200,7 @@ namespace pitTeam.Modules
 
         internal static void RevokeGroup(BotsGroup group, EBotEnemyCause cause)
         {
-            if (!GameplayModeRuntime.IsAllegiance || group == null || !FollowerGroupHostility.IsExplicitHostility(cause)) return;
+            if (!IsEnabled || group == null || !FollowerGroupHostility.IsExplicitHostility(cause)) return;
             foreach (var decision in Decisions.Values)
                 if (decision.Friendly && !BossPlayers.IsFollower(decision.Bot) && decision.Bot.BotsGroup == group)
                     Revoke(decision, cause.ToString());
@@ -205,8 +213,9 @@ namespace pitTeam.Modules
                 var bot = group.Member(i);
                 if (!IsPmc(bot) || BossPlayers.IsFollower(bot) ||
                     string.IsNullOrEmpty(bot.ProfileId) || Decisions.ContainsKey(bot.ProfileId)) continue;
+                if (!GameplayModeRuntime.IsAllegiance && bot.Side != human.Side) continue;
                 Decisions.Add(bot.ProfileId, new Decision { Bot = bot, Group = group });
-                Logger.LogInfo($"[Allegiance] candidate={bot.ProfileId} decision=hostile-before-selection cause={cause}");
+                Logger.LogInfo($"{LogPrefix} candidate={bot.ProfileId} decision=hostile-before-selection cause={cause}");
             }
         }
 
@@ -214,7 +223,7 @@ namespace pitTeam.Modules
         {
             decision.Friendly = false;
             // The lifetime selection remains spent; reactivation and repeat requests cannot reroll it.
-            Logger.LogInfo($"[Allegiance] candidate={decision.Bot.ProfileId} friendship-revoked={reason} selected={selectedCount}/{RaidLimit}");
+            Logger.LogInfo($"{LogPrefix} candidate={decision.Bot.ProfileId} friendship-revoked={reason} selected={selectedCount}/{RaidLimit}");
         }
     }
 }

@@ -74,7 +74,7 @@ namespace pitTeam.Localization
                     "Switch between Simple and Realistic enemy tracking. Simple tracks the enemy’s current position regardless of when they were last seen or reported. Realistic uses positions reported through sight or sound, or the enemy’s last known position."),
                 friendlyChanceMultiplier = Entry(
                     "Friendly Chance Multiplier",
-                    "Improve your odds of crossing paths with a potential ally."),
+                    "Improve your odds of crossing paths with a potential ally. In Guns for Hire, only your own faction can become friendly. Has no effect while Friendly PMC Side or Bad Guy is on."),
                 healthMultiplier = Entry(
                     "Squad Health Multiplier",
                     "Health multiplier for the followers you spawn with. This is applied per each body part."),
@@ -412,9 +412,9 @@ namespace pitTeam.Localization
                     ["SquadControlEmptyAllegianceRoster"] = "No one’s watching your six. Jump into a raid, forge alliances, and Escape together.",
                     ["GameplayModeSwitchFailed"] = "Unable to complete the mode switch. Please reconnect before deploying.",
                     ["SquadControlModeGunsForHire"] = "Guns for Hire",
-                    ["SquadControlModeGunsForHireDescription"] = "Build and equip your squad before deploying. Customize and play by your own rules.",
+                    ["SquadControlModeGunsForHireDescription"] = "Hire and equip your squad before deploying. Make Tarkov yours, and play by your own rules.",
                     ["SquadControlModeAllegiance"] = "Allegiance",
-                    ["SquadControlModeAllegianceDescription"] = "Play by Tarkov's rules. Alliances are formed, not bought. Settings are locked, and relationships are determined in the field.",
+                    ["SquadControlModeAllegianceDescription"] = "Play by Tarkov's rules. Alliances are formed, not bought. Find your allies in the field, and escape together.",
                     ["SquadControlSettingsTab"] = "Settings",
                     ["SquadControlRosterPlayer"] = "PLAYER",
                     ["SquadControlRosterLeader"] = "Leader",

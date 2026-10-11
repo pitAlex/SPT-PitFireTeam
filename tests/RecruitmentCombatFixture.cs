@@ -152,7 +152,7 @@ namespace pitTeam.Modules
             return entry.Value;
         }
     }
-    public static class AllegiancePmcFriendship { public static bool Allowed=true; public static bool CanRecruit(BotOwner bot, IPlayer player) => Allowed; }
+    public static class AllegiancePmcFriendship { public static bool Allowed=true; public static bool IsEnabled=true; public static bool CanRecruit(BotOwner bot, IPlayer player) => Allowed; }
     public class Logger
     {
         public static void LogInfo(string message) { }

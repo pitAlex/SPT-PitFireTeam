@@ -11,10 +11,12 @@ public static class AllegianceGreetingChecks
     public static int Run()
     {
         foreach (bool sain in new[] { false, true })
+        foreach (bool allegiance in new[] { false, true })
         foreach (float random in new[] { 0f, 1f })
         {
             pitTeam.pitFireTeam.IsSAINInstalled = sain;
-            GameplayModeRuntime.IsAllegiance = true;
+            GameplayModeRuntime.IsAllegiance = allegiance;
+            AllegiancePmcFriendship.IsEnabled = true;
             UnityEngine.Random.Fraction = random;
             var human = new Player();
             var bot = new BotOwner { ProfileId = "greeting-" + sain + random };
@@ -61,9 +63,10 @@ public static class AllegianceGreetingChecks
             Tick(400);
             bot.IsFollower=true; Tick(410);
             Check(bot.GetPlayer.VoiceCalls==2,"Recruitment cancels pending greeting");
-            bot.IsFollower=false; GameplayModeRuntime.IsAllegiance=false; Tick(420);
+            bot.IsFollower=false; GameplayModeRuntime.IsAllegiance=false; AllegiancePmcFriendship.IsEnabled=false; Tick(420);
+            AllegiancePmcFriendship.IsEnabled=true;
             bot.IsDead=true; GameplayModeRuntime.IsAllegiance=true; Tick(430);
-            Check(bot.GetPlayer.VoiceCalls==2,"Mode and death guards");
+            Check(bot.GetPlayer.VoiceCalls==2,"Encounter availability and death guards");
             bot.IsDead=false; bot.GetPlayer.HealthController.IsAlive=false; Tick(440);
             bot.GetPlayer.HealthController.IsAlive=true; human.HealthController.IsAlive=false; Tick(450);
             Check(bot.GetPlayer.VoiceCalls==2,"Living bot and human required");

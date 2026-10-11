@@ -1,6 +1,6 @@
 # Allegiance
 
-> Play by Tarkov's rules. Alliances are formed, not bought. Settings are locked, and relationships are determined in the field.
+> Play by Tarkov's rules. Alliances are formed, not bought. Find your allies in the field, and escape together.
 
 Allegiance builds the squad through field recruitment. **Add Teammate** is hidden and manual hiring is rejected on the server. Successfully recruited bots can enter this mode's saved roster through the existing post-raid invitation and acceptance workflow. Allegiance has its own roster, equipment, teammate settings and pending invitations; it starts empty and does not import the Guns for Hire roster.
 
@@ -21,19 +21,20 @@ Allegiance disables these controls, with the tooltip `this option is not availab
 | Recruit Pickup | On |
 | Team Escape | On |
 | Team Escape: Use Any Extraction Point | Off |
-| Loadout Management | Immersive |
 
 Heal Followers remains available as a manual emergency shortcut in Allegiance. Its key can be configured normally; ordinary follower healing behavior is unchanged.
 
 Squad Health Multiplier is also editable in Allegiance and uses the saved value through the existing follower-spawn customization path. Its range remains 1–10 and its existing in-raid editing restriction still applies.
 
-Fixed values are resolved at runtime rather than written over the saved Guns for Hire preferences. Editing the cfg cannot bypass this policy. Returning to Guns for Hire restores the captured preferences; see [settings restoration](Gameplay-Modes.md#saved-settings-and-restoration).
+Loadout Management is editable outside raids in Allegiance, with the same Restricted, Immersive and Realistic equipment policies as Guns for Hire. Both modes use one shared saved choice, defaulting to Immersive. Existing saved choices are preserved, and switching gameplay mode keeps the current choice. See [Loadout Management](Loadout-Management.md) for ownership, supplies, upkeep and death-loss rules.
+
+Fixed values are resolved at runtime rather than written over the saved Guns for Hire preferences. Editing the cfg cannot bypass this policy. Only the nine settings in the table are captured and restored when returning to Guns for Hire. All other settings are shared and keep edits made in either mode; see [settings restoration](Gameplay-Modes.md#saved-settings-and-restoration).
 
 ## Finding friendly PMCs
 
 Allegiance selects solo BEAR and USEC PMCs after `FactionHostility.Apply` in the activation hook. At the default Friendly Chance Multiplier of 1, same-faction candidates have a 30% friendship chance and opposite-faction candidates have a 15% chance, relative to the human PMC's side. Each profile has one raid-local decision, with at most three lifetime friendly selections shared across both factions; deaths, recruitment and dismissal never release a slot. Failed rolls do not consume a friendly selection slot and cannot be retried. Current groups, original multi-bot spawn groups and groups awaiting additional members are excluded, including their later survivors. A selected solo joining a group loses this individual friendship. Player-Scav/Fence behavior remains unchanged.
 
-`Miscellaneous > Friendly Chance Multiplier` appears immediately before Squad Health Multiplier. It is an integer BepInEx setting from 1 to 5, enabled only in Allegiance; Guns for Hire displays it disabled with the mode-unavailable tooltip. Each step adds 17.5 percentage points for the player's faction and 21.25 for the opposite faction. Changes affect future candidate rolls only, without resetting existing decisions or the raid cap. Its saved value survives restarts and mode switches independently of the Guns for Hire snapshot.
+`Miscellaneous > Friendly Chance Multiplier` appears immediately before Squad Health Multiplier. It is an integer BepInEx setting from 1 to 5, editable in both gameplay modes. In Allegiance each step adds 17.5 percentage points for the player's faction and 21.25 for the opposite faction. Changes affect future candidate rolls only, without resetting existing decisions or the raid cap. Its shared saved value survives restarts and mode switches independently of the Guns for Hire snapshot. Guns for Hire rolls only the player's faction, and the setting has no effect there while Friendly PMC Side or Bad Guy is on.
 
 | Friendly Chance Multiplier | Same faction | Opposite faction |
 |---|---|---|
@@ -76,7 +77,7 @@ Allegiance additionally restores 0.005 once after a completed raid with selected
 ## Implementation ownership and verification
 
 - [GameplayModeRuntime](../client/Modules/GameplayModeRuntime.cs) owns fixed setting values and coordinated mode transitions.
-- [AllegiancePmcFriendship](../client/Modules/AllegiancePmcFriendship.cs) owns raid-local selection, exclusions, recruitment eligibility and friendship revocation.
+- [AllegiancePmcFriendship](../client/Modules/AllegiancePmcFriendship.cs) owns the shared raid-local encounter selection, exclusions and revocation, plus Allegiance's selected-candidate recruitment requirement.
 - [AllegianceFriendlyGreeting](../client/Modules/AllegianceFriendlyGreeting.cs) owns the sight/timing sequence through `BotOwnerUpdateHub`.
 - [BotGroupRequestPatch](../client/Patches/BotGroupRequestPatch.cs) and the existing follower conversion path own recruitment admission and registration.
 - [FriendlyEncounterPenaltyRuntime](../client/Modules/FriendlyEncounterPenaltyRuntime.cs), [FriendlyEncounterPenaltyService](../server/Services/FriendlyEncounterPenaltyService.cs) and [FriendlyEncounterPenaltyPolicy](../shared/FriendlyEncounterPenaltyPolicy.cs) own the ledger, scaling, expiry and display data.
