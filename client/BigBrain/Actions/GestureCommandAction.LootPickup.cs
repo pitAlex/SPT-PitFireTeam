@@ -22,6 +22,7 @@ namespace pitTeam.BigBrain.Actions
 {
     internal partial class GestureCommandAction
     {
+        private Dictionary<string, int>? scavLootPickupBefore;
         // Loose item pickup is a direct "pick this up" command, not the body/container looting
         // scenario. It stays separate from loot-search voice, delay, and filtering rules.
         private void HandleTakeLootItem()
@@ -505,6 +506,7 @@ namespace pitTeam.BigBrain.Actions
                     }
                 }
 
+                scavLootPickupBefore = AllegianceScavCargo.CaptureCommandedLoot(BotOwner);
                 inventory.RunNetworkTransaction(pickupAction, new Callback(result => CompleteLootPickup(result, botPlayer, rootItem)));
             }
             catch (Exception ex)
@@ -558,6 +560,8 @@ namespace pitTeam.BigBrain.Actions
 
         private void FinishLootPickupSuccess(Player? botPlayer, Item rootItem, string reason)
         {
+            AllegianceScavCargo.TrackCommandedLoot(BotOwner, rootItem, scavLootPickupBefore);
+            scavLootPickupBefore = null;
             botPlayer?.UpdateInteractionCast();
             InteractableObjects.ClearStrictCargoTree(BotOwner, rootItem);
             InteractableObjects.RegisterLootedWeaponTree(BotOwner, rootItem);
@@ -949,6 +953,7 @@ namespace pitTeam.BigBrain.Actions
             lootPickupReadyAt = 0f;
             lootPickupAttemptStartedAt = 0f;
             activeLootItem = null;
+            scavLootPickupBefore = null;
             ResetLoosePickupBackpackSupport();
 
             if (BotOwner != null)

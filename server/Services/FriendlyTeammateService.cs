@@ -1509,11 +1509,10 @@ public partial class FriendlyTeammateService(
                 // Raid outcomes do not persist health. Ordinary follower activation restores full
                 // health; saving a failed escape as zero only left a misleading dead profile.
 
-                // Eligible surviving Default loadouts keep the in-raid state here. Immersive/Realistic
-                // always qualify; Restricted only qualifies when Field Upkeep is enabled.
+                // Surviving Default loadouts keep the in-raid state in every equipment mode.
                 ApplyImmersiveEscapedDefaultEquipmentState(sessionId, teammate, entry, protectedTeammateItemIdsByAid);
 
-                // Field Upkeep does not enable death gear loss, but it still needs the
+                // Restricted protects gear from death loss, but still needs the
                 // death-time equipment state so used consumables and durability loss cannot be duplicated.
                 ApplyRestrictedGearMaintenanceDeathEquipmentState(sessionId, teammate, entry, protectedTeammateItemIdsByAid);
 
@@ -1702,7 +1701,6 @@ public partial class FriendlyTeammateService(
 
         FriendlyServerSettingsRequest serverSettings = settingsService.LoadSettings();
         string mode = NormalizeLoadoutManagementMode(serverSettings.LoadoutManagementMode);
-        bool persistFieldState = ShouldPersistEscapedDefaultEquipmentState(mode, serverSettings);
 
         var settings = GetTeammateSettings(sessionId, teammate);
         if (!string.Equals(settings.SelectedLoadoutId, DefaultLoadoutId, StringComparison.OrdinalIgnoreCase))
@@ -1729,18 +1727,11 @@ public partial class FriendlyTeammateService(
             return;
         }
 
-        if (!persistFieldState)
-        {
-            // Empty-slot acquisitions are permanent in every mode. Do not turn on
-            // Field Upkeep for unchanged baseline gear merely to save a new item.
-            replacementItems = MergeAcquiredEquipment(teammate.Inventory?.Items, replacementItems);
-        }
-
         var mergedItems = MergeEquipmentWithPreservedSpecialItems(
             teammate.Inventory?.Items,
             replacementItems,
             useReplacementSecureContainer: IsExtremeLoadoutManagementMode(mode));
-        if (persistFieldState && IsRestrictedLoadoutManagementMode(mode) && !TryRestoreRestrictedMagazines(teammate, mergedItems))
+        if (IsRestrictedLoadoutManagementMode(mode) && !TryRestoreRestrictedMagazines(teammate, mergedItems))
         {
             return;
         }
@@ -1757,8 +1748,7 @@ public partial class FriendlyTeammateService(
 
         EnsureFollowerHasScabbardKnife(teammate);
         SaveDefaultEquipmentSnapshot(sessionId, teammate, overwrite: true, includeSecureContainer: keepSecureContainer);
-        logger.Info($"Persisted escaped Default equipment state for teammate '{teammate.Aid}' in loadout management mode '{mode}' " +
-            $"(state={(persistFieldState ? "live" : "acquired-equipment-only")}).");
+        logger.Info($"Persisted escaped Default equipment state for teammate '{teammate.Aid}' in loadout management mode '{mode}'.");
     }
 
     private void ApplyRestrictedGearMaintenanceDeathEquipmentState(
@@ -1774,7 +1764,7 @@ public partial class FriendlyTeammateService(
 
         FriendlyServerSettingsRequest serverSettings = settingsService.LoadSettings();
         string mode = NormalizeLoadoutManagementMode(serverSettings.LoadoutManagementMode);
-        if (!ShouldPersistRestrictedGearMaintenanceDeathEquipmentState(mode, serverSettings))
+        if (!IsRestrictedLoadoutManagementMode(mode))
         {
             return;
         }
@@ -2824,21 +2814,6 @@ public partial class FriendlyTeammateService(
     private static bool IsRestrictedLoadoutManagementMode(string mode)
     {
         return string.Equals(mode, "Restricted", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool ShouldPersistEscapedDefaultEquipmentState(
-        string mode,
-        FriendlyServerSettingsRequest settings)
-    {
-        return IsImmersiveLikeLoadoutManagementMode(mode)
-            || (IsRestrictedLoadoutManagementMode(mode) && settings?.RestrictedGearMaintenance == true);
-    }
-
-    private static bool ShouldPersistRestrictedGearMaintenanceDeathEquipmentState(
-        string mode,
-        FriendlyServerSettingsRequest settings)
-    {
-        return IsRestrictedLoadoutManagementMode(mode) && settings?.RestrictedGearMaintenance == true;
     }
 
     private void EnsureFollowerHasSecureContainerSupplies(BotBase profile)

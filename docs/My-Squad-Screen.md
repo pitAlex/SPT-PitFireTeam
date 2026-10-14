@@ -371,8 +371,9 @@ Verified entry groups:
     - `npcSendMessage`
     - `pitFireTeamFLAG`
     - `badGuy`
+    - `friendlyEncounterChance` (5–80%, default 30%, shown with a percent suffix; editable in both gameplay modes; no effect in Guns for Hire while Friendly PMC Side or Bad Guy is on)
+    - `pmcArmbands` (when enabled, generated PMC inventories use blue USEC/red BEAR armbands, including Acid's Progressive Bot System; disabled leaves generator choices intact)
     - `factionHostilities`
-    - `pmcArmbands`
 - `Looting Settings`
     - `Minimum Price`
     - `Maximum Price`
@@ -383,28 +384,28 @@ Verified entry groups:
     - `Pickup Gear`
 - `Loadout Management`
     - `Restricted`
-    - `Field Upkeep` (visible only while `Restricted` is active)
     - `Immersive`
     - `Realistic`
 - `Input Settings`
-    - `hideUnsupportedCommands`
+    - `hideUnsupportedCommands` (filters PMC phrase menus only; player Scav phrase menus retain all native groups)
     - `pingKey`
     - `contactKey`
     - `overThereKey`
 - `Miscellaneous`
     - `teleportKey`
     - `healKey`
-    - `friendlyChanceMultiplier` (editable in both gameplay modes; no effect in Guns for Hire while Friendly PMC Side or Bad Guy is on)
     - `heatlhMultiplier`
     - `botPrefetch`
     - debug builds also show `battleRecorderEnabled` and `battleRecorderSnapshotIntervalMs`
 
 ### Current control behavior
 
+Settings rows retain their minimum height and expand to fit the fully wrapped description at the available text width. Descriptions are not ellipsized; sliders remain aligned near the row header when a row grows.
+
 Supported control types:
 
 - `bool` -> toggle
-- ranged `int` -> slider
+- ranged `int` -> native numeric slider; percentage units use a separate non-interactive label, never a suffix in `NumberSlider.Show`'s numeric format. The native formatter compares text with the slider's numeric value; a suffix can reenter value callbacks while Show updates min before max. See `tests/Verify-NumberSlider.ps1` for initialization and manual-edit regression coverage.
 - loot price ranged `int` settings -> integer input field
 - hex color settings -> validated `#RRGGBB` input with a color preview
     - Status Report color applies to report text and the teammate outline
@@ -425,7 +426,6 @@ Fresh configurations and Reset to Defaults use:
 - Pickup Food, Pickup Meds, and Pickup Gear: disabled
 - Pickup Weapons and Pickup Valuables: enabled
 - Loadout Management: `Immersive`
-- Field Upkeep: disabled
 
 ### Raid faction hostility setting
 
@@ -444,11 +444,11 @@ It is rendered as three mutually exclusive rows using cloned Ragfair `UIAnimated
 
 The rows are intentionally vertical: each row shows the mode description on the left and the selectable mode toggle on the right.
 
-When `Restricted` is the active mode, a `Field Upkeep` checkbox row appears between `Restricted` and `Immersive`. It defaults off and uses the same settings-row layout as other checkbox settings instead of joining the radio `ToggleGroup`.
+`Restricted` always persists raid wear and consumed supplies while protecting gear from death loss and extraction. There is no separate `Field Upkeep` checkbox or config entry.
 
 Changing modes applies immediately and syncs to the server. `Immersive` is the default in both Guns for Hire and Allegiance, and Loadout Management is editable outside raids in either mode. Both use one shared saved selection that persists across gameplay-mode switches. Existing saved choices are retained; all three modes edit real `Default` equipment. Legacy preset selections restore the saved `Default` automatically.
 
-When a mode change is applied, the client saves the BepInEx setting, syncs the new mode to the server, and rebuilds the settings entries so conditional rows such as `Field Upkeep` appear or disappear immediately. The settings scroll position is captured before this rebuild and restored after Unity finishes recalculating the layout, so the view does not jump back to the top.
+When a mode change is applied, the client saves the BepInEx setting, syncs the new mode to the server, and rebuilds the settings entries. The settings scroll position is captured before this rebuild and restored after Unity finishes recalculating the layout, so the view does not jump back to the top.
 
 ### Looting setting
 
@@ -520,7 +520,7 @@ Gameplay Mode and Enemy Tracking reuse the native location-time `Toggle` through
 
 The penalty amounts, triggers and real-time expiry are owned by [Allegiance](Allegiance.md#friendly-encounters-penalties).
 
-While a penalty is active, Roster displays a small red label beneath the Roster tab, aligned with its left edge: `-5 points in Friendly Encounters (24h)` at multiplier 1, or `-25 points in Friendly Encounters (24h)` at multiplier 5. The label belongs to the roster panel rather than the moving card shell. Multiple penalties show their scaled total reduction and the countdown to the next expiry; the total then drops by `5 × current multiplier` points. Changing the multiplier refreshes the displayed total immediately, without resetting any expiry. The displayed time rounds up in half-hour steps above two hours, 0.1-hour steps from two hours to one hour, and one-minute steps below one hour. Actual expiry is exact and the label disappears when no penalties remain. The countdown updates while Roster is open without per-frame string formatting or HTTP polling.
+While a penalty is active, Roster displays a small red label beneath the Roster tab, aligned with its left edge: `-15% Friendly Encounters (24h)` for one active kill, or `-30% Friendly Encounters (24h)` for two. The label belongs to the roster panel rather than the moving card shell. Each kill adds a 15% relative reduction, stacking to a maximum of 100%, with independent expiry. The countdown shows the next expiry; the total is recalculated when that entry expires. Changing the chance slider changes the probability being reduced rather than the displayed reduction percentage. The displayed time rounds up in half-hour steps above two hours, 0.1-hour steps from two hours to one hour, and one-minute steps below one hour. Actual expiry is exact and the label disappears when no penalties remain. The countdown updates while Roster is open without per-frame string formatting or HTTP polling.
 
 ## Part 4: Profile Screen
 

@@ -10,6 +10,7 @@ public static class AllegianceGreetingChecks
     private static void Check(bool condition, string name) { if (!condition) throw new Exception(name); count++; }
     public static int Run()
     {
+        SAIN.Plugin.SAINEnableClass.Bot = new();
         foreach (bool sain in new[] { false, true })
         foreach (bool allegiance in new[] { false, true })
         foreach (float random in new[] { 0f, 1f })
@@ -141,6 +142,53 @@ public static class AllegianceGreetingChecks
             Tick(707); bot.GetPlayer.Speaker.Speaking=false; Tick(710); Tick(720);
             Check(UnityEngine.Random.Rolls==1 && bot.GetPlayer.VoiceCalls==(repeat ? 3 : 1),"Playback retries preserve an accepted roll and later meetings cannot reroll a skip");
         }
+        SignalChecks();
         return count;
+    }
+
+    private static void Face(BotOwner bot, Player human, float distance)
+    {
+        bot.GetPlayer.Position=new Vector3 { x=distance };
+        bot.GetPlayer.MainParts[BodyPartType.body].Position=new Vector3 { x=distance,y=1 };
+        human.InteractionRay=new Ray { origin=new Vector3 { y=1 },direction=new Vector3 { x=1 } };
+    }
+
+    private static void SignalChecks()
+    {
+        AllegiancePmcFriendship.IsEnabled=true;
+        AllegiancePmcFriendship.ResolveHandled=false;
+        foreach(bool sain in new[] {false,true})
+        foreach(bool scav in new[] {false,true})
+        {
+            pitTeam.pitFireTeam.IsSAINInstalled=sain;
+            var bot=new BotOwner {ProfileId="voice-signal-"+sain+scav,Side=scav ? EPlayerSide.Savage : EPlayerSide.Usec};
+            bot.GetPlayer.MarkSpeaking=true;
+            var human=new Player();Face(bot,human,50);var greeting=new AllegianceFriendlyGreeting();
+            Time.time=1000;greeting.Update(bot,human);Time.time=1002;greeting.Update(bot,human);
+            Check(bot.BotTalk.Last==(scav ? EPhraseTrigger.MumblePhrase : EPhraseTrigger.HoldFire) &&
+                bot.GetPlayer.Spoken==(scav ? EPhraseTrigger.OnMutter : EPhraseTrigger.HoldFire),"Scav mumble and PMC Hold Fire pass native speech with/without SAIN");
+            Check(!FollowerForcedPhraseGate.TryGetArmedPhrase(bot,out _),"Greeting always releases its immediate speech exception");
+            Face(bot,human,12);Time.time=1004;greeting.Update(bot,human);
+            Check(bot.Gesture.Calls==0 && bot.Mover.Stops==0,"Passive voice hub never performs close-layer movement or gestures");
+        }
+        {
+            var bot=new BotOwner {ProfileId="speaker-throw"};var human=new Player();Face(bot,human,50);
+            var greeting=new AllegianceFriendlyGreeting();Time.time=1100;greeting.Update(bot,human);
+            bot.BotTalk.ThrowOnSay=true;Time.time=1102;
+            try {greeting.Update(bot,human);throw new Exception("Expected speaker failure");}
+            catch(Exception e) when(e.Message=="speaker failure") {}
+            Check(!FollowerForcedPhraseGate.TryGetArmedPhrase(bot,out _),"Speaker exceptions clean their scope");
+            bot.BotTalk.ThrowOnSay=false;bot.GetPlayer.MarkSpeaking=true;Time.time=1103;greeting.Update(bot,human);
+            Check(bot.GetPlayer.VoiceCalls==1,"Failed speaker output does not consume a line");
+        }
+        {
+            var bot=new BotOwner {ProfileId="replaced-scope"};bot.GetPlayer.MarkSpeaking=true;
+            var human=new Player();Face(bot,human,50);var greeting=new AllegianceFriendlyGreeting();
+            Time.time=1200;greeting.Update(bot,human);
+            bot.BotTalk.AfterSay=()=>FollowerForcedPhraseGate.ArmRecruitmentResponse(bot,EPhraseTrigger.Negative,2f);
+            Time.time=1202;greeting.Update(bot,human);
+            Check(FollowerForcedPhraseGate.IsRecruitmentResponse(bot,EPhraseTrigger.Negative),"Cleanup preserves a newer recruitment reply");
+            FollowerForcedPhraseGate.Clear(bot);
+        }
     }
 }

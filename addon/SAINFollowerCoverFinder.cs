@@ -82,7 +82,8 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
             string location = Comfort.Common.Singleton<GameWorld>.Instance?.LocationId;
             return !string.IsNullOrEmpty(location) &&
                 (location.IndexOf("factory", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                 string.Equals(location, "laboratory", StringComparison.OrdinalIgnoreCase)) ? 12f : 25f;
+                 string.Equals(location, "laboratory", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(location, "Labyrinth", StringComparison.OrdinalIgnoreCase)) ? 12f : 25f;
         }
     }
 

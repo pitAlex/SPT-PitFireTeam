@@ -68,7 +68,7 @@
     "Name": "敌人追踪",
     "Description": "在简单和真实敌人追踪模式之间切换。简单模式追踪敌人的当前位置，不受最后一次目击或报告时间的影响。真实模式使用通过目击或声音报告的位置，或敌人的最后已知位置。"
   },
-  "friendlyChanceMultiplier": { "Name": "友好相遇概率倍率", "Description": "提高你遇到潜在盟友的机会。在 Guns for Hire 中，只有同阵营的战士可能成为友军。开启「同阵营 PMC 友好」或「恶人」后，此设置不生效。" },
+  "friendlyEncounterChance": {"Name": "友好相遇概率", "Description": "在战局中遇到友军的基础概率。\n在 Guns for Hire 中，仅影响同阵营 PMC；开启「同阵营 PMC 友好」或「恶人」时无效。\n在 Allegiance 中，该基础概率适用于同阵营，敌对阵营的概率为其一半。Scav 的概率还会根据你的 Fence 声望提高或降低。"},
   "healthMultiplier": {
     "Name": "小队生命倍率",
     "Description": "战局开始时，您的队员的每个身体部位的生命值会分别和本生命倍率相乘。"
@@ -132,11 +132,7 @@
 
   "loadoutManagementRestricted": {
     "Name": "受限",
-    "Description": "小队成员装备必须使用仓库中的装备或通过装备购买系统购买。装备仍然受保护：不会因阵亡丢失，也无法带出。"
-  },
-  "loadoutManagementRestrictedGearMaintenance": {
-    "Name": "野外维护",
-    "Description": "跟踪小队成员在战局中的装备损耗及消耗品使用情况，其装备仍受保护，不会因阵亡丢失或带出。"
+    "Description": "装备来自你的仓库，无法带出战局。战局中的装备损耗和补给消耗会保留，但队员阵亡时装备不会丢失。"
   },
   "loadoutManagementImmersive": {
     "Name": "沉浸",
@@ -241,6 +237,7 @@
     "WantToHeal": "需要治疗"
   },
   "socialUi": {
+    "FriendlyEncounterPenaltyLabel": "-{0}% 友好相遇 ({1})",
     "EnemyTrackingSimple": "简单",
     "EnemyTrackingRealistic": "真实",
     "LootActionCheckHim": "CMD : 搜查他",
@@ -372,6 +369,7 @@
     "SettingsUnavailableDuringRaid": "战局中不可用"
   },
   "returnItems": ["您的队员送回了这些物品，请查收。"],
+  "scavCargoReturn": ["我的一个手下把你的东西带回来了。按约定，东西还给你。"],
   "returnItemsDeath": ["您的队员找回了这些物品。"],
   "teamEscaped": ["活了！\n成功撤离了。"],
   "teamSomeEscaped": ["唉，可惜了 {0}，不过至少我们其他人都出来了。"],

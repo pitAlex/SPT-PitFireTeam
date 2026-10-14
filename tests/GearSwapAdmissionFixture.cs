@@ -80,10 +80,12 @@ static class GearSwapAdmissionFixture
         Check(Admission.Check(owner, bot, follower) == "followerHandsBusy", "native hands restrictions preserved");
         bot.WeaponManager.HandsAllowed = true; follower.KnownEnemy = true;
         Check(Admission.Check(owner, bot, follower) == "knownEnemy", "known enemy preserved");
+        Check(Admission.Check(owner, bot, follower, true) == null, "accepted protected Apply may finish after enemy acquisition");
         follower.KnownEnemy = false; bot.Memory.HaveEnemy = true;
         Check(Admission.Check(owner, bot, follower) == "nativeEnemy", "native enemy preserved");
         bot.Memory.HaveEnemy = false; bot.Memory.IsUnderFire = true;
         Check(Admission.Check(owner, bot, follower) == "underFire", "under fire preserved");
+        Check(Admission.Check(owner, bot, follower, true) == null, "accepted protected Apply may finish under fire");
         bot.Memory.IsUnderFire = false; bot.HealPending = true;
         Check(Admission.Check(owner, bot, follower) == "healing", "pending heal preserved");
         bot.HealPending = false; bot.PickupPending = true;

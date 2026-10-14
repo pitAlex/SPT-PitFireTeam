@@ -95,7 +95,7 @@ namespace pitTeam
         public Dictionary<string, string> enemyRemember { get; set; }
         public Dictionary<string, string> enemyTracking { get; set; }
         public Dictionary<string, string> healthMultiplier { get; set; }
-        public Dictionary<string, string> friendlyChanceMultiplier { get; set; }
+        public Dictionary<string, string> friendlyEncounterChance { get; set; }
         public Dictionary<string, string> pickup { get; set; }
         public Dictionary<string, string> tieredPickup { get; set; }
         public Dictionary<string, string> maximumPickup { get; set; }
@@ -120,7 +120,6 @@ namespace pitTeam
         public Dictionary<string, string> equipmentLock { get; set; }
         public Dictionary<string, string> loadoutManagement { get; set; }
         public Dictionary<string, string> loadoutManagementRestricted { get; set; }
-        public Dictionary<string, string> loadoutManagementRestrictedGearMaintenance { get; set; }
         public Dictionary<string, string> loadoutManagementImmersive { get; set; }
         public Dictionary<string, string> loadoutManagementExtreme { get; set; }
         public Dictionary<string, string> npcSendMessage { get; set; }
@@ -176,6 +175,7 @@ namespace pitTeam
 
         // used only by BE
         public string[] returnItems { get; set; }
+        public string[] scavCargoReturn { get; set; }
         public string[] returnItemsDeath { get; set; }
         public string[] teamEscaped { get; set; }
         public string[] teamSomeEscaped { get; set; }
@@ -229,7 +229,7 @@ namespace pitTeam
         public static ConfigEntry<EnemyTrackingMode> enemyTracking;
 
         public static ConfigEntry<int> heatlhMultiplier;
-        public static ConfigEntry<int> friendlyChanceMultiplier;
+        public static ConfigEntry<int> friendlyEncounterChance;
 
         public static ConfigEntry<int> scanDistance;
 
@@ -261,7 +261,6 @@ namespace pitTeam
         public static ConfigEntry<bool> englishBear;
         public static ConfigEntry<bool> pmcArmbands;
         public static ConfigEntry<LoadoutManagementMode> loadoutManagementMode;
-        public static ConfigEntry<bool> restrictedGearMaintenance;
 
         public static ConfigEntry<bool> botPrefetch;
 
@@ -363,6 +362,7 @@ namespace pitTeam
             new BotGroupCalcGoalPatch().Enable();
             new BotControllerEnemyPropagationSafetyPatch().Enable();
             new PmcFriendlyFireRetaliationBridgePatch().Enable();
+            new AllegianceScavTrustDamagePatch().Enable();
 
             new BotMemoryDamagePatch().Enable();
             new FollowerFriendlyFireDamagePatch().Enable();
@@ -409,6 +409,21 @@ namespace pitTeam
             new TeammateBackpackInspectionUpdatePatch().Enable();
             new GearSwapPanelPatch().Enable();
             new GearSwapPanelClosePatch().Enable();
+            new GearSwapApplyBotTickPatch().Enable();
+            new GearSwapApplyBrainTickPatch().Enable();
+            new GearSwapApplyMovementPatch().Enable();
+            new GearSwapApplyTriggerPatch().Enable();
+            new GearSwapApplyWeaponSelectionPatch().Enable();
+            new GearSwapApplyShotPatch().Enable();
+            new GearSwapApplyAutomaticFirePatch().Enable();
+            new GearSwapApplyDamageInfoPatch().Enable();
+            new GearSwapApplyExplosionArmorPatch().Enable();
+            new GearSwapApplyHealthDamagePatch().Enable();
+            new GearSwapApplyHealthDrainPatch().Enable();
+            new GearSwapActorDeathPatch().Enable();
+            new GearSwapActorDeadFallbackPatch().Enable();
+            new GearSwapRaidStopPatch().Enable();
+            new GearSwapBotsStopPatch().Enable();
             new GearSwapBackpackSlotContentsPatch().Enable();
             new GearSwapBackpackContentsPatch().Enable();
             new GearSwapBackpackOpenPatch().Enable();
@@ -479,6 +494,10 @@ namespace pitTeam
             new FollowerGrenadeCooldownPatch().Enable();
             new FollowerGrenadeThrowFinishPatch().Enable();
             new FollowerGrenadeReleasePatch().Enable();
+            new FollowerGrenadeSpawnPatch().Enable();
+            new FollowerMedicalCancelPatch().Enable();
+            new FollowerFirstAidMinimumHealthPatch().Enable();
+            new FollowerSurgeryTargetPatch().Enable();
             new FollowerEnemyInfoCorrectionPatch().Enable();
             new FollowerEnemyInfoSetVisibleCorrectionPatch().Enable();
             new BulletImpactPatch().Enable();
@@ -1067,7 +1086,7 @@ namespace pitTeam
             enemyRemember = Config.Bind("", "03 EnemyRemember", 20, new ConfigDescription(optionsLang.enemyRemember["Description"], new AcceptableValueRange<int>(5, 60), CreateConfigAttributes(-300, false, optionsLang.enemyRemember)));
             enemyTracking = Config.Bind("", "03 EnemyTracking", EnemyTrackingMode.Realistic, new ConfigDescription(optionsLang.enemyTracking["Description"], null, CreateConfigAttributes(-299, false, optionsLang.enemyTracking)));
 
-            friendlyChanceMultiplier = Config.Bind("", "04 FriendlyChanceMultiplier", 1, new ConfigDescription(optionsLang.friendlyChanceMultiplier["Description"], new AcceptableValueRange<int>(1, 5), CreateConfigAttributes(-399, false, optionsLang.friendlyChanceMultiplier)));
+            friendlyEncounterChance = Config.Bind("", "04 FriendlyEncounterChance", 30, new ConfigDescription(optionsLang.friendlyEncounterChance["Description"], new AcceptableValueRange<int>(5, 80), CreateConfigAttributes(-399, false, optionsLang.friendlyEncounterChance)));
 
             heatlhMultiplier = Config.Bind("", "04 HealthMultiplier", 1, new ConfigDescription(optionsLang.healthMultiplier["Description"], new AcceptableValueRange<int>(1, 10), CreateConfigAttributes(-400, false, optionsLang.healthMultiplier)));
 
@@ -1212,9 +1231,6 @@ namespace pitTeam
             {
                 loadoutManagementMode.Value = DefaultLoadoutManagementMode;
             }
-
-            restrictedGearMaintenance = Config.Bind("", "14 LoadoutManagementRestrictedGearMaintenance", false, new ConfigDescription(optionsLang.loadoutManagementRestrictedGearMaintenance["Description"], null, CreateConfigAttributes(-1005, false, optionsLang.loadoutManagementRestrictedGearMaintenance)));
-            restrictedGearMaintenance.SettingChanged += (_, _) => SyncServerSettings();
 
             botGrenades = Config.Bind("", "15 BotGrenades", true, new ConfigDescription(optionsLang.botGrenades["Description"], null, CreateConfigAttributes(-1005, false, optionsLang.botGrenades)));
 

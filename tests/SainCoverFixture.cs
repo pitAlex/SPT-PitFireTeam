@@ -106,7 +106,7 @@ public static partial class CombatChecks {
         Check(reloadBoss.Sain.Cover.FindForTest()==boss,"routine reload uses player cover if no close cover qualifies");
         reloadBoss.Memory.IsUnderFire=true;
         Check(reloadBoss.Sain.Cover.FindForTest()==reloadBoss.Sain.Cover.NativePoint,"reload under incoming fire retains native emergency cover");
-        foreach(string map in new[]{"bigmap","Factory4_day","factory4_night","laboratory"}){
+        foreach(string map in new[]{"bigmap","Factory4_day","factory4_night","laboratory","Labyrinth","labyrinth"}){
             Comfort.Common.Singleton<GameWorld>.Instance.LocationId=map;
             float radius=map=="bigmap"?25f:12f;
             var boundary=CoverBot("nearbyRange"+map);var edge=CoverAt(-radius,radius);

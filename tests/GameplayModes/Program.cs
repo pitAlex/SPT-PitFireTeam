@@ -23,11 +23,11 @@ internal static class Program
         GameplayModeRuntime.Initialize(config);
         var modeSpecificKeys = new HashSet<string> { "BadGuy", "Friendly", "Tracking", "Pickup", "Tiered", "Maximum", "Recruit", "TeamEscape", "TeamEscapeUseAnyExtract" };
         var original = config.Where(pair => pair.Key.Section == "Game" && modeSpecificKeys.Contains(pair.Key.Key)).ToDictionary(pair => pair.Key, pair => pair.Value.GetSerializedValue());
-        Check(pitFireTeam.friendlyChanceMultiplier.Value == 1 && !GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyChanceMultiplier), "friendly chance defaults to 1 and is editable in Guns for Hire");
+        Check(pitFireTeam.friendlyEncounterChance.Value == 30 && !GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyEncounterChance), "friendly chance defaults to 30 and is editable in Guns for Hire");
         await GameplayModeRuntime.ChangeAsync(GameplayMode.Allegiance);
-        Check(!GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyChanceMultiplier), "friendly chance is enabled in Allegiance");
-        pitFireTeam.friendlyChanceMultiplier.Value = 4;
-        Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.friendlyChanceMultiplier) == 4, "Allegiance friendly chance is editable without a locked override");
+        Check(!GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyEncounterChance), "friendly chance is enabled in Allegiance");
+        pitFireTeam.friendlyEncounterChance.Value = 45;
+        Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.friendlyEncounterChance) == 45, "Allegiance friendly chance is editable without a locked override");
         Check(SPT.Common.Http.RequestHandler.Mode == "Allegiance", "server mode follows client");
         Check(original.All(pair => config[pair.Key].GetSerializedValue() == pair.Value), "entering Allegiance preserves saved mode-specific preferences");
         Check(SPT.Common.Http.RequestHandler.Loadout == "Restricted", "Allegiance synchronization preserves the saved loadout choice");
@@ -83,14 +83,13 @@ internal static class Program
         Check(GameplayModeRuntime.IsAllegiance && GameplayModeRuntime.GetEffectiveValue(pitFireTeam.maximumPickup) == 2,
             "cfg reload cannot perform an uncoordinated mode switch");
         Check(!File.ReadAllText(path + ".guns-for-hire.json").Contains("00 GameplayMode"), "snapshot excludes mode");
-        Check(!File.ReadAllText(path + ".guns-for-hire.json").Contains("FriendlyChanceMultiplier"), "snapshot excludes the shared encounter preference");
+        Check(!File.ReadAllText(path + ".guns-for-hire.json").Contains("FriendlyEncounterChance"), "snapshot excludes the shared encounter preference");
         Check(!JArray.Parse(File.ReadAllText(path + ".guns-for-hire.json")).Any(value => value["Key"]?.ToString() == "Loadout"), "snapshot excludes shared Loadout Management");
         var savedSnapshot = JArray.Parse(File.ReadAllText(path + ".guns-for-hire.json"));
         Check(savedSnapshot.Count == 9 && savedSnapshot.All(value => value["Section"]?.ToString() == "Game" && modeSpecificKeys.Contains(value["Key"]?.ToString())), "snapshot contains only the nine Allegiance-locked settings");
         Check(original.All(pair => savedSnapshot.Any(value => value["Key"]?.ToString() == pair.Key.Key && value["Value"]?.ToString() == pair.Value)), "snapshot retains the original mode-specific preferences");
         custom.Value = 90;
         pitFireTeam.pmcArmbands.Value = false;
-        pitFireTeam.restrictedGearMaintenance.Value = true;
         var shared = config.Where(pair => pair.Key.Key != "00 GameplayMode" && !original.ContainsKey(pair.Key)).ToDictionary(pair => pair.Key, pair => pair.Value.GetSerializedValue());
         config = Bind(path); // Real BepInEx reload, with a new ConfigFile and newly bound entries.
         custom = config.Bind("Other", "Untouched", 17);
@@ -103,7 +102,7 @@ internal static class Program
             !GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.heatlhMultiplier), "restart preserves the unlocked Allegiance health multiplier");
         Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.healKey).MainKey == KeyCode.J &&
             !GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.healKey), "restart preserves the usable Allegiance healing binding");
-        Check(pitFireTeam.friendlyChanceMultiplier.Value == 4, "restart preserves Allegiance friendly chance preference");
+        Check(pitFireTeam.friendlyEncounterChance.Value == 45, "restart preserves Allegiance friendly chance preference");
         Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.teamEscape) && !GameplayModeRuntime.GetEffectiveValue(pitFireTeam.teamEscapeUseAnyExtract), "restart preserves Team Escape locks");
         var legacySnapshot = JArray.Parse(File.ReadAllText(path + ".guns-for-hire.json"));
         foreach (var pair in shared)
@@ -111,7 +110,7 @@ internal static class Program
         File.WriteAllText(path + ".guns-for-hire.json", legacySnapshot.ToString());
         await GameplayModeRuntime.ChangeAsync(GameplayMode.GunsForHire);
         Check(pitFireTeam.loadoutManagementMode.Value == LoadoutManagementMode.Immersive && SPT.Common.Http.RequestHandler.Loadout == "Immersive", "returning to Guns for Hire ignores legacy shared snapshot values and retains the current loadout choice");
-        Check(pitFireTeam.friendlyChanceMultiplier.Value == 4 && !GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyChanceMultiplier), "returning to Guns for Hire retains and enables the shared encounter preference");
+        Check(pitFireTeam.friendlyEncounterChance.Value == 45 && !GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyEncounterChance), "returning to Guns for Hire retains and enables the shared encounter preference");
         Check(original.All(pair => config[pair.Key].GetSerializedValue() == pair.Value), "restart restores every original mode-specific setting");
         Check(shared.All(pair => config[pair.Key].GetSerializedValue() == pair.Value), "returning to Guns for Hire ignores all legacy shared entries and preserves current shared settings");
         Check(!GameplayModeRuntime.GetEffectiveValue(pitFireTeam.teamEscape) && GameplayModeRuntime.GetEffectiveValue(pitFireTeam.teamEscapeUseAnyExtract), "Guns for Hire restores both Team Escape preferences");
@@ -120,13 +119,12 @@ internal static class Program
         pitFireTeam.heatlhMultiplier.Value = 5;
         pitFireTeam.healKey.Value = new KeyboardShortcut(KeyCode.H);
         pitFireTeam.pmcArmbands.Value = true;
-        pitFireTeam.restrictedGearMaintenance.Value = false;
         custom.Value = 91;
         shared = config.Where(pair => shared.ContainsKey(pair.Key)).ToDictionary(pair => pair.Key, pair => pair.Value.GetSerializedValue());
         await GameplayModeRuntime.ChangeAsync(GameplayMode.Allegiance);
         Check(shared.All(pair => config[pair.Key].GetSerializedValue() == pair.Value), "shared changes in Guns for Hire carry into Allegiance");
         Check(pitFireTeam.loadoutManagementMode.Value == LoadoutManagementMode.Extreme && SPT.Common.Http.RequestHandler.Loadout == "Extreme", "Allegiance receives the shared Realistic choice");
-        Check(pitFireTeam.friendlyChanceMultiplier.Value == 4 && !GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyChanceMultiplier), "returning to Allegiance retains and enables friendly chance preference");
+        Check(pitFireTeam.friendlyEncounterChance.Value == 45 && !GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyEncounterChance), "returning to Allegiance retains and enables friendly chance preference");
         await GameplayModeRuntime.ChangeAsync(GameplayMode.GunsForHire);
         Check(pitFireTeam.loadoutManagementMode.Value == LoadoutManagementMode.Extreme && SPT.Common.Http.RequestHandler.Loadout == "Extreme", "mode cycling preserves the shared Realistic choice");
         Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.maximumPickup) == 5, "second cycle snapshots latest Guns for Hire values");
@@ -174,9 +172,8 @@ internal static class Program
         pitFireTeam.loadoutManagementMode = c.Bind("Game", "Loadout", LoadoutManagementMode.Restricted);
         pitFireTeam.healKey = c.Bind("Game", "Heal", new KeyboardShortcut(KeyCode.H));
         pitFireTeam.heatlhMultiplier = c.Bind("Game", "Health", 3);
-        pitFireTeam.friendlyChanceMultiplier = c.Bind("Game", "FriendlyChanceMultiplier", 1, new ConfigDescription("", new AcceptableValueRange<int>(1,5)));
+        pitFireTeam.friendlyEncounterChance = c.Bind("Game", "FriendlyEncounterChance", 30, new ConfigDescription("", new AcceptableValueRange<int>(5,80)));
         pitFireTeam.pmcArmbands = c.Bind("Game", "Armbands", true);
-        pitFireTeam.restrictedGearMaintenance = c.Bind("Game", "Maintenance", false);
         return c;
     }
 }
@@ -188,9 +185,9 @@ namespace pitTeam
     public class ConfigurationManagerAttributes { public bool Browsable; }
     public static class pitFireTeam
     {
-        public static ConfigEntry<bool> badGuy, pitFireTeamFLAG, pickupEnabled, tieredPickup, recruitPickup, pmcArmbands, restrictedGearMaintenance;
+        public static ConfigEntry<bool> badGuy, pitFireTeamFLAG, pickupEnabled, tieredPickup, recruitPickup, pmcArmbands;
         public static ConfigEntry<bool> teamEscape, teamEscapeUseAnyExtract;
-        public static ConfigEntry<int> maximumPickup, heatlhMultiplier, friendlyChanceMultiplier;
+        public static ConfigEntry<int> maximumPickup, heatlhMultiplier, friendlyEncounterChance;
         public static ConfigEntry<EnemyTrackingMode> enemyTracking;
         public static ConfigEntry<LoadoutManagementMode> loadoutManagementMode;
         public static ConfigEntry<KeyboardShortcut> healKey;

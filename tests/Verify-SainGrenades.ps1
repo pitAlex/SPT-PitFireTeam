@@ -12,25 +12,52 @@ try {
     }
     $throw=$type.Methods | Where-Object Name -eq 'TryThrowGrenade'
     if(@($throw.Body.Instructions | Where-Object {$_.Operand -is [Mono.Cecil.MethodReference] -and $_.Operand.DeclaringType.FullName -eq 'BotGrenadeController' -and $_.Operand.Name -eq 'DoThrow'}).Count -ne 1){throw 'Installed native throw path changed'}
+    $friendly=$type.Methods | Where-Object Name -eq 'CheckFriendlyDistances'
+    if($friendly.ReturnType.FullName -ne 'System.Boolean' -or ($friendly.Parameters.ParameterType.FullName -join '|') -ne 'UnityEngine.Vector3'){throw 'Installed native grenade friend check changed'}
     Write-Output 'Installed SAIN 4.5.1 grenade decision enable switches and EFT DoThrow path verified.'
 } finally {$metadata.Dispose()}
+foreach($assemblyPath in @((Join-Path $RepositoryRoot 'client/libs4.1/Assembly-CSharp.dll'),(Join-Path $GameRoot 'EscapeFromTarkov_Data/Managed/Assembly-CSharp.dll'))) {
+    $game=[Mono.Cecil.ModuleDefinition]::ReadModule($assemblyPath)
+    try {
+        $hands=$game.GetType('EFT.Player/BaseGrenadeHandsController')
+        $release=$hands.Methods | Where-Object Name -eq 'ThrowGrenade'
+        $spawn=$hands.Methods | Where-Object Name -eq 'CreateAndRegisterGrenade'
+        if(($release.Parameters.ParameterType.FullName -join '|') -ne 'System.Single|UnityEngine.Vector3|UnityEngine.Quaternion|UnityEngine.Vector3|System.Boolean' -or $release.ReturnType.FullName -ne 'System.Void'){throw 'Release safety signature changed'}
+        if(($spawn.Parameters.ParameterType.FullName -join '|') -ne 'UnityEngine.Vector3|UnityEngine.Quaternion|UnityEngine.Vector3|System.Single' -or $spawn.ReturnType.FullName -ne 'EFT.Grenade'){throw 'Physical grenade creation signature changed'}
+        $calls=@($release.Body.Instructions | Where-Object {$_.Operand -is [Mono.Cecil.MethodReference]} | ForEach-Object {$_.Operand.Name})
+        $inventory=[Array]::IndexOf($calls,'ThrowGrenade');$creation=[Array]::IndexOf($calls,'CreateAndRegisterGrenade')
+        if($inventory -lt 0 -or $creation -le $inventory){throw 'Review changed grenade inventory/spawn ordering'}
+        $playerField=$game.GetType('EFT.Player/ItemHandsController').Fields | Where-Object Name -eq '_player'
+        if($playerField.FieldType.FullName -ne 'EFT.Player'){throw 'Injected player field changed'}
+        $finish=$game.GetType('EFT.Player/GrenadeHandsController/HighThrowOperation').Methods | Where-Object Name -eq 'OnDropFinishedAction'
+        if('_onUsedCallback' -notin $finish.Body.Instructions.Operand.Name){throw 'Native completion cleanup changed'}
+        $drop=$game.GetType('EFT.Player/GrenadeHandsController/HighThrowOperation').Methods | Where-Object Name -eq 'SpawnGrenade'
+        if('Throw' -notin $drop.Body.Instructions.Operand.Name){throw 'Native physical throw boundary changed'}
+        Write-Output "Verified pre-inventory release veto, physical spawn and later completion callback: $assemblyPath"
+    } finally {$game.Dispose()}
+}
 $temporary=Join-Path ([IO.Path]::GetTempPath()) ('pit-sain-grenades-'+[Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $temporary | Out-Null
 try {
     $native=Get-Content -Raw (Join-Path $SainSourceRoot 'Classes/Bot/WeaponFunction/Grenades/GrenadeThrowDecider.cs')
     $decision=[regex]::Match($native,'(?ms)^    public bool GetDecision\(.*?^    [}]').Value
     $throw=[regex]::Match($native,'(?ms)^    private bool TryThrowGrenade\(.*?^    [}]').Value
-    if(!$decision -or !$throw){throw 'Native grenade source boundaries changed'}
+    $friendly=[regex]::Match($native,'(?ms)^    private bool CheckFriendlyDistances\(.*?^    [}]').Value
+    if(!$decision -or !$throw -or !$friendly){throw 'Native grenade source boundaries changed'}
     $fixture=Get-Content -Raw (Join-Path $RepositoryRoot 'tests/SainGrenadeFixture.cs')
-    $fixture=$fixture.Replace('__NATIVE_DECISION__',$decision).Replace('__NATIVE_THROW__',$throw)
+    $fixture=$fixture.Replace('__NATIVE_DECISION__',$decision).Replace('__NATIVE_THROW__',$throw).Replace('__NATIVE_FRIENDLY__',$friendly)
+    $safety=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Utils/FollowerShotSafety.cs')
+    $geometry=@()
+    foreach($name in @('IsFriendlyNearGrenadeImpact','IsPlayerNearGrenadeImpact','IsFollowerMovementSegmentNearImpact','DistancePointToSegmentXZSqr','GetSafeName','IsFinite')) {
+        $body=[regex]::Match($safety,"(?ms)^        (?:public|private) static [^`r`n]+ $name\(.*?^        [}]").Value
+        if(!$body){throw "Core impact geometry boundary changed: $name"}
+        $geometry+=$body
+    }
+    $fixture=$fixture.Replace('__CORE_IMPACT_GEOMETRY__',($geometry -join "`n"))
     [IO.File]::WriteAllText((Join-Path $temporary 'Fixture.cs'),$fixture)
-    foreach($path in @('addon/SainGrenadeThrowBridge.cs','client/Modules/FollowerGrenadeRuntimeGate.cs','client/Modules/FollowerGrenadeCooldowns.cs','client/Patches/FollowerGrenadeAvailabilityPatch.cs')) {
+    foreach($path in @('addon/SainGrenadeThrowBridge.cs','client/Modules/FollowerGrenadeRuntimeGate.cs','client/Modules/FollowerGrenadeCooldowns.cs','client/Patches/FollowerGrenadeAvailabilityPatch.cs','client/Patches/FollowerGrenadeCooldownPatch.cs')) {
         Copy-Item -LiteralPath (Join-Path $RepositoryRoot $path) -Destination $temporary
     }
-    $patch=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Patches/FollowerGrenadeCooldownPatch.cs')
-    $end=$patch.IndexOf('    internal class FollowerGrenadeReleasePatch')
-    if($end -lt 0){throw 'Core grenade hook boundaries changed'}
-    [IO.File]::WriteAllText((Join-Path $temporary 'CoreThrowPatch.cs'),$patch.Substring(0,$end)+"`n}")
     Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'client/libs/0Harmony.dll') -Destination $temporary
     Get-ChildItem (Join-Path $GameRoot 'BepInEx/core') -Filter '*.dll' |
         Where-Object {$_.Name -like 'Mono*' -or $_.Name -eq 'System.ValueTuple.dll'} | Copy-Item -Destination $temporary

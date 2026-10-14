@@ -81,6 +81,8 @@ namespace pitTeam.Modules
         public static void Dispose()
         {
             AllegiancePmcFriendship.Reset();
+            AllegianceScavCargo.Reset();
+            AllegianceScavRelations.Reset();
             if (Instance != null)
             {
                 Instance.Destroy();
@@ -145,6 +147,9 @@ namespace pitTeam.Modules
             if (_bosses.ContainsKey(name))
             {
                 pitAIBossPlayer boss = _bosses[name];
+
+                // Settle/close any exchange before death-escape or progress captures equipment.
+                if (ReferenceEquals(TeammateGearSwap.Current?.Owner.Player, boss.realPlayer)) TeammateGearSwap.EndRaid();
 
                 List<BotOwner> ownersToRemove = new List<BotOwner>();
                 List<BotFollowerPlayer> followersToRemove = new List<BotFollowerPlayer>();
@@ -325,6 +330,8 @@ namespace pitTeam.Modules
             // Group reassignment and follower lookup must be complete before repairing
             // relationships with already-selected Allegiance candidates.
             AllegiancePmcFriendship.OnFollowerAdded(bot, player.realPlayer);
+            AllegianceScavRelations.OnFollowerAdded(bot, player, squadMate);
+            if (!squadMate) AllegianceScavCargo.OnRecruited(bot, player.realPlayer);
 
             // Fire lifecycle event for addon integration (cache registration, etc).
             SainAddonBridge.RaiseFollowerLifecycleEvent(bot, FollowerLifecycleEvent.OnRecruited);
@@ -971,6 +978,7 @@ namespace pitTeam.Modules
 
             if (_follower != null)
             {
+                AllegianceScavRelations.OnRemoved(bot);
                 _followers.Remove(_follower);
                 if (bot?.ProfileId != null)
                 {
@@ -1188,6 +1196,10 @@ namespace pitTeam.Modules
             if (Instance == null) return;
             Instance.RemoveBotFollower(bot, player);
         }
+
+        public static bool IsPlayerFollowerGroup(BotOwner bot, pitAIBossPlayer boss) =>
+            bot?.BotsGroup != null && boss != null &&
+            (bot.BotsGroup == boss.bossGroup || AllegianceScavRelations.OwnsGroup(bot, boss));
 
         public static pitAIBossPlayer AddPlayerAsBoss(Player player, BotsController botsController)
         {

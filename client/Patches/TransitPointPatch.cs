@@ -16,17 +16,13 @@ namespace pitTeam.Patches
     /** On extracting via transit point, remember bots the player was with so we can re-spawn them **/
     internal class TransitPointPatch : ModulePatch
     {
-        private const string LabyrinthLocationId = "6733700029c367a3d40b02af";
-        private const string LabyrinthLocationName = "Labyrinth";
-
         protected override MethodBase GetTargetMethod()
         {
             return AccessTools.Method(typeof(TransitPoint), nameof(TransitPoint.SeparateGroupPlayers));
         }
 
         [PatchPostfix]
-        private static void PatchPostfix(TransitPoint __instance,
-                        string groupId,
+        private static void PatchPostfix(string groupId,
                         HashSet<string> __result,
                         HashSet<string> singlePlayers,
                         HashSet<string> partyPlayers,
@@ -40,14 +36,6 @@ namespace pitTeam.Patches
             Utils.SpawnHelper.spawnMemberIds.Clear();
             Utils.SpawnHelper.spawnMemberIdsBoss.Clear();
             FollowerTransitStateCache.Clear();
-
-            if (IsLabyrinthTransit(__instance))
-            {
-                Modules.Logger.LogInfo(
-                    $"[Transit] Target '{__instance?.parameters?.location ?? __instance?.parameters?.target ?? "unknown"}' does not allow teammate transit. " +
-                    "Squadmates will resolve as escaped with their carried loot.");
-                return;
-            }
 
             Dictionary<string, List<string>> protectedEquipmentByProfileId = InteractableObjects.GetStoredEquipment();
 
@@ -120,15 +108,6 @@ namespace pitTeam.Patches
 
                 }
             }
-        }
-
-        private static bool IsLabyrinthTransit(TransitPoint transitPoint)
-        {
-            JsonType.LocationSettings.Location.TransitParameters parameters = transitPoint?.parameters;
-            if (parameters == null) return false;
-
-            return string.Equals(parameters.target, LabyrinthLocationId, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(parameters.location, LabyrinthLocationName, StringComparison.OrdinalIgnoreCase);
         }
     }
 

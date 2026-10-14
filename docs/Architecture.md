@@ -11,6 +11,7 @@ This is the source map for pitFireTeam's main plugin. Detailed behavior belongs 
 | Peaceful follow and requests | [FollowerPatrolLayer](../client/BigBrain/FollowerPatrolLayer.cs), [FollowerRequestLayer](../client/BigBrain/FollowerRequestLayer.cs), [FollowAction](../client/BigBrain/Actions/FollowAction.cs), [GestureCommandAction](../client/BigBrain/Actions/GestureCommandAction.cs) |
 | Core combat | [FollowerCombatLayer](../client/BigBrain/FollowerCombatLayer.cs), [FollowerCombatLogicBase](../client/BigBrain/FollowerCombatLogicBase.cs), [FollowerCombatCommon](../client/BigBrain/FollowerCombatCommon.cs) |
 | Recruitment and group conversion | [BotGroupRequestPatch](../client/Patches/BotGroupRequestPatch.cs), [BossPlayers](../client/Modules/BossPlayers.cs), [Allegiance solo friendship](../client/Modules/AllegiancePmcFriendship.cs) |
+| Friendly interaction and invitations | [FriendlyEncounterLayer](../client/BigBrain/FriendlyEncounterLayer.cs), [FriendlyEncounterInteraction](../client/Modules/FriendlyEncounterInteraction.cs), [greetings and saved acceptance](Allegiance.md#friendly-greetings) |
 | Acquisition and reaction | [FollowerCalcGoalEnemyAcquire](../client/Modules/FollowerCalcGoalEnemyAcquire.cs), [FollowerAwareness](../client/Utils/FollowerAwareness.cs), [Enemy](../client/Utils/Enemy.cs) |
 | UI and status | [SquadControlMenuUi](../client/Components/SquadControlMenuUi.cs), [PingTeamates](../client/Utils/PingTeamates.cs), [My Squad](My-Squad-Screen.md) |
 | Optional external-SAIN compatibility | [SAINPatches](../client/Patches/SAINPatches.cs), [compatibility contract](SAIN-Compatibility.md) |
@@ -19,6 +20,8 @@ This is the source map for pitFireTeam's main plugin. Detailed behavior belongs 
 ## Lifecycle and invariants
 
 Core converts/recruits followers, assigns player ownership, reconciles groups/hostility, installs follower layers and releases state on dismissal/raid teardown. Saved squadmates and raid pickups share the follower framework, but differ in profile persistence and command eligibility; [Commands](Commands.md) owns those distinctions.
+
+[AllegianceScavRelations](../client/Modules/AllegianceScavRelations.cs) keeps recruited Scavs in independent native groups, links reciprocal squad allies, applies raid-local Scav neutrality and publishes actual hostile relationships across allied groups. [AllegianceScavTrustDamagePatch](../client/Patches/AllegianceScavTrustDamagePatch.cs) captures the first damaging-hit relationship before native health/death and retaliation callbacks; the existing kill dispatcher owns trust loss. Deferred Scav betrayal departure retains native group identity, removes all departing companions before publishing hostility, and keeps special Scav roles excluded. See [Allegiance Scav groups](Allegiance.md#scav-groups-and-trust).
 
 Allegiance recruited-follower kills reuse the existing `traitor` report. [FriendlyEncounterPenaltyService](../server/Services/FriendlyEncounterPenaltyService.cs) persists independent 24-hour penalties per user in the Allegiance database; [FriendlyEncounterPenaltyRuntime](../client/Modules/FriendlyEncounterPenaltyRuntime.cs) mirrors them for friendship rolls and the Roster label. Shared expiry/countdown arithmetic lives in [FriendlyEncounterPenaltyPolicy](../shared/FriendlyEncounterPenaltyPolicy.cs). See [Allegiance penalties](Allegiance.md#friendly-encounters-penalties).
 
@@ -35,6 +38,8 @@ Per-follower proficiency uses independent data/settings; no global preset is edi
 ## Server responsibilities
 
 The server owns mod teammate profiles, persistence, customization, social/group integration and raid outcomes. Teammates are mod-owned profiles, not full independent stock `SptProfile` accounts. Runtime bot spawning is a client/game-session responsibility.
+
+[FriendlyPmcArmbandHooks](../server/Services/FriendlyPmcArmbandHooks.cs) enforces the enabled PMC Faction Arm Bands setting on the returned `BotInventoryGenerator.GenerateInventory` inventory, after stock or replacement generation. Startup, settings endpoints and the hook share the singleton [FriendlyServerSettingsService](../server/Services/FriendlyServerSettingsService.cs), so the hook sees both the loaded preference and later toggle changes independently of shared SPT config writes. It sets blue USEC/red BEAR equipment, adds a missing band and removes replaced band trees. Disabled settings, player Scavs, non-PMC bots and existing saved inventories are unchanged. No Acid assembly dependency or tier-pool mutation is required.
 
 | Area | Source and contract |
 |---|---|

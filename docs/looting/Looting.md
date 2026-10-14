@@ -1,8 +1,12 @@
 # Looting
 
+Followers recognize items they currently carry as examined, including reserve ammunition and newly acquired gear. Core scopes this answer to the registered AI follower's own inventory controller and equipment tree; items outside that tree and the human player's encyclopedia are unchanged. See [patrol ammunition maintenance](../Combat-Tactics.md) for native transfer rules and validation boundaries.
+
 Date: 2026-07-30
 
 ## Scope
+
+Allegiance recruited Scavs return player-commanded loot through Fence when the human extracts successfully with a living Scav still following them. Starting Scav kit and ambient loot are excluded; see [Friendly Scav cargo](Friendly-Scav-Cargo.md). This separate capture does not expand saved-squadmate return eligibility.
 
 This document tracks pitFireTeam follower-commanded looting behavior.
 
@@ -328,7 +332,7 @@ Equipped gear is kept in every mode:
 
 - Only add into empty equipment slots. Raw Restricted acquisition tracking remains available if the item later becomes cargo; final return filtering excludes equipment still occupying a gear slot.
 - A seated magazine and its loaded ammunition stay with the weapon. Tracked magazines that are later ejected into grid/pocket cargo remain separately returnable; nested-root checks prevent duplicate delivery.
-- Saved squad members persist retained equipment through the escaped Default snapshot. Restricted without Field Upkeep merges acquired equipment without updating unchanged baseline state. Field recruits do not enter the mail-return path.
+- Saved squad members persist retained equipment through the escaped Default snapshot, including raid wear and consumed supplies in Restricted. Field recruits do not enter the mail-return path.
 
 Weapon trees are also registered through `RegisterLootedWeaponTree(...)` so patrol reload maintenance can treat picked-up weapons as carried loot and avoid wasting spawned magazines on them.
 

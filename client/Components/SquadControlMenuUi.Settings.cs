@@ -213,7 +213,6 @@ namespace pitTeam.Components
 
                 CreateSettingsEntryRow(setting);
             }
-
             LayoutRebuilder.ForceRebuildLayoutImmediate(settingsContentRoot);
             if (settingsScrollRect != null)
             {
@@ -385,8 +384,9 @@ namespace pitTeam.Components
                 pitFireTeam.npcSendMessage,
                 pitFireTeam.pitFireTeamFLAG,
                 pitFireTeam.badGuy,
-                pitFireTeam.factionHostilities,
-                pitFireTeam.pmcArmbands))
+                pitFireTeam.friendlyEncounterChance,
+                pitFireTeam.pmcArmbands,
+                pitFireTeam.factionHostilities))
             {
                 yield return setting;
             }
@@ -408,16 +408,6 @@ namespace pitTeam.Components
             {
                 string loadoutSection = pitFireTeam.GetLanguageText(language => language.loadoutManagementSettings);
                 yield return new SquadSettingEntry { SectionTitle = loadoutSection, LoadoutMode = LoadoutManagementMode.Restricted };
-                if (GameplayModeRuntime.GetEffectiveValue(pitFireTeam.loadoutManagementMode) == LoadoutManagementMode.Restricted &&
-                    pitFireTeam.restrictedGearMaintenance != null)
-                {
-                    yield return new SquadSettingEntry
-                    {
-                        SectionTitle = loadoutSection,
-                        Entry = pitFireTeam.restrictedGearMaintenance
-                    };
-                }
-
                 yield return new SquadSettingEntry { SectionTitle = loadoutSection, LoadoutMode = LoadoutManagementMode.Immersive };
                 yield return new SquadSettingEntry { SectionTitle = loadoutSection, LoadoutMode = LoadoutManagementMode.Extreme };
             }
@@ -436,7 +426,6 @@ namespace pitTeam.Components
                 pitFireTeam.GetLanguageText(language => language.miscSettings),
                 pitFireTeam.teleportKey,
                 pitFireTeam.healKey,
-                pitFireTeam.friendlyChanceMultiplier,
                 pitFireTeam.heatlhMultiplier,
                 pitFireTeam.botPrefetch))
             {
@@ -622,7 +611,8 @@ namespace pitTeam.Components
                 ? new Color(0.46f, 0.46f, 0.46f, 1f)
                 : new Color(0.72f, 0.72f, 0.72f, 1f);
             descriptionLabel.enableWordWrapping = true;
-            descriptionLabel.overflowMode = TextOverflowModes.Ellipsis;
+            descriptionLabel.overflowMode = TextOverflowModes.Overflow;
+            FitSettingsRowDescription(rowRect, layout, descriptionRect, descriptionLabel);
 
             RectTransform controlRect = new GameObject("Control", typeof(RectTransform)).GetComponent<RectTransform>();
             controlRect.SetParent(rowObject.transform, false);
@@ -650,7 +640,8 @@ namespace pitTeam.Components
                     controlRect.pivot = new Vector2(1f, 0.5f);
                 }
 
-                controlRect.anchoredPosition = new Vector2(-SettingsControlRightInset, SettingsSliderVerticalOffset);
+                controlRect.anchoredPosition = new Vector2(-SettingsControlRightInset,
+                    SettingsSliderVerticalOffset + (rowRect.sizeDelta.y - SettingsRowHeight) * 0.5f);
                 CreateIntSliderSettingControl(controlRect, entry, acceptableRange, !disabledDuringRaid);
                 AddRaidDisabledTooltipOverlay(rowObject, disabledDuringRaid, entry);
                 return;
@@ -689,8 +680,7 @@ namespace pitTeam.Components
 
         private static bool IsNestedSettingsEntry(ConfigEntryBase entry)
         {
-            return entry == pitFireTeam.restrictedGearMaintenance
-                || entry == pitFireTeam.statusReportHealthColoring
+            return entry == pitFireTeam.statusReportHealthColoring
                 || entry == pitFireTeam.statusReportFullHealthColor
                 || entry == pitFireTeam.statusReportMediumHealthColor
                 || entry == pitFireTeam.statusReportLowHealthColor
@@ -805,7 +795,8 @@ namespace pitTeam.Components
                 ? new Color(0.46f, 0.46f, 0.46f, 1f)
                 : new Color(0.72f, 0.72f, 0.72f, 1f);
             descriptionLabel.enableWordWrapping = true;
-            descriptionLabel.overflowMode = TextOverflowModes.Ellipsis;
+            descriptionLabel.overflowMode = TextOverflowModes.Overflow;
+            FitSettingsRowDescription(rowRect, layout, descriptionRect, descriptionLabel);
 
             RectTransform controlRect = new GameObject("Control", typeof(RectTransform)).GetComponent<RectTransform>();
             controlRect.SetParent(rowObject.transform, false);
@@ -817,6 +808,20 @@ namespace pitTeam.Components
 
             createControl(controlRect);
             AddRaidDisabledTooltipOverlay(rowObject, disabledDuringRaid, entry);
+        }
+
+        private void FitSettingsRowDescription(RectTransform row, LayoutElement layout,
+            RectTransform descriptionRect, TextMeshProUGUI description)
+        {
+            float rowWidth = settingsContentRoot.rect.width;
+            if (rowWidth <= 0f)
+                rowWidth = settingsPanel.GetComponent<RectTransform>().rect.width;
+            float textWidth = Mathf.Max(1f, rowWidth + descriptionRect.offsetMax.x - descriptionRect.offsetMin.x);
+            float textHeight = description.GetPreferredValues(description.text, textWidth, Mathf.Infinity).y;
+            float height = Mathf.Max(layout.preferredHeight,
+                Mathf.Ceil(textHeight + descriptionRect.offsetMin.y - descriptionRect.offsetMax.y + 2f));
+            layout.preferredHeight = height;
+            row.sizeDelta = new Vector2(row.sizeDelta.x, height);
         }
 
         private static void CreateSettingsRowChrome(Transform rowTransform)
@@ -1326,7 +1331,7 @@ namespace pitTeam.Components
                 fallbackSlider.maxValue = acceptableRange.MaxValue;
                 fallbackSlider.wholeNumbers = true;
                 fallbackSlider.value = Convert.ToSingle(GameplayModeRuntime.GetEffectiveValue(entry));
-                valueLabel.text = GameplayModeRuntime.GetEffectiveValue(entry)?.ToString() ?? "0";
+                valueLabel.text = (GameplayModeRuntime.GetEffectiveValue(entry)?.ToString() ?? "0") + (entry == pitFireTeam.friendlyEncounterChance ? "%" : string.Empty);
                 SetSettingsControlInteractable(sliderRoot, interactable);
 
                 if (interactable)
@@ -1340,14 +1345,31 @@ namespace pitTeam.Components
                         }
 
                         entry.BoxedValue = boxed;
-                        valueLabel.text = boxed.ToString();
+                        valueLabel.text = boxed.ToString() + (entry == pitFireTeam.friendlyEncounterChance ? "%" : string.Empty);
                         pitFireTeam.Instance?.Config.Save();
                     });
                 }
                 return;
             }
 
+            // NumberSlider compares formatted text with its numeric slider value. A unit
+            // suffix breaks that equality and can reenter SetCurrentValue indefinitely.
             slider.Show(acceptableRange.MinValue, acceptableRange.MaxValue, "0");
+            if (entry == pitFireTeam.friendlyEncounterChance)
+            {
+                TMP_InputField input = NumberSliderValueInputField?.GetValue(slider) as TMP_InputField;
+                if (input != null)
+                {
+                    GameObject suffixObject = CreateText("PercentSuffix", "%", 18f, TextAlignmentOptions.MidlineLeft);
+                    RectTransform suffixRect = suffixObject.GetComponent<RectTransform>();
+                    suffixRect.SetParent(input.transform, false);
+                    suffixRect.anchorMin = suffixRect.anchorMax = new Vector2(1f, 0.5f);
+                    suffixRect.pivot = new Vector2(0f, 0.5f);
+                    suffixRect.sizeDelta = new Vector2(24f, 28f);
+                    suffixRect.anchoredPosition = new Vector2(4f, 0f);
+                    suffixObject.GetComponent<TextMeshProUGUI>().raycastTarget = false;
+                }
+            }
             slider.UpdateValue(Convert.ToSingle(GameplayModeRuntime.GetEffectiveValue(entry)), false, acceptableRange.MinValue, acceptableRange.MaxValue);
             SetSettingsControlInteractable(slider.transform, interactable);
             slider.enabled = interactable;
@@ -2603,7 +2625,7 @@ namespace pitTeam.Components
             if (entry == pitFireTeam.regroupRadius) return language.regroupRadius;
             if (entry == pitFireTeam.enemyRemember) return language.enemyRemember;
             if (entry == pitFireTeam.enemyTracking) return language.enemyTracking;
-            if (entry == pitFireTeam.friendlyChanceMultiplier) return language.friendlyChanceMultiplier;
+            if (entry == pitFireTeam.friendlyEncounterChance) return language.friendlyEncounterChance;
             if (entry == pitFireTeam.heatlhMultiplier) return language.healthMultiplier;
             if (entry == pitFireTeam.statusSound) return language.statusSound;
             if (entry == pitFireTeam.enemyMarker) return language.enemyMarker;
@@ -2630,7 +2652,6 @@ namespace pitTeam.Components
             if (entry == pitFireTeam.factionHostilities) return language.factionHostilities;
             if (entry == pitFireTeam.pmcArmbands) return language.pmcArmbands;
             if (entry == pitFireTeam.englishBear) return language.englishBear;
-            if (entry == pitFireTeam.restrictedGearMaintenance) return language.loadoutManagementRestrictedGearMaintenance;
             if (entry == pitFireTeam.botGrenades) return language.botGrenades;
             if (entry == pitFireTeam.pingKey) return language.pingSquad;
             if (entry == pitFireTeam.pingRadioVolume) return language.pingRadioVolume;

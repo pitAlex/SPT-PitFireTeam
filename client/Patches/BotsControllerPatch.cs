@@ -1443,6 +1443,8 @@ namespace pitTeam.Patches
                 if (Controller == null)
                 {
                     AllegiancePmcFriendship.Reset();
+                    AllegianceScavCargo.Reset();
+                    AllegianceScavRelations.Reset();
                     FriendlyEncounterPenaltyRuntime.BeginRaid();
                     PmcKarmaRuntime.BeginRaid(Utils.Utils.FlagGet("RaidTransit"));
                     PlayerKilledPatch.ResetKillMessageRaidState();

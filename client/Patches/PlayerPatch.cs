@@ -301,6 +301,8 @@ namespace pitTeam.Patches
             // Capture recruit identity before native death callbacks remove followers.
             TryRecordPlayerKillMessage(__instance, aggressor);
             PmcKarmaRuntime.RecordKill(__instance, aggressor);
+            try { AllegianceScavRelations.RecordKill(__instance, aggressor); }
+            catch (Exception ex) { Modules.Logger.LogError("[ScavRelations] Friendly kill processing failed: " + ex); }
             try
             {
                 global::pitTeam.Utils.PingTeamates.TryRememberEnemyDown(__instance, aggressor);

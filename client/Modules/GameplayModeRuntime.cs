@@ -214,8 +214,7 @@ namespace pitTeam.Modules
             {
                 gameplayMode = Current.ToString(),
                 pmcArmbands = pitFireTeam.pmcArmbands.Value,
-                loadoutManagementMode = GetEffectiveValue(pitFireTeam.loadoutManagementMode).ToString(),
-                restrictedGearMaintenance = pitFireTeam.restrictedGearMaintenance.Value
+                loadoutManagementMode = GetEffectiveValue(pitFireTeam.loadoutManagementMode).ToString()
             });
             return Task.Run(() =>
             {

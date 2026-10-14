@@ -146,7 +146,10 @@ public class FriendlyPostRaidService(
         }
     }
 
-    private void RemoveReturnedItemsFromInsurance(MongoId sessionId, List<SPTarkov.Server.Core.Models.Eft.Common.Tables.Item> returnedItems)
+    internal void FilterReturnItems(MongoId sessionId, List<SPTarkov.Server.Core.Models.Eft.Common.Tables.Item> items) =>
+        StripProtectedTeammateItemsFromReturnItems(sessionId, items);
+
+    internal void RemoveReturnedItemsFromInsurance(MongoId sessionId, List<SPTarkov.Server.Core.Models.Eft.Common.Tables.Item> returnedItems)
     {
         HashSet<MongoId> returnedItemIds = returnedItems
             .Where(item => item != null)

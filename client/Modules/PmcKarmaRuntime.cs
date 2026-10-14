@@ -42,13 +42,14 @@ namespace pitTeam.Modules
 
         internal static void NoteFriendly(BotOwner bot)
         {
-            if (!ended && IsPmc(Human) && bot != null) hadFriendlies = true;
+            if (!ended && IsPmc(Human) && IsPmc(bot?.GetPlayer)) hadFriendlies = true;
         }
 
         internal static void NoteRecruitment(BotOwner bot, IPlayer leader, bool squadMate)
         {
             if (!ended && !squadMate && IsPmc(leader) && leader.ProfileId == Human?.ProfileId &&
-                IsPmc(bot?.GetPlayer) && !string.IsNullOrEmpty(bot.ProfileId))
+                IsPmc(bot?.GetPlayer) &&
+                !string.IsNullOrEmpty(bot.ProfileId))
             {
                 recruitedAny = true;
                 Recruits.Add(bot.ProfileId);
@@ -57,13 +58,15 @@ namespace pitTeam.Modules
 
         private static bool IsFriendlyTarget(Player target, IPlayer player)
         {
+            if (!IsPmc(target)) return false;
             var follower = BossPlayers.GetFollowerByProfileId(target.ProfileId);
             if (follower != null)
                 return Recruits.Contains(target.ProfileId) && !follower.IsSquadMate &&
                     follower.GetBoss()?.realPlayer?.ProfileId == player.ProfileId;
             var bot = target.AIData?.BotOwner;
-            if (bot?.BotsGroup == null || !IsPmc(target)) return false;
+            if (bot?.BotsGroup == null) return false;
             if (GameplayModeRuntime.IsAllegiance) return AllegiancePmcFriendship.CanRecruit(bot, player);
+            if (!IsPmc(target)) return false;
             if (AllegiancePmcFriendship.IsSelectedFriendly(bot, player)) return true;
             return target.Side == player.Side && GameplayModeRuntime.GetEffectiveValue(pitFireTeam.pitFireTeamFLAG) &&
                 !GameplayModeRuntime.GetEffectiveValue(pitFireTeam.badGuy) &&
@@ -75,7 +78,7 @@ namespace pitTeam.Modules
         {
             var attacker = damage.Player?.iPlayer;
             if (ended || damage.Damage <= 0f || attacker?.IsYourPlayer != true || !IsPmc(attacker) ||
-                target?.IsAI != true || string.IsNullOrEmpty(target.ProfileId) || !Damaged.Add(target.ProfileId)) return;
+                target?.IsAI != true || !IsPmc(target) || string.IsNullOrEmpty(target.ProfileId) || !Damaged.Add(target.ProfileId)) return;
             if (IsFriendlyTarget(target, attacker)) FriendlyBeforeDamage.Add(target.ProfileId);
         }
 
@@ -84,7 +87,7 @@ namespace pitTeam.Modules
             try
             {
                 if (ended || string.IsNullOrEmpty(raidId) || aggressor?.IsYourPlayer != true || !IsPmc(aggressor) ||
-                    victim?.IsAI != true || string.IsNullOrEmpty(victim.ProfileId) ||
+                    victim?.IsAI != true || !IsPmc(victim) || string.IsNullOrEmpty(victim.ProfileId) ||
                     (!FriendlyBeforeDamage.Contains(victim.ProfileId) && !IsFriendlyTarget(victim, aggressor)) ||
                     !Killed.Add(victim.ProfileId)) return;
                 Send(new PmcKarmaReport { RaidId = raidId, Kind = "kill", VictimProfileId = victim.ProfileId }, Human);
@@ -103,7 +106,7 @@ namespace pitTeam.Modules
                 human.HealthController?.IsAlive == true;
             var recruits = extracted ? BossPlayers.GetFollowersByBoss(profileId)
                 .Where(f => f != null && !f.IsSquadMate && f.GetBot()?.IsDead != true &&
-                    Recruits.Contains(f.GetBot()?.ProfileId ?? string.Empty) && IsPmc(f.GetBot()?.GetPlayer) &&
+                    Recruits.Contains(f.GetBot()?.ProfileId ?? string.Empty) &&
                     f.GetBot()?.GetPlayer?.HealthController?.IsAlive == true)
                 .Select(f => f.GetBot().ProfileId).Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList()
                 : new List<string>();

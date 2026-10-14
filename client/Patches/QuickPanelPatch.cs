@@ -174,10 +174,19 @@ namespace pitTeam.Patches
         {
             var target = player?.InteractablePlayer;
             var bot = target?.AIData?.BotOwner;
-            return GameplayModeRuntime.GetEffectiveValue(pitFireTeam.pickupEnabled) && target?.IsAI == true &&
-                target.HealthController?.IsAlive == true && bot != null &&
-                !BossPlayers.IsFollower(bot) && FollowRequestPatch.IsRecruitmentSideAllowed(player, bot) &&
-                AllegiancePmcFriendship.CanRecruit(bot, player);
+            if (!GameplayModeRuntime.GetEffectiveValue(pitFireTeam.pickupEnabled) || target?.IsAI != true ||
+                target.HealthController?.IsAlive != true || bot == null || BossPlayers.IsFollower(bot)) return false;
+
+            if (target.Side == EPlayerSide.Savage)
+            {
+                var group = bot.BotsGroup;
+                // Offer the interaction to friendly/neutral Scavs independently of the
+                // narrower recruitment admission. Existing enemies always take priority.
+                return group != null && !group.IsEnemy(player) &&
+                    (group.IsAlly(player) || group.Neutrals.ContainsKey(player) || !group.IsPlayerEnemy(player));
+            }
+
+            return FollowRequestPatch.IsRecruitmentSideAllowed(player, bot) && AllegiancePmcFriendship.CanRecruit(bot, player);
         }
 
         internal static void RefreshFollowerQuickCommands(GesturesQuickPanel panel, Player player)

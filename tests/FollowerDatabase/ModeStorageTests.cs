@@ -15,7 +15,6 @@ internal static class ModeStorageTests
 
     public static async Task Run(Action<bool, string> check)
     {
-        EquippedGearRetentionTests.Run(check);
         string initialDirectory = Environment.CurrentDirectory;
         string work = Path.GetFullPath(Path.Combine("tests", "artifacts", "mode-storage", Guid.NewGuid().ToString("N")));
         Directory.CreateDirectory(work);
@@ -39,6 +38,7 @@ internal static class ModeStorageTests
                 DispatchProxy.Create<ISptLogger<FriendlyTeammateStorage>, TestLogger>(), settings);
             var session = new MongoId("aaaaaaaaaaaaaaaaaaaaaaaa");
             storage.InitializeProfile(session);
+            RestrictedEquipmentPersistenceTests.Run(storage, settings, new JsonUtil([new SptJsonConverterRegistrator()]), session, check);
             RecruitAggressionPersistenceTests.Run(storage,session,check);
             storage.WriteBatch(session, new Dictionary<string, string>
             {

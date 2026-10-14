@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace pitTeam.Modules
@@ -16,22 +17,27 @@ namespace pitTeam.Modules
 
         internal static async Task Run<T>(Func<bool> alive, Func<bool> idle,
             Action<Action<T, bool, string>> begin, Func<T, bool> matches, Action<int> mismatch = null,
-            int attempts = 3, int timeoutMs = 10000)
+            int attempts = 3, int timeoutMs = 10000, CancellationToken cancellation = default)
         {
             var elapsed = Stopwatch.StartNew();
             for (int attempt = 1; attempt <= attempts; attempt++)
             {
-                await WaitForIdle(alive, idle, elapsed, timeoutMs);
+                await WaitForIdle(alive, idle, elapsed, timeoutMs, cancellation);
                 // EFT calls completion before ExecuteNext clears ProcessStatus. Never run the
                 // caller's continuation inline within that callback. Await retains Unity's context.
                 var completion = new TaskCompletionSource<Outcome<T>>(TaskCreationOptions.RunContinuationsAsynchronously);
-                begin((value, success, error) => completion.TrySetResult(new Outcome<T>
-                    { Value = value, Success = success, Error = error }));
-                int remaining = Math.Max(1, timeoutMs - (int)elapsed.ElapsedMilliseconds);
-                if (await Task.WhenAny(completion.Task, Task.Delay(remaining)) != completion.Task)
-                    throw new TimeoutException("Hands callback did not complete before the exchange deadline.");
-                Outcome<T> outcome = await completion.Task;
-                await WaitForIdle(alive, idle, elapsed, timeoutMs);
+                Outcome<T> outcome;
+                using (cancellation.Register(() => completion.TrySetCanceled()))
+                {
+                    cancellation.ThrowIfCancellationRequested();
+                    begin((value, success, error) => completion.TrySetResult(new Outcome<T>
+                        { Value = value, Success = success, Error = error }));
+                    int remaining = Math.Max(1, timeoutMs - (int)elapsed.ElapsedMilliseconds);
+                    if (await Task.WhenAny(completion.Task, Task.Delay(remaining)) != completion.Task)
+                        throw new TimeoutException("Hands callback did not complete before the exchange deadline.");
+                    outcome = await completion.Task;
+                }
+                await WaitForIdle(alive, idle, elapsed, timeoutMs, cancellation);
                 if (!outcome.Success) throw new InvalidOperationException("Hands transition failed: " + outcome.Error);
                 if (matches(outcome.Value)) return;
                 mismatch?.Invoke(attempt);
@@ -39,15 +45,17 @@ namespace pitTeam.Modules
             throw new InvalidOperationException("Hands transition returned the wrong controller/item after bounded retries.");
         }
 
-        private static async Task WaitForIdle(Func<bool> alive, Func<bool> idle, Stopwatch elapsed, int timeoutMs)
+        private static async Task WaitForIdle(Func<bool> alive, Func<bool> idle, Stopwatch elapsed, int timeoutMs,
+            CancellationToken cancellation)
         {
             while (true)
             {
+                cancellation.ThrowIfCancellationRequested();
                 if (!alive()) throw new OperationCanceledException("Actor died during hands transition.");
                 if (elapsed.ElapsedMilliseconds >= timeoutMs)
                     throw new TimeoutException("Native hands process did not unlock before the exchange deadline.");
                 if (idle()) return;
-                await Task.Delay(10);
+                await Task.Delay(10, cancellation);
             }
         }
     }

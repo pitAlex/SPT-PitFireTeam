@@ -1,4 +1,5 @@
 using EFT.UI.Gestures;
+using EFT;
 using EFT.UI;
 using HarmonyLib;
 using SPT.Reflection.Patching;
@@ -79,7 +80,7 @@ namespace pitTeam.Patches
             var list_0 = (List<GesturesAudioItem>)AccessTools.Field(typeof(GesturesMenu), "_audioItems").GetValue(__instance);
             var list_1 = (List<GestureBaseItem>)AccessTools.Field(typeof(GesturesMenu), "_allItems").GetValue(__instance);
 
-            if (!pitFireTeam.hideUnsupportedCommands.Value) list_0.ForEach(item =>
+            if (!GestureMenuUnsupportedCommandVisibility.ShouldFilter(__instance)) list_0.ForEach(item =>
             {
                 if (item.gameObject.name == "ENEMY")
                 {
@@ -128,7 +129,7 @@ namespace pitTeam.Patches
         [PatchPrefix]
         private static bool PatchPrefix(GesturesMenu __instance, string localizationKey, GesturesAudioItem groupTemplate, ref EPhraseTrigger[] phrases)
         {
-            if (pitFireTeam.hideUnsupportedCommands.Value)
+            if (GestureMenuUnsupportedCommandVisibility.ShouldFilter(__instance))
             {
                 // modify phrases here
                 if (localizationKey == "COMMAND")
@@ -187,7 +188,11 @@ namespace pitTeam.Patches
                         EPhraseTrigger.OpenDoor
                     ];
                 }
-                else if (localizationKey == "HEALTH STATUS" || localizationKey == "REACTION")
+                else if (localizationKey == "REACTION")
+                {
+                    phrases = [EPhraseTrigger.Roger, EPhraseTrigger.Negative];
+                }
+                else if (localizationKey == "HEALTH STATUS")
                 {
                     return false;
                 }
@@ -290,6 +295,12 @@ namespace pitTeam.Patches
         {
             return AccessTools.Method(typeof(GesturesMenu), "Init");
         }
+        [PatchPrefix]
+        private static void PatchPrefix(GesturesMenu __instance, EPlayerSide side)
+        {
+            GestureMenuUnsupportedCommandVisibility.PrepareForSideChange(__instance, side);
+        }
+
         [PatchPostfix]
         private static void PatchPostfix(GesturesMenu __instance)
         {
@@ -337,9 +348,28 @@ namespace pitTeam.Patches
 
     internal static class GestureMenuUnsupportedCommandVisibility
     {
+        private static readonly FieldInfo SideField = AccessTools.Field(typeof(GesturesMenu), "_side");
         private static readonly FieldInfo AudioGroupsField = AccessTools.Field(typeof(GesturesMenu), "_audioItems");
         private static readonly FieldInfo AllItemsField = AccessTools.Field(typeof(GesturesMenu), "_allItems");
         private static readonly List<WeakReference<GesturesMenu>> TrackedMenus = new List<WeakReference<GesturesMenu>>();
+
+        internal static bool ShouldFilter(GesturesMenu menu)
+        {
+            return menu != null && ShouldFilterSide((EPlayerSide)SideField.GetValue(menu));
+        }
+
+        private static bool ShouldFilterSide(EPlayerSide side)
+        {
+            return pitFireTeam.hideUnsupportedCommands.Value &&
+                   (side == EPlayerSide.Usec || side == EPlayerSide.Bear);
+        }
+
+        internal static void PrepareForSideChange(GesturesMenu menu, EPlayerSide side)
+        {
+            if (menu == null || ShouldFilter(menu) == ShouldFilterSide(side)) return;
+            // Native Init reuses existing phrase groups. Rebuild them when PMC/Scav filtering differs.
+            ClearPhraseGroups(menu);
+        }
 
         public static void Track(GesturesMenu menu)
         {

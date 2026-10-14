@@ -15,6 +15,7 @@
     <Compile Include="../shared/FriendlyEncounterPenaltyPolicy.cs" Link="Shared/FriendlyEncounterPenaltyPolicy.cs" />
     <Compile Include="../shared/PmcKarmaPolicy.cs" Link="Shared/PmcKarmaPolicy.cs" />
     <PackageReference Include="LiteDB" Version="5.0.21" />
+    <PackageReference Include="HarmonyX" Version="2.16.1" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="SPTarkov.Common">

@@ -36,6 +36,4 @@ public record FriendlyServerSettingsRequest : IRequestData
         };
     }
 
-    [JsonPropertyName("restrictedGearMaintenance")]
-    public bool RestrictedGearMaintenance { get; set; } = false;
 }

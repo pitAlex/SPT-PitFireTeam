@@ -64,6 +64,18 @@ public static class RecruitmentInputChecks {
             AllegiancePmcFriendship.Allowed=true;
             bear.Side=EPlayerSide.Usec;bear.GetPlayer.Side=EPlayerSide.Usec;
             Check(QuickPanelPatch.CanShowCooperation(player),"Eligible same-side target remains available");
+            bear.Side=EPlayerSide.Savage;bear.GetPlayer.Side=EPlayerSide.Savage;
+            AllegiancePmcFriendship.Allowed=false;bear.BotsGroup.PolicyEnemy=true;
+            bear.BotsGroup.Neutrals[player]=true;
+            Check(QuickPanelPatch.CanShowCooperation(player),"Neutral Scav exposes Cooperation even without selected recruitment eligibility");
+            bear.BotsGroup.Neutrals.Clear();bear.BotsGroup.Allied=true;
+            Check(QuickPanelPatch.CanShowCooperation(player),"Allied Scav exposes Cooperation independently of its group size or role");
+            bear.BotsGroup.Allied=false;bear.BotsGroup.PolicyEnemy=false;
+            Check(QuickPanelPatch.CanShowCooperation(player),"Native friendly Scav policy exposes Cooperation without explicit ally membership");
+            bear.BotsGroup.Hostile=true;bear.BotsGroup.Allied=true;bear.BotsGroup.Neutrals[player]=true;
+            Check(!QuickPanelPatch.CanShowCooperation(player),"Actual Scav enemy membership overrides stale friendly/neutral policy");
+            bear.BotsGroup.Hostile=false;bear.BotsGroup.Allied=false;bear.BotsGroup.Neutrals.Clear();
+            bear.Side=EPlayerSide.Usec;bear.GetPlayer.Side=EPlayerSide.Usec;AllegiancePmcFriendship.Allowed=true;
             bear.GetPlayer.HealthController.IsAlive=false;
             Check(!QuickPanelPatch.CanShowCooperation(player),"Dead target has no Cooperation interaction");bear.GetPlayer.HealthController.IsAlive=true;
             bear.IsFollower=true;Check(!QuickPanelPatch.CanShowCooperation(player),"Existing follower has no recruitment interaction");bear.IsFollower=false;

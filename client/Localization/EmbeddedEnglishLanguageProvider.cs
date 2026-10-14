@@ -72,9 +72,9 @@ namespace pitTeam.Localization
                 enemyTracking = Entry(
                     "Enemy Tracking",
                     "Switch between Simple and Realistic enemy tracking. Simple tracks the enemy’s current position regardless of when they were last seen or reported. Realistic uses positions reported through sight or sound, or the enemy’s last known position."),
-                friendlyChanceMultiplier = Entry(
-                    "Friendly Chance Multiplier",
-                    "Improve your odds of crossing paths with a potential ally. In Guns for Hire, only your own faction can become friendly. Has no effect while Friendly PMC Side or Bad Guy is on."),
+                friendlyEncounterChance = Entry(
+                    "Friendly Encounter Chance",
+                    "The base chance of encountering friendlies during a raid.\nIn Guns for Hire, this affects only same-side PMCs and has no effect if Friendly PMC Side or Bad Guy is on.\nIn Allegiance, the base chance is that of your own side while opposite sides get half the chance. Scavs are affected by your Fence karma, which further increases or decreases their chances."),
                 healthMultiplier = Entry(
                     "Squad Health Multiplier",
                     "Health multiplier for the followers you spawn with. This is applied per each body part."),
@@ -143,10 +143,7 @@ namespace pitTeam.Localization
                     "Controls how teammate loadouts are selected, consumed, and preserved."),
                 loadoutManagementRestricted = Entry(
                     "Restricted",
-                    "Teammate loadouts must use gear from your stash or be purchased through the kit buyout system. Gear is still protected: it is not lost on death and cannot be extracted with."),
-                loadoutManagementRestrictedGearMaintenance = Entry(
-                    "Field Upkeep",
-                    "Track raid wear and spent supplies for teammates while their gear remains protected from death loss and extraction."),
+                    "Gear comes from your stash and cannot be extracted with. Raid wear and spent supplies persist, but gear is kept if a teammate dies."),
                 loadoutManagementImmersive = Entry(
                     "Immersive",
                     "Same as Restricted, but teammate gear behaves like real raid equipment. Equipment can become damaged, dead teammates lose their gear, and you can extract with their items."),
@@ -406,7 +403,7 @@ namespace pitTeam.Localization
                     ["SquadOnboardingRetry"] = "Retry",
                     ["SettingsUnavailableInAllegiance"] = "this option is not available in Allegiance Mode",
                     ["SettingsUnavailableInGunsForHire"] = "this option is not available in Guns for Hire Mode",
-                    ["FriendlyEncounterPenaltyLabel"] = "-{0} points in Friendly Encounters ({1})",
+                    ["FriendlyEncounterPenaltyLabel"] = "-{0}% Friendly Encounters ({1})",
                     ["FriendlyEncounterPenaltyHours"] = "{0}h",
                     ["FriendlyEncounterPenaltyMinutes"] = "{0}min",
                     ["SquadControlEmptyAllegianceRoster"] = "No one’s watching your six. Jump into a raid, forge alliances, and Escape together.",
@@ -427,6 +424,7 @@ namespace pitTeam.Localization
                     ["SettingsUnavailableDuringRaid"] = "Not available during raid",
                 },
                 returnItems = new[] { "Items received from your teammate. Ready for you to claim." },
+                scavCargoReturn = new[] { "One of my men brought your things back. Here’s your stuff, as promised." },
                 returnItemsDeath = new[] { "Your teammate recovered these items." },
                 teamEscaped = new[] { "Nice!\nWe managed to get out." },
                 teamSomeEscaped = new[] { "Well it's a shame about {0}, but at least the rest of us made it." },

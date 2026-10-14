@@ -99,10 +99,25 @@ namespace pitTeam.Patches
                     bool canPickup = false;
                     int hardPickupLimit = GetHardPickupLimit();
                     int currentPickups = GetActivePickupCount(player.ProfileId);
-                    if (BossPlayers.HasDeniedRecruitment(posibleExecuter.ProfileId))
+                    if (HasLevelBasedRecruitmentDenial(posibleExecuter))
                     {
                         // A tiered level-based refusal is final for this bot for the current raid.
                         canPickup = false;
+                    }
+                    else if (currentPickups >= hardPickupLimit)
+                    {
+                        canPickup = false;
+                    }
+                    else if (AllegiancePmcFriendship.TryResolveRecruitmentAcceptance(posibleExecuter, player, false, out bool encounterAccepted))
+                    {
+                        canPickup = encounterAccepted;
+                        if (!canPickup) AllegiancePmcFriendship.NoteRequestedRefusal(posibleExecuter);
+                    }
+                    else if (player.Side != EPlayerSide.Savage && posibleExecuter.Side == EPlayerSide.Savage)
+                    {
+                        // A field Scav's generated level is not a recruitment condition.
+                        canPickup = currentPickups < hardPickupLimit &&
+                            AllegiancePmcFriendship.AcceptScavRecruitment(posibleExecuter, player);
                     }
                     // Tiered pickup uses the old player-vs-bot acceptance rules.
                     else if (GameplayModeRuntime.GetEffectiveValue(pitFireTeam.tieredPickup))
@@ -195,7 +210,7 @@ namespace pitTeam.Patches
                                     return;
                                 }
 
-                                if (!AllegiancePmcFriendship.CanRecruit(me, player) || BossPlayers.HasDeniedRecruitment(me.ProfileId))
+                                if (!AllegiancePmcFriendship.CanRecruit(me, player) || HasLevelBasedRecruitmentDenial(me))
                                 {
                                     TrySayRecruitmentResponse(me, EPhraseTrigger.Negative, false);
                                     me.Gesture.TryGestus(EInteraction.NoGesture, true);
@@ -261,6 +276,9 @@ namespace pitTeam.Patches
             return bot.Memory?.HaveEnemy == true || SainGoalEnemyBridge.HasEnemy(bot);
         }
 
+        private static bool HasLevelBasedRecruitmentDenial(BotOwner bot) =>
+            bot != null && bot.Side != EPlayerSide.Savage && BossPlayers.HasDeniedRecruitment(bot.ProfileId);
+
         private static int GetHardPickupLimit() => Math.Min(10, Math.Max(0, GameplayModeRuntime.GetEffectiveValue(pitFireTeam.maximumPickup)));
 
         private static int GetActivePickupCount(string bossProfileId) =>
@@ -270,6 +288,10 @@ namespace pitTeam.Patches
                 return f != null && !f.IsSquadMate && member != null && !member.IsDead &&
                        member.BotState == EBotState.Active && member.GetPlayer?.HealthController?.IsAlive == true;
             }).Count;
+
+        internal static bool HasPickupCapacity(Player player) => player != null &&
+            GameplayModeRuntime.GetEffectiveValue(pitFireTeam.pickupEnabled) &&
+            GetActivePickupCount(player.ProfileId) < GetHardPickupLimit();
 
         private static void CompleteRecruitConversion(BotOwner bot, pitAIBossPlayer playerBoss)
         {
@@ -290,7 +312,7 @@ namespace pitTeam.Patches
                 return;
             }
 
-            if (!AllegiancePmcFriendship.CanRecruit(bot, playerBoss.Player()) || BossPlayers.HasDeniedRecruitment(bot.ProfileId) ||
+            if (!AllegiancePmcFriendship.CanRecruit(bot, playerBoss.Player()) || HasLevelBasedRecruitmentDenial(bot) ||
                 GetActivePickupCount(playerBoss.Player().ProfileId) >= GetHardPickupLimit())
             {
                 FollowerForcedPhraseGate.ArmRecruitmentResponse(bot, EPhraseTrigger.Negative, 1.5f);
@@ -373,7 +395,7 @@ namespace pitTeam.Patches
             }, delayMs);
         }
 
-        private static bool TryPlayDirectFollowerPhrase(BotOwner bot, EPhraseTrigger phrase)
+        internal static bool TryPlayDirectFollowerPhrase(BotOwner bot, EPhraseTrigger phrase)
         {
             if (bot?.GetPlayer?.Speaker == null)
             {

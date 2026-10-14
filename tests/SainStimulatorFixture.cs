@@ -12,6 +12,7 @@ using SAIN.Components;
 using SAIN.SAINComponent.Classes.Decision;
 using Enemy = SAIN.SAINComponent.Classes.EnemyClasses.Enemy;
 using UnityEngine;
+using Utils = pitTeam.Utils;
 
 public class BotStimulators {
     public bool Using, HaveSmt=true, Allowed=true, _shallUseInSafe;
@@ -23,10 +24,15 @@ public static class BotMedecine {
     public static EquipmentSlot[] secureSlots={EquipmentSlot.SecuredContainer}, anySlots={EquipmentSlot.Pockets};
 }
 namespace EFT {
+    public enum BotLogicDecision {healStimulators}
+    public class CoreActionResultParams {}
+    public struct AICoreActionResult<T,D> {public T Action;public string Reason;public AICoreActionResult(T action,string reason){Action=action;Reason=reason;}}
     public enum EBodyPart {Head,Chest,Stomach,LeftArm,RightArm,LeftLeg,RightLeg}
     public enum EPhysicalCondition {OnPainkillers}
     public enum EDamageEffectType {Pain}
     public class StimHealth {
+        public bool IsAlive=true;
+        public List<IHealthEffect> Effects=new List<IHealthEffect>();
         public HashSet<EBodyPart> Destroyed=new HashSet<EBodyPart>();
         public bool IsBodyPartDestroyed(EBodyPart part)=>Destroyed.Contains(part);
     }
@@ -59,8 +65,19 @@ namespace EFT.InventoryLogic {
     }
 }
 namespace EFT.HealthSystem {
-    public enum EStimulatorBuffType {HealthRate,Other}
-    public class EffectsSettings {public class StimulatorSettings {public struct StimulatorBuffSettings {public EStimulatorBuffType BuffType;public float Value;}}}
+    public enum EStimulatorBuffType {HealthRate,Other,Antidote}
+    public interface IHealthEffect {bool Existing{get;}}
+    public interface IIntoxication:IHealthEffect {}
+    public interface ILethalIntoxication:IHealthEffect {}
+    public interface IStimulator:IHealthEffect {IStimulatorBuff[] ActiveBuffs{get;}}
+    public interface IStimulatorBuff {bool Active{get;} EffectsSettings.StimulatorSettings.StimulatorBuffSettings Settings{get;}}
+    public class Toxin:IIntoxication {public bool Existing{get;set;}=true;}
+    public class LethalToxin:ILethalIntoxication {public bool Existing{get;set;}=true;}
+    public class ActiveHealthController {public class Stimulator:IStimulator {
+        public bool Existing{get;set;}=true;public IStimulatorBuff[] ActiveBuffs{get;set;}=Array.Empty<IStimulatorBuff>();
+        public class Buff:IStimulatorBuff {public bool Active{get;set;} public bool Processed;public EffectsSettings.StimulatorSettings.StimulatorBuffSettings Settings{get;set;}}
+    }}
+    public class EffectsSettings {public class StimulatorSettings {public struct StimulatorBuffSettings {public EStimulatorBuffType BuffType;public float Value,Chance,Delay;}}}
 }
 namespace SAIN.Components {
     public partial class EnemyController {public bool AtPeace=>KnownEnemies.Count==0;}
@@ -77,6 +94,7 @@ namespace SAIN.SAINComponent.Classes.Decision {
 }
 public static partial class CombatChecks {
     private static void TestStimulators(){
+        TestAntidotes();
         var b=PushBot("stims");var bot=b.Sain;var decision=new SelfActionDecisionClass(bot);var enemy=bot.GoalEnemy;
         var cover=CoverAt(0);bot.Cover.CoverInUse=cover;bot.Mover.Moving=false;enemy.Seen=true;enemy.TimeSinceSeen=20;enemy.InLineOfSight=false;
         var inventory=b.GetPlayer.InventoryController;var stims=b.Medecine.Stimulators;
@@ -123,4 +141,75 @@ public static partial class CombatChecks {
         var hook=AccessTools.Method(typeof(SelfActionDecisionClass),"startUseStims");
         Check(Harmony.GetPatchInfo(hook).Prefixes.Count==1&&Harmony.GetPatchInfo(hook).Owners.Contains("xyz.pit.fireteam.sainaddon"),"stim hook installs once under addon owner");
     }
+
+    private static void TestAntidotes(){
+        var b=PushBot("antidote");var bot=b.Sain;var enemy=bot.GoalEnemy;enemy.InLineOfSight=false;enemy.Seen=true;enemy.TimeSinceSeen=20;
+        var decision=new SelfActionDecisionClass(bot);var health=b.GetPlayer.ActiveHealthController;
+        var inventory=b.GetPlayer.InventoryController;var stims=b.Medecine.Stimulators;
+        var unrelated=new Stimulator();var antidote=new Stimulator();
+        antidote.HealthEffectsComponent.BuffSettings=new[]{new EffectsSettings.StimulatorSettings.StimulatorBuffSettings{BuffType=EStimulatorBuffType.Antidote,Chance=1,Delay=5}};
+        var impossible=new Stimulator();impossible.HealthEffectsComponent.BuffSettings=new[]{new EffectsSettings.StimulatorSettings.StimulatorBuffSettings{BuffType=EStimulatorBuffType.Antidote,Chance=0}};
+        var policy=new FollowerStimulatorPolicy();inventory.Items.AddRange(new[]{unrelated,impossible,antidote});stims._stimulator=unrelated;
+        int scans=inventory.Scans;
+        Check(!FollowerStimulatorPolicy.NeedsAntidote(b)&&!policy.TrySelectAntidoteStimulator(b,stims)&&inventory.Scans==scans,"healthy unpoisoned follower neither selects an antidote nor scans inventory");
+        health.Effects.Add(new Toxin());
+        Check(FollowerStimulatorPolicy.NeedsAntidote(b)&&policy.TrySelectAntidoteStimulator(b,stims)&&stims._stimulator==antidote,"ordinary toxin selects effect-based antidote and skips zero-chance buff");
+        Check(decision.StimsForTest()&&stims._stimulator==antidote&&decision.NativeStimCalls==0&&!stims.Using,"healthy poisoned addon follower selects antidote through native scheduling without executing another provider");
+        health.Effects.Clear();health.Effects.Add(new LethalToxin());
+        Check(decision.StimsForTest()&&stims._stimulator==antidote,"lethal toxin has the same antidote selection");
+        b.GetPlayer.ActiveHealthController.Destroyed.Add(EBodyPart.Stomach);var pain=new Stimulator();pain.HealthEffectsComponent.DamageEffects.Add(EDamageEffectType.Pain,new object());inventory.Items.Insert(0,pain);
+        Check(decision.StimsForTest()&&stims._stimulator==antidote,"present toxin takes priority over pain-specific selection");b.GetPlayer.ActiveHealthController.Destroyed.Clear();
+        var buff=new ActiveHealthController.Stimulator.Buff{Settings=new EffectsSettings.StimulatorSettings.StimulatorBuffSettings{BuffType=EStimulatorBuffType.Antidote,Chance=1,Delay=5}};
+        var dose=new ActiveHealthController.Stimulator{ActiveBuffs=new IStimulatorBuff[]{buff}};health.Effects.Add(dose);
+        Check(!FollowerStimulatorPolicy.NeedsAntidote(b)&&!policy.TrySelectAntidoteStimulator(b,stims),"pending delayed antidote prevents another dose before activation");
+        buff.Active=true;buff.Processed=true;Check(!FollowerStimulatorPolicy.NeedsAntidote(b),"active antidote prevents repeat dosing");
+        buff.Active=false;Check(FollowerStimulatorPolicy.NeedsAntidote(b),"failed or expired dose does not permanently suppress treatment of a remaining toxin");
+        dose.Existing=false;buff.Processed=false;Check(FollowerStimulatorPolicy.NeedsAntidote(b),"residual stim cannot claim a pending dose");
+        health.Effects.Clear();health.Effects.Add(new Toxin{Existing=false});Check(!FollowerStimulatorPolicy.NeedsAntidote(b),"residual cured toxin does not request medicine");
+        health.Effects.Clear();health.Effects.Add(new Toxin());health.IsAlive=false;Check(!FollowerStimulatorPolicy.NeedsAntidote(b),"dead follower cannot request an antidote");health.IsAlive=true;
+        stims._stimulator=unrelated;inventory.Items.Clear();scans=inventory.Scans;
+        Check(!policy.TrySelectAntidoteStimulator(b,stims)&&stims._stimulator==unrelated&&stims.Refreshes==0,"missing antidote preserves native cached item and performs no random refresh");
+        for(int i=0;i<20;i++)policy.TrySelectAntidoteStimulator(b,stims);
+        Check(inventory.Scans==scans+1,"missing antidote search is bounded instead of scanning every decision");
+        inventory.Items.Add(antidote);Time.time+=1.01f;Check(policy.TrySelectAntidoteStimulator(b,stims),"new supplies become selectable after bounded miss delay");
+        b.Settings.FileSettings.Mind.CAN_USE_MEDS=false;Check(!policy.TrySelectAntidoteStimulator(b,stims),"native medical permission still gates antidote selection");b.Settings.FileSettings.Mind.CAN_USE_MEDS=true;
+        stims._shallUseInSafe=true;policy.TrySelectAntidoteStimulator(b,stims);Check(ReferenceEquals(inventory.LastSlots,BotMedecine.secureSlots),"antidote search preserves native accessible medical slots");stims._shallUseInSafe=false;
+        stims.LastEndUseTime=Time.time-2;Check(!decision.StimsForTest(),"poison cannot bypass stim cooldown");stims.LastEndUseTime=-100;
+        b.WeaponManager.Reload.Reloading=true;Check(!decision.StimsForTest(),"poison does not interrupt reload");b.WeaponManager.Reload.Reloading=false;
+        enemy.IsVisible=enemy.InLineOfSight=true;Check(!decision.StimsForTest(),"poison alone cannot bypass native exposed-contact stim safety");enemy.IsVisible=enemy.InLineOfSight=false;
+        b.Follower.CombatTactic=FollowerCombatTactic.Balanced;Check(!decision.StimsForTest(),"addon antidote extension excludes Core-owned combat");b.Follower.CombatTactic=FollowerCombatTactic.SainMan;
+
+        var core=new CoreAntidoteHarness(b);b.Memory.GoalEnemy.PersonalLastSeenTime=Time.time-3;
+        Check(core.Select(out var selected)&&selected.Action==BotLogicDecision.healStimulators,"Core poison selects native stim action without requiring low health");
+        b.Memory.GoalEnemy.IsVisible=true;Check(!core.Select(out _),"Core exposed visible fight defers antidote");core.SafeCover=true;
+        Check(core.Select(out _),"Core existing protected heal position permits antidote");core.CloseThreat=true;Check(!core.Select(out _),"point-blank threat retains priority over antidote");core.CloseThreat=false;b.Memory.GoalEnemy.IsVisible=false;
+        var patrol=new PatrolAntidoteHarness(b);Check(patrol.Prepare(),"peaceful Core patrol prepares effect-selected antidote");
+        patrol.Start();stims.Using=true;Check(!patrol.End(),"patrol owns actual injector use until native completion");stims.Using=false;
+        Check(patrol.End()&&!patrol.Prepare(),"completed injector use ends action and retains bounded retry gate");
+        Time.time+=3.1f;Check(patrol.Prepare(),"unsolved poisoning can retry after cooldown when no dose effect exists");
+        patrol.Start();Time.time+=5.1f;Check(patrol.End()&&!patrol.Prepare(),"failed-to-start peaceful injector cannot hold patrol indefinitely");
+        health.Effects.Add(dose);dose.Existing=true;Check(!patrol.Prepare(),"patrol does not redose while native antidote activation is pending");
+        health.Effects.Clear();Check(!FollowerStimulatorPolicy.NeedsAntidote(b),"cure releases shared antidote need");
+    }
+}
+
+public sealed class CoreAntidoteHarness {
+    private readonly BotOwner botOwner;private readonly FollowerStimulatorPolicy stimulatorPolicy=new FollowerStimulatorPolicy();private float stimStartedAt;
+    public bool SafeCover,CloseThreat;
+    public CoreAntidoteHarness(BotOwner b){botOwner=b;}
+    private bool HasReachedSafeHealPosition(EnemyInfo e)=>SafeCover;
+    private bool IsPointBlankVisibleShootableThreat(EnemyInfo e)=>CloseThreat;
+    public bool Select(out AICoreActionResult<BotLogicDecision,CoreActionResultParams> result)=>TryGetAntidoteStimDecision(out result);
+    __CORE_ANTIDOTE__
+}
+public sealed class PatrolAntidoteHarness {
+    public readonly BotOwner BotOwner;private FollowerStimulatorPolicy antidotePolicy;
+    private float antidoteStartedAt,nextAntidoteAttemptAt;private bool antidoteUseObserved;
+    public PatrolAntidoteHarness(BotOwner b){BotOwner=b;}
+    private bool IsActive()=>true;
+    public bool Prepare()=>TryPreparePatrolAntidote();
+    public void Start(){antidoteStartedAt=Time.time;antidoteUseObserved=false;}
+    public bool End()=>EndPatrolAntidote();
+    __PATROL_PREPARE_ANTIDOTE__
+    __PATROL_END_ANTIDOTE__
 }

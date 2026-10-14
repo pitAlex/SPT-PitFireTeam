@@ -65,11 +65,13 @@ namespace pitTeam.Modules
             if (boss == null || group == null || !enemy.IsAI ||
                 BossPlayers.IsPlayerBoss(enemy.ProfileId) || BossPlayers.IsFollowerProfileId(enemy.ProfileId) ||
                 IsProtected(enemy.Profile.Info.Settings.Role)) return;
+            AllegianceScavRelations.RememberContact(boss, enemy);
             ShareHostility(group, boss, EBotEnemyCause.addPlayer);
         }
 
         internal static void OnBossDamage(pitAIBossPlayer boss, IPlayer attacker)
         {
+            AllegianceScavRelations.OnBossDamage(boss, attacker);
             if (boss?.realPlayer == null || attacker?.IsAI != true || FindBoss(attacker) != null ||
                 IsProtected(attacker.Profile.Info.Settings.Role)) return;
             ShareHostility(attacker.AIData?.BotOwner?.BotsGroup, boss, EBotEnemyCause.followGetHit);
@@ -78,6 +80,7 @@ namespace pitTeam.Modules
         internal static void OnDamage(BotOwner victim, IPlayer attacker)
         {
             if (victim?.GetPlayer == null || attacker == null) return;
+            AllegianceScavRelations.OnDamage(victim, attacker);
             var victimBoss = FindBoss(victim.GetPlayer);
             var attackerBoss = FindBoss(attacker);
             // Friendly fire inside the player's squad must not declare hostility.

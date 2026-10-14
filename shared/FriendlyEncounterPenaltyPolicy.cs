@@ -19,23 +19,20 @@ namespace pitTeam.Shared
     // Real elapsed time determines expiry; only the displayed countdown is quantized.
     public static class FriendlyEncounterPenaltyPolicy
     {
-        public const int PointsPerKill = 5;
+        public const int ReductionPercentPerKill = 15;
         public const long DurationMs = 24 * 60 * 60 * 1000L;
         private const long HourMs = 60 * 60 * 1000L;
 
-        public static int GetPoints(IEnumerable<FriendlyEncounterPenaltyEntry> entries, long nowUnixMs, int chanceMultiplier = 1)
+        public static int GetReductionPercent(IEnumerable<FriendlyEncounterPenaltyEntry> entries, long nowUnixMs)
         {
-            int points = 0;
+            int percent = 0;
             foreach (var entry in entries)
-                if (entry.ExpiresAtUnixMs > nowUnixMs) points += PointsPerKill;
-            return ScalePoints(points, chanceMultiplier);
+                if (entry.ExpiresAtUnixMs > nowUnixMs) percent = Math.Min(100, percent + ReductionPercentPerKill);
+            return percent;
         }
 
-        public static int ScalePoints(int basePoints, int chanceMultiplier) =>
-            basePoints * Math.Max(1, Math.Min(5, chanceMultiplier));
-
-        public static float Apply(float chance, int penaltyPoints) =>
-            Math.Max(0f, Math.Min(1f, chance - penaltyPoints / 100f));
+        public static float Apply(float chance, int reductionPercent) =>
+            Math.Max(0f, Math.Min(1f, chance)) * (1f - Math.Max(0, Math.Min(100, reductionPercent)) / 100f);
 
         public static string GetCountdown(long expiresAtUnixMs, long nowUnixMs, out bool hours, out long nextUpdateUnixMs)
         {

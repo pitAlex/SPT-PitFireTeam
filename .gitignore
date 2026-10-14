@@ -72,3 +72,9 @@ types
 /tests/GameplayModes/obj/
 /tests/PmcKarma/bin/
 /tests/PmcKarma/obj/
+/tests/ScavCargo/bin/
+/tests/ScavCargo/obj/
+/tests/ScavCargoClient/bin/
+/tests/ScavCargoClient/obj/
+/tests/PmcArmbands/bin/
+/tests/PmcArmbands/obj/

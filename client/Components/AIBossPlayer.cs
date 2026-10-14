@@ -235,6 +235,7 @@ namespace pitTeam.Components
 
             if (info.PlayerRequester != null && info.PlayerRequester.ProfileId == realPlayer.ProfileId)
             {
+                if (AllegiancePmcFriendship.HandleEncounterPhrase(realPlayer, info.phrase)) return;
                 if (_lootInteractionDispatch != null && info.phrase == _lootInteractionPhrase)
                 {
                     _lootInteractionDispatch();
@@ -420,7 +421,9 @@ namespace pitTeam.Components
             Vector3 toTarget = target - ray.origin;
             if (toTarget.sqrMagnitude < 0.01f || ray.direction.sqrMagnitude < 0.01f ||
                 Vector3.Angle(ray.direction, toTarget) > recruitLookAngle) return;
-            if (!CanReactToBossGesture(bot, requester, recruitDistance)) return;
+            bool canReact = CanReactToBossGesture(bot, requester, recruitDistance);
+            AllegiancePmcFriendship.RecordCooperationAttempt(bot, requester, canReact);
+            if (!canReact) return;
 
             // Eligibility, tiered refusal, capacity and conversion remain request-owned.
             bot.BotsGroup?.RequestsController?.TryAskFollowMeRequest(requester, bot);
@@ -452,6 +455,7 @@ namespace pitTeam.Components
 
             if (info.Player != null && info.Player.ProfileId == realPlayer.ProfileId)
             {
+                if (AllegiancePmcFriendship.HandleEncounterGesture(realPlayer, info.Gesture)) return;
                 // Gesture command path mirrors phrases, but gesture visibility/range gates are stricter.
                 // Commands handled here are consumed before the gesture is forwarded to vanilla receivers.
                 if (info.Gesture == (EInteraction)CustomGestures.OverThere)

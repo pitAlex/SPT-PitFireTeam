@@ -113,6 +113,12 @@ namespace pitTeam.Patches
             if (person.Profile?.Info == null) return true;
             bool isBossPlayerGroup = __instance is BotsGroupPlayer;
 
+            if (AllegianceScavRelations.ShouldBlockEnemyAddition(__instance, person, cause))
+            {
+                __result = false;
+                return false;
+            }
+
             if (AllegiancePmcFriendship.ShouldBlockEnemyAddition(__instance, person, cause))
             {
                 __result = false;
@@ -304,6 +310,7 @@ namespace pitTeam.Patches
         [PatchPostfix]
         private static void PatchPostfix(BotsGroup __instance, IPlayer person, EBotEnemyCause cause, bool __result)
         {
+            if (__result) AllegianceScavRelations.OnEnemyAdded(__instance, person, cause);
             if (__result && __instance is BotsGroupPlayer)
             {
                 Utils.Enemy.ForceIgnoreUntilAggressionOff(__instance);

@@ -92,6 +92,10 @@ internal static PropertyInfo sainPlayerComponentPlayerProperty = typeof(NativeSp
     ($sainMethods -join "`n") + '}}'
 $fixture = Get-Content -Raw (Join-Path $PSScriptRoot 'RecruitmentCombatFixture.cs')
 $bossCommandSource = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Components/AIBossPlayer.cs')
+if($bossCommandSource -notmatch 'HandleEncounterPhrase\(realPlayer, info\.phrase\)' -or
+   $bossCommandSource -notmatch 'HandleEncounterGesture\(realPlayer, info\.Gesture\)') {throw 'Friendly encounter response routing is not wired into the human event handlers'}
+$layerRegistry=Get-Content -Raw (Join-Path $RepositoryRoot 'client/BigBrain/FollowerPatrolLayer.cs')
+if($layerRegistry -notmatch 'AddCustomLayer\(typeof\(FriendlyEncounterLayer\), pmcCombatBrains, FriendlyEncounterLayer.LayerPriority\)') {throw 'Friendly encounter layer registration is missing'}
 $gestureVisibility = [regex]::Match($bossCommandSource, '(?ms)^        internal bool CanReactToBossGesture\(.*?^        \}').Value
 if (!$gestureVisibility) { throw 'Shared gesture visibility boundary changed' }
 $fixture = $fixture.Replace('__GESTURE_VISIBILITY__', $gestureVisibility)
@@ -141,6 +145,15 @@ $mapping = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/RecruitCo
 $voiceFixture = Get-Content -Raw (Join-Path $PSScriptRoot 'RecruitmentSpeechFixture.cs')
 $voiceFixture += Get-Content -Raw (Join-Path $PSScriptRoot 'AllegianceGreetingFixture.cs')
 $voiceFixture += Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/AllegianceFriendlyGreeting.cs')
+$nativeStubs=Get-Content -Raw (Join-Path $PSScriptRoot 'FriendlyEncounterNativeStubs.cs')
+$medicalSource=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/TeammateBackpackInspection.cs')
+$medicalGate=[regex]::Match($medicalSource,'(?ms)^        internal static bool HasActiveOrPendingHealWork\(.*?^        \}').Value
+if(!$medicalGate){throw 'Passive active/pending medical gate boundary changed'}
+$voiceFixture += $nativeStubs.Replace('__HEAL_WORK_GATE__',$medicalGate)
+$voiceFixture += Get-Content -Raw (Join-Path $PSScriptRoot 'FriendlyEncounterFixture.cs')
+$voiceFixture += Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/FriendlyEncounterInteraction.cs')
+$voiceFixture += Get-Content -Raw (Join-Path $RepositoryRoot 'client/BigBrain/FriendlyEncounterLayer.cs')
+$voiceFixture += Get-Content -Raw (Join-Path $RepositoryRoot 'client/BigBrain/Actions/FriendlyEncounterAction.cs')
 $imports = foreach ($source in @($request, $bridge, $talk, $sayGate, $sainHooks, $fixture, $voiceFixture,$inputFixture,$inputPatch)) {
     [regex]::Matches($source, '(?m)^using [^\r\n]+;') | ForEach-Object Value
 }
@@ -148,7 +161,7 @@ $sources = foreach ($source in @($request, $bridge, $talk, $sayGate, $sainHooks,
     [regex]::Replace($source, '(?m)^using [^\r\n]+;\r?\n', '')
 }
 $code = '#nullable disable' + "`n#pragma warning disable CS8632`nusing Comfort.Common;`n" + (($imports | Select-Object -Unique) -join "`n") + "`n" + ($sources -join "`n")
-$code += "`npublic static class Entry { public static int Main() { try { RecruitmentSpeechChecks.Install(); Console.WriteLine(RecruitmentCombatChecks.Run() + "" recruitment combat checks passed.""); Console.WriteLine(RecruitmentSpeechChecks.Run() + "" recruitment speech checks passed with real Harmony.""); Console.WriteLine(RecruitmentPersonalityChecks.Run() + "" recruitment personality checks passed.""); Console.WriteLine(RecruitmentInputChecks.Run() + "" recruitment input checks passed.""); Console.WriteLine(AllegianceGreetingChecks.Run() + "" Allegiance greeting checks passed with real Harmony.""); return 0; } catch (Exception e) { Console.Error.WriteLine(e); return 1; } } }"
+$code += "`npublic static class Entry { public static int Main() { try { RecruitmentSpeechChecks.Install(); Console.WriteLine(RecruitmentCombatChecks.Run() + "" recruitment combat checks passed.""); Console.WriteLine(RecruitmentSpeechChecks.Run() + "" recruitment speech checks passed with real Harmony.""); Console.WriteLine(RecruitmentPersonalityChecks.Run() + "" recruitment personality checks passed.""); Console.WriteLine(RecruitmentInputChecks.Run() + "" recruitment input checks passed.""); Console.WriteLine(AllegianceGreetingChecks.Run() + "" Allegiance greeting checks passed with real Harmony.""); Console.WriteLine(FriendlyEncounterChecks.Run() + "" friendly interaction layer checks passed.""); return 0; } catch (Exception e) { Console.Error.WriteLine(e); return 1; } } }"
 $framework = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319'
 $sdk = dotnet --list-sdks | Select-Object -Last 1
 if ($sdk -notmatch '^(\S+) \[(.+)\]$') { throw 'Cannot find SDK compiler' }

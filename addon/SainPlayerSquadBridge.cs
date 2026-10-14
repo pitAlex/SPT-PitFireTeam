@@ -149,7 +149,7 @@ namespace pitTeam.SAINAddon
             boss = owner?.BotFollower?.BossToFollow as pitAIBossPlayer;
             return IsEnabled && owner != null && !Detaching.Contains(owner) &&
                 SainAddonBridge.IsAddonTacticSelected(owner) && boss?.realPlayer != null && boss.bossGroup != null &&
-                ReferenceEquals(owner.BotsGroup, boss.bossGroup);
+                BossPlayers.IsPlayerFollowerGroup(owner, boss);
         }
 
         private static void Synchronize(BotOwner owner)
@@ -167,7 +167,7 @@ namespace pitTeam.SAINAddon
                 if (bot == null || manager == null) return; // Staggered SAIN initialization: retry on the next boss tick.
                 BotSquadContainer container = bot.Squad;
                 if (container == null) return;
-                Squad target = GetPlayerSquad(manager, boss);
+                Squad target = GetPlayerSquad(manager, boss, owner.BotsGroup);
                 Squad previous = container.SquadInfo;
                 bool changed = !ReferenceEquals(previous, target);
                 if (changed)
@@ -234,13 +234,13 @@ namespace pitTeam.SAINAddon
                     _findLeader(squad);
             }
         }
-        private static Squad GetPlayerSquad(BotSquads manager, pitAIBossPlayer boss)
+        private static Squad GetPlayerSquad(BotSquads manager, pitAIBossPlayer boss, BotsGroup group)
         {
             foreach (PlayerSquad context in Squads.Values)
-                if (ReferenceEquals(context.Manager, manager) && ReferenceEquals(context.Group, boss.bossGroup) &&
+                if (ReferenceEquals(context.Manager, manager) && ReferenceEquals(context.Group, group) &&
                     ReferenceEquals(context.Boss, boss)) return context.Squad;
             Squad squad = CreateRegisteredSquad(manager);
-            Squads.Add(squad, new PlayerSquad { Squad = squad, Manager = manager, Boss = boss, Group = boss.bossGroup });
+            Squads.Add(squad, new PlayerSquad { Squad = squad, Manager = manager, Boss = boss, Group = group });
             return squad;
         }
 
@@ -271,7 +271,7 @@ namespace pitTeam.SAINAddon
         private static bool GetSquadPrefix(BotSquads __instance, BotOwner botOwner, ref Squad __result)
         {
             if (!TryGetBoss(botOwner, out pitAIBossPlayer boss)) return true;
-            __result = GetPlayerSquad(__instance, boss);
+            __result = GetPlayerSquad(__instance, boss, botOwner.BotsGroup);
             return false;
         }
 

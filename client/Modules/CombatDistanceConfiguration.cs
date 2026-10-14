@@ -6,7 +6,7 @@ namespace pitTeam.Modules
 {
     /// <summary>
     /// Centralized combat distance configuration that adapts based on map context.
-    /// Factory and Labs require tighter distances for close-quarters gameplay.
+    /// Factory, Labs and Labyrinth require tighter distances for close-quarters gameplay.
     /// Larger maps (Customs, Woods, etc.) use standard open-engagement distances.
     /// </summary>
     internal sealed class CombatDistanceConfiguration
@@ -49,7 +49,7 @@ namespace pitTeam.Modules
         private const float DefaultRegroupBossMoveRefreshDistance = 10f;
 
 
-        // Factory/Labs map settings (compressed for close-quarters gameplay)
+        // Factory/Labs/Labyrinth map settings (compressed for close-quarters gameplay)
         private const float FactoryBossCoverSearchRadius = 15f;
         private const float FactoryStartCloseCoverDistance = 12f;
         private const float FactoryVisiblePushDistance = 10f;
@@ -86,7 +86,8 @@ namespace pitTeam.Modules
                    (mapName!.IndexOf("factory", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     string.Equals(mapName, "Factory4_day", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(mapName, "Factory4_night", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(mapName, "laboratory", StringComparison.OrdinalIgnoreCase));
+                    string.Equals(mapName, "laboratory", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(mapName, "Labyrinth", StringComparison.OrdinalIgnoreCase));
         }
 
         public static bool UsesUrbanDetourProfile(string? mapName)

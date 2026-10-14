@@ -19,9 +19,15 @@ public class FriendlyPostRaidCallbacks(
     FollowerInsuranceRaidDiagnostics insuranceDiagnostics,
     FollowerInsuranceCourierTransferService courierTransfers,
     FriendlyTeammateService teammateService,
+    FriendlyScavCargoService scavCargo,
     ISptLogger<FriendlyPostRaidCallbacks> logger
 )
 {
+    public ValueTask<string> ScavCargo(FriendlyScavCargoRequest request, MongoId sessionId)
+    {
+        scavCargo.Queue(sessionId, request);
+        return new ValueTask<string>(httpResponse.NullResponse());
+    }
     public ValueTask<string> ReturnItems(string url, FriendlyPostRaidReturnItemsRequest request, MongoId sessionId)
     {
         postRaidService.HandleReturnItems(sessionId, request);
@@ -57,6 +63,7 @@ public class FriendlyPostRaidCallbacks(
     public ValueTask<string> StartLocalRaid(string url, StartLocalRaidRequestData request, MongoId sessionId, string? output)
     {
         insuranceDiagnostics.BeginRaid(sessionId, request, output);
+        scavCargo.BeginRaid(sessionId, output);
         return new ValueTask<string>(output ?? httpResponse.NullResponse());
     }
 
@@ -64,6 +71,7 @@ public class FriendlyPostRaidCallbacks(
     {
         postRaidService.RemoveProtectedTeammateItemsFromExtractedProfile(sessionId, request);
         postRaidService.HandleEndLocalRaidKillMessages(sessionId, request);
+        scavCargo.FinishRaid(sessionId, request);
         insuranceDiagnostics.EndRaid(sessionId, request);
         return new ValueTask<string>(output ?? httpResponse.NullResponse());
     }

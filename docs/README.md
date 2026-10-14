@@ -23,12 +23,14 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 | [Commands](Commands.md) | Shared inputs, peaceful execution, core combat orders and status rendering |
 | [Enemy Tracking](Enemy-Tracking.md) | Shared Simple/Realistic modes, remembered search and bounded contact lifetime |
 | [Looting](looting/Looting.md) | Commanded loot, filters, ownership and return bookkeeping |
+| [Friendly Scav cargo](looting/Friendly-Scav-Cargo.md) | Allegiance Scav commanded loot, living companion extraction and Fence returns |
 | [Primary weapon pickup](looting/Weapon-Pickup-Primary-Slot-Available.md) | Primary readiness, empty-slot acquisition and qualification matrix |
 | [Secondary weapon support](looting/Weapon-Pickup-Secondary-Slot.md) | Secondary acquisition, ammunition maintenance and qualification |
 | [Holster support](looting/Weapon-Pickup-Holster-Slot.md) | Shared support planner and pistol qualification |
 | [Suppression](Suppression.md) | Core player-facing suppression guide |
 | [Team Escape](Team-Escape.md) | Escape rolls, recovery, results and notifications |
 | [PMC karma](PMC-Karma.md) | Independent friendly-kill, recruited extraction and peaceful Allegiance recovery rules |
+| [Fence karma](Fence-Karma.md) | Intentional friendly Scav kills, extraction standing and inspected native reputation values |
 
 ## Squad UI and persistence
 

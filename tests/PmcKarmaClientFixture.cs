@@ -46,7 +46,7 @@ namespace pitTeam.Modules {
         public static bool GetEffectiveValue(pitTeam.Flag flag)=>flag.Value;
         public static Task RunRosterRequest(Action action){var hold=HoldNext;HoldNext=null;var task=Task.Run(()=>{Interlocked.Increment(ref WorkersStarted);hold?.WaitOne();action();});Tasks.Add(task);return task;}
     }
-    public static class AllegiancePmcFriendship {public static HashSet<string> Allowed=new HashSet<string>();public static bool CanRecruit(BotOwner bot,IPlayer p)=>Allowed.Contains(bot.ProfileId);public static bool IsSelectedFriendly(BotOwner bot,IPlayer p)=>Allowed.Contains(bot.ProfileId);}
+    public static class AllegiancePmcFriendship {public static HashSet<string> Allowed=new HashSet<string>();public static bool IsRegularScav(BotOwner bot)=>bot?.GetPlayer?.Side==EPlayerSide.Savage;public static bool CanRecruit(BotOwner bot,IPlayer p)=>Allowed.Contains(bot.ProfileId);public static bool IsSelectedFriendly(BotOwner bot,IPlayer p)=>Allowed.Contains(bot.ProfileId);}
     public static class BossPlayers {
         public static List<pitTeam.Components.BotFollowerPlayer> Followers=new List<pitTeam.Components.BotFollowerPlayer>();
         public static pitTeam.Components.BotFollowerPlayer GetFollowerByProfileId(string id)=>Followers.FirstOrDefault(f=>f.Bot.ProfileId==id);
@@ -126,6 +126,12 @@ public static class KarmaClientChecks {
         Check(SPT.Common.Http.RequestHandler.Karma==0.175 && Comfort.Common.Singleton<EFT.UI.GUISounds>.Instance.Sounds.SequenceEqual(new[]{false}),"Killing a selected Guns for Hire encounter costs karma with Friendly PMC Side off");
         Reset();PmcKarmaRuntime.NoteFriendly(Bot("peaceful-hired-mode"));PmcKarmaRuntime.EndRaid(human.ProfileId,ExitStatus.Survived);Complete();
         Check(SPT.Common.Http.RequestHandler.Karma==0.2,"Guns for Hire encounters do not enable Allegiance quiet recovery");
+        Reset(true);var friendlyScav=Bot("friendly-scav",EPlayerSide.Savage);AllegiancePmcFriendship.Allowed.Add(friendlyScav.ProfileId);PmcKarmaRuntime.NoteFriendly(friendlyScav);Hit(friendlyScav);PmcKarmaRuntime.RecordKill(friendlyScav.GetPlayer,human);Complete();
+        Check(SPT.Common.Http.RequestHandler.Karma==0.2 && SPT.Common.Http.RequestHandler.Reports.Count==0,"Selected unrecruited Scav leaves PMC karma untouched");
+        Reset(true);friendlyScav=Bot("recruited-scav",EPlayerSide.Savage);PmcKarmaRuntime.NoteFriendly(friendlyScav);Recruit(friendlyScav);PmcKarmaRuntime.EndRaid(human.ProfileId,ExitStatus.Survived);Complete();
+        Check(SPT.Common.Http.RequestHandler.Karma==0.2 && Comfort.Common.Singleton<EFT.UI.GUISounds>.Instance.Sounds.Count==0,"Scav recruitment and extraction grant neither PMC reward nor quiet recovery nor sound");
+        Reset();friendlyScav=Bot("ordinary-scav",EPlayerSide.Savage);Hit(friendlyScav);PmcKarmaRuntime.RecordKill(friendlyScav.GetPlayer,human);Complete();
+        Check(SPT.Common.Http.RequestHandler.Reports.Count==0,"Ordinary Scav in Guns for Hire does not incur mod karma");
         Console.WriteLine("PASS: "+count+" PMC karma client checks.");
     }
 }

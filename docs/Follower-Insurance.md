@@ -1,6 +1,6 @@
 # Follower Insurance
 
-Updated: 2026-09-25
+Updated: 2026-10-12
 
 ## Scope
 
@@ -33,7 +33,7 @@ Purchases charge real roubles and save coverage. A completed, correlated raid re
 9. Final confirmation commits any pending real equipment/stash changes through the same service-preparation boundary used by repair.
 10. The client submits exact item IDs, the selected trader, and the displayed total to `/singleplayer/pitfireteam/teammate/profile/insurance`.
 11. The server validates ownership/eligibility, recomputes prices with the stock service, charges through stock payment, and persists exact item/trader policies.
-12. The client refreshes money, skills, trader relations, and insurance from the server while keeping the loadout editor open like repair. Staged rouble stacks are updated/removed in place and the post-payment save baseline is captured before further editing.
+12. The client refreshes money, skills, trader relations, and insurance from the server while keeping the loadout editor open like repair. Staged rouble stacks are updated/removed in place and the post-payment save baseline is captured before further editing. After a successful confirmation callback, it plays EFT's normal insurance-complete sound; failed purchases remain silent.
 
 ### Purchase safety
 

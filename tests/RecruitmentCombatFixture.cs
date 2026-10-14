@@ -14,6 +14,7 @@ namespace UnityEngine
     public struct Vector3 {
         public float x, y, z; public static Vector3 zero => default; public float sqrMagnitude => x*x+y*y+z*z;
         public static Vector3 operator -(Vector3 a,Vector3 b) => new Vector3{x=a.x-b.x,y=a.y-b.y,z=a.z-b.z};
+        public static Vector3 operator +(Vector3 a,Vector3 b) => new Vector3{x=a.x+b.x,y=a.y+b.y,z=a.z+b.z};
         public static float Angle(Vector3 a,Vector3 b) => (float)(Math.Acos(Math.Max(-1,Math.Min(1,(a.x*b.x+a.y*b.y+a.z*b.z)/Math.Sqrt(a.sqrMagnitude*b.sqrMagnitude))))*180/Math.PI);
     }
     public struct Ray { public Vector3 origin, direction; }
@@ -21,7 +22,7 @@ namespace UnityEngine
     public static class Random { public static int Range(int min, int max) => min; public static float Fraction, ValueFraction; public static int Rolls; public static float value { get { Rolls++; return ValueFraction; } } public static float Range(float min, float max) => min + (max-min)*Fraction; }
     public class Transform { public Vector3 position; }
 }
-namespace EFT.Interactive { public enum EInteraction { NoGesture, GetOffGesture, OkGesture } }
+namespace EFT.Interactive { public enum EInteraction { NoGesture, GetOffGesture, OkGesture, FriendlyGesture } }
 namespace EFT
 {
     public class GameWorld { public List<Player> AllAlivePlayersList = new(); }
@@ -29,6 +30,14 @@ namespace EFT
     public enum ETagStatus { Coop, Solo, Unaware }
     public enum EPlayerSide { Usec, Bear, Savage }
     public enum EBotState { Active, Inactive }
+    public enum BotLogicDecision {holdPosition,heal,healStimulators}
+    public class Medicine {public FirstAid FirstAid=new();public Surgery SurgicalKit=new();public Stimulators Stimulators=new();}
+    public class FirstAid {public bool Have2Do,Using;}
+    public class Surgery {public bool HaveWork,Using;}
+    public class Stimulators {public bool Using;}
+    public class Brain {public Agent Agent=new();}
+    public class Agent {public DecisionResult Result=new();public DecisionResult LastResult()=>Result;}
+    public class DecisionResult {public BotLogicDecision Action;}
     public interface IPlayer { string ProfileId { get; } EPlayerSide Side { get; } Profile Profile { get; } Vector3 Position { get; } }
     public class Profile { public string Nickname="candidate"; public Info Info = new(); public FenceInfo FenceInfo = new(); }
     public class Info { public int Level = 20; public EPlayerSide Side; }
@@ -37,7 +46,10 @@ namespace EFT
     public class Speaker
     {
         public bool Speaking, Busy;
-        public object Play(EPhraseTrigger phrase, ETagStatus mask, bool force, object unused) => new();
+        public bool AcceptDirect=true; public readonly List<EPhraseTrigger> DirectPhrases=new();
+        public object Play(EPhraseTrigger phrase, ETagStatus mask, bool force, object unused) {
+            if(!AcceptDirect)return null;DirectPhrases.Add(phrase);Speaking=true;return new();
+        }
     }
     public class Player : IPlayer
     {
@@ -49,22 +61,43 @@ namespace EFT
         public Profile Profile { get; } = new();
         public Health HealthController = new(); public Speaker Speaker = new(); public Vector3 Position {get;set;}
         public Player InteractablePlayer;
+        public HandsController HandsController = new();
+        public MovementContext MovementContext = new();
+        public bool UsedSimplifiedSkeleton;
         public bool MarkSpeaking; public int VoiceCalls;
         public Ray InteractionRay;
         public Dictionary<BodyPartType, BodyPart> MainParts = new() {
             [BodyPartType.head] = new BodyPart { Position = new Vector3 { y = 2 } },
             [BodyPartType.body] = new BodyPart { Position = new Vector3 { y = 1 } }
         };
-        public void Say(EPhraseTrigger phrase) { if (NativeSpeech.PlayerPrefix(this, phrase)) { Spoken = phrase; VoiceCalls++; if(MarkSpeaking) Speaker.Speaking=true; } }
+        public void Say(EPhraseTrigger phrase) { if (NativeSpeech.PlayerPrefix(this, phrase)) { Spoken = phrase==EPhraseTrigger.MumblePhrase ? EPhraseTrigger.OnMutter : phrase; VoiceCalls++; if(MarkSpeaking) Speaker.Speaking=true; } }
     }
     public class AIData { public BotOwner BotOwner; }
     public class EnemyInfo { public string ProfileId; public Player Person; }
-    public class Memory { public EnemyInfo GoalEnemy; public bool HaveEnemy => GoalEnemy != null; }
+    public class Memory { public EnemyInfo GoalEnemy; public bool IsUnderFire; public bool HaveEnemy => GoalEnemy != null; }
+    public class HandsController { public bool Busy; public FirearmsAnimator FirearmsAnimator = new(); public bool IsInInteractionStrictCheck() => Busy; }
+    public class FirearmsAnimator { public bool Idle=true; public bool IsIdling() => Idle; }
+    public class MovementContext { public bool IsSprintEnabled, IsInMountedState, IsStationaryWeaponInHands; public PlayerAnimator PlayerAnimator=new(); }
+    public class PlayerAnimator { public AnimatedInteractions AnimatedInteractions=new(); }
+    public class AnimatedInteractions : EFT.AnimatedInteractionsSubsystem.AnimatedInteractions { }
+    public class PatrolSettings { public bool CAN_GESTUS=true; }
+    public class FileSettings { public PatrolSettings Patrol=new(); }
+    public class BotSettings { public FileSettings FileSettings=new(); }
+    public class WeaponManager { public Grenades Grenades=new(); public WeaponSelector Selector=new(); public WeaponInfo _currentWeaponInfo=new(); }
+    public class Grenades { public bool ThrowindNow; }
+    public class WeaponSelector { public bool IsChanging; }
+    public class WeaponInfo { public Reload Reload=new(); }
+    public class Reload { public bool Reloading; }
+    public class ShootData { public bool Shooting; }
+    public class GrenadeDangerPoint { public object Grenade=new(); public float EndTime=float.MaxValue; }
+    public class BewareGrenade { public GrenadeDangerPoint GrenadeDangerPoint; }
     public class BotTalk
     {
         public BotOwner _owner;
         public int Queued;
         public bool QueueRequests;
+        public bool ThrowOnSay;
+        public Action AfterSay;
         public EPhraseTrigger Last;
         private bool silenced;
         private float silenceEnds;
@@ -76,21 +109,30 @@ namespace EFT
         }
         public void Say(EPhraseTrigger type, bool sayImmediately, ETagStatus? additionalMask = null)
         {
+            if (ThrowOnSay) throw new Exception("speaker failure");
             if (!NativeSpeech.BotPrefix(this, type)) return;
             Last = type;
             _owner.GetPlayer.Say(type);
+            AfterSay?.Invoke();
         }
         public void SetSilence(float seconds) { silenced=true; silenceEnds=Time.time+seconds; }
         public void DropNextSayPeriod() { }
     }
-    public class Gesture { public void TryGestus(EFT.Interactive.EInteraction interaction, bool force) { } }
+    public class Gesture {
+        public BotOwner Owner; public int Calls; public bool Accept=true; public EFT.Interactive.EInteraction Last;
+        public void TryGestus(EFT.Interactive.EInteraction interaction, bool force) {
+            Calls++; Last=interaction;
+            if(Owner!=null && Accept) Owner.GetPlayer.MovementContext.PlayerAnimator.AnimatedInteractions.IsInteractionPlaying=true;
+        }
+    }
     public class Boss { public bool IsMe(Player player) => true; }
     public class BotFollower { public bool HaveBoss; public Boss BossToFollow = new(); }
-    public class Group { public int MembersCount; public BotGroupRequestController RequestsController=new(); }
+    public class Group { public int MembersCount; public BotGroupRequestController RequestsController=new(); public bool Hostile,Allied,PolicyEnemy; public Dictionary<IPlayer,bool> Neutrals=new(); public bool IsEnemy(IPlayer player)=>Hostile; public bool IsAlly(IPlayer player)=>Allied; public bool IsPlayerEnemy(IPlayer player)=>PolicyEnemy; }
     public class BotReceiver { public BotOwner _owner; public void OnPhraseSay(GlobalEventDispatcher.PhraseDelegateInfo info) {} }
     public class BotOwner
     {
-        public BotOwner() { BotTalk._owner = this; GetPlayer.AIData.BotOwner = this; }
+        public static Vector3 STAY_HEIGHT=new Vector3 {y=1.5f};
+        public BotOwner() { BotTalk._owner = this; GetPlayer.AIData.BotOwner = this; Gesture.Owner=this;Mover.Owner=this; }
         public string ProfileId = "candidate"; public EPlayerSide Side; public Profile Profile = new();
         public bool IsDead, IsFollower; public EBotState BotState = EBotState.Active;
         public Player GetPlayer = new(); public Memory Memory = new(); public BotTalk BotTalk = new();
@@ -98,14 +140,20 @@ namespace EFT
         public Vector3 Position => GetPlayer.Position;
         public Transform WeaponRoot = new();
         public LookSensor LookSensor = new();
+        public BotSettings Settings=new(); public WeaponManager WeaponManager=new(); public ShootData ShootData=new();
+        public BewareGrenade BewareGrenade=new();public Medicine Medecine=new();public Brain Brain=new();
+        public bool UsingMedical {get=>Medecine.FirstAid.Using;set=>Medecine.FirstAid.Using=value;}
+        public Mover Mover=new(); public Steering Steering=new();
         public bool IsEnemyLookingAtMe(EnemyInfo enemy) => false;
     }
-    public class BotGroupRequestController { public int Calls; public bool TryAskFollowMeRequest(IPlayer player,BotOwner bot) {Calls++;return true;} }
+    public class Mover { public BotOwner Owner;public bool Sprinting;public int Stops; public void Stop() {Stops++;}public void Sprint(bool value,bool debug){Sprinting=value;Owner.GetPlayer.MovementContext.IsSprintEnabled=value;} }
+    public class Steering { public Vector3 LastLook; public int Looks;public bool Throw; public void LookToPoint(Vector3 point) {if(Throw)throw new Exception("steering failure");LastLook=point;Looks++;} }
+    public class BotGroupRequestController { public int Calls;public Action AfterAsk; public bool TryAskFollowMeRequest(IPlayer player,BotOwner bot) {Calls++;AfterAsk?.Invoke();return true;} }
 }
 public class LookSensor {
-    public float VisibleDist = 100; public bool InSector = true, Clear = true;
+    public float VisibleDist = 100; public bool InSector = true, Clear = true, Throw;
     public bool IsPointInVisibleSector(Vector3 point) => InSector;
-    public bool CheckLookSimple(Player from, Player to) => Clear;
+    public bool CheckLookSimple(Player from, Player to) => Throw ? throw new Exception("sight failure") : Clear;
 }
 public class GlobalEventDispatcher { public class PhraseDelegateInfo { public EPhraseTrigger phrase;public IPlayer PlayerRequester; } }
 namespace SPT.Reflection.Patching
@@ -152,13 +200,31 @@ namespace pitTeam.Modules
             return entry.Value;
         }
     }
-    public static class AllegiancePmcFriendship { public static bool Allowed=true; public static bool IsEnabled=true; public static bool CanRecruit(BotOwner bot, IPlayer player) => Allowed; }
+    public static class AllegiancePmcFriendship {
+        public static bool Allowed=true, IsEnabled=true, Acceptance=true, ResolveHandled, ResolveAccepted=true;
+        public static int AcceptanceCalls, ResolveCalls, Refusals; public static Player EncounterPlayer;
+        internal static FriendlyEncounterInteraction Interaction; internal static AllegianceFriendlyGreeting Greeting; public static BotOwner InteractionBot;
+        public static bool AcceptScavRecruitment(BotOwner bot,IPlayer player) { AcceptanceCalls++; return Allowed && Acceptance; }
+        public static bool TryResolveRecruitmentAcceptance(BotOwner bot,IPlayer player,bool proactive,out bool accepted) {
+            ResolveCalls++;accepted=ResolveAccepted;
+            if(ResolveHandled)return true;
+            if(!proactive && GameplayModeRuntime.IsAllegiance && bot.Side==EPlayerSide.Savage){accepted=AcceptScavRecruitment(bot,player);return true;}
+            return false;
+        }
+        internal static bool TryGetInteraction(BotOwner bot,out FriendlyEncounterInteraction interaction,out AllegianceFriendlyGreeting greeting) {
+            interaction=Interaction;greeting=Greeting;return bot==InteractionBot && IsEnabled;
+        }
+        public static void NoteRequestedRefusal(BotOwner bot) {Refusals++;if(bot.Side!=EPlayerSide.Savage)BossPlayers.RememberRecruitmentDenial(bot.ProfileId);Interaction?.BeginRefusal(bot);Greeting?.Cancel();}
+        public static bool CanRecruit(BotOwner bot, IPlayer player) => Allowed;
+        public static void RecordCooperationAttempt(BotOwner bot,IPlayer requester,bool canReact) { }
+    }
     public class Logger
     {
         public static void LogInfo(string message) { }
         public static int Warnings;
+        public static bool AllowErrors;public static int Errors;
         public void LogWarning(string message) => Warnings++;
-        public static void LogError(object error) => throw new Exception("Unexpected recruitment failure", error as Exception);
+        public static void LogError(object error) {if(!AllowErrors)throw new Exception("Unexpected recruitment failure",error as Exception);Errors++;}
     }
     public partial class BossPlayers
     {
@@ -188,6 +254,7 @@ namespace pitTeam.Patches
 }
 namespace pitTeam.Utils
 {
+    public static class FollowerMedical { public static bool IsUsingMedical(BotOwner bot) => bot.UsingMedical; }
     public static class Utils
     {
         public static Action Pending;
@@ -229,6 +296,7 @@ public static class RecruitmentCombatChecks
     private static BotOwner Fresh()
     {
         AllegiancePmcFriendship.Allowed = true;
+        AllegiancePmcFriendship.Acceptance = true; AllegiancePmcFriendship.AcceptanceCalls = 0;
         GameplayModeRuntime.IsAllegiance = false;
         BossPlayers.Denied.Clear(); BossPlayers.Active.Clear(); BossPlayers.Added = 0; BossPlayers.Boss = new();
         BotOwnerManualUpdatePatch.BotOwnerUpdate.Clear(); pitTeam.Utils.Utils.Pending = null;
@@ -246,6 +314,20 @@ public static class RecruitmentCombatChecks
     private static void Deferred(BotOwner bot) => BotOwnerManualUpdatePatch.BotOwnerUpdate[bot.ProfileId](bot);
     public static int Run()
     {
+        foreach(int level in new[]{0,20,100}) {
+            var fieldScav=Fresh();GameplayModeRuntime.IsAllegiance=true;fieldScav.Side=EPlayerSide.Savage;
+            fieldScav.Profile.Info.Level=level;BossPlayers.Denied.Add(fieldScav.ProfileId);
+            Ask(fieldScav);Deferred(fieldScav);pitTeam.Utils.Utils.Pending();
+            Check(BossPlayers.Added==1 && AllegiancePmcFriendship.AcceptanceCalls==1,"Scav acceptance bypasses generated levels and legacy level denial at all conversion stages");
+        }
+        var refusingScav=Fresh();GameplayModeRuntime.IsAllegiance=true;refusingScav.Side=EPlayerSide.Savage;AllegiancePmcFriendship.Acceptance=false;
+        Ask(refusingScav);
+        Check(refusingScav.BotTalk.Last==EPhraseTrigger.Negative && BotOwnerManualUpdatePatch.BotOwnerUpdate.Count==0 && BossPlayers.Denied.Count==0,"Scav chance refusal does not queue conversion or create a PMC level denial");
+        var fightingScav=Fresh();GameplayModeRuntime.IsAllegiance=true;fightingScav.Side=EPlayerSide.Savage;fightingScav.Memory.GoalEnemy=new();Ask(fightingScav);
+        Check(AllegiancePmcFriendship.AcceptanceCalls==0 && fightingScav.BotTalk.Last==EPhraseTrigger.DontKnow,"Combat precedes Scav acceptance roll");
+        var cappedScav=Fresh();GameplayModeRuntime.IsAllegiance=true;cappedScav.Side=EPlayerSide.Savage;
+        BossPlayers.Active.Add(new BotFollowerPlayer {Bot=new BotOwner()});BossPlayers.Active.Add(new BotFollowerPlayer {Bot=new BotOwner()});Ask(cappedScav);
+        Check(AllegiancePmcFriendship.AcceptanceCalls==0 && BotOwnerManualUpdatePatch.BotOwnerUpdate.Count==0,"Capacity precedes Scav acceptance roll");
         foreach(bool allegiance in new[]{false,true}) {
             foreach(var side in new[]{EPlayerSide.Usec,EPlayerSide.Bear}) {
                 var scav=Fresh();GameplayModeRuntime.IsAllegiance=allegiance;

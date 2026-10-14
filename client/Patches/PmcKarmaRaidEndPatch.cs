@@ -13,8 +13,10 @@ namespace pitTeam.Patches
             new[] { typeof(string), typeof(ExitStatus), typeof(string), typeof(float) });
 
         [PatchPrefix]
-        private static void PatchPrefix(string profileId, ExitStatus exitStatus)
+        private static void PatchPrefix(string profileId, ExitStatus exitStatus, string exitName)
         {
+            try { AllegianceScavCargo.EndRaid(profileId, exitStatus, exitName); }
+            catch (Exception ex) { Logger.LogError("[ScavCargo] Raid-end capture failed: " + ex); }
             try { PmcKarmaRuntime.EndRaid(profileId, exitStatus); }
             catch (Exception ex) { Logger.LogError("[PmcKarma] Raid-end capture failed: " + ex); }
         }

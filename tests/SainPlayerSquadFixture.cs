@@ -47,6 +47,7 @@ namespace pitTeam {
 namespace pitTeam.Modules {
     public class Follower { public BotOwner Bot; public FollowerCombatTactic CombatTactic; public BotOwner GetBot()=>Bot; __CORE_TACTIC__ }
     public class BossPlayers {
+        public static bool IsPlayerFollowerGroup(BotOwner owner,pitAIBossPlayer boss) => owner?.BotFollower.BossToFollow==boss;
         public static BossPlayers Instance=new();
         public Follower GetFollower(BotOwner bot)=>Followers.FirstOrDefault(f=>f.Bot==bot);
         public static List<Follower> Followers=new(); public static List<Follower> GetFollowers()=>Followers;
@@ -208,6 +209,14 @@ public static class LeadershipChecks {
         Check(recruit.DecisionSubscriptions==1&&second.DecisionSubscriptions==1&&squad.Members.Count==2,"idempotent membership and subscriptions");
         var bossB=Boss("playerB");var third=Spawn();Recruit(third,bossB);
         Check(third.Squad.SquadInfo!=squad&&third.Squad.SquadInfo.LeaderId=="playerB","independent player groups");
+        var scavCompanion=Spawn();var scavNativeGroup=scavCompanion.BotOwner.BotsGroup;
+        scavCompanion.BotOwner.BotFollower.BossToFollow=boss;boss.Followers.Add(scavCompanion.BotOwner);
+        BossPlayers.Followers.Add(new(){Bot=scavCompanion.BotOwner,CombatTactic=FollowerCombatTactic.SainMan});
+        SainAddonBridge.RaiseFollowerLifecycleEvent(scavCompanion.BotOwner,FollowerLifecycleEvent.OnRecruited);
+        Check(SainPlayerSquadBridge.TryGetPlayerLeader(scavCompanion.BotOwner,out var scavLeader)&&scavLeader==boss.realPlayer,"independent Scav group retains the human SAINGrunt leader");
+        Check(scavCompanion.Squad.SquadInfo!=squad&&scavCompanion.Squad.SquadInfo.Members.Count==1&&scavCompanion.BotOwner.BotsGroup==scavNativeGroup,"Scav and PMC native groups keep separate SAIN squad membership");
+        Dismiss(scavCompanion,boss);
+        Check(!SainPlayerSquadBridge.TryGetPlayerLeader(scavCompanion.BotOwner,out _),"Scav dismissal releases independent addon leadership");
         boss.realPlayer.Position=new Vector3(200,0,0);Check(recruit.Squad.DistanceToSquadLeader==200,"live position tracks leader movement");
         boss.realPlayer.HealthController.IsAlive=false;squad.Tick();Check(squad.LeaderIsDeadorNull&&squad.LeaderId=="playerA"&&squad.Elections==0,"player death never promotes AI");
         boss.realPlayer.HealthController.IsAlive=true;
@@ -270,6 +279,16 @@ public static class LeadershipChecks {
 // Combat behavior is covered by Verify-SainAddonCombat. These installers inject a
 // late failure to exercise the production patch owner's rollback with real Harmony.
 namespace pitTeam.SAINAddon {
+    // Other feature installers have their own production fixtures; this harness owns leadership.
+    internal static class SainSquadSupportBridge { public static void Apply(Harmony h){} public static void Reset(){} }
+    internal static class SainContactEnemyBridge { public static void Apply(Harmony h){} }
+    internal static class SainAttentionBridge { public static void Apply(Harmony h){} }
+    internal static class SainIdleWeaponGuard { public static void Apply(Harmony h){} }
+    internal static class SainFollowerLeanGuard { public static void Apply(Harmony h){} }
+    internal static class SainFollowerSoundAwareness { public static void Install(Harmony h){} }
+    internal static class SainEnemyTracking { public static void Apply(Harmony h){} }
+    internal static class SainEmergencyWeaponBridge { public static void Apply(Harmony h){} public static void Reset(){} }
+    internal static class SainGrenadeThrowBridge { public static void Apply(Harmony h){} public static void Reset(){} }
     internal static class SainSquadDecisionBridge {
         public static bool IsAvailable;
         public static void Apply(Harmony h){if(IsAvailable)return;h.Patch(AccessTools.Method(typeof(InstallProbe),nameof(InstallProbe.Decision)),prefix:new HarmonyMethod(typeof(InstallProbe),nameof(InstallProbe.Prefix)));IsAvailable=true;}

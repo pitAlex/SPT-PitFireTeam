@@ -171,6 +171,18 @@ try {
             if($begin -lt 0 -or $end -le $begin){throw 'Marker contact boundaries changed'}
             $source=$source.Replace('__MARKER_CONTACT__',$ping.Substring($begin,$end-$begin))
         }
+        if($sourcePath -eq 'tests/SainStimulatorFixture.cs'){
+            foreach($member in @(
+                @{File='client/BigBrain/FollowerCombatCommon.cs';Name='TryGetAntidoteStimDecision';Marker='__CORE_ANTIDOTE__'},
+                @{File='client/BigBrain/FollowerPatrolLayer.cs';Name='TryPreparePatrolAntidote';Marker='__PATROL_PREPARE_ANTIDOTE__'},
+                @{File='client/BigBrain/FollowerPatrolLayer.cs';Name='EndPatrolAntidote';Marker='__PATROL_END_ANTIDOTE__'}
+            )){
+                $nativeSource=Get-Content -Raw (Join-Path $RepositoryRoot $member.File)
+                $method=[regex]::Match($nativeSource,'(?ms)^        private bool '+$member.Name+'\(.*?^        [}]')
+                if(!$method.Success){throw "Missing production antidote member $($member.Name)"}
+                $source=$source.Replace($member.Marker,$method.Value)
+            }
+        }
         if($sourcePath -eq 'tests/SainPushRiskFixture.cs'){
             $core=Get-Content -Raw -Encoding UTF8 (Join-Path $RepositoryRoot 'client/BigBrain/FollowerCombatCommon.cs')
             $reader=[regex]::Match($core,'(?ms)^        public float GetApproachThreatRangeMultiplier\(.*?^        [}]')

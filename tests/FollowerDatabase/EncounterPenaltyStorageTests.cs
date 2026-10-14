@@ -23,7 +23,7 @@ internal static class EncounterPenaltyStorageTests
         check(service.Get(other,start).Entries.Count==0,"penalties are isolated by user id");
         kill.VictimProfileId="recruit-two";kill.KilledAtUnixMs=start+3600000;
         state=service.Record(session,kill,start+3600000);
-        check(FriendlyEncounterPenaltyPolicy.GetPoints(state.Entries,start+3600000)==10,"kills stack five percentage points each");
+        check(FriendlyEncounterPenaltyPolicy.GetReductionPercent(state.Entries,start+3600000)==30,"kills stack 15% relative reductions each");
         var restartedStorage=new FriendlyTeammateStorage(new FileUtil(),new JsonUtil([new SptJsonConverterRegistrator()]),
             DispatchProxy.Create<ISptLogger<FriendlyTeammateStorage>,TestLogger>(),settings);
         var restarted=new FriendlyEncounterPenaltyService(restartedStorage,settings);
@@ -35,7 +35,7 @@ internal static class EncounterPenaltyStorageTests
         kill.VictimProfileId="ordinary-friendly";kill.MessageKind="jerk";kill.KilledAtUnixMs=start+7200000;
         check(service.Record(session,kill,start+7200000).Entries.Count==2,"ordinary friendly PMC jerk report is not a recruit penalty");
         state=service.Get(session,start+FriendlyEncounterPenaltyPolicy.DurationMs);
-        check(state.Entries.Count==1 && FriendlyEncounterPenaltyPolicy.GetPoints(state.Entries,start+FriendlyEncounterPenaltyPolicy.DurationMs)==5,"first penalty expires at its own kill plus 24h");
+        check(state.Entries.Count==1 && FriendlyEncounterPenaltyPolicy.GetReductionPercent(state.Entries,start+FriendlyEncounterPenaltyPolicy.DurationMs)==15,"first penalty expires at its own kill plus 24h");
         check(state.Entries[0].Id.EndsWith("recruit-two"),"newer kill retains its separate expiration");
         check(service.Get(session,start+FriendlyEncounterPenaltyPolicy.DurationMs+3600000).Entries.Count==0,"last penalty expires completely");
         kill.MessageKind="traitor";kill.VictimProfileId="recruit-one";kill.KilledAtUnixMs=start;

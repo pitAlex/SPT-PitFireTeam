@@ -5,14 +5,17 @@ using System.Reflection.Emit;
 using EFT;
 using HarmonyLib;
 using pitTeam.Modules;
+using FollowerShotSafety = pitTeam.Utils.FollowerShotSafety;
 using SAIN.Components;
 using SAIN.SAINComponent.Classes.EnemyClasses;
 using SAIN.SAINComponent.Classes.WeaponFunction;
+using UnityEngine;
 
 namespace pitTeam.SAINAddon;
 
 // Native SAIN plans and starts the throw inside GetDecision. Only its enable
-// switches and Core's explicit permission are adapted; all safety checks stay native.
+// switches and Core's explicit permission are adapted. Native safety remains,
+// supplemented by Core's player/follower impact check.
 internal static class SainGrenadeThrowBridge
 {
     private static readonly HashSet<BotOwner> Owners = new();
@@ -36,6 +39,9 @@ internal static class SainGrenadeThrowBridge
             prefix: new HarmonyMethod(typeof(SainGrenadeThrowBridge), nameof(BeforeDecision)),
             transpiler: new HarmonyMethod(typeof(SainGrenadeThrowBridge), nameof(EnableReads)),
             finalizer: new HarmonyMethod(typeof(SainGrenadeThrowBridge), nameof(AfterDecision)));
+        harmony.Patch(AccessTools.Method(typeof(GrenadeThrowDecider), "CheckFriendlyDistances",
+            new[] { typeof(Vector3) }),
+            postfix: new HarmonyMethod(typeof(SainGrenadeThrowBridge), nameof(FriendlyDistances)));
         harmony.Patch(AccessTools.Method(typeof(BotGrenadeController), nameof(BotGrenadeController.EndAll),
             new[] { typeof(EFT.InventoryLogic.ThrowWeap) }),
             postfix: new HarmonyMethod(typeof(SainGrenadeThrowBridge), nameof(Ended)));
@@ -72,6 +78,15 @@ internal static class SainGrenadeThrowBridge
 
     private static bool Enabled(bool native, GrenadeThrowDecider decider) =>
         Owns(decider.Bot) ? pitFireTeam.botGrenades.Value : native;
+
+    private static void FriendlyDistances(GrenadeThrowDecider __instance, Vector3 __0, ref bool __result)
+    {
+        // SAIN's Members contains BotComponents only; the human leader is absent.
+        // Apply this to native candidates too, after dispersion/blind-corner selection.
+        if (__result && Owns(__instance.Bot))
+            __result = !FollowerShotSafety.IsFriendlyNearGrenadeImpact(__instance.BotOwner, __0,
+                FollowerShotSafety.RegularGrenadeUnsafeRadius, includeMovementPrediction: true, out _);
+    }
 
     private static bool BeforeDecision(GrenadeThrowDecider __instance, Enemy __0, ref string __1,
         ref bool __result, out BotOwner __state)

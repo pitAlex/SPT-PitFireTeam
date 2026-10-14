@@ -121,6 +121,17 @@ static class GearSwapBodyRefreshFixture
         Check(verifies == 0, "Death and failed hands cannot reach final visual verification");
         await Expect<InvalidOperationException>(() => GearSwapBodyRefresh.Run(() => true, () => new Task[0],
             () => Task.CompletedTask, () => throw new InvalidOperationException("held model remains"), null));
+
+        var cancelled = new CancellationTokenSource();
+        restores = 0; verifies = 0;
+        await Expect<OperationCanceledException>(() => GearSwapBodyRefresh.Run(() => true,
+            () => { cancelled.Cancel(); return new[] { stuck.Task }; },
+            () => { restores++; return Task.CompletedTask; }, () => verifies++, cancellation: cancelled.Token));
+        Check(restores == 0 && verifies == 0, "Teardown skips hands recovery and verification on disposed world");
+        cancelled = new CancellationTokenSource();
+        await Expect<OperationCanceledException>(() => GearSwapBodyRefresh.Run(() => true, () => new Task[0],
+            () => { cancelled.Cancel(); return Task.CompletedTask; }, () => verifies++, cancellation: cancelled.Token));
+        Check(verifies == 0, "Teardown during restoration cannot continue to model verification");
     }
 
     public static int Main()

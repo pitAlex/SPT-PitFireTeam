@@ -26,7 +26,7 @@ Core resolves one target for ready SAINGrunts at the spoken order: prefer an eli
 
 ## Suppress
 
-SAINGrunt consumes Core's accepted suppression command into a bounded Squad-layer objective. It retains the requested known target, can use Core's fresh-report fallback when SAIN has no usable suppression point, and uses native firing with shared foliage/hard-cover and friendly-lane safety, and ends after up to two seconds of actual fire or the attempt deadline. It can prepare one native firing position when the current lane is unavailable. Survival, replacement orders and contact loss interrupt it. Grenade launchers are excluded. SAINShooter supports Core's eligible automatic secondary/holster command fallback with bounded weapon preparation. See [squad suppression and ally support](Squad-Support.md) for the full adaptation and limits.
+SAINGrunt consumes Core's accepted suppression command into a bounded Squad-layer objective. It retains the requested known target, can use Core's fresh-report fallback when SAIN has no usable suppression point, and uses native firing with shared foliage/hard-cover and friendly-lane safety. It ends after up to two seconds of actual fire or the attempt deadline. It can prepare one native firing position when the current lane is unavailable, and checks for a stable safe firing lane during approach. Survival and medical work pause the accepted order within its unchanged deadline; replacement orders and contact loss cancel it. Grenade launchers are excluded. SAINShooter supports Core's eligible automatic secondary/holster command fallback with bounded weapon preparation. See [squad suppression and ally support](Squad-Support.md) for the full adaptation and limits.
 
 ## Regroup and Exit Located
 

@@ -11431,6 +11431,11 @@ namespace pitTeam.BigBrain
                 return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.healStimulators, "healQuick");
             }
 
+            if (TryGetAntidoteStimDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> antidoteDecision))
+            {
+                return antidoteDecision;
+            }
+
             if (TryGetBlackStomachPainStimDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> painStimDecision))
             {
                 return painStimDecision;
@@ -11677,6 +11682,24 @@ namespace pitTeam.BigBrain
             {
                 Modules.Logger.LogInfo($"Combat heal-work refresh failed for {botOwner.Profile?.Nickname ?? botOwner.name ?? "unknown"}: {ex.Message}");
             }
+        }
+
+        private bool TryGetAntidoteStimDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
+        {
+            decision = default;
+            if (!FollowerStimulatorPolicy.NeedsAntidote(botOwner) || botOwner.Medecine?.Using == true ||
+                !FollowerStimulatorPolicy.CanUseStimulatorNow(botOwner, out var stims)) return false;
+            EnemyInfo? enemy = botOwner.Memory?.GoalEnemy;
+            // Use Core's protected-cover or cold-contact stim opportunity. Poison alone
+            // cannot force an injector animation in front of a shootable enemy.
+            if (IsPointBlankVisibleShootableThreat(enemy) ||
+                !HasReachedSafeHealPosition(enemy) && (botOwner.Memory.IsUnderFire ||
+                    enemy != null && (enemy.IsVisible || Time.time - enemy.PersonalLastSeenTime <= 1.5f))) return false;
+            if (!stimulatorPolicy.TrySelectAntidoteStimulator(botOwner, stims)) return false;
+            stimStartedAt = Time.time;
+            decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
+                BotLogicDecision.healStimulators, "antidoteStim");
+            return true;
         }
 
         private bool TryGetHealCoverStimDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)

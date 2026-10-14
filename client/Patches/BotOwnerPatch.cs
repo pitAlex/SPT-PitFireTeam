@@ -49,6 +49,7 @@ namespace pitTeam.Patches
         {
             try
             {
+                if (TeammateGearSwap.Protects(__instance?.GetPlayer)) return;
                 if (
                     __instance != null &&
                     __instance.BotState == EBotState.Active &&
@@ -236,7 +237,8 @@ namespace pitTeam.Patches
                 });
             }),
             new Action<BotOwner>(FactionHostility.Apply),
-            new Action<BotOwner>(AllegiancePmcFriendship.Apply)
+            new Action<BotOwner>(AllegiancePmcFriendship.Apply),
+            new Action<BotOwner>(AllegianceScavRelations.Apply)
         };
         protected override MethodBase GetTargetMethod()
         {

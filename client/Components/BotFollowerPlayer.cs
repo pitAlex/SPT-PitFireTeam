@@ -527,7 +527,21 @@ namespace pitTeam.Components
             bool isPickedUp = !_IsSquadMate && (_player.bossGroup == null || _player.bossGroup.Id != _bot.BotsGroup.Id);
 
             // make bot join the player's group
-            if (_player.bossGroup != null)
+            if (AllegianceScavRelations.KeepSeparateGroup(_bot, _player.realPlayer, _IsSquadMate))
+            {
+                // The Scav remains a native member of his original Scav group. Players
+                // and PMC followers join it only as allies, never as bot members.
+                if (_player.bossGroup == null)
+                {
+                    BotZone zone = _bot.BotsController.BotSpawner.GetClosestZone(_bot.GetPlayer.Transform.position, out var zoneDist);
+                    var pmcGroup = new BotsGroupPlayer(zone, _bot.BotsController.BotGame, _bot,
+                        new List<BotOwner>(), _bot.BotsController.BotSpawner._deadBodiesController,
+                        _bot.BotsController.BotSpawner._allPlayers, _player);
+                    BossPlayers.AddGroupToBoss(_player, pmcGroup);
+                }
+                isPickedUp = true;
+            }
+            else if (_player.bossGroup != null)
             {
                 Dictionary<IPlayer, EnemyInfo>? enemyInfos = _bot.EnemiesController?.EnemyInfos;
                 BotsGroup currentGroup = _bot.BotsGroup;
@@ -822,7 +836,9 @@ namespace pitTeam.Components
 
             if (playerSide != EPlayerSide.Savage)
             {
-                settings.FileSettings.Mind.DEFAULT_SAVAGE_BEHAVIOUR = EWarnBehaviour.AlwaysEnemies;
+                settings.FileSettings.Mind.DEFAULT_SAVAGE_BEHAVIOUR =
+                    AllegianceScavRelations.KeepSeparateGroup(bot, _player.realPlayer, _IsSquadMate)
+                        ? EWarnBehaviour.AlwaysFriends : EWarnBehaviour.AlwaysEnemies;
                 // - bad guy is hostile to everyone    
                 if (Utils.Utils.FlagGet("isBadGuy"))
                 {
@@ -984,8 +1000,11 @@ namespace pitTeam.Components
             // - have followers share the same groupId as the player
             _grouId = bot.GetPlayer.Profile.Info.GroupId;
             _teamId = bot.GetPlayer.Profile.Info.TeamId;
-            bot.GetPlayer.Profile.Info.GroupId = _player.realPlayer.GroupId;
-            bot.GetPlayer.Profile.Info.TeamId = _player.realPlayer.Profile.Info.TeamId;
+            if (!AllegianceScavRelations.KeepSeparateGroup(bot, _player.realPlayer, _IsSquadMate))
+            {
+                bot.GetPlayer.Profile.Info.GroupId = _player.realPlayer.GroupId;
+                bot.GetPlayer.Profile.Info.TeamId = _player.realPlayer.Profile.Info.TeamId;
+            }
 
             bot.Tactic.AggressionChange(1f);
 
@@ -1113,7 +1132,8 @@ namespace pitTeam.Components
 
                 // -- bot needs a new group
                 BotZone zone = _bot.BotsController.BotSpawner.GetClosestZone(_bot.GetPlayer.Transform.position, out var zoneDist);
-                BotsGroup group = _bot.BotsController.BotSpawner.GetGroupAndSetEnemies(_bot, zone);
+                BotsGroup group = AllegianceScavRelations.DepartureGroup(_bot) ??
+                    _bot.BotsController.BotSpawner.GetGroupAndSetEnemies(_bot, zone);
 
                 _bot.BotsGroup = group;
 

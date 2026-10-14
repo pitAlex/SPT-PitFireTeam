@@ -498,6 +498,7 @@ namespace pitTeam.Patches
         [HarmonyPrefix]
         private static bool BlockFollowerSainReloadIfAddonMissing(BotOwner botOwner)
         {
+            if (TeammateGearSwap.Protects(botOwner?.GetPlayer)) return false;
             if (!pitFireTeam.IsSAINInstalled)
             {
                 return true;

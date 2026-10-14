@@ -4,6 +4,7 @@ using EFT.UI.Screens;
 using pitTeam.Components;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace pitTeam.Modules
@@ -26,6 +27,7 @@ namespace pitTeam.Modules
         private static EFT.InventoryLogic.SearchableItem? _targetBackpack;
         private static IItemOwner? _targetBackpackOwner;
         private static HashSet<string>? _initialBackpackItemIds;
+        private static Dictionary<string, int> _scavCargoStackCounts;
         private static HashSet<string>? _initialTrackedItemIds;
         private static Dictionary<string, HashSet<string>>? _initialTrackedItemTreeIds;
         private static float _openedAtTime;
@@ -166,6 +168,7 @@ namespace pitTeam.Modules
                 _targetBackpackOwner = backpack.Owner;
                 _targetBackpackOwner.AddItemEvent += HandleBackpackItemAdded;
                 _initialBackpackItemIds = SnapshotAllItemIds(backpack);
+                _scavCargoStackCounts = backpack.GetAllItems().ToDictionary(item => item.Id, item => item.StackObjectsCount);
                 _initialTrackedItemIds = SnapshotTrackedItemIdsInBackpack(liveBot, _initialBackpackItemIds);
                 _initialTrackedItemTreeIds = SnapshotTrackedItemTreesInBackpack(backpack, _initialTrackedItemIds);
                 _openedAtTime = Time.time;
@@ -632,6 +635,7 @@ namespace pitTeam.Modules
                 _targetBackpack = null;
                 _targetBackpackOwner = null;
                 _initialBackpackItemIds = null;
+                _scavCargoStackCounts = null;
                 _initialTrackedItemIds = null;
                 _initialTrackedItemTreeIds = null;
                 _openedAtTime = 0f;
@@ -663,7 +667,7 @@ namespace pitTeam.Modules
             _targetFollower?.SetBackpackInspectionActive(false);
         }
 
-        private static void TrackBackpackItemChanges()
+        internal static void TrackBackpackItemChanges()
         {
             if (_targetBot == null || _targetBackpack == null || _initialBackpackItemIds == null)
             {
@@ -675,19 +679,26 @@ namespace pitTeam.Modules
             HashSet<string> currentBackpackItemIds = SnapshotAllItemIds(_targetBackpack);
             foreach (Item item in _targetBackpack.GetAllItems())
             {
+                if (_scavCargoStackCounts?.TryGetValue(item.Id, out int previousCount) == true)
+                    AllegianceScavCargo.TrackStackChange(_targetBot, item, previousCount);
                 if (!_initialBackpackItemIds.Contains(item.Id) &&
                     !HasNewAncestorInBackpack(item, _targetBackpack, _initialBackpackItemIds))
                 {
                     InteractableObjects.RegisterStrictCargoTree(_targetBot, item);
                     InteractableObjects.StoreItem(_targetBot, item);
+                    AllegianceScavCargo.TrackGiven(_targetBot, item);
                 }
             }
+            if (_scavCargoStackCounts != null)
+                AllegianceScavCargo.RemoveGiven(_targetBot, _scavCargoStackCounts.Keys.Where(id => !currentBackpackItemIds.Contains(id)).ToArray());
+            _scavCargoStackCounts = _targetBackpack.GetAllItems().ToDictionary(item => item.Id, item => item.StackObjectsCount);
 
             // Strict-cargo provenance ends as soon as the player takes the item back. Compare the
             // complete backpack snapshots directly instead of relying on return-root bookkeeping;
             // this also clears removed weapon parts, inserted magazines, and nested cargo items.
             HashSet<string> removedBackpackItemIds = new HashSet<string>(_initialBackpackItemIds, StringComparer.Ordinal);
             removedBackpackItemIds.ExceptWith(currentBackpackItemIds);
+            AllegianceScavCargo.RemoveGiven(_targetBot, removedBackpackItemIds);
             int clearedStrictItemCount = InteractableObjects.RemoveStrictCargoItemIds(
                 _targetBot.ProfileId,
                 removedBackpackItemIds);

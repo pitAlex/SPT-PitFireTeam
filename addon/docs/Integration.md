@@ -23,6 +23,8 @@ SAINShooter is a separate persisted tactic using these same layers with [Marksma
 
 ## Human leadership
 
+Core [Allegiance Scav companions](../../docs/Allegiance.md#scav-groups-and-trust) retain their separate native group. `SainPlayerSquadBridge` validates Core follower-group ownership and keys player-led SAIN squads by that actual group, so the Scav retains the same human leader without joining the PMC squad's native or SAIN membership. Dismissal releases that separate binding through the existing lifecycle event.
+
 `SainPlayerSquadBridge` owns real SAIN membership, human leader identity, liveness, distance, election and cleanup. It follows the actual player; it does not create a fake bot leader. `LeaderComponent` stays null because the native component type cannot represent a human. Ordinary AI squad election remains native. Lifecycle and boss-group subscriptions maintain membership independently of combat readiness.
 
 GroupSearch uses a separate temporary [search-party assignment](Squad-Support.md#search-party-cooperation) to follow the initiating bot. It does not change `LeaderComponent`, elect a replacement squad leader or alter player ownership.

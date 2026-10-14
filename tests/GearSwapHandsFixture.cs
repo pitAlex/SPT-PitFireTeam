@@ -134,6 +134,20 @@ static class GearSwapHandsFixture
         await Expect<TimeoutException>(() => GearSwapHandsTransition.Run<string>(() => true, () => idle,
             complete => { idle = false; complete("weapon", true, null); },
             returned => true, null, timeoutMs: 25), "Callback success cannot bypass pending native unlock");
+
+        var cancelled = new CancellationTokenSource();
+        Action<string, bool, string> late = null;
+        int validations = 0;
+        var stopped = GearSwapHandsTransition.Run<string>(() => true, () => true,
+            complete => { late = complete; cancelled.Cancel(); }, returned => { validations++; return true; },
+            cancellation: cancelled.Token);
+        await Expect<OperationCanceledException>(() => stopped, "Teardown cancels pending callback without waiting for its timeout");
+        late("late-weapon", true, null);
+        Check(validations == 0, "Late callback cannot verify or continue a cancelled exchange");
+        starts = 0;
+        await Expect<OperationCanceledException>(() => GearSwapHandsTransition.Run<string>(() => true, () => true,
+            complete => starts++, returned => true, cancellation: cancelled.Token), "Stopped lifetime cancels before requesting native hands");
+        Check(starts == 0, "Teardown never starts a new hands request");
     }
 
     public static int Main()

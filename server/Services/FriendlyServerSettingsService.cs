@@ -9,13 +9,16 @@ using SPTarkov.Server.Core.Models.Spt.Config;
 
 namespace pitTeam.Server.Services;
 
-[Injectable]
+[Injectable(InjectionType.Singleton)]
 public class FriendlyServerSettingsService(
     ISptLogger<FriendlyServerSettingsService> logger,
     LostOnDeathConfig lostOnDeathConfig,
     PmcConfig pmcConfig
 )
 {
+    private volatile bool pmcArmbandsEnabled;
+    internal bool PmcArmbandsEnabled => pmcArmbandsEnabled;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -200,6 +203,8 @@ public class FriendlyServerSettingsService(
 
     private void ApplySettings(FriendlyServerSettingsRequest settings)
     {
+        // Keep our inventory policy independent of other mods' shared SPT config writes.
+        pmcArmbandsEnabled = settings.PmcArmbands;
         try
         {
             pmcConfig.ForceArmband.Enabled = settings.PmcArmbands;

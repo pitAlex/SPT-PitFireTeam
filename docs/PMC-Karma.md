@@ -6,11 +6,11 @@ Core adds friendly encounter karma rules to the native PMC profile's `karmaValue
 
 | Event | Karma | Sound |
 |---|---|---|
-| Human PMC kills a raid recruit or an unrecruited friendly | −0.025 per victim, minimum 0 | Native negative sound when karma actually decreases |
-| Human PMC extracts alive with raid recruits | +0.02 per distinct living recruit, maximum 1 | One native positive sound for the combined gain when karma actually increases |
-| Completed Allegiance raid had selected friendlies, with no qualifying friendly kill or recruitment | +0.005 once, maximum 1 | Silent |
+| Human PMC kills a PMC raid recruit or an unrecruited friendly PMC | −0.025 per victim, minimum 0 | Native negative sound when karma actually decreases |
+| Human PMC extracts alive with PMC raid recruits | +0.02 per distinct living PMC recruit, maximum 1 | One native positive sound for the combined gain when karma actually increases |
+| Completed Allegiance raid had selected friendly PMCs, with no qualifying PMC kill or recruitment | +0.005 once, maximum 1 | Silent |
 
-Spawned and saved squadmates are excluded from the kill/extraction rules, including automatically spawned Goons. Actual successful recruitment registers the bot identity; `IsSquadMate == false` alone does not establish recruitment. Unrecruited eligibility is captured before the player's first damaging hit can trigger retaliation. Guns for Hire recognizes its selected, unrevoked same-faction encounters as well as its existing enabled same-side friendly relationships; Allegiance recognizes selected, unrevoked candidates from either faction. A different aggressor's kill does not charge the player. Player Scav raids do not change PMC karma.
+Spawned and saved squadmates are excluded from the kill/extraction rules, including automatically spawned Goons. Actual successful recruitment registers the bot identity; `IsSquadMate == false` alone does not establish recruitment. Guns for Hire recognizes its selected, unrevoked same-faction encounters as well as its existing enabled same-side friendly relationships; Allegiance recognizes selected, unrevoked candidates from either PMC faction. A different aggressor's kill does not charge the player. Player Scav raids do not change PMC karma. Scav encounters, recruitment, kills and extraction never contribute to these PMC rules; see [Fence karma](Fence-Karma.md).
 
 Run-through counts as extraction. Player death, missing-in-action, abandonment and simulated Team Escape never grant recruited extraction karma. Quiet recovery permits completed killed/missing-in-action raids if its other requirements hold; abandonment/disconnection does not qualify. Any successful recruitment suppresses quiet recovery, even when that recruit later dies, is dismissed or fails to extract. Thus recruitment cannot stack the 0.005 bonus with 0.02 rewards. Multiple selected friendlies still produce only one quiet bonus. Merely greeting/requesting a bot without successful conversion does not count as recruitment.
 

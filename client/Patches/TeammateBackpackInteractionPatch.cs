@@ -83,10 +83,11 @@ namespace pitTeam.Patches
         [PatchPostfix]
         private static void PatchPostfix(InventoryController __instance, Item item, ref bool __result)
         {
-            // Moving an item into a normal grid requires template examination. This is a temporary UI/session
-            // answer only; it intentionally does not mutate the player's encyclopedia.
+            // Followers know their carried items; teammate UI keeps its existing temporary scope.
+            // This answer never adds templates to the human player's encyclopedia or grants examine XP.
             if (__result ||
-                (!TeammateBackpackInspection.ShouldTreatItemExamined(__instance, item) &&
+                (!FollowerInventoryKnowledge.ShouldTreatItemExamined(__instance, item) &&
+                 !TeammateBackpackInspection.ShouldTreatItemExamined(__instance, item) &&
                  !TeammateCorpseLootGuard.ShouldTreatItemExamined(__instance, item) &&
                  !TeammateGearSwap.TreatCommitItemKnown(item)))
             {

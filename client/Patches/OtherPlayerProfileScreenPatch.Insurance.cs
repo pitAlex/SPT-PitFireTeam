@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using EFT;
+using EFT.UI;
 using EFT.UI.Insurance;
 using SPT.Common.Http;
 
@@ -99,6 +100,11 @@ namespace pitTeam.Patches
             LogInsuranceUiState(InsuranceUiStage);
             try { callback?.Invoke(result); }
             catch (Exception ex) { pitFireTeam.Log.LogError($"[FollowerInsurance:Callback] {ex}"); }
+            if (result.Succeed)
+            {
+                try { Singleton<GUISounds>.Instance?.PlayUISound(EUISoundType.InsuranceInsured); }
+                catch (Exception ex) { pitFireTeam.Log.LogWarning($"[FollowerInsurance:Sound] {ex}"); }
+            }
             LogInsuranceUiState("after-stock-callback");
             try
             {

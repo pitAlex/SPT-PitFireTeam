@@ -173,7 +173,7 @@ public static partial class CombatChecks {
         b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover,ESquadDecision.None,ESelfActionType.FirstAid);
         Check(!SAINFollowerRuntime.GetSquadSupport(b).Active&&b.Follower.Command==FollowerCommandType.SuppressEnemy,"medicine retains original pending order");
         b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);action=new SAINFollowerSquadSupportAction(b);action.Start();action.OnSteeringTicked();
-        b.Sain.Medical.TimeSinceShot=0;action.OnSteeringTicked();Check(!SAINFollowerRuntime.GetSquadSupport(b).Active,"fresh damage cancels support immediately");action.Stop();
+        b.Sain.Medical.TimeSinceShot=0;action.OnSteeringTicked();Check(SAINFollowerRuntime.GetSquadSupport(b).Active&&!b.Sain.Suppression.SuppressingTarget,"fresh damage pauses ordered support without losing its intent");action.Stop();
 
         b=SupportBot("squadPosition");b.Sain.GoalEnemy.SuppressionTarget=null;action=OrderSuppress(b);action.Update(null);
         objective=SAINFollowerRuntime.GetSquadSupport(b);
@@ -444,6 +444,76 @@ public static partial class CombatChecks {
         FiringPositionFinder.Candidate=new Vector3(10,0,0);ally.GetPlayer.Position=new Vector3(46,0,0);Time.time+=2.1f;
         Check(!OfferGrunt(b),"push support still requires a nearby helper within Core's distance limit");
         Physics.Blocked=false;FiringPositionFinder.Candidate=null;
+    }
+
+    private static void TestOrderedSuppressionRetentionAndApproach() {
+        Physics.Blocked=false;Physics.RayBlock=null;pitTeam.BigBrain.FollowerCombatCommon.SoftLane=false;
+        var b=SupportBot("orderedApproach");var enemy=b.Sain.GoalEnemy;enemy.SuppressionTarget=null;
+        var action=OrderSuppress(b);var o=SAINFollowerRuntime.GetSquadSupport(b);
+        action.Update(null);action.Update(null);var destination=o.Destination;
+        Check(destination.HasValue&&b.Sain.Mover.Moving,"ordered lane failure starts one committed approach");
+        float approachDeadline=Time.time+(float)Newtonsoft.Json.Linq.JObject.FromObject(o.Snapshot)["remaining"];
+        Check(approachDeadline-Time.time>19,"committed approach receives existing bounded support movement window");
+        int plans=FiringPositionFinder.Calls;
+        b.Memory.IsUnderFire=true;b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
+        action.Update(null);action.OnSteeringTicked();
+        Check(o.Active&&!o.OwnsAction&&o.Destination.HasValue&&(o.Destination.Value-destination.Value).sqrMagnitude<.001f&&!b.Sain.Mover.Moving,"incoming fire pauses execution while retaining command target and destination");
+        Check(b.Sain.Suppression.Calls==0,"paused suppression cannot trigger through its old action");
+        Time.time+=.4f;b.Memory.IsUnderFire=false;b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
+        action.Update(null);
+        Check(o.Active&&o.OwnsAction&&o.Destination.HasValue&&(o.Destination.Value-destination.Value).sqrMagnitude<.001f&&FiringPositionFinder.Calls==plans,"cleared pressure resumes original intent without replanning");
+        Check(Math.Abs(Time.time+(float)Newtonsoft.Json.Linq.JObject.FromObject(o.Snapshot)["remaining"]-approachDeadline)<.01f,"resume cannot renew approach deadline");
+        enemy.SuppressionTarget=new Vector3(60,0,0);action.OnSteeringTicked();
+        Check(b.Sain.Suppression.Calls==0,"moving suppression waits for Core lane stability");
+        Time.time+=.21f;action.OnSteeringTicked();
+        Check(b.Sain.Suppression.Calls==1&&o.Destination.HasValue&&(o.Destination.Value-destination.Value).sqrMagnitude<.001f&&(b.GetPlayer.Position-destination.Value).sqrMagnitude>4f,"ordered suppression fires before arrival without releasing movement commitment");
+        float burstDeadline=Time.time+(float)Newtonsoft.Json.Linq.JObject.FromObject(o.Snapshot)["burstRemaining"];
+        int shots=b.Sain.Suppression.Calls;b.FriendlyInLane=true;action.OnSteeringTicked();
+        Check(b.Sain.Suppression.Calls==shots&&!b.Sain.Suppression.SuppressingTarget,"moving friendly lane veto clears active suppression immediately");
+        b.FriendlyInLane=false;action.OnSteeringTicked();
+        Check(b.Sain.Suppression.Calls==shots,"unsafe lane resets moving stability instead of reusing previous clear time");
+        Time.time+=.21f;Physics.Blocked=true;action.OnSteeringTicked();
+        Check(b.Sain.Suppression.Calls==shots,"moving hard obstruction retains Core physical veto");
+        pitTeam.BigBrain.FollowerCombatCommon.SoftLane=true;action.OnSteeringTicked();Time.time+=.21f;action.OnSteeringTicked();
+        Check(b.Sain.Suppression.Calls==shots+1,"stable foliage-only moving lane permits ordered suppression");
+        float burstRemaining=(float)Newtonsoft.Json.Linq.JObject.FromObject(o.Snapshot)["burstRemaining"];
+        Check(Math.Abs(Time.time+burstRemaining-burstDeadline)<.01f,"lane recovery cannot renew the actual-fire burst");
+        Time.time+=burstRemaining+.01f;action.Update(null);Check(!o.Active,"moving burst completes once before arrival");action.Stop();
+        Physics.Blocked=false;pitTeam.BigBrain.FollowerCombatCommon.SoftLane=false;
+
+        foreach(var self in new[]{ESelfActionType.Reload,ESelfActionType.FirstAid}) {
+            b=SupportBot("orderedPause"+self);action=OrderSuppress(b);o=SAINFollowerRuntime.GetSquadSupport(b);
+            b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover,ESquadDecision.None,self);action.OnSteeringTicked();
+            Check(o.Active&&!o.OwnsAction&&b.Sain.Suppression.Calls==0,"native self action retains bounded order without firing: "+self);
+            Time.time+=.3f;b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);action.OnSteeringTicked();
+            Check(o.Active&&o.OwnsAction&&b.Sain.Suppression.Calls==1,"same suppression resumes after native self action: "+self);
+            o.Clear("test");action.Stop();
+        }
+        b=SupportBot("orderedPendingMedicine");action=OrderSuppress(b);o=SAINFollowerRuntime.GetSquadSupport(b);
+        b.RiskMedical=true;b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
+        Check(o.Active&&!o.OwnsAction,"pending medical work retains accepted order while yielding to treatment");
+        b.RiskMedical=false;b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);action.OnSteeringTicked();
+        Check(o.OwnsAction&&b.Sain.Suppression.Calls==1,"pending medical clearance resumes same target");o.Clear("test");action.Stop();
+
+        b=SupportBot("orderedPauseBound");action=OrderSuppress(b);o=SAINFollowerRuntime.GetSquadSupport(b);
+        b.Memory.IsUnderFire=true;b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
+        for(int i=0;i<30;i++){Time.time+=.21f;b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);action.OnSteeringTicked();}
+        Check(!o.Active&&b.Sain.Suppression.Calls==0,"repeated interruptions cannot rearm or extend original stationary attempt");action.Stop();
+        b=SupportBot("orderedApproachBound");enemy=b.Sain.GoalEnemy;enemy.SuppressionTarget=null;action=OrderSuppress(b);o=SAINFollowerRuntime.GetSquadSupport(b);action.Update(null);
+        b.Memory.IsUnderFire=true;b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);Time.time+=20.1f;action.Update(null);
+        Check(!o.Active,"paused committed approach remains bounded to one movement window");action.Stop();
+
+        b=SupportBot("orderedMovingVisible");enemy=b.Sain.GoalEnemy;enemy.SuppressionTarget=null;action=OrderSuppress(b);o=SAINFollowerRuntime.GetSquadSupport(b);action.Update(null);action.Update(null);
+        enemy.IsVisible=enemy.CanShoot=true;enemy.EnemyPlayer.Position=new Vector3(60,0,0);b.Sain.Shoot.Succeeds=true;
+        action.OnSteeringTicked();Check(b.Sain.Shoot.LastTarget==null,"moving visible fire waits for same stable lane window");
+        Time.time+=.21f;action.OnSteeringTicked();Check(b.Sain.Shoot.LastTarget==enemy&&b.ShootData.Shooting,"visible contact during approach uses exact native aim and trigger");
+        b.FriendlyInAim=true;action.OnSteeringTicked();Check(!b.ShootData.Shooting,"moving visible aim lane still rejects friendlies");
+        b.FriendlyInAim=false;Physics.Blocked=true;action.OnSteeringTicked();Check(!b.ShootData.Shooting,"moving visible fire cannot cross hard geometry");
+        Physics.Blocked=false;b.Sain.Mover.Running=true;action.OnSteeringTicked();Check(!b.ShootData.Shooting,"native sprint restriction prevents moving ordered fire");o.Clear("test");action.Stop();
+        b=SupportBot("automaticSupportStillCancels");((pitAIBossPlayer)b.BotFollower.BossToFollow).Engagement=b.Sain.GoalEnemy.EnemyProfileId;OfferSupport(b);o=SAINFollowerRuntime.GetSquadSupport(b);
+        Check(o.Active&&o.Mode==SAINSquadSupportMode.AllySupport,"automatic support fixture is active before pressure");
+        b.Memory.IsUnderFire=true;b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);Check(!o.Active,"automatic support retains existing cancellation instead of new ordered retention");
+        Physics.Blocked=false;Physics.RayBlock=null;pitTeam.BigBrain.FollowerCombatCommon.SoftLane=false;
     }
 
     private static void TestReportSuppressionOwnership() {

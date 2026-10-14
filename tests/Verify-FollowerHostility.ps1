@@ -4,6 +4,10 @@ Add-Type -Path (Join-Path $GameRoot 'BepInEx/core/Mono.Cecil.dll')
 $assembly=[Mono.Cecil.AssemblyDefinition]::ReadAssembly((Join-Path $GameRoot 'EscapeFromTarkov_Data/Managed/Assembly-CSharp.dll'))
 try {
     $group=$assembly.MainModule.GetType('BotsGroup')
+    $lockMethod=@($group.Methods | Where-Object {$_.Name -eq 'Lock' -and $_.IsPublic -and $_.Parameters.Count -eq 0})
+    if($lockMethod.Count -ne 1 -or !($lockMethod[0].Body.Instructions | Where-Object {$_.Operand -is [Mono.Cecil.MethodReference] -and $_.Operand.Name -eq 'set_Locked'})) {throw 'Native solo-group lock boundary changed'}
+    $groupLookup=$assembly.MainModule.GetType('BotZoneGroupsDictionary').Methods | Where-Object {$_.Name -eq 'TryGetValue' -and $_.Parameters.Count -eq 5}
+    if(!($groupLookup.Body.Instructions | Where-Object {$_.Operand -is [Mono.Cecil.MethodReference] -and $_.Operand.Name -eq 'get_Locked'})) {throw 'Native spawn group lookup no longer checks group locks'}
     foreach($name in @('AddEnemy','IsEnemy','IsPlayerEnemy','IsAlly')) {
         if(!($group.Methods | Where-Object {$_.Name -eq $name -and $_.IsPublic -and $_.ReturnType.FullName -eq 'System.Boolean'})){throw "Missing group method: $name"}
     }
@@ -14,6 +18,16 @@ try {
     if(!($group.Properties | Where-Object {$_.Name -eq 'TargetMembersCount' -and $_.PropertyType.FullName -eq 'System.Int32'}) -or
        !($group.Events | Where-Object {$_.Name -eq 'OnMemberAdd' -and $_.EventType.FullName -eq 'System.Action`1<EFT.BotOwner>'})) {throw 'Group-size lifecycle boundary changed'}
     $owner=$assembly.MainModule.GetType('EFT.BotOwner')
+    $health=$assembly.MainModule.GetType('EFT.HealthSystem.IHealthController')
+    $died=@($health.Events | Where-Object {$_.Name -eq 'DiedEvent' -and $_.EventType.FullName -eq 'System.Action`1<EFT.EDamageType>'})
+    if($died.Count -ne 1 -or !$died[0].AddMethod.IsPublic -or !$died[0].RemoveMethod.IsPublic){throw 'Companion death cleanup event boundary changed'}
+    $player=$assembly.MainModule.GetType('EFT.Player')
+    $damage=@($player.Methods | Where-Object {$_.Name -eq 'ApplyDamageInfo' -and $_.IsPublic -and $_.ReturnType.FullName -eq 'System.Void' -and
+        ($_.Parameters.ParameterType.FullName -join '|') -eq 'EFT.Ballistics.DamageInfo|EBodyPart|EBodyPartColliderType|System.Single'})
+    if($damage.Count -ne 1 -or ($damage[0].Parameters.Name -join '|') -ne 'damageInfo|bodyPartType|colliderType|absorbed'){throw 'Pre-health trust damage boundary changed'}
+    if(!($group.Methods | Where-Object {$_.Name -eq 'AddAlly' -and $_.IsPublic -and
+        ($_.Parameters.ParameterType.FullName -join '|') -eq 'EFT.Player'}) -or
+       !($owner.Properties | Where-Object {$_.Name -eq 'BotsGroup' -and $_.PropertyType.FullName -eq 'BotsGroup'})) {throw 'Independent Scav group/allied player boundary changed'}
     $spawnProperty=$owner.Properties | Where-Object Name -eq 'SpawnProfileData'
     $spawnData=$assembly.MainModule.GetType($spawnProperty.PropertyType.FullName)
     $spawnParamsProperty=$spawnData.Properties | Where-Object Name -eq 'SpawnParams'
@@ -25,6 +39,10 @@ try {
     $cause=$assembly.MainModule.GetType('EBotEnemyCause')
     $values=$cause.Fields | Where-Object HasConstant | ForEach-Object {$_.Name+' = '+$_.Constant}
     $enum='namespace EFT { public enum EBotEnemyCause { '+($values -join ',')+' } }'
+    $roles=$assembly.MainModule.GetType('EFT.WildSpawnType')
+    if(!$roles -or !$roles.IsEnum){throw 'Native bot role enum missing'}
+    $roleValues=$roles.Fields | Where-Object HasConstant | ForEach-Object {$_.Name+' = '+$_.Constant}
+    $enum+=' namespace EFT { public enum WildSpawnType { '+($roleValues -join ',')+' } }'
 } finally {$assembly.Dispose()}
 $sdk=dotnet --list-sdks | Select-Object -Last 1
 if($sdk -notmatch '^(\S+) \[(.+)\]$'){throw 'SDK missing'}
@@ -71,7 +89,7 @@ try {
         Where-Object Name -ne '0Harmony.dll' | Copy-Item -Destination $temporary
     $arguments=@($compiler,'/nologo','/target:exe','/langversion:latest','/nullable:annotations','/nostdlib+',"/out:$exe","/reference:$harmony")
     foreach($reference in @('mscorlib.dll','System.dll','System.Core.dll')){$arguments+='/reference:'+(Join-Path $framework $reference)}
-    $arguments+=@((Join-Path $temporary 'GroupPatch.cs'),(Join-Path $temporary 'Fixture.cs'),(Join-Path $RepositoryRoot 'client/Modules/FollowerGroupHostility.cs'),(Join-Path $RepositoryRoot 'client/Modules/AllegiancePmcFriendship.cs'),(Join-Path $RepositoryRoot 'client/Modules/BotOwnerUpdateHub.cs'),(Join-Path $RepositoryRoot 'shared/FriendlyEncounterPenaltyPolicy.cs'))
+    $arguments+=@((Join-Path $temporary 'GroupPatch.cs'),(Join-Path $temporary 'Fixture.cs'),(Join-Path $RepositoryRoot 'client/Modules/FollowerGroupHostility.cs'),(Join-Path $RepositoryRoot 'client/Modules/AllegiancePmcFriendship.cs'),(Join-Path $RepositoryRoot 'client/Modules/AllegianceScavRelations.cs'),(Join-Path $RepositoryRoot 'client/Modules/ScavFenceKarma.cs'),(Join-Path $RepositoryRoot 'client/Patches/AllegianceScavTrustDamagePatch.cs'),(Join-Path $RepositoryRoot 'client/Modules/BotOwnerUpdateHub.cs'),(Join-Path $RepositoryRoot 'shared/FriendlyEncounterPenaltyPolicy.cs'))
     & dotnet @arguments
     if($LASTEXITCODE -ne 0){throw 'Hostility fixture compilation failed'}
     & $exe

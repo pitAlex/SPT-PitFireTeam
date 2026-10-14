@@ -11,6 +11,59 @@ namespace pitTeam.Utils
     public sealed class FollowerStimulatorPolicy
     {
         private readonly List<Meds> stimSearchBuffer = new List<Meds>();
+        private float nextAntidoteSearchAt;
+
+        public static bool NeedsAntidote(BotOwner botOwner)
+        {
+            var health = botOwner?.GetPlayer?.ActiveHealthController;
+            if (health?.IsAlive != true) return false;
+            var effects = health.Effects;
+            bool poisoned = false;
+            for (int i = 0; i < effects.Count; i++)
+            {
+                var effect = effects[i];
+                if (effect.Existing && (effect is IIntoxication || effect is ILethalIntoxication))
+                { poisoned = true; break; }
+            }
+            if (!poisoned) return false;
+
+            // UnknownToxin/LethalToxin buffs become separate intoxication effects.
+            // Inspect the actual effects, and retain a dose through its activation delay.
+            for (int i = 0; i < effects.Count; i++)
+            {
+                if (!effects[i].Existing || effects[i] is not IStimulator stim) continue;
+                var buffs = stim.ActiveBuffs;
+                for (int j = 0; j < buffs.Length; j++)
+                {
+                    var buff = buffs[j];
+                    if (buff?.Settings.BuffType != EStimulatorBuffType.Antidote || buff.Settings.Chance <= 0f) continue;
+                    if (buff.Active || buff is ActiveHealthController.Stimulator.Buff { Processed: false }) return false;
+                }
+            }
+            return true;
+        }
+
+        public bool TrySelectAntidoteStimulator(BotOwner botOwner, BotStimulators stims)
+        {
+            if (!NeedsAntidote(botOwner) || botOwner.Medecine?.Using == true ||
+                botOwner.Settings.FileSettings.Mind.CAN_USE_MEDS != true ||
+                !CanUseStimulatorNow(botOwner, out var available) || !ReferenceEquals(stims, available) ||
+                Time.time < nextAntidoteSearchAt) return false;
+            if (TrySelectStimulator(botOwner, stims, HasAntidoteEffect, refreshOnMiss: false)) return true;
+            // A poisoned bot with no matching injector must not scan inventory every frame.
+            // New supplies become eligible within one second; no failed choice changes native selection.
+            nextAntidoteSearchAt = Time.time + 1f;
+            return false;
+        }
+
+        private static bool HasAntidoteEffect(EFT.InventoryLogic.Stimulator stimulator)
+        {
+            var buffs = stimulator.HealthEffectsComponent?.BuffSettings;
+            if (buffs == null) return false;
+            for (int i = 0; i < buffs.Length; i++)
+                if (buffs[i].BuffType == EStimulatorBuffType.Antidote && buffs[i].Chance > 0f) return true;
+            return false;
+        }
 
         public static bool NeedsBlackStomachPainRelief(BotOwner botOwner)
         {

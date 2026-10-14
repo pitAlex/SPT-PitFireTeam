@@ -931,6 +931,7 @@ namespace pitTeam.BigBrain.Actions
             int moveGeneration = ++bodyLootMoveGeneration;
             activeBodyLootMoveGeneration = moveGeneration;
             activeBodyLootMove = move;
+            move.ScavCargoBefore = AllegianceScavCargo.CaptureCommandedLoot(BotOwner);
             RunBodyGearMoveTransaction(
                 inventory,
                 move,
@@ -1018,6 +1019,8 @@ namespace pitTeam.BigBrain.Actions
                        IsLootNowInBotInventory(BotOwner?.GetPlayer, completedItem));
                 if (moveSucceeded)
                 {
+                    if (!move.IsStagingOperation)
+                        AllegianceScavCargo.TrackCommandedLoot(BotOwner, completedItem, move.ScavCargoBefore);
                     bool countsAsLootMove = !move.IsStagingOperation || !move.ReportAsLootNothing;
                     if (countsAsLootMove)
                     {

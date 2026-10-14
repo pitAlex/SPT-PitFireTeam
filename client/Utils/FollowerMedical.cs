@@ -23,7 +23,6 @@ namespace pitTeam.Utils
         private const float HandsAfterMedicalStallTimeout = 5f;
         private const float HandsAfterMedicalHardTimeout = 20f;
         private const float RecentMedicalWindow = 8f;
-        private const float FirstAidMinVisibleNormalizedHealth = 0.06f;
         private const float EmergencySurgeryHealthPenalty = 0.5f;
         private const float PostCombatFullHealRestoreDelay = 12f;
 
@@ -522,25 +521,7 @@ namespace pitTeam.Utils
                     player.ActiveHealthController.RestoreBodyPart(part, EmergencySurgeryHealthPenalty);
                     ClampImpossibleBodyPartHealth(player, part);
                 }
-
-                ValueStruct health = player.ActiveHealthController.GetBodyPartHealth(part, false);
-                if (health.Maximum <= 0f || health.Current <= 0f)
-                {
-                    continue;
-                }
-
-                float minHealth = GetFirstAidVisibleHealth(player, part);
-                if (health.Current < minHealth)
-                {
-                    player.ActiveHealthController.ChangeHealth(part, minHealth - health.Current, EFT.HealthSystem.DamageHelper.MedKitUse);
-                }
             }
-        }
-
-        private static float GetFirstAidVisibleHealth(Player player, EBodyPart part)
-        {
-            ValueStruct health = player.ActiveHealthController.GetBodyPartHealth(part, false);
-            return Mathf.Max(1f, health.Maximum * FirstAidMinVisibleNormalizedHealth);
         }
 
         private static void ClampImpossibleBodyPartHealth(Player player, EBodyPart part)

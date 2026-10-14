@@ -9,7 +9,8 @@ pitFireTeam has two gameplay modes. Each player profile chooses one on its first
 | Settings | Saved preferences and ordinary restrictions | Fixed values for the settings listed in its guide |
 | Loadout Management | Editable outside raids; Immersive default | Editable outside raids; Immersive default |
 | PMC recruitment | Existing same-side rules; encounter rolls only for same-faction solos | Selected solo friendlies from either faction |
-| Friendly Chance Multiplier | 1–5; no effect while Friendly PMC Side or Bad Guy is on | 1–5, affecting future friendship rolls |
+| Scav encounters | No randomized Scav encounters | Solo regular Scavs can become friendly; extract together at any exit for cargo returns through Fence |
+| Friendly Encounter Chance | 5–80%, default 30%; same-side PMCs only, no effect while Friendly PMC Side or Bad Guy is on | Same-side percentage; opposite-side curve converges at 10%; Scav base multiplied by Fence standing |
 | Friendly Encounters penalties | No new penalties or effect | Independent 24-hour recruited-friendly kill penalties |
 | PMC karma | Shared kill/extraction rules | Shared rules plus quiet peaceful-raid recovery |
 

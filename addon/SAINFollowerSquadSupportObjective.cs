@@ -26,6 +26,9 @@ internal sealed class SAINFollowerSquadSupportObjective(BotComponent bot, Firing
     // Core cover-fire flicker grace; continuation never renews this timestamp.
     private float lastVisibleFireAt = -1f;
     private Vector3 lastVisibleFirePoint, lastVisibleFirePosition;
+    private bool movingLaneTracked;
+    private float movingLaneClearSince;
+    private Vector3 movingLaneTarget;
     private bool suppressionOwned, manualSuppressionOwned, shootingOwned, automaticWeapon, automaticWeaponReady;
     private SainMarksmanWeaponBridge? Weapons => SAINFollowerRuntime.GetMarksman(bot.BotOwner)?.Weapons;
     private SainSuppressionAim suppressionAim;
@@ -73,6 +76,17 @@ internal sealed class SAINFollowerSquadSupportObjective(BotComponent bot, Firing
         solo == ECombatDecision.Retreat || solo == ECombatDecision.DogFight || solo == ECombatDecision.MeleeAttack ||
         solo == ECombatDecision.AvoidGrenade || solo == ECombatDecision.ThrowGrenade || solo == ECombatDecision.FightZombies;
 
+    private void Interrupt(string why)
+    {
+        if (!Active) return;
+        if (!Ordered) { Clear(why); return; }
+        // Core retains its ordered suppression objective while urgent actions execute.
+        // Stop only our execution; the original deadline/burst/target cannot be renewed.
+        Pause();
+        string paused = why == "medicalPending" ? "medicalPendingPaused" : "survivalPaused";
+        if (reason != paused) Record(paused);
+    }
+
     internal void Observe()
     {
         if (!Active) return;
@@ -97,7 +111,7 @@ internal sealed class SAINFollowerSquadSupportObjective(BotComponent bot, Firing
         out ESquadDecision result)
     {
         result = squad; OwnsAction = false; Observe();
-        if (Danger(solo, self)) { if (Active) Clear("survival"); inCoverSince = -1f; return false; }
+        if (Danger(solo, self)) { Interrupt("survival"); inCoverSince = -1f; return false; }
         var follower = Follower;
         if (follower == null) return false;
         bool pending = follower.TryGetActiveCommand(out var command, out _);
@@ -134,7 +148,7 @@ internal sealed class SAINFollowerSquadSupportObjective(BotComponent bot, Firing
 
         if (Active)
         {
-            if (health.Read(target.EnemyInfo).Medical) { Clear("medicalPending"); return false; }
+            if (health.Read(target.EnemyInfo).Medical) { Interrupt("medicalPending"); return false; }
             // A different immediate threat belongs to native combat, never to support retargeting.
             if (enemy != target && enemy?.IsVisible == true && enemy.CanShoot) { Pause(); return false; }
             if (!StationaryFire && enemy == target && enemy.IsVisible && enemy.CanShoot)
@@ -148,6 +162,7 @@ internal sealed class SAINFollowerSquadSupportObjective(BotComponent bot, Firing
                 if (!automaticWeaponReady) { automaticWeaponReady = true; deadline = Time.time + 6f; }
             }
             if (Ordered && !SainSquadSupportBridge.CanSuppress(bot.BotOwner)) { Finish("weaponUnavailable", true); return false; }
+            if (Ordered && (reason == "survivalPaused" || reason == "medicalPendingPaused")) Record("resumed");
             OwnsAction = true; result = StationaryFire ? ESquadDecision.Suppress : ESquadDecision.Help; return true;
         }
 
@@ -344,13 +359,16 @@ internal sealed class SAINFollowerSquadSupportObjective(BotComponent bot, Firing
     private void Commit(Vector3 point)
     {
         Destination = point; bestDistance = (point - bot.Position).magnitude;
+        // One committed approach shares the existing 20-second support movement bound.
+        // Repeated ticks and interruptions never extend it; actual fire still owns 2s.
+        if (Ordered && burstUntil <= 0f) deadline = Mathf.Max(deadline, Time.time + 20f);
         SainRegroupBridge.Claim(bot.BotOwner, point); Record("firingPosition");
     }
     internal void Tick()
     {
         Observe();
         if (!Active || !OwnsAction) { Pause(); return; }
-        if (Danger(bot.Decision.CurrentCombatDecision, bot.Decision.CurrentSelfDecision)) { Clear("survival"); return; }
+        if (Danger(bot.Decision.CurrentCombatDecision, bot.Decision.CurrentSelfDecision)) { Interrupt("survival"); return; }
         if (automaticWeapon && Weapons?.SupportReady != true) { Pause(); return; }
         if (!Destination.HasValue)
         {
@@ -391,13 +409,32 @@ internal sealed class SAINFollowerSquadSupportObjective(BotComponent bot, Firing
     {
         Observe();
         if (!Active || !OwnsAction) return;
-        if (Danger(bot.Decision.CurrentCombatDecision, bot.Decision.CurrentSelfDecision)) { Clear("survival"); return; }
+        if (Danger(bot.Decision.CurrentCombatDecision, bot.Decision.CurrentSelfDecision)) { Interrupt("survival"); return; }
         if (automaticWeapon && Weapons?.SupportReady != true) { StopSuppression(); bot.Steering.LookToLastKnownEnemyPosition(target); return; }
         bool arrived = !Destination.HasValue || (Destination.Value - bot.Position).sqrMagnitude <= 4f;
-        if (!arrived) { bot.Steering.LookToMovingDirection(); return; }
+        if (!arrived && !Ordered) { bot.Steering.LookToMovingDirection(); return; }
+        bool approaching = !arrived;
+        if (!approaching) movingLaneTracked = false;
         bool fired = false, keepAim = false;
         if (target.IsVisible && target.CanShoot)
         {
+            if (approaching)
+            {
+                // A genuinely visible target permits this body point. Reuse the existing
+                // Core geometry/muzzle/friendly/readiness guard before the stability timer.
+                Vector3 point = target.EnemyPlayer.Position + Vector3.up * 1.2f;
+                bot.Steering.LookToPoint(point);
+                bool safe = SainSquadSupportBridge.CanContinueVisibleFire(bot, point);
+                if (!safe) movingLaneTracked = false;
+                if (!safe || !HoldStableMovingLane(point))
+                {
+                    StopSuppression();
+                    if (shootingOwned) bot.Shoot.EndShoot();
+                    shootingOwned = false; lastVisibleFireAt = -1f;
+                    FireDiagnostic(safe ? "movingLaneStabilizing" : "movingVisibleLaneUnavailable", default);
+                    return;
+                }
+            }
             StopSuppression(); shootingOwned = true; keepAim = true;
             fired = SainSquadSupportBridge.FireVisible(bot, target) && bot.BotOwner.ShootData.Shooting;
             if (fired)
@@ -435,7 +472,8 @@ internal sealed class SAINFollowerSquadSupportObjective(BotComponent bot, Firing
                     if (shootingOwned) { bot.Shoot.EndShoot(); shootingOwned = false; }
                     // Preserve native alignment/weapon/friendly/trigger safety. The point is
                     // already admitted, so do not ask native path-point selection to veto it again.
-                    if (bot.Steering.AngleToPointFromLookDir(point) > 10f) state = "aligning";
+                    if (approaching && !HoldStableMovingLane(point)) state = "movingLaneStabilizing";
+                    else if (bot.Steering.AngleToPointFromLookDir(point) > 10f) state = "aligning";
                     else
                     {
                         fired = FireSuppression(point, aim.Source == "coreRecentReport");
@@ -443,6 +481,7 @@ internal sealed class SAINFollowerSquadSupportObjective(BotComponent bot, Firing
                     }
                 }
             }
+            if (!aim.Ready) movingLaneTracked = false;
             FireDiagnostic(state, aim);
         }
         else StopSuppression();
@@ -457,6 +496,15 @@ internal sealed class SAINFollowerSquadSupportObjective(BotComponent bot, Firing
             if (!keepAim) bot.Steering.LookToLastKnownEnemyPosition(target);
         }
     }
+    private bool HoldStableMovingLane(Vector3 point)
+    {
+        // Admission/physical/friendly checks run each time before this timing gate.
+        // Match Core's 0.2s moving lane hold and 2m target-displacement reset.
+        if (!movingLaneTracked || (movingLaneTarget - point).sqrMagnitude > 4f)
+        { movingLaneTracked = true; movingLaneTarget = point; movingLaneClearSince = Time.time; return false; }
+        movingLaneTarget = point;
+        return Time.time - movingLaneClearSince >= 0.2f;
+    }
     private void FireDiagnostic(string state, SainSuppressionAim aim)
     {
         bool changed = fireState != state || suppressionAim.Source != aim.Source || suppressionAim.Gate != aim.Gate;
@@ -468,6 +516,7 @@ internal sealed class SAINFollowerSquadSupportObjective(BotComponent bot, Firing
     {
         if (ownedPath != null && ReferenceEquals(bot.Mover.ActivePath, ownedPath)) bot.Mover.Stop();
         ownedPath = null; lastTick = -1f; StopSuppression();
+        movingLaneTracked = false;
         if (shootingOwned) bot.Shoot.EndShoot();
         shootingOwned = false; lastVisibleFireAt = -1f;
     }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Threading;
 using EFT;
 using EFT.InventoryLogic;
 using EFT.UI;
@@ -44,6 +45,8 @@ namespace pitTeam.Modules
         private readonly HashSet<string> _playerOwnedIds;
         private readonly InventoryScreen.RaidInventoryScreenController _screen;
         private bool _closed, _cancelled, _committed;
+        private bool _worldEnding, _movementHeld, _previousMoverPause;
+        private GearSwapApplyScope _applyScope;
         private string _cancelReason;
         private float _openedAt;
         private readonly Dictionary<GameObject, bool> _hiddenTabs = new Dictionary<GameObject, bool>();
@@ -51,6 +54,8 @@ namespace pitTeam.Modules
         private TeammateGearSwap(EftGamePlayerOwner owner, BotOwner bot, BotFollowerPlayer follower)
         {
             Owner = owner; Bot = bot; Follower = follower;
+            // Capture before the editor's patrol inspection hold pauses movement.
+            _previousMoverPause = bot.Mover?.Pause ?? false;
             AllowBackpackSwap = follower.IsSpawnedSquadMate;
             _playerBefore = Snapshot(owner.Player.InventoryController.Inventory.Equipment);
             _botBefore = Snapshot(bot.GetPlayer.InventoryController.Inventory.Equipment);
@@ -113,6 +118,66 @@ namespace pitTeam.Modules
 
         internal static bool Holds(BotFollowerPlayer follower) => Current != null && ReferenceEquals(Current.Follower, follower);
         internal static bool Holds(BotWeaponManager manager) => Current != null && ReferenceEquals(Current.Bot.WeaponManager, manager);
+        internal static bool Protects(Player player) => Current != null && ReferenceEquals(Current.Bot.GetPlayer, player)
+            && Current.Applying && Current._applyScope?.Active == true && !Current._worldEnding
+            && player != null && !player.Destroyed && player.HealthController?.IsAlive == true;
+        internal static bool Protects(EFT.HealthSystem.ActiveHealthController health) => Current != null
+            && ReferenceEquals(Current.Bot.GetPlayer?.ActiveHealthController, health) && Protects(Current.Bot.GetPlayer);
+
+        internal static void EndRaid()
+        {
+            var session = Current;
+            if (session == null) return;
+            session._worldEnding = true;
+            session.Cancel("raidEnded");
+            session._applyScope?.Stop();
+            session.ReleaseMovement();
+            try { session.Close(); }
+            catch (Exception ex) { Logger.LogError("[SwapGear] Teardown UI cleanup failed: " + ex); }
+        }
+
+        internal static void ActorDying(EFT.HealthSystem.ActiveHealthController health)
+        {
+            var session = Current;
+            if (session == null || health == null) return;
+            if (ReferenceEquals(session.Owner.Player?.ActiveHealthController, health)) EndRaid();
+            else if (ReferenceEquals(session.Bot.GetPlayer?.ActiveHealthController, health))
+            {
+                session.Cancel("followerDied");
+                session.ReleaseMovement();
+                if (!session.Applying)
+                {
+                    try { session.Close(); }
+                    catch (Exception ex) { Logger.LogError("[SwapGear] Death UI cleanup failed: " + ex); }
+                }
+            }
+        }
+
+        internal static void CheckApplyDeadline()
+        {
+            var session = Current;
+            if (session?.Applying != true || session._applyScope?.Active != false) return;
+            session.Cancel("applyDeadline");
+            session.ReleaseMovement();
+        }
+
+        private bool CanContinue(Player player) => !_closed && !_worldEnding && ReferenceEquals(Current, this)
+            && _applyScope?.Active == true && player != null && !player.Destroyed && player.HealthController?.IsAlive == true;
+
+        private void HoldMovement()
+        {
+            _movementHeld = true;
+            Bot.Mover.Pause = true;
+            Bot.GetPlayer.Move(Vector2.zero);
+            Utils.FollowerRecovery.StopShooting(Bot);
+        }
+
+        private void ReleaseMovement()
+        {
+            if (!_movementHeld) return;
+            _movementHeld = false;
+            if (Bot?.Mover != null) Bot.Mover.Pause = _previousMoverPause;
+        }
         internal bool IsLiveLocked(Item item) => !Mutating && item != null &&
             (ReferenceEquals(item.Owner, Owner.Player.InventoryController) || ReferenceEquals(item.Owner, Bot.GetPlayer.InventoryController));
         internal static bool TreatCommitAddressKnown(ItemAddress address) => Current?.Mutating == true &&
@@ -129,6 +194,7 @@ namespace pitTeam.Modules
             if (session == null || !ReferenceEquals(session.Owner, owner)) return;
             try
             {
+                CheckApplyDeadline();
                 var tabs = CommonUI.Instance?.InventoryScreen?._tabDictionary;
                 if (tabs != null)
                     foreach (var tab in tabs.Where(t => t.Key != EInventoryTab.Gear))
@@ -154,6 +220,7 @@ namespace pitTeam.Modules
             if (_cancelled) return;
             _cancelled = true;
             _cancelReason = reason;
+            _applyScope?.CancelPreparation();
         }
 
         private static string UnsafeReason(GamePlayerOwner owner, BotOwner bot, BotFollowerPlayer follower, bool applying)
@@ -169,12 +236,13 @@ namespace pitTeam.Modules
                 return "followerDeadOrInactive";
             float distance = Vector3.Distance(owner.Player.Position, bot.GetPlayer.Position);
             if (distance > 2.5f) return $"outOfRange:{distance:0.00}m";
+            // An accepted protected Apply finishes without clearing newly acquired enemy knowledge.
+            if (applying) return null;
             if (follower.HasKnownEnemy()) return "knownEnemy";
             if (bot.Memory?.HaveEnemy == true) return "nativeEnemy";
             if (bot.Memory?.IsUnderFire == true) return "underFire";
             if (TeammateBackpackInspection.HasActiveOrPendingHealWork(bot)) return "healing";
             if (TeammateBackpackInspection.HasActiveOrPendingPickupWork(bot, follower)) return "looting";
-            if (applying) return null;
             if (bot.WeaponManager?.Selector?.IsChanging == true) return "followerWeaponChanging";
             if (bot.WeaponManager?.Grenades?.ThrowindNow == true) return "throwingGrenade";
             // EFT polls only the active reload record. A stale flag on a stowed
@@ -326,10 +394,13 @@ namespace pitTeam.Modules
                 ValidateLive();
                 ValidateFinalEquipment();
                 Applying = true;
+                _applyScope = new GearSwapApplyScope();
+                HoldMovement();
                 handsStarted = true;
                 // Hands must release original item references before any equipment changes.
                 await EmptyHands(Owner.Player);
                 await EmptyHands(Bot.GetPlayer);
+                _applyScope.Preparation.ThrowIfCancellationRequested();
                 ValidateLive();
                 var player = Owner.Player.InventoryController;
                 var bot = Bot.GetPlayer.InventoryController;
@@ -362,6 +433,7 @@ namespace pitTeam.Modules
                 finally { Mutating = false; }
                 committed = true;
                 _committed = true;
+                _applyScope.Commit();
                 // Establish provenance first: a visual/event subscriber failing must not lose returns.
                 var publicationErrors = new List<Exception>();
                 try { TrackOwnership(); }
@@ -389,18 +461,18 @@ namespace pitTeam.Modules
                 keepDraft = !handsStarted && ex is GearSwapValidationException draftError &&
                     (draftError.Key == "SwapGearMagazineSpace" || draftError.Key == "SwapGearNeedsWeapon");
                 if (!keepDraft) Logger.LogError("[SwapGear] Apply " + (committed ? "committed; refresh failed" : "rejected/rolled back") + ": " + ex);
-                Warn(committed ? "SwapGearRefreshFailed" : ex is AggregateException ? "SwapGearRecoveryFailed" :
+                if (!_worldEnding) Warn(committed ? "SwapGearRefreshFailed" : ex is AggregateException ? "SwapGearRecoveryFailed" :
                     ex is GearSwapValidationException validation ? validation.Key : "SwapGearApplyFailed");
             }
             finally
             {
                 try
                 {
-                    if (Applying)
+                    if (Applying && CanContinue(Bot.GetPlayer))
                     {
                         if (committed) RefreshWeapons();
                         await RestoreHands(Bot.GetPlayer, committed ? null : botHands);
-                        if (Bot.GetPlayer.HealthController.IsAlive && Bot.GetPlayer.HandsController != null)
+                        if (CanContinue(Bot.GetPlayer) && Bot.GetPlayer.HandsController != null)
                         {
                             Bot.WeaponManager.UpdateHandsController(Bot.GetPlayer.HandsController, out bool allFine);
                             if (!allFine) throw new InvalidOperationException("Native follower hands binding was rejected.");
@@ -411,17 +483,19 @@ namespace pitTeam.Modules
                 catch (Exception ex)
                 {
                     Logger.LogError("[SwapGear] Hands/equipment refresh failed: " + ex);
-                    Warn("SwapGearRefreshFailed");
+                    if (!_worldEnding) Warn("SwapGearRefreshFailed");
                 }
                 try
                 {
-                    if (Applying) await RestoreHands(Owner.Player, playerHands);
+                    if (Applying && CanContinue(Owner.Player)) await RestoreHands(Owner.Player, playerHands);
                 }
                 catch (Exception ex)
                 {
                     Logger.LogError("[SwapGear] Player hands restore failed: " + ex);
-                    Warn("SwapGearRefreshFailed");
+                    if (!_worldEnding) Warn("SwapGearRefreshFailed");
                 }
+                _applyScope?.Dispose();
+                ReleaseMovement();
                 Applying = false;
                 if (!keepDraft) Close();
             }
@@ -473,10 +547,10 @@ namespace pitTeam.Modules
             FollowerLootedPrimaryWeaponBinding.ReconcileExchangedEquipment(Bot);
         }
 
-        private Task EmptyHands(Player player)
+        private Task EmptyHands(Player player, bool restoring = false)
         {
             return GearSwapHandsTransition.Run<IEmptyHandsController>(
-                () => player?.HealthController?.IsAlive == true,
+                () => CanContinue(player),
                 () => HandsIdle(player),
                 complete =>
                 {
@@ -486,16 +560,19 @@ namespace pitTeam.Modules
                     });
                 },
                 returned => returned != null && player.HandsController is Player.EmptyHandsController &&
-                    !player.HandsController.Destroyed);
+                    !player.HandsController.Destroyed,
+                timeoutMs: Math.Min(10000, _applyScope.RemainingMs),
+                cancellation: restoring ? _applyScope.Lifetime : _applyScope.Preparation);
         }
         private Task RestoreHands(Player player, Item preferred)
         {
-            if (player?.HealthController?.IsAlive != true) return Task.CompletedTask;
+            if (!CanContinue(player)) return Task.CompletedTask;
             return GearSwapBodyRefresh.Run(
-                () => player?.HealthController?.IsAlive == true,
+                () => CanContinue(player),
                 () => player.PlayerBody.SlotViews.Where(view => view.LoadingJob != null).Select(view => view.LoadingJob).ToArray(),
                 () => RestoreHandsCore(player, preferred),
-                () => VerifyHeldWeaponBody(player));
+                () => VerifyHeldWeaponBody(player), timeoutMs: Math.Min(10000, _applyScope.RemainingMs),
+                cancellation: _applyScope.Lifetime);
         }
 
         private static void VerifyHeldWeaponBody(Player player)
@@ -515,7 +592,7 @@ namespace pitTeam.Modules
 
         private Task RestoreHandsCore(Player player, Item preferred)
         {
-            if (player?.HealthController?.IsAlive != true) return Task.CompletedTask;
+            if (!CanContinue(player)) return Task.CompletedTask;
             var equipment = player.InventoryController.Inventory.Equipment;
             // Never restore a gun that the accepted draft moved into cargo, or an incomplete firearm.
             bool preferredEquipped = preferred?.CurrentAddress?.Container?.ParentItem == equipment &&
@@ -525,9 +602,9 @@ namespace pitTeam.Modules
                 .FirstOrDefault(w => !w.MissingVitalParts.Any());
             // A player may deliberately give away their last firearm; null is not a valid
             // argument to EFT's item-generic SetInHands and must use the empty-hands path.
-            if (item == null) return EmptyHands(player);
+            if (item == null) return EmptyHands(player, restoring: true);
             return GearSwapHandsTransition.Run<IHandsController>(
-                () => player?.HealthController?.IsAlive == true,
+                () => CanContinue(player),
                 () => HandsIdle(player),
                 complete =>
                 {
@@ -538,7 +615,8 @@ namespace pitTeam.Modules
                 },
                 returned => returned?.Item?.Id == item.Id && player.HandsController?.Item?.Id == item.Id &&
                     player.HandsController?.Destroyed == false &&
-                    (!(item is Weapon) || returned is IFirearmHandsController));
+                    (!(item is Weapon) || returned is IFirearmHandsController),
+                timeoutMs: Math.Min(10000, _applyScope.RemainingMs), cancellation: _applyScope.Lifetime);
         }
         private static bool HandsIdle(Player player) => player.ProcessStatus == Player.EProcessStatus.None &&
             !player.InventoryController.IsChangingWeapon;
@@ -549,23 +627,31 @@ namespace pitTeam.Modules
         }
         internal void Close()
         {
-            if (!_closed) _screen.CloseScreen();
-            Cleanup();
+            try { if (!_closed) _screen.CloseScreen(); }
+            finally { Cleanup(); }
         }
         private void Cleanup()
         {
             if (_closed) return;
             _closed = true;
+            _applyScope?.Stop();
+            ReleaseMovement();
             TraceInsurance(_committed ? "closeCommitted" : "closeCancelled", draft: false);
             GearSwapInsuranceDiagnostics.End(_committed);
-            _screen.OnClose -= OnScreenClosed;
-            Owner.Player.SetInventoryOpened(false);
-            PlayerDraft.Session = null;
-            BotDraft.Session = null;
-            foreach (var tab in _hiddenTabs)
-                if (tab.Key != null) tab.Key.SetActive(tab.Value);
-            _hiddenTabs.Clear();
-            if (ReferenceEquals(Current, this)) Current = null;
+            try
+            {
+                _screen.OnClose -= OnScreenClosed;
+                if (Owner.Player != null && !Owner.Player.Destroyed) Owner.Player.SetInventoryOpened(false);
+                foreach (var tab in _hiddenTabs)
+                    if (tab.Key != null) tab.Key.SetActive(tab.Value);
+            }
+            finally
+            {
+                PlayerDraft.Session = null;
+                BotDraft.Session = null;
+                _hiddenTabs.Clear();
+                if (ReferenceEquals(Current, this)) Current = null;
+            }
         }
         private static void Warn(string key) => EFT.Communications.NotificationManager.DisplayWarningNotification(
             pitFireTeam.GetSocialUiText(key), EFT.Communications.ENotificationDurationType.Default);

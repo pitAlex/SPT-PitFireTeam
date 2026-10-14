@@ -531,7 +531,11 @@ Your teammates can still successfully extract after your death and return any lo
 
 ## Friendly Encounters
 
-Guns for Hire brings potential allies from your own faction; Allegiance can bring allies from either side. **Friendly Chance Multiplier** improves your odds of meeting one, but has no effect while **Friendly PMC Side** or **Bad Guy** is on.
+Guns for Hire brings potential allies from your own faction; Allegiance can bring allies from either side. **Friendly Encounter Chance** improves your odds of meeting one, but has no effect while **Friendly PMC Side** or **Bad Guy** is on.
+
+In Allegiance, some lone Scavs may be willing to team up too. Scavs judge you by your standing with Fence. Have your Scav buddy collect loot and make it out alive—Fence will return what he still carries, and your reputation with him will grow. At a real co-op exit, you'll also get Fence's usual gift. Scavs won't join your roster afterward. This also works when SVM turns a co-op exit into a paid one, as long as your Scav buddy is alive and still following you.
+
+A Scav at your side can cool things down with the locals. Turn on three neutral Scavs, yourself or through your orders, and your Scav companions leave. The locals turn against you for the rest of the raid. Fence remembers each betrayal, too. Your PMC squad picking a fight on its own won't cost you that trust.
 
 ## Loadout Management
 
@@ -541,8 +545,7 @@ Before editing teammate loadouts, check **Known Issues and Conflicts** for curre
 
 ![Loadout Management](https://iili.io/BpKDP4I.md.png)
 
-- **Restricted** — Teammate loadouts must use gear from your stash or be purchased through **Kit Loadouts**. Gear is still protected: it is not lost on death and cannot be extracted with.
-    - **Field Upkeep** — Track raid wear and spent supplies for teammates while their gear remains protected from death loss and extraction.
+- **Restricted** — Gear comes from your stash and cannot be extracted with. Raid wear and spent supplies persist, but gear is kept if a teammate dies.
 - **Immersive (default)** — Same as Restricted, but teammate gear behaves like real raid equipment. Equipment can become damaged, dead teammates lose their gear, and their bodies can be looted.
 - **Realistic** — Same as Immersive, but secure containers are no longer automatically managed for teammates. You are fully responsible for configuring them yourself.
 
@@ -577,7 +580,7 @@ The mod changes bot grouping, teammate ownership, commands, and combat routing. 
 
 Mods that add custom gear like belts should not be used on teammates; it can cause game crashes.
 
-The Labyrinth is a special map with special AI, not meant to AI followers. They will not spawn there.
+Followers can transit with you into Labyrinth and use the same close-quarters distance settings as Factory and Labs.
 
 In teammate loadout editing, do not repair equipment and then move items into or out of the teammate loadout before saving. For now, repair should be the last step before saving. If the editor starts failing after this, cancel out of the Edit Loadout overlay, re-open Edit Loadout, then save without moving anything.
 
