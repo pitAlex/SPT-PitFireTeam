@@ -7,6 +7,30 @@ namespace pitTeam.Modules
 {
     public static class SainAddonBridge
     {
+        private static Func<BotOwner, Vector3?>? _getMovementCorner;
+        private static Action<BotOwner>? _releaseWireCover;
+        public static void RegisterMovementCornerProvider(Func<BotOwner, Vector3?> provider, Action<BotOwner> releaseWireCover)
+        {
+            _getMovementCorner = provider;
+            _releaseWireCover = releaseWireCover;
+        }
+        public static void UnregisterMovementCornerProvider(Func<BotOwner, Vector3?> provider)
+        {
+            if (_getMovementCorner == provider) { _getMovementCorner = null; _releaseWireCover = null; }
+        }
+        public static void ReleaseWireCover(BotOwner owner)
+        {
+            if (IsFollowerCombatEnabled(owner)) _releaseWireCover?.Invoke(owner);
+        }
+        // A handled null is authoritative: native EFT path state may be stale while SAIN owns movement.
+        public static bool TryGetMovementCorner(BotOwner owner, out Vector3? corner)
+        {
+            corner = null;
+            if (_getMovementCorner == null || !IsFollowerCombatEnabled(owner)) return false;
+            corner = _getMovementCorner(owner);
+            return true;
+        }
+
         private static Func<BotOwner, object?>? _getSquadSnapshot;
         public static bool HasSquadProvider => _getSquadSnapshot != null;
         public static void RegisterSquadSnapshot(Func<BotOwner, object?> provider) => _getSquadSnapshot = provider;
@@ -184,6 +208,12 @@ namespace pitTeam.Modules
         /// <summary>
         /// Raise the boss-group static update event (called from core boss-group paths).
         /// </summary>
+        public static void NotifyCombatEpisode(BotOwner owner, bool active)
+        {
+            if (owner?.BotFollower?.BossToFollow is not pitAIBossPlayer boss) return;
+            boss.NotifyAddonCombatEpisode(owner, active);
+        }
+
         public static void RaiseBossGroupStaticUpdate(pitAIBossPlayer boss)
         {
             if (!pitFireTeam.IsSainFollowerCombatAvailable && !SainAddonBridge.HasSquadProvider)

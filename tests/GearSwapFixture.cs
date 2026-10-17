@@ -76,10 +76,11 @@ static class GearSwapFixture
         foreach (EquipmentSlot slot in Enum.GetValues(typeof(EquipmentSlot)))
         {
             var item = Child(bot, slot.ToString());
-            Check(AccessPolicy.CanEdit(item, player, bot) == AccessPolicy.VisibleSlots.Contains(slot), "exact follower slot policy " + slot);
+            Check(AccessPolicy.CanEdit(item, player, bot) ==
+                (AccessPolicy.VisibleSlots.Contains(slot) && slot != EquipmentSlot.Pockets), "exact follower slot policy " + slot);
             Check(AccessPolicy.CanEdit(Child(player, slot.ToString()), player, bot), "player layout unaffected " + slot);
         }
-        Check(AccessPolicy.VisibleSlots.Count == 9, "exactly nine editable follower slots including holster");
+        Check(AccessPolicy.VisibleSlots.Count == 10, "nine gear slots plus visible normal pockets");
         foreach (bool spawned in new[] { false, true })
         {
             var pistol = Child(bot, "Holster");
@@ -99,41 +100,45 @@ static class GearSwapFixture
         var backpackLoot = Child(backpack, "main");
         var nestedBag = Child(backpack, "main");
         var nestedLoot = Child(nestedBag, "main");
-        var sealedBags = new HashSet<string> { backpack.Id };
-        Check(AccessPolicy.IsInOpaqueBackpack(backpack, sealedBags), "whole backpack cannot open a contents window");
-        Check(AccessPolicy.IsInOpaqueBackpack(nestedBag, sealedBags), "nested container cannot open a contents window");
-        Check(AccessPolicy.IsInOpaqueBackpack(nestedLoot, sealedBags), "deep descendants stay in sealed tree");
-        Check(!AccessPolicy.IsInOpaqueBackpack(detachedPreset, sealedBags), "detached unrelated item is safe");
-        Check(!AccessPolicy.IsInOpaqueBackpack(null, sealedBags), "null item is not sealed");
-        Check(AccessPolicy.CanEdit(backpack, player, bot, true, sealedBags), "whole spawned backpack can move");
-        Check(!AccessPolicy.CanEdit(backpack, player, bot, false, sealedBags), "whole recruited backpack cannot move");
-        Check(!AccessPolicy.CanEdit(backpackLoot, player, bot, true, sealedBags), "backpack loose loot stays locked");
-        Check(!AccessPolicy.CanEdit(nestedLoot, player, bot, true, sealedBags), "nested backpack loot stays locked");
-        Check(!AccessPolicy.CanPlace(Address(backpack, "main"), player, bot, true, sealedBags), "cannot add to sealed backpack grid");
-        Check(!AccessPolicy.CanEdit(backpackLoot, player, bot, true), "follower backpack descendants denied even without registered seal");
+        Check(AccessPolicy.CanEdit(backpack, player, bot, true), "whole spawned backpack can move");
+        Check(!AccessPolicy.CanEdit(backpack, player, bot, false), "whole recruited backpack cannot move");
+        Check(AccessPolicy.CanEdit(backpackLoot, player, bot, true), "backpack loose loot editable");
+        Check(AccessPolicy.CanEdit(nestedLoot, player, bot, true), "nested backpack loot editable");
+        Check(AccessPolicy.CanPlace(Address(backpack, "main"), player, bot, true), "empty backpack grid accepts items");
+        Check(AccessPolicy.CanPlace(Address(nestedBag, "main"), player, bot, true), "nested backpack grid accepts items");
+        Check(!AccessPolicy.CanEdit(backpackLoot, player, bot, false), "ineligible backpack ancestry stays denied");
         backpack.Parent = Address(player, "Backpack");
-        Check(AccessPolicy.CanEdit(backpack, player, bot, true, sealedBags), "removed whole backpack stays movable on player side");
-        Check(AccessPolicy.IsInOpaqueBackpack(backpack, sealedBags), "removed whole backpack contents window remains blocked");
-        Check(!AccessPolicy.CanEdit(backpackLoot, player, bot, true, sealedBags), "removing backpack cannot bypass contents lock");
+        Check(AccessPolicy.CanEdit(backpack, player, bot, true), "removed whole backpack stays movable on player side");
+        Check(AccessPolicy.CanEdit(backpackLoot, player, bot, true), "removed backpack contents stay editable");
         Check(ReferenceEquals(backpackLoot.Parent.Container.ParentItem, backpack), "whole removal leaves child attached to same backpack");
         var playerBag = Child(player, "Backpack");
         var playerBagLoot = Child(playerBag, "main");
-        Check(AccessPolicy.CanEdit(playerBagLoot, player, bot, true, sealedBags), "unrelated player backpack contents remain editable");
-        // Replay must follow draft chronology, not apply the final seal set to earlier edits.
-        Check(AccessPolicy.CanEdit(playerBagLoot, player, bot, true, sealedBags), "player bag can be prepared before handover");
+        Check(AccessPolicy.CanEdit(playerBagLoot, player, bot, true), "unrelated player backpack contents remain editable");
         playerBag.Parent = Address(bot, "Backpack");
-        sealedBags.Add(playerBag.Id);
-        Check(AccessPolicy.CanEdit(playerBag, player, bot, true, sealedBags), "replacement backpack can be returned as a whole");
-        Check(!AccessPolicy.CanEdit(playerBagLoot, player, bot, true, sealedBags), "handed-over replacement contents become locked");
+        Check(AccessPolicy.CanEdit(playerBag, player, bot, true), "replacement backpack can be returned as a whole");
+        Check(AccessPolicy.CanEdit(playerBagLoot, player, bot, true), "replacement contents editable after handover");
+        Check(AccessPolicy.CanPlace(Address(playerBag, "main"), player, bot, true), "replacement grid accepts items after handover");
         playerBag.Parent = Address(backpack, "main");
-        Check(!AccessPolicy.CanEdit(playerBagLoot, player, bot, true, sealedBags), "nesting a sealed replacement cannot expose contents");
+        Check(AccessPolicy.CanEdit(playerBagLoot, player, bot, true), "nested replacement contents remain editable");
         var vest = Child(bot, "TacticalVest");
         var valuable = Child(vest, "main");
         Check(AccessPolicy.CanEdit(valuable, player, bot), "ordinary vest loot editable");
         Check(AccessPolicy.CanPlace(valuable.Parent, player, bot), "vest accepts loose items");
         Check(AccessPolicy.CanEdit(Child(Child(bot, "ArmorVest"), "plate_front"), player, bot), "individual plate editable");
         Check(!AccessPolicy.CanEdit(Child(Child(bot, "Backpack"), "main"), player, bot), "nested hidden backpack denied");
-        Check(!AccessPolicy.CanEdit(Child(Child(bot, "Pockets"), "main"), player, bot), "nested pockets denied");
+        var pockets = Child(bot, "Pockets");
+        Check(AccessPolicy.IsVisibleFollowerSlot(EquipmentSlot.Pockets, true), "normal pockets visible");
+        Check(AccessPolicy.CanEdit(Child(pockets, "main"), player, bot, true), "normal pocket contents editable");
+        Check(AccessPolicy.CanPlace(Address(pockets, "main"), player, bot, true), "empty normal pocket cells accept items");
+        Check(AccessPolicy.CanEdit(Child(Child(pockets, "main"), "main"), player, bot, true), "nested normal pocket contents editable");
+        Check(!AccessPolicy.CanEdit(pockets, player, bot, true), "structural pocket container cannot be removed");
+        Check(!AccessPolicy.CanPlace(Address(bot, "Pockets"), player, bot, true), "structural pocket container cannot be replaced");
+        var special = Child(pockets, "SpecialSlot1");
+        Check(!AccessPolicy.CanEdit(special, player, bot, true), "follower special slot item remains protected");
+        Check(!AccessPolicy.CanPlace(Address(pockets, "SpecialSlot2"), player, bot, true), "empty follower special slot remains protected");
+        Check(!AccessPolicy.CanEdit(Child(special, "main"), player, bot, true), "nested special slot contents remain protected");
+        Check(AccessPolicy.CanEdit(Child(Child(player, "Pockets"), "SpecialSlot1"), player, bot, true), "player special slot access unaffected");
+        Check(!AccessPolicy.CanEdit(Child(Child(bot, "SecuredContainer"), "main"), player, bot, true), "secure container contents remain protected");
         Check(!AccessPolicy.CanPlace(Address(bot, "SecuredContainer"), player, bot), "empty hidden destination denied");
         Check(!AccessPolicy.CanEdit(bot, player, bot) && !AccessPolicy.CanEdit(player, player, bot), "equipment roots cannot move");
         Check(!AccessPolicy.CanEdit(Child(new InventoryEquipment(), "TacticalVest"), player, bot), "foreign inventory denied");
@@ -142,7 +147,6 @@ static class GearSwapFixture
         Check(!AccessPolicy.CanPlace(Address(bot, "unexpected_mod_slot"), player, bot), "unknown mod slot denied");
         Check(!AccessPolicy.CanPlace(Address(new Item(), "main"), null, bot), "unowned address denied");
         var cycle = new Item(); cycle.Parent = Address(cycle, "cycle");
-        Check(!AccessPolicy.IsInOpaqueBackpack(cycle, sealedBags), "cyclic container lookup terminates safely");
         Check(!AccessPolicy.CanEdit(cycle, player, bot), "cyclic path terminates safely");
 
         int state = 0, published = 0;

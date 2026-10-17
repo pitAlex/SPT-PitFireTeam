@@ -139,8 +139,9 @@ namespace pitTeam.Patches
             }
 
             BattleRecorder.RecordGrenadeEvent(bot, "releaseBlocked", reason, target: data?.Target);
-            // Do not interrupt the executing hands operation. Its ordinary on-used
-            // callback finishes the sequence and restores the weapon even on a veto.
+            if (ReferenceEquals(____player.HandsController, __instance) &&
+                !FollowerGrenadeRuntimeGate.HasReleasedThrow(bot))
+                FollowerBlockedGrenadeRecovery.Record(bot, __instance);
             return false;
         }
     }

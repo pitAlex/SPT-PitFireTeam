@@ -30,6 +30,7 @@ internal sealed class SAINFollowerRegroupObjective(BotComponent bot) : BotBase(b
     private bool completePath, hasTarget;
     private Vector3 measuredPlayer, measuredBot, target, targetPlayer;
     private CoverPoint cover;
+    private float automaticCompletion;
     private string movement;
     private float autoRetryAt;
 
@@ -66,9 +67,10 @@ internal sealed class SAINFollowerRegroupObjective(BotComponent bot) : BotBase(b
         if (command == FollowerCommandType.RegroupNearBoss)
         {
             bool tight = follower.TightRegroupRequested;
+            bool determinationRegroup = follower.DeterminationRegroupRequested;
             follower.ClearOrderedPushTargetLock("SAIN:Regroup");
             follower.ClearCommand("SAIN:ConsumeRegroup");
-            Begin(SAINRegroupMode.Command, tight);
+            Begin(SAINRegroupMode.Command, tight, determinationRegroup: determinationRegroup);
             follower.SetCombatRegroupBossAnchor(true);
             // Cancels only this follower's old action/path through native lifecycle APIs.
             Bot.Mover.Stop();
@@ -124,6 +126,8 @@ internal sealed class SAINFollowerRegroupObjective(BotComponent bot) : BotBase(b
         // has no advance left to protect; retain its failure while allowing escort recovery.
         if (push?.Ordered == true && (!push.Exhausted || push.AwaitingTarget || push.EnemyId != enemy.EnemyProfileId))
             return RejectAuto("orderedPush");
+        if (push?.Mode == SAINPushMode.Automatic && !push.AllowsArbitration)
+            return RejectAuto("pushCommitment");
         bool failedPush = solo == ECombatDecision.SeekCover && push is { Exhausted: true } &&
             push.EnemyId == enemy.EnemyProfileId && Bot.Cover.CoverPoint_MovingTo == null &&
             (!Bot.Mover.Moving || Bot.CurrentAction is SAINFollowerMoveToEngageAction);
@@ -180,10 +184,11 @@ internal sealed class SAINFollowerRegroupObjective(BotComponent bot) : BotBase(b
         return false;
     }
 
-    private void Begin(SAINRegroupMode mode, bool tight, string reason = "activate")
+    private void Begin(SAINRegroupMode mode, bool tight, string reason = "activate", bool determinationRegroup = false)
     {
         ReleaseTarget();
         Mode = mode; Tight = tight; settleUntil = 0f; nextDistanceCheck = 0f; movement = null;
+        automaticCompletion = mode == SAINRegroupMode.Auto || determinationRegroup ? SainRegroupBridge.GetAutomaticCompleteDistance(BotOwner) : 0f;
         SainRegroupBridge.Record(BotOwner, Mode.ToString(), tight ? "activateTight" : reason);
     }
 
@@ -217,8 +222,8 @@ internal sealed class SAINFollowerRegroupObjective(BotComponent bot) : BotBase(b
         Measure(player); result = distance; return completePath;
     }
 
-    private float CompleteDistance => Mode == SAINRegroupMode.Auto
-        ? Mathf.Min(SainRegroupBridge.GetCompleteDistance(BotOwner, false), Mathf.Max(2f, SainRegroupBridge.GetTriggerDistance(BotOwner) - 2f))
+    private float CompleteDistance => automaticCompletion > 0f
+        ? automaticCompletion
         : SainRegroupBridge.GetCompleteDistance(BotOwner, Tight);
     private bool AtPlayer(Vector3 player) => completePath && distance <= CompleteDistance && SainRegroupBridge.SameLevel(BotOwner.Position, player);
 

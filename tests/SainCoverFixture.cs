@@ -12,6 +12,9 @@ using SAIN.Preset.Shared.Enums;
 using SAIN.SAINComponent.Classes;
 using SAIN.SAINComponent.SubComponents.CoverFinder;
 using UnityEngine;
+namespace pitTeam.Modules {
+    public static class FollowerWireNavigation {public static Func<Vector3,bool> UnsafePosition;public static bool IsCoverUnsafe(Vector3 p)=>UnsafePosition?.Invoke(p)==true;}
+}
 
 namespace UnityEngine {
     public class Collider { public CoverPoint Point; }
@@ -284,10 +287,12 @@ public static partial class CombatChecks {
         var pending=CoverBot("pendingNoCover");for(int i=0;i<32;i++)SainBotCoverData.Scene.Add(new SainBotColliderData{Collider=new Collider{Point=CoverAt(10+i)}});
         pending.Sain.Cover.FindForTest();var dogfight=new SAIN.SAINComponent.Classes.Mover.DogFight(pending.Sain);
         dogfight.DogFightMove(true,pending.Sain.GoalEnemy);
-        Check(dogfight.Moves==0,"unfinished boss scan cannot trigger native no-cover aggressive advance");
-        dogfight.DogFightMove(false,pending.Sain.GoalEnemy);Check(dogfight.Moves==1,"defensive dogfight retains priority while cover scan is pending");
+        Check(dogfight.Moves==1&&!dogfight.LastAggressive&&dogfight.Advances==0,"unfinished boss scan cannot trigger native no-cover aggressive advance");
+        dogfight.BackupAvailable=true;dogfight.DogFightMove(false,pending.Sain.GoalEnemy);
+        Check(dogfight.Moves==2&&dogfight.Backups==1,"defensive dogfight retains priority while cover scan is pending");
+        dogfight.BackupAvailable=false;
         pending.Sain.Decision.CurrentCombatDecision=ECombatDecision.DogFight;dogfight.DogFightMove(true,pending.Sain.GoalEnemy);
-        Check(dogfight.Moves==2,"actual native dogfight decision can preempt pending cover selection");
+        Check(dogfight.Moves==3&&dogfight.LastAggressive&&dogfight.Advances==1,"actual native dogfight decision can preempt pending cover selection");
         var idle=CoverBot("idleRoute");int calls=pitTeam.Utils.Utils.PathCalls;
         for(int i=0;i<10;i++){Time.time+=0.6f;SAINFollowerRuntime.GetRegroup(idle).Observe();}
         Check(pitTeam.Utils.Utils.PathCalls==calls,"inactive regroup observes orders without calculating player routes");

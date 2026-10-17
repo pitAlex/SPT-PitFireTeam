@@ -50,6 +50,7 @@ internal sealed class SAINFollowerObjectives
     {
         nextSolo = solo; nextSquad = squad;
         Observe();
+        Push.RefreshCommitment(enemy, solo, self);
         if (Relocation.GetDecision(enemy, solo, self, out nextSolo))
         { nextSquad = ESquadDecision.None; return true; }
         if (SquadSupport.Filter(enemy, solo, squad, self, out nextSquad))
@@ -68,11 +69,11 @@ internal sealed class SAINFollowerObjectives
         if (Push.GetDecision(enemy, solo, squad, self, regroup.Active, out nextSolo))
         {
             nextSquad = ESquadDecision.None;
-            // Like core Rifleman, rejected advancement may hold locally or regroup.
-            // Assessing has no committed advance; the normal regroup gates still protect
-            // native cover travel/arrival, useful fire, recovery and independence.
+            // Like core Rifleman, rejected or passively blocked automatic advancement
+            // may hold locally or regroup. The shared commitment result protects
+            // native cover travel/arrival, useful fire and recovery.
             // TryBeginAuto also protects unfinished orders; only an exhausted order may yield.
-            if ((Push.Exhausted || Push.Phase == SAINPushPhase.Assessing) &&
+            if ((Push.Exhausted || Push.AllowsArbitration) &&
                 regroup.TryBeginAuto(enemy, nextSolo, nextSquad, self))
             { nextSolo = ECombatDecision.None; nextSquad = ESquadDecision.Regroup; }
             return true;

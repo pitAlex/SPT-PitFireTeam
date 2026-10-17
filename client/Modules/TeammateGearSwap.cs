@@ -20,7 +20,7 @@ namespace pitTeam.Modules
         {
             EquipmentSlot.FirstPrimaryWeapon, EquipmentSlot.SecondPrimaryWeapon, EquipmentSlot.Holster,
             EquipmentSlot.TacticalVest, EquipmentSlot.ArmorVest, EquipmentSlot.Headwear,
-            EquipmentSlot.FaceCover, EquipmentSlot.Eyewear, EquipmentSlot.Earpiece
+            EquipmentSlot.FaceCover, EquipmentSlot.Eyewear, EquipmentSlot.Earpiece, EquipmentSlot.Pockets
         };
         internal static bool IsVisibleFollowerSlot(EquipmentSlot slot, bool allowBackpack) =>
             VisibleSlots.Contains(slot) || (allowBackpack && slot == EquipmentSlot.Backpack);
@@ -36,8 +36,6 @@ namespace pitTeam.Modules
         internal bool Applying { get; private set; }
         internal bool Mutating { get; private set; }
         internal readonly bool AllowBackpackSwap;
-        private readonly HashSet<string> _opaqueBackpackIds = new HashSet<string>();
-        private readonly HashSet<string> _initialOpaqueBackpackIds = new HashSet<string>();
         private readonly List<GearSwapEdit> _edits = new List<GearSwapEdit>();
         private readonly Dictionary<string, Item> _draftItems;
         private readonly string _playerBefore, _botBefore;
@@ -70,11 +68,6 @@ namespace pitTeam.Modules
             Profile botProfile = Clone(bot.Profile);
             PlayerDraft = new GearSwapInventoryController(playerProfile) { Session = this };
             BotDraft = new GearSwapInventoryController(botProfile) { Session = this };
-            if (AllowBackpackSwap)
-            {
-                RememberBackpack(FollowerEquipment, _opaqueBackpackIds);
-                _initialOpaqueBackpackIds.UnionWith(_opaqueBackpackIds);
-            }
             _draftItems = Index(PlayerEquipment, FollowerEquipment);
             var liveItems = Index(owner.Player.InventoryController.Inventory.Equipment, bot.GetPlayer.InventoryController.Inventory.Equipment);
             if (_draftItems.Any(pair => liveItems.TryGetValue(pair.Key, out Item live) && ReferenceEquals(live, pair.Value)))
@@ -298,42 +291,33 @@ namespace pitTeam.Modules
                 ItemBinarySerializer.SerializeItem(equipment, FullySearchedSearchController.Instance)));
 
         internal static bool CanEdit(Item item, InventoryEquipment player, InventoryEquipment bot,
-            bool allowBackpack = false, ISet<string> opaqueBackpacks = null)
+            bool allowBackpack = false)
         {
             if (item == null || ReferenceEquals(item, player) || ReferenceEquals(item, bot)) return false;
-            return CanPlace(item.CurrentAddress, player, bot, allowBackpack, opaqueBackpacks);
+            return CanPlace(item.CurrentAddress, player, bot, allowBackpack);
         }
         internal static bool CanPlace(ItemAddress address, InventoryEquipment player, InventoryEquipment bot,
-            bool allowBackpack = false, ISet<string> opaqueBackpacks = null)
+            bool allowBackpack = false)
         {
+            bool special = false;
             for (int depth = 0; address != null && depth < 64; depth++)
             {
                 Item parent = address.Container.ParentItem;
-                // A whole bag may move, but its contents stay sealed for this draft even
-                // after moving the bag onto the player's side or nesting it in another bag.
-                if (parent != null && opaqueBackpacks?.Contains(parent.Id) == true) return false;
+                special |= address.Container.ID?.StartsWith("SpecialSlot", StringComparison.Ordinal) == true;
                 if (player != null && ReferenceEquals(parent, player)) return true;
                 if (ReferenceEquals(parent, bot))
-                    return Enum.TryParse(address.Container.ID, out EquipmentSlot slot) &&
-                        IsVisibleFollowerSlot(slot, allowBackpack) && (slot != EquipmentSlot.Backpack || depth == 0);
+                    return !special && Enum.TryParse(address.Container.ID, out EquipmentSlot slot) &&
+                        IsVisibleFollowerSlot(slot, allowBackpack) && (slot != EquipmentSlot.Pockets || depth > 0);
                 address = parent?.CurrentAddress;
-            }
-            return false;
-        }
-        internal static bool IsInOpaqueBackpack(Item item, ISet<string> opaqueBackpacks)
-        {
-            for (int depth = 0; item != null && depth < 64; depth++)
-            {
-                if (opaqueBackpacks.Contains(item.Id)) return true;
-                item = item.CurrentAddress?.Container?.ParentItem;
             }
             return false;
         }
         internal bool IsDraft(Item item) => item != null && _draftItems.TryGetValue(item.Id, out Item found) && ReferenceEquals(found, item);
         internal bool CanSeeFollowerSlot(EquipmentSlot slot) => IsVisibleFollowerSlot(slot, AllowBackpackSwap);
-        internal bool IsOpaqueBackpack(Item item) => IsDraft(item) && IsInOpaqueBackpack(item, _opaqueBackpackIds);
-        internal bool CanEditDraft(Item item) => CanEdit(item, PlayerEquipment, FollowerEquipment, AllowBackpackSwap, _opaqueBackpackIds);
-        internal bool CanPlaceDraft(ItemAddress address) => CanPlace(address, PlayerEquipment, FollowerEquipment, AllowBackpackSwap, _opaqueBackpackIds);
+        internal bool IsFollowerPockets(Item item) => item != null &&
+            ReferenceEquals(item, FollowerEquipment.GetSlot(EquipmentSlot.Pockets).ContainedItem);
+        internal bool CanEditDraft(Item item) => CanEdit(item, PlayerEquipment, FollowerEquipment, AllowBackpackSwap);
+        internal bool CanPlaceDraft(ItemAddress address) => CanPlace(address, PlayerEquipment, FollowerEquipment, AllowBackpackSwap);
         internal bool CanEditPlateSlot(Slot slot, bool allowCommit = false)
         {
             if (_closed || _cancelled || !(slot is ArmorSlot) || slot.Locked || slot.ParentItem == null) return false;
@@ -343,18 +327,12 @@ namespace pitTeam.Modules
             // transaction may bypass their equipped-state check; ordinary live UI may not.
             return allowCommit && Mutating && TreatCommitAddressKnown(carrier.CurrentAddress);
         }
-        private static void RememberBackpack(InventoryEquipment equipment, ISet<string> opaqueBackpacks)
-        {
-            Item backpack = equipment.GetSlot(EquipmentSlot.Backpack)?.ContainedItem;
-            if (backpack != null) opaqueBackpacks.Add(backpack.Id);
-        }
 
         internal void Stage(GearSwapEdit edit, InventoryController controller)
         {
             if (_closed || _cancelled || Applying) throw new InvalidOperationException("Draft is closed.");
             edit.ValidateProvenance(_playerOwnedIds);
             IOperationResult applied = edit.Execute(_draftItems, controller, CanEditDraft, CanPlaceDraft);
-            if (AllowBackpackSwap) RememberBackpack(FollowerEquipment, _opaqueBackpackIds);
             _edits.Add(edit);
             edit.UpdateProvenance(_playerOwnedIds);
             // UI notifications affect only owners of the cloned items.
@@ -405,7 +383,6 @@ namespace pitTeam.Modules
                 var player = Owner.Player.InventoryController;
                 var bot = Bot.GetPlayer.InventoryController;
                 var items = Index(player.Inventory.Equipment, bot.Inventory.Equipment);
-                var replayOpaqueBackpacks = new HashSet<string>(_initialOpaqueBackpackIds);
                 List<IOperationResult> applied;
                 Mutating = true;
                 try
@@ -413,11 +390,8 @@ namespace pitTeam.Modules
                     applied = GearSwapTransaction.Execute(_edits.Select(edit => (Func<IOperationResult>)(() =>
                     {
                         var result = edit.Execute(items, player,
-                            i => CanEdit(i, player.Inventory.Equipment, bot.Inventory.Equipment, AllowBackpackSwap, replayOpaqueBackpacks),
-                            a => CanPlace(a, player.Inventory.Equipment, bot.Inventory.Equipment, AllowBackpackSwap, replayOpaqueBackpacks));
-                        // Match draft order: player contents edited before handing over a bag
-                        // must replay before that replacement becomes sealed on the follower.
-                        if (AllowBackpackSwap) RememberBackpack(bot.Inventory.Equipment, replayOpaqueBackpacks);
+                            i => CanEdit(i, player.Inventory.Equipment, bot.Inventory.Equipment, AllowBackpackSwap),
+                            a => CanPlace(a, player.Inventory.Equipment, bot.Inventory.Equipment, AllowBackpackSwap));
                         return result;
                     })),
                         result => result.RollBack(), () =>
@@ -525,7 +499,7 @@ namespace pitTeam.Modules
             // Track each new descendant too: a plate or magazine may later leave its original parent.
             InteractableObjects.StoreGearSwapReturnItems(Bot,
                 items.Where(i => _playerOwnedIds.Contains(i.Id) && !ReferenceEquals(i, equipment)));
-            foreach (EquipmentSlot slot in VisibleSlots)
+            foreach (EquipmentSlot slot in VisibleSlots.Where(slot => slot != EquipmentSlot.Pockets))
             {
                 Item root = equipment.GetSlot(slot).ContainedItem;
                 if (root != null) InteractableObjects.ClearStrictCargoTree(Bot, root);

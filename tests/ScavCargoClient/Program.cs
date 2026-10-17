@@ -127,8 +127,31 @@ public static class Program
             End();Check(Returned().Single()=="given","Successful extraction does not depend on exit collider/controller availability");
         }
         foreach(var status in Enum.GetValues<ExitStatus>()) {
-            bot=Setup();Give(bot);End(status);Check(FollowerInsuranceRaidReports.Sent.Count==(status is ExitStatus.Survived or ExitStatus.Runner ? 1:0),"Only living final extraction captures cargo");
+            bot=Setup();Give(bot);End(status);Check(FollowerInsuranceRaidReports.Sent.Count==(status is ExitStatus.Survived or ExitStatus.Runner or ExitStatus.Transit ? 1:0),"Living extraction or departing transit captures cargo");
+            if(FollowerInsuranceRaidReports.Sent.Count>0)
+                Check(FollowerInsuranceRaidReports.Sent.Single()["transit"].Value<bool>()==(status==ExitStatus.Transit),"Transit settlement is explicit and distinct from final extraction");
         }
+        bot=Setup();Give(bot);End(ExitStatus.Transit,"transit");
+        Check(Returned().Single()=="given","Departing Scav returns commanded cargo at transit, not his starting kit");
+        End(ExitStatus.Transit,"transit");End();
+        Check(FollowerInsuranceRaidReports.Sent.Count==1,"Transit and later duplicate Stop callbacks cannot settle the same Scav twice");
+        AllegianceScavCargo.Reset();BossPlayers.Followers.Clear();End();
+        Check(FollowerInsuranceRaidReports.Sent.Count==1,"Next map has no departing Scav or cargo to settle again");
+        bot=Setup();End(ExitStatus.Transit,"transit");
+        Check(FollowerInsuranceRaidReports.Sent.Count==1 && Returned().Length==0,"Transit with an empty-handed Scav still captures partner evidence for a Fence note");
+        foreach(int unavailable in new[]{0,1,2,3,4,5}) {
+            bot=Setup();Give(bot);
+            if(unavailable==0)bot.IsDead=true;
+            if(unavailable==1)Human.HealthController.IsAlive=false;
+            if(unavailable==2)BossPlayers.Followers.Clear();
+            if(unavailable==3)AllegianceScavRelations.TrustBroken=true;
+            if(unavailable==4)BossPlayers.Followers[bot.ProfileId].IsSquadMate=true;
+            End(ExitStatus.Transit,unavailable==5 ? "" : "transit");
+            Check(FollowerInsuranceRaidReports.Sent.Count==0,"Transit preserves death, dismissal, betrayal, squad and exit-evidence exclusions");
+        }
+        bot=Setup();AllegianceScavCargo.Reset();bot.GetPlayer.Side=EPlayerSide.Bear;
+        AllegianceScavCargo.OnRecruited(bot,Human);Give(bot);End(ExitStatus.Transit,"transit");
+        Check(FollowerInsuranceRaidReports.Sent.Count==0,"PMC field recruits do not enter Scav transit settlement");
         bot=Setup();Give(bot);End(exit:"other");Check(Returned().Single()=="given","Native end result supplies the exit name without a second scene lookup");
         bot=Setup();Give(bot);End(exit:"");Check(FollowerInsuranceRaidReports.Sent.Count==0,"Missing exit evidence cannot return cargo");
         bot=Setup();Give(bot);AllegianceScavCargo.EndRaid("other-player",ExitStatus.Survived,"co-op");Check(FollowerInsuranceRaidReports.Sent.Count==0,"Another player cannot claim a companion");

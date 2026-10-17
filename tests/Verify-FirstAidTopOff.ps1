@@ -77,6 +77,7 @@ public static class BotMedecine { public static readonly EquipmentSlot[] secureS
 namespace pitTeam.Components { public static class BotFollowerPlayer { public static bool IsEnemyInfoAlive(EnemyInfo info)=>info?.Alive==true; } }
 __POLICY__
 namespace pitTeam.Utils {
+    internal static class FollowerFirstAidRetry { internal static bool CanAttempt(Player player,EBodyPart part)=>true; }
     public static class FollowerMedical {
 __STATE__
         private static readonly ConditionalWeakTable<Player,FirstAidTopOffState> FirstAidTopOffStates=new ConditionalWeakTable<Player,FirstAidTopOffState>();

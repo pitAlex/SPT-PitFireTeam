@@ -1673,7 +1673,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            if (combatCommon.GetBossProtectionWillingness01() < PickupFollowerPersonality.ProtectBossMinWillingness)
+            if (combatCommon.GetBossProtectionWillingness01() <= 0f)
             {
                 return false;
             }
@@ -3133,11 +3133,6 @@ namespace pitTeam.BigBrain
 
             float followerBossDistance = FollowerCombatCommon.GetSafeRegroupDistance(navDistance, directDistance);
             float regroupTriggerDistance = CombatDistanceConfiguration.Instance.GetBossRegroupTriggerDistance(botOwner);
-            float protectionWillingness = combatCommon.GetBossProtectionWillingness01();
-            regroupTriggerDistance *= Mathf.Lerp(
-                PickupFollowerPersonality.RegroupMaxTriggerMultiplier,
-                1f,
-                protectionWillingness);
             if (followerBossDistance <= regroupTriggerDistance)
             {
                 return false;

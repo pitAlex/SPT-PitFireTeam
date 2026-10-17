@@ -93,6 +93,19 @@ public static partial class CombatChecks {
         Check(!solo.IsActive()&&bot.Sain.Steering.Looks==looks,"tactic opt-out cancels linger ownership");
         bot.Follower.CombatTactic=FollowerCombatTactic.SainMan;Tick();
         Check(!solo.IsActive(),"reselecting SainMan does not resurrect old linger");
+        var cleanupBot=RegroupBot("combat-registration-readiness",100);
+        var cleanupSolo=new SAINFollowerSoloCombatLayer(cleanupBot,74);
+        new SAINFollowerSquadCombatLayer(cleanupBot,75);Tick();
+        var cleanupBoss=(pitAIBossPlayer)cleanupBot.BotFollower.BossToFollow;
+        cleanupBot.Sain.Decision.CurrentCombatDecision=ECombatDecision.SeekCover;
+        Check(cleanupSolo.IsActive()&&cleanupBoss.ActiveAddonCombat.Contains(cleanupBot.ProfileId),
+            "active addon combat registers the follower");
+        var nativeBot=cleanupBot.Sain;cleanupBot.Sain=null;Tick();
+        Check(!cleanupBoss.ActiveAddonCombat.Contains(cleanupBot.ProfileId),
+            "readiness loss releases squad combat registration");
+        Check(nativeBot.GoalEnemy.EnemyPlayer.HealthController.IsAlive,
+            "registration cleanup preserves living native enemy memory");
+        cleanupBot.Sain=nativeBot;Tick();
         TestPreparation();
         TestInvestigationGate();
         TestMedicalLingerDeadline();
@@ -171,14 +184,14 @@ public static partial class CombatChecks {
         Check(!SAINFollowerCombatHandoff.AllowsDecision(bot.Sain,ECombatDecision.SeekCover,ESelfActionType.Reload),"reload alone cannot authorize investigative cover movement");
         SainAddonBridge.TryForceReleaseFollowerCombatState(bot);
         bot.Follower.CanPatrol=true;bot.Sain.Decision.Manager.Publish(ECombatDecision.Search);
-        Check(solo.IsActive()&&bot.Follower.CombatIndependent,"peaceful On Your Own authorizes investigation and initializes combat independence");
+        Check(!solo.IsActive()&&!bot.Follower.CombatIndependent,"peaceful patrol does not override the configured combat percentage");
         bot.Follower.CombatIndependent=false;bot.Sain.Decision.Manager.Publish(ECombatDecision.Search);
         Check(bot.Sain.Decision.CurrentCombatDecision==ECombatDecision.None,"combat independence revocation overrides saved patrol preference during this combat");
         solo.IsActive();Time.time+=3.1f;SAINFollowerRuntime.GetCombatPhase(bot);
         Check(!bot.Follower.CombatIndependent&&bot.Follower.CanPatrol,"combat release clears active independence while preserving patrol intent");
-        bot.Follower.CanPatrol=false;bot.Follower.CombatIndependenceRequested=true;
+        bot.Follower.CanPatrol=false;bot.Follower.CombatIndependent=true;
         bot.Sain.Decision.Manager.Publish(ECombatDecision.Search);
-        Check(solo.IsActive()&&bot.Follower.CombatIndependent,"saved combat On Your Own intent also authorizes the next independent investigation");
+        Check(solo.IsActive()&&bot.Follower.CombatIndependent,"effective one hundred authorizes independent investigation");
     }
 
     private static void TestMedicalLingerDeadline(){

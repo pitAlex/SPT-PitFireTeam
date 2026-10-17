@@ -28,6 +28,7 @@ public static partial class CombatChecks {
         Tick();FiringPositionFinder.Calls=0;FiringPositionFinder.Candidate=new Vector3(-10,0,0);return b;
     }
     private static void TestShooter() {
+        TestShooterShootingCover();
         Check(FollowerCombatTactics.CoreTactic(FollowerCombatTactic.SAINShooter)==FollowerCombatTactic.Marksman &&
             FollowerCombatTactics.CoreTactic(FollowerCombatTactic.SainMan)==FollowerCombatTactic.Balanced,
             "Shooter and Grunt retain separate Core fallback roles");
@@ -166,6 +167,7 @@ public static partial class CombatChecks {
         Check(SAINFollowerRuntime.GetEngageAttempt(b).Failure=="arrivedWithoutShot",
             "independent Shooter retains bounded native firing-position arrival");
         move.Stop();
+        b.Follower.CombatIndependent=false;
         Check(SainRegroupBridge.GetCompleteDistance(b,false)==24f &&
             SainRegroupBridge.GetTriggerDistance(b)==CombatDistanceConfiguration.Instance.Trigger*1.5f,
             "Shooter uses Marksman completion and trigger distances");
@@ -173,5 +175,112 @@ public static partial class CombatChecks {
         Check(!pitTeam.pitFireTeam.UseSainFollowerCombat(b),"role changes use Core fallback until prepared for the new role");Tick();
         Check(SAINFollowerRuntime.GetMarksman(b)==null && pitTeam.pitFireTeam.UseSainFollowerCombat(b),
             "switching to Grunt releases Shooter objective state and restores Grunt ownership");
+    }
+
+    private static BotOwner ShelteredShooter(string id)
+    {
+        SAIN.SAINComponent.SubComponents.CoverFinder.SainBotCoverData.Scene.Clear();
+        Physics.Blocked=false;Physics.LineBlock=null;
+        var b=ShooterBot(id);
+        b.Sain.Cover.CoverInUse=CoverAt(0);
+        b.Sain.Cover.CoverSeekingState=SAIN.SAINComponent.Classes.ECoverSeekingState.HoldInCover;
+        return b;
+    }
+    private static void TestShooterShootingCover()
+    {
+        var b=ShelteredShooter("shooterFiringPreference");var shelter=CoverAt(-3);var firing=CoverAt(-10);
+        b.Sain.Cover.CoverPoints.Add(shelter);b.Sain.Cover.CoverPoints.Add(firing);
+        Physics.LineBlock=(from,to,mask)=>from.x>-5;
+        var policy=SAINFollowerRuntime.GetCover(b);
+        Check(b.Sain.Cover.FindForTest()==firing,"Shooter prefers a potential firing lane over nearer shelter");
+        Check((string)Newtonsoft.Json.Linq.JObject.FromObject(policy.Snapshot)["reason"]=="shootingCover",
+            "Shooter cover intent is recorded separately from shelter");
+        Check(!b.Sain.GoalEnemy.IsVisible&&!b.ShootData.Shooting,"planning a lane grants neither visibility nor firing");
+        b=ShelteredShooter("shooterBlockedPreference");b.Sain.Cover.CoverPoints.Add(shelter);b.Sain.Cover.CoverPoints.Add(firing);Physics.Blocked=true;
+        Check(b.Sain.Cover.FindForTest()==shelter,"no potential firing lane retains ordinary safe shelter");
+        b=ShelteredShooter("shooterRecoveryPreference");b.Memory.IsUnderFire=true;b.Sain.Cover.NativePoint=shelter;b.Sain.Cover.CoverPoints.Add(firing);
+        int rays=Physics.LinecastCalls;
+        Check(b.Sain.Cover.FindForTest()==shelter&&Physics.LinecastCalls==rays,"emergency cover performs no shooting-cover probes");
+        b=ShelteredShooter("shooterMedicalPreference");b.Sain.Decision.CurrentSelfDecision=ESelfActionType.FirstAid;
+        b.Sain.Cover.NativePoint=shelter;b.Sain.Cover.CoverPoints.Add(firing);rays=Physics.LinecastCalls;
+        Check(b.Sain.Cover.FindForTest()==shelter&&Physics.LinecastCalls==rays,"medical recovery retains native shelter selection");
+        b=ShelteredShooter("shooterCriticalPreference");b.Sain.Memory.Health.HealthStatus=ETagStatus.BadlyInjured;
+        b.Sain.Cover.CoverPoints.Add(shelter);b.Sain.Cover.CoverPoints.Add(firing);rays=Physics.LinecastCalls;
+        Check(b.Sain.Cover.FindForTest()==shelter&&Physics.LinecastCalls==rays,"critical health does not prefer firing cover over shelter");
+        b=ShelteredShooter("shooterSuppressedPreference");b.Sain.Suppression.IsHeavySuppressed=true;
+        b.Sain.Cover.CoverPoints.Add(shelter);b.Sain.Cover.CoverPoints.Add(firing);rays=Physics.LinecastCalls;
+        Check(b.Sain.Cover.FindForTest()==shelter&&Physics.LinecastCalls==rays,"heavy suppression skips firing-cover ranking");
+        b=ShelteredShooter("shooterStandoffPreference");b.Sain.GoalEnemy.KnownPlaces.LastKnownPosition=new Vector3(20,0,0);
+        shelter=CoverAt(-3);firing=CoverAt(10);b.Sain.Cover.CoverPoints.Add(shelter);b.Sain.Cover.CoverPoints.Add(firing);
+        Physics.LineBlock=(from,to,mask)=>from.x<0;
+        Check(b.Sain.Cover.FindForTest()==shelter,"too-close firing cover cannot outrank shelter");
+        b=ShelteredShooter("shooterFloorPreference");shelter=CoverAt(-3);firing=CoverAt(-10);firing.Position+=new Vector3(0,4,0);
+        b.Sain.Cover.CoverPoints.Add(shelter);b.Sain.Cover.CoverPoints.Add(firing);Physics.LineBlock=(from,to,mask)=>from.x>-5;
+        Check(b.Sain.Cover.FindForTest()==shelter,"different-floor position cannot gain shooting-cover preference");
+        b=ShelteredShooter("shooterRememberedLane");firing=CoverAt(-8);b.Sain.Cover.CoverPoints.Add(firing);
+        Vector3 laneTarget=default;Physics.LineBlock=(from,to,mask)=>{laneTarget=to;return false;};
+        Check(b.Sain.Cover.FindForTest()==firing&&laneTarget.x==60&&Math.Abs(laneTarget.y-1.1f)<.001f,
+            "shooting-cover geometry uses the remembered position rather than hidden live coordinates");
+
+        b=ShelteredShooter("shooterShelterReposition");shelter=b.Sain.Cover.CoverInUse;firing=CoverAt(-8);
+        b.Sain.Cover.CoverPoints.Add(firing);FiringPositionFinder.Candidate=null;
+        b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
+        var objective=SAINFollowerRuntime.GetMarksman(b);
+        Check(objective.OwnsMovement&&objective.Destination.Value.x==-8&&FiringPositionFinder.Calls==0,
+            "settled Shooter tries existing local shooting cover before an empty native point scan");
+        Check(b.Sain.Cover.CoverInUse==shelter,"planning a replacement retains the existing shelter");
+        var move=new SAINFollowerMoveToEngageAction(b);move.Start();move.Update(null);
+        Check(b.Sain.Cover.CoverInUse==null&&b.Sain.Mover.Moving&&b.Sain.Mover.Destination.x==-8,
+            "accepted firing-position path releases only the old shelter latch");
+        for(int i=0;i<20;i++)b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
+        Check(objective.Destination.Value.x==-8&&FiringPositionFinder.Calls==0,"committed local firing leg does not rescan or churn");
+        b.GetPlayer.Position=firing.Position;Time.time+=.1f;move.Update(null);Time.time+=2.1f;move.Update(null);
+        b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);move.Stop();
+        Check(SAINFollowerRuntime.GetEngageAttempt(b).Failure=="arrivedWithoutShot"&&!objective.Destination.HasValue,
+            "local shooting cover preserves the existing bounded arrival failure");
+
+        b=ShelteredShooter("shooterShelterPathRejected");shelter=b.Sain.Cover.CoverInUse;b.Sain.Cover.CoverPoints.Add(CoverAt(-8));
+        b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);b.Sain.Mover.Complete=false;
+        move=new SAINFollowerMoveToEngageAction(b);move.Start();move.Update(null);
+        Check(b.Sain.Cover.CoverInUse==shelter&&SAINFollowerRuntime.GetEngageAttempt(b).Failure=="pathRejected",
+            "rejected replacement path retains existing shelter");move.Stop();
+        b=ShelteredShooter("shooterShelterEmpty");FiringPositionFinder.Candidate=null;shelter=b.Sain.Cover.CoverInUse;
+        b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);Time.time+=3.9f;b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
+        Check(!SAINFollowerRuntime.GetMarksman(b).OwnsMovement&&b.Sain.Cover.CoverInUse==shelter&&FiringPositionFinder.Calls==1,
+            "empty local and native searches retain shelter and the four-second retry");
+        Time.time+=.2f;FiringPositionFinder.Candidate=new Vector3(-12,0,0);b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
+        Check(SAINFollowerRuntime.GetMarksman(b).OwnsMovement&&FiringPositionFinder.Calls==2,"native point fallback remains available after local cover miss");
+
+        b=ShelteredShooter("shooterIndependentCover");b.Follower.CombatIndependent=true;b.Leader.Position=new Vector3(100,0,0);
+        b.Sain.Cover.CoverPoints.Add(CoverAt(-8));FiringPositionFinder.Candidate=null;b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
+        Check(SAINFollowerRuntime.GetMarksman(b).OwnsMovement&&FiringPositionFinder.Calls==0,
+            "independent local reposition is bot-centered rather than constrained to the player");
+
+        b=ShelteredShooter("shooterShelterPending");shelter=b.Sain.Cover.CoverInUse;
+        for(int i=0;i<12;i++)b.Sain.Cover.CoverPoints.Add(CoverAt(-5-i*.5f));
+        FiringPositionFinder.Candidate=null;int polls=0;
+        do {
+            Time.time+=.3f;int before=Physics.LinecastCalls+SAIN.SAINComponent.SubComponents.CoverFinder.CoverAnalyzer.Rechecks+pitTeam.Utils.Utils.PathCalls;
+            // Isolate this planner's budget from the existing regroup measurement.
+            SAINFollowerRuntime.GetMarksman(b).Filter(b.Sain.GoalEnemy,ECombatDecision.SeekCover,ESquadDecision.None,
+                ESelfActionType.None,false,out _,out _);
+            Check(Physics.LinecastCalls+SAIN.SAINComponent.SubComponents.CoverFinder.CoverAnalyzer.Rechecks+pitTeam.Utils.Utils.PathCalls-before<=4,
+                "Shooter local-cover probes retain the shared four-operation frame budget");
+            Check(b.Sain.Cover.CoverInUse==shelter&&FiringPositionFinder.Calls==0,"pending local scan retains shelter without a duplicate native scan");
+        } while(!SAINFollowerRuntime.GetMarksman(b).OwnsMovement&&++polls<30);
+        Check(SAINFollowerRuntime.GetMarksman(b).OwnsMovement,"budgeted local cover search completes at a slow publication cadence");
+        b=ShelteredShooter("shooterInitialRankingBudget");var finder=new SAINFollowerCoverFinder(b.Sain);
+        for(int i=0;i<32;i++)b.Sain.Cover.CoverPoints.Add(CoverAt(-4-i*.4f));
+        polls=0;int found=0;
+        do {
+            Time.time+=.3f;int before=Physics.LinecastCalls+SAIN.SAINComponent.SubComponents.CoverFinder.CoverAnalyzer.Rechecks;
+            found=finder.Find(b.Sain.GoalEnemy,b.Leader.Position,preferNearby:true,preferFiring:true).Count;
+            Check(Physics.LinecastCalls+SAIN.SAINComponent.SubComponents.CoverFinder.CoverAnalyzer.Rechecks-before<=4,
+                "initial Shooter firing preference shares validation and lane probe budget");
+        } while(finder.Pending&&++polls<40);
+        Check(!finder.Pending&&found==32,"initial firing-cover ranking completes without slow-poll starvation");
+        rays=Physics.LinecastCalls;finder.Find(b.Sain.GoalEnemy,b.Leader.Position,preferNearby:true,preferFiring:true);
+        Check(Physics.LinecastCalls==rays,"unchanged firing-cover preference reuses its planning lanes");
+        Physics.LineBlock=null;Physics.Blocked=false;SAIN.SAINComponent.SubComponents.CoverFinder.SainBotCoverData.Scene.Clear();
     }
 }

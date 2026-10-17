@@ -29,15 +29,33 @@ $code = Get-Content -Raw (Join-Path $PSScriptRoot 'FollowerMedicineFixture.cs')
 $code = $code.Replace('__PATCHES__', $patches).
     Replace('__CANCEL__', (Read-NativeMember $abstract 'CancelCurrent')).
     Replace('__USING__', (Read-NativeMember $abstract 'Using')).
-    Replace('__FIRST_AID__', (Read-NativeMember $firstAid 'FindDamagedPart')).
+    Replace('__FIRST_AID__', (Read-NativeMember $firstAid 'FindDamagedPart').Replace('void FindDamagedPart()', 'void FindDamagedPartNative()')).
+    Replace('__FIRST_AID_WORK__', (Read-NativeMember $firstAid 'Have2Do')).
+    Replace('__FIRST_AID_START__', (Read-NativeMember $firstAid 'ShallStartUse')).
+    Replace('__FIRST_AID_APPLY__', (Read-NativeMember $firstAid 'TryApplyToCurrentPart')).
     Replace('__SURGERY__', (Read-NativeMember $surgery 'FindDamagedPart')).
     Replace('__HIDE__', (Read-NativeMember $player.Substring($operationStart) 'HideWeapon'))
 $plugin = Get-Content -Raw (Join-Path $RepositoryRoot 'client/friendlyPlugin.cs')
-foreach ($patch in @('FollowerMedicalCancelPatch', 'FollowerFirstAidMinimumHealthPatch', 'FollowerSurgeryTargetPatch')) {
+foreach ($patch in @('FollowerMedicalCancelPatch', 'FollowerFirstAidMinimumHealthPatch', 'FollowerFirstAidFracturePatch', 'FollowerFirstAidAttemptPatch', 'FollowerSurgeryTargetPatch')) {
     if (!$plugin.Contains("new $patch().Enable();")) { throw "Unregistered medical patch $patch" }
 }
 $medical = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Utils/FollowerMedical.cs')
 if ($medical -match 'FirstAidMinVisibleNormalizedHealth|GetFirstAidVisibleHealth') { throw 'Obsolete artificial first-aid health floor remains' }
+$selectionMethods = foreach ($name in @('FinishExplicitHealHands', 'ReconcileCancelledMedicalOwnership', 'FinishCancelledMedicine', 'SelectFractureFirstAid', 'FindBestDamageEffectTreatment', 'GetDamageEffectTreatmentScore', 'CanTreatDamageEffect', 'TryGetDamageEffectCost', 'HasActiveBleeding', 'TryGetActiveBleeding')) {
+    $found = [regex]::Matches($medical, '(?ms)^        (?:public|private|internal)[^\r\n]*\b' + $name + '\(.*?^        \}')
+    if (!$found.Count) { throw "Missing production selection helper $name" }
+    foreach ($method in $found) { $method.Value }
+}
+$code = $code.Replace('__SELECTION__', ($selectionMethods -join "`n"))
+foreach ($entry in @(
+    @{Token='__COMBAT_REFRESH__';Path='client/BigBrain/FollowerCombatCommon.cs';Name='RefreshCombatHealWorkIfNeeded'},
+    @{Token='__PATROL_REFRESH__';Path='client/BigBrain/FollowerPatrolLayer.cs';Name='RefreshHealWorkIfNeeded'}
+)) {
+    $source = Get-Content -Raw (Join-Path $RepositoryRoot $entry.Path)
+    $match = [regex]::Match($source, '(?ms)^        private void ' + $entry.Name + '\(\).*?^        \}')
+    if (!$match.Success) { throw "Missing production refresh $($entry.Name)" }
+    $code = $code.Replace($entry.Token, $match.Value)
+}
 Add-Type -TypeDefinition $code -Language CSharp
 $count = [FollowerMedicineChecks]::Run()
 Write-Output "Passed $count follower medicine checks using production hooks and native EFT selection/cancellation/hide methods. Unity hands transitions still require raid validation."

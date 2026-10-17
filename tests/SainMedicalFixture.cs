@@ -30,8 +30,13 @@ namespace UnityEngine {
 namespace pitTeam.Utils {public static class Covers {__CORE_COVER__}}
 namespace SAIN.SAINComponent.Classes.Mover {
     public class DogFight : SAIN.SAINComponent.BotBase {
-        public int Moves;public DogFight(BotComponent bot):base(bot){}
-        [MethodImpl(MethodImplOptions.NoInlining)] public void DogFightMove(bool aggressive,Enemy enemy){Moves++;}
+        public int Moves,Advances,Backups;public bool BackupAvailable,LastAggressive;public DogFight(BotComponent bot):base(bot){}
+        [MethodImpl(MethodImplOptions.NoInlining)] public void DogFightMove(bool aggressive,Enemy enemy){
+            Moves++;LastAggressive=aggressive;
+            // Native defensive handling runs before the aggressive pursuit branch.
+            if(BackupAvailable){Backups++;return;}
+            if(aggressive)Advances++;
+        }
     }
 }
 namespace SAIN.SAINComponent.Classes.Decision {

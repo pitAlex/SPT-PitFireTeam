@@ -1394,6 +1394,11 @@ namespace pitTeam.Modules
                         weaponAdjustedAggression = SanitizeFloat(
                             FollowerWeaponAggressionOverrides.Apply(bot, followerData.EffectiveCombatAggression)),
                         temporaryAggressionOverride = followerData.IsTemporaryCombatAggressionOverrideActive,
+                        selfDetermination = followerData.SelfDetermination,
+                        effectiveSelfDetermination = followerData.EffectiveSelfDetermination,
+                        temporaryDeterminationOverride = followerData.HasDeterminationOverride,
+                        determinationSource = followerData.DeterminationSource,
+                        bossInfluence = followerData.BossInfluence,
                         combatIndependent = followerData.CombatIndependent
                     }
                     : null

@@ -147,7 +147,7 @@ Input:
 Behavior:
 
 - Debounced in `AIBossPlayer`.
-- Clears active command state and temporary combat aggression override.
+- Clears active command state and immediately restores both Aggression and Self-Determination to their configured values by clearing command overrides.
 - Temporarily suppresses enemy enforcement.
 - Clears current goal enemy and known enemy memory.
 - Soft-resets follower recovery and forces upright pose.
@@ -176,7 +176,7 @@ Behavior:
 - Cooperation always appears in the gesture menu's Help category with either setting of Hide Unsupported Commands. It is a regular, assignable phrase: right-click assignment, menu playback and bound keys work without a contextual target, and the situational exclamation marker is absent. Native `Player.Say` pairs Cooperation with the Hello (`FriendlyGesture`) gesture; no extra gesture is injected.
 - `AIBossPlayer.PhraseSaid` owns Cooperation recruitment dispatch. Phrase playback is independent of recruitment eligibility. An interacted bot is the exclusive target; without one, the receiver checks living raid players for bots within the player's 18-degree interaction view cone. Receiving candidates must be active non-followers within 5m and pass the shared Come Here unobstructed sight gate to the player's head or body using the high-poly/terrain check. Requests then use the existing recruitment controller for faction, combat, tiered acceptance and capacity checks. The native per-bot phrase route is suppressed to avoid duplicates and rejected-request fallback. The contextual quick prompt retains its normal 2.5m interaction range. Friendly or neutral non-follower Scavs can show the prompt independently of recruitment eligibility; PMC targets retain their faction/selection gate. Need Help retains its combat-support behavior.
 - Recruitment during combat answers `EPhraseTrigger.DontKnow` without rolling or remembering a refusal. Combat means EFT `Memory.HaveEnemy` or the external SAIN plugin's native `HasEnemy`, even without an EFT goal and with the addon absent. The initial request and deferred conversion checks give combat priority over an existing cached refusal; that earlier level refusal still applies after combat ends.
-- During the selected friendly's 20-second close-interaction wait, directed Cooperation reaches that bot within 12 m; outside it, the normal 5 m receiver applies. Recruitment acceptance is shared with its proactive roll when the chance is at least 60%. Roger/Negative and OK/No gestures answer only the single pending bot invitation with close clear sight. The Reaction category retains Affirmative (`Roger`) and Negative when Show Only Supported Commands is enabled. Player rejection suppresses repeat offers but permits a later Cooperate request. Actual bot refusal ends further waits; temporary combat/capacity refusals do not. See [invitations](Allegiance.md#bot-invitations-and-saved-acceptance).
+- During the selected friendly's 20-second close-interaction wait, directed Cooperation reaches that bot within 17 m; outside it, the normal 5 m receiver applies. Recruitment acceptance is shared with its proactive roll when the chance is at least 60%. Roger/Negative and OK/No gestures answer only the single pending bot invitation with close clear sight. The Reaction category retains Affirmative (`Roger`) and Negative when Show Only Supported Commands is enabled. Player rejection suppresses repeat offers but permits a later Cooperate request. Actual bot refusal ends further waits; temporary combat/capacity refusals do not. See [invitations](Allegiance.md#bot-invitations-and-saved-acceptance).
 - When tiered PMC recruitment rejects that bot because of the level-based acceptance decision, the refusal is remembered for the rest of the raid. Field Scavs ignore generated levels: acceptance decreases from 100% at 15% encounter chance to 50% at 50% encounter chance, and remains 50% above that. The recorded encounter chance includes multiplier and penalties. Both Scav acceptance and refusal are cached per candidate for the raid; combat and full capacity do not consume the roll. Repeating `Cooperation` cannot reroll either decision.
 - Active pickup capacity is counted consistently at request, manual update and final conversion, including after the first-group delay. Queued requests cannot exceed the limit or convert the same bot twice; capacity refusal is not cached as a tiered denial. Cross-faction recruitment is restricted to human PMC players, preserving same-side Scav/Fence eligibility.
 - After group reassignment and follower registration, Allegiance repairs stale hostility in both directions with remaining living, unrevoked friendly candidates, regardless of faction. Native removal notifications also clear external SAIN contacts; this does not reroll friendship or erase unrelated hostility. See [Allegiance relationships](Allegiance.md#recruiting-and-squad-relationships).
@@ -194,7 +194,7 @@ State:
 
 - Does not create `FollowerCommandType` state.
 - Sets `BotFollowerPlayer.CanPatrol` true for selected out-of-combat followers.
-- In combat, sets combat-independent mode instead of changing out-of-combat patrol state.
+- In combat, sets effective Self-Determination to 100% while leaving Aggression unchanged; see [shared settings and lifetime](Self-Determination.md#settings-and-commands).
 
 Targeting:
 
@@ -202,7 +202,7 @@ Targeting:
 
 Behavior:
 
-- Clears current request command state and temporary combat aggression override.
+- Peaceful use clears current request command state and temporary combat aggression override. Combat use changes only determination.
 - Enables patrol-radius intent in `FollowAction`.
 - `FollowMe` / `Cooperation` clears this mode.
 - Combat use does not create a request command; it only asks the current combat layer to stop anchoring behavior around the boss.
@@ -217,9 +217,8 @@ Behavior:
 
 - Broadcast to all active followers.
 - Outside combat, disables patrol-radius mode by setting `CanPatrol` false.
-- In combat, clears ordered-push objective pressure and disables combat-independent mode.
-- Does not clear active request command state.
-- Does not set boss protection, combat aggression, regroup, or a new combat objective state.
+- In combat, sets Self-Determination to exactly 20% without changing Aggression, cancels conflicting push pressure and issues one regroup using that determination's completion envelope.
+- Repeating the same override does not rearm its destination/hold. Survival and medicine retain priority; peaceful use retains its existing patrol meaning.
 
 Execution:
 
@@ -371,6 +370,7 @@ Targeting:
 Combat variant:
 
 - Becomes `PushEnemy` when the follower has active combat enemy state. Ready SAINGrunts also accept a squad-selected, already-admitted target; see [addon Go Forward](../addon/docs/Commands.md#go-forward). Core tactics keep their per-follower target.
+- An accepted combat Go Forward sets effective Aggression to 100% without changing Self-Determination. Go Go Go or aggregate combat end restores the saved value.
 
 ### Regroup Phrase Outside Combat
 
@@ -654,6 +654,7 @@ State:
 Behavior:
 
 - Core combat reads `EffectiveCombatAggression` through `FollowerCombatCommon.GetAggression01()`.
+- Determination remains unchanged. Combat percentage overrides survive individual follower handoffs until aggregate squad combat ends; see [Self-Determination](Self-Determination.md).
 - Rifleman/default behavior becomes less proactive and more defensive/regroup-oriented.
 - Marksman suppresses proactive close-search/auto-search behavior.
 - Defensive survival behavior still wins: immediate fire, dogfight, healing, boss protection, and other urgent actions can still run.
@@ -673,11 +674,11 @@ Input:
 
 State:
 
-- Clears temporary combat aggression override.
+- Clears both temporary Aggression and Self-Determination overrides.
 
 Behavior:
 
-- Returns followers to their saved combat aggression/tactic behavior.
+- Returns followers to both saved percentages; it does not substitute hardcoded default values.
 - Does not create `FollowerCommandType` state.
 
 Vanilla handling:

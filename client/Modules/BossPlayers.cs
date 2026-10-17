@@ -80,6 +80,7 @@ namespace pitTeam.Modules
 
         public static void Dispose()
         {
+            FollowerHazardAvoidance.Reset();
             AllegiancePmcFriendship.Reset();
             AllegianceScavCargo.Reset();
             AllegianceScavRelations.Reset();
@@ -251,7 +252,8 @@ namespace pitTeam.Modules
             WildSpawnType role = WildSpawnType.assault,
             string tactic = "Default",
             float aggression = 50f,
-            FollowerProficiencyModifierValues proficiency = null)
+            FollowerProficiencyModifierValues proficiency = null,
+            float selfDetermination = 50f)
         {
 
             BotFollowerPlayer? _follower = null;
@@ -303,6 +305,7 @@ namespace pitTeam.Modules
 
             _follower.CombatTactic = BotFollowerPlayer.ParseCombatTactic(tactic);
             _follower.CombatAggression = aggression;
+            _follower.SelfDetermination = selfDetermination;
             _follower.Proficiency.ReplaceModifiers(proficiency);
 
             try
@@ -1218,9 +1221,10 @@ namespace pitTeam.Modules
             WildSpawnType role = WildSpawnType.assault,
             string tactic = "Default",
             float aggression = 50f,
-            FollowerProficiencyModifierValues proficiency = null)
+            FollowerProficiencyModifierValues proficiency = null,
+            float selfDetermination = 50f)
         {
-            return Instance.AddBotFollower(bot, player, squadMate, role, tactic, aggression, proficiency);
+            return Instance.AddBotFollower(bot, player, squadMate, role, tactic, aggression, proficiency, selfDetermination);
         }
 
         public static void ShallBeFollower(string profileId)

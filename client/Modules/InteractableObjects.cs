@@ -1903,9 +1903,9 @@ namespace pitTeam.Modules
                 }
 
                 // The weapon is the normal return root, but EFT can eject its original magazine
-                // into the vest during combat. Keep the magazine id as a fallback root so it is
-                // still stripped/returned after reloading; ancestor checks suppress duplicates
-                // while the magazine remains seated in the tracked weapon.
+                // into the vest during combat. Keep its fallback ID if the weapon or spare
+                // later becomes cargo; the final return policy retains registered vest/pocket
+                // spares for equipped weapons and ancestor checks suppress nested duplicates.
                 trackedReturnIds.Add(magazine.Id);
             }
         }
@@ -2377,7 +2377,8 @@ namespace pitTeam.Modules
             if (!IsReturnSquadMember(bot)) return new List<string>();
             var controller = bot.GetPlayer?.InventoryController;
             return FollowerReturnPolicy.GetReturnIds(true, controller?.Inventory?.Equipment,
-                GetStoredItems(bot.ProfileId), id => FindStoredReturnItem(controller, id));
+                GetStoredItems(bot.ProfileId), id => FindStoredReturnItem(controller, id),
+                (weapon, magazine) => IsApprovedLootedWeaponMagazine(bot, weapon, magazine));
         }
 
         public static List<string>? GetStoredItems(string bot)

@@ -820,6 +820,7 @@ public partial class FriendlyTeammateService(
                     Aid = teammate.Aid?.ToString() ?? string.Empty,
                     Tactic = NormalizeCombatTactic(settings.CombatTactic),
                     Aggression = NormalizeAggression(settings.Aggression),
+                    SelfDetermination = pitTeam.Shared.SelfDeterminationPolicy.Normalize(settings.SelfDetermination),
                     Proficiency = NormalizeProficiency(settings.Proficiency),
                     Equipment = DefaultLoadoutName,
                     Voice = teammate.Customization?.Voice?.ToString() ?? string.Empty,
@@ -856,6 +857,7 @@ public partial class FriendlyTeammateService(
             CurrentLoadoutId = DefaultLoadoutId,
             CurrentTactic = NormalizeCombatTactic(settings.CombatTactic),
             Aggression = NormalizeAggression(settings.Aggression),
+            SelfDetermination = pitTeam.Shared.SelfDeterminationPolicy.Normalize(settings.SelfDetermination),
             Proficiency = NormalizeProficiency(settings.Proficiency),
             OwnedBodyCustomizationIds = settings.OwnedBodyCustomizationIds.ToList(),
             OwnedFeetCustomizationIds = settings.OwnedFeetCustomizationIds.ToList(),
@@ -1324,6 +1326,8 @@ public partial class FriendlyTeammateService(
         var teammate = FindByAccountId(sessionId, request.Aid);
         var settings = GetTeammateSettings(sessionId, teammate);
         settings.Proficiency = NormalizeProficiency(request.Proficiency);
+        if (request.SelfDetermination.HasValue)
+            settings.SelfDetermination = pitTeam.Shared.SelfDeterminationPolicy.Normalize(request.SelfDetermination.Value);
         SaveTeammateSettings(sessionId, teammate, settings);
     }
 
@@ -4563,6 +4567,7 @@ public partial class FriendlyTeammateService(
             loadedSettings.SelectedLoadoutId = DefaultLoadoutId;
         }
         loadedSettings.Aggression = NormalizeAggression(loadedSettings.Aggression);
+        loadedSettings.SelfDetermination = pitTeam.Shared.SelfDeterminationPolicy.Normalize(loadedSettings.SelfDetermination);
         loadedSettings.Proficiency = NormalizeProficiency(loadedSettings.Proficiency);
         loadedSettings.CombatTactic = NormalizeCombatTactic(loadedSettings.CombatTactic);
         if (teammateInsuranceService.PrunePolicies(teammate, loadedSettings))

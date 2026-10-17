@@ -28,18 +28,21 @@ foreach ($forbidden in @('Reloading =', 'FastForwardCurrentState(', 'ForceStopIn
 if (!$patrol.Contains('if (TryHandleSkippedReloadStart()) return;') -or
     !$patrol.Contains('OutOfCombatReloadMaxFailedReloadsPerWeapon = 2')) { throw 'Existing bounded patrol budget required' }
 $retry = Get-Region $patrol '        private bool TryHandleSkippedReloadStart()' '        private bool ShouldReloadCurrentWeaponOutOfCombat()'
+$stationary = Get-Region $patrol '        private void ArmStationaryPatrolReloadRecovery()' '        private bool TryHandleSkippedReloadStart()'
+if (!$patrol.Contains('if (TryRecoverStationaryPatrolReload()) return;') -or
+    !$patrol.Contains('ArmStationaryPatrolReloadRecovery();')) { throw 'Missing patrol stationary recovery wiring' }
 $native = Get-Content -Raw $NativeSource
 $nativeReload = Get-Region $native 'public virtual void ReloadMag(Magazine magazine, ItemAddress itemAddress, Callback callback)' 'public virtual void QuickReloadMag('
 # Decompile uses tabs; accept its exact method region without retyping the implementation.
 if (!$nativeReload.Contains('ForceStopInteractions()') -or !$nativeReload.Contains('IsInteractionPlaying')) { throw 'Native silent-branch contract changed' }
-$reload = (Get-Content -Raw (Join-Path $PSScriptRoot 'FollowerReloadStartFixture.cs')).Replace('/* NATIVE RELOAD */', $nativeReload).Replace('/* PATROL RETRY */', $retry)
+$reload = (Get-Content -Raw (Join-Path $PSScriptRoot 'FollowerReloadStartFixture.cs')).Replace('/* NATIVE RELOAD */', $nativeReload).Replace('/* PATROL RETRY */', $retry).Replace('/* STATIONARY RELOAD */', $stationary)
 $sdk = dotnet --list-sdks | Select-Object -Last 1
 if ($sdk -notmatch '^(\S+) \[(.+)\]$') { throw 'SDK missing' }
 $compiler = Join-Path $Matches[2] ($Matches[1] + '/Roslyn/bincore/csc.dll')
 $framework = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319'
 $temporary = Join-Path ([IO.Path]::GetTempPath()) ('pitFireTeam-reload-start-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $temporary | Out-Null
-$arguments = @($compiler, '/nologo', '/target:exe', '/langversion:latest', '/nowarn:0649', '/nostdlib+')
+$arguments = @($compiler, '/nologo', '/target:exe', '/langversion:latest', '/nowarn:0649,8632', '/nostdlib+')
 foreach ($reference in @('mscorlib.dll', 'System.dll', 'System.Core.dll')) { $arguments += "/reference:$(Join-Path $framework $reference)" }
 function Run-Fixture([string]$name, [string]$code, [string[]]$extra, [string[]]$runArgs = @()) {
     $source = Join-Path $temporary "$name.cs"

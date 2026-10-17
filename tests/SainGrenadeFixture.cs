@@ -36,6 +36,7 @@ namespace UnityEngine {
     }
 }
 namespace Comfort.Common {}
+namespace pitTeam.Modules { static class FollowerBlockedGrenadeRecovery { public static void Record(BotOwner bot,Player.BaseGrenadeHandsController hands){} } }
 namespace EFT.InventoryLogic {public class ThrowWeap {}}
 namespace EFT {
     public enum EPhraseTrigger {NeedFrag}

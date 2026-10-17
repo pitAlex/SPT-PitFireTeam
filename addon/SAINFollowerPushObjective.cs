@@ -14,6 +14,7 @@ namespace pitTeam.SAINAddon;
 
 internal enum SAINPushMode { None, Automatic, Ordered }
 internal enum SAINPushPhase { None, Approach, Pressure, Recovery, Assessing, Exhausted }
+internal enum SAINPushCommitment { None, Ordered, Recovery, NativeCombat, Fire, Movement, Arrival, Planning, Passive }
 
 // Core-style intent/commitment, executed by SAIN MoveToEngage, StandAndShoot,
 // SeekCover and native urgent actions. Never promotes a hidden live transform.
@@ -29,6 +30,9 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
     internal bool Exhausted => Phase == SAINPushPhase.Exhausted;
     internal bool OwnsMovement { get; private set; }
     internal bool NativeEngagementAllowed { get; private set; }
+    internal SAINPushCommitment Commitment { get; private set; }
+    internal bool AllowsArbitration => Mode == SAINPushMode.Automatic && Commitment == SAINPushCommitment.Passive;
+    private float arbitrationCheckedAt = -1f;
     internal bool HoldsPosition => Active && target != null && !AwaitingTarget && (Phase == SAINPushPhase.Pressure ||
         Phase == SAINPushPhase.Approach && !Destination.HasValue) && target == bot.GoalEnemy;
     internal string EnemyId { get; private set; }
@@ -176,6 +180,49 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
     internal bool GetDecision(Enemy enemy, ECombatDecision solo, ESquadDecision squad, ESelfActionType self,
         bool regroupActive, out ECombatDecision result)
     {
+        try { return GetDecisionCore(enemy, solo, squad, self, regroupActive, out result); }
+        finally { RefreshCommitment(enemy, solo, self); }
+    }
+
+    // Evaluated at publication, before support admission and after push selection.
+    // Consumers share this result; snapshots never evaluate providers or readiness.
+    internal void RefreshCommitment(Enemy enemy, ECombatDecision solo, ESelfActionType self)
+    {
+        arbitrationCheckedAt = Time.time;
+        Commitment = GetCommitment(enemy, solo, self);
+    }
+
+    private SAINPushCommitment GetCommitment(Enemy enemy, ECombatDecision solo, ESelfActionType self)
+    {
+        if (!Active) return SAINPushCommitment.None;
+        if (Ordered) return SAINPushCommitment.Ordered;
+        if (self != ESelfActionType.None || SainAddonBridge.IsUsingMedical(bot.BotOwner) || assessment.SafetyBlocked ||
+            bot.BotOwner.WeaponManager?.Reload?.Reloading == true || bot.BotOwner.WeaponManager?.Selector?.IsChanging == true ||
+            SainRegroupBridge.IsUnderFire(bot.BotOwner) || bot.Medical.TimeSinceShot < 1f ||
+            solo == ECombatDecision.AvoidGrenade || solo == ECombatDecision.ThrowGrenade ||
+            solo == ECombatDecision.DogFight || solo == ECombatDecision.MeleeAttack ||
+            solo == ECombatDecision.FightZombies || solo == ECombatDecision.Retreat)
+            return SAINPushCommitment.Recovery;
+        if (enemy != target || enemy == null || solo == ECombatDecision.StandAndShoot || solo == ECombatDecision.ShootDistantEnemy)
+            return SAINPushCommitment.NativeCombat;
+        if (enemy.IsVisible && enemy.CanShoot) return SAINPushCommitment.Fire;
+        foreach (Enemy known in bot.EnemyController.KnownEnemies)
+            if (known != null && Enemy.IsEnemyActive(known) && known.EnemyPlayer?.HealthController?.IsAlive == true &&
+                known.IsVisible && known.CanShoot) return SAINPushCommitment.Fire;
+        if (Time.time < recoveryUntil) return SAINPushCommitment.Recovery;
+        if (bot.Mover.Moving || bot.Cover.CoverPoint_MovingTo != null) return SAINPushCommitment.Movement;
+        if (SAINFollowerRuntime.GetCover(bot.BotOwner)?.HoldsArrival(enemy) == true ||
+            Phase == SAINPushPhase.Pressure && Time.time < holdUntil) return SAINPushCommitment.Arrival;
+        if (Destination.HasValue) return SAINPushCommitment.Movement;
+        // A changed report may rename Recovery to Approach; it cannot renew recovery
+        // grace or make an unresolved readiness blocker productive again.
+        if (pressureLatch || Exhausted || Phase == SAINPushPhase.Assessing) return SAINPushCommitment.Passive;
+        return SAINPushCommitment.Planning;
+    }
+
+    private bool GetDecisionCore(Enemy enemy, ECombatDecision solo, ESquadDecision squad, ESelfActionType self,
+        bool regroupActive, out ECombatDecision result)
+    {
         result = solo; OwnsMovement = false; NativeEngagementAllowed = false;
         Observe();
         bool urgent = self != ESelfActionType.None || SainAddonBridge.IsUsingMedical(bot.BotOwner) ||
@@ -192,7 +239,16 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
             SAINFollowerRuntime.GetCover(bot.BotOwner)?.HoldsArrival(enemy) != true)
             Begin(SAINPushMode.Automatic, enemy.EnemyProfileId);
         if (!Active || target == null || enemy != target)
-        { NativeEngagementAllowed = !AwaitingTarget && solo == ECombatDecision.MoveToEngage; Pause(); return false; }
+        {
+            NativeEngagementAllowed = !AwaitingTarget && solo == ECombatDecision.MoveToEngage;
+            if (NativeEngagementAllowed && (Follower?.EffectiveSelfDetermination ?? 50f) <= 0f &&
+                bot.Decision.EnemyDecisions.FiringPosition is Vector3 position &&
+                SainPlayerSquadBridge.TryGetPlayerLeader(bot.BotOwner, out Player escortPlayer) &&
+                !pitTeam.Shared.SelfDeterminationPolicy.AllowsAutomaticPosition(0f,
+                    (bot.Position - escortPlayer.Position).sqrMagnitude, (position - escortPlayer.Position).sqrMagnitude))
+            { NativeEngagementAllowed = false; Pause(); result = ECombatDecision.SeekCover; return true; }
+            Pause(); return false;
+        }
         if (!Ordered && squad != ESquadDecision.None && squad != ESquadDecision.PushSuppressedEnemy)
         { Pause(); return false; }
         if (solo == ECombatDecision.StandAndShoot || solo == ECombatDecision.ShootDistantEnemy)
@@ -377,9 +433,11 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
         holdUntil = recoveryUntil = riskRetryAt = 0f; riskHeld = false; lastRiskReason = null;
         pressureLatch = targetBound = localFiringAttempted = false; NativeEngagementAllowed = false;
         lastBoundTarget = null; contactLostUntil = -1f;
+        Commitment = SAINPushCommitment.None; arbitrationCheckedAt = -1f;
     }
     internal object Snapshot => new { mode = Mode.ToString(), phase = Phase.ToString(), enemyId = EnemyId,
         reason = Reason, destination = SAINFollowerRecorder.Point(Destination), activeSeconds, risk = assessment.Snapshot,
+        commitment = Commitment.ToString(), allowsArbitration = AllowsArbitration, arbitrationCheckedAt,
         contactGraceRemaining = Mathf.Max(0f, contactLostUntil - Time.time),
         arrivalHoldRemaining = Mathf.Max(0f, holdUntil - Time.time), recoveryRemaining = Mathf.Max(0f, recoveryUntil - Time.time) };
     private void Record(string reason)

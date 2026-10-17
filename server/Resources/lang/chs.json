@@ -370,6 +370,7 @@
   },
   "returnItems": ["您的队员送回了这些物品，请查收。"],
   "scavCargoReturn": ["我的一个手下把你的东西带回来了。按约定，东西还给你。"],
+  "scavTransitFarewell": ["我的一个手下回来了。多谢你照应他。"],
   "returnItemsDeath": ["您的队员找回了这些物品。"],
   "teamEscaped": ["活了！\n成功撤离了。"],
   "teamSomeEscaped": ["唉，可惜了 {0}，不过至少我们其他人都出来了。"],

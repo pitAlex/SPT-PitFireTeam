@@ -10,7 +10,7 @@ using SAIN.SAINComponent.Classes.EnemyClasses;
 using SAIN.SAINComponent.SubComponents.CoverFinder;
 using UnityEngine;
 
-namespace UnityEngine { public static partial class Physics { public static bool Blocked; public static int LinecastCalls; public static bool Linecast(Vector3 from,Vector3 to,int mask){LinecastCalls++;return Blocked;} } }
+namespace UnityEngine { public static partial class Physics { public static bool Blocked; public static int LinecastCalls; public static Func<Vector3,Vector3,int,bool> LineBlock; public static bool Linecast(Vector3 from,Vector3 to,int mask){LinecastCalls++;return Blocked||LineBlock?.Invoke(from,to,mask)==true;} } }
 namespace SAIN.Components {
     public partial class EnemyController {
         public Enemy Candidate;
@@ -205,11 +205,105 @@ public static partial class CombatChecks {
         Check(SainBotCoverData.Queries==queries,"stable objective polls do not repeat cover discovery");
         TestPushContactInterruption();
         TestPushRoute();
+        TestBlockedAutomaticPushArbitration();
         var newer=new Vector3(7,0,9);((pitTeam.Components.pitAIBossPlayer)b.BotFollower.BossToFollow).CombatEvents.Claims[b.ProfileId]=newer;
         p.Clear("test");Check(((pitTeam.Components.pitAIBossPlayer)b.BotFollower.BossToFollow).CombatEvents.Claims[b.ProfileId].z==9,"push cleanup preserves newer destination claim");
         b.Follower.SetPushEnemy(12);SainAddonBridge.TryForceReleaseFollowerCombatState(b);Check(!p.Active,"explicit combat release clears objective");
         Check(pitTeam.BigBrain.FollowerPushGeometry.IsForwardPosition(new Vector3(),new Vector3(50,0,0),new Vector3(15,0,0))&&
             !pitTeam.BigBrain.FollowerPushGeometry.IsForwardPosition(new Vector3(),new Vector3(50,0,0),new Vector3(2,0,0)),"shared core forward geometry enforces minimum progress");
+    }
+    private static BotOwner BlockedAutomaticPush(string id,float playerX=200){
+        var b=PushBot(id,false);b.Leader.Position=new Vector3(playerX,0,0);
+        b.WeaponManager.IsWeaponReady=false;
+        b.Sain.Decision.Manager.Publish(ECombatDecision.Search);
+        var p=SAINFollowerRuntime.GetPush(b);
+        Check(p.Mode==SAINPushMode.Automatic&&p.Commitment==SAINPushCommitment.Recovery&&!p.AllowsArbitration,
+            "weapon-blocked automatic push gets one recovery grace: "+id);
+        return b;
+    }
+    private static void TestBlockedAutomaticPushArbitration(){
+        var b=BlockedAutomaticPush("blockedAutoRegroup");var p=SAINFollowerRuntime.GetPush(b);var m=b.Sain.Decision.Manager;
+        string enemy=p.EnemyId;int publications=m.Publications;
+        Time.time+=2;m.Publish(ECombatDecision.SeekCover);
+        Check(!SAINFollowerRuntime.GetRegroup(b).Active&&!p.AllowsArbitration,"automatic readiness recovery cannot regroup before its grace expires");
+        Time.time+=1.1f;m.Publish(ECombatDecision.SeekCover);
+        Check(p.AllowsArbitration&&p.Active&&p.EnemyId==enemy&&!p.Destination.HasValue&&
+            SAINFollowerRuntime.GetRegroup(b).Mode==SAINRegroupMode.Auto&&m.Publications==publications+2,
+            "settled blocked push permits distant-player regroup through one native publication without erasing mission");
+        var regroup=SAINFollowerRuntime.GetRegroup(b);
+        b.GetPlayer.Position=b.Leader.Position;regroup.Observe();Time.time+=2;regroup.Observe();
+        m.Publish(ECombatDecision.SeekCover);
+        Check(!regroup.Active&&p.Active&&p.AllowsArbitration&&!p.OwnsMovement&&p.EnemyId==enemy,
+            "regroup completion cannot rearm the same weapon-blocked advance");
+        int queries=SainBotCoverData.Queries,paths=pitTeam.Utils.Utils.PathCalls;
+        for(int i=0;i<8;i++){var snapshot=p.Snapshot;}
+        Check(SainBotCoverData.Queries==queries&&pitTeam.Utils.Utils.PathCalls==paths,
+            "push commitment snapshots are passive and run no navigation or cover work");
+
+        b=BlockedAutomaticPush("blockedAutoNewReports");p=SAINFollowerRuntime.GetPush(b);m=b.Sain.Decision.Manager;
+        for(int i=0;i<4;i++){
+            Time.time+=1;b.Sain.GoalEnemy.KnownPlaces.LastKnownPosition=new Vector3(60+i*10,0,0);
+            m.Publish(ECombatDecision.SeekCover);
+        }
+        Check(p.AllowsArbitration&&SAINFollowerRuntime.GetRegroup(b).Active,
+            "changed remembered anchors cannot renew unresolved readiness recovery indefinitely");
+
+        b=BlockedAutomaticPush("blockedAutoCoverTravel");p=SAINFollowerRuntime.GetPush(b);Time.time+=4;
+        b.Sain.Cover.CoverPoint_MovingTo=CoverAt(10);b.Sain.Mover.Moving=true;
+        b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
+        Check(!p.AllowsArbitration&&!SAINFollowerRuntime.GetRegroup(b).Active,"native recovery cover travel retains priority over blocked-push fallback");
+        b.Sain.Mover.Moving=false;b.Sain.Cover.CoverPoint_MovingTo=null;
+        var arrival=CoverAt(0);SAINFollowerRuntime.GetCover(b).Selected(arrival);Arrive(b,arrival);
+        b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
+        Check(p.Commitment==SAINPushCommitment.Arrival&&!SAINFollowerRuntime.GetRegroup(b).Active,"real recovery arrival hold remains productive");
+        Time.time+=4;b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
+        Check(p.AllowsArbitration&&SAINFollowerRuntime.GetRegroup(b).Active,"expired recovery arrival eventually returns to ordinary arbitration");
+
+        foreach(var self in new[]{ESelfActionType.Reload,ESelfActionType.FirstAid,ESelfActionType.Surgery}){
+            b=BlockedAutomaticPush("blockedAutoSelf"+self);p=SAINFollowerRuntime.GetPush(b);Time.time+=20;
+            b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover,ESquadDecision.None,self);
+            Check(!p.AllowsArbitration&&!SAINFollowerRuntime.GetRegroup(b).Active,"actual self action retains ownership beyond recovery grace: "+self);
+        }
+        b=BlockedAutomaticPush("blockedAutoActualReload");p=SAINFollowerRuntime.GetPush(b);Time.time+=20;
+        b.WeaponManager.Reload.Reloading=true;b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
+        Check(!p.AllowsArbitration&&!SAINFollowerRuntime.GetRegroup(b).Active,"actual active-weapon reload remains protected across a native self-decision gap");
+        b=BlockedAutomaticPush("blockedAutoActualDraw");p=SAINFollowerRuntime.GetPush(b);Time.time+=20;
+        b.WeaponManager.Selector.IsChanging=true;b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
+        Check(!p.AllowsArbitration&&!SAINFollowerRuntime.GetRegroup(b).Active,"actual weapon draw remains protected after the automatic recovery grace");
+        b=BlockedAutomaticPush("blockedAutoPendingMedicine");p=SAINFollowerRuntime.GetPush(b);Time.time+=4;b.RiskMedical=true;
+        b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
+        Check(!p.AllowsArbitration&&!SAINFollowerRuntime.GetRegroup(b).Active,"pending legitimate treatment protects automatic push recovery");
+        b=BlockedAutomaticPush("blockedAutoOwnShot");p=SAINFollowerRuntime.GetPush(b);Time.time+=4;
+        b.Sain.GoalEnemy.IsVisible=b.Sain.GoalEnemy.CanShoot=true;b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
+        Check(!p.AllowsArbitration&&!SAINFollowerRuntime.GetRegroup(b).Active,"available exact-target fire remains productive during a readiness block");
+
+        b=BlockedAutomaticPush("blockedAutoSupport",0);p=SAINFollowerRuntime.GetPush(b);
+        // Establish a legitimate passive cover and existing player-engagement cue.
+        b.Sain.Cover.CoverInUse=CoverAt(0);b.Sain.Cover.CoverSeekingState=SAIN.SAINComponent.Classes.ECoverSeekingState.HoldInCover;
+        b.Sain.GoalEnemy.KnownPlaces.LastKnownPosition=new Vector3(60,0,0);
+        ((pitTeam.Components.pitAIBossPlayer)b.BotFollower.BossToFollow).Engagement=b.Sain.GoalEnemy.EnemyProfileId;
+        SAIN.SAINComponent.Classes.Decision.FiringPositionFinder.Candidate=new Vector3(-10,0,0);
+        Time.time+=4;b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
+        Time.time+=1.1f;b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
+        Check(p.Active&&p.AllowsArbitration&&SAINFollowerRuntime.GetSquadSupport(b).Mode==SAINSquadSupportMode.AllySupport,
+            "settled blocked automatic push permits a prepared ordinary ally-support successor");
+        SAINFollowerRuntime.GetSquadSupport(b).Clear("test");
+        b=BlockedAutomaticPush("blockedAutoNoSuccessor",0);p=SAINFollowerRuntime.GetPush(b);
+        var safeHold=CoverAt(0);b.Sain.Cover.CoverInUse=safeHold;b.Sain.Cover.CoverSeekingState=SAIN.SAINComponent.Classes.ECoverSeekingState.HoldInCover;
+        enemy=p.EnemyId;Time.time+=4;
+        for(int i=0;i<8;i++)b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
+        Check(p.Active&&p.EnemyId==enemy&&p.AllowsArbitration&&!p.Destination.HasValue&&
+            b.Sain.Cover.CoverInUse==safeHold&&!SAINFollowerRuntime.GetRegroup(b).Active&&!SAINFollowerRuntime.GetSquadSupport(b).Active,
+            "no prepared support or required regroup retains safe cover and mission without rearming an advance");
+        b=BlockedAutomaticPush("blockedAutoReadyAgain",0);p=SAINFollowerRuntime.GetPush(b);Time.time+=4;
+        b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);b.WeaponManager.IsWeaponReady=true;
+        b.Sain.Decision.Manager.Publish(ECombatDecision.Search);
+        Check(p.OwnsMovement&&!p.AllowsArbitration,"actual weapon recovery permits a fresh productive automatic leg");
+
+        b=PushBot("blockedOrderedRetains");p=SAINFollowerRuntime.GetPush(b);b.Leader.Position=new Vector3(200,0,0);
+        b.WeaponManager.IsWeaponReady=false;b.Sain.Decision.Manager.Publish(ECombatDecision.Search);Time.time+=30;
+        b.Sain.Decision.Manager.Publish(ECombatDecision.SeekCover);
+        Check(p.Ordered&&!p.AllowsArbitration&&!SAINFollowerRuntime.GetRegroup(b).Active,"automatic liveness correction cannot erase an unfinished ordered push");
     }
     private static void TestPushContactInterruption(){
         var b=PushBot("brickContactGap");var p=SAINFollowerRuntime.GetPush(b);var m=b.Sain.Decision.Manager;

@@ -167,7 +167,7 @@ internal sealed class SAINFollowerSquadSupportObjective(BotComponent bot, Firing
         }
 
         if (SAINFollowerRuntime.GetRegroup(bot.BotOwner)?.Active == true ||
-            SAINFollowerRuntime.GetPush(bot.BotOwner)?.Active == true ||
+            SAINFollowerRuntime.GetPush(bot.BotOwner) is { Active: true, AllowsArbitration: false } ||
             SAINFollowerRuntime.GetMarksman(bot.BotOwner)?.Ordered == true ||
             SAINFollowerRuntime.GetMarksman(bot.BotOwner)?.OwnsMovement == true ||
             SAINFollowerRuntime.GetMarksman(bot.BotOwner)?.Preparing == true ||
@@ -225,7 +225,7 @@ internal sealed class SAINFollowerSquadSupportObjective(BotComponent bot, Firing
     {
         var follower = Follower; var boss = Boss;
         // Core Rifleman protection gates, using native personal sight and known identity.
-        if (follower == null || follower.CombatIndependent || follower.BossProtectionWillingness01 < 0.45f ||
+        if (follower == null || follower.CombatIndependent || follower.BossProtectionWillingness01 <= 0f ||
             boss?.GetBossLogic()?.IsHitted != true ||
             bot.BotOwner.Memory.HaveEnemy && !(current?.Seen == true && current.TimeSinceSeen <= 2.5f)) return null;
         BotOwner attacker = boss.ClosestEnemy();

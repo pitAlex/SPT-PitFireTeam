@@ -171,59 +171,23 @@ namespace pitTeam.Patches
     internal static class GearSwapInteractions
     {
         internal static bool Allowed(EItemInfoButton action, Item item = null) =>
-            !(action == EItemInfoButton.Open && TeammateGearSwap.Current?.IsOpaqueBackpack(item) == true) &&
             (action == EItemInfoButton.Inspect ||
             action == EItemInfoButton.Open || action == EItemInfoButton.Equip || action == EItemInfoButton.Unequip ||
             action == EItemInfoButton.Install || action == EItemInfoButton.Uninstall ||
             action == EItemInfoButton.Load || action == EItemInfoButton.Unload ||
             action == EItemInfoButton.Fold || action == EItemInfoButton.Unfold);
     }
-    internal sealed class GearSwapBackpackSlotContentsPatch : ModulePatch
+    internal sealed class GearSwapPocketSpecialSlotsPatch : ModulePatch
     {
-        protected override MethodBase GetTargetMethod() => AccessTools.Method(typeof(SearchableSlotView), nameof(SearchableSlotView.ShowContent));
+        protected override MethodBase GetTargetMethod() => AccessTools.Method(typeof(SearchableSlotView), nameof(SearchableSlotView.CreateSlots));
         [PatchPrefix]
         private static bool Prefix(SearchableSlotView __instance, Item item)
         {
-            if (TeammateGearSwap.Current?.IsOpaqueBackpack(item) != true) return true;
-            GearSwapBackpackPresentation.CloseContents(__instance._searchableItemView, __instance);
+            // Keep the normal pocket grids; only the follower's cloned special-slot panel is hidden.
+            if (TeammateGearSwap.Current?.IsFollowerPockets(item) != true) return true;
             if (__instance._specSlotsPanel != null) __instance._specSlotsPanel.gameObject.SetActive(false);
             return false;
         }
-    }
-    internal static class GearSwapBackpackPresentation
-    {
-        internal static void CloseContents(SearchableItemView contents, SlotView slot = null)
-        {
-            if (contents == null) return;
-            slot = slot ?? contents.GetComponent<SlotView>();
-            // UIElement.Close disables the entire GameObject. Native searchable-slot
-            // prefabs may share that object with the equipment row. Dispose the contents
-            // without hiding the slot/header/drop target; no grids are created here.
-            bool containsSlot = slot != null && slot.transform.IsChildOf(contents.transform);
-            contents.Close();
-            if (containsSlot)
-            {
-                contents.ShowGameObject();
-                slot.ShowGameObject();
-            }
-        }
-    }
-    internal sealed class GearSwapBackpackContentsPatch : ModulePatch
-    {
-        protected override MethodBase GetTargetMethod() => AccessTools.Method(typeof(SearchableItemView), nameof(SearchableItemView.Show));
-        [PatchPrefix]
-        private static bool Prefix(SearchableItemView __instance, CompoundItem compoundItem)
-        {
-            if (TeammateGearSwap.Current?.IsOpaqueBackpack(compoundItem) != true) return true;
-            GearSwapBackpackPresentation.CloseContents(__instance);
-            return false;
-        }
-    }
-    internal sealed class GearSwapBackpackOpenPatch : ModulePatch
-    {
-        protected override MethodBase GetTargetMethod() => AccessTools.Method(typeof(ItemUiContext), nameof(ItemUiContext.OpenItem));
-        [PatchPrefix]
-        private static bool Prefix(CompoundItem item) => TeammateGearSwap.Current?.IsOpaqueBackpack(item) != true;
     }
     internal sealed class GearSwapArmorSlotPatch : ModulePatch
     {

@@ -54,6 +54,7 @@ namespace pitTeam.SAINAddon
         internal static void Enable()
         {
             SainAddonBridge.RegisterEnemyContactProvider(GetEnemyContact);
+            SainAddonBridge.RegisterMovementCornerProvider(GetMovementCorner, ReleaseWireCover);
             SainCoverSelectionBridge.Register(SelectCover, CoverSelected);
             SainManPersonality.Initialize();
             SainAddonBridge.RegisterPushEnemyHandler(BeginPushObjective);
@@ -72,6 +73,7 @@ namespace pitTeam.SAINAddon
         {
             _enabled = false;
             SainAddonBridge.UnregisterEnemyContactProvider(GetEnemyContact);
+            SainAddonBridge.UnregisterMovementCornerProvider(GetMovementCorner);
             SainCoverSelectionBridge.Unregister(SelectCover, CoverSelected);
             SainAddonBridge.UnregisterPushEnemyHandler(BeginPushObjective);
             SainAddonBridge.UnregisterDirectedPushEnemyHandler(BeginDirectedPushObjective);
@@ -82,6 +84,24 @@ namespace pitTeam.SAINAddon
             SainAddonBridge.OnFollowerLifecycleEvent -= Lifecycle;
             foreach (var follower in BossPlayers.GetFollowers()) Cleanup(follower?.GetBot());
             SainCombatRecorderBridge.Unregister(CaptureCombat, IsRecordedCombat);
+        }
+
+        private static UnityEngine.Vector3? GetMovementCorner(BotOwner owner)
+        {
+            if (!IsReady(owner) || !States.TryGetValue(owner, out State state) ||
+                !state.Bot.SAINLayersActive || !state.Bot.Mover.Moving) return null;
+            var path = state.Bot.Mover.ActivePath;
+            if (path?.PathCorners == null || path.CurrentIndex < 0 || path.CurrentIndex >= path.PathCorners.Count) return null;
+            return path.GetCurrentCorner().Position;
+        }
+
+        private static void ReleaseWireCover(BotOwner owner)
+        {
+            if (!States.TryGetValue(owner, out State state) || state.Bot == null) return;
+            state.Cover?.Clear();
+            var cover = state.Bot.Cover;
+            var point = cover.CoverInUse ?? cover.CoverPoint_MovingTo;
+            if (point != null && FollowerWireNavigation.IsCoverUnsafe(point.Position)) cover.StopSeekingCover();
         }
 
         private static SainEnemyContact? GetEnemyContact(BotOwner owner)
@@ -121,15 +141,17 @@ namespace pitTeam.SAINAddon
                 bool wasReady = state.Prepared;
                 state.Prepared = false;
                 if (!SainPlayerSquadBridge.TryGetPlayerLeader(owner, out Player player) ||
-                    !SAINEnableClass.GetSAIN(owner.ProfileId, out BotComponent bot) || bot?.Decision == null || bot.Info == null) return;
+                    !SAINEnableClass.GetSAIN(owner.ProfileId, out BotComponent bot) || bot?.Decision == null || bot.Info == null)
+                { state.Handoff.Clear(); return; }
                 state.AttentionIgnore.Refresh(player.Position);
                 if (state.Bot != bot || state.SquadDecisions == null || state.Shooter != SainAddonBridge.IsShooterSelected(owner))
                 {
                     if (state.Bot == bot && state.Shooter != SainAddonBridge.IsShooterSelected(owner))
                     {
                         state.SoloLayer?.Stop(); state.SquadLayer?.Stop();
-                        bot.Mover.Stop(); bot.Decision.ResetDecisions(false); state.Handoff.Clear();
+                        bot.Mover.Stop(); bot.Decision.ResetDecisions(false);
                     }
+                    state.Handoff.Clear();
                     state.AttentionIgnore.Clear();
                     state.SoundAwareness?.Clear();
                     state.SoundAwareness = new SainFollowerSoundAwareness(bot);
@@ -151,13 +173,14 @@ namespace pitTeam.SAINAddon
                 state.Bot = bot;
                 state.Recorder ??= new SAINFollowerRecorder(bot, state.EngageAttempt, state.Regroup);
                 state.Prepared = state.Personality.Apply(bot);
-                if (!state.Prepared) SainManPersonality.Restore(owner);
+                if (!state.Prepared) { state.Handoff.Clear(); SainManPersonality.Restore(owner); }
                 if (state.Prepared && !wasReady)
                     Modules.Logger.LogInfo($"[SAIN] SainMan combat ready: follower={owner.ProfileId} solo={SAINFollowerSoloCombatLayer.Name} squad={SAINFollowerSquadCombatLayer.Name} personality={bot.Info.Personality}");
             }
             catch (Exception ex)
             {
                 state.Prepared = false;
+                state.Handoff.Clear();
                 try { SainManPersonality.Restore(owner); }
                 catch (Exception restoreError) { if (!state.ReportedFailure) Modules.Logger.LogError(restoreError.ToString()); }
                 if (!state.ReportedFailure)

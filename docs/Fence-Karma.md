@@ -2,11 +2,13 @@
 
 ## Allegiance Scav rules
 
-Intentional friendly ordinary-Scav kills cost exactly **0.05 Fence standing for a recruited companion**, or **0.025 for an unrecruited friendly/neutral Scav**. The player must initiate damaging fire or issue an accepted Contact command against that neutral victim; a PMC follower may finish the kill. An uncommanded PMC attack is excluded, even if the player later finishes that fight. The first intent/damage classification survives retaliation. Outside killers and Scav followers do not charge the player. Only a recruited victim plays the negative karma sound.
+Intentional friendly ordinary-Scav kills, including sniper Scavs calmed by a companion, cost exactly **0.05 Fence standing for a recruited companion**, or **0.025 for an unrecruited friendly/neutral Scav**. The player must initiate damaging fire or issue an accepted Contact command against that neutral victim; a PMC follower may finish the kill. An uncommanded PMC attack is excluded, even if the player later finishes that fight. The first intent/damage classification survives retaliation. Outside killers and Scav followers do not charge the player. Only a recruited victim plays the negative karma sound.
 
 `ScavFenceKarma.RecordKill` uses native `Profile.FenceInfo.AddStanding` with the selected negative amount, `ScavKill`, and `false`. The final argument bypasses charisma discount and its two-decimal floor so the fixed amounts stay exact. No high-reputation multiplier is added. The native raid-result profile carries standing to the server; native post-raid handling clamps it and synchronizes PMC and player-Scav trader data. There is no second standing HTTP report. This follows native persistence at raid end, not crash-proof saving during a raid.
 
 Survived/Runner extraction at a non-co-op exit with a living recruited Scav still following the human grants a flat **+0.025 Fence standing** once per raid. Multiple partners do not multiply it, and repeated use of the exit does not diminish it. The reward respects configured Fence bounds and does not touch native co-op use counts. Real co-op exits, including SVM-paid conversions still listed as co-op by the server, use only native standing/gift handling; the mod adds no reward or fallback when native rewards are disabled. No positive karma sound plays. See [cargo and extraction](looting/Friendly-Scav-Cargo.md).
+
+Empty-handed ordinary extraction sends Fence's localized thank-you note as well as the existing standing gain. Transit departure sends the same note when no cargo remains, but adds no supplemental standing or random co-op reward. Real co-op messages/rewards and PMC recruit/transit behavior remain unchanged.
 
 These rules do not change PMC `karmaValue` or the independent 24-hour encounter penalty ledger. Scavs also do not create PMC quiet-recovery eligibility.
 

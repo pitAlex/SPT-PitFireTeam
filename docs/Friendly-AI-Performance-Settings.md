@@ -11,6 +11,8 @@ This document identifies the settings and runtime calculations that determine fo
 
 The SAIN Default baseline, follower-local values model, persistent per-teammate percentages, profile UI, runtime modifier, and final aim-time patch are implemented. Runtime gameplay calibration across the validation matrix remains pending. `addon/docs/Integration.md` is authoritative for the addon boundary.
 
+The Proficiency editor also contains **Aggression** and **Self-Determination**, both 0..100. Self-Determination defaults to 50 and controls tactical dependence on the player, separately from these execution modifiers; see [its shared contract](Self-Determination.md). Raid pickups use a fixed 50 baseline. All editor percentages display a separate adjacent `%` label while retaining plain editable numeric inputs and their existing ranges.
+
 ## Executive conclusions
 
 1. EFT has separable controls for:

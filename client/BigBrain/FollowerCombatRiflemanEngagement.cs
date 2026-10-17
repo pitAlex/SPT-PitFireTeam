@@ -30,6 +30,7 @@ namespace pitTeam.BigBrain
         private Vector3 cachedEnemyPosition;
         private Vector3 cachedBossPosition;
         private float cachedAggression = -1f;
+        private float cachedDetermination = -1f;
         private float cachedAt;
         private bool hasCachedEvaluation;
         private bool cachedEnemyVisible;
@@ -114,6 +115,7 @@ namespace pitTeam.BigBrain
         public Evaluation Evaluate(EnemyInfo goalEnemy)
         {
             float effectiveAggression = combatCommon.GetAggression01() * 100f;
+            float determination = BossPlayers.Instance?.GetFollower(botOwner)?.EffectiveSelfDetermination ?? 50f;
             Vector3 botPosition = botOwner.Position;
             Vector3 enemyPosition = FollowerCombatCommon.GetEnemyAnchor(goalEnemy);
             Vector3 bossPosition = combatCommon.GetRealBossPosition();
@@ -126,7 +128,7 @@ namespace pitTeam.BigBrain
             bool memoryOnly = goalEnemy == null || Enemy.IsMemoryOnlyAcquisitionWithoutPersonalContact(goalEnemy);
             bool hasReliableLocation = goalEnemy != null && combatCommon.HasReliablePersonalEnemyLocation(goalEnemy);
 
-            if (CanReuse(
+            if (Mathf.Approximately(cachedDetermination, determination) && CanReuse(
                     enemyProfileId,
                     botPosition,
                     enemyPosition,
@@ -159,6 +161,7 @@ namespace pitTeam.BigBrain
             cachedEnemyPosition = enemyPosition;
             cachedBossPosition = bossPosition;
             cachedAggression = effectiveAggression;
+            cachedDetermination = determination;
             cachedAt = Time.time;
             cachedEnemyVisible = goalEnemy?.IsVisible == true;
             cachedEnemyShootable = goalEnemy?.CanShoot == true;
@@ -289,7 +292,8 @@ namespace pitTeam.BigBrain
                 enemyRouteDistance, threatAdjustment, roleThreatMultiplier, (int)weaponThreatPolicy);
             float playerPullAdjustment = combatIndependent || !pathsComplete
                 ? 0f
-                : CalculatePlayerPullAdjustment(enemyRouteDistance, currentBossDistance, projectedBossPathDistance);
+                : CalculatePlayerPullAdjustment(enemyRouteDistance, currentBossDistance, projectedBossPathDistance) *
+                  (BossPlayers.Instance?.GetFollower(botOwner)?.BossInfluence ?? 1f);
             float requiredAggression = FollowerPushRiskPolicy.Required(
                 enemyRouteDistance, threatAdjustment, playerPullAdjustment, roleThreatMultiplier, (int)weaponThreatPolicy);
 
@@ -301,6 +305,9 @@ namespace pitTeam.BigBrain
                 pathsComplete,
                 weaponThreatPolicy);
             bool allowsEngagement = string.IsNullOrEmpty(blockReason) && effectiveAggression >= requiredAggression;
+            if ((BossPlayers.Instance?.GetFollower(botOwner)?.EffectiveSelfDetermination ?? 50f) <= 0f &&
+                projectedBossPathDistance > regroupTriggerDistance && projectedBossPathDistance > currentBossDistance)
+            { allowsEngagement = false; blockReason = "closeEscort"; }
             Outcome outcome;
             string reason;
             if (allowsEngagement)
@@ -373,10 +380,7 @@ namespace pitTeam.BigBrain
         private float GetEffectiveRegroupTriggerDistance()
         {
             float triggerDistance = CombatDistanceConfiguration.Instance.GetBossRegroupTriggerDistance(botOwner);
-            return triggerDistance * Mathf.Lerp(
-                PickupFollowerPersonality.RegroupMaxTriggerMultiplier,
-                1f,
-                combatCommon.GetBossProtectionWillingness01());
+            return triggerDistance;
         }
 
         private bool TryGetPathDistance(Vector3 start, Vector3 destination, out float distance)

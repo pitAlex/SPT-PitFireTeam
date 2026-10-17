@@ -15,9 +15,11 @@ public static class SainRegroupBridge
     public static float GetTriggerDistance(BotOwner owner) =>
         (SainAddonBridge.IsShooterSelected(owner)
             ? CombatDistanceConfiguration.Instance.GetRegroupNeededDistanceMarksman(owner)
-            : CombatDistanceConfiguration.Instance.GetBossRegroupTriggerDistance(owner)) *
-        Mathf.Lerp(PickupFollowerPersonality.RegroupMaxTriggerMultiplier, 1f,
-            BossPlayers.Instance?.GetFollower(owner)?.BossProtectionWillingness01 ?? 1f);
+            : CombatDistanceConfiguration.Instance.GetBossRegroupTriggerDistance(owner));
+
+    public static float GetAutomaticCompleteDistance(BotOwner owner) => pitTeam.Shared.SelfDeterminationPolicy.Completion(
+        BossPlayers.Instance?.GetFollower(owner)?.EffectiveSelfDetermination ?? 50f,
+        GetTriggerDistance(owner), GetCompleteDistance(owner, false), SainAddonBridge.IsShooterSelected(owner));
 
     public static float GetCompleteDistance(bool tight) => tight
         ? FollowerCombatRegroupObjective.TightRegroupCompleteDistance

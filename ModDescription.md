@@ -587,6 +587,7 @@ In teammate loadout editing, do not repair equipment and then move items into or
 In teammate loadout editing, if you happen to end up in a situation where you cannot save the teammate loadout due to a message regarding duplicate items, restart the game to recover the teammate's profile. Note that any duplicate item will be stripped in the process.
 
 - Teammates can linger after combat. Use **Attention** to reset them.
+- A teammate stuck in an internal magazine-reload state can block **Swap Gear**, even outside combat. Issue **Attention**, let the reload finish, then try **Swap Gear** again.
 - Teammates might not heal their health all the way. It is a game issue; use the Heal key to force heal.
 - Teleporting teammates while they are interacting with doors or other objects can leave them in a bad state.
 - **The game has navigation problems that even SAIN is not able to fully resolve. If your bots get stuck, use teleportation. In other situations, their movement is in teleportation-like bursts. Be mindful of this and stay aware of their position, or you will find yourself in a fight all alone or without all your squad as they got stuck somewhere.**

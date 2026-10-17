@@ -73,15 +73,13 @@ internal static class SainMedicalDecisionBridge
                 !FollowerStimulatorPolicy.CanUseStimulatorNow(bot.BotOwner, out var stims)) return true;
 
             bool stomachPain = FollowerStimulatorPolicy.NeedsBlackStomachPainRelief(bot.BotOwner);
-            bool antidote = FollowerStimulatorPolicy.NeedsAntidote(bot.BotOwner);
             bool health = bot.Memory.Health.Dying || bot.Memory.Health.BadlyInjured;
             // Inspect advertised surgery work; do not run its provider to decide on a stim.
             bool limbPain = FollowerStimulatorPolicy.ShouldUsePainStimForDestroyedPartAtHealCover(bot.BotOwner, refreshSurgeryPart: false);
-            if ((!antidote && !stomachPain && !health && !limbPain) || !CanUseStimsSafely(bot)) return true;
+            if ((!stomachPain && !health && !limbPain) || !CanUseStimsSafely(bot)) return true;
 
             var selection = stimulators.GetValue(bot, _ => new FollowerStimulatorPolicy());
-            if ((antidote && selection.TrySelectAntidoteStimulator(bot.BotOwner, stims)) ||
-                (stomachPain && selection.TrySelectPainStimulator(bot.BotOwner, stims, refreshOnMiss: false)) ||
+            if ((stomachPain && selection.TrySelectPainStimulator(bot.BotOwner, stims, refreshOnMiss: false)) ||
                 (health && selection.TrySelectPositiveHealthRateStimulator(bot.BotOwner, stims, refreshOnMiss: false)) ||
                 (limbPain && selection.TrySelectPainStimulator(bot.BotOwner, stims, refreshOnMiss: false)))
             {

@@ -43,8 +43,8 @@ namespace pitTeam.Modules {
     public class CombatDistanceConfiguration {
         public static CombatDistanceConfiguration Instance=new CombatDistanceConfiguration();
         public bool Factory,Urban;public float Trigger=18;
-        public float GetBossRegroupTriggerDistance(BotOwner o)=>Trigger;
-        public float GetRegroupNeededDistanceMarksman(BotOwner o)=>Trigger*(Factory?2f:1.5f);
+        public float GetBossRegroupTriggerDistance(BotOwner o)=>pitTeam.Shared.SelfDeterminationPolicy.Trigger(o.Follower.EffectiveSelfDetermination,Trigger);
+        public float GetRegroupNeededDistanceMarksman(BotOwner o)=>pitTeam.Shared.SelfDeterminationPolicy.Trigger(o.Follower.EffectiveSelfDetermination,Trigger*(Factory?2f:1.5f));
         public float GetRegroupBossMoveRefreshDistance()=>Factory?8:10;
         public float GetBossCoverSearchRadius()=>25;
         public bool IsUrbanDetourRegroup(float direct,float path)=>Urban&&direct<45&&path>75;
@@ -218,7 +218,7 @@ public static partial class CombatChecks {
         var previousPath=bot.Sain.Mover.ActivePath;bot.Sain.Mover.ActivePath=new SAIN.Components.PathData();int stops=bot.Sain.Mover.Stops;action.Stop();
         Check(bot.Sain.Mover.Stops==stops,"regroup stop does not cancel a successor path");
         Check(!((pitAIBossPlayer)bot.BotFollower.BossToFollow).CombatEvents.Claims.ContainsKey(bot.ProfileId),"regroup stop releases its reservation");
-        bot.GetPlayer.Position=new Vector3(45,0,0);Time.time+=1;objective.Observe();
+        bot.GetPlayer.Position=new Vector3(50,0,0);Time.time+=1;objective.Observe();
         Check(objective.Settling,"auto arrival uses inner hysteresis distance and a short settle");
         Time.time+=2;objective.Observe();Check(!objective.Active,"settled arrival completes regroup");
         Check(!RegroupDecision(bot),"completed regroup does not immediately rearm");

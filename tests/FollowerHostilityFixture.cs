@@ -44,7 +44,7 @@ namespace EFT {
         public void RaiseDeath() => DiedEvent?.Invoke(EDamageType.Bullet);
     }
     public class Settings { public WildSpawnType Role; }
-    public class ProfileInfo { public int Level=20; public EPlayerSide Side; public Settings Settings = new Settings(); }
+    public class ProfileInfo { public int Level=20; public EPlayerSide Side; public string GroupId,TeamId; public Settings Settings = new Settings(); }
     public class Profile { public ProfileInfo Info = new ProfileInfo(); public bool KnightFriend; public FenceData FenceInfo = new FenceData(); }
     public class FenceData { public double Standing=0.2; public int Changes;
         public void AddStanding(double delta,EFT.Counters.EFenceStandingSource source,bool discount) {
@@ -55,7 +55,7 @@ namespace EFT {
     public class AIData { public BotOwner BotOwner; }
     public class Player : IPlayer {
         public string ProfileId { get; set; } public bool IsAI { get; set; } public IPlayer iPlayer => this;
-        public string GroupId => "group-" + ProfileId;
+        public string GroupId => Profile.Info.GroupId ?? "group-" + ProfileId;
         public Profile Profile { get; set; } = new Profile(); public AIData AIData { get; set; } = new AIData();
         public Health HealthController { get; set; } = new Health(); public UnityEngine.Vector3 Position {get;set;}
         public EPlayerSide Side => Profile.Info.Side;
@@ -139,7 +139,11 @@ namespace pitTeam.Components {
         __BOSS_HIT_METHOD__
     }
     public class BotFollowerPlayer { public pitAIBossPlayer Boss; public BotOwner Bot; public BotOwner GetBot() => Bot; public pitAIBossPlayer GetBoss() => Boss;
-        public void Dismiss(bool warn) { if(warn) throw new Exception("Scav departure must remain peaceful"); Bot.BotFollower.BossToFollow=null; }
+        private BotOwner _bot => Bot; private pitAIBossPlayer _player => Boss;
+        private string _grouId,_teamId;private bool _profileIdentityAssigned;
+        __PROFILE_IDENTITY_METHODS__
+        public void AssignIdentity() => AssignProfileIdentity();
+        public void Dismiss(bool warn) { if(warn) throw new Exception("Scav departure must remain peaceful"); RestoreProfileIdentity();Bot.BotFollower.BossToFollow=null; }
     }
 }
 namespace pitTeam.Patches { public class BotsGroupPlayer : BotsGroup { public pitAIBossPlayer Boss; } }
@@ -197,7 +201,8 @@ namespace pitTeam.Modules {
         public static pitAIBossPlayer GetBossByGroup(int id) => Boss.bossGroup.Id == id ? Boss : null;
     }
     public static class FactionHostility {
-        public static bool IsScavFaction(Player p) => p.Profile.Info.Settings.Role == WildSpawnType.assault;
+        public static bool IsScavFaction(Player p) => p.Side==EPlayerSide.Savage &&
+            (p.Profile.Info.Settings.Role == WildSpawnType.assault || p.Profile.Info.Settings.Role == WildSpawnType.marksman);
         __NEUTRAL_METHOD__
     }
     public static class FollowerCalcGoalEnemyAcquire {
@@ -430,14 +435,40 @@ public static class HostilityChecks {
         UnityEngine.Random.NextValue=0;var scav=Scav(id);AllegiancePmcFriendship.Apply(scav);
         scav.BotFollower.BossToFollow=boss;boss.Followers.Add(scav);
         BossPlayers.Registered[scav.ProfileId]=new BotFollowerPlayer{Boss=boss,Bot=scav};
+        BossPlayers.Registered[scav.ProfileId].AssignIdentity();
         AllegianceScavRelations.OnFollowerAdded(scav,boss,false);return scav;
     }
+    private static void ScavProfileIdentityChecks() {
+        foreach(string departure in new[]{"dismissal","death","removal"}) {
+            Setup();boss.realPlayer.Profile.Info.GroupId="leader-group";boss.realPlayer.Profile.Info.TeamId="leader-team";
+            GameplayModeRuntime.IsAllegiance=true;pitTeam.pitFireTeam.friendlyEncounterChance.Value=80;UnityEngine.Random.NextValue=0;
+            var scav=Scav("identity-companion");scav.Profile.Info.GroupId="original-scav-group";scav.Profile.Info.TeamId="original-scav-team";
+            AllegiancePmcFriendship.Apply(scav);var originalGroup=scav.BotsGroup;
+            var follower=new BotFollowerPlayer{Boss=boss,Bot=scav};follower.AssignIdentity();
+            // A repeated assignment must not overwrite the saved original IDs.
+            follower.AssignIdentity();scav.BotFollower.BossToFollow=boss;boss.Followers.Add(scav);BossPlayers.Registered[scav.ProfileId]=follower;
+            AllegianceScavRelations.OnFollowerAdded(scav,boss,false);
+            Check(scav.GroupId==boss.realPlayer.GroupId&&scav.Profile.Info.TeamId=="leader-team","Scav shares leader profile IDs during recruitment: "+departure);
+            Check(scav.BotsGroup==originalGroup&&originalGroup.Contains(scav)&&!boss.bossGroup.Contains(scav)&&scav.Side==EPlayerSide.Savage,"Shared profile IDs preserve native Scav group and side: "+departure);
+            var enemy=Scav("identity-hostile");enemy.BotsGroup.Enemies[boss.realPlayer]=new();UnityEngine.Random.NextValue=0.9f;AllegianceScavRelations.Apply(enemy);
+            enemy.BotsGroup._enemyPlayerGroups.Add("leader-group");enemy.BotsGroup._enemyPlayerGroups.Add("original-scav-group");
+            if(departure=="dismissal") {follower.Dismiss(false);BossPlayers.RemoveFollower(scav,boss);}
+            else if(departure=="death") {scav.HealthController.IsAlive=false;scav.HealthController.RaiseDeath();}
+            else BossPlayers.RemoveFollower(scav,boss);
+            Check(scav.Profile.Info.GroupId=="original-scav-group"&&scav.Profile.Info.TeamId=="original-scav-team","Departure restores both original IDs: "+departure);
+            Check(enemy.BotsGroup._enemyPlayerGroups.Contains("leader-group")&&!enemy.BotsGroup._enemyPlayerGroups.Contains("original-scav-group"),"Departure cleanup clears the Scav's cache without clearing the leader's group hostility: "+departure);
+            Check(enemy.BotsGroup.IsEnemy(boss.realPlayer)&&scav.BotsGroup==originalGroup,"Departure preserves human hostility and native group membership: "+departure);
+            scav.Profile.Info.GroupId="later-group";scav.Profile.Info.TeamId="later-team";follower.RestoreProfileIdentity();
+            Check(scav.GroupId=="later-group"&&scav.Profile.Info.TeamId=="later-team","Repeated cleanup cannot overwrite a later identity: "+departure);
+        }
+    }
     private static void ScavDiplomacyChecks() {
+        foreach(var role in new[]{WildSpawnType.assault,WildSpawnType.marksman})
         foreach(float roll in new[]{0f,0.7499f,0.75f,0.9999f}) {
             Setup();var companion=RecruitScavCompanion();var own=companion.BotsGroup;
             Check(own.Side==EPlayerSide.Savage && own.MembersCount==1 && own.Contains(companion) && !boss.bossGroup.Contains(companion),"Scav remains a member only of the independent Savage group");
             Check(own.IsAlly(boss.realPlayer)&&own.IsAlly(first)&&own.IsAlly(second)&&boss.bossGroup.IsAlly(companion),"Player and PMC squad are reciprocal allies, not Scav group members");
-            var target=Scav("ordinary");var group=target.BotsGroup;group.Enemies[boss.realPlayer]=new BotGroupEnemyInfo();
+            var target=Scav("ordinary");var group=target.BotsGroup;target.Profile.Info.Settings.Role=role;group.InitialBotType=role;group.Enemies[boss.realPlayer]=new BotGroupEnemyInfo();
             group.Enemies[first]=new BotGroupEnemyInfo();boss.bossGroup.Enemies[target]=new BotGroupEnemyInfo();
             UnityEngine.Random.NextValue=roll;int before=UnityEngine.Random.Rolls;
             AllegianceScavRelations.Apply(target);AllegianceScavRelations.Apply(target);
@@ -449,6 +480,7 @@ public static class HostilityChecks {
                 Check(!group.AddEnemy(boss.realPlayer,EBotEnemyCause.initial) && !boss.bossGroup.AddEnemy(target,EBotEnemyCause.initial),"Ambient native scans cannot undo group neutrality");
                 Check(group.AddEnemy(boss.realPlayer,EBotEnemyCause.followGetHit) && own.IsEnemy(target),"Actual aggression ends neutrality and reaches the separate Scav group");
             } else {
+                Check(group.IsEnemy(companion)&&own.IsEnemy(target),"A Scav remaining hostile to the leader is already mutually hostile with his Scav companion: "+role);
                 group.AddEnemy(boss.realPlayer,EBotEnemyCause.initial);
                 Check(own.IsEnemy(target),"Existing hostility toward the PMC leader reaches the independent Scav group");
             }
@@ -465,10 +497,10 @@ public static class HostilityChecks {
         Check(UnityEngine.Random.Rolls==groupRolls+1&&boss.bossGroup.Neutrals.ContainsKey(groupedNeutral)&&boss.bossGroup.Neutrals.ContainsKey(groupedMember),"An ordinary Scav group rolls once and neutralizes every member");
         Setup();recruitedScav=RecruitScavCompanion();var mixed=Scav("mixed-group");var sniper=Scav("sniper");sniper.Profile.Info.Settings.Role=WildSpawnType.marksman;mixed.BotsGroup.Members.Add(sniper);
         groupRolls=UnityEngine.Random.Rolls;AllegianceScavRelations.Apply(mixed);
-        Check(UnityEngine.Random.Rolls==groupRolls,"Mixed marksman group never gets diplomatic neutrality");
+        Check(UnityEngine.Random.Rolls==groupRolls+1&&mixed.BotsGroup.Neutrals.ContainsKey(boss.realPlayer),"Ordinary assault/marksman groups receive the same single diplomacy roll");
         Setup();recruitedScav=RecruitScavCompanion();
         foreach(WildSpawnType role in Enum.GetValues(typeof(WildSpawnType))) {
-            if(role==WildSpawnType.assault)continue;
+            if(role==WildSpawnType.assault||role==WildSpawnType.marksman)continue;
             var excluded=Scav("diplomacy-excluded-"+role);excluded.Profile.Info.Settings.Role=role;excluded.BotsGroup.InitialBotType=role;
             excluded.BotsGroup.Enemies[boss.realPlayer]=new BotGroupEnemyInfo();int before=UnityEngine.Random.Rolls;
             AllegianceScavRelations.Apply(excluded);
@@ -525,6 +557,58 @@ public static class HostilityChecks {
         }
         AllegianceScavRelations.Reset();
         Check(!AllegianceScavRelations.RefusesRecruitment(recruitedScav),"Raid reset clears diplomatic trust and refusal");
+    }
+    private static void ScavReciprocalHostilityChecks() {
+        foreach(var role in new[]{WildSpawnType.assault,WildSpawnType.marksman}) {
+            Setup();var one=RecruitScavCompanion("reciprocal-one");var two=RecruitScavCompanion("reciprocal-two");
+            var target=Scav("reciprocal-hostile");target.Profile.Info.Settings.Role=role;target.BotsGroup.InitialBotType=role;
+            var group=target.BotsGroup;group.Enemies[boss.realPlayer]=new();group.Allies.Add(one);group.Allies.Add(two);
+            one.BotsGroup.Enemies[target]=new(); // The old one-way relationship must also be repaired.
+            UnityEngine.Random.NextValue=0.9f;AllegianceScavRelations.Apply(target);
+            Check(group.IsEnemy(one)&&group.IsEnemy(two)&&one.BotsGroup.IsEnemy(target)&&two.BotsGroup.IsEnemy(target),"Every living Scav companion and an uncalmed group become mutual enemies: "+role);
+            Check(!group.IsAlly(one)&&!group.IsAlly(two),"Native enemy admission removes stale same-side allies: "+role);
+            Check(one.Side==EPlayerSide.Savage&&one.BotsGroup!=boss.bossGroup&&group.MembersCount==1,"Traitor treatment preserves native side and group membership: "+role);
+            Check(one.Memory.GoalEnemy==null&&target.Memory.GoalEnemy==null&&one.EnemiesController.EnemyInfos.Count==0,"Relationship repair does not manufacture perception or select a combat goal: "+role);
+            int calls=group.Calls;AllegianceScavRelations.Apply(target);
+            Check(group.Calls==calls,"Already reciprocal hostility is not republished on repeated application: "+role);
+
+            Setup();one=RecruitScavCompanion();target=Scav("reciprocal-later-aggression");target.Profile.Info.Settings.Role=role;target.BotsGroup.InitialBotType=role;
+            UnityEngine.Random.NextValue=0;AllegianceScavRelations.Apply(target);
+            Check(target.BotsGroup.Neutrals.ContainsKey(one)&&one.BotsGroup.Neutrals.ContainsKey(target),"Successful calming leaves both Scav directions neutral: "+role);
+            target.BotsGroup.AddEnemy(boss.realPlayer,EBotEnemyCause.followGetHit);
+            Check(target.BotsGroup.IsEnemy(one)&&one.BotsGroup.IsEnemy(target),"Later actual aggression against the leader updates both Scav directions: "+role);
+
+            Setup();one=RecruitScavCompanion();target=Scav("reciprocal-native-rejection");target.Profile.Info.Settings.Role=role;target.BotsGroup.InitialBotType=role;
+            target.BotsGroup.Enemies[boss.realPlayer]=new();target.BotsGroup.Reject=true;UnityEngine.Random.NextValue=0.9f;
+            AllegianceScavRelations.Apply(target);Check(!target.BotsGroup.IsEnemy(one),"Reciprocal sharing respects native enemy rejection: "+role);
+            target.BotsGroup.Reject=false;AllegianceScavRelations.Apply(target);
+            Check(target.BotsGroup.IsEnemy(one),"A previously rejected reciprocal relationship can be admitted later: "+role);
+
+            foreach(bool directAggressor in new[]{false,true}) {
+                Setup();one=RecruitScavCompanion();target=Scav("reciprocal-departure");target.Profile.Info.Settings.Role=role;target.BotsGroup.InitialBotType=role;
+                target.BotsGroup.Enemies[boss.realPlayer]=new();UnityEngine.Random.NextValue=0.9f;AllegianceScavRelations.Apply(target);
+                if(directAggressor) AllegianceScavRelations.OnDamage(one,target);
+                BossPlayers.RemoveFollower(one,boss);
+                Check(target.BotsGroup.IsEnemy(one)==directAggressor&&one.BotsGroup.IsEnemy(target)==directAggressor,"Departure clears borrowed hostility in both directions but retains direct aggression: "+role+"/"+directAggressor);
+                Check(target.BotsGroup.IsEnemy(boss.realPlayer),"Companion departure preserves the group's original player hostility: "+role+"/"+directAggressor);
+            }
+
+            Setup();one=RecruitScavCompanion();target=Scav("reciprocal-independent-neutral");target.Profile.Info.Settings.Role=role;target.BotsGroup.InitialBotType=role;
+            target.BotsGroup.AddNeutral(boss.realPlayer);UnityEngine.Random.NextValue=0.9f;AllegianceScavRelations.Apply(target);
+            Check(!target.BotsGroup.IsEnemy(one)&&!one.BotsGroup.IsEnemy(target),"A failed calming roll does not turn an independently neutral Scav hostile: "+role);
+
+            Setup();GameplayModeRuntime.IsAllegiance=true;target=Scav("reciprocal-before-recruitment");target.Profile.Info.Settings.Role=role;target.BotsGroup.InitialBotType=role;
+            target.BotsGroup.Enemies[boss.realPlayer]=new();FollowerGroupHostility.OnBossDamage(boss,target);
+            Comfort.Common.Singleton<GameWorld>.Instance.AllAlivePlayersList.Add(target);one=RecruitScavCompanion();
+            Check(target.BotsGroup.IsEnemy(one)&&one.BotsGroup.IsEnemy(target),"Recruitment also repairs already-present aggressive Scav groups: "+role);
+        }
+        Setup();var survivor=RecruitScavCompanion();var sniper=Scav("neutral-sniper-trust");sniper.Profile.Info.Settings.Role=WildSpawnType.marksman;sniper.BotsGroup.InitialBotType=WildSpawnType.marksman;
+        UnityEngine.Random.NextValue=0;AllegianceScavRelations.Apply(sniper);
+        sniper.ApplyDamageInfo(new EFT.Ballistics.DamageInfo{Player=boss.realPlayer,Damage=100},EBodyPart.Chest,EBodyPartColliderType.Chest,0);
+        Check(boss.realPlayer.Profile.FenceInfo.Changes==1,"Intentionally killing a calmed sniper follows the neutral-Scav Fence rule");
+        var threshold=Scav("sniper-trust-threshold");UnityEngine.Random.NextValue=0.6f;AllegianceScavRelations.Apply(threshold);
+        Check(!threshold.BotsGroup.Neutrals.ContainsKey(boss.realPlayer),"A calmed sniper kill also reduces the saved trust threshold");
+        Check(!AllegiancePmcFriendship.CanRecruit(sniper,boss.realPlayer),"Diplomatic inclusion does not make sniper Scavs recruitable");
     }
     private static void ScavCompanionLossChecks() {
         Setup();var companion=RecruitScavCompanion();var target=Scav("loss-target");
@@ -665,7 +749,9 @@ public static class HostilityChecks {
         var late=Scav("late-spawn");int rolls=UnityEngine.Random.Rolls;
         AllegiancePmcFriendship.Apply(late);AllegianceScavRelations.Apply(late);
         Check(UnityEngine.Random.Rolls==rolls && late.BotsGroup.IsEnemy(boss.realPlayer) && boss.bossGroup.IsEnemy(late),"Later spawns become hostile without a friendship reroll");
-        foreach(var role in new[]{WildSpawnType.marksman,WildSpawnType.bossKilla,WildSpawnType.followerBully}) {
+        var lateSniper=Scav("sniper-after-betrayal");lateSniper.Profile.Info.Settings.Role=WildSpawnType.marksman;lateSniper.BotsGroup.InitialBotType=WildSpawnType.marksman;
+        AllegianceScavRelations.Apply(lateSniper);Check(lateSniper.BotsGroup.IsEnemy(boss.realPlayer),"Broken trust also affects sniper Scavs");
+        foreach(var role in new[]{WildSpawnType.bossKilla,WildSpawnType.followerBully}) {
             var excluded=Scav("excluded-after-betrayal-"+role);excluded.Profile.Info.Settings.Role=role;excluded.BotsGroup.InitialBotType=role;
             AllegianceScavRelations.Apply(excluded);
             Check(!excluded.BotsGroup.IsEnemy(boss.realPlayer),"Raid hostility keeps special roles excluded: "+role);
@@ -1073,6 +1159,8 @@ public static class HostilityChecks {
         EncounterChanceChecks();
         ScavAcceptanceChecks();
         ScavDiplomacyChecks();
+        ScavProfileIdentityChecks();
+        ScavReciprocalHostilityChecks();
         ScavCompanionLossChecks();
         ScavTrustDamageChecks();
         ScavIntentChecks();

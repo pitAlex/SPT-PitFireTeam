@@ -43,22 +43,26 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
     private int scanIndex, probeFrame = -1, probes, validationPass;
     internal bool Pending { get; private set; }
     private Comparison<CoverPoint> bossComparison;
-    private Vector3 rankBoss;
-    private bool rankNearby, rankProtective;
+    private Vector3 rankBoss, rankThreat;
+    private bool rankNearby, rankProtective, rankFiring;
     private Vector3 rankEnemyDirection;
     private float rankEnemyDistance, protectiveRange;
+    private float rankBossInfluence = 1f;
     private float nearbyCoverDistance = 25f;
     private bool scanned;
     private string contact;
     private Vector3 bossAnchor, botAnchor, enemyAnchor;
     internal int LastScanCount { get; private set; }
 
-    internal List<CoverPoint> Find(Enemy enemy, Vector3 boss, bool preferNearby = false, bool preferProtective = false)
+    internal List<CoverPoint> Find(Enemy enemy, Vector3 boss, bool preferNearby = false, bool preferProtective = false,
+        bool preferFiring = false)
     {
         ranked.Clear(); if (!Pending) validationPass++; Pending = false;
         if (SainEnemyTracking.Position(enemy) == null) return ranked;
-        rankNearby = preferNearby; rankProtective = preferNearby && preferProtective;
+        rankNearby = preferNearby; rankProtective = preferNearby && preferProtective; rankFiring = preferFiring;
         rankBoss = boss;
+        rankBossInfluence = preferNearby ? BossPlayers.Instance?.GetFollower(bot.BotOwner)?.BossInfluence ?? 1f : 1f;
+        rankThreat = SainEnemyTracking.Position(enemy).GetValueOrDefault();
         if (rankProtective)
         {
             Vector3 toEnemy = SainEnemyTracking.Position(enemy).GetValueOrDefault() - boss; toEnemy.y = 0f;
@@ -70,6 +74,17 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
         foreach (CoverPoint point in candidates) Add(point, boss);
         foreach (CoverPoint point in bot.Cover.CoverPoints) Add(point, boss);
         if (Pending) { ranked.Clear(); return ranked; }
+        if (rankFiring)
+        {
+            Vector3 threat = SainEnemyTracking.Position(enemy).GetValueOrDefault();
+            foreach (CoverPoint point in ranked)
+            {
+                // Ordinary Shooter cover prefers a potential standing lane. Recovery
+                // never requests this ranking; planning does not grant actual sight.
+                if (FiringCoverGeometry(point, threat)) HasFiringLane(point, enemy, threat);
+                if (Pending) { ranked.Clear(); return ranked; }
+            }
+        }
         ranked.Sort(bossComparison ??= CompareBoss);
         return ranked;
     }
@@ -138,8 +153,16 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
     }
     private int CompareBoss(CoverPoint a, CoverPoint b)
     {
+        if (rankFiring)
+        {
+            bool aFiring = IsFiringCover(a), bFiring = IsFiringCover(b);
+            if (aFiring != bFiring) return aFiring ? -1 : 1;
+        }
         if (rankNearby)
         {
+            if (Math.Abs(rankBossInfluence - 1f) > 0.001f)
+                return (RouteDistance(a) + (a.Position - rankBoss).magnitude * rankBossInfluence).CompareTo(
+                    RouteDistance(b) + (b.Position - rankBoss).magnitude * rankBossInfluence);
             bool aProtective = IsProtective(a), bProtective = IsProtective(b);
             if (aProtective != bProtective) return aProtective ? -1 : 1;
             bool aNearby = IsNearby(a), bNearby = IsNearby(b);
@@ -223,6 +246,14 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
         return clear;
     }
 
+    private bool FiringCoverGeometry(CoverPoint point, Vector3 threat)
+    {
+        Vector3 delta = point.Position - threat; delta.y = 0f;
+        return delta.sqrMagnitude >= 16f * 16f && SainRegroupBridge.SameLevel(point.Position, bot.Position);
+    }
+    internal bool IsFiringCover(CoverPoint point) => point != null &&
+        FiringCoverGeometry(point, rankThreat) && firingLanes.TryGetValue(point, out var probe) && probe.Clear;
+
     // Called in ranked order, after native candidate validation. A depleted budget
     // is pending work, not a rejected route or permission to select a lower rank.
     internal bool InsideBossRoute(CoverPoint point, Vector3 boss, float radius)
@@ -280,7 +311,8 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
     }
     private bool ValidateCandidate(CoverPoint point, Enemy enemy)
     {
-        if (point == null || point.Spotted || point.CoverData.IsBad || SainEnemyTracking.Position(enemy) == null) return false;
+        if (point == null || point.Spotted || point.CoverData.IsBad || SainEnemyTracking.Position(enemy) == null ||
+            FollowerWireNavigation.IsCoverUnsafe(point.Position)) return false;
         if (validation.TryGetValue(point, out Validation cached) && (Time.time < cached.Until || cached.Pass == validationPass) &&
             cached.Enemy == enemy.EnemyProfileId && (cached.Bot - bot.NavMeshPosition).sqrMagnitude < 64f &&
             (cached.Threat - SainEnemyTracking.Position(enemy).GetValueOrDefault()).sqrMagnitude < 64f &&
@@ -292,7 +324,8 @@ internal sealed class SAINFollowerCoverFinder(BotComponent bot)
     // rechecked immediately when that observer asks, independently of selection.
     internal bool Validate(CoverPoint point, Enemy enemy)
     {
-        if (point == null || point.Spotted || point.CoverData.IsBad || SainEnemyTracking.Position(enemy) == null) return false;
+        if (point == null || point.Spotted || point.CoverData.IsBad || SainEnemyTracking.Position(enemy) == null ||
+            FollowerWireNavigation.IsCoverUnsafe(point.Position)) return false;
         Vector3 threat = SainEnemyTracking.Position(enemy).GetValueOrDefault();
         bool valid = analyzer.RecheckCoverPoint(point, threat, (threat - bot.NavMeshPosition).normalized,
             bot.NavMeshPosition, out _);

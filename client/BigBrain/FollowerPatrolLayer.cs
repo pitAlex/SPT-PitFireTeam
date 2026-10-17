@@ -62,6 +62,7 @@ namespace pitTeam.BigBrain
                 BrainManager.AddCustomLayer(typeof(FollowerCombatLayer), pmcCombatBrains, FollowerCombatLayerPriority);
                 BrainManager.AddCustomLayer(typeof(FollowerRequestLayer), brains, FollowerRequestLayerPriority);
                 BrainManager.AddCustomLayer(typeof(FollowerTripwireLayer), brains, FollowerTripwireLayer.LayerPriority);
+                BrainManager.AddCustomLayer(typeof(FollowerWireLayer), brains, FollowerWireLayer.LayerPriority);
                 BrainManager.AddCustomLayer(typeof(FollowerPatrolLayer), brains, FollowerLayerPriority);
                 BrainManager.AddCustomLayer(typeof(FriendlyEncounterLayer), pmcCombatBrains, FriendlyEncounterLayer.LayerPriority);
             }
@@ -127,13 +128,14 @@ namespace pitTeam.BigBrain
         private EquipmentSlot? returnAfterTopOffSlot = null;
         private EquipmentSlot? patrolReloadFinalSlot = null;
         private string? reloadingWeaponId = null;
+        private float stationaryReloadRecoveryAt;
+        private Vector3 stationaryReloadStartPosition;
+        private string? stationaryReloadWeaponId;
+        private int stationaryReloadLoadedCount;
         private float nextPatrolLauncherFallbackRecordAt = 0f;
         private float nextStowedTacticalDeviceCheckAt = 0f;
         private float nextHealWorkRefreshAt = 0f;
         private float nextHealStartCheckAt = 0f;
-        private Utils.FollowerStimulatorPolicy? antidotePolicy;
-        private float antidoteStartedAt, nextAntidoteAttemptAt;
-        private bool antidoteUseObserved;
         private bool stoppedForHealDecision = false;
         private bool healUseObserved = false;
         private CustomNavigationPoint? patrolHealCover;
@@ -341,14 +343,6 @@ namespace pitTeam.BigBrain
                     return selectedAction;
                 }
 
-                if (TryPreparePatrolAntidote())
-                {
-                    antidoteStartedAt = Time.time;
-                    antidoteUseObserved = false;
-                    BotOwner.StopMove();
-                    selectedAction = new Action(typeof(HealStimulatorsAction), "patrolAntidote");
-                    return selectedAction;
-                }
 
                 if (TryCompletePostCombatFullHealRestore())
                 {
@@ -425,7 +419,7 @@ namespace pitTeam.BigBrain
         {
             try
             {
-                if (selectedAction?.Type == typeof(HealStimulatorsAction)) return EndPatrolAntidote();
+
                 bool shouldWait = ShouldWaitForCombatReadiness();
                 if (selectedAction?.Type == typeof(PatrolCombatWaitAction))
                 {
@@ -448,7 +442,6 @@ namespace pitTeam.BigBrain
                         return true;
                     }
 
-                    if (TryPreparePatrolAntidote()) return true;
 
                     if (TryCompletePostCombatFullHealRestore())
                     {
@@ -473,7 +466,6 @@ namespace pitTeam.BigBrain
                         return true;
                     }
 
-                    if (!isHealCoverAction && TryPreparePatrolAntidote()) return true;
 
                     if (TryCompletePostCombatFullHealRestore())
                     {
@@ -515,27 +507,7 @@ namespace pitTeam.BigBrain
             }
         }
 
-        private bool TryPreparePatrolAntidote()
-        {
-            return Time.time >= nextAntidoteAttemptAt && BotOwner.Memory?.IsUnderFire != true &&
-                Utils.FollowerStimulatorPolicy.NeedsAntidote(BotOwner) &&
-                Utils.FollowerStimulatorPolicy.CanUseStimulatorNow(BotOwner, out var stims) &&
-                (antidotePolicy ??= new Utils.FollowerStimulatorPolicy()).TrySelectAntidoteStimulator(BotOwner, stims);
-        }
 
-        private bool EndPatrolAntidote()
-        {
-            if (!IsActive()) return true;
-            if (BotOwner.Medecine?.Stimulators?.Using == true)
-            { antidoteUseObserved = true; return false; }
-            if (antidoteUseObserved || !Utils.FollowerStimulatorPolicy.NeedsAntidote(BotOwner) ||
-                !Utils.FollowerStimulatorPolicy.CanUseStimulatorNow(BotOwner, out _) || Time.time - antidoteStartedAt >= 5f)
-            {
-                nextAntidoteAttemptAt = Time.time + 3f;
-                return true;
-            }
-            return false;
-        }
 
         private void RefreshHealWorkIfNeeded()
         {
@@ -557,7 +529,8 @@ namespace pitTeam.BigBrain
             bool hasHealRelevantDamage = BotOwner.GetPlayer.HealthStatus != ETagStatus.Healthy;
             foreach (EBodyPart part in EFT.HealthSystem.HealthHelper.RealBodyParts)
             {
-                if (!BotOwner.GetPlayer.ActiveHealthController.IsBodyPartDestroyed(part))
+                if (!BotOwner.GetPlayer.ActiveHealthController.IsBodyPartDestroyed(part) &&
+                    !BotOwner.GetPlayer.ActiveHealthController.IsBodyPartBroken(part))
                 {
                     continue;
                 }
@@ -847,7 +820,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            if (!cover.IsFreeById(BotOwner.Id) || cover.IsSpotted)
+            if (!cover.IsFreeById(BotOwner.Id) || cover.IsSpotted || FollowerWireNavigation.IsCoverUnsafe(cover.Position))
             {
                 return false;
             }
@@ -1094,6 +1067,8 @@ namespace pitTeam.BigBrain
             returnAfterTopOffSlot = null;
             patrolReloadFinalSlot = null;
             reloadingWeaponId = null;
+            stationaryReloadRecoveryAt = 0f;
+            stationaryReloadWeaponId = null;
             nextPatrolLauncherFallbackRecordAt = 0f;
             nextReloadCheckAt = Time.time + OutOfCombatReloadInitialCooldown;
             nextMagazineFillCheckAt = Time.time + OutOfCombatReloadInitialCooldown;
@@ -1307,6 +1282,7 @@ namespace pitTeam.BigBrain
         {
             if (BotOwner?.WeaponManager == null) return;
             Utils.FollowerRecovery.CheckReloadTimeout(BotOwner);
+            if (TryRecoverStationaryPatrolReload()) return;
             if (Time.time < nextReloadCheckAt)
             {
                 BattleRecorder.RecordAmmoRefillGate(BotOwner, "cooldown", triedFillMagazines, nextReloadCheckAt);
@@ -1414,6 +1390,10 @@ namespace pitTeam.BigBrain
                 reloadSlotsTried.Add(currentSlot);
                 reloadingInProgress = TryForceReloadCurrentWeaponOutOfCombat();
                 reloadingWeaponId = reloadingInProgress ? currentWeaponId : null;
+                if (reloadingInProgress)
+                {
+                    ArmStationaryPatrolReloadRecovery();
+                }
                 if (!reloadingInProgress)
                 {
                     RecordOutOfCombatReloadFailure(currentSlot, currentWeapon, "reloadRejected");
@@ -1461,6 +1441,46 @@ namespace pitTeam.BigBrain
             reloadSlotsTried.Clear();
             returnAfterTopOffSlot = null;
             nextReloadCheckAt = Time.time + OutOfCombatReloadFullCycleCooldown;
+        }
+
+        private void ArmStationaryPatrolReloadRecovery()
+        {
+            Weapon? weapon = BotOwner.WeaponManager.CurrentWeapon;
+            if (weapon == null) return;
+            stationaryReloadStartPosition = BotOwner.Position;
+            stationaryReloadWeaponId = weapon.Id;
+            stationaryReloadLoadedCount = weapon.GetCurrentMagazineCount();
+            stationaryReloadRecoveryAt = Time.time + 1f;
+        }
+
+        private bool TryRecoverStationaryPatrolReload()
+        {
+            if (stationaryReloadRecoveryAt <= 0f) return false;
+
+            Weapon? weapon = BotOwner.WeaponManager.CurrentWeapon;
+            float now = Time.time;
+            // This is one peaceful movement/brain nudge, never a native reload cancellation.
+            // Discard old observations after another action owned the follower for a while.
+            if (BotOwner.IsDead || BotOwner.BotState != EBotState.Active ||
+                BotFollowerPlayer.IsEnemyInfoAlive(BotOwner.Memory?.GoalEnemy) ||
+                BotOwner.Medecine?.Using == true || weapon == null ||
+                weapon.Id != stationaryReloadWeaponId ||
+                weapon.GetCurrentMagazineCount() > stationaryReloadLoadedCount ||
+                (BotOwner.Position - stationaryReloadStartPosition).sqrMagnitude > 0.01f ||
+                now > stationaryReloadRecoveryAt + 1f)
+            {
+                stationaryReloadRecoveryAt = 0f;
+                stationaryReloadWeaponId = null;
+                return false;
+            }
+
+            if (now < stationaryReloadRecoveryAt) return false;
+            string? weaponId = stationaryReloadWeaponId;
+            stationaryReloadRecoveryAt = 0f;
+            stationaryReloadWeaponId = null;
+            Utils.FollowerRecovery.SoftReset(BotOwner);
+            BattleRecorder.RecordAmmoRefill(BotOwner, "recovery", "stationaryReload", () => new { weaponId });
+            return true;
         }
 
         private bool TryHandleSkippedReloadStart()

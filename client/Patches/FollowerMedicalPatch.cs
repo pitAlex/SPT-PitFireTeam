@@ -63,6 +63,51 @@ namespace pitTeam.Patches
         }
     }
 
+    internal class FollowerFirstAidFracturePatch : ModulePatch
+    {
+        private static bool reported;
+
+        protected override MethodBase GetTargetMethod() =>
+            AccessTools.Method(typeof(BotFirstAid), nameof(BotFirstAid.FindDamagedPart));
+
+        [PatchPostfix]
+        private static void PatchPostfix(BotFirstAid __instance)
+        {
+            if (!BossPlayers.IsFollower(__instance._owner)) return;
+            try
+            {
+                Utils.FollowerFirstAidRetry.ValidateSelection(__instance);
+                Utils.FollowerMedical.SelectFractureFirstAid(__instance);
+            }
+            catch (Exception ex)
+            {
+                if (reported) return;
+                reported = true;
+                Logger.LogError($"[Medical] Could not select follower fracture treatment; retaining native selection. {ex}");
+            }
+        }
+    }
+
+    internal class FollowerFirstAidAttemptPatch : ModulePatch
+    {
+        private static bool reported;
+        protected override MethodBase GetTargetMethod() =>
+            AccessTools.Method(typeof(BotFirstAid), nameof(BotFirstAid.ApplyToSelf));
+
+        [PatchPrefix]
+        private static void PatchPrefix(BotFirstAid __instance)
+        {
+            if (!BossPlayers.IsFollower(__instance._owner)) return;
+            try { Utils.FollowerFirstAidRetry.Begin(__instance); }
+            catch (Exception ex)
+            {
+                if (reported) return;
+                reported = true;
+                Logger.LogError($"[Medical] Could not observe first-aid start: {ex}");
+            }
+        }
+    }
+
     internal class FollowerSurgeryTargetPatch : ModulePatch
     {
         protected override MethodBase GetTargetMethod() =>

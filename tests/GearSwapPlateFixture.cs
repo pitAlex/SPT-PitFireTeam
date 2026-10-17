@@ -35,7 +35,7 @@ namespace pitTeam.Modules
             Check(!session.CanEditPlateSlot(new ArmorSlot()), "Detached slot rejected");
             Check(!session.CanEditPlateSlot(slot), "Foreign/live item rejected during draft");
             session.DraftItems.Add(carrier);
-            Check(!session.CanEditPlateSlot(slot), "Hidden/sealed draft carrier rejected");
+            Check(!session.CanEditPlateSlot(slot), "Hidden draft carrier rejected");
             session.Editable.Add(carrier);
             Check(session.CanEditPlateSlot(slot), "Editable draft carrier allowed");
             slot.Locked = true;

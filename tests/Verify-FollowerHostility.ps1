@@ -72,6 +72,13 @@ try {
     $end=$faction.IndexOf('        private static bool EnsureEnemy(', $start)
     if($start -lt 0 -or $end -le $start){throw 'Neutral relationship extraction boundary changed'}
     $fixture=$fixture.Replace('__NEUTRAL_METHOD__',$faction.Substring($start,$end-$start))
+    $followerSource=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Components/BotFollowerPlayer.cs')
+    $identityStart=$followerSource.IndexOf('        private void AssignProfileIdentity()')
+    $identityEnd=$followerSource.IndexOf('        public virtual void Dismiss(', $identityStart)
+    if($identityStart -lt 0 -or $identityEnd -le $identityStart){throw 'Follower profile identity extraction boundary changed'}
+    $fixture=$fixture.Replace('__PROFILE_IDENTITY_METHODS__',$followerSource.Substring($identityStart,$identityEnd-$identityStart))
+    $dismiss=$followerSource.Substring($identityEnd,$followerSource.IndexOf('        private void ClearInvalidEnemyState()', $identityEnd)-$identityEnd)
+    if($dismiss.IndexOf('RestoreProfileIdentity();') -lt 0 -or $dismiss.IndexOf('RestoreProfileIdentity();') -gt $dismiss.IndexOf('if (_bot.IsDead')) {throw 'Dismissal must restore profile identity before inactive/dead exit and native cleanup'}
     $bossSource=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Components/AIBossPlayer.cs')
     $registration=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/BossPlayers.cs')
     $registerIndex=$registration.IndexOf('_followersByProfileId[bot.ProfileId] = _follower;')

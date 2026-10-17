@@ -21,8 +21,8 @@ public static class FriendlyEncounterChecks
         BossPlayers.Active.Clear();BossPlayers.Denied.Clear();BossPlayers.Added=0;
         BotOwnerManualUpdatePatch.BotOwnerUpdate.Clear();FriendlyEncounterInteraction.ResetRaid();
         var bot=new BotOwner {ProfileId="social-"+count,BotsGroup=new Group()};
-        var human=new Player {IsAI=false};bot.GetPlayer.Position=new Vector3{x=12};
-        bot.GetPlayer.MainParts[BodyPartType.body].Position=new Vector3{x=12,y=1};
+        var human=new Player {IsAI=false};bot.GetPlayer.Position=new Vector3{x=17};
+        bot.GetPlayer.MainParts[BodyPartType.body].Position=new Vector3{x=17,y=1};
         human.InteractionRay=new Ray {origin=new Vector3{y=1},direction=new Vector3{x=1}};
         BossPlayers.Boss=new();BossPlayers.Boss.Value=human;
         AllegiancePmcFriendship.EncounterPlayer=human;AllegiancePmcFriendship.InteractionBot=bot;
@@ -33,9 +33,9 @@ public static class FriendlyEncounterChecks
     public static int Run()
     {
         {
-            var x=Fresh();x.Bot.GetPlayer.Position=new Vector3{x=12.01f};
-            Check(!x.Layer.IsActive() && x.Bot.Mover.Stops==0,"Layer never activates or writes movement beyond 12m");
-            x.Bot.GetPlayer.Position=new Vector3{x=12};x.Bot.LookSensor.Clear=false;
+            var x=Fresh();x.Bot.GetPlayer.Position=new Vector3{x=17.01f};
+            Check(!x.Layer.IsActive() && x.Bot.Mover.Stops==0,"Layer never activates or writes movement beyond 17m");
+            x.Bot.GetPlayer.Position=new Vector3{x=17};x.Bot.LookSensor.Clear=false;
             Check(!x.Layer.IsActive(),"Acquisition requires actual sight");x.Bot.LookSensor.Clear=true;
             Check(x.Layer.IsActive() && !x.State.Waiting && x.Bot.Mover.Stops==0,"Layer probes do not start waits or movement");
             x.Layer.Start();x.Action.Update(null);

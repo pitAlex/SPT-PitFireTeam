@@ -12,12 +12,15 @@ using SAIN.SAINComponent.Classes.EnemyClasses;
 using UnityEngine;
 namespace SAIN.Models.Enums {public enum EBotMoveStatus {None,ReadyToMove,Moving,Paused,DoorInteraction,Complete}}
 namespace SAIN.Components {
+    public struct FixturePathCorner { public Vector3 Position; }
     public class PathData {
         public SAIN.Models.Enums.EBotMoveStatus Status=SAIN.Models.Enums.EBotMoveStatus.Moving;
         public UnityEngine.AI.NavMeshPathStatus PathStatus=UnityEngine.AI.NavMeshPathStatus.PathComplete;
         public Vector3 Destination;public float TimeStarted,PathLength;public int CurrentIndex;
         public bool OnLastCorner;public string CurrentSprintStatus="Run",SprintReason="Requested";
         public List<Vector3> PathPoints=new List<Vector3>();
+        public List<FixturePathCorner> PathCorners=new List<FixturePathCorner>();
+        public FixturePathCorner GetCurrentCorner()=>PathCorners[CurrentIndex];
     }
     public class EnemyDecisions {public Vector3? FiringPosition;}
     public partial class Decision {

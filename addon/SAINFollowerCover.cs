@@ -13,6 +13,8 @@ using UnityEngine;
 
 namespace pitTeam.SAINAddon;
 
+internal enum SAINCoverSelection { NativeFallback, Pending, Selected, ConstrainedEmpty }
+
 // Shares the core cover lifecycle: choose nearby/player cover, reach it, then use it
 // before ordinary movement may be reconsidered. Real combat/orders still interrupt.
 internal sealed class SAINFollowerCover(BotComponent bot)
@@ -27,6 +29,7 @@ internal sealed class SAINFollowerCover(BotComponent bot)
     private bool attemptedRegroup;
     private int attemptedNativeCount;
     private string selectionReason = "nativeFallback";
+    internal SAINCoverSelection Selection { get; private set; }
     private float regroupRadius;
     private string regroupEnemy;
     private Vector3 regroupEnemyAnchor;
@@ -36,11 +39,15 @@ internal sealed class SAINFollowerCover(BotComponent bot)
     private string medicalReason = "notChecked";
     private float medicalCheckedAt = -1f;
     private struct MedicalCoverProbe { internal Vector3 Position, Threat; internal float Until; internal bool Safe; }
-    internal bool WaitingForSelection => finder.Pending && !Independent && !Recovery &&
+    internal bool RestrictsNoCoverAdvance =>
+        !Independent && !Recovery && Follower?.TryGetActiveCommand(out _, out _) != true &&
+        SAINFollowerRuntime.GetPush(bot.BotOwner)?.Ordered != true &&
         bot.Cover.CoverInUse == null && bot.Cover.CoverPoint_MovingTo == null &&
         bot.Decision.CurrentCombatDecision == ECombatDecision.SeekCover &&
         (bot.Decision.CurrentSelfDecision == ESelfActionType.None || bot.Decision.CurrentSelfDecision == ESelfActionType.Reload) &&
-        !(bot.GoalEnemy?.IsVisible == true && bot.GoalEnemy.CanShoot);
+        !(bot.GoalEnemy?.IsVisible == true && bot.GoalEnemy.CanShoot) &&
+        ((Follower?.EffectiveSelfDetermination ?? 50f) <= 0f || Selection == SAINCoverSelection.Pending ||
+         Selection == SAINCoverSelection.ConstrainedEmpty && RetainRegroupArea());
 
     // Core's reached-heal-cover contract, using SAIN knowledge and native cover ownership.
     // Eligibility/item selection and execution stay in SAIN/EFT.
@@ -48,7 +55,7 @@ internal sealed class SAINFollowerCover(BotComponent bot)
     {
         medicalCheckedAt = Time.time; medicalReason = "coverUnready";
         CoverPoint point = bot.Cover.CoverInUse;
-        if (point == null || point.Spotted || point.CoverData.IsBad || bot.Mover.Moving ||
+        if (point == null || point.Spotted || point.CoverData.IsBad || bot.Mover.Moving || FollowerWireNavigation.IsCoverUnsafe(point.Position) ||
             (point.Position - bot.Position).sqrMagnitude > 1.75f * 1.75f) return false;
         medicalReason = "pressure";
         if (SainRegroupBridge.IsUnderFire(bot.BotOwner) || bot.Medical.TimeSinceShot < 3f ||
@@ -89,17 +96,26 @@ internal sealed class SAINFollowerCover(BotComponent bot)
     {
         point = null;
         selectionReason = "nativeFallback";
+        Selection = SAINCoverSelection.NativeFallback;
         if (Independent) return false;
         if (Recovery) { selectionReason = "nativeRecovery"; return false; }
         if (!SainPlayerSquadBridge.TryGetPlayerLeader(bot.BotOwner, out Player player) || player.HealthController?.IsAlive != true) return false;
         bool limitToRegroup = RetainRegroupArea();
         Enemy enemy = bot.GoalEnemy;
         Vector3 threat = SainEnemyTracking.Position(enemy) ?? default;
+        bool preferFiring = SainAddonBridge.IsShooterSelected(bot.BotOwner) &&
+            bot.Memory.Health.HealthStatus != ETagStatus.BadlyInjured && bot.Memory.Health.HealthStatus != ETagStatus.Dying &&
+            !bot.Suppression.IsHeavySuppressed;
         if (Time.time < nextSelectionAttempt && attemptedNativeCount == bot.Cover.CoverPoints.Count && attemptedEnemy == enemy?.EnemyProfileId && attemptedRegroup == limitToRegroup &&
             (attemptedBoss - player.Position).sqrMagnitude < 4f && (attemptedBot - bot.Position).sqrMagnitude < 4f &&
-            (attemptedThreat - threat).sqrMagnitude < 4f) return limitToRegroup;
+            (attemptedThreat - threat).sqrMagnitude < 4f)
+        {
+            if (limitToRegroup) { Selection = SAINCoverSelection.ConstrainedEmpty; selectionReason = "regroupNoCover"; }
+            return limitToRegroup;
+        }
         foreach (CoverPoint candidate in finder.Find(bot.GoalEnemy, player.Position, preferNearby: true,
-            preferProtective: SainAddonBridge.IsSainManSelected(bot.BotOwner)))
+            preferProtective: SainAddonBridge.IsSainManSelected(bot.BotOwner),
+            preferFiring: preferFiring))
         {
             if (limitToRegroup && !InsideRegroupArea(candidate, player.Position))
             {
@@ -107,15 +123,17 @@ internal sealed class SAINFollowerCover(BotComponent bot)
                 continue;
             }
             if (!bot.Mover.GoToCoverPoint(candidate, sprint, ESprintUrgency.High)) continue;
-            selectionReason = finder.IsProtective(candidate)
+            selectionReason = preferFiring && finder.IsFiringCover(candidate)
+                ? "shootingCover" : finder.IsProtective(candidate)
                 ? limitToRegroup ? "regroupProtectiveCover" : "protectiveCover"
                 : limitToRegroup ? "regroupCover" : finder.IsNearby(candidate) ? "nearbyCover" : "bossCover";
             reportedRegroupNoCover = false;
+            Selection = SAINCoverSelection.Selected;
             point = candidate;
             return true;
         }
         // Incomplete work is not a failed search and must not choose an outward fallback.
-        if (finder.Pending) { selectionReason = "searchingCover"; return true; }
+        if (finder.Pending) { Selection = SAINCoverSelection.Pending; selectionReason = "searchingCover"; return true; }
         nextSelectionAttempt = Time.time + 0.5f;
         attemptedBoss = player.Position; attemptedBot = bot.Position; attemptedThreat = threat;
         attemptedEnemy = enemy?.EnemyProfileId; attemptedRegroup = limitToRegroup; attemptedNativeCount = bot.Cover.CoverPoints.Count;
@@ -124,10 +142,29 @@ internal sealed class SAINFollowerCover(BotComponent bot)
             // A native fallback outside the completed envelope would undo regroup again.
             // No valid local cover is a handled empty selection, not a new outward journey.
             selectionReason = "regroupNoCover";
+            Selection = SAINCoverSelection.ConstrainedEmpty;
             if (!reportedRegroupNoCover) { Record("regroupNoCover"); reportedRegroupNoCover = true; }
             return true;
         }
         return false;
+    }
+
+    internal List<CoverPoint> FindNearbyFiring(Enemy enemy, Vector3 player, float radius, out bool pending)
+    {
+        if (!Independent && RetainRegroupArea()) radius = Mathf.Min(radius, regroupRadius);
+        var points = finder.FindNearbyFiring(enemy, player, radius);
+        pending = finder.Pending;
+        return points;
+    }
+
+    // Called only after the Shooter's different firing-position path is accepted.
+    // StopSeekingCover releases native latches without cancelling that new path.
+    internal void ReleaseForFiringPosition()
+    {
+        bot.Cover.StopSeekingCover();
+        Record("firingPositionHandoff");
+        ReleaseClaim(); selected = null; hasArrival = false; holdUntil = 0f;
+        Selection = SAINCoverSelection.NativeFallback; selectionReason = "firingPositionHandoff"; nextSelectionAttempt = 0f;
     }
 
     internal void RegroupCompleted(float radius)
@@ -243,6 +280,7 @@ internal sealed class SAINFollowerCover(BotComponent bot)
     internal void EndArrivalHold(string reason)
     {
         regroupRadius = 0f;
+        Selection = SAINCoverSelection.NativeFallback;
         nextSelectionAttempt = 0f;
         holdUntil = 0f;
         Record(reason);
@@ -251,6 +289,7 @@ internal sealed class SAINFollowerCover(BotComponent bot)
     internal void Clear()
     {
         ReleaseClaim(); selected = null; hasArrival = false; holdUntil = 0f; nextSelectionAttempt = 0f; finder.Clear();
+        Selection = SAINCoverSelection.NativeFallback; selectionReason = "nativeFallback";
         regroupRadius = 0f; regroupEnemy = null; reportedRegroupNoCover = false; medicalProbes.Clear(); medicalCheckedAt = -1f; medicalReason = "notChecked";
     }
     private void Claim(Vector3 position)
@@ -263,7 +302,7 @@ internal sealed class SAINFollowerCover(BotComponent bot)
         if (claimed) SainRegroupBridge.Release(bot.BotOwner, claimedPosition);
         claimed = false;
     }
-    internal object Snapshot => new { reason = selectionReason, arrivalHoldRemaining = Mathf.Max(0f, holdUntil - Time.time),
+    internal object Snapshot => new { reason = selectionReason, selection = Selection.ToString(), arrivalHoldRemaining = Mathf.Max(0f, holdUntil - Time.time),
         recovery, scanCount = finder.LastScanCount, regroupRadius,
         medicalCover = new { reason = medicalReason, checkedAt = medicalCheckedAt } };
     private void Record(string reason)

@@ -360,7 +360,7 @@ public static partial class CombatChecks {
         b=BossSupportBot("bossStale");b.Sain.GoalEnemy.TimeSinceSeen=3;
         Check(!OfferGrunt(b),"Core boss protection requires fresh personal contact when already fighting");
         b=BossSupportBot("bossNoWillingness");b.Follower.BossProtectionWillingness01=.44f;
-        Check(!OfferGrunt(b),"boss protection preserves Core pickup willingness threshold");
+        Check(OfferGrunt(b),"intermediate dependence does not hit the old binary pickup protection cutoff");
         b=BossSupportBot("bossNoHit");((pitAIBossPlayer)b.BotFollower.BossToFollow).SupportLogic.IsHitted=false;
         Check(!OfferGrunt(b),"nearby known enemy alone is not a boss-under-attack signal");
         b=BossSupportBot("bossIndependent");b.Follower.CombatIndependent=true;

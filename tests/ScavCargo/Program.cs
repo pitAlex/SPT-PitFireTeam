@@ -52,12 +52,17 @@ internal static class Program
         foreach(var status in Enum.GetValues<ExitStatus>())
         foreach(var side in new[]{"Usec","Bear","USEC","Savage"})
         foreach(bool correctRaid in new[]{true,false})
-        foreach(bool correctExit in new[]{true,false}) {
+        foreach(bool correctExit in new[]{true,false})
+        foreach(bool transitReport in new[]{true,false})
+        foreach(bool transitMetadata in new[]{true,false}) {
             request.Results.Result=status;request.Results.Profile.Info.Side=side;
             request.ServerId=correctRaid ? "raid" : "other";request.Results.ExitName=correctExit ? "co-op" : "normal";
-            bool expected=(status is ExitStatus.SURVIVED or ExitStatus.RUNNER) && side!="Savage" && correctRaid && correctExit;
+            ledger.Cargo.Transit=transitReport;request.LocationTransit=transitMetadata ? new() : null;
+            bool expected=((status is ExitStatus.SURVIVED or ExitStatus.RUNNER && !transitReport) ||
+                (status==ExitStatus.TRANSIT && transitReport && transitMetadata)) && side!="Savage" && correctRaid && correctExit;
             Check(FriendlyScavCargoService.Matches(ledger,request)==expected,"Exact raid/outcome/PMC/exit match matrix");
         }
+        ledger.Cargo.Transit=false;request.LocationTransit=null;
         request.ServerId="raid";request.Results.ExitName="co-op";request.Results.Result=ExitStatus.SURVIVED;request.Results.Profile.Info.Side="Usec";
         ledger.Allegiance=false;Check(!FriendlyScavCargoService.Matches(ledger,request),"Guns for Hire never gets Scav returns");ledger.Allegiance=true;
         ledger.Cargo.ScavProfileIds.Clear();Check(!FriendlyScavCargoService.Matches(ledger,request),"Exit name alone cannot establish a recruited partner");ledger.Cargo.ScavProfileIds.Add("scav");
@@ -156,7 +161,7 @@ internal static class Program
             settings.SaveAndApply(new() {GameplayMode="Allegiance"});
             var storage=new FriendlyTeammateStorage(files,json,Logger<ISptLogger<FriendlyTeammateStorage>>(),settings);
             var id=new MongoId("aaaaaaaaaaaaaaaaaaaaaaaa");
-            language.GetLanguageJson(id,"en","{\"scavCargoReturn\":[\"One of my men brought your things back. Here’s your stuff, as promised.\"]}");
+            language.GetLanguageJson(id,"en","{\"scavCargoReturn\":[\"One of my men brought your things back. Here’s your stuff, as promised.\"],\"scavTransitFarewell\":[\"One of my men is back. Thanks for looking out for him.\"]}");
             var profile=new SptProfile {ProfileInfo=new(),CharacterData=new() {PmcData=new() {Info=new() {Side="Usec"},Inventory=new() {Items=[]},InsuredItems=[]}},DialogueRecords=[]};
             var profiles=new ConcurrentDictionary<MongoId,SptProfile>();profiles[id]=profile;
             var core=(CoreConfig)RuntimeHelpers.GetUninitializedObject(typeof(CoreConfig));core.Features=(ServerFeatures)RuntimeHelpers.GetUninitializedObject(typeof(ServerFeatures));
@@ -282,7 +287,7 @@ internal static class Program
             service.BeginRaid(id,"{\"err\":0,\"data\":{\"serverId\":\"ordinary-empty-raid\"}}");
             service.Queue(id,new() {ServerId="ordinary-empty-raid",ExitName="ordinary",InsuranceReportId=Guid.NewGuid().ToString("N"),ScavProfileIds=["scav"]});
             end.ServerId="ordinary-empty-raid";end.Results.Profile=pmc;service.FinishRaid(id,end);
-            Check(pmc.TradersInfo[fence].Standing==0.05 && pmc.CoopExtractCounts!.Count==0 && profile.DialogueRecords![fence].Messages!.Count==3,"Repeat exit use grants another flat 0.025 with empty cargo and no gift");
+            Check(pmc.TradersInfo[fence].Standing==0.05 && pmc.CoopExtractCounts!.Count==0 && profile.DialogueRecords![fence].Messages!.Count==4,"Repeat exit use grants another flat 0.025 with empty cargo and a thank-you note, not a gift");
             pmc.TradersInfo[fence].Standing=0;
 
             // Exercise actual native co-op reward/standing handlers. Only random loot
@@ -294,7 +299,7 @@ internal static class Program
             using((IDisposable)typeof(FriendlyScavCargoHooks).GetMethod("UseNativeRaid",BindingFlags.Static|BindingFlags.NonPublic)!.Invoke(null,[id,end])!)
                 AccessTools.Method(typeof(LocationLifecycleService),"SendCoopTakenFenceMessage").Invoke(native,[id]);
             service.FinishRaid(id,end);
-            Check(profile.DialogueRecords![fence].Messages!.Count==4,"Real co-op sends one combined native Fence gift and cargo return");
+            Check(profile.DialogueRecords![fence].Messages!.Count==5,"Real co-op sends one combined native Fence gift and cargo return");
             var combined=profile.DialogueRecords[fence].Messages!.Last();
             Check(traders.Fence.CoopExtractGift.MessageLocaleIds.Contains(combined.TemplateId!) && string.IsNullOrEmpty(combined.Text),"Combined co-op package preserves the original native message wording");
             Check(combined.Items!.Data!.Count==4 && combined.Items.Data.Count(i=>i.Template==boxTpl)==1,"Combined package retains the native reward and complete cargo, including an empty ammo box");
@@ -302,10 +307,10 @@ internal static class Program
             Check(pmc.TradersInfo[fence].Standing==0.25 && profile.CharacterData!.ScavData!.TradersInfo![fence].Standing==0.25,"Real co-op keeps native Fence standing gain and PMC/Scav synchronization");
             Check(pmc.CoopExtractCounts!["co-op"]==1,"Native co-op count changes exactly once");
             service.FinishRaid(id,end);
-            Check(profile.DialogueRecords![fence].Messages!.Count==4 && pmc.TradersInfo[fence].Standing==0.25,"Cargo replay cannot duplicate a return or add more standing");
+            Check(profile.DialogueRecords![fence].Messages!.Count==5 && pmc.TradersInfo[fence].Standing==0.25,"Cargo replay cannot duplicate a return or add more standing");
             using((IDisposable)typeof(FriendlyScavCargoHooks).GetMethod("UseNativeRaid",BindingFlags.Static|BindingFlags.NonPublic)!.Invoke(null,[id,end])!)
                 AccessTools.Method(typeof(LocationLifecycleService),"SendCoopTakenFenceMessage").Invoke(native,[id]);
-            Check(profile.DialogueRecords[fence].Messages!.Count==4,"Repeated native reward delivery cannot duplicate the combined receipt");
+            Check(profile.DialogueRecords[fence].Messages!.Count==5,"Repeated native reward delivery cannot duplicate the combined receipt");
             AccessTools.Method(typeof(LocationLifecycleService),"HandleCoopExtract").Invoke(native,[id,pmc,"co-op"]);
             Check(pmc.TradersInfo[fence].Standing==0.38,"Subsequent real co-op keeps native diminishing standing rewards");
             foreach(bool survived in new[]{false,true}) {
@@ -410,6 +415,88 @@ internal static class Program
             Check(profile.DialogueRecords[fence].Messages!.Last().Text=="One of my men brought your things back. Here’s your stuff, as promised.","Recovered standalone cargo keeps return wording");
             service.FinishRaid(id,end);
             Check(profile.DialogueRecords[fence].Messages!.Count==failureMessages+2,"Recovered merge failure does not duplicate cargo on replay");
+            // Recruited Scavs stay on the departing map. Transit settles only their message/cargo;
+            // it does not alter PMC recruit transit or manufacture native co-op rewards/standing.
+            profile=profiles[id];pmc=profile.CharacterData!.PmcData!;
+            int transitMessages=profile.DialogueRecords![fence].Messages!.Count;
+            int transitNotifications=Notifications.Count;
+            double? transitStanding=pmc.TradersInfo![fence].Standing;
+            int transitCoopCounts=pmc.CoopExtractCounts!.Count;
+            foreach(bool withCargo in new[]{true,false}) {
+                string raid=withCargo ? "transit-cargo" : "transit-empty";
+                service.BeginRaid(id,$"{{\"err\":0,\"data\":{{\"serverId\":\"{raid}\"}}}}");
+                var departing=new FriendlyScavCargoRequest {ServerId=raid,ExitName="transit",Transit=true,
+                    InsuranceReportId=Guid.NewGuid().ToString("N"),ScavProfileIds=["departing-scav"],Items=withCargo ? cargo.Items : []};
+                service.Queue(id,departing);
+                end.ServerId=raid;end.Results.Result=ExitStatus.TRANSIT;end.Results.ExitName="transit";end.Results.Profile=pmc;end.LocationTransit=new();
+                Check(AccessTools.Method(typeof(FriendlyScavCargoService),"PrepareCoopCargo").Invoke(service,[id,end])==null,
+                    "Transit never borrows the native co-op gift merge path");
+                service.FinishRaid(id,end);
+                transitMessages++;transitNotifications++;
+                var transitMessage=profile.DialogueRecords[fence].Messages!.Last();
+                Check(profile.DialogueRecords[fence].Messages!.Count==transitMessages && Notifications.Count==transitNotifications,
+                    "Transit sends exactly one Fence message with or without cargo");
+                Check((transitMessage.Items?.Data?.Count ?? 0)==(withCargo ? 3 : 0),"Transit preserves exact cargo and creates no free items for an empty Scav");
+                Check(transitMessage.Text==(withCargo ? "One of my men brought your things back. Here’s your stuff, as promised." :
+                    "One of my men is back. Thanks for looking out for him."),"Transit uses cargo wording or a localized empty-handed farewell");
+                Check(pmc.TradersInfo[fence].Standing==transitStanding && pmc.CoopExtractCounts.Count==transitCoopCounts,
+                    "Transit settlement leaves existing standing and native co-op counters unchanged");
+                service.FinishRaid(id,end);service.Queue(id,departing);
+                Check(profile.DialogueRecords[fence].Messages!.Count==transitMessages && Notifications.Count==transitNotifications,"Transit replay cannot duplicate mail or notifications");
+                var transitReceipt=storage.ReadModeDocument<FriendlyScavCargoLedger>(id,"scav-cargo.json",true)!;
+                Check(transitReceipt.State=="complete" && transitReceipt.Cargo!.Transit && transitReceipt.ExpectedMailItemCount==(withCargo ? 3 : 0),
+                    "Transit evidence and exact empty/nonempty receipt persist");
+                transitReceipt.State="prepared";storage.WriteModeDocuments(id,true,new Dictionary<string,string> {["scav-cargo.json"]=json.Serialize(transitReceipt)!});
+                service.FinishRaid(id,end);
+                Check(profile.DialogueRecords[fence].Messages!.Count==transitMessages,"Saved transit mail resolves an interrupted receipt, including an empty note");
+                // Even claimed/deleted transit mail remains completed and cannot be regenerated.
+                profile.DialogueRecords[fence].Messages!.Remove(transitMessage);saves.SaveProfileAsync(id).GetAwaiter().GetResult();
+                service.FinishRaid(id,end);
+                Check(profile.DialogueRecords[fence].Messages!.Count==transitMessages-1,"Deleted completed transit mail is never redelivered");
+                transitMessages--;
+            }
+            service.BeginRaid(id,"{\"err\":0,\"data\":{\"serverId\":\"after-transit\"}}");
+            end.ServerId="after-transit";end.Results.Result=ExitStatus.SURVIVED;end.Results.ExitName="ordinary";end.LocationTransit=null;
+            service.FinishRaid(id,end);
+            Check(profile.DialogueRecords[fence].Messages!.Count==transitMessages && Notifications.Count==transitNotifications,
+                "Later-map extraction without another recruited Scav cannot repeat departing Scav settlement");
+            foreach(var outcome in new[]{ExitStatus.SURVIVED,ExitStatus.RUNNER}) {
+                string raid="empty-note-"+outcome;
+                int noteMessages=profile.DialogueRecords[fence].Messages!.Count;
+                int noteNotifications=Notifications.Count;
+                pmc.TradersInfo[fence].Standing=0;
+                int coopCounts=pmc.CoopExtractCounts!.Count;
+                service.BeginRaid(id,$"{{\"err\":0,\"data\":{{\"serverId\":\"{raid}\"}}}}");
+                var emptyCargo=new FriendlyScavCargoRequest {ServerId=raid,ExitName="ordinary",
+                    InsuranceReportId=Guid.NewGuid().ToString("N"),ScavProfileIds=["scav-one","scav-two"]};
+                service.Queue(id,emptyCargo);
+                end.ServerId=raid;end.Results.Result=outcome;end.Results.Profile=pmc;
+                service.FinishRaid(id,end);
+                var note=profile.DialogueRecords[fence].Messages!.Last();
+                Check(profile.DialogueRecords[fence].Messages!.Count==noteMessages+1 && Notifications.Count==noteNotifications+1,
+                    "Empty-handed normal extraction sends one note and notification, not one per Scav");
+                Check(note.Text=="One of my men is back. Thanks for looking out for him." && note.TemplateId==null,
+                    "Normal extraction shares the localized transit thank-you wording");
+                Check(note.MessageType==MessageType.NpcTraderMessage && (note.Items?.Data?.Count ?? 0)==0,
+                    "Empty-handed thank-you is ordinary NPC mail without free items");
+                Check(pmc.TradersInfo[fence].Standing==0.025 && pmc.CoopExtractCounts.Count==coopCounts,
+                    "Empty-handed note preserves the single flat standing gain and native co-op history");
+                var noteReceipt=storage.ReadModeDocument<FriendlyScavCargoLedger>(id,"scav-cargo.json",true)!;
+                Check(noteReceipt.State=="complete" && noteReceipt.ExpectedMailItemCount==0 && !noteReceipt.NativeCoopGift,
+                    "Normal empty note records a completed zero-item receipt");
+                service.Queue(id,emptyCargo);restarted.FinishRaid(id,end);
+                Check(profile.DialogueRecords[fence].Messages!.Count==noteMessages+1 && Notifications.Count==noteNotifications+1 &&
+                    pmc.TradersInfo[fence].Standing==0.025,"Normal empty-note replay duplicates neither mail, notification nor standing");
+                noteReceipt.State="prepared";
+                storage.WriteModeDocuments(id,true,new Dictionary<string,string> {["scav-cargo.json"]=json.Serialize(noteReceipt)!});
+                restarted.FinishRaid(id,end);
+                Check(profile.DialogueRecords[fence].Messages!.Count==noteMessages+1 && Notifications.Count==noteNotifications+1,
+                    "Saved normal empty note resolves an interrupted receipt without resending");
+                profile.DialogueRecords[fence].Messages!.Remove(note);saves.SaveProfileAsync(id).GetAwaiter().GetResult();
+                restarted.FinishRaid(id,end);
+                Check(profile.DialogueRecords[fence].Messages!.Count==noteMessages && Notifications.Count==noteNotifications+1,
+                    "Deleted completed normal thank-you note is not regenerated");
+            }
             Console.WriteLine("Temporary native cargo profiles: "+work);
         }
         finally {

@@ -79,7 +79,10 @@ public sealed class FriendlyScavCargoService(
         ledger?.Allegiance == true && ledger.Cargo != null && ledger.ServerId == request.ServerId &&
         !string.IsNullOrWhiteSpace(ledger.Cargo.ExitName) &&
         ledger.Cargo.ServerId == request.ServerId && ledger.Cargo.ExitName == request.Results?.ExitName &&
-        ledger.Cargo.ScavProfileIds.Count > 0 && request.Results?.Result is ExitStatus.SURVIVED or ExitStatus.RUNNER &&
+        ledger.Cargo.ScavProfileIds.Count > 0 &&
+        ledger.Cargo.Transit == (request.Results?.Result == ExitStatus.TRANSIT) &&
+        (request.Results?.Result is ExitStatus.SURVIVED or ExitStatus.RUNNER ||
+            (request.Results?.Result == ExitStatus.TRANSIT && request.LocationTransit != null)) &&
         (string.Equals(request.Results.Profile?.Info?.Side, "Usec", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(request.Results.Profile?.Info?.Side, "Bear", StringComparison.OrdinalIgnoreCase));
 
@@ -108,7 +111,8 @@ public sealed class FriendlyScavCargoService(
     {
         // Use the same exit-name classification as native raid completion. Real co-op
         // rewards (including SVM-paid conversions and disabled gifts) are entirely native.
-        if (ledger.State == "rejected" || inRaid.CoopExtracts.Contains(ledger.Cargo!.ExitName!)) return;
+        // Transit settles a departing Scav's message/cargo only; it is not a new co-op reward.
+        if (ledger.State == "rejected" || ledger.Cargo!.Transit || inRaid.CoopExtracts.Contains(ledger.Cargo.ExitName!)) return;
         var profile = saves.GetProfile(sessionId);
         var pmc = profile.CharacterData?.PmcData ?? throw new InvalidOperationException("PMC profile unavailable.");
         var pmcFence = pmc.TradersInfo?[Traders.FENCE] ?? throw new InvalidOperationException("PMC Fence standing unavailable.");
@@ -183,14 +187,17 @@ public sealed class FriendlyScavCargoService(
         ledger.DeliveredIds = ids.ToList();
         ledger.ExpectedMailItemCount = items.Count;
         Write(sessionId, ledger);
-        if (items.Count > 0)
+        // Empty-handed companions still receive thanks at ordinary exits and transit.
+        // Real co-op exits retain their native message/reward flow, including disabled gifts.
+        if (items.Count > 0 || cargo.Transit || !inRaid.CoopExtracts.Contains(cargo.ExitName!))
         {
             returns.RemoveReturnedItemsFromInsurance(sessionId, items);
             var details = new SendMessageDetails
             {
-                RecipientId = sessionId, Trader = Traders.FENCE, Sender = MessageType.MessageWithItems,
+                RecipientId = sessionId, Trader = Traders.FENCE,
+                Sender = items.Count > 0 ? MessageType.MessageWithItems : MessageType.NpcTraderMessage,
                 DialogType = MessageType.NpcTraderMessage,
-                MessageText = language.GetStringArray(sessionId, "scavCargoReturn").First(),
+                MessageText = language.GetStringArray(sessionId, items.Count > 0 ? "scavCargoReturn" : "scavTransitFarewell").First(),
                 Items = items,
                 ItemsMaxStorageLifetimeSeconds = (long)(traders.Fence.CoopExtractGift.GiftExpiryHours * 3600)
             };
@@ -229,7 +236,7 @@ public sealed class FriendlyScavCargoService(
         lock (gate)
         {
             var ledger = Read(sessionId);
-            if (ledger == null || !Matches(ledger, request) || request.Results?.ExitName is not string exitName ||
+            if (ledger == null || ledger.Cargo?.Transit == true || !Matches(ledger, request) || request.Results?.ExitName is not string exitName ||
                 !inRaid.CoopExtracts.Contains(exitName)) return null;
             var existing = saves.GetProfile(sessionId).DialogueRecords?.Values.SelectMany(d => d.Messages ?? [])
                 .Any(m => m.Id.ToString() == ledger!.MessageId) == true;
@@ -272,7 +279,7 @@ public sealed class FriendlyScavCargoService(
             files.ReadFile(Path.Combine("user", "profiles", $"{sessionId}.json")));
         var message = saved?.DialogueRecords?.Values.SelectMany(d => d.Messages ?? [])
             .FirstOrDefault(m => m.Id.ToString() == messageId);
-        if (message?.Items?.Data?.Count != itemCount)
+        if (message == null || (message.Items?.Data?.Count ?? 0) != itemCount)
             throw new IOException("Scav cargo delivery persistence was not confirmed.");
     }
 }

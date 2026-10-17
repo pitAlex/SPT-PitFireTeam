@@ -10,4 +10,7 @@ public record FriendlyTeammateProficiencyRequest : IRequestData
 
     [JsonPropertyName("proficiency")]
     public FriendlyTeammateProficiencySettings? Proficiency { get; set; }
+
+    [JsonPropertyName("selfDetermination")]
+    public float? SelfDetermination { get; set; }
 }

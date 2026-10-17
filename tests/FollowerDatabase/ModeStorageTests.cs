@@ -40,6 +40,7 @@ internal static class ModeStorageTests
             storage.InitializeProfile(session);
             RestrictedEquipmentPersistenceTests.Run(storage, settings, new JsonUtil([new SptJsonConverterRegistrator()]), session, check);
             RecruitAggressionPersistenceTests.Run(storage,session,check);
+            SelfDeterminationPersistenceTests.Run(storage,session,check);
             storage.WriteBatch(session, new Dictionary<string, string>
             {
                 ["123.json"] = "{\"aid\":123}",

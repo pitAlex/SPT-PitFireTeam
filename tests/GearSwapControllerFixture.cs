@@ -28,7 +28,7 @@ namespace EFT
 }
 namespace EFT.InventoryLogic
 {
-    public enum EquipmentSlot { FirstPrimaryWeapon, Holster, Backpack }
+    public enum EquipmentSlot { FirstPrimaryWeapon, Holster, Backpack, Pockets, SecuredContainer }
     public class Slot { public object ParentItem; public bool Deleted; }
     public class Inventory { public object Equipment = new object(); }
     public interface IOperationResult { }
@@ -84,14 +84,15 @@ namespace pitTeam.Modules
     {
         internal bool Applying;
         internal object FollowerEquipment = new object();
-        internal static HashSet<EquipmentSlot> VisibleSlots = new HashSet<EquipmentSlot> { EquipmentSlot.FirstPrimaryWeapon, EquipmentSlot.Holster };
+        internal static HashSet<EquipmentSlot> VisibleSlots = new HashSet<EquipmentSlot> { EquipmentSlot.FirstPrimaryWeapon, EquipmentSlot.Holster, EquipmentSlot.Pockets };
         internal bool AllowBackpackSwap;
         internal bool CanSeeFollowerSlot(EquipmentSlot slot) => VisibleSlots.Contains(slot) ||
             (AllowBackpackSwap && slot == EquipmentSlot.Backpack);
         internal Dictionary<string, string> Slots = new Dictionary<string, string>
         {
             ["botPrimary"] = "botGun", ["botSecondary"] = "botSpare", ["playerSecondary"] = "playerGun",
-            ["botHolster"] = "botPistol", ["playerHolster"] = "playerPistol"
+            ["botHolster"] = "botPistol", ["playerHolster"] = "playerPistol",
+            ["botPocket"] = "botAmmo", ["playerBackpackCell"] = "playerSupply", ["botBackpackCell"] = "botLoot"
         };
         internal void Stage(GearSwapEdit edit, InventoryController controller)
         {
@@ -150,6 +151,14 @@ static class GearSwapControllerFixture
         Move(controller, "botHolster", "playerHolster");
         Move(controller, "backpack", "botHolster");
         Check(controller.Session.Slots["botHolster"] == "botPistol", "original pistol returns to holster without stale busy markers");
+        Move(controller, "botPocket", "playerPocket");
+        Move(controller, "playerBackpackCell", "botPocket");
+        Move(controller, "botBackpackCell", "playerBackpackCell");
+        Move(controller, "botPocket", "botBackpackCell");
+        Move(controller, "playerPocket", "botPocket");
+        Check(controller.Session.Slots["botPocket"] == "botAmmo" &&
+            controller.Session.Slots["botBackpackCell"] == "playerSupply" &&
+            controller.Session.Slots["playerBackpackCell"] == "botLoot", "repeated staged pocket/backpack transfers preserve all identities");
         var rejected = controller.ConvertOperationResultToOperation(new UnsupportedEdit());
         bool failed = false;
         controller.Execute(rejected, result => failed = !result.Succeed);
@@ -172,11 +181,17 @@ static class GearSwapControllerFixture
         Check(controller.IsAllowedToSeeEquipmentSlot(followerSlot, EquipmentSlot.Holster), "spawned equipment holster visible");
         Check(controller.IsAllowedToSeeSlot(followerSlot, EquipmentSlot.Backpack), "spawned container backpack visible");
         Check(controller.IsAllowedToSeeEquipmentSlot(followerSlot, EquipmentSlot.Backpack), "spawned equipment backpack visible");
+        Check(controller.IsAllowedToSeeSlot(followerSlot, EquipmentSlot.Pockets), "normal pocket container visible");
+        Check(controller.IsAllowedToSeeEquipmentSlot(followerSlot, EquipmentSlot.Pockets), "normal pocket visibility consistent");
+        Check(!controller.IsAllowedToSeeSlot(followerSlot, EquipmentSlot.SecuredContainer), "secure container remains hidden");
         followerSlot.Deleted = true;
         Check(!controller.IsAllowedToSeeSlot(followerSlot, EquipmentSlot.Holster), "deleted container holster remains hidden");
         Check(!controller.IsAllowedToSeeEquipmentSlot(followerSlot, EquipmentSlot.Holster), "deleted equipment holster remains hidden");
         Check(!controller.IsAllowedToSeeSlot(followerSlot, EquipmentSlot.Backpack), "deleted backpack slots remain hidden");
+        Check(!controller.IsAllowedToSeeSlot(followerSlot, EquipmentSlot.Pockets), "deleted pocket slots remain hidden");
         Check(controller.IsAllowedToSeeSlot(new Slot(), EquipmentSlot.Backpack), "player backpack visibility unaffected");
+        Check(controller.IsAllowedToSeeSlot(new Slot(), EquipmentSlot.Pockets), "player pocket visibility unaffected");
+        Check(controller.IsAllowedToSeeSlot(new Slot(), EquipmentSlot.SecuredContainer), "player secure container visibility unaffected");
         controller.Session = null;
         duringApply.Dispose();
         Check(controller.ActiveEvents == 0, "cancel/disposal never starts an inventory operation");

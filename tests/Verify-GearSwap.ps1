@@ -11,18 +11,31 @@ $panel = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Patches/TeammateGea
 if (!$session.Contains('GearSwapSnapshot.Normalize(JsonConvert.SerializeObject(')) {
     throw 'All opening, stale-state and final replay snapshots must use grid-order normalization'
 }
-foreach ($backpackContract in @('AllowBackpackSwap = follower.IsSpawnedSquadMate',
-    'new HashSet<string>(_initialOpaqueBackpackIds)',
-    'RememberBackpack(bot.Inventory.Equipment, replayOpaqueBackpacks)',
-    'RememberBackpack(FollowerEquipment, _opaqueBackpackIds)')) {
-    if (!$session.Contains($backpackContract)) { throw "Missing backpack policy: $backpackContract" }
+foreach ($accessContract in @('AllowBackpackSwap = follower.IsSpawnedSquadMate',
+    'EquipmentSlot.Earpiece, EquipmentSlot.Pockets',
+    'VisibleSlots.Where(slot => slot != EquipmentSlot.Pockets)',
+    'ReferenceEquals(item, FollowerEquipment.GetSlot(EquipmentSlot.Pockets).ContainedItem)')) {
+    if (!$session.Contains($accessContract)) { throw "Missing staged container policy: $accessContract" }
 }
-foreach ($patchType in @('GearSwapBackpackSlotContentsPatch', 'GearSwapBackpackContentsPatch', 'GearSwapBackpackOpenPatch',
+foreach ($obsolete in @('OpaqueBackpack', 'RememberBackpack', 'GearSwapBackpackPresentation', 'GearSwapBackpackOpenPatch')) {
+    if ($session.Contains($obsolete) -or $panel.Contains($obsolete)) { throw "Abandoned backpack sealing remains: $obsolete" }
+}
+foreach ($patchType in @('GearSwapPocketSpecialSlotsPatch',
     'GearSwapArmorSlotPatch', 'GearSwapArmorSlotUiPatch')) {
     if (!$panel.Contains("class $patchType") -or
         !(Get-Content -Raw (Join-Path $RepositoryRoot 'client/friendlyPlugin.cs')).Contains("new $patchType().Enable()")) {
-        throw "Missing opaque backpack boundary: $patchType"
+        throw "Missing staged editor boundary: $patchType"
     }
+}
+$interactions = Get-Region $panel '    internal static class GearSwapInteractions' '    internal sealed class GearSwapPocketSpecialSlotsPatch'
+if (!$interactions.Contains('action == EItemInfoButton.Open') -or $interactions.Contains('IsOpaque')) {
+    throw 'Staged backpack/nested-container Open must remain available'
+}
+$stage = Get-Region $session '        internal void Stage(' '        private void ValidateLive()'
+if (!$stage.Contains('edit.Execute(_draftItems, controller, CanEditDraft, CanPlaceDraft)') -or
+    $stage.Contains('Owner.Player.InventoryController') -or $stage.Contains('Bot.GetPlayer.InventoryController') -or
+    !$session.Contains('ReferenceEquals(live, pair.Value)')) {
+    throw 'Editing must execute against independent clones only; live references are rejected'
 }
 $plateAcceptance = Get-Region $panel '    internal sealed class GearSwapArmorSlotPatch' '    internal sealed class GearSwapArmorSlotUiPatch'
 $plateUi = Get-Region $panel '    internal sealed class GearSwapArmorSlotUiPatch' '    internal sealed class GearSwapContextPatch'
@@ -119,19 +132,19 @@ if ($LASTEXITCODE -ne 0) { throw 'Gear Swap controller fixture compilation faile
 & $controllerExe
 if ($LASTEXITCODE -ne 0) { throw 'Gear Swap controller fixture failed' }
 
-$presentation = Get-Content -Raw (Join-Path $PSScriptRoot 'GearSwapBackpackPresentationFixture.cs')
-$presentation = $presentation.Replace('/* PRESENTATION */', (Get-Region $panel '    internal static class GearSwapBackpackPresentation' '    internal sealed class GearSwapBackpackContentsPatch'))
-$presentationSource = Join-Path $temporary 'GearSwapBackpackPresentation.cs'
-[IO.File]::WriteAllText($presentationSource, $presentation)
-$presentationExe = Join-Path $temporary 'GearSwapBackpackPresentation.exe'
-$presentationArgs = @($arguments | Where-Object { $_ -notlike '/out:*' }) + "/out:$presentationExe"
-& dotnet @presentationArgs $presentationSource
-if ($LASTEXITCODE -ne 0) { throw 'Gear Swap backpack presentation fixture compilation failed' }
-& $presentationExe
-if ($LASTEXITCODE -ne 0) { throw 'Gear Swap backpack presentation fixture failed' }
+$pockets = Get-Content -Raw (Join-Path $PSScriptRoot 'GearSwapPocketsFixture.cs')
+$pockets = $pockets.Replace('/* POCKETS PATCH */', (Get-Region $panel '    internal sealed class GearSwapPocketSpecialSlotsPatch' '    internal sealed class GearSwapArmorSlotPatch'))
+$pocketsSource = Join-Path $temporary 'GearSwapPockets.cs'
+[IO.File]::WriteAllText($pocketsSource, $pockets)
+$pocketsExe = Join-Path $temporary 'GearSwapPockets.exe'
+$pocketsArgs = @($arguments | Where-Object { $_ -notlike '/out:*' }) + "/out:$pocketsExe"
+& dotnet @pocketsArgs $pocketsSource
+if ($LASTEXITCODE -ne 0) { throw 'Gear Swap pocket presentation fixture compilation failed' }
+& $pocketsExe
+if ($LASTEXITCODE -ne 0) { throw 'Gear Swap pocket presentation fixture failed' }
 
 $plate = Get-Content -Raw (Join-Path $PSScriptRoot 'GearSwapPlateFixture.cs')
-$plate = $plate.Replace('/* PLATE POLICY */', (Get-Region $session '        internal bool CanEditPlateSlot(' '        private static void RememberBackpack('))
+$plate = $plate.Replace('/* PLATE POLICY */', (Get-Region $session '        internal bool CanEditPlateSlot(' '        internal void Stage('))
 $plateSource = Join-Path $temporary 'GearSwapPlate.cs'
 [IO.File]::WriteAllText($plateSource, $plate)
 $plateExe = Join-Path $temporary 'GearSwapPlate.exe'
@@ -206,6 +219,7 @@ try {
         @('EFT.UI.DragAndDrop.ComplexStashPanel', 'Show', 6),
         @('EFT.UI.DragAndDrop.ComplexStashPanel', 'Close', 0),
         @('EFT.UI.DragAndDrop.SearchableSlotView', 'ShowContent', 1),
+        @('EFT.UI.DragAndDrop.SearchableSlotView', 'CreateSlots', 1),
         @('EFT.UI.DragAndDrop.SearchableItemView', 'Show', 5),
         @('EFT.UI.ItemUiContext', 'OpenItem', 2),
         @('ArmorSlot', 'CanAcceptRaid', 1),

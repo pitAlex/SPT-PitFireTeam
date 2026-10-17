@@ -16,12 +16,16 @@ internal sealed class SAINFollowerCombatHandoff
     internal const float LingerSeconds = 3f;
     private bool hadCombat;
     private bool hadEnemy;
+    private bool registeredCombat;
+    private BotOwner registeredOwner;
     private float lingerUntil;
     internal bool EnteredCombat => hadCombat || lingerUntil > 0f;
 
     internal SAINFollowerCombatPhase Update(BotComponent bot)
     {
         bool liveEnemy = HasLiveEnemy(bot);
+        if (liveEnemy && !registeredCombat)
+        { registeredCombat = true; registeredOwner = bot.BotOwner; SainAddonBridge.NotifyCombatEpisode(bot.BotOwner, true); }
         if (liveEnemy && !EnteredCombat)
             BossPlayers.Instance?.GetFollower(bot.BotOwner)?.BeginCombatIndependenceFromPatrol();
         if (liveEnemy && !hadEnemy) SainAddonBridge.EndPostCombatFullHeal(bot.BotOwner);
@@ -69,6 +73,8 @@ internal sealed class SAINFollowerCombatHandoff
             BossPlayers.Instance?.GetFollower(bot.BotOwner)?.ClearActiveCombatIndependent();
             pitTeam.Modules.Logger.LogInfo($"[SAIN] Linger completed: follower={bot.ProfileId}");
         }
+        if (registeredCombat)
+        { registeredCombat = false; SainAddonBridge.NotifyCombatEpisode(bot.BotOwner, false); }
         return SAINFollowerCombatPhase.Released;
     }
 
@@ -140,6 +146,8 @@ internal sealed class SAINFollowerCombatHandoff
 
     internal void Release(BotOwner owner)
     {
+        if (registeredCombat)
+        { registeredCombat = false; SainAddonBridge.NotifyCombatEpisode(owner, false); }
         if (EnteredCombat) SainAddonBridge.BeginPostCombatFullHeal(owner);
         BossPlayers.Instance?.GetFollower(owner)?.ClearActiveCombatIndependent();
         Clear();
@@ -150,6 +158,9 @@ internal sealed class SAINFollowerCombatHandoff
 
     internal void Clear()
     {
+        if (registeredCombat)
+        { registeredCombat = false; SainAddonBridge.NotifyCombatEpisode(registeredOwner, false); }
+        registeredOwner = null;
         hadCombat = false;
         hadEnemy = false;
         lingerUntil = 0f;

@@ -4,6 +4,8 @@ Add-Type -Path (Join-Path $GameRoot 'BepInEx/core/Mono.Cecil.dll')
 $assembly=[Mono.Cecil.AssemblyDefinition]::ReadAssembly((Join-Path $GameRoot 'BepInEx/plugins/SAIN/SAIN.dll'))
 try {
     if($assembly.Name.Version.ToString() -ne '4.5.1.0'){throw 'SAIN version must be 4.5.1.0'}
+    $pathApi=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.SAINComponent.Classes.Mover.IBotPathData'
+    if(@($pathApi.Methods | Where-Object {$_.Name -eq 'GetCurrentCorner' -and $_.Parameters.Count -eq 0 -and $_.ReturnType.FullName -eq 'SAIN.SAINComponent.Classes.Mover.BotPathCorner'}).Count -ne 1){throw 'SAIN current movement corner API changed'}
     $hearingAnalysis=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.Classes.Bot.Sense.Hearing.HearingAnalysis'
     if(@($hearingAnalysis.Methods | Where-Object {$_.Name -eq 'CheckIfSoundHeard' -and !$_.IsStatic -and $_.ReturnType.FullName -eq 'System.Boolean' -and ($_.Parameters.ParameterType.FullName -join '|') -eq 'SAIN.Components.PlayerComponentSpace.AISoundData'}).Count -ne 1){throw 'Native personal audibility boundary changed'}
     $layerSource=Get-Content -Raw (Join-Path $RepositoryRoot 'addon/SAINActionTypes.cs')
@@ -28,6 +30,14 @@ try {
     $cover=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.SAINComponent.Classes.SAINCoverClass'
     $selection=@($cover.Methods | Where-Object {$_.Name -eq 'FindCoverPoint' -and !$_.IsStatic -and $_.Parameters.Count -eq 0 -and $_.ReturnType.FullName -eq 'SAIN.SAINComponent.SubComponents.CoverFinder.CoverPoint'})
     if($selection.Count -ne 1 -or !($cover.Fields | Where-Object {$_.Name -eq '_shallSprint' -and $_.FieldType.FullName -eq 'System.Boolean'})){throw 'Cover selection boundary changed'}
+    $updateCover=$cover.Methods | Where-Object {$_.Name -eq 'UpdateCover' -and $_.Parameters.Count -eq 1}
+    if(@($updateCover.Body.Instructions | Where-Object {$_.Operand -is [Mono.Cecil.MethodReference] -and $_.Operand.Name -eq 'DogFightMove'}).Count -ne 1){throw 'Native empty-cover fallback changed'}
+    $dogfight=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.SAINComponent.Classes.Mover.DogFight'
+    $dogfightMove=@($dogfight.Methods | Where-Object {$_.Name -eq 'DogFightMove' -and $_.IsPublic -and !$_.IsStatic -and $_.ReturnType.FullName -eq 'System.Void' -and ($_.Parameters.ParameterType.FullName -join '|') -eq 'System.Boolean|SAIN.SAINComponent.Classes.EnemyClasses.Enemy'})
+    if($dogfightMove.Count -ne 1){throw 'Native no-cover movement boundary changed'}
+    $backup=@($dogfightMove[0].Body.Instructions | Where-Object {$_.Operand -is [Mono.Cecil.MethodReference] -and $_.Operand.Name -eq 'BackUpFromEnemy'})
+    $aggressiveRead=@($dogfightMove[0].Body.Instructions | Where-Object {$_.OpCode.Code.ToString() -eq 'Ldarg_1'})
+    if($backup.Count -ne 1 -or $aggressiveRead.Count -eq 0 -or $backup[0].Offset -ge $aggressiveRead[0].Offset){throw 'Native defensive movement must precede the aggressive argument gate'}
     $self=$assembly.MainModule.Types | Where-Object FullName -eq 'SAIN.SAINComponent.Classes.Decision.SelfActionDecisionClass'
     if(@($self.Methods | Where-Object {$_.Name -eq 'ShallFirstAidCheckEnemy' -and $_.ReturnType.FullName -eq 'System.Boolean' -and $_.Parameters.Count -eq 1 -and $_.Parameters[0].ParameterType.FullName -eq 'SAIN.SAINComponent.Classes.EnemyClasses.Enemy'}).Count -ne 1){throw 'First-aid safety boundary changed'}
     if(@($self.Methods | Where-Object {$_.Name -eq 'startUseStims' -and !$_.IsStatic -and $_.ReturnType.FullName -eq 'System.Boolean' -and $_.Parameters.Count -eq 0}).Count -ne 1){throw 'Stim selection boundary changed'}
@@ -156,7 +166,7 @@ New-Item -ItemType Directory -Path $temporary | Out-Null
 try {
     $sources=@('addon/SainFollowerSoundAwareness.cs','tests/SainSoundAwarenessFixture.cs','addon/SainIdleWeaponGuard.cs','tests/SainIdleWeaponFixture.cs','addon/SainFollowerLeanGuard.cs','tests/SainFollowerLeanFixture.cs','tests/SainCoverPerformanceFixture.cs','addon/SainRegroupFireSafety.cs','tests/SainRegroupFireFixture.cs','addon/SainContactEnemyBridge.cs','tests/SainContactFixture.cs','addon/SainMarksmanWeaponBridge.cs','tests/SainShooterWeaponFixture.cs','client/BigBrain/FollowerSuppressTargetPolicy.cs','addon/SAINFollowerSquadSupportObjective.cs','addon/SAINFollowerSquadSupportAction.cs','addon/SainSquadSupportBridge.cs','tests/SainSquadSupportFixture.cs','tests/SainShooterFixture.cs','client/Components/FollowerCombatTactics.cs','addon/SAINFollowerMarksmanObjective.cs','tests/SainRelocationFixture.cs','client/BigBrain/FollowerCombatCommandGeometry.cs','addon/SAINFollowerRelocationObjective.cs','addon/SAINFollowerRelocationAction.cs','addon/SAINFollowerApproachRoute.cs','addon/SainMedicalDecisionBridge.cs','tests/SainMedicalFixture.cs','client/Utils/FollowerStimulatorPolicy.cs','tests/SainStimulatorFixture.cs','client/Modules/SainBotOwnerAccessor.cs','client/Modules/SainCoverGeometry.cs','tests/SainRegroupChurnFixture.cs','client/BigBrain/FollowerPushRiskPolicy.cs','client/Modules/SainPushRiskBridge.cs','addon/SAINFollowerPushAssessment.cs','tests/SainPushRiskFixture.cs','addon/SAINFollowerPushHoldAction.cs','addon/SAINFollowerObjectives.cs','addon/SAINFollowerPushObjective.cs','client/BigBrain/FollowerPushGeometry.cs','tests/SainPushFixture.cs','tests/SainEnemyMarkerFixture.cs','addon/SAINFollowerCover.cs','addon/SAINFollowerCoverFinder.cs','addon/SainCoverSelectionBridge.cs','tests/SainCoverFixture.cs','addon/SAINFollowerPersonality.cs','tests/SainPersonalityFixture.cs','addon/SAINFollowerEngageAttempt.cs','addon/SAINFollowerMoveToEngageAction.cs','addon/SAINFollowerRecorder.cs','client/Modules/SainCombatRecorderBridge.cs','tests/SainEngageRecorderFixture.cs','addon/SAINFollowerRegroupObjective.cs','client/Modules/SainRegroupBridge.cs','tests/SainRegroupFixture.cs','addon/SAINFollowerCombatHandoff.cs','addon/SAINFollowerLingerAction.cs','addon/SAINFollowerPreparationAction.cs','addon/SAINFollowerAttentionIgnore.cs','addon/SainAttentionBridge.cs','tests/SainAttentionFixture.cs','tests/SainPreparationFixture.cs','tests/SainLingerFixture.cs','addon/SAINActionTypes.cs','addon/SAINFollowerSoloCombatLayer.cs','addon/SAINFollowerSquadCombatLayer.cs','addon/SAINFollowerSquadDecision.cs','addon/SAINFollowerSquadRegroupAction.cs','addon/SAINFollowerFollowSearchPartyAction.cs','addon/SainSquadDecisionBridge.cs','tests/SainSquadFixture.cs','addon/SAINFollowerRuntime.cs','client/Modules/SainAddonBridge.cs','addon/SainManPersonality.cs','client/Patches/FollowerSainFriendlyFirePatch.cs')
     $paths=@()
-    $sources+=@('addon/SainEnemyTrackingPolicy.cs','tests/SainTrackingRegressionFixture.cs')
+    $sources+=@('addon/SainEnemyTrackingPolicy.cs','tests/SainTrackingRegressionFixture.cs','shared/SelfDeterminationPolicy.cs')
     foreach($sourcePath in $sources){
         $source=Get-Content -Raw -Encoding UTF8 (Join-Path $RepositoryRoot $sourcePath)
         if($sourcePath -eq 'tests/SainEngageRecorderFixture.cs'){$source=$source.Replace('__RECORDER_METHODS__',$recorderMethods)}
@@ -170,18 +180,6 @@ try {
             $end=$ping.IndexOf('    internal sealed class RetainedEnemyDownContact',$begin)
             if($begin -lt 0 -or $end -le $begin){throw 'Marker contact boundaries changed'}
             $source=$source.Replace('__MARKER_CONTACT__',$ping.Substring($begin,$end-$begin))
-        }
-        if($sourcePath -eq 'tests/SainStimulatorFixture.cs'){
-            foreach($member in @(
-                @{File='client/BigBrain/FollowerCombatCommon.cs';Name='TryGetAntidoteStimDecision';Marker='__CORE_ANTIDOTE__'},
-                @{File='client/BigBrain/FollowerPatrolLayer.cs';Name='TryPreparePatrolAntidote';Marker='__PATROL_PREPARE_ANTIDOTE__'},
-                @{File='client/BigBrain/FollowerPatrolLayer.cs';Name='EndPatrolAntidote';Marker='__PATROL_END_ANTIDOTE__'}
-            )){
-                $nativeSource=Get-Content -Raw (Join-Path $RepositoryRoot $member.File)
-                $method=[regex]::Match($nativeSource,'(?ms)^        private bool '+$member.Name+'\(.*?^        [}]')
-                if(!$method.Success){throw "Missing production antidote member $($member.Name)"}
-                $source=$source.Replace($member.Marker,$method.Value)
-            }
         }
         if($sourcePath -eq 'tests/SainPushRiskFixture.cs'){
             $core=Get-Content -Raw -Encoding UTF8 (Join-Path $RepositoryRoot 'client/BigBrain/FollowerCombatCommon.cs')

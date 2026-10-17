@@ -67,7 +67,12 @@ internal sealed class SAINFollowerMoveToEngageAction(BotOwner bot) : BotAction(b
         bool sprint = !BotOwner.Memory.IsUnderFire && (destination.Value - Bot.Position).magnitude > 15f;
         bool moved = sprint && Bot.Mover.RunToPoint(destination.Value, true, -1f, ESprintUrgency.Middle);
         if (!moved) moved = Bot.Mover.WalkToPoint(destination.Value, true);
-        if (moved) ownedPath = Bot.Mover.ActivePath;
+        if (moved)
+        {
+            ownedPath = Bot.Mover.ActivePath;
+            if (marksman?.OwnsMovement == true && Bot.Cover.CoverInUse != null)
+                SAINFollowerRuntime.GetCover(BotOwner)?.ReleaseForFiringPosition();
+        }
         else
         {
             if (SainCombatRecorderBridge.IsRecording)

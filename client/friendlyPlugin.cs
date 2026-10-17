@@ -176,6 +176,7 @@ namespace pitTeam
         // used only by BE
         public string[] returnItems { get; set; }
         public string[] scavCargoReturn { get; set; }
+        public string[] scavTransitFarewell { get; set; }
         public string[] returnItemsDeath { get; set; }
         public string[] teamEscaped { get; set; }
         public string[] teamSomeEscaped { get; set; }
@@ -424,9 +425,7 @@ namespace pitTeam
             new GearSwapActorDeadFallbackPatch().Enable();
             new GearSwapRaidStopPatch().Enable();
             new GearSwapBotsStopPatch().Enable();
-            new GearSwapBackpackSlotContentsPatch().Enable();
-            new GearSwapBackpackContentsPatch().Enable();
-            new GearSwapBackpackOpenPatch().Enable();
+            new GearSwapPocketSpecialSlotsPatch().Enable();
             new GearSwapArmorSlotPatch().Enable();
             new GearSwapArmorSlotUiPatch().Enable();
             new GearSwapContextPatch().Enable();
@@ -496,7 +495,15 @@ namespace pitTeam
             new FollowerGrenadeReleasePatch().Enable();
             new FollowerGrenadeSpawnPatch().Enable();
             new FollowerMedicalCancelPatch().Enable();
+            new FollowerPoisonImmunityPatch().Enable();
+            new FollowerHazardMovementPatch().Enable();
+            new FollowerBarbedWireContactPatch().Enable();
+            new FollowerLethalPoisonImmunityPatch().Enable();
+            new FollowerStimulatorSelectionPatch().Enable();
+            new FollowerStimulatorUsePatch().Enable();
             new FollowerFirstAidMinimumHealthPatch().Enable();
+            new FollowerFirstAidFracturePatch().Enable();
+            new FollowerFirstAidAttemptPatch().Enable();
             new FollowerSurgeryTargetPatch().Enable();
             new FollowerEnemyInfoCorrectionPatch().Enable();
             new FollowerEnemyInfoSetVisibleCorrectionPatch().Enable();
@@ -1452,8 +1459,7 @@ namespace pitTeam
 
                     if (follower != null && bot.HealthController.IsAlive)
                     {
-                        global::pitTeam.Utils.FollowerMedical.CancelAllHealing(bot, recoverDestroyedSurgeryParts: true);
-                        global::pitTeam.Utils.FollowerMedical.ForceHeal(bot);
+                        global::pitTeam.Utils.FollowerMedical.ForceHeal(bot, clearNegativeEffects: true);
                     }
                 }
             }

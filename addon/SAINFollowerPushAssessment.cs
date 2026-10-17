@@ -67,7 +67,8 @@ internal sealed class SAINFollowerPushAssessment(BotComponent bot)
         effectivePathsComplete = complete;
         ratio = data.EquipmentRatio; role = data.RoleMultiplier; weaponPolicy = data.WeaponPolicy;
         threat = FollowerPushRiskPolicy.Threat(ratio, role, EnemyCount, weaponPolicy);
-        pull = independent || !complete ? 0f : FollowerPushRiskPolicy.PlayerPull(enemyRoute, currentBossRoute, projectedBossRoute);
+        pull = independent || !complete ? 0f : FollowerPushRiskPolicy.PlayerPull(enemyRoute, currentBossRoute, projectedBossRoute) *
+            (BossPlayers.Instance?.GetFollower(bot.BotOwner)?.BossInfluence ?? 1f);
         RequiredAggression = FollowerPushRiskPolicy.Required(enemyRoute, threat, pull, role, weaponPolicy);
         aggression = effectiveAggression;
         SafetyBlocked = data.Medical || bot.Memory.Health.HealthStatus == ETagStatus.BadlyInjured ||
@@ -82,6 +83,9 @@ internal sealed class SAINFollowerPushAssessment(BotComponent bot)
             weaponPolicy == 2 && direct >= 18f ? "weaponThreat" : magazineRestricted ? "magazineReadiness" :
             effectiveAggression < RequiredAggression ? "riskScore" : "scorePassed";
         AllowsAutomatic = Reason == "scorePassed";
+        if ((BossPlayers.Instance?.GetFollower(bot.BotOwner)?.EffectiveSelfDetermination ?? 50f) <= 0f &&
+            projectedBossRoute > SainRegroupBridge.GetTriggerDistance(bot.BotOwner) && projectedBossRoute > currentBossRoute)
+        { AllowsAutomatic = false; Reason = "closeEscort"; }
     }
     internal object Snapshot => new { reason = Reason, enemiesAtLocation = EnemyCount, equipmentRatio = ratio,
         roleMultiplier = role, weaponPolicy, magazineRestricted, safetyBlocked = SafetyBlocked, weaponBlocked = WeaponBlocked,

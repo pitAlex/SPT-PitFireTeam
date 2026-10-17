@@ -8,7 +8,7 @@ namespace pitTeam.Modules
     // Raid-owned state; layer activation never resets the answer or player rejection.
     internal sealed class FriendlyEncounterInteraction
     {
-        internal const float Range = 12f;
+        internal const float Range = 17f;
         private const float RefusalPause = 1.5f;
         private static BotOwner invitingBot;
         private static float invitationUntil;

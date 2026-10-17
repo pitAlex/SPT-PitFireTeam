@@ -69,6 +69,7 @@ namespace pitTeam.Components
 
         protected string _grouId = "";
         protected string _teamId = "";
+        private bool _profileIdentityAssigned;
 
         protected List<AICoreLayer<BotLogicDecision>>? vanillaLayers;
 
@@ -130,8 +131,8 @@ namespace pitTeam.Components
 
         protected WildSpawnType _botRole;
         protected bool _canPatrol = false;
-        private bool _combatIndependent;
-        private bool _combatIndependentRequested;
+        private float _selfDetermination = 50f;
+        private float? _combatDeterminationOverride;
         private bool _combatRegroupUsesBossAnchor;
         private bool _patrolLeaderSectorAnchorSet;
         private Vector3 _patrolLeaderSectorAnchor;
@@ -151,6 +152,7 @@ namespace pitTeam.Components
         private Vector3 _commandTarget;
         private float _commandUntilTime;
         private bool _tightRegroupRequested;
+        private bool _determinationRegroupRequested;
         private int _moveToPointIssueSequence;
         private int _pushEnemyIssueSequence;
         private bool _suppressEnemyRequiresLauncher;
@@ -201,13 +203,32 @@ namespace pitTeam.Components
             }
         }
 
-        public bool CombatIndependencePreference => _canPatrol || _combatIndependentRequested;
+        public bool CombatIndependencePreference => EffectiveSelfDetermination >= 100f;
+
+        public float SelfDetermination
+        {
+            get => _IsSquadMate ? _selfDetermination : 50f;
+            set => _selfDetermination = pitTeam.Shared.SelfDeterminationPolicy.Normalize(value);
+        }
+        public float EffectiveSelfDetermination => _combatDeterminationOverride ?? SelfDetermination;
+        public bool HasDeterminationOverride => _combatDeterminationOverride.HasValue;
+        public string DeterminationSource => !_combatDeterminationOverride.HasValue ? (_IsSquadMate ? "saved" : "pickupBaseline")
+            : _combatDeterminationOverride.Value == 100f ? "OnYourOwn" : _combatDeterminationOverride.Value == 20f ? "CoverMe" : "command";
+        public float BossInfluence => pitTeam.Shared.SelfDeterminationPolicy.BossInfluence(EffectiveSelfDetermination);
+        public bool HasCombatPercentageOverrides => _combatDeterminationOverride.HasValue || _temporaryCombatAggressionOverrideActive;
+        public void SetCombatDeterminationOverride(float value) => _combatDeterminationOverride = pitTeam.Shared.SelfDeterminationPolicy.Normalize(value);
+        public void ClearCombatDeterminationOverride() => _combatDeterminationOverride = null;
+        public void ResetCombatPercentageOverrides(string source)
+        {
+            ClearCombatDeterminationOverride();
+            ClearTemporaryCombatAggressionOverride(source);
+        }
 
         public bool CombatIndependent
         {
             get
             {
-                return _combatIndependent;
+                return EffectiveSelfDetermination >= 100f;
             }
         }
 
@@ -293,17 +314,7 @@ namespace pitTeam.Components
         {
             get
             {
-                if (_IsSquadMate)
-                {
-                    return 1f;
-                }
-
-                int followerLevel = Mathf.Max(1, _bot?.Profile?.Info?.Level ?? 1);
-                int playerLevel = Mathf.Max(1, _player?.realPlayer?.Profile?.Info?.Level ?? 1);
-                return PickupFollowerPersonality.CalculateBossProtectionWillingness01(
-                    followerLevel,
-                    playerLevel,
-                    PickupIndependence01);
+                return BossInfluence;
             }
         }
 
@@ -318,6 +329,7 @@ namespace pitTeam.Components
             }
             set
             {
+                if (_combatTactic != value) ResetCombatPercentageOverrides("tacticChanged");
                 _combatTactic = value;
             }
         }
@@ -399,6 +411,7 @@ namespace pitTeam.Components
             // ORBIT registers its own agent/squad runtime when its layer is constructed. Claim the bot
             // before resetting brain layers so ORBIT cannot keep ticking or re-register this follower.
             OrbitCompatibility.ClaimFollower(_bot);
+            Utils.FollowerMedical.ClearFollowerPoison(_bot.GetPlayer);
 
             // Constructor-time player inventory is normally ready, but follower initialization is
             // the last safe retry before raid commands can alter equipment provenance.
@@ -997,14 +1010,7 @@ namespace pitTeam.Components
             bot.GetPlayer.Physical.HandsStamina.ForceMode = true;
             // - need no food
             bot.GetPlayer.HealthController.DisableMetabolism();
-            // - have followers share the same groupId as the player
-            _grouId = bot.GetPlayer.Profile.Info.GroupId;
-            _teamId = bot.GetPlayer.Profile.Info.TeamId;
-            if (!AllegianceScavRelations.KeepSeparateGroup(bot, _player.realPlayer, _IsSquadMate))
-            {
-                bot.GetPlayer.Profile.Info.GroupId = _player.realPlayer.GroupId;
-                bot.GetPlayer.Profile.Info.TeamId = _player.realPlayer.Profile.Info.TeamId;
-            }
+            AssignProfileIdentity();
 
             bot.Tactic.AggressionChange(1f);
 
@@ -1099,11 +1105,32 @@ namespace pitTeam.Components
             _teleportGraceUntil = Time.time + TeleportGraceSeconds;
         }
 
+        private void AssignProfileIdentity()
+        {
+            if (_profileIdentityAssigned) return;
+            _grouId = _bot.GetPlayer.Profile.Info.GroupId;
+            _teamId = _bot.GetPlayer.Profile.Info.TeamId;
+            _profileIdentityAssigned = true;
+            // Profile identity is separate from native BotsGroup membership.
+            _bot.GetPlayer.Profile.Info.GroupId = _player.realPlayer.GroupId;
+            _bot.GetPlayer.Profile.Info.TeamId = _player.realPlayer.Profile.Info.TeamId;
+        }
+
+        internal void RestoreProfileIdentity()
+        {
+            if (!_profileIdentityAssigned || _bot?.GetPlayer?.Profile?.Info == null) return;
+            _bot.GetPlayer.Profile.Info.GroupId = _grouId;
+            _bot.GetPlayer.Profile.Info.TeamId = _teamId;
+            _profileIdentityAssigned = false;
+        }
+
         public virtual void Dismiss(bool warnPlayer = false)
         {
             if (_bot == null) return;
             try
             {
+                // Restore before native group lookup and diplomacy cleanup, including death.
+                RestoreProfileIdentity();
                 if (_bot.IsDead || _bot.BotState != EBotState.Active) return;
 
                 // Prevent stale enemy refs from surviving the follower->regular bot handoff.
@@ -1144,9 +1171,6 @@ namespace pitTeam.Components
 
                 _bot.Memory._botsGroup = group;
                 _bot.BotRequestController._groupRequestController = null;
-
-                _bot.GetPlayer.Profile.Info.GroupId = _grouId;
-                _bot.GetPlayer.Profile.Info.TeamId = _teamId;
 
                 _bot.BotsGroup.AddMember(_bot, false);
                 Utils.Enemy.ForceIgnoreUntilAggressionOff(_bot.BotsGroup);
@@ -1349,27 +1373,23 @@ namespace pitTeam.Components
 
         public void BeginCombatIndependenceFromPatrol()
         {
-            _combatIndependent = CombatIndependencePreference;
             _combatRegroupUsesBossAnchor = false;
         }
 
         public void SetCombatIndependent(bool value)
         {
-            _combatIndependentRequested = value;
-            _combatIndependent = value;
-            _combatRegroupUsesBossAnchor = false;
+            SetCombatDeterminationOverride(value ? 100f : 20f);
         }
 
         public void ClearActiveCombatIndependent()
         {
-            _combatIndependent = false;
             _combatRegroupUsesBossAnchor = false;
         }
 
         public void ClearCombatIndependent()
         {
-            _combatIndependent = false;
-            _combatIndependentRequested = false;
+            // Patrol handoff cannot clear a battle-wide override before the squad's
+            // quiet confirmation. The boss owns that reset, including the last bot.
             _combatRegroupUsesBossAnchor = false;
         }
 
@@ -1518,7 +1538,7 @@ namespace pitTeam.Components
             BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(SetContactApproach));
         }
 
-        public void SetRegroup(float duration, bool tightRegroup = false)
+        public void SetRegroup(float duration, bool tightRegroup = false, bool determinationRegroup = false)
         {
             if (ShouldIgnoreCommandSet())
             {
@@ -1534,6 +1554,7 @@ namespace pitTeam.Components
             _commandTarget = Vector3.zero;
             _commandUntilTime = Time.time + Mathf.Max(2f, duration);
             _tightRegroupRequested = tightRegroup;
+            _determinationRegroupRequested = determinationRegroup;
             _resumeHoldAfterComeCloser = false;
             _resumeHoldAfterTakeLoot = false;
             _resumeHoldAfterTakeLootCrouch = false;
@@ -1929,7 +1950,7 @@ namespace pitTeam.Components
                 return;
             }
 
-            if (!IsSafelyOutOfCombat(_bot))
+            if (_player?.HasFollowerCombat == true || !IsSafelyOutOfCombat(_bot))
             {
                 _temporaryCombatAggressionClearAfter = Time.time + TemporaryCombatAggressionClearDelaySeconds;
                 return;
@@ -2283,6 +2304,7 @@ namespace pitTeam.Components
 
         public int PushEnemyIssueSequence => _pushEnemyIssueSequence;
 
+        public bool DeterminationRegroupRequested => _activeCommand == FollowerCommandType.RegroupNearBoss && _determinationRegroupRequested;
         public bool TightRegroupRequested =>
             _activeCommand == FollowerCommandType.RegroupNearBoss && _tightRegroupRequested;
 
@@ -2439,7 +2461,7 @@ namespace pitTeam.Components
 
         public void SetCombatTacticFromString(string? tactic)
         {
-            _combatTactic = ParseCombatTactic(tactic);
+            CombatTactic = ParseCombatTactic(tactic);
         }
 
         public static FollowerCombatTactic ParseCombatTactic(string? tactic)
@@ -3077,6 +3099,7 @@ namespace pitTeam.Components
 
                 Utils.FollowerRecovery.ClearInvalidGoalEnemy(owner);
                 FollowerEnemyTracking.Update(owner);
+                FollowerBlockedGrenadeRecovery.Update(owner);
                 Utils.FollowerMedical.UpdateMedicalHandsWatchdog(owner);
                 postCombatDiagnostics.Update(owner, this);
                 UpdateTemporaryCombatAggressionClearDelay();

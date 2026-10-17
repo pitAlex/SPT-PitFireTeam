@@ -64,6 +64,7 @@ namespace pitTeam.Patches
         public string CurrentLoadoutId { get; set; }
         public string CurrentTactic { get; set; }
         public float Aggression { get; set; } = 50f;
+        public float SelfDetermination { get; set; } = 50f;
         public FollowerProficiencyModifierValues Proficiency { get; set; } = new FollowerProficiencyModifierValues();
         public List<FriendlyTeammateLoadoutOption> Loadouts { get; set; }
         public List<FriendlyTeammateTacticOption> Tactics { get; set; }
@@ -101,6 +102,7 @@ namespace pitTeam.Patches
     {
         public string aid { get; set; }
         public FollowerProficiencyModifierValues proficiency { get; set; }
+        public float? selfDetermination { get; set; }
     }
 
     internal class FriendlyTeammateTacticRequest
@@ -1115,6 +1117,7 @@ namespace pitTeam.Patches
             Slider stockSlider = slider.GetComponentInChildren<Slider>(true);
             TMP_InputField valueInput = NumberSliderValueInputField?.GetValue(slider) as TMP_InputField;
             ConfigureSliderValueInputChrome(valueInput);
+            AddProficiencyPercentLabel(valueInput);
             if (stockSlider != null)
             {
                 stockSlider.interactable = interactable;
@@ -1273,6 +1276,15 @@ namespace pitTeam.Patches
             colors.selectedColor = Color.clear;
             colors.disabledColor = Color.clear;
             valueInput.colors = colors;
+        }
+
+        private static void AddProficiencyPercentLabel(TMP_InputField input)
+        {
+            if (input?.transform is not RectTransform parent || parent.Find("pitFireTeam_Percent") != null) return;
+            var label = CreateAggressionLabel("pitFireTeam_Percent", parent, "%",
+                new Vector2(1f, .5f), new Vector2(1f, .5f), new Vector2(0f, .5f),
+                new Vector2(4f, 0f), new Vector2(22f, 28f), 18f, TextAlignmentOptions.MidlineLeft);
+            label.raycastTarget = false;
         }
 
         private static void HideStockLabelContainers(Transform root, Transform exemptRoot)

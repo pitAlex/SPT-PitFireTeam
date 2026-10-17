@@ -2,14 +2,16 @@ using EFT;
 using pitTeam.SAINAddon;
 using SAIN.Preset.Shared.Enums;
 using SAIN.SAINComponent.Classes;
+using SAIN.SAINComponent.SubComponents.CoverFinder;
 using UnityEngine;
 
 public static partial class CombatChecks
 {
-    private static BotOwner ArrivedRegroup(string id)
+    private static BotOwner ArrivedRegroup(string id,bool shooter=false)
     {
         Time.time += 10;
         var b = CoverBot(id);
+        if(shooter){b.Follower.CombatTactic=pitTeam.Components.FollowerCombatTactic.SAINShooter;Tick();b.Follower.Command=pitTeam.Components.FollowerCommandType.RegroupNearBoss;}
         RegroupDecision(b);
         var objective = SAINFollowerRuntime.GetRegroup(b);
         b.GetPlayer.Position = new Vector3(34,0,0);
@@ -29,6 +31,32 @@ public static partial class CombatChecks
         b.Sain.Cover.CoverPoints.Add(old); b.Sain.Cover.NativePoint = old;
         Check(b.Sain.Cover.FindForTest() == null && b.Sain.Cover.NativeCalls == 0,
             "completed regroup cannot fall back to old cover outside completion envelope");
+        var dogfight = new SAIN.SAINComponent.Classes.Mover.DogFight(b.Sain);
+        dogfight.DogFightMove(true,b.Sain.GoalEnemy);
+        Check(dogfight.Moves==1&&!dogfight.LastAggressive&&dogfight.Advances==0,
+            "completed empty constrained selection reaches native defensive handling without outward pursuit");
+        int queries=SainBotCoverData.Queries, probes=CoverAnalyzer.Rechecks;
+        for(int i=0;i<8;i++){b.Sain.Cover.FindForTest();dogfight.DogFightMove(true,b.Sain.GoalEnemy);}
+        Check(dogfight.Advances==0&&SainBotCoverData.Queries==queries&&CoverAnalyzer.Rechecks==probes,
+            "cached empty local selection retains restriction without repeat scans or validation");
+        dogfight.BackupAvailable=true;dogfight.DogFightMove(true,b.Sain.GoalEnemy);
+        Check(dogfight.Backups==1&&!dogfight.LastAggressive,"no-cover restriction preserves native defensive backing up");
+        dogfight.BackupAvailable=false;
+        foreach(var urgent in new[]{ECombatDecision.DogFight,ECombatDecision.Retreat}){
+            b.Sain.Decision.CurrentCombatDecision=urgent;dogfight.DogFightMove(true,b.Sain.GoalEnemy);
+            Check(dogfight.LastAggressive,"actual urgent decision bypasses empty local restriction: "+urgent);
+        }
+        b.Sain.Decision.CurrentCombatDecision=ECombatDecision.SeekCover;
+        b.Memory.IsUnderFire=true;dogfight.DogFightMove(true,b.Sain.GoalEnemy);
+        Check(dogfight.LastAggressive,"incoming fire can escape empty post-regroup restriction immediately");
+        b.Memory.IsUnderFire=false;b.Sain.Medical.TimeSinceShot=.1f;dogfight.DogFightMove(true,b.Sain.GoalEnemy);
+        Check(dogfight.LastAggressive,"recent hit can escape empty post-regroup restriction immediately");
+        b.Sain.Medical.TimeSinceShot=999;b.Sain.Decision.CurrentSelfDecision=ESelfActionType.FirstAid;
+        dogfight.DogFightMove(true,b.Sain.GoalEnemy);
+        Check(dogfight.LastAggressive,"medical recovery retains native escape after empty local selection");
+        b.Sain.Decision.CurrentSelfDecision=ESelfActionType.Reload;dogfight.DogFightMove(true,b.Sain.GoalEnemy);
+        Check(!dogfight.LastAggressive,"routine reload cannot reopen ordinary outward no-cover pursuit");
+        b.Sain.Decision.CurrentSelfDecision=ESelfActionType.None;
         Time.time += 10;
         Check(b.Sain.Cover.FindForTest() == null, "post-regroup protection is geometric, not another cooldown");
         b.Sain.Cover.CoverPoints.Add(near);
@@ -57,11 +85,27 @@ public static partial class CombatChecks
         moved.Sain.GoalEnemy.KnownPlaces.LastKnownPosition = new Vector3(58,0,0);
         Check(moved.Sain.Cover.FindForTest()==old, "meaningfully changed enemy anchor permits fresh combat cover");
         var ordered = ArrivedRegroup("regroupNewOrder"); ordered.Sain.Cover.CoverPoints.Add(old);
+        ordered.Sain.Cover.FindForTest();
         ordered.Follower.SetPushEnemy(20);
+        dogfight=new SAIN.SAINComponent.Classes.Mover.DogFight(ordered.Sain);dogfight.DogFightMove(true,ordered.Sain.GoalEnemy);
+        Check(dogfight.LastAggressive,"accepted Go Forward cannot inherit an old empty-result movement restriction");
         Check(ordered.Sain.Cover.FindForTest()==old, "accepted Go Forward releases post-regroup cover constraint");
         var cleared = ArrivedRegroup("regroupClear"); cleared.Sain.Cover.CoverPoints.Add(old);
         SAINFollowerRuntime.GetCover(cleared).Clear();
         Check(cleared.Sain.Cover.FindForTest()==old, "combat release clears post-regroup selection state");
+        var ordinary=CoverBot("ordinaryEmptyFallback");ordinary.Sain.Cover.FindForTest();
+        dogfight=new SAIN.SAINComponent.Classes.Mover.DogFight(ordinary.Sain);dogfight.DogFightMove(true,ordinary.Sain.GoalEnemy);
+        Check(dogfight.LastAggressive,"unconstrained empty cover permits native fallback");
+        ordinary.IsFollower=false;dogfight.DogFightMove(true,ordinary.Sain.GoalEnemy);
+        Check(dogfight.LastAggressive,"ordinary SAIN bots retain native aggressive no-cover movement");
+        var shooter=ArrivedRegroup("shooterEmptyCover",true);shooter.Sain.Cover.FindForTest();
+        dogfight=new SAIN.SAINComponent.Classes.Mover.DogFight(shooter.Sain);dogfight.DogFightMove(true,shooter.Sain.GoalEnemy);
+        Check(!dogfight.LastAggressive,"SAINShooter retains the same completed-empty local cover boundary");
+        shooter.Follower.CombatIndependent=true;dogfight.DogFightMove(true,shooter.Sain.GoalEnemy);
+        Check(dogfight.LastAggressive,"independence immediately bypasses a previously constrained empty result");
+        var unready=ArrivedRegroup("unreadyEmptyCover");unready.Sain.Cover.FindForTest();
+        unready.IsFollower=false;dogfight=new SAIN.SAINComponent.Classes.Mover.DogFight(unready.Sain);dogfight.DogFightMove(true,unready.Sain.GoalEnemy);
+        Check(dogfight.LastAggressive,"a former follower cannot carry the empty-result restriction into ordinary SAIN");
 
         var waiting = CoverBot("regroupPublicationWait");
         var layer = new SAINFollowerSquadCombatLayer(waiting,75); Tick();

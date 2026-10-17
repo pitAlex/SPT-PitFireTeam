@@ -117,6 +117,27 @@ internal sealed class SAINFollowerMarksmanObjective(BotComponent bot, FiringPosi
             // finder is retried only on its bounded cadence at a planning boundary.
             Vector3? point = !attempted && solo == ECombatDecision.MoveToEngage && squad == ESquadDecision.None
                 ? bot.Decision.EnemyDecisions.FiringPosition : null;
+            bool localCover = false;
+            // Core Marksman tries another shooting cover before the wider point
+            // search. Reuse the cover owner's candidates and shared frame budget;
+            // incomplete work retains the current shelter and does not run both scans.
+            if (!point.HasValue && bot.Cover.CoverSeekingState == ECoverSeekingState.HoldInCover &&
+                SainPlayerSquadBridge.TryGetPlayerLeader(bot.BotOwner, out Player leader) &&
+                SAINFollowerRuntime.GetCover(bot.BotOwner) is { } coverPolicy)
+            {
+                bool independent = Follower?.CombatIndependent == true;
+                float radius = independent ? SAINFollowerCoverFinder.NearbyCoverRange : SainRegroupBridge.GetTriggerDistance(bot.BotOwner);
+                var covers = coverPolicy.FindNearbyFiring(enemy, independent ? bot.Position : leader.Position, radius, out bool pending);
+                foreach (var candidate in covers)
+                    if (Allowed(candidate.Position, known, false,
+                        Mathf.Max(candidate.PathData.PathLength, (candidate.Position - bot.Position).magnitude)))
+                    { point = candidate.Position; localCover = true; break; }
+                if (pending)
+                {
+                    Report("searchingLocalShootingCover");
+                    result = ECombatDecision.SeekCover; squadResult = ESquadDecision.None; return true;
+                }
+            }
             if (!point.HasValue)
             {
                 if (Time.time < nextScanAt)
@@ -127,14 +148,15 @@ internal sealed class SAINFollowerMarksmanObjective(BotComponent bot, FiringPosi
             }
             attempted = true; nextRetryAt = Time.time + (Ordered ? 2f : 4f);
             lastCandidate = point; rejection = point.HasValue ? null : "nativeFinderEmpty";
-            bool automatic = !Ordered && SAINFollowerRuntime.GetSearchLeader(bot.BotOwner) == null && point.HasValue &&
+            bool automatic = !localCover && !Ordered && SAINFollowerRuntime.GetSearchLeader(bot.BotOwner) == null && point.HasValue &&
                 (point.Value - known).magnitude + 1.5f < (bot.Position - known).magnitude && Weapons.CanAdvance(enemy);
-            if (point.HasValue && Allowed(point.Value, known, automatic))
+            if (point.HasValue && (localCover || Allowed(point.Value, known, automatic)))
             {
                 // Only an admitted different position resets the per-leg execution budget.
                 Attempt?.Clear("marksmanNewPosition");
                 automaticDestination = automatic;
-                Destination = point; SainRegroupBridge.Claim(bot.BotOwner, point.Value); Report("nativeFiringPosition");
+                Destination = point; SainRegroupBridge.Claim(bot.BotOwner, point.Value);
+                Report(localCover ? "localShootingCover" : "nativeFiringPosition");
             }
             else Report("noSuitableNativePosition");
         }
@@ -175,7 +197,7 @@ internal sealed class SAINFollowerMarksmanObjective(BotComponent bot, FiringPosi
         squad == ESquadDecision.PushSuppressedEnemy;
 
     private bool Reject(string why) { rejection = why; return false; }
-    private bool Allowed(Vector3 point, Vector3 known, bool automatic)
+    private bool Allowed(Vector3 point, Vector3 known, bool automatic, float? validatedRoute = null)
     {
         if (!Finite(point)) return Reject("nonfinite");
         if ((point - bot.Position).sqrMagnitude <= 4f) return Reject("alreadyAtPosition");
@@ -183,11 +205,18 @@ internal sealed class SAINFollowerMarksmanObjective(BotComponent bot, FiringPosi
             if ((point - failedPositions[i]).sqrMagnitude < 16f) return Reject("failedPosition");
         if (!SainRegroupBridge.SameLevel(point, bot.Position)) return Reject("differentFloor");
         if (!SainRegroupBridge.IsDestinationAvailable(bot.BotOwner, point)) return Reject("reserved");
-        if (!SainRegroupBridge.TryGetDistance(bot.Position, point, out float path)) return Reject("incompleteRoute");
+        float path = validatedRoute.GetValueOrDefault();
+        if (!validatedRoute.HasValue && !SainRegroupBridge.TryGetDistance(bot.Position, point, out path)) return Reject("incompleteRoute");
         if (path > (Ordered ? 140f : 90f)) return Reject("routeTooLong");
         Vector3 delta = point - known; delta.y = 0f;
         if (delta.sqrMagnitude < 16f * 16f) return Reject("enemyTooClose");
-        if (Ordered || automatic) return true;
+        if (Ordered) return true;
+        if ((Follower?.EffectiveSelfDetermination ?? 50f) <= 0f &&
+            SainPlayerSquadBridge.TryGetPlayerLeader(bot.BotOwner, out Player escortPlayer) &&
+            (point - escortPlayer.Position).sqrMagnitude > 10f * 10f &&
+            (point - escortPlayer.Position).sqrMagnitude >= (bot.Position - escortPlayer.Position).sqrMagnitude)
+            return Reject("closeEscort");
+        if (automatic) return true;
         if (Follower?.CombatIndependent != true && SainPlayerSquadBridge.TryGetPlayerLeader(bot.BotOwner, out Player player))
         {
             float radius = SainRegroupBridge.GetTriggerDistance(bot.BotOwner);

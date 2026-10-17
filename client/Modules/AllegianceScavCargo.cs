@@ -114,7 +114,8 @@ namespace pitTeam.Modules
             var human = world?.MainPlayer;
             if (captured || !GameplayModeRuntime.IsAllegiance || AllegianceScavRelations.TrustBroken || human?.ProfileId != profileId ||
                 human.Side == EPlayerSide.Savage || human.HealthController?.IsAlive != true ||
-                (status != ExitStatus.Survived && status != ExitStatus.Runner) || string.IsNullOrWhiteSpace(exitName)) return;
+                (status != ExitStatus.Survived && status != ExitStatus.Runner && status != ExitStatus.Transit) ||
+                string.IsNullOrWhiteSpace(exitName)) return;
             captured = true;
 
             // Include an inspection still open at extraction, before follower/UI teardown.
@@ -152,12 +153,14 @@ namespace pitTeam.Modules
             var packet = new JObject
             {
                 ["serverId"] = serverId, ["exitName"] = exitName,
+                // Recruited Scavs stay behind at transit; settle this map, never respawn them.
+                ["transit"] = status == ExitStatus.Transit,
                 ["scavProfileIds"] = JArray.FromObject(present.Select(c => c.Bot.ProfileId)),
                 ["items"] = allItems
             };
             FollowerInsuranceRaidReports.Prepare(packet.ToString(Formatting.None))
                 .Send("/singleplayer/pitfireteam/scav-cargo");
-            Logger.LogInfo($"[ScavCargo] captured serverId='{serverId}' exit='{exitName}' partners={present.Length} items={allItems.Count}");
+            Logger.LogInfo($"[ScavCargo] captured serverId='{serverId}' exit='{exitName}' transit={status == ExitStatus.Transit} partners={present.Length} items={allItems.Count}");
         }
     }
 }

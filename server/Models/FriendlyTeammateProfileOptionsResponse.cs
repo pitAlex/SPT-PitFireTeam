@@ -9,6 +9,7 @@ public record FriendlyTeammateProfileOptionsResponse
     public string CurrentTactic { get; set; } = string.Empty;
 
     public float Aggression { get; set; } = 50f;
+    public float SelfDetermination { get; set; } = 50f;
 
     public FriendlyTeammateProficiencySettings Proficiency { get; set; } = new();
 

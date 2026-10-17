@@ -19,6 +19,8 @@ See `docs/Buy Screen.md` for the current stock `EquipmentBuildsScreen` reuse, bu
 
 See `docs/Team-Escape.md` for the player-death squad escape, recovered death-gear mail, and escape outcome persistence behavior.
 
+Equipped weapons keep their exact registered spare magazines directly in tactical-vest or normal pocket grids, including loaded rounds, under every loadout mode. This applies to acquired primary/secondary weapons and holster weapons as well as manual gear exchange. Unregistered magazines, backpack/secure/nested-container cargo and registrations for weapons no longer equipped remain subject to ordinary return filtering. Return mail and equipment snapshots share this classification; other-teammate protected-gear exclusions remain unchanged. See [looting bookkeeping](looting/Looting.md#tracking-and-return-bookkeeping).
+
 See [Follower Insurance](Follower-Insurance.md) for real purchases, persistent exact-item policies, transfer safety, and stock trader returns for verified raid losses. Insurance confirmation commits pending loadout changes like repair and keeps the editor open after refreshing live and staged payment state.
 
 ## UI Behavior

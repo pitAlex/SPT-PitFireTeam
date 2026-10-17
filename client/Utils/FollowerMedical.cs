@@ -98,26 +98,102 @@ namespace pitTeam.Utils
 
         public static void ForceHeal(BotOwner bot)
         {
+            ForceHeal(bot, clearNegativeEffects: false);
+        }
+
+        public static void ForceHeal(BotOwner bot, bool clearNegativeEffects)
+        {
             if (bot == null || bot.GetPlayer == null || bot.HealthController?.IsAlive != true)
             {
                 return;
             }
 
-            CancelAllHealing(bot, recoverDestroyedSurgeryParts: true);
+            // The key finishes only current medical hands. Broad stuck-hands recovery
+            // can fast-forward the weapon draw started by cancellation and discard its
+            // inventory events, leaving a later treatment without a clean transition.
+            if (clearNegativeEffects)
+            {
+                FinishExplicitHealHands(bot.GetPlayer);
+                CancelActiveMedical(bot);
+                ResetExplicitHealTracking(bot);
+            }
+            else CancelAllHealing(bot, recoverDestroyedSurgeryParts: true);
 
             Player player = bot.GetPlayer;
+            if (clearNegativeEffects) RemoveNegativeMedicalEffects(player);
             RestoreAllBodyPartsToMaximum(player);
             RemoveBleedingEffects(player);
             if (bot.AIData?.Player != null && bot.AIData.Player != player)
             {
+                if (clearNegativeEffects) RemoveNegativeMedicalEffects(bot.AIData.Player);
                 RestoreAllBodyPartsToMaximum(bot.AIData.Player);
                 RemoveBleedingEffects(bot.AIData.Player);
             }
 
             RefreshMedicalWork(bot);
-            RefreshBotMovementAfterHealing(bot, ignoreBrokenLegPenalty: true);
-            TryRecoverStuckMedicalHands(bot, "forceHeal");
+            RefreshBotMovementAfterHealing(bot);
+            if (!clearNegativeEffects) TryRecoverStuckMedicalHands(bot, "forceHeal");
             TryReturnToMainWeapon(bot);
+            if (clearNegativeEffects) ReconcileCancelledMedicalOwnership(bot);
+        }
+
+        internal static void ClearFollowerPoison(Player player)
+        {
+            var health = player?.ActiveHealthController;
+            if (health == null) return;
+            // Recruitment can inherit pre-existing poison. Clear every instance,
+            // including non-default body parts, without changing other health effects.
+            for (int i = health.Effects.Count - 1; i >= 0; i--)
+            {
+                var effect = health.Effects[i];
+                if (effect is IIntoxication || effect is ILethalIntoxication) effect.ForceRemove();
+            }
+        }
+
+        internal static void FinishExplicitHealHands(Player player)
+        {
+            if (player?.HandsController is not Player.MedsController hands || hands.CurrentOperation == null) return;
+            hands._failedToApply = true;
+            hands.CurrentOperation.State = Player.EOperationState.Finished;
+            // The normal weapon return invokes native HideWeapon and its use callback.
+            // Do not fast-forward unrelated firearm, reload or inventory operations.
+        }
+
+        internal static void ReconcileCancelledMedicalOwnership(BotOwner bot)
+        {
+            var medicine = bot?.Medecine;
+            if (medicine == null || bot.GetPlayer?.HandsController is Player.MedsController ||
+                medicine.FirstAid?.Using == true || medicine.SurgicalKit?.Using == true || medicine.Stimulators?.Using == true) return;
+            // Native CancelCurrent hides Using through _lastIsCanceled without clearing
+            // _using or the aggregate AidCallback flag if the old hands callback is lost.
+            // Only reconcile after medicine no longer owns the actual hands or a start.
+            FinishCancelledMedicine(medicine.FirstAid);
+            FinishCancelledMedicine(medicine.SurgicalKit);
+            FinishCancelledMedicine(medicine.Stimulators);
+            if (medicine.Using) medicine.AidCallback(false);
+        }
+
+        private static void FinishCancelledMedicine(BotAbstractMeds medicine)
+        {
+            if (medicine?._using == true && medicine._lastIsCanceled) medicine.Using = false;
+        }
+
+        private static void ResetExplicitHealTracking(BotOwner bot)
+        {
+            string key = GetBotKey(bot);
+            if (!string.IsNullOrEmpty(key))
+            {
+                HandsWatchStates.Remove(key);
+                PostCombatFullHealStates.Remove(key);
+            }
+            FirstAidTopOffStates.Remove(bot.GetPlayer);
+            FollowerFirstAidRetry.Clear(bot.GetPlayer);
+            if (bot.AIData?.Player != null && bot.AIData.Player != bot.GetPlayer)
+            {
+                FinishExplicitHealHands(bot.AIData.Player);
+                FirstAidTopOffStates.Remove(bot.AIData.Player);
+                FollowerFirstAidRetry.Clear(bot.AIData.Player);
+            }
         }
 
         public static void CancelAllHealing(BotOwner bot, bool recoverDestroyedSurgeryParts)
@@ -139,7 +215,7 @@ namespace pitTeam.Utils
             }
 
             RefreshMedicalWork(bot);
-            RefreshBotMovementAfterHealing(bot, ignoreBrokenLegPenalty: recoverDestroyedSurgeryParts);
+            RefreshBotMovementAfterHealing(bot);
             TryReturnToMainWeapon(bot);
         }
 
@@ -157,7 +233,7 @@ namespace pitTeam.Utils
             }
 
             RefreshMedicalWork(bot);
-            RefreshBotMovementAfterHealing(bot, ignoreBrokenLegPenalty: true);
+            RefreshBotMovementAfterHealing(bot);
 
             if (!IsUsingMedical(bot) &&
                 bot.WeaponManager?.Selector != null &&
@@ -364,7 +440,7 @@ namespace pitTeam.Utils
             if (TryGetActiveBleeding(player, out EDamageEffectType bleedingType))
             {
                 return CanTreatDamageEffect(firstAid.CurUsingMeds, bleedingType) ||
-                       FindBestBleedTreatment(firstAid, bleedingType) != null;
+                       FindBestDamageEffectTreatment(firstAid, bleedingType) != null;
             }
 
             return HasRecoverableFirstAidDamage(bot);
@@ -372,6 +448,8 @@ namespace pitTeam.Utils
 
         public static void UpdateMedicalHandsWatchdog(BotOwner bot)
         {
+            ReconcileCancelledMedicalOwnership(bot);
+            FollowerFirstAidRetry.Observe(bot);
             if (bot?.ProfileId == null || bot.GetPlayer == null || bot.HealthController?.IsAlive != true)
             {
                 return;
@@ -434,6 +512,16 @@ namespace pitTeam.Utils
                 hardTimeoutReached ? $"{reason}.hardTimeout" : $"{reason}.stalled");
             state.RecentMedicalUntil = Time.time + RecentMedicalWindow;
             ResetWatchState(state);
+        }
+
+        private static void RemoveNegativeMedicalEffects(Player player)
+        {
+            var health = player?.ActiveHealthController;
+            if (health == null) return;
+            health.RemoveNegativeEffects(EBodyPart.Common);
+            // Ordinary intoxication is IPermanent, so RemoveNegativeEffects skips it.
+            health.RemoveIntoxication();
+            ClearFollowerPoison(player);
         }
 
         private static void RestoreAllBodyPartsToMaximum(Player player)
@@ -506,11 +594,14 @@ namespace pitTeam.Utils
 
         private static void NormalizeSurgeryRecoveredPartsForFirstAid(Player player)
         {
-            if (player?.ActiveHealthController == null)
+            if (player?.ActiveHealthController == null || HasActiveBleeding(player))
             {
                 return;
             }
 
+            // Native first aid can stop bleeding on a blacked part. Restoring it to
+            // 1 HP before that cure lets the next bleed tick black it again, repeatedly
+            // applying the surgery penalty and invalidating an HP treatment in flight.
             for (int i = 0; i < SurgeryRecoveryParts.Length; i++)
             {
                 EBodyPart part = SurgeryRecoveryParts[i];
@@ -550,7 +641,7 @@ namespace pitTeam.Utils
             Modules.Logger.LogInfo($"[Medical] Clamped impossible follower {part} health max from {oldMaximum:0.##} to {profileMaximum:0.##}: {player.Profile?.Nickname ?? player.name}");
         }
 
-        private static void RefreshBotMovementAfterHealing(BotOwner bot, bool ignoreBrokenLegPenalty)
+        private static void RefreshBotMovementAfterHealing(BotOwner bot)
         {
             if (bot?.GetPlayer == null)
             {
@@ -558,10 +649,10 @@ namespace pitTeam.Utils
             }
 
             Player player = bot.GetPlayer;
-            RefreshMovementHealthPenalty(player, ignoreBrokenLegPenalty);
+            RefreshMovementHealthPenalty(player);
             if (bot.AIData?.Player != null && bot.AIData.Player != player)
             {
-                RefreshMovementHealthPenalty(bot.AIData.Player, ignoreBrokenLegPenalty);
+                RefreshMovementHealthPenalty(bot.AIData.Player);
             }
 
             if (bot.Mover != null)
@@ -571,7 +662,7 @@ namespace pitTeam.Utils
                 bot.Mover.SetTargetMoveSpeed(1f);
             }
 
-            if (!HasDamagedLeg(player, ignoreBrokenLegPenalty))
+            if (!HasDamagedLeg(player))
             {
                 player.EnableSprint(true);
                 if (bot.AIData?.Player != null && bot.AIData.Player != player)
@@ -581,7 +672,7 @@ namespace pitTeam.Utils
             }
         }
 
-        private static void RefreshMovementHealthPenalty(Player player, bool ignoreBrokenLegPenalty)
+        private static void RefreshMovementHealthPenalty(Player player)
         {
             if (player?.HealthController == null || player.MovementContext == null)
             {
@@ -591,8 +682,8 @@ namespace pitTeam.Utils
             player.MovementContext.SetPhysicalCondition(EPhysicalCondition.UsingMeds, false);
             player.MovementContext.SetPhysicalCondition(EPhysicalCondition.HealingLegs, false);
 
-            bool rightLegDamaged = IsMovementDamagedLeg(player, EBodyPart.RightLeg, ignoreBrokenLegPenalty);
-            bool leftLegDamaged = IsMovementDamagedLeg(player, EBodyPart.LeftLeg, ignoreBrokenLegPenalty);
+            bool rightLegDamaged = IsMovementDamagedLeg(player, EBodyPart.RightLeg);
+            bool leftLegDamaged = IsMovementDamagedLeg(player, EBodyPart.LeftLeg);
 
             player.UpdateSpeedLimitByHealth();
             player.MovementContext.SetPhysicalCondition(EPhysicalCondition.RightLegDamaged, rightLegDamaged);
@@ -605,18 +696,18 @@ namespace pitTeam.Utils
             }
         }
 
-        private static bool HasDamagedLeg(Player player, bool ignoreBrokenLegPenalty)
+        private static bool HasDamagedLeg(Player player)
         {
             if (player?.HealthController == null)
             {
                 return false;
             }
 
-            return IsMovementDamagedLeg(player, EBodyPart.RightLeg, ignoreBrokenLegPenalty) ||
-                   IsMovementDamagedLeg(player, EBodyPart.LeftLeg, ignoreBrokenLegPenalty);
+            return IsMovementDamagedLeg(player, EBodyPart.RightLeg) ||
+                   IsMovementDamagedLeg(player, EBodyPart.LeftLeg);
         }
 
-        private static bool IsMovementDamagedLeg(Player player, EBodyPart part, bool ignoreBrokenLegPenalty)
+        private static bool IsMovementDamagedLeg(Player player, EBodyPart part)
         {
             if (player?.HealthController == null)
             {
@@ -628,7 +719,7 @@ namespace pitTeam.Utils
                 return true;
             }
 
-            return !ignoreBrokenLegPenalty && player.HealthController.IsBodyPartBroken(part);
+            return player.HealthController.IsBodyPartBroken(part);
         }
 
         private static string? GetMedicalBusyReason(
@@ -727,11 +818,11 @@ namespace pitTeam.Utils
             MedicalProgressSnapshot current)
         {
             return !ReferenceEquals(previous.ActiveMeds, current.ActiveMeds) ||
-                   previous.FirstAidPending != current.FirstAidPending ||
-                   previous.SurgeryPending != current.SurgeryPending ||
+                   (previous.FirstAidPending && !current.FirstAidPending) ||
+                   (previous.SurgeryPending && !current.SurgeryPending) ||
                    previous.HandsInteractionActive != current.HandsInteractionActive ||
-                   Mathf.Abs(previous.CurrentHealth - current.CurrentHealth) > 0.01f ||
-                   Mathf.Abs(previous.MaximumHealth - current.MaximumHealth) > 0.01f;
+                   current.CurrentHealth > previous.CurrentHealth + 0.01f ||
+                   current.MaximumHealth > previous.MaximumHealth + 0.01f;
         }
 
         private static bool IsHandsInteractionActive(Player player)
@@ -926,6 +1017,7 @@ namespace pitTeam.Utils
                 med = state.Med;
                 ValueStruct cachedHealth = player.HealthController.GetBodyPartHealth(bodyPart, false);
                 return med != null && ReferenceEquals(med.Owner, player.InventoryController) && state.Policy.HasWork(bodyPart) &&
+                       FollowerFirstAidRetry.CanAttempt(player, bodyPart) &&
                        !player.ActiveHealthController.IsBodyPartDestroyed(bodyPart) &&
                        FollowerFirstAidTopOffPolicy.NeedsTreatment(bodyPart, cachedHealth.Current, cachedHealth.Maximum, false) &&
                        med.TryGetItemComponent<MedKitComponent>(out MedKitComponent cachedKit) && cachedKit.HpResource > 0f &&
@@ -968,7 +1060,8 @@ namespace pitTeam.Utils
             bool bestVital = false;
             foreach (EBodyPart part in EFT.HealthSystem.HealthHelper.RealBodyParts)
             {
-                if (player.ActiveHealthController.IsBodyPartDestroyed(part))
+                if (player.ActiveHealthController.IsBodyPartDestroyed(part) ||
+                    !FollowerFirstAidRetry.CanAttempt(player, part))
                 {
                     continue;
                 }
@@ -1215,7 +1308,7 @@ namespace pitTeam.Utils
                 return;
             }
 
-            EFT.InventoryLogic.Meds best = FindBestBleedTreatment(firstAid, bleedingType);
+            EFT.InventoryLogic.Meds best = FindBestDamageEffectTreatment(firstAid, bleedingType);
             if (best != null)
             {
                 firstAid.CurUsingMeds = best;
@@ -1261,7 +1354,35 @@ namespace pitTeam.Utils
             return TryGetActiveBleeding(player, out _);
         }
 
-        private static EFT.InventoryLogic.Meds FindBestBleedTreatment(BotFirstAid firstAid, EDamageEffectType bleedingType)
+        internal static void SelectFractureFirstAid(BotFirstAid firstAid)
+        {
+            BotOwner bot = firstAid?._owner;
+            Player player = bot?.GetPlayer;
+            if (firstAid == null || firstAid.Damaged || firstAid.Using || bot?.Medecine?.Using == true ||
+                player?.HealthController == null || bot.HealthController?.IsAlive != true ||
+                bot.Settings?.FileSettings?.Mind?.CAN_USE_MEDS != true || firstAid.parts == null ||
+                HasActiveBleeding(player)) return;
+
+            // Native bleeding/HP selection keeps priority. Read only the native
+            // slot-filtered medicine cache; native execution owns costs and the cure.
+            foreach (EBodyPart part in firstAid.parts)
+            {
+                if (!player.HealthController.IsBodyPartBroken(part) ||
+                    player.HealthController.IsBodyPartDestroyed(part) ||
+                    player.HealthController.GetBodyPartHealth(part, false).Current <= 0f) continue;
+                var med = FindBestDamageEffectTreatment(firstAid, EDamageEffectType.Fracture, part);
+                if (med == null) continue;
+                firstAid.CurUsingMeds = med;
+                firstAid._bodyPartToHeal = part;
+                firstAid._isBleedingLight = false;
+                firstAid._isBleedingHeavy = false;
+                firstAid.Damaged = true;
+                return;
+            }
+        }
+
+        private static EFT.InventoryLogic.Meds FindBestDamageEffectTreatment(
+            BotFirstAid firstAid, EDamageEffectType damageType, EBodyPart? bodyPart = null)
         {
             EFT.InventoryLogic.Meds best = null;
             float bestScore = float.MaxValue;
@@ -1269,12 +1390,15 @@ namespace pitTeam.Utils
             for (int i = 0; i < firstAid._medsList.Count; i++)
             {
                 EFT.InventoryLogic.Meds med = firstAid._medsList[i];
-                if (!CanTreatDamageEffect(med, bleedingType, out int cost, out MedKitComponent medKit))
+                if (!CanTreatDamageEffect(med, damageType, out int cost, out MedKitComponent medKit) ||
+                    (bodyPart.HasValue &&
+                     (!ReferenceEquals(med.Owner, firstAid._owner.GetPlayer.InventoryController) ||
+                      !firstAid._owner.GetPlayer.HealthController.CanApplyItem(med, bodyPart.Value))))
                 {
                     continue;
                 }
 
-                float score = GetBleedTreatmentScore(medKit, cost);
+                float score = GetDamageEffectTreatmentScore(medKit, cost);
                 if (score < bestScore)
                 {
                     best = med;
@@ -1285,7 +1409,7 @@ namespace pitTeam.Utils
             return best;
         }
 
-        private static float GetBleedTreatmentScore(MedKitComponent medKit, int cost)
+        private static float GetDamageEffectTreatmentScore(MedKitComponent medKit, int cost)
         {
             if (medKit == null)
             {

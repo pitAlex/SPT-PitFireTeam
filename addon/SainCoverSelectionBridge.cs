@@ -29,7 +29,7 @@ namespace pitTeam.SAINAddon
                 postfix: new HarmonyMethod(typeof(SainCoverSelectionBridge), nameof(Observe)));
             var fallback = AccessTools.Method(typeof(DogFight), nameof(DogFight.DogFightMove), new[] { typeof(bool), typeof(Enemy) });
             if (fallback?.ReturnType != typeof(void)) throw new MissingMemberException("SAIN no-cover movement boundary changed.");
-            harmony.Patch(fallback, prefix: new HarmonyMethod(typeof(SainCoverSelectionBridge), nameof(WaitForSelection)));
+            harmony.Patch(fallback, prefix: new HarmonyMethod(typeof(SainCoverSelectionBridge), nameof(ConstrainFallback)));
             IsAvailable = true;
         }
         internal static void Reset()
@@ -62,23 +62,31 @@ namespace pitTeam.SAINAddon
             }
             catch (Exception ex) { Report(ex); return true; }
         }
-        private static void Observe(SAINCoverClass __instance, CoverPoint __result)
+        private static void Observe(SAINCoverClass __instance, ref CoverPoint __result)
         {
             if (_observer == null || __result == null) return;
             try
             {
-                if (pitFireTeam.UseSainFollowerCombat(__instance.BotOwner)) _observer(__instance.BotOwner, __result);
+                if (pitFireTeam.UseSainFollowerCombat(__instance.BotOwner))
+                {
+                    if (FollowerWireNavigation.IsCoverUnsafe(__result.Position)) { __result = null; return; }
+                    _observer(__instance.BotOwner, __result);
+                }
             }
             catch (Exception ex) { Report(ex); }
         }
-        private static bool WaitForSelection(DogFight __instance, bool __0)
+        private static void ConstrainFallback(DogFight __instance, ref bool __0)
         {
             // Native UpdateCover treats an empty result as permission to advance.
-            // A budgeted scan is still pending; genuine urgent dogfight keeps priority.
-            if (!__0) return true;
-            try { return !pitFireTeam.UseSainFollowerCombat(__instance.BotOwner) ||
-                SAINFollowerRuntime.GetCover(__instance.BotOwner)?.WaitingForSelection != true; }
-            catch (Exception ex) { Report(ex); return true; }
+            // Pending or intentionally empty local selection cannot authorize pursuit.
+            // Keep native BackUpFromEnemy and other defensive handling in this call.
+            if (!__0) return;
+            try
+            {
+                if (pitFireTeam.UseSainFollowerCombat(__instance.BotOwner) &&
+                    SAINFollowerRuntime.GetCover(__instance.BotOwner)?.RestrictsNoCoverAdvance == true) __0 = false;
+            }
+            catch (Exception ex) { Report(ex); }
         }
         private static void Report(Exception ex)
         {

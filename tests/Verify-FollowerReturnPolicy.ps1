@@ -31,4 +31,7 @@ foreach ($path in @('client/Modules/FollowerDeathEscapeResolver.GearSnapshot.cs'
     }
 }
 if (!$source.Contains('TrackedItemIds = GetReturnItemIds(bot).ToArray()')) { throw 'Escape snapshot must match return policy' }
+if (!$source.Contains('(weapon, magazine) => IsApprovedLootedWeaponMagazine(bot, weapon, magazine)')) {
+    throw 'Shared return filter must use this follower exact weapon-magazine registrations'
+}
 Write-Output 'Follower return membership/snapshot source guards passed.'

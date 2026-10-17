@@ -6,6 +6,7 @@ using EFT;
 using EFT.InventoryLogic;
 using pitTeam.Modules;
 using pitTeam.Patches;
+using pitTeam.Components;
 using UnityEngine;
 
 namespace Comfort.Common
@@ -15,7 +16,17 @@ namespace Comfort.Common
     public delegate void Callback(IResult result);
     public static class CallbackExtensions { public static void Fail(this Callback callback, string reason) => callback(new Result()); }
 }
-namespace UnityEngine { public static class Time { public static float time = 10; } }
+namespace UnityEngine
+{
+    public static class Time { public static float time = 10; }
+    public struct Vector3
+    {
+        public float x;
+        public Vector3(float value) { x = value; }
+        public float sqrMagnitude => x * x;
+        public static Vector3 operator -(Vector3 a, Vector3 b) => new Vector3(a.x - b.x);
+    }
+}
 namespace HarmonyLib { public static class AccessTools { public static MethodInfo Method(Type t, string n, Type[] p) => t.GetMethod(n, p); } }
 namespace SPT.Reflection.Patching
 {
@@ -25,17 +36,24 @@ namespace SPT.Reflection.Patching
 namespace EFT.InventoryLogic
 {
     public class Magazine { } public class ItemAddress { }
-    public class Weapon { public string Id = "primary"; }
+    public class Weapon { public string Id = "primary"; public int Count = 10; public int GetCurrentMagazineCount() => Count; }
     public enum EquipmentSlot { FirstPrimaryWeapon, SecondPrimaryWeapon, Holster }
 }
 namespace EFT
 {
     public class Profile { public string Nickname = "recruit"; }
-    public class Memory { public bool HaveEnemy; }
+    public class Memory { public bool HaveEnemy; public object GoalEnemy; }
+    public enum EBotState { Inactive, Active }
+    public class Medicine { public bool Using; }
     public class Selector { public EquipmentSlot LastEquipmentSlot; }
     public class Reload { public bool Reloading; }
     public class Weapons { public Weapon CurrentWeapon = new Weapon(); public Selector Selector = new Selector(); public Reload Reload = new Reload(); }
-    public class BotOwner { public bool Follower = true; public Profile Profile = new Profile(); public Memory Memory = new Memory(); public Weapons WeaponManager = new Weapons(); }
+    public class BotOwner
+    {
+        public bool Follower = true, IsDead; public EBotState BotState = EBotState.Active;
+        public Vector3 Position; public Medicine Medecine = new Medicine(); public int Resets;
+        public Profile Profile = new Profile(); public Memory Memory = new Memory(); public Weapons WeaponManager = new Weapons();
+    }
     public class AIData { public BotOwner BotOwner = new BotOwner(); }
     public class Interactions
     {
@@ -78,9 +96,12 @@ static class Profiler
 }
 namespace pitTeam.Modules
 {
+    static class BattleRecorder { public static void RecordAmmoRefill(BotOwner b, string a, string reason, Func<object> payload) { } }
     static class BossPlayers { public static bool IsFollower(BotOwner b) => b.Follower; }
     static class Logger { public static bool FailLogging; public static void LogInfo(string s) { if (FailLogging) throw new Exception("injected logging fault"); } public static void LogError(string s) { throw new Exception(s); } }
 }
+namespace pitTeam.Components { static class BotFollowerPlayer { public static bool IsEnemyInfoAlive(object goal) => goal != null; } }
+namespace Utils { static class FollowerRecovery { public static void SoftReset(BotOwner b) { b.Resets++; } } }
 namespace pitTeam { static class pitFireTeam { public static bool IsDebugBuild => true; } }
 class PatrolHarness
 {
@@ -88,11 +109,15 @@ class PatrolHarness
     public EquipmentSlot? forcedTopOffSlot; public float nextReloadCheckAt; public int Failures, Returns;
     public readonly HashSet<EquipmentSlot> reloadSlotsTried = new HashSet<EquipmentSlot> { EquipmentSlot.FirstPrimaryWeapon };
     const float OutOfCombatReloadSlotCooldown = 2;
+    float stationaryReloadRecoveryAt; Vector3 stationaryReloadStartPosition; string stationaryReloadWeaponId; int stationaryReloadLoadedCount;
     void RecordOutOfCombatReloadFailure(EquipmentSlot s, Weapon w, string why) { Failures++; }
     bool IsOutOfCombatReloadGiveUpActive(EquipmentSlot s, Weapon w) => Failures >= 2;
     void TryCompleteReturnAfterTopOffSwitch(Selector s) { Returns++; }
     /* PATROL RETRY */
+    /* STATIONARY RELOAD */
     public bool Tick() => TryHandleSkippedReloadStart();
+    public void Arm() => ArmStationaryPatrolReloadRecovery();
+    public bool RecoveryTick() => TryRecoverStationaryPatrolReload();
 }
 static class FollowerReloadStartFixture
 {
@@ -100,6 +125,44 @@ static class FollowerReloadStartFixture
     static readonly MethodInfo Prefix = typeof(FollowerMagazineReloadStartPatch).GetMethod("PatchPrefix", BindingFlags.Static | BindingFlags.NonPublic);
     static readonly MethodInfo Postfix = typeof(FollowerMagazineReloadStartPatch).GetMethod("PatchPostfix", BindingFlags.Static | BindingFlags.NonPublic);
     static void Check(bool value, string label) { if (!value) throw new Exception(label); checks++; }
+    static void CheckStationaryRecovery()
+    {
+        var bot = new BotOwner(); var patrol = new PatrolHarness { BotOwner = bot };
+        Time.time = 20; patrol.Arm();
+        Time.time = 20.99f; Check(!patrol.RecoveryTick() && bot.Resets == 0, "no recovery before one second");
+        bot.WeaponManager.Reload.Reloading = true;
+        Time.time = 21; Check(patrol.RecoveryTick() && bot.Resets == 1, "stationary accepted attempt receives soft reset at one second");
+        Check(bot.WeaponManager.Reload.Reloading, "soft recovery does not clear native reload ownership");
+        Time.time = 21.5f; Check(!patrol.RecoveryTick() && bot.Resets == 1, "same attempt cannot reset again");
+
+        Time.time = 22; patrol.Arm(); bot.Position = new Vector3(0.2f);
+        Check(!patrol.RecoveryTick(), "movement before deadline disarms recovery");
+        bot.Position = new Vector3(); Time.time = 23;
+        Check(!patrol.RecoveryTick() && bot.Resets == 1, "stopping again cannot revive moved attempt");
+
+        Action<Action<BotOwner>, string> cancelled = (change, reason) =>
+        {
+            var other = new BotOwner(); var p = new PatrolHarness { BotOwner = other };
+            Time.time = 30; p.Arm(); change(other); Time.time = 31;
+            Check(!p.RecoveryTick() && other.Resets == 0, reason);
+            other.IsDead = false; other.BotState = EBotState.Active; other.Medecine.Using = false;
+            other.Memory.GoalEnemy = null; other.WeaponManager.CurrentWeapon = new Weapon();
+            Check(!p.RecoveryTick(), "cancelled observation cannot revive: " + reason);
+        };
+        cancelled(b => b.WeaponManager.CurrentWeapon.Count++, "completed reload does not need recovery");
+        cancelled(b => b.WeaponManager.CurrentWeapon.Id = "secondary", "weapon switch discards observation");
+        cancelled(b => b.Memory.GoalEnemy = new object(), "real combat blocks peaceful reset");
+        cancelled(b => b.Medecine.Using = true, "active medicine blocks reset");
+        cancelled(b => b.IsDead = true, "dead follower ignored");
+        cancelled(b => b.BotState = EBotState.Inactive, "inactive follower ignored");
+        cancelled(b => b.WeaponManager.CurrentWeapon = null, "missing weapon ignored");
+
+        Time.time = 40; patrol.Arm(); Time.time = 43;
+        Check(!patrol.RecoveryTick() && bot.Resets == 1, "old sample discarded after another action delays polling");
+        Time.time = 50; patrol.Arm(); Time.time = 51;
+        Check(patrol.RecoveryTick() && bot.Resets == 2, "new accepted attempt gets its own single recovery");
+        Time.time = 10;
+    }
     static void Call(Player.FirearmController controller, Callback callback, bool patched = true)
     {
         object[] args = { controller, callback, null };
@@ -109,6 +172,7 @@ static class FollowerReloadStartFixture
     }
     static void Main()
     {
+        CheckStationaryRecovery();
         var c = new Player.FirearmController(); var interactions = c._player.MovementContext.PlayerAnimator.AnimatedInteractions;
         interactions.IsInteractionPlaying = interactions.SurvivesStop = true;
         int completed = 0; bool flag = true;

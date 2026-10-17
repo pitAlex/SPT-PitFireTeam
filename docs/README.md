@@ -43,9 +43,13 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 | [Follower Insurance](Follower-Insurance.md) | Purchase, policy transfers, raid evidence, settlement and stock trader returns |
 | [Teammate Storage](Teammate-Storage.md) | Database representation, migration and recovery |
 
+## Shared tactical settings
+
+- [Self-Determination](Self-Determination.md): saved combat dependence, command overrides, initial calibration and churn safeguards, with a separate addon adaptation.
+
 ## Proposals and unfinished work
 
-- [Self Determination specification](Self-Determination-Proposal.md): proposed Core/shared setting, command overrides, calibration and churn safeguards, with a separate addon adaptation.
+- [Give Gear specification](Give-Gear-Spec.md): proposed staged donations to recruited PMC/Scav followers, primary-first equipment decisions and unresolved ownership policies; not implemented.
 - [Core roadmap](../TASKS.md): retained product proposals and future work.
 - [Addon roadmap](../addon/docs/Roadmap.md): addon-specific gaps and raid qualification.
 

@@ -113,11 +113,17 @@ namespace pitTeam.Modules
                 foreach (var enemy in pmcGroup.Enemies.Keys.ToArray()) MirrorEnemy(companion, enemy);
         }
 
+        private static bool IsDiplomacyRole(WildSpawnType role) =>
+            role == WildSpawnType.assault || role == WildSpawnType.marksman;
+
+        private static bool IsDiplomacyScav(BotOwner bot) => bot?.Side == EPlayerSide.Savage &&
+            bot.Profile?.Info?.Settings != null && IsDiplomacyRole(bot.Profile.Info.Settings.Role);
+
         private static bool OrdinaryGroup(BotsGroup group)
         {
-            if (group == null || group is BotsGroupPlayer || group.InitialBotType != WildSpawnType.assault || group.MembersCount == 0) return false;
+            if (group == null || group is BotsGroupPlayer || !IsDiplomacyRole(group.InitialBotType) || group.MembersCount == 0) return false;
             for (int i = 0; i < group.MembersCount; i++)
-                if (!AllegiancePmcFriendship.IsRegularScav(group.Member(i)) || BossPlayers.IsFollower(group.Member(i))) return false;
+                if (!IsDiplomacyScav(group.Member(i)) || BossPlayers.IsFollower(group.Member(i))) return false;
             return true;
         }
 
@@ -152,7 +158,16 @@ namespace pitTeam.Modules
                 Encounters.Add(group, new Encounter { Roll = UnityEngine.Random.value, Revoked = AggressiveGroups.Contains(group) });
                 Logger.LogInfo($"[ScavRelations] group={group.Id} neutral={IsNeutral(group)} kills={neutralKills}");
             }
-            if (!IsNeutral(group)) return;
+            if (!IsNeutral(group))
+            {
+                // A failed calming roll does not invent aggression. Only an actually hostile
+                // relationship to the leader warrants sharing enemies with his Scav companions.
+                foreach (var companion in Companions.Values.ToArray())
+                    if (!companion.Bot.IsDead && companion.Bot.GetPlayer?.HealthController?.IsAlive == true &&
+                        FollowerGroupHostility.IsHostileToPlayer(group, companion.Boss))
+                        for (int i = 0; i < group.MembersCount; i++) MirrorEnemy(companion, group.Member(i)?.GetPlayer);
+                return;
+            }
             var encounter = Encounters[group];
             var boss = BossPlayers.GetBoss(Human.ProfileId);
             BorrowNeutral(encounter, group, Human);
@@ -237,7 +252,7 @@ namespace pitTeam.Modules
                 if (group == companion.Boss.bossGroup) MirrorEnemy(companion, person);
                 else if (group == companion.Group)
                 {
-                    if (person.AIData?.BotOwner is BotOwner enemy && AllegiancePmcFriendship.IsRegularScav(enemy))
+                    if (person.AIData?.BotOwner is BotOwner enemy && IsDiplomacyScav(enemy))
                         FollowerGroupHostility.ShareHostility(enemy.BotsGroup, companion.Boss, EBotEnemyCause.addPlayer);
                 }
                 else if (person.ProfileId == Human.ProfileId || FollowerGroupHostility.FindBoss(person)?.realPlayer?.ProfileId == Human.ProfileId)
@@ -248,12 +263,19 @@ namespace pitTeam.Modules
         private static void MirrorEnemy(Companion companion, IPlayer enemy)
         {
             if (enemy == null || enemy.HealthController?.IsAlive != true || enemy.ProfileId == Human.ProfileId ||
-                BossPlayers.IsFollowerProfileId(enemy.ProfileId) || companion.Group.IsEnemy(enemy)) return;
+                BossPlayers.IsFollowerProfileId(enemy.ProfileId)) return;
             sharing = true;
             try
             {
-                companion.Group.AddEnemy(enemy, EBotEnemyCause.addPlayerToBoss);
-                if (companion.Group.IsEnemy(enemy)) companion.SharedEnemies[enemy.ProfileId] = enemy;
+                if (!companion.Group.IsEnemy(enemy))
+                {
+                    companion.Group.AddEnemy(enemy, EBotEnemyCause.addPlayerToBoss);
+                    if (companion.Group.IsEnemy(enemy)) companion.SharedEnemies[enemy.ProfileId] = enemy;
+                }
+                if (enemy.AIData?.BotOwner is BotOwner scav && IsDiplomacyScav(scav) &&
+                    scav.BotsGroup != companion.Group && FollowerGroupHostility.IsHostileToPlayer(scav.BotsGroup, companion.Boss) &&
+                    !scav.BotsGroup.IsEnemy(companion.Bot.GetPlayer))
+                    scav.BotsGroup.AddEnemy(companion.Bot.GetPlayer, EBotEnemyCause.addPlayerToBoss);
             }
             finally { sharing = false; }
         }
@@ -290,7 +312,7 @@ namespace pitTeam.Modules
         private static void CaptureIntent(Player target, bool playerInitiated)
         {
             if (!Enabled || target?.HealthController?.IsAlive != true ||
-                target.AIData?.BotOwner is not BotOwner bot || !AllegiancePmcFriendship.IsRegularScav(bot) ||
+                target.AIData?.BotOwner is not BotOwner bot || !IsDiplomacyScav(bot) ||
                 bot.BotsGroup == null || Intentions.ContainsKey(target.ProfileId)) return;
             var boss = BossPlayers.GetBoss(Human.ProfileId);
             bool companion = Companions.ContainsKey(bot.ProfileId);
@@ -379,12 +401,15 @@ namespace pitTeam.Modules
         internal static void OnRemoved(BotOwner bot)
         {
             if (bot == null || !Companions.TryGetValue(bot.ProfileId, out var companion)) return;
+            // Native death can remove diplomacy before Dismiss runs. Never neutralize
+            // a departed Scav using the human leader's borrowed profile GroupId.
+            BossPlayers.GetFollowerByProfileId(bot.ProfileId)?.RestoreProfileIdentity();
             Companions.Remove(bot.ProfileId);
             if (companion.Bot.GetPlayer?.HealthController != null)
                 companion.Bot.GetPlayer.HealthController.DiedEvent -= companion.Died;
             companion.Boss.bossGroup?.Allies.Remove(bot.GetPlayer);
             foreach (var enemy in companion.SharedEnemies.Values)
-                if (enemy.AIData?.BotOwner is BotOwner scav && AllegiancePmcFriendship.IsRegularScav(scav) &&
+                if (enemy.AIData?.BotOwner is BotOwner scav && IsDiplomacyScav(scav) &&
                     !companion.DirectAggressors.Contains(enemy.ProfileId))
                 {
                     // These were borrowed from the PMC alliance, not the Scav's own conflicts.

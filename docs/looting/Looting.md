@@ -56,7 +56,7 @@ Related summaries:
 
 `Tracked follower loot` means follower loot registered through `InteractableObjects.StoreItem(...)`. Tracked loot is eligible for the mod's return/recovery flows when the owning squadmate survives the relevant flow.
 
-`Equipped gear loot` means loot moved into an equipment slot as part of category-authorized empty-slot acquisition. In every mode, this is add-only: empty slots may be filled, but occupied gear slots are not replaced. Equipment filling those slots is kept in every loadout mode even if earlier registered as player-owned return cargo. Slotted attachments and seated magazines/ammunition stay with the equipment; loose grid/pocket cargo remains separately returnable. Only saved squad members participate in the return-item flow; field recruits do not.
+`Equipped gear loot` means loot moved into an equipment slot as part of category-authorized empty-slot acquisition. In every mode, this is add-only: empty slots may be filled, but occupied gear slots are not replaced. Equipment filling those slots is kept in every loadout mode even if earlier registered as player-owned return cargo. Slotted attachments and seated magazines/ammunition stay with the equipment. Registered spare magazines directly in vest/pocket grids, including their loaded rounds, also stay with a retained equipped weapon; other loose cargo remains separately returnable. Only saved squad members participate in the return-item flow; field recruits do not.
 
 `Protected teammate gear` means saved teammate equipment that should not become free player gear under `Restricted` loadout management. Protected gear cleanup is owned by the loadout-management and escape/recovery systems, not by the looting planner alone.
 
@@ -331,7 +331,7 @@ Items transferred through `View Backpack` have a separate strict-cargo provenanc
 Equipped gear is kept in every mode:
 
 - Only add into empty equipment slots. Raw Restricted acquisition tracking remains available if the item later becomes cargo; final return filtering excludes equipment still occupying a gear slot.
-- A seated magazine and its loaded ammunition stay with the weapon. Tracked magazines that are later ejected into grid/pocket cargo remain separately returnable; nested-root checks prevent duplicate delivery.
+- A seated magazine and its loaded ammunition stay with the weapon. Exact magazines registered to a retained first-primary, second-primary or holster weapon also stay in the kit while directly in the equipped vest or normal pocket grids, even when empty or previously tracked as player-owned cargo. Their loaded rounds follow the magazine. Registration for a weapon no longer equipped does not qualify. Backpack, secure-container, nested-container and unregistered magazines remain cargo; nested-root checks prevent duplicate delivery. The same final filter supplies return mail and equipment/death-escape snapshots, preventing retained magazines from also being returned.
 - Saved squad members persist retained equipment through the escaped Default snapshot, including raid wear and consumed supplies in Restricted. Field recruits do not enter the mail-return path.
 
 Weapon trees are also registered through `RegisterLootedWeaponTree(...)` so patrol reload maintenance can treat picked-up weapons as carried loot and avoid wasting spawned magazines on them.
@@ -618,6 +618,10 @@ With `Pickup Gear` or a gear request enabled, a found tactical vest may equip in
 
 Occupied primary, secondary, holster, headgear, armor, vest and backpack replacement is outside core. The proposed upgrade-evaluation version of `CMD: Get Weapon` is abandoned; existing CMD weapon requests remain category-specific loot requests.
 
+## Return-policy qualification
+
+2026-10-15 registered magazine retention: `Verify-FollowerReturnPolicy.ps1` passes 426 assertions covering primary, secondary and holster registrations, loaded/empty magazines in vest and pockets, backpack/secure/nested/special-slot exclusions, cargo weapons, unregistered magazines, loaded-round descendants, duplicate tracking and squad admission before lookup. The shared production filter supplies both mail and equipment/death-escape snapshots. Gear Swap passes 313 assertions, Apply protection 66 and Restricted magazine recovery 20. The Debug core build passes with zero warnings/errors. These fixtures do not establish live extraction, retained loadout or mail behavior; fresh raid testing remains required.
+
 ## Test Checklist
 
 Body/container basics:
@@ -696,7 +700,7 @@ Empty-slot acquisition and weapon-support tests:
 - a found vest can fill an empty compatible tactical vest slot
 - occupied vest replacement is refused in every loadout mode
 - looted weapon does not trigger patrol reload maintenance with spawned magazines
-- after a looted primary reloads, follower death/raid-end cleanup does not leave its ejected original magazine in the teammate's persisted `Restricted` kit
+- after a retained weapon reloads, its registered ejected magazine stays in the kit when in vest/pocket grids; if the weapon or magazine becomes cargo instead, ordinary return filtering applies
 - loose weapon pickup into `FirstPrimaryWeapon` registers as the combat primary, and a pending weapon-taken callback cannot fault after that follower dies
 - a looted launcher in `FirstPrimaryWeapon` remains the follower's real primary and enters the grenadier objective for eligible combat targets; only a launcher used from `SecondPrimaryWeapon` returns to another main weapon after the attempt
 - rejected acquisition leaves current follower gear untouched

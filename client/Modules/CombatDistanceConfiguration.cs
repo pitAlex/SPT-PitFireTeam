@@ -106,7 +106,9 @@ namespace pitTeam.Modules
         public float GetBossRegroupTriggerDistance(BotOwner? botOwner = null)
         {
             float baseDistance = pitFireTeam.regroupRadius?.Value ?? 18f;
-            return Mathf.Clamp(baseDistance, 10f, 38f);
+            float baseline = Mathf.Clamp(baseDistance, 10f, 38f);
+            return botOwner == null ? baseline : pitTeam.Shared.SelfDeterminationPolicy.Trigger(
+                BossPlayers.Instance?.GetFollower(botOwner)?.EffectiveSelfDetermination ?? 50f, baseline);
         }
 
         // Close-quarter and starting distances
@@ -195,7 +197,9 @@ namespace pitTeam.Modules
             float multiplier = isFactoryMode
                 ? FactoryMarksmanRegroupMultiplier
                 : DefaultMarksmanRegroupMultiplier;
-            return GetBossRegroupTriggerDistance(botOwner) * multiplier;
+            float baseline = GetBossRegroupTriggerDistance() * multiplier;
+            return pitTeam.Shared.SelfDeterminationPolicy.Trigger(
+                BossPlayers.Instance?.GetFollower(botOwner)?.EffectiveSelfDetermination ?? 50f, baseline);
         }
 
         public float GetBossSupportShootCoverRadius()

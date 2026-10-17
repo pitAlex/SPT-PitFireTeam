@@ -150,7 +150,11 @@ namespace SAIN.SAINComponent.Classes {
 namespace pitTeam.Components {
     public enum FollowerCombatTactic { Balanced,Marksman,SainMan,SAINShooter }
     public enum FollowerCommandType { None,RegroupNearBoss,CombatComeToBossCover,CombatMoveToPointTactical,PushEnemy,SuppressEnemy,HoldPosition,NeedSniper,MoveToPoint,ComeCloser,TakeBodyGear }
-    public partial class pitAIBossPlayer {public CombatEvents CombatEvents=new CombatEvents();}
+    public partial class pitAIBossPlayer {
+        public CombatEvents CombatEvents=new CombatEvents();
+        public HashSet<string> ActiveAddonCombat=new HashSet<string>();
+        public void NotifyAddonCombatEpisode(BotOwner owner,bool active){if(active)ActiveAddonCombat.Add(owner.ProfileId);else ActiveAddonCombat.Remove(owner.ProfileId);}
+    }
     public partial class BotFollowerPlayer {
         private string pushCancel;
         public void RequestOrderedPushCancel(string reason){pushCancel=reason;}
@@ -160,10 +164,15 @@ namespace pitTeam.Components {
         public FollowerCommandType Command;public Vector3 Target;public string EndReason;
         public float CombatAggression=70;public float? OverrideAggression;public bool IsTemporaryCombatAggressionOverrideActive=>OverrideAggression.HasValue;public float EffectiveCombatAggression=>OverrideAggression??CombatAggression;
         public bool CanPatrol,CombatIndependenceRequested;
-        public bool CombatIndependencePreference=>CanPatrol||CombatIndependenceRequested;
-        public void BeginCombatIndependenceFromPatrol(){CombatIndependent=CombatIndependencePreference||CombatIndependent;}
-        public void ClearActiveCombatIndependent(){CombatIndependent=false;}
-        public bool CombatIndependent,TightRegroupRequested,CombatRegroupUsesBossAnchor;public float BossProtectionWillingness01=1f;
+        public bool CombatIndependencePreference=>EffectiveSelfDetermination>=100;
+        public void BeginCombatIndependenceFromPatrol(){}
+        public void ClearActiveCombatIndependent(){}
+        public bool CombatIndependent {get=>EffectiveSelfDetermination>=100;set=>SelfDetermination=value?100:50;}
+        public bool TightRegroupRequested,CombatRegroupUsesBossAnchor;public float BossProtectionWillingness01=1f;
+        public float SelfDetermination=50f;
+        public float EffectiveSelfDetermination=>SelfDetermination;
+        public float BossInfluence=>pitTeam.Shared.SelfDeterminationPolicy.BossInfluence(EffectiveSelfDetermination);
+        public bool DeterminationRegroupRequested;
         public void SetTemporaryCombatAggressionOverride(float value,string source){OverrideAggression=value;}
         public void ClearTemporaryCombatAggressionOverride(string source){OverrideAggression=null;}
         public bool IgnoreCommands;
@@ -239,6 +248,23 @@ public static partial class CombatChecks {
         Check(!pitFireTeam.UseSainFollowerCombat(selected),"unprepared bot retains core fallback");
         Tick();
         Check(pitFireTeam.UseSainFollowerCombat(selected),"ready SainMan selects addon combat");
+        selected.Sain.ActiveLayer=SAIN.Models.Enums.ESAINLayer.Combat;selected.Sain.Mover.Moving=true;
+        selected.Sain.Mover.ActivePath=new SAIN.Components.PathData();
+        selected.Sain.Mover.ActivePath.PathCorners.Add(new SAIN.Components.FixturePathCorner{Position=new Vector3(3,0,8)});
+        Check(SainAddonBridge.TryGetMovementCorner(selected,out var wireCorner)&&wireCorner.HasValue&&wireCorner.Value.z==8,"wire routing reads SAIN native current corner even when PathPoints is empty");
+        selected.Sain.Mover.ActivePath.CurrentIndex=9;
+        Check(SainAddonBridge.TryGetMovementCorner(selected,out wireCorner)&&!wireCorner.HasValue,"completed or invalid SAIN corner is authoritative without stale EFT fallback");
+        selected.Sain.ActiveLayer=SAIN.Models.Enums.ESAINLayer.None;selected.Sain.Mover.Moving=false;selected.Sain.Mover.ActivePath=null;
+        Check(!SainAddonBridge.TryGetMovementCorner(rifle,out _),"Core tactics keep native route ownership");
+        var wireCover=new SAIN.SAINComponent.SubComponents.CoverFinder.CoverPoint{Position=new Vector3(9,0,9)};
+        FollowerWireNavigation.UnsafePosition=p=>p.x==9;
+        selected.Sain.Cover.CoverInUse=wireCover;SainAddonBridge.ReleaseWireCover(selected);
+        Check(selected.Sain.Cover.CoverInUse==null,"wire escape releases unsafe native SAIN cover instead of returning to it");
+        selected.Sain.Cover.NativePoint=wireCover;
+        Check(selected.Sain.Cover.FindForTest()==null,"native cover fallback cannot return a wire-covered point");
+        rifle.Sain.Cover.NativePoint=wireCover;
+        Check(rifle.Sain.Cover.FindForTest()==wireCover,"wire rejection does not change non-addon SAIN cover ownership");
+        FollowerWireNavigation.UnsafePosition=null;selected.Sain.Cover.NativePoint=null;rifle.Sain.Cover.NativePoint=null;
         Check(!pitFireTeam.UseSainFollowerCombat(rifle)&&!pitFireTeam.UseSainFollowerCombat(marks),"Rifleman and Marksman retain core ownership");
         Check(selected.Sain.Info.Personality==EPersonality.Chad&&rifle.Sain.Info.Personality==EPersonality.Normal,"70 percent selects Chad only for SainMan");
         Check(selected.Settings.FileSettings.Mind.TIME_TO_FORGOR_ABOUT_ENEMY_SEC==60&&selected.Sain.Info.ForgetEnemyTime==60&&selected.Sain.Info.Difficulty.Updates==1,"personality refresh preserves follower memory and refreshes native difficulty");

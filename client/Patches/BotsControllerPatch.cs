@@ -947,6 +947,7 @@ namespace pitTeam.Patches
             // remember what tactic this bot is associated with as the tactic will be set after spawn
             Dictionary<string, string> profileTactic = new Dictionary<string, string>();
             Dictionary<string, float> profileAggression = new Dictionary<string, float>();
+            Dictionary<string, float> profileDetermination = new Dictionary<string, float>();
             Dictionary<string, FollowerProficiencyModifierValues> profileProficiency =
                 new Dictionary<string, FollowerProficiencyModifierValues>();
 
@@ -987,6 +988,7 @@ namespace pitTeam.Patches
 
                 Dictionary<string, string> botsTactic = new Dictionary<string, string>();
                 Dictionary<string, float> botsAggression = new Dictionary<string, float>();
+                Dictionary<string, float> botsDetermination = new Dictionary<string, float>();
                 Dictionary<string, FollowerProficiencyModifierValues> botsProficiency =
                     new Dictionary<string, FollowerProficiencyModifierValues>();
 
@@ -999,6 +1001,7 @@ namespace pitTeam.Patches
                     {
                         botsTactic[item.Aid] = item.Tactic;
                         botsAggression[item.Aid] = item.Aggression;
+                        botsDetermination[item.Aid] = item.SelfDetermination;
                         botsProficiency[item.Aid] = item.Proficiency ?? new FollowerProficiencyModifierValues();
                     }
                 }
@@ -1039,6 +1042,7 @@ namespace pitTeam.Patches
                         profileProficiency[profile.Id] = botsProficiency.TryGetValue(aid, out FollowerProficiencyModifierValues proficiency)
                             ? proficiency
                             : new FollowerProficiencyModifierValues();
+                        profileDetermination[profile.Id] = botsDetermination.TryGetValue(aid, out float determination) ? determination : 50f;
                     }
                 }
 
@@ -1103,7 +1107,8 @@ namespace pitTeam.Patches
 
                             Modules.Logger.LogInfo("Tactic is " + tactic);
 
-                            BossPlayers.AddFollower(me, player, true, botType, tactic, aggression, proficiency);
+                            BossPlayers.AddFollower(me, player, true, botType, tactic, aggression, proficiency,
+                                profileDetermination.TryGetValue(me.Profile.ProfileId, out float determination) ? determination : 50f);
 
                             TrySayFollowerReadyControlled(me, 2000);
 

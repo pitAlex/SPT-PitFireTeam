@@ -9,7 +9,7 @@ namespace EFT.InventoryLogic
     public enum EquipmentSlot { FirstPrimaryWeapon, SecondPrimaryWeapon, Holster, Backpack, TacticalVest,
         ArmorVest, Headwear, Earpiece, FaceCover, Eyewear, Pockets, SecuredContainer }
     public interface IContainer { string ID { get; } Item ParentItem { get; } }
-    public class Slot : IContainer { public string ID { get; set; } public Item ParentItem { get; set; } }
+    public class Slot : IContainer { public string ID { get; set; } public Item ParentItem { get; set; } public Item ContainedItem; }
     public class StackSlot : IContainer { public string ID { get; set; } public Item ParentItem { get; set; } }
     public class Grid : IContainer { public string ID { get; set; } public Item ParentItem { get; set; } }
     public class ItemAddress { public IContainer Container; }
@@ -20,7 +20,14 @@ namespace EFT.InventoryLogic
         public List<Item> Children = new List<Item>();
         public IEnumerable<Item> GetAllItems() => Children.SelectMany(child => new[] { child }.Concat(child.GetAllItems()));
     }
-    public class InventoryEquipment : Item { }
+    public class Weapon : Item { }
+    public class Magazine : Item { }
+    public class InventoryEquipment : Item
+    {
+        public Slot GetSlot(EquipmentSlot slot) => new Slot { ID = slot.ToString(), ParentItem = this,
+            ContainedItem = Children.FirstOrDefault(item => item.CurrentAddress?.Container is Slot address &&
+                ReferenceEquals(address.ParentItem, this) && address.ID == slot.ToString()) };
+    }
 }
 
 internal static class Program
@@ -31,11 +38,13 @@ internal static class Program
         if (!value) throw new Exception(message);
         checks++;
     }
-    private static Item Put(Item parent, string id, string slot, bool grid = false, bool stack = false)
+    private static Item Put(Item parent, string id, string slot, bool grid = false, bool stack = false, Item value = null)
     {
         IContainer container = grid ? (IContainer)new Grid { ID = slot, ParentItem = parent } :
             stack ? new StackSlot { ID = slot, ParentItem = parent } : new Slot { ID = slot, ParentItem = parent };
-        var item = new Item { Id = id, CurrentAddress = new ItemAddress { Container = container } };
+        var item = value ?? new Item();
+        item.Id = id;
+        item.CurrentAddress = new ItemAddress { Container = container };
         parent.Children.Add(item);
         return item;
     }
@@ -81,6 +90,66 @@ internal static class Program
         Check(!FollowerReturnPolicy.IsRetainedEquipment(detached, equipment), "detached item");
         detached.CurrentAddress = new ItemAddress { Container = new Slot { ID = "cycle", ParentItem = detached } };
         Check(!FollowerReturnPolicy.IsRetainedEquipment(detached, equipment), "bounded cyclic ancestry");
+        VerifyRegisteredMagazines();
         Console.WriteLine($"PASS: {checks} follower return policy assertions.");
+    }
+
+    private static void VerifyRegisteredMagazines()
+    {
+        foreach (EquipmentSlot weaponSlot in new[] { EquipmentSlot.FirstPrimaryWeapon, EquipmentSlot.SecondPrimaryWeapon, EquipmentSlot.Holster })
+        foreach (string location in new[] { "vest", "pockets", "backpack", "secure", "nested", "special" })
+        foreach (bool registered in new[] { false, true })
+        foreach (bool loaded in new[] { false, true })
+        {
+            var equipment = new InventoryEquipment { Id = "equipment" };
+            var weapon = (Weapon)Put(equipment, "weapon", weaponSlot.ToString(), value: new Weapon());
+            Item rig = Put(equipment, "rig", "TacticalVest");
+            Item pockets = Put(equipment, "pockets", "Pockets");
+            Item bag = Put(equipment, "bag", "Backpack");
+            Item secure = Put(equipment, "secure", "SecuredContainer");
+            Item nested = Put(rig, "nestedBag", "main", grid: true);
+            Item parent = location == "vest" ? rig : location == "pockets" || location == "special" ? pockets :
+                location == "backpack" ? bag : location == "secure" ? secure : nested;
+            var magazine = (Magazine)Put(parent, "packageMag", location == "special" ? "SpecialSlot1" : "main",
+                grid: location != "special", value: new Magazine());
+            Item ammo = loaded ? Put(magazine, "packageRounds", "cartridges", stack: true) : null;
+            var unrelated = (Magazine)Put(rig, "cargoMag", "main", grid: true, value: new Magazine());
+            Item cargoRounds = Put(unrelated, "cargoRounds", "cartridges", stack: true);
+            var all = equipment.GetAllItems().ToDictionary(item => item.Id);
+            Func<string, Item> find = id => all.TryGetValue(id, out Item item) ? item : null;
+            Func<Weapon, Magazine, bool> approved = (gun, mag) =>
+                registered && ReferenceEquals(gun, weapon) && ReferenceEquals(mag, magazine);
+            var tracked = new List<string> { rig.Id, magazine.Id, unrelated.Id, cargoRounds.Id };
+            if (ammo != null) tracked.Add(ammo.Id);
+            string scenario = weaponSlot + "/" + location + "/registered=" + registered + "/loaded=" + loaded;
+            List<string> returned = FollowerReturnPolicy.GetReturnIds(true, equipment, tracked, find, approved);
+            bool retained = registered && (location == "vest" || location == "pockets");
+            Check(returned.Contains(magazine.Id) != retained, "registered magazine classification " + scenario);
+            if (loaded) Check(returned.Contains(ammo.Id) != retained, "loaded rounds follow magazine " + scenario);
+            Check(returned.Contains(unrelated.Id) && returned.Contains(cargoRounds.Id), "unregistered cargo still returns " + scenario);
+            Check(returned.Count == returned.Distinct().Count(), "overlapping tracked trees deduplicate " + scenario);
+
+            // Registration is exact to the retained weapon, not a compatibility/cargo exemption.
+            equipment.Children.Remove(weapon);
+            weapon.CurrentAddress = new ItemAddress { Container = new Grid { ID = "main", ParentItem = bag } };
+            bag.Children.Add(weapon);
+            returned = FollowerReturnPolicy.GetReturnIds(true, equipment, tracked, find, approved);
+            Check(returned.Contains(magazine.Id) && (ammo == null || returned.Contains(ammo.Id)), "cargo weapon cannot retain spares " + scenario);
+            Check(!FollowerReturnPolicy.GetReturnIds(false, equipment, tracked,
+                id => throw new Exception("recruit lookup"), (gun, mag) => throw new Exception("recruit registry")).Any(),
+                "membership gate precedes magazine classification " + scenario);
+        }
+
+        var sharedEquipment = new InventoryEquipment { Id = "shared" };
+        var primary = (Weapon)Put(sharedEquipment, "primary", "FirstPrimaryWeapon", value: new Weapon());
+        var secondary = (Weapon)Put(sharedEquipment, "secondary", "SecondPrimaryWeapon", value: new Weapon());
+        Item sharedRig = Put(sharedEquipment, "sharedRig", "TacticalVest");
+        var sharedMag = (Magazine)Put(sharedRig, "sharedMag", "main", grid: true, value: new Magazine());
+        var sharedItems = sharedEquipment.GetAllItems().ToDictionary(item => item.Id);
+        Check(!FollowerReturnPolicy.GetReturnIds(true, sharedEquipment, new[] { sharedMag.Id }, id => sharedItems[id],
+            (gun, mag) => ReferenceEquals(gun, secondary) && ReferenceEquals(mag, sharedMag)).Any(),
+            "secondary registration retains its magazine even when primary is not registered");
+        Check(FollowerReturnPolicy.GetReturnIds(true, sharedEquipment, new[] { sharedMag.Id }, id => sharedItems[id],
+            (gun, mag) => false).Contains(sharedMag.Id), "unregistered compatible cargo is not promoted to kit");
     }
 }

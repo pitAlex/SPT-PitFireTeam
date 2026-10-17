@@ -1855,7 +1855,7 @@ namespace pitTeam.Components
                         followerData?.ClearCommand("Attention:Look");
                     }
 
-                    followerData?.ClearTemporaryCombatAggressionOverride("Attention");
+                    followerData?.ResetCombatPercentageOverrides("Attention");
                     followerData?.ClearOrderedPushTargetLock("Attention");
                     FollowerCombatTargetCommitments.ClearMission(follower, null, "Attention");
 
@@ -2216,8 +2216,10 @@ namespace pitTeam.Components
 
                 if (combatContext)
                 {
+                    bool changed = !followerData.HasDeterminationOverride || !Mathf.Approximately(followerData.EffectiveSelfDetermination, 20f);
                     followerData.RequestOrderedPushCancel("CoverMe");
                     followerData.SetCombatIndependent(false);
+                    if (changed) followerData.SetRegroup(20f, determinationRegroup: true);
                 }
                 else
                 {
@@ -2857,6 +2859,25 @@ namespace pitTeam.Components
             }
         }
 
+        private readonly HashSet<string> _addonFollowerCombatProfiles = new HashSet<string>(StringComparer.Ordinal);
+        public bool HasFollowerCombat => _activeFollowerCombatProfiles.Count > 0 || _addonFollowerCombatProfiles.Count > 0;
+        internal void NotifyAddonCombatEpisode(BotOwner owner, bool active)
+        {
+            if (owner == null || string.IsNullOrEmpty(owner.ProfileId)) return;
+            if (active) { _addonFollowerCombatProfiles.Add(owner.ProfileId); _combatPercentageResetAt = 0f; }
+            else _addonFollowerCombatProfiles.Remove(owner.ProfileId);
+        }
+        private float _combatPercentageResetAt;
+        private void UpdateCombatPercentageOverrides()
+        {
+            if (HasFollowerCombat || IsCombatRegroupContext()) { _combatPercentageResetAt = 0f; return; }
+            if (_combatPercentageResetAt == 0f) { _combatPercentageResetAt = Time.time + 2f; return; }
+            if (Time.time < _combatPercentageResetAt) return;
+            foreach (BotOwner owner in Followers)
+                BossPlayers.Instance?.GetFollower(owner)?.ResetCombatPercentageOverrides("squadCombatEnded");
+            _combatPercentageResetAt = float.PositiveInfinity;
+        }
+
         private bool IsCombatRegroupContext()
         {
             foreach (BotOwner follower in Followers)
@@ -3063,11 +3084,13 @@ namespace pitTeam.Components
             }
 
             _activeFollowerCombatProfiles.Add(follower.ProfileId);
+            _combatPercentageResetAt = 0f;
             _postCombatEpisodeParticipants.Add(follower.ProfileId);
         }
 
         internal void NotifyFollowerCombatLayerReleased(BotOwner follower, string reason)
         {
+            if (follower != null && reason == "followerDismissed") _addonFollowerCombatProfiles.Remove(follower.ProfileId);
             if (follower == null || string.IsNullOrEmpty(follower.ProfileId) ||
                 !_activeFollowerCombatProfiles.Remove(follower.ProfileId))
             {
@@ -3526,7 +3549,7 @@ namespace pitTeam.Components
                 else
                 {
                     // Gogogo clears the temporary override so combat logic reads the persisted tactic aggression again.
-                    followerData.ClearTemporaryCombatAggressionOverride("HoldPositionAggression:gogogo");
+                    followerData.ResetCombatPercentageOverrides("GoGoGo");
                 }
 
                 follower.BotTalk.TrySay(response, false);
@@ -3672,13 +3695,13 @@ namespace pitTeam.Components
                     {
                         if (RollPickupFollowerPushAcceptance(follower, followerData, requester, directedInfo ?? goalEnemy))
                         {
-                            followerData.ClearTemporaryCombatAggressionOverride("GoForwardPhrase:pickupPush");
                             bool issued = directedGrunt
                                 ? directedInfo != null && followerData.TrySetSainPushEnemy(
                                     new SainPushOrder(squadTarget!.Enemy.ProfileId, squadTarget.LastKnownPosition),
                                     directedInfo)
                                 : hasCombatEnemy;
                             if (!directedGrunt && issued) followerData.SetPushEnemy(12f);
+                            if (issued) followerData.SetTemporaryCombatAggressionOverride(100f, "GoForward");
                             follower.BotTalk.TrySay(issued ? EPhraseTrigger.Going : EPhraseTrigger.Negative, false);
                             follower.Gesture.TryGestus(issued ? EInteraction.OkGesture : EInteraction.NoGesture, false);
                         }
@@ -3693,13 +3716,13 @@ namespace pitTeam.Components
 
                     // Core tactics keep their existing per-follower push. Only a ready
                     // SAINGrunt consumes the command-time squad target.
-                    followerData.ClearTemporaryCombatAggressionOverride("GoForwardPhrase:push");
                     bool accepted = directedGrunt
                         ? directedInfo != null && followerData.TrySetSainPushEnemy(
                             new SainPushOrder(squadTarget!.Enemy.ProfileId, squadTarget.LastKnownPosition),
                             directedInfo)
                         : hasCombatEnemy;
                     if (!directedGrunt && accepted) followerData.SetPushEnemy(12f);
+                    if (accepted) followerData.SetTemporaryCombatAggressionOverride(100f, "GoForward");
                     if (!accepted) follower.BotTalk.TrySay(EPhraseTrigger.Negative, false);
                     else if (!FollowerCombatTactics.IsMarksman(followerData.CombatTactic))
                         follower.BotTalk.TrySay(EPhraseTrigger.Going, false);
@@ -5101,6 +5124,7 @@ namespace pitTeam.Components
             }
 
             _nextBossGroupStaticUpdateAt = Time.time + 0.5f;
+            UpdateCombatPercentageOverrides();
             bool preserveDirectPlayerEngagement =
                 Time.time <= _playerEngagementUntil &&
                 (string.Equals(_playerEngagementSource, "bossShot", StringComparison.Ordinal) ||

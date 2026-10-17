@@ -53,6 +53,7 @@ namespace pitTeam.BigBrain
         private Vector3 arrivalCoverSectorAnchor;
         private bool hasArrivalCoverSectorAnchor;
         private bool tightRegroup;
+        private float automaticCompletion;
 
         private enum RegroupBossDirection
         {
@@ -83,20 +84,30 @@ namespace pitTeam.BigBrain
             arrivalCoverSectorAnchor = Vector3.zero;
             hasArrivalCoverSectorAnchor = false;
             tightRegroup = false;
+            automaticCompletion = 0f;
             ResetWithdrawProgressTracking();
         }
 
         public override void Activate()
         {
-            Activate(tightRegroup: false);
+            Activate(tightRegroup: false, automatic: true);
         }
 
-        internal void Activate(bool tightRegroup)
+        internal void Activate(bool tightRegroup, bool automatic = false)
         {
             // Regroup is command-triggered but objective-owned, so each activation should discard
             // previous bossward targets and recompute from current combat geometry.
             Reset();
             this.tightRegroup = tightRegroup;
+            if (automatic)
+            {
+                var follower = BossPlayers.Instance?.GetFollower(BotOwner);
+                bool marksman = CombatCommon.GetFollowerTactic() == FollowerCombatTactic.Marksman;
+                float trigger = marksman ? CombatDistanceConfiguration.Instance.GetRegroupNeededDistanceMarksman(BotOwner)
+                    : CombatDistanceConfiguration.Instance.GetBossRegroupTriggerDistance(BotOwner);
+                automaticCompletion = pitTeam.Shared.SelfDeterminationPolicy.Completion(
+                    follower?.EffectiveSelfDetermination ?? 50f, trigger, GetOrderedRegroupDistance(), marksman);
+            }
             regroupActivatedAt = Time.time;
         }
 
@@ -881,12 +892,12 @@ namespace pitTeam.BigBrain
 
         private float GetRegroupCompleteDistance()
         {
-            return tightRegroup ? TightRegroupCompleteDistance : GetOrderedRegroupDistance();
+            return tightRegroup ? TightRegroupCompleteDistance : automaticCompletion > 0f ? automaticCompletion : GetOrderedRegroupDistance();
         }
 
         private float GetRegroupCoverRadius()
         {
-            return GetOrderedRegroupDistance();
+            return GetRegroupCompleteDistance();
         }
 
         private float GetOrderedRegroupDistance() => GetOrderedRegroupDistance(CombatCommon.GetFollowerTactic());

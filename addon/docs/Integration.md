@@ -4,6 +4,8 @@
 
 ## Selection and fallback
 
+Shared [Labyrinth-only wire awareness](../../docs/Combat-Tactics.md#wire-awareness) stays in Core. On that map, the addon publishes the already-computed current SAIN path corner while its native layers own movement, rejects wire-covered cover candidates and releases its unsafe native cover latch on medical escape. Other maps bypass wire checks before geometry or path reads. No SAIN decision/path provider is evaluated and no native planner is patched. Disabling the addon unregisters those optional callbacks.
+
 The Grunt tactic is displayed as **SAINGrunt**. The persisted `SainMan` identifier, enum value and `ProfileTacticSainMan` localization key remain unchanged. Saved teammates retain their selected tactic. A recruited bot with a native SAIN component defaults to this tactic when both plugins are installed; other recruits use Rifleman.
 
 `UseSainFollowerCombat(botOwner)` requires the selected tactic, both plugins, both constructed addon layers, native state, a real player leader, and registered readiness callbacks. Missing/unready addon state uses core fallback without erasing the saved selection. Installation alone does not switch combat ownership.

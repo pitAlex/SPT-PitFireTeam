@@ -8,6 +8,7 @@ public sealed class FriendlyScavCargoRequest : IRequestData
 {
     [JsonPropertyName("serverId")] public string? ServerId { get; set; }
     [JsonPropertyName("exitName")] public string? ExitName { get; set; }
+    [JsonPropertyName("transit")] public bool Transit { get; set; }
     [JsonPropertyName("scavProfileIds")] public List<string> ScavProfileIds { get; set; } = [];
     [JsonPropertyName("items")] public List<Item> Items { get; set; } = [];
     public string? InsuranceReportId { get; set; }

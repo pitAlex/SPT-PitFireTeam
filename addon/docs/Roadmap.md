@@ -4,12 +4,14 @@
 
 ## Raid qualification
 
+- [Self-Determination](Self-Determination.md): initial distance/cover calibration, zero escort, fifty guard behavior, one hundred independence, mixed-brain command lifetime and percentage editor.
+
 - [SAINShooter](SAINShooter.md): native firing-position usefulness, Need Sniper, failed/blocked approaches, survival interruptions, role switching and mixed-squad behavior. Its documented parity limits are intentional.
 
 - [Squad support](Squad-Support.md): exact-target ordered fire, obstruction/friendly lanes, cancellation, mixed Core/addon engagement and push cues, Grunt boss protection and pusher-relative support, bounded native cover/firing positions and simultaneous Shooter planning.
-- Ordered/automatic push: forward cover, provisional/bent walking, pressure/medical recovery, contact gaps, failed approaches, replacement orders and On Your Own.
+- Ordered/automatic push: forward cover, provisional/bent walking, pressure/medical recovery, settled weapon-blocked arbitration, contact gaps, failed approaches, replacement orders and On Your Own.
 - SAINGrunt protective cover: forward-side choices with the player behind, lateral offsets, empty/unsafe forward sectors and stable travel/arrival when player or threat geometry changes.
-- Regroup: productive-combat priority, complete-route/floor arrival, post-regroup cover constraints and publication handoff.
+- Regroup: productive-combat priority, complete-route/floor arrival, post-regroup cover constraints, completed-empty no-cover fallback and publication handoff.
 - There/Come here: destination commitment, cover discovery/fallback, live firing/medicine interruptions, arrival and cleanup.
 - Aggression anchors/interpolation and temporary command overrides in a fresh raid.
 - Native first aid/surgery, release into core recovery, markers/status text and recorder ownership.
@@ -17,7 +19,6 @@
 
 ## Unimplemented extensions
 
-- [Self Determination adaptation](Self-Determination-Proposal.md): proposed shared setting integration, productive-commitment arbitration and the independently identified blocked-push/no-cover fallback faults.
 - [Enemy Tracking](Enemy-Tracking.md): addon Simple adaptation of the common planned mode contract. No setting is implemented.
 - Grenade-launcher support is excluded from the current suppression scope at the user's request.
 - Core's complete support arbitration and broad support-position sampling are not replicated. Implemented Grunt boss protection/ally support and Shooter automatic support-weapon transactions use the bounded native capabilities described in their topic documents; they do not establish full Core parity.

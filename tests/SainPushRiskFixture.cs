@@ -1,6 +1,7 @@
 using System;
 using EFT;
 using pitTeam.BigBrain;
+using pitTeam.Components;
 using pitTeam.Modules;
 using pitTeam.SAINAddon;
 using SAIN.Preset.Shared.Enums;
@@ -44,6 +45,7 @@ namespace pitTeam.BigBrain {
 }
 public static partial class CombatChecks {
     private static void TestPushRisk(){
+        TestDeterminationAdaptation();
         TestRejectedSearchFiringCover();
         // Independent expected values from core's existing formulas, including clamps.
         bool formulaParity=true;
@@ -140,6 +142,40 @@ public static partial class CombatChecks {
         Check(!p.OwnsMovement&&p.Phase==SAINPushPhase.Recovery,"health deterioration interrupts committed advance");
         TestCautiousNoCoverFallback();
         TestRiskHeldRegroup();
+    }
+    private static void TestDeterminationAdaptation()
+    {
+        var b=PushBot("determinationPull",false);b.Leader.Position=new Vector3(-11,0,0);
+        b.Sain.GoalEnemy.KnownPlaces.LastKnownPosition=new Vector3(70,0,0);
+        var assessment=new SAINFollowerPushAssessment(b.Sain);assessment.Evaluate(b.Sain.GoalEnemy,100,false);
+        float baseline=assessment.RequiredAggression;int paths=pitTeam.Utils.Utils.PathCalls;
+        b.Follower.SelfDetermination=25;assessment.Evaluate(b.Sain.GoalEnemy,100,false);
+        Check(assessment.RequiredAggression>baseline,"lower determination increases player-separation cost");
+        b.Follower.SelfDetermination=75;assessment.Evaluate(b.Sain.GoalEnemy,100,false);
+        Check(assessment.RequiredAggression<baseline,"higher determination reduces player-separation cost");
+        Check(pitTeam.Utils.Utils.PathCalls==paths,"intermediate determination changes reuse unchanged navigation");
+        b.Follower.SelfDetermination=0;assessment.Evaluate(b.Sain.GoalEnemy,100,false);
+        Check(!assessment.AllowsAutomatic&&assessment.Reason=="closeEscort","zero determination cannot automatically leave escort despite full aggression");
+        b.Follower.SelfDetermination=100;assessment.Evaluate(b.Sain.GoalEnemy,100,true);
+        Check(b.Follower.CombatIndependent,"one hundred resolves existing addon independent routing");
+        var independent=RegroupBot("determinationNoAuto",200);independent.Follower.SelfDetermination=100;
+        Check(!SAINFollowerRuntime.GetRegroup(independent).TryBeginAuto(independent.Sain.GoalEnemy,ECombatDecision.SeekCover,ESquadDecision.None,ESelfActionType.None),
+            "one hundred disables boss-distance automatic regroup");
+        var command=RegroupBot("determinationCoverMe",40);command.Follower.SelfDetermination=20;
+        command.Follower.Command=FollowerCommandType.RegroupNearBoss;command.Follower.DeterminationRegroupRequested=true;
+        var regroup=SAINFollowerRuntime.GetRegroup(command);regroup.Observe();
+        command.GetPlayer.Position=new Vector3(29,0,0);Time.time+=1;regroup.Observe();
+        Check(!regroup.Settling,"Cover Me does not stop outside its tighter automatic escort envelope");
+        command.GetPlayer.Position=new Vector3(33,0,0);Time.time+=1;regroup.Observe();
+        Check(regroup.Settling,"Cover Me settles inside the resolved twenty-percent arrival envelope");
+        command.Follower.SelfDetermination=50;command.GetPlayer.Position=new Vector3(29,0,0);Time.time+=.1f;regroup.Observe();
+        Check(!regroup.Settling,"changing determination does not expand a committed regroup arrival envelope");
+        var native=RegroupBot("zeroNativeEngage",0);native.Follower.SelfDetermination=0;
+        native.Sain.Decision.EnemyDecisions.FiringPosition=new Vector3(20,0,0);native.Sain.Decision.Manager.Publish(ECombatDecision.MoveToEngage);
+        Check(native.Sain.Decision.CurrentCombatDecision==ECombatDecision.SeekCover,
+            "zero escort also constrains native MoveToEngage rather than only automatic push");
+        var coverPolicy=SAINFollowerRuntime.GetCover(native);native.Sain.Decision.CurrentCombatDecision=ECombatDecision.SeekCover;
+        Check(coverPolicy.RestrictsNoCoverAdvance,"zero cannot use aggressive no-cover fallback to leave escort");
     }
 
     private static BotOwner CautiousNoCoverBot(string id)

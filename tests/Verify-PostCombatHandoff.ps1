@@ -134,7 +134,7 @@ __SETTER__
 __ACQUISITION__
     }
 }
-namespace pitTeam.BigBrain.Actions { public class HealAction {} public class PatrolHealWaitAction {} }
+namespace pitTeam.BigBrain.Actions { public class HealAction {} public class HealStimulatorsAction {} public class PatrolHealWaitAction {} }
 namespace pitTeam.BigBrain {
     public class CustomLayer { public virtual bool IsActive()=>false; }
     public class SelectedAction { public Type Type; }
