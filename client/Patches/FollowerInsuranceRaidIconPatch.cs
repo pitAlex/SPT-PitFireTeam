@@ -27,13 +27,6 @@ namespace pitTeam.Patches
                     __instance.InsuredItemBorder?.SetActive(true);
                     __instance.InsuredIcon?.SetActive(true);
                 }
-#if DEBUG
-                if (GearSwapInsuranceDiagnostics.Watches(__instance.Item.Id))
-                    GearSwapInsuranceDiagnostics.Icon(__instance.Item.Id, __instance.GetType().Name,
-                    TeammateGearSwap.Current?.IsDraft(__instance.Item) == true, enable, raidInsured,
-                    __instance.InsuredItemBorder?.activeSelf == true, __instance.InsuredIcon?.activeSelf == true,
-                    __instance.InsuredIcon?.activeInHierarchy == true, FollowerInsuranceRaidDisplay.DiagnosticState());
-#endif
             }
             catch (Exception ex)
             {

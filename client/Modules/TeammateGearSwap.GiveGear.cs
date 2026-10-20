@@ -19,15 +19,6 @@ namespace pitTeam.Modules
         private readonly List<string> _nativeDonationSplitIds = new List<string>();
         private HashSet<string> _offeredDonationIds;
         private HashSet<string> _borrowedDonationIds;
-        private readonly string _donationTraceId = Guid.NewGuid().ToString("N").Substring(0, 8);
-        private int _donationPlanNumber;
-
-        private void TraceDonation(string message)
-        {
-            try { Logger.LogInfo($"[GiveGear] handover='{_donationTraceId}' attempt={_donationPlanNumber} follower='{Bot?.ProfileId}' {message}"); }
-            catch { /* Logging cannot affect the inventory transaction. */ }
-        }
-
         private void InitializeDonation()
         {
             _playerOwnedIds.UnionWith(AllegianceScavCargo.GetPureGivenIds(Bot));
@@ -72,12 +63,10 @@ namespace pitTeam.Modules
             _offeredDonationIds = new HashSet<string>(Tree(Donation).Where(i => _playerOwnedIds.Contains(i.Id)).Select(i => (string)i.Id));
             _borrowedDonationIds = new HashSet<string>(Tree(Donation).Where(i => !ReferenceEquals(i, Donation) &&
                 !_playerOwnedIds.Contains(i.Id)).Select(i => (string)i.Id));
-            _donationPlanNumber++;
             _donationPlan = new GiveGearPlanner(BotDraft, Donation, _donationOverflow, Bot,
                 edit => { _edits.Add(edit); edit.UpdateProvenance(_playerOwnedIds); },
                 _playerOwnedIds, item => _draftItems[item.Id] = item,
-                id => _nativeDonationSplitIds.Add(id),
-                message => TraceDonation("phase=plan " + message));
+                id => _nativeDonationSplitIds.Add(id));
             _planningDonation = true;
             try { _donationPlan.Build(); }
             finally { _planningDonation = false; }
@@ -89,7 +78,6 @@ namespace pitTeam.Modules
         {
             if (_donationPlan == null) return;
             _donationPlan.Rollback();
-            TraceDonation("phase=plan result=rolledBack reason=applyDidNotCommit");
             if (_edits.Count > _donationEditCount) _edits.RemoveRange(_donationEditCount, _edits.Count - _donationEditCount);
             _donationPlan = null;
             _nativeDonationSplitIds.Clear();
@@ -130,7 +118,6 @@ namespace pitTeam.Modules
                             if (magazineSlot.CanAccept(magazine))
                                 InteractableObjects.RegisterLootedWeaponMagazine(Bot, weapon, magazine);
             }
-            TraceDonation("phase=committed result=ownershipTracked");
         }
 
         private void TrackDonationInsurance()

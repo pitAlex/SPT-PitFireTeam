@@ -7,6 +7,7 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 | Document | Purpose |
 |---|---|
 | [Architecture](Architecture.md) | Client/server ownership, lifecycle invariants and source map |
+| [Version 1 release preparation](Version-1-Release-Readiness.md) | Feature inventory, description gaps, cleanup disposition and remaining release gates |
 | [SPT compatibility](SPT-Compatibility.md) | Build/reference baseline and packaging boundaries |
 | [SAIN compatibility](SAIN-Compatibility.md) | Core integration with the external plugin, including deferred shot-safety investigation |
 | [Localization](Localization.md) | Centralized text and locale maintenance |

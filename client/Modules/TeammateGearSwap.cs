@@ -99,8 +99,6 @@ namespace pitTeam.Modules
             {
                 var session = new TeammateGearSwap(eftOwner, bot, follower, giving);
                 Current = session;
-                GearSwapInsuranceDiagnostics.Begin(bot.ProfileId, session._botIds.Concat(session._playerOwnedIds));
-                session.TraceInsurance("open", draft: true);
                 session._openedAt = Time.time;
                 owner.Player.SetInventoryOpened(true);
                 session._screen.ShowScreen(EScreenState.Queued);
@@ -258,33 +256,6 @@ namespace pitTeam.Modules
             return profile;
         }
 
-        [System.Diagnostics.Conditional("DEBUG")]
-        private void TraceInsurance(string phase, bool draft)
-        {
-            // Read exact-ID presentation only. Never register clone items or modify policies.
-            try
-            {
-                var insurance = (Owner.Session as IEftSession)?.InsuranceCompany;
-                var player = draft ? PlayerEquipment : Owner.Player.InventoryController.Inventory.Equipment;
-                var bot = draft ? FollowerEquipment : Bot.GetPlayer.InventoryController.Inventory.Equipment;
-                var playerItems = Tree(player).ToArray();
-                var botItems = Tree(bot).ToArray();
-                GearSwapInsuranceDiagnostics.Summary(phase, FollowerInsuranceRaidDisplay.DiagnosticState(),
-                    playerItems.Count(i => FollowerInsuranceRaidDisplay.IsInsured(i.Id)),
-                    botItems.Count(i => FollowerInsuranceRaidDisplay.IsInsured(i.Id)));
-                foreach (var pair in new[] { new { Name = "player", Equipment = player, Items = playerItems },
-                    new { Name = "follower", Equipment = bot, Items = botItems } })
-                {
-                    var rootIds = new HashSet<string>(VisibleSlots.Concat(new[] { EquipmentSlot.Backpack })
-                        .Select(slot => pair.Equipment.GetSlot(slot)?.ContainedItem).Where(i => i != null).Select(i => (string)i.Id));
-                    foreach (Item item in pair.Items.Where(i => rootIds.Contains(i.Id) || FollowerInsuranceRaidDisplay.IsInsured(i.Id)))
-                        GearSwapInsuranceDiagnostics.Item(phase, item.Id, item.TemplateId, pair.Name + (draft ? ":draft" : ":live"),
-                            insurance?.Insured(item.Id) == true, FollowerInsuranceRaidDisplay.IsInsured(item.Id));
-                }
-            }
-            catch (Exception ex) { Logger.LogError("[SwapGear:Insurance] Passive snapshot failed: " + ex); }
-        }
-
         internal static IEnumerable<Item> Tree(Item item)
         {
             if (item == null) return Enumerable.Empty<Item>();
@@ -349,7 +320,6 @@ namespace pitTeam.Modules
             // UI notifications affect only owners of the cloned items.
             applied.RaiseEvents(controller, CommandStatus.Begin);
             applied.RaiseEvents(controller, CommandStatus.Succeed);
-            TraceInsurance("staged:" + _edits.Count, draft: true);
         }
 
         private void ValidateLive()
@@ -372,8 +342,6 @@ namespace pitTeam.Modules
             if (Applying || _closed) return;
             if (Giving && !Donation.Grids.Any(grid => grid.Items.Any())) { Close(); return; }
             if (_edits.Count == 0) { Close(); return; }
-            TraceInsurance("applyDraft", draft: true);
-            TraceInsurance("applyBefore", draft: false);
             bool committed = false;
             bool handsStarted = false;
             bool keepDraft = false;
@@ -441,7 +409,6 @@ namespace pitTeam.Modules
                 }
                 foreach (Item item in Tree(player.Inventory.Equipment).Where(i => _botIds.Contains(i.Id)))
                     TeammateBackpackInspection.MarkItemTreeVisible(Owner.Player.SearchController, item);
-                TraceInsurance("applyAfter", draft: false);
                 RefreshWeapons();
                 Bot.WeaponManager.Grenades.SetDirty();
                 Bot.WeaponManager.Grenades.UpdateCheck();
@@ -635,8 +602,6 @@ namespace pitTeam.Modules
             _closed = true;
             _applyScope?.Stop();
             ReleaseMovement();
-            TraceInsurance(_committed ? "closeCommitted" : "closeCancelled", draft: false);
-            GearSwapInsuranceDiagnostics.End(_committed);
             try
             {
                 _screen.OnClose -= OnScreenClosed;

@@ -23,7 +23,6 @@ namespace pitTeam.Modules
                 InsuredIds.Clear();
                 GiftedIds.Clear();
             }
-            GearSwapInsuranceDiagnostics.Clear();
         }
 
         internal static bool IsInsured(string itemId)
@@ -41,14 +40,6 @@ namespace pitTeam.Modules
                 GiftedIds.UnionWith(ids);
                 InsuredIds.ExceptWith(GiftedIds);
             }
-        }
-
-        internal static string DiagnosticState()
-        {
-            string currentServerId = FollowerInsuranceRaidReports.CurrentServerId;
-            lock (Gate)
-                return $"currentRaid='{currentServerId ?? "<none>"}' cachedRaid='{raidServerId ?? "<none>"}' " +
-                    $"cacheMatches={currentServerId != null && currentServerId == raidServerId} cachedIds={InsuredIds.Count}";
         }
 
         internal static void Refresh()

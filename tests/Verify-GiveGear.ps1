@@ -10,9 +10,8 @@ function Region([string]$source, [string]$start, [string]$end) {
 $session = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/TeammateGearSwap.cs')
 $giving = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/TeammateGearSwap.GiveGear.cs')
 $planner = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/GiveGearPlanner.cs')
-foreach ($contract in @('message => TraceDonation("phase=plan " + message)', 'phase=committed result=ownershipTracked',
-    'phase=plan result=rolledBack reason=applyDidNotCommit')) {
-    if (!$giving.Contains($contract)) { throw "Missing session-scoped Give Gear decision diagnostic: $contract" }
+foreach ($retired in @('TraceDonation(', '_donationTraceId', '_donationPlanNumber')) {
+    if ($giving.Contains($retired)) { throw "Retired runtime Give Gear diagnostic remains: $retired" }
 }
 $insurance = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/GiveGearInsurance.cs')
 $insuranceLedger = Get-Content -Raw (Join-Path $RepositoryRoot 'server/Services/FollowerInsuranceRaidDiagnostics.cs')
