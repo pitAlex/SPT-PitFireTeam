@@ -264,10 +264,11 @@ Execution:
 
 Picked-up follower behavior:
 
-- Recruited/picked-up followers roll command acceptance before taking the hold.
-- Higher-level picked-up followers are more likely to refuse with `Negative` because they do not fully accept the player as their boss.
-- Lower-level picked-up followers are more likely to accept, with a small stable personality bias per follower.
+- Out of combat, recruited/picked-up followers obey without a personality acceptance roll, just like saved squadmates. Normal targeting, availability and safety gates still apply.
+- Only in combat (including the existing combat handoff signals) do picked-up followers roll acceptance. Higher-level recruits are more likely to refuse with `Negative`; lower-level recruits are more likely to accept, with a small stable personality bias per follower.
 - The same personality bias also feeds autonomous combat protection: less loyal pickups tolerate more distance from the player and are less likely to break their own fight to protect the boss.
+
+2026-10-19 qualification: `tests/Verify-PeacefulCommandAcceptance.ps1` runs the production hold and aggression handlers with controlled combat/admission stand-ins (332 checks). Peaceful Stop/Hold and combat refusal paths are covered for recruits and saved squadmates; live three-follower command behavior remains to be retested.
 
 ### Stop Phrase
 
@@ -290,7 +291,7 @@ Execution:
 
 Picked-up follower behavior:
 
-- Uses the same level/personality acceptance roll as the hold gesture.
+- Obeys without a personality roll out of combat. In combat, uses the same level/personality acceptance roll as the hold gesture.
 
 Vanilla handling:
 
@@ -658,7 +659,7 @@ Behavior:
 - Rifleman/default behavior becomes less proactive and more defensive/regroup-oriented.
 - Marksman suppresses proactive close-search/auto-search behavior.
 - Defensive survival behavior still wins: immediate fire, dogfight, healing, boss protection, and other urgent actions can still run.
-- Picked-up followers may refuse this hold with `Negative`; higher-level and more independent recruits are more likely to ignore the order.
+- Only in combat may picked-up followers refuse this hold with `Negative`; higher-level and more independent recruits are more likely to ignore the order. Issuing the phrase peacefully does not roll acceptance.
 
 Addon behavior: see [SAIN addon commands](../addon/docs/Commands.md).
 
@@ -912,3 +913,15 @@ Common command cleanup cases:
 - `GestureCommandAction` clears movement commands on arrival, invalid path, invalid target, danger, healing, grenade/BTR avoidance, and interaction failure.
 - Core combat objectives clear command state when consuming or rejecting objective commands.
 - Combat gesture orders are cleared when consumed, invalid or expired; accepted orders replace ordinary combat movement while medical relocation is protected.
+
+## Debug recruit spawning
+
+`fs_spawnfollower` and `fs_spawnscavfollower` are compiled and registered only with the `DEBUG` symbol. In a raid they share the existing game-session bot-generation/activation flow near the player, then convert the bot with `squadMate: false`. These are field recruits for Give Gear testing, not spawned/saved squadmates; normal recruit initialization and inventory ownership apply.
+
+- `fs_spawnfollower`: in Allegiance, independently chooses USEC or BEAR with equal probability per invocation; in Guns for Hire, matches the player's faction. Generation retries preserve that requested faction/role rather than substituting a Scav.
+- SPT intentionally returns generated PMC profiles with raw side `Savage`. The direct Debug spawn applies SPT's normal `ChooseProfile` role-based correction (`pmcBEAR` → BEAR, `pmcUSEC` → USEC) before activation. Only a genuinely wrong/missing role or incompatible final side is rejected; raw `Savage` on a matching PMC role is not an error.
+- `fs_spawnscavfollower`: always requests a regular Savage/assault recruit. In Allegiance it has a selected-friendly encounter identity and a locked, independent native Scav group before conversion, enabling the normal companion diplomacy and Fence cargo-capture path. Outside Allegiance it remains a field follower; this command does not enable Allegiance-only cargo/diplomacy rules in other modes.
+
+A command-created PMC has a raid-local Debug invitation marker. On living post-raid capture it can submit a candidate even if the ordinary pickup-invitation setting is disabled. The Debug server still validates the candidate, filters Restricted protected equipment, captures the actual current kit and calculates/logs the ordinary donation-adjusted chance, but bypasses that recruit's chance roll. It prioritizes marked recruits within the existing one-invitation-per-raid selection; multiple command-created PMCs do not produce multiple invitations from one capture. Normal recruits keep their ordinary settings/chance and Scavs never gain a PMC invitation.
+
+The command handlers, faction policy, test encounter registration, spawn entry point, marker and server bypass are absent from Release builds. Both client and server must be Debug for the deterministic test invitation. No roster entry is created until the normal invitation is accepted. Existing `fs_spawnscav` remains the separate enemy-spawn command and is unchanged.

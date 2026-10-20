@@ -40,6 +40,7 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 | [Buy Screen](Buy%20Screen.md) | Purchase UI ownership and restore flow |
 | [Loadout Management](Loadout-Management.md) | Equipment modes, teammate hiring prices/payment, transactions, spawn and extraction |
 | [Swap Gear](Swap-Gear.md) | Staged in-raid manual equipment exchange, Apply, ownership and qualification |
+| [Give Gear](Give-Gear-Spec.md) | Staged field-recruit donations, primary-first kit selection, PMC gifts/invitations, Scav returns and remaining qualification cases |
 | [Follower Insurance](Follower-Insurance.md) | Purchase, policy transfers, raid evidence, settlement and stock trader returns |
 | [Teammate Storage](Teammate-Storage.md) | Database representation, migration and recovery |
 
@@ -49,7 +50,6 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 
 ## Proposals and unfinished work
 
-- [Give Gear specification](Give-Gear-Spec.md): proposed staged donations to recruited PMC/Scav followers, primary-first equipment decisions and unresolved ownership policies; not implemented.
 - [Core roadmap](../TASKS.md): retained product proposals and future work.
 - [Addon roadmap](../addon/docs/Roadmap.md): addon-specific gaps and raid qualification.
 

@@ -19,12 +19,6 @@ public class FriendlyRecruitService(
 )
 {
     private const string RecruitRequestsFileName = "recruit-requests.json";
-#if DEBUG
-    // Local-only test override. Release builds use the separate hardcoded-false branch below.
-    private const bool ForceRecruitPickupInviteForTesting = false;
-#else
-    private const bool ForceRecruitPickupInviteForTesting = false;
-#endif
 
     public void QueueRecruitPickups(MongoId sessionId, List<FriendlyRecruitPickupCandidate>? candidates)
     {
@@ -38,6 +32,9 @@ public class FriendlyRecruitService(
 
             var playerLevel = profileHelper.GetPmcProfile(sessionId)?.Info?.Level ?? 1;
             var successfulCandidates = new List<FriendlyRecruitRequestEntry>();
+#if DEBUG
+            var forcedDebugProfileIds = new HashSet<string>(StringComparer.Ordinal);
+#endif
             foreach (var candidate in candidates)
             {
                 if (!IsValidCandidate(candidate))
@@ -49,8 +46,24 @@ public class FriendlyRecruitService(
                     continue;
                 }
 
-                if (!ForceRecruitPickupInviteForTesting &&
-                    Random.Shared.Next(0, 101) > CalculateRecruitChance(playerLevel, Math.Max(1, candidate.Level)))
+                // Do not award donation credit or retain protected kit in the invitation.
+                teammateService.SanitizeRecruitCandidateEquipment(sessionId, candidate);
+                string[] donationSlots = candidate.GivenEquipmentSlots ?? [];
+                int invitationChance = pitTeam.Shared.GiveGearInvitePolicy.Apply(
+                    CalculateRecruitChance(playerLevel, Math.Max(1, candidate.Level)),
+                    string.Equals(candidate.Side, "Usec", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(candidate.Side, "Bear", StringComparison.OrdinalIgnoreCase) ? donationSlots : []);
+#if DEBUG
+                bool forceInvite = IsDebugForcedInvite(candidate);
+                if (forceInvite)
+                {
+                    forcedDebugProfileIds.Add(candidate.ProfileId);
+                    logger.Info($"[DebugRecruit] Invitation roll bypassed for '{candidate.Nickname}'; normalChance={invitationChance}% donationSlots={string.Join(",", donationSlots)}.");
+                }
+#else
+                const bool forceInvite = false;
+#endif
+                if (!forceInvite && Random.Shared.Next(0, 101) > invitationChance)
                 {
                     continue;
                 }
@@ -66,6 +79,7 @@ public class FriendlyRecruitService(
                     Head = candidate.Head.Trim(),
                     ProfileJson = candidate.ProfileJson?.Trim() ?? string.Empty,
                     Aggression = candidate.GetSavedAggression(),
+                    GivenEquipmentSlots = donationSlots,
                     CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                 });
             }
@@ -77,6 +91,9 @@ public class FriendlyRecruitService(
             }
 
             var pending = LoadRecruitRequests(sessionId);
+#if DEBUG
+            successfulCandidates = PreferDebugRecruitCandidates(successfulCandidates, forcedDebugProfileIds);
+#endif
             var picked = successfulCandidates[Random.Shared.Next(successfulCandidates.Count)];
             var accepted = storage.Read<Dictionary<string, int>>(sessionId, "accepted-recruits.json");
             if (accepted?.ContainsKey(picked.ProfileId) == true
@@ -174,8 +191,15 @@ public class FriendlyRecruitService(
         }
     }
 
-    private List<FriendlyRecruitRequestEntry> LoadRecruitRequests(MongoId sessionId) =>
-        storage.Read<List<FriendlyRecruitRequestEntry>>(sessionId, RecruitRequestsFileName) ?? [];
+    private List<FriendlyRecruitRequestEntry> LoadRecruitRequests(MongoId sessionId)
+    {
+        var requests = storage.Read<List<FriendlyRecruitRequestEntry>>(sessionId, RecruitRequestsFileName) ?? [];
+        bool changed = false;
+        foreach (var request in requests)
+            changed |= teammateService.SanitizeRecruitCandidateEquipment(sessionId, request);
+        if (changed) SaveRecruitRequests(sessionId, requests);
+        return requests;
+    }
 
     private void SaveRecruitRequests(MongoId sessionId, List<FriendlyRecruitRequestEntry> requests) =>
         storage.Write(sessionId, RecruitRequestsFileName, requests);
@@ -252,6 +276,21 @@ public class FriendlyRecruitService(
             },
         };
     }
+
+#if DEBUG
+    private static bool IsDebugForcedInvite(FriendlyRecruitPickupCandidate candidate) => candidate.DebugForceInvite &&
+        (string.Equals(candidate.Side, Sides.Usec, StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(candidate.Side, Sides.Bear, StringComparison.OrdinalIgnoreCase));
+
+    // Retain the normal one-invitation-per-raid limit, but do not let a normal
+    // random candidate crowd out the explicitly spawned test recruit.
+    private static List<FriendlyRecruitRequestEntry> PreferDebugRecruitCandidates(
+        List<FriendlyRecruitRequestEntry> candidates, ISet<string> forcedProfileIds)
+    {
+        var forced = candidates.Where(candidate => forcedProfileIds.Contains(candidate.ProfileId)).ToList();
+        return forced.Count > 0 ? forced : candidates;
+    }
+#endif
 
     private static int CalculateRecruitChance(int playerLevel, int botLevel)
     {

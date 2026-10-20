@@ -11,8 +11,6 @@ namespace pitTeam.Modules
     /// </summary>
     internal static class FollowerWeaponChamberReadiness
     {
-        private const int MinimumReadinessRounds = 8;
-
         private static readonly EquipmentSlot[] VanillaLooseAmmoSlots =
         {
             EquipmentSlot.Pockets,
@@ -114,14 +112,14 @@ namespace pitTeam.Modules
         {
             ChamberReadinessScenario[] scenarios =
             {
-                new ChamberReadinessScenario("CR-01", 2, 2, new[] { 6 }, 8, true, false),
-                new ChamberReadinessScenario("CR-02", 2, 2, new[] { 5 }, 7, false, false),
-                new ChamberReadinessScenario("CR-03", 2, 0, new[] { 8 }, 8, true, true),
-                new ChamberReadinessScenario("CR-04", 2, 1, new[] { 7 }, 8, true, true),
-                new ChamberReadinessScenario("CR-05", 1, 1, new[] { 7 }, 8, true, false),
-                new ChamberReadinessScenario("CR-06", 1, 1, new[] { 6 }, 7, false, false),
-                new ChamberReadinessScenario("CR-07", 1, 0, new[] { 8 }, 8, true, true),
-                new ChamberReadinessScenario("CR-08", 5, 5, new[] { 5 }, 10, true, false)
+                new ChamberReadinessScenario("CR-01", 2, 2, new[] { 10 }, 12, true, false),
+                new ChamberReadinessScenario("CR-02", 2, 2, new[] { 9 }, 11, false, false),
+                new ChamberReadinessScenario("CR-03", 2, 0, new[] { 12 }, 12, true, true),
+                new ChamberReadinessScenario("CR-04", 2, 1, new[] { 11 }, 12, true, true),
+                new ChamberReadinessScenario("CR-05", 1, 1, new[] { 11 }, 12, true, false),
+                new ChamberReadinessScenario("CR-06", 1, 1, new[] { 10 }, 11, false, false),
+                new ChamberReadinessScenario("CR-07", 1, 0, new[] { 12 }, 12, true, true),
+                new ChamberReadinessScenario("CR-08", 5, 5, new[] { 5 }, 10, false, false)
             };
 
             List<string> failures = new List<string>();
@@ -130,7 +128,8 @@ namespace pitTeam.Modules
                 WeaponPrimaryReadinessSnapshot result = EvaluateFormula(
                     scenario.Capacity,
                     scenario.LoadedRounds,
-                    scenario.ReserveStacks);
+                    scenario.ReserveStacks,
+                    caliber: "Caliber12g");
                 if (result.TotalContribution != scenario.ExpectedTotal ||
                     result.PrimaryReady != scenario.ExpectedReady ||
                     result.RequiresMagazineLoad != scenario.ExpectedRequiresLoad)
@@ -168,14 +167,16 @@ namespace pitTeam.Modules
                 capacity,
                 loadedRoundsOverride ?? loadedRounds,
                 reserveStacks,
-                "chamberCapacity");
+                "usableActualRounds",
+                weapon.AmmoCaliber);
         }
 
-        private static WeaponPrimaryReadinessSnapshot EvaluateFormula(
+        internal static WeaponPrimaryReadinessSnapshot EvaluateFormula(
             int capacity,
             int loadedRounds,
             IEnumerable<int> reserveStacks,
-            string referenceReason = "provided")
+            string referenceReason = "provided",
+            string caliber = "")
         {
             int normalizedCapacity = Math.Max(0, capacity);
             int normalizedLoadedRounds = Math.Min(
@@ -186,14 +187,9 @@ namespace pitTeam.Modules
                 .Select(count => Math.Max(0, count))
                 .ToList() ?? new List<int>();
             int reserveRounds = normalizedReserveStacks.Sum();
-            // Two chamber loads are too permissive for low-capacity weapons: a double barrel
-            // would otherwise become the combat primary with only four shells. Eight total
-            // rounds gives it a small but useful reserve while larger feeds keep the two-load rule.
-            int threshold = normalizedCapacity > 0
-                ? Math.Max(normalizedCapacity * 2, MinimumReadinessRounds)
-                : 0;
+            int threshold = FollowerWeaponAmmoReadinessPolicy.GetRequiredRounds(caliber);
             int total = normalizedLoadedRounds + reserveRounds;
-            bool primaryReady = normalizedCapacity > 0 && total >= threshold;
+            bool primaryReady = normalizedCapacity > 0 && threshold > 0 && total >= threshold;
             bool requiresLoad = primaryReady && normalizedLoadedRounds < normalizedCapacity;
 
             string reason = normalizedCapacity <= 0
@@ -207,7 +203,6 @@ namespace pitTeam.Modules
                 : "insufficientUsableRounds";
 
             return new WeaponPrimaryReadinessSnapshot(
-                normalizedCapacity,
                 threshold,
                 hasInsertedMagazine: normalizedLoadedRounds > 0,
                 insertedRounds: normalizedLoadedRounds,
@@ -220,7 +215,7 @@ namespace pitTeam.Modules
                 requiresMagazineLoad: requiresLoad,
                 reason: reason,
                 availableMagazineCount: normalizedReserveStacks.Count,
-                referenceReason: referenceReason,
+                referenceReason: $"caliber={caliber};{referenceReason}",
                 feedKind: "chamberFed");
         }
 

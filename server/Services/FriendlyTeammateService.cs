@@ -281,6 +281,7 @@ public partial class FriendlyTeammateService(
     public SearchFriendResponse CreateTeammateFromRecruitCandidate(MongoId sessionId, FriendlyRecruitPickupCandidate candidate,
         IReadOnlyDictionary<string, string>? additionalDocuments = null)
     {
+        SanitizeRecruitCandidateEquipment(sessionId, candidate);
         var playerPmc = GetPlayerProfile(sessionId);
         var nickname = EnsureUniqueRecruitNickname(sessionId, NormalizeRequiredValue(candidate.Nickname, "nickname"));
         var voice = NormalizeRequiredValue(candidate.Voice, "voice");
@@ -361,6 +362,7 @@ public partial class FriendlyTeammateService(
 
     public bool TryGetRecruitCandidateProfile(MongoId sessionId, FriendlyRecruitPickupCandidate candidate, out GetOtherProfileResponse? profile)
     {
+        SanitizeRecruitCandidateEquipment(sessionId, candidate);
         profile = null;
         if (!TryDeserializeRecruitProfile(candidate, out var recruit))
         {

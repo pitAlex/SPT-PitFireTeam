@@ -56,6 +56,7 @@ namespace pitTeam
         TeamStatus = 10001,
         ViewBackpack = 10002,
         SwapGear = 10003,
+        GiveGear = 10004,
     }
 
     public enum CustomGestures
@@ -410,6 +411,8 @@ namespace pitTeam
             new TeammateBackpackInspectionUpdatePatch().Enable();
             new GearSwapPanelPatch().Enable();
             new GearSwapPanelClosePatch().Enable();
+            new GiveGearPanelPatch().Enable();
+            new GiveGearPanelClosePatch().Enable();
             new GearSwapApplyBotTickPatch().Enable();
             new GearSwapApplyBrainTickPatch().Enable();
             new GearSwapApplyMovementPatch().Enable();
@@ -1528,38 +1531,56 @@ namespace pitTeam
 
                 if (registerWithDescription != null)
                 {
+#if DEBUG
                     RegisterDebugConsoleCommand(
                         processor,
                         registerWithDescription,
                         "fs_spawnfollower",
                         SpawnFollowerConsoleCommand,
-                        "Spawn a follower bot near the player");
+                        "Spawn a recruited follower near the player (Debug only)");
+                    Modules.Logger.LogInfo("Registered console command: fs_spawnfollower");
+                    RegisterDebugConsoleCommand(
+                        processor,
+                        registerWithDescription,
+                        "fs_spawnscavfollower",
+                        SpawnScavFollowerConsoleCommand,
+                        "Spawn a recruited scav near the player (Debug only)");
+                    Modules.Logger.LogInfo("Registered console command: fs_spawnscavfollower");
+#endif
                     RegisterDebugConsoleCommand(
                         processor,
                         registerWithDescription,
                         "fs_spawnscav",
                         SpawnScavConsoleCommand,
                         "Spawn a scav enemy at the point you are looking at");
-                    Modules.Logger.LogInfo("Registered console command: fs_spawnfollower");
                     Modules.Logger.LogInfo("Registered console command: fs_spawnscav");
                     return;
                 }
 
                 if (registerSimple != null)
                 {
+#if DEBUG
                     RegisterDebugConsoleCommand(
                         processor,
                         registerSimple,
                         "fs_spawnfollower",
                         SpawnFollowerConsoleCommand,
                         null);
+                    Modules.Logger.LogInfo("Registered console command: fs_spawnfollower");
+                    RegisterDebugConsoleCommand(
+                        processor,
+                        registerSimple,
+                        "fs_spawnscavfollower",
+                        SpawnScavFollowerConsoleCommand,
+                        null);
+                    Modules.Logger.LogInfo("Registered console command: fs_spawnscavfollower");
+#endif
                     RegisterDebugConsoleCommand(
                         processor,
                         registerSimple,
                         "fs_spawnscav",
                         SpawnScavConsoleCommand,
                         null);
-                    Modules.Logger.LogInfo("Registered console command: fs_spawnfollower");
                     Modules.Logger.LogInfo("Registered console command: fs_spawnscav");
                     return;
                 }
@@ -1590,25 +1611,39 @@ namespace pitTeam
             registerMethod.Invoke(processor, new object[] { command, action });
         }
 
+#if DEBUG
         private static void SpawnFollowerConsoleCommand()
         {
-            _ = SpawnFollowerConsoleCommandAsync();
+            _ = SpawnRecruitConsoleCommandAsync("fs_spawnfollower", false);
         }
 
-        private static async Task SpawnFollowerConsoleCommandAsync()
+        private static void SpawnScavFollowerConsoleCommand()
+        {
+            _ = SpawnRecruitConsoleCommandAsync("fs_spawnscavfollower", true);
+        }
+
+        internal static EPlayerSide ResolveDebugRecruitSide(EPlayerSide playerSide, bool allegiance, bool scavFollower, bool chooseBear)
+        {
+            if (scavFollower) return EPlayerSide.Savage;
+            return allegiance ? (chooseBear ? EPlayerSide.Bear : EPlayerSide.Usec) : playerSide;
+        }
+
+        private static async Task SpawnRecruitConsoleCommandAsync(string command, bool scavFollower)
         {
             if (!Singleton<AbstractGame>.Instantiated || Singleton<GameWorld>.Instance == null || GamePlayerOwner.MyPlayer == null)
             {
-                DebugConsoleLog("fs_spawnfollower: this command can only be used in-raid.", true);
+                DebugConsoleLog($"{command}: this command can only be used in-raid.", true);
                 return;
             }
 
             Player player = GamePlayerOwner.MyPlayer;
-            EPlayerSide spawnSide = player.Side;
+            bool allegiance = GameplayModeRuntime.IsAllegiance;
+            bool chooseBear = !scavFollower && allegiance && UnityEngine.Random.Range(0, 2) == 0;
+            EPlayerSide spawnSide = ResolveDebugRecruitSide(player.Side, allegiance, scavFollower, chooseBear);
 
             if (BossPlayers.Instance == null)
             {
-                DebugConsoleLog("fs_spawnfollower: boss system is not initialized.", true);
+                DebugConsoleLog($"{command}: boss system is not initialized.", true);
                 return;
             }
 
@@ -1617,21 +1652,21 @@ namespace pitTeam
             {
                 if (BotsControllerPatch.Controller == null)
                 {
-                    DebugConsoleLog("fs_spawnfollower: bots controller is not ready.", true);
+                    DebugConsoleLog($"{command}: bots controller is not ready.", true);
                     return;
                 }
 
                 boss = BossPlayers.AddPlayerAsBoss(player, BotsControllerPatch.Controller);
                 if (boss == null)
                 {
-                    DebugConsoleLog("fs_spawnfollower: failed to initialize player boss.", true);
+                    DebugConsoleLog($"{command}: failed to initialize player boss.", true);
                     return;
                 }
             }
 
             if (BotsControllerPatch.Instance == null)
             {
-                DebugConsoleLog("fs_spawnfollower: bots patch instance is missing.", true);
+                DebugConsoleLog($"{command}: bots patch instance is missing.", true);
                 return;
             }
 
@@ -1645,21 +1680,22 @@ namespace pitTeam
                 );
                 if (result)
                 {
-                    DebugConsoleLog($"fs_spawnfollower: spawn requested ({spawnSide}).", false);
+                    DebugConsoleLog($"{command}: recruited follower spawn requested ({spawnSide}, mode={GameplayModeRuntime.Current}).", false);
                 }
                 else
                 {
                     string details = string.IsNullOrEmpty(spawnFailureReason) ? "unknown reason" : spawnFailureReason;
-                    DebugConsoleLog($"fs_spawnfollower: spawn request failed ({details}).", true);
+                    DebugConsoleLog($"{command}: spawn request failed ({details}).", true);
                 }
             }
             catch (Exception ex)
             {
-                DebugConsoleLog($"fs_spawnfollower: exception: {ex.Message}", true);
+                DebugConsoleLog($"{command}: exception: {ex.Message}", true);
                 Modules.Logger.LogError(ex);
             }
         }
 
+#endif
         private static void SpawnScavConsoleCommand()
         {
             _ = SpawnScavConsoleCommandAsync();

@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../client/Modules/FollowerWeaponAmmoReadinessPolicy.cs" Link="Production/Policy.cs" />
+    <Compile Include="../../client/Modules/FollowerWeaponPrimaryReadiness.cs" Link="Production/Primary.cs" />
+    <Compile Include="../../client/Modules/FollowerWeaponInternalReadiness.cs" Link="Production/Internal.cs" />
+    <Compile Include="../../client/Modules/FollowerWeaponChamberReadiness.cs" Link="Production/Chamber.cs" />
+    <Compile Include="../../client/Modules/FollowerWeaponLooseFeedReadiness.cs" Link="Production/LooseFeed.cs" />
+  </ItemGroup>
+</Project>

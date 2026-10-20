@@ -14,6 +14,8 @@ Core owns the manual in-raid editor. This is separate from add-only commanded [l
 
 ## Known issue and workaround
 
+Field recruits instead use [Give Gear](Give-Gear-Spec.md), a separate one-way staged donation grid. It does not expose their kit or broaden Swap Gear admission. View Backpack remains an immediate live-transfer interface for spawned teammates.
+
 A follower can become stuck in an internal magazine-reload state, preventing Swap Gear from opening even outside combat. Issue **Attention**, let the reload finish, then try opening Swap Gear again. This is a workaround, not a reason to bypass the editor's active-reload safety gate.
 
 ## Access policy

@@ -9,6 +9,7 @@ public static class FollowerInsuranceRaidClassifier
     {
         if (!raid.Enabled || raid.EndReceived) return [];
         return raid.InsuredItems.GroupBy(item => item.ItemId, StringComparer.OrdinalIgnoreCase)
+            .Where(group => !raid.GiftedItemIds.Contains(group.Key, StringComparer.OrdinalIgnoreCase))
             .Where(group => group.Select(item => (item.OwnerAid, item.TraderId, item.TemplateId)).Distinct().Count() == 1)
             .Select(group => group.First()).ToList();
     }
@@ -27,6 +28,7 @@ public static class FollowerInsuranceRaidClassifier
         var player = raid.PlayerItemIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var courier = raid.CourierItemIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var transfers = raid.TransferItemIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var gifted = raid.GiftedItemIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var saved = raid.Participants.Where(p => p.OutcomeReceived)
             .SelectMany(p => p.SavedItemIds).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var escaped = raid.Participants.Where(p => p.OutcomeReceived && p.Escaped)
@@ -41,6 +43,7 @@ public static class FollowerInsuranceRaidClassifier
             .ThenBy(i => i.OwnerAid, StringComparer.Ordinal).Select(item =>
             {
                 (string status, string reason) = !raid.Enabled ? ("ineligible", "insurance-mode-disabled")
+                    : gifted.Contains(item.ItemId) ? ("cancelled", "permanent-pmc-gift")
                     : conflicts.Contains(item.ItemId) ? ("unresolved", "conflicting-snapshot-ownership")
                     : raid.AwaitingTransit ? ("deferred", "transit-chain-not-finished")
                     : !raid.EndReceived ? ("pending", "waiting-for-player-raid-end")

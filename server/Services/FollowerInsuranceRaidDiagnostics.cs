@@ -23,11 +23,30 @@ public sealed class FollowerInsuranceRaidDiagnostics(
     JsonUtil jsonUtil,
     FollowerInsuranceSettlementService settlementService,
     FollowerInsuranceCourierTransferService courierTransfers,
+    GiveGearInsuranceService gifts,
     ISptLogger<FollowerInsuranceRaidDiagnostics> logger)
 {
     private const string Document = "insurance-raid-diagnostic.json";
     private const string PreviousDocument = "insurance-previous-raid-diagnostic.json";
     private readonly ConcurrentDictionary<string, object> locks = new();
+
+    // Unlike passive observations, a failed cancellation must fail the HTTP report.
+    public void CancelGiftInsurance(MongoId sessionId, GiveGearInsuranceRequest request)
+    {
+        lock (locks.GetOrAdd(sessionId.ToString(), _ => new object()))
+        {
+            var raid = storage.Read<FollowerInsuranceRaidDiagnostic>(sessionId, Document)
+                ?? throw new InvalidOperationException("Gift raid identity unavailable.");
+            if (request.ItemIds == null || request.ItemIds.Count == 0
+                || request.ItemIds.Any(id => !MongoId.IsValidMongoId(id))
+                || !AcceptReport(raid, request.InsuranceServerId, request.InsuranceReportId))
+                throw new InvalidOperationException("Invalid or stale gift insurance report.");
+            raid.GiftedItemIds = raid.GiftedItemIds.Concat(request.ItemIds).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            // Record intent first. A repeat report or native raid-end import can safely reapply deletion.
+            storage.Write(sessionId, Document, raid);
+            SaveAndReport(sessionId, raid, "permanent-gift");
+        }
+    }
 
     // Server-owned removal returns are authoritative ownership changes, independent of raid reports.
     public void ObserveMemberRemovalCourier(MongoId sessionId, IEnumerable<string> itemIds)
@@ -203,6 +222,7 @@ public sealed class FollowerInsuranceRaidDiagnostics(
 
     private void SaveAndReport(MongoId sessionId, FollowerInsuranceRaidDiagnostic raid, string source)
     {
+        gifts.Cancel(sessionId, raid.GiftedItemIds);
         var findings = FollowerInsuranceRaidClassifier.Classify(raid);
         string signature = jsonUtil.Serialize(findings) ?? string.Empty;
         bool changed = signature != raid.LastReportSignature;

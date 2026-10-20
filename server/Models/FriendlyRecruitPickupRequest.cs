@@ -42,6 +42,13 @@ public record FriendlyRecruitPickupCandidate
     [JsonPropertyName("Aggression")]
     public float? Aggression { get; set; }
 
+    [JsonPropertyName("GivenEquipmentSlots")]
+    public string[] GivenEquipmentSlots { get; set; } = [];
+#if DEBUG
+    [JsonPropertyName("DebugForceInvite")]
+    public bool DebugForceInvite { get; set; }
+#endif
+
     public float GetSavedAggression() => Aggression is float value && float.IsFinite(value)
         ? Math.Clamp(value, 0f, 100f) : 50f;
 

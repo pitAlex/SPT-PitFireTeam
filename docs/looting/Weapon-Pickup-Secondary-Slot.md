@@ -15,7 +15,7 @@ The current phase concerns an already-equipped weapon in
 - `Pickup Weapons` may add a usable long gun to an empty second-primary slot
   when the follower already has a working primary.
 - The support weapon needs a real ammunition source but does not need to meet
-  the two-magazine primary-readiness threshold.
+  the caliber-based primary-readiness threshold.
 - Compatible source magazines may enter vest or pockets only when the planner
   preserves reload landing space.
 - The support weapon is registered through the vanilla selector and weapon

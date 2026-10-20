@@ -253,6 +253,7 @@ namespace pitTeam.Localization
                     ["TeamStatus"] = "Status Report",
                     ["ViewBackpack"] = "View Backpack",
                     ["SwapGear"] = "Swap Gear",
+                    ["GiveGear"] = "Give Gear",
                     ["OnRepeatedContact"] = "Contact"
                 },
                 botStatus = new Dictionary<string, string>
@@ -291,6 +292,10 @@ namespace pitTeam.Localization
                     ["AddTeammateUnsupportedSide"] = "Add teammate only supports PMC profiles right now.",
                     ["Cancel"] = "Cancel",
                     ["SwapGearApply"] = "Apply Changes",
+                    ["GiveGearApply"] = "Give Items",
+                    ["GiveGearWorking"] = "Giving Items…",
+                    ["GiveGearUnavailable"] = "Give Gear requires a nearby recruited follower who is not busy or in danger.",
+                    ["GiveGearApplyFailed"] = "Items were not given. Check the offered equipment, ammunition and inventory changes, then try again.",
                     ["SwapGearTransferInProgress"] = "Please do not close until the transfer process is finished.",
                     ["SwapGearStale"] = "Inventory changed while editing. Nothing was applied; reopen Swap Gear.",
                     ["SwapGearNeedsWeapon"] = "Leave the follower at least one complete firearm before applying.",

@@ -1163,6 +1163,17 @@ namespace pitTeam.Patches
             });
         }
 
+#if DEBUG
+        internal static bool TryPrepareDebugRecruitProfile(Profile profile, EPlayerSide spawnSide, WildSpawnType role)
+        {
+            if (profile?.Info?.Settings?.Role != role) return false;
+            // SPT deliberately returns PMC profiles as Savage. Its normal ChooseProfile
+            // postfix assigns their faction from the role; this direct spawn skips that call.
+            if (role == WildSpawnType.pmcBEAR) profile.Info.Side = EPlayerSide.Bear;
+            else if (role == WildSpawnType.pmcUSEC) profile.Info.Side = EPlayerSide.Usec;
+            return profile.Info.Side == spawnSide;
+        }
+
         public async Task<bool> SpawnDebugFollower(pitAIBossPlayer player, EPlayerSide spawnSide, Action<string> onFailure = null)
         {
             if (player == null || Controller == null || Controller.BotSpawner == null)
@@ -1195,9 +1206,10 @@ namespace pitTeam.Patches
                 _ => WildSpawnType.assault
             };
 
+            bool separateScavGroup = spawnSide == EPlayerSide.Savage && GameplayModeRuntime.IsAllegiance;
             BotSpawnParams spawnParams = new BotSpawnParams
             {
-                ShallBeGroup = new ShallBeGroupParams(true, false, Mathf.Max(2, player.Followers.Count + 2))
+                ShallBeGroup = separateScavGroup ? null : new ShallBeGroupParams(true, false, Mathf.Max(2, player.Followers.Count + 2))
             };
 
             IProfileData data = new IProfileData(spawnSide, role, BotDifficulty.hard, spawnSide == EPlayerSide.Savage ? 5f : 0f, spawnParams);
@@ -1219,11 +1231,11 @@ namespace pitTeam.Patches
             {
                 try
                 {
-                    IProfileData safeData = new IProfileData(EPlayerSide.Savage, WildSpawnType.assault, BotDifficulty.normal, 0f, spawnParams);
-                    profile = await GenerateDebugSpawnProfile(botCreator, safeData, EPlayerSide.Savage, WildSpawnType.assault, false, token, "SpawnDebugFollower");
+                    IProfileData safeData = new IProfileData(spawnSide, role, BotDifficulty.normal, 0f, spawnParams);
+                    profile = await GenerateDebugSpawnProfile(botCreator, safeData, spawnSide, role, false, token, "SpawnDebugFollower");
                     if (profile != null)
                     {
-                        Modules.Logger.LogInfo("SpawnDebugFollower used safe fallback profile (Savage/assault)");
+                        Modules.Logger.LogInfo($"SpawnDebugFollower used normal-difficulty fallback profile ({spawnSide}/{role})");
                     }
                 }
                 catch (Exception ex)
@@ -1239,8 +1251,19 @@ namespace pitTeam.Patches
                 return false;
             }
 
-            profile.Info.GroupId = player.realPlayer.GroupId;
-            profile.Info.TeamId = player.realPlayer.Profile.Info.TeamId;
+            EPlayerSide? generatedSide = profile.Info?.Side;
+            if (!TryPrepareDebugRecruitProfile(profile, spawnSide, role))
+            {
+                onFailure?.Invoke($"game profile role mismatch: requested={spawnSide}/{role}, received={profile.Info?.Side}/{profile.Info?.Settings?.Role}");
+                return false;
+            }
+            if (generatedSide != profile.Info.Side)
+                Modules.Logger.LogInfo($"[DebugRecruit] Applied SPT PMC side correction: {generatedSide}->{profile.Info.Side}, role={role}.");
+            if (!separateScavGroup)
+            {
+                profile.Info.GroupId = player.realPlayer.GroupId;
+                profile.Info.TeamId = player.realPlayer.Profile.Info.TeamId;
+            }
             botsData.AddProfile(profile);
 
             AICorePoint closestCorePoint = GetClosestCorePoint(Controller, position);
@@ -1252,7 +1275,16 @@ namespace pitTeam.Patches
             botsData.AddPosition(position, closestCorePoint.Id);
 
             Func<BotOwner, BotZone, BotsGroup> groupAction = (BotOwner bt, BotZone zn) =>
-                GetPlayerGroup(player, bt, zn, Mathf.Max(2, player.Followers.Count + 2));
+            {
+                if (!separateScavGroup) return GetPlayerGroup(player, bt, zn, Mathf.Max(2, player.Followers.Count + 2));
+                var group = new BotsGroup(zn, botSpawnerClass.BotGame, bt,
+                    botSpawnerClass.GetBotEnemiesList(bt).ToList(), botSpawnerClass._deadBodiesController,
+                    botSpawnerClass._allPlayers, false);
+                group.TargetMembersCount = 1;
+                group.Lock();
+                botSpawnerClass.Groups.AddNoKey(group, zn);
+                return group;
+            };
 
             Action<BotOwner> onActivate = owner =>
             {
@@ -1268,8 +1300,14 @@ namespace pitTeam.Patches
                         me.Memory.DeleteInfoAboutEnemy(player.Player());
                         me.GetPlayer.ActiveHealthController.RestoreFullHealth();
 
+                        // Register before conversion so Scav diplomacy and cargo capture see
+                        // the same selected-friendly identity as an ordinary field recruit.
+                        AllegiancePmcFriendship.RegisterDebugRecruit(me, player.realPlayer);
                         WildSpawnType botRole = me.Profile.Info?.Settings?.Role ?? role;
-                        BossPlayers.AddFollower(me, player, true, botRole, "Default");
+                        var recruit = BossPlayers.AddFollower(me, player, false, botRole, "Default");
+                        if (recruit == null) throw new InvalidOperationException("Debug recruit conversion failed.");
+                        recruit.DebugForceRecruitInvite = spawnSide == EPlayerSide.Usec || spawnSide == EPlayerSide.Bear;
+                        Modules.Logger.LogInfo($"[DebugRecruit] Created field recruit '{me.ProfileId}' side={spawnSide} forceInvite={recruit.DebugForceRecruitInvite}.");
                         TrySayFollowerReadyControlled(me, 500);
                     }
                     catch (Exception ex)
@@ -1322,6 +1360,7 @@ namespace pitTeam.Patches
             return true;
         }
 
+#endif
         public async Task<bool> SpawnDebugScavEnemy(Vector3 position, Action<string> onFailure = null)
         {
             if (Controller == null || Controller.BotSpawner == null)
@@ -1602,6 +1641,7 @@ namespace pitTeam.Patches
         {
             Instance = __instance;
             FollowerInsuranceRaidReports.Reset();
+            GiveGearInsurance.Reset();
             FollowerInsuranceRaidDisplay.Clear();
         }
     }

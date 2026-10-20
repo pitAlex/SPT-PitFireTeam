@@ -29,7 +29,7 @@ class BotOwner
 class Boss { public Player realPlayer; }
 class BotFollowerPlayer
 {
-    public Boss Boss = new Boss(); public bool KnownEnemy; public bool IsSpawnedSquadMate = true;
+    public Boss Boss = new Boss(); public bool KnownEnemy; public bool IsSpawnedSquadMate = true; public bool IsSquadMate;
     public Boss GetBoss() => Boss; public bool HasKnownEnemy() => KnownEnemy;
 }
 static class TeammateBackpackInspection
@@ -40,7 +40,7 @@ static class TeammateBackpackInspection
 static class Admission
 {
     /* GATE */
-    public static string Check(GamePlayerOwner o, BotOwner b, BotFollowerPlayer f, bool applying = false) => UnsafeReason(o, b, f, applying);
+    public static string Check(GamePlayerOwner o, BotOwner b, BotFollowerPlayer f, bool applying = false, bool giving = false) => UnsafeReason(o, b, f, applying, giving);
 }
 static class GearSwapAdmissionFixture
 {
@@ -108,6 +108,14 @@ static class GearSwapAdmissionFixture
         Check(Admission.Check(owner, bot, follower) == "playerDeadOrUnavailable", "dead player preserved");
         owner.Player.HealthController.IsAlive = true;
         Check(Admission.Check(owner, null, follower) == "followerUnavailable", "missing target safe");
+        follower.IsSquadMate = false; follower.IsSpawnedSquadMate = false;
+        Check(Admission.Check(owner, bot, follower, giving: true) == null, "owned field recruit admits Give Gear without granting Swap Gear");
+        follower.IsSquadMate = true;
+        Check(Admission.Check(owner, bot, follower, giving: true) == "giveGearRequiresFieldRecruit", "saved teammate cannot open Give Gear");
+        Check(Admission.Check(owner, bot, follower, applying: true, giving: true) == "giveGearRequiresFieldRecruit", "Give Gear rechecks recipient category during Apply");
+        follower.IsSquadMate = false; follower.KnownEnemy = true;
+        Check(Admission.Check(owner, bot, follower, giving: true) == "knownEnemy", "Give Gear draft retains combat cancellation");
+        Check(Admission.Check(owner, bot, follower, applying: true, giving: true) == null, "accepted Give Gear Apply may finish protected after combat starts");
         Console.WriteLine("Swap Gear admission: " + checks + " assertions passed.");
     }
 }

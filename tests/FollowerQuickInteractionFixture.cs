@@ -10,8 +10,8 @@ using pitTeam.Modules;
 using pitTeam.Patches;
 using UnityEngine;
 
-namespace pitTeam { /* CUSTOM_PHRASES */ }
-namespace pitTeam.Patches { /* ROUTER */ /* INPUT_PATCHES */ }
+namespace pitTeam { /* CUSTOM_PHRASES */ internal static class pitFireTeam { public static string GetGestureText(string key) => key; } }
+namespace pitTeam.Patches { /* ROUTER */ /* INPUT_PATCHES */ internal static class CustomGestureText { /* INTERACTION_TEXT */ } }
 namespace SPT.Reflection.Patching
 {
     internal abstract class ModulePatch { protected abstract MethodBase GetTargetMethod(); }
@@ -68,7 +68,21 @@ namespace EFT
         public EBotState BotState = EBotState.Active;
         public bool IsDead = false;
         public bool HealPending;
+        public bool PickupPending;
+        public Memory Memory = new Memory();
+        public Weapons WeaponManager = new Weapons();
         public Player GetPlayer;
+    }
+    public sealed class Memory { public bool HaveEnemy, IsUnderFire; }
+    public sealed class Selector { public bool IsChanging; }
+    public sealed class Grenades { public bool ThrowindNow; }
+    public sealed class Reload { public bool Reloading; }
+    public sealed class WeaponInfo { public Reload Reload = new Reload(); }
+    public sealed class Weapons
+    {
+        public Selector Selector = new Selector(); public Grenades Grenades = new Grenades();
+        public WeaponInfo _currentWeaponInfo = new WeaponInfo(); public bool HandsAllowed = true;
+        public bool CanChangeHands() => HandsAllowed;
     }
     public sealed class GamePlayerOwner
     {
@@ -107,6 +121,8 @@ namespace pitTeam.Components
         public bool IsSpawnedSquadMate;
         public BotOwner Bot;
         public Boss Boss;
+        public bool KnownEnemy;
+        public bool HasKnownEnemy() => KnownEnemy;
         public BotOwner GetBot() => Bot;
         public Boss GetBoss() => Boss;
     }
@@ -116,7 +132,9 @@ namespace pitTeam.Modules
     internal static class TeammateGearSwap
     {
         internal static int OpenCalls;
+        internal static int GiveCalls;
         internal static void Open(GamePlayerOwner owner) { OpenCalls++; }
+        internal static void Open(GamePlayerOwner owner, bool giving) { if (giving) GiveCalls++; else OpenCalls++; }
     }
     public sealed class BossPlayers
     {
@@ -132,6 +150,7 @@ namespace pitTeam.Modules
         public static int OpenCalls;
         public static bool TryOpenFromQuickInteraction(GamePlayerOwner owner) { OpenCalls++; return true; }
         public static bool HasActiveOrPendingHealWork(BotOwner bot) => bot.HealPending;
+        public static bool HasActiveOrPendingPickupWork(BotOwner bot, BotFollowerPlayer follower) => bot.PickupPending;
         /* SWAP_TARGET */
         /* TARGET_RESOLUTION */
     }
@@ -159,6 +178,9 @@ internal static class QuickInteractionFixture
     }
     public static void Main()
     {
+        Check(CustomGestureText.FollowerInteractionTextUpper((EPhraseTrigger)CustomPhrases.GiveGear) == "GIVEGEAR", "Give Gear label does not fall through to View Backpack");
+        Check(CustomGestureText.FollowerInteractionTextUpper(Swap) == "SWAPGEAR", "Swap Gear label preserved");
+        Check(CustomGestureText.FollowerInteractionTextUpper(Backpack) == "VIEWBACKPACK", "View Backpack label preserved");
         var panel = new EFT.UI.Gestures.GesturesQuickPanel { PrioritizedCommand = Backpack, Activation = Backpack };
         var owner = new GamePlayerOwner { BattleUIScreenController = new EFT.UI.BattleUi { GesturesQuickPanel = panel } };
         Check(!Quick(owner) && TeammateBackpackInspection.OpenCalls == 1, "existing custom quick dispatch opens backpack");
@@ -225,6 +247,26 @@ internal static class QuickInteractionFixture
         BossPlayers.Followers.Clear();
         Check(!TeammateBackpackInspection.CanShowSwapGearInteraction(player), "non-follower excluded");
         Check(!TeammateBackpackInspection.CanShowSwapGearInteraction(null), "missing player excluded");
+        follower.Boss.realPlayer = player; follower.IsSquadMate = false; follower.IsSpawnedSquadMate = false;
+        BossPlayers.Followers.Add(follower);
+        Check(TeammateBackpackInspection.CanShowGiveGearInteraction(player), "owned idle field recruit can receive gear");
+        follower.IsSquadMate = true;
+        Check(!TeammateBackpackInspection.CanShowGiveGearInteraction(player), "saved squadmate cannot use Give Gear");
+        follower.IsSquadMate = false; bot.HealPending = true;
+        Check(!TeammateBackpackInspection.CanShowGiveGearInteraction(player), "healing recruit hides Give Gear");
+        bot.HealPending = false; bot.PickupPending = true;
+        Check(!TeammateBackpackInspection.CanShowGiveGearInteraction(player), "looting recruit hides Give Gear");
+        bot.PickupPending = false; follower.KnownEnemy = true;
+        Check(!TeammateBackpackInspection.CanShowGiveGearInteraction(player), "combat recruit hides Give Gear");
+        follower.KnownEnemy = false; bot.WeaponManager._currentWeaponInfo.Reload.Reloading = true;
+        Check(!TeammateBackpackInspection.CanShowGiveGearInteraction(player), "active reload hides Give Gear");
+        bot.WeaponManager._currentWeaponInfo.Reload.Reloading = false;
+        follower.Boss.realPlayer = new Player();
+        Check(!TeammateBackpackInspection.CanShowGiveGearInteraction(player), "foreign follower cannot receive gear");
+        panel.PrioritizedCommand = panel.Activation = (EPhraseTrigger)CustomPhrases.GiveGear;
+        Check(!Quick(owner) && TeammateGearSwap.GiveCalls == 1, "Give Gear quick dispatch is silent and separate from Swap Gear");
+        callback((EPhraseTrigger)CustomPhrases.GiveGear);
+        Check(TeammateGearSwap.GiveCalls == 2 && owner.Spoken == 1, "Give Gear dropdown dispatch preserves native speech routing");
         Console.WriteLine("Follower quick interaction fixture passed: " + _assertions + " assertions.");
     }
 }

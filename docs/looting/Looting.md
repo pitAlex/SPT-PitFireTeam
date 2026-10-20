@@ -110,7 +110,7 @@ Current behavior:
 - evaluates commanded loose long guns with the same primary-readiness model, independently of saved pickup filters
 - sends a primary-ready long gun to an empty `FirstPrimaryWeapon` slot
 - sends an under-ready long gun to empty `SecondPrimaryWeapon`, then backpack cargo
-- if support and backpack are unavailable while first primary is empty, permits a last-resort first-primary placement only when the inserted magazine has at least half of the smaller of its capacity and the weapon's ordinary magazine reference
+- if support and backpack are unavailable while first primary is empty, permits a last-resort first-primary placement only when the inserted magazine has at least half of its capacity capped at 30; this command-only placement floor is separate from normal readiness
 - leaves a dangerously underloaded weapon at the source when no honest support/cargo destination exists
 - registers looted weapon trees through `RegisterLootedWeaponTree(...)`
 - releases pickup animation/hand ownership before rebuilding a first-primary weapon's bot-manager state and requesting selection
@@ -408,10 +408,10 @@ Rules:
 
 - if `FirstPrimaryWeapon` is empty, a detachable-magazine long gun is evaluated from its inserted magazine and all compatible non-empty magazines in vanilla fast access
 - vanilla fast access is the follower's tactical vest plus pockets; backpack magazines remain cargo and never contribute
-- readiness normally requires two ordinary magazine equivalents; the ordinary reference is the largest capacity among compatible loaded magazines actually inserted, already in fast access, or accepted by the active transfer plan, capped at 30 rounds
-- theoretical compatible magazine templates do not affect the reference; five-round magazines require two full-magazine equivalents, where an inserted `4/5` or `5/5` counts as one and each full `5/5` fast-access spare counts as one
-- an inserted five-round magazine at `3/5` or below does not count as a full equivalent, so two full spares are required; partial spare magazines do not combine
-- for references larger than five rounds, an inserted magazine below half full contributes its actual rounds, at least half full contributes at least one ordinary reference, and compatible fast-access spares contribute their actual rounds
+- readiness requires actual usable rounds by caliber: pistol/SMG/intermediate rifle 60; 9×39/.366 TKM 40; 7.62×51/7.62×54R/6.8×51 30; .338 Lapua 20; shotgun 12; unknown/custom ordinary calibers 60
+- magazine capacity and theoretical compatible templates never change the target; five-round, half-full and drum magazines receive no artificial credit
+- compatible inserted and fast-access magazine rounds combine by actual count, plus live compatible chambered rounds counted once
+- specialized launcher feeds retain their separate existing readiness; grenade/flare calibers are outside ordinary detachable readiness
 - a detachable-magazine weapon with no inserted magazine first receives the most-loaded compatible magazine from the same body/container through a real transaction
 - insertion is a staging step: after it completes, the normal loaded-weapon planner runs again against live inventory, reserves reload landing space, moves fitting spares, and decides primary, secondary, or cargo placement
 - a package that remains under-ready after insertion follows the existing secondary and potential-cargo policies; `Pickup Weapons`, whole-tree price, and backpack fit still control ordinary cargo
@@ -532,10 +532,10 @@ When `Pickup Weapons` enables normal weapon work, loose ammunition on a searched
 - `Immersive`/`Realistic` may use compatible searched-source ammunition after carried supply; `Restricted` do not merge searched rounds into protected spawned magazines and may only carry accepted source ammunition as returnable cargo
 - top-off only fills free capacity: it never unloads, replaces, or rearranges cartridges that are already inside a magazine
 - after existing magazines are topped off, compatible source magazines are assigned to reload-safe vest or pocket space before remaining loose ammunition is judged as surplus; an empty source magazine participates only when compatible loose ammunition is available to fill it
-- **need weight** is the compatible carried-round deficit against the weapon's two-magazine reserve target
+- **need weight** is the compatible carried-round deficit against the weapon's caliber-based reserve target
 - **power weight** is source penetration versus the round-weighted penetration of all compatible rounds already carried, including loaded magazines, chambers, loose stacks, and strict cargo
-- below one ordinary magazine, critical need accepts any mechanically compatible source round
-- between one and two magazine equivalents, need weight and the relative penetration gain/loss are combined; severe downgrades can be rejected when the remaining shortage is small
+- below half the reserve target, critical need accepts any mechanically compatible source round
+- between half and the full reserve target, need weight and the relative penetration gain/loss are combined; severe downgrades can be rejected when the remaining shortage is small
 - at or above reserve, additional ammunition is limited to the secure-storage
   rule above; otherwise the existing tactical upgrade decision applies
 - these tactical decisions supersede ordinary price/category pickup only for loose rounds compatible with the equipped primary; unrelated ammunition remains under normal filters
@@ -579,7 +579,7 @@ An already-equipped detachable-magazine secondary receives ammunition maintenanc
 
 Tube-fed and other `InternalMagazine` weapons use a separate loose-ammunition path:
 
-- the attached internal magazine capacity is the readiness reference; primary readiness requires two capacity equivalents
+- ordinary internal-magazine weapons use the shared caliber target; attached feed capacity affects loading only, while specialized launchers retain their separate two-load rule
 - loaded contribution is the live rounds in the attached magazine plus live rounds in the chamber
 - reserve contribution comes only from compatible loose ammunition already carried in vanilla reload-search locations, or source stacks proven to fit in secure container, pockets, backpack, or reload-safe vest space
 - loose ammunition inside another magazine or weapon never counts
@@ -596,12 +596,12 @@ Tube-fed and other `InternalMagazine` weapons use a separate loose-ammunition pa
 
 Supported non-launcher `OnlyBarrel` weapons, including single-shot and double-barrel break actions, use their live chambers as the attached feed:
 
-- readiness is the larger of two complete chamber-load equivalents or eight total rounds; a two-chamber shotgun therefore needs eight shells
+- readiness uses the shared caliber target; a two-chamber shotgun needs 12 total usable shells
 - only live, unspent chamber rounds contribute as loaded ammunition
 - compatible loose reserve rounds use the same strict-cargo exclusion and secure-container, pockets, backpack, reload-safe-vest placement rules as internal-magazine reserves
 - an empty or partially loaded weapon fills one empty chamber at a time through vanilla's off-hands `Weapon.Apply(...)` inventory transaction
 - every chamber transaction must settle and increase the live chamber count before another shell, reserve stack, or weapon destination is planned
-- eight rounds is only the primary-readiness threshold; accepted compatible source stacks still move whole through the established loose-ammo policy
+- the caliber target is only the primary-readiness threshold; accepted compatible source stacks still move whole through the established loose-ammo policy
 - a ready chamber-fed weapon enters first primary; an under-ready loaded weapon may use empty second primary; ordinary `Pickup Weapons` and price rules own cargo when no equipment destination is available
 - with a working primary, an optional chamber-fed support add still requires `Pickup Weapons` and announces `EPhraseTrigger.LootGeneric`
 - later compatible source shells may complete and promote one tracked chamber-fed secondary or backpack weapon
@@ -665,9 +665,9 @@ Filtered body/container rules:
 
 Empty-slot acquisition and weapon-support tests:
 
-- missing-primary weapon equip uses the centralized two-ordinary-magazine readiness formula after all planned fast-access transfers settle
-- tube-fed/internal-magazine weapons load the attached magazine first, then count only settled loaded rounds and fitting loose reserves toward two-load readiness
-- supported single- and multi-chamber break-action weapons load empty chambers one real round transaction at a time and require at least eight total rounds; accepted compatible loose-ammo stacks still move whole
+- missing-primary weapon equip uses the centralized caliber-based actual-round readiness formula after all planned fast-access transfers settle
+- ordinary tube-fed/internal-magazine weapons load the attached magazine first, then count only settled loaded rounds and fitting loose reserves toward their caliber target
+- supported single- and multi-chamber break-action weapons load empty chambers one real round transaction at a time and use the caliber target (12 total shells for shotguns); accepted compatible loose-ammo stacks still move whole
 - internal-feed loose ammunition nested in magazines/weapons or marked as strict cargo is ignored
 - accepted weapon-support loose ammunition uses secure container, pockets, backpack, then reload-safe vest space; detachable-magazine readiness remains magazine-only
 - detachable-magazine loose-ammo top-off fills acquired inserted/source magazines before readiness and never counts uncommitted loose cartridges

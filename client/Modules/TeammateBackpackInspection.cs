@@ -125,6 +125,20 @@ namespace pitTeam.Modules
                    !HasActiveOrPendingHealWork(bot);
         }
 
+        public static bool CanShowGiveGearInteraction(Player player)
+        {
+            var bot = ResolveInteractionTargetPlayer(player, false)?.AIData?.BotOwner;
+            var follower = BossPlayers.Instance?.GetFollower(bot);
+            return player?.HealthController?.IsAlive == true && bot != null && !bot.IsDead &&
+                bot.BotState == EBotState.Active && follower?.IsSquadMate == false &&
+                follower.GetBoss()?.realPlayer == player && !follower.HasKnownEnemy() &&
+                bot.Memory?.HaveEnemy != true && bot.Memory?.IsUnderFire != true &&
+                !HasActiveOrPendingHealWork(bot) && !HasActiveOrPendingPickupWork(bot, follower) &&
+                bot.WeaponManager?.Selector?.IsChanging != true && bot.WeaponManager?.Grenades?.ThrowindNow != true &&
+                bot.WeaponManager?._currentWeaponInfo?.Reload?.Reloading != true &&
+                bot.WeaponManager?.CanChangeHands() == true;
+        }
+
         public static bool TryOpenFromQuickInteraction(GamePlayerOwner owner)
         {
             try

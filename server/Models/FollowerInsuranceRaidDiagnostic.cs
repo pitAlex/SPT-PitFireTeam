@@ -20,6 +20,7 @@ public sealed class FollowerInsuranceRaidDiagnostic
     public List<string> ReceivedReportIds { get; set; } = [];
     public List<string> PlayerItemIds { get; set; } = [];
     public List<string> CourierItemIds { get; set; } = [];
+    public List<string> GiftedItemIds { get; set; } = [];
     public List<string> TransferItemIds { get; set; } = [];
     public List<FollowerInsuranceRaidParticipant> Participants { get; set; } = [];
     public List<FollowerInsuranceRaidItem> InsuredItems { get; set; } = [];

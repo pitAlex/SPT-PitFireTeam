@@ -14,6 +14,10 @@ public class FriendlyPostRaidRouter(JsonUtil jsonUtil, FriendlyPostRaidCallbacks
     : StaticRouter(
         jsonUtil,
         [
+            new RouteAction<GiveGearInsuranceRequest>(
+                "/singleplayer/pitfireteam/give-gear/insurance-cancel",
+                async (url, info, sessionId, output, cancellationToken) => await FriendlyModeRequestGate.Run(() => callbacks.GiveGearInsurance(info, sessionId))
+            ),
             new RouteAction<FriendlyScavCargoRequest>(
                 "/singleplayer/pitfireteam/scav-cargo",
                 async (url, info, sessionId, output, cancellationToken) => await FriendlyModeRequestGate.Run(() => callbacks.ScavCargo(info, sessionId))

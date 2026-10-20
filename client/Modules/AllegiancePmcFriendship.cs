@@ -71,6 +71,25 @@ namespace pitTeam.Modules
         private static bool IsCandidate(BotOwner bot) => IsPmc(bot) ||
             (GameplayModeRuntime.IsAllegiance && IsRegularScav(bot));
 
+#if DEBUG
+        internal static void RegisterDebugRecruit(BotOwner bot, IPlayer leader)
+        {
+            if (bot == null || string.IsNullOrEmpty(bot.ProfileId) || leader?.IsYourPlayer != true ||
+                leader.ProfileId != Human?.ProfileId || !IsCandidate(bot)) return;
+            if (Decisions.TryGetValue(bot.ProfileId, out var previous))
+            {
+                previous.Greeting.Cancel();
+                previous.Interaction.Cancel(previous.Bot);
+                if (previous.MemberAdded != null) previous.Group.OnMemberAdd -= previous.MemberAdded;
+            }
+            Decisions[bot.ProfileId] = new Decision
+            {
+                Bot = bot, Group = bot.BotsGroup, Friendly = true,
+                SelectionChance = 1f, RecruitmentAccepted = true, RecruitmentChance = 1f
+            };
+        }
+#endif
+
         private static bool IsGrouped(BotOwner bot)
         {
             var group = bot.BotsGroup;

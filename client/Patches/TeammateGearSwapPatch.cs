@@ -101,6 +101,28 @@ namespace pitTeam.Patches
             Canvas.willRenderCanvases += positionButton;
             positionButton();
 
+            CreateTransferFeedback(panel, rect, label, out var progress, out var notice);
+            button.OnClick.AddListener(async () =>
+            {
+                if (session.Applying) return;
+                button.Interactable = false;
+                button.gameObject.SetActive(false);
+                progress.SetActive(true);
+                notice.SetActive(true);
+                await session.Apply();
+                if (ReferenceEquals(TeammateGearSwap.Current, session) && button != null)
+                {
+                    progress.SetActive(false);
+                    notice.SetActive(false);
+                    button.gameObject.SetActive(true);
+                    button.Interactable = true;
+                }
+            });
+        }
+
+        internal static void CreateTransferFeedback(Component panel, RectTransform rect, TMP_Text label,
+            out GameObject progress, out GameObject notice)
+        {
             // Reuse the actual item-thumbnail loading prefab, including its artwork/animation.
             GameObject loaderTemplate = panel.GetComponentsInChildren<ItemView>(true)
                 .Select(view => view._iconLoader).FirstOrDefault(loader => loader != null)
@@ -109,7 +131,7 @@ namespace pitTeam.Patches
                 ?? Resources.FindObjectsOfTypeAll<ItemIconView>()
                     .Select(view => view.IconLoader).FirstOrDefault(loader => loader != null);
             if (loaderTemplate == null) throw new InvalidOperationException("Item loading indicator template is unavailable.");
-            var progress = UnityEngine.Object.Instantiate(loaderTemplate, rect, false);
+            progress = UnityEngine.Object.Instantiate(loaderTemplate, rect, false);
             progress.name = "TransferProgress";
             progress.SetActive(false);
             var progressRect = (RectTransform)progress.transform;
@@ -118,7 +140,7 @@ namespace pitTeam.Patches
             progressRect.sizeDelta = new Vector2(24f, 24f);
             progressRect.localScale = Vector3.one;
             foreach (var graphic in progress.GetComponentsInChildren<Graphic>(true)) graphic.raycastTarget = false;
-            var notice = new GameObject("TransferNotice", typeof(RectTransform), typeof(Image));
+            notice = new GameObject("TransferNotice", typeof(RectTransform), typeof(Image));
             notice.SetActive(false);
             notice.transform.SetParent(rect, false);
             var noticeRect = (RectTransform)notice.transform;
@@ -142,22 +164,6 @@ namespace pitTeam.Patches
             noticeText.rectTransform.anchorMax = Vector2.one;
             noticeText.rectTransform.offsetMin = new Vector2(8f, 4f);
             noticeText.rectTransform.offsetMax = new Vector2(-8f, -4f);
-            button.OnClick.AddListener(async () =>
-            {
-                if (session.Applying) return;
-                button.Interactable = false;
-                button.gameObject.SetActive(false);
-                progress.SetActive(true);
-                notice.SetActive(true);
-                await session.Apply();
-                if (ReferenceEquals(TeammateGearSwap.Current, session) && button != null)
-                {
-                    progress.SetActive(false);
-                    notice.SetActive(false);
-                    button.gameObject.SetActive(true);
-                    button.Interactable = true;
-                }
-            });
         }
     }
 

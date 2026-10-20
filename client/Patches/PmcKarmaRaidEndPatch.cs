@@ -15,6 +15,7 @@ namespace pitTeam.Patches
         [PatchPrefix]
         private static void PatchPrefix(string profileId, ExitStatus exitStatus, string exitName)
         {
+            GiveGearInsurance.EndRaid(profileId);
             try { AllegianceScavCargo.EndRaid(profileId, exitStatus, exitName); }
             catch (Exception ex) { Logger.LogError("[ScavCargo] Raid-end capture failed: " + ex); }
             try { PmcKarmaRuntime.EndRaid(profileId, exitStatus); }

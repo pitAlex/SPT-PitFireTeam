@@ -93,9 +93,7 @@ namespace pitTeam.BigBrain.Actions
                     projectedBeforeTopOff.ToDiagnosticString());
             }
 
-            int reserveTargetRounds = ResolveMagazineTopOffReserveTargetRounds(
-                projectedBeforeTopOff,
-                targets);
+            int reserveTargetRounds = projectedBeforeTopOff.Threshold;
             List<EFT.InventoryLogic.Ammo> carriedAmmo = GetFollowerWeaponCartridgeItems(
                     followerEquipment,
                     weapon)
@@ -274,18 +272,6 @@ namespace pitTeam.BigBrain.Actions
             }
 
             return null;
-        }
-
-        private static int ResolveMagazineTopOffReserveTargetRounds(
-            WeaponPrimaryReadinessSnapshot projected,
-            IEnumerable<MagazineTopOffTarget> targets)
-        {
-            int largestAvailableCapacity = targets?
-                .Select(target => Math.Max(0, target?.Magazine?.MaxCount ?? 0))
-                .DefaultIfEmpty(0)
-                .Max() ?? 0;
-            int capacityThreshold = Math.Min(30, largestAvailableCapacity) * 2;
-            return Math.Max(projected?.Threshold ?? 0, capacityThreshold);
         }
 
         private static bool CanTopOffMagazineWithAmmo(

@@ -23,6 +23,12 @@ public class FriendlyPostRaidCallbacks(
     ISptLogger<FriendlyPostRaidCallbacks> logger
 )
 {
+    public ValueTask<string> GiveGearInsurance(GiveGearInsuranceRequest request, MongoId sessionId)
+    {
+        insuranceDiagnostics.CancelGiftInsurance(sessionId, request);
+        return new ValueTask<string>(httpResponse.NullResponse());
+    }
+
     public ValueTask<string> ScavCargo(FriendlyScavCargoRequest request, MongoId sessionId)
     {
         scavCargo.Queue(sessionId, request);

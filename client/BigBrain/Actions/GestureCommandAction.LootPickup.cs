@@ -450,10 +450,8 @@ namespace pitTeam.BigBrain.Actions
             }
 
             int insertedCapacity = Math.Max(0, readiness.InsertedCapacity);
-            int ordinaryReference = Math.Max(0, readiness.OrdinaryReference);
-            int usableBasis = insertedCapacity > 0 && ordinaryReference > 0
-                ? Math.Min(insertedCapacity, ordinaryReference)
-                : Math.Max(insertedCapacity, ordinaryReference);
+            // Last-resort loose pickup is a placement safety exception, not primary readiness.
+            int usableBasis = Math.Min(30, insertedCapacity);
             return Math.Max(1, (usableBasis + 1) / 2);
         }
 

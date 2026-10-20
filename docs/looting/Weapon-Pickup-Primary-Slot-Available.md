@@ -21,7 +21,7 @@ This document preserves the runtime contract and qualification matrix. Completed
 
 Included:
 
-- ordinary magazine reference calculation
+- caliber-based actual-round readiness
 - inserted-magazine contribution
 - compatible fast-access magazine contribution
 - body/container magazine-first transfer flow
@@ -56,9 +56,9 @@ Excluded:
 
 `Compatible magazine` is a magazine accepted by the candidate's current magazine slot whose every loaded cartridge is also accepted by the weapon. Mechanical fit alone is insufficient because shared magazine families can hold ammunition for different weapon calibers. A mixed magazine is operational only when every remaining cartridge is compatible.
 
-`Ordinary reference` is the largest capacity among the compatible loaded magazines actually available to the current live or projected plan, capped at 30 rounds. It includes the inserted magazine, compatible magazines already in fast access, and compatible magazines proven to fit through the active transfer plan. Magazine templates that are merely compatible with the weapon do not affect readiness.
+`Readiness target` is the minimum actual usable round total for the weapon caliber, resolved by `FollowerWeaponAmmoReadinessPolicy`. Neither compatible templates nor magazine capacity can change it.
 
-`Primary-ready` means the candidate has at least two ordinary magazine equivalents of immediately usable ammunition. For five-round magazines, those equivalents are counted by magazine state rather than by combining rounds.
+`Primary-ready` means the candidate meets its caliber target with immediately usable ammunition. No partial magazine receives fictional rounds or whole-magazine credit.
 
 `Support weapon` is an unready candidate stored in `SecondPrimaryWeapon`. It is an inert holding slot in this scenario, not a custom vanilla main-weapon override. The support slot is never displaced by this feature.
 
@@ -66,19 +66,25 @@ Excluded:
 
 A `recruited backpack spare` is a compatible loose cargo magazine that an active weapon plan can physically move into vest or pockets. It contributes only after that transfer succeeds; while it remains in the backpack it contributes nothing.
 
-## Frozen Readiness Rules
+## Current Readiness Rules (2026-10-19)
 
-Let `R` be the ordinary reference and, for magazines larger than five rounds, let `T = 2 * R` be the readiness threshold.
+Let `T` be the caliber target:
 
-Five-round magazines use a full-magazine-equivalent rule. An inserted `4/5` or `5/5` magazine counts as one full equivalent. An inserted magazine at `3/5` or below does not count as a full equivalent, so two full `5/5` spares are required. Partial spare magazines never combine into a full equivalent. Therefore `2/5 + 5/5 + 5/5`, `3/5 + 5/5 + 5/5`, `4/5 + 5/5`, and `5/5 + 5/5` are ready, while `3/5 + 5/5` and `5/5 + 4/5` are not.
+| Caliber group | Actual usable rounds |
+|---|---:|
+| Pistol/SMG, intermediate rifle (including .300 BLK) | 60 |
+| 9×39, .366 TKM | 40 |
+| 7.62×51, 7.62×54R, 6.8×51 | 30 |
+| .338 Lapua | 20 |
+| 12/20 gauge, 23×75 | 12 |
+| Unknown/custom ordinary calibers | 60 |
 
-Inserted-magazine contribution for magazines larger than five rounds:
+Loaded contribution:
 
 - no inserted magazine contributes `0`
-- an inserted magazine below half full contributes its actual rounds
-- an inserted magazine at least half full contributes at least `R`
-- when the inserted magazine contains more than `R`, all of its actual rounds contribute
-- exactly half full uses the at-least-half-full rule
+- every inserted magazine contributes only its actual compatible rounds
+- live compatible chamber rounds count once, separately from the magazine
+- half-full, nearly full five-round and drum magazines receive no special credit
 
 Fast-access spare contribution:
 
@@ -87,20 +93,14 @@ Fast-access spare contribution:
 - wrong-caliber, mixed-incompatible, empty, backpack, and failed-transfer magazines contribute `0`
 - an incompatible cartridge in the inserted magazine makes the weapon unready until an explicit later operation replaces or unloads that magazine
 
-Decision for magazines larger than five rounds:
+Decision:
 
 - primary-ready when total contribution is at least `T`
 - without an inserted magazine, at least one compatible non-empty fast-access magazine must also be loadable
 - a planned transfer never counts until the transaction succeeds
 - readiness is recalculated from current inventory state; no historical "magazines still needed" counter is kept
 
-Decision for five-round magazines:
-
-- an inserted magazine at `4/5` or `5/5` contributes one full magazine equivalent
-- an inserted magazine at `3/5` or below contributes no full magazine equivalent
-- each compatible `5/5` fast-access spare contributes one full magazine equivalent
-- partial spare rounds do not combine into a full magazine equivalent
-- the weapon is ready at two full magazine equivalents
+Internal/chamber-fed ordinary weapons use the same caliber target, counting settled loaded rounds and eligible compatible loose reserves. Capacity remains relevant to physical loading, not the minimum. Detachable-feed loose ammo counts only after actual loading; backpack magazines count only after successful fast-access placement. Specialized launcher feeds retain their existing policy (including the M32 two-load cylinder rule); grenade/flare calibers do not enter ordinary detachable readiness.
 
 ## Existing Reload-Space Invariant
 
@@ -136,7 +136,7 @@ Known baseline differences from this contract:
 
 | Phase | Scope | Status |
 |---|---|---|
-| P1 | Central readiness model, available-magazine reference resolver, actual fast-access scanner, shadow diagnostics, deterministic formula tests | Complete |
+| P1 | Central readiness model, caliber target resolver, actual fast-access scanner, shadow diagnostics, deterministic formula tests | Complete; caliber revision needs raid qualification |
 | P2 | Body/container pickup with an inserted magazine; final destination from post-transfer live state | Implemented; runtime testing pending |
 | P3 | No-inserted-magazine transaction and mandatory magazine load before primary equip | Implemented for body/container sources; staged insertion and overflow salvage paths passed separately at runtime |
 | P4 | Commanded loose weapon/magazine pickup integration without changing non-weapon pickup or voice behavior | Implemented; runtime retest pending |
@@ -154,10 +154,10 @@ P1 must not change live weapon destination decisions.
 P1 deliverables:
 
 - one side-effect-free round-contribution calculator
-- one EFT adapter that derives the ordinary reference from compatible loaded magazines participating in the live or projected plan
+- one caliber-target resolver shared by live and projected evaluation
 - one EFT adapter that snapshots compatible magazines from actual `Inventory.FastAccessSlots`
-- reference resolution from the inserted magazine plus compatible actual or planned fast-access magazines
-- a diagnostic snapshot containing reference, threshold, inserted state, inserted contribution, spare rounds, total contribution, readiness, and reason
+- actual round counts from the inserted magazine, chambers and compatible actual or planned fast-access magazines
+- a diagnostic snapshot containing caliber, threshold, inserted state, chamber rounds, spare rounds, total contribution, readiness, and reason
 - a projected diagnostic that may include planned fast-access transfers but is clearly labeled as projection rather than actual state
 - deterministic Debug-build tests covering the required arithmetic scenarios
 
@@ -274,7 +274,7 @@ Destination order:
 4. if support and backpack are unavailable while first primary is empty, permit `FirstPrimaryWeapon` only when the inserted magazine is not dangerously low
 5. otherwise leave the weapon at the source and report negative
 
-The last-resort minimum is half, rounded up, of the smaller of the inserted magazine capacity and ordinary reference. Examples with `R=30`:
+The last-resort placement floor is half, rounded up, of the inserted magazine capacity capped at 30. This explicit command-only exception is separate from caliber-based readiness:
 
 - `15/30`, `15/60`, and full `5/5` pass the last-resort floor
 - `14/30`, `14/60`, and no inserted magazine fail it
@@ -295,9 +295,9 @@ P5 handles the exact continuation of an under-threshold pickup when both long-gu
 
 Promotion is blocked while the follower is dead, inactive, in combat, teleporting, reloading, changing hands, or executing another loot/pickup command. It never displaces an occupied primary and never counts backpack magazines.
 
-## Formula Scenario Matrix
+## Historical Formula Scenario Matrix (superseded 2026-10-19)
 
-Unless specified otherwise, the ordinary reference is 30 and the threshold is 60.
+The matrix below records the retired capacity-credit formula, not current acceptance. Current production formula and adapter checks are in `tests/WeaponReadiness`; all caliber groups are tested immediately below, at and above their targets across 5/20/30/60/100-round capacities. New caliber behavior requires in-raid retesting. Earlier runtime passes below do not qualify the new formula.
 
 | ID | Inserted magazine | Compatible fast-access spares | Expected | Formula | Runtime |
 |---|---:|---:|---|---|---|
@@ -366,7 +366,7 @@ Unless specified otherwise, the ordinary reference is 30 and the threshold is 60
 | WI-37 | Realistic follower already carries the normal compatible bullet target | Ignore saturation and take every compatible source stack that fits | P7 loose-ammo support | Implemented; runtime pending |
 | WI-38 | Working primary, `Pickup Weapons` disabled, empty second primary, and no one-shot weapon request | Reject the optional support add before moving its weapon, magazines, or loose ammunition; ordinary filtered looting also leaves that gear at the source | Support gate | Historical runtime pass; current request gate fixture covered |
 | WI-39 | Empty `OnlyBarrel` double-barrel shotgun and compatible loose shells | Load both chambers through real transactions, keep seven total rounds under-ready, require eight or more for primary readiness, and carry accepted compatible source stacks whole | P8 | Runtime passed |
-| WI-40 | Empty non-launcher single-chamber `OnlyBarrel` weapon and compatible loose ammunition | Load `Chambers[0]` through the shared real transaction, require eight total rounds, carry accepted source stacks whole, then classify from settled state | P8 | Runtime passed |
+| WI-40 | Empty non-launcher single-chamber `OnlyBarrel` weapon and compatible loose ammunition | Load `Chambers[0]` through the shared real transaction, require the caliber target, carry accepted source stacks whole, then classify from settled state | P8 | Previous threshold runtime passed; caliber revision pending |
 | WI-41 | A `RevolverItemClass` weapon is classified for equipment use | Keep `WeapClass=pistol` revolvers on the holster path; route shotgun, launcher, and custom rifle/sniper revolvers through the shoulder-weapon readiness pipeline | P9 | Implemented; MTs-255 runtime pending |
 | WI-42 | A mechanically compatible magazine contains ammunition for another caliber, or a mixed incompatible load | Reject it from support-magazine transfer and readiness; reject an incompatible inserted load as weapon-unready even when good spares exist | Magazine ammunition validation | Implemented; runtime pending |
 | WI-43 | A loaded internal-magazine revolver has enough compatible loose reserves but exposes no accepting chamber slot | Treat cylinder compatibility as authoritative, count only reserves proven to fit protected carry space, and classify primary at two cylinder capacities | P9 cylinder readiness | Runtime passed with M32 `6/6` plus six loose grenades |
@@ -468,11 +468,11 @@ Not yet runtime-covered:
 
 ## Feed-System Revisit
 
-Internal-magazine weapons now have a separate first implementation. Their reference is the attached magazine capacity, their readiness threshold is two complete capacity equivalents, and their contribution is the rounds already in the attached magazine/chamber plus compatible loose reserve rounds that are already carried or proven to fit in secure container, pockets, backpack, or reload-safe vest space. Before equipment placement, compatible source ammunition fills the attached magazine through a real EFT load transaction. A failed or interrupted load contributes nothing. For `RevolverItemClass` internal feeds, the cylinder's compatibility is authoritative because shoulder-fired revolvers such as the M32 may expose no separate accepting chamber slot.
+Ordinary internal-magazine weapons use the shared caliber target. Their contribution is actual rounds in the attached magazine/chamber plus compatible loose reserves already carried or proven to fit in secure container, pockets, backpack, or reload-safe vest space. Specialized internal launchers retain their existing two-capacity rule. Before equipment placement, compatible source ammunition fills the attached magazine through a real EFT load transaction. A failed or interrupted load contributes nothing. For `RevolverItemClass` internal feeds, cylinder compatibility is authoritative because shoulder-fired revolvers such as the M32 may expose no separate accepting chamber slot.
 
 The internal-feed path deliberately excludes loose rounds nested inside another weapon or magazine and strict cargo placed manually through `View Backpack` from readiness. The shared saturation check still counts all compatible loose bullets physically carried by a non-Realistic follower, including strict cargo, so manual cargo can prevent unnecessary collection without silently becoming usable gear. The path supports later source-ammo promotion for one tracked second-primary or backpack weapon. It does not change detachable-magazine fast-access rules.
 
-Non-launcher `OnlyBarrel` weapons now use a separate chamber-fed implementation for both single- and multi-chamber break actions. Their threshold is the larger of two chamber-load equivalents or eight total rounds, so low-capacity weapons need eight rounds. Only live unspent chamber rounds plus compatible loose reserves that are already carried or proven to fit can contribute. Empty chambers are loaded one round at a time through vanilla's off-hands `Weapon.Apply(...)` transaction; vanilla selects `Chambers[0]` for a single chamber and the first free slot for multiple chambers. Each transaction must increase the live chamber count before planning continues, which prevents speculative rounds or stale split-stack references from entering readiness. The threshold controls weapon classification only; accepted compatible loose-ammo stacks retain the existing whole-stack transfer policy.
+Non-launcher `OnlyBarrel` weapons use a separate chamber-fed adapter for single- and multi-chamber break actions, with the shared caliber target (12 total shells for shotguns). Only live unspent chamber rounds plus compatible loose reserves already carried or proven to fit can contribute. Empty chambers are loaded one round at a time through vanilla's off-hands `Weapon.Apply(...)` transaction; vanilla selects `Chambers[0]` for a single chamber and the first free slot for multiple chambers. Each transaction must increase the live chamber count before planning continues, preventing speculative rounds or stale split-stack references from entering readiness. The threshold controls weapon classification only; accepted compatible loose-ammo stacks retain the existing whole-stack transfer policy.
 
 The first detachable-magazine top-off slice is implemented for a missing-primary candidate:
 
@@ -490,9 +490,9 @@ Later phases still need these distinct ownership and transaction models:
 - non-pistol revolvers now enter the shoulder-weapon pipeline by `WeapClass`; the MTs-255 cylinder must verify the shared internal-magazine transaction path in raid, while holster-revolver gear behavior remains separate
 - equipped-primary donor consolidation remains separate from the acquired-package implementation
 
-P12 equipped-primary top-off fills free capacity in compatible vest/pocket magazines, prefers loose ammunition already carried by the follower, and allows Immersive/Realistic to use searched-source rounds when weapon pickup is authorized by the current setting/request. Weapon readiness requires two ordinary magazine equivalents, while tactical loose-ammunition stocking continues to three ordinary magazine equivalents before quantity need is considered satisfied. High-penetration ammunition at `50+` remains an upgrade opportunity even above that stock target. It does not unload or replace existing cartridges. Acquired-package donor consolidation is implemented separately; applying the same ownership model to spawned primary magazines remains deferred.
+P12 equipped-primary top-off fills free capacity in compatible vest/pocket magazines, prefers loose ammunition already carried by the follower, and allows Immersive/Realistic to use searched-source rounds when weapon pickup is authorized by the current setting/request. Weapon readiness uses the caliber target; ordinary tactical loose-ammunition stocking continues to 1.5 times that target. Shotgun tactical stocking retains its separate three-stack policy. High-penetration ammunition at `50+` remains an upgrade opportunity even above that stock target. It does not unload or replace existing cartridges. Acquired-package donor consolidation is implemented separately; applying the same ownership model to spawned primary magazines remains deferred.
 
-Acquired-package repacking uses real EFT magazine-load transactions and settled counts. It tops off the inserted magazine first, then the fullest useful accepted targets from the least-full donors, and reruns the existing largest-available reference and readiness evaluation after each transfer. Donor rounds cannot count twice; a failed or interrupted transfer leaves readiness based only on the magazine states that actually settled.
+Acquired-package repacking uses real EFT magazine-load transactions and settled counts. It tops off the inserted magazine first, then the fullest useful accepted targets from the least-full donors, and reruns caliber-based actual-round readiness after each transfer. Donor rounds cannot count twice; a failed or interrupted transfer leaves readiness based only on the magazine states that actually settled.
 
 Loose cartridges must not contribute speculatively. Compatibility, available stack count, magazine capacity, inventory ownership, and every real load, top-off, or repacking transaction must succeed before the resulting loaded rounds count toward primary readiness. These feed systems require their own scenario matrices and runtime tests rather than being folded into the current magazine-move logic.
 
@@ -504,7 +504,7 @@ Each snapshot should identify:
 
 - follower and candidate weapon
 - evaluation kind: `actual` or `plannedProjection`
-- ordinary reference and threshold
+- caliber and threshold
 - inserted rounds, capacity, and contribution
 - compatible fast-access magazine count and total rounds
 - projected additional fast-access rounds, when applicable

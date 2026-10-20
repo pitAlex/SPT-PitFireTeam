@@ -40,6 +40,13 @@ public class FriendlyPostRaidService(
     private static readonly ConcurrentDictionary<string, Dictionary<string, KillMessageRecord>> KillMessageRecords = new();
     private static readonly ConcurrentDictionary<string, HashSet<string>> ProtectedRaidItemIds = new();
 
+    internal static HashSet<string> SnapshotProtectedRaidItemIds(MongoId sessionId)
+    {
+        if (!ProtectedRaidItemIds.TryGetValue(sessionId.ToString(), out var ids))
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        lock (ids) return new HashSet<string>(ids, StringComparer.OrdinalIgnoreCase);
+    }
+
     private static readonly string[] ReturnItemsMessages =
     [
         "Items received from your teammate. Ready for you to claim.",

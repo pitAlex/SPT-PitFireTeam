@@ -39,6 +39,8 @@ internal static class ModeStorageTests
             var session = new MongoId("aaaaaaaaaaaaaaaaaaaaaaaa");
             storage.InitializeProfile(session);
             RestrictedEquipmentPersistenceTests.Run(storage, settings, new JsonUtil([new SptJsonConverterRegistrator()]), session, check);
+            RecruitProtectionTests.Run(storage, settings, new JsonUtil([new SptJsonConverterRegistrator()]), session, check);
+            DebugRecruitInviteTests.Run(check);
             RecruitAggressionPersistenceTests.Run(storage,session,check);
             SelfDeterminationPersistenceTests.Run(storage,session,check);
             storage.WriteBatch(session, new Dictionary<string, string>

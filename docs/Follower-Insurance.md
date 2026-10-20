@@ -93,6 +93,8 @@ Failures use `FollowerInsurance:Purchase`, with response-loss refresh failures u
 
 ## Persistent Policies and Equipment Transfers
 
+[Give Gear](Give-Gear-Spec.md) preserves existing insurance throughout the raid, including on gifts recovered from a dead recruited PMC. Only at final raid/departure capture do exact donated IDs still carried by a living field PMC become permanent gifts and lose coverage. Player-recovered items, dead recipients, dropped gifts and Restricted protected loans do not enter that cancellation report; no new insurance is granted. Capture runs before follower teardown/report sealing, including player-death teardown, and is idempotent. Recruited Scav donations retain the separate Fence rules, including mail insurance cleanup. The exact-raid gift ledger removes active/original-follower policies and queued native copies and excludes those IDs from follower loss settlement; it cannot create a policy or mail reward.
+
 Existing insurance is stored in `InsuredItems` in the teammate's `<aid>-settings.json` document inside the encrypted teammate database. Each entry contains:
 
 - exact item ID

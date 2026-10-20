@@ -331,6 +331,8 @@ For `Realistic` / internal `Extreme`:
 
 ## In-Raid Backpack Inspection
 
+Field recruits have a separate [Give Gear](Give-Gear-Spec.md) donation interaction. It stages the player's offering until Give Items, then evaluates the recruit's kit privately. PMC donations are permanent and cancel insurance; Scav donations use existing Fence returns. This does not grant recruits saved-squad return admission or access through View Backpack/Swap Gear.
+
 Spawned squadmates can expose their live `Backpack` slot through the lower-left `View Backpack` quick interaction while the player is close and looking at them. Recruited allies are not eligible because the interaction is scoped to saved squadmates.
 
 The screen is the follower's actual live backpack, not a cloned editor surface. The inspection session is intentionally out-of-combat only: active enemy/under-fire state, follower medical work, follower loot-pickup work, target invalidation, or player death closes the screen.
@@ -340,6 +342,8 @@ Items placed into the inspected backpack during the session are registered as tr
 ## Protected Extraction Filtering
 
 `Restricted` allows teammate gear to be physically looted in raid so the player can inspect, reorganize, or recover from inventory edge cases without special slot locks. Commanded fallen-teammate recovery (`Check Him` / `Loot Body` on a teammate corpse) is stricter about protected roots: followers skip protected teammate gear roots, but non-protected backpacks and rigs are recovered as whole containers instead of being emptied item by item. To prevent gear farming, extraction and return-delivery cleanup strip protected teammate item ids from the extracted player profile or returned container tree.
+
+Explicit Give Gear handovers may loan that protected kit to field recruits for raid use. The original teammate keeps its saved kit; the borrowed items do not become permanent PMC gifts or Fence cargo and cannot survive in an invitation profile. Temporarily using the recruit's displaced unprotected equipment is allowed; this does not change ordinary commanded recovery admission.
 
 Protected ids come from two sources:
 

@@ -46,6 +46,7 @@ namespace pitTeam.Patches
     {
         private static readonly EPhraseTrigger ViewBackpackPhrase = (EPhraseTrigger)CustomPhrases.ViewBackpack;
         private static readonly EPhraseTrigger SwapGearPhrase = (EPhraseTrigger)CustomPhrases.SwapGear;
+        private static readonly EPhraseTrigger GiveGearPhrase = (EPhraseTrigger)CustomPhrases.GiveGear;
         private static readonly FieldInfo QuickPanelAvailablePhrasesField = AccessTools.Field(typeof(GesturesQuickPanel), "_availablePhrases");
         private static readonly FieldInfo QuickPanelPlayerField = AccessTools.Field(typeof(GesturesQuickPanel), "_player");
 
@@ -202,10 +203,14 @@ namespace pitTeam.Patches
             }
 
             HashSet<EPhraseTrigger> availablePhrases = QuickPanelAvailablePhrasesField.GetValue(panel) as HashSet<EPhraseTrigger>;
+            if (!GesturesQuickPanel.PhrasePriorities.ContainsKey(GiveGearPhrase))
+                GesturesQuickPanel.PhrasePriorities.Add(GiveGearPhrase, 83);
             availablePhrases?.Add(ViewBackpackPhrase);
             availablePhrases?.Add(SwapGearPhrase);
+            availablePhrases?.Add(GiveGearPhrase);
             panel.SetPhraseActive(ViewBackpackPhrase, TeammateBackpackInspection.CanShowQuickInteraction(player));
             panel.SetPhraseActive(SwapGearPhrase, TeammateBackpackInspection.CanShowSwapGearInteraction(player));
+            panel.SetPhraseActive(GiveGearPhrase, TeammateBackpackInspection.CanShowGiveGearInteraction(player));
         }
     }
 

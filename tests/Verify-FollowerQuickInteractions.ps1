@@ -12,6 +12,12 @@ $inspection = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/Teamma
 $plugin = Get-Content -Raw (Join-Path $RepositoryRoot 'client/friendlyPlugin.cs')
 $code = Get-Content -Raw (Join-Path $PSScriptRoot 'FollowerQuickInteractionFixture.cs')
 $code = $code.Replace('/* CUSTOM_PHRASES */', (Get-Region $plugin '    public enum CustomPhrases' '    public enum CustomGestures'))
+$gesture = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Patches/GestureMenuPatch.cs')
+$code = $code.Replace('/* INTERACTION_TEXT */', (Get-Region $gesture '        public static string FollowerInteractionTextUpper(' '        public static void FitViewBackpackQuickText('))
+foreach ($contract in @('hashSet_1.Add((EPhraseTrigger)CustomPhrases.GiveGear)',
+    'index == (int)(EPhraseTrigger)CustomPhrases.GiveGear', 'trigger == (EPhraseTrigger)CustomPhrases.GiveGear')) {
+    if (!$gesture.Contains($contract)) { throw "Missing Give Gear phrase display boundary: $contract" }
+}
 $code = $code.Replace('/* ROUTER */', (Get-Region $player '    internal static class FollowerQuickInteractionRouter' '    internal static class BossGestureCommandRouter'))
 $code = $code.Replace('/* INPUT_PATCHES */', (Get-Region $player '    internal class QuickMumbleStartViewBackpackPatch' '    /** Have follower kills'))
 $code = $code.Replace('/* SWAP_TARGET */', (Get-Region $inspection '        public static bool CanShowSwapGearInteraction' '        public static bool TryOpenFromQuickInteraction'))

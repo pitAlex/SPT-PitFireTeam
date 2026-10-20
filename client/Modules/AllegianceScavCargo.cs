@@ -55,6 +55,26 @@ namespace pitTeam.Modules
                 }
         }
 
+        // Give Gear may split ammunition while planning a magazine package. Preserve the
+        // source ownership rather than treating every newly generated cartridge ID as loot.
+        internal static IEnumerable<string> GetPureGivenIds(BotOwner bot) => bot != null &&
+            Recruits.TryGetValue(bot.ProfileId, out var cargo) ? cargo.GivenIds.Where(id =>
+                cargo.NativeUnits.TryGetValue(id, out int native) && native == 0).ToArray() : new string[0];
+
+        internal static bool HasMixedStack(BotOwner bot, Item item) => bot != null && item != null &&
+            Recruits.TryGetValue(bot.ProfileId, out var cargo) &&
+            cargo.GivenUnits.TryGetValue(item.Id, out int given) && given > 0 &&
+            cargo.NativeUnits.TryGetValue(item.Id, out int native) && native > 0;
+
+        // Native split children and borrowed Restricted kit are usable but never return cargo.
+        internal static void RegisterNonReturnableIds(BotOwner bot, IEnumerable<string> ids)
+        {
+            if (bot == null || !Recruits.TryGetValue(bot.ProfileId, out var cargo)) return;
+            var excluded = ids.ToArray();
+            cargo.StartingIds.UnionWith(excluded);
+            RemoveGiven(bot, excluded);
+        }
+
         // Stack merges keep the recipient's existing ID. Record only the added units,
         // including a gift merged into the Scav's native stack; never return that native share.
         internal static void TrackStackChange(BotOwner bot, Item item, int before)
@@ -139,7 +159,8 @@ namespace pitTeam.Modules
                 foreach (var token in JArray.FromObject(flat, serializer))
                 {
                     string id = token["_id"]?.Value<string>();
-                    if (id == null || !cargo.GivenIds.Contains(id) || !live.TryGetValue(id, out var item)) continue;
+                    if (id == null || !cargo.GivenIds.Contains(id) || !live.TryGetValue(id, out var item) ||
+                        InteractableObjects.IsProtectedFollowerEquipment(item)) continue;
                     int units = Math.Min(cargo.GivenUnits[id], Math.Max(0, item.StackObjectsCount - cargo.NativeUnits[id]));
                     if (units <= 0 || !ids.Add(id)) continue;
                     var upd = token["upd"] as JObject ?? new JObject();

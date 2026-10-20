@@ -68,6 +68,11 @@ namespace pitTeam.Modules
     public class Follower {public bool IsSquadMate;public Boss Boss;public Boss GetBoss()=>Boss;}
     public static class BossPlayers {public static Dictionary<string,Follower> Followers=new();public static Follower GetFollowerByProfileId(string id)=>Followers.GetValueOrDefault(id);}
     public static class TeammateBackpackInspection {public static Action Flush;public static void TrackBackpackItemChanges()=>Flush?.Invoke();}
+    public static class InteractableObjects
+    {
+        public static HashSet<string> ProtectedIds = new();
+        public static bool IsProtectedFollowerEquipment(Item item) => ProtectedIds.Contains(item.Id);
+    }
     public static class Logger {public static void LogInfo(string message){}}
     public static class FollowerInsuranceRaidReports
     {
@@ -85,7 +90,7 @@ public static class Program
     static CommonAssets.Scripts.Game.Point Point=>CommonAssets.Scripts.Game.ExfiltrationController.Instance.ExfiltrationPoints[0];
     static BotOwner Setup()
     {
-        AllegianceScavCargo.Reset();GameplayModeRuntime.IsAllegiance=true;AllegiancePmcFriendship.Selected=true;AllegianceScavRelations.TrustBroken=false;
+        AllegianceScavCargo.Reset();InteractableObjects.ProtectedIds.Clear();GameplayModeRuntime.IsAllegiance=true;AllegiancePmcFriendship.Selected=true;AllegianceScavRelations.TrustBroken=false;
         FollowerInsuranceRaidReports.Sent.Clear();BossPlayers.Followers.Clear();TeammateBackpackInspection.Flush=null;
         Comfort.Common.Singleton<GameWorld>.Instance=new();CommonAssets.Scripts.Game.ExfiltrationController.Instance=new();
         var bot=new BotOwner();var bag=new Item {Id="native-backpack",Parent=bot.GetPlayer.InventoryController.Inventory.Equipment};
@@ -191,6 +196,28 @@ public static class Program
         var secondBag=new Item{Id="second-bag",Parent=second.GetPlayer.InventoryController.Inventory.Equipment};secondBag.Parent.Children.Add(secondBag);
         BossPlayers.Followers[second.ProfileId]=new(){Boss=new(){realPlayer=Human}};AllegianceScavCargo.OnRecruited(second,Human);Give(second,"second-cargo");End();
         Check(FollowerInsuranceRaidReports.Sent.Count==1&&FollowerInsuranceRaidReports.Sent[0]["scavProfileIds"].Count()==2&&Returned().Length==2,"Multiple companions contribute one package");
+        bot=Setup();gift=Give(bot,"donated-magazine");
+        Check(AllegianceScavCargo.GetPureGivenIds(bot).Contains(gift.Id),"Pure donations are eligible split sources with preserved return ownership");
+        before=AllegianceScavCargo.CaptureCommandedLoot(bot);
+        var nativeSplit=new Item {Id="native-split",Parent=gift,StackObjectsCount=20};gift.Children.Add(nativeSplit);
+        var givenSplit=new Item {Id="given-split",Parent=gift,StackObjectsCount=30};gift.Children.Add(givenSplit);
+        AllegianceScavCargo.RegisterNonReturnableIds(bot,[nativeSplit.Id]);
+        AllegianceScavCargo.TrackCommandedLoot(bot,bot.GetPlayer.InventoryController.Inventory.Equipment,before);End();
+        Check(Returned().Contains(gift.Id) && Returned().Contains(givenSplit.Id) && !Returned().Contains(nativeSplit.Id),
+            "A donated magazine returns player ammo but never newly split native Scav ammunition");
+        bot=Setup();stack=bot.GetPlayer.InventoryController.Inventory.Equipment.Children[1];stack.StackObjectsCount=60;
+        AllegianceScavCargo.TrackStackChange(bot,stack,40);
+        Check(AllegianceScavCargo.HasMixedStack(bot,stack) && !AllegianceScavCargo.GetPureGivenIds(bot).Contains(stack.Id),
+            "Mixed-origin stacks cannot be repartitioned as pure donations");
+        Check(!AllegianceScavCargo.HasMixedStack(null,stack) && !AllegianceScavCargo.GetPureGivenIds(null).Any(),
+            "Non-Scav recipients have no Scav split provenance");
+        bot=Setup();gift=Give(bot,"borrowed-gun");
+        AllegianceScavCargo.RegisterNonReturnableIds(bot,[gift.Id]);End();
+        Check(Returned().Length==0 && bot.GetPlayer.InventoryController.Inventory.Equipment.GetAllItems().Contains(gift),
+            "Borrowed weapon remains usable in raid but is not Fence cargo, including stale prior gift tracking");
+        bot=Setup();gift=Give(bot,"borrowed-helmet");var validGift=Give(bot,"real-gift");
+        InteractableObjects.ProtectedIds.Add(gift.Id);End();
+        Check(Returned().SequenceEqual([validGift.Id]), "Final exact-ID protection excludes loaned gear without suppressing real gifts");
         Console.WriteLine($"PASS: {checks} production Scav cargo client checks.");
     }
 }

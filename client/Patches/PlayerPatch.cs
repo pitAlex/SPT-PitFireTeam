@@ -26,7 +26,8 @@ namespace pitTeam.Patches
         public static bool IsHandledPhrase(EPhraseTrigger phrase)
         {
             return phrase == (EPhraseTrigger)CustomPhrases.ViewBackpack ||
-                   phrase == (EPhraseTrigger)CustomPhrases.SwapGear;
+                   phrase == (EPhraseTrigger)CustomPhrases.SwapGear ||
+                   phrase == (EPhraseTrigger)CustomPhrases.GiveGear;
         }
 
         public static bool TryHandle(GamePlayerOwner owner, EPhraseTrigger phrase)
@@ -40,6 +41,11 @@ namespace pitTeam.Patches
             if (phrase == (EPhraseTrigger)CustomPhrases.SwapGear)
             {
                 TeammateGearSwap.Open(owner);
+                return true;
+            }
+            if (phrase == (EPhraseTrigger)CustomPhrases.GiveGear)
+            {
+                TeammateGearSwap.Open(owner, giving: true);
                 return true;
             }
             return false;

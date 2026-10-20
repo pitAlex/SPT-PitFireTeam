@@ -12,6 +12,7 @@ namespace pitTeam.Modules
         private const string Route = "/singleplayer/pitfireteam/insurance/raid-display";
         private static readonly object Gate = new object();
         private static readonly HashSet<string> InsuredIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly HashSet<string> GiftedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static string raidServerId;
 
         internal static void Clear()
@@ -20,6 +21,7 @@ namespace pitTeam.Modules
             {
                 raidServerId = null;
                 InsuredIds.Clear();
+                GiftedIds.Clear();
             }
             GearSwapInsuranceDiagnostics.Clear();
         }
@@ -30,6 +32,15 @@ namespace pitTeam.Modules
             string currentServerId = FollowerInsuranceRaidReports.CurrentServerId;
             lock (Gate)
                 return currentServerId != null && currentServerId == raidServerId && InsuredIds.Contains(itemId);
+        }
+
+        internal static void CancelGifts(IEnumerable<string> ids)
+        {
+            lock (Gate)
+            {
+                GiftedIds.UnionWith(ids);
+                InsuredIds.ExceptWith(GiftedIds);
+            }
         }
 
         internal static string DiagnosticState()
@@ -64,7 +75,7 @@ namespace pitTeam.Modules
                         InsuredIds.Clear();
                     }
                     foreach (var policy in policies)
-                        if (!string.IsNullOrWhiteSpace(policy?.ItemId)) InsuredIds.Add(policy.ItemId);
+                        if (!string.IsNullOrWhiteSpace(policy?.ItemId) && !GiftedIds.Contains(policy.ItemId)) InsuredIds.Add(policy.ItemId);
                     Logger.LogInfo($"[FollowerInsurance:RaidDisplay] serverId='{serverId}' received={policies.Count} visibleIds={InsuredIds.Count}");
                 }
             }

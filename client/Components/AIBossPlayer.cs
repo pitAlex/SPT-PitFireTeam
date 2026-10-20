@@ -2082,7 +2082,8 @@ namespace pitTeam.Components
                 return false;
             }
 
-            if (IsPickedUpFollower(followerData) &&
+            bool combatContext = HasHoldCombatContext(follower, followerData);
+            if (combatContext && IsPickedUpFollower(followerData) &&
                 !RollPickupFollowerHoldAcceptance(follower, followerData, requester, source))
             {
                 follower.BotTalk.TrySay(EPhraseTrigger.Negative, false);
@@ -2090,10 +2091,6 @@ namespace pitTeam.Components
                 return true;
             }
 
-            bool combatContext =
-                follower.Memory?.HaveEnemy == true ||
-                HasActiveCombatEnemy(follower) ||
-                followerData.HasCombatHandoffSignal();
             if (combatContext)
             {
                 if (followerData.TryPeekActiveCommand(out FollowerCommandType command, out _, out _) &&
@@ -2115,6 +2112,13 @@ namespace pitTeam.Components
 
             follower.Gesture.TryGestus(EInteraction.OkGesture, false);
             return true;
+        }
+
+        private static bool HasHoldCombatContext(BotOwner follower, BotFollowerPlayer followerData)
+        {
+            return follower.Memory?.HaveEnemy == true ||
+                   HasActiveCombatEnemy(follower) ||
+                   followerData.HasCombatHandoffSignal();
         }
 
         private void ApplyRegroupCommand(IPlayer requester, bool tightRegroup)
@@ -3527,6 +3531,7 @@ namespace pitTeam.Components
                 if (overrideAggression.HasValue)
                 {
                     if (Mathf.Approximately(overrideAggression.Value, 0f) &&
+                        HasHoldCombatContext(follower, followerData) &&
                         IsPickedUpFollower(followerData) &&
                         !RollPickupFollowerHoldAcceptance(follower, followerData, requester, "HoldPositionAggression"))
                     {

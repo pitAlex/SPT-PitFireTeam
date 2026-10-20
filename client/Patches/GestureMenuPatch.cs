@@ -21,8 +21,8 @@ namespace pitTeam.Patches
     {
         public static string FollowerInteractionTextUpper(EPhraseTrigger phrase)
         {
-            return pitFireTeam.GetGestureText(phrase == (EPhraseTrigger)CustomPhrases.SwapGear
-                ? "SwapGear" : "ViewBackpack").ToUpperInvariant();
+            return pitFireTeam.GetGestureText(phrase == (EPhraseTrigger)CustomPhrases.GiveGear ? "GiveGear" :
+                phrase == (EPhraseTrigger)CustomPhrases.SwapGear ? "SwapGear" : "ViewBackpack").ToUpperInvariant();
         }
 
         public static void FitViewBackpackQuickText(CustomTextMeshProUGUI textField, GameObject? quickCommandObject = null)
@@ -310,6 +310,7 @@ namespace pitTeam.Patches
             hashSet_1.Add((EPhraseTrigger)CustomPhrases.TeamStatus);
             hashSet_1.Add((EPhraseTrigger)CustomPhrases.ViewBackpack);
             hashSet_1.Add((EPhraseTrigger)CustomPhrases.SwapGear);
+            hashSet_1.Add((EPhraseTrigger)CustomPhrases.GiveGear);
         }
     }
 
@@ -587,6 +588,12 @@ namespace pitTeam.Patches
                 return false;
             }
 
+            if (index == (int)(EPhraseTrigger)CustomPhrases.GiveGear)
+            {
+                __result = GetGestureText("GiveGear");
+                return false;
+            }
+
             if (index == (int)(EInteraction)CustomGestures.OverThere)
             {
                 __result = GetGestureText("OverThere");
@@ -632,6 +639,11 @@ namespace pitTeam.Patches
                 else if (trigger == (EPhraseTrigger)CustomPhrases.SwapGear)
                 {
                     __result = pitFireTeam.GetGestureText("SwapGear");
+                    return false;
+                }
+                else if (trigger == (EPhraseTrigger)CustomPhrases.GiveGear)
+                {
+                    __result = pitFireTeam.GetGestureText("GiveGear");
                     return false;
                 }
             }

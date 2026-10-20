@@ -66,6 +66,11 @@ namespace pitTeam.Components
         protected BotSettingsInGameModif settingModif;
 
         protected bool _IsSquadMate = false;
+        internal readonly HashSet<EquipmentSlot> GivenEquipmentSlots = new HashSet<EquipmentSlot>();
+        internal readonly HashSet<string> GivenGearWeaponIds = new HashSet<string>(StringComparer.Ordinal);
+#if DEBUG
+        internal bool DebugForceRecruitInvite;
+#endif
 
         protected string _grouId = "";
         protected string _teamId = "";

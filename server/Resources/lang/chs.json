@@ -227,6 +227,7 @@
     "TeamStatus": "报告状态",
     "ViewBackpack": "查看背包",
     "SwapGear": "更换装备",
+    "GiveGear": "给予装备",
     "OnRepeatedContact": "接敌"
   },
   "botStatus": {
@@ -264,6 +265,10 @@
     "AddTeammateUnsupportedSide": "当前小队成员仅支持添加 PMC 角色。",
     "Cancel": "取消",
     "SwapGearApply": "应用更改",
+    "GiveGearApply": "给予物品",
+    "GiveGearWorking": "正在给予物品…",
+    "GiveGearUnavailable": "附近必须有一名已招募且未忙碌、未处于危险中的随从才能给予装备。",
+    "GiveGearApplyFailed": "物品未能给予。请检查装备、弹药和物品栏变化后重试。",
     "SwapGearTransferInProgress": "请勿关闭窗口，直到转移完成。",
     "SwapGearStale": "编辑期间物品栏发生了变化。未应用任何更改，请重新打开装备交换。",
     "SwapGearNeedsWeapon": "应用前，请为队友保留至少一把配件齐全的枪械。",

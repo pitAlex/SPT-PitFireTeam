@@ -28,6 +28,10 @@ namespace pitTeam.Modules
         public string Head { get; set; } = string.Empty;
         public string ProfileJson { get; set; } = string.Empty;
         public float? Aggression { get; set; }
+        public string[] GivenEquipmentSlots { get; set; } = new string[0];
+#if DEBUG
+        public bool DebugForceInvite { get; set; }
+#endif
     }
 
     internal class RecruitPickupRequest
@@ -151,6 +155,9 @@ namespace pitTeam.Modules
 
                 // Settle/close any exchange before death-escape or progress captures equipment.
                 if (ReferenceEquals(TeammateGearSwap.Current?.Owner.Player, boss.realPlayer)) TeammateGearSwap.EndRaid();
+                // Player death can tear down recruits before LocalGame.Stop. Capture gifts
+                // while their live inventories still exist and before reports are sealed.
+                if (boss.realPlayer?.IsYourPlayer == true) GiveGearInsurance.EndRaid(boss.realPlayer.ProfileId);
 
                 List<BotOwner> ownersToRemove = new List<BotOwner>();
                 List<BotFollowerPlayer> followersToRemove = new List<BotFollowerPlayer>();
@@ -404,7 +411,14 @@ namespace pitTeam.Modules
 
                     if (!item.IsSquadMate)
                     {
-                        if (GameplayModeRuntime.GetEffectiveValue(pitFireTeam.recruitPickup) && item.GetBoss()?.realPlayer?.Side != EPlayerSide.Savage)
+                        bool queueRecruit = GameplayModeRuntime.GetEffectiveValue(pitFireTeam.recruitPickup);
+#if DEBUG
+                        bool debugInvite = item.DebugForceRecruitInvite && !item.GetBot().IsDead &&
+                            item.GetBoss()?.realPlayer?.HealthController?.IsAlive == true;
+                        if (item.DebugForceRecruitInvite && !debugInvite) continue;
+                        queueRecruit |= debugInvite;
+#endif
+                        if (queueRecruit && item.GetBoss()?.realPlayer?.Side != EPlayerSide.Savage)
                         {
                             string voiceId = pr.Customization != null && pr.Customization.TryGetValue(EBodyModelPart.Voice, out MongoID voice) ? voice.ToString() : string.Empty;
                             string headId = pr.Customization != null && pr.Customization.TryGetValue(EBodyModelPart.Head, out MongoID head) ? head.ToString() : string.Empty;
@@ -425,6 +439,10 @@ namespace pitTeam.Modules
                                     Head = headId,
                                     ProfileJson = CreateRecruitProfileJson(pr, _defaultJsonConverters),
                                     Aggression = item.CombatAggression,
+                                    GivenEquipmentSlots = item.GivenEquipmentSlots.Select(slot => slot.ToString()).ToArray(),
+#if DEBUG
+                                    DebugForceInvite = debugInvite,
+#endif
                                 });
                             }
                             else

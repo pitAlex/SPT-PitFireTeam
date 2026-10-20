@@ -318,4 +318,25 @@ Check(FollowerInsuranceCourierPolicyPlanner.ClaimedPolicies([claim], [Policy("cl
     ["claimed"]).Count == 0, "duplicate current policy is rejected");
 Check(FollowerInsuranceCourierPolicyPlanner.ClaimedPolicies([claim], claimPolicies, claimTemplates, []).Count == 0,
     "unrequested courier policies are not synchronized");
+var giftedRaid = new FollowerInsuranceRaidDiagnostic
+{
+    Enabled = true, EndReceived = true, SettlementEligible = true, PlayerInventoryKnown = true,
+    ReportsComplete = true,
+    InsuredItems = [new("donated", "gun", "prapor", "member", "", "FirstPrimaryWeapon"),
+        new("lost", "helmet", "prapor", "member", "", "Headwear")],
+    GiftedItemIds = ["DONATED"],
+    Participants = [new() { Aid = "member", OutcomeReceived = true }],
+};
+Check(FollowerInsuranceRaidClassifier.Classify(giftedRaid).Single(f => f.ItemId == "donated").Reason == "permanent-pmc-gift",
+    "exact permanent PMC gift cancels follower insurance claim");
+Check(FollowerInsuranceSettlementPlanner.Plan(giftedRaid).Select(p => p.ItemId).SequenceEqual(["lost"]),
+    "cancelled gift cannot create an insurance copy; unrelated loss still eligible");
+giftedRaid.PlayerItemIds = ["donated"];
+Check(FollowerInsuranceSettlementPlanner.PlanPlayerPolicyTransfer(giftedRaid).Count == 0,
+    "recovered permanent gift does not resurrect its cancelled policy");
+giftedRaid.EndReceived = false;
+Check(FollowerInsuranceRaidClassifier.DisplayPolicies(giftedRaid).Select(p => p.ItemId).SequenceEqual(["lost"]),
+    "gift display policy removed without stripping unrelated insurance");
+Check(JsonSerializer.Deserialize<FollowerInsuranceRaidDiagnostic>(JsonSerializer.Serialize(giftedRaid))!.GiftedItemIds.SequenceEqual(["DONATED"]),
+    "gift cancellation survives raid ledger persistence");
 Console.WriteLine($"PASS: {checks} follower insurance checks");
