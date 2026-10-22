@@ -713,15 +713,9 @@ namespace pitTeam.Modules
             HashSet<string> removedBackpackItemIds = new HashSet<string>(_initialBackpackItemIds, StringComparer.Ordinal);
             removedBackpackItemIds.ExceptWith(currentBackpackItemIds);
             AllegianceScavCargo.RemoveGiven(_targetBot, removedBackpackItemIds);
-            int clearedStrictItemCount = InteractableObjects.RemoveStrictCargoItemIds(
+            InteractableObjects.RemoveStrictCargoItemIds(
                 _targetBot.ProfileId,
                 removedBackpackItemIds);
-            if (clearedStrictItemCount > 0)
-            {
-                Logger.LogInfo(
-                    $"[LootCommand][CargoProvenance] follower='{_targetBot.Profile?.Nickname ?? _targetBot.ProfileId ?? "unknown"}' " +
-                    $"classification=removedFromBackpack clearedStrictItems={clearedStrictItemCount}");
-            }
 
             if (_initialTrackedItemIds == null)
             {

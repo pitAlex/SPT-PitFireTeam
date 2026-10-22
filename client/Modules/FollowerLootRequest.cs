@@ -26,6 +26,15 @@ namespace pitTeam.Modules
         public string SelectedLongGunId { get; private set; }
         public string SelectedPistolId { get; private set; }
         public bool SelectedLongGunCanEquip { get; private set; }
+        // An Apply callback can finish on the previous action instance. Its accepted
+        // result belongs to the command, not to that instance's resettable counters.
+        internal bool GearExchangeCommitted { get; private set; }
+        internal void CompleteGearExchange()
+        {
+            GearExchangeCommitted = true;
+            CompletePriority();
+        }
+        internal bool HasSuccessfulLoot(int reportedMoves) => reportedMoves > 0 || GearExchangeCommitted;
 
         public void InitializeWeaponSelection(bool pickupWeaponsEnabled, string primaryId, string secondaryId,
             string pistolId, bool shoulderSlotAvailable, bool holsterAvailable)

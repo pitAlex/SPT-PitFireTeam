@@ -306,7 +306,7 @@ namespace pitTeam.Patches
         [PatchPrefix]
         private static bool Prefix(Tab tab)
         {
-            if (TeammateGearSwap.Current == null) return true;
+            if (TeammateGearSwap.Current == null || TeammateGearSwap.Current.CommandLoot) return true;
             var tabs = CommonUI.Instance?.InventoryScreen?._tabDictionary;
             if (tabs == null) return true;
             foreach (var entry in tabs)

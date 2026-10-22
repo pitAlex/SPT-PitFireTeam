@@ -208,7 +208,7 @@ namespace pitTeam.Modules
         public static bool TryResolveRecruitmentAcceptance(BotOwner bot,IPlayer player,bool proactive,out bool accepted) {
             ResolveCalls++;accepted=ResolveAccepted;
             if(ResolveHandled)return true;
-            if(!proactive && GameplayModeRuntime.IsAllegiance && bot.Side==EPlayerSide.Savage){accepted=AcceptScavRecruitment(bot,player);return true;}
+            if(!proactive && GameplayModeRuntime.IsAllegiance && player.Side!=EPlayerSide.Savage && bot.Side==EPlayerSide.Savage){accepted=AcceptScavRecruitment(bot,player);return true;}
             return false;
         }
         internal static bool TryGetInteraction(BotOwner bot,out FriendlyEncounterInteraction interaction,out AllegianceFriendlyGreeting greeting) {
@@ -312,8 +312,54 @@ public static class RecruitmentCombatChecks
         Check(!(bool)Prefix.Invoke(null, args) && !(bool)args[1], "Recruitment owns the request result");
     }
     private static void Deferred(BotOwner bot) => BotOwnerManualUpdatePatch.BotOwnerUpdate[bot.ProfileId](bot);
+    private static void FenceCapacityChecks()
+    {
+        foreach(bool allegiance in new[]{false,true})
+        foreach(var sample in new[]{(-1d,0),(0d,0),(0.99d,0),(1d,1),(1.99d,1),(2d,2),(3d,3),(4d,4),(5.99d,5),(6d,6),(15d,6),(double.NaN,0),(double.PositiveInfinity,0)}) {
+            var candidate=Fresh();GameplayModeRuntime.IsAllegiance=allegiance;
+            candidate.Side=EPlayerSide.Savage;var human=BossPlayers.Boss.Value;human.Side=EPlayerSide.Savage;human.Profile.FenceInfo.Standing=sample.Item1;
+            int limit=sample.Item2;
+            for(int i=0;i<Math.Max(0,limit-1);i++) BossPlayers.Active.Add(new BotFollowerPlayer{Bot=new BotOwner{ProfileId="fence-existing-"+i}});
+            Check(FollowRequestPatch.HasPickupCapacity(human)==(limit>0),"Fence permits one recruit per full point up to six: "+allegiance+"/"+sample.Item1);
+            Ask(candidate);
+            if(limit>0) {
+                Deferred(candidate);pitTeam.Utils.Utils.Pending();
+                Check(BossPlayers.Added==1,"The last Fence-allowed Scav can complete conversion: "+allegiance+"/"+sample.Item1);
+                Check(!FollowRequestPatch.HasPickupCapacity(human),"Contextual capacity agrees after reaching the Fence limit: "+allegiance+"/"+sample.Item1);
+                Ask(new BotOwner{ProfileId="fence-excess",Side=EPlayerSide.Savage});
+            }
+            Check(BotOwnerManualUpdatePatch.BotOwnerUpdate.Count==0,"Recruitment request cannot exceed Fence capacity: "+allegiance+"/"+sample.Item1);
+        }
+        var unrestricted=Fresh();BossPlayers.Boss.Value.Side=EPlayerSide.Savage;BossPlayers.Boss.Value.Profile.FenceInfo.Standing=0;
+        pitFireTeam.tieredPickup.Value=false;pitFireTeam.maximumPickup.Value=4;
+        for(int i=0;i<3;i++)BossPlayers.Active.Add(new BotFollowerPlayer{Bot=new BotOwner()});
+        Check(FollowRequestPatch.HasPickupCapacity(BossPlayers.Boss.Value),"Guns for Hire without Tiered Pickup keeps configured capacity rather than requiring Fence standing");
+        BossPlayers.Active.Add(new BotFollowerPlayer{Bot=unrestricted});
+        Check(!FollowRequestPatch.HasPickupCapacity(BossPlayers.Boss.Value),"Non-tiered player-Scav hiring still respects configured Maximum Pickup");
+        foreach(bool allegiance in new[]{false,true}) {
+            var candidate=Fresh();GameplayModeRuntime.IsAllegiance=allegiance;candidate.Side=EPlayerSide.Savage;
+            var human=BossPlayers.Boss.Value;human.Side=EPlayerSide.Savage;human.Profile.FenceInfo.Standing=6;
+            pitFireTeam.maximumPickup.Value=1;
+            BossPlayers.Active.Add(new BotFollowerPlayer{Bot=new BotOwner()});
+            Check(FollowRequestPatch.HasPickupCapacity(human)==allegiance,"Guns for Hire retains its configured cap; Allegiance Scavs use Fence capacity instead of the PMC cap");
+            Fresh();GameplayModeRuntime.IsAllegiance=allegiance;human=BossPlayers.Boss.Value;human.Side=EPlayerSide.Savage;human.Profile.FenceInfo.Standing=6;
+            var callbacks=new List<Action>();
+            for(int i=0;i<7;i++) {candidate=new BotOwner{ProfileId="fence-queued-"+i,Side=EPlayerSide.Savage};Ask(candidate);Deferred(candidate);callbacks.Add(pitTeam.Utils.Utils.Pending);}
+            foreach(var callback in callbacks)callback();
+            Check(BossPlayers.Added==6,"Queued conversions cannot exceed six player-Scav recruits: "+allegiance);
+            candidate=Fresh();GameplayModeRuntime.IsAllegiance=allegiance;candidate.Side=EPlayerSide.Savage;
+            human=BossPlayers.Boss.Value;human.Side=EPlayerSide.Savage;human.Profile.FenceInfo.Standing=6;Ask(candidate);
+            human.Profile.FenceInfo.Standing=0;Deferred(candidate);
+            Check(BossPlayers.Added==0&&pitTeam.Utils.Utils.Pending==null,"Deferred conversion rechecks current Fence capacity: "+allegiance);
+            candidate=Fresh();GameplayModeRuntime.IsAllegiance=allegiance;candidate.Side=EPlayerSide.Savage;
+            human=BossPlayers.Boss.Value;human.Side=EPlayerSide.Savage;human.Profile.FenceInfo.Standing=6;Ask(candidate);Deferred(candidate);
+            human.Profile.FenceInfo.Standing=0;pitTeam.Utils.Utils.Pending();
+            Check(BossPlayers.Added==0,"First-group delayed completion rechecks Fence capacity: "+allegiance);
+        }
+    }
     public static int Run()
     {
+        FenceCapacityChecks();
         foreach(int level in new[]{0,20,100}) {
             var fieldScav=Fresh();GameplayModeRuntime.IsAllegiance=true;fieldScav.Side=EPlayerSide.Savage;
             fieldScav.Profile.Info.Level=level;BossPlayers.Denied.Add(fieldScav.ProfileId);
@@ -337,7 +383,7 @@ public static class RecruitmentCombatChecks
             var friendlyScav=Fresh();GameplayModeRuntime.IsAllegiance=allegiance;
             BossPlayers.Boss.Value.Side=EPlayerSide.Savage;friendlyScav.Side=EPlayerSide.Savage;
             Ask(friendlyScav);Deferred(friendlyScav);pitTeam.Utils.Utils.Pending();
-            Check(BossPlayers.Added==1,"Same-side Scav recruitment preserves Fence path in either mode");
+            Check(BossPlayers.Added==1,"Same-side player-Scav recruitment remains available in either mode");
         }
         foreach(bool allegiance in new[]{false,true}) {
             Fresh();GameplayModeRuntime.IsAllegiance=allegiance;pitFireTeam.maximumPickup.Value=2;

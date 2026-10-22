@@ -11,6 +11,7 @@ try {
         if(@($method.Body.Instructions | Where-Object {$_.OpCode.Name -eq 'ldfld' -and $_.Operand.Name -eq $switch}).Count -ne 1){throw "Installed enable switch changed: $switch"}
     }
     $throw=$type.Methods | Where-Object Name -eq 'TryThrowGrenade'
+    if(@($throw).Count -ne 1 -or $throw.IsStatic -or $throw.Parameters.Count -ne 0 -or $throw.ReturnType.FullName -ne 'System.Boolean'){throw 'Installed grenade start boundary changed'}
     if(@($throw.Body.Instructions | Where-Object {$_.Operand -is [Mono.Cecil.MethodReference] -and $_.Operand.DeclaringType.FullName -eq 'BotGrenadeController' -and $_.Operand.Name -eq 'DoThrow'}).Count -ne 1){throw 'Installed native throw path changed'}
     $friendly=$type.Methods | Where-Object Name -eq 'CheckFriendlyDistances'
     if($friendly.ReturnType.FullName -ne 'System.Boolean' -or ($friendly.Parameters.ParameterType.FullName -join '|') -ne 'UnityEngine.Vector3'){throw 'Installed native grenade friend check changed'}

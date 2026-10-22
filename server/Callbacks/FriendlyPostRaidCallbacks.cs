@@ -69,7 +69,7 @@ public class FriendlyPostRaidCallbacks(
     public ValueTask<string> StartLocalRaid(string url, StartLocalRaidRequestData request, MongoId sessionId, string? output)
     {
         insuranceDiagnostics.BeginRaid(sessionId, request, output);
-        scavCargo.BeginRaid(sessionId, output);
+        scavCargo.BeginRaid(sessionId, output, request);
         return new ValueTask<string>(output ?? httpResponse.NullResponse());
     }
 

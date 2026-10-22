@@ -218,6 +218,7 @@ namespace pitTeam {
     public static class pitFireTeam {
         public sealed class BoolSetting {public bool Value=true;}
         public static BoolSetting tieredPickup=new();
+        public static BoolSetting friendlyScavEncounters=new();
         public sealed class IntSetting { public int Value=30; }
         public static IntSetting friendlyEncounterChance=new IntSetting();
     }
@@ -232,6 +233,7 @@ public static class HostilityChecks {
         AllegianceScavRelations.Reset(); BossPlayers.Registered.Clear(); pitTeam.Utils.Utils.Timers.Clear();
         AllegiancePmcFriendship.Reset(); GameplayModeRuntime.IsAllegiance=false; UnityEngine.Random.Rolls=0; UnityEngine.Random.NextValue=0f;
         pitTeam.pitFireTeam.friendlyEncounterChance.Value=30;
+        pitTeam.pitFireTeam.friendlyScavEncounters.Value=true;
         FriendlyEncounterPenaltyRuntime.Points=0;
         pitTeam.Utils.Utils.Friendly = pitTeam.Utils.Utils.Bad = false;
         boss = new pitAIBossPlayer { realPlayer = new Player {ProfileId="boss"} };
@@ -278,18 +280,38 @@ public static class HostilityChecks {
             Check(AllegiancePmcFriendship.IsSelectedFriendly(failed,boss.realPlayer),"New raid clears prior decisions");
         }
     }
+    private static void ScavEncounterToggleChecks() {
+        foreach(bool allegiance in new[]{false,true}) foreach(bool enabled in new[]{false,true}) {
+            Setup();GameplayModeRuntime.IsAllegiance=allegiance;pitTeam.pitFireTeam.friendlyScavEncounters.Value=enabled;
+            boss.realPlayer.Profile.FenceInfo.Standing=6;pitTeam.pitFireTeam.friendlyEncounterChance.Value=80;
+            var scav=Scav("toggle-scav");AllegiancePmcFriendship.Apply(scav);
+            bool selected=allegiance&&enabled;
+            Check(AllegiancePmcFriendship.IsSelectedFriendly(scav,boss.realPlayer)==selected,"Scav encounter toggle is default-on policy scoped to Allegiance: "+allegiance+"/"+enabled);
+            Check(UnityEngine.Random.Rolls==(selected?1:0),"Disabled Scav encounters do not consume an encounter roll: "+allegiance+"/"+enabled);
+            if(allegiance&&!enabled) {
+                Check(!AllegiancePmcFriendship.CanRecruit(scav,boss.realPlayer)&&!AllegiancePmcFriendship.TryGetInteraction(scav,out _,out _),"Disabled Scav encounters cannot recruit or own friendly interaction");
+                Check(!AllegiancePmcFriendship.ShouldBlockEnemyAddition(scav.BotsGroup,boss.realPlayer,EBotEnemyCause.initial),"Disabled Scav encounters do not block native hostility");
+            }
+            var same=Solo("toggle-same");var opposite=Solo("toggle-opposite",EPlayerSide.Bear);
+            AllegiancePmcFriendship.Apply(same);AllegiancePmcFriendship.Apply(opposite);
+            Check(AllegiancePmcFriendship.IsSelectedFriendly(same,boss.realPlayer),"Scav toggle preserves same-side PMC selection: "+allegiance+"/"+enabled);
+            Check(AllegiancePmcFriendship.IsSelectedFriendly(opposite,boss.realPlayer)==allegiance,"Scav toggle preserves opposite-side PMC mode policy: "+allegiance+"/"+enabled);
+        }
+        Setup();GameplayModeRuntime.IsAllegiance=true;boss.realPlayer.Profile.Info.Side=EPlayerSide.Savage;pitTeam.pitFireTeam.friendlyScavEncounters.Value=false;
+        Check(AllegiancePmcFriendship.CanRecruit(Scav("native-scav-recruit"),boss.realPlayer),"Disabled friendly encounters preserve native player-Scav recruitment");
+    }
     private static void ScavAcceptanceChecks() {
         foreach(var sample in new[]{(0f,1f),(0.15f,1f),(0.325f,0.75f),(0.5f,0.5f),(1f,0.5f)})
-            Check(Math.Abs(ScavFenceKarma.RecruitmentAcceptanceChance(sample.Item1)-sample.Item2)<0.000001f,"Scav acceptance curve clamps at 50% above 50% encounters");
-        Setup();GameplayModeRuntime.IsAllegiance=true;boss.realPlayer.Profile.FenceInfo.Standing=1;
+            Check(Math.Abs(ScavFenceKarma.RecruitmentAcceptanceChance(sample.Item1)-sample.Item2)<0.000001f,"Scav acceptance curve clamps at 50% for slider values at or above 50%");
+        Setup();GameplayModeRuntime.IsAllegiance=true;boss.realPlayer.Profile.FenceInfo.Standing=1;pitTeam.pitFireTeam.friendlyEncounterChance.Value=15;
         var baseline=Scav("baseline-acceptance");AllegiancePmcFriendship.Apply(baseline);int rolls=UnityEngine.Random.Rolls;
         boss.realPlayer.Profile.FenceInfo.Standing=6;pitTeam.pitFireTeam.friendlyEncounterChance.Value=80;UnityEngine.Random.NextValue=1f;
-        Check(AllegiancePmcFriendship.AcceptScavRecruitment(baseline,boss.realPlayer) && UnityEngine.Random.Rolls==rolls,"Original 15% encounter guarantees acceptance despite later settings changes");
-        foreach(int chancePercent in new[]{30,80}) foreach(float roll in new[]{0.499f,0.5f,0.999f}) {
+        Check(AllegiancePmcFriendship.AcceptScavRecruitment(baseline,boss.realPlayer) && UnityEngine.Random.Rolls==rolls,"Original 15% slider guarantees acceptance despite later settings changes");
+        foreach(int chancePercent in new[]{50,80}) foreach(float roll in new[]{0.499f,0.5f,0.999f}) {
             Setup();GameplayModeRuntime.IsAllegiance=true;boss.realPlayer.Profile.FenceInfo.Standing=6;pitTeam.pitFireTeam.friendlyEncounterChance.Value=chancePercent;
             var candidate=Scav("cached-acceptance");AllegiancePmcFriendship.Apply(candidate);rolls=UnityEngine.Random.Rolls;
             UnityEngine.Random.NextValue=roll;bool accepted=AllegiancePmcFriendship.AcceptScavRecruitment(candidate,boss.realPlayer);
-            Check(accepted==(roll<0.5f) && UnityEngine.Random.Rolls==rolls+1,"90% and 100% encounter chance both have 50% acceptance");
+            Check(accepted==(roll<0.5f) && UnityEngine.Random.Rolls==rolls+1,"Slider values of 50% and 80% both have 50% acceptance");
             UnityEngine.Random.NextValue=accepted ? 1f : 0f;boss.realPlayer.Profile.FenceInfo.Standing=0;pitTeam.pitFireTeam.friendlyEncounterChance.Value=30;
             Check(AllegiancePmcFriendship.AcceptScavRecruitment(candidate,boss.realPlayer)==accepted && UnityEngine.Random.Rolls==rolls+1,"Acceptance or refusal stays cached without rerolling");
             FollowerGroupHostility.DeclareContact(first,candidate);
@@ -301,6 +323,38 @@ public static class HostilityChecks {
         Check(!AllegiancePmcFriendship.AcceptScavRecruitment(bossScav,boss.realPlayer) && UnityEngine.Random.Rolls==0,"Excluded bosses cannot roll acceptance");
         AllegiancePmcFriendship.Reset();boss.realPlayer.Profile.FenceInfo.Standing=6;var reset=Scav("cached-acceptance");UnityEngine.Random.NextValue=0;AllegiancePmcFriendship.Apply(reset);
         Check(AllegiancePmcFriendship.AcceptScavRecruitment(reset,boss.realPlayer),"Raid reset clears previous refusal");
+    }
+    private static void ScavAcceptanceSettingOnlyChecks() {
+        foreach(var sample in new[]{(5,1f),(15,1f),(30,11f/14f),(40,9f/14f),(50,0.5f),(80,0.5f)})
+        foreach(double standing in new[]{0.2d,1d,2d,6d}) foreach(int penalty in new[]{0,15,45})
+        foreach(bool below in new[]{false,true}) {
+            Setup();GameplayModeRuntime.IsAllegiance=true;pitTeam.pitFireTeam.friendlyEncounterChance.Value=sample.Item1;
+            boss.realPlayer.Profile.FenceInfo.Standing=standing;FriendlyEncounterPenaltyRuntime.Points=penalty;
+            var candidate=Scav("setting-only-acceptance");AllegiancePmcFriendship.Apply(candidate);
+            Check(AllegiancePmcFriendship.IsSelectedFriendly(candidate,boss.realPlayer),"Positive encounter chance can select the Scav at every tested Fence/penalty setting");
+            int rolls=UnityEngine.Random.Rolls;
+            // Freeze the slider at selection, not at the later player request.
+            pitTeam.pitFireTeam.friendlyEncounterChance.Value=sample.Item1==80?5:80;
+            boss.realPlayer.Profile.FenceInfo.Standing=0;FriendlyEncounterPenaltyRuntime.Points=100;
+            UnityEngine.Random.NextValue=sample.Item2+(below?-0.001f:0.001f);
+            bool accepted=AllegiancePmcFriendship.AcceptScavRecruitment(candidate,boss.realPlayer);
+            Check(accepted==(sample.Item2>=1f||below),"Only the original raw encounter slider determines Scav acceptance; Fence and penalties cannot change it: "+sample.Item1+"/"+standing+"/"+penalty);
+            int expectedRolls=rolls+(sample.Item2>=1f?0:1);
+            UnityEngine.Random.NextValue=accepted?1f:0f;
+            Check(AllegiancePmcFriendship.AcceptScavRecruitment(candidate,boss.realPlayer)==accepted&&UnityEngine.Random.Rolls==expectedRolls,"Setting-only acceptance still caches YES and NO without rerolls");
+        }
+        foreach(int setting in new[]{30,50}) foreach(float roll in new[]{0.7f,0.9f}) {
+            Setup();GameplayModeRuntime.IsAllegiance=true;pitTeam.pitFireTeam.friendlyEncounterChance.Value=setting;
+            boss.realPlayer.Profile.FenceInfo.Standing=6;var candidate=Scav("setting-only-proactive");AllegiancePmcFriendship.Apply(candidate);
+            int rolls=UnityEngine.Random.Rolls;UnityEngine.Random.NextValue=roll;
+            bool resolved=AllegiancePmcFriendship.TryResolveRecruitmentAcceptance(candidate,boss.realPlayer,true,out bool accepted);
+            Check(resolved==(setting==30)&&UnityEngine.Random.Rolls==rolls+(setting==30?1:0),"Proactive threshold uses slider-only acceptance, independently of Fence");
+            Check(!BossPlayers.HasDeniedRecruitment(candidate.ProfileId),"A proactive roll never becomes an actual spoken refusal");
+            if(resolved) {
+                UnityEngine.Random.NextValue=accepted?1f:0f;
+                Check(AllegiancePmcFriendship.AcceptScavRecruitment(candidate,boss.realPlayer)==accepted&&UnityEngine.Random.Rolls==rolls+1,"Requested recruitment reuses the proactive setting-only answer");
+            }
+        }
     }
     private static void ScavEncounterChecks() {
         // Use the installed game's entire role enum, including solo bosses, guards and marksmen.
@@ -1061,10 +1115,10 @@ public static class HostilityChecks {
         }
         foreach(float roll in new[]{0f,1f})
         {
-            Setup();GameplayModeRuntime.IsAllegiance=true;boss.realPlayer.Profile.FenceInfo.Standing=1;
+            Setup();GameplayModeRuntime.IsAllegiance=true;boss.realPlayer.Profile.FenceInfo.Standing=1;pitTeam.pitFireTeam.friendlyEncounterChance.Value=15;
             var bot=Scav("offer-scav");AllegiancePmcFriendship.Apply(bot);UnityEngine.Random.NextValue=roll;
             Check(AllegiancePmcFriendship.TryResolveRecruitmentAcceptance(bot,boss.realPlayer,true,out bool accepted) && accepted,
-                "Low-encounter Scav's 100% recruitment probability permits proactive acceptance");
+                "Low-slider Scav's 100% recruitment probability permits proactive acceptance");
             int before=UnityEngine.Random.Rolls;
             Check(AllegiancePmcFriendship.AcceptScavRecruitment(bot,boss.realPlayer) && UnityEngine.Random.Rolls==before,"Scav request reuses its proactive answer");
         }
@@ -1157,7 +1211,9 @@ public static class HostilityChecks {
         AllegianceChecks();
         ScavEncounterChecks();
         EncounterChanceChecks();
+        ScavEncounterToggleChecks();
         ScavAcceptanceChecks();
+        ScavAcceptanceSettingOnlyChecks();
         ScavDiplomacyChecks();
         ScavProfileIdentityChecks();
         ScavReciprocalHostilityChecks();

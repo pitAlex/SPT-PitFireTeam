@@ -40,7 +40,7 @@ public sealed class FriendlyScavCargoService(
         [JsonPropertyName("serverId")] public string? ServerId { get; set; }
     }
 
-    public void BeginRaid(MongoId sessionId, string? output)
+    public void BeginRaid(MongoId sessionId, string? output, StartLocalRaidRequestData? request = null)
     {
         FriendlyScavCargoHooks.Register(this);
         var body = json.Deserialize<FriendlyTeammateBodyResponse<StartIdentity>>(output ?? string.Empty);
@@ -49,7 +49,8 @@ public sealed class FriendlyScavCargoService(
         {
             var ledger = Read(sessionId);
             if (ledger?.ServerId == body.Data.ServerId) return;
-            Write(sessionId, new() { ServerId = body.Data.ServerId, Allegiance = settings.LoadSettings().IsAllegiance });
+            Write(sessionId, new() { ServerId = body.Data.ServerId, Allegiance = settings.LoadSettings().IsAllegiance,
+                PlayerScav = string.Equals(request?.PlayerSide, "savage", StringComparison.OrdinalIgnoreCase) });
         }
     }
 
@@ -58,7 +59,7 @@ public sealed class FriendlyScavCargoService(
         lock (gate)
         {
             var ledger = Read(sessionId);
-            if (!FriendlyScavCargoHooks.Enabled || ledger?.Allegiance != true || ledger.ServerId != request.ServerId ||
+            if (!FriendlyScavCargoHooks.Enabled || ledger == null || (!ledger.Allegiance && !ledger.PlayerScav) || ledger.ServerId != request.ServerId ||
                 !Guid.TryParseExact(request.InsuranceReportId, "N", out _) ||
                 string.IsNullOrWhiteSpace(request.ExitName) ||
                 request.ScavProfileIds.Count is < 1 or > 3 || request.ScavProfileIds.Any(string.IsNullOrWhiteSpace) ||
@@ -76,15 +77,17 @@ public sealed class FriendlyScavCargoService(
     }
 
     public static bool Matches(FriendlyScavCargoLedger? ledger, EndLocalRaidRequestData request) =>
-        ledger?.Allegiance == true && ledger.Cargo != null && ledger.ServerId == request.ServerId &&
+        ledger != null && (ledger.Allegiance || ledger.PlayerScav) && ledger.Cargo != null && ledger.ServerId == request.ServerId &&
         !string.IsNullOrWhiteSpace(ledger.Cargo.ExitName) &&
         ledger.Cargo.ServerId == request.ServerId && ledger.Cargo.ExitName == request.Results?.ExitName &&
         ledger.Cargo.ScavProfileIds.Count > 0 &&
         ledger.Cargo.Transit == (request.Results?.Result == ExitStatus.TRANSIT) &&
         (request.Results?.Result is ExitStatus.SURVIVED or ExitStatus.RUNNER ||
             (request.Results?.Result == ExitStatus.TRANSIT && request.LocationTransit != null)) &&
-        (string.Equals(request.Results.Profile?.Info?.Side, "Usec", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(request.Results.Profile?.Info?.Side, "Bear", StringComparison.OrdinalIgnoreCase));
+        (ledger.PlayerScav
+            ? string.Equals(request.Results.Profile?.Info?.Side, "Savage", StringComparison.OrdinalIgnoreCase)
+            : string.Equals(request.Results.Profile?.Info?.Side, "Usec", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(request.Results.Profile?.Info?.Side, "Bear", StringComparison.OrdinalIgnoreCase));
 
     public void FinishRaid(MongoId sessionId, EndLocalRaidRequestData request)
     {
@@ -112,7 +115,7 @@ public sealed class FriendlyScavCargoService(
         // Use the same exit-name classification as native raid completion. Real co-op
         // rewards (including SVM-paid conversions and disabled gifts) are entirely native.
         // Transit settles a departing Scav's message/cargo only; it is not a new co-op reward.
-        if (ledger.State == "rejected" || ledger.Cargo!.Transit || inRaid.CoopExtracts.Contains(ledger.Cargo.ExitName!)) return;
+        if (ledger.State == "rejected" || ledger.PlayerScav || ledger.Cargo!.Transit || inRaid.CoopExtracts.Contains(ledger.Cargo.ExitName!)) return;
         var profile = saves.GetProfile(sessionId);
         var pmc = profile.CharacterData?.PmcData ?? throw new InvalidOperationException("PMC profile unavailable.");
         var pmcFence = pmc.TradersInfo?[Traders.FENCE] ?? throw new InvalidOperationException("PMC Fence standing unavailable.");
@@ -189,7 +192,7 @@ public sealed class FriendlyScavCargoService(
         Write(sessionId, ledger);
         // Empty-handed companions still receive thanks at ordinary exits and transit.
         // Real co-op exits retain their native message/reward flow, including disabled gifts.
-        if (items.Count > 0 || cargo.Transit || !inRaid.CoopExtracts.Contains(cargo.ExitName!))
+        if (items.Count > 0 || ledger.PlayerScav || cargo.Transit || !inRaid.CoopExtracts.Contains(cargo.ExitName!))
         {
             returns.RemoveReturnedItemsFromInsurance(sessionId, items);
             var details = new SendMessageDetails
@@ -236,7 +239,7 @@ public sealed class FriendlyScavCargoService(
         lock (gate)
         {
             var ledger = Read(sessionId);
-            if (ledger == null || ledger.Cargo?.Transit == true || !Matches(ledger, request) || request.Results?.ExitName is not string exitName ||
+            if (ledger == null || ledger.PlayerScav || ledger.Cargo?.Transit == true || !Matches(ledger, request) || request.Results?.ExitName is not string exitName ||
                 !inRaid.CoopExtracts.Contains(exitName)) return null;
             var existing = saves.GetProfile(sessionId).DialogueRecords?.Values.SelectMany(d => d.Messages ?? [])
                 .Any(m => m.Id.ToString() == ledger!.MessageId) == true;

@@ -63,7 +63,7 @@ Each card is nominally 380 × 535 UI units, twice the roster-card width and 2.5 
 
 Choice controls are disabled while the coordinated mode transition and server-owned onboarding completion run. Successful completion refreshes My Squad into the selected mode's normal Roster view. Choosing the already-active default also completes the flow. Back before choosing leaves the choice pending. Late callbacks from a closed or replaced screen cannot paint its successor.
 
-Accounts with no roster in either mode receive one same-faction level-1 welcome friend invitation, with a random level-1 kit and fixed zero starting skill progress. The normal screen's completed refresh acknowledges readiness, then delivery waits two seconds. Existing squads receive no welcome invitation. [Gameplay modes](Gameplay-Modes.md#first-my-squad-visit) owns eligibility and switching; [storage](Teammate-Storage.md#first-visit-and-welcome-invitation) owns persistence/recovery. The screen has not yet been qualified in EFT for layout, pointer interaction or native invitation display.
+Accounts with no roster in either mode receive one same-faction welcome friend invitation matching the player's PMC level, minimum 1, with a random kit generated at that level and zero starting skill progress. The normal screen's completed refresh acknowledges readiness, then delivery waits two seconds. Existing squads receive no welcome invitation. [Gameplay modes](Gameplay-Modes.md#first-my-squad-visit) owns eligibility and switching; [storage](Teammate-Storage.md#first-visit-and-welcome-invitation) owns persistence/recovery. The screen has not yet been qualified in EFT for layout, pointer interaction or native invitation display.
 
 ### Main menu entry
 

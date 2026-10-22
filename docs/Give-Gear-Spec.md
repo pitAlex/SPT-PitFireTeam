@@ -1,6 +1,6 @@
 # Give Gear
 
-Status: implemented; main raid behavior verified by the user, with remaining edge cases listed below. Updated: 2026-10-20.
+Status: implemented; deferred-ammunition transfer changes require new raid qualification. Earlier main raid behavior was verified by the user. Updated: 2026-10-22.
 
 This document owns the current Core Give Gear contract. The approved disposition, nesting, invitation and insurance rules are collected in section 10. Dated evidence belongs in the [validation ledger](validation/Give-Gear.md); build/fixture success does not establish live raid behavior.
 
@@ -21,6 +21,10 @@ Give Gear is a one-way, staged handover to a follower recruited during the raid.
 PMC/Scav here identifies the recipient. This feature does not broaden recruitment eligibility or player-side rules. A field recruit receiving gear does not thereby become a saved squad member.
 
 Give Gear is independent of saved Pickup Weapons / Pickup Gear settings. Its explicit handover authorizes evaluation of the offered items for this session only; it must not alter saved toggles or later autonomous looting.
+
+A player Scav may donate through the same editor to a native-recruited regular Scav. Remaining donated/command-collected cargo returns through the shared Fence courier when the human extracts alive with that living field follower, in either gameplay mode; it does not grant a Scav-with-Scav cooperation bonus. See [Scav cargo admission and delivery](looting/Friendly-Scav-Cargo.md).
+
+The same staged planner/transaction also serves explicit command loot for field recruits: loose firearms, Loot & Get Weapon packages and the complete corpse kit for Loot & Get Gear. This is a headless exchange at the reserved world source, not an editor or a temporary transfer through the player's inventory. Source snapshot/identity validation joins the existing transaction boundary; player hands/UI remain untouched. Spawned teammates retain their existing loot behavior, and recruited body commands still require no living spawned teammate. See the [command-loot bridge](looting/Looting.md#recruited-follower-upgrade-bridge) for exact source selection and command limits. This does not add autonomous upgrades or broaden standalone Get Weapon/Get Gear.
 
 There is no exhaustive search for an optimal kit. The new comparison work is deliberately limited to a primary-first decision, armor/helmet protection, the supporting vest arrangement and backpack capacity. Existing secondary/holster logic handles support roles afterward. Other equipment follows compatible-empty-slot acquisition rather than occupied-slot upgrade comparisons.
 
@@ -88,7 +92,7 @@ Cadence diagnostics describe the native single-shot cooldown rather than calling
 
 Readiness fallback: before rejecting a weaker candidate, check the current primary's shared native ammunition readiness. If below the normal minimum, first try to restore it using eligible carried/offered magazines and loose ammunition, with the existing bounded current/separate-armor/armored-rig arrangements. Keep the stronger primary if this succeeds. If every replenishment attempt fails, waive only the quality-upgrade threshold for the best-first replacement candidates; they must still pass the complete ordinary functional, ammunition, fast-access and reload-space gates. A mere ammunition-quantity advantage cannot displace a ready or replenishable primary, and two unready packages do not force a swap. Failed replenishment/replacement trials restore exact equipment and ammunition quantities. This happens only during explicit Give Items evaluation, not as a new autonomous cargo-weapon scanner. Logs distinguish current replenishment and `currentPrimaryUnready` fallback from normal quality rejection.
 
-The shared minimum is caliber-based actual usable rounds, not magazine capacity: pistol/SMG and intermediate rifle calibers require 60; 9×39/.366 TKM 40; 7.62×51/7.62×54R/6.8×51 30; .338 Lapua 20; shotgun calibers 12. Unknown/custom calibers conservatively require 60. Detachable weapons count compatible loaded magazine rounds in the weapon and fast access plus usable chambered rounds; loose ammunition counts only after successful loading. Internal/chamber-fed weapons count settled loaded rounds and eligible loose reserves against the same caliber target. No half-full or five-round-magazine credits remain. Specialized launcher readiness stays on its existing separate contract. See [primary readiness](looting/Weapon-Pickup-Primary-Slot-Available.md).
+The shared minimum remains caliber-based: pistol/SMG and intermediate rifle calibers require 60; 9×39/.366 TKM 40; 7.62×51/7.62×54R/6.8×51 30; .338 Lapua 20; shotgun calibers 12. Unknown/custom calibers conservatively require 60. Give Gear admission now uses a read-only allocation of the final equipped package: compatible loaded rounds plus loose rounds which fit the retained magazines' actual capacity. Each round and shared fast-access magazine is allocated once, primary before secondary/holster. This does not declare predicted rounds actually loaded: ordinary firing/reload readiness still uses settled game state. Internal/chamber-fed weapons use loaded and eligible loose reserves. Specialized launcher handling is unchanged. See [primary readiness](looting/Weapon-Pickup-Primary-Slot-Available.md).
 
 ### 4.2 Establish support for the selected primary
 
@@ -116,7 +120,9 @@ Minimum primary readiness is an admission gate, not a magazine-collection cap. E
 
 Use existing readiness, ammunition-compatibility, fast-access placement and reload-reserve rules, including the appropriate internal-magazine/chamber-fed handling. This feature must not create a second, inconsistent ammunition-readiness model.
 
-For detachable-magazine weapons, top off the inserted compatible magazine from eligible loose ammunition before filling spares and before the readiness decision. EFT prohibits direct loading while it is inserted: remove, refill and reinsert it through replayable staged operations, rolling back exactly if it cannot be refilled. Keep existing ownership/protected-loan and mixed-stack restrictions. Insufficient usable ammunition still cannot qualify a new primary.
+Give Gear never tops off magazines, splits stacks or merges rounds, in either the draft or Apply. It transfers magazines and whole loose stacks intact and leaves filling to regular maintenance. Fast-access magazine placement precedes loose-ammo storage; normal cargo placement preserves reload room, with the secure container as an ammunition fallback. Actual native filters and capacity apply. A lone magazine which needs filling may be left in fast access for normal filling followed by native reload; the draft must still prove its future landing opening. Never count incompatible, unavailable, mixed-ownership or excess-capacity rounds toward acceptance.
+
+`FollowerWeaponSupplyBudget` is the shared read-only allocator for Give Gear and later refill requests. The primary claims compatible approved magazines first and protects its refill needs plus the existing tactical stock target (1.5 times caliber readiness, including allocated loaded rounds). Secondary/holster refills may use only non-conflicting magazines and surplus compatible ammunition. Different-caliber packages are independent. Native combat refill requests use the same finite allocation; ordinary bots are unchanged. Normal maintenance fills reachable spares first and uses native reload to cycle them into service. A committed handover re-arms patrol's maintenance window without filling during Apply. Successful Scav refill callbacks preserve donated-versus-native quantities when stack IDs change.
 
 Reloads are sequential. Retained weapons may share the same free magazine landing opening when each magazine fits it independently; do not reserve simultaneous ejection cells for every weapon. Preserve native reload safety for every weapon that remains operational.
 
@@ -170,6 +176,8 @@ Backpack evaluation may establish available carrying capacity before final gener
 Other equipment uses compatible-empty-slot acquisition, not occupied-slot upgrades. For example, an offered headset may fill an empty earpiece slot but does not initiate a price-based replacement of an occupied one. Secondary/holster weapon acquisition remains owned by the existing support planners.
 
 Items not equipped are carried in valid available space. Player-offered items that cannot be equipped or carried are dropped on the ground after submission. They are not deleted, left in a disappearing virtual grid or returned to the player through an invented mail path.
+
+The secure container may also hold compatible items temporarily while planning the exchange. These remain clone-only moves until protected Apply replays them. Existing secure contents are preserved; temporary non-ammunition items must end equipped, in ordinary cargo or in the existing ground-drop escrow, never silently retained as hidden cargo. Failed trials restore both inventory and temporary-staging bookkeeping. The existing virtual escrow remains the fallback when secure capacity/filters do not permit staging.
 
 Giving medical supplies or grenades does not independently enable prohibited medical/combat behavior or override existing bot permissions.
 

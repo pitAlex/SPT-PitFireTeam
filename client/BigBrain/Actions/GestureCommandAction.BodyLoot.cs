@@ -192,6 +192,7 @@ namespace pitTeam.BigBrain.Actions
 
         private void TryStartNextBodyGearMove()
         {
+            if (recruitGearInProgress) return;
             try
             {
                 if (!TryGetBodyLootExecutionContext(out InventoryController? inventory, out InventoryEquipment? corpseEquipment, out InventoryEquipment? followerEquipment, out string reason))
@@ -346,6 +347,8 @@ namespace pitTeam.BigBrain.Actions
             {
                 return;
             }
+
+            if (TryStartRecruitBodyKit(corpseEquipment, followerEquipment)) return;
 
             if (TryStartPendingBodyGearSwapFollowUpMove(inventory, followerEquipment))
             {
@@ -1171,8 +1174,9 @@ namespace pitTeam.BigBrain.Actions
             TryMarkBodyLootSearchedForBoss();
             InteractableObjects.MarkBodyLootTargetChecked(activeBodyLootCorpse);
 
-            if (bodyLootReportedMovesSucceeded > 0)
+            if (ActiveLootRequest?.HasSuccessfulLoot(bodyLootReportedMovesSucceeded) ?? bodyLootReportedMovesSucceeded > 0)
             {
+                BotOwner.BotTalk.TrySay(EPhraseTrigger.Ready, false);
                 ClearBodyLootState("TakeBodyGear:done");
                 QueuePostLootPrimaryWeaponSelection(primaryWeaponToSelect, "bodyLootComplete");
                 QueuePostLootSecondaryWeaponPromotion(secondaryWeaponToPromote, "bodyLootSecondaryPromotion");
@@ -1212,6 +1216,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             StopLootSearchSound();
+            ResetRecruitGearCommand();
             bodyLootMoveInProgress = false;
             activeBodyLootMoveGeneration = 0;
             activeBodyLootMove = null;

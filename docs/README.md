@@ -7,8 +7,8 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 | Document | Purpose |
 |---|---|
 | [Architecture](Architecture.md) | Client/server ownership, lifecycle invariants and source map |
-| [Version 1 release preparation](Version-1-Release-Readiness.md) | Feature inventory, description gaps, cleanup disposition and remaining release gates |
 | [SPT compatibility](SPT-Compatibility.md) | Build/reference baseline and packaging boundaries |
+| [Version 1 validation](validation/Release-1.0.0.md) | Dated release cleanup evidence and outstanding live qualification |
 | [SAIN compatibility](SAIN-Compatibility.md) | Core integration with the external plugin, including deferred shot-safety investigation |
 | [Localization](Localization.md) | Centralized text and locale maintenance |
 | [Proficiency](Friendly-AI-Performance-Settings.md) | Vision, Precision and Reaction calculations and qualification |
@@ -24,7 +24,7 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 | [Commands](Commands.md) | Shared inputs, peaceful execution, core combat orders and status rendering |
 | [Enemy Tracking](Enemy-Tracking.md) | Shared Simple/Realistic modes, remembered search and bounded contact lifetime |
 | [Looting](looting/Looting.md) | Commanded loot, filters, ownership and return bookkeeping |
-| [Friendly Scav cargo](looting/Friendly-Scav-Cargo.md) | Allegiance Scav commanded loot, living companion extraction and Fence returns |
+| [Friendly Scav cargo](looting/Friendly-Scav-Cargo.md) | PMC/player-Scav commanded cargo, living companion extraction and Fence returns |
 | [Primary weapon pickup](looting/Weapon-Pickup-Primary-Slot-Available.md) | Primary readiness, empty-slot acquisition and qualification matrix |
 | [Secondary weapon support](looting/Weapon-Pickup-Secondary-Slot.md) | Secondary acquisition, ammunition maintenance and qualification |
 | [Holster support](looting/Weapon-Pickup-Holster-Slot.md) | Shared support planner and pistol qualification |

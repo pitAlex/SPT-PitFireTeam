@@ -1,5 +1,7 @@
 # Swap Gear
 
+The shared staged exchange engine also supports headless [command-loot upgrades for field recruits](looting/Looting.md#recruited-follower-upgrade-bridge). That path uses Give Gear comparison/ownership and does not expose an editor, change player hands or grant recruits manual Swap Gear access. The spawned-only UI policy below is unchanged.
+
 Core owns the manual in-raid editor. This is separate from add-only commanded [looting](looting/Looting.md) and the out-of-raid [loadout editor](Loadout-Management.md).
 
 ## Interaction and draft

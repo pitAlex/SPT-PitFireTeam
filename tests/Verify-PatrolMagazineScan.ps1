@@ -2,7 +2,7 @@ param([string]$RepositoryRoot = (Split-Path $PSScriptRoot -Parent))
 $ErrorActionPreference = 'Stop'
 $source = Get-Content -Raw (Join-Path $RepositoryRoot 'client/BigBrain/FollowerPatrolLayer.cs')
 $first = $source.IndexOf('        private static bool TryFillReachableSpareMagazines(')
-$last = $source.IndexOf('        private static bool TryFillMagazineWithLooseAmmo(', $first)
+$last = $source.IndexOf('        private static FollowerWeaponSupplyBudget BuildRefillBudget(', $first)
 if ($first -lt 0 -or $last -le $first) { throw 'Missing production spare-magazine refill method' }
 $method = $source.Substring($first, $last - $first)
 $completion = [regex]::Match($source, '(?s)            if \(reloadingInProgress\)\r?\n.*?(?=            if \(!BotOwner\.WeaponManager\.IsWeaponReady)')

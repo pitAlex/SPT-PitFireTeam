@@ -7,6 +7,8 @@ using pitTeam.Modules;
 using pitTeam.Patches;
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Runtime.CompilerServices;
 using UnityEngine;
 
 namespace pitTeam.BigBrain
@@ -114,6 +116,7 @@ namespace pitTeam.BigBrain
         private float healNodeEnteredAt = 0f;
         private bool isHealing = false;
         private bool triedFillMagazines = false;
+        private int _supplyRevision;
         private bool reloadingInProgress = false;
         private float nextReloadCheckAt = 0f;
         private float nextMagazineFillCheckAt = 0f;
@@ -359,7 +362,6 @@ namespace pitTeam.BigBrain
 
                 if (ShouldOwnPatrolHealAction(isUsingHeal, hasPendingHealWork, hasRecoverableTopOffWork))
                 {
-                    BattleRecorder.RecordAmmoRefillGate(BotOwner, "medicalPriority", triedFillMagazines, nextReloadCheckAt);
                     if (!isUsingHeal && TryCreatePatrolHealCoverAction(out Action? coverAction))
                     {
                         selectedAction = coverAction;
@@ -484,7 +486,6 @@ namespace pitTeam.BigBrain
 
                     if (ShouldOwnPatrolHealAction(isUsingHeal, hasPendingHealWork, hasRecoverableTopOffWork))
                     {
-                        BattleRecorder.RecordAmmoRefillGate(BotOwner, "medicalPriority", triedFillMagazines, nextReloadCheckAt);
                         return true;
                     }
 
@@ -497,7 +498,6 @@ namespace pitTeam.BigBrain
                     return false;
                 }
 
-                BattleRecorder.RecordAmmoRefillGate(BotOwner, "medicalAction", triedFillMagazines, nextReloadCheckAt);
                 return EndHealing();
             }
             catch (Exception ex)
@@ -1122,9 +1122,6 @@ namespace pitTeam.BigBrain
                 if (TryTurnOffTacticalDevices(weapon, out HashSet<string> changedDeviceIds))
                 {
                     RefreshTacticalDeviceVisuals(changedDeviceIds);
-                    Modules.Logger.LogInfo(
-                        $"[PatrolLight] Turned off stowed tactical device(s) for {BotOwner?.Profile?.Nickname ?? BotOwner?.name ?? "<unknown>"} " +
-                        $"slot={slot} weaponId={weapon.Id} template={weapon.TemplateId} devices={changedDeviceIds.Count}");
                 }
 
                 if (!string.IsNullOrEmpty(weapon.Id))
@@ -1281,11 +1278,12 @@ namespace pitTeam.BigBrain
         private void TryHandleOutOfCombatReloadInternal()
         {
             if (BotOwner?.WeaponManager == null) return;
+            int supplyRevision = FollowerOutOfCombatReloadPolicy.SupplyRevision(BotOwner);
+            if (_supplyRevision != supplyRevision) { _supplyRevision = supplyRevision; ResetReloadState(); }
             Utils.FollowerRecovery.CheckReloadTimeout(BotOwner);
             if (TryRecoverStationaryPatrolReload()) return;
             if (Time.time < nextReloadCheckAt)
             {
-                BattleRecorder.RecordAmmoRefillGate(BotOwner, "cooldown", triedFillMagazines, nextReloadCheckAt);
                 return;
             }
             if (TryHandleSkippedReloadStart()) return;
@@ -1295,7 +1293,6 @@ namespace pitTeam.BigBrain
             // budget during that intentional suppression; revisit it once the cooldown expires.
             if (FollowerWeaponSwitchPolicyRuntime.ShouldSuppressHoldLingerReload(BotOwner))
             {
-                BattleRecorder.RecordAmmoRefillGate(BotOwner, "combatLinger", triedFillMagazines, nextReloadCheckAt);
                 nextReloadCheckAt = Time.time + 0.5f;
                 return;
             }
@@ -1345,12 +1342,12 @@ namespace pitTeam.BigBrain
 
             if (!BotOwner.WeaponManager.IsWeaponReady || BotOwner.WeaponManager.Reload.Reloading)
             {
-                BattleRecorder.RecordAmmoRefillGate(BotOwner, "weaponBusy", triedFillMagazines, nextReloadCheckAt);
                 return;
             }
             if (AreAllReloadWeaponsProcessed())
             {
-                BattleRecorder.RecordAmmoRefillGate(BotOwner, "allWeaponsProcessed", triedFillMagazines, nextReloadCheckAt);
+                if (Time.time >= nextMagazineFillCheckAt && FollowerOutOfCombatReloadPolicy.HasRefillWork(BotOwner))
+                { ResetReloadState(); return; }
                 if (!TryRestorePatrolReloadFinalSlot(selector))
                 {
                     nextReloadCheckAt = Time.time + 0.25f;
@@ -1367,11 +1364,7 @@ namespace pitTeam.BigBrain
             if (!triedFillMagazines)
             {
                 bool refillQueued = FollowerOutOfCombatReloadPolicy.TryFillCarriedWeaponMagazines(BotOwner);
-                bool nativeFallback = !InteractableObjects.IsLootedWeapon(BotOwner, BotOwner.WeaponManager.CurrentWeapon);
-                if (nativeFallback)
-                {
-                    BotOwner.WeaponManager.Reload.TryFillMagazines();
-                }
+                bool nativeFallback = false; // The shared bounded pass already owns this allocation.
 
                 triedFillMagazines = true;
                 BattleRecorder.RecordAmmoRefill(BotOwner, "pass", "completed", () => new { refillQueued, nativeFallback });
@@ -1530,7 +1523,7 @@ namespace pitTeam.BigBrain
 
             EquipmentSlot currentSlot = BotOwner.WeaponManager.Selector?.LastEquipmentSlot ?? EquipmentSlot.FirstPrimaryWeapon;
             bool reloadLootedPrimaryLauncher = CanReloadLootedFirstPrimaryLauncher(currentSlot, currentWeapon);
-            bool reloadLootedPrimaryPackage = CanReloadLootedFirstPrimaryPackage(currentSlot, currentWeapon);
+            bool reloadLootedPrimaryPackage = CanReloadLootedWeaponPackage(currentSlot, currentWeapon);
             if (InteractableObjects.IsLootedWeapon(BotOwner, currentWeapon) &&
                 !reloadLootedPrimaryLauncher &&
                 !reloadLootedPrimaryPackage)
@@ -1606,7 +1599,7 @@ namespace pitTeam.BigBrain
                         out _);
                 }
 
-                if (!CanReloadLootedFirstPrimaryPackage(currentSlot, currentWeapon))
+                if (!CanReloadLootedWeaponPackage(currentSlot, currentWeapon))
                 {
                     return false;
                 }
@@ -1617,7 +1610,7 @@ namespace pitTeam.BigBrain
                 return BotOwner.WeaponManager.Reload.TryReload();
             }
 
-            EFT.InventoryLogic.Magazine? bestMagazine = BotOwner.WeaponManager.Reload.GetMagazineForReload(currentWeapon);
+            EFT.InventoryLogic.Magazine? bestMagazine = FollowerOutOfCombatReloadPolicy.FindBetterMagazine(BotOwner, currentWeapon);
             if (bestMagazine == null || bestMagazine.Count <= currentWeapon.GetCurrentMagazineCount())
             {
                 return false;
@@ -1626,10 +1619,6 @@ namespace pitTeam.BigBrain
             if (InteractableObjects.IsLootedWeapon(BotOwner, currentWeapon) &&
                 !InteractableObjects.IsApprovedLootedWeaponMagazine(BotOwner, currentWeapon, bestMagazine))
             {
-                Modules.Logger.LogInfo(
-                    $"[PatrolReload] Rejected non-package magazine for looted primary " +
-                    $"'{BotOwner?.Profile?.Nickname ?? BotOwner?.name ?? "<unknown>"}' " +
-                    $"weapon={currentWeapon.TemplateId} magazine={bestMagazine.TemplateId}");
                 return false;
             }
 
@@ -1683,7 +1672,7 @@ namespace pitTeam.BigBrain
             }
 
             bool reloadLootedPrimaryLauncher = CanReloadLootedFirstPrimaryLauncher(slot, weapon);
-            bool reloadLootedPrimaryPackage = CanReloadLootedFirstPrimaryPackage(slot, weapon);
+            bool reloadLootedPrimaryPackage = CanReloadLootedWeaponPackage(slot, weapon);
             if (InteractableObjects.IsLootedWeapon(BotOwner, weapon) &&
                 !reloadLootedPrimaryLauncher &&
                 !reloadLootedPrimaryPackage)
@@ -1768,7 +1757,7 @@ namespace pitTeam.BigBrain
             }
 
             bool reloadLootedPrimaryLauncher = CanReloadLootedFirstPrimaryLauncher(slot, weapon);
-            bool reloadLootedPrimaryPackage = CanReloadLootedFirstPrimaryPackage(slot, weapon);
+            bool reloadLootedPrimaryPackage = CanReloadLootedWeaponPackage(slot, weapon);
             if (InteractableObjects.IsLootedWeapon(BotOwner, weapon) &&
                 !reloadLootedPrimaryLauncher &&
                 !reloadLootedPrimaryPackage)
@@ -1806,13 +1795,11 @@ namespace pitTeam.BigBrain
                    FollowerCombatCommon.CanReloadGrenadeLauncherFromLooseAmmo(BotOwner, weapon);
         }
 
-        private bool CanReloadLootedFirstPrimaryPackage(EquipmentSlot slot, Weapon weapon)
+        private bool CanReloadLootedWeaponPackage(EquipmentSlot slot, Weapon weapon)
         {
-            // Looted firearms normally stay outside patrol reload maintenance so they cannot
-            // consume compatible magazines from the bot's spawned kit. Gear planning now records
-            // magazines successfully acquired for each weapon package; only those magazines may
-            // unlock the first-primary reload path.
-            return slot == EquipmentSlot.FirstPrimaryWeapon &&
+            // An acquired operational weapon may reload only from a registered magazine which
+            // the shared supply allocation does not reserve for an earlier-priority weapon.
+            return ReloadSlotOrder.Contains(slot) &&
                    weapon?.ReloadMode == Weapon.EReloadMode.ExternalMagazine &&
                    InteractableObjects.IsLootedWeapon(BotOwner, weapon) &&
                    FollowerOutOfCombatReloadPolicy.HasBetterMagazine(BotOwner, weapon);
@@ -2130,6 +2117,11 @@ namespace pitTeam.BigBrain
 
     internal static class FollowerOutOfCombatReloadPolicy
     {
+        private sealed class SupplyState { internal int Revision; }
+        private static readonly ConditionalWeakTable<BotOwner, SupplyState> Supplies = new ConditionalWeakTable<BotOwner, SupplyState>();
+        internal static int SupplyRevision(BotOwner bot) => bot != null && Supplies.TryGetValue(bot, out var state) ? state.Revision : 0;
+        internal static void NotifySupplyChanged(BotOwner bot) { if (bot != null) Supplies.GetValue(bot, _ => new SupplyState()).Revision++; }
+        internal static bool HasRefillWork(BotOwner bot) => BuildRefillBudget(bot).HasReachableRefill;
         private const int MinimumBetterMagazineGain = 2;
 
         private static readonly EquipmentSlot[] WeaponSlotsToTopOff =
@@ -2142,11 +2134,6 @@ namespace pitTeam.BigBrain
         public static bool CanTopOffWeapon(BotOwner botOwner, Weapon weapon)
         {
             if (botOwner?.GetPlayer?.InventoryController == null || weapon == null)
-            {
-                return false;
-            }
-
-            if (InteractableObjects.IsLootedWeapon(botOwner, weapon))
             {
                 return false;
             }
@@ -2176,31 +2163,36 @@ namespace pitTeam.BigBrain
             return HasCompatibleLooseAmmo(botOwner, weapon, currentMagazine);
         }
 
-        public static bool HasBetterMagazine(BotOwner botOwner, Weapon weapon)
+        public static bool HasBetterMagazine(BotOwner botOwner, Weapon weapon) => FindBetterMagazine(botOwner, weapon) != null;
+
+        internal static EFT.InventoryLogic.Magazine FindBetterMagazine(BotOwner botOwner, Weapon weapon)
         {
             if (botOwner?.GetPlayer?.InventoryController == null || weapon == null)
             {
-                return false;
+                return null;
             }
 
             if (IsLauncherWeapon(weapon))
             {
-                return false;
+                return null;
             }
 
             Slot magazineSlot = weapon.GetMagazineSlot();
             if (magazineSlot == null)
             {
-                return false;
+                return null;
             }
 
             bool lootedWeapon = InteractableObjects.IsLootedWeapon(botOwner, weapon);
+            var budget = BuildRefillBudget(botOwner);
             int currentCount = weapon.GetCurrentMagazineCount();
             List<EFT.InventoryLogic.Magazine> magazines = new List<EFT.InventoryLogic.Magazine>();
+            EFT.InventoryLogic.Magazine best = null;
             botOwner.GetPlayer.InventoryController.GetReachableItemsOfTypeNonAlloc<EFT.InventoryLogic.Magazine>(magazines, null);
             foreach (EFT.InventoryLogic.Magazine magazine in magazines)
             {
                 if (magazine == null ||
+                    !budget.Owns(weapon, magazine) ||
                     IsInstalledInWeaponTree(magazine) ||
                     (lootedWeapon &&
                      !InteractableObjects.IsApprovedLootedWeaponMagazine(botOwner, weapon, magazine)) ||
@@ -2214,11 +2206,11 @@ namespace pitTeam.BigBrain
                         magazineSlot,
                         botOwner.GetPlayer.InventoryController).Succeeded)
                 {
-                    return true;
+                    if (best == null || magazine.Count > best.Count) best = magazine;
                 }
             }
 
-            return false;
+            return best;
         }
 
         public static bool TryFillCarriedWeaponMagazines(BotOwner botOwner)
@@ -2229,11 +2221,11 @@ namespace pitTeam.BigBrain
             }
 
             bool filledAny = false;
+            var budget = BuildRefillBudget(botOwner);
             foreach (EquipmentSlot slot in WeaponSlotsToTopOff)
             {
                 Weapon? weapon = botOwner.GetPlayer.InventoryController.Inventory.Equipment.GetSlot(slot)?.ContainedItem as Weapon;
                 if (weapon == null ||
-                    InteractableObjects.IsLootedWeapon(botOwner, weapon) ||
                     IsLauncherWeapon(weapon) ||
                     weapon.ReloadMode != Weapon.EReloadMode.ExternalMagazine)
                 {
@@ -2250,10 +2242,10 @@ namespace pitTeam.BigBrain
                 EFT.InventoryLogic.Magazine? currentMagazine = weapon.GetCurrentMagazine();
                 if (currentMagazine != null && currentMagazine.Count < currentMagazine.MaxCount)
                 {
-                    filledAny |= TryFillMagazineWithLooseAmmo(botOwner, currentMagazine);
+                    filledAny |= TryFillMagazineWithLooseAmmo(botOwner, currentMagazine, weapon, budget);
                 }
 
-                filledAny |= TryFillReachableSpareMagazines(botOwner, weapon);
+                filledAny |= TryFillReachableSpareMagazines(botOwner, weapon, budget);
             }
 
             return filledAny;
@@ -2289,7 +2281,7 @@ namespace pitTeam.BigBrain
             return ammos.Count > 0;
         }
 
-        private static bool TryFillReachableSpareMagazines(BotOwner botOwner, Weapon weapon)
+        private static bool TryFillReachableSpareMagazines(BotOwner botOwner, Weapon weapon, FollowerWeaponSupplyBudget budget = null)
         {
             if (botOwner?.GetPlayer?.InventoryController == null || weapon == null)
             {
@@ -2324,21 +2316,33 @@ namespace pitTeam.BigBrain
                 }
 
                 // Partial fills are intentional: a 10-round stack should turn a 0/11 pistol mag into 10/11.
-                filledAny |= TryFillMagazineWithLooseAmmo(botOwner, magazine);
+                filledAny |= TryFillMagazineWithLooseAmmo(botOwner, magazine, weapon, budget);
             }
 
             return filledAny;
         }
 
-        private static bool TryFillMagazineWithLooseAmmo(BotOwner botOwner, EFT.InventoryLogic.Magazine magazine)
+        private static FollowerWeaponSupplyBudget BuildRefillBudget(BotOwner botOwner) =>
+            FollowerWeaponSupplyBudget.Build(botOwner.GetPlayer.InventoryController.Inventory.Equipment,
+                (weapon, magazine) => !InteractableObjects.IsLootedWeapon(botOwner, weapon) ||
+                    InteractableObjects.IsApprovedLootedWeaponMagazine(botOwner, weapon, magazine),
+                ammo => ammo.CheckAction(null).Succeeded && !AllegianceScavCargo.HasMixedStack(botOwner, ammo), spareFirst: true);
+
+        internal static bool TryFillMagazineWithLooseAmmo(BotOwner botOwner, EFT.InventoryLogic.Magazine magazine,
+            Weapon weapon, FollowerWeaponSupplyBudget budget = null)
         {
             if (botOwner?.GetPlayer?.InventoryController == null ||
+                TeammateGearSwap.Current?.Bot == botOwner ||
+                weapon == null ||
                 magazine?.Cartridges?.Filters == null ||
                 magazine.MaxCount <= 0 ||
                 magazine.Count >= magazine.MaxCount)
             {
                 return false;
             }
+
+            budget = budget ?? BuildRefillBudget(botOwner);
+            if (!budget.Owns(weapon, magazine)) return false;
 
             List<EFT.InventoryLogic.Ammo> ammos = new List<EFT.InventoryLogic.Ammo>();
             int compatibleStacks = 0;
@@ -2349,7 +2353,7 @@ namespace pitTeam.BigBrain
                 ammos,
                 ammo =>
                 {
-                    if (ammo == null || ammo.StackObjectsCount <= 0 || !magazine.Cartridges.Filters.CheckItemFilter(ammo)) return false;
+                    if (ammo == null || budget.Fill(magazine, ammo) <= 0 || ammo.StackObjectsCount <= 0 || !magazine.Cartridges.Filters.CheckItemFilter(ammo)) return false;
                     compatibleStacks++;
                     var admission = ammo.CheckAction(null);
                     bool accepted = admission.Succeeded;
@@ -2381,7 +2385,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            int roundsToMove = Math.Min(magazine.MaxCount - magazine.Count, bestAmmo.StackObjectsCount);
+            int roundsToMove = Math.Min(budget.Fill(magazine, bestAmmo), Math.Min(magazine.MaxCount - magazine.Count, bestAmmo.StackObjectsCount));
             if (roundsToMove <= 0)
             {
                 return false;
@@ -2406,17 +2410,22 @@ namespace pitTeam.BigBrain
 
             BattleRecorder.RecordAmmoRefill(botOwner, "transfer", "queued", () => new
             { magazineId = magazine.Id, before = magazine.Count, ammoId = bestAmmo.Id, available = bestAmmo.StackObjectsCount, roundsToMove });
-#if DEBUG
-            if (BattleRecorder.IsRecordingFor(botOwner))
+            var beforeRefill = AllegianceScavCargo.CaptureCommandedLoot(botOwner);
+            bool givenSource = AllegianceScavCargo.GetPureGivenIds(botOwner).Contains(bestAmmo.Id);
+            botOwner.GetPlayer.InventoryController.TryRunNetworkTransaction(result, new Comfort.Common.Callback(completion =>
             {
-                botOwner.GetPlayer.InventoryController.TryRunNetworkTransaction(result, new Comfort.Common.Callback(completion =>
+                try
+                {
+                    if (completion.Succeed)
+                        AllegianceScavCargo.TrackMagazineRefill(botOwner, magazine, beforeRefill, givenSource);
+#if DEBUG
                     BattleRecorder.RecordAmmoRefill(botOwner, "transfer", "callback", () => new
                     { magazineId = magazine.Id, rounds = magazine.Count, ammoId = bestAmmo.Id, remaining = bestAmmo.StackObjectsCount,
-                        success = completion.Succeed, result = completion.ToString() })));
-                return true;
-            }
+                        success = completion.Succeed, result = completion.ToString() });
 #endif
-            botOwner.GetPlayer.InventoryController.TryRunNetworkTransaction(result, null);
+                }
+                catch (Exception ex) { Modules.Logger.LogError("[MagazineSupply] Refill ownership tracking failed: " + ex); }
+            }));
             return true;
         }
 

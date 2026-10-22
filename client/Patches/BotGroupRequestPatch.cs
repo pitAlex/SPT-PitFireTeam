@@ -97,7 +97,7 @@ namespace pitTeam.Patches
                     }
 
                     bool canPickup = false;
-                    int hardPickupLimit = GetHardPickupLimit();
+                    int hardPickupLimit = GetHardPickupLimit(player);
                     int currentPickups = GetActivePickupCount(player.ProfileId);
                     if (HasLevelBasedRecruitmentDenial(posibleExecuter))
                     {
@@ -125,20 +125,7 @@ namespace pitTeam.Patches
                         // - SCAV : based on fence level
                         if (player.Side == EPlayerSide.Savage)
                         {
-                            double standing = player.Profile.FenceInfo.Standing;
-
-                            if (standing >= 1.0)
-                            {
-                                double ratio = (standing - 1.0) / (6.0 - 1.0); // 0 to 1
-                                int maxAllowedByStanding = (int)Math.Round(1 + ratio * (10 - 1));
-
-                                int effectiveLimit = Math.Min(maxAllowedByStanding, hardPickupLimit);
-
-                                if (currentPickups < effectiveLimit)
-                                {
-                                    canPickup = true;
-                                }
-                            }
+                            canPickup = currentPickups < hardPickupLimit;
                         }
                         // - PMC:
                         else
@@ -219,7 +206,7 @@ namespace pitTeam.Patches
 
                                 // Re-check pickup cap at execution time because this runs deferred and
                                 // multiple recruit requests can be queued in the same window.
-                                if (GetActivePickupCount(player.ProfileId) >= GetHardPickupLimit())
+                                if (GetActivePickupCount(player.ProfileId) >= GetHardPickupLimit(player))
                                 {
                                     TrySayRecruitmentResponse(me, EPhraseTrigger.Negative, false);
                                     me.Gesture.TryGestus(EInteraction.NoGesture, true);
@@ -279,7 +266,16 @@ namespace pitTeam.Patches
         private static bool HasLevelBasedRecruitmentDenial(BotOwner bot) =>
             bot != null && bot.Side != EPlayerSide.Savage && BossPlayers.HasDeniedRecruitment(bot.ProfileId);
 
-        private static int GetHardPickupLimit() => Math.Min(10, Math.Max(0, GameplayModeRuntime.GetEffectiveValue(pitFireTeam.maximumPickup)));
+        private static int GetHardPickupLimit(IPlayer player)
+        {
+            int configured = Math.Min(10, Math.Max(0, GameplayModeRuntime.GetEffectiveValue(pitFireTeam.maximumPickup)));
+            if (player?.Side != EPlayerSide.Savage || !GameplayModeRuntime.GetEffectiveValue(pitFireTeam.tieredPickup)) return configured;
+            double standing = player.Profile?.FenceInfo?.Standing ?? 0d;
+            int fenceLimit = double.IsNaN(standing) || double.IsInfinity(standing)
+                ? 0 : (int)Math.Floor(Math.Max(0d, Math.Min(6d, standing)));
+            // Allegiance's fixed maximum is for PMC pickups; player-Scavs use Fence.
+            return GameplayModeRuntime.IsAllegiance ? fenceLimit : Math.Min(configured, fenceLimit);
+        }
 
         private static int GetActivePickupCount(string bossProfileId) =>
             BossPlayers.GetFollowersByBoss(bossProfileId).FindAll(f =>
@@ -291,7 +287,7 @@ namespace pitTeam.Patches
 
         internal static bool HasPickupCapacity(Player player) => player != null &&
             GameplayModeRuntime.GetEffectiveValue(pitFireTeam.pickupEnabled) &&
-            GetActivePickupCount(player.ProfileId) < GetHardPickupLimit();
+            GetActivePickupCount(player.ProfileId) < GetHardPickupLimit(player);
 
         private static void CompleteRecruitConversion(BotOwner bot, pitAIBossPlayer playerBoss)
         {
@@ -313,7 +309,7 @@ namespace pitTeam.Patches
             }
 
             if (!AllegiancePmcFriendship.CanRecruit(bot, playerBoss.Player()) || HasLevelBasedRecruitmentDenial(bot) ||
-                GetActivePickupCount(playerBoss.Player().ProfileId) >= GetHardPickupLimit())
+                GetActivePickupCount(playerBoss.Player().ProfileId) >= GetHardPickupLimit(playerBoss.Player()))
             {
                 FollowerForcedPhraseGate.ArmRecruitmentResponse(bot, EPhraseTrigger.Negative, 1.5f);
                 PrepareImmediateRecruitmentSpeech(bot);

@@ -18,6 +18,7 @@ public sealed class FriendlyScavCargoLedger
 {
     public string? ServerId { get; set; }
     public bool Allegiance { get; set; }
+    public bool PlayerScav { get; set; }
     public FriendlyScavCargoRequest? Cargo { get; set; }
     public string? MessageId { get; set; }
     public string? State { get; set; }

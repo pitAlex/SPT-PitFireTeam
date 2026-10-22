@@ -97,6 +97,7 @@ namespace pitTeam
         public Dictionary<string, string> enemyTracking { get; set; }
         public Dictionary<string, string> healthMultiplier { get; set; }
         public Dictionary<string, string> friendlyEncounterChance { get; set; }
+        public Dictionary<string, string> friendlyScavEncounters { get; set; }
         public Dictionary<string, string> pickup { get; set; }
         public Dictionary<string, string> tieredPickup { get; set; }
         public Dictionary<string, string> maximumPickup { get; set; }
@@ -232,6 +233,7 @@ namespace pitTeam
 
         public static ConfigEntry<int> heatlhMultiplier;
         public static ConfigEntry<int> friendlyEncounterChance;
+        public static ConfigEntry<bool> friendlyScavEncounters;
 
         public static ConfigEntry<int> scanDistance;
 
@@ -482,6 +484,7 @@ namespace pitTeam
             new FollowerSupportNoAmmoMainSwitchPolicyPatch().Enable();
             new FollowerHoldLingerReloadSuppressPatch().Enable();
             new FollowerMagazineReloadStartPatch().Enable();
+            new FollowerMagazineSupplyPatch().Enable();
             new FollowerCombatReloadPermissionPatch().Enable();
             new FollowerLauncherNoAmmoSwitchPatch().Enable();
             new FollowerCombatReloadFallbackSuppressPatch().Enable();
@@ -1097,6 +1100,7 @@ namespace pitTeam
             enemyTracking = Config.Bind("", "03 EnemyTracking", EnemyTrackingMode.Realistic, new ConfigDescription(optionsLang.enemyTracking["Description"], null, CreateConfigAttributes(-299, false, optionsLang.enemyTracking)));
 
             friendlyEncounterChance = Config.Bind("", "04 FriendlyEncounterChance", 30, new ConfigDescription(optionsLang.friendlyEncounterChance["Description"], new AcceptableValueRange<int>(5, 80), CreateConfigAttributes(-399, false, optionsLang.friendlyEncounterChance)));
+            friendlyScavEncounters = Config.Bind("", "04 FriendlyScavEncounters", true, new ConfigDescription(optionsLang.friendlyScavEncounters["Description"], null, CreateConfigAttributes(-399, false, optionsLang.friendlyScavEncounters)));
 
             heatlhMultiplier = Config.Bind("", "04 HealthMultiplier", 1, new ConfigDescription(optionsLang.healthMultiplier["Description"], new AcceptableValueRange<int>(1, 10), CreateConfigAttributes(-400, false, optionsLang.healthMultiplier)));
 

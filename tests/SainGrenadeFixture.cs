@@ -112,7 +112,7 @@ namespace SAIN.SAINComponent.Classes.WeaponFunction {
         public Vector3 ReportTarget=new(20,0,0),FinalTarget=new(20,0,0);private float _minFriendlyDistToThrow_SQR=64;
         public GrenadeThrowDecider(BotComponent bot,bool enabled=false,bool capable=false){Bot=bot;_grenadesEnabled=initialEnabled=enabled;_canThrowGrenades=initialCapable=capable;}
         public bool FlagsUnchanged=>_grenadesEnabled==initialEnabled&&_canThrowGrenades==initialCapable;
-        private bool CheckCanThrow(out string reason){Checks++;if(ThrowException)throw new InvalidOperationException("fixture planner error");reason="hands";return HandsSafe;}
+        private bool CheckCanThrow(out string reason){Checks++;if(ThrowException)throw new InvalidOperationException("fixture planner error");reason="handsOrAttemptTime";return HandsSafe&&Time.time>=_nextPossibleAttempt;}
         private bool CanThrowAtEnemy(Enemy e,out string reason){reason="targetSafety";return TargetSafe;}
         private bool FindThrowTarget(Enemy e){if(!ArcSafe||!CheckFriendlyDistances(ReportTarget)||!CheckFriendlyDistances(FinalTarget))return false;BotOwner.WeaponManager.Grenades.AIGreanageThrowData.Target=FinalTarget;return true;}
         __NATIVE_FRIENDLY__
@@ -130,6 +130,10 @@ namespace pitTeam {
     public static class pitFireTeam {public static Switch botGrenades=new();}
 }
 namespace pitTeam.Modules {
+    public static class SainCombatRecorderBridge {
+        public static bool IsRecording=>true;
+        public static void RecordEvent(BotOwner bot,string kind,object details){var type=details.GetType();BattleRecorder.Events.Add(type.GetProperty("action").GetValue(details)+":"+type.GetProperty("reason").GetValue(details));}
+    }
     public static class BossPlayers {public static Dictionary<string,BotOwner> Bots=new();public static bool IsFollower(BotOwner b)=>b.IsFollower;public static object GetFollowerByProfileId(string id)=>Bots.TryGetValue(id,out var b)&&b.IsFollower?b:null;}
     public static class SainAddonBridge {public static bool IsFollowerCombatEnabled(BotOwner b)=>b.IsFollower&&b.Addon;public static bool IsCombatReady(BotOwner b)=>b.Ready;}
     public static class BattleRecorder {
@@ -140,8 +144,8 @@ namespace pitTeam.Modules {
 namespace pitTeam.Utils {
     public static class FollowerShotSafety {
         public const float RegularGrenadeUnsafeRadius=8;
-        public static bool TrajectoryUnsafe;
-        public static bool IsRegularGrenadeTrajectoryUnsafeForThrower(BotOwner bot,BotGrenadeController controller,AIGreanageThrowData data,out string reason){reason="fixtureTrajectoryUnsafe";return TrajectoryUnsafe;}
+        public static bool TrajectoryUnsafe;public static int TrajectoryChecks;
+        public static bool IsRegularGrenadeTrajectoryUnsafeForThrower(BotOwner bot,BotGrenadeController controller,AIGreanageThrowData data,out string reason){TrajectoryChecks++;reason="fixtureTrajectoryUnsafe";return TrajectoryUnsafe;}
         __CORE_IMPACT_GEOMETRY__
     }
 }
@@ -151,7 +155,7 @@ public static class GrenadeChecks {
     private static void Check(bool value,string name){if(!value)throw new Exception(name);count++;}
     private static BotOwner Bot(string id,TestBoss boss,bool addon=true){var b=new BotOwner{ProfileId=id,IsFollower=true,Addon=addon};b.GetPlayer.AIData.BotOwner=b;b.BotFollower.BossToFollow=boss;boss.Followers.Add(b);b.WeaponManager.Grenades=new(){_owner=b};BossPlayers.Bots[id]=b;return b;}
     private static GrenadeThrowDecider Decider(BotOwner b){var component=new BotComponent{BotOwner=b};component.Squad.Members[b.ProfileId]=component;return new(component);}
-    private static void Clear(){SainGrenadeThrowBridge.Reset();FollowerGrenadeRuntimeGate.ClearAll();FollowerGrenadeCooldowns.ClearAll();UnityEngine.Time.time=0;pitTeam.pitFireTeam.botGrenades.Value=true;GlobalSettingsClass.Instance.General.BotsUseGrenades=false;GlobalSettingsClass.Instance.General.BotVsBotGrenade=false;pitTeam.Utils.FollowerShotSafety.TrajectoryUnsafe=false;BattleRecorder.Events.Clear();}
+    private static void Clear(){SainGrenadeThrowBridge.Reset();FollowerGrenadeRuntimeGate.ClearAll();FollowerGrenadeCooldowns.ClearAll();UnityEngine.Time.time=0;pitTeam.pitFireTeam.botGrenades.Value=true;GlobalSettingsClass.Instance.General.BotsUseGrenades=false;GlobalSettingsClass.Instance.General.BotVsBotGrenade=false;pitTeam.Utils.FollowerShotSafety.TrajectoryUnsafe=false;pitTeam.Utils.FollowerShotSafety.TrajectoryChecks=0;BattleRecorder.Events.Clear();}
     private static void CoreHooks(Harmony h) {
         h.Patch(AccessTools.PropertyGetter(typeof(BotGrenadeController),nameof(BotGrenadeController.HaveGrenade)),postfix:new HarmonyMethod(typeof(pitTeam.Patches.FollowerGrenadeAvailabilityPatch),"PatchPostfix"));
         h.Patch(AccessTools.Method(typeof(BotGrenadeController),nameof(BotGrenadeController.DoThrow)),prefix:new HarmonyMethod(typeof(pitTeam.Patches.FollowerGrenadeCooldownPatch),"PatchPrefix"),postfix:new HarmonyMethod(typeof(pitTeam.Patches.FollowerGrenadeCooldownPatch),"PatchPostfix"));
@@ -163,8 +167,56 @@ public static class GrenadeChecks {
         var hands=new Player.BaseGrenadeHandsController{_player=bot.GetPlayer};bot.GetPlayer.HandsController=hands;return hands;
     }
     private static void Drop(Player.BaseGrenadeHandsController hands) => hands.ThrowGrenade(0,default,default,default,false);
+    private static void RetryChecks() {
+        Clear();var boss=new TestBoss();var b=Bot("preDraw",boss);var d=Decider(b);var g=b.WeaponManager.Grenades;var enemy=new Enemy();
+        pitTeam.Utils.FollowerShotSafety.TrajectoryUnsafe=true;
+        Check(!d.GetDecision(enemy,out _)&&g.Throws==0&&g.NativeCalls==0,"unsafe current-origin arc is rejected before drawing");
+        Check(!FollowerGrenadeRuntimeGate.IsThrowAllowed(b)&&FollowerGrenadeCooldowns.CanProceedToThrow(b),"pre-draw rejection releases permission without fabricated release cooldown");
+        Check(BattleRecorder.Events.Contains("retryDeferred:preDraw:fixtureTrajectoryUnsafe"),"pre-draw rejection passively records the actual safety reason");
+        int checks=d.Checks,probes=pitTeam.Utils.FollowerShotSafety.TrajectoryChecks;
+        for(int i=0;i<1000;i++)d.GetDecision(enemy,out _);
+        Check(d.Checks==checks&&pitTeam.Utils.FollowerShotSafety.TrajectoryChecks==probes&&g.NativeCalls==0,"failed-candidate delay prevents repeated native planning and safety probes");
+        pitTeam.Utils.FollowerShotSafety.TrajectoryUnsafe=false;Time.time=14.99f;
+        Check(!d.GetDecision(enemy,out string reason)&&reason=="followerGrenadeRetry","clear geometry does not immediately rearm a failed candidate");
+        SainGrenadeThrowBridge.Release(b);
+        Check(!d.GetDecision(enemy,out _),"brief ownership handoff cannot erase failed-throw delay");
+        var teammate=Bot("unblockedTeammate",boss);
+        Check(Decider(teammate).GetDecision(enemy,out _),"failed candidate does not impose a squad-wide successful-throw cooldown");
+        teammate.WeaponManager.Grenades.EndAll();Time.time=15f;
+        Check(d.GetDecision(enemy,out _)&&g.Throws==1,"candidate may be reconsidered after fifteen seconds");
+
+        Clear();b=Bot("cancelledDraw",new TestBoss());d=Decider(b);g=b.WeaponManager.Grenades;
+        Check(d.GetDecision(enemy,out _)&&g.ThrowindNow,"valid candidate starts normal native sequence");
+        Time.time=1;g.EndAll();
+        Check(BattleRecorder.Events.Contains("retryDeferred:endedWithoutRelease"),"native cancellation arms retry after capturing release state before Core cleanup");
+        Check(FollowerGrenadeCooldowns.CanProceedToThrow(b)&&!FollowerGrenadeRuntimeGate.IsThrowAllowed(b),"cancelled draw closes permission without marking a release");
+        Time.time=3;g.EndAll();Time.time=15.99f;
+        Check(!d.GetDecision(enemy,out _),"cancelled draw waits fifteen seconds from cancellation");
+        Time.time=16;
+        Check(d.GetDecision(enemy,out _)&&g.Throws==2,"duplicate cleanup does not keep extending cancellation delay");
+
+        Clear();b=Bot("lateReleaseVeto",new TestBoss());d=Decider(b);g=b.WeaponManager.Grenades;d.GetDecision(enemy,out _);
+        var hands=Hands(b);pitTeam.Utils.FollowerShotSafety.TrajectoryUnsafe=true;Drop(hands);Time.time=1;g.EndAll();
+        pitTeam.Utils.FollowerShotSafety.TrajectoryUnsafe=false;Time.time=10;
+        Check(!d.GetDecision(enemy,out _)&&hands.Spawned==0&&hands.Consumed==0,"live release veto preserves item and prevents another draw during backoff");
+
+        Clear();b=Bot("resetRetry",new TestBoss());d=Decider(b);pitTeam.Utils.FollowerShotSafety.TrajectoryUnsafe=true;d.GetDecision(enemy,out _);
+        SainGrenadeThrowBridge.Reset();pitTeam.Utils.FollowerShotSafety.TrajectoryUnsafe=false;
+        Check(d.GetDecision(enemy,out _),"addon reset clears raid-local retry state");
+        foreach(string scope in new[]{"core","unready","ordinary"}) {
+            Clear();b=Bot(scope,new TestBoss());d=Decider(b);g=b.WeaponManager.Grenades;
+            if(scope=="core")b.Addon=false;if(scope=="unready")b.Ready=false;if(scope=="ordinary")b.IsFollower=false;
+            GlobalSettingsClass.Instance.General.BotsUseGrenades=true;GlobalSettingsClass.Instance.General.BotVsBotGrenade=true;
+            d=new GrenadeThrowDecider(d.Bot,true,true);FollowerGrenadeRuntimeGate.EnableExplicitThrow(b);
+            pitTeam.Utils.FollowerShotSafety.TrajectoryUnsafe=true;
+            Check(d.GetDecision(enemy,out _)&&g.Throws==1&&pitTeam.Utils.FollowerShotSafety.TrajectoryChecks==0,"pre-draw adaptation excludes "+scope);
+            g.EndAll();Check(!BattleRecorder.Events.Contains("retryDeferred:endedWithoutRelease"),"addon cancellation state excludes "+scope);
+        }
+        Clear();
+    }
     public static int Main(){
         var core=new Harmony("xyz.pit.fireteam");var addon=new Harmony("xyz.pit.fireteam.sainaddon");CoreHooks(core);SainGrenadeThrowBridge.Apply(addon);
+        RetryChecks();
         foreach(bool own in new[]{false,true}) foreach(bool master in new[]{false,true}) foreach(bool capability in new[]{false,true}) foreach(bool versus in new[]{false,true}) {
             Clear();pitTeam.pitFireTeam.botGrenades.Value=own;GlobalSettingsClass.Instance.General.BotsUseGrenades=master;GlobalSettingsClass.Instance.General.BotVsBotGrenade=versus;
             var matrixBot=Bot("matrix",new TestBoss());var matrix=new GrenadeThrowDecider(new BotComponent{BotOwner=matrixBot},master,capability);
@@ -254,6 +306,7 @@ public static class GrenadeChecks {
             UnityEngine.Time.time=6.1f;var ready=Bot("nextMember",boss);
             Check(FollowerGrenadeCooldowns.CanProceedToThrow(ready),"group cooldown measured from spawn, not delayed completion");
             UnityEngine.Time.time=16.1f;Check(FollowerGrenadeCooldowns.CanProceedToThrow(b),"individual cooldown measured from spawn, not delayed completion");
+            if(addonTactic)Check(!BattleRecorder.Events.Contains("retryDeferred:endedWithoutRelease")&&Decider(b).GetDecision(enemy,out _),"successful spawn is not mistaken for cancellation after Core consumes the release marker");
         }
         Clear();b=Bot("inventoryFailure",new TestBoss());Decider(b).GetDecision(enemy,out _);
         var failedHands=Hands(b);failedHands.InventorySucceeds=false;Drop(failedHands);

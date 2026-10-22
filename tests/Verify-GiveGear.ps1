@@ -10,8 +10,17 @@ function Region([string]$source, [string]$start, [string]$end) {
 $session = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/TeammateGearSwap.cs')
 $giving = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/TeammateGearSwap.GiveGear.cs')
 $planner = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/GiveGearPlanner.cs')
+if ($planner.Contains('magazine.Apply(') -or $planner.Contains('TopOffInsertedMagazine(') -or $planner.Contains('RefillMagazine(')) {
+    throw 'Give Gear must only allocate and move supplies, never load magazines'
+}
+foreach ($contract in @('FollowerWeaponSupplyBudget.Build', 'EquipmentSlot.SecuredContainer', '_temporarySecureItems', 'reserveReloadSpace: true')) {
+    if (!$planner.Contains($contract)) { throw "Missing deferred supply/staging boundary: $contract" }
+}
 foreach ($retired in @('TraceDonation(', '_donationTraceId', '_donationPlanNumber')) {
     if ($giving.Contains($retired)) { throw "Retired runtime Give Gear diagnostic remains: $retired" }
+}
+foreach ($retired in @('private readonly Action<string> _trace', 'Trace(', 'DescribeWeaponRange(', 'DescribeWeaponCadence(')) {
+    if ($planner.Contains($retired)) { throw "Retired Give Gear comparison diagnostic remains: $retired" }
 }
 $insurance = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/GiveGearInsurance.cs')
 $insuranceLedger = Get-Content -Raw (Join-Path $RepositoryRoot 'server/Services/FollowerInsuranceRaidDiagnostics.cs')
@@ -28,7 +37,7 @@ foreach ($contract in @('if (Giving) PrepareDonation()', 'if (Giving) AddLiveDon
     '!giving && !follower.IsSpawnedSquadMate')) {
     if (!$session.Contains($contract)) { throw "Missing shared transaction boundary: $contract" }
 }
-foreach ($contract in @('10, 12', 'RegisterNonReturnableIds(Bot, _nativeDonationSplitIds.Concat(_borrowedDonationIds))',
+foreach ($contract in @('CommandLoot ? 64 : 10, CommandLoot ? 64 : 12', 'RegisterNonReturnableIds(Bot, _borrowedDonationIds)',
     'TrackCommandedLoot(Bot, live, _scavBeforeDonation)', 'Bot.Side != EPlayerSide.Savage',
     '_applyScope.Preparation.ThrowIfCancellationRequested()', 'Snapshot(overflow) != Snapshot(_donationOverflow)',
     '_planningDonation = false', 'IsProtectedFollowerEquipment', 'PreserveBorrowedGearOwnership()')) {
@@ -153,10 +162,19 @@ try {
     }
     $company = $module.GetType('EFT.UI.Insurance.InsuranceCompany')
     $magazine = $module.GetType('EFT.InventoryLogic.Magazine')
+    $reload = $module.GetType('BotReload')
+    $ownerType = $reload
+    while ($ownerType -and !($ownerType.Fields | Where-Object { $_.Name -eq '_owner' -and $_.IsPublic })) {
+        $ownerType = $module.GetType($ownerType.BaseType.FullName)
+    }
+    if (!($reload.Methods | Where-Object { $_.Name -eq 'AddAmmoToMag' -and $_.Parameters.Count -eq 2 -and $_.IsPublic }) -or
+        !$ownerType) {
+        throw 'Installed native shared refill entry point changed'
+    }
     $applyItem = $magazine.Methods | Where-Object { $_.Name -eq 'ApplyItem' -and $_.Parameters.Count -eq 4 }
     if (!$applyItem -or !($applyItem.Body.Instructions | Where-Object { $_.Operand -is [Mono.Cecil.MethodReference] -and
         $_.Operand.DeclaringType.Name -eq 'LoadInsertedMagazineError' })) {
-        throw 'Installed detachable-magazine loading restriction changed; recheck staged detach/refill/reinsert'
+        throw 'Installed detachable-magazine loading restriction changed; recheck deferred ordinary refill/reload'
     }
     if (!($company.Fields | Where-Object { $_.Name -eq '_missingInsuredItems' -and $_.IsPublic }) -or
         !($company.Methods | Where-Object { $_.Name -eq 'get_InsuredItems' })) {

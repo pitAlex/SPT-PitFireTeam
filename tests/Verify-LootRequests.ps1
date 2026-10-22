@@ -19,6 +19,25 @@ if ($LASTEXITCODE -ne 0) { throw 'Loot fixture compilation failed' }
 & $exe
 if ($LASTEXITCODE -ne 0) { throw 'Loot request fixture failed' }
 
+# Run the real body finalizer with command-owned success surviving an action restart.
+$bodySource = Get-Content -Raw (Join-Path $RepositoryRoot 'client/BigBrain/Actions/GestureCommandAction.BodyLoot.cs')
+$finishStart = $bodySource.IndexOf('        private void FinishBodyLootNoMoreMoves()')
+$finishEnd = $bodySource.IndexOf('        private void CleanupBodyLootInteraction(', $finishStart)
+if ($finishStart -lt 0 -or $finishEnd -le $finishStart) { throw 'Missing body completion boundary' }
+$finishFixture = Get-Content -Raw (Join-Path $PSScriptRoot 'RecruitLootCompletionFixture.cs')
+$finishCode = $finishFixture.Replace('/* FINISH BODY LOOT */', $bodySource.Substring($finishStart, $finishEnd - $finishStart))
+$finishSource = Join-Path $temporary 'RecruitLootCompletion.cs'
+[IO.File]::WriteAllText($finishSource, $finishCode)
+$finishExe = Join-Path $temporary 'RecruitLootCompletion.exe'
+$finishArgs = @($compiler, '/nologo', '/target:exe', '/langversion:latest', '/nostdlib+', "/out:$finishExe")
+foreach ($reference in @('mscorlib.dll', 'System.dll', 'System.Core.dll')) {
+    $finishArgs += "/reference:$(Join-Path $framework $reference)"
+}
+& dotnet @finishArgs $finishSource (Join-Path $RepositoryRoot 'client/Modules/FollowerLootRequest.cs')
+if ($LASTEXITCODE -ne 0) { throw 'Recruit loot completion fixture compilation failed' }
+& $finishExe
+if ($LASTEXITCODE -ne 0) { throw 'Recruit loot completion fixture failed' }
+
 # Exercise the production eligibility getters across recruit-only, mixed, death and transit cases.
 $followerSource = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Components/BotFollowerPlayer.cs')
 $eligibilityStart = $followerSource.IndexOf('        public bool CanHandleBodyContainerLootCommands')

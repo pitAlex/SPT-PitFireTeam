@@ -16,7 +16,6 @@ namespace pitTeam.Modules
         private GiveGearWorldDrops _donationDrops;
         private int _donationEditCount;
         private Dictionary<string, int> _scavBeforeDonation;
-        private readonly List<string> _nativeDonationSplitIds = new List<string>();
         private HashSet<string> _offeredDonationIds;
         private HashSet<string> _borrowedDonationIds;
         private void InitializeDonation()
@@ -26,7 +25,7 @@ namespace pitTeam.Modules
                 .Where(w => Follower.GivenGearWeaponIds.Contains(w.Id)))
                 _playerOwnedIds.UnionWith(Tree(weapon).Select(i => (string)i.Id));
             PreserveBorrowedGearOwnership();
-            Donation = GiveGearContainer.Create(MongoID.Generate(true), 10, 12, Bot.Profile.Nickname);
+            Donation = GiveGearContainer.Create(MongoID.Generate(true), CommandLoot ? 64 : 10, CommandLoot ? 64 : 12, Bot.Profile.Nickname);
             _donationOverflow = GiveGearContainer.Create(MongoID.Generate(true), 64, 64, Bot.Profile.Nickname);
             _draftItems.Add(Donation.Id, Donation);
             _draftItems.Add(_donationOverflow.Id, _donationOverflow);
@@ -65,8 +64,7 @@ namespace pitTeam.Modules
                 !_playerOwnedIds.Contains(i.Id)).Select(i => (string)i.Id));
             _donationPlan = new GiveGearPlanner(BotDraft, Donation, _donationOverflow, Bot,
                 edit => { _edits.Add(edit); edit.UpdateProvenance(_playerOwnedIds); },
-                _playerOwnedIds, item => _draftItems[item.Id] = item,
-                id => _nativeDonationSplitIds.Add(id));
+                _playerOwnedIds);
             _planningDonation = true;
             try { _donationPlan.Build(); }
             finally { _planningDonation = false; }
@@ -80,7 +78,6 @@ namespace pitTeam.Modules
             _donationPlan.Rollback();
             if (_edits.Count > _donationEditCount) _edits.RemoveRange(_donationEditCount, _edits.Count - _donationEditCount);
             _donationPlan = null;
-            _nativeDonationSplitIds.Clear();
         }
 
         private bool CanReplayDonation(Item item, ItemAddress destination, Dictionary<string, Item> items)
@@ -95,8 +92,9 @@ namespace pitTeam.Modules
         private void TrackDonation()
         {
             var live = Bot.GetPlayer.InventoryController.Inventory.Equipment;
+            pitTeam.BigBrain.FollowerOutOfCombatReloadPolicy.NotifySupplyChanged(Bot);
             // PMC gifts remain with the recruit/invitation. Scavs return only exact donated trees.
-            AllegianceScavCargo.RegisterNonReturnableIds(Bot, _nativeDonationSplitIds.Concat(_borrowedDonationIds));
+            AllegianceScavCargo.RegisterNonReturnableIds(Bot, _borrowedDonationIds);
             AllegianceScavCargo.TrackCommandedLoot(Bot, live, _scavBeforeDonation);
             foreach (EquipmentSlot slot in GiveGearPlanner.EquipmentSlots)
             {
@@ -130,7 +128,7 @@ namespace pitTeam.Modules
 
         private void AddLiveDonationContainers(Dictionary<string, Item> items)
         {
-            items.Add(Donation.Id, GiveGearContainer.Create(Donation.Id, 10, 12, Bot.Profile.Nickname));
+            items.Add(Donation.Id, GiveGearContainer.Create(Donation.Id, CommandLoot ? 64 : 10, CommandLoot ? 64 : 12, Bot.Profile.Nickname));
             items.Add(_donationOverflow.Id, GiveGearContainer.Create(_donationOverflow.Id, 64, 64, Bot.Profile.Nickname));
         }
 
@@ -141,6 +139,7 @@ namespace pitTeam.Modules
                 Item parent = address.Container.ParentItem;
                 if (ReferenceEquals(parent, Owner.Player.InventoryController.Inventory.Equipment) ||
                     ReferenceEquals(parent, Bot.GetPlayer.InventoryController.Inventory.Equipment) ||
+                    (CommandLoot && ReferenceEquals(parent, _commandSource)) ||
                     (parent != null && (parent.Id == Donation.Id || parent.Id == _donationOverflow.Id))) return true;
                 address = parent?.CurrentAddress;
             }
@@ -157,7 +156,7 @@ namespace pitTeam.Modules
             try
             {
                 _applyScope.Preparation.ThrowIfCancellationRequested();
-                if (UnsafeReason(Owner, Bot, Follower, applying: true, giving: true) != null)
+                if (UnsafeReason(Owner, Bot, Follower, applying: true, giving: true, commandLoot: CommandLoot) != null)
                     throw new InvalidOperationException("Donation actors changed during world-owner preparation.");
             }
             catch { _donationDrops.Rollback(); _donationDrops = null; throw; }

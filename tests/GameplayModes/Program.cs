@@ -24,8 +24,11 @@ internal static class Program
         var modeSpecificKeys = new HashSet<string> { "BadGuy", "Friendly", "Tracking", "Pickup", "Tiered", "Maximum", "Recruit", "TeamEscape", "TeamEscapeUseAnyExtract" };
         var original = config.Where(pair => pair.Key.Section == "Game" && modeSpecificKeys.Contains(pair.Key.Key)).ToDictionary(pair => pair.Key, pair => pair.Value.GetSerializedValue());
         Check(pitFireTeam.friendlyEncounterChance.Value == 30 && !GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyEncounterChance), "friendly chance defaults to 30 and is editable in Guns for Hire");
+        Check(pitFireTeam.friendlyScavEncounters.Value && GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyScavEncounters), "Scav encounters default on but the toggle is unavailable in Guns for Hire");
         await GameplayModeRuntime.ChangeAsync(GameplayMode.Allegiance);
         Check(!GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyEncounterChance), "friendly chance is enabled in Allegiance");
+        Check(!GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyScavEncounters), "Scav encounters are editable in Allegiance");
+        pitFireTeam.friendlyScavEncounters.Value = false;
         pitFireTeam.friendlyEncounterChance.Value = 45;
         Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.friendlyEncounterChance) == 45, "Allegiance friendly chance is editable without a locked override");
         Check(SPT.Common.Http.RequestHandler.Mode == "Allegiance", "server mode follows client");
@@ -103,6 +106,7 @@ internal static class Program
         Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.healKey).MainKey == KeyCode.J &&
             !GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.healKey), "restart preserves the usable Allegiance healing binding");
         Check(pitFireTeam.friendlyEncounterChance.Value == 45, "restart preserves Allegiance friendly chance preference");
+        Check(!pitFireTeam.friendlyScavEncounters.Value, "restart preserves disabled Scav encounters");
         Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.teamEscape) && !GameplayModeRuntime.GetEffectiveValue(pitFireTeam.teamEscapeUseAnyExtract), "restart preserves Team Escape locks");
         var legacySnapshot = JArray.Parse(File.ReadAllText(path + ".guns-for-hire.json"));
         foreach (var pair in shared)
@@ -111,6 +115,7 @@ internal static class Program
         await GameplayModeRuntime.ChangeAsync(GameplayMode.GunsForHire);
         Check(pitFireTeam.loadoutManagementMode.Value == LoadoutManagementMode.Immersive && SPT.Common.Http.RequestHandler.Loadout == "Immersive", "returning to Guns for Hire ignores legacy shared snapshot values and retains the current loadout choice");
         Check(pitFireTeam.friendlyEncounterChance.Value == 45 && !GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyEncounterChance), "returning to Guns for Hire retains and enables the shared encounter preference");
+        Check(!pitFireTeam.friendlyScavEncounters.Value && GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyScavEncounters), "Guns for Hire retains the disabled Scav preference while making its control unavailable");
         Check(original.All(pair => config[pair.Key].GetSerializedValue() == pair.Value), "restart restores every original mode-specific setting");
         Check(shared.All(pair => config[pair.Key].GetSerializedValue() == pair.Value), "returning to Guns for Hire ignores all legacy shared entries and preserves current shared settings");
         Check(!GameplayModeRuntime.GetEffectiveValue(pitFireTeam.teamEscape) && GameplayModeRuntime.GetEffectiveValue(pitFireTeam.teamEscapeUseAnyExtract), "Guns for Hire restores both Team Escape preferences");
@@ -125,6 +130,7 @@ internal static class Program
         Check(shared.All(pair => config[pair.Key].GetSerializedValue() == pair.Value), "shared changes in Guns for Hire carry into Allegiance");
         Check(pitFireTeam.loadoutManagementMode.Value == LoadoutManagementMode.Extreme && SPT.Common.Http.RequestHandler.Loadout == "Extreme", "Allegiance receives the shared Realistic choice");
         Check(pitFireTeam.friendlyEncounterChance.Value == 45 && !GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyEncounterChance), "returning to Allegiance retains and enables friendly chance preference");
+        Check(!pitFireTeam.friendlyScavEncounters.Value && !GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyScavEncounters), "returning to Allegiance preserves disabled Scav encounters and enables their control");
         await GameplayModeRuntime.ChangeAsync(GameplayMode.GunsForHire);
         Check(pitFireTeam.loadoutManagementMode.Value == LoadoutManagementMode.Extreme && SPT.Common.Http.RequestHandler.Loadout == "Extreme", "mode cycling preserves the shared Realistic choice");
         Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.maximumPickup) == 5, "second cycle snapshots latest Guns for Hire values");
@@ -173,6 +179,7 @@ internal static class Program
         pitFireTeam.healKey = c.Bind("Game", "Heal", new KeyboardShortcut(KeyCode.H));
         pitFireTeam.heatlhMultiplier = c.Bind("Game", "Health", 3);
         pitFireTeam.friendlyEncounterChance = c.Bind("Game", "FriendlyEncounterChance", 30, new ConfigDescription("", new AcceptableValueRange<int>(5,80)));
+        pitFireTeam.friendlyScavEncounters = c.Bind("Game", "FriendlyScavEncounters", true);
         pitFireTeam.pmcArmbands = c.Bind("Game", "Armbands", true);
         return c;
     }
@@ -186,7 +193,7 @@ namespace pitTeam
     public static class pitFireTeam
     {
         public static ConfigEntry<bool> badGuy, pitFireTeamFLAG, pickupEnabled, tieredPickup, recruitPickup, pmcArmbands;
-        public static ConfigEntry<bool> teamEscape, teamEscapeUseAnyExtract;
+        public static ConfigEntry<bool> teamEscape, teamEscapeUseAnyExtract, friendlyScavEncounters;
         public static ConfigEntry<int> maximumPickup, heatlhMultiplier, friendlyEncounterChance;
         public static ConfigEntry<EnemyTrackingMode> enemyTracking;
         public static ConfigEntry<LoadoutManagementMode> loadoutManagementMode;

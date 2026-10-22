@@ -15,10 +15,10 @@ namespace pitTeam.Modules
             return (float)Math.Max(0d, Math.Min(1d, baseChance * Math.Max(0d, Math.Min(6d, standing))));
         }
 
-        internal static float RecruitmentAcceptanceChance(float encounterChance)
+        internal static float RecruitmentAcceptanceChance(float encounterSettingChance)
         {
-            if (float.IsNaN(encounterChance) || float.IsInfinity(encounterChance)) encounterChance = 0.15f;
-            float fraction = Math.Max(0f, Math.Min(1f, (encounterChance - 0.15f) / 0.35f));
+            if (float.IsNaN(encounterSettingChance) || float.IsInfinity(encounterSettingChance)) encounterSettingChance = 0.15f;
+            float fraction = Math.Max(0f, Math.Min(1f, (encounterSettingChance - 0.15f) / 0.35f));
             return 1f - 0.5f * fraction;
         }
 

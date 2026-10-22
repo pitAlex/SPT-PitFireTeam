@@ -1,10 +1,15 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using pitTeam.Server.Models;
 using pitTeam.Server.Services;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Common.Tables;
 using SPTarkov.Server.Core.Models.Enums;
 using SPTarkov.Server.Core.Utils;
+using SPTarkov.Server.Core.Helpers.Profile;
+using SPTarkov.Server.Core.Models.Eft.Common;
+using SPTarkov.Server.Core.Models.Spt.Bots;
+using SPTarkov.Server.Core.Models.Spt.Tables;
 
 internal static class SquadOnboardingTests
 {
@@ -92,9 +97,41 @@ internal static class SquadOnboardingTests
             Skills = new Skills { Common = [new CommonSkill { Id = SkillTypes.Assault, Progress = 4500, PointsEarnedDuringSession = 50 }], Points = 40 },
             Stats = new Stats { Eft = new EftStats { TotalInGameTime = 6000, OverallCounters = new OverallCounters { Items = [] } } }
         };
-        var normalize = typeof(FriendlyTeammateService).GetMethod("NormalizeWelcomeProfile", BindingFlags.NonPublic | BindingFlags.Static)!;
-        normalize.Invoke(null, [profile]);
-        check(profile.Info.Level == 1 && profile.Info.Experience == 0, "starter normalization fixes level and experience");
+        var generationMethod = typeof(FriendlyTeammateService).GetMethod("CreateWelcomeGenerationDetails", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var globals = new GlobalTable
+        {
+            Configuration = new()
+            {
+                Exp = new() { Level = new() { ExperienceTable = Enumerable.Range(0, 80).Select(i => new ExpTable { Experience = i * 100 }).ToArray() } },
+                Mastering = [], ArenaEftTransferSettings = null!, RestrictionsInRaid = [], EventType = []
+            },
+            LocationInfection = [], BotPresets = [], BotWeaponScatterings = [], ItemPresets = []
+        };
+        var profileHelper = new ProfileHelper(null!, null!, globals, null!, null!, null!, null!, null!, null!);
+        var teammateService = (FriendlyTeammateService)RuntimeHelpers.GetUninitializedObject(typeof(FriendlyTeammateService));
+        typeof(FriendlyTeammateService).GetFields(BindingFlags.NonPublic | BindingFlags.Instance)
+            .Single(field => field.FieldType == typeof(ProfileHelper)).SetValue(teammateService, profileHelper);
+        var normalize = typeof(FriendlyTeammateService).GetMethod("NormalizeWelcomeProfile", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        foreach (int? playerLevel in new int?[] { null, -3, 0, 1, 2, 15, 45 })
+        {
+            int expectedLevel = Math.Max(1, playerLevel ?? 1);
+            var player = new PmcData { Info = new() { Level = playerLevel, Side = "Usec", Nickname = "Player" } };
+            var generation = (BotGenerationDetails)generationMethod.Invoke(teammateService, [player])!;
+            check(generation.PlayerLevel == expectedLevel && generation.LocationSpecificPmcLevelOverride!.Min == expectedLevel
+                && generation.LocationSpecificPmcLevelOverride.Max == expectedLevel, "welcome generation and kit use the player level with a minimum of one");
+            check(generation.BotCountToGenerate == 1 && generation.BotRelativeLevelDeltaMin == 0 && generation.BotRelativeLevelDeltaMax == 0,
+                "welcome remains exactly one teammate at the selected level");
+            normalize.Invoke(teammateService, [profile, expectedLevel]);
+            check(profile.Info.Level == expectedLevel && profile.Info.Experience == profileHelper.GetExperience(expectedLevel),
+                "welcome level and baseline XP stay consistent with the native experience table");
+        }
+        var invite = new FriendlyRecruitRequestEntry { Level = 15, IsWelcomeTeammate = true };
+        storage.Write(session, "welcome-level-fixture.json", invite);
+        var savedInvite = storage.Read<FriendlyRecruitRequestEntry>(session, "welcome-level-fixture.json")!;
+        normalize.Invoke(teammateService, [profile, savedInvite.Level]);
+        normalize.Invoke(teammateService, [profile, savedInvite.Level]);
+        check(profile.Info.Level == 15 && profile.Info.Experience == profileHelper.GetExperience(15),
+            "preview and acceptance normalization preserve the invitation's saved level instead of resetting it to one");
         check(profile.Skills.Common!.Single().Progress == 0 && profile.Skills.Common.Single().PointsEarnedDuringSession == 0
             && profile.Skills.Points == 0 && !profile.Skills.Mastering!.Any(), "starter normalization clears generated skill, mastery and session bonuses");
         check(profile.Stats.Eft.TotalInGameTime == 0, "starter has no fabricated raid history");

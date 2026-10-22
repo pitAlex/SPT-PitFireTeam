@@ -49,10 +49,11 @@ namespace pitTeam.Modules
         private float _openedAt;
         private readonly Dictionary<GameObject, bool> _hiddenTabs = new Dictionary<GameObject, bool>();
 
-        private TeammateGearSwap(EftGamePlayerOwner owner, BotOwner bot, BotFollowerPlayer follower, bool giving = false)
+        private TeammateGearSwap(EftGamePlayerOwner owner, BotOwner bot, BotFollowerPlayer follower, bool giving = false, bool commandLoot = false)
         {
             Owner = owner; Bot = bot; Follower = follower;
             Giving = giving;
+            CommandLoot = commandLoot;
             // Capture before the editor's patrol inspection hold pauses movement.
             _previousMoverPause = bot.Mover?.Pause ?? false;
             AllowBackpackSwap = follower.IsSpawnedSquadMate;
@@ -74,6 +75,7 @@ namespace pitTeam.Modules
             var liveItems = Index(owner.Player.InventoryController.Inventory.Equipment, bot.GetPlayer.InventoryController.Inventory.Equipment);
             if (_draftItems.Any(pair => liveItems.TryGetValue(pair.Key, out Item live) && ReferenceEquals(live, pair.Value)))
                 throw new InvalidOperationException("Draft inventory contains a live item reference.");
+            if (CommandLoot) return;
             _screen = new InventoryScreen.RaidInventoryScreenController((IEftSession)owner.Session, playerProfile,
                 owner.Player.HealthController, PlayerDraft, owner.Player.QuestController,
                 owner.Player.AchievementsController, owner.Player.PrestigeController, Giving ? Donation : (CompoundItem)FollowerEquipment,
@@ -174,7 +176,9 @@ namespace pitTeam.Modules
             if (Bot?.Mover != null) Bot.Mover.Pause = _previousMoverPause;
         }
         internal bool IsLiveLocked(Item item) => !Mutating && item != null &&
-            (ReferenceEquals(item.Owner, Owner.Player.InventoryController) || ReferenceEquals(item.Owner, Bot.GetPlayer.InventoryController));
+            ((!CommandLoot && ReferenceEquals(item.Owner, Owner.Player.InventoryController)) ||
+             ReferenceEquals(item.Owner, Bot.GetPlayer.InventoryController) ||
+             (CommandLoot && ReferenceEquals(item.Owner, _commandSourceOwner)));
         internal static bool TreatCommitAddressKnown(ItemAddress address) => Current?.Mutating == true &&
             (Current.Giving ? Current.CanCommitDonationAddress(address) :
                 CanPlace(address, Current.Owner.Player.InventoryController.Inventory.Equipment, Current.Bot.GetPlayer.InventoryController.Inventory.Equipment,
@@ -186,11 +190,18 @@ namespace pitTeam.Modules
 
         internal static void Update(GamePlayerOwner owner)
         {
+            if (owner?.Player?.IsYourPlayer == true) _commandOwner = owner as EftGamePlayerOwner;
             var session = Current;
             if (session == null || !ReferenceEquals(session.Owner, owner)) return;
             try
             {
                 CheckApplyDeadline();
+                if (session.CommandLoot)
+                {
+                    string commandReason = session.CommandUnsafeReason();
+                    if (commandReason != null) { session.Cancel(commandReason); if (!session.Applying) session.Close(); }
+                    return;
+                }
                 var tabs = CommonUI.Instance?.InventoryScreen?._tabDictionary;
                 if (tabs != null)
                     foreach (var tab in tabs.Where(t => t.Key != EInventoryTab.Gear))
@@ -219,7 +230,7 @@ namespace pitTeam.Modules
             _applyScope?.CancelPreparation();
         }
 
-        private static string UnsafeReason(GamePlayerOwner owner, BotOwner bot, BotFollowerPlayer follower, bool applying, bool giving = false)
+        private static string UnsafeReason(GamePlayerOwner owner, BotOwner bot, BotFollowerPlayer follower, bool applying, bool giving = false, bool commandLoot = false)
         {
             // Evaluate the safety gate once without changing medical/AI state.
             if (owner?.Player?.HealthController?.IsAlive != true) return "playerDeadOrUnavailable";
@@ -232,20 +243,20 @@ namespace pitTeam.Modules
             if (bot.IsDead || bot.BotState != EBotState.Active || bot.GetPlayer?.HealthController?.IsAlive != true)
                 return "followerDeadOrInactive";
             float distance = Vector3.Distance(owner.Player.Position, bot.GetPlayer.Position);
-            if (distance > 2.5f) return $"outOfRange:{distance:0.00}m";
+            if (!commandLoot && distance > 2.5f) return $"outOfRange:{distance:0.00}m";
             // An accepted protected Apply finishes without clearing newly acquired enemy knowledge.
             if (applying) return null;
             if (follower.HasKnownEnemy()) return "knownEnemy";
             if (bot.Memory?.HaveEnemy == true) return "nativeEnemy";
             if (bot.Memory?.IsUnderFire == true) return "underFire";
             if (TeammateBackpackInspection.HasActiveOrPendingHealWork(bot)) return "healing";
-            if (TeammateBackpackInspection.HasActiveOrPendingPickupWork(bot, follower)) return "looting";
+            if (!commandLoot && TeammateBackpackInspection.HasActiveOrPendingPickupWork(bot, follower)) return "looting";
             if (bot.WeaponManager?.Selector?.IsChanging == true) return "followerWeaponChanging";
             if (bot.WeaponManager?.Grenades?.ThrowindNow == true) return "throwingGrenade";
             // EFT polls only the active reload record. A stale flag on a stowed
             // weapon is not an in-flight hands operation; native hands safety still follows.
             if (bot.WeaponManager?._currentWeaponInfo?.Reload?.Reloading == true) return "reloading";
-            if (owner.Player.InventoryController.IsChangingWeapon) return "playerWeaponChanging";
+            if (!commandLoot && owner.Player.InventoryController.IsChangingWeapon) return "playerWeaponChanging";
             return bot.WeaponManager?.CanChangeHands() == true ? null : "followerHandsBusy";
         }
 
@@ -255,6 +266,12 @@ namespace pitTeam.Modules
             profile.Inventory = new InventoryDescriptor(source.Inventory, FullySearchedSearchController.Instance).ToInventory();
             return profile;
         }
+
+        // Match the descriptor used by Snapshot and the profile inventory clone above.
+        // The convenience CloneItemWithSameId path omits weapon runtime state (for
+        // example malfunction/chamber metadata) serialized by the Apply validator.
+        private static Item Clone(Item source) => ItemBinarySerializer.SerializeItem(source,
+            FullySearchedSearchController.Instance).Deserialize(new Dictionary<MongoID, Item>());
 
         internal static IEnumerable<Item> Tree(Item item)
         {
@@ -324,17 +341,19 @@ namespace pitTeam.Modules
 
         private void ValidateLive()
         {
-            string reason = _closed ? "sessionClosed" : _cancelled ? _cancelReason : UnsafeReason(Owner, Bot, Follower, Applying, Giving);
+            string reason = _closed ? "sessionClosed" : _cancelled ? _cancelReason :
+                CommandLoot ? CommandUnsafeReason() : UnsafeReason(Owner, Bot, Follower, Applying, Giving);
             if (reason != null)
             {
                 Cancel(reason);
                 throw new InvalidOperationException("Swap interrupted: " + reason);
             }
-            if (_playerBefore != Snapshot(Owner.Player.InventoryController.Inventory.Equipment) ||
+            if ((!CommandLoot && _playerBefore != Snapshot(Owner.Player.InventoryController.Inventory.Equipment)) ||
                 _botBefore != Snapshot(Bot.GetPlayer.InventoryController.Inventory.Equipment))
             {
                 throw new GearSwapValidationException("SwapGearStale");
             }
+            ValidateCommandSource();
         }
 
         internal async Task Apply()
@@ -357,13 +376,15 @@ namespace pitTeam.Modules
                 HoldMovement();
                 handsStarted = true;
                 // Hands must release original item references before any equipment changes.
-                await EmptyHands(Owner.Player);
+                if (!CommandLoot) await EmptyHands(Owner.Player);
                 await EmptyHands(Bot.GetPlayer);
                 _applyScope.Preparation.ThrowIfCancellationRequested();
                 ValidateLive();
                 var player = Owner.Player.InventoryController;
                 var bot = Bot.GetPlayer.InventoryController;
+                var actor = CommandLoot ? bot : player;
                 var items = Index(player.Inventory.Equipment, bot.Inventory.Equipment);
+                AddCommandSource(items);
                 if (Giving) AddLiveDonationContainers(items);
                 List<IOperationResult> applied;
                 Mutating = true;
@@ -371,7 +392,7 @@ namespace pitTeam.Modules
                 {
                     applied = GearSwapTransaction.Execute(_edits.Select(edit => (Func<IOperationResult>)(() =>
                     {
-                        var result = edit.Execute(items, player,
+                        var result = edit.Execute(items, actor,
                             i => Giving ? CanReplayDonation(i, null, items) : CanEdit(i, player.Inventory.Equipment, bot.Inventory.Equipment, AllowBackpackSwap),
                             a => Giving ? CanReplayDonation(null, a, items) : CanPlace(a, player.Inventory.Equipment, bot.Inventory.Equipment, AllowBackpackSwap));
                         return result;
@@ -380,10 +401,11 @@ namespace pitTeam.Modules
                         {
                             string playerActual = Snapshot(player.Inventory.Equipment), playerExpected = Snapshot(PlayerEquipment);
                             string followerActual = Snapshot(bot.Inventory.Equipment), followerExpected = Snapshot(FollowerEquipment);
-                            if (playerActual != playerExpected || followerActual != followerExpected)
+                            if ((!CommandLoot && playerActual != playerExpected) || followerActual != followerExpected)
                             {
                                 throw new InvalidOperationException("Replay did not match the accepted draft.");
                             }
+                            ValidateCommandReplay();
                             if (Giving) PrepareDonationDrops(items);
                         });
                 }
@@ -402,9 +424,9 @@ namespace pitTeam.Modules
                 // No await between mutation and publication. Native events update armor, visuals and weights.
                 foreach (IOperationResult result in applied)
                 {
-                    try { result.RaiseEvents(player, CommandStatus.Begin); }
+                    try { result.RaiseEvents(actor, CommandStatus.Begin); }
                     catch (Exception ex) { publicationErrors.Add(ex); }
-                    try { result.RaiseEvents(player, CommandStatus.Succeed); }
+                    try { result.RaiseEvents(actor, CommandStatus.Succeed); }
                     catch (Exception ex) { publicationErrors.Add(ex); }
                 }
                 foreach (Item item in Tree(player.Inventory.Equipment).Where(i => _botIds.Contains(i.Id)))
@@ -418,16 +440,16 @@ namespace pitTeam.Modules
             {
                 // Correctable draft errors occur before any hands or live inventory changes.
                 // Preserve all staged edits so the player can fix the arrangement and retry.
-                keepDraft = !handsStarted && ex is GearSwapValidationException draftError &&
+                keepDraft = !CommandLoot && !handsStarted && ex is GearSwapValidationException draftError &&
                     (draftError.Key == "SwapGearMagazineSpace" || draftError.Key == "SwapGearNeedsWeapon");
                 if (Giving && !committed)
                 {
                     UndoDonationPlan();
-                    keepDraft = !handsStarted && !_cancelled && !_closed &&
+                    keepDraft = !CommandLoot && !handsStarted && !_cancelled && !_closed &&
                         !(ex is GearSwapValidationException stale && stale.Key == "SwapGearStale");
                 }
                 if (!keepDraft) Logger.LogError("[SwapGear] Apply " + (committed ? "committed; refresh failed" : "rejected/rolled back") + ": " + ex);
-                if (!_worldEnding) Warn(Giving && !committed ? "GiveGearApplyFailed" : committed ? "SwapGearRefreshFailed" : ex is AggregateException ? "SwapGearRecoveryFailed" :
+                if (!_worldEnding && (!CommandLoot || committed)) Warn(Giving && !committed ? "GiveGearApplyFailed" : committed ? "SwapGearRefreshFailed" : ex is AggregateException ? "SwapGearRecoveryFailed" :
                     ex is GearSwapValidationException validation ? validation.Key : "SwapGearApplyFailed");
             }
             finally
@@ -453,7 +475,7 @@ namespace pitTeam.Modules
                 }
                 try
                 {
-                    if (Applying && CanContinue(Owner.Player)) await RestoreHands(Owner.Player, playerHands);
+                    if (!CommandLoot && Applying && CanContinue(Owner.Player)) await RestoreHands(Owner.Player, playerHands);
                 }
                 catch (Exception ex)
                 {
@@ -593,7 +615,7 @@ namespace pitTeam.Modules
         }
         internal void Close()
         {
-            try { if (!_closed) _screen.CloseScreen(); }
+            try { if (!_closed) _screen?.CloseScreen(); }
             finally { Cleanup(); }
         }
         private void Cleanup()
@@ -604,8 +626,8 @@ namespace pitTeam.Modules
             ReleaseMovement();
             try
             {
-                _screen.OnClose -= OnScreenClosed;
-                if (Owner.Player != null && !Owner.Player.Destroyed) Owner.Player.SetInventoryOpened(false);
+                if (_screen != null) _screen.OnClose -= OnScreenClosed;
+                if (!CommandLoot && Owner.Player != null && !Owner.Player.Destroyed) Owner.Player.SetInventoryOpened(false);
                 foreach (var tab in _hiddenTabs)
                     if (tab.Key != null) tab.Key.SetActive(tab.Value);
             }

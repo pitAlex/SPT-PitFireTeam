@@ -88,11 +88,12 @@ public static class Program
     static void Check(bool value,string label){if(!value)throw new Exception(label);checks++;}
     static Player Human=>Comfort.Common.Singleton<GameWorld>.Instance.MainPlayer;
     static CommonAssets.Scripts.Game.Point Point=>CommonAssets.Scripts.Game.ExfiltrationController.Instance.ExfiltrationPoints[0];
-    static BotOwner Setup()
+    static BotOwner Setup(bool playerScav=false,bool allegiance=true,bool selected=true)
     {
-        AllegianceScavCargo.Reset();InteractableObjects.ProtectedIds.Clear();GameplayModeRuntime.IsAllegiance=true;AllegiancePmcFriendship.Selected=true;AllegianceScavRelations.TrustBroken=false;
+        AllegianceScavCargo.Reset();InteractableObjects.ProtectedIds.Clear();GameplayModeRuntime.IsAllegiance=allegiance;AllegiancePmcFriendship.Selected=selected;AllegianceScavRelations.TrustBroken=false;
         FollowerInsuranceRaidReports.Sent.Clear();BossPlayers.Followers.Clear();TeammateBackpackInspection.Flush=null;
         Comfort.Common.Singleton<GameWorld>.Instance=new();CommonAssets.Scripts.Game.ExfiltrationController.Instance=new();
+        Human.Side=playerScav ? EPlayerSide.Savage : EPlayerSide.Usec;
         var bot=new BotOwner();var bag=new Item {Id="native-backpack",Parent=bot.GetPlayer.InventoryController.Inventory.Equipment};
         var gun=new Item {Id="native-gun",Parent=bot.GetPlayer.InventoryController.Inventory.Equipment};
         bot.GetPlayer.InventoryController.Inventory.Equipment.Children.AddRange([bag,gun]);
@@ -186,6 +187,23 @@ public static class Program
         Check(Returned().Length==0,"Ambient loot not collected by player order remains excluded");
         bot=Setup();stack=bot.GetPlayer.InventoryController.Inventory.Equipment.Children[1];stack.StackObjectsCount=40;before=AllegianceScavCargo.CaptureCommandedLoot(bot);stack.StackObjectsCount=60;AllegianceScavCargo.TrackCommandedLoot(bot,stack,before);End();
         Check(FollowerInsuranceRaidReports.Sent.Single()["items"][0]["upd"]["StackObjectsCount"].Value<int>()==20,"Commanded stack merge excludes the native share");
+        bot=Setup();
+        var refillGift=Give(bot);refillGift.StackObjectsCount=25;AllegianceScavCargo.TrackStackChange(bot,refillGift,1);
+        var refillTarget=bot.GetPlayer.InventoryController.Inventory.Equipment.Children[1];
+        var refillBefore=AllegianceScavCargo.CaptureCommandedLoot(bot);
+        refillGift.Parent.Children.Remove(refillGift);refillTarget.StackObjectsCount+=25;
+        AllegianceScavCargo.TrackMagazineRefill(bot,refillTarget,refillBefore,true);End();
+        Check(Returned().Length==1 && FollowerInsuranceRaidReports.Sent.Single()["items"][0]["upd"]["StackObjectsCount"].Value<int>()==25,
+            "Donated rounds loaded later into a native magazine retain only their donated return quantity");
+        bot=Setup();var donatedTarget=Give(bot);donatedTarget.StackObjectsCount=10;AllegianceScavCargo.TrackStackChange(bot,donatedTarget,1);
+        refillBefore=AllegianceScavCargo.CaptureCommandedLoot(bot);donatedTarget.StackObjectsCount=20;
+        AllegianceScavCargo.TrackMagazineRefill(bot,donatedTarget,refillBefore,false);End();
+        Check(FollowerInsuranceRaidReports.Sent.Single()["items"][0]["upd"]["StackObjectsCount"].Value<int>()==10,
+            "Native rounds loaded into a donated magazine never become extra return cargo");
+        bot=Setup();refillBefore=AllegianceScavCargo.CaptureCommandedLoot(bot);
+        var nativeChild=new Item{Id="native-refill-split",StackObjectsCount=15,Parent=bot.GetPlayer.InventoryController.Inventory.Equipment};nativeChild.Parent.Children.Add(nativeChild);
+        AllegianceScavCargo.TrackMagazineRefill(bot,nativeChild,refillBefore,false);End();
+        Check(Returned().Length==0,"Native refill split identities remain excluded from Fence returns");
         bot=Setup();before=AllegianceScavCargo.CaptureCommandedLoot(bot);native=bot.GetPlayer.InventoryController.Inventory.Equipment.Children[1];AllegianceScavCargo.TrackCommandedLoot(bot,native,before);End();
         Check(Returned().Length==0,"Repositioning the Scav's own kit is not new cargo");
         bot=Setup();before=AllegianceScavCargo.CaptureCommandedLoot(bot);loot=new Item{Id="failed-move"};AllegianceScavCargo.TrackCommandedLoot(bot,loot,before);End();
@@ -218,6 +236,36 @@ public static class Program
         bot=Setup();gift=Give(bot,"borrowed-helmet");var validGift=Give(bot,"real-gift");
         InteractableObjects.ProtectedIds.Add(gift.Id);End();
         Check(Returned().SequenceEqual([validGift.Id]), "Final exact-ID protection excludes loaned gear without suppressing real gifts");
+        foreach(bool allegiance in new[]{false,true})
+        foreach(var status in Enum.GetValues<ExitStatus>()) {
+            bot=Setup(playerScav:true,allegiance:allegiance,selected:false);
+            gift=Give(bot,"scav-run-gift");
+            child=new Item{Id="scav-run-child",Parent=gift};gift.Children.Add(child);AllegianceScavCargo.TrackGiven(bot,gift);
+            End(status,"ordinary");
+            bool success=status is ExitStatus.Survived or ExitStatus.Runner or ExitStatus.Transit;
+            Check(FollowerInsuranceRaidReports.Sent.Count==(success ? 1:0),"Native Scav recruitment supports Scav raids in both modes without PMC encounter selection");
+            if(success) {
+                Check(Returned().Order().SequenceEqual(new[]{gift.Id,child.Id}.Order()),"Player Scav returns exact donated tree, never companion starting equipment");
+                Check(gift.Parent.Id=="native-backpack","Scav extraction does not detach the companion's live equipment");
+                End(status,"ordinary");Check(FollowerInsuranceRaidReports.Sent.Count==1,"Repeated player-Scav completion cannot duplicate capture");
+            }
+        }
+        foreach(int unavailable in Enumerable.Range(0,7)) {
+            bot=Setup(playerScav:true,allegiance:false,selected:false);Give(bot);
+            if(unavailable==0)bot.IsDead=true;
+            if(unavailable==1)Human.HealthController.IsAlive=false;
+            if(unavailable==2)BossPlayers.Followers.Clear();
+            if(unavailable==3)BossPlayers.Followers[bot.ProfileId].Boss.realPlayer=new(){ProfileId="other-player"};
+            if(unavailable==4)BossPlayers.Followers[bot.ProfileId].IsSquadMate=true;
+            if(unavailable==5)AllegianceScavRelations.TrustBroken=true;
+            End(exit:unavailable==6 ? "" : "ordinary");
+            Check(FollowerInsuranceRaidReports.Sent.Count==0,"Player-Scav mode retains death, dismissal, ownership, squad, betrayal and extraction evidence gates");
+        }
+        bot=Setup(playerScav:true,allegiance:false,selected:false);AllegianceScavCargo.Reset();BossPlayers.Followers.Clear();
+        AllegianceScavCargo.OnRecruited(bot,Human);Give(bot);End();
+        Check(FollowerInsuranceRaidReports.Sent.Count==0,"Nearby friendly Scav without actual follower registration cannot acquire return provenance");
+        bot=Setup(selected:false);Give(bot);End();
+        Check(FollowerInsuranceRaidReports.Sent.Count==0,"PMC still requires selected Allegiance recruitment");
         Console.WriteLine($"PASS: {checks} production Scav cargo client checks.");
     }
 }

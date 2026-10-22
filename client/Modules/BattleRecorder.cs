@@ -1067,7 +1067,6 @@ namespace pitTeam.Modules
                 bool sainActive = SainCombatRecorderBridge.IsActive(owner);
                 RecordAddonCombatState(owner, sainActive, "sainSnapshotSync");
                 bool layerActive = FollowerCombatLayer.IsFollowerCombatLayerActive(owner) || sainActive;
-                RecordAmmoRefillObservation(owner, state.InCombat || layerActive);
                 TryRecordFollowerWeaponActivity(owner, state, layerActive);
                 BotFollowerPlayer? followerData = BossPlayers.Instance?.GetFollower(owner);
                 bool hasActiveCommand = followerData?.TryPeekActiveCommand(out _, out _, out _) == true;

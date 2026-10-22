@@ -50,20 +50,26 @@ internal static class Program
         var request=new EndLocalRaidRequestData { ServerId="raid", Results=new() {ExitName="co-op",Result=ExitStatus.SURVIVED,Profile=new PmcData {Info=new() {Side="Usec"}}}};
         var ledger=new FriendlyScavCargoLedger {ServerId="raid",Allegiance=true,Cargo=new() {ServerId="raid",ExitName="co-op",ScavProfileIds=["scav"]},MessageId=new MongoId().ToString(),State="prepared",DeliveredIds=["cargo"]};
         foreach(var status in Enum.GetValues<ExitStatus>())
-        foreach(var side in new[]{"Usec","Bear","USEC","Savage"})
+        foreach(var side in new[]{"Usec","Bear","USEC","Savage","SAVAGE","Unknown",null})
+        foreach(bool playerScav in new[]{true,false})
+        foreach(bool allegiance in new[]{true,false})
         foreach(bool correctRaid in new[]{true,false})
         foreach(bool correctExit in new[]{true,false})
         foreach(bool transitReport in new[]{true,false})
         foreach(bool transitMetadata in new[]{true,false}) {
-            request.Results.Result=status;request.Results.Profile.Info.Side=side;
+            request.Results.Result=status;request.Results.Profile.Info=side==null ? null : new() {Side=side};
+            ledger.PlayerScav=playerScav;ledger.Allegiance=allegiance;
             request.ServerId=correctRaid ? "raid" : "other";request.Results.ExitName=correctExit ? "co-op" : "normal";
             ledger.Cargo.Transit=transitReport;request.LocationTransit=transitMetadata ? new() : null;
             bool expected=((status is ExitStatus.SURVIVED or ExitStatus.RUNNER && !transitReport) ||
-                (status==ExitStatus.TRANSIT && transitReport && transitMetadata)) && side!="Savage" && correctRaid && correctExit;
-            Check(FriendlyScavCargoService.Matches(ledger,request)==expected,"Exact raid/outcome/PMC/exit match matrix");
+                (status==ExitStatus.TRANSIT && transitReport && transitMetadata)) &&
+                (playerScav ? string.Equals(side,"Savage",StringComparison.OrdinalIgnoreCase) : allegiance &&
+                    (string.Equals(side,"Usec",StringComparison.OrdinalIgnoreCase)||string.Equals(side,"Bear",StringComparison.OrdinalIgnoreCase))) && correctRaid && correctExit;
+            Check(FriendlyScavCargoService.Matches(ledger,request)==expected,"Exact raid/outcome/start-bound player side/mode/exit match matrix");
         }
+        ledger.PlayerScav=false;ledger.Allegiance=true;
         ledger.Cargo.Transit=false;request.LocationTransit=null;
-        request.ServerId="raid";request.Results.ExitName="co-op";request.Results.Result=ExitStatus.SURVIVED;request.Results.Profile.Info.Side="Usec";
+        request.ServerId="raid";request.Results.ExitName="co-op";request.Results.Result=ExitStatus.SURVIVED;request.Results.Profile.Info=new() {Side="Usec"};
         ledger.Allegiance=false;Check(!FriendlyScavCargoService.Matches(ledger,request),"Guns for Hire never gets Scav returns");ledger.Allegiance=true;
         ledger.Cargo.ScavProfileIds.Clear();Check(!FriendlyScavCargoService.Matches(ledger,request),"Exit name alone cannot establish a recruited partner");ledger.Cargo.ScavProfileIds.Add("scav");
         ledger.Cargo.ExitName=request.Results.ExitName="ordinary";
@@ -496,6 +502,66 @@ internal static class Program
                 restarted.FinishRaid(id,end);
                 Check(profile.DialogueRecords[fence].Messages!.Count==noteMessages && Notifications.Count==noteNotifications+1,
                     "Deleted completed normal thank-you note is not regenerated");
+            }
+            // Player Scavs recruit natively in either mode. Reuse the same courier and
+            // receipts, without manufacturing a PMC/Scav cooperation reward.
+            profile=profiles[id];pmc=profile.CharacterData!.PmcData!;
+            var scavEndProfile=new PmcData {Info=new() {Side="Savage"},Inventory=new() {Items=[]}};
+            foreach(bool allegiance in new[]{true,false})
+            foreach(var outcome in new[]{ExitStatus.SURVIVED,ExitStatus.RUNNER,ExitStatus.TRANSIT})
+            foreach(bool withCargo in new[]{true,false}) {
+                settings.SaveAndApply(new() {GameplayMode=allegiance ? "Allegiance" : "GunsForHire"});
+                string raid=$"scav-{allegiance}-{outcome}-{withCargo}";
+                string exit=withCargo ? "ordinary" : "co-op";
+                int oldMessages=profile.DialogueRecords![fence].Messages!.Count;
+                int oldNotifications=Notifications.Count;
+                double? oldStanding=pmc.TradersInfo![fence].Standing;
+                double? oldScavStanding=profile.CharacterData.ScavData!.TradersInfo![fence].Standing;
+                int oldCoop=pmc.CoopExtractCounts!.Count;
+                service.BeginRaid(id,$"{{\"err\":0,\"data\":{{\"serverId\":\"{raid}\"}}}}",new() {PlayerSide="savage"});
+                // A repeated start cannot change the already established raid side.
+                service.BeginRaid(id,$"{{\"err\":0,\"data\":{{\"serverId\":\"{raid}\"}}}}",new() {PlayerSide="pmc"});
+                var scavCargo=new FriendlyScavCargoRequest {ServerId=raid,ExitName=exit,Transit=outcome==ExitStatus.TRANSIT,
+                    InsuranceReportId=Guid.NewGuid().ToString("N"),ScavProfileIds=["native-scav"],Items=withCargo ? cargo.Items : []};
+                service.Queue(id,scavCargo);
+                var scavEnd=new EndLocalRaidRequestData {ServerId=raid,Results=new() {Result=outcome,ExitName=exit,Profile=scavEndProfile},
+                    LocationTransit=outcome==ExitStatus.TRANSIT ? new() : null};
+                Check(typeof(FriendlyScavCargoService).GetMethod("PrepareCoopCargo",BindingFlags.Instance|BindingFlags.NonPublic)!
+                    .Invoke(service,[id,scavEnd])==null,"Player-Scav cargo does not enter native PMC co-op gift merging");
+                service.FinishRaid(id,scavEnd);
+                var scavMail=profile.DialogueRecords[fence].Messages!.Last();
+                Check(profile.DialogueRecords[fence].Messages!.Count==oldMessages+1 && Notifications.Count==oldNotifications+1,
+                    "Player-Scav successful extraction/transit delivers exactly one shared Fence package or note");
+                Check((scavMail.Items?.Data?.Count ?? 0)==(withCargo ? cargo.Items.Count : 0),"Player-Scav cargo return has exact contents and no added reward");
+                Check(scavMail.Text==(withCargo ? "One of my men brought your things back. Here’s your stuff, as promised." : "One of my men is back. Thanks for looking out for him."),
+                    "Player-Scav courier reuses existing localized cargo/empty-note wording");
+                Check(pmc.TradersInfo[fence].Standing==oldStanding && profile.CharacterData.ScavData.TradersInfo[fence].Standing==oldScavStanding &&
+                    pmc.CoopExtractCounts.Count==oldCoop,"Scav-with-Scav handover changes neither native standing nor co-op counts");
+                var scavReceipt=storage.ReadModeDocument<FriendlyScavCargoLedger>(id,"scav-cargo.json",true)!;
+                Check(scavReceipt.PlayerScav && scavReceipt.Allegiance==allegiance && scavReceipt.State=="complete" && !scavReceipt.NativeCoopGift,
+                    "Durable courier receipt binds the native start side and mode without native gift ownership");
+                restarted.FinishRaid(id,scavEnd);service.FinishRaid(id,scavEnd);
+                Check(profile.DialogueRecords[fence].Messages!.Count==oldMessages+1 && Notifications.Count==oldNotifications+1,
+                    "Repeated/restarted Scav completion cannot duplicate cargo mail");
+                scavReceipt.State="prepared";
+                storage.WriteModeDocuments(id,true,new Dictionary<string,string> {["scav-cargo.json"]=json.Serialize(scavReceipt)!});
+                restarted.FinishRaid(id,scavEnd);
+                Check(profile.DialogueRecords[fence].Messages!.Count==oldMessages+1,"Saved Scav mail resolves an interrupted receipt without duplication");
+                profile.DialogueRecords[fence].Messages!.Remove(scavMail);saves.SaveProfileAsync(id).GetAwaiter().GetResult();
+                service.FinishRaid(id,scavEnd);
+                Check(profile.DialogueRecords[fence].Messages!.Count==oldMessages,"Deleted completed player-Scav courier mail is never regenerated");
+            }
+            foreach(var outcome in new[]{ExitStatus.KILLED,ExitStatus.LEFT,ExitStatus.MISSINGINACTION,ExitStatus.SURVIVED}) {
+                string raid="scav-reject-"+outcome;
+                service.BeginRaid(id,$"{{\"err\":0,\"data\":{{\"serverId\":\"{raid}\"}}}}",new() {PlayerSide="savage"});
+                service.Queue(id,new() {ServerId=raid,ExitName="ordinary",InsuranceReportId=Guid.NewGuid().ToString("N"),ScavProfileIds=["native-scav"],Items=cargo.Items});
+                int oldMessages=profile.DialogueRecords![fence].Messages!.Count;
+                // Successful PMC results cannot claim cargo captured for a Scav raid either.
+                var rejectedEnd=new EndLocalRaidRequestData {ServerId=raid,Results=new() {Result=outcome,ExitName="ordinary",
+                    Profile=outcome==ExitStatus.SURVIVED ? pmc : scavEndProfile}};
+                service.FinishRaid(id,rejectedEnd);
+                Check(profile.DialogueRecords[fence].Messages!.Count==oldMessages && storage.ReadModeDocument<FriendlyScavCargoLedger>(id,"scav-cargo.json",true)!.State=="rejected",
+                    "Player-Scav death/abandonment or native start/end side mismatch never returns cargo");
             }
             Console.WriteLine("Temporary native cargo profiles: "+work);
         }

@@ -88,7 +88,7 @@ namespace pitTeam.Modules
         public static bool IsLocked(ConfigEntryBase entry) => IsAllegiance && entry != null && lockedValues?.ContainsKey(entry) == true;
 
         internal static bool IsSettingUnavailableInCurrentMode(ConfigEntryBase entry) =>
-            entry != null && IsLocked(entry);
+            entry != null && (IsLocked(entry) || (entry == pitFireTeam.friendlyScavEncounters && !IsAllegiance));
 
         // Config entries are saved preferences. Gameplay and UI read the active
         // policy here, so editing/reloading the cfg cannot change Allegiance rules.

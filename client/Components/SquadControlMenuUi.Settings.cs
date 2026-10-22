@@ -385,6 +385,7 @@ namespace pitTeam.Components
                 pitFireTeam.pitFireTeamFLAG,
                 pitFireTeam.badGuy,
                 pitFireTeam.friendlyEncounterChance,
+                pitFireTeam.friendlyScavEncounters,
                 pitFireTeam.pmcArmbands,
                 pitFireTeam.factionHostilities))
             {
@@ -680,7 +681,8 @@ namespace pitTeam.Components
 
         private static bool IsNestedSettingsEntry(ConfigEntryBase entry)
         {
-            return entry == pitFireTeam.statusReportHealthColoring
+            return entry == pitFireTeam.friendlyScavEncounters
+                || entry == pitFireTeam.statusReportHealthColoring
                 || entry == pitFireTeam.statusReportFullHealthColor
                 || entry == pitFireTeam.statusReportMediumHealthColor
                 || entry == pitFireTeam.statusReportLowHealthColor
@@ -868,6 +870,7 @@ namespace pitTeam.Components
                 || entry == pitFireTeam.enemyTracking
                 || entry == pitFireTeam.heatlhMultiplier
                 || entry == pitFireTeam.pitFireTeamFLAG
+                || entry == pitFireTeam.friendlyScavEncounters
                 || entry == pitFireTeam.badGuy
                 || entry == pitFireTeam.factionHostilities
                 || entry == pitFireTeam.pmcArmbands
@@ -2626,6 +2629,7 @@ namespace pitTeam.Components
             if (entry == pitFireTeam.enemyRemember) return language.enemyRemember;
             if (entry == pitFireTeam.enemyTracking) return language.enemyTracking;
             if (entry == pitFireTeam.friendlyEncounterChance) return language.friendlyEncounterChance;
+            if (entry == pitFireTeam.friendlyScavEncounters) return language.friendlyScavEncounters;
             if (entry == pitFireTeam.heatlhMultiplier) return language.healthMultiplier;
             if (entry == pitFireTeam.statusSound) return language.statusSound;
             if (entry == pitFireTeam.enemyMarker) return language.enemyMarker;

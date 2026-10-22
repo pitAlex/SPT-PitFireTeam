@@ -30,6 +30,7 @@ foreach ($configuration in @('Debug', 'Release')) {
         $spawner = $client.GetType('pitTeam.Patches.BotsControllerPatch')
         Check ((@($spawner.Methods | Where-Object Name -eq 'SpawnDebugFollower').Count -gt 0) -eq $debug) "$configuration spawn entry point scope"
         Check ((@($spawner.Methods | Where-Object Name -eq 'TryPrepareDebugRecruitProfile').Count -gt 0) -eq $debug) "$configuration SPT profile preparation scope"
+        Check (@($spawner.Methods | Where-Object Name -eq 'PrepareDebugScavGear').Count -eq 0) "$configuration special Scav kit is removed"
         foreach ($method in @('SpawnRecruitConsoleCommandAsync', 'SpawnDebugFollower')) {
             $states = @(AllTypes $client.Types | Where-Object { $_.Name.StartsWith('<' + $method + '>') })
             Check (($states.Count -gt 0) -eq $debug) "$configuration generated async spawn body follows DEBUG scope: $method"
@@ -52,6 +53,7 @@ $spawning = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Patches/BotsCont
 $first = $spawning.IndexOf('public async Task<bool> SpawnDebugFollower(')
 $last = $spawning.IndexOf('public async Task<bool> SpawnDebugScavEnemy(', $first)
 $spawn = $spawning.Substring($first, $last - $first)
+Check (!$spawning.Contains('PrepareDebugScavGear')) 'Debug Scav keeps its normal generated kit'
 Check ($spawn.Contains('BossPlayers.AddFollower(me, player, false, botRole, "Default")')) 'Command must use the actual field-recruit conversion path'
 Check (!$spawn.Contains('BossPlayers.AddFollower(me, player, true')) 'Command must not create a squadmate'
 Check ($spawn.Contains('recruit.DebugForceRecruitInvite = spawnSide == EPlayerSide.Usec || spawnSide == EPlayerSide.Bear')) 'Only command-spawned PMCs receive the Debug invitation marker'

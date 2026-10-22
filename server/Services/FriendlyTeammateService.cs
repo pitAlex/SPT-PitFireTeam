@@ -340,7 +340,7 @@ public partial class FriendlyTeammateService(
         // Roster ordering uses registration time; a captured bot's original date
         // predates joining this squad. Stamp acceptance here, not in preview normalization.
         teammate.Info.RegistrationDate = GetCurrentUnixTimestampSeconds();
-        if (welcome) NormalizeWelcomeProfile(teammate);
+        if (welcome) NormalizeWelcomeProfile(teammate, targetLevel);
         else
         {
             NormalizeTeammateSkillsForCreation(teammate, playerPmc);
@@ -395,7 +395,7 @@ public partial class FriendlyTeammateService(
         }
 
         NormalizeCapturedRecruitProfile(recruit, playerPmc, candidate);
-        if (candidate is FriendlyRecruitRequestEntry { IsWelcomeTeammate: true }) NormalizeWelcomeProfile(recruit);
+        if (candidate is FriendlyRecruitRequestEntry { IsWelcomeTeammate: true }) NormalizeWelcomeProfile(recruit, candidate.Level);
         else
         {
             NormalizeTeammateSkillsForCreation(recruit, playerPmc);

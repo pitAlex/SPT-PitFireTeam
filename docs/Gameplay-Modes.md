@@ -9,7 +9,8 @@ pitFireTeam has two gameplay modes. Each player profile chooses one on its first
 | Settings | Saved preferences and ordinary restrictions | Fixed values for the settings listed in its guide |
 | Loadout Management | Editable outside raids; Immersive default | Editable outside raids; Immersive default |
 | PMC recruitment | Existing same-side rules; encounter rolls only for same-faction solos | Selected solo friendlies from either faction |
-| Scav encounters | No randomized Scav encounters | Solo regular Scavs can become friendly; extract together at any exit for cargo returns through Fence |
+| Player-Scav recruitment with Tiered Pickup | One slot per full Fence point up to six, also capped by configured Maximum Pickup | One slot per full Fence point up to six; PMC players retain their two-recruit cap |
+| Scav encounters | No randomized Scav encounters | Default-on Friendly Scav encounters checkbox enables solo regular Scav friendship; extract together at any exit for cargo returns through Fence |
 | Friendly Encounter Chance | 5–80%, default 30%; same-side PMCs only, no effect while Friendly PMC Side or Bad Guy is on | Same-side percentage; opposite-side curve converges at 10%; Scav base multiplied by Fence standing |
 | Friendly Encounters penalties | No new penalties or effect | Independent 24-hour recruited-friendly kill penalties |
 | PMC karma | Shared kill/extraction rules | Shared rules plus quiet peaceful-raid recovery |
@@ -24,7 +25,7 @@ The server persists `firstTimeVisit = true` when the initial choice completes, o
 
 A successful launcher **Wipe Profile** also clears that account's squads in both modes and resets `firstTimeVisit`, including its welcome-invitation state. The next My Squad visit presents the mode cards again and an empty account can receive a new welcome invitation.
 
-An account with no squad receives one free same-faction PMC friend invitation. The server generates a random level-1 faction kit and identity, fixes level to 1 and XP/common skill progress/mastery to zero, and preserves these values through invitation preview and acceptance. It adds no random weapon specialty or fabricated raid history. The invitation uses ordinary recruitment acceptance and equipment policies; it does not immediately add a teammate or group member.
+An account with no squad receives one free same-faction PMC friend invitation. The teammate matches the player's PMC level when the invitation is prepared, with a minimum of level 1; its random faction kit is generated at that level. XP starts at that level's native baseline, while common skill progress and mastery remain zero. The saved level and starting values are preserved through invitation preview and acceptance, even if the player levels up while the invitation is pending. It adds no random weapon specialty or fabricated raid history. The invitation uses ordinary recruitment acceptance and equipment policies; it does not immediately add a teammate or group member.
 
 After the normal My Squad roster/settings refresh finishes, the client acknowledges completion and the server starts a fixed two-second delivery deadline. The exact candidate, selected mode and delivery intent survive restarts. Closing My Squad after acknowledgment does not cancel server delivery. Switching modes defers the welcome invitation until its originally selected mode is active again; it cannot enter the other mode's inbox. A squad acquired before delivery suppresses it. Acceptance, decline, deletion, retries and lost responses never grant another welcome invitation. [Teammate storage](Teammate-Storage.md#first-visit-and-welcome-invitation) owns persistence and crash recovery.
 

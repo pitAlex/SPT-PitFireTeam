@@ -58,6 +58,7 @@ namespace EFT
 namespace UnityEngine { public static class Time { public static float time = 100; } }
 namespace pitTeam.Modules
 {
+    public class FollowerWeaponSupplyBudget { }
     public static class BattleRecorder
     {
         public static void RecordAmmoRefill(BotOwner owner, string stage, string reason, Func<object> details) { }
@@ -94,7 +95,7 @@ public static class PatrolMagazineScanChecks
     /* SPARE_FILL */
     private static bool IsInstalledInWeaponTree(Item item) => ((Magazine)item).Installed;
     public static bool FillSpares(BotOwner owner) => TryFillReachableSpareMagazines(owner, new Weapon());
-    private static bool TryFillMagazineWithLooseAmmo(BotOwner owner, Magazine magazine)
+    private static bool TryFillMagazineWithLooseAmmo(BotOwner owner, Magazine magazine, Weapon weapon, FollowerWeaponSupplyBudget budget)
     {
         var inventory = owner.GetPlayer.InventoryController;
         int rounds = Math.Min(magazine.MaxCount - magazine.Count, inventory.Reserve);

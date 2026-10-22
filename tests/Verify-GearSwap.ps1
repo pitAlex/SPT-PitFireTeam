@@ -73,7 +73,7 @@ if ($click.IndexOf('progress.SetActive(true)') -lt 0 -or
     throw 'Transfer feedback must be visible before awaiting Apply'
 }
 $apply = Get-Region $session '        internal async Task Apply()' '        private void ValidateFinalEquipment()'
-if (!$apply.Contains('keepDraft = !handsStarted && ex is GearSwapValidationException draftError') -or
+if (!$apply.Contains('keepDraft = !CommandLoot && !handsStarted && ex is GearSwapValidationException draftError') -or
     !$apply.Contains('draftError.Key == "SwapGearMagazineSpace"') -or
     !$apply.Contains('draftError.Key == "SwapGearNeedsWeapon"') -or
     !$apply.Contains('if (!keepDraft) Close();') -or
@@ -177,6 +177,17 @@ $snapshotArgs = @($arguments | Where-Object { $_ -notlike '/out:*' }) + "/out:$s
 if ($LASTEXITCODE -ne 0) { throw 'Gear Swap snapshot normalization fixture compilation failed' }
 & $snapshotExe
 if ($LASTEXITCODE -ne 0) { throw 'Gear Swap snapshot normalization fixture failed' }
+
+$itemClone = Get-Content -Raw (Join-Path $PSScriptRoot 'GearSwapItemCloneFixture.cs')
+$itemClone = $itemClone.Replace('/* ITEM CLONE */', (Get-Region $session '        private static Item Clone(Item source)' '        internal static IEnumerable<Item> Tree('))
+$itemCloneSource = Join-Path $temporary 'GearSwapItemClone.cs'
+[IO.File]::WriteAllText($itemCloneSource, $itemClone)
+$itemCloneExe = Join-Path $temporary 'GearSwapItemClone.exe'
+$itemCloneArgs = @($snapshotArgs | Where-Object { $_ -notlike '/out:*' }) + "/out:$itemCloneExe"
+& dotnet @itemCloneArgs $itemCloneSource
+if ($LASTEXITCODE -ne 0) { throw 'Gear Swap descriptor clone fixture compilation failed' }
+& $itemCloneExe
+if ($LASTEXITCODE -ne 0) { throw 'Gear Swap descriptor clone fixture failed' }
 
 # Reproduce the original constructor-side event leak with the same fixture and old conversion call.
 $oldWrapperSource = Join-Path $temporary 'OldGearSwapInventoryController.cs'

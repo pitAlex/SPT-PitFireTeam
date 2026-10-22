@@ -12,7 +12,17 @@ Empty-handed ordinary extraction sends Fence's localized thank-you note as well 
 
 These rules do not change PMC `karmaValue` or the independent 24-hour encounter penalty ledger. Scavs also do not create PMC quiet-recovery eligibility.
 
+## Player-Scav recruitment capacity
+
+With Tiered Pickup enabled, a player-Scav can recruit one active Scav per full point of Fence reputation, capped at six: `floor(clamp(standing, 0, 6))`. Reputation below 1 gives no slots; 1.99 gives one and 6 or higher gives six. Missing/non-finite standing gives no slots. In Allegiance this replaces the PMC player's two-recruit cap. In Guns for Hire, configured Maximum Pickup can further reduce the allowance; disabling Tiered Pickup retains its configured-cap behavior. Pickup must be enabled, same-side admission and combat safety still apply, and the friendly Scav encounter checkbox does not affect player-Scav hiring.
+
+The request, contextual capacity check, deferred conversion and first-group delayed completion share this calculation. Each conversion rechecks current standing and active recruits; saved squadmates, dead and inactive recruits do not consume slots. A later standing loss blocks additional recruitment without dismissing existing followers.
+
 ## Scav encounter chance
+
+Fence reputation affects how often a friendly Scav appears, not his willingness to join a PMC. Acceptance uses the raw Friendly Encounter Chance slider saved when his encounter is first evaluated, without Fence, the opposite-faction base or active encounter penalties. See [friendly Scav acceptance](Allegiance.md#friendly-scavs).
+
+This chance applies when **Friendly Scav encounters** is enabled in Allegiance. The default-on checkbox beneath **Friendly Encounter Chance** can disable Scav encounters without changing PMC encounters.
 
 Fence standing multiplies the Scav base supplied by [Friendly Encounter Chance](Allegiance.md#finding-friendly-pmcs). The standing factor is clamped to 0–6 and the result to 0–100%; encounter penalties then reduce that final chance proportionally. At the default slider value of 30%, the Scav base is 15%.
 

@@ -25,6 +25,7 @@ static class Program
         }
         Check(GiveGearInvitePolicy.Apply(-20, new[] { "FirstPrimaryWeapon" }) == 10, "Invalid base does not erase a real slot bonus");
         CheckPrimaryKitPriority();
+        CheckDeferredSupplies();
         CheckLowAmmoFallback();
         CheckArmoredMaskCapConflict();
         CheckWeaponCadence();
@@ -55,7 +56,6 @@ static class Program
             if (primary) Check(s.Get(EquipmentSlot.FirstPrimaryWeapon) == weapon && s.InFastAccess(spare) &&
                 pitTeam.BigBrain.Actions.GestureCommandAction.CanFitGearSwapReloadReserves(s.Controller.Inventory.Equipment),
                 "Smaller carrier retains primary magazines and sequential reload room");
-            Check(s.Decisions.Any(d => d.Contains("currentFront=") && d.Contains("currentBack=")), "Armor decision reports both coverage scores");
             s.AssertConserved(); s.Plan.Rollback();
             Check(s.Get(EquipmentSlot.ArmorVest) == oldArmor && s.Get(EquipmentSlot.TacticalVest) == originalRig && s.InOffer(incoming),
                 "Carrier replacement rollback restores exact equipment and offering");
@@ -335,9 +335,6 @@ static class Program
             Check(s.Get(EquipmentSlot.Headwear) == helmet && s.Get(EquipmentSlot.FaceCover) == null,
                 "Protective helmet displaces a conflicting cosmetic beard, with or without existing headwear");
             Check(cargo ? s.InKit(face) : s.InOverflow(face), "Displaced face cover is carried when possible, otherwise explicitly dropped");
-            Check(s.Decisions.Any(d => d.Contains("action='helmet'") && d.Contains("result='rejected'")) &&
-                s.Decisions.Any(d => d.Contains("helmet/displacedFaceCover") && d.Contains(face.Id)),
-                "Native conflict and successful cosmetic displacement are traceable");
             s.AssertConserved(); s.Plan.Rollback();
             Check(s.Get(EquipmentSlot.Headwear) == old && s.Get(EquipmentSlot.FaceCover) == face && s.InOffer(helmet),
                 "Rollback restores exact headwear, beard and offering after cosmetic displacement");
@@ -353,7 +350,6 @@ static class Program
             s.Equip(face, EquipmentSlot.FaceCover); s.Offer(helmet); s.Run();
             Check(s.Get(EquipmentSlot.FaceCover) == face && s.Get(EquipmentSlot.Headwear) == (protective ? old : helmet),
                 "Keep protective conflicting masks and compatible cosmetic face covers");
-            Check(!s.Decisions.Any(d => d.Contains("helmet/displacedFaceCover")), "No unnecessary cosmetic displacement");
             s.AssertConserved();
         }
         {
@@ -366,7 +362,6 @@ static class Program
             s.Offer(helmet); s.Run();
             Check(s.Get(EquipmentSlot.Headwear) == old && s.Get(EquipmentSlot.FaceCover) == face && s.Get(EquipmentSlot.Earpiece) == ears,
                 "Failed cosmetic retry restores every existing slot; real headset restrictions remain enforced");
-            Check(!s.Decisions.Any(d => d.Contains("helmet/displacedFaceCover")), "Failed retry never claims a cosmetic item was displaced");
             s.AssertConserved();
         }
         {
@@ -422,10 +417,8 @@ static class Program
             s.Offer(ammo); s.Run();
             if (looseRounds >= 35)
             {
-                Check(gun.GetCurrentMagazine().Count == Math.Min(30, 5 + looseRounds),
-                    "Inserted magazine receives compatible loose rounds before any spare is filled");
-                Check(spare.Count == 20 + Math.Min(10, Math.Max(0, looseRounds - 25)),
-                    "Only ammunition left after inserted-magazine top-off reaches the spare");
+                Check(gun.GetCurrentMagazine().Count == 5 && spare.Count == 20 && ammo.StackObjectsCount == looseRounds,
+                    "Readiness allocation never loads or splits real draft ammunition");
             }
             Check((s.Get(EquipmentSlot.FirstPrimaryWeapon) == gun) == (existingPrimary || looseRounds >= 35),
                 "Top-off permits a genuinely ready new primary without relaxing readiness for insufficient rounds");
@@ -440,44 +433,36 @@ static class Program
             var ammo = new Ammo("loose-ammo") { StackObjectsCount = 90, PenetrationPower = 70 };
             if (donatedAmmo) s.Offer(ammo); else s.AddFast(ammo);
             s.Offer(candidate); s.Offer(new Magazine("empty-spare")); s.Run();
-            Check(s.Get(EquipmentSlot.FirstPrimaryWeapon) == candidate && candidate.GetCurrentMagazine().Count == 30,
-                "Loose compatible ammo plus empty magazines can establish a new primary package");
-            Check(donatedAmmo ? s.NativeSplits.Count == 0 : s.NativeSplits.Count > 0,
-                "New cartridge IDs preserve gift versus native ammunition provenance");
+            Check(s.Get(EquipmentSlot.FirstPrimaryWeapon) == candidate && candidate.GetCurrentMagazine().Count == 0 && ammo.StackObjectsCount == 90,
+                "Loose compatible ammo plus empty magazines supports a deferred-fill primary package");
+            Check(s.NativeSplits.Count == 0, "Planning never creates cartridge identities");
             s.AssertConserved();
         }
-        foreach (bool failDiagnostics in new[] { false, true })
         {
-            var s = new Scenario { FailDiagnostics = failDiagnostics };
+            var s = new Scenario();
             var gun = Gun("diagnostic-primary", 70); gun.GetCurrentMagazine().Cartridges.Items[0].StackObjectsCount = 5;
             s.Offer(gun); s.Offer(Mag("diagnostic-spare", 70));
             var ammo = new Ammo("diagnostic-ammo") { StackObjectsCount = 25, PenetrationPower = 70 }; s.Offer(ammo);
             s.Run();
-            Check(s.Get(EquipmentSlot.FirstPrimaryWeapon) == gun && gun.GetCurrentMagazine().Count == 30,
-                "Diagnostics are passive: a throwing logger cannot change top-off or selection");
-            if (!failDiagnostics)
-                Check(s.Decisions.Any(d => d.Contains("action='magazineRounds'") && d.Contains("inserted=5->30")) &&
-                    s.Decisions.Any(d => d.Contains("action='primary/currentGear'") && d.Contains("result='planned'")) &&
-                    s.Decisions.Any(d => d.Contains("action='complete'")),
-                    "Plan diagnostics identify top-off, accepted primary and completion without claiming live commitment");
+            Check(s.Get(EquipmentSlot.FirstPrimaryWeapon) == gun && gun.GetCurrentMagazine().Count == 5,
+                "Planning selects the supported primary without changing its inserted ammunition");
             s.AssertConserved(); s.Plan.Rollback();
             Check(gun.GetCurrentMagazine().Count == 5 && ammo.StackObjectsCount == 25,
-                "Logger failure does not affect exact native-operation rollback");
+                "Exact native-operation rollback preserves the original ammunition counts");
         }
         {
             var s = new Scenario(); s.Equip(Gun("diagnostic-current", 90), EquipmentSlot.FirstPrimaryWeapon);
             s.AddFast(Mag("diagnostic-current-spare", 90));
             var worse = Gun("diagnostic-worse", 10); s.Offer(worse); s.Run();
-            Check(s.Decisions.Any(d => d.Contains("item='diagnostic-worse'") && d.Contains("notMeaningfulUpgrade")),
-                "Logs distinguish a failed upgrade comparison from missing supplies or placement"); s.AssertConserved();
+            Check(s.Get(EquipmentSlot.FirstPrimaryWeapon).Id == "diagnostic-current",
+                "A supported stronger primary is not replaced by a weaker offering"); s.AssertConserved();
         }
         {
             var s = new Scenario(); var vest = new Vest("diagnostic-tiny-vest");
             vest.Grids = new[] { new Grid(vest, 1, 2) }; s.Equip(vest, EquipmentSlot.TacticalVest);
             var gun = Gun("diagnostic-no-space", 70); s.Offer(gun); s.Offer(Mag("diagnostic-blocking-spare", 70)); s.Run();
-            Check(s.Decisions.Any(d => d.Contains("reloadSafePlacement") && d.Contains("cannot land during reload")) &&
-                s.Decisions.Any(d => d.Contains("primary/currentGear") && d.Contains("Weapon package is not operational")),
-                "Logs preserve the reload-reserve rejection and the resulting failed primary package"); s.AssertConserved();
+            Check(s.Get(EquipmentSlot.FirstPrimaryWeapon) != gun,
+                "An offering without safe reload landing space cannot become primary"); s.AssertConserved();
         }
         {
             var s = new Scenario(); var primary = Gun("keep-primary", 90); s.Equip(primary, EquipmentSlot.FirstPrimaryWeapon);
@@ -501,7 +486,161 @@ static class Program
                 "Non-permanent borrowed weapon, magazines and helmet are eligible raid upgrades");
             s.AssertConserved();
         }
+        CheckCommandSourceTransactions();
         Console.WriteLine($"PASS: {checks} production Give Gear planner/invitation checks.");
+    }
+    static void CheckCommandSourceTransactions()
+    {
+        foreach (int failure in new[] { 0, 1, 2 })
+        {
+            var s = new Scenario();
+            var old = Gun("old-command-primary", 10); var oldSpare = Mag("old-command-spare", 10);
+            s.Equip(old, EquipmentSlot.FirstPrimaryWeapon); s.AddFast(oldSpare);
+            var source = new SearchableItem("command-source"); source.Grids = new[] { new Grid(source, 12, 12) };
+            var gun = Gun("command-new-primary", 80); var spare = Mag("command-new-spare", 80);
+            var helmet = Armor("command-new-helmet", 4, 1, EquipmentSlot.Headwear);
+            foreach (var item in new Item[] { gun, spare, helmet }) source.Grids[0].Put(item);
+            var roots = new Item[] { source, s.Controller.Inventory.Equipment, s.OfferRoot, s.Overflow };
+            var before = roots.SelectMany(TeammateGearSwap.Tree).ToArray();
+            var beforeIds = before.Select(i => i.Id).ToHashSet();
+            int rounds = before.OfType<Ammo>().Sum(i => i.StackObjectsCount);
+            var edits = new List<Func<Action>>();
+            foreach (Item item in new Item[] { gun, spare, helmet })
+                edits.Add(() =>
+                {
+                    var move = ItemManipulator.Move(item, s.OfferRoot.Grids[0].FindLocationForItem(item), s.Controller, false);
+                    if (move.Failed) throw new Exception(move.Error.ToString());
+                    return move.Value.RollBack;
+                });
+            edits.Add(() =>
+            {
+                if (failure == 1) throw new InvalidOperationException("source changed before planning");
+                s.Run();
+                return s.Plan.Rollback;
+            });
+            bool rejected = false;
+            try { GearSwapTransaction.Execute(edits, undo => undo(), () => { if (failure == 2) throw new InvalidOperationException("source replay mismatch"); }); }
+            catch (InvalidOperationException) { rejected = true; }
+            Check(rejected == (failure != 0), "Command source prelude and planner share one transaction outcome");
+            if (failure == 0)
+            {
+                Check(s.Get(EquipmentSlot.FirstPrimaryWeapon) == gun && s.Get(EquipmentSlot.Headwear) == helmet,
+                    "Commanded source kit uses actual Give Gear weapon and helmet decisions");
+                Check(!source.Grids[0].Items.Any() && s.InKit(old), "Accepted source leaves corpse and displaced weapon is retained as cargo/support");
+            }
+            else
+            {
+                Check(source.Grids[0].Items.ToHashSet().SetEquals(new Item[] { gun, spare, helmet }), "Rejected command returns every source root");
+                Check(s.Get(EquipmentSlot.FirstPrimaryWeapon) == old && s.Get(EquipmentSlot.Headwear) == null && s.InFastAccess(oldSpare),
+                    "Rejected command restores original complete kit and support");
+                Check(!s.OfferRoot.Grids[0].Items.Any() && !s.Overflow.Grids[0].Items.Any(), "Rejected command leaves no escrow cargo");
+            }
+            var after = roots.SelectMany(TeammateGearSwap.Tree).ToArray();
+            Check(after.Select(i => i.Id).ToHashSet().SetEquals(beforeIds) && after.Length == before.Length, "Three-party source/offer/kit transfer conserves exact identities");
+            Check(after.OfType<Ammo>().Sum(i => i.StackObjectsCount) == rounds, "Three-party transfer conserves actual rounds");
+        }
+    }
+    static void CheckDeferredSupplies()
+    {
+        // This exact-fill package used to consume a root stack through native Merge, then
+        // try to carry the removed root. Native loading is forbidden by the fixture below.
+        var exact = new Scenario(); var gun = Gun("exact-primary", 70); SetRounds(gun.GetCurrentMagazine(), 5);
+        var spare = Mag("exact-spare", 70); var exactAmmo = new Ammo("exact-ammo") { StackObjectsCount = 25, PenetrationPower = 70 };
+        exact.Offer(gun); exact.Offer(spare); exact.Offer(exactAmmo); exact.Run();
+        Check(exact.Get(EquipmentSlot.FirstPrimaryWeapon) == gun && exact.InKit(exactAmmo) && exactAmmo.StackObjectsCount == 25,
+            "Exact-fill ammunition remains a complete carried root rather than a consumed/phantom stack");
+        Check(gun.GetCurrentMagazine().Count == 5 && spare.Count == 30 && exact.NativeSplits.Count == 0,
+            "Give Gear does not load, split or create ammunition during a successful exchange");
+        exact.AssertConserved(); exact.Plan.Rollback(); Check(exact.InOffer(exactAmmo), "Exact-fill rollback restores the offered root");
+        {
+            var s = new Scenario(); var single = Gun("single-large-mag-primary", 70); var magazine = single.GetCurrentMagazine();
+            magazine.MaxCount = 60; SetRounds(magazine, 0);
+            var rounds = new Ammo("single-large-mag-ammo") { StackObjectsCount = 60, PenetrationPower = 70 };
+            s.Offer(single); s.Offer(rounds); s.Run();
+            Check(s.Get(EquipmentSlot.FirstPrimaryWeapon) == single && single.GetCurrentMagazine() == null && s.InFastAccess(magazine),
+                "A sole empty large magazine is staged as a reachable spare for ordinary fill/reload");
+            Check(magazine.Count == 0 && rounds.StackObjectsCount == 60, "Even lone-magazine preparation leaves rounds untouched");
+            s.AssertConserved(); s.Plan.Rollback(); Check(single.GetCurrentMagazine() == magazine, "Deferred lone-magazine placement rolls back exactly");
+        }
+
+        foreach (int stock in new[] { 20, 55, 100, 200 })
+        {
+            var s = new Scenario(); var primary = Gun("budget-primary", 70); SetRounds(primary.GetCurrentMagazine(), 5);
+            var support = Gun("budget-support", 70); SetRounds(support.GetCurrentMagazine(), 10);
+            support.Pistol = true;
+            s.Equip(primary, EquipmentSlot.FirstPrimaryWeapon); s.Equip(support, EquipmentSlot.Holster);
+            var primarySpare = Mag("budget-primary-spare", 70); var supportSpare = Mag("budget-support-spare", 70); SetRounds(supportSpare, 0);
+            s.AddFast(primarySpare); s.AddFast(supportSpare);
+            var first = new Ammo("budget-small-stack") { StackObjectsCount = Math.Min(stock, 10) };
+            var second = new Ammo("budget-large-stack") { StackObjectsCount = stock - first.StackObjectsCount };
+            ((Backpack)s.Get(EquipmentSlot.Backpack)).Grids[0].Put(first);
+            ((Backpack)s.Get(EquipmentSlot.Backpack)).Grids[0].Put(second);
+            var budget = FollowerWeaponSupplyBudget.Build(s.Controller.Inventory.Equipment,
+                (weapon, magazine) => weapon == primary ? magazine == primarySpare : magazine == supportSpare);
+            int supportFill = new[] { first, second }.Sum(stack => budget.Fill(support.GetCurrentMagazine(), stack) + budget.Fill(supportSpare, stack));
+            Check(supportFill == Math.Min(50, Math.Max(0, stock - 55)), "A shared-ammo pistol uses only surplus after primary fill and tactical reserve");
+            Check(budget.Rounds(primary) == 35 + Math.Min(25, stock), "Primary receives ammunition first, independently of the held weapon");
+            foreach (Ammo stack in new[] { first, second })
+                Check(new[] { primary.GetCurrentMagazine(), primarySpare, support.GetCurrentMagazine(), supportSpare }.Sum(m => budget.Fill(m, stack)) <= stack.StackObjectsCount,
+                    "Multiple magazine projections never allocate a round twice");
+            Check(!budget.Owns(support, primarySpare), "Support cannot claim the primary's registered magazine");
+            Check(first.StackObjectsCount + second.StackObjectsCount == stock && primary.GetCurrentMagazine().Count == 5,
+                "Supply allocation is read-only");
+            var shared = FollowerWeaponSupplyBudget.Build(s.Controller.Inventory.Equipment);
+            Check(shared.Owns(primary, supportSpare) && !shared.Owns(support, supportSpare), "Shared unassigned magazines get primary priority");
+        }
+        {
+            var s = new Scenario(); var primary = FamilyGun("distinct-primary", 70, "rifle");
+            var support = FamilyGun("distinct-secondary", 70, "pistol"); SetRounds(support.GetCurrentMagazine(), 5);
+            s.Equip(primary, EquipmentSlot.FirstPrimaryWeapon); s.Equip(support, EquipmentSlot.SecondPrimaryWeapon);
+            var ammo = new Ammo("independent-ammo") { WeaponFamily = "pistol", StackObjectsCount = 60 }; s.AddFast(ammo);
+            var budget = FollowerWeaponSupplyBudget.Build(s.Controller.Inventory.Equipment);
+            Check(budget.Fill(support.GetCurrentMagazine(), ammo) == 25, "An independent caliber can refill despite a primary shortage");
+        }
+        {
+            var s = new Scenario(false); var rig = (Vest)s.Get(EquipmentSlot.TacticalVest); rig.Grids = new[] { new Grid(rig, 1, 4) };
+            var primary = Gun("secure-primary", 70); s.Equip(primary, EquipmentSlot.FirstPrimaryWeapon); s.AddFast(Mag("secure-spare", 70));
+            var secure = Bag("secure", 4, 4); secure.AcceptedSlot = EquipmentSlot.SecuredContainer; s.Equip(secure, EquipmentSlot.SecuredContainer);
+            var native = new Ammo("native-secure-stack") { StackObjectsCount = 40 }; secure.Grids[0].Put(native);
+            var donation = new Ammo("secure-donation") { StackObjectsCount = 25 }; s.Offer(donation); s.Run();
+            Check(donation.CurrentAddress.Container.ParentItem == secure && donation.StackObjectsCount == 25 && native.StackObjectsCount == 40,
+                "A full rig/no backpack uses secure ammo overflow without merging native reserve stacks");
+            s.AssertConserved(); s.Plan.Rollback(); Check(s.InOffer(donation) && native.CurrentAddress.Container.ParentItem == secure,
+                "Secure ammo overflow rolls back without changing existing contents");
+        }
+        {
+            var s = new Scenario(false); var secure = Bag("temporary-secure", 4, 4); secure.AcceptedSlot = EquipmentSlot.SecuredContainer;
+            s.Equip(secure, EquipmentSlot.SecuredContainer);
+            var old = Armor("temporary-helmet", 2, 1, EquipmentSlot.Headwear); old.Width = old.Height = 2; s.Equip(old, EquipmentSlot.Headwear);
+            var better = Armor("new-helmet", 4, 1, EquipmentSlot.Headwear); s.Offer(better); s.Run();
+            Check(s.Get(EquipmentSlot.Headwear) == better && old.CurrentAddress.Container.ParentItem == s.Overflow,
+                "Temporary secure staging never turns displaced ordinary gear into hidden permanent cargo");
+            Check(!secure.Grids[0].Items.Any(), "Temporary secure space is cleared before commit");
+            s.AssertConserved(); s.Plan.Rollback(); Check(s.Get(EquipmentSlot.Headwear) == old && s.InOffer(better),
+                "Temporary staging retains exact transaction rollback");
+        }
+        {
+            var s = new Scenario(false); var rig = (Vest)s.Get(EquipmentSlot.TacticalVest); rig.Grids = new[] { new Grid(rig, 1, 4) };
+            var old = Gun("scratch-old-primary", 10); s.Equip(old, EquipmentSlot.FirstPrimaryWeapon);
+            s.Equip(Gun("scratch-retained-secondary", 10), EquipmentSlot.SecondPrimaryWeapon); s.AddFast(Mag("scratch-shared-spare", 70));
+            var secure = Bag("scratch-secure", 4, 2); secure.AcceptedSlot = EquipmentSlot.SecuredContainer; s.Equip(secure, EquipmentSlot.SecuredContainer);
+            var replacement = Gun("scratch-replacement", 100); var rounds = new Ammo("scratch-donated-rounds") { StackObjectsCount = 25, PenetrationPower = 100 };
+            s.Offer(replacement); s.Offer(rounds); s.Run();
+            Check(s.Get(EquipmentSlot.FirstPrimaryWeapon) == replacement && rounds.CurrentAddress.Container.ParentItem == secure,
+                "Temporary old gear yields secure space to retained ammunition instead of causing an ammo drop");
+            s.AssertConserved(); s.Plan.Rollback(); Check(s.Get(EquipmentSlot.FirstPrimaryWeapon) == old && s.InOffer(rounds),
+                "Evacuating scratch space is fully reversible");
+        }
+        {
+            var s = new Scenario(); var secure = Bag("demotion-secure", 4, 2); secure.AcceptedSlot = EquipmentSlot.SecuredContainer;
+            s.Equip(secure, EquipmentSlot.SecuredContainer);
+            var original = Gun("demotion-original", 10); s.Equip(original, EquipmentSlot.FirstPrimaryWeapon);
+            var replacement = Gun("demotion-replacement", 100); s.Offer(replacement); s.Offer(Mag("demotion-spare", 100)); s.Run();
+            Check(s.Get(EquipmentSlot.FirstPrimaryWeapon) == replacement && s.Get(EquipmentSlot.SecondPrimaryWeapon) == original,
+                "An original primary staged in secure storage remains eligible for secondary, not just escrow weapons");
+            s.AssertConserved(); s.Plan.Rollback(); Check(s.Get(EquipmentSlot.FirstPrimaryWeapon) == original && s.InOffer(replacement),
+                "Secure-staged primary demotion rolls back exactly");
+        }
     }
     static Weapon Gun(string id, int pen) { var gun = new Weapon(id); gun.Magazine.Put(Mag(id + "-loaded", pen)); return gun; }
     static Weapon FamilyGun(string id, int pen, string family, int magazineWidth = 1, int magazineHeight = 2)
@@ -583,11 +722,6 @@ static class Program
             bool shouldSwitch = mode == 0 || mode == 4 || mode == 9 || mode == 10;
             Check(s.Get(EquipmentSlot.FirstPrimaryWeapon) == (shouldSwitch ? rifle : current),
                 $"Range credits a supported useful rifle, not missing data, weak ammunition, broken/unready packages or unsafe reloads (mode {mode})");
-            if (mode != 7) Check(s.Decisions.Any(d => d.Contains("primary/comparison")), "Range candidate is actually compared");
-            if (mode == 2) Check(s.Decisions.Any(d => d.Contains("primary/currentGear") && d.Contains("not operational")),
-                "A high-scoring long-range weapon still fails primary ammunition readiness");
-            if (mode == 8) Check(s.Decisions.Any(d => d.Contains("primary/currentGear") && d.Contains("cannot land during reload")),
-                "A high-scoring long-range weapon still fails real reload landing geometry");
             s.AssertConserved(); s.Plan.Rollback();
             Check(s.Get(EquipmentSlot.FirstPrimaryWeapon) == current && (mode == 9 ? s.InKit(rifle) :
                 mode == 10 ? s.Get(EquipmentSlot.SecondPrimaryWeapon) == rifle : s.InOffer(rifle)),
@@ -659,8 +793,6 @@ static class Program
             bool shouldSwitch = mode == 0 || mode == 1 || mode == 2;
             Check(s.Get(EquipmentSlot.FirstPrimaryWeapon) == (shouldSwitch ? candidate : current),
                 "Cadence ranks bolts/slow semi lower without forcing swaps, overriding ammo quality, penalizing fast/automatic guns or guessing missing metadata");
-            Check(s.Decisions.Any(d => d.Contains("primary/comparison") && d.Contains("currentCadence=")),
-                "Cadence comparison remains traceable for rejected and accepted candidates");
             if (current.Template != null && mode == 9) Check(current.Template.SingleFireRate == 0,
                 "Comparison never repairs or mutates shared cadence metadata");
             Check(pitTeam.BigBrain.Actions.GestureCommandAction.CanFitGearSwapReloadReserves(s.Controller.Inventory.Equipment), "Cadence does not bypass reload geometry");
@@ -698,9 +830,6 @@ static class Program
             Check(s.Get(EquipmentSlot.FaceCover) == mask && s.Get(EquipmentSlot.Headwear) == null,
                 "Protective mask displaces conflicting non-protective cap, loose or one level deep");
             Check(cargo ? s.InKit(cap) : s.InOverflow(cap), "Displaced cap follows normal carry/drop handling");
-            Check(s.Decisions.Any(d => d.Contains("action='emptySlot/FaceCover'") && d.Contains("result='rejected'")) &&
-                s.Decisions.Any(d => d.Contains("faceCover/displacedHeadwear") && d.Contains(cap.Id)),
-                "Native mask rejection and successful cap displacement are traceable");
             s.AssertConserved(); s.Plan.Rollback();
             Check(s.Get(EquipmentSlot.Headwear) == cap && s.Get(EquipmentSlot.FaceCover) == null &&
                 (packed ? mask.CurrentAddress.Container.ParentItem == incoming : s.InOffer(mask)),
@@ -721,7 +850,6 @@ static class Program
             Check(s.Get(EquipmentSlot.FaceCover) == (mode == 0 ? mask : mode == 4 ? oldFace : null),
                 "Native compatibility, protective mask and empty FaceCover requirements remain mandatory");
             if (mode == 3) Check(s.Get(EquipmentSlot.Earpiece) == ears, "Mask retry never strips a conflicting headset");
-            Check(!s.Decisions.Any(d => d.Contains("faceCover/displacedHeadwear")), "No false cap displacement diagnostic");
             s.AssertConserved(); s.Plan.Rollback();
             Check(s.Get(EquipmentSlot.Headwear) == cap && s.InOffer(mask), "Rejected/compatible mask draft rolls back exactly");
         }
@@ -766,13 +894,13 @@ static class Program
             Check(s.Get(EquipmentSlot.FirstPrimaryWeapon) == (switchExpected ? replacement : current),
                 "Low-ammo fallback switches only when current resupply fails and the weaker replacement is operational");
             if (mode != 5)
-                Check(FollowerWeaponPrimaryReadiness.EvaluateActual(s.Controller, (Weapon)s.Get(EquipmentSlot.FirstPrimaryWeapon)).PrimaryReady,
-                    "Selected/resupplied primary meets the ordinary readiness gate");
+                Check(FollowerWeaponSupplyBudget.Build(s.Controller.Inventory.Equipment).Rounds((Weapon)s.Get(EquipmentSlot.FirstPrimaryWeapon)) >=
+                    FollowerWeaponAmmoReadinessPolicy.GetRequiredRounds(((Weapon)s.Get(EquipmentSlot.FirstPrimaryWeapon)).AmmoCaliber),
+                    "Selected/resupplied primary has a supported future refill allocation");
             if (mode == 5) Check(current.GetCurrentMagazine().Count == 8 && spare.Count == 9,
                 "Two unready packages do not force a downgrade or lose the depleted original ammunition");
-            if (switchExpected) Check(s.Decisions.Any(d => d.Contains("currentPrimaryUnready")), "Fallback reason is visible in handover diagnostics");
-            if (mode == 2) Check(current.GetCurrentMagazine().Count == 30 && spare.Count == 30,
-                "Compatible carried loose rounds refill the current primary before considering a weaker weapon");
+            if (mode == 2) Check(current.GetCurrentMagazine().Count == originalLoaded && spare.Count == originalSpare,
+                "Current-primary resupply is predicted without changing magazine contents");
             Check(pitTeam.BigBrain.Actions.GestureCommandAction.CanFitGearSwapReloadReserves(s.Controller.Inventory.Equipment),
                 "Low-ammo rescue never bypasses equipped-weapon reload geometry");
             s.AssertConserved(); s.Plan.Rollback();
@@ -790,7 +918,7 @@ static class Program
             var rig = NarrowRig("replenishment-vest", false);
             s.Offer(replacement); s.Offer(FamilyMag("weaker-spare", 20, "9x19")); s.Offer(rig); s.Run();
             Check(s.Get(EquipmentSlot.FirstPrimaryWeapon) == current && s.Get(EquipmentSlot.TacticalVest) == rig &&
-                FollowerWeaponPrimaryReadiness.EvaluateActual(s.Controller, current).PrimaryReady,
+                FollowerWeaponSupplyBudget.Build(s.Controller.Inventory.Equipment).Rounds(current) >= FollowerWeaponAmmoReadinessPolicy.GetRequiredRounds(current.AmmoCaliber),
                 "Current primary can use incoming suitable gear to recover instead of being needlessly replaced");
             s.AssertConserved(); s.Plan.Rollback();
             Check(s.Get(EquipmentSlot.TacticalVest) == oldRig && current.GetCurrentMagazine().Count == 8 && spare.Count == 9,
@@ -914,11 +1042,8 @@ static class Program
         readonly List<Item> initialRoots = new();
         HashSet<string> expectedIds;
         int expectedRounds;
-        readonly List<Item> created = new();
         public List<string> NativeSplits = new();
         public HashSet<string> BorrowedIds = new();
-        public List<string> Decisions = new();
-        public bool FailDiagnostics;
         public Scenario(bool cargo = true)
         {
             OfferRoot.Grids = new[] { new Grid(OfferRoot, 10, 12) }; Overflow.Grids = new[] { new Grid(Overflow, 64, 64) };
@@ -947,9 +1072,8 @@ static class Program
                 .Concat(TeammateGearSwap.Tree(Overflow)).Select(i => i.Id).ToHashSet();
             expectedRounds = TeammateGearSwap.Tree(Controller.Inventory.Equipment).Concat(TeammateGearSwap.Tree(OfferRoot))
                 .Concat(TeammateGearSwap.Tree(Overflow)).OfType<Ammo>().Sum(a => a.StackObjectsCount);
-            Plan = new GiveGearPlanner(Controller, OfferRoot, Overflow, Bot, _ => { },
-                TeammateGearSwap.Tree(OfferRoot).Where(i => !BorrowedIds.Contains(i.Id)).Select(i => i.Id), item => created.Add(item), id => NativeSplits.Add(id),
-                message => { if (FailDiagnostics) throw new InvalidOperationException("Diagnostic sink unavailable"); Decisions.Add(message); }); Plan.Build();
+            Plan = new GiveGearPlanner(Controller, OfferRoot, Overflow, Bot, edit => { if (edit.SplitItem != null) NativeSplits.Add(edit.SplitItem.Id); },
+                TeammateGearSwap.Tree(OfferRoot).Where(i => !BorrowedIds.Contains(i.Id)).Select(i => i.Id)); Plan.Build();
         }
         public void AssertConserved()
         {
@@ -957,8 +1081,7 @@ static class Program
             Check(initialRoots.All(i => all.Count(x => x.Id == i.Id) == 1), "Every original/offered root has exactly one final owner");
             Check(all.Select(i => i.Id).Distinct().Count() == all.Length, "No duplicated descendant IDs");
             var ids = all.Select(i => i.Id).ToHashSet();
-            Check(expectedIds.IsSubsetOf(ids) && ids.Except(expectedIds).All(id => created.Any(i => i.Id == id)),
-                "Every new identity belongs to an explicit native split; all original item identities remain accounted for");
+            Check(expectedIds.SetEquals(ids), "Move-only Give Gear conserves every identity without creating cartridge children");
             Check(all.OfType<Ammo>().Sum(a => a.StackObjectsCount) == expectedRounds, "Ammunition quantities are conserved across package preparation");
         }
     }
@@ -1032,28 +1155,25 @@ namespace EFT.InventoryLogic
     }
     public class CartridgeStack : IContainer
     {
+        public FilterSet Filters = new();
         public List<Item> Items = new(); public Item ParentItem { get; set; }
         public void Take(Item item) { Items.Remove(item); item.CurrentAddress = null; }
         public void Put(Item item, ItemAddress address = null) { Items.Add(item); item.CurrentAddress = address ?? new() { Container = this }; }
     }
+    public class FilterSet { public bool CheckItemFilter(Ammo ammo) => true; }
     public class Magazine : CompoundItem
     {
         public string MagazineFamily = "shared";
         public bool MechanicallyCompatible = true, LoadedCartridgesCompatible = true;
-        public CartridgeStack Cartridges = new(); public int MaxCount = 30; static int splits;
+        public CartridgeStack Cartridges = new(); public int MaxCount = 30;
         public int Count => Cartridges.Items.Sum(i => i.StackObjectsCount);
         public Magazine(string id) : base(id) { Width = 1; Height = 2; Cartridges.ParentItem = this; }
         public OperationResult Apply(InventoryController controller, Ammo ammo, int count, bool simulate)
         {
-            if (CurrentAddress?.Container is Slot) return new() { Failed = true, Error = "Cannot load an inserted detachable magazine" };
-            var destination = new ItemAddress { Container = Cartridges };
-            if (count == ammo.StackObjectsCount) return ItemManipulator.Move(ammo, destination, controller, false);
-            var child = new Ammo(ammo.Id + "-split-" + ++splits) { StackObjectsCount = count, PenetrationPower = ammo.PenetrationPower, Damage = ammo.Damage, WeaponFamily = ammo.WeaponFamily };
-            ammo.StackObjectsCount -= count; Cartridges.Put(child);
-            return new() { Value = new AbstractMagOperationResult { OperationResult = new SplitResult { Item = ammo, ResultItem = child, Count = count } } };
+            throw new Exception("Give Gear must not load magazines, even temporarily.");
         }
     }
-    public class Ammo : Item { public string WeaponFamily = "shared"; public int PenetrationPower, Damage = 40; public Ammo(string id) : base(id) { Width = Height = 1; } }
+    public class Ammo : Item { public bool IsUsed; public string WeaponFamily = "shared"; public int PenetrationPower, Damage = 40; public Ammo(string id) : base(id) { Width = Height = 1; } }
     public class WeaponTemplate
     {
         public bool BoltAction;
@@ -1062,6 +1182,7 @@ namespace EFT.InventoryLogic
     }
     public class Weapon : CompoundItem
     {
+        public int ChamberAmmoCount;
         public enum EFireMode { fullauto, single, doublet, burst, doubleaction, semiauto }
         public WeaponTemplate Template = new();
         public string MagazineFamily = "shared";
@@ -1106,6 +1227,7 @@ namespace pitTeam.Modules
     internal class GearSwapEdit
     {
         IOperationResult operation;
+        internal Item SplitItem => (operation as SplitResult)?.ResultItem;
         internal static GearSwapEdit Capture(IOperationResult operation) => new() { operation = operation };
         internal void ValidateProvenance(HashSet<string> _) { }
         internal void UpdateProvenance(HashSet<string> owned)

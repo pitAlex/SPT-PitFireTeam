@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Runtime.CompilerServices;
 using EFT;
 using HarmonyLib;
 using pitTeam.Modules;
@@ -13,15 +14,20 @@ using UnityEngine;
 
 namespace pitTeam.SAINAddon;
 
-// Native SAIN plans and starts the throw inside GetDecision. Only its enable
-// switches and Core's explicit permission are adapted. Native safety remains,
-// supplemented by Core's player/follower impact check.
+// Native SAIN plans and starts the throw inside GetDecision. Adapt its enable
+// switches/permission and validate the chosen arc before drawing. Native safety
+// remains, with Core impact/release checks and a local failed-sequence backoff.
 internal static class SainGrenadeThrowBridge
 {
+    // Failed sequences must not cycle drawing/putting away a grenade. Keep this
+    // separate from Core's successful-release timers and squad reservation.
+    private const float FailedThrowRetrySeconds = 15f;
+    private sealed class Retry { internal float Until; }
+    private static ConditionalWeakTable<BotOwner, Retry> retries = new();
     private static readonly HashSet<BotOwner> Owners = new();
     private static Action<BotOwner> enable;
     private static Action<BotOwner, bool> finish;
-    private static Func<BotOwner, bool> allowed, cooldown;
+    private static Func<BotOwner, bool> allowed, cooldown, released;
 
     internal static void Apply(Harmony harmony)
     {
@@ -30,6 +36,7 @@ internal static class SainGrenadeThrowBridge
         enable = Bind<Action<BotOwner>>(gate, "EnableExplicitThrow", typeof(BotOwner));
         finish = Bind<Action<BotOwner, bool>>(gate, "FinishExplicitThrow", typeof(BotOwner), typeof(bool));
         allowed = Bind<Func<BotOwner, bool>>(gate, "IsThrowAllowed", typeof(BotOwner));
+        released = Bind<Func<BotOwner, bool>>(gate, "HasReleasedThrow", typeof(BotOwner));
         cooldown = Bind<Func<BotOwner, bool>>(timers, "CanProceedToThrow", typeof(BotOwner));
         var decision = AccessTools.Method(typeof(GrenadeThrowDecider), nameof(GrenadeThrowDecider.GetDecision),
             new[] { typeof(Enemy), typeof(string).MakeByRefType() });
@@ -39,11 +46,16 @@ internal static class SainGrenadeThrowBridge
             prefix: new HarmonyMethod(typeof(SainGrenadeThrowBridge), nameof(BeforeDecision)),
             transpiler: new HarmonyMethod(typeof(SainGrenadeThrowBridge), nameof(EnableReads)),
             finalizer: new HarmonyMethod(typeof(SainGrenadeThrowBridge), nameof(AfterDecision)));
+        var start = AccessTools.Method(typeof(GrenadeThrowDecider), "TryThrowGrenade", Type.EmptyTypes);
+        if (start?.ReturnType != typeof(bool) || start.IsStatic)
+            throw new MissingMethodException("SAIN grenade start boundary changed.");
+        harmony.Patch(start, prefix: new HarmonyMethod(typeof(SainGrenadeThrowBridge), nameof(BeforeThrow)));
         harmony.Patch(AccessTools.Method(typeof(GrenadeThrowDecider), "CheckFriendlyDistances",
             new[] { typeof(Vector3) }),
             postfix: new HarmonyMethod(typeof(SainGrenadeThrowBridge), nameof(FriendlyDistances)));
         harmony.Patch(AccessTools.Method(typeof(BotGrenadeController), nameof(BotGrenadeController.EndAll),
             new[] { typeof(EFT.InventoryLogic.ThrowWeap) }),
+            prefix: new HarmonyMethod(typeof(SainGrenadeThrowBridge), nameof(BeforeEnd)),
             postfix: new HarmonyMethod(typeof(SainGrenadeThrowBridge), nameof(Ended)));
     }
 
@@ -102,6 +114,12 @@ internal static class SainGrenadeThrowBridge
         { __1 = "followerGrenadeControllerMissing"; __result = false; return false; }
         // An accepted sequence owns its window until native EndAll, including after release.
         if (owner.WeaponManager.Grenades.ThrowindNow) return true;
+        if (retries.TryGetValue(owner, out Retry retry))
+        {
+            if (Time.time < retry.Until)
+            { __1 = "followerGrenadeRetry"; __result = false; return false; }
+            retries.Remove(owner);
+        }
         if (!cooldown(owner))
         { __1 = "followerGrenadeCooldown"; __result = false; return false; }
         __state = owner;
@@ -120,10 +138,50 @@ internal static class SainGrenadeThrowBridge
         return __exception;
     }
 
-    private static void Ended(BotGrenadeController __instance) => Owners.Remove(__instance._owner);
+    private static bool BeforeThrow(GrenadeThrowDecider __instance, ref bool __result)
+    {
+        var owner = __instance.BotOwner;
+        if (!Owns(__instance.Bot) || !Owners.Contains(owner)) return true;
+        var grenades = owner.WeaponManager?.Grenades;
+        var data = grenades?.AIGreanageThrowData;
+        // Native eligibility remains authoritative. Probe only a selected, fresh
+        // candidate that is actually about to draw, never an idle decision poll.
+        if (grenades == null || grenades.ThrowindNow || !grenades.ReadyToThrow || data?.IsUpToDate() != true) return true;
+        if (!FollowerShotSafety.IsRegularGrenadeTrajectoryUnsafeForThrower(owner, grenades, data, out string reason)) return true;
+        DeferRetry(owner, "preDraw:" + reason, data.Target);
+        __result = false;
+        return false;
+    }
+
+    private static void BeforeEnd(BotGrenadeController __instance, out BotOwner __state)
+    {
+        var owner = __instance._owner;
+        // Capture before Core's EndAll postfix consumes the release marker. A
+        // cancelled draw and a real spawn must not depend on postfix ordering.
+        __state = owner != null && Owners.Contains(owner) && __instance.ThrowindNow && !released(owner) ? owner : null;
+    }
+
+    private static void Ended(BotGrenadeController __instance, BotOwner __state)
+    {
+        Owners.Remove(__instance._owner);
+        if (__state != null) DeferRetry(__state, "endedWithoutRelease", __instance.AIGreanageThrowData?.Target);
+    }
+
+    private static void DeferRetry(BotOwner owner, string reason, Vector3? target)
+    {
+        float until = Time.time + FailedThrowRetrySeconds;
+        retries.GetValue(owner, _ => new Retry()).Until = until;
+        if (SainCombatRecorderBridge.IsRecording)
+            SainCombatRecorderBridge.RecordEvent(owner, "sainGrenade", new {
+                action = "retryDeferred", reason, retryUntil = until,
+                target = target.HasValue ? new { x = target.Value.x, y = target.Value.y, z = target.Value.z } : null
+            });
+    }
 
     internal static void Release(BotOwner owner)
     {
+        // A short combat/tactic handoff cannot rearm a failed throw. Weak retry
+        // state expires on the next eligible decision or with the bot itself.
         if (owner != null && Owners.Remove(owner)) finish(owner, false);
     }
 
@@ -131,5 +189,6 @@ internal static class SainGrenadeThrowBridge
     {
         foreach (var owner in Owners) finish(owner, false);
         Owners.Clear();
+        retries = new();
     }
 }

@@ -30,9 +30,15 @@ namespace pitTeam.Modules
 
         internal static void OnRecruited(BotOwner bot, IPlayer leader)
         {
-            if (!GameplayModeRuntime.IsAllegiance || !AllegiancePmcFriendship.IsRegularScav(bot) ||
-                leader?.IsYourPlayer != true || !AllegiancePmcFriendship.IsSelectedFriendly(bot, leader) ||
+            var human = Singleton<GameWorld>.Instance?.MainPlayer;
+            // Player Scavs use native recruitment, not the PMC-only encounter lottery.
+            if (!AllegiancePmcFriendship.IsRegularScav(bot) || human == null ||
+                leader?.IsYourPlayer != true || leader.ProfileId != human.ProfileId ||
+                (human.Side != EPlayerSide.Savage && (!GameplayModeRuntime.IsAllegiance ||
+                    !AllegiancePmcFriendship.IsSelectedFriendly(bot, leader))) ||
                 Recruits.ContainsKey(bot.ProfileId)) return;
+            var follower = BossPlayers.GetFollowerByProfileId(bot.ProfileId);
+            if (follower?.IsSquadMate != false || follower.GetBoss()?.realPlayer?.ProfileId != leader.ProfileId) return;
             var cargo = new Cargo { Bot = bot };
             foreach (var item in Inventory(bot)) cargo.StartingIds.Add(item.Id);
             Recruits.Add(bot.ProfileId, cargo);
@@ -103,6 +109,19 @@ namespace pitTeam.Modules
             return Inventory(bot).ToDictionary(item => item.Id, item => item.StackObjectsCount, StringComparer.Ordinal);
         }
 
+        internal static void TrackMagazineRefill(BotOwner bot, Item magazine, Dictionary<string, int> before, bool givenSource)
+        {
+            if (before == null || magazine == null || bot == null || !Recruits.TryGetValue(bot.ProfileId, out var cargo)) return;
+            if (givenSource) { TrackCommandedLoot(bot, magazine, before); return; }
+            foreach (Item item in magazine.GetAllItems())
+            {
+                if (!before.TryGetValue(item.Id, out int units))
+                { RegisterNonReturnableIds(bot, new[] { (string)item.Id }); continue; }
+                if (cargo.GivenUnits.ContainsKey(item.Id))
+                    cargo.NativeUnits[item.Id] += Math.Max(0, item.StackObjectsCount - units);
+            }
+        }
+
         internal static void TrackCommandedLoot(BotOwner bot, Item item, Dictionary<string, int> before)
         {
             if (bot == null || item == null || !Recruits.TryGetValue(bot.ProfileId, out var cargo)) return;
@@ -132,8 +151,8 @@ namespace pitTeam.Modules
         {
             var world = Singleton<GameWorld>.Instance;
             var human = world?.MainPlayer;
-            if (captured || !GameplayModeRuntime.IsAllegiance || AllegianceScavRelations.TrustBroken || human?.ProfileId != profileId ||
-                human.Side == EPlayerSide.Savage || human.HealthController?.IsAlive != true ||
+            if (captured || human == null || (human.Side != EPlayerSide.Savage && !GameplayModeRuntime.IsAllegiance) ||
+                AllegianceScavRelations.TrustBroken || human.ProfileId != profileId || human.HealthController?.IsAlive != true ||
                 (status != ExitStatus.Survived && status != ExitStatus.Runner && status != ExitStatus.Transit) ||
                 string.IsNullOrWhiteSpace(exitName)) return;
             captured = true;
@@ -181,7 +200,6 @@ namespace pitTeam.Modules
             };
             FollowerInsuranceRaidReports.Prepare(packet.ToString(Formatting.None))
                 .Send("/singleplayer/pitfireteam/scav-cargo");
-            Logger.LogInfo($"[ScavCargo] captured serverId='{serverId}' exit='{exitName}' transit={status == ExitStatus.Transit} partners={present.Length} items={allItems.Count}");
         }
     }
 }

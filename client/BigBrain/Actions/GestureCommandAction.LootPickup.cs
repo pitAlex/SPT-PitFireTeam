@@ -27,6 +27,7 @@ namespace pitTeam.BigBrain.Actions
         // scenario. It stays separate from loot-search voice, delay, and filtering rules.
         private void HandleTakeLootItem()
         {
+            if (recruitGearInProgress) return;
             if (followerData == null)
             {
                 return;
@@ -198,6 +199,8 @@ namespace pitTeam.BigBrain.Actions
                     ClearTakeLootState(reason);
                     return;
                 }
+
+                if (TryStartRecruitLooseWeapon(rootItem)) return;
 
                 if (rootItem is Weapon supportWeapon &&
                     IsShoulderWeaponCandidate(supportWeapon) &&
@@ -947,6 +950,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             StopLootPickupState(BotOwner?.GetPlayer);
+            ResetRecruitGearCommand();
             lootPickupInProgress = false;
             lootPickupReadyAt = 0f;
             lootPickupAttemptStartedAt = 0f;

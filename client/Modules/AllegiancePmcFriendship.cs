@@ -69,7 +69,7 @@ namespace pitTeam.Modules
             bot.Profile?.Info?.Settings?.Role == WildSpawnType.assault;
 
         private static bool IsCandidate(BotOwner bot) => IsPmc(bot) ||
-            (GameplayModeRuntime.IsAllegiance && IsRegularScav(bot));
+            (GameplayModeRuntime.IsAllegiance && (pitFireTeam.friendlyScavEncounters?.Value ?? true) && IsRegularScav(bot));
 
 #if DEBUG
         internal static void RegisterDebugRecruit(BotOwner bot, IPlayer leader)
@@ -119,6 +119,10 @@ namespace pitTeam.Modules
                 float roll = UnityEngine.Random.value;
                 float chance = GetSelectionChance(bot.Side, human.Side);
                 decision.SelectionChance = chance;
+                // Freeze willingness from the raw slider. Fence and penalties affect
+                // finding a friendly Scav, not whether that Scav wants to join.
+                if (IsRegularScav(bot))
+                    decision.RecruitmentChance = ScavFenceKarma.RecruitmentAcceptanceChance(GetSameSideChance());
                 decision.Friendly = chance >= 1f || roll < chance;
                 if (decision.Friendly)
                 {
@@ -240,10 +244,9 @@ namespace pitTeam.Modules
         {
             accepted = false;
             if (!IsSelectedFriendly(bot, player) || !Decisions.TryGetValue(bot.ProfileId, out var decision)) return false;
-            float chance = decision.RecruitmentChance ?? (IsRegularScav(bot)
-                ? ScavFenceKarma.RecruitmentAcceptanceChance(decision.SelectionChance)
-                : GameplayModeRuntime.GetEffectiveValue(pitFireTeam.tieredPickup)
-                    ? Math.Max(0f, Math.Min(1f, (player.Profile.Info.Level - bot.Profile.Info.Level + 10) / 20f)) : 1f);
+            // Scav probability was captured at selection; PMCs still use levels.
+            float chance = decision.RecruitmentChance ?? (GameplayModeRuntime.GetEffectiveValue(pitFireTeam.tieredPickup)
+                ? Math.Max(0f, Math.Min(1f, (player.Profile.Info.Level - bot.Profile.Info.Level + 10) / 20f)) : 1f);
             if (proactive && chance < 0.6f) return false;
             if (!decision.RecruitmentAccepted.HasValue)
             {
@@ -385,7 +388,8 @@ namespace pitTeam.Modules
                     canReact, role = bot.Profile?.Info?.Settings?.Role.ToString(), side = bot.Side.ToString(),
                     candidate = IsCandidate(bot), selectionKnown = decision != null,
                     selected = decision?.Friendly, trustBroken = AllegianceScavRelations.TrustBroken,
-                    encounterChance = decision?.SelectionChance, recruitmentAccepted = decision?.RecruitmentAccepted,
+                    encounterChance = decision?.SelectionChance, recruitmentChance = decision?.RecruitmentChance,
+                    recruitmentAccepted = decision?.RecruitmentAccepted,
                     groupId = bot.BotsGroup?.Id, members = bot.BotsGroup?.MembersCount,
                     enemyToPlayer = bot.BotsGroup?.IsEnemy(requester), memoryHasEnemy = bot.Memory?.HaveEnemy,
                     followers = boss?.Followers?.Where(f => f != null && f.GetPlayer != null).Select(f => new

@@ -496,6 +496,8 @@ Acquired-package repacking uses real EFT magazine-load transactions and settled 
 
 Loose cartridges must not contribute speculatively. Compatibility, available stack count, magazine capacity, inventory ownership, and every real load, top-off, or repacking transaction must succeed before the resulting loaded rounds count toward primary readiness. These feed systems require their own scenario matrices and runtime tests rather than being folded into the current magazine-move logic.
 
+The explicit [Give Gear exchange](../Give-Gear-Spec.md#43-primary-magazines-take-priority), also used by recruited command upgrades, has a separate handover admission projection: it may transfer an intact supported kit before magazine filling. This projection allocates compatible finite rounds to actual retained magazine capacity without changing stacks; it is not actual loaded-round readiness. Later maintenance performs the real fills/reloads. The ordinary acquisition/promotion readiness above remains settled-state based.
+
 ## Diagnostic Contract
 
 Readiness diagnostics use the `[LootCommand][Readiness]` prefix.

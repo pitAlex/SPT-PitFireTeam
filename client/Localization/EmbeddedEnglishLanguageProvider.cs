@@ -75,6 +75,9 @@ namespace pitTeam.Localization
                 friendlyEncounterChance = Entry(
                     "Friendly Encounter Chance",
                     "The base chance of encountering friendlies during a raid.\nIn Guns for Hire, this affects only same-side PMCs and has no effect if Friendly PMC Side or Bad Guy is on.\nIn Allegiance, the base chance is that of your own side while opposite sides get half the chance. Scavs are affected by your Fence karma, which further increases or decreases their chances."),
+                friendlyScavEncounters = Entry(
+                    "Friendly Scav encounters",
+                    "In Allegiance mode only, allow friendly Scav encounters that follow the same rules as opposite-faction encounters."),
                 healthMultiplier = Entry(
                     "Squad Health Multiplier",
                     "Health multiplier for the followers you spawn with. This is applied per each body part."),
