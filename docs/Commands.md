@@ -1,12 +1,12 @@
-# Command System Notes
+# Core commands
 
-Last updated: 2026-08-30
+Addon adaptations are in [SAIN addon commands](../addon/docs/Commands.md). Shared input, command state and peaceful execution stay here.
 
 ## Scope
 
 This document summarizes boss-issued follower commands as implemented in the client runtime.
 
-Detailed looting behavior, filtered-loot rules, and gear-swap design constraints are tracked in `docs/Looting.md`.
+Detailed looting behavior, the five corpse-only CMD action-menu requests, filtered-loot rules, and empty-slot acquisition rules are tracked in [Looting](looting/Looting.md). Containers and loose items retain their normal player interactions and existing follower quick/voice commands; no CMD actions are appended to their interaction menus.
 
 Authoritative files:
 
@@ -20,7 +20,6 @@ Authoritative files:
 - `client/BigBrain/FollowerCombatRegroupObjective.cs` - core combat regroup.
 - `client/BigBrain/FollowerCombatSuppressionObjective.cs` - core ordered suppression.
 - `client/BigBrain/FollowerCombatNeedSniperObjective.cs` - core marksman support order.
-- `addon/SAINFollowerCombatLayer.cs` - optional SAIN addon regroup/hold-override handling.
 - `client/Patches/BotReceiverPhraseOverridePatch.cs` and `client/Patches/BotReceiverGestureOverridePatch.cs` - vanilla receiver suppression for mod-owned commands.
 - `client/Patches/GestureMenuPatch.cs` - command menu injection/localization/filtering.
 
@@ -44,11 +43,8 @@ There are three execution paths:
    - `PushEnemy` is consumed into the ordered-push objective.
    - Combat gesture commands (`CombatComeToBossCover`, `CombatMoveToPointTactical`) break hold commitments and ordinary combat movement, while protected movement such as heal relocation is allowed to finish.
 
-3. **SAIN addon combat**
-   - Only active when SAIN plugin and the pitFireTeam SAIN addon are both present.
-   - The addon's sole purpose is to provide a custom follower combat brain based on SAIN's Squad layer, with the human player as leader. Command handling here is bridge glue that translates pitFireTeam orders into that layer; the addon may implement custom SAIN actions, but it must not own general compatibility patches or overwrite shared/general SAIN objects or methods.
-   - `RegroupNearBoss` is seen by `SAINFollowerCombatLayer` and translated into SAIN `ESquadDecision.Regroup`.
-   - Temporary `HoldPosition` combat aggression override is also treated as regroup/protection intent by the SAIN addon.
+3. **Optional addon combat**
+   - Core dispatches through the readiness-gated bridge; see [addon command handling](../addon/docs/Commands.md).
 
 ## Command State
 
@@ -60,7 +56,7 @@ There are three execution paths:
 | `MoveToPoint` | sampled world/nav point | infinite | `GestureCommandAction` |
 | `ComeCloser` | boss position snapshot owned by action | timed unless resuming a hold | `GestureCommandAction` |
 | `ContactApproach` | boss position and Contact bearing snapshots | timed | `GestureCommandAction` |
-| `RegroupNearBoss` | normal or tight mode | timed | `GestureCommandAction`, core combat regroup, or SAIN addon |
+| `RegroupNearBoss` | normal or tight mode | timed | `GestureCommandAction`, core combat regroup, or the addon squad regroup objective |
 | `TakeLootItem` | reserved current loot item, not `_commandTarget` | timed | `GestureCommandAction` |
 | `OpenDoor` | reserved current door, not `_commandTarget` | timed | `GestureCommandAction` |
 | `PushEnemy` | current combat enemy | consumed into objective | core ordered-push objective |
@@ -93,12 +89,18 @@ Behavior:
 - The outline color is configurable with a `#RRGGBB` value and defaults to green (`#00FF00`).
 - Name, distance, combat status, HP, and tactic (`MD`) can each be toggled under `My Squad > Settings > Base Settings`.
 - Disabling every text field while leaving the highlight enabled produces a highlight-only Status Report.
-- Enemy markers are grouped by enemy profile, so multiple followers reporting the same contact produce one marker. During the Status Report display, the active marker set follows each follower's current enemy selection: switching targets adds the newly selected enemy and removes an old contact once no follower targets it. `Auto Display Enemy Marker` keeps this marker set active independently for the full live contact without automatically playing the report sound or voice line. Each new contact starts at the enemy's current position. A reliably visible enemy uses a steady `27x27` red reticle that follows the live position every frame; an enemy that is not reliably visible uses a vertically bobbing `30.6x30.6` yellow `!` whose position refreshes every five seconds; and a killed enemy uses a steady `27x27` grey skull at its remembered death position. `Auto Display Kill Marker` can open the independent skull display immediately, `Kill Display Time` requests its duration, and `Kill Remember Time` caps that duration and disables killed-enemy markers when set to `0`. The spatial location sound and spoken direction use the position captured when Status Report was triggered.
+- Enemy markers are grouped by enemy profile, so multiple followers reporting the same contact produce one marker. During the Status Report display, the active marker set follows each follower's current enemy selection: switching targets adds the newly selected enemy and removes an old contact once no follower targets it. `Auto Display Enemy Marker` keeps this marker set active independently for the full live contact without automatically playing the report sound or voice line. On the core combat path, contacts use the permitted [Enemy Tracking](Enemy-Tracking.md) position: the last accepted report in Realistic (default), or live accepted-enemy coordinates in Simple. A reliably visible enemy uses a steady `27x27` red reticle that follows the live position every frame; an enemy that is not reliably visible uses a vertically bobbing `30.6x30.6` yellow `!` whose position refreshes every five seconds; and a killed enemy uses a steady `27x27` grey skull at its remembered death position. `Auto Display Kill Marker` can open the independent skull display immediately, `Kill Display Time` requests its duration, and `Kill Remember Time` caps that duration and disables killed-enemy markers when set to `0`. The spatial location sound and spoken direction use the position captured when Status Report was triggered.
+- Ready SAIN addon contact/status behavior is documented in [addon status reporting](../addon/docs/Commands.md#status-report-and-enemy-markers).
 - Nearby active followers without enemies play `FriendlyGesture`.
 - When no living teammate exists, Status Report plays `radiobeep.ogg` instead of the normal `radiochat.ogg` response.
 - Does not create `FollowerCommandType` state.
 
 ### Contact / Over There
+
+An accepted prioritized Contact target overrides a neutral relationship for all tactics. The target's group then recognizes the player and living followers as enemies; ordinary shared contact reports do not perform this override. Relationship changes do not grant visibility or firing permission.
+
+Automatic Contact candidate collection excludes selected friendly PMC/Scav encounters and ordinary/sniper Scav groups calmed by a living Scav companion, alongside existing follower/faction protections. A friendly standing in the same view cone as a hostile cannot become a Contact target. Real aggression can revoke that friendship/calming; hostile former allies remain eligible.
+
 
 Input:
 
@@ -138,6 +140,8 @@ Behavior:
 
 ### Attention / Look
 
+Core also remembers dismissed local-sound identities until the player moves into a new sector (10 m, or 8 m on Factory/Labs/Labyrinth). Repeated nearby movement/voice from those identities cannot restart peaceful facing in that sector. Directed gunfire can turn followers again after the immediate command suppression expires; real sight and damage remain separate combat inputs. See [peaceful sound orientation](Combat-Tactics.md#peaceful-sound-orientation).
+
 Input:
 
 - `EPhraseTrigger.Look`
@@ -145,7 +149,7 @@ Input:
 Behavior:
 
 - Debounced in `AIBossPlayer`.
-- Clears active command state and temporary combat aggression override.
+- Clears active command state and immediately restores both Aggression and Self-Determination to their configured values by clearing command overrides.
 - Temporarily suppresses enemy enforcement.
 - Clears current goal enemy and known enemy memory.
 - Soft-resets follower recovery and forces upright pose.
@@ -154,6 +158,10 @@ Behavior:
 - Does not create new command state.
 
 ### Follow Me / Cooperation
+
+Allegiance also admits selected regular solo Scavs. They remain members of their native Scav group while following the human leader, with reciprocal allies in the PMC group. Three intentional post-recruitment neutral Scav kills end Scav recruitment and make ordinary Scavs hostile for the raid. PMC follower kills count only when the player initiated damage or explicitly designated that victim with Contact. See [Scav groups and trust](Allegiance.md#scav-groups-and-trust).
+
+In Allegiance, a BEAR, USEC or regular Scav candidate must first pass the raid's solo friendship selection. Friendly Encounter Chance ranges from 5% to 80%, default 30%. Same-side PMCs use that value; opposite-side PMCs converge to the same chance at 10% or below and use half at 30% or above. Scavs multiply that opposite-side base by Fence standing clamped to 0–6. There is no lifetime encounter cap. Requests never reroll a profile; group exclusions and aggression revocations remain fixed for the raid. The guard repeats before deferred conversion. Combat, recruitment acceptance and active pickup limits still apply. Guns for Hire selects only same-side PMCs; player-Scav recruitment uses one slot per full Fence point up to six when Tiered Pickup is enabled. Allegiance uses that allowance instead of the PMC cap of two; Guns for Hire also respects configured Maximum Pickup. See [player-Scav capacity](Fence-Karma.md#player-scav-recruitment-capacity). See [Allegiance](Allegiance.md#finding-friendly-pmcs) for the selection curve.
 
 Input:
 
@@ -166,8 +174,17 @@ Behavior:
 - Clears active `FollowerCommandType` state on all active followers.
 - Disables patrol-radius mode by setting `CanPatrol` false.
 - Does not otherwise change combat objective state directly.
-- For a same-side non-follower, the receiver path instead attempts in-raid recruitment.
-- When tiered PMC recruitment rejects that bot because of the level-based acceptance decision, the refusal is remembered for the rest of the raid. Repeating `Follow Me` or `Cooperation` cannot reroll that bot's decision.
+- Only Cooperation attempts in-raid recruitment for a same-side non-follower or a selected opposite-faction solo in Allegiance. Follow Me resumes squad following and never requests recruitment, including through the native receiver fallback.
+- Cooperation always appears in the gesture menu's Help category with either setting of Hide Unsupported Commands. It is a regular, assignable phrase: right-click assignment, menu playback and bound keys work without a contextual target, and the situational exclamation marker is absent. Native `Player.Say` pairs Cooperation with the Hello (`FriendlyGesture`) gesture; no extra gesture is injected.
+- `AIBossPlayer.PhraseSaid` owns Cooperation recruitment dispatch. Phrase playback is independent of recruitment eligibility. An interacted bot is the exclusive target; without one, the receiver checks living raid players for bots within the player's 18-degree interaction view cone. Receiving candidates must be active non-followers within 5m and pass the shared Come Here unobstructed sight gate to the player's head or body using the high-poly/terrain check. Requests then use the existing recruitment controller for faction, combat, tiered acceptance and capacity checks. The native per-bot phrase route is suppressed to avoid duplicates and rejected-request fallback. The contextual quick prompt retains its normal 2.5m interaction range. Friendly or neutral non-follower Scavs can show the prompt independently of recruitment eligibility; PMC targets retain their faction/selection gate. Need Help retains its combat-support behavior.
+- Recruitment during combat answers `EPhraseTrigger.DontKnow` without rolling or remembering a refusal. Combat means EFT `Memory.HaveEnemy` or the external SAIN plugin's native `HasEnemy`, even without an EFT goal and with the addon absent. The initial request and deferred conversion checks give combat priority over an existing cached refusal; that earlier level refusal still applies after combat ends.
+- During the selected friendly's 20-second close-interaction wait, directed Cooperation reaches that bot within 17 m; outside it, the normal 5 m receiver applies. Recruitment acceptance is shared with its proactive roll when the chance is at least 60%. Roger/Negative and OK/No gestures answer only the single pending bot invitation with close clear sight. The Reaction category retains Affirmative (`Roger`) and Negative when Show Only Supported Commands is enabled. Player rejection suppresses repeat offers but permits a later Cooperate request. Actual bot refusal ends further waits; temporary combat/capacity refusals do not. See [invitations](Allegiance.md#bot-invitations-and-saved-acceptance).
+- When tiered PMC recruitment rejects that bot because of the level-based acceptance decision, the refusal is remembered for the rest of the raid. Field Scavs ignore generated levels: acceptance uses only the raw Friendly Encounter Chance slider saved at encounter selection. It decreases from 100% at slider values up to 15% to 50% at 50%, remaining 50% through 80%. The opposite-faction base, Fence multiplier and encounter penalties do not affect acceptance; they remain part of encounter selection only. Both Scav acceptance and refusal are cached per candidate for the raid; combat and full capacity do not consume the roll. Repeating `Cooperation` cannot reroll either decision.
+- Active pickup capacity is counted consistently at request, manual update and final conversion, including after the first-group delay. Queued requests cannot exceed the limit or convert the same bot twice; capacity refusal is not cached as a tiered denial. Cross-faction recruitment is restricted to human PMC players, preserving same-side Scav/Fence eligibility.
+- After group reassignment and follower registration, Allegiance repairs stale hostility in both directions with remaining living, unrevoked friendly candidates, regardless of faction. Native removal notifications also clear external SAIN contacts; this does not reroll friendship or erase unrelated hostility. See [Allegiance relationships](Allegiance.md#recruiting-and-squad-relationships).
+- Successful pickup captures native SAIN personality before follower conversion or addon initialization. Saved aggression is Coward 0%, Timmy 20%, Rat 30%, SnappingTurtle 40%, Normal 50%, Chad 70%, GigaChad/Wreckless 100%. Without a recognized native personality, recruitment retains the 20–60% random fallback. These values affect combat willingness, not tiered recruitment acceptance. The base aggression travels with the post-raid invitation and becomes the accepted teammate's saved aggression; command overrides are excluded.
+- With external SAIN installed, the candidate's exact recruitment reply uses immediate EFT speech rather than SAIN's suppressed EFT queue. A timed scope protects refusal replies for 1.5 seconds and pending acceptance for the existing 2.5-second conversion window, including before follower registration. Only that candidate's SAIN mumbling/taunting is suppressed during the scope; other bots, native warnings and recruitment eligibility remain unchanged.
+- Immediate recruitment replies expire the native silence deadline before calling `Say`. EFT's zero-duration silence remains active in the current frame, so `SetSilence(0)` cannot unmute an immediate negative or affirmative reply. Delayed acceptance uses the same preparation after the conversion silence.
 
 ### On Your Own
 
@@ -179,7 +196,7 @@ State:
 
 - Does not create `FollowerCommandType` state.
 - Sets `BotFollowerPlayer.CanPatrol` true for selected out-of-combat followers.
-- In combat, sets combat-independent mode instead of changing out-of-combat patrol state.
+- In combat, sets effective Self-Determination to 100% while leaving Aggression unchanged; see [shared settings and lifetime](Self-Determination.md#settings-and-commands).
 
 Targeting:
 
@@ -187,7 +204,7 @@ Targeting:
 
 Behavior:
 
-- Clears current request command state and temporary combat aggression override.
+- Peaceful use clears current request command state and temporary combat aggression override. Combat use changes only determination.
 - Enables patrol-radius intent in `FollowAction`.
 - `FollowMe` / `Cooperation` clears this mode.
 - Combat use does not create a request command; it only asks the current combat layer to stop anchoring behavior around the boss.
@@ -202,14 +219,14 @@ Behavior:
 
 - Broadcast to all active followers.
 - Outside combat, disables patrol-radius mode by setting `CanPatrol` false.
-- In combat, clears ordered-push objective pressure and disables combat-independent mode.
-- Does not clear active request command state.
-- Does not set boss protection, combat aggression, regroup, or a new combat objective state.
+- In combat, sets Self-Determination to exactly 20% without changing Aggression, cancels conflicting push pressure and issues one regroup using that determination's completion envelope.
+- Repeating the same override does not rearm its destination/hold. Survival and medicine retain priority; peaceful use retains its existing patrol meaning.
 
 Execution:
 
 - `FollowAction` checks `followerData.CanPatrol` every update.
 - When disabled, the action uses normal close follow/settle behavior.
+- Normal automatic settling accepts cover and sampled fallback points only within `1.75m` vertically of both the boss and follower, matching peaceful Regroup's same-level tolerance. A follower on another floor keeps following toward the boss even inside the straight-line follow radius; a committed settle cover on the wrong level is released before selecting another point.
 - When enabled, `CanPatrol` is treated as patrol intent, not immediate patrol ownership:
   - before patrol arms, boss/player movement resets the patrol runtime gate and the follower behaves like normal follow
   - if the follower is outside normal follow range, the follower catches up with normal follow behavior before patrol can arm
@@ -249,10 +266,11 @@ Execution:
 
 Picked-up follower behavior:
 
-- Recruited/picked-up followers roll command acceptance before taking the hold.
-- Higher-level picked-up followers are more likely to refuse with `Negative` because they do not fully accept the player as their boss.
-- Lower-level picked-up followers are more likely to accept, with a small stable personality bias per follower.
+- Out of combat, recruited/picked-up followers obey without a personality acceptance roll, just like saved squadmates. Normal targeting, availability and safety gates still apply.
+- Only in combat (including the existing combat handoff signals) do picked-up followers roll acceptance. Higher-level recruits are more likely to refuse with `Negative`; lower-level recruits are more likely to accept, with a small stable personality bias per follower.
 - The same personality bias also feeds autonomous combat protection: less loyal pickups tolerate more distance from the player and are less likely to break their own fight to protect the boss.
+
+2026-10-19 qualification: `tests/Verify-PeacefulCommandAcceptance.ps1` runs the production hold and aggression handlers with controlled combat/admission stand-ins (332 checks). Peaceful Stop/Hold and combat refusal paths are covered for recruits and saved squadmates; live three-follower command behavior remains to be retested.
 
 ### Stop Phrase
 
@@ -275,7 +293,7 @@ Execution:
 
 Picked-up follower behavior:
 
-- Uses the same level/personality acceptance roll as the hold gesture.
+- Obeys without a personality roll out of combat. In combat, uses the same level/personality acceptance roll as the hold gesture.
 
 Vanilla handling:
 
@@ -354,7 +372,8 @@ Targeting:
 
 Combat variant:
 
-- Becomes `PushEnemy` when the follower has active combat enemy state.
+- Becomes `PushEnemy` when the follower has active combat enemy state. Ready SAINGrunts also accept a squad-selected, already-admitted target; see [addon Go Forward](../addon/docs/Commands.md#go-forward). Core tactics keep their per-follower target.
+- An accepted combat Go Forward sets effective Aggression to 100% without changing Self-Determination. Go Go Go or aggregate combat end restores the saved value.
 
 ### Regroup Phrase Outside Combat
 
@@ -384,7 +403,7 @@ Execution:
 Combat variant:
 
 - Core combat consumes `RegroupNearBoss` into `FollowerCombatRegroupObjective`.
-- SAIN addon can consume it as `ESquadDecision.Regroup` when SAIN route is enabled.
+- Combat dispatch may be handled by the [addon regroup adapter](../addon/docs/Commands.md#regroup-and-exit-located).
 
 ### Exit Located Phrase
 
@@ -401,10 +420,12 @@ Execution:
 
 - Assembles eligible followers inside a tight extraction envelope around the boss.
 - Prefers a nearby spread destination; if none is valid, moves directly toward the boss instead of selecting normal boss-near cover.
-- Completes at `2.5m` NavMesh distance out of combat and on the SAIN addon route, or at the core combat objective's `4m` envelope.
+- Completes at `2.5m` NavMesh distance out of combat; core combat uses a `4m` tight envelope with path/floor arrival checks. The addon references this same base contract.
 - Skips normal regroup's final boss-local cover acquisition.
 
 ### Loot Phrases
+
+Field-recruited PMC/Scav loose firearm orders reuse [Give Gear upgrade evaluation](looting/Looting.md#recruited-follower-upgrade-bridge), including comparison against an occupied primary. Spawned/saved teammates retain the ordinary pickup path described below. Loose assignment may still choose any eligible follower, regardless of whether spawned teammates remain alive.
 
 Loot and pickup selections enter `AIBossPlayer` through the player's `OnPhraseSay` event. Assignment diagnostics record the quick-menu action, live and stored targets, phrase arrival, follower eligibility, reservation, and final command state so a lost order can be located at its exact boundary.
 
@@ -441,6 +462,8 @@ Execution:
 
 ### Body Loot Phrases
 
+For eligible field recruits, **Loot & Get Weapon** evaluates its selected weapon package through Give Gear, while **Loot & Get Gear** evaluates the corpse's complete offered kit, including weapons. Both then continue ordinary looting. The source exchange is staged and validated without opening an editor or changing player hands. These routes require no living spawned teammate; spawned teammates, normal searches and standalone Get Weapon/Get Gear keep their existing behavior. See the [command-loot contract](looting/Looting.md#recruited-follower-upgrade-bridge).
+
 Input:
 
 - `EPhraseTrigger.CheckHim`
@@ -453,7 +476,7 @@ Command state:
 Targeting:
 
 - Requires `InteractableObjects.GetCurBodyLootTarget()`.
-- Only saved teammates spawned through the raid squad flow can be assigned to body-loot commands; recruited/picked-up followers are ignored.
+- While any spawned teammate is alive, only spawned teammates can receive body-loot commands. If none remain alive, including raids started without spawned teammates, recruited/picked-up followers may receive them. Busy or distant living spawned teammates still block recruit assignment.
 - Chooses the active follower with the shortest complete NavMesh path for teammate corpses.
 - Chooses the active follower with the shortest complete NavMesh path of 22m or less for non-teammate corpses, ignoring followers with no free backpack/pocket grid space.
 - Ignores followers with enemies or active loot/pickup commands.
@@ -474,7 +497,7 @@ Execution:
     - tries backpack, rig, and pocket carry containers for the remaining body gear
     - treats backpacks and rigs as whole cargo: if the follower can carry the container, its contents ride with it; if the container cannot be carried, the command does not pull items out of it
     - pockets are not a movable cargo container, so pocket contents are still considered individually
-    - in `Simple` and `Restricted`, skips roots that are protected follower equipment. Non-protected containers may carry protected descendants, and post-raid filtering strips those protected descendants before extraction or return delivery
+    - in `Restricted`, skips roots that are protected follower equipment. Non-protected containers may carry protected descendants, and post-raid filtering strips those protected descendants before extraction or return delivery
 - In `Immersive` and `Realistic`, protected-equipment skipping is not applied because fallen teammate gear is lootable in those modes.
 - Non-teammate corpses use filtered looting:
     - tries to take the corpse dogtag first only for non-teammate USEC/BEAR bodies; dogtags bypass the min/max price filter but still require a valid backpack/pocket move
@@ -482,26 +505,26 @@ Execution:
     - checks backpack contents first, then pockets, then vest contents
     - normal filtered carry looting does not take the corpse's worn backpack as a container shortcut
     - when `Pickup Gear` is enabled, worn armor, armored rigs, tactical rigs, and headwear are priced and moved as whole trees before eligible fallback contents are considered
-    - pocket and vest contents skip magazines during normal filtered looting so follower reload space is not disturbed; when `Allow Gear Swapping` is active, compatible loaded magazines from the loot source may move into tactical vest or pockets for an accepted primary, or for a working-primary support equip when `Pickup Weapons` is also enabled
+    - pocket and vest contents skip magazines during normal filtered looting so follower reload space is not disturbed; when `Pickup Weapons` or the weapon request enables acquisition, compatible loaded magazines from the loot source may move into tactical vest or pockets for the accepted weapon
     - loose armor plates remain excluded; an installed plate is a fallback candidate only after its parent armor/rig remains at the source, it passes `Pickup Gear` and price, and current durability is at least 50 percent of maximum
-    - normal cargo weapons are priced and moved as whole weapon trees, including attached mods, instead of being stripped part by part; missing-primary acquisition and implemented true swaps ignore min/max price and are controlled by `Allow Gear Swapping`, while optional secondary/holster weapon additions additionally require `Pickup Weapons`
-    - with `Allow Gear Swapping` active, an empty-primary long gun equips only when its inserted magazine plus compatible loaded fast-access magazines satisfy the readiness policy
+    - normal cargo weapons are priced and moved as whole weapon trees, including attached mods, instead of being stripped part by part; missing-primary acquisition ignores min/max price; all primary/secondary/holster acquisition requires `Pickup Weapons` or the matching one-shot request, with no extra toggle
+    - with weapon pickup enabled by setting or request, an empty-primary long gun equips only when its inserted magazine plus compatible loaded fast-access magazines satisfy the readiness policy
     - if the found detachable-magazine weapon has an empty magazine slot, the most-loaded compatible source magazine is inserted through a real inventory transaction before normal weapon planning resumes; the existing loaded-weapon rules then decide fitting spares and weapon destination from live inventory
     - an under-ready empty-magazine package remains ordinary potential cargo and still requires `Pickup Weapons`, whole-tree price, and backpack fit
     - successful empty-primary weapon equip rebuilds the follower weapon-manager primary info and requests a main-hand switch so combat can use the new weapon
     - with `Pickup Weapons` enabled, a working first primary, and an empty second primary, a usable found long gun becomes a registered vanilla support weapon; only compatible source magazines that fit fast access while preserving reload landing space join it, and this non-primary result uses `EPhraseTrigger.LootGeneric`
     - once first and second primary are occupied, later long guns are ordinary filtered cargo and cannot recruit compatible magazines through the future-primary package bypass; an occupied holster applies the same boundary to pistols
     - other weapons that do not qualify for equipment still try an empty compatible slot, such as holster, then fall back to backpack/pocket space
-    - tactical vests are eligible for gear handling only when `Allow Gear Swapping` is active: an empty tactical vest slot may be filled directly in any mode; occupied vest replacement is only allowed in Immersive/Realistic, and only when the found vest is a protection upgrade, the old vest has no non-plate contents, and the old vest can be moved as a whole tree into the backpack first
-    - category filters from `Looting Settings` are checked before price for ordinary cargo: `Pickup Food`, `Pickup Meds`, `Pickup Valuables`, `Pickup Weapons`, and `Pickup Gear`; corpse dogtags, missing-primary acquisition, and implemented true swaps bypass these category filters, but optional second-primary/holster weapon additions require `Pickup Weapons`
+    - tactical vests may fill an empty compatible slot when `Pickup Gear` or the matching gear request is active; occupied equipment is never replaced in any loadout mode
+    - category filters from `Looting Settings` are checked before price for ordinary cargo: `Pickup Food`, `Pickup Meds`, `Pickup Valuables`, `Pickup Weapons`, and `Pickup Gear`; corpse dogtags and missing-primary acquisition bypass these category filters, but all weapon acquisition still requires `Pickup Weapons` or the matching request
     - compatible loaded magazines moved as support for an accepted weapon equip bypass the normal loot filters entirely; they must be loaded, safe to take, and able to fit in tactical vest or pockets with the shared reload reserve preserved; overflow stays at the source
-    - with `Allow Gear Swapping` active, equipped detachable-magazine weapons may top off empty or partial compatible vest/pocket magazines independently of `Pickup Weapons`; the primary is maintained first, then an equipped secondary may use unresolved ammunition without changing slots or hands
+    - with normal weapon work authorized by `Pickup Weapons`, equipped detachable-magazine weapons may top off empty or partial compatible vest/pocket magazines; selective requests prepare only their chosen package; the primary is maintained first, then an equipped secondary may use unresolved ammunition without changing slots or hands
     - a looted secondary may top off only magazines registered to its accepted weapon package, so shared magazine compatibility cannot make it consume the primary weapon's magazines; carried loose ammunition is used first, and searched-source rounds follow the loadout ownership rules
     - an equipped secondary may also take compatible loaded source magazines into tactical vest or pockets; loaded cartridges must match the weapon, every successful move registers the magazine to the secondary, and combined primary/secondary reload landing space is preserved
     - compatible secondary magazines that cannot pass the reload-safe fast-access plan remain at the body instead of becoming ordinary backpack cargo
     - ordinary cargo item price is compared once against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound; money ignores these price bounds when `Pickup Valuables` is enabled
     - non-weapon successful moves only target the follower's backpack and pockets, never the follower's rig
-- Stores successful cargo moves through `InteractableObjects.StoreItem(...)` for squadmates. Additive equipped gear moves are also stored in `Simple` and `Restricted`; Immersive/Realistic equipped gear can persist as the teammate's kit instead.
+- Stores successful cargo moves through `InteractableObjects.StoreItem(...)` for squadmates. Additive equipped gear moves are also stored in `Restricted`; Immersive/Realistic equipped gear can persist as the teammate's kit instead.
 - On completion, says `EPhraseTrigger.Ready` when at least one non-dogtag item was moved, `EPhraseTrigger.Negative` when eligible loot existed but no executable move could be built, or `EPhraseTrigger.LootNothing` when no eligible non-dogtag item existed.
 - Once searching starts, normal replacement commands are ignored until the loot command completes; combat, timeout, and safety invalidation can still stop the command.
 - After successful looting, walks to a reachable uncrowded same-level point within 3m of the corpse before resuming normal follow or the previous hold order.
@@ -523,7 +546,7 @@ Targeting:
 - Direct `Loot Container` orders may revisit a container after a previous follower search completed.
 - Autonomous `Go loot` selection skips containers marked completed by a follower.
 - A live container reservation still blocks duplicate assignment while another follower is approaching or looting it.
-- Only saved teammates spawned through the raid squad flow can be assigned to container-loot commands; recruited/picked-up followers are ignored.
+- Container-loot commands follow the same roster rule as body-loot commands: spawned teammates only while any is alive; recruits are eligible once none remain alive.
 - Chooses the active follower with the shortest complete NavMesh path of 22m or less, ignoring followers with no free backpack/pocket grid space.
 - Ignores followers with enemies or active loot/pickup commands.
 - Reserves container ownership through `InteractableObjects.SetContainerLootTaker(...)`.
@@ -540,8 +563,8 @@ Execution:
 - Compares each ordinary cargo candidate item tree against `Looting Settings -> Minimum Price` and `Maximum Price`; `0` disables that bound. Money ignores these price bounds when `Pickup Valuables` is enabled.
 - With `Pickup Gear` enabled, helmets, armor, armored rigs, and tactical rigs found in a container are tried as complete cargo trees first. If armor or a rig stays at the source, its eligible contents are reconsidered individually; installed plates additionally require at least 50 percent durability, while loose plates remain excluded.
 - Moves non-weapon candidates only into the follower's backpack and pockets, never the follower's rig.
-- Normal cargo weapons are priced and moved as whole weapon trees. With `Allow Gear Swapping` active, a long gun can equip into an empty first-primary slot without min/max price or `Pickup Weapons` when its loaded state and compatible fast-access magazines satisfy readiness. A working-primary follower may add a registered second-primary support weapon only when `Pickup Weapons` is enabled and second primary is empty. For an empty magazine slot, the most-loaded compatible body/container magazine is inserted first as a staging transaction, then the same live loaded-weapon planner decides its destination. Once a primary or Pickup-Weapons-authorized support plan is accepted, compatible loaded source magazines bypass normal loot filters only while they fit reload-safe fast access.
-- Equipped-weapon magazine top-off follows the same body-loot rule: `Allow Gear Swapping`, not `Pickup Weapons`, owns the operation; the primary is maintained first, then an equipped secondary may use unresolved ammunition without changing slots or hands.
+- Normal cargo weapons are priced and moved as whole weapon trees. With weapon pickup authorized by setting or request, a long gun can equip into an empty first-primary slot without min/max price when its loaded state and compatible fast-access magazines satisfy readiness. A working-primary follower may add a registered second-primary support weapon only when weapon pickup is authorized and second primary is empty. For an empty magazine slot, the most-loaded compatible body/container magazine is inserted first as a staging transaction, then the same live loaded-weapon planner decides its destination. Once a primary or Pickup-Weapons-authorized support plan is accepted, compatible loaded source magazines bypass normal loot filters only while they fit reload-safe fast access.
+- Equipped-weapon magazine top-off follows the same body-loot rule: `Pickup Weapons` authorizes normal weapon maintenance; selective requests prepare only their selected package; the primary is maintained first, then an equipped secondary may use unresolved ammunition without changing slots or hands.
 - A looted secondary may top off only magazines registered to its accepted weapon package. Carried loose ammunition is preferred; searched rounds may fill tracked looted magazines in every mode, while protected original magazines accept searched rounds only in Immersive/Realistic. No loaded cartridge is removed or replaced.
 - An equipped secondary may take compatible loaded container magazines into tactical vest or pockets after loose-ammo maintenance. Every move is recalculated from settled inventory, preserves primary and secondary reload landing space, and registers the moved magazine to the secondary; overflow remains in the container.
 - When a later search supplies compatible ammunition for a tracked secondary or backpack weapon candidate, acquired inserted/source magazines are topped off first, operational magazine placement and readiness are then recalculated, and only the remaining accepted loose rounds enter the normal protected ammo-storage order.
@@ -550,7 +573,7 @@ Execution:
 - Tactical vests follow the same narrow gear rule: fill an empty tactical vest slot directly in any mode, or replace an occupied vest only in Immersive/Realistic when the found vest is a protection upgrade, the old vest has no non-plate contents, and the old vest can be moved as a whole tree into the backpack first.
 - Missing-primary acquisition and implemented true swaps bypass min/max price and the `Pickup Weapons` category filter. Optional second-primary/holster weapon additions require `Pickup Weapons`; ordinary weapon and wearable cargo fallbacks respect their separate category filters plus price.
 - Closes the container on normal completion. Combat, timeout, or safety interruption can leave it open.
-- Stores successful cargo moves through `InteractableObjects.StoreItem(...)` for squadmates. Additive equipped gear moves are also stored in `Simple` and `Restricted`; Immersive/Realistic equipped gear can persist as the teammate's kit instead.
+- Stores successful cargo moves through `InteractableObjects.StoreItem(...)` for squadmates. Additive equipped gear moves are also stored in `Restricted`; Immersive/Realistic equipped gear can persist as the teammate's kit instead.
 - On completion, says `EPhraseTrigger.Ready` when at least one item was moved, `EPhraseTrigger.Negative` when eligible loot existed but no executable move could be built, or `EPhraseTrigger.LootNothing` when no eligible item existed.
 - Once searching starts, normal replacement commands are ignored until the loot command completes; combat, timeout, and safety invalidation can still stop the command.
 - After successful looting, walks to a reachable uncrowded same-level point within 3m of the container before resuming normal follow or the previous hold order.
@@ -574,7 +597,8 @@ Targeting:
 Execution:
 
 - `QuickPanelPatch` keeps the custom phrase available and refreshes whether it can be shown.
-- `QuickMumbleStartViewBackpackPatch` and `PlayerPatch.PlayPhraseOrGesture` route the phrase to `TeammateBackpackInspection.TryOpenFromQuickInteraction(...)`.
+- `QuickMumbleStartViewBackpackPatch`, the native dropdown selection callback, and `PlayerPatch.PlayPhraseOrGesture` share `FollowerQuickInteractionRouter`, routing the phrase to `TeammateBackpackInspection.TryOpenFromQuickInteraction(...)` without voice playback.
+- Keybindings and press/release/continuous configuration belong to EFT's Controls settings. No shared-key customization is added; the existing custom quick-action dispatch is retained.
 - Opens the target follower's live backpack through `GamePlayerOwner.ShowInventoryScreenLoot(...)`.
 - Marks the backpack tree searched/known for the local raid session, without permanently examining unknown templates for the player.
 - Persists raid-local searched/known state for item trees moved into the open backpack, so a nested container keeps its revealed contents if it is later moved back to the player.
@@ -585,6 +609,17 @@ Loot tracking:
 
 - On close, new items placed into the follower backpack are registered through `InteractableObjects.StoreItem(...)` so they behave like handed-over follower loot.
 - Previously tracked items removed from the backpack are unregistered through `InteractableObjects.RemoveStoredItem(...)` so post-raid return handling does not duplicate items the player already took back.
+
+### Swap Gear Quick Interaction
+
+- Custom `EPhraseTrigger` value `CustomPhrases.SwapGear` appears in the lower-left quick interaction dropdown when looking at a living active follower within View Backpack's 2.5m range and 18-degree look cone.
+- Only spawned squadmates belonging to the player are eligible; a backpack is not required. Field recruits are excluded from both the prompt and direct/bound editor opening to prevent stripping their gear.
+- View Backpack remains the prioritized quick action when both are available. Recruits remain excluded from View Backpack as well.
+- Like View Backpack, Swap Gear hides while the follower has active or pending healing work. Direct opening still uses the editor's existing healing safety gate.
+- Selecting Swap Gear silently opens a staged equipment exchange, with Apply Changes centered above the helmet slot between LOOT and the follower's name. Both inventories are cloned; only Apply can transfer original items and refresh the bot. Closing without Apply discards the draft.
+- The follower exposes both shoulder weapon slots, holster, tactical vest and all contents, body armor and individual plates, helmet, face cover, eyewear, earpiece and the whole backpack slot without its contents. All other follower slots stay hidden/inaccessible. Player inventory visibility remains normal. Discard is disabled, including its shortcut.
+- This is manual equipment exchange, independent of loot pickup settings and automatic upgrade comparison. Whole armored-rig to separate armor/vest arrangements are supported. See [Swap Gear](Swap-Gear.md) for transaction, ownership and pending runtime qualification.
+- The quick tap, native dropdown selection, and menu/bound-action routes consume the custom interaction through the same router instead of sending an unknown phrase to EFT speech.
 
 ### Open Door Phrase
 
@@ -626,14 +661,13 @@ State:
 Behavior:
 
 - Core combat reads `EffectiveCombatAggression` through `FollowerCombatCommon.GetAggression01()`.
+- Determination remains unchanged. Combat percentage overrides survive individual follower handoffs until aggregate squad combat ends; see [Self-Determination](Self-Determination.md).
 - Rifleman/default behavior becomes less proactive and more defensive/regroup-oriented.
 - Marksman suppresses proactive close-search/auto-search behavior.
 - Defensive survival behavior still wins: immediate fire, dogfight, healing, boss protection, and other urgent actions can still run.
-- Picked-up followers may refuse this hold with `Negative`; higher-level and more independent recruits are more likely to ignore the order.
+- Only in combat may picked-up followers refuse this hold with `Negative`; higher-level and more independent recruits are more likely to ignore the order. Issuing the phrase peacefully does not roll acceptance.
 
-SAIN addon:
-
-- `SAINFollowerCombatLayer` treats the temporary override as regroup/protection intent.
+Addon behavior: see [SAIN addon commands](../addon/docs/Commands.md).
 
 Vanilla handling:
 
@@ -647,11 +681,11 @@ Input:
 
 State:
 
-- Clears temporary combat aggression override.
+- Clears both temporary Aggression and Self-Determination overrides.
 
 Behavior:
 
-- Returns followers to their saved combat aggression/tactic behavior.
+- Returns followers to both saved percentages; it does not substitute hardcoded default values.
 - Does not create `FollowerCommandType` state.
 
 Vanilla handling:
@@ -696,6 +730,8 @@ Marksman behavior:
 - Generic push is not a direct marksman assault.
 - Marksman support logic may clear unsupported push/suppress commands or turn the situation into support/reposition behavior.
 
+Addon push: see [SAINGrunt Go Forward](../addon/docs/Commands.md#go-forward).
+
 ### Regroup In Combat
 
 Input:
@@ -716,9 +752,7 @@ Core behavior:
 - Completion requires the conservative larger of direct and valid NavMesh distance to be inside the boss radius, plus same-level tolerance.
 - Push or suppress orders can end regroup and return to primary/suppression behavior.
 
-SAIN addon:
-
-- `SAINFollowerCombatLayer.TryHandleRegroupCommand(...)` latches the command briefly and returns `ESquadDecision.Regroup`.
+Addon behavior: see [SAIN addon commands](../addon/docs/Commands.md).
 
 ### Suppress Enemy
 
@@ -774,7 +808,8 @@ Core behavior:
 - Accepted orders activate `FollowerCombatNeedSniperObjective`.
 - Objective tries immediate shoot, current cover fire, support firing cover, or firing-position movement.
 - Arrival arms a short `sniper.NeedSniper.positionHold`.
-- Completes/rejects when enemy disappears, no lane exists after retry, direct shot is available, or stronger survival interrupts.
+- An arrival's original two-second deadline survives a temporary shot action. If the firing lane is lost before that deadline, shared firing safety stops the shot and the objective resumes its committed arrival hold; renewed shots do not extend the deadline. Distance regroup cannot take ownership merely because a short firing opportunity appeared. Immediate fire before arrival still completes the order normally.
+- Completes/rejects when enemy disappears, no lane exists after retry, the arrival window finishes, a direct shot is available outside that window, or stronger survival interrupts.
 
 ### Need Help
 
@@ -840,6 +875,7 @@ Core behavior:
 - On consume, `FollowerCombatCommon.TryCreateBossCommandTacticalPointDecision(...)` sets `GoToSomePointData` and returns `BotLogicDecision.goToPointTactical`.
 - Invalid target produces `Negative` and `NoGesture`.
 
+
 ## Receiver Patches And Vanilla Forwarding
 
 Mod-owned phrases suppressed from vanilla follower receiver handling:
@@ -869,7 +905,7 @@ Unhandled phrases and gestures are still forwarded to follower receivers from `A
 - custom `TeamStatus` phrase
 - custom `OverThere` gesture
 - `OnRepeatedContact` display text
-- optional `hideUnsupportedCommands` filtering
+- optional `hideUnsupportedCommands` filtering for PMC players; player Scavs retain their full native phrase groups. Reused menus rebuild their phrase groups when switching between PMC and Scav so prior filtering cannot carry into the next raid.
 
 The menu is not authoritative for command behavior. It only controls what the player can see/select and how labels are localized.
 
@@ -882,4 +918,16 @@ Common command cleanup cases:
 - `FollowerRequestLayer` clears most known-enemy request commands before combat takes over.
 - `GestureCommandAction` clears movement commands on arrival, invalid path, invalid target, danger, healing, grenade/BTR avoidance, and interaction failure.
 - Core combat objectives clear command state when consuming or rejecting objective commands.
-- Combat gesture orders are cleared when consumed, invalid, or issued while the follower is already moving.
+- Combat gesture orders are cleared when consumed, invalid or expired; accepted orders replace ordinary combat movement while medical relocation is protected.
+
+## Debug recruit spawning
+
+`fs_spawnfollower` and `fs_spawnscavfollower` are compiled and registered only with the `DEBUG` symbol. In a raid they share the existing game-session bot-generation/activation flow near the player, then convert the bot with `squadMate: false`. These are field recruits for Give Gear testing, not spawned/saved squadmates; normal recruit initialization and inventory ownership apply.
+
+- `fs_spawnfollower`: in Allegiance, independently chooses USEC or BEAR with equal probability per invocation; in Guns for Hire, matches the player's faction. Generation retries preserve that requested faction/role rather than substituting a Scav. For the current backpack-swap test, a generated PMC keeps its normal worn kit but receives a Beta 2 filled completely with loose bolts (30 in its standard 5×6 grid; respects runtime grid resizing). This replaces only the unactivated test profile's generated backpack and its contents, with fresh item IDs; it does not copy 52sierra's lost kit or change live followers/shared templates. The replacement assets are loaded before activation. Offer an empty Attack 2 or Blackjack through Give Gear to exercise content migration and old-backpack cargo/drop handling. This test setup does not fix the handover bug.
+- SPT intentionally returns generated PMC profiles with raw side `Savage`. The direct Debug spawn applies SPT's normal `ChooseProfile` role-based correction (`pmcBEAR` → BEAR, `pmcUSEC` → USEC) before activation. Only a genuinely wrong/missing role or incompatible final side is rejected; raw `Savage` on a matching PMC role is not an error.
+- `fs_spawnscavfollower`: always requests a regular Savage/assault recruit with its normal generated equipment; no special rig, backpack or headwear override. In Allegiance it has a selected-friendly encounter identity and a locked, independent native Scav group before conversion, enabling the normal companion diplomacy and Fence cargo-capture path. Outside Allegiance it remains a field follower; this command does not enable Allegiance-only cargo/diplomacy rules in other modes.
+
+A command-created PMC has a raid-local Debug invitation marker. On living post-raid capture it can submit a candidate even if the ordinary pickup-invitation setting is disabled. The Debug server still validates the candidate, filters Restricted protected equipment, captures the actual current kit and calculates/logs the ordinary donation-adjusted chance, but bypasses that recruit's chance roll. It prioritizes marked recruits within the existing one-invitation-per-raid selection; multiple command-created PMCs do not produce multiple invitations from one capture. Normal recruits keep their ordinary settings/chance and Scavs never gain a PMC invitation.
+
+The command handlers, faction policy, test encounter registration, spawn entry point, marker and server bypass are absent from Release builds. Both client and server must be Debug for the deterministic test invitation. No roster entry is created until the normal invitation is accepted. Existing `fs_spawnscav` remains the separate enemy-spawn command and is unchanged.

@@ -94,7 +94,7 @@ namespace pitTeam.Modules
 
             try
             {
-                bool teamEscapeEnabled = pitFireTeam.teamEscape?.Value == true;
+                bool teamEscapeEnabled = GameplayModeRuntime.GetEffectiveValue(pitFireTeam.teamEscape);
 
                 // Include all squadmates in the result so already-dead followers appear in the summary,
                 // but only followers still alive at player death get an escape roll.
@@ -259,6 +259,7 @@ namespace pitTeam.Modules
             catch (Exception ex)
             {
                 Logger.LogError("Failed to resolve follower death escape outcomes");
+                FollowerInsuranceRaidReports.Fail();
                 Logger.LogError(ex);
             }
             finally
@@ -451,7 +452,7 @@ namespace pitTeam.Modules
                 return Array.Empty<ExfiltrationPoint>();
             }
 
-            bool useAnyExtract = pitFireTeam.teamEscapeUseAnyExtract?.Value != false;
+            bool useAnyExtract = GameplayModeRuntime.GetEffectiveValue(pitFireTeam.teamEscapeUseAnyExtract, true);
             ExfiltrationPoint[] candidates;
 
             if (useAnyExtract)
@@ -505,11 +506,12 @@ namespace pitTeam.Modules
                 Entries = entries
             }.ToJson(defaultJsonConverters);
 
+            var insuranceReport = FollowerInsuranceRaidReports.Prepare(json);
             Task.Run(() =>
             {
                 try
                 {
-                    RequestHandler.PostJson(OutcomeRoute, json);
+                    insuranceReport.Send(OutcomeRoute);
                 }
                 catch (Exception ex)
                 {

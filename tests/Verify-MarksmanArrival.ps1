@@ -74,6 +74,8 @@ public class Aid { public bool Have2Do,HaveWork,Using; }
 public class Medicine { public Aid FirstAid=new Aid(),SurgicalKit=new Aid(); }
 public class Look { public int Mask; }
 public class BotOwner { public Vector3 Position; public BotMemory Memory=new BotMemory(); public Medicine Medecine=new Medicine(); public PointData GoToSomePointData=new PointData(); public Look LookSensor=new Look(); }
+public class FollowerPreferences {public float BossInfluence=1f;}
+public class BossPlayers {public static BossPlayers Instance=new BossPlayers();public FollowerPreferences GetFollower(BotOwner owner)=>new FollowerPreferences();}
 public class ShootToPoint { public ShootToPoint(Vector3 p,float f){} }
 public class BotsGroup { public enum BotCurrentTactic { Attack } }
 public class CombatDistanceConfiguration { public static CombatDistanceConfiguration Instance=new CombatDistanceConfiguration(); public float GetCloseQuarterDistance()=>25f; }
@@ -111,6 +113,7 @@ public class ArrivalCommon {
     private void AddBattlefieldFiringCandidates(List<Vector3> c,Vector3 a,Vector3 b,Vector3 e,Vector3 d,Vector3 s){}
     private bool IsBlockedTacticalPoint(Vector3 c)=>Blocked;
     private bool IsMarksmanFiringPositionAllowed(EnemyInfo e,Vector3 c)=>!WrongPolicy;
+    private bool IsMarksmanFiringPositionAllowedForIntent(EnemyInfo e,Vector3 c,bool commandSupport=false)=>IsMarksmanFiringPositionAllowed(e,c);
     private bool IsMarksmanSupportSeparatedFromBoss(Vector3 c)=>Separated;
     private bool IsSupportPositionBehindBossLine(Vector3 c,Vector3 b,Vector3 e)=>true;
     private bool IsSupportPositionSafeFromAlternateThreats(Vector3 c,string id,bool strict)=>!AlternateThreat;

@@ -53,6 +53,8 @@ namespace pitTeam.Modules
         private Dictionary<string, Dictionary<string, HashSet<string>>>? _lootedWeaponMagazineIds;
         private Dictionary<string, HashSet<string>>? _strictCargoItemIds;
         private List<Item>? _toSendItems;
+        private readonly Dictionary<string, string[]> _returnSourceItemIds = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _returnOriginalIdByReturnId = new Dictionary<string, string>(StringComparer.Ordinal);
         private Dictionary<string, Dictionary<string, object>>? _followersWithLoot;
 
         private Dictionary<string, List<string>>? _followersEquipment;
@@ -115,19 +117,22 @@ namespace pitTeam.Modules
 
             if (trackedItemCount > 0 && _toSendItems.Count == 0)
             {
-                Logger.LogInfo($"[Loot] Raid-end follower return had {trackedItemCount} tracked item id(s), but no readable return roots were found.");
+                Logger.LogInfo($"[Loot] Raid-end follower return had {trackedItemCount} tracked item id(s), but no returnable cargo roots remained after membership/equipment filtering.");
             }
 
             Dictionary<string, object>? member = null;
             if (_followersWithLoot != null && _followersWithLoot.Count > 0)
             {
-                member = _followersWithLoot.Values.FirstOrDefault();
+                member = _followersWithLoot.FirstOrDefault(pair =>
+                    BossPlayers.GetFollowers()?.Any(follower =>
+                        follower?.IsSquadMate == true && follower.GetBot()?.ProfileId == pair.Key) == true).Value;
             }
 
             // Raid cleanup can unload the request owner immediately after this object is disposed.
-            // Send the return payload now so temporary Simple/Restricted gear cannot be stripped
+            // Send the return payload now so returned cargo cannot be stripped
             // from teammate persistence before the mail request has actually reached the server.
-            return SendReturnItems(_toSendItems, member, "post-raid returned follower items", synchronous: true);
+            return SendReturnItems(_toSendItems, member, "post-raid returned follower items", synchronous: true,
+                sourceItemIdsByRoot: _returnSourceItemIds, sourceIdByReturnId: _returnOriginalIdByReturnId);
         }
         /** Gather what items where given to followers and which is still alive to count */
         private void GatherItems()
@@ -139,6 +144,8 @@ namespace pitTeam.Modules
             }
 
             _toSendItems.Clear();
+            _returnSourceItemIds.Clear();
+            _returnOriginalIdByReturnId.Clear();
             List<string> gathered = new List<string>();
 
             foreach (var player in bossPlayers)
@@ -155,20 +162,20 @@ namespace pitTeam.Modules
             }
         }
 
-        public static void SendDeathEscapeRecoveredGear(IEnumerable<Item> recoveredItems)
+        public static void SendDeathEscapeRecoveredGear(IEnumerable<Item> recoveredItems, Dictionary<string, string[]> sourceItemIdsByRoot = null)
         {
-            SendReturnItems(recoveredItems, null, "recovered death-escape gear");
+            SendReturnItems(recoveredItems, null, "recovered death-escape gear", sourceItemIdsByRoot: sourceItemIdsByRoot);
         }
 
         public static List<Item> GetTrackedReturnItemRoots(BotOwner bot)
         {
             List<Item> roots = new List<Item>();
-            if (bot?.GetPlayer?.InventoryController == null)
+            if (!IsReturnSquadMember(bot) || bot.GetPlayer?.InventoryController == null)
             {
                 return roots;
             }
 
-            List<string>? storedItems = GetStoredItems(bot.ProfileId);
+            List<string> storedItems = GetReturnItemIds(bot);
             if (storedItems == null || storedItems.Count == 0)
             {
                 return roots;
@@ -191,12 +198,14 @@ namespace pitTeam.Modules
 
         private void GatherStoredItemsFromBot(BotOwner bot, List<string> gathered)
         {
-            if (_toSendItems == null || bot?.GetPlayer?.InventoryController == null)
+            if (!IsReturnSquadMember(bot) || _toSendItems == null || bot.GetPlayer?.InventoryController == null)
             {
                 return;
             }
 
-            var storedItems = GetStoredItems(bot.ProfileId);
+            var storedItems = GetReturnItemIds(bot);
+            Logger.LogInfo($"[Loot] Squadmate '{bot.Profile?.Nickname ?? bot.ProfileId}' return policy: " +
+                $"tracked={GetStoredItems(bot.ProfileId)?.Count ?? 0}, cargoIds={storedItems.Count}; equipped gear stays in kit.");
             if (storedItems == null)
             {
                 return;
@@ -222,7 +231,10 @@ namespace pitTeam.Modules
                     continue;
                 }
 
-                _toSendItems.Add(item.CloneItem());
+                Item returnedItem = item.CloneItem();
+                _toSendItems.Add(returnedItem);
+                _returnSourceItemIds[returnedItem.Id] = GetItemTreeIds(item).ToArray();
+                RecordReturnItemLineage(item, returnedItem, _returnOriginalIdByReturnId);
                 gathered.Add(stored);
             }
         }
@@ -384,13 +396,39 @@ namespace pitTeam.Modules
             }
             catch
             {
+                FollowerInsuranceRaidReports.Fail();
                 ids.Add(item.Id);
             }
 
             return ids;
         }
 
-        // In Simple/Restricted modes teammate gear is lootable during the raid for interaction
+        private static void RecordReturnItemLineage(Item source, Item clone, Dictionary<string, string> destination)
+        {
+            try
+            {
+                Item[] originals = new[] { source }.Concat(source.GetAllItems()).Where(i => i != null)
+                    .GroupBy(i => i.Id, StringComparer.Ordinal).Select(g => g.First()).ToArray();
+                Item[] copies = new[] { clone }.Concat(clone.GetAllItems()).Where(i => i != null)
+                    .GroupBy(i => i.Id, StringComparer.Ordinal).Select(g => g.First()).ToArray();
+                if (originals.Length != copies.Length || originals.Length == 0
+                    || originals[0].Id != source.Id || copies[0].Id != clone.Id
+                    || originals.Where((item, index) => item.TemplateId != copies[index].TemplateId).Any())
+                {
+                    Logger.LogInfo($"[FollowerInsurance:CourierMap] Ambiguous cloned tree root='{source.Id}'; coverage handoff disabled for this tree.");
+                    return;
+                }
+
+                for (int i = 0; i < originals.Length; i++)
+                    destination[copies[i].Id] = originals[i].Id;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogInfo($"[FollowerInsurance:CourierMap] Unable to map cloned tree root='{source.Id}': {ex.Message}");
+            }
+        }
+
+        // In Restricted modes teammate gear is lootable during the raid for interaction
         // parity, but those exact item ids must not survive player extraction. The server also
         // derives saved teammate gear from profile JSON; this client route covers live-only
         // movement such as gear handed through the teammate backpack inspection flow.
@@ -495,7 +533,9 @@ namespace pitTeam.Modules
             IEnumerable<Item> items,
             Dictionary<string, object>? member,
             string context,
-            bool synchronous = false)
+            bool synchronous = false,
+            Dictionary<string, string[]> sourceItemIdsByRoot = null,
+            Dictionary<string, string> sourceIdByReturnId = null)
         {
             if (!EnableBackendItemReturn || items == null)
             {
@@ -525,17 +565,50 @@ namespace pitTeam.Modules
                     .First(t => t.GetField("Converters", BindingFlags.Static | BindingFlags.Public) != null);
                 var defaultJsonConverters = Traverse.Create(converterClass).Field<JsonConverter[]>("Converters").Value;
 
+                // Insurance lineage is optional. A bad mapping must never prevent the ordinary
+                // return package from reaching the server. MongoID is a value type; do not compare
+                // FlatItem._id to null (that invokes its string-to-ID conversion and can throw).
+                var insuranceLineage = new Dictionary<string, string>(StringComparer.Ordinal);
+                if (sourceIdByReturnId != null)
+                {
+                    try
+                    {
+                        foreach (var flatItem in flatItems)
+                        {
+                            string returnedId = flatItem._id.ToString();
+                            if (string.IsNullOrWhiteSpace(returnedId)
+                                || !sourceIdByReturnId.TryGetValue(returnedId, out string originalId)
+                                || string.IsNullOrWhiteSpace(originalId))
+                                continue;
+                            if (insuranceLineage.ContainsKey(returnedId))
+                                throw new InvalidOperationException($"Duplicate returned item ID '{returnedId}'.");
+                            insuranceLineage.Add(returnedId, originalId);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        insuranceLineage.Clear();
+                        Logger.LogInfo($"[FollowerInsurance:CourierMap] Skipped optional lineage; normal item return continues: {ex.Message}");
+                    }
+                }
+
                 string returnItemsJson = new
                 {
                     items = flatItems,
                     member,
+                    // Loss provenance and optional policy handoff; mail keeps its clone/ID behavior.
+                    insuranceSourceItemIdsByRoot = rootItems
+                        .Where(root => sourceItemIdsByRoot?.ContainsKey(root.Id) == true)
+                        .ToDictionary(root => root.Id, root => sourceItemIdsByRoot[root.Id]),
+                    insuranceSourceItemIdByReturnId = insuranceLineage,
                 }.ToJson(defaultJsonConverters);
 
+                var insuranceReport = FollowerInsuranceRaidReports.Prepare(returnItemsJson);
                 bool Send()
                 {
                     try
                     {
-                        RequestHandler.PostJson("/singleplayer/returnitems", returnItemsJson);
+                        insuranceReport.Send("/singleplayer/returnitems");
                         return true;
                     }
                     catch (Exception ex)
@@ -557,6 +630,7 @@ namespace pitTeam.Modules
             catch (Exception ex)
             {
                 Logger.LogError($"Failed to prepare {context}");
+                FollowerInsuranceRaidReports.Fail();
                 Logger.LogError(ex);
                 return false;
             }
@@ -621,6 +695,7 @@ namespace pitTeam.Modules
             catch (Exception e)
             {
                 Logger.LogError("Error sending stored loot");
+                FollowerInsuranceRaidReports.Fail();
                 Logger.LogError(e);
             }
 
@@ -637,6 +712,8 @@ namespace pitTeam.Modules
             _lootedWeaponMagazineIds?.Clear();
             _strictCargoItemIds?.Clear();
             _toSendItems?.Clear();
+            _returnSourceItemIds.Clear();
+            _returnOriginalIdByReturnId.Clear();
             _followersWithLoot?.Clear();
             _enemiesSeen?.Clear();
 
@@ -723,7 +800,7 @@ namespace pitTeam.Modules
                             AliveSquadmates = 0,
                             HasSecureMeds = false,
                             EquipmentItems = equipmentItems,
-                            TrackedItemIds = GetStoredItems(bot.ProfileId)?.ToArray() ?? Array.Empty<string>()
+                            TrackedItemIds = GetReturnItemIds(bot).ToArray()
                         });
                     }
                 }
@@ -743,11 +820,12 @@ namespace pitTeam.Modules
                     Entries = entries
                 }.ToJson(defaultJsonConverters);
 
+                var insuranceReport = FollowerInsuranceRaidReports.Prepare(json);
                 Task.Run(() =>
                 {
                     try
                     {
-                        RequestHandler.PostJson("/singleplayer/pitfireteam/teammate/raid-outcomes", json);
+                        insuranceReport.Send("/singleplayer/pitfireteam/teammate/raid-outcomes");
                     }
                     catch (Exception ex)
                     {
@@ -759,6 +837,7 @@ namespace pitTeam.Modules
             catch (Exception ex)
             {
                 Logger.LogError("Failed to prepare escaped teammate loadout outcomes");
+                FollowerInsuranceRaidReports.Fail();
                 Logger.LogError(ex);
             }
         }
@@ -791,7 +870,7 @@ namespace pitTeam.Modules
 
         private static bool ShouldGatherRaidEndFollowerInventory(BotOwner bot)
         {
-            if (bot == null ||
+            if (!IsReturnSquadMember(bot) ||
                 bot.IsDead ||
                 bot.HealthController?.IsAlive != true ||
                 bot.GetPlayer?.InventoryController?.Inventory?.Equipment == null)
@@ -1759,6 +1838,9 @@ namespace pitTeam.Modules
         /** Store the item that was given to a follower */
         public static void StoreItem(BotOwner bot, Item item)
         {
+            if (!IsReturnSquadMember(bot)) return;
+            SquadRaidKillReport.RecordCollectedDogtags(item);
+
             if (Instance == null || Instance._lootedItems == null || Instance._followersWithLoot == null)
             {
                 return;
@@ -1821,9 +1903,9 @@ namespace pitTeam.Modules
                 }
 
                 // The weapon is the normal return root, but EFT can eject its original magazine
-                // into the vest during combat. Keep the magazine id as a fallback root so it is
-                // still stripped/returned after reloading; ancestor checks suppress duplicates
-                // while the magazine remains seated in the tracked weapon.
+                // into the vest during combat. Keep its fallback ID if the weapon or spare
+                // later becomes cargo; the final return policy retains registered vest/pocket
+                // spares for equipped weapons and ancestor checks suppress nested duplicates.
                 trackedReturnIds.Add(magazine.Id);
             }
         }
@@ -2111,7 +2193,7 @@ namespace pitTeam.Modules
                 return false;
             }
 
-            // Simple/Restricted teammate spawn gear may be moved around in raid for interaction
+            // Restricted teammate spawn gear may be moved around in raid for interaction
             // parity, but it must not become return-mail cargo. If a handled tree mixes protected
             // gear and unrelated cargo, split clean non-protected children back out for return
             // tracking instead of mailing the protected parent.
@@ -2267,6 +2349,36 @@ namespace pitTeam.Modules
             }
 
             RemoveStrictCargoItemIds(bot, new[] { itemId });
+        }
+
+        // Gear exchange permits later plate/mod removal and magazine ejection. Keep descendant
+        // fallback IDs as well as roots; GatherStoredItemsFromBot deduplicates nested return trees.
+        internal static void StoreGearSwapReturnItems(BotOwner bot, IEnumerable<Item> items)
+        {
+            if (!IsReturnSquadMember(bot))
+            {
+                Logger.LogInfo($"[Loot] Gear exchange return tracking skipped for non-squad follower '{bot?.Profile?.Nickname ?? bot?.ProfileId}'.");
+                return;
+            }
+            Item[] returnable = items.Where(item => item != null && !IsProtectedFollowerEquipment(item)).ToArray();
+            foreach (Item item in returnable) StoreItem(bot, item);
+            List<string> tracked = GetStoredItems(bot.ProfileId);
+            if (tracked == null) return;
+            foreach (Item item in returnable)
+                if (!tracked.Contains(item.Id)) tracked.Add(item.Id);
+        }
+
+        private static bool IsReturnSquadMember(BotOwner bot) =>
+            bot != null && BossPlayers.Instance?.GetFollower(bot)?.IsSquadMate == true;
+
+        internal static List<string> GetReturnItemIds(BotOwner bot)
+        {
+            // Membership is the admission gate, before inventory or ownership checks.
+            if (!IsReturnSquadMember(bot)) return new List<string>();
+            var controller = bot.GetPlayer?.InventoryController;
+            return FollowerReturnPolicy.GetReturnIds(true, controller?.Inventory?.Equipment,
+                GetStoredItems(bot.ProfileId), id => FindStoredReturnItem(controller, id),
+                (weapon, magazine) => IsApprovedLootedWeaponMagazine(bot, weapon, magazine));
         }
 
         public static List<string>? GetStoredItems(string bot)

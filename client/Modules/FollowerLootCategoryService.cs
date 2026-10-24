@@ -4,11 +4,19 @@ namespace pitTeam.Modules
 {
     internal static class FollowerLootCategoryService
     {
-        public static bool PassesCategoryFilter(Item item)
+        public static bool PassesCategoryFilter(Item item, FollowerLootRequest request = null)
         {
             if (item == null)
             {
                 return false;
+            }
+
+            bool weapon = IsWeaponLoot(item);
+            bool gear = IsWearableGear(item);
+            if (request != null)
+            {
+                if (!request.AllowsCategory(weapon, gear)) return false;
+                if ((request.WantsWeapons && weapon) || (request.WantsGear && gear)) return true;
             }
 
             switch (Classify(item))
@@ -58,14 +66,14 @@ namespace pitTeam.Modules
                    item is EFT.InventoryLogic.Headwear;
         }
 
-        private static bool IsWearableGear(Item item)
+        public static bool IsWearableGear(Item item)
         {
             return IsWholeWearableTree(item) ||
                    item is EFT.InventoryLogic.ArmorPlate ||
                    item is EFT.InventoryLogic.ArmoredEquipment;
         }
 
-        private static bool IsWeaponLoot(Item item)
+        public static bool IsWeaponLoot(Item item)
         {
             return item is Weapon ||
                    item is EFT.InventoryLogic.IWeapon ||

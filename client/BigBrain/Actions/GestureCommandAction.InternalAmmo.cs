@@ -74,7 +74,7 @@ namespace pitTeam.BigBrain.Actions
         {
             move = null;
             Weapon support = GetEligibleSupportAmmoMaintenanceWeapon(followerEquipment, supportSlot);
-            if (!pitFireTeam.IsLootGearSwappingEnabled() ||
+            if (!IsRequestedWeaponPickupEnabled() ||
                 inventory == null ||
                 sourceRoot == null ||
                 sourceAmmoFactory == null ||
@@ -792,7 +792,7 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
-            if (!pitFireTeam.IsLootWeaponPickupEnabled())
+            if (!IsRequestedWeaponPickupEnabled())
             {
                 reason = "pickupGearDisabled";
                 return false;

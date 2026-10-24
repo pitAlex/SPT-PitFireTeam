@@ -225,6 +225,7 @@ namespace pitTeam.Modules
             }
 
             EnemyInfo? currentGoal = follower.Memory?.GoalEnemy;
+            if (!FollowerEnemyTracking.CanRestore(follower, contact.EnemyProfileId)) return false;
             if (FollowerCombatTargetCommitments.IsActiveTemporaryTarget(follower, currentGoal))
             {
                 // A mission may temporarily yield to a close self-defence target. Retention is
@@ -264,9 +265,17 @@ namespace pitTeam.Modules
             }
 
             info.PriorityIndex = 0;
+            if (FollowerEnemyTracking.IsRealistic(info))
+            {
+                if (!FollowerEnemyTracking.IsEligible(info)) return false;
+                info.PersonalLastPos = FollowerEnemyTracking.Position(info);
+            }
+            else
+            {
             info.PersonalLastPos = enemy.Position;
             info.SetVisible(contact.WasVisible);
             Enemy.RepairPersonalMemory(info, enemy.Position, contact.WasVisible || Enemy.HasDirectPersonalContact(info));
+            }
             follower.Memory.IsPeace = false;
             using (FollowerGoalEnemyTracker.Begin("FollowerContactEnemyRetention.TryRestore", "retainedContactRestore"))
             {
@@ -503,7 +512,7 @@ namespace pitTeam.Modules
 
         private static float GetRetainSeconds()
         {
-            int configuredSeconds = pitFireTeam.enemyRemember?.Value ?? 12;
+            float configuredSeconds = FollowerEnemyTracking.RememberSeconds;
             return Mathf.Max(MinimumRetainSeconds, configuredSeconds);
         }
     }

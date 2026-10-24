@@ -88,7 +88,7 @@ namespace DrakiaXYZ.BigBrain.Internal {
     }
 }
 namespace pitTeam {
-    public static class pitFireTeam { public static bool UseSainFollowerCombat; public static LogStub Log=new LogStub(); }
+    public static class pitFireTeam { public static bool AddonCombatEnabled; public static bool UseSainFollowerCombat(BotOwner owner)=>AddonCombatEnabled; public static LogStub Log=new LogStub(); }
     public class LogStub { public List<string> Lines=new List<string>(); public void LogWarning(string s){Lines.Add(s);} }
 }
 namespace pitTeam.Components { public class BotFollowerPlayer { public string DescribePatrolCombatBlock()=>"squadmate:test"; public static bool IsEnemyInfoAlive(EnemyInfo e)=>false; } }

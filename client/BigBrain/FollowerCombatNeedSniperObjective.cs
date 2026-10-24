@@ -105,13 +105,15 @@ namespace pitTeam.BigBrain
 
             if (CombatCommon.TryGetImmediateShootDecision($"{ReasonPrefix}.immediateShoot") is { } immediateShoot)
             {
-                complete = true;
+                // A shot opportunity may flicker before aiming finishes. Keep the
+                // original arrival deadline so losing that lane can resume its hold.
+                complete = Time.time >= settleUntil;
                 return immediateShoot;
             }
 
             if (CombatCommon.CanShootFromCurrentCover(out _))
             {
-                complete = true;
+                complete = Time.time >= settleUntil;
                 return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                     BotLogicDecision.shootFromCover,
                     $"{ReasonPrefix}.currentCover");
@@ -123,7 +125,9 @@ namespace pitTeam.BigBrain
                 return RejectObjective("selfPreservation");
             }
 
-            if (CombatCommon.HasCommittedPosition(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> committedPosition))
+            if (CombatCommon.HasCommittedPosition(
+                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> committedPosition,
+                    deferCombatBreaks: Time.time < settleUntil))
             {
                 return committedPosition;
             }
@@ -227,7 +231,10 @@ namespace pitTeam.BigBrain
             if (currentDecision.Action == BotLogicDecision.shootFromCover ||
                 currentDecision.Action == BotLogicDecision.shootFromPlace)
             {
-                return CombatCommon.ShallEndCurrentDecision(currentDecision);
+                AICoreActionEnd end = CombatCommon.ShallEndCurrentDecision(currentDecision);
+                if (end.Value && settleUntil > 0f && Time.time >= settleUntil)
+                    complete = true;
+                return end;
             }
 
             if (currentDecision.Action == BotLogicDecision.goToPoint)
@@ -309,8 +316,8 @@ namespace pitTeam.BigBrain
             if (CombatCommon.TryGetImmediateShootDecision($"{ReasonPrefix}.holdShoot") != null ||
                 CombatCommon.CanShootFromCurrentCoverOrStandingIntent(out _))
             {
-                complete = true;
-                CombatCommon.ClearCommittedPosition();
+                complete = Time.time >= settleUntil;
+                if (complete) CombatCommon.ClearCommittedPosition();
                 return new AICoreActionEnd("needSniperShotReady", true);
             }
 

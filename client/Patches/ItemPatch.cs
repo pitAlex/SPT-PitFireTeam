@@ -40,7 +40,7 @@ namespace pitTeam.Patches
             if (isBotEquipment)
             {
                 // Teammate gear is physically lootable in every loadout-management mode.
-                // Simple/Restricted anti-farming is enforced later by stripping protected
+                // Restricted anti-farming is enforced later by stripping protected
                 // teammate item IDs from the extracted PMC profile.
                 __result = false;
                 return false;

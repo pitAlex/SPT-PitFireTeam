@@ -26,6 +26,7 @@ namespace pitTeam.Modules
         public static bool SuppressPlayerModelViewShow { get; private set; }
         public static bool IsOpeningSquadModeScreen { get; private set; }
         public static IReadOnlyCollection<string> OpeningGroupAccountIds => openingGroupAccountIds;
+        internal static void ClearOpeningGroupSnapshot() => openingGroupAccountIds.Clear();
 
         private static GameObject alphaLabelObject;
         private static bool? alphaLabelWasActive;

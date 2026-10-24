@@ -3,18 +3,14 @@ using pitTeam.Modules;
 using HarmonyLib;
 using SPT.Reflection.Patching;
 using System.Reflection;
-using UnityEngine;
 
 using EventInfo = GlobalEventDispatcher.PhraseDelegateInfo;
 
 namespace pitTeam.Patches
 {
-    // Minimal recruit trigger for 4.x:
-    // Intercept FollowMe/Cooperation phrase receipt and forward it to the existing follow-request flow.
-    internal class BotReceiverFollowMeRecruitPatch : ModulePatch
+    // Keep native broadcast recruitment separate from AIBossPlayer command ownership.
+    internal class BotReceiverRecruitPatch : ModulePatch
     {
-        private const float RecruitPhraseDistance = 15f;
-
         protected override MethodBase GetTargetMethod()
         {
             return AccessTools.Method(typeof(BotReceiver), nameof(BotReceiver.OnPhraseSay));
@@ -42,7 +38,15 @@ namespace pitTeam.Patches
                 return false;
             }
 
-            if (phrase != EPhraseTrigger.Cooperation && phrase != EPhraseTrigger.FollowMe)
+            if (phrase == EPhraseTrigger.FollowMe)
+            {
+                var leader = ReadRequester(info);
+                // Native FollowMe also calls TryAskFollowMeRequest. Suppress that
+                // route for the human squad leader; core handles existing followers.
+                return leader == null || !BossPlayers.IsPlayerBoss(leader.ProfileId);
+            }
+
+            if (phrase != EPhraseTrigger.Cooperation)
             {
                 return true;
             } else if (BossPlayers.IsFollower(botOwner))
@@ -54,25 +58,8 @@ namespace pitTeam.Patches
             if (requester == null) return true;
             if (!BossPlayers.IsPlayerBoss(requester.ProfileId)) return true;
 
-            // Cooperation should apply only to the currently interacted bot target.
-            // FollowMe is an ambient phrase and can be heard by nearby bots.
-            if (phrase == EPhraseTrigger.Cooperation &&
-                requester is Player requesterPlayer &&
-                requesterPlayer.InteractablePlayer != null)
-            {
-                BotOwner interactedBot = requesterPlayer.InteractablePlayer.AIData?.BotOwner;
-                if (interactedBot != null && interactedBot != botOwner)
-                {
-                    return false;
-                }
-            }
-
-            // Keep vanilla behavior at longer range.
-            if ((botOwner.Position - requester.Position).sqrMagnitude > RecruitPhraseDistance * RecruitPhraseDistance) return true;
-
-            botOwner.BotsGroup?.RequestsController?.TryAskFollowMeRequest(requester, botOwner);
-
-            // Request was handled by the mod flow, suppress vanilla duplicate processing.
+            // AIBossPlayer owns player Cooperation dispatch and receiving-bot checks.
+            // Suppress the broadcast's native route even when no candidate can react.
             return false;
         }
 

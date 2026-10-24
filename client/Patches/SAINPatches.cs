@@ -14,8 +14,6 @@ namespace pitTeam.Patches
 {
     internal class SAINPatch
     {
-        private static Type? squadType = null;
-        private static Type? SAINEnableClass = null;
         private static Type? combatSoloLayerType = null;
         private static Type? combatSquadLayerType = null;
         private static Type? avoidThreatLayerType = null;
@@ -38,17 +36,6 @@ namespace pitTeam.Patches
         public static void PatchSAINIfInstalled(Harmony harmony)
         {
             if (!pitFireTeam.IsSAINInstalled) return;
-
-            if (squadType == null)
-            {
-                squadType = Type.GetType("SAIN.BotController.Classes.Squad, SAIN");
-            }
-
-            if (SAINEnableClass == null)
-            {
-                SAINEnableClass = Type.GetType("SAIN.SAINEnableClass, SAIN");
-            }
-
 
             if (enemyTalk == null)
             {
@@ -98,27 +85,23 @@ namespace pitTeam.Patches
             }
 
             PatchFollowerLayerFallbackIfAddonMissing(harmony);
+            FollowerSainGrenadeAwarenessPatch.Apply(harmony);
             PatchFollowerEnemyClearGuardIfAddonMissing(harmony);
             PatchFollowerCombatPatrolStanceWithoutAddon(harmony);
             PatchFollowerReloadBlockIfAddonMissing(harmony);
             PatchFollowerWeaponSelectionGuard(harmony);
             FollowerSainAimTargetPatch.Apply(harmony);
+            FollowerSainFriendlyFirePatch.Apply(harmony);
+            FollowerSainManualFireSafety.Apply(harmony);
             PatchSainTalkPrefixesForFollowers(harmony);
             PatchSainTalkGenerationForFollowers(harmony);
             PatchSainPlayerVoiceLineForFollowers(harmony);
             FollowerSainVisionRaycastPatch.Apply(harmony);
+            SainVisionRecoveryPatch.Apply(harmony);
             FollowerSainProficiency.ApplyPatches(harmony);
-
-
-            if (squadType != null && SAINEnableClass != null)
-            {
-                var assignLeader = AccessTools.Method(squadType, "assignSquadLeader");
-                if (assignLeader != null)
-                {
-                    harmony.Patch(assignLeader, new HarmonyMethod(typeof(SAINPatch).GetMethod(nameof(PatchAssignSquadLeader), BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance)));
-                }
-                Modules.Logger.LogInfo("SAIN Patched");
-            }
+            FollowerSainTrackingTimerPatch.Apply(harmony);
+            FollowerSainHearingPatch.Apply(harmony);
+            FollowerSainSquadLeaderPatch.Apply(harmony);
         }
 
         private static void PatchFollowerCombatPatrolStanceWithoutAddon(Harmony harmony)
@@ -324,12 +307,15 @@ namespace pitTeam.Patches
                     botOwner = botTalk._owner;
                 }
 
-                if (botOwner == null || !BossPlayers.IsFollower(botOwner))
+                if (botOwner == null || (!BossPlayers.IsFollower(botOwner) &&
+                    !(__args.Length > 1 && __args[1] is EPhraseTrigger response &&
+                        FollowerForcedPhraseGate.IsRecruitmentResponse(botOwner, response))))
                 {
                     return true;
                 }
 
-                // Skip SAIN talk-patch logic for followers so EFT/plugin talk behavior can run.
+                // Followers and the candidate's exact timed recruitment reply use EFT speech.
+                // Candidate ManualUpdate and unrelated phrases retain native SAIN ownership.
                 __result = true;
                 return false;
             }
@@ -350,25 +336,6 @@ namespace pitTeam.Patches
             return true;
         }
 
-        private static object? GetMemberValue(object? instance, string name)
-        {
-            if (instance == null)
-            {
-                return null;
-            }
-
-            Type type = instance.GetType();
-            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-            PropertyInfo? property = type.GetProperty(name, flags);
-            if (property != null)
-            {
-                return property.GetValue(instance);
-            }
-
-            FieldInfo? field = type.GetField(name, flags);
-            return field?.GetValue(instance);
-        }
-
         [HarmonyPrefix]
         private static bool PatchEnemyConvesation(EPhraseTrigger trigger, ETagStatus status, Player player)
         {
@@ -376,13 +343,14 @@ namespace pitTeam.Patches
         }
 
         [HarmonyPrefix]
-        private static bool UseVanillaTalkForFollower(object __instance, ref bool __result)
+        private static bool UseVanillaTalkForFollower(object __instance, EPhraseTrigger phrase, ref bool __result)
         {
             try
             {
                 Player? player = sainPlayerComponentPlayerProperty?.GetValue(__instance) as Player;
                 BotOwner? botOwner = player?.AIData?.BotOwner;
-                if (botOwner == null || !BossPlayers.IsFollower(botOwner))
+                if (botOwner == null || (!BossPlayers.IsFollower(botOwner) &&
+                    !FollowerForcedPhraseGate.ShouldBlockRecruitmentChatter(botOwner, phrase)))
                 {
                     return true;
                 }
@@ -414,11 +382,13 @@ namespace pitTeam.Patches
         }
 
         [HarmonyPrefix]
-        private static bool DisableSainTalkSayForFollower(object __instance, ref bool __result)
+        private static bool DisableSainTalkSayForFollower(object __instance, EPhraseTrigger phrase, ref bool __result)
         {
             try
             {
-                if (!IsSainTalkOwnerFollower(__instance))
+                BotOwner? botOwner = SainBotOwnerAccessor.Get(__instance);
+                if (botOwner == null || (!BossPlayers.IsFollower(botOwner) &&
+                    !FollowerForcedPhraseGate.ShouldBlockRecruitmentChatter(botOwner, phrase)))
                 {
                     return true;
                 }
@@ -434,48 +404,31 @@ namespace pitTeam.Patches
 
         private static bool IsSainTalkOwnerFollower(object instance)
         {
-            BotOwner? botOwner = GetMemberValue(instance, "BotOwner") as BotOwner;
+            BotOwner? botOwner = SainBotOwnerAccessor.Get(instance);
             return botOwner != null && BossPlayers.IsFollower(botOwner);
-        }
-
-        [HarmonyPrefix]
-        private static bool PatchAssignSquadLeader(object __instance, object sain)
-        {
-            try
-            {
-                if (sain == null) return true;
-
-                var botOwnerProp = AccessTools.Property(sain.GetType(), "BotOwner");
-                var botOwner = botOwnerProp?.GetValue(sain) as BotOwner;
-                if (botOwner == null) return true;
-
-                if (BossPlayers.IsFollower(botOwner))
-                {
-                    return false;
-                }
-            }
-            catch
-            {
-                return true;
-            }
-            return true;
         }
 
         [HarmonyPrefix]
         private static bool DisableSainLayerForFollowersWithoutAddon(object __instance, ref bool __result)
         {
-            if (!pitFireTeam.ShouldDisableSainForFollowers)
+            if (!pitFireTeam.IsSAINInstalled)
             {
                 return true;
             }
 
             try
             {
-                BotOwner? botOwner = AccessTools.Property(__instance.GetType(), "BotOwner")?.GetValue(__instance) as BotOwner;
+                BotOwner? botOwner = SainBotOwnerAccessor.Get(__instance);
                 if (botOwner == null || !BossPlayers.IsFollower(botOwner))
                 {
                     return true;
                 }
+
+                // The addon owns combat. Native urgent-threat and flash layers remain available.
+                Type layerType = __instance.GetType();
+                if (pitFireTeam.UseSainFollowerCombat(botOwner) &&
+                    (layerType == avoidThreatLayerType || layerType == flashBangedLayerType))
+                    return true;
 
                 __result = false;
                 return false;
@@ -489,15 +442,15 @@ namespace pitTeam.Patches
         [HarmonyPrefix]
         private static bool BlockFollowerSainClearEnemyIfRetained(object __instance)
         {
-            if (!pitFireTeam.ShouldDisableSainForFollowers)
+            if (!pitFireTeam.IsSAINInstalled)
             {
                 return true;
             }
 
             try
             {
-                BotOwner? botOwner = AccessTools.Property(__instance.GetType(), "BotOwner")?.GetValue(__instance) as BotOwner;
-                if (botOwner == null || !BossPlayers.IsFollower(botOwner))
+                BotOwner? botOwner = SainBotOwnerAccessor.Get(__instance);
+                if (botOwner == null || !BossPlayers.IsFollower(botOwner) || !pitFireTeam.ShouldDisableSainForFollower(botOwner))
                 {
                     return true;
                 }
@@ -513,15 +466,15 @@ namespace pitTeam.Patches
         [HarmonyPostfix]
         private static void ForcePatrolOffForFollowerCombat(object __instance)
         {
-            if (!pitFireTeam.ShouldDisableSainForFollowers)
+            if (!pitFireTeam.IsSAINInstalled)
             {
                 return;
             }
 
             try
             {
-                BotOwner? botOwner = AccessTools.Property(__instance.GetType(), "BotOwner")?.GetValue(__instance) as BotOwner;
-                if (botOwner == null || !BossPlayers.IsFollower(botOwner))
+                BotOwner? botOwner = SainBotOwnerAccessor.Get(__instance);
+                if (botOwner == null || !BossPlayers.IsFollower(botOwner) || !pitFireTeam.ShouldDisableSainForFollower(botOwner))
                 {
                     return;
                 }
@@ -545,14 +498,15 @@ namespace pitTeam.Patches
         [HarmonyPrefix]
         private static bool BlockFollowerSainReloadIfAddonMissing(BotOwner botOwner)
         {
-            if (!pitFireTeam.ShouldDisableSainForFollowers)
+            if (TeammateGearSwap.Protects(botOwner?.GetPlayer)) return false;
+            if (!pitFireTeam.IsSAINInstalled)
             {
                 return true;
             }
 
             try
             {
-                if (botOwner == null || !BossPlayers.IsFollower(botOwner))
+                if (botOwner == null || !BossPlayers.IsFollower(botOwner) || !pitFireTeam.ShouldDisableSainForFollower(botOwner))
                 {
                     return true;
                 }
@@ -578,7 +532,7 @@ namespace pitTeam.Patches
 
             try
             {
-                BotOwner? botOwner = AccessTools.Property(__instance.GetType(), "BotOwner")?.GetValue(__instance) as BotOwner;
+                BotOwner? botOwner = SainBotOwnerAccessor.Get(__instance);
                 if (botOwner == null || !BossPlayers.IsFollower(botOwner))
                 {
                     return true;

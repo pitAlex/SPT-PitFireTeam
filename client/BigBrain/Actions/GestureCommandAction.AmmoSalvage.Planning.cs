@@ -73,7 +73,7 @@ namespace pitTeam.BigBrain.Actions
                 simulatedVest);
             // Consolidate only output created from this source magazine. Merging raid-earned
             // rounds into a pre-existing follower stack would erase quantity ownership needed by
-            // Simple/Restricted post-raid cargo return.
+            // Restricted post-raid cargo return.
             Dictionary<string, List<AmmoSalvageOutputStack>> outputStacksByAmmo =
                 new Dictionary<string, List<AmmoSalvageOutputStack>>(StringComparer.Ordinal);
 

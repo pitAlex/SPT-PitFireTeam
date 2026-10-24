@@ -90,11 +90,9 @@ namespace pitTeam.Modules
             }
 
             SetThrowState(bot, enabled: false, disabled: true);
-            if (completed)
-            {
-                FollowerGrenadeCooldowns.RecordThrow(bot);
-            }
-            else
+            // MarkThrowReleased already starts cooldowns at physical creation.
+            // The later animation callback must not restart those timers.
+            if (!completed)
             {
                 FollowerGrenadeCooldowns.CancelPending(bot);
             }

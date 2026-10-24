@@ -32,6 +32,7 @@ namespace pitTeam.Modules
             public float OriginalProfileDifficultySqrt;
             public float OriginalHearingModifier;
             public float OriginalAggressionModifier;
+            public readonly FollowerSainEftCoreProjection EftCore = new();
             public bool Logged;
         }
 
@@ -210,6 +211,8 @@ namespace pitTeam.Modules
             try
             {
                 DismissAppliedModifier(state);
+                state.EftCore.Restore();
+                if (bot.LookSensor != null) bot.LookSensor._nextUpdateVisibleDist = 0f;
                 SetMemberValue(state.Info, "_fileSettings", state.OriginalFileSettings);
 
                 object? profile = GetMemberValue(state.Info, "Profile");
@@ -318,7 +321,7 @@ namespace pitTeam.Modules
         {
             try
             {
-                BotOwner? bot = GetMemberValue(__instance, "BotOwner") as BotOwner;
+                BotOwner? bot = SainBotOwnerAccessor.Get(__instance);
                 if (bot == null)
                 {
                     return true;
@@ -351,7 +354,7 @@ namespace pitTeam.Modules
         {
             try
             {
-                BotOwner? bot = GetMemberValue(__instance, "BotOwner") as BotOwner;
+                BotOwner? bot = SainBotOwnerAccessor.Get(__instance);
                 if (!TryGetActiveState(bot, out FollowerState? state))
                 {
                     return;
@@ -436,13 +439,12 @@ namespace pitTeam.Modules
         }
 
         [HarmonyPrefix]
-        private static void BeginDefaultFollowerAim(object[] __args, out bool __state)
+        private static void BeginDefaultFollowerAim(object __0, out bool __state)
         {
             __state = false;
             try
             {
-                object? sainBot = __args != null && __args.Length > 0 ? __args[0] : null;
-                BotOwner? bot = GetMemberValue(sainBot, "BotOwner") as BotOwner;
+                BotOwner? bot = SainBotOwnerAccessor.Get(__0);
                 if (!TryGetActiveState(bot, out FollowerState? state))
                 {
                     return;
@@ -467,7 +469,7 @@ namespace pitTeam.Modules
         }
 
         [HarmonyPrefix]
-        private static bool UseDefaultFollowerFasterCqb(object[] __args, ref float __result)
+        private static bool UseDefaultFollowerFasterCqb(float __0, float __1, ref float __result)
         {
             if (!TryGetActiveAimValues(out FollowerSainProficiencyOverrides? values))
             {
@@ -476,8 +478,8 @@ namespace pitTeam.Modules
 
             try
             {
-                float distance = Convert.ToSingle(__args[0]);
-                float aimTime = Convert.ToSingle(__args[1]);
+                float distance = __0;
+                float aimTime = __1;
                 if (!values.Global.FasterCQBReactionsGlobal ||
                     !values.Aiming.FasterCQBReactions)
                 {
@@ -503,7 +505,7 @@ namespace pitTeam.Modules
         }
 
         [HarmonyPrefix]
-        private static bool UseDefaultFollowerAdsAimTime(object[] __args, ref float __result)
+        private static bool UseDefaultFollowerAdsAimTime(bool __0, float __1, ref float __result)
         {
             if (!TryGetActiveAimValues(out FollowerSainProficiencyOverrides? values))
             {
@@ -512,8 +514,8 @@ namespace pitTeam.Modules
 
             try
             {
-                bool aiming = Convert.ToBoolean(__args[0]);
-                float aimTime = Convert.ToSingle(__args[1]);
+                bool aiming = __0;
+                float aimTime = __1;
                 float multiplier = values.Global.AimDownSightsAimTimeMultiplier;
                 __result = aiming ? aimTime * multiplier : aimTime;
                 return false;
@@ -525,7 +527,7 @@ namespace pitTeam.Modules
         }
 
         [HarmonyPrefix]
-        private static bool UseDefaultFollowerAimClamp(object[] __args, ref float __result)
+        private static bool UseDefaultFollowerAimClamp(float __0, ref float __result)
         {
             if (!TryGetActiveAimValues(out FollowerSainProficiencyOverrides? values))
             {
@@ -534,7 +536,7 @@ namespace pitTeam.Modules
 
             try
             {
-                float aimTime = Convert.ToSingle(__args[0]);
+                float aimTime = __0;
                 float minimum = values.Global.MinAimTime;
                 float maximum = values.Aiming.MAX_AIM_TIME;
                 __result = Mathf.Clamp(aimTime, minimum, maximum);
@@ -574,6 +576,8 @@ namespace pitTeam.Modules
             modifier.ScatteringCoef = sain.RuntimeDifficulty.ScatteringCoef;
             modifier.RuntimeVisionEffectK = sain.RuntimeDifficulty.RuntimeVisionEffectK;
             modifier.HearingDistCoef = sain.RuntimeDifficulty.HearingDistCoef;
+            if (state.EftCore.Apply(state.Bot.Settings.Current, sain.Core) && state.Bot.LookSensor != null)
+                state.Bot.LookSensor._nextUpdateVisibleDist = 0f;
             state.Bot.Settings.Current.Apply(modifier);
             state.AppliedModifier = modifier;
 
@@ -588,7 +592,8 @@ namespace pitTeam.Modules
                 state.Logged = true;
                 Logger.LogInfo(
                     $"[SAIN] Follower proficiency uses SAIN Default follower={state.Bot.Profile?.Nickname ?? state.Bot.name} " +
-                    $"role={state.TemplateRole} difficulty={botDifficulty} profile={profileDifficulty:0.##} hearing={hearing:0.##}");
+                    $"role={state.TemplateRole} difficulty={botDifficulty} profile={profileDifficulty:0.##} hearing={hearing:0.##} " +
+                    $"visibleDistance={state.Bot.Settings.Current.CurrentVisibleDistance:0.##} scatter={state.Bot.Settings.Current.CurrentScattering:0.####}");
             }
             return true;
         }
@@ -638,7 +643,7 @@ namespace pitTeam.Modules
 
             // Retain the per-bot field for the SAIN 4.5.0 settings schema.
             // Keep the follower-local settings semantically correct for future SAIN versions while
-            // the core target patch owns today's visible-part selection and Precision preference.
+            // the core target patch owns today's native-first visible-part enhancement and Precision preference.
             values.Aiming.AimCenterMass = false;
             values.Aiming.AimForHead = true;
             values.Aiming.AimForHeadChance = FollowerAimTargetPolicy.GetHeadPreference(

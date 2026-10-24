@@ -53,6 +53,8 @@ namespace pitTeam.Components
         Balanced = 0,
         Marksman = 1,
         Protector = 2,
+        SainMan = 3,
+        SAINShooter = 4,
     }
 
     public class BotFollowerPlayer
@@ -64,9 +66,15 @@ namespace pitTeam.Components
         protected BotSettingsInGameModif settingModif;
 
         protected bool _IsSquadMate = false;
+        internal readonly HashSet<EquipmentSlot> GivenEquipmentSlots = new HashSet<EquipmentSlot>();
+        internal readonly HashSet<string> GivenGearWeaponIds = new HashSet<string>(StringComparer.Ordinal);
+#if DEBUG
+        internal bool DebugForceRecruitInvite;
+#endif
 
         protected string _grouId = "";
         protected string _teamId = "";
+        private bool _profileIdentityAssigned;
 
         protected List<AICoreLayer<BotLogicDecision>>? vanillaLayers;
 
@@ -82,6 +90,23 @@ namespace pitTeam.Components
         {
             get
             {
+                if (IsSpawnedSquadMate)
+                {
+                    return true;
+                }
+
+                // Recruits take over body/container orders only after the boss has no living
+                // spawned teammate. Busy, distant or inactive living teammates still count.
+                return _player?.Followers != null && BossPlayers.Instance != null &&
+                       !_player.Followers.Any(bot => bot != null && !bot.IsDead &&
+                           BossPlayers.Instance.GetFollower(bot)?.IsSpawnedSquadMate == true);
+            }
+        }
+
+        internal bool IsSpawnedSquadMate
+        {
+            get
+            {
                 if (!_IsSquadMate)
                 {
                     return false;
@@ -90,9 +115,7 @@ namespace pitTeam.Components
                 string profileId = _bot?.ProfileId ?? _bot?.Profile?.ProfileId ?? _bot?.Profile?.Id ?? string.Empty;
                 string accountId = _bot?.Profile?.AccountId ?? string.Empty;
 
-                // Body/container looting is reserved for saved teammates that were generated
-                // through the raid squad flow. Recruited/picked-up allies can still be followers,
-                // but they should not satisfy these command assignments.
+                // Saved squad identity also covers teammates carried across a map transition.
                 return IsSpawnedSquadMemberId(profileId) ||
                        IsSpawnedSquadMemberId(accountId) ||
                        FollowerTransitStateCache.IsTransitSpawnProfile(profileId);
@@ -113,8 +136,8 @@ namespace pitTeam.Components
 
         protected WildSpawnType _botRole;
         protected bool _canPatrol = false;
-        private bool _combatIndependent;
-        private bool _combatIndependentRequested;
+        private float _selfDetermination = 50f;
+        private float? _combatDeterminationOverride;
         private bool _combatRegroupUsesBossAnchor;
         private bool _patrolLeaderSectorAnchorSet;
         private Vector3 _patrolLeaderSectorAnchor;
@@ -134,6 +157,7 @@ namespace pitTeam.Components
         private Vector3 _commandTarget;
         private float _commandUntilTime;
         private bool _tightRegroupRequested;
+        private bool _determinationRegroupRequested;
         private int _moveToPointIssueSequence;
         private int _pushEnemyIssueSequence;
         private bool _suppressEnemyRequiresLauncher;
@@ -184,11 +208,32 @@ namespace pitTeam.Components
             }
         }
 
+        public bool CombatIndependencePreference => EffectiveSelfDetermination >= 100f;
+
+        public float SelfDetermination
+        {
+            get => _IsSquadMate ? _selfDetermination : 50f;
+            set => _selfDetermination = pitTeam.Shared.SelfDeterminationPolicy.Normalize(value);
+        }
+        public float EffectiveSelfDetermination => _combatDeterminationOverride ?? SelfDetermination;
+        public bool HasDeterminationOverride => _combatDeterminationOverride.HasValue;
+        public string DeterminationSource => !_combatDeterminationOverride.HasValue ? (_IsSquadMate ? "saved" : "pickupBaseline")
+            : _combatDeterminationOverride.Value == 100f ? "OnYourOwn" : _combatDeterminationOverride.Value == 20f ? "CoverMe" : "command";
+        public float BossInfluence => pitTeam.Shared.SelfDeterminationPolicy.BossInfluence(EffectiveSelfDetermination);
+        public bool HasCombatPercentageOverrides => _combatDeterminationOverride.HasValue || _temporaryCombatAggressionOverrideActive;
+        public void SetCombatDeterminationOverride(float value) => _combatDeterminationOverride = pitTeam.Shared.SelfDeterminationPolicy.Normalize(value);
+        public void ClearCombatDeterminationOverride() => _combatDeterminationOverride = null;
+        public void ResetCombatPercentageOverrides(string source)
+        {
+            ClearCombatDeterminationOverride();
+            ClearTemporaryCombatAggressionOverride(source);
+        }
+
         public bool CombatIndependent
         {
             get
             {
-                return _combatIndependent;
+                return EffectiveSelfDetermination >= 100f;
             }
         }
 
@@ -245,7 +290,7 @@ namespace pitTeam.Components
         {
             get
             {
-                return _backpackInspectionActive;
+                return _backpackInspectionActive || TeammateGearSwap.Holds(this);
             }
         }
 
@@ -274,19 +319,12 @@ namespace pitTeam.Components
         {
             get
             {
-                if (_IsSquadMate)
-                {
-                    return 1f;
-                }
-
-                int followerLevel = Mathf.Max(1, _bot?.Profile?.Info?.Level ?? 1);
-                int playerLevel = Mathf.Max(1, _player?.realPlayer?.Profile?.Info?.Level ?? 1);
-                return PickupFollowerPersonality.CalculateBossProtectionWillingness01(
-                    followerLevel,
-                    playerLevel,
-                    PickupIndependence01);
+                return BossInfluence;
             }
         }
+
+        // Addon tactics retain their identity while the matching Core role supplies fallback.
+        public FollowerCombatTactic CoreCombatTactic => FollowerCombatTactics.CoreTactic(CombatTactic);
 
         public FollowerCombatTactic CombatTactic
         {
@@ -296,6 +334,7 @@ namespace pitTeam.Components
             }
             set
             {
+                if (_combatTactic != value) ResetCombatPercentageOverrides("tacticChanged");
                 _combatTactic = value;
             }
         }
@@ -377,6 +416,7 @@ namespace pitTeam.Components
             // ORBIT registers its own agent/squad runtime when its layer is constructed. Claim the bot
             // before resetting brain layers so ORBIT cannot keep ticking or re-register this follower.
             OrbitCompatibility.ClaimFollower(_bot);
+            Utils.FollowerMedical.ClearFollowerPoison(_bot.GetPlayer);
 
             // Constructor-time player inventory is normally ready, but follower initialization is
             // the last safe retry before raid commands can alter equipment provenance.
@@ -459,23 +499,6 @@ namespace pitTeam.Components
                 }
             }*/
 
-            // followers should not be questing, so stop it (if questing mod is present)
-            /* Type questingBrain = Type.GetType("SPTQuestingBots.Components.BotObjectiveManager, SPTQuestingBots");
-             if (questingBrain != null && _bot.GetPlayer.gameObject.TryGetComponent(questingBrain, out var questingComponent))
-             {
-                 try
-                 {
-                     MethodInfo stopMethod = questingBrain.GetMethod("StopQuesting", BindingFlags.Public | BindingFlags.Instance);
-                     stopMethod?.Invoke(questingComponent, null);
-                     Modules.Logger.LogInfo("Questing stopped for " + _bot.Profile.Nickname);
-                 }
-                 catch (Exception ex)
-                 {
-                     Modules.Logger.LogError("Failed to stop questing");
-                     Modules.Logger.LogError(ex);
-                 }
-             }*/
-
             /// reset bot animation stances
             _bot.GetPlayer.MovementContext.SetPatrol(false);
             _bot.Tilt.Stop();
@@ -505,7 +528,21 @@ namespace pitTeam.Components
             bool isPickedUp = !_IsSquadMate && (_player.bossGroup == null || _player.bossGroup.Id != _bot.BotsGroup.Id);
 
             // make bot join the player's group
-            if (_player.bossGroup != null)
+            if (AllegianceScavRelations.KeepSeparateGroup(_bot, _player.realPlayer, _IsSquadMate))
+            {
+                // The Scav remains a native member of his original Scav group. Players
+                // and PMC followers join it only as allies, never as bot members.
+                if (_player.bossGroup == null)
+                {
+                    BotZone zone = _bot.BotsController.BotSpawner.GetClosestZone(_bot.GetPlayer.Transform.position, out var zoneDist);
+                    var pmcGroup = new BotsGroupPlayer(zone, _bot.BotsController.BotGame, _bot,
+                        new List<BotOwner>(), _bot.BotsController.BotSpawner._deadBodiesController,
+                        _bot.BotsController.BotSpawner._allPlayers, _player);
+                    BossPlayers.AddGroupToBoss(_player, pmcGroup);
+                }
+                isPickedUp = true;
+            }
+            else if (_player.bossGroup != null)
             {
                 Dictionary<IPlayer, EnemyInfo>? enemyInfos = _bot.EnemiesController?.EnemyInfos;
                 BotsGroup currentGroup = _bot.BotsGroup;
@@ -728,7 +765,7 @@ namespace pitTeam.Components
             settings.FileSettings.Mind.DIST_TO_ENEMY_YO_CAN_HEAL = 15f;
 
             settings.FileSettings.Mind.DIST_TO_STOP_RUN_ENEMY = 15f;
-            settings.FileSettings.Mind.TIME_TO_FORGOR_ABOUT_ENEMY_SEC = pitFireTeam.enemyRemember.Value;
+            settings.FileSettings.Mind.TIME_TO_FORGOR_ABOUT_ENEMY_SEC = FollowerEnemyTracking.RememberSeconds;
             settings.FileSettings.Mind.TIME_TO_FIND_ENEMY = 10f;
             settings.FileSettings.Mind.ATTACK_IMMEDIATLY_CHANCE_0_100 = 50f;
             settings.FileSettings.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 = 50f;
@@ -800,7 +837,9 @@ namespace pitTeam.Components
 
             if (playerSide != EPlayerSide.Savage)
             {
-                settings.FileSettings.Mind.DEFAULT_SAVAGE_BEHAVIOUR = EWarnBehaviour.AlwaysEnemies;
+                settings.FileSettings.Mind.DEFAULT_SAVAGE_BEHAVIOUR =
+                    AllegianceScavRelations.KeepSeparateGroup(bot, _player.realPlayer, _IsSquadMate)
+                        ? EWarnBehaviour.AlwaysFriends : EWarnBehaviour.AlwaysEnemies;
                 // - bad guy is hostile to everyone    
                 if (Utils.Utils.FlagGet("isBadGuy"))
                 {
@@ -959,11 +998,7 @@ namespace pitTeam.Components
             bot.GetPlayer.Physical.HandsStamina.ForceMode = true;
             // - need no food
             bot.GetPlayer.HealthController.DisableMetabolism();
-            // - have followers share the same groupId as the player
-            _grouId = bot.GetPlayer.Profile.Info.GroupId;
-            _teamId = bot.GetPlayer.Profile.Info.TeamId;
-            bot.GetPlayer.Profile.Info.GroupId = _player.realPlayer.GroupId;
-            bot.GetPlayer.Profile.Info.TeamId = _player.realPlayer.Profile.Info.TeamId;
+            AssignProfileIdentity();
 
             bot.Tactic.AggressionChange(1f);
 
@@ -994,7 +1029,7 @@ namespace pitTeam.Components
             // AddFollower postfix fires since GetSainBot falls back gracefully when SAIN is absent.
             if (pitFireTeam.IsSAINInstalled)
             {
-                TryOverrideSainForgetEnemyTime(bot, pitFireTeam.enemyRemember.Value);
+                TryOverrideSainForgetEnemyTime(bot, FollowerEnemyTracking.RememberSeconds);
             }
         }
 
@@ -1058,11 +1093,32 @@ namespace pitTeam.Components
             _teleportGraceUntil = Time.time + TeleportGraceSeconds;
         }
 
+        private void AssignProfileIdentity()
+        {
+            if (_profileIdentityAssigned) return;
+            _grouId = _bot.GetPlayer.Profile.Info.GroupId;
+            _teamId = _bot.GetPlayer.Profile.Info.TeamId;
+            _profileIdentityAssigned = true;
+            // Profile identity is separate from native BotsGroup membership.
+            _bot.GetPlayer.Profile.Info.GroupId = _player.realPlayer.GroupId;
+            _bot.GetPlayer.Profile.Info.TeamId = _player.realPlayer.Profile.Info.TeamId;
+        }
+
+        internal void RestoreProfileIdentity()
+        {
+            if (!_profileIdentityAssigned || _bot?.GetPlayer?.Profile?.Info == null) return;
+            _bot.GetPlayer.Profile.Info.GroupId = _grouId;
+            _bot.GetPlayer.Profile.Info.TeamId = _teamId;
+            _profileIdentityAssigned = false;
+        }
+
         public virtual void Dismiss(bool warnPlayer = false)
         {
             if (_bot == null) return;
             try
             {
+                // Restore before native group lookup and diplomacy cleanup, including death.
+                RestoreProfileIdentity();
                 if (_bot.IsDead || _bot.BotState != EBotState.Active) return;
 
                 // Prevent stale enemy refs from surviving the follower->regular bot handoff.
@@ -1091,7 +1147,8 @@ namespace pitTeam.Components
 
                 // -- bot needs a new group
                 BotZone zone = _bot.BotsController.BotSpawner.GetClosestZone(_bot.GetPlayer.Transform.position, out var zoneDist);
-                BotsGroup group = _bot.BotsController.BotSpawner.GetGroupAndSetEnemies(_bot, zone);
+                BotsGroup group = AllegianceScavRelations.DepartureGroup(_bot) ??
+                    _bot.BotsController.BotSpawner.GetGroupAndSetEnemies(_bot, zone);
 
                 _bot.BotsGroup = group;
 
@@ -1102,9 +1159,6 @@ namespace pitTeam.Components
 
                 _bot.Memory._botsGroup = group;
                 _bot.BotRequestController._groupRequestController = null;
-
-                _bot.GetPlayer.Profile.Info.GroupId = _grouId;
-                _bot.GetPlayer.Profile.Info.TeamId = _teamId;
 
                 _bot.BotsGroup.AddMember(_bot, false);
                 Utils.Enemy.ForceIgnoreUntilAggressionOff(_bot.BotsGroup);
@@ -1154,6 +1208,7 @@ namespace pitTeam.Components
             }
             finally
             {
+                FollowerQuestingBots.Release(_bot);
                 FollowerSainProficiency.RestoreFollower(_bot);
 
                 // Fire lifecycle event for addon integration (cleanup, cache removal, etc).
@@ -1173,6 +1228,7 @@ namespace pitTeam.Components
 
                 ClearCommand("Dismiss:finally");
                 UnhookManualUpdate();
+                FollowerEnemyTracking.Clear(_bot);
                 UnhookPeaceChange();
             }
             // @TODO : see what else can be reverted
@@ -1306,27 +1362,23 @@ namespace pitTeam.Components
 
         public void BeginCombatIndependenceFromPatrol()
         {
-            _combatIndependent = _canPatrol || _combatIndependentRequested;
             _combatRegroupUsesBossAnchor = false;
         }
 
         public void SetCombatIndependent(bool value)
         {
-            _combatIndependentRequested = value;
-            _combatIndependent = value;
-            _combatRegroupUsesBossAnchor = false;
+            SetCombatDeterminationOverride(value ? 100f : 20f);
         }
 
         public void ClearActiveCombatIndependent()
         {
-            _combatIndependent = false;
             _combatRegroupUsesBossAnchor = false;
         }
 
         public void ClearCombatIndependent()
         {
-            _combatIndependent = false;
-            _combatIndependentRequested = false;
+            // Patrol handoff cannot clear a battle-wide override before the squad's
+            // quiet confirmation. The boss owns that reset, including the last bot.
             _combatRegroupUsesBossAnchor = false;
         }
 
@@ -1475,7 +1527,7 @@ namespace pitTeam.Components
             BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(SetContactApproach));
         }
 
-        public void SetRegroup(float duration, bool tightRegroup = false)
+        public void SetRegroup(float duration, bool tightRegroup = false, bool determinationRegroup = false)
         {
             if (ShouldIgnoreCommandSet())
             {
@@ -1491,6 +1543,7 @@ namespace pitTeam.Components
             _commandTarget = Vector3.zero;
             _commandUntilTime = Time.time + Mathf.Max(2f, duration);
             _tightRegroupRequested = tightRegroup;
+            _determinationRegroupRequested = determinationRegroup;
             _resumeHoldAfterComeCloser = false;
             _resumeHoldAfterTakeLoot = false;
             _resumeHoldAfterTakeLootCrouch = false;
@@ -1523,13 +1576,16 @@ namespace pitTeam.Components
             }
 
             _activeCommand = FollowerCommandType.TakeLootItem;
+            LootRequest = new FollowerLootRequest();
             _commandTarget = Vector3.zero;
             _commandUntilTime = Time.time + Mathf.Max(6f, duration);
             _resumeHoldAfterComeCloser = false;
             BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(SetTakeLootItem));
         }
 
-        public void SetTakeBodyGear(float duration)
+        public FollowerLootRequest LootRequest { get; private set; } = new FollowerLootRequest();
+
+        public void SetTakeBodyGear(float duration, FollowerLootMode mode = FollowerLootMode.Normal)
         {
             if (ShouldIgnoreCommandSet())
             {
@@ -1555,13 +1611,15 @@ namespace pitTeam.Components
             }
 
             _activeCommand = FollowerCommandType.TakeBodyGear;
+            LootRequest = new FollowerLootRequest(mode);
+            Modules.Logger.LogInfo($"[LootCommand] command=body mode={mode} follower={_bot?.ProfileId}");
             _commandTarget = Vector3.zero;
             _commandUntilTime = Time.time + Mathf.Max(12f, duration);
             _resumeHoldAfterComeCloser = false;
             BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(SetTakeBodyGear));
         }
 
-        public void SetTakeContainerLoot(float duration)
+        public void SetTakeContainerLoot(float duration, FollowerLootMode mode = FollowerLootMode.Normal)
         {
             if (ShouldIgnoreCommandSet())
             {
@@ -1587,6 +1645,8 @@ namespace pitTeam.Components
             }
 
             _activeCommand = FollowerCommandType.TakeContainerLoot;
+            LootRequest = new FollowerLootRequest(mode);
+            Modules.Logger.LogInfo($"[LootCommand] command=container mode={mode} follower={_bot?.ProfileId}");
             _commandTarget = Vector3.zero;
             _commandUntilTime = Time.time + Mathf.Max(12f, duration);
             _resumeHoldAfterComeCloser = false;
@@ -1614,12 +1674,56 @@ namespace pitTeam.Components
             BattleRecorder.RecordCommandSet(this, _activeCommand, _commandTarget, _commandUntilTime, nameof(SetOpenDoor));
         }
 
+        // A ready SAINGrunt may receive an already admitted squad target. A different
+        // visible personal threat remains the current fight until it is resolved.
+        public bool TrySetSainPushEnemy(SainPushOrder order, EnemyInfo target)
+        {
+            if (ShouldIgnoreCommandSet() || target?.ProfileId != order.EnemyProfileId ||
+                target.Person?.HealthController?.IsAlive != true || _bot.Memory == null)
+                return false;
+            EnemyInfo? previous = _bot.Memory.GoalEnemy;
+            if (previous != target && previous?.Person?.HealthController?.IsAlive == true &&
+                (previous.IsVisible || previous.CanShoot)) return false;
+            bool changed = previous != target;
+            bool wasPeace = _bot.Memory.IsPeace;
+            int oldPriority = target.PriorityIndex;
+            bool oldIgnore = target.IgnoreUntilAggression;
+            if (changed)
+            {
+                _bot.Memory.IsPeace = false;
+                target.PriorityIndex = 0;
+                target.IgnoreUntilAggression = false;
+                using (FollowerGoalEnemyTracker.Begin("BotFollowerPlayer.TrySetSainPushEnemy", "directedSquadPush"))
+                    _bot.Memory.GoalEnemy = target;
+                if (_bot.Memory.GoalEnemy != target)
+                {
+                    _bot.Memory.IsPeace = wasPeace;
+                    target.PriorityIndex = oldPriority;
+                    target.IgnoreUntilAggression = oldIgnore;
+                    return false;
+                }
+            }
+            if (SainAddonBridge.TryPushEnemy(_bot, order)) return true;
+            if (changed)
+            {
+                using (FollowerGoalEnemyTracker.Begin("BotFollowerPlayer.TrySetSainPushEnemy", "directedSquadPushRejected"))
+                    _bot.Memory.GoalEnemy = previous;
+                _bot.Memory.IsPeace = wasPeace;
+                target.PriorityIndex = oldPriority;
+                target.IgnoreUntilAggression = oldIgnore;
+            }
+            return false;
+        }
+
         public void SetPushEnemy(float duration)
         {
             if (ShouldIgnoreCommandSet())
             {
                 return;
             }
+
+            // Ready SainMan translates this accepted order inside the addon.
+            if (SainAddonBridge.TryPushEnemy(_bot)) return;
 
             unchecked
             {
@@ -1835,7 +1939,7 @@ namespace pitTeam.Components
                 return;
             }
 
-            if (!IsSafelyOutOfCombat(_bot))
+            if (_player?.HasFollowerCombat == true || !IsSafelyOutOfCombat(_bot))
             {
                 _temporaryCombatAggressionClearAfter = Time.time + TemporaryCombatAggressionClearDelaySeconds;
                 return;
@@ -1938,6 +2042,7 @@ namespace pitTeam.Components
                 return;
             }
 
+            LootRequest = new FollowerLootRequest();
             if (_resumeHoldAfterTakeLoot)
             {
                 _activeCommand = FollowerCommandType.HoldPosition;
@@ -1961,6 +2066,7 @@ namespace pitTeam.Components
                 return;
             }
 
+            LootRequest = new FollowerLootRequest();
             if (_resumeHoldAfterTakeLoot)
             {
                 _activeCommand = FollowerCommandType.HoldPosition;
@@ -2187,6 +2293,7 @@ namespace pitTeam.Components
 
         public int PushEnemyIssueSequence => _pushEnemyIssueSequence;
 
+        public bool DeterminationRegroupRequested => _activeCommand == FollowerCommandType.RegroupNearBoss && _determinationRegroupRequested;
         public bool TightRegroupRequested =>
             _activeCommand == FollowerCommandType.RegroupNearBoss && _tightRegroupRequested;
 
@@ -2287,7 +2394,7 @@ namespace pitTeam.Components
                 return;
             }
 
-            if (IsFinite(target.Position) && target.Position.sqrMagnitude > 0.01f)
+            if (FollowerEnemyTracking.Mode == EnemyTrackingMode.Simple && IsFinite(target.Position) && target.Position.sqrMagnitude > 0.01f)
             {
                 _orderedPushTargetPosition = target.Position;
             }
@@ -2312,6 +2419,7 @@ namespace pitTeam.Components
 
         private static Vector3 GetOrderedPushTargetPosition(EnemyInfo goalEnemy)
         {
+            if (FollowerEnemyTracking.IsRealistic(goalEnemy)) return FollowerEnemyTracking.Position(goalEnemy);
             if (IsFinite(goalEnemy.CurrPosition) && goalEnemy.CurrPosition.sqrMagnitude > 0.01f)
             {
                 return goalEnemy.CurrPosition;
@@ -2342,7 +2450,7 @@ namespace pitTeam.Components
 
         public void SetCombatTacticFromString(string? tactic)
         {
-            _combatTactic = ParseCombatTactic(tactic);
+            CombatTactic = ParseCombatTactic(tactic);
         }
 
         public static FollowerCombatTactic ParseCombatTactic(string? tactic)
@@ -2354,6 +2462,12 @@ namespace pitTeam.Components
 
             switch (tactic.Trim().ToLowerInvariant())
             {
+                case "sainshooter":
+                    return FollowerCombatTactic.SAINShooter;
+
+                case "sainman":
+                    return FollowerCombatTactic.SainMan;
+
                 case "marksman":
                     return FollowerCombatTactic.Marksman;
 
@@ -2495,7 +2609,7 @@ namespace pitTeam.Components
                 return false;
             }
 
-            if (!pitFireTeam.UseSainFollowerCombat)
+            if (!pitFireTeam.UseSainFollowerCombat(_bot))
             {
                 ClearTemporaryCombatAggressionOverrideAfterCombatCooldown();
                 return true;
@@ -2635,7 +2749,8 @@ namespace pitTeam.Components
 
                 if (info.IsVisible ||
                     info.CanShoot ||
-                    Time.time - info.PersonalLastSeenTime <= TemporaryCombatAggressionRecentEnemySeconds)
+                    (Time.time - info.PersonalLastSeenTime <= TemporaryCombatAggressionRecentEnemySeconds &&
+                     (pitFireTeam.UseSainFollowerCombat(owner) || !FollowerEnemyTracking.IsSearched(info))))
                 {
                     return true;
                 }
@@ -2655,6 +2770,10 @@ namespace pitTeam.Components
 
             foreach (IPlayer enemy in owner.BotsGroup.Enemies.Keys)
             {
+                if (!pitFireTeam.UseSainFollowerCombat(owner) &&
+                    owner.EnemiesController?.EnemyInfos != null &&
+                    owner.EnemiesController.EnemyInfos.TryGetValue(enemy, out var searched) &&
+                    FollowerEnemyTracking.IsSearched(searched) && !searched.IsVisible) continue;
                 if (IsLiveEnemyPlayer(enemy))
                 {
                     return true;
@@ -2770,6 +2889,7 @@ namespace pitTeam.Components
             _activeCommand = FollowerCommandType.None;
             _commandTarget = Vector3.zero;
             _commandUntilTime = 0f;
+            LootRequest = new FollowerLootRequest();
             _tightRegroupRequested = false;
             _suppressEnemyRequiresLauncher = false;
             _suppressEnemyForceWeapon = false;
@@ -2822,7 +2942,7 @@ namespace pitTeam.Components
                     _bot.Mover.Sprint(false, false);
                 }
 
-                if (pitFireTeam.UseSainFollowerCombat)
+                if (pitFireTeam.UseSainFollowerCombat(_bot))
                 {
                     SainAddonBridge.TryResetDecisionState(_bot);
                     SainAddonBridge.TryForceReleaseFollowerCombatState(_bot);
@@ -2967,6 +3087,8 @@ namespace pitTeam.Components
                 if (owner == null || owner != _bot) return;
 
                 Utils.FollowerRecovery.ClearInvalidGoalEnemy(owner);
+                FollowerEnemyTracking.Update(owner);
+                FollowerBlockedGrenadeRecovery.Update(owner);
                 Utils.FollowerMedical.UpdateMedicalHandsWatchdog(owner);
                 postCombatDiagnostics.Update(owner, this);
                 UpdateTemporaryCombatAggressionClearDelay();
@@ -3001,8 +3123,9 @@ namespace pitTeam.Components
             }
 
             _nextLootedWeaponPromotionCheckAt = Time.time + LootedWeaponPromotionCheckInterval;
-            if (!pitFireTeam.IsLootGearSwappingEnabled() ||
-                _backpackInspectionActive ||
+            // Finish readiness for already accepted loot, including a one-shot weapon request
+            // after its override has ended. This does not authorize new source-item pickup.
+            if (_backpackInspectionActive ||
                 owner == null ||
                 owner.IsDead ||
                 owner.BotState != EBotState.Active ||
@@ -3224,6 +3347,38 @@ namespace pitTeam.Components
             return !string.IsNullOrEmpty(first?.Id) &&
                    !string.IsNullOrEmpty(second?.Id) &&
                    string.Equals(first.Id, second.Id, StringComparison.Ordinal);
+        }
+
+        internal static bool HasNativeSainBot(BotOwner owner)
+        {
+            if (owner == null || !pitFireTeam.IsSAINInstalled) return false;
+            try { return GetSainBot(owner) != null; }
+            catch (Exception ex)
+            {
+                Modules.Logger.LogError($"[SAIN] Could not identify recruited bot {owner.ProfileId}; retaining core tactic. {ex}");
+                return false;
+            }
+        }
+
+        internal static bool TryGetNativeSainPersonality(BotOwner owner, out string personality)
+        {
+            personality = null;
+            if (owner == null || !pitFireTeam.IsSAINInstalled) return false;
+            try
+            {
+                object native = GetSainBot(owner);
+                if (native == null) return false;
+                object info = AccessTools.Property(native.GetType(), "Info")?.GetValue(native);
+                object value = info == null ? null : AccessTools.Property(info.GetType(), "Personality")?.GetValue(info);
+                if (value == null || !value.GetType().IsEnum) return false;
+                personality = value.ToString();
+                return !string.IsNullOrEmpty(personality);
+            }
+            catch (Exception ex)
+            {
+                Modules.Logger.LogError($"[SAIN] Could not capture recruit personality for {owner.ProfileId}; retaining fallback aggression. {ex}");
+                return false;
+            }
         }
 
         private static object GetSainBot(BotOwner owner)

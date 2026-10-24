@@ -1,0 +1,60 @@
+# Core architecture
+
+This is the source map for pitFireTeam's main plugin. Detailed behavior belongs to the [topic documents](README.md). The optional [SAIN addon](../addon/docs/Integration.md) references this base and owns only its alternative combat brain.
+
+## Components
+
+| Area | Owner and entry points |
+|---|---|
+| Startup, configuration, patch installation | [friendlyPlugin](../client/friendlyPlugin.cs) |
+| Player commands and follower state | [AIBossPlayer](../client/Components/AIBossPlayer.cs), [BotFollowerPlayer](../client/Components/BotFollowerPlayer.cs), [BossPlayers](../client/Modules/BossPlayers.cs) |
+| Peaceful follow and requests | [FollowerPatrolLayer](../client/BigBrain/FollowerPatrolLayer.cs), [FollowerRequestLayer](../client/BigBrain/FollowerRequestLayer.cs), [FollowAction](../client/BigBrain/Actions/FollowAction.cs), [GestureCommandAction](../client/BigBrain/Actions/GestureCommandAction.cs) |
+| Core combat | [FollowerCombatLayer](../client/BigBrain/FollowerCombatLayer.cs), [FollowerCombatLogicBase](../client/BigBrain/FollowerCombatLogicBase.cs), [FollowerCombatCommon](../client/BigBrain/FollowerCombatCommon.cs) |
+| Recruitment and group conversion | [BotGroupRequestPatch](../client/Patches/BotGroupRequestPatch.cs), [BossPlayers](../client/Modules/BossPlayers.cs), [Allegiance solo friendship](../client/Modules/AllegiancePmcFriendship.cs) |
+| Friendly interaction and invitations | [FriendlyEncounterLayer](../client/BigBrain/FriendlyEncounterLayer.cs), [FriendlyEncounterInteraction](../client/Modules/FriendlyEncounterInteraction.cs), [greetings and saved acceptance](Allegiance.md#friendly-greetings) |
+| Acquisition and reaction | [FollowerCalcGoalEnemyAcquire](../client/Modules/FollowerCalcGoalEnemyAcquire.cs), [FollowerAwareness](../client/Utils/FollowerAwareness.cs), [Enemy](../client/Utils/Enemy.cs) |
+| UI and status | [SquadControlMenuUi](../client/Components/SquadControlMenuUi.cs), [PingTeamates](../client/Utils/PingTeamates.cs), [My Squad](My-Squad-Screen.md) |
+| Optional external-SAIN compatibility | [SAINPatches](../client/Patches/SAINPatches.cs), [compatibility contract](SAIN-Compatibility.md) |
+| Optional Questing Bots compatibility | [FollowerQuestingBots](../client/Modules/FollowerQuestingBots.cs), [objective handoff](Questing-Bots-Compatibility.md) |
+| Recording | [BattleRecorder](../client/Modules/BattleRecorder.cs), [core recording contract](Combat-Tactics.md#battle-recorder) |
+
+## Lifecycle and invariants
+
+Core converts/recruits followers, assigns player ownership, reconciles groups/hostility, installs follower layers and releases state on dismissal/raid teardown. Saved squadmates and raid pickups share the follower framework, but differ in profile persistence and command eligibility; [Commands](Commands.md) owns those distinctions.
+
+[AllegianceScavRelations](../client/Modules/AllegianceScavRelations.cs) keeps recruited Scavs in independent native groups, links reciprocal squad allies, applies raid-local Scav neutrality and publishes actual hostile relationships across allied groups. [AllegianceScavTrustDamagePatch](../client/Patches/AllegianceScavTrustDamagePatch.cs) captures the first damaging-hit relationship before native health/death and retaliation callbacks; the existing kill dispatcher owns trust loss. Deferred Scav betrayal departure retains native group identity, removes all departing companions before publishing hostility, and keeps special Scav roles excluded. See [Allegiance Scav groups](Allegiance.md#scav-groups-and-trust).
+
+Allegiance recruited-follower kills reuse the existing `traitor` report. [FriendlyEncounterPenaltyService](../server/Services/FriendlyEncounterPenaltyService.cs) persists independent 24-hour penalties per user in the Allegiance database; [FriendlyEncounterPenaltyRuntime](../client/Modules/FriendlyEncounterPenaltyRuntime.cs) mirrors them for friendship rolls and the Roster label. Shared expiry/countdown arithmetic lives in [FriendlyEncounterPenaltyPolicy](../shared/FriendlyEncounterPenaltyPolicy.cs). See [Allegiance penalties](Allegiance.md#friendly-encounters-penalties).
+
+[PMC karma](PMC-Karma.md) independently observes friendly kills, actual recruitment and raid completion. Core captures eligible bot identities before retaliation/cleanup; the server persists native PMC karma with deduplication receipts in the player profile, shared across modes. Spawned/saved squadmates and player-Scav/Fence standing remain outside this feature.
+
+Config entries hold saved preferences. Gameplay consumers, Settings controls and server settings synchronization resolve mode-locked values through [GameplayModeRuntime.GetEffectiveValue](../client/Modules/GameplayModeRuntime.cs), independently of cfg edits/reloads. [Allegiance](Allegiance.md#settings-policy) owns its fixed values; [Gameplay modes](Gameplay-Modes.md#saved-settings-and-restoration) owns Guns for Hire snapshot restoration.
+
+Core owns peaceful follow/request execution and post-combat recovery. Combat has one owner at a time; an absent/unready optional brain falls back to core. Optional callbacks may provide readiness, release/reset and passive data, but general compatibility cannot depend on the addon being loaded.
+
+The shared cover lifecycle is selection, travel, arrival, hold, then a concrete next decision. Immediate fire, pressure/recent hits, ally or boss protection and compromised cover can preempt a hold. Distance regroup is a fallback after productive combat/commitments. Heal-cover arrival yields directly to treatment. [Combat tactics](Combat-Tactics.md) defines the detailed priority and timing.
+
+Per-follower proficiency uses independent data/settings; no global preset is edited to tune one follower. [Proficiency](Friendly-AI-Performance-Settings.md) owns Vision, Precision and Reaction. Tactical aggression is a separate input.
+
+## Server responsibilities
+
+The server owns mod teammate profiles, persistence, customization, social/group integration and raid outcomes. Teammates are mod-owned profiles, not full independent stock `SptProfile` accounts. Runtime bot spawning is a client/game-session responsibility.
+
+[FriendlyPmcArmbandHooks](../server/Services/FriendlyPmcArmbandHooks.cs) enforces the enabled PMC Faction Arm Bands setting on the returned `BotInventoryGenerator.GenerateInventory` inventory, after stock or replacement generation. Startup, settings endpoints and the hook share the singleton [FriendlyServerSettingsService](../server/Services/FriendlyServerSettingsService.cs), so the hook sees both the loaded preference and later toggle changes independently of shared SPT config writes. It sets blue USEC/red BEAR equipment, adds a missing band and removes replaced band trees. Disabled settings, player Scavs, non-PMC bots and existing saved inventories are unchanged. No Acid assembly dependency or tier-pool mutation is required.
+
+| Area | Source and contract |
+|---|---|
+| Teammate CRUD, equipment and profile state | [FriendlyTeammateService](../server/Services/FriendlyTeammateService.cs), [callbacks](../server/Callbacks/FriendlyTeammateCallbacks.cs), [static routes](../server/Routers/Static/FriendlyTeammateStaticRouter.cs) |
+| Encrypted database and recovery | [FriendlyTeammateStorage](../server/Services/FriendlyTeammateStorage.cs), [storage contract](Teammate-Storage.md) |
+| Launcher account wipe | [wipe routes](../server/Routers/Static/FriendlyProfileWipeRouter.cs), [storage reset contract](Teammate-Storage.md#launcher-profile-wipe) |
+| Social list/profile integration | [social routes](../server/Routers/Static/FriendlyTeammateSocialRouter.cs) |
+| Group/ready/spawn flow | [match routes](../server/Routers/Static/FriendlyTeammateMatchRouter.cs) |
+| Post-raid results and returned equipment | [FriendlyPostRaidService](../server/Services/FriendlyPostRaidService.cs), [Team Escape](Team-Escape.md), [Loadout Management](Loadout-Management.md) |
+| Recruit requests | [FriendlyRecruitService](../server/Services/FriendlyRecruitService.cs) |
+| Follower insurance | [Follower Insurance](Follower-Insurance.md) |
+
+Use the current router declarations as the authority for method/route signatures. Older task notes claiming all tactics were hardcoded to Default or profile customization was unimplemented are superseded by the feature documents and current source.
+
+## Development boundaries
+
+Build/reference policy is in [SPT compatibility](SPT-Compatibility.md). Machine-local paths, release packaging destinations and the bug tracker are in [LOCAL.md](../LOCAL.md). Commands, looting, UI and storage each have one owning topic; avoid copying their full contracts into this overview or AGENTS.md.

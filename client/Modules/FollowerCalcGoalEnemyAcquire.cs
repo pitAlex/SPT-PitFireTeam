@@ -477,6 +477,8 @@ namespace pitTeam.Modules
             }
 
             bool sameSide = owner.Side == candidate.Side;
+            if (FollowerGroupHostility.ShouldBlockCandidate(owner.BotFollower?.BossToFollow as pitAIBossPlayer, candidate))
+                return true;
             bool scavCandidate = FactionHostility.IsScavFaction(candidate);
             if (!sameSide && !scavCandidate)
             {

@@ -3,7 +3,10 @@ using pitTeam.Server.Services;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Match;
+using SPTarkov.Server.Core.Models.Eft.ItemEvent;
 using SPTarkov.Server.Core.Utils;
+using SPTarkov.Common.Models.Logging;
+using System.Text.Json;
 
 namespace pitTeam.Server.Callbacks;
 
@@ -12,9 +15,25 @@ public class FriendlyPostRaidCallbacks(
     HttpResponseUtil httpResponse,
     FriendlyPostRaidService postRaidService,
     FriendlyRecruitService recruitService,
-    FriendlyTeammateService teammateService
+    FriendlyEncounterPenaltyService encounterPenalties,
+    FollowerInsuranceRaidDiagnostics insuranceDiagnostics,
+    FollowerInsuranceCourierTransferService courierTransfers,
+    FriendlyTeammateService teammateService,
+    FriendlyScavCargoService scavCargo,
+    ISptLogger<FriendlyPostRaidCallbacks> logger
 )
 {
+    public ValueTask<string> GiveGearInsurance(GiveGearInsuranceRequest request, MongoId sessionId)
+    {
+        insuranceDiagnostics.CancelGiftInsurance(sessionId, request);
+        return new ValueTask<string>(httpResponse.NullResponse());
+    }
+
+    public ValueTask<string> ScavCargo(FriendlyScavCargoRequest request, MongoId sessionId)
+    {
+        scavCargo.Queue(sessionId, request);
+        return new ValueTask<string>(httpResponse.NullResponse());
+    }
     public ValueTask<string> ReturnItems(string url, FriendlyPostRaidReturnItemsRequest request, MongoId sessionId)
     {
         postRaidService.HandleReturnItems(sessionId, request);
@@ -36,6 +55,8 @@ public class FriendlyPostRaidCallbacks(
     public ValueTask<string> RecordKillMessage(string url, FriendlyPostRaidKillMessageRequest request, MongoId sessionId)
     {
         postRaidService.RecordKillMessage(sessionId, request);
+        if (request.MessageKind == "traitor" && request.KilledAtUnixMs > 0)
+            return new ValueTask<string>(httpResponse.GetBody(encounterPenalties.Record(sessionId, request)));
         return new ValueTask<string>(httpResponse.NullResponse());
     }
 
@@ -45,10 +66,19 @@ public class FriendlyPostRaidCallbacks(
         return new ValueTask<string>(httpResponse.NullResponse());
     }
 
+    public ValueTask<string> StartLocalRaid(string url, StartLocalRaidRequestData request, MongoId sessionId, string? output)
+    {
+        insuranceDiagnostics.BeginRaid(sessionId, request, output);
+        scavCargo.BeginRaid(sessionId, output, request);
+        return new ValueTask<string>(output ?? httpResponse.NullResponse());
+    }
+
     public ValueTask<string> EndLocalRaid(string url, EndLocalRaidRequestData request, MongoId sessionId, string? output)
     {
         postRaidService.RemoveProtectedTeammateItemsFromExtractedProfile(sessionId, request);
         postRaidService.HandleEndLocalRaidKillMessages(sessionId, request);
+        scavCargo.FinishRaid(sessionId, request);
+        insuranceDiagnostics.EndRaid(sessionId, request);
         return new ValueTask<string>(output ?? httpResponse.NullResponse());
     }
 
@@ -68,6 +98,7 @@ public class FriendlyPostRaidCallbacks(
         }
 
         FriendlyTeammateDeathEscapeSummary summary = teammateService.PersistDeathEscapeOutcomes(sessionId, entries);
+        insuranceDiagnostics.ObserveOutcomes(sessionId, entries, request.InsuranceServerId, request.InsuranceReportId);
         if (request.Notify)
         {
             postRaidService.HandleDeathEscapeSummary(sessionId, summary);
@@ -79,5 +110,36 @@ public class FriendlyPostRaidCallbacks(
     public ValueTask<string> DeathEscape(string url, FriendlyTeammateDeathEscapeRequest request, MongoId sessionId)
     {
         return RaidOutcomes(url, request, sessionId);
+    }
+
+    public ValueTask<string> InsuranceReportsComplete(string url, FollowerInsuranceRaidCompletionRequest request, MongoId sessionId)
+    {
+        insuranceDiagnostics.CompleteReports(sessionId, request);
+        return new ValueTask<string>(httpResponse.NullResponse());
+    }
+
+    public ValueTask<string> InsuranceMailClaim(ItemEventRouterRequest request, MongoId sessionId, string? output)
+    {
+        if (request.Data?.Any(body => body.ValueKind == JsonValueKind.Object
+            && body.TryGetProperty("fromOwner", out var owner)
+            && owner.ValueKind == JsonValueKind.Object
+            && owner.TryGetProperty("type", out var type)
+            && string.Equals(type.GetString(), "Mail", StringComparison.OrdinalIgnoreCase)) == true)
+        {
+            try { courierTransfers.TryApplyClaimed(sessionId); }
+            catch (Exception ex) { logger.Warning($"[FollowerInsurance:CourierTransfer] Claim observation failed: {ex}"); }
+        }
+        return new ValueTask<string>(output ?? httpResponse.NullResponse());
+    }
+
+    public ValueTask<string> InsuranceRaidDisplay(string url, FollowerInsuranceRaidDisplayRequest request, MongoId sessionId)
+    {
+        return new ValueTask<string>(httpResponse.GetBody(
+            insuranceDiagnostics.GetDisplayPolicies(sessionId, request?.InsuranceServerId)));
+    }
+
+    public ValueTask<string> InsuranceMailClaimPolicies(string url, FollowerInsuranceMailClaimRequest request, MongoId sessionId)
+    {
+        return new ValueTask<string>(httpResponse.GetBody(courierTransfers.GetClaimedPolicies(sessionId, request?.ItemIds ?? [])));
     }
 }

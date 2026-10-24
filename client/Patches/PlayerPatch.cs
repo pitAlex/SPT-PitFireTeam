@@ -21,6 +21,37 @@ using EventInfo = GlobalEventDispatcher.PhraseDelegateInfo;
 
 namespace pitTeam.Patches
 {
+    internal static class FollowerQuickInteractionRouter
+    {
+        public static bool IsHandledPhrase(EPhraseTrigger phrase)
+        {
+            return phrase == (EPhraseTrigger)CustomPhrases.ViewBackpack ||
+                   phrase == (EPhraseTrigger)CustomPhrases.SwapGear ||
+                   phrase == (EPhraseTrigger)CustomPhrases.GiveGear;
+        }
+
+        public static bool TryHandle(GamePlayerOwner owner, EPhraseTrigger phrase)
+        {
+            if (phrase == (EPhraseTrigger)CustomPhrases.ViewBackpack)
+            {
+                TeammateBackpackInspection.TryOpenFromQuickInteraction(owner);
+                return true;
+            }
+
+            if (phrase == (EPhraseTrigger)CustomPhrases.SwapGear)
+            {
+                TeammateGearSwap.Open(owner);
+                return true;
+            }
+            if (phrase == (EPhraseTrigger)CustomPhrases.GiveGear)
+            {
+                TeammateGearSwap.Open(owner, giving: true);
+                return true;
+            }
+            return false;
+        }
+    }
+
     internal static class BossGestureCommandRouter
     {
         public static bool IsBossCommandGesture(EInteraction gesture)
@@ -122,9 +153,8 @@ namespace pitTeam.Patches
         [PatchPrefix]
         private static bool PatchPrefix(GamePlayerOwner __instance, int actionId, bool aggressive)
         {
-            if ((EPhraseTrigger)actionId == (EPhraseTrigger)CustomPhrases.ViewBackpack)
+            if (FollowerQuickInteractionRouter.TryHandle(__instance, (EPhraseTrigger)actionId))
             {
-                TeammateBackpackInspection.TryOpenFromQuickInteraction(__instance);
                 return false;
             }
 
@@ -216,16 +246,40 @@ namespace pitTeam.Patches
         [PatchPrefix]
         private static bool PatchPrefix(GamePlayerOwner __instance)
         {
-            EPhraseTrigger viewBackpackPhrase = (EPhraseTrigger)CustomPhrases.ViewBackpack;
             EFT.UI.IBattleUIScreenController battleUi = BattleUiControllerField.GetValue(__instance) as EFT.UI.IBattleUIScreenController;
-            if (battleUi?.GesturesQuickPanel?.PrioritizedCommand != viewBackpackPhrase)
+            var panel = battleUi?.GesturesQuickPanel;
+            if (panel == null || !FollowerQuickInteractionRouter.IsHandledPhrase(panel.PrioritizedCommand))
             {
                 return true;
             }
 
-            battleUi.GesturesQuickPanel.ActivateCommand();
-            TeammateBackpackInspection.TryOpenFromQuickInteraction(__instance);
+            // Keep the existing custom quick-action dispatch; input configuration belongs to EFT.
+            EPhraseTrigger phrase = panel.PrioritizedCommand;
+            panel.ActivateCommand();
+            FollowerQuickInteractionRouter.TryHandle(__instance, phrase);
             return false;
+        }
+    }
+
+    internal class FollowerQuickInteractionDropdownPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+        {
+            return AccessTools.Method(typeof(EFT.UI.Gestures.GesturesQuickPanel), "CloseDropdown",
+                new[] { typeof(Action<EPhraseTrigger>) });
+        }
+
+        [PatchPrefix]
+        private static void PatchPrefix(ref Action<EPhraseTrigger> onPhraseSelected)
+        {
+            // The native GamePlayerOwner callback calls Player.Say directly. Custom interactions
+            // have no voice bank, so route them before that callback while preserving stock phrases.
+            if (onPhraseSelected?.Target is not GamePlayerOwner owner) return;
+            Action<EPhraseTrigger> original = onPhraseSelected;
+            onPhraseSelected = phrase =>
+            {
+                if (!FollowerQuickInteractionRouter.TryHandle(owner, phrase)) original(phrase);
+            };
         }
     }
 
@@ -250,6 +304,11 @@ namespace pitTeam.Patches
         [PatchPrefix]
         private static void PatchPrefix(Player __instance, IPlayer aggressor)
         {
+            // Capture recruit identity before native death callbacks remove followers.
+            TryRecordPlayerKillMessage(__instance, aggressor);
+            PmcKarmaRuntime.RecordKill(__instance, aggressor);
+            try { AllegianceScavRelations.RecordKill(__instance, aggressor); }
+            catch (Exception ex) { Modules.Logger.LogError("[ScavRelations] Friendly kill processing failed: " + ex); }
             try
             {
                 global::pitTeam.Utils.PingTeamates.TryRememberEnemyDown(__instance, aggressor);
@@ -491,7 +550,8 @@ namespace pitTeam.Patches
 
                 bool messagesEnabled = pitFireTeam.npcSendMessage?.Value == true;
                 string messageText = messagesEnabled ? GetKillMessageText(messageKind) : string.Empty;
-                if (messagesEnabled && string.IsNullOrWhiteSpace(messageText))
+                bool encounterPenalty = GameplayModeRuntime.IsAllegiance && messageKind == "traitor";
+                if (!encounterPenalty && messagesEnabled && string.IsNullOrWhiteSpace(messageText))
                 {
                     return;
                 }
@@ -510,26 +570,19 @@ namespace pitTeam.Patches
                     }
                 }
 
+                long killedAtUnixMs = encounterPenalty ? FriendlyEncounterPenaltyRuntime.NowUnixMs : 0;
+                string raidId = FriendlyEncounterPenaltyRuntime.RaidId;
                 string json = JsonConvert.SerializeObject(new
                 {
                     victimProfileId,
                     victimAccountId = victim.AccountId,
                     messageKind,
                     messageText,
+                    raidId,
+                    killedAtUnixMs,
                 });
 
-                Task.Run(() =>
-                {
-                    try
-                    {
-                        RequestHandler.PostJson(KillMessageRoute, json);
-                    }
-                    catch (Exception ex)
-                    {
-                        Modules.Logger.LogError($"Failed to record post-raid kill message for {victim.Profile?.Info?.Nickname}");
-                        Modules.Logger.LogError(ex);
-                    }
-                });
+                _ = FriendlyEncounterPenaltyRuntime.SendKillReport(KillMessageRoute, json, victimProfileId, killedAtUnixMs, raidId);
             }
             catch (Exception ex)
             {
@@ -540,13 +593,17 @@ namespace pitTeam.Patches
 
         private static string GetKillMessageKind(Player victim, IPlayer aggressor)
         {
+            BotFollowerPlayer follower = BossPlayers.GetFollowerByProfileId(victim.ProfileId);
+            if (GameplayModeRuntime.IsAllegiance && follower != null)
+                return !follower.IsSquadMate && follower.GetBoss()?.realPlayer?.ProfileId == aggressor.ProfileId
+                    ? "traitor" : string.Empty;
+
             if (!IsFriendlyPmcKillMessageContextEnabled() ||
                 !WasFriendlyBeforePlayerDamage(victim.ProfileId))
             {
                 return string.Empty;
             }
 
-            BotFollowerPlayer follower = BossPlayers.GetFollowerByProfileId(victim.ProfileId);
             if (follower != null)
             {
                 return follower.IsSquadMate ? string.Empty : "traitor";
@@ -570,7 +627,7 @@ namespace pitTeam.Patches
 
         private static bool IsFriendlyPmcKillMessageContextEnabled()
         {
-            return pitFireTeam.pitFireTeamFLAG?.Value == true && pitFireTeam.badGuy?.Value != true;
+            return GameplayModeRuntime.GetEffectiveValue(pitFireTeam.pitFireTeamFLAG) && !GameplayModeRuntime.GetEffectiveValue(pitFireTeam.badGuy);
         }
 
         private static bool IsPmc(EPlayerSide side)

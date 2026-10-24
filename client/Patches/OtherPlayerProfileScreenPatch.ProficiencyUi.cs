@@ -18,6 +18,8 @@ namespace pitTeam.Patches
         private static Transform ProficiencyButtonRoot { get; set; }
         private static GameObject ProficiencyOverlayRoot { get; set; }
         private static NumberSlider ProficiencyAggressionSlider { get; set; }
+        private static NumberSlider ProficiencyDeterminationSlider { get; set; }
+        private static float ActiveProfileSelfDetermination { get; set; } = 50f;
         private static NumberSlider ProficiencyVisionSlider { get; set; }
         private static NumberSlider ProficiencyPrecisionSlider { get; set; }
         private static NumberSlider ProficiencyReactionSlider { get; set; }
@@ -43,6 +45,7 @@ namespace pitTeam.Patches
             }
 
             ActiveProfileAggression = Mathf.Clamp(options.Aggression, 0f, 100f);
+            ActiveProfileSelfDetermination = pitTeam.Shared.SelfDeterminationPolicy.Normalize(options.SelfDetermination);
             ActiveProfileTactic = string.IsNullOrWhiteSpace(options.CurrentTactic)
                 ? "Rifleman"
                 : options.CurrentTactic;
@@ -117,7 +120,7 @@ namespace pitTeam.Patches
             panelRect.anchorMax = new Vector2(0.5f, 0.5f);
             panelRect.pivot = new Vector2(0.5f, 0.5f);
             panelRect.anchoredPosition = Vector2.zero;
-            panelRect.sizeDelta = new Vector2(720f, 430f);
+            panelRect.sizeDelta = new Vector2(720f, 492f);
             panelRect.localScale = Vector3.one;
 
             Image panelImage = panel.GetComponent<Image>();
@@ -166,14 +169,19 @@ namespace pitTeam.Patches
             RectTransform aggressionRow = CreateProficiencySliderRow(
                 panel.transform,
                 "pitFireTeam_ProficiencyAggressionRow",
-                50f);
+                81f);
             CreateAggressionRowContent(aggressionRow, profile, ActiveProfileAggression, true);
+
+            ProficiencyDeterminationSlider = CreateProficiencyModifierSlider(
+                panel.transform, "pitFireTeam_ProficiencyDeterminationRow", "ProfileSelfDetermination", 19f,
+                ActiveProfileSelfDetermination, value => ActiveProfileSelfDetermination = pitTeam.Shared.SelfDeterminationPolicy.Normalize(value),
+                profile.AccountId, 0f, 100f);
 
             ProficiencyVisionSlider = CreateProficiencyModifierSlider(
                 panel.transform,
                 "pitFireTeam_ProficiencyVisionRow",
                 "ProfileVision",
-                -12f,
+                -43f,
                 ActiveProfileProficiency.GetVisionPercent(),
                 ActiveProfileProficiency.SetVisionPercent,
                 profile.AccountId);
@@ -181,7 +189,7 @@ namespace pitTeam.Patches
                 panel.transform,
                 "pitFireTeam_ProficiencyPrecisionRow",
                 "ProfilePrecision",
-                -74f,
+                -105f,
                 ActiveProfileProficiency.GetPrecisionPercent(),
                 ActiveProfileProficiency.SetPrecisionPercent,
                 profile.AccountId);
@@ -189,7 +197,7 @@ namespace pitTeam.Patches
                 panel.transform,
                 "pitFireTeam_ProficiencyReactionRow",
                 "ProfileReaction",
-                -136f,
+                -167f,
                 ActiveProfileProficiency.GetReactionPercent(),
                 ActiveProfileProficiency.SetReactionPercent,
                 profile.AccountId);
@@ -249,7 +257,9 @@ namespace pitTeam.Patches
             float anchoredY,
             float currentValue,
             Action<float> updateValue,
-            string accountId)
+            string accountId,
+            float minimum = FollowerProficiencyModifierValues.MinimumPercent,
+            float maximum = FollowerProficiencyModifierValues.MaximumPercent)
         {
             RectTransform rowRoot = CreateProficiencySliderRow(parent, rowName, anchoredY);
             CreateAggressionLabel(
@@ -290,14 +300,14 @@ namespace pitTeam.Patches
             }
 
             slider.Show(
-                FollowerProficiencyModifierValues.MinimumPercent,
-                FollowerProficiencyModifierValues.MaximumPercent,
+                minimum,
+                maximum,
                 "0");
             slider.UpdateValue(
-                FollowerProficiencyModifierValues.NormalizePercent(currentValue),
+                Mathf.Clamp(currentValue, minimum, maximum),
                 false,
-                FollowerProficiencyModifierValues.MinimumPercent,
-                FollowerProficiencyModifierValues.MaximumPercent);
+                minimum,
+                maximum);
 
             Slider stockSlider = slider.GetComponentInChildren<Slider>(true);
             if (stockSlider != null)
@@ -307,6 +317,7 @@ namespace pitTeam.Patches
 
             TMP_InputField valueInput = NumberSliderValueInputField?.GetValue(slider) as TMP_InputField;
             ConfigureSliderValueInputChrome(valueInput);
+            AddProficiencyPercentLabel(valueInput);
             if (valueInput != null)
             {
                 valueInput.readOnly = false;
@@ -330,7 +341,9 @@ namespace pitTeam.Patches
                 return;
             }
 
-            SetProficiencyAggressionForTactic(IsMarksmanTactic(ActiveProfileTactic));
+            SetProficiencyAggressionForTactic(ActiveProfileTactic);
+            ActiveProfileSelfDetermination = 50f;
+            ProficiencyDeterminationSlider?.UpdateValue(50f, false, 0f, 100f);
             ActiveProfileProficiency.SetVisionPercent(FollowerProficiencyModifierValues.DefaultPercent);
             ActiveProfileProficiency.SetPrecisionPercent(FollowerProficiencyModifierValues.DefaultPercent);
             ActiveProfileProficiency.SetReactionPercent(FollowerProficiencyModifierValues.DefaultPercent);
@@ -369,7 +382,7 @@ namespace pitTeam.Patches
 
             int revision = ++PendingProficiencyPersistRevision;
             PendingProficiencyPersistCoroutine = pitFireTeam.Instance.StartCoroutine(
-                PersistProficiencyDelayed(accountId, proficiency.Clone(), revision));
+                PersistProficiencyDelayed(accountId, proficiency.Clone(), ActiveProfileSelfDetermination, revision));
         }
 
         private static void StopPendingProficiencyPersist()
@@ -385,6 +398,7 @@ namespace pitTeam.Patches
         private static System.Collections.IEnumerator PersistProficiencyDelayed(
             string accountId,
             FollowerProficiencyModifierValues proficiency,
+            float selfDetermination,
             int revision)
         {
             yield return new WaitForSecondsRealtime(0.35f);
@@ -401,7 +415,8 @@ namespace pitTeam.Patches
                     SerializeBody(new FriendlyTeammateProficiencyRequest
                     {
                         aid = accountId,
-                        proficiency = proficiency
+                        proficiency = proficiency,
+                        selfDetermination = selfDetermination
                     }));
                 EnsureBodySuccess(responseJson);
                 MarkSquadRosterDirty(accountId);
@@ -431,6 +446,7 @@ namespace pitTeam.Patches
             }
 
             ProficiencyAggressionSlider = null;
+            ProficiencyDeterminationSlider = null;
             ProficiencyVisionSlider = null;
             ProficiencyPrecisionSlider = null;
             ProficiencyReactionSlider = null;
@@ -448,6 +464,7 @@ namespace pitTeam.Patches
 
             ProficiencyButton = null;
             ActiveProfileAggression = 50f;
+            ActiveProfileSelfDetermination = 50f;
             ActiveProfileTactic = "Rifleman";
             ActiveProfileProficiency = new FollowerProficiencyModifierValues();
         }

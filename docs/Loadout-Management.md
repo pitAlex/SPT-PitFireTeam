@@ -1,6 +1,6 @@
 # Loadout Management
 
-Date: 2026-05-13
+Date: 2026-10-12
 
 ## Scope
 
@@ -9,16 +9,19 @@ This document tracks the current `Loadout Management` setting and the first impl
 Current phase focus:
 
 - expose the mode in `My Squad -> Settings`
-- confirm before switching modes
-- preserve each teammate's saved `Default` gear and select `Default` when the mode changes
-- test default-loadout spawn preparation for the four modes
+- preserve each teammate's saved `Default` gear and migrate legacy preset selections to `Default`
+- test default-loadout spawn preparation for the three modes
 - test Immersive-style death gear loss for teammates using `Default`
 
-This is not yet the full real-stash economy implementation. Default-loadout real item ownership transfer is implemented for `Restricted`, `Immersive`, and `Realistic` (internal mode value: `Extreme`). The non-`Simple` profile UI intentionally hides the saved-loadout dropdown and uses `Default` as the editable real-gear surface, with `KIT LOADOUTS` reserved as the way to acquire a full kit.
+This is not yet the full real-stash economy implementation. Default-loadout real item ownership transfer is implemented for `Restricted`, `Immersive`, and `Realistic` (internal mode value: `Extreme`). The profile UI replaces the saved-loadout dropdown with `EDIT LOADOUT` and uses `Default` as the editable real-gear surface, with `KIT LOADOUTS` reserved as the way to acquire a full kit.
 
 See `docs/Buy Screen.md` for the current stock `EquipmentBuildsScreen` reuse, buy-mode UI changes, and kit price-display behavior.
 
 See `docs/Team-Escape.md` for the player-death squad escape, recovered death-gear mail, and escape outcome persistence behavior.
+
+Equipped weapons keep their exact registered spare magazines directly in tactical-vest or normal pocket grids, including loaded rounds, under every loadout mode. This applies to acquired primary/secondary weapons and holster weapons as well as manual gear exchange. Unregistered magazines, backpack/secure/nested-container cargo and registrations for weapons no longer equipped remain subject to ordinary return filtering. Return mail and equipment snapshots share this classification; other-teammate protected-gear exclusions remain unchanged. See [looting bookkeeping](looting/Looting.md#tracking-and-return-bookkeeping).
+
+See [Follower Insurance](Follower-Insurance.md) for real purchases, persistent exact-item policies, transfer safety, and stock trader returns for verified raid losses. Insurance confirmation commits pending loadout changes like repair and keeps the editor open after refreshing live and staged payment state.
 
 ## UI Behavior
 
@@ -26,59 +29,37 @@ See `docs/Team-Escape.md` for the player-death squad escape, recovered death-gea
 
 The group is hidden while the settings panel is opened from a raid-restricted context, including the in-raid `Squad Settings` overlay.
 
-It contains four mutually exclusive mode choices:
+It contains three mutually exclusive mode choices:
 
-- `Simple`
 - `Restricted`
 - `Immersive`
 - `Realistic` (stored internally as `Extreme`)
 
 The UI uses cloned Ragfair `UIAnimatedToggleSpawner` controls under a Unity `ToggleGroup`. Each option is rendered as its own vertical row: description text on the left, radio-style toggle on the right.
 
-When the user clicks a different mode:
+Selecting a different mode saves the config, syncs it to the server, and refreshes the visible toggle and roster. All modes use `Default`, so there is no preset-selection confirmation.
 
-1. the current visible selection is kept unchanged
-2. a confirmation overlay opens
-3. `Continue` applies the new mode
-4. the overlay `X` cancels and keeps the previous mode
+The setting is editable in both Guns for Hire and Allegiance and has one shared saved value. Immersive is the default for both gameplay modes; existing valid saved choices remain unchanged. Switching gameplay mode keeps the current selection, including when an older mode snapshot contains a different Loadout Management value.
 
-Confirmation text:
-
-- title: `SWITCH LOADOUT MANAGMENT`
-- question: `Switching loadout management will switch all teammates to their Default loadout.`
-- confirm button: `Continue`
-
-After confirmation, the client saves the config, syncs the mode to the server, and updates the visible toggle state in place.
+Opening `EDIT LOADOUT` resets the cloned player-stash panel to the top after its grid and viewport layout is built, stopping inherited scroll momentum. The reset runs only on opening; scrolling within the editor works normally.
 
 ## Modes
 
-### Simple
-
-`Simple` is the current baseline behavior.
-
-The user can edit or choose a follower loadout without requiring the gear to be physically consumed from the player's inventory.
-
-Current intended constraints:
-
-- `Edit Loadout` works against the stash-side editor surface, so the player's currently worn gear is not part of that editor view
-- equipment preset dropdown availability must exclude items currently equipped by the player or already reserved/equipped by other teammates
-- spawned follower gear is protected
-- gear is not lost on follower death
-- spawned follower gear cannot be extracted with
-
 ### Restricted
+
+`Restricted` is an optional equipment policy. The server retains legacy `Simple` as `Restricted`; missing and invalid settings use the Immersive default. Existing valid Restricted, Immersive and Realistic settings retain their behavior.
 
 Target behavior:
 
 - any gear used for a follower loadout is taken from the player's stash
 - gear is not lost on follower death
 - spawned follower gear cannot be extracted with
-- optional `Field Upkeep` can preserve raid damage and consumed non-secure-container supplies without enabling death gear loss
+- raid damage and consumed non-secure-container supplies always persist without enabling death gear loss
 
 Current phase behavior:
 
 - mode exists in UI and server settings
-- when `Restricted` is active, the settings UI can show the `Field Upkeep` checkbox row between `Restricted` and `Immersive`; it is off by default
+- wear and tear is part of `Restricted`; there is no separate `Field Upkeep` setting or checkbox
 - switching to this mode preserves each teammate's current `Default` gear and selects `Default`
 - the teammate profile hides the saved-loadout dropdown and shows the `KIT LOADOUTS` button
 - buying a kit sends the teammate's previous active `Default` kit back through the pitFireTeam courier before equipping the newly purchased kit
@@ -87,10 +68,11 @@ Current phase behavior:
 - items moved onto the teammate are removed from the player stash
 - items moved back from the teammate are returned to the player stash
 - spawned follower gear is protected from raid loss and cannot be extracted with
-- when `Field Upkeep` is off, raid outcome does not persist durability damage, consumable use, or death loss
-- when `Field Upkeep` is on, escaped `Default` teammates persist their live in-raid equipment state like `Immersive`, with tracked follower-loot/player-given item ids, other teammates' protected gear ids, and the non-Realistic managed secure-container tree stripped before saving
-- `Field Upkeep` does not enable death gear loss; dead teammates are not stripped down like `Immersive`
-- if a `Default` teammate dies while `Field Upkeep` is on, the server saves that teammate's death-time equipment state so durability/resource changes at death are preserved, but later corpse looting cannot consume or move the fallen teammate's saved gear
+- escaped `Default` teammates always persist their live in-raid equipment state like `Immersive`, with tracked follower-loot/player-given item ids, other teammates' protected gear ids, and the non-Realistic managed secure-container tree stripped before saving
+- original saved magazines remain protected during upkeep after extraction or death: missing magazine shells are restored empty, while surviving magazines retain their live cartridges; acquired loot magazines are not restored
+- magazine recovery uses free compatible grid space or the magazine's original empty weapon slot; if recovery cannot fit safely, maintenance retains the previous saved equipment and logs the failure instead of committing magazine loss
+- `Restricted` does not enable death gear loss; dead teammates are not stripped down like `Immersive`
+- if a `Default` teammate dies, the server saves that teammate's death-time equipment state so durability/resource changes at death are preserved, but later corpse looting cannot consume or move the fallen teammate's saved gear
 
 ### Immersive
 
@@ -150,13 +132,10 @@ When `loadoutManagementMode` changes:
 
 1. the server keeps every teammate's saved inventory and `Default` equipment snapshot unchanged
 2. if the change moves into or out of `Realistic` / internal `Extreme`, the saved `Default` secure-container tree is removed and the default snapshot is overwritten
-3. when leaving `Simple` for any non-`Simple` mode, each teammate's selected loadout is set to `Default`
-4. switching between non-`Simple` modes does not repeat the `Default` selection because those modes already require it
-5. the client only shows the `Default`-selection warning when leaving `Simple`
 
-This avoids on-the-fly ownership checks against non-default selected equipment when the economic rules change, without destroying the existing `Default` gear.
+Every teammate is migrated on load: a legacy custom preset selection restores the saved `Default` equipment before the profile can be viewed, edited, purchased over, delivered, or spawned. The profile is saved before the selection so an interrupted migration can retry. The saved `Default` snapshot is preserved. No custom preset can be selected for free, and clone-only equipment saves are rejected by the server.
 
-The server also receives `restrictedGearMaintenance`. This conditional `Restricted` setting defaults to `false` and does not change the selected loadout or saved `Default` snapshot when toggled.
+Restricted maintenance is unconditional. The client no longer binds or sends `restrictedGearMaintenance`, and the server ignores that obsolete field in older settings files or requests, including saved `false` values. Saving settings removes the obsolete field from server JSON. Existing saved equipment is preserved until a valid raid snapshot is persisted.
 
 ## Real Default Loadout Commit
 
@@ -186,9 +165,101 @@ The server is authoritative for the commit:
 
 After the save succeeds, the server returns the saved player stash snapshot to the client.
 
+## Teammate Addition Cost
+
+Manual addition quotes the candidate's equipment; there is no separate recruitment fee. Raid-recruit acceptance remains separate. See [My Squad's hiring preview](My-Squad-Screen.md#hiring-preview) for navigation, loading and button behavior.
+
+### Candidate and quote lifecycle
+
+All routes below use the `/singleplayer/pitfireteam` prefix:
+
+| Route | Effect |
+|---|---|
+| `/teammate/prepare` | Generates a candidate, normalizes its knife, calculates the gear price and persists a pending quote. Returns `quoteToken`, `aid`, `price` and `supportsWithoutKit`. |
+| `/teammate/create` | Confirms the current `quoteToken`; optional `withoutKit: true` selects the free no-gear path. Tokenless calls cannot create free teammates. |
+| `/teammate/cancel` | Cancels the matching pending token without payment or roster changes. A stale token cannot cancel a replacement quote. |
+
+Regenerate repeats preparation while retaining the chosen nickname, head and voice. Each successful preparation replaces the pending candidate and invalidates its old token without payment. Confirmation saves the exact quoted profile instead of generating another teammate. Pending candidates can be previewed but are not friends or roster members.
+
+The quote lasts 30 minutes. Confirmation rejects an expired quote, a changed loadout mode or an older pricing version, and rechecks nickname uniqueness. Pricing version `2` covers the corrected unit-price calculation and knife exclusion. Completed receipts and interrupted payments remain recoverable across pricing-version changes.
+
+### Charged equipment
+
+Only eligible items directly equipped under the equipment root start a priced tree:
+
+| Equipment slots | Charged items |
+|---|---|
+| `FirstPrimaryWeapon`, `SecondPrimaryWeapon`, `Holster` | Each weapon with installed attachments and magazines; no ammunition |
+| `Headwear` | Helmet/headwear with installed accessories, including mounted devices |
+| `FaceCover`, `Eyewear`, `Earpiece` | Face cover, eyewear and headset, plus any eligible installed attachments |
+| `TacticalVest`, `ArmorVest` | The vest/armor item and installed removable armor plates |
+| `Backpack` | The backpack item itself |
+
+Traversal follows template attachment `Slots`, never container grids. Each item ID is charged at most once. Loaded/chambered ammunition, integral armor inserts, carried supplies, pocket contents, dogtags, armbands, secure-container trees and knives are excluded. Exclusion from the price does not remove an item from a paid candidate's inventory.
+
+After every manual generation, the equipped `Scabbard` knife tree is replaced with one fresh **6Kh5 Bayonet** (`5bffdc370db834001d23eca8`) before preview and pricing. This also applies to regeneration. The knife costs nothing in either purchase option. Dogtags and other slots are preserved; existing saved teammates and raid recruits are unaffected.
+
+### Unit-price calculation
+
+When SPT's `Dynamic.GenerateBaseFleaPrices.UseHandbookPrice` is enabled and the item has a positive handbook value:
+
+1. Start with `PriceMultiplier`; a template-specific override takes precedence, otherwise use the first matching base-class override.
+2. If the enabled crafting adjustment applies to an item required by a hideout production recipe, add `HideoutCraftMultiplier` to that multiplier once.
+3. Multiply the handbook value by the resulting multiplier.
+4. When `PreventPriceBeingBelowTraderBuyPrice` is enabled, floor the result at the highest amount a trader would pay the player for that item.
+
+Hiring computes this value once per template per quote. It bypasses the additive generated flea table observed in SPT 4.1 and does not change the shared economy. When handbook generation is disabled or the item has no positive handbook entry, use a positive dynamic flea-table value, falling back to the handbook value.
+
+This is a configured equipment valuation, not a lookup of the cheapest live flea offer or a trader's selling price. Local SPT data and economy settings can differ substantially from official-game prices; official prices must not be substituted when auditing a local quote. There are no kit, assembled-weapon or condition discounts. Sum eligible individual item prices, then round the total upward to whole roubles once. Missing, non-positive, non-finite or overflowing prices reject preparation rather than silently making equipment free.
+
+### Add With No Gear
+
+`withoutKit: true` confirms the same candidate for **zero roubles**, with no player-money save. The shared permanent-equipment retention helper keeps the equipment root, dogtag, knife, armband and special-slot trees, plus the pockets and secure-container shells. Ordinary kit and ordinary pocket/secure-container cargo are removed. Special-slot trees are preserved separately, including when attached to pockets.
+
+The stripped profile, stripped `Default` snapshot and completion receipt are saved in one teammate-database transaction, so the discarded kit cannot return through Default restoration. A failed save retains the original pending candidate and price. The client offers this action only when preparation advertises `supportsWithoutKit`, preventing an older server from ignoring the flag and treating the request as a paid hire.
+
+### Payment and recovery
+
+Paid confirmation checks and deducts unlocked stash roubles. Insufficient funds leave the quote available, with no partial debit or new teammate; the client displays the localized message in the vanilla message window.
+
+The player's SPT save and teammate database are separate stores. Before saving player money, a persistent `paying` journal records the before/after rouble item identities, counts and locations. The teammate, Default equipment, settings and `complete` receipt then commit together in the teammate database. Retrying the current completed token returns the saved stash without another charge; switching between paid/no-gear buttons cannot create a second teammate or change a completed purchase.
+
+Recovery runs when listing the roster or preparing, confirming or cancelling a hire. Money matching the journal's after-state completes the hire without another debit; matching the before-state restores the pending quote. Ambiguous money changes stop recovery rather than guessing. A failed commit records refund intent and original rouble items before saving the refund. Payment/refund recovery verifies the saved player JSON, so restored memory or an SPT cached-write skip cannot acknowledge an unpersisted refund. If the cached retry leaves disk unchanged, recovery remains blocked until a fresh save (normally after server restart). See [Teammate Storage](Teammate-Storage.md) for the database boundary.
+
+### Source and verification
+
+- [Creation service](../server/Services/FriendlyTeammateService.Creation.cs): prepare/confirm/cancel, bayonet replacement and payment recovery.
+- [Equipment selector](../server/Services/TeammateEquipmentPrice.cs) and [unit-price lookup](../server/Services/FriendlyTeammateService.HiringPrices.cs): charged trees and valuation.
+- [Permanent-equipment retention](../server/Services/FriendlyTeammateService.EquipmentRetention.cs): no-gear stripping, also shared with existing equipment-loss behavior.
+- [Hiring fixtures](../tests/TeammateHiring/Program.cs): run `dotnet run --project tests/TeammateHiring/TeammateHiring.csproj` from the repository root. Covers selection/exclusions, duplicate prevention, price overrides/fallbacks, knife replacement, regeneration, no-gear retention, insufficient funds, retries, rollback and interrupted-payment recovery. These fixtures do not establish Unity layout, navigation or model-loading behavior.
+
+## Raid-Recruit Deletion Fee
+
+An in-raid pickup who later sends a friend invite joins for free when accepted. The server records the gear value from the captured post-raid profile when creating that invite. It uses the same [charged equipment and unit-price rules](#charged-equipment) as manual hiring, including the knife exclusion, but keeps the recruit's actual knife rather than replacing it with a bayonet.
+
+`FriendlyRecruitRequestEntry.RecruitmentGearPrice` stores the server-calculated amount in `recruit-requests.json`; it is not accepted from the client pickup payload. Acceptance copies it into `FriendlyTeammateSettings.RecruitmentGearPrice` with the teammate and Default equipment. Member creation, invitation removal and an acceptance receipt commit in the same database transaction. Repeated requests cannot duplicate the member, and Accept All resumes from only the unfinished invitations after a failure. Legacy pending invites without a price are valued at acceptance, before loadout-mode preparation. Existing roster members without this metadata remain free to delete because their recruitment origin and original equipment value cannot be reconstructed reliably. Manual hires, including Add With No Gear, also remain free to delete.
+
+The recorded amount is fixed: changing equipment, moving gear into the player's stash, buying a kit, losing equipment or changing economy settings does not reprice or erase the fee. Only the initial gear price is retained for this policy; no initial-inventory snapshot or remaining-gear credit is used. Deleting a recorded recruit requires that amount in unlocked stash roubles. Insufficient funds preserve the member, settings, Default equipment and player money. The roster and native social deletion paths display the fee in confirmation and wait for the server before removing the member; they refresh the live stash after success. In-raid dismissal and declining an unaccepted invite do not charge this fee.
+
+`FriendlyTeammateService.Deletion.cs` owns both deletion entry points. A `pending-deletion.json` journal records before/after money state before the SPT player save. Removing the member/profile, settings and Default commits atomically with the prepared courier outbox. Repeating a completed request returns the stash without charging or delivering again. Roster reads reconcile interrupted deletion: a matching after-state completes removal, a matching before-state keeps the member, and an ambiguous state blocks further deletion. The fixed fee has no credit for equipment still on the recruit; removal returns the current gear instead.
+
+## Equipment Return on Member Removal
+
+Removing either a normal or raid-recruited member sends the current saved equipment through the pitFireTeam courier. This applies to existing members without a migration. Both roster and social confirmations include **The equipped items will be mailed via service.** above **This cannot be undone**. Raid recruits still show and pay their recorded fee; manual hires and legacy unmarked members remain free to remove. A declined invitation or in-raid dismissal does not deliver a saved member kit.
+
+The shared kit-delivery selector returns equipped items with complete attachment, armor-insert/plate and container-content trees, including loaded ammo, consumables, knife, armband and special-slot items. Pocket contents return individually; the structural equipment root, pockets shell and dogtag are excluded. The hidden managed secure container and its supplies are excluded outside Realistic; the editable secure-container tree returns in Realistic. Item condition and remaining stack counts are preserved. Only the current saved inventory is returned, never the separate Default snapshot, starting recruit inventory, or a newly generated loadout.
+
+Preparation clones each tree and assigns fresh item IDs with one native mail stash root. It finds each actual root by ID rather than assuming the first saved array entry is the root. Existing player/member ownership collisions block preparation. The player stash does not need space because the return is a mail attachment, with the same 24-hour pickup window as existing kit courier deliveries. The pickup window begins when mail is attached, including when a pending outbox resumes after a restart.
+
+The member deletion and `delivering` outbox commit in one encrypted-database transaction. Before that commit, failures retain the member and refund a paid fee through the verified money journal. After commit, a delivery failure retains the outbox and never refunds or recreates the member. Recovery saves the prepared mail to the SPT player profile and verifies a namespaced player receipt before marking the outbox `complete`. That receipt survives collecting or deleting the mail, preventing a crash/retry from creating another kit. Only one outbox can be active; another removal first recovers it. Unfinished payment journals from before courier returns capture the still-saved member inventory before completing deletion. The vanilla new-message notification follows the verified save.
+
+Returned source IDs are recorded as courier ownership in the current and preceding raid insurance ledgers. Matching PMC policies and already queued insurance trees are removed, preserving unrelated claims. Removed member settings also remove that member's active coverage. Courier observation does not invoke settlement; later deferred claims respect the durable ownership evidence.
+
+Source: [equipment selection](../server/Services/FriendlyTeammateService.EquipmentDelivery.cs), [removal delivery](../server/Services/FriendlyTeammateService.RemovalDelivery.cs) and [deletion coordination](../server/Services/FriendlyTeammateService.Deletion.cs). Run `dotnet run --project tests/TeammateHiring/TeammateHiring.csproj` for pricing, paid/free removal, selection, rollback, failed-save/receipt recovery, collected-mail replay and insurance cleanup cases. Run `dotnet run --project tests/FollowerDatabase/FollowerDatabase.csproj -- --courier-smoke <SPT-runtime-root>` for native SPT tree remapping, mailbox/database JSON round trips and insurance-ledger suppression. Unity confirmation layout and live mail collection still require in-game validation.
+
 ## Kit Purchase
 
-`KIT LOADOUTS` is available in `Restricted`, `Immersive`, and `Realistic` / internal `Extreme`. `Simple` keeps the saved-loadout dropdown and does not use the buyout screen.
+`KIT LOADOUTS` is available in every mode: `Restricted`, `Immersive`, and `Realistic` / internal `Extreme`. Saved builds are available through this purchase flow only.
 
 The buy screen reuses EFT's stock `EquipmentBuildsScreen` in a custom teammate-buy mode. The selected build is priced with market-facing item prices, including nested weapon mods, armor plates, armor inserts, magazine contents, and container contents. Weapon trees first try to use the best available overlapping assembled trader/barter offer; any extra unmatched parts then fall back to the gated kit discount where fuller kits can earn deeper weapon-only discounts. Armor, helmets, rigs, backpacks, loose/grid-contained items, ammo, meds, keys, cards, coins, and carried loot remain full price.
 
@@ -208,12 +279,15 @@ The old-kit delivery intentionally does not include the teammate equipment root 
 
 Repair is available from the teammate loadout editor for repairable teammate equipment in all loadout-management modes.
 
-Repair follows the real teammate-equipment rule even in `Simple`:
+Repair follows the real teammate-equipment rule:
 
 - the repaired item is updated on the teammate's current `Default` equipment/profile
 - player repair kits and repair-related player profile changes are consumed through the stock repair service
 - saved player equipment presets are not changed by repair
-- pressing `Done` remains the action that writes editor changes back to the selected player equipment preset in the clone/preset flow
+- pending staged inventory changes are committed through the real stash transfer before repair
+- after kit resources are synchronized, the editor captures the resulting stash/equipment as its saved baseline
+- EFT's repair UI subtracts the final selected kit's resource before invoking the patched repair method; that exact pending subtraction is excluded from the pre-repair loadout-change check only when every other staged item still matches. If another staged edit requires a commit, the outgoing stash snapshot omits this temporary kit subtraction, so the stock server repair remains the sole saved kit charge.
+- the editor captures its initial comparison baseline after its synchronous item panels have initialized. A kit-only repair response updates and verifies the selected live kit resources against the server's changed-item data; it does not rebuild or compare the whole player stash. Other repair responses first apply the server's exact new/changed/deleted item delta. A full stash refresh is only a fallback when that delta cannot be applied. If every refresh fails after a server-confirmed repair, the editor can close but further teammate loadout changes are blocked until a game restart; never retry the paid repair in that session. The editor's own kit resource and saved baseline update after every repair.
 
 ## Live Stash Refresh
 
@@ -260,6 +334,8 @@ For `Realistic` / internal `Extreme`:
 
 ## In-Raid Backpack Inspection
 
+Field recruits have a separate [Give Gear](Give-Gear-Spec.md) donation interaction. It stages the player's offering until Give Items, then evaluates the recruit's kit privately. PMC donations are permanent and cancel insurance; Scav donations use existing Fence returns. This does not grant recruits saved-squad return admission or access through View Backpack/Swap Gear.
+
 Spawned squadmates can expose their live `Backpack` slot through the lower-left `View Backpack` quick interaction while the player is close and looking at them. Recruited allies are not eligible because the interaction is scoped to saved squadmates.
 
 The screen is the follower's actual live backpack, not a cloned editor surface. The inspection session is intentionally out-of-combat only: active enemy/under-fire state, follower medical work, follower loot-pickup work, target invalidation, or player death closes the screen.
@@ -268,7 +344,9 @@ Items placed into the inspected backpack during the session are registered as tr
 
 ## Protected Extraction Filtering
 
-`Simple` and `Restricted` allow teammate gear to be physically looted in raid so the player can inspect, reorganize, or recover from inventory edge cases without special slot locks. Commanded fallen-teammate recovery (`Check Him` / `Loot Body` on a teammate corpse) is stricter about protected roots: followers skip protected teammate gear roots, but non-protected backpacks and rigs are recovered as whole containers instead of being emptied item by item. To prevent gear farming, extraction and return-delivery cleanup strip protected teammate item ids from the extracted player profile or returned container tree.
+`Restricted` allows teammate gear to be physically looted in raid so the player can inspect, reorganize, or recover from inventory edge cases without special slot locks. Commanded fallen-teammate recovery (`Check Him` / `Loot Body` on a teammate corpse) is stricter about protected roots: followers skip protected teammate gear roots, but non-protected backpacks and rigs are recovered as whole containers instead of being emptied item by item. To prevent gear farming, extraction and return-delivery cleanup strip protected teammate item ids from the extracted player profile or returned container tree.
+
+Explicit Give Gear handovers may loan that protected kit to field recruits for raid use. The original teammate keeps its saved kit; the borrowed items do not become permanent PMC gifts or Fence cargo and cannot survive in an invitation profile. Temporarily using the recruit's displaced unprotected equipment is allowed; this does not change ordinary commanded recovery admission.
 
 Protected ids come from two sources:
 
@@ -312,17 +390,19 @@ If the player also dies in the same raid, already-dead teammates are still sent 
 
 Current escape-state persistence applies only to teammates whose selected loadout is `Default`.
 
-When an `Immersive`, `Realistic` / internal `Extreme`, or `Restricted` teammate with `Field Upkeep` enabled survives/extracts:
+When an `Immersive`, `Realistic` / internal `Extreme`, or `Restricted` teammate survives/extracts:
 
 - the client sends the teammate's live equipment snapshot to the server
 - follower progress and live-equipment persistence are serialized on the server so their independent post-raid requests cannot overwrite each other
-- tracked follower-loot/player-given item ids are sent with the snapshot
+- returnable cargo item ids are sent with the snapshot; equipped gear and its slotted attachments are excluded regardless of earlier player-owned tracking
 - the server removes those tracked item trees before saving the new `Default`
 - the server also removes protected gear ids owned by other teammates before saving, so gear looted from a fallen or different squadmate cannot be permanently saved onto the survivor
 - durability, remaining ammo, and consumed meds from the teammate's actual raid equipment are preserved
 - non-Realistic modes still strip the secure-container tree before saving; Realistic keeps it
 
-When a `Restricted` teammate with `Field Upkeep` enabled dies while using `Default`:
+Newly equipped gear and slotted attachments remain in the filtered live snapshot in every mode. Return admission checks saved squad membership first; field recruits send no loot returns, avoiding duplication with their later invitation profile.
+
+When a `Restricted` teammate dies while using `Default`:
 
 - the fallen teammate's full equipment state is captured at death time
 - the server saves that death-time state instead of reading the corpse after players or surviving teammates may have looted it
@@ -330,8 +410,16 @@ When a `Restricted` teammate with `Field Upkeep` enabled dies while using `Defau
 - protected teammate gear is still stripped from the extracted player profile and from escaped teammate equipment snapshots
 - death gear loss is still not enabled; this is maintenance-state persistence, not Immersive loss
 
+### Restricted consolidation validation
+
+2026-10-12: core client and server Debug builds passed. The server build reported only `NU1900` because the NuGet vulnerability feed was unavailable. `tests/FollowerDatabase` mode smoke checks passed 163 assertions, including 45 checks of Restricted extraction/death persistence through the production equipment methods and encrypted Default snapshot storage. Legacy upkeep values `false`, `true`, and `null` are ignored; durability, medicine and ammunition use persist while equipment is retained and tracked cargo, other teammates' protected gear, and managed secure supplies are filtered. The old acquired-equipment-only branch and its fixture were removed.
+
+Gameplay settings passed 64 checks, Restricted magazine recovery passed 20, and follower return policy passed 28 plus membership/snapshot source guards. These checks do not establish the in-game Settings layout or live raid persistence. Fresh extraction and follower-death tests remain required, including worn armor, spent supplies, ejected magazines, and protected gear taken from a fallen teammate.
+
+Debug deployment was deferred because Tarkov and the SPT server were running. No installed DLLs or locale files were changed by this task.
+
 ## Current Gaps
 
-Non-`Simple` custom preset selection remains intentionally hidden so it does not conflict with real item ownership rules. The remaining planned loadout work is the future `KIT LOADOUTS` purchase hardening where consumed stash items can preserve their exact live durability/resource state when they become teammate equipment instead of using the saved build's item state.
+Direct custom preset selection has been removed; all equipment changes use real item ownership rules. The remaining planned loadout work is the future `KIT LOADOUTS` purchase hardening where consumed stash items can preserve their exact live durability/resource state when they become teammate equipment instead of using the saved build's item state.
 
 Player-owned items handed to a teammate during raid are currently known only to the client at the moment of handoff. The server can derive saved teammate default gear from teammate profiles, but it cannot independently know every player-owned item that was temporarily moved through a live teammate inventory unless the client reports those item ids. The current protected-extraction filter uses a client side registration route for those handled item ids; a later pass should make this ownership/event reporting more explicit and durable instead of treating it as part of the extraction cleanup flow.

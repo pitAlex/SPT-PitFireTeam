@@ -1,0 +1,168 @@
+using EFT;
+using pitTeam.Modules;
+using SAIN.Components;
+using SAIN.Preset.Shared.Enums;
+using Enemy = SAIN.SAINComponent.Classes.EnemyClasses.Enemy;
+using UnityEngine;
+
+namespace pitTeam.SAINAddon;
+
+internal enum SAINFollowerCombatPhase { Combat, Ambush, Linger, Released }
+
+// One handoff per follower, shared by the solo and squad layers. Layer switches must
+// not restart the timer or carry a dead enemy's native action into peaceful follow.
+internal sealed class SAINFollowerCombatHandoff
+{
+    internal const float LingerSeconds = 3f;
+    private bool hadCombat;
+    private bool hadEnemy;
+    private bool registeredCombat;
+    private BotOwner registeredOwner;
+    private float lingerUntil;
+    internal bool EnteredCombat => hadCombat || lingerUntil > 0f;
+
+    internal SAINFollowerCombatPhase Update(BotComponent bot)
+    {
+        bool liveEnemy = HasLiveEnemy(bot);
+        if (liveEnemy && !registeredCombat)
+        { registeredCombat = true; registeredOwner = bot.BotOwner; SainAddonBridge.NotifyCombatEpisode(bot.BotOwner, true); }
+        if (liveEnemy && !EnteredCombat)
+            BossPlayers.Instance?.GetFollower(bot.BotOwner)?.BeginCombatIndependenceFromPatrol();
+        if (liveEnemy && !hadEnemy) SainAddonBridge.EndPostCombatFullHeal(bot.BotOwner);
+        hadEnemy = liveEnemy;
+        if (liveEnemy)
+        {
+            if (bot.Decision.HasDecision) hadCombat = true;
+            lingerUntil = 0f;
+            return SAINFollowerCombatPhase.Combat;
+        }
+
+        if (hadCombat)
+        {
+            hadCombat = false;
+            lingerUntil = Time.time + LingerSeconds;
+            pitTeam.Modules.Logger.LogInfo($"[SAIN] Linger started: follower={bot.ProfileId}");
+        }
+
+        // Enemy loss owns one deadline. Transient medical selections cannot rearm it.
+        // An already-running native treatment may finish past that deadline; fresh
+        // selections after release belong to core recovery, not another combat episode.
+        if (bot.Decision.CurrentCombatDecision == ECombatDecision.AvoidGrenade ||
+            (AllowsMedicalContinuation(bot) &&
+             (SainAddonBridge.IsUsingMedical(bot.BotOwner) || IsMedical(bot.Decision.CurrentSelfDecision))))
+            return SAINFollowerCombatPhase.Combat;
+
+        if (lingerUntil > Time.time)
+        {
+            if (bot.Decision.HasDecision) bot.Decision.ResetDecisions(false);
+            return SAINFollowerCombatPhase.Linger;
+        }
+        // Native defensive hearing decisions may prepare contact before Core has a
+        // goal. They never start a combat/medical linger episode.
+        if (AllowsAmbushPreparation(bot, bot.GoalEnemy, bot.Decision.CurrentCombatDecision,
+            bot.Decision.CurrentSquadDecision, bot.Decision.CurrentSelfDecision))
+            return SAINFollowerCombatPhase.Ambush;
+
+        // Reset this follower through SAIN's publisher, never its private decision fields
+        // or living enemy memory. A stale decision must not reactivate either replica.
+        if (bot.Decision.HasDecision) bot.Decision.ResetDecisions(false);
+        if (lingerUntil > 0f)
+        {
+            lingerUntil = 0f;
+            SainAddonBridge.BeginPostCombatFullHeal(bot.BotOwner);
+            BossPlayers.Instance?.GetFollower(bot.BotOwner)?.ClearActiveCombatIndependent();
+            pitTeam.Modules.Logger.LogInfo($"[SAIN] Linger completed: follower={bot.ProfileId}");
+        }
+        if (registeredCombat)
+        { registeredCombat = false; SainAddonBridge.NotifyCombatEpisode(bot.BotOwner, false); }
+        return SAINFollowerCombatPhase.Released;
+    }
+
+    internal static bool HasLiveEnemy(BotComponent bot)
+    {
+        if (bot == null || !AllowsEnemyCombat(bot.BotOwner)) return false;
+        if (IsLive(bot.GoalEnemy)) return true;
+        if (bot.EnemyController?.KnownEnemies != null)
+            foreach (Enemy enemy in bot.EnemyController.KnownEnemies)
+                if (IsLive(enemy)) return true;
+        return false;
+    }
+
+    // Native heard contacts can have a SAIN goal while core deliberately rejects the
+    // EFT goal. Full combat still requires Core admission or independent mode.
+    internal static bool AllowsEnemyCombat(BotOwner owner)
+    {
+        var follower = BossPlayers.Instance?.GetFollower(owner);
+        return follower?.CombatIndependent == true ||
+            (!SAINFollowerRuntime.HasEnteredCombat(owner) && follower?.CombatIndependencePreference == true) ||
+            SainAddonBridge.HasAcceptedGoalEnemy(owner);
+    }
+
+    internal static bool AllowsAmbushPreparation(BotComponent bot, Enemy enemy, ECombatDecision solo,
+        ESquadDecision squad, ESelfActionType self)
+    {
+        if (bot == null || enemy == null || !ReferenceEquals(bot.GoalEnemy, enemy) ||
+            (solo != ECombatDecision.Freeze && solo != ECombatDecision.SeekCover && solo != ECombatDecision.ShiftCover) ||
+            squad != ESquadDecision.None || self != ESelfActionType.None ||
+            AllowsEnemyCombat(bot.BotOwner) || !IsLive(enemy) || !enemy.WasValid || !enemy.EnemyKnown ||
+            enemy.Hearing?.EnemyHeardFromPeace != true || !AllowsLocalHeardSound(bot, enemy))
+            return false;
+        BotOwner owner = bot.BotOwner;
+        var follower = BossPlayers.Instance?.GetFollower(owner);
+        if (follower == null || SAINFollowerRuntime.IsAttentionContactIgnored(owner, enemy) ||
+            SainAddonBridge.IsUsingMedical(owner) ||
+            follower.TryPeekActiveCommand(out _, out _, out _) ||
+            SAINFollowerRuntime.HasOrderedPush(owner)) return false;
+        Player player = enemy.EnemyPlayer;
+        return owner.BotsGroup != null &&
+            (owner.BotsGroup.IsEnemy(player) || owner.BotsGroup.IsPlayerEnemy(player));
+    }
+
+    // Core turns for nearby steps and voices. SAIN records the personal report's
+    // sound type on its remembered place; the unused LastSoundHeard field is never
+    // populated in 4.5.1. Use that place, not the hidden player's live position.
+    internal static bool AllowsLocalHeardSound(BotComponent bot, Enemy enemy)
+    {
+        var places = enemy?.KnownPlaces;
+        var heard = places?.LastHeardPlace;
+        if (bot == null || heard == null || !ReferenceEquals(places.LastKnownPlace, heard)) return false;
+        return SainFollowerSoundAwareness.IsLocalSound(heard.SoundType) &&
+            (heard.Position - bot.Position).sqrMagnitude <=
+                SainFollowerSoundAwareness.LocalRange * SainFollowerSoundAwareness.LocalRange;
+    }
+
+    internal static bool AllowsDecision(BotComponent bot, ECombatDecision solo, ESelfActionType self,
+        Enemy enemy = null, ESquadDecision squad = ESquadDecision.None) =>
+        AllowsEnemyCombat(bot.BotOwner) || AllowsAmbushPreparation(bot, enemy, solo, squad, self) ||
+        solo == ECombatDecision.AvoidGrenade ||
+        (SAINFollowerRuntime.AllowsMedicalContinuation(bot.BotOwner) &&
+         (SainAddonBridge.IsUsingMedical(bot.BotOwner) || IsMedical(self)));
+
+    internal bool AllowsMedicalContinuation(BotComponent bot) =>
+        EnteredCombat && (hadCombat || lingerUntil > Time.time || SainAddonBridge.IsUsingMedical(bot.BotOwner));
+
+    private static bool IsMedical(ESelfActionType self) =>
+        self == ESelfActionType.FirstAid || self == ESelfActionType.Surgery || self == ESelfActionType.Stims;
+
+    internal void Release(BotOwner owner)
+    {
+        if (registeredCombat)
+        { registeredCombat = false; SainAddonBridge.NotifyCombatEpisode(owner, false); }
+        if (EnteredCombat) SainAddonBridge.BeginPostCombatFullHeal(owner);
+        BossPlayers.Instance?.GetFollower(owner)?.ClearActiveCombatIndependent();
+        Clear();
+    }
+
+    private static bool IsLive(Enemy enemy) =>
+        enemy?.EnemyPlayer?.HealthController?.IsAlive == true && Enemy.IsEnemyActive(enemy);
+
+    internal void Clear()
+    {
+        if (registeredCombat)
+        { registeredCombat = false; SainAddonBridge.NotifyCombatEpisode(registeredOwner, false); }
+        registeredOwner = null;
+        hadCombat = false;
+        hadEnemy = false;
+        lingerUntil = 0f;
+    }
+}

@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Common.Tables;
 using SPTarkov.Server.Core.Models.Eft.Repair;
 using SPTarkov.Server.Core.Models.Utils;
@@ -24,6 +25,24 @@ public record FriendlyTeammateDefaultEquipmentRequest : IRequestData
 
 public record FriendlyTeammateDefaultEquipmentResponse
 {
+    [JsonPropertyName("insurancePaid")]
+    public int InsurancePaid { get; set; }
+
+    [JsonPropertyName("insurancePlayerRoubles")]
+    public List<Item>? InsurancePlayerRoubles { get; set; }
+
+    [JsonPropertyName("insurancePlayerSkills")]
+    public Skills? InsurancePlayerSkills { get; set; }
+
+    [JsonPropertyName("insurancePlayerTraders")]
+    public Dictionary<MongoId, TraderInfo>? InsurancePlayerTraders { get; set; }
+
+    [JsonPropertyName("playerInsuredItems")]
+    public List<FriendlyTeammateInsuredItem> PlayerInsuredItems { get; set; } = [];
+
+    [JsonPropertyName("followerInsuredItems")]
+    public List<FriendlyTeammateInsuredItem> FollowerInsuredItems { get; set; } = [];
+
     [JsonPropertyName("realItemCommit")]
     public bool RealItemCommit { get; set; }
 

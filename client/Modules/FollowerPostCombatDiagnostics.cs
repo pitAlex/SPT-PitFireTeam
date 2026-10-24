@@ -21,7 +21,7 @@ namespace pitTeam.Modules
             if (now < nextSampleAt) return;
             nextSampleAt = now + 0.5f;
 
-            if (pitFireTeam.UseSainFollowerCombat ||
+            if (pitFireTeam.UseSainFollowerCombat(owner) ||
                 FollowerCombatLayer.IsFollowerCombatLayerActive(owner) ||
                 FollowerMedical.IsUsingMedical(owner))
             {

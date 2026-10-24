@@ -97,7 +97,7 @@ namespace pitTeam.BigBrain
             }
 
             // Close-range enemy (dogfight range) → cover may constrain engagement
-            if (goalEnemy != null && goalEnemy.IsVisible && goalEnemy.Distance < 8f)
+            if (goalEnemy != null && goalEnemy.IsVisible && pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) < 8f)
             {
                 return false;
             }

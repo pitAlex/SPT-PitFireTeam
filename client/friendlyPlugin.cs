@@ -55,6 +55,8 @@ namespace pitTeam
     {
         TeamStatus = 10001,
         ViewBackpack = 10002,
+        SwapGear = 10003,
+        GiveGear = 10004,
     }
 
     public enum CustomGestures
@@ -64,8 +66,8 @@ namespace pitTeam
 
     public enum LoadoutManagementMode
     {
-        Simple,
-        Restricted,
+        // Preserve persisted numeric values for the remaining modes.
+        Restricted = 1,
         Immersive,
         Extreme
     }
@@ -92,7 +94,10 @@ namespace pitTeam
         public Dictionary<string, string> enemyKilledRetainTime { get; set; }
         public Dictionary<string, string> scanDistance { get; set; }
         public Dictionary<string, string> enemyRemember { get; set; }
+        public Dictionary<string, string> enemyTracking { get; set; }
         public Dictionary<string, string> healthMultiplier { get; set; }
+        public Dictionary<string, string> friendlyEncounterChance { get; set; }
+        public Dictionary<string, string> friendlyScavEncounters { get; set; }
         public Dictionary<string, string> pickup { get; set; }
         public Dictionary<string, string> tieredPickup { get; set; }
         public Dictionary<string, string> maximumPickup { get; set; }
@@ -106,7 +111,6 @@ namespace pitTeam
         public Dictionary<string, string> lootFilterValuables { get; set; }
         public Dictionary<string, string> lootFilterWeapons { get; set; }
         public Dictionary<string, string> lootFilterGear { get; set; }
-        public Dictionary<string, string> lootAllowGearSwapping { get; set; }
 
         public Dictionary<string, string> memberTactic { get; set; }
         public Dictionary<string, string> memberEquipment { get; set; }
@@ -117,9 +121,7 @@ namespace pitTeam
 
         public Dictionary<string, string> equipmentLock { get; set; }
         public Dictionary<string, string> loadoutManagement { get; set; }
-        public Dictionary<string, string> loadoutManagementSimple { get; set; }
         public Dictionary<string, string> loadoutManagementRestricted { get; set; }
-        public Dictionary<string, string> loadoutManagementRestrictedGearMaintenance { get; set; }
         public Dictionary<string, string> loadoutManagementImmersive { get; set; }
         public Dictionary<string, string> loadoutManagementExtreme { get; set; }
         public Dictionary<string, string> npcSendMessage { get; set; }
@@ -175,6 +177,8 @@ namespace pitTeam
 
         // used only by BE
         public string[] returnItems { get; set; }
+        public string[] scavCargoReturn { get; set; }
+        public string[] scavTransitFarewell { get; set; }
         public string[] returnItemsDeath { get; set; }
         public string[] teamEscaped { get; set; }
         public string[] teamSomeEscaped { get; set; }
@@ -201,8 +205,9 @@ namespace pitTeam
         public string Message { get; set; }
     }
 
-    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "0.10.3")]
+    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "1.0.0")]
     [BepInDependency("xyz.drakia.bigbrain")]
+    [BepInDependency(pitFireTeam.SainPluginId, BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency(pitFireTeam.MenuOverhaulPluginId, BepInDependency.DependencyFlags.SoftDependency)]
     public class pitFireTeam : BaseUnityPlugin
     {
@@ -210,7 +215,7 @@ namespace pitTeam
         public const string SainAddonPluginId = "xyz.pit.fireteam.sainaddon";
         public const string SeparateHostilityPluginId = "dk.sptplugins.separatehostility";
         public const string MenuOverhaulPluginId = "com.moxopixel.menuoverhaul";
-        internal const LoadoutManagementMode DefaultLoadoutManagementMode = LoadoutManagementMode.Restricted;
+        internal const LoadoutManagementMode DefaultLoadoutManagementMode = LoadoutManagementMode.Immersive;
         private const string StartupRecoveryNoticeRoute = "/singleplayer/pitfireteam/recovery-notice";
         private const string StartupRecoveryNoticeAckRoute = "/singleplayer/pitfireteam/recovery-notice/ack";
         private const int DefaultLootMinimumPriceRoubles = 20_000;
@@ -224,8 +229,11 @@ namespace pitTeam
         public static LanguageOptions optionsLang;
 
         public static ConfigEntry<int> enemyRemember;
+        public static ConfigEntry<EnemyTrackingMode> enemyTracking;
 
         public static ConfigEntry<int> heatlhMultiplier;
+        public static ConfigEntry<int> friendlyEncounterChance;
+        public static ConfigEntry<bool> friendlyScavEncounters;
 
         public static ConfigEntry<int> scanDistance;
 
@@ -249,7 +257,6 @@ namespace pitTeam
         public static ConfigEntry<bool> lootFilterValuables;
         public static ConfigEntry<bool> lootFilterWeapons;
         public static ConfigEntry<bool> lootFilterGear;
-        public static ConfigEntry<bool> lootAllowGearSwapping;
 
         public static ConfigEntry<bool> pitFireTeamFLAG;
         public static ConfigEntry<bool> badGuy;
@@ -258,7 +265,6 @@ namespace pitTeam
         public static ConfigEntry<bool> englishBear;
         public static ConfigEntry<bool> pmcArmbands;
         public static ConfigEntry<LoadoutManagementMode> loadoutManagementMode;
-        public static ConfigEntry<bool> restrictedGearMaintenance;
 
         public static ConfigEntry<bool> botPrefetch;
 
@@ -324,9 +330,12 @@ namespace pitTeam
         public static bool IsSAINAddonInstalled { get; private set; }
         public static bool IsSeparateHostilityInstalled { get; private set; }
 
-        public static bool UseSainFollowerCombat => IsSAINInstalled && IsSAINAddonInstalled;
-        public static bool HasSainRegroupAddon => UseSainFollowerCombat;
-        public static bool ShouldDisableSainForFollowers => IsSAINInstalled && !UseSainFollowerCombat;
+        public static bool IsSainManTacticAvailable => IsSAINInstalled && IsSAINAddonInstalled;
+        public static bool IsSainFollowerCombatAvailable => IsSainManTacticAvailable && SainAddonBridge.HasRuntimeCallbacks;
+        public static bool UseSainFollowerCombat(BotOwner? botOwner) =>
+            IsSainFollowerCombatAvailable && SainAddonBridge.IsAddonTacticSelected(botOwner) && SainAddonBridge.IsCombatReady(botOwner);
+        public static bool ShouldDisableSainForFollower(BotOwner? botOwner) =>
+            IsSAINInstalled && !UseSainFollowerCombat(botOwner);
 
         private void Awake()
         {
@@ -357,8 +366,10 @@ namespace pitTeam
             new BotGroupCalcGoalPatch().Enable();
             new BotControllerEnemyPropagationSafetyPatch().Enable();
             new PmcFriendlyFireRetaliationBridgePatch().Enable();
+            new AllegianceScavTrustDamagePatch().Enable();
 
             new BotMemoryDamagePatch().Enable();
+            new FollowerFriendlyFireDamagePatch().Enable();
             new FollowerGoalEnemyClearRetentionPatch().Enable();
             new ExUsecBrainHitPatch().Enable();
 
@@ -373,6 +384,7 @@ namespace pitTeam
             new AdvAssaultTargetFollowerGuardPatch().Enable();
             new PatrolDataFollowerUpdateGuardPatch().Enable();
             new AvoidDangerFollowerGuardPatch().Enable();
+            FollowerTripwireAwarenessPatch.Apply(harmony);
             new FollowerNightVisionActivatePatch().Enable();
             new FollowerNightVisionOnPatch().Enable();
             new FollowerNightVisionOffPatch().Enable();
@@ -382,22 +394,53 @@ namespace pitTeam
 
             // Core follower actions must own BotMover.Sprint even when SAIN is installed;
             // SAIN's global sprint look-direction gate is only valid for SAIN-owned movement.
-            if (!UseSainFollowerCombat)
-                new FollowerSprintPatch().Enable();
+            new FollowerSprintPatch().Enable();
             new FollowerSprintStateDirectionPatch().Enable();
 
 #if DEBUG
             new AICoreAgentUpdatePatch().Enable();
+            RuntimeFailureDiagnostics.Apply(harmony);
+            GroupSightRecorderPatch.Apply(harmony);
 #endif
 
             // recruit/request patches
-            new BotReceiverFollowMeRecruitPatch().Enable();
+            new BotReceiverRecruitPatch().Enable();
             new FollowRequestPatch().Enable();
             new HoldRequestPatch().Enable();
             new OpenDoorRequestPatch().Enable();
             new FollowerDoorAutoClosePatch().Enable();
             new FollowerBotRequestTakePatch().Enable();
             new TeammateBackpackInspectionUpdatePatch().Enable();
+            new GearSwapPanelPatch().Enable();
+            new GearSwapPanelClosePatch().Enable();
+            new GiveGearPanelPatch().Enable();
+            new GiveGearPanelClosePatch().Enable();
+            new GearSwapApplyBotTickPatch().Enable();
+            new GearSwapApplyBrainTickPatch().Enable();
+            new GearSwapApplyMovementPatch().Enable();
+            new GearSwapApplyTriggerPatch().Enable();
+            new GearSwapApplyWeaponSelectionPatch().Enable();
+            new GearSwapApplyShotPatch().Enable();
+            new GearSwapApplyAutomaticFirePatch().Enable();
+            new GearSwapApplyDamageInfoPatch().Enable();
+            new GearSwapApplyExplosionArmorPatch().Enable();
+            new GearSwapApplyHealthDamagePatch().Enable();
+            new GearSwapApplyHealthDrainPatch().Enable();
+            new GearSwapActorDeathPatch().Enable();
+            new GearSwapActorDeadFallbackPatch().Enable();
+            new GearSwapRaidStopPatch().Enable();
+            new GearSwapBotsStopPatch().Enable();
+            new GearSwapPocketSpecialSlotsPatch().Enable();
+            new GearSwapArmorSlotPatch().Enable();
+            new GearSwapArmorSlotUiPatch().Enable();
+            new GearSwapContextPatch().Enable();
+            new GearSwapExecuteInteractionPatch().Enable();
+            new GearSwapDiscardPatch().Enable();
+            new GearSwapModifyPatch().Enable();
+            new GearSwapDestinationPatch().Enable();
+            new GearSwapWeaponUpdatePatch().Enable();
+            new GearSwapHealthUsePatch().Enable();
+            new GearSwapTabPatch().Enable();
             new TeammateBackpackChangedContainerPatch().Enable();
             new TeammateBackpackObserverStatePatch().Enable();
             new TeammateBackpackExaminedPatch().Enable();
@@ -419,6 +462,7 @@ namespace pitTeam
             // spawn patches
             new BotsControllerPatch().Enable();
             new BotsControllerStopPatch().Enable();
+            new PmcKarmaRaidEndPatch().Enable();
             new LocalGameCleanupPatch().Enable();
 
             // Only patch LocalGame ctor here; avoid broad PatchAll side effects at menu/hideout time.
@@ -439,16 +483,34 @@ namespace pitTeam
             new FollowerWeaponSelectorManualUpdatePatch().Enable();
             new FollowerSupportNoAmmoMainSwitchPolicyPatch().Enable();
             new FollowerHoldLingerReloadSuppressPatch().Enable();
+            new FollowerMagazineReloadStartPatch().Enable();
+            new FollowerMagazineSupplyPatch().Enable();
             new FollowerCombatReloadPermissionPatch().Enable();
+            new FollowerLauncherNoAmmoSwitchPatch().Enable();
             new FollowerCombatReloadFallbackSuppressPatch().Enable();
             new FollowerAimTimeProficiencyPatch().Enable();
             new FollowerAimTargetPatch().Enable();
             new FollowerShootDataSafetyPatch().Enable();
+            new FollowerFirearmTriggerSafetyPatch().Enable();
+            new FollowerFirearmUpdateSafetyPatch().Enable();
+            new FollowerAutomaticFireSafetyPatch().Enable();
             new FollowerShootFromPlaceCrouchPatch().Enable();
             new FollowerGrenadeAvailabilityPatch().Enable();
             new FollowerGrenadeCooldownPatch().Enable();
             new FollowerGrenadeThrowFinishPatch().Enable();
             new FollowerGrenadeReleasePatch().Enable();
+            new FollowerGrenadeSpawnPatch().Enable();
+            new FollowerMedicalCancelPatch().Enable();
+            new FollowerPoisonImmunityPatch().Enable();
+            new FollowerHazardMovementPatch().Enable();
+            new FollowerBarbedWireContactPatch().Enable();
+            new FollowerLethalPoisonImmunityPatch().Enable();
+            new FollowerStimulatorSelectionPatch().Enable();
+            new FollowerStimulatorUsePatch().Enable();
+            new FollowerFirstAidMinimumHealthPatch().Enable();
+            new FollowerFirstAidFracturePatch().Enable();
+            new FollowerFirstAidAttemptPatch().Enable();
+            new FollowerSurgeryTargetPatch().Enable();
             new FollowerEnemyInfoCorrectionPatch().Enable();
             new FollowerEnemyInfoSetVisibleCorrectionPatch().Enable();
             new BulletImpactPatch().Enable();
@@ -460,6 +522,7 @@ namespace pitTeam
             new PlayerVoicePhraseAvailabilityReplacePatch().Enable();
             new PlayerKilledPatch().Enable();
             new SessionResultKillListShowPatch().Enable();
+            new SessionResultKillVictimIdentificationPatch().Enable();
             new PlayerDeadFallbackPatch().Enable();
             new PlayerMakingShotPatch().Enable();
             new PlayerShotPatch().Enable();
@@ -471,12 +534,15 @@ namespace pitTeam
             new AddTeammateNicknameValueChangedPatch().Enable();
             new AddTeammateHeadSelectionOptionsPatch().Enable();
             new AddTeammateFinishPatch().Enable();
+            new TeammateHiringPreviewInputPatch().Enable();
 
             // AIBossPlayer class patch
             new AIDataContructPatch().Enable();
 
             // command/request patches
             new QuickPanelPatch().Enable();
+            new FollowerLootInteractionPatch().Enable();
+            new FollowerLootInteractionRefreshPatch().Enable();
             new QuickPanelHurtPhrasePatch().Enable();
             new QuickPanelUpdateBackpackInteractionPatch().Enable();
             new GestureMenuPatch().Enable();
@@ -486,11 +552,14 @@ namespace pitTeam
             new CustomPlayerGestureInteractionPatch().Enable();
             new GestureCommandNamePatch().Enable();
             new GestureMenuAvailablePhrasesPatch().Enable();
+            new GestureMenuCooperationVisibilityPatch().Enable();
+            new GestureMenuCooperationPhrasePatch().Enable();
             new ViewBackpackQuickPanelTextPatch().Enable();
             new ViewBackpackQuickPanelItemTextPatch().Enable();
             new EPhraseTriggerPatch().Enable();
             new PlayPhraseOrGesturePatch().Enable();
             new QuickMumbleStartViewBackpackPatch().Enable();
+            new FollowerQuickInteractionDropdownPatch().Enable();
             new BotReceiverGestureOverridePatch().Enable();
             new RaidStartPatch().Enable();
             new MainMenuControllerPatch().Enable();
@@ -529,6 +598,7 @@ namespace pitTeam
 
             // social / teammate management patches
             new SocialNetworkClassPatch().Enable();
+            new TeammateSocialDeletionPatch().Enable();
             new FriendListInvitePlayerPanelPatch().Enable();
             new TeammateContextMenuButtonsPatch().Enable();
             new TeammateGroupContextMenuButtonsPatch().Enable();
@@ -550,6 +620,9 @@ namespace pitTeam
             new OtherPlayerProfileScreenClosePatch().Enable();
             new LoadoutEditorUnloadAmmoPatch().Enable();
             new LoadoutEditorRepairContextInteractionPatch().Enable();
+            new LoadoutEditorInsurancePurchasePatch().Enable();
+            new FollowerInsuranceRaidIconPatch().Enable();
+            new FollowerInsuranceMailClaimPatch().Enable();
             new LoadoutEditorRepairByKitPatch().Enable();
             new LoadoutEditorRepairByTraderPatch().Enable();
             new LoadoutEditorLockContextInteractionPatch().Enable();
@@ -765,14 +838,14 @@ namespace pitTeam
             }
         }
 
-        public static bool ShouldUseSainRegroupRoute(bool isCombatRegroupContext)
+        public static bool ShouldUseSainRegroupRoute(BotOwner? botOwner, bool isCombatRegroupContext)
         {
-            return HasSainRegroupAddon && isCombatRegroupContext;
+            return UseSainFollowerCombat(botOwner) && isCombatRegroupContext;
         }
 
         public static bool ShouldSainRegroupLayerHandle(BotOwner? botOwner)
         {
-            return HasSainRegroupAddon && botOwner?.Memory?.HaveEnemy == true;
+            return UseSainFollowerCombat(botOwner) && botOwner?.Memory?.HaveEnemy == true;
         }
 
         private static bool HasPlugin(string pluginId)
@@ -1024,6 +1097,10 @@ namespace pitTeam
             followDistance = Config.Bind("", "02 FollowDistance", 12, new ConfigDescription(optionsLang.followDistance["Description"], new AcceptableValueRange<int>(8, 30), CreateConfigAttributes(-201, false, optionsLang.followDistance)));
 
             enemyRemember = Config.Bind("", "03 EnemyRemember", 20, new ConfigDescription(optionsLang.enemyRemember["Description"], new AcceptableValueRange<int>(5, 60), CreateConfigAttributes(-300, false, optionsLang.enemyRemember)));
+            enemyTracking = Config.Bind("", "03 EnemyTracking", EnemyTrackingMode.Realistic, new ConfigDescription(optionsLang.enemyTracking["Description"], null, CreateConfigAttributes(-299, false, optionsLang.enemyTracking)));
+
+            friendlyEncounterChance = Config.Bind("", "04 FriendlyEncounterChance", 30, new ConfigDescription(optionsLang.friendlyEncounterChance["Description"], new AcceptableValueRange<int>(5, 80), CreateConfigAttributes(-399, false, optionsLang.friendlyEncounterChance)));
+            friendlyScavEncounters = Config.Bind("", "04 FriendlyScavEncounters", true, new ConfigDescription(optionsLang.friendlyScavEncounters["Description"], null, CreateConfigAttributes(-399, false, optionsLang.friendlyScavEncounters)));
 
             heatlhMultiplier = Config.Bind("", "04 HealthMultiplier", 1, new ConfigDescription(optionsLang.healthMultiplier["Description"], new AcceptableValueRange<int>(1, 10), CreateConfigAttributes(-400, false, optionsLang.healthMultiplier)));
 
@@ -1150,8 +1227,6 @@ namespace pitTeam
                 (lootFilterGear?.Value ?? true);
             lootFilterWeapons = Config.Bind("", "10 LootFilterWeapons", defaultWeaponPickup, new ConfigDescription(optionsLang.lootFilterWeapons["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootFilterWeapons)));
 
-            lootAllowGearSwapping = Config.Bind("", "10 LootAllowGearSwapping", false, new ConfigDescription(optionsLang.lootAllowGearSwapping["Description"], null, CreateConfigAttributes(-1002, false, optionsLang.lootAllowGearSwapping)));
-
             npcSendMessage = Config.Bind("", "11 NpcSendMessage", true, new ConfigDescription(optionsLang.npcSendMessage["Description"], null, CreateConfigAttributes(-1003, false, optionsLang.npcSendMessage)));
 
             pitFireTeamFLAG = Config.Bind("", "12 PitFireTeam", true, new ConfigDescription(optionsLang.pitFireTeam["Description"], null, CreateConfigAttributes(-1004, false, optionsLang.pitFireTeam)));
@@ -1166,9 +1241,10 @@ namespace pitTeam
             pmcArmbands.SettingChanged += (_, _) => SyncServerSettings();
 
             loadoutManagementMode = Config.Bind("", "14 LoadoutManagement", DefaultLoadoutManagementMode, new ConfigDescription(optionsLang.loadoutManagement["Description"], null, CreateConfigAttributes(-1005, false, optionsLang.loadoutManagement)));
-
-            restrictedGearMaintenance = Config.Bind("", "14 LoadoutManagementRestrictedGearMaintenance", false, new ConfigDescription(optionsLang.loadoutManagementRestrictedGearMaintenance["Description"], null, CreateConfigAttributes(-1005, false, optionsLang.loadoutManagementRestrictedGearMaintenance)));
-            restrictedGearMaintenance.SettingChanged += (_, _) => SyncServerSettings();
+            if (!Enum.IsDefined(typeof(LoadoutManagementMode), loadoutManagementMode.Value))
+            {
+                loadoutManagementMode.Value = DefaultLoadoutManagementMode;
+            }
 
             botGrenades = Config.Bind("", "15 BotGrenades", true, new ConfigDescription(optionsLang.botGrenades["Description"], null, CreateConfigAttributes(-1005, false, optionsLang.botGrenades)));
 
@@ -1228,6 +1304,7 @@ namespace pitTeam
             battleRecorderSnapshotIntervalMs = Config.Bind("Miscellaneous", "28 BattleRecorderSnapshotIntervalMs", 200, new ConfigDescription(optionsLang.battleRecorderSnapshotIntervalMs["Description"], new AcceptableValueRange<int>(50, 1000), CreateConfigAttributes(-9999, showBattleRecorderSettings, optionsLang.battleRecorderSnapshotIntervalMs)));
 
 
+            GameplayModeRuntime.Initialize(Config);
             Config.SaveOnConfigSet = true;
             Config.Save();
             SyncServerSettings();
@@ -1250,26 +1327,13 @@ namespace pitTeam
 
         internal static bool IsFollowerLoadoutLootableMode()
         {
-            LoadoutManagementMode mode = loadoutManagementMode?.Value ?? DefaultLoadoutManagementMode;
+            LoadoutManagementMode mode = GameplayModeRuntime.GetEffectiveValue(loadoutManagementMode, DefaultLoadoutManagementMode);
             return mode == LoadoutManagementMode.Immersive || mode == LoadoutManagementMode.Extreme;
-        }
-
-        internal static bool IsFollowerLoadoutRealTransferMode()
-        {
-            LoadoutManagementMode mode = loadoutManagementMode?.Value ?? DefaultLoadoutManagementMode;
-            return mode == LoadoutManagementMode.Restricted
-                || mode == LoadoutManagementMode.Immersive
-                || mode == LoadoutManagementMode.Extreme;
         }
 
         internal static bool IsFollowerLoadoutRealisticMode()
         {
-            return (loadoutManagementMode?.Value ?? DefaultLoadoutManagementMode) == LoadoutManagementMode.Extreme;
-        }
-
-        internal static bool IsLootGearSwappingEnabled()
-        {
-            return lootAllowGearSwapping?.Value == true;
+            return GameplayModeRuntime.GetEffectiveValue(loadoutManagementMode, DefaultLoadoutManagementMode) == LoadoutManagementMode.Extreme;
         }
 
         internal static bool IsLootWeaponPickupEnabled()
@@ -1282,35 +1346,11 @@ namespace pitTeam
             _ = SyncServerSettingsAsync();
         }
 
-        private static Task SyncServerSettingsAsync()
+        private static async Task SyncServerSettingsAsync()
         {
-            try
-            {
-                string requestBody = JsonConvert.SerializeObject(new
-                {
-                    pmcArmbands = pmcArmbands?.Value ?? true,
-                    loadoutManagementMode = (loadoutManagementMode?.Value ?? DefaultLoadoutManagementMode).ToString(),
-                    restrictedGearMaintenance = restrictedGearMaintenance?.Value ?? false
-                });
-                return Task.Run(() =>
-                {
-                    try
-                    {
-                        RequestHandler.PostJson("/singleplayer/pitfireteam/settings", requestBody);
-                    }
-                    catch (Exception ex)
-                    {
-                        Modules.Logger.LogInfo($"Failed to sync pitFireTeam server settings: {ex.Message}");
-                    }
-                });
-            }
-            catch (Exception ex)
-            {
-                Modules.Logger.LogInfo($"Failed to sync pitFireTeam server settings: {ex.Message}");
-                return Task.CompletedTask;
-            }
+            try { await GameplayModeRuntime.SynchronizeAsync(); }
+            catch (Exception ex) { Modules.Logger.LogInfo($"Failed to sync pitFireTeam server settings: {ex.Message}"); }
         }
-
         private static ConfigurationManagerAttributes CreateConfigAttributes(int order, bool browsable, Dictionary<string, string> languageEntry)
         {
             string displayName = null;
@@ -1426,8 +1466,7 @@ namespace pitTeam
 
                     if (follower != null && bot.HealthController.IsAlive)
                     {
-                        global::pitTeam.Utils.FollowerMedical.CancelAllHealing(bot, recoverDestroyedSurgeryParts: true);
-                        global::pitTeam.Utils.FollowerMedical.ForceHeal(bot);
+                        global::pitTeam.Utils.FollowerMedical.ForceHeal(bot, clearNegativeEffects: true);
                     }
                 }
             }
@@ -1496,38 +1535,56 @@ namespace pitTeam
 
                 if (registerWithDescription != null)
                 {
+#if DEBUG
                     RegisterDebugConsoleCommand(
                         processor,
                         registerWithDescription,
                         "fs_spawnfollower",
                         SpawnFollowerConsoleCommand,
-                        "Spawn a follower bot near the player");
+                        "Spawn a recruited follower near the player (Debug only)");
+                    Modules.Logger.LogInfo("Registered console command: fs_spawnfollower");
+                    RegisterDebugConsoleCommand(
+                        processor,
+                        registerWithDescription,
+                        "fs_spawnscavfollower",
+                        SpawnScavFollowerConsoleCommand,
+                        "Spawn a recruited scav near the player (Debug only)");
+                    Modules.Logger.LogInfo("Registered console command: fs_spawnscavfollower");
+#endif
                     RegisterDebugConsoleCommand(
                         processor,
                         registerWithDescription,
                         "fs_spawnscav",
                         SpawnScavConsoleCommand,
                         "Spawn a scav enemy at the point you are looking at");
-                    Modules.Logger.LogInfo("Registered console command: fs_spawnfollower");
                     Modules.Logger.LogInfo("Registered console command: fs_spawnscav");
                     return;
                 }
 
                 if (registerSimple != null)
                 {
+#if DEBUG
                     RegisterDebugConsoleCommand(
                         processor,
                         registerSimple,
                         "fs_spawnfollower",
                         SpawnFollowerConsoleCommand,
                         null);
+                    Modules.Logger.LogInfo("Registered console command: fs_spawnfollower");
+                    RegisterDebugConsoleCommand(
+                        processor,
+                        registerSimple,
+                        "fs_spawnscavfollower",
+                        SpawnScavFollowerConsoleCommand,
+                        null);
+                    Modules.Logger.LogInfo("Registered console command: fs_spawnscavfollower");
+#endif
                     RegisterDebugConsoleCommand(
                         processor,
                         registerSimple,
                         "fs_spawnscav",
                         SpawnScavConsoleCommand,
                         null);
-                    Modules.Logger.LogInfo("Registered console command: fs_spawnfollower");
                     Modules.Logger.LogInfo("Registered console command: fs_spawnscav");
                     return;
                 }
@@ -1558,25 +1615,39 @@ namespace pitTeam
             registerMethod.Invoke(processor, new object[] { command, action });
         }
 
+#if DEBUG
         private static void SpawnFollowerConsoleCommand()
         {
-            _ = SpawnFollowerConsoleCommandAsync();
+            _ = SpawnRecruitConsoleCommandAsync("fs_spawnfollower", false);
         }
 
-        private static async Task SpawnFollowerConsoleCommandAsync()
+        private static void SpawnScavFollowerConsoleCommand()
+        {
+            _ = SpawnRecruitConsoleCommandAsync("fs_spawnscavfollower", true);
+        }
+
+        internal static EPlayerSide ResolveDebugRecruitSide(EPlayerSide playerSide, bool allegiance, bool scavFollower, bool chooseBear)
+        {
+            if (scavFollower) return EPlayerSide.Savage;
+            return allegiance ? (chooseBear ? EPlayerSide.Bear : EPlayerSide.Usec) : playerSide;
+        }
+
+        private static async Task SpawnRecruitConsoleCommandAsync(string command, bool scavFollower)
         {
             if (!Singleton<AbstractGame>.Instantiated || Singleton<GameWorld>.Instance == null || GamePlayerOwner.MyPlayer == null)
             {
-                DebugConsoleLog("fs_spawnfollower: this command can only be used in-raid.", true);
+                DebugConsoleLog($"{command}: this command can only be used in-raid.", true);
                 return;
             }
 
             Player player = GamePlayerOwner.MyPlayer;
-            EPlayerSide spawnSide = player.Side;
+            bool allegiance = GameplayModeRuntime.IsAllegiance;
+            bool chooseBear = !scavFollower && allegiance && UnityEngine.Random.Range(0, 2) == 0;
+            EPlayerSide spawnSide = ResolveDebugRecruitSide(player.Side, allegiance, scavFollower, chooseBear);
 
             if (BossPlayers.Instance == null)
             {
-                DebugConsoleLog("fs_spawnfollower: boss system is not initialized.", true);
+                DebugConsoleLog($"{command}: boss system is not initialized.", true);
                 return;
             }
 
@@ -1585,21 +1656,21 @@ namespace pitTeam
             {
                 if (BotsControllerPatch.Controller == null)
                 {
-                    DebugConsoleLog("fs_spawnfollower: bots controller is not ready.", true);
+                    DebugConsoleLog($"{command}: bots controller is not ready.", true);
                     return;
                 }
 
                 boss = BossPlayers.AddPlayerAsBoss(player, BotsControllerPatch.Controller);
                 if (boss == null)
                 {
-                    DebugConsoleLog("fs_spawnfollower: failed to initialize player boss.", true);
+                    DebugConsoleLog($"{command}: failed to initialize player boss.", true);
                     return;
                 }
             }
 
             if (BotsControllerPatch.Instance == null)
             {
-                DebugConsoleLog("fs_spawnfollower: bots patch instance is missing.", true);
+                DebugConsoleLog($"{command}: bots patch instance is missing.", true);
                 return;
             }
 
@@ -1613,21 +1684,22 @@ namespace pitTeam
                 );
                 if (result)
                 {
-                    DebugConsoleLog($"fs_spawnfollower: spawn requested ({spawnSide}).", false);
+                    DebugConsoleLog($"{command}: recruited follower spawn requested ({spawnSide}, mode={GameplayModeRuntime.Current}).", false);
                 }
                 else
                 {
                     string details = string.IsNullOrEmpty(spawnFailureReason) ? "unknown reason" : spawnFailureReason;
-                    DebugConsoleLog($"fs_spawnfollower: spawn request failed ({details}).", true);
+                    DebugConsoleLog($"{command}: spawn request failed ({details}).", true);
                 }
             }
             catch (Exception ex)
             {
-                DebugConsoleLog($"fs_spawnfollower: exception: {ex.Message}", true);
+                DebugConsoleLog($"{command}: exception: {ex.Message}", true);
                 Modules.Logger.LogError(ex);
             }
         }
 
+#endif
         private static void SpawnScavConsoleCommand()
         {
             _ = SpawnScavConsoleCommandAsync();
@@ -1798,7 +1870,7 @@ namespace pitTeam
                 _BotTeleport();
             }
 
-            else if (healKey.Value.IsUp())
+            else if (GameplayModeRuntime.GetEffectiveValue(healKey).IsUp())
             {
                 _BotHeal();
             }

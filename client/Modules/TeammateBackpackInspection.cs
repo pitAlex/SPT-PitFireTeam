@@ -4,6 +4,7 @@ using EFT.UI.Screens;
 using pitTeam.Components;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace pitTeam.Modules
@@ -26,6 +27,7 @@ namespace pitTeam.Modules
         private static EFT.InventoryLogic.SearchableItem? _targetBackpack;
         private static IItemOwner? _targetBackpackOwner;
         private static HashSet<string>? _initialBackpackItemIds;
+        private static Dictionary<string, int> _scavCargoStackCounts;
         private static HashSet<string>? _initialTrackedItemIds;
         private static Dictionary<string, HashSet<string>>? _initialTrackedItemTreeIds;
         private static float _openedAtTime;
@@ -113,6 +115,30 @@ namespace pitTeam.Modules
             return TryGetInspectableBackpack(player, out _, out _, out _);
         }
 
+        public static bool CanShowSwapGearInteraction(Player player)
+        {
+            Player target = ResolveInteractionTargetPlayer(player, false);
+            BotOwner bot = target?.AIData?.BotOwner;
+            BotFollowerPlayer follower = BossPlayers.Instance?.GetFollower(bot);
+            return bot != null && bot.BotState == EBotState.Active && !bot.IsDead &&
+                   follower?.IsSpawnedSquadMate == true && follower.GetBoss()?.realPlayer == player &&
+                   !HasActiveOrPendingHealWork(bot);
+        }
+
+        public static bool CanShowGiveGearInteraction(Player player)
+        {
+            var bot = ResolveInteractionTargetPlayer(player, false)?.AIData?.BotOwner;
+            var follower = BossPlayers.Instance?.GetFollower(bot);
+            return player?.HealthController?.IsAlive == true && bot != null && !bot.IsDead &&
+                bot.BotState == EBotState.Active && follower?.IsSquadMate == false &&
+                follower.GetBoss()?.realPlayer == player && !follower.HasKnownEnemy() &&
+                bot.Memory?.HaveEnemy != true && bot.Memory?.IsUnderFire != true &&
+                !HasActiveOrPendingHealWork(bot) && !HasActiveOrPendingPickupWork(bot, follower) &&
+                bot.WeaponManager?.Selector?.IsChanging != true && bot.WeaponManager?.Grenades?.ThrowindNow != true &&
+                bot.WeaponManager?._currentWeaponInfo?.Reload?.Reloading != true &&
+                bot.WeaponManager?.CanChangeHands() == true;
+        }
+
         public static bool TryOpenFromQuickInteraction(GamePlayerOwner owner)
         {
             try
@@ -156,6 +182,7 @@ namespace pitTeam.Modules
                 _targetBackpackOwner = backpack.Owner;
                 _targetBackpackOwner.AddItemEvent += HandleBackpackItemAdded;
                 _initialBackpackItemIds = SnapshotAllItemIds(backpack);
+                _scavCargoStackCounts = backpack.GetAllItems().ToDictionary(item => item.Id, item => item.StackObjectsCount);
                 _initialTrackedItemIds = SnapshotTrackedItemIdsInBackpack(liveBot, _initialBackpackItemIds);
                 _initialTrackedItemTreeIds = SnapshotTrackedItemTreesInBackpack(backpack, _initialTrackedItemIds);
                 _openedAtTime = Time.time;
@@ -230,7 +257,7 @@ namespace pitTeam.Modules
             return backpack != null;
         }
 
-        private static Player ResolveInteractionTargetPlayer(Player player)
+        internal static Player ResolveInteractionTargetPlayer(Player player, bool spawnedOnly = true)
         {
             if (player == null)
             {
@@ -240,7 +267,8 @@ namespace pitTeam.Modules
             // EFT's InteractablePlayer is updated by a narrow collider raycast and can stay stale until the
             // next stock interaction event. Keep it only if the player is still really looking at that follower.
             Player stockTarget = player.InteractablePlayer;
-            if (IsLookedAtCandidate(player, stockTarget))
+            if (IsLookedAtCandidate(player, stockTarget) &&
+                (spawnedOnly || BossPlayers.Instance?.GetFollower(stockTarget.AIData?.BotOwner)?.GetBoss()?.realPlayer == player))
             {
                 return stockTarget;
             }
@@ -253,7 +281,8 @@ namespace pitTeam.Modules
             float bestAngle = float.MaxValue;
             foreach (BotFollowerPlayer follower in BossPlayers.GetFollowers())
             {
-                if (follower?.IsSquadMate != true)
+                if (follower == null || (spawnedOnly && !follower.IsSquadMate) ||
+                    (!spawnedOnly && follower.GetBoss()?.realPlayer != player))
                 {
                     continue;
                 }
@@ -325,7 +354,7 @@ namespace pitTeam.Modules
                    bot.GetPlayer.HealthController?.IsAlive == true;
         }
 
-        private static bool HasActiveOrPendingHealWork(BotOwner bot)
+        internal static bool HasActiveOrPendingHealWork(BotOwner bot)
         {
             if (bot?.Medecine == null)
             {
@@ -342,7 +371,7 @@ namespace pitTeam.Modules
                    currentDecision == BotLogicDecision.healStimulators;
         }
 
-        private static bool HasActiveOrPendingPickupWork(BotOwner bot, BotFollowerPlayer follower)
+        internal static bool HasActiveOrPendingPickupWork(BotOwner bot, BotFollowerPlayer follower)
         {
             if (bot == null)
             {
@@ -422,7 +451,7 @@ namespace pitTeam.Modules
             }
         }
 
-        private static void MarkItemTreeVisible(IPlayerSearchController searchController, Item rootItem)
+        internal static void MarkItemTreeVisible(IPlayerSearchController searchController, Item rootItem)
         {
             if (searchController == null || rootItem == null)
             {
@@ -620,6 +649,7 @@ namespace pitTeam.Modules
                 _targetBackpack = null;
                 _targetBackpackOwner = null;
                 _initialBackpackItemIds = null;
+                _scavCargoStackCounts = null;
                 _initialTrackedItemIds = null;
                 _initialTrackedItemTreeIds = null;
                 _openedAtTime = 0f;
@@ -651,7 +681,7 @@ namespace pitTeam.Modules
             _targetFollower?.SetBackpackInspectionActive(false);
         }
 
-        private static void TrackBackpackItemChanges()
+        internal static void TrackBackpackItemChanges()
         {
             if (_targetBot == null || _targetBackpack == null || _initialBackpackItemIds == null)
             {
@@ -663,28 +693,29 @@ namespace pitTeam.Modules
             HashSet<string> currentBackpackItemIds = SnapshotAllItemIds(_targetBackpack);
             foreach (Item item in _targetBackpack.GetAllItems())
             {
+                if (_scavCargoStackCounts?.TryGetValue(item.Id, out int previousCount) == true)
+                    AllegianceScavCargo.TrackStackChange(_targetBot, item, previousCount);
                 if (!_initialBackpackItemIds.Contains(item.Id) &&
                     !HasNewAncestorInBackpack(item, _targetBackpack, _initialBackpackItemIds))
                 {
                     InteractableObjects.RegisterStrictCargoTree(_targetBot, item);
                     InteractableObjects.StoreItem(_targetBot, item);
+                    AllegianceScavCargo.TrackGiven(_targetBot, item);
                 }
             }
+            if (_scavCargoStackCounts != null)
+                AllegianceScavCargo.RemoveGiven(_targetBot, _scavCargoStackCounts.Keys.Where(id => !currentBackpackItemIds.Contains(id)).ToArray());
+            _scavCargoStackCounts = _targetBackpack.GetAllItems().ToDictionary(item => item.Id, item => item.StackObjectsCount);
 
             // Strict-cargo provenance ends as soon as the player takes the item back. Compare the
             // complete backpack snapshots directly instead of relying on return-root bookkeeping;
             // this also clears removed weapon parts, inserted magazines, and nested cargo items.
             HashSet<string> removedBackpackItemIds = new HashSet<string>(_initialBackpackItemIds, StringComparer.Ordinal);
             removedBackpackItemIds.ExceptWith(currentBackpackItemIds);
-            int clearedStrictItemCount = InteractableObjects.RemoveStrictCargoItemIds(
+            AllegianceScavCargo.RemoveGiven(_targetBot, removedBackpackItemIds);
+            InteractableObjects.RemoveStrictCargoItemIds(
                 _targetBot.ProfileId,
                 removedBackpackItemIds);
-            if (clearedStrictItemCount > 0)
-            {
-                Logger.LogInfo(
-                    $"[LootCommand][CargoProvenance] follower='{_targetBot.Profile?.Nickname ?? _targetBot.ProfileId ?? "unknown"}' " +
-                    $"classification=removedFromBackpack clearedStrictItems={clearedStrictItemCount}");
-            }
 
             if (_initialTrackedItemIds == null)
             {

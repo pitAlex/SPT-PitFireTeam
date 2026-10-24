@@ -1,5 +1,4 @@
 using EFT;
-using EFT.InventoryLogic;
 using pitTeam.Components;
 using pitTeam.Modules;
 using System;
@@ -137,6 +136,15 @@ namespace pitTeam.BigBrain
                 return FinishForEmergency(emergencyDecision);
             }
 
+            // Commit impact points before drawing. Losing visual contact during the draw does
+            // not invalidate suppression; execution rechecks the stored points and their safety.
+            if (launcherPlan == null &&
+                !CombatCommon.TryPrepareGrenadeLauncherFirePlan(
+                    goalEnemy, GetModeReasonPrefix(), ordered, out launcherPlan))
+            {
+                return FailObjective("noSuppressionPlan");
+            }
+
             if (!launcherReady)
             {
                 if (!CombatCommon.TryPrepareGrenadeLauncherWeaponForSuppress(
@@ -201,7 +209,7 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEnd("grenadierEnemyMissing", true);
             }
 
-            if (currentDecision.Action == BotLogicDecision.shootFromPlace)
+            if (currentDecision.Action == BotLogicDecision.suppressFire)
             {
                 return EndLauncherFire(currentDecision.Reason);
             }
@@ -458,24 +466,7 @@ namespace pitTeam.BigBrain
             out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
-            if (launcherPlan != null && TryUseLauncherPlan(goalEnemy, launcherPlan, out decision))
-            {
-                return true;
-            }
-
-            launcherPlan = null;
-            if (!CombatCommon.TryPrepareGrenadeLauncherFirePlan(
-                    goalEnemy,
-                    GetModeReasonPrefix(),
-                    ordered,
-                    out FollowerCombatCommon.GrenadeLauncherFirePlan? preparedPlan) ||
-                preparedPlan == null)
-            {
-                return false;
-            }
-
-            launcherPlan = preparedPlan;
-            return TryUseLauncherPlan(goalEnemy, preparedPlan, out decision);
+            return launcherPlan != null && TryUseLauncherPlan(goalEnemy, launcherPlan, out decision);
         }
 
         private bool TryUseLauncherPlan(
@@ -496,71 +487,30 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
-            launcherPlan = null;
             return false;
         }
 
         private AICoreActionEnd EndLauncherFire(string? reason)
         {
-            EnemyInfo? goalEnemy = BotOwner.Memory?.GoalEnemy;
-            if (!CombatCommon.HasActiveCombatEnemy(goalEnemy))
+            AICoreActionEnd end = CombatCommon.EndSuppressFire(reason);
+            if (!end.Value)
             {
-                complete = true;
-                launcherPlan = null;
-                ClearObjectiveCommitments();
-                return new AICoreActionEnd("grenadierEnemyMissing", true);
+                return end;
             }
 
-            Weapon? launcher = FollowerCombatCommon.GetActiveOrEquippedGrenadeLauncher(BotOwner);
-            if (FollowerCombatCommon.CountLoadedRounds(launcher) <= 0)
+            bool fired = CombatCommon.HasFiredGrenadeLauncherSuppressShot;
+            complete = true;
+            launcherPlan = null;
+            RecordAttemptCooldown(fired ? end.Reason : $"fail.{end.Reason}");
+            CombatCommon.PrepareLauncherSuppressWeaponFallback();
+            if (!fired || FollowerCombatCommon.IsSingleUseLauncherWeapon(
+                    FollowerCombatCommon.GetActiveOrEquippedGrenadeLauncher(BotOwner)))
             {
-                if (FollowerCombatCommon.IsSingleUseLauncherWeapon(launcher))
-                {
-                    complete = true;
-                    RecordAttemptCooldown("launcherSingleUseSpent");
-                    CombatCommon.PrepareLauncherSuppressWeaponFallback();
-                    CombatCommon.RequestFirstPrimaryLauncherHolsterFallback("launcherSingleUseSpent");
-                    ClearObjectiveCommitments();
-                    return new AICoreActionEnd("launcherSingleUseSpent", true);
-                }
-
-                // Leave the ordinary shooting node as soon as the cylinder/barrel is empty. The
-                // objective preparation step owns the bounded loose-ammo reload and then returns to
-                // normal fire without completing a one-shot suppression task.
-                launcherReady = false;
-                launcherPlan = null;
-                activeUntil = Time.time + OpportunityWindowSeconds;
-                return new AICoreActionEnd("launcherNeedsReload", true);
+                CombatCommon.RequestFirstPrimaryLauncherHolsterFallback(
+                    fired ? "launcherSingleUseSpent" : $"grenadierFail.{end.Reason}");
             }
-
-            if (!FollowerCombatCommon.TryCanUseGrenadeLauncherNormalFire(
-                    BotOwner,
-                    goalEnemy,
-                    ordered,
-                    out _,
-                    out string fireRejectReason))
-            {
-                bool continueCommittedPrimaryShot =
-                    string.Equals(fireRejectReason, "enemyNotVisible", StringComparison.Ordinal) &&
-                    FollowerCombatCommon.TryContinueFirstPrimaryGrenadeLauncherNormalFire(
-                        BotOwner,
-                        goalEnemy,
-                        ordered,
-                        out _,
-                        out _);
-                if (continueCommittedPrimaryShot)
-                {
-                    return default;
-                }
-
-                launcherPlan = null;
-                return new AICoreActionEnd($"launcherNormalFireRejected:{fireRejectReason}", true);
-            }
-
-            // CombatShootFromPlaceAction runs EFT's normal aim-and-trigger worker directly after
-            // launcher arc safety succeeds. Do not delegate to EndShootFromPlace here because that
-            // outer rifle end gate rejects the same valid arc whenever GoalEnemy.CanShoot is false.
-            return default;
+            ClearObjectiveCommitments();
+            return end;
         }
 
         private AICoreActionEnd EndLauncherMove()

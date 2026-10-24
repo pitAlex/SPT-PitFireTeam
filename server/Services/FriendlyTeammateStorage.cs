@@ -1,0 +1,228 @@
+using pitTeam.Server.Models;
+using pitTeam.Server.Persistence;
+using SPTarkov.Common.Models.Logging;
+using SPTarkov.DI.Annotations;
+using SPTarkov.Server.Core.Models.Common;
+using SPTarkov.Server.Core.Models.Eft.Common.Tables;
+using SPTarkov.Server.Core.Utils;
+using System.Text.Json;
+using Path = System.IO.Path;
+
+namespace pitTeam.Server.Services;
+
+/// <summary>All follower persistence goes through here; loose JSON is read only by the one-time importer.</summary>
+// All routes must share the per-profile database cache and its operation locks.
+[Injectable(InjectionType.Singleton)]
+public class FriendlyTeammateStorage(FileUtil fileUtil, JsonUtil jsonUtil, ISptLogger<FriendlyTeammateStorage> logger, FriendlyServerSettingsService settingsService)
+{
+    private readonly object sync = new();
+    private readonly Dictionary<string, TeammateDatabase> databases = new(StringComparer.Ordinal);
+    private string GetRoot(bool allegiance) => Path.Combine(fileUtil.GetModPath("pitFireTeam-ServerMod"), "Resources", allegiance ? "teammates-allegiance" : "teammates");
+    private string RootDirectory => GetRoot(settingsService.LoadSettings().IsAllegiance);
+
+    public void PrepareMode(MongoId sessionId, bool allegiance) => GetDatabase(sessionId, allegiance);
+
+    public void InitializeAllProfiles(IEnumerable<MongoId> profileIds)
+    {
+        foreach (string profileId in profileIds.Select(id => id.ToString()).Concat(GetStoredProfileIds()).Distinct())
+        {
+            try
+            {
+                InitializeProfile(new MongoId(profileId));
+            }
+            catch (Exception ex)
+            {
+                // Keep other player profiles usable. Access to this profile still fails/retries through
+                // GetDatabase; never register an empty replacement or accept a partially imported roster.
+                logger.Warning($"Teammate storage startup skipped profile '{profileId}': {ex.Message}");
+            }
+        }
+    }
+
+    public void InitializeProfile(MongoId sessionId) => GetDatabase(sessionId);
+
+    public void WipeProfile(MongoId sessionId)
+    {
+        lock (sync)
+        {
+            // Initialize both before clearing either. Keep cached owners and migration markers.
+            var hired = GetDatabase(sessionId, false);
+            var allegiance = GetDatabase(sessionId, true);
+            allegiance.Wipe();
+            hired.Wipe();
+        }
+    }
+
+    public List<BotBase> ReadProfiles(MongoId sessionId) => GetDatabase(sessionId).ReadProfiles()
+        .Select(entry => Deserialize<BotBase>(entry.Value, entry.Key)).ToList();
+
+    // Account-wide mod state lives in the canonical Guns for Hire database, independently
+    // of the active roster. Explicit mode access never changes the global mode selection.
+    public T? ReadSharedDocument<T>(MongoId sessionId, string name) where T : class =>
+        ReadModeDocument<T>(sessionId, name, false);
+
+    public void WriteSharedDocument<T>(MongoId sessionId, string name, T value) =>
+        WriteModeDocuments(sessionId, false, new Dictionary<string, string>
+        {
+            [name] = jsonUtil.Serialize(value) ?? throw new InvalidDataException($"Unable to serialize shared document: {name}")
+        });
+
+    public bool HasTeammatesInEitherMode(MongoId sessionId) =>
+        GetDatabase(sessionId, false).ReadProfiles().Count > 0 || GetDatabase(sessionId, true).ReadProfiles().Count > 0;
+
+    public T? ReadModeDocument<T>(MongoId sessionId, string name, bool allegiance) where T : class
+    {
+        string? json = GetDatabase(sessionId, allegiance).Read(name);
+        return json == null ? null : Deserialize<T>(json, name);
+    }
+
+    public void WriteModeDocuments(MongoId sessionId, bool allegiance, IReadOnlyDictionary<string, string> documents) =>
+        GetDatabase(sessionId, allegiance).WriteBatch(documents);
+
+    public HashSet<int> GetAllAccountIds()
+    {
+        var result = new HashSet<int>();
+        foreach (bool allegiance in new[] { false, true })
+        foreach (string profileId in GetStoredProfileIds(GetRoot(allegiance)))
+        {
+            foreach (var entry in GetDatabase(new MongoId(profileId), allegiance).ReadProfiles())
+            {
+                var teammate = Deserialize<BotBase>(entry.Value, entry.Key);
+                if (teammate.Aid is > 0) result.Add(teammate.Aid.Value);
+            }
+        }
+        return result;
+    }
+
+    public T? Read<T>(MongoId sessionId, string name) where T : class
+    {
+        string? json = GetDatabase(sessionId).Read(name);
+        return json == null ? null : Deserialize<T>(json, name);
+    }
+
+    public bool Exists(MongoId sessionId, string name) => GetDatabase(sessionId).Read(name) != null;
+
+    public void Write<T>(MongoId sessionId, string name, T value, bool backupPrevious = false) =>
+        GetDatabase(sessionId).WriteBatch(new Dictionary<string, string>
+        {
+            [name] = jsonUtil.Serialize(value) ?? throw new InvalidDataException($"Unable to serialize teammate document: {name}")
+        }, backupPrevious);
+
+    public void WriteBatch(MongoId sessionId, IReadOnlyDictionary<string, string> documents) =>
+        GetDatabase(sessionId).WriteBatch(documents);
+
+    public bool DeleteTeammate(MongoId sessionId, int aid, IReadOnlyDictionary<string, string>? receipt = null) =>
+        GetDatabase(sessionId).DeleteTeammate(aid, receipt);
+
+    private TeammateDatabase GetDatabase(MongoId sessionId) => GetDatabase(sessionId, settingsService.LoadSettings().IsAllegiance);
+
+    private TeammateDatabase GetDatabase(MongoId sessionId, bool allegiance)
+    {
+        string profileId = sessionId.ToString();
+        string root = GetRoot(allegiance);
+        string cacheKey = root + "/" + profileId;
+        lock (sync)
+        {
+            if (databases.TryGetValue(cacheKey, out var existing)) return existing;
+            var database = new TeammateDatabase(root, profileId);
+            try
+            {
+                database.Initialize(() => allegiance ? new Dictionary<string, string>() : LoadLegacyDocuments(profileId));
+                databases.Add(cacheKey, database);
+                if (!allegiance) TryBackupImportedDirectory(database);
+                logger.Info($"Teammate database ready: '{database.DatabasePath}'.");
+                return database;
+            }
+            catch (Exception ex)
+            {
+                logger.Error($"Unable to initialize teammate database '{database.DatabasePath}': {ex.Message}.");
+                throw;
+            }
+        }
+    }
+
+    private void TryBackupImportedDirectory(TeammateDatabase database)
+    {
+        // DatabasePath is absolute and its profile id is validated. Both paths are siblings
+        // inside the teammate storage root; rename the whole folder without changing its files.
+        string directory = Path.ChangeExtension(database.DatabasePath, null);
+        string backup = directory + ".backup";
+        if (!Directory.Exists(directory)) return;
+        try
+        {
+            if (Directory.Exists(backup) || File.Exists(backup))
+            {
+                logger.Warning($"Teammate backup path already exists: '{backup}'. Original folder retained.");
+                return;
+            }
+            Directory.Move(directory, backup);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Import is already committed. Keep the database usable and retry on the next startup.
+            logger.Warning($"Unable to rename teammate JSON folder '{directory}' to '{backup}': {ex.Message}");
+        }
+    }
+
+    private IEnumerable<string> GetStoredProfileIds() => GetStoredProfileIds(RootDirectory);
+
+    private IEnumerable<string> GetStoredProfileIds(string root)
+    {
+        if (!Directory.Exists(root)) return [];
+        return Directory.GetDirectories(root).Select(Path.GetFileName)
+            .Concat(Directory.GetFiles(root, "*.db").Select(Path.GetFileNameWithoutExtension))
+            .Where(name => name != null && TeammateDatabase.IsProfileId(name))
+            .Select(name => name!).Distinct().ToArray();
+    }
+
+    private IReadOnlyDictionary<string, string> LoadLegacyDocuments(string profileId)
+    {
+        string directory = Path.Combine(GetRoot(false), profileId);
+        var documents = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (!Directory.Exists(directory)) return documents;
+        foreach (string file in Directory.GetFiles(directory).Order(StringComparer.Ordinal))
+        {
+            string name = Path.GetFileName(file);
+            if (!TeammateDatabase.IsLegacyDocument(name)) continue;
+            string json = File.ReadAllText(file);
+            try
+            {
+                ValidateLegacyDocument(name, json);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidDataException($"Cannot import legacy teammate document '{file}': {ex.Message}", ex);
+            }
+            documents.Add(name, json);
+        }
+        return documents;
+    }
+
+    private void ValidateLegacyDocument(string name, string json)
+    {
+        using var document = JsonDocument.Parse(json, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip });
+        if (TeammateDatabase.IsProfileDocument(name))
+        {
+            var profile = Deserialize<BotBase>(json, name);
+            int aid = int.Parse(name[..^5]);
+            if (profile.Id == null || profile.Aid != aid || profile.Inventory == null || profile.Info == null)
+                throw new InvalidDataException("Missing profile identity/inventory/info or account id does not match the filename.");
+        }
+        else if (name.EndsWith("-settings.json", StringComparison.OrdinalIgnoreCase))
+        {
+            if (document.RootElement.ValueKind != JsonValueKind.Object) throw new InvalidDataException("Settings must be an object.");
+            Deserialize<FriendlyTeammateSettings>(json, name);
+        }
+        else if (name.EndsWith("-equipment.json", StringComparison.OrdinalIgnoreCase))
+        {
+            Deserialize<List<Item>>(json, name);
+        }
+        else
+        {
+            Deserialize<List<FriendlyRecruitRequestEntry>>(json, name);
+        }
+    }
+
+    private T Deserialize<T>(string json, string name) where T : class =>
+        jsonUtil.Deserialize<T>(json) ?? throw new InvalidDataException($"Empty teammate document: {name}");
+}

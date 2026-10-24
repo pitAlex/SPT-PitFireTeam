@@ -42,7 +42,7 @@ namespace pitTeam.Patches
             FriendlyTeammateBodyResponse<T> body = null;
             try
             {
-                body = JsonConvert.DeserializeObject<FriendlyTeammateBodyResponse<T>>(responseJson);
+                body = JsonConvert.DeserializeObject<FriendlyTeammateBodyResponse<T>>(responseJson, GetDefaultJsonConverters());
             }
             catch
             {
@@ -85,7 +85,7 @@ namespace pitTeam.Patches
             return body.ToJson(GetDefaultJsonConverters());
         }
 
-        private static JsonConverter[] GetDefaultJsonConverters()
+        internal static JsonConverter[] GetDefaultJsonConverters()
         {
             Type converterClass = typeof(AbstractGame).Assembly
                 .GetTypes()
@@ -374,48 +374,17 @@ namespace pitTeam.Patches
         {
             CustomDropdownIds.Clear();
 
-            List<dropDownItem> loadoutItems = [];
-            HashSet<string> loadoutIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            FriendlyProfileDropdownItem defaultLoadout = new FriendlyProfileDropdownItem
+            {
+                Id = DefaultLoadoutId,
+                Name = DefaultLoadoutName
+            };
+            CustomDropdownIds.Add(defaultLoadout.Id);
+            List<dropDownItem> loadoutItems = new List<dropDownItem> { defaultLoadout };
             HashSet<string> tacticIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             Dictionary<string, string> tacticValueByDropdownId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            dropDownItem currentLoadout = null;
-            dropDownItem defaultLoadout = null;
-            foreach (FriendlyTeammateLoadoutOption option in options.Loadouts)
-            {
-                FriendlyProfileDropdownItem item = new FriendlyProfileDropdownItem
-                {
-                    Id = option.Id,
-                    Name = option.Name
-                };
-
-                CustomDropdownIds.Add(item.Id);
-                loadoutIds.Add(item.Id);
-                loadoutItems.Add(item);
-
-                if (string.Equals(option.Id, DefaultLoadoutId, StringComparison.OrdinalIgnoreCase))
-                {
-                    defaultLoadout = item;
-                }
-
-                if (string.Equals(option.Id, options.CurrentLoadoutId, StringComparison.OrdinalIgnoreCase))
-                {
-                    currentLoadout = item;
-                }
-            }
-
-            if (pitFireTeam.IsFollowerLoadoutRealTransferMode())
-            {
-                currentLoadout = defaultLoadout ?? currentLoadout;
-            }
-
-            currentLoadout ??= loadoutItems.FirstOrDefault();
-            if (currentLoadout == null)
-            {
-                return;
-            }
-
-            ActiveTeammateLoadoutId = currentLoadout.Id;
-            ActiveTeammateLoadoutName = currentLoadout.Name;
+            ActiveTeammateLoadoutId = DefaultLoadoutId;
+            ActiveTeammateLoadoutName = DefaultLoadoutName;
 
             List<dropDownItem> tacticItems = [];
             dropDownItem currentTactic = null;
@@ -426,6 +395,8 @@ namespace pitTeam.Patches
                     {
                         new FriendlyTeammateTacticOption { Id = "Rifleman", Name = "Rifleman" },
                         new FriendlyTeammateTacticOption { Id = "Marksman", Name = "Marksman" },
+                        new FriendlyTeammateTacticOption { Id = "SainMan", Name = GetSocialUiText("ProfileTacticSainMan") },
+                        new FriendlyTeammateTacticOption { Id = "SAINShooter", Name = GetSocialUiText("ProfileTacticSAINShooter") },
                     };
 
             int tacticIdSeed = 0;
@@ -439,7 +410,7 @@ namespace pitTeam.Patches
                 }
 
                 string tacticValue = tactic.Id;
-                if (IsBetaHiddenTactic(tacticValue))
+                if (IsUnavailableTactic(tacticValue))
                 {
                     continue;
                 }
@@ -470,35 +441,10 @@ namespace pitTeam.Patches
                 return;
             }
 
-            panel.Show(loadoutItems, currentLoadout, tacticItems, currentTactic, false, selected =>
+            panel.Show(loadoutItems, defaultLoadout, tacticItems, currentTactic, false, selected =>
             {
                 if (selected == null)
                 {
-                    return;
-                }
-
-                if (loadoutIds.Contains(selected.Id))
-                {
-                    try
-                    {
-                        string responseJson = RequestHandler.PostJson(LoadoutRoute, SerializeBody(new FriendlyTeammateLoadoutRequest
-                        {
-                            aid = profile.AccountId,
-                            loadoutId = selected.Id
-                        }));
-                        EnsureBodySuccess(responseJson);
-
-                        ActiveTeammateLoadoutId = selected.Id;
-                        ActiveTeammateLoadoutName = selected.Name;
-                        MarkSquadRosterDirty(profile?.AccountId);
-                        RefreshPlayerVisualization(profile, inventoryController, session, window);
-                    }
-                    catch (Exception ex)
-                    {
-                        Modules.Logger.LogError("[UI] Failed to persist teammate loadout change.");
-                        Modules.Logger.LogError(ex);
-                    }
-
                     return;
                 }
 
@@ -519,7 +465,7 @@ namespace pitTeam.Patches
                         EnsureBodySuccess(responseJson);
                         Modules.Logger.LogInfo($"[UI] Persisted teammate tactic '{tacticValue}' for '{profile.AccountId}'.");
 
-                        SetProficiencyAggressionForTactic(IsMarksmanTactic(tacticValue));
+                        SetProficiencyAggressionForTactic(tacticValue);
                         MarkSquadRosterDirty(profile?.AccountId);
                         RefreshPlayerVisualization(profile, inventoryController, session, window);
                     }
@@ -531,7 +477,7 @@ namespace pitTeam.Patches
                 }
             });
 
-            if (replaceLoadoutDropdown && pitFireTeam.IsFollowerLoadoutRealTransferMode())
+            if (replaceLoadoutDropdown)
             {
                 ReplaceLoadoutDropdownWithEditButton(screen, profile, panel);
             }
@@ -613,9 +559,11 @@ namespace pitTeam.Patches
             }
         }
 
-        private static bool IsBetaHiddenTactic(string tactic)
+        private static bool IsUnavailableTactic(string tactic)
         {
-            return string.Equals(tactic, "protector", StringComparison.OrdinalIgnoreCase);
+            return string.Equals(tactic, "protector", StringComparison.OrdinalIgnoreCase) ||
+                ((string.Equals(tactic, "SainMan", StringComparison.OrdinalIgnoreCase) ||
+                  string.Equals(tactic, "SAINShooter", StringComparison.OrdinalIgnoreCase)) && !pitFireTeam.IsSainManTacticAvailable);
         }
 
         private static void RefreshPlayerVisualization(ResultProfile profile, InventoryController inventoryController, EFT.IEftSession session, InventoryPlayerModelWithStatsWindow window)

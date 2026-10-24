@@ -237,6 +237,12 @@ namespace pitTeam.BigBrain.Actions
             BodyGearMove move,
             Callback callback)
         {
+            if (!PreservesEquippedMagazineReloadSpace(inventory?.Inventory?.Equipment, move?.Item, move?.DestinationAddress))
+            {
+                callback.Fail("Loot move would consume equipped magazine reload landing space");
+                return;
+            }
+
             if (move?.UseDirectAmmoLoadTransaction == true)
             {
                 try

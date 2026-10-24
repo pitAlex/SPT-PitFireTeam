@@ -1,4 +1,3 @@
-using Comfort.Common;
 using EFT;
 using EFT.InventoryLogic;
 using pitTeam.Modules;
@@ -92,66 +91,78 @@ namespace pitTeam.Patches
 
     internal class FollowerGrenadeReleasePatch : ModulePatch
     {
-        private static readonly FieldInfo BotOwnerField = AccessTools.Field(typeof(BotGrenadeController), "_owner");
-
         protected override MethodBase GetTargetMethod()
         {
-            return AccessTools.Method(typeof(BotGrenadeController), nameof(BotGrenadeController.CG_method_11));
+            // CG_method_11 is the on-used callback: the grenade already exists then.
+            return AccessTools.Method(typeof(Player.BaseGrenadeHandsController),
+                nameof(Player.BaseGrenadeHandsController.ThrowGrenade),
+                new[] { typeof(float), typeof(Vector3), typeof(Quaternion), typeof(Vector3), typeof(bool) });
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(BotGrenadeController __instance, Result<EFT.IGrenadeController> throwResult)
+        private static bool PatchPrefix(Player.BaseGrenadeHandsController __instance, Player ____player)
         {
-            BotOwner bot = BotOwnerField?.GetValue(__instance) as BotOwner;
+            BotOwner bot = ____player?.AIData?.BotOwner;
             if (bot == null || !BossPlayers.IsFollower(bot))
             {
                 return true;
             }
 
-            if (throwResult.Succeed && throwResult.Value != null)
+            BotGrenadeController grenades = bot.WeaponManager?.Grenades;
+            AIGreanageThrowData data = grenades?.AIGreanageThrowData;
+            string reason;
+            if (!ReferenceEquals(____player.HandsController, __instance))
             {
-                if (__instance.AIGreanageThrowData != null &&
-                    FollowerShotSafety.IsRegularGrenadeTrajectoryUnsafeForThrower(
-                        bot,
-                        __instance,
-                        __instance.AIGreanageThrowData,
-                        out string trajectoryRejectReason))
-                {
-                    BattleRecorder.RecordGrenadeEvent(
-                        bot,
-                        "releaseBlocked",
-                        trajectoryRejectReason,
-                        target: __instance.AIGreanageThrowData?.Target);
-                    __instance.EndAll(null);
-                    return false;
-                }
-
-                Vector3? target = __instance.AIGreanageThrowData?.Target;
-                if (target.HasValue &&
-                    FollowerShotSafety.IsFriendlyNearGrenadeImpact(
-                        bot,
-                        target.Value,
-                        FollowerShotSafety.RegularGrenadeUnsafeRadius,
-                        includeMovementPrediction: false,
-                        out string impactRejectReason))
-                {
-                    BattleRecorder.RecordGrenadeEvent(
-                        bot,
-                        "releaseBlocked",
-                        $"friendlyImpact:{impactRejectReason}",
-                        target: target.Value);
-                    __instance.EndAll(null);
-                    return false;
-                }
-
-                bool firstRelease = FollowerGrenadeRuntimeGate.MarkThrowReleased(bot);
-                if (firstRelease)
-                {
-                    BattleRecorder.RecordGrenadeEvent(bot, "release", "cooldownStart");
-                }
+                reason = "staleHandsController";
+            }
+            else if (FollowerGrenadeRuntimeGate.HasReleasedThrow(bot))
+            {
+                reason = "alreadyReleased";
+            }
+            else if (!FollowerGrenadeRuntimeGate.IsThrowAllowed(bot))
+            {
+                reason = "throwPermissionRevoked";
+            }
+            else if (data == null)
+            {
+                reason = "trajectoryMissing";
+            }
+            else if (FollowerShotSafety.IsFriendlyNearGrenadeImpact(bot, data.Target,
+                FollowerShotSafety.RegularGrenadeUnsafeRadius, includeMovementPrediction: false,
+                out string impactRejectReason))
+            {
+                reason = $"friendlyImpact:{impactRejectReason}";
+            }
+            else if (!FollowerShotSafety.IsRegularGrenadeTrajectoryUnsafeForThrower(bot, grenades, data, out reason))
+            {
+                return true;
             }
 
-            return true;
+            BattleRecorder.RecordGrenadeEvent(bot, "releaseBlocked", reason, target: data?.Target);
+            if (ReferenceEquals(____player.HandsController, __instance) &&
+                !FollowerGrenadeRuntimeGate.HasReleasedThrow(bot))
+                FollowerBlockedGrenadeRecovery.Record(bot, __instance);
+            return false;
+        }
+    }
+
+    internal class FollowerGrenadeSpawnPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+        {
+            return AccessTools.Method(typeof(Player.BaseGrenadeHandsController),
+                nameof(Player.BaseGrenadeHandsController.CreateAndRegisterGrenade),
+                new[] { typeof(Vector3), typeof(Quaternion), typeof(Vector3), typeof(float) });
+        }
+
+        [PatchPostfix]
+        private static void PatchPostfix(Player ____player, Grenade __result)
+        {
+            BotOwner bot = ____player?.AIData?.BotOwner;
+            if (__result == null || bot == null || !BossPlayers.IsFollower(bot)) return;
+            if (FollowerGrenadeRuntimeGate.MarkThrowReleased(bot))
+                BattleRecorder.RecordGrenadeEvent(bot, "release", "cooldownStart",
+                    target: bot.WeaponManager?.Grenades?.AIGreanageThrowData?.Target);
         }
     }
 }

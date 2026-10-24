@@ -285,7 +285,7 @@ namespace pitTeam.BigBrain.Actions
                     support,
                     magazineEligibility),
                 // Source rounds become part of tracked loot when they enter an approved looted
-                // support magazine, so Simple/Restricted do not touch protected spawn gear.
+                // support magazine, so Restricted do not touch protected spawn gear.
                 allowSearchedSourceTopOff: isLootedSupport || pitFireTeam.IsFollowerLoadoutLootableMode(),
                 out move,
                 allowLooseAmmoCarry);
@@ -305,7 +305,7 @@ namespace pitTeam.BigBrain.Actions
             move = null;
             hadCompatibleMagazine = false;
             Weapon weapon = GetEligibleDetachableWeaponForSlot(followerEquipment, weaponSlot);
-            if (!pitFireTeam.IsLootGearSwappingEnabled() ||
+            if (!IsRequestedWeaponPickupEnabled() ||
                 inventory == null ||
                 followerEquipment == null ||
                 sourceMagazineFactory == null ||
@@ -455,16 +455,6 @@ namespace pitTeam.BigBrain.Actions
                 return null;
             }
 
-            WeaponPrimaryReadinessSnapshot readiness = FollowerWeaponPrimaryReadiness.EvaluateActual(
-                inventory,
-                weapon);
-            if (readiness?.Threshold > 0 && readiness.InsertedContribution >= readiness.Threshold)
-            {
-                // A high-capacity inserted magazine that satisfies readiness by itself needs no
-                // protected landing slot under the established primary policy.
-                return null;
-            }
-
             EFT.InventoryLogic.Magazine inserted = GetCurrentMagazineSafely(weapon);
             if (inserted != null &&
                 FollowerWeaponPrimaryReadiness.HasMagazineReloadLandingSpace(
@@ -517,7 +507,7 @@ namespace pitTeam.BigBrain.Actions
             bool allowLooseAmmoCarry)
         {
             move = null;
-            if (!pitFireTeam.IsLootGearSwappingEnabled() ||
+            if (!IsRequestedWeaponPickupEnabled() ||
                 inventory == null ||
                 followerEquipment == null ||
                 sourceRoot == null ||

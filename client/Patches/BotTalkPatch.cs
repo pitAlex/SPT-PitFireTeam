@@ -15,6 +15,7 @@ namespace pitTeam.Patches
         {
             public EPhraseTrigger Phrase;
             public float UntilTime;
+            public bool RecruitmentResponse;
         }
 
         private static readonly Dictionary<string, ForcedPhraseState> StateByFollower = new Dictionary<string, ForcedPhraseState>(StringComparer.Ordinal);
@@ -42,6 +43,27 @@ namespace pitTeam.Patches
             }
 
             StateByFollower.Remove(owner.ProfileId);
+        }
+
+        public static void ArmRecruitmentResponse(BotOwner owner, EPhraseTrigger phrase, float durationSeconds)
+        {
+            Arm(owner, phrase, durationSeconds);
+            if (owner != null && !string.IsNullOrEmpty(owner.ProfileId) &&
+                StateByFollower.TryGetValue(owner.ProfileId, out ForcedPhraseState state))
+                state.RecruitmentResponse = true;
+        }
+
+        public static bool IsRecruitmentResponse(BotOwner owner, EPhraseTrigger phrase)
+        {
+            return TryGetArmedPhrase(owner, out EPhraseTrigger armed) && armed == phrase &&
+                StateByFollower[owner.ProfileId].RecruitmentResponse;
+        }
+
+        public static bool ShouldBlockRecruitmentChatter(BotOwner owner, EPhraseTrigger phrase)
+        {
+            return (phrase == EPhraseTrigger.MumblePhrase || phrase == EPhraseTrigger.OnMutter ||
+                phrase == EPhraseTrigger.OnFight) &&
+                TryGetArmedPhrase(owner, out _) && StateByFollower[owner.ProfileId].RecruitmentResponse;
         }
 
         public static bool ShouldBlock(BotOwner owner, EPhraseTrigger phrase)

@@ -370,7 +370,7 @@ namespace pitTeam.BigBrain.Actions
 
             BotOwner.LookData.SetLookPointByHearing(null);
             CommitLookMode(RunLookMode.KeepCurrent);
-            BotOwner.Steering.LookToDirection(BotOwner.LookDirection);
+            CombatAttackMoveLook.LookAlongMovementOrLevel(BotOwner);
         }
 
         private bool TryApplyCommittedLook(EnemyInfo goalEnemy, bool canRun)
@@ -413,9 +413,7 @@ namespace pitTeam.BigBrain.Actions
                     return false;
 
                 case RunLookMode.KeepCurrent:
-                    BotOwner.LookData.SetLookPointByHearing(null);
-                    BotOwner.Steering.LookToDirection(BotOwner.LookDirection);
-                    return true;
+                    return false;
             }
 
             return false;
@@ -579,13 +577,16 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
+            if (FollowerEnemyTracking.IsRealistic(goalEnemy) && !goalEnemy.IsVisible)
+                return TryMoveToPoint(FollowerEnemyTracking.Position(goalEnemy));
+
             if (TryFindEnemyRunPoint(goalEnemy, out Vector3 attackPoint) &&
                 TryMoveToPoint(attackPoint))
             {
                 return true;
             }
 
-            return TryMoveToEnemyFallback(goalEnemy.CurrPosition);
+            return TryMoveToEnemyFallback(pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy));
         }
 
         private bool TryMoveToEnemyFallback(Vector3 targetPoint)
@@ -723,7 +724,7 @@ namespace pitTeam.BigBrain.Actions
         private bool TryFindEnemyRunPoint(EnemyInfo goalEnemy, out Vector3 point)
         {
             point = Vector3.zero;
-            Vector3 enemyPosition = goalEnemy.CurrPosition;
+            Vector3 enemyPosition = pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy);
             if (!IsFinite(enemyPosition))
             {
                 return false;

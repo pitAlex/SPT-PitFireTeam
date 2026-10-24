@@ -11,8 +11,7 @@ namespace pitTeam.Patches
 {
     /// <summary>
     /// Stops stale vanilla action/reload state from starting a new burst after core combat has
-    /// released ownership. Live core combat and the optional SAIN follower-combat path are not
-    /// changed by this guard.
+    /// released ownership, and enforces the shared muzzle-lane gate for every follower brain.
     /// </summary>
     internal sealed class FollowerShootDataSafetyPatch : ModulePatch
     {
@@ -22,20 +21,31 @@ namespace pitTeam.Patches
         }
 
         [PatchPrefix]
-        private static bool PatchPrefix(ShootData __instance, ref bool __result)
+        [HarmonyPriority(Priority.First)]
+        private static bool PatchPrefix(ShootData __instance, ref bool __result, out bool __state)
         {
+            __state = false;
             try
             {
                 BotOwner? botOwner = __instance?._owner;
+                if (FollowerFireSafety.IsUnsafe(botOwner))
+                {
+                    __state = true;
+                    FollowerFireSafety.Stop(botOwner);
+                    __result = false;
+                    return false;
+                }
+
                 if (botOwner == null ||
                     !BossPlayers.IsFollower(botOwner) ||
-                    pitFireTeam.UseSainFollowerCombat ||
+                    pitFireTeam.UseSainFollowerCombat(botOwner) ||
                     FollowerCombatLayer.IsFollowerCombatLayerActive(botOwner) ||
                     FollowerCombatLayer.HasLiveGoalEnemyForFire(botOwner))
                 {
                     return true;
                 }
 
+                __state = true;
                 FollowerRecovery.StopShooting(botOwner);
                 BattleRecorder.RecordFollowerWeaponSafetyEvent(botOwner, "shootBlockedNoCombatEnemy");
                 __result = false;
@@ -43,9 +53,20 @@ namespace pitTeam.Patches
             }
             catch
             {
-                // Fail open so a compatibility problem cannot disable normal bot shooting.
-                return true;
+                // Unknown layouts fail open; a confirmed veto survives cleanup faults.
+                return !__state;
             }
+        }
+
+        [PatchPostfix]
+        private static void PatchPostfix(ShootData __instance, bool __state, ref bool __result)
+        {
+            if (!__state) return;
+            // HarmonyX permits other prefixes to run after a veto. SAIN may
+            // still publish Shooting/result=true; reconcile after all prefixes.
+            __result = false;
+            try { FollowerFireSafety.Stop(__instance?._owner); }
+            catch { /* A confirmed veto must retain its false result. */ }
         }
     }
 }

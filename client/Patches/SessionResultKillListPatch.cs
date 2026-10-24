@@ -13,6 +13,23 @@ using UnityEngine.UI;
 
 namespace pitTeam.Patches
 {
+    internal sealed class SessionResultKillVictimIdentificationPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+        {
+            return typeof(KillListVictim).GetMethod(
+                nameof(KillListVictim.Show),
+                new[] { typeof(VictimStats), typeof(bool), typeof(int) });
+        }
+
+        [PatchPrefix]
+        private static void PatchPrefix(VictimStats victim, ref bool knownName)
+        {
+            // Both stock player rows and our grouped follower rows use this same view.
+            knownName = knownName || SquadRaidKillReport.IsIdentifiedByCollectedDogtag(victim?.ProfileId);
+        }
+    }
+
     internal sealed class SessionResultKillListInjectedContent : MonoBehaviour
     {
         private readonly List<GameObject> _objects = new List<GameObject>();

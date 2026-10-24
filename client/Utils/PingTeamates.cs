@@ -570,6 +570,17 @@ namespace pitTeam.Utils
                         {
                             combatStatus = pitFireTeam.GetBotStatusText("WantToHeal");
                         }
+                        else if (SainAddonBridge.TryGetEnemyContact(bt.Data, out SainEnemyContact? sainContact))
+                        {
+                            // A handled empty SAIN contact must not fall back to retained EFT memory.
+                            if (sainContact.HasValue && !string.IsNullOrEmpty(sainContact.Value.ProfileId) &&
+                                IsPlausibleEnemyMarkerPosition(sainContact.Value.LastKnownPosition))
+                            {
+                                float lastSeenAgo = sainContact.Value.TimeSinceSeen;
+                                bool recentlySeen = IsFinite(lastSeenAgo) && lastSeenAgo >= 0f && lastSeenAgo < 5f;
+                                combatStatus = pitFireTeam.GetBotStatusText(recentlySeen ? "Engaged" : "Alerted");
+                            }
+                        }
                         else if (bt.Data.Memory.HaveEnemy)
                         {
                             EnemyInfo goalEnemy = bt.Data.Memory.GoalEnemy;
@@ -651,6 +662,8 @@ namespace pitTeam.Utils
                             {
                                 tactic = followerData.CombatTactic switch
                                 {
+                                    FollowerCombatTactic.SainMan => pitFireTeam.GetSocialUiText("ProfileTacticSainMan"),
+                                    FollowerCombatTactic.SAINShooter => pitFireTeam.GetSocialUiText("ProfileTacticSAINShooter"),
                                     FollowerCombatTactic.Marksman => pitFireTeam.GetSocialUiText("ProfileTacticMarksman"),
                                     FollowerCombatTactic.Protector => pitFireTeam.GetSocialUiText("ProfileTacticProtector"),
                                     _ => pitFireTeam.GetTacticOptionText(0),
@@ -1044,13 +1057,11 @@ namespace pitTeam.Utils
             {
                 BotOwner? follower = botMap[i]?.Data;
                 if (follower == null || follower.IsDead ||
-                    !TryGetCurrentGoalEnemy(follower, out EnemyInfo? goalEnemy) ||
-                    string.IsNullOrEmpty(goalEnemy.ProfileId))
+                    !TryGetMarkerEnemy(follower, out string enemyProfileId, out _, out _))
                 {
                     continue;
                 }
 
-                string enemyProfileId = goalEnemy.ProfileId;
                 activeEnemyProfileIds.Add(enemyProfileId);
                 if (enemyMarkersByProfileId.TryGetValue(
                         enemyProfileId,
@@ -1123,6 +1134,7 @@ namespace pitTeam.Utils
                 {
                     bool shouldRefreshPosition =
                         resolution.IsVisible ||
+                        (resolution.UsesSainKnowledge && FollowerEnemyTracking.Mode == EnemyTrackingMode.Realistic) ||
                         captureHiddenPosition ||
                         !contact.HasCapturedPosition ||
                         Time.time >= contact.NextHiddenPositionRefreshTime;
@@ -1175,19 +1187,36 @@ namespace pitTeam.Utils
             BotOwner? fallbackReporter = null;
             Vector3 fallbackPosition = Vector3.zero;
             float fallbackReporterDistanceSqr = float.MaxValue;
+            bool fallbackUsesSainKnowledge = false;
 
             for (int i = 0; i < botMap.Count; i++)
             {
                 BotOwner? follower = botMap[i]?.Data;
                 if (follower == null || follower.IsDead ||
-                    !TryGetCurrentGoalEnemy(follower, out EnemyInfo? goalEnemy) ||
-                    !string.Equals(goalEnemy.ProfileId, enemyProfileId, StringComparison.Ordinal) ||
-                    !TryGetEnemyCurrentPosition(goalEnemy, liveEnemy, out Vector3 currentEnemyPosition))
+                    !TryGetMarkerEnemy(follower, out string reportedProfileId, out EnemyInfo? goalEnemy,
+                        out SainEnemyContact? sainContact) ||
+                    !string.Equals(reportedProfileId, enemyProfileId, StringComparison.Ordinal))
                 {
                     continue;
                 }
 
-                if (goalEnemy.Person?.HealthController != null)
+                Vector3 currentEnemyPosition;
+                bool isVisible;
+                if (sainContact.HasValue)
+                {
+                    SainEnemyContact known = sainContact.Value;
+                    isVisible = known.VisiblePosition.HasValue && IsFinite(known.TimeSinceSeen) &&
+                        known.TimeSinceSeen >= 0f && known.TimeSinceSeen <= ReliableVisibleMaxAgeSeconds &&
+                        IsPlausibleEnemyMarkerPosition(known.VisiblePosition.Value);
+                    currentEnemyPosition = isVisible ? known.VisiblePosition.GetValueOrDefault() : known.LastKnownPosition;
+                }
+                else
+                {
+                    if (!TryGetEnemyCurrentPosition(goalEnemy, liveEnemy, out currentEnemyPosition)) continue;
+                    isVisible = IsEnemyReliablyVisibleForMarker(follower, goalEnemy);
+                }
+
+                if (goalEnemy?.Person?.HealthController != null)
                 {
                     lifeStateKnown = true;
                     enemyAlive |= goalEnemy.Person.HealthController.IsAlive;
@@ -1197,7 +1226,7 @@ namespace pitTeam.Utils
                     ? (follower.Position - myPlayer.Position).sqrMagnitude
                     : 0f;
 
-                if (IsEnemyReliablyVisibleForMarker(follower, goalEnemy))
+                if (isVisible)
                 {
                     if (visibleReporter == null || reporterDistanceSqr < visibleReporterDistanceSqr)
                     {
@@ -1214,6 +1243,7 @@ namespace pitTeam.Utils
                     fallbackReporter = follower;
                     fallbackPosition = currentEnemyPosition;
                     fallbackReporterDistanceSqr = reporterDistanceSqr;
+                    fallbackUsesSainKnowledge = sainContact.HasValue;
                 }
             }
 
@@ -1234,11 +1264,31 @@ namespace pitTeam.Utils
                     fallbackPosition,
                     isVisible: false,
                     isDead,
-                    fallbackReporter);
+                    fallbackReporter,
+                    fallbackUsesSainKnowledge);
                 return true;
             }
 
             return false;
+        }
+
+        private static bool TryGetMarkerEnemy(BotOwner bot, out string profileId,
+            out EnemyInfo? goalEnemy, out SainEnemyContact? sainContact)
+        {
+            profileId = string.Empty;
+            goalEnemy = null;
+            if (SainAddonBridge.TryGetEnemyContact(bot, out sainContact))
+            {
+                if (!sainContact.HasValue || string.IsNullOrEmpty(sainContact.Value.ProfileId) ||
+                    !IsPlausibleEnemyMarkerPosition(sainContact.Value.LastKnownPosition)) return false;
+                profileId = sainContact.Value.ProfileId;
+                return true;
+            }
+
+            if (!TryGetCurrentGoalEnemy(bot, out goalEnemy) || string.IsNullOrEmpty(goalEnemy.ProfileId))
+                return false;
+            profileId = goalEnemy.ProfileId;
+            return true;
         }
 
         private static bool TryGetCurrentGoalEnemy(BotOwner bot, out EnemyInfo? goalEnemy)
@@ -1268,6 +1318,9 @@ namespace pitTeam.Utils
             currentEnemyPosition = Vector3.zero;
             try
             {
+                if (FollowerEnemyTracking.IsRealistic(goalEnemy))
+                    return FollowerEnemyTracking.TryGetKnownPosition(goalEnemy, out currentEnemyPosition, out _) &&
+                        IsPlausibleEnemyMarkerPosition(currentEnemyPosition);
                 currentEnemyPosition = liveEnemy?.Transform != null
                     ? liveEnemy.Transform.position
                     : goalEnemy.CurrPosition;
@@ -1304,18 +1357,21 @@ namespace pitTeam.Utils
                 Vector3 worldPosition,
                 bool isVisible,
                 bool isDead,
-                BotOwner reportingFollower)
+                BotOwner reportingFollower,
+                bool usesSainKnowledge = false)
             {
                 WorldPosition = worldPosition;
                 IsVisible = isVisible;
                 IsDead = isDead;
                 ReportingFollower = reportingFollower;
+                UsesSainKnowledge = usesSainKnowledge;
             }
 
             public Vector3 WorldPosition { get; }
             public bool IsVisible { get; }
             public bool IsDead { get; }
             public BotOwner ReportingFollower { get; }
+            public bool UsesSainKnowledge { get; }
         }
 
         private void CreateGuiStyle()

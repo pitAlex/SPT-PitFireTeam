@@ -9,13 +9,16 @@ using SPTarkov.Server.Core.Models.Spt.Config;
 
 namespace pitTeam.Server.Services;
 
-[Injectable]
+[Injectable(InjectionType.Singleton)]
 public class FriendlyServerSettingsService(
     ISptLogger<FriendlyServerSettingsService> logger,
     LostOnDeathConfig lostOnDeathConfig,
     PmcConfig pmcConfig
 )
 {
+    private volatile bool pmcArmbandsEnabled;
+    internal bool PmcArmbandsEnabled => pmcArmbandsEnabled;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -33,13 +36,16 @@ public class FriendlyServerSettingsService(
             }
 
             string json = File.ReadAllText(path);
-            return JsonSerializer.Deserialize<FriendlyServerSettingsRequest>(json, JsonOptions)
-                ?? new FriendlyServerSettingsRequest();
+            var settings = JsonSerializer.Deserialize<FriendlyServerSettingsRequest>(json, JsonOptions)
+                ?? throw new InvalidDataException("Empty gameplay settings.");
+            if (settings.GameplayMode is not ("GunsForHire" or "Allegiance"))
+                throw new InvalidDataException("Invalid gameplay mode.");
+            return settings;
         }
         catch (Exception ex)
         {
             logger.Warning($"Failed to load pitFireTeam server settings: {ex.Message}");
-            return new FriendlyServerSettingsRequest();
+            throw;
         }
     }
 
@@ -184,16 +190,21 @@ public class FriendlyServerSettingsService(
         {
             string path = GetSettingsPath();
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllText(path, JsonSerializer.Serialize(settings, JsonOptions));
+            string temporary = path + ".tmp";
+            File.WriteAllText(temporary, JsonSerializer.Serialize(settings, JsonOptions));
+            File.Move(temporary, path, true);
         }
         catch (Exception ex)
         {
             logger.Warning($"Failed to save pitFireTeam server settings: {ex.Message}");
+            throw;
         }
     }
 
     private void ApplySettings(FriendlyServerSettingsRequest settings)
     {
+        // Keep our inventory policy independent of other mods' shared SPT config writes.
+        pmcArmbandsEnabled = settings.PmcArmbands;
         try
         {
             pmcConfig.ForceArmband.Enabled = settings.PmcArmbands;

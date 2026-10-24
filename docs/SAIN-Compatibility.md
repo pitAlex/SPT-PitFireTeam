@@ -1,0 +1,102 @@
+# Core compatibility with the external SAIN plugin
+
+**Scope:** compatibility owned by pitFireTeam core and needed whether the optional addon is installed or not. SAIN means the external `me.sol.sain` plugin. The addon is a separate combat brain documented under [addon/docs](../addon/docs/README.md).
+
+## Runtime ownership
+
+| Runtime | Follower combat owner |
+|---|---|
+| SAIN absent | Core |
+| SAIN installed, addon absent | Core |
+| Addon unready or a core tactic selected | Core |
+| Both plugins ready, SAINGrunt selected | [Addon solo/squad replicas](../addon/docs/Integration.md) |
+
+External SAIN may patch low-level EFT calculations even when core owns combat. General compatibility is gated by external-SAIN presence, not by `UseSainFollowerCombat`. Core has no typed SAIN dependency. Ordinary bots retain native SAIN behavior except for the shared vision-loop recovery below.
+
+[Swap Gear Apply](Swap-Gear.md#apply-interruption-and-protection) is a Core-owned temporary safety scope. Its native action/weapon-selection gates and existing external-SAIN reload hook hold only the applying follower, whether Core or the addon owns combat. Hands/body callbacks remain active; enemy memory and shared presets are not changed. Editing itself has no damage protection.
+
+Before recruiting an allied bot, Core passively reads native `HasEnemy` through `SainGoalEnemyBridge`, alongside EFT `Memory.HaveEnemy`. A native active enemy can block recruitment even without an EFT goal or the addon. Initial and deferred checks answer `DontKnow` before checking cached level refusals, without selecting/synchronizing an enemy or creating a refusal. See [recruitment commands](Commands.md#follow-me--cooperation).
+
+Recruitment replies are also Core-owned before the candidate becomes a follower. `FollowRequestPatch` marks the exact reply in the existing `FollowerForcedPhraseGate`; SAIN's `BotTalk.Say` and `Player.Say` blockers allow that timed phrase only. Initial/deferred replies use immediate EFT speech with SAIN installed because SAIN also suppresses the candidate's EFT talk queue. Its EFT `ManualUpdate` stays SAIN-owned. Native `Say` and final `PlayVoiceLine` reject only `MumblePhrase`, `OnMutter` and `OnFight` while the candidate's recruitment scope is live, preventing both new and already-pending friendly chatter from replacing the answer. Other bots and native injury/warning speech retain their paths. Expiry, replacement with an ordinary forced phrase or explicit clearing revokes the candidate exception; conversion retains existing follower speech ownership. No global talk setting, addon dependency or acceptance rule is changed.
+
+After Core admits a follower goal and EFT's goal setter succeeds, `FollowerAcceptedContactActivation` wakes that living hostile AI target from `paused`/`goToSave` standby through the existing `HostilePeacefulLayerInterrupt.WakeHostileBot` helper. SAIN 4.5.1 otherwise hides such a target from its public `GoalEnemy` even when native decision selection and squad reports still contain it. The correction requires the exact accepted EFT goal, active follower/target lifecycle and a hostile group relationship; rejected setters, cleared goals, neutral targets, heard-only knowledge and ordinary bots cannot initiate it. Native standby settings, enemy memory, perception, decision publication and firing gates remain unchanged. This is external-SAIN compatibility and does not require the addon.
+
+Selected encounter friendlies reuse the exact pre-recruitment speech scope for `HoldFire` (PMCs) or `MumblePhrase` (Scavs). Immediate output clears its matching scope in `finally`; another forced reply or speaker output retains priority. The Core close-interaction layer temporarily owns peaceful movement/facing within 12 m for 20 seconds, with a 10-second cooldown. Native `HasEnemy` and EFT combat/urgent-work gates prevent it from taking combat ownership. Close Hello scheduling and a single pending invitation reuse raid-owned state. Invitation audio uses EFT's native speaker without a command broadcast or Cooperation's implicit extra gesture. Ordinary SAIN talk updates, shared presets and the optional addon retain their existing owners. See [Core greetings and invitations](Allegiance.md#friendly-greetings).
+
+## Core ownership while SAIN is installed
+
+Core tactics observe the native `HearingAnalysis.CheckIfSoundHeard` result for peaceful sound orientation through `FollowerSainHearingPatch`. This covers SAIN gunshots that bypass the game's original sound dispatcher. Cached compiled accessors keep Core free of typed SAIN references, and the hook never reruns hearing or changes native results. Ready addon tactics are excluded because they retain their own native hearing/preparation owner. See [Core sound policy](Combat-Tactics.md#peaceful-sound-orientation).
+
+General external-SAIN compatibility belongs to the main plugin and is gated by `IsSAINInstalled`, not addon presence. It must behave consistently in both configurations:
+
+- SAIN installed, addon absent;
+- SAIN installed, addon present.
+
+Core owns, among other things:
+
+- follower-local proficiency normalization and the finalized Vision, Precision, and Reaction contract;
+- final aim-time, recoil, body-part, and other calculation compatibility required because external SAIN patches EFT;
+- follower/enemy friendship and hostility repair;
+- contact propagation, enemy-state synchronization, target acquisition, and perception compatibility;
+- general friendly-fire and shot-safety compatibility;
+- any reflection or Harmony boundary required to keep external SAIN compatible with pitFireTeam followers in all supported runtime modes.
+
+Core compatibility must be follower-scoped and must not mutate SAIN's shared preset objects. The addon may consume the already-finalized follower state, but it cannot rewrite that state through general SAIN patches.
+
+Grenade awareness follows the active avoidance owner. In core-combat mode with SAIN installed, `FollowerSainGrenadeAwarenessPatch` restores the `BotsController.OnGrenadeThrow` notifications that SAIN 4.5.0/4.5.1 skips for SAIN-enabled followers, forwarding them to native `BewareGrenade.AddGrenadeDanger`. Followers already receiving native notifications are not notified twice or given another recognition roll. The corresponding SAIN `EnemyGrenadeThrown` tracker is bypassed for core-controlled followers to prevent duplicate warnings and fallback registrations. Native reaction probability, delay, smoke handling, cover selection, escape movement, and danger expiry remain authoritative. With ready SainMan addon combat active, SAIN's existing grenade routing remains in place. Core tactics retain the core notification route. In-raid escape and return-to-command behavior still require verification.
+
+Tripwire awareness is core-owned through `FollowerTripwireAwarenessPatch`. It observes the real trigger and activation pin sound, confirms the tripping follower or nearby followers who hear the unobstructed sound, warns with `Spreadout`, and records the actual grenade in native `BewareGrenade`. The danger lifetime covers the real fuse; per-grenade/per-follower deduplication prevents duplicate warnings or SAIN tracking. This preserves native escape and cover selection while adding reliable recognition of a confirmed tripwire.
+
+After the native escape, core `FollowerTripwireLayer` (priority 101) keeps a confirmed live tripwire above ordinary combat, requests, and follow. It reuses `FollowerCombatLayer.CreateBigBrainAction`: our combat hold/shoot actions defend in place, `CombatDogFightAction` handles incoming fire, and `HealAction` runs only in occupied safe cover without immediate enemy pressure. An optional movement predicate on the shared dogfight payload rejects paths through the grenade radius; ordinary combat has no predicate. Unsafe positions and other immediate dangers yield to native avoidance. Detonation or danger expiry releases the layer so combat, requests, or follow can resume. This general follower behavior is core-owned in all SAIN/addon modes.
+
+Follower sound reactions run from a postfix on `GlobalEventDispatcher.PlaySound`, independently of EFT's per-bot hearing subscription. This preserves the existing follower hostility, audibility, cooldown, and threat-priority filters when SAIN 4.5.1 skips `BotHearingSensor.Init`. The old `BotHearingSensor.OnSoundPlayed` postfix is replaced, so SAIN 4.5.0 and no-SAIN runs also dispatch each sound to the follower handler once. No follower lifecycle subscriptions or changes to ordinary bot hearing are required.
+
+Follower aim-point enhancement wraps `SAINShootData.GetAimTarget`: SAIN 4.5.0 takes `(Enemy, BotComponent)`, while 4.5.1 takes `(Enemy)`. A validated, compiled accessor captures the follower's `EnemyInfo`, then the complete native SAIN selector runs first. For followers, the postfix first substitutes an eligible body point using `FollowerAimTargetPolicy.TryGetBodyFirstShootPoint`, then applies the existing verified-head promotion once per retarget window. If the body is blocked, the native choice remains the baseline, including a native exposed-head choice. Calls that pass through EFT's `GetVisiblePartToShoot` are marked and enhanced only once at the outer SAIN boundary. The separate EFT patch is also a postfix, so vanilla/core calls follow the same native-first rule without patching SAIN's `BodyPartToShootPatch` itself. SAIN 4.5.1's optional weighted `AimTarget.ChosenPart` is read through a compiled accessor, while 4.5.0 uses `EnemyInfo.LastPartToShoot` and restores a native head after that version's later center-mass height clamp. Ordinary bots remain unchanged; follower native fallbacks remain when no body point or head enhancement is eligible. Shared aim weights and general SAIN presets are never modified.
+
+Follower foliage compatibility removes foliage/grass from SAIN 4.5's line-of-sight, vision, and shooting ray masks at every distance, replacing the previous 10-metre exception. Hard geometry remains in those follower rays; non-followers retain SAIN's original masks. This bypass changes only SAIN's binary foliage veto: EFT look checks, `FollowerEnemyInfoCorrection` (including its own 10-metre foliage exception), suppression safety, and decision/commitment timing are unchanged. It does not disable foliage handling throughout the follower pipeline.
+
+The mask bypass runs inside SAIN's native command builder through a validated startup transpiler. Follower status and the three query parameters are selected once per enemy; native body-part sampling, command order, geometry, and job cadence are preserved. The former reflection-based replacement builder is removed. An unsupported instruction/member layout logs an error and leaves the native builder unchanged. Compare the parent `VisionRaycastJob.EnemyVisionJob` timing when profiling this optimization, since removing the old separately measured prefix changes attribution as well as runtime overhead.
+
+Player-visual contact promotion is one example of this core boundary. A target genuinely seen by the player is reported as visual contact rather than sense-only contact. If the follower has not independently seen the target, current `IsVisible` and `CanShoot` remain false while core seeds the complete personal contact record at the promotion timestamp. The addon is not involved in that compatibility path.
+
+
+## Shared vision-loop recovery
+
+The Shoreline EFT log at 03:38:47.818 records a collection-modified exception in native `SAINBotLookClass.UpdateLookForEnemies`, escaping the shared `VisionRaycastJob.UpdateEFTVision` coroutine. This can halt sight updates across SAIN bots. The initiating collection mutation is not yet attributed; the near-simultaneous core acquisition is a lead, not proof.
+
+Core `SainVisionRecoveryPatch` wraps the native iterator factory for all SAIN bots, with or without the addon. On failure, `SainVisionRecoveryEnumerator` logs the exception, disposes the failed iterator, waits one second and creates a fresh native iterator inside the same Unity coroutine. It never starts another Unity coroutine, resets bot combat, clears enemy memory, or restarts the separate raycast job. Native yields and normal completion are preserved. Native job disposal, destroyed controller and explicit wrapper disposal stop retries. Factory/update/current/disposal failures are contained; repeated reports are limited to 30 seconds per wrapper and include cumulative failures. A persistent underlying fault can still prevent a full vision pass; this is recovery containment, not a claim that the collection-mutation cause is repaired.
+
+`tests/Verify-SainVisionRecovery.ps1` validates the installed native factory/lifecycle signatures and runs 23 checks against the production wrapper and real Harmony boundary, including a real HashSet mutation, successful retry, repeated faults, factory failure, logging failure and teardown. Full in-raid recovery still requires qualification. The hook must be installed before the raid's native coroutine starts; this build cannot retroactively repair an already-running old session.
+
+## Proficiency baseline projection
+
+Finalized follower vision and scatter baselines are projected into follower-local EFT Core settings through `FollowerSainEftCoreProjection`. SAIN 4.5.1 config application does not populate those fields. Normalizing only `Info.FileSettings` is insufficient. Vision/Precision/Reaction mapping and mechanical normalization remain in [Core proficiency](Friendly-AI-Performance-Settings.md).
+
+## Cost boundaries
+
+Manual [Swap Gear](Swap-Gear.md) refreshes only the edited follower's external-SAIN weapon cache after native hands restoration. `SainEquipmentBridge` disposes old per-slot `WeaponInfo` entries, rebuilds from actual slots and invokes native equipped-weapon refresh. This also removes stale entries for emptied slots, which native `getAllWeapons` does not do. Native `GearInfo` continues its two-second armor/headset/plate update loop. No shared presets or ordinary-bot caches are changed.
+
+Core route probes reuse a thread-local NavMeshPath. The optional native hooks cache compiled BotOwner access and bind aim/friendly-fire parameters directly, avoiding repeated reflection and Harmony argument-array boxing. These are source-level reductions; measured frame-time improvement requires comparable raids.
+
+## Friendly-fire analysis
+
+Earlier recorder evidence: Shoreline `20260916-183446-Shoreline.jsonl`, around raid time 1661.970 (local time approximately 18:57:41), showed Medved losing 40.5352 chest health while automatically regrouping about eight metres from Brick. Brick was in native StandAndShoot, with a trigger event about 16.6 ms before the inferred hit; the movement crossed his recorded aiming lane. That record has no attacker identity, so attribution and frequency remain unproven.
+
+Current prevention uses Core's [shared firing guards](Combat-Tactics.md#friendly-fire-prevention) for ordinary fire and suppression, with or without the addon:
+
+- `FollowerSainFriendlyFirePatch` repairs native SAIN's single-member early return so the human leader is checked. Its target overload checks the intended lane independently of the supplied barrel direction; both overloads preserve native blocked results.
+- `FollowerSainManualFireSafety` guards every follower `ManualShootClass.TryShoot`, including ordinary manual fire, native `SuppressAction`, ordered support and regroup. Suppression uses Core's wider intended-target lane. The check is independent of SAIN's cached friendly-fire status and the caller's `checkFF` flag. Compiled optional accessors read the live manual target/reason and reset native manual/suppression state when Core stops unsafe fire; Core has no typed SAIN/addon dependency or retained per-bot safety cache.
+- `ShootData.Shoot` admission, direct firearm trigger requests and active firearm updates check the actual adjusted three-dimensional firing vector. The active guard reads current `ManualShoot.ShootPosition`, so suppression target changes and reused native bursts are rechecked without calling a targeting/decision provider. Main barrel, underbarrel and native eye-origin modes use their respective firing vectors; the current muzzle lane includes squad members behind the aim point.
+- Native automatic/fixed-burst rounds are additionally guarded before ammunition consumption at `AutomaticFireOperation.InternalOnFireEvent`. Unsafe rounds use the native idle transition. This covers burst-mode trigger reassertion and multiple rounds within one update. No late `Shot`/`InitiateShot` call is skipped, and normal chamber/ejection/animation updates continue. Already-prepared single shots and released projectiles remain beyond cancellation.
+
+SAIN's `BotShootPatch` replaces the original `ShootData.Shoot` for enabled bots. The shared admission prefix runs at high priority, but the installed HarmonyX library still allows other prefixes to run after a veto. A postfix reconciles a confirmed rejection to `false` and releases any republished trigger state; the controller trigger guard prevents those later prefixes from actually starting unsafe fire. Ordinary bots and the human player's trigger remain native. Addon removal leaves the Core safety hooks installed; regroup retains only its action-local early hold.
+
+`tests/Verify-FollowerFireSafety.ps1` verifies the compile-reference/installed EFT entry points and installed SAIN manual-fire accessors, then runs production hooks, vector calculation and lane geometry with real Harmony. Existing addon combat and rifle/launcher suppression checks cover retained tactical policies. These checks do not establish in-raid behavior or measured frame time. The helper samples current feet/torso/head positions with finite radii; later movement, spread, ricochets and already-committed shots remain residual risks.
+
+The separate [Core damage reduction](Combat-Tactics.md#friendly-fire-damage) halves player/follower damage in both directions. The reduction has no dedicated damage-recording event and does not establish the cause of the older Brick/Medved incident.
+
+## SAIN 4.5.0 / 4.5.1 compatibility checks
+
+On Windows, run `./tests/Verify-SainCompatibility.ps1 -GameRoot '<SPT game root>'`. The harness compiles the production targeting patch and sound-dispatch methods with controlled EFT/SAIN stand-ins, then exercises them with the project's real Harmony DLL under .NET Framework. It checks both target signatures, native visibility gates, no-target behavior, ordinary bots, recruitment/dismissal, teardown, and exactly one follower callback with or without an EFT hearing subscription. The existing body-part policy and sound filters are stand-ins, so the checks do not establish in-raid perception or shooting quality.
+
+Raid validation should cover a fresh teammate and a recruited bot hearing hostile gunshots, neutral/friendly sounds remaining ignored, partially exposed enemies retaining native aim-point selection plus bounded proficiency enhancement, and startup logging `Native follower aim-target proficiency enhancement applied.` with no unsupported-layout error. Repeat with the supported SAIN version and keep the optional addon disabled unless its separate qualification is intended.

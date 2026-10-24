@@ -7,6 +7,7 @@ public record FriendlyTeammateFollowerDetailsResponse
     public string Tactic { get; set; } = string.Empty;
 
     public float Aggression { get; set; }
+    public float SelfDetermination { get; set; } = 50f;
 
     public FriendlyTeammateProficiencySettings Proficiency { get; set; } = new();
 

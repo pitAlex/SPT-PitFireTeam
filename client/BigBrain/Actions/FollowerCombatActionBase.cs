@@ -17,12 +17,14 @@ namespace pitTeam.BigBrain.Actions
         public BotLogicDecision Decision { get; }
         public string Reason { get; }
         public CoreActionResultParams? Data { get; }
+        public System.Func<Vector3, bool>? MovementAllowed { get; }
 
-        public FollowerCombatActionData(BotLogicDecision decision, string reason, CoreActionResultParams? data)
+        public FollowerCombatActionData(BotLogicDecision decision, string reason, CoreActionResultParams? data, System.Func<Vector3, bool>? movementAllowed = null)
         {
             Decision = decision;
             Reason = reason;
             Data = data;
+            MovementAllowed = movementAllowed;
         }
     }
 
@@ -179,11 +181,24 @@ namespace pitTeam.BigBrain.Actions
             out Vector3 pointDirection)
         {
             Player? player = botOwner?.GetPlayer ?? botOwner?.AIData?.Player;
-            if (player?.HandsController is Player.FirearmController firearmController &&
-                firearmController.CurrentFireport != null)
+            if (player?.HandsController is Player.FirearmController firearmController)
             {
-                fireOrigin = firearmController.CurrentFireport.position;
-                pointDirection = firearmController.CurrentFireport.Original.TransformDirection(player.LocalShotDirection);
+                var fireport = firearmController.IsInLauncherMode()
+                    ? firearmController._underbarrelContainer?.Fireport
+                    : firearmController.CurrentFireport;
+                if (fireport == null)
+                {
+                    fireOrigin = Vector3.zero;
+                    pointDirection = Vector3.zero;
+                    return false;
+                }
+                bool fromEyes = firearmController.IsAIShootFromEyes?.Invoke() == true;
+                fireOrigin = fromEyes
+                    ? botOwner.LookSensor.ShootStartPos
+                    : fireport.position;
+                pointDirection = fromEyes
+                    ? player.LookDirection
+                    : fireport.Original.TransformDirection(player.LocalShotDirection);
                 firearmController.AdjustShotVectors(ref fireOrigin, ref pointDirection);
                 if (pointDirection.sqrMagnitude > 0.0001f)
                 {
@@ -313,7 +328,7 @@ namespace pitTeam.BigBrain.Actions
 
             if (enemyDistance <= 0f)
             {
-                enemyDistance = Vector3.Distance(BotOwner.Position, goalEnemy.CurrPosition);
+                enemyDistance = Vector3.Distance(BotOwner.Position, pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy));
             }
 
             if (enemyDistance < DistantCombatMovementStandingDistance)
@@ -452,20 +467,13 @@ namespace pitTeam.BigBrain.Actions
 
         protected bool StopIfFriendlyInCurrentFireLane(Vector3 target)
         {
-            Vector3 fireOrigin = BotOwner.WeaponRoot != null
-                ? BotOwner.WeaponRoot.position
-                : BotOwner.Position + Vector3.up * 1.2f;
+            if (!TryGetCurrentShotVector(BotOwner, out Vector3 fireOrigin, out Vector3 aimDirection))
+                return false;
 
             if (FollowerShotSafety.IsFriendlyInShotLane(BotOwner, fireOrigin, target))
             {
                 StopCombatShooting();
                 return true;
-            }
-
-            Vector3 aimDirection = BotOwner.LookDirection;
-            if (aimDirection.sqrMagnitude <= 0.0001f && BotOwner.Transform != null)
-            {
-                aimDirection = BotOwner.Transform.forward;
             }
 
             float distance = Vector3.Distance(fireOrigin, target);

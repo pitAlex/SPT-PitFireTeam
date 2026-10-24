@@ -142,7 +142,7 @@ namespace pitTeam.Modules
                 return;
             }
 
-            if (IsFinite(target.Position) && target.Position.sqrMagnitude > 0.01f)
+            if (FollowerEnemyTracking.Mode == EnemyTrackingMode.Simple && IsFinite(target.Position) && target.Position.sqrMagnitude > 0.01f)
             {
                 state.MissionLastKnownPosition = target.Position;
             }
@@ -334,6 +334,11 @@ namespace pitTeam.Modules
             }
 
             Player? missionTarget = Singleton<GameWorld>.Instance?.GetAlivePlayerByProfileID(state.MissionEnemyProfileId);
+            if (!FollowerEnemyTracking.CanRestore(follower, state.MissionEnemyProfileId))
+            {
+                ClearMission(follower, state.MissionKind, "trackingExpired");
+                return false;
+            }
             if (missionTarget?.HealthController?.IsAlive != true)
             {
                 ClearMission(follower, state.MissionKind, "missionTargetDead");
@@ -347,6 +352,12 @@ namespace pitTeam.Modules
                 countSharedSeenAsPersonal: false);
             if (missionEnemy == null)
             {
+                return false;
+            }
+
+            if (!FollowerEnemyTracking.IsEligible(missionEnemy))
+            {
+                ClearMission(follower, state.MissionKind, "trackingExpired");
                 return false;
             }
 
@@ -510,6 +521,7 @@ namespace pitTeam.Modules
 
         private static Vector3 GetBestEnemyPosition(EnemyInfo enemy)
         {
+            if (FollowerEnemyTracking.IsRealistic(enemy)) return FollowerEnemyTracking.Position(enemy);
             if (IsFinite(enemy.CurrPosition) && enemy.CurrPosition.sqrMagnitude > 0.01f)
             {
                 return enemy.CurrPosition;

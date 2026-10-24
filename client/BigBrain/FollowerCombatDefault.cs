@@ -304,7 +304,7 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
-            if (goalEnemy.Distance <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance())
+            if (pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance())
             {
                 return false;
             }
@@ -1243,7 +1243,7 @@ namespace pitTeam.BigBrain
             // while the enemy is still visible.
             if (!combatCommon.HasActiveOrPendingHealWork() &&
                 combatCommon.ShouldAdvance(goalEnemy) &&
-                goalEnemy.Distance <= CombatDistanceConfiguration.Instance.GetVisiblePushDistance())
+                pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= CombatDistanceConfiguration.Instance.GetVisiblePushDistance())
             {
                 // Once local logic decides a visible enemy should be pushed, hand off to the old-plugin
                 // engage helper so it can choose rush/walk/approach behavior from its richer threat checks.
@@ -1583,7 +1583,7 @@ namespace pitTeam.BigBrain
 
         private bool ShouldForceVisibleAlignedFire(EnemyInfo goalEnemy)
         {
-            Vector3 enemyPosition = goalEnemy.CurrPosition;
+            Vector3 enemyPosition = pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy);
             Vector3 toEnemy = enemyPosition - botOwner.Position;
             toEnemy.y = 0f;
             if (toEnemy.sqrMagnitude <= 0.01f)
@@ -1673,7 +1673,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            if (combatCommon.GetBossProtectionWillingness01() < PickupFollowerPersonality.ProtectBossMinWillingness)
+            if (combatCommon.GetBossProtectionWillingness01() <= 0f)
             {
                 return false;
             }
@@ -2337,13 +2337,13 @@ namespace pitTeam.BigBrain
                 return true;
             }
 
-            if (goalEnemy.IsVisible && goalEnemy.Distance <= 18f)
+            if (goalEnemy.IsVisible && pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= 18f)
             {
                 return true;
             }
 
             return Enemy.IsVisible(botOwner, goalEnemy) &&
-                   (goalEnemy.CanShoot || goalEnemy.Distance <= VisibleAlignedFireMaxDistance);
+                   (goalEnemy.CanShoot || pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= VisibleAlignedFireMaxDistance);
         }
 
         private static bool IsCoverHoldReason(string? reason)
@@ -2428,12 +2428,13 @@ namespace pitTeam.BigBrain
 
             AICoreActionEnd result = combatCommon.ShallEndCurrentDecision(currentDecision);
             if (result.Value &&
-                string.Equals(result.Reason, "visibleCloseFireBreakCoverMove", StringComparison.Ordinal))
+                (string.Equals(result.Reason, "visibleCloseFireBreakCoverMove", StringComparison.Ordinal) ||
+                 string.Equals(result.Reason, "stableImmediateFire", StringComparison.Ordinal)))
             {
                 // Ending first and hoping the normal router chooses combat lets low-ammo reload
-                // routing reuse this same committed cover. That creates an end/reselect loop while
-                // the follower keeps sprinting and cannot fire. End only with a real close-fight
-                // handoff ready; otherwise preserve the current run and retry on a later update.
+                // routing reuse this same committed cover. Threat-based immediate-fire exits had
+                // the same failure when no shot was possible. End only with a real firing handoff
+                // ready; otherwise preserve the current run and retry on a later update.
                 if (!TryPrepareCloseCoverFightHandoff(goalEnemy))
                 {
                     return FollowerCombatCommon.Continue();
@@ -2943,7 +2944,7 @@ namespace pitTeam.BigBrain
             MarkCoverIntentScanned();
             return goalEnemy.IsVisible ||
                    combatCommon.ShouldAdvance(goalEnemy) ||
-                   (goalEnemy.Distance <= CombatDistanceConfiguration.Instance.GetClosePushDistance() &&
+                   (pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= CombatDistanceConfiguration.Instance.GetClosePushDistance() &&
                     combatCommon.IsAutonomousEngagementLowThreat(goalEnemy));
         }
 
@@ -3132,11 +3133,6 @@ namespace pitTeam.BigBrain
 
             float followerBossDistance = FollowerCombatCommon.GetSafeRegroupDistance(navDistance, directDistance);
             float regroupTriggerDistance = CombatDistanceConfiguration.Instance.GetBossRegroupTriggerDistance(botOwner);
-            float protectionWillingness = combatCommon.GetBossProtectionWillingness01();
-            regroupTriggerDistance *= Mathf.Lerp(
-                PickupFollowerPersonality.RegroupMaxTriggerMultiplier,
-                1f,
-                protectionWillingness);
             if (followerBossDistance <= regroupTriggerDistance)
             {
                 return false;

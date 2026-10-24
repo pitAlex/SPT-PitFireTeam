@@ -14,6 +14,7 @@ namespace pitTeam.Utils
         public string Tactic { get; set; }
 
         public float Aggression { get; set; }
+        public float SelfDetermination { get; set; } = 50f;
 
         public FollowerProficiencyModifierValues Proficiency { get; set; } = new FollowerProficiencyModifierValues();
 

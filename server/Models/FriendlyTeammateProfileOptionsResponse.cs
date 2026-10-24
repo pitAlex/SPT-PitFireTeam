@@ -2,11 +2,14 @@ namespace pitTeam.Server.Models;
 
 public record FriendlyTeammateProfileOptionsResponse
 {
+    public List<FriendlyTeammateInsuredItem> InsuredItems { get; set; } = [];
+    public List<FriendlyTeammateInsuredItem> PlayerInsuredItems { get; set; } = [];
     public string CurrentLoadoutId { get; set; } = string.Empty;
 
     public string CurrentTactic { get; set; } = string.Empty;
 
     public float Aggression { get; set; } = 50f;
+    public float SelfDetermination { get; set; } = 50f;
 
     public FriendlyTeammateProficiencySettings Proficiency { get; set; } = new();
 

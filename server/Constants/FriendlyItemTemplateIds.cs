@@ -27,6 +27,7 @@ internal static class FriendlyItemTemplateIds
     internal static class Weapon
     {
         public const string DefaultKnife = "54491bb74bdc2d09088b4567";
+        public const string HiringBayonet = "5bffdc370db834001d23eca8";
     }
 
     internal static class Medical

@@ -62,8 +62,13 @@
   },
   "enemyRemember": {
     "Name": "遗忘敌方人员时间（秒）",
-    "Description": "队员关注敌方人员的最长时间。修改后从下一战局开始时生效。"
+    "Description": "敌方接触信息的正常记忆时间。真实模式下，正在进行且未完成的搜索可延长记忆，但最长不超过最后一次报告后的400秒。从下一战局开始生效。"
   },
+  "enemyTracking": {
+    "Name": "敌人追踪",
+    "Description": "在简单和真实敌人追踪模式之间切换。简单模式追踪敌人的当前位置，不受最后一次目击或报告时间的影响。真实模式使用通过目击或声音报告的位置，或敌人的最后已知位置。"
+  },
+  "friendlyEncounterChance": {"Name": "友好相遇概率", "Description": "在战局中遇到友军的基础概率。\n在 Guns for Hire 中，仅影响同阵营 PMC；开启「同阵营 PMC 友好」或「恶人」时无效。\n在 Allegiance 中，该基础概率适用于同阵营，敌对阵营的概率为其一半。Scav 的概率还会根据你的 Fence 声望提高或降低。"},
   "healthMultiplier": {
     "Name": "小队生命倍率",
     "Description": "战局开始时，您的队员的每个身体部位的生命值会分别和本生命倍率相乘。"
@@ -124,17 +129,10 @@
     "Name": "装备管理模式",
     "Description": "控制小队成员装备的选择、消耗和保存方式。"
   },
-  "loadoutManagementSimple": {
-    "Name": "简单",
-    "Description": "以仓库中的装备为模板自由创建小队成员装备，不会消耗任何物品。小队成员装备受保护：不会因阵亡丢失，也无法带出。"
-  },
+
   "loadoutManagementRestricted": {
     "Name": "受限",
-    "Description": "小队成员装备必须使用仓库中的装备或通过装备购买系统购买。装备仍然受保护：不会因阵亡丢失，也无法带出。"
-  },
-  "loadoutManagementRestrictedGearMaintenance": {
-    "Name": "野外维护",
-    "Description": "跟踪小队成员在战局中的装备损耗及消耗品使用情况，其装备仍受保护，不会因阵亡丢失或带出。"
+    "Description": "装备来自你的仓库，无法带出战局。战局中的装备损耗和补给消耗会保留，但队员阵亡时装备不会丢失。"
   },
   "loadoutManagementImmersive": {
     "Name": "沉浸",
@@ -160,7 +158,7 @@
     "Name": "阵营敌对关系",
     "Description": "启用补丁，尝试修复阵营之间的敌对关系未能始终正常生效的问题。"
   },
-  "PmcArmbands": {
+  "pmcArmbands": {
     "Name": "PMC 阵营臂章",
     "Description": "PMC 人机是否佩戴臂章（BEAR 为红色，USEC 为蓝色）。"
   },
@@ -228,6 +226,8 @@
     "OverThere": "那边",
     "TeamStatus": "报告状态",
     "ViewBackpack": "查看背包",
+    "SwapGear": "更换装备",
+    "GiveGear": "给予装备",
     "OnRepeatedContact": "接敌"
   },
   "botStatus": {
@@ -238,14 +238,46 @@
     "WantToHeal": "需要治疗"
   },
   "socialUi": {
+    "FriendlyEncounterPenaltyLabel": "-{0}% 友好相遇 ({1})",
+    "EnemyTrackingSimple": "简单",
+    "EnemyTrackingRealistic": "真实",
+    "LootActionCheckHim": "CMD : 搜查他",
+    "LootActionAndWeapon": "CMD: 搜刮并获取武器",
+    "LootActionAndGear": "CMD: 搜刮并获取装备",
+    "LootActionWeapon": "CMD: 获取武器",
+    "LootActionGear": "CMD: 获取装备",
     "AddTeammate": "+ 添加小队成员",
     "AddTeammateInProgress": "{0} 已添加至好友列表",
     "AddTeammateConfirm": "添加小队成员",
+    "AddTeammateNext": "下一步",
+    "TeammateHireWithoutKit": "不带装备添加",
+    "TeammateHireRegenerate": "重新生成",
+    "TeammateHireRegenerateFailed": "无法加载新的队员预览。请再次点击重新生成或返回。",
+    "TeammateHirePrice": "装备价格：{0} ₽",
+    "TeammateHirePriceFailed": "无法计算该队员的装备价格，请重试。",
+    "TeammateHireQuoteExpired": "报价已过期或装备管理模式已更改，请返回重新预览。",
+    "TeammateHireInsufficientFunds": "资金不足，无法执行此操作。",
+    "TeammateHirePurchaseFailed": "无法完成添加队员，可安全地再次点击添加小队成员。",
+    "TeammateHireRecoveryFailed": "无法恢复中断的队员购买，请先检查服务器日志。",
     "AddTeammateFlowActive": "添加小队成员流程已开启。",
     "AddTeammateOpenFailed": "无法打开小队成员创建界面。",
     "AddTeammateCreateFailed": "无法创建小队成员。",
     "AddTeammateUnsupportedSide": "当前小队成员仅支持添加 PMC 角色。",
     "Cancel": "取消",
+    "SwapGearApply": "应用更改",
+    "GiveGearApply": "给予物品",
+    "GiveGearWorking": "正在给予物品…",
+    "GiveGearUnavailable": "附近必须有一名已招募且未忙碌、未处于危险中的随从才能给予装备。",
+    "GiveGearApplyFailed": "物品未能给予。请检查装备、弹药和物品栏变化后重试。",
+    "SwapGearTransferInProgress": "请勿关闭窗口，直到转移完成。",
+    "SwapGearStale": "编辑期间物品栏发生了变化。未应用任何更改，请重新打开装备交换。",
+    "SwapGearNeedsWeapon": "应用前，请为队友保留至少一把配件齐全的枪械。",
+    "SwapGearMagazineSpace": "请在弹挂内留出队友换弹时存放弹匣的空间。",
+    "SwapGearRecoveryFailed": "装备交换失败后未能恢复状态。继续前请检查双方物品栏和日志。",
+    "SwapGearUnavailable": "任一角色忙碌或队友处于危险中时，无法交换装备。",
+    "SwapGearActionBlocked": "装备交换中无法执行此操作。请先在预览物品栏中调整装备，再点击应用。",
+    "SwapGearApplyFailed": "未应用装备更改。请检查装备兼容性、弹匣空间及物品栏变化，然后重新打开装备交换。",
+    "SwapGearRefreshFailed": "物品已转移，但队友装备状态刷新失败。继续前请查看日志。",
     "Save": "保存",
     "Done": "完成",
     "Ok": "确定",
@@ -279,7 +311,6 @@
     "UnknownItem": "未知物品",
     "EditLoadoutTitle": "编辑装备",
     "EditLoadoutTitleWithName": "编辑装备：{0}",
-    "EditLoadoutSubtitle": "编辑 {0} 的克隆物品。此处的更改还不会影响到实际仓库。",
     "EditLoadoutSubtitleReal": "编辑 {0} 的准备装备。保存将在你的仓库与此小队成员之间转移物品。",
     "ProfileRecoveredTitle": "角色已恢复",
     "ProfileRecoveredBody": "该小队成员的角色已从异常状态恢复。过程中其物品栏中的部分物品可能已被删除。",
@@ -291,13 +322,18 @@
     "PlayerStashPlaceholder": "加载克隆仓库视图失败。\n{0}",
     "BotInventory": "队员物品栏",
     "BotInventoryPlaceholder": "加载克隆队员物品栏失败。\n{0}",
-    "SaveEquipmentPresetFailed": "保存装备预设失败。",
     "ProfileTactic": "步枪手",
     "ProfileTacticMarksman": "精确射手",
     "ProfileTacticProtector": "掩护手",
     "ProfileAggression": "侵略性",
     "RemoveTeammateTitle": "移除小队成员",
-    "RemoveTeammatePrompt": "确定要删除成员 {0} 吗？此操作不可撤销。",
+    "RemoveRecruitedTeammatePrompt": "确定要移除招募的队员 {0} 吗？\n解雇费用：{1} ₽\n已装备的物品将通过快递服务邮寄。\n此操作无法撤销",
+    "TeammateDeleteInsufficientFunds": "资金不足，无法执行此操作。",
+    "TeammateDeleteFailed": "无法完成队员删除。请重试；已完成的删除不会重复扣款。",
+    "TeammateDeleteRecoveryFailed": "无法核实上次删除队员的付款状态。为防止错误扣款，已阻止删除。",
+    "TeammateDeleteDeliveryFailed": "队员已移除，但装备配送尚未完成。请重新打开“我的小队”以重试配送。如问题持续，请重启服务器。",
+    "RemovedTeammateEquipmentDelivery": "已移除队员的装备现可领取。",
+    "RemoveTeammatePrompt": "确定要移除成员 {0} 吗？\n已装备的物品将通过快递服务邮寄。\n此操作无法撤销",
     "RemoveTeammateConfirm": "移除",
     "SquadControlDeleteTooltip": "删除",
     "SquadControlInviteToGroup": "邀请入队",
@@ -329,15 +365,17 @@
     "SquadControlRosterMemberA": "小队成员 01",
     "SquadControlRosterMemberB": "小队成员 02",
     "SquadControlRosterRole": "小队成员",
-    "SquadControlEmptyRoster": "你还没有创建任何小队成员，请按下方的添加按钮开始。",
+    "SquadControlEmptyRoster": "背后无人掩护。雇佣队友，或在战场上招募队友，让塔科夫由你掌控。",
+    "SquadControlEmptyAllegianceRoster": "背后无人掩护。投身一场突袭，结成同盟，一起逃离塔科夫。",
+    "SquadControlModeGunsForHireDescription": "出发前雇佣并武装你的小队。让塔科夫由你掌控，按自己的规则游玩。",
+    "SquadControlModeAllegianceDescription": "遵循塔科夫的规则。盟友靠结交，而非购买。在战场上找到盟友，一起逃离。",
     "SettingsPressKey": "按下按键……",
     "SettingsNotBound": "未绑定",
-    "SettingsUnavailableDuringRaid": "战局中不可用",
-    "LoadoutManagementConfirmTitle": "切换装备管理模式",
-    "LoadoutManagementConfirmPrompt": "切换装备管理模式会将所有小队成员的装备切换为默认装备。",
-    "LoadoutManagementConfirm": "继续"
+    "SettingsUnavailableDuringRaid": "战局中不可用"
   },
   "returnItems": ["您的队员送回了这些物品，请查收。"],
+  "scavCargoReturn": ["我的一个手下把你的东西带回来了。按约定，东西还给你。"],
+  "scavTransitFarewell": ["我的一个手下回来了。多谢你照应他。"],
   "returnItemsDeath": ["您的队员找回了这些物品。"],
   "teamEscaped": ["活了！\n成功撤离了。"],
   "teamSomeEscaped": ["唉，可惜了 {0}，不过至少我们其他人都出来了。"],

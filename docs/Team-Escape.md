@@ -8,8 +8,7 @@ This document tracks the player-death squad escape system.
 
 The feature exists for the specific case where the player dies before raid end. In that case, surviving squadmates can independently escape the raid and keep the post-raid systems usable:
 
-- escaped squadmates are marked alive in their teammate profile
-- lost squadmates stay dead for roster/spawn logic
+- escaped and lost outcomes update teammate raid stats without writing raid-end health into saved profiles
 - player-given tracked follower loot can still be returned if an escaped squadmate has room after higher-priority death gear
 - recoverable player gear can be carried out by escaped squadmates and returned by mail
 - in `Immersive` and `Realistic` / internal `Extreme`, fallen teammate gear can also be carried out and returned by mail
@@ -27,6 +26,8 @@ Related docs:
 The player-death outcome system runs when the player boss dies and `BossPlayers.KillPlayerBoss(...)` tears down the active boss/follower relationship.
 
 The `Team Escape` raid setting controls whether surviving teammates roll for escape after player death. It is enabled by default. If disabled, player death skips survivor escape rolls, tracked follower loot recovery, and death-gear recovery. Live and already-dead teammates are still posted as lost outcomes so raid stats, roster death state, and `Immersive` / `Realistic` Default gear loss are persisted.
+
+In Allegiance mode, `Team Escape` is locked on and `Team Escape: Use Any Extraction Point` is locked off, restricting escape routes to player-assigned extraction points. Both controls show the Allegiance restriction tooltip. Returning to Guns for Hire restores their snapshotted values; see [gameplay mode restoration](Gameplay-Modes.md#saved-settings-and-restoration).
 
 Authoritative client files:
 
@@ -169,11 +170,11 @@ When a squadmate dies, the client records a fallen-gear snapshot.
 The snapshot has two separate uses:
 
 - recoverable top-level gear candidates are used only if the player later dies within the fallen-teammate pickup radius, currently `50m`
-- the full death-time equipment state is sent with the fallen teammate's lost outcome so `Restricted` + `Field Upkeep` can persist damage/consumable state without reading gear after corpse looting
+- the full death-time equipment state is sent with the fallen teammate's lost outcome so `Restricted` can persist damage/consumable state without reading gear after corpse looting
 
 The snapshot exists because by the time player-death escape resolution runs, normal raid cleanup may already be invalidating live bot state.
 
-The snapshot also records identity data so the server receives a lost outcome for a squadmate who died before the player. That lost outcome is what lets `Immersive` and `Realistic` strip the dead teammate's saved `Default` gear, and lets `Restricted` + `Field Upkeep` save the fallen teammate's death-time `Default` state.
+The snapshot also records identity data so the server receives a lost outcome for a squadmate who died before the player. That lost outcome is what lets `Immersive` and `Realistic` strip the dead teammate's saved `Default` gear, and lets `Restricted` save the fallen teammate's death-time `Default` state.
 
 ## Gear Recovery
 
@@ -258,7 +259,6 @@ Player gear recovery applies in every loadout-management mode. An escaped squadm
 
 Pocket recovery follows SPT's `lostondeath` `PocketItems` setting. The permanent `Pockets` container is never returned, but its contents are recoverable when pocket items would be lost on death.
 
-- `Simple`
 - `Restricted`
 - `Immersive`
 - `Realistic` / internal `Extreme`
@@ -284,9 +284,9 @@ Fallen teammate gear recovery only applies in:
 - `Immersive`
 - `Realistic` / internal `Extreme`
 
-In `Simple` and `Restricted`, teammate gear is protected and is not recovered from fallen bodies.
+In `Restricted`, teammate gear is protected and is not recovered from fallen bodies.
 
-In `Restricted` with `Field Upkeep` enabled, fallen teammate gear is still protected from player extraction and is still not returned as recovery mail. The server instead saves the fallen teammate's death-time `Default` equipment state, after removing tracked player-given loot and gear ids owned by other teammates.
+In `Restricted`, fallen teammate gear is still protected from player extraction and is still not returned as recovery mail. The server always saves the fallen teammate's death-time `Default` equipment state, after removing tracked player-given loot and gear ids owned by other teammates.
 
 If teammate gear is recovered, it is mailed to the player. It is not saved onto escaped teammate profiles.
 
@@ -312,7 +312,7 @@ This behavior only applies to the player-death escape situation. If the player e
 
 ## Escaped Teammate State
 
-Escaped teammates are marked alive by server persistence.
+Escape and loss outcomes do not change saved teammate health, hydration, or energy. The live health ratio affects the escape roll, but is not persisted into the next raid; ordinary non-transit follower activation restores full health. Survived/death stats and the equipment consequences below still follow the outcome.
 
 In `Immersive` and `Realistic`, escaped teammates using `Default` can save their live raid equipment state back to their saved `Default` loadout. This preserves their own durability, ammo, and consumed-med state.
 
@@ -341,8 +341,7 @@ The message text must use the language system. Hardcoded English should not be a
 
 Death escape can mutate teammate profiles after raid end:
 
-- escaped teammates may be marked alive
-- lost teammates may stay dead
+- escaped/lost teammates gain the corresponding survived/death raid stats, without rewriting saved health
 - `Immersive` / `Realistic` dead teammates may have their saved gear stripped
 - escaped teammates may persist their own updated `Default` equipment state
 

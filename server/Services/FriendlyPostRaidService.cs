@@ -26,6 +26,8 @@ public class FriendlyPostRaidService(
     DialogueHelper dialogueHelper,
     FriendlyLanguageService languageService,
     FriendlyTeammateService teammateService,
+    FollowerInsuranceRaidDiagnostics insuranceDiagnostics,
+    FollowerInsuranceCourierTransferService insuranceCourierTransfers,
     TimeUtil timeUtil,
     SaveServer saveServer,
     InventoryHelper inventoryHelper,
@@ -37,6 +39,13 @@ public class FriendlyPostRaidService(
     private const string KillMessageKindJerk = "jerk";
     private static readonly ConcurrentDictionary<string, Dictionary<string, KillMessageRecord>> KillMessageRecords = new();
     private static readonly ConcurrentDictionary<string, HashSet<string>> ProtectedRaidItemIds = new();
+
+    internal static HashSet<string> SnapshotProtectedRaidItemIds(MongoId sessionId)
+    {
+        if (!ProtectedRaidItemIds.TryGetValue(sessionId.ToString(), out var ids))
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        lock (ids) return new HashSet<string>(ids, StringComparer.OrdinalIgnoreCase);
+    }
 
     private static readonly string[] ReturnItemsMessages =
     [
@@ -74,6 +83,7 @@ public class FriendlyPostRaidService(
         StripProtectedTeammateItemsFromReturnItems(sessionId, items);
         if (items.Count == 0)
         {
+            insuranceDiagnostics.ObserveCourier(sessionId, [], request.InsuranceServerId, request.InsuranceReportId);
             return;
         }
 
@@ -92,7 +102,23 @@ public class FriendlyPostRaidService(
             ItemsMaxStorageLifetimeSeconds = 86400,
         };
 
+        string[] returnedIds = items.Where(item => item != null).Select(item => item.Id.ToString()).ToArray();
+        // Only accept provenance attached to a tree that survived the existing delivery filters.
+        var sourceIds = FollowerInsuranceRaidClassifier.DeliveredSourceIds(returnedIds, request.InsuranceSourceItemIdsByRoot);
         mailSendService.SendMessageToPlayer(details);
+        try
+        {
+            var acceptedMailIds = saveServer.GetProfile(sessionId)?.DialogueRecords?
+                .Where(pair => pair.Key.ToString() == FriendlyCourierTraderProfile.CourierTraderIdValue)
+                .SelectMany(pair => pair.Value.Messages?.LastOrDefault()?.Items?.Data ?? [])
+                .Select(item => item.Id.ToString()).ToHashSet(StringComparer.OrdinalIgnoreCase) ?? [];
+            insuranceCourierTransfers.ObserveDelivered(sessionId, request, items, details.Items, sourceIds, acceptedMailIds);
+        }
+        catch (Exception ex)
+        {
+            logger.Warning($"[FollowerInsurance:CourierTransfer] Unable to record mail lineage; delivery remains valid: {ex}");
+        }
+        insuranceDiagnostics.ObserveCourier(sessionId, sourceIds, request.InsuranceServerId, request.InsuranceReportId);
         EnsureDialogHasSender(sessionId, sender);
     }
 
@@ -127,7 +153,10 @@ public class FriendlyPostRaidService(
         }
     }
 
-    private void RemoveReturnedItemsFromInsurance(MongoId sessionId, List<SPTarkov.Server.Core.Models.Eft.Common.Tables.Item> returnedItems)
+    internal void FilterReturnItems(MongoId sessionId, List<SPTarkov.Server.Core.Models.Eft.Common.Tables.Item> items) =>
+        StripProtectedTeammateItemsFromReturnItems(sessionId, items);
+
+    internal void RemoveReturnedItemsFromInsurance(MongoId sessionId, List<SPTarkov.Server.Core.Models.Eft.Common.Tables.Item> returnedItems)
     {
         HashSet<MongoId> returnedItemIds = returnedItems
             .Where(item => item != null)

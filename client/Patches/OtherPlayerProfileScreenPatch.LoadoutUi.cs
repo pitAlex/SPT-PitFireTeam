@@ -1,7 +1,6 @@
 using Arena.UI;
 using Comfort.Common;
 using EFT;
-using EFT.Builds;
 using EFT.Communications;
 using EFT.InputSystem;
 using EFT.InventoryLogic;
@@ -23,17 +22,24 @@ namespace pitTeam.Patches
 {
     internal partial class OtherPlayerProfileScreenPatch
     {
+        // A repair can be saved server-side even when the live stash cannot be refreshed.
+        // In that case prevent another paid service or staged commit until restart.
+        private static bool RepairStashRefreshRequired;
+
         private static void ShowLoadoutEditorOverlay(OtherPlayerProfileScreen screen, ResultProfile profile)
         {
             CloseLoadoutEditorOverlay();
+            if (RepairStashRefreshRequired)
+            {
+                EFT.Communications.NotificationManager.DisplayWarningNotification(
+                    GetSocialUiText("LiveStashRefreshFailed"), ENotificationDurationType.Default);
+                return;
+            }
 
             if (screen == null || profile == null || ActiveProfileSession?.Profile?.Inventory?.Stash == null)
             {
                 return;
             }
-
-            LoadoutEditorSourceLoadoutId = ActiveTeammateLoadoutId;
-            LoadoutEditorSourceLoadoutName = ActiveTeammateLoadoutName;
 
             DefaultUIButton buttonTemplate = BackButtonField?.GetValue(screen) as DefaultUIButton;
             if (buttonTemplate == null)
@@ -116,9 +122,7 @@ namespace pitTeam.Patches
                 new Vector2(-28f, -98f),
                 TextAlignmentOptions.MidlineLeft,
                 string.Format(
-                    pitFireTeam.IsFollowerLoadoutRealTransferMode()
-                        ? GetSocialUiText("EditLoadoutSubtitleReal")
-                        : GetSocialUiText("EditLoadoutSubtitle"),
+                    GetSocialUiText("EditLoadoutSubtitleReal"),
                     profile.Info?.Nickname ?? "teammate"),
                 17f,
                 new Color(0.67f, 0.67f, 0.64f, 1f));
@@ -163,7 +167,7 @@ namespace pitTeam.Patches
             doneButton.OnClick.RemoveAllListeners();
             doneButton.OnClick.AddListener(async () =>
             {
-                await CommitLoadoutEditorPresetFromUiAsync(profile);
+                await CommitLoadoutEditorFromUiAsync(profile);
             });
             if (doneButton.transform is RectTransform doneRect)
             {
@@ -240,14 +244,6 @@ namespace pitTeam.Patches
 
         private static string GetLoadoutEditorTitleTargetName(ResultProfile profile)
         {
-            bool simpleMode = !pitFireTeam.IsFollowerLoadoutRealTransferMode();
-            if (simpleMode
-                && !IsDefaultLoadoutEditorSelection()
-                && !string.IsNullOrWhiteSpace(LoadoutEditorSourceLoadoutName))
-            {
-                return LoadoutEditorSourceLoadoutName;
-            }
-
             return profile?.Info?.Nickname ?? "teammate";
         }
 
@@ -318,6 +314,8 @@ namespace pitTeam.Patches
             LoadoutEditorInventoryController = editorInventoryController;
             RebuildLoadoutEditorItemIndexes();
 
+            OpenLoadoutEditorInsurance(profile.AccountId);
+
             itemUiContext.Configure(
                 editorInventoryController,
                 editorProfile,
@@ -334,6 +332,18 @@ namespace pitTeam.Patches
 
             TryBuildLoadoutEditorStashPanel(leftSection, editorProfile, editorInventoryController);
             TryBuildLoadoutEditorFollowerPanel(profile, rightSection, itemUiContext, editorProfile, editorInventoryController);
+
+            // Configure/Show can initialize item-component state (notably weapon attachments).
+            // Player interaction cannot begin until this synchronous build returns, so this is the
+            // first stable baseline for deciding whether the player actually edited the loadout.
+            try
+            {
+                CaptureLoadoutEditorInitialState(editorProfile);
+            }
+            catch (Exception ex)
+            {
+                pitFireTeam.Log.LogWarning($"[UI] Could not capture post-initialization loadout baseline: {ex.Message}");
+            }
         }
 
         private static bool TryCreateLoadoutEditorProfile(ResultProfile profile, out Profile editorProfile, out InventoryController editorInventoryController)
@@ -343,15 +353,7 @@ namespace pitTeam.Patches
 
             try
             {
-                bool preserveRealItemIds = IsRealDefaultLoadoutEditorCommit();
-                if (preserveRealItemIds)
-                {
-                    CaptureLoadoutEditorOriginalPinLocks(ActiveProfileSession?.Profile?.Inventory?.Stash);
-                }
-                else
-                {
-                    ClearLoadoutEditorOriginalPinLocks();
-                }
+                CaptureLoadoutEditorOriginalPinLocks(ActiveProfileSession?.Profile?.Inventory?.Stash);
 
                 Profile baseProfile = ActiveProfileSession?.Profile?.Clone();
                 InventoryEquipment editorEquipment = ResolveLoadoutEditorSourceEquipment(profile);
@@ -360,11 +362,8 @@ namespace pitTeam.Patches
                     return false;
                 }
 
-                // Player stash ids are preserved only for real default commits, where Done describes actual
-                // ownership movement between the player's stash and teammate gear.
-                Item editorStash = preserveRealItemIds
-                    ? baseProfile.Inventory.Stash.CloneItemWithSameId()
-                    : baseProfile.Inventory.Stash.CloneItem(null);
+                // Preserve item ids so Done commits ownership movement between the two inventories.
+                Item editorStash = baseProfile.Inventory.Stash.CloneItemWithSameId();
 
                 EFT.InventoryDescriptor inventoryDescriptor = new EFT.InventoryDescriptor(baseProfile.Inventory, EFT.FullySearchedSearchController.Instance)
                 {
@@ -373,14 +372,11 @@ namespace pitTeam.Patches
                 };
 
                 baseProfile.Inventory = inventoryDescriptor.ToInventory();
-                if (preserveRealItemIds)
-                {
-                    ApplyLoadoutEditorOriginalPinLocks(baseProfile.Inventory?.Stash);
-                }
+                ApplyLoadoutEditorOriginalPinLocks(baseProfile.Inventory?.Stash);
 
                 editorProfile = baseProfile;
                 editorInventoryController = new InventoryController(editorProfile, false);
-                CaptureLoadoutEditorInitialState(editorProfile, preserveRealItemIds);
+                CaptureLoadoutEditorInitialState(editorProfile);
                 return editorProfile.Inventory?.Equipment != null && editorProfile.Inventory.Stash != null;
             }
             catch (Exception ex)
@@ -395,12 +391,7 @@ namespace pitTeam.Patches
 
         private static InventoryEquipment ResolveLoadoutEditorSourceEquipment(ResultProfile profile)
         {
-            InventoryEquipment sourceEquipment = TryGetCustomBuildById(LoadoutEditorSourceLoadoutId)?.Equipment ?? profile?.Equipment;
-            // Real default editing stages the teammate's existing item ids so Done can describe
-            // actual ownership movement. Clone-only modes avoid aliasing live profile items.
-            InventoryEquipment clonedEquipment = IsRealDefaultLoadoutEditorCommit()
-                ? sourceEquipment?.CloneItemWithSameId() as InventoryEquipment
-                : sourceEquipment?.CloneItem(null) as InventoryEquipment;
+            InventoryEquipment clonedEquipment = profile?.Equipment?.CloneItemWithSameId() as InventoryEquipment;
             if (clonedEquipment == null)
             {
                 return null;
@@ -472,6 +463,15 @@ namespace pitTeam.Patches
                     SimpleStashPanel.EStashSearchAvailability.Unavailable,
                     null,
                     ItemsPanel.EItemsTab.Gear);
+
+                // The template may retain a previous screen's offset. Reset only this clone,
+                // after the stash grid and viewport have their final layout bounds.
+                if (stashPanel._stashScroll != null)
+                {
+                    Canvas.ForceUpdateCanvases();
+                    stashPanel._stashScroll.StopMovement();
+                    stashPanel._stashScroll.normalizedPosition = Vector2.up;
+                }
 
                 LoadoutEditorStashPanel = stashPanel;
             }
@@ -587,9 +587,7 @@ namespace pitTeam.Patches
                 insurance,
                 itemUiContext);
 
-            string headerTitle = !string.IsNullOrWhiteSpace(LoadoutEditorSourceLoadoutName)
-                ? LoadoutEditorSourceLoadoutName
-                : followerName;
+            string headerTitle = DefaultLoadoutName;
 
             if (!pitFireTeam.IsFollowerLoadoutRealisticMode())
             {
@@ -803,10 +801,9 @@ namespace pitTeam.Patches
                 LoadoutEditorOverlayRoot = null;
             }
 
+            CloseLoadoutEditorInsurance();
             LoadoutEditorProfile = null;
             LoadoutEditorInventoryController = null;
-            LoadoutEditorSourceLoadoutId = null;
-            LoadoutEditorSourceLoadoutName = null;
             LoadoutEditorInitialEquipmentItems = null;
             LoadoutEditorInitialStashItems = null;
             ClearLoadoutEditorOriginalPinLocks();
@@ -985,12 +982,14 @@ namespace pitTeam.Patches
             }
         }
 
-        private static async Task CommitLoadoutEditorPresetFromUiAsync(ResultProfile profile)
+        private static async Task CommitLoadoutEditorFromUiAsync(ResultProfile profile)
         {
             try
             {
+                if (InsurancePurchaseBusy || InsuranceRefreshRequiredForAid != null)
+                    throw new InvalidOperationException(GetSocialUiText("FollowerInsuranceRefreshRequired"));
                 CloseLoadoutEditorChildWindows();
-                await SaveLoadoutEditorPresetAsync(profile);
+                await SaveLoadoutEditorAsync(profile);
             }
             catch (Exception ex)
             {
@@ -1002,7 +1001,7 @@ namespace pitTeam.Patches
             }
         }
 
-        private static async Task SaveLoadoutEditorPresetAsync(ResultProfile profile)
+        private static async Task SaveLoadoutEditorAsync(ResultProfile profile)
         {
             if (profile == null
                 || LoadoutEditorProfile?.Inventory?.Equipment == null
@@ -1014,121 +1013,16 @@ namespace pitTeam.Patches
                 return;
             }
 
-            if (IsDefaultLoadoutEditorSelection())
-            {
-                await SaveLoadoutEditorDefaultEquipmentAsync(profile);
-                return;
-            }
-
-            if (ActiveProfileSession?.EquipmentBuildsStorage == null)
-            {
-                EFT.Communications.NotificationManager.DisplayWarningNotification(
-                    GetSocialUiText("LoadoutEditorSaveFailed"),
-                    ENotificationDurationType.Default);
-                return;
-            }
-
-            string initialName = string.IsNullOrWhiteSpace(LoadoutEditorSourceLoadoutName)
-                ? ActiveProfileSession.EquipmentBuildsStorage.LastEquippedPresetName
-                : LoadoutEditorSourceLoadoutName;
-
-            EFT.UI.Builds.EditBuildNameWindowContext nameDialog = ItemUiContext.Instance.ShowEditBuildNameWindow(
-                initialName ?? string.Empty,
-                "EquipmentBuild/SetNameWindowCaption".Localized(null),
-                "EquipmentBuild/SetNameWindowPlaceholder".Localized(null));
-
-            try
-            {
-                while (true)
-                {
-                    string enteredName;
-                    try
-                    {
-                        enteredName = await nameDialog.AcceptResult;
-                    }
-                    catch (TaskCanceledException)
-                    {
-                        return;
-                    }
-
-                    if (string.IsNullOrWhiteSpace(enteredName))
-                    {
-                        EFT.Communications.NotificationManager.DisplayWarningNotification(GetSocialUiText("NameCannotBeEmpty"), ENotificationDurationType.Default);
-                        continue;
-                    }
-
-                    enteredName = enteredName.Trim();
-                    EFT.UI.Builds.EquipmentBuildsStorage buildsStorage = ActiveProfileSession.EquipmentBuildsStorage;
-                    EFT.UI.Builds.EquipmentBuild originalBuild = TryGetCustomBuildById(LoadoutEditorSourceLoadoutId);
-                    EFT.UI.Builds.EquipmentBuild existingBuildByName = buildsStorage.FindCustomBuildByName(enteredName);
-                    MongoID targetBuildId;
-
-                    if (existingBuildByName != null
-                        && (originalBuild == null || existingBuildByName.Id != originalBuild.Id))
-                    {
-                        bool replaceExisting = await ShowReplaceBuildPromptAsync();
-                        if (!replaceExisting)
-                        {
-                            continue;
-                        }
-
-                        targetBuildId = existingBuildByName.Id;
-                    }
-                    else if (originalBuild != null && string.Equals(originalBuild.Name, enteredName, StringComparison.Ordinal))
-                    {
-                        targetBuildId = originalBuild.Id;
-                    }
-                    else
-                    {
-                        targetBuildId = new MongoID(ActiveProfileSession.Profile);
-                    }
-
-                    EFT.UI.Builds.EquipmentBuild editedBuild = new EFT.UI.Builds.EquipmentBuild(
-                        targetBuildId,
-                        enteredName,
-                        CreateSanitizedLoadoutEditorSaveEquipment(),
-                        EEquipmentBuildType.Custom);
-
-                    var saveResult = await buildsStorage.SaveBuild(editedBuild);
-                    if (saveResult.Failed)
-                    {
-                        EFT.Communications.NotificationManager.DisplayWarningNotification(saveResult.Error ?? GetSocialUiText("SaveEquipmentPresetFailed"), ENotificationDurationType.Default);
-                        continue;
-                    }
-
-                    await PersistTeammateLoadoutSelectionAsync(profile.AccountId, editedBuild.Id);
-                    ActiveTeammateLoadoutId = editedBuild.Id;
-                    ActiveTeammateLoadoutName = editedBuild.Name;
-                    EFT.Communications.NotificationManager.DisplayMessageNotification(
-                        string.Format("EquipmentBuilds/PresetSaved".Localized(null), editedBuild.Name),
-                        ENotificationDurationType.Default,
-                        ENotificationIconType.Default,
-                        null);
-
-                    CloseLoadoutEditorOverlay();
-                    RefreshCurrentTeammateLoadoutSelector(profile);
-                    MarkSquadRosterDirty(profile.AccountId);
-                    return;
-                }
-            }
-            finally
-            {
-                nameDialog.Close();
-            }
-        }
-
-        private static bool IsDefaultLoadoutEditorSelection()
-        {
-            return string.Equals(LoadoutEditorSourceLoadoutId, DefaultLoadoutId, StringComparison.OrdinalIgnoreCase);
+            await SaveLoadoutEditorDefaultEquipmentAsync(profile);
         }
 
         private static async Task SaveLoadoutEditorDefaultEquipmentAsync(ResultProfile profile)
         {
-            bool realItemCommit = IsRealDefaultLoadoutEditorCommit();
-            SetLoadoutEditorBusy(realItemCommit);
+            SetLoadoutEditorBusy(true);
 
             try
             {
+                EnsureRepairStashRefreshReady();
                 JsonType.FlatItem[] serializedEquipment = Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(
                     new Item[] { CreateSanitizedLoadoutEditorSaveEquipment() });
                 if (serializedEquipment == null || serializedEquipment.Length == 0)
@@ -1136,22 +1030,18 @@ namespace pitTeam.Patches
                     throw new InvalidOperationException("Loadout editor default equipment was unavailable for save.");
                 }
 
-                JsonType.FlatItem[] serializedPlayerStash = null;
-                if (realItemCommit)
+                // The editor is a staged inventory. Sending both sides lets the server commit the final
+                // ownership state atomically instead of trusting client-side drag events one by one.
+                JsonType.FlatItem[] serializedPlayerStash = CreateLoadoutEditorSaveStashItems();
+                if (!HasLoadoutEditorRealChanges(serializedEquipment, serializedPlayerStash))
                 {
-                    // The editor is a staged inventory. Sending both sides lets the server commit the final
-                    // ownership state atomically instead of trusting client-side drag events one by one.
-                    serializedPlayerStash = CreateLoadoutEditorSaveStashItems();
-                    if (!HasLoadoutEditorRealChanges(serializedEquipment, serializedPlayerStash))
-                    {
-                        Modules.Logger.LogInfo("[UI] No real loadout editor changes detected; closing without teammate default commit.");
-                        CloseLoadoutEditorOverlay();
-                        RefreshCurrentTeammateLoadoutSelector(profile);
-                        return;
-                    }
-
-                    Modules.Logger.LogInfo("[UI] Prepared server-authoritative real loadout commit.");
+                    Modules.Logger.LogInfo("[UI] No real loadout editor changes detected; closing without teammate default commit.");
+                    CloseLoadoutEditorOverlay();
+                    RefreshCurrentTeammateLoadoutSelector(profile);
+                    return;
                 }
+
+                Modules.Logger.LogInfo("[UI] Prepared server-authoritative real loadout commit.");
 
                 string responseJson = await Task.Run(() => RequestHandler.PostJson(
                     DefaultEquipmentRoute,
@@ -1160,18 +1050,15 @@ namespace pitTeam.Patches
                         aid = profile.AccountId,
                         items = serializedEquipment,
                         playerStashItems = serializedPlayerStash,
-                        realItemCommit = realItemCommit
+                        realItemCommit = true
                     })));
 
                 FriendlyTeammateBodyResponse<FriendlyTeammateDefaultEquipmentResponse> response =
                     DeserializeBodySuccess<FriendlyTeammateDefaultEquipmentResponse>(responseJson);
 
-                if (realItemCommit)
-                {
-                    // The server save is authoritative. This reconciles the currently open client
-                    // profile with the server-saved stash snapshot so a restart is not needed.
-                    ApplyServerDefaultEquipmentPlayerStashChanges(response?.data);
-                }
+                // The server save is authoritative. This reconciles the currently open client
+                // profile with the server-saved stash snapshot so a restart is not needed.
+                ApplyServerDefaultEquipmentPlayerStashChanges(response?.data);
 
                 ActiveTeammateLoadoutId = DefaultLoadoutId;
                 ActiveTeammateLoadoutName = DefaultLoadoutName;
@@ -1225,6 +1112,12 @@ namespace pitTeam.Patches
                 savedStashItems);
         }
 
+        private static void EnsureRepairStashRefreshReady()
+        {
+            if (RepairStashRefreshRequired)
+                throw CreateLiveStashRefreshException("A previous teammate repair stash refresh failed; restart the game before further loadout changes.");
+        }
+
         internal static void ApplyServerSavedPlayerStash(
             Profile activeProfile,
             InventoryController activeInventoryController,
@@ -1241,6 +1134,7 @@ namespace pitTeam.Patches
                 throw new InvalidOperationException("Active player profile was unavailable for live stash refresh.");
             }
 
+            savedStashItems = NormalizePlayerStashSnapshot(savedStashItems, activeProfile.Inventory.Stash.Id);
             JsonType.FlatItem[] liveStashItems = Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(
                 new Item[] { activeProfile.Inventory.Stash });
             if (liveStashItems == null || liveStashItems.Length == 0)
@@ -1290,6 +1184,19 @@ namespace pitTeam.Patches
             ApplyServerSavedPlayerStashSnapshot(activeProfile, activeInventoryController, savedStashItems);
         }
 
+        // Server inventory arrays can put descendants before their parent. EFT's item factory
+        // expects a tree-ordered snapshot, as produced by TreeToFlatItems.
+        private static JsonType.FlatItem[] NormalizePlayerStashSnapshot(JsonType.FlatItem[] items, string stashRootId)
+        {
+            Dictionary<string, JsonType.FlatItem> byId = ToFlatItemDictionary(items);
+            if (!byId.ContainsKey(stashRootId) || byId.Count != items.Length)
+                throw CreateLiveStashRefreshException("Server-saved player stash did not contain the active stash root.");
+            List<JsonType.FlatItem> ordered = ExpandFlatItemRoots(new[] { stashRootId }, byId);
+            if (ordered.Count != items.Length)
+                throw CreateLiveStashRefreshException("Server-saved player stash contained items outside the active stash tree.");
+            return ordered.ToArray();
+        }
+
         private static void ApplyServerSavedPlayerStashSnapshot(
             Profile activeProfile,
             InventoryController activeInventoryController,
@@ -1298,6 +1205,8 @@ namespace pitTeam.Patches
             EFT.ItemFactory.FlatItemsToResultTree tree = Singleton<EFT.ItemFactory>.Instance.FlatItemsToTree(savedStashItems, false, null);
             if (tree.DeserializationErrors != null && tree.DeserializationErrors.Count > 0)
             {
+                foreach (var error in tree.DeserializationErrors)
+                    pitFireTeam.Log.LogWarning($"[UI] Server-saved stash item deserialization detail: {error}");
                 throw CreateLiveStashRefreshException(
                     $"Server-saved player stash contained {tree.DeserializationErrors.Count} deserialization error(s).");
             }
@@ -1369,7 +1278,6 @@ namespace pitTeam.Patches
         internal static bool CanRepairLoadoutEditorEquipmentItem(Item item)
         {
             return ViewedProfile != null
-                && IsDefaultLoadoutEditorSelection()
                 && IsLoadoutEditorEquipmentItem(item)
                 && item.GetItemComponentsInChildren<RepairableComponent>(true).Any();
         }
@@ -1381,7 +1289,7 @@ namespace pitTeam.Patches
                 return false;
             }
 
-            if (IsRealDefaultLoadoutEditorCommit() && LoadoutEditorInitialEquipmentItems != null)
+            if (LoadoutEditorInitialEquipmentItems != null)
             {
                 return LoadoutEditorInitialEquipmentItems.Any(candidate =>
                     candidate?._id != null
@@ -1407,7 +1315,7 @@ namespace pitTeam.Patches
             SetLoadoutEditorBusy(true);
             try
             {
-                IResult prepareResult = await PrepareLoadoutEditorRepairTargetAsync(itemToRepair.Id);
+                IResult prepareResult = await PrepareLoadoutEditorRepairTargetAsync(itemToRepair.Id, repairKitsInfo);
                 if (prepareResult.Failed)
                 {
                     return prepareResult;
@@ -1436,12 +1344,13 @@ namespace pitTeam.Patches
                 }
 
                 ApplyLoadoutEditorRepairResult(itemToRepair, data);
-                ApplyServerRepairPlayerStashChanges(data);
+                ApplyServerRepairPlayerStashChanges(data, repairKitsInfo);
                 ApplyServerRepairLoadoutEditorStashChanges(data);
-                CaptureLoadoutEditorInitialState(LoadoutEditorProfile, IsRealDefaultLoadoutEditorCommit());
                 SyncLoadoutEditorRepairKitsFromActiveProfile(repairKitsInfo);
+                // Kit resource synchronization can change the staged stash after its delta is applied.
+                // Capture the final state so the next repair does not re-commit unchanged equipment.
+                CaptureLoadoutEditorInitialState(LoadoutEditorProfile);
                 MarkSquadRosterDirty(ViewedProfile.AccountId);
-                Modules.Logger.LogInfo($"[UI] Repaired teammate loadout item '{itemToRepair.Id}' through teammate repair route.");
                 return SuccessfulResult.New;
             }
             catch (Exception ex)
@@ -1466,6 +1375,7 @@ namespace pitTeam.Patches
             SetLoadoutEditorBusy(true);
             try
             {
+                EnsureRepairStashRefreshReady();
                 IResult prepareResult = await PrepareLoadoutEditorRepairTargetAsync(itemToRepair.Id);
                 if (prepareResult.Failed)
                 {
@@ -1498,9 +1408,8 @@ namespace pitTeam.Patches
                 ApplyLoadoutEditorRepairResult(itemToRepair, data);
                 ApplyServerRepairPlayerStashChanges(data);
                 ApplyServerRepairLoadoutEditorStashChanges(data);
-                CaptureLoadoutEditorInitialState(LoadoutEditorProfile, IsRealDefaultLoadoutEditorCommit());
+                CaptureLoadoutEditorInitialState(LoadoutEditorProfile);
                 MarkSquadRosterDirty(ViewedProfile.AccountId);
-                Modules.Logger.LogInfo($"[UI] Repaired teammate loadout item '{itemToRepair.Id}' through teammate trader repair route.");
                 return SuccessfulResult.New;
             }
             catch (Exception ex)
@@ -1515,20 +1424,24 @@ namespace pitTeam.Patches
             }
         }
 
-        private static async Task<IResult> PrepareLoadoutEditorRepairTargetAsync(string targetItemId)
+        private static async Task<IResult> PrepareLoadoutEditorRepairTargetAsync(string targetItemId, RepairItem[] repairKitsInfo = null)
         {
+            if (RepairStashRefreshRequired)
+                return new FailedResult(GetSocialUiText("LiveStashRefreshFailed"), 0);
+            if (InsurancePurchaseBusy || InsuranceRefreshRequiredForAid != null)
+                return new FailedResult(GetSocialUiText("FollowerInsuranceRefreshRequired"), 0);
             if (!TryGetLoadoutEditorEquipmentItem(targetItemId, out Item itemToRepair)
                 || !CanRepairLoadoutEditorEquipmentItem(itemToRepair))
             {
                 return new FailedResult("This teammate loadout item must remain on teammate equipment to be repaired", 0);
             }
 
-            if (!ShouldCommitLoadoutEditorBeforeRepair(itemToRepair))
+            if (!ShouldCommitLoadoutEditorBeforeRepair(itemToRepair, repairKitsInfo))
             {
                 return SuccessfulResult.New;
             }
 
-            IResult commitResult = await CommitLoadoutEditorStateBeforeRepairAsync(ViewedProfile);
+            IResult commitResult = await CommitLoadoutEditorStateBeforeServiceAsync(ViewedProfile, repairKitsInfo);
             if (commitResult.Failed)
             {
                 return commitResult;
@@ -1544,13 +1457,13 @@ namespace pitTeam.Patches
             return SuccessfulResult.New;
         }
 
-        private static bool ShouldCommitLoadoutEditorBeforeRepair(Item item)
+        private static bool ShouldCommitLoadoutEditorBeforeRepair(Item item, RepairItem[] repairKitsInfo)
         {
-            return !IsLoadoutEditorEquipmentItemSavedToTeammateProfile(item)
-                || HasPendingLoadoutEditorRealChanges();
+            bool targetSaved = IsLoadoutEditorEquipmentItemSavedToTeammateProfile(item);
+            return !targetSaved || HasPendingLoadoutEditorRealChanges(repairKitsInfo);
         }
 
-        private static async Task<IResult> CommitLoadoutEditorStateBeforeRepairAsync(ResultProfile profile)
+        private static async Task<IResult> CommitLoadoutEditorStateBeforeServiceAsync(ResultProfile profile, RepairItem[] repairKitsInfo = null)
         {
             if (profile == null || LoadoutEditorProfile?.Inventory?.Equipment == null)
             {
@@ -1559,7 +1472,7 @@ namespace pitTeam.Patches
 
             try
             {
-                bool realItemCommit = IsRealDefaultLoadoutEditorCommit();
+                EnsureRepairStashRefreshReady();
                 JsonType.FlatItem[] serializedEquipment = Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(
                     new Item[] { CreateSanitizedLoadoutEditorSaveEquipment() });
                 if (serializedEquipment == null || serializedEquipment.Length == 0)
@@ -1567,11 +1480,10 @@ namespace pitTeam.Patches
                     return new FailedResult("Loadout editor default equipment was unavailable for save.", 0);
                 }
 
-                JsonType.FlatItem[] serializedPlayerStash = realItemCommit
-                    ? CreateLoadoutEditorSaveStashItems()
-                    : null;
+                JsonType.FlatItem[] serializedPlayerStash = CreateLoadoutEditorSaveStashItems();
+                RestoreNativeRepairKitReservationForCommit(serializedPlayerStash, repairKitsInfo);
 
-                Modules.Logger.LogInfo("[UI] Saving pending teammate loadout editor changes before repair.");
+                Modules.Logger.LogInfo("[UI] Saving pending teammate loadout editor changes before a paid service.");
                 string responseJson = await Task.Run(() => RequestHandler.PostJson(
                     DefaultEquipmentRoute,
                     SerializeBody(new FriendlyTeammateDefaultEquipmentRequest
@@ -1579,27 +1491,20 @@ namespace pitTeam.Patches
                         aid = profile.AccountId,
                         items = serializedEquipment,
                         playerStashItems = serializedPlayerStash,
-                        realItemCommit = realItemCommit
+                        realItemCommit = true
                     })));
 
                 FriendlyTeammateBodyResponse<FriendlyTeammateDefaultEquipmentResponse> response =
                     DeserializeBodySuccess<FriendlyTeammateDefaultEquipmentResponse>(responseJson);
 
-                if (realItemCommit)
+                bool appliedDelta = ApplyServerDefaultEquipmentPlayerStashChanges(response?.data);
+                if (appliedDelta)
                 {
-                    bool appliedDelta = ApplyServerDefaultEquipmentPlayerStashChanges(response?.data);
-                    if (appliedDelta)
-                    {
-                        CaptureLoadoutEditorInitialState(LoadoutEditorProfile, realItemCommit: true);
-                    }
-                    else
-                    {
-                        ApplyServerSavedLoadoutEditorStash(response?.data?.playerStashItems);
-                    }
+                    CaptureLoadoutEditorInitialState(LoadoutEditorProfile);
                 }
                 else
                 {
-                    CaptureLoadoutEditorInitialState(LoadoutEditorProfile, realItemCommit: false);
+                    ApplyServerSavedLoadoutEditorStash(response?.data?.playerStashItems);
                 }
 
                 ActiveTeammateLoadoutId = DefaultLoadoutId;
@@ -1610,7 +1515,7 @@ namespace pitTeam.Patches
             }
             catch (Exception ex)
             {
-                pitFireTeam.Log.LogError("[UI] Failed to save pending teammate loadout editor changes before repair.");
+                pitFireTeam.Log.LogError("[UI] Failed to save pending teammate loadout editor changes before a paid service.");
                 pitFireTeam.Log.LogError(ex);
                 return new FailedResult(ex.Message ?? GetSocialUiText("LoadoutEditorSaveFailed"), 0);
             }
@@ -1635,39 +1540,121 @@ namespace pitTeam.Patches
             if (response?.playerStashItems != null && response.playerStashItems.Length > 0)
             {
                 ApplyServerSavedPlayerStash(response.playerStashItems);
+                ApplyCommittedInsurance(response);
                 return true;
             }
 
             // Compatibility fallback for older servers that only returned item-granular changes.
+            EnsureRepairStashRefreshReady();
             if (TryApplyPlayerStashDelta(
                     response?.playerNewStashItems,
                     response?.playerChangedStashItems,
                     response?.playerDeletedStashItemIds,
                     "real loadout commit"))
             {
+                ApplyCommittedInsurance(response);
                 return true;
             }
 
             return false;
         }
 
-        private static void ApplyServerRepairPlayerStashChanges(FriendlyTeammateRepairEquipmentResponse response)
+        private static void ApplyServerRepairPlayerStashChanges(
+            FriendlyTeammateRepairEquipmentResponse response, RepairItem[] repairKitsInfo = null)
         {
-            if (response?.playerStashItems != null && response.playerStashItems.Length > 0)
-            {
-                ApplyServerSavedPlayerStash(response.playerStashItems);
+            if (repairKitsInfo != null && TryApplyRepairKitResourceInPlace(response, repairKitsInfo))
                 return;
-            }
 
-            // Compatibility fallback for older servers that only returned item-granular changes.
+            // The repair response contains the exact saved player-item changes. Apply those
+            // before considering a full stash rebuild, which can encounter unrelated modded
+            // items that the live EFT item factory cannot deserialize.
             if (TryApplyPlayerStashDelta(
                     response?.playerNewStashItems,
                     response?.playerChangedStashItems,
                     response?.playerDeletedStashItemIds,
                     "teammate repair"))
-            {
                 return;
+
+            try
+            {
+                if (response?.playerStashItems == null || response.playerStashItems.Length == 0)
+                    throw CreateLiveStashRefreshException("Teammate repair returned no usable player stash change response.");
+                ApplyServerSavedPlayerStash(response.playerStashItems);
             }
+            catch
+            {
+                // The repair already committed server-side. Never permit another paid service
+                // or staged save against a client stash that could not be refreshed.
+                RepairStashRefreshRequired = true;
+                throw;
+            }
+        }
+
+        private static bool TryApplyRepairKitResourceInPlace(
+            FriendlyTeammateRepairEquipmentResponse response, RepairItem[] repairKitsInfo)
+        {
+            if (response?.playerChangedStashItems == null || response.playerChangedStashItems.Length == 0
+                || response.playerNewStashItems?.Length > 0 || response.playerDeletedStashItemIds?.Length > 0
+                || ActiveProfileSession?.Profile?.Inventory?.Stash == null)
+            {
+                return false;
+            }
+
+            var activeProfile = ActiveProfileSession.Profile;
+            var updates = new List<(EFT.InventoryLogic.RepairKit Kit, float Before, float After, JsonType.FlatItem Saved)>();
+            var seenIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var selectedIds = new HashSet<string>(repairKitsInfo.Where(kit => kit != null).Select(kit => kit.Id), StringComparer.OrdinalIgnoreCase);
+            foreach (JsonType.FlatItem changedItem in response.playerChangedStashItems)
+            {
+                string itemId = changedItem?._id.ToString();
+                if (string.IsNullOrWhiteSpace(itemId) || !selectedIds.Contains(itemId) || !seenIds.Add(itemId)
+                    || !(changedItem.upd?.JToken?["RepairKit"]?["Resource"] is Newtonsoft.Json.Linq.JToken resourceToken)
+                    || (resourceToken.Type != Newtonsoft.Json.Linq.JTokenType.Float
+                        && resourceToken.Type != Newtonsoft.Json.Linq.JTokenType.Integer))
+                {
+                    return false;
+                }
+
+                float savedResource = resourceToken.ToObject<float>();
+                EFT.InventoryLogic.RepairKit kit = activeProfile.Inventory.GetPlayerItems()
+                    .OfType<EFT.InventoryLogic.RepairKit>()
+                    .FirstOrDefault(item => string.Equals(item.Id, itemId, StringComparison.OrdinalIgnoreCase));
+                if (kit?.RepairKitComponent == null || float.IsNaN(savedResource)
+                    || float.IsInfinity(savedResource) || savedResource < 0f)
+                {
+                    return false;
+                }
+
+                updates.Add((kit, kit.RepairKitComponent.Resource, savedResource, changedItem));
+            }
+
+            try
+            {
+                foreach (var update in updates)
+                    update.Kit.RepairKitComponent.Resource = update.After;
+
+                foreach (var update in updates)
+                {
+                    JsonType.FlatItem live = Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(
+                        new Item[] { update.Kit }).FirstOrDefault(item => item?._id.ToString() == update.Kit.Id);
+                    if (live == null || !JsonTokenEquals(live.upd, update.Saved.upd))
+                        throw new InvalidOperationException($"Repair kit '{update.Kit.Id}' has additional saved changes; use the item delta.");
+                }
+                foreach (var update in updates)
+                {
+                    update.Kit.UpdateAttributes();
+                    update.Kit.RaiseRefreshEvent(true, true);
+                }
+                return true;
+            }
+            catch
+            {
+                // A saved kit can have additional changes; the item delta is authoritative.
+            }
+
+            foreach (var update in updates)
+                update.Kit.RepairKitComponent.Resource = update.Before;
+            return false;
         }
 
         private static bool TryApplyPlayerStashDelta(
@@ -1715,7 +1702,6 @@ namespace pitTeam.Patches
                     }
                 });
 
-                Modules.Logger.LogInfo($"[UI] Applied {reason} player stash delta: new={newItems.Length}, change={changedItems.Length}, del={deletedItems.Length}.");
                 return true;
             }
             catch (Exception ex)
@@ -1753,9 +1739,9 @@ namespace pitTeam.Patches
             return deletedItems.ToArray();
         }
 
-        private static void ApplyServerRepairLoadoutEditorStashChanges(FriendlyTeammateRepairEquipmentResponse response)
+        private static void ApplyServerRepairLoadoutEditorStashChanges(FriendlyTeammateRepairEquipmentResponse response, bool requireInPlace = false)
         {
-            if (response == null || !IsRealDefaultLoadoutEditorCommit() || LoadoutEditorProfile?.Inventory == null)
+            if (response == null || LoadoutEditorProfile?.Inventory == null)
             {
                 return;
             }
@@ -1811,15 +1797,19 @@ namespace pitTeam.Patches
                     }
                     else
                     {
+                        if (requireInPlace)
+                            throw new InvalidOperationException("FollowerInsuranceRefreshRequired");
                         pitFireTeam.Log.LogWarning($"[UI] Failed to remove consumed repair stash item '{deletedItemId}' from loadout editor stash: {removeResult.Error}");
                     }
                 }
 
                 RebuildLoadoutEditorItemIndexes();
-                CaptureLoadoutEditorInitialState(LoadoutEditorProfile, realItemCommit: true);
+                CaptureLoadoutEditorInitialState(LoadoutEditorProfile);
             }
             catch (Exception ex)
             {
+                // Insurance must retain its save guard if a visible editor stack could not be refreshed.
+                if (requireInPlace) throw;
                 pitFireTeam.Log.LogWarning($"[UI] Teammate repair editor stash delta refresh failed; falling back to full refresh when available. {ex.Message}");
                 if (response.playerStashItems != null && response.playerStashItems.Length > 0)
                 {
@@ -1832,14 +1822,14 @@ namespace pitTeam.Patches
         {
             if (savedStashItems == null
                 || savedStashItems.Length == 0
-                || LoadoutEditorProfile?.Inventory == null
-                || !IsRealDefaultLoadoutEditorCommit())
+                || LoadoutEditorProfile?.Inventory == null)
             {
                 return;
             }
 
             try
             {
+                savedStashItems = NormalizePlayerStashSnapshot(savedStashItems, LoadoutEditorProfile.Inventory.Stash.Id);
                 JsonType.FlatItem[] editorStashItems = RemoveLoadoutEditorEquipmentItemsFromSavedStash(savedStashItems);
                 EFT.ItemFactory.FlatItemsToResultTree tree = Singleton<EFT.ItemFactory>.Instance.FlatItemsToTree(editorStashItems, false, null);
                 string stashRootId = editorStashItems[0]._id.ToString();
@@ -1851,7 +1841,7 @@ namespace pitTeam.Patches
                 ApplyLoadoutEditorOriginalPinLocks(savedStash);
                 LoadoutEditorProfile.Inventory.Stash = savedStash;
                 RebuildLoadoutEditorItemIndexes();
-                CaptureLoadoutEditorInitialState(LoadoutEditorProfile, realItemCommit: true);
+                CaptureLoadoutEditorInitialState(LoadoutEditorProfile);
             }
             catch (Exception ex)
             {
@@ -2208,7 +2198,8 @@ namespace pitTeam.Patches
             return Newtonsoft.Json.Linq.JToken.DeepEquals(leftToken, rightToken);
         }
 
-        private static bool PlayerStashMatchesSavedSnapshot(Profile activeProfile, JsonType.FlatItem[] savedStashItems)
+        private static bool PlayerStashMatchesSavedSnapshot(
+            Profile activeProfile, JsonType.FlatItem[] savedStashItems, HashSet<string> kitUpdExceptions = null)
         {
             if (activeProfile?.Inventory?.Stash == null || savedStashItems == null || savedStashItems.Length == 0)
             {
@@ -2233,7 +2224,8 @@ namespace pitTeam.Patches
             {
                 if (!liveById.TryGetValue(savedEntry.Key, out JsonType.FlatItem liveItem)
                     || PlacementChanged(liveItem, savedEntry.Value)
-                    || !JsonTokenEquals(liveItem.upd, savedEntry.Value.upd))
+                    || (kitUpdExceptions?.Contains(savedEntry.Key) != true
+                        && !JsonTokenEquals(liveItem.upd, savedEntry.Value.upd)))
                 {
                     return false;
                 }
@@ -2257,9 +2249,7 @@ namespace pitTeam.Patches
 
         private static InventoryEquipment CreateSanitizedLoadoutEditorSaveEquipment()
         {
-            InventoryEquipment sanitizedEquipment = IsRealDefaultLoadoutEditorCommit()
-                ? LoadoutEditorProfile?.Inventory?.Equipment?.CloneItemWithSameId() as InventoryEquipment
-                : LoadoutEditorProfile?.Inventory?.Equipment?.CloneItem(null) as InventoryEquipment;
+            InventoryEquipment sanitizedEquipment = LoadoutEditorProfile?.Inventory?.Equipment?.CloneItemWithSameId() as InventoryEquipment;
             if (sanitizedEquipment == null)
             {
                 throw new InvalidOperationException("Loadout editor equipment was unavailable for save.");
@@ -2267,11 +2257,6 @@ namespace pitTeam.Patches
 
             SanitizeLoadoutEditorEquipment(sanitizedEquipment);
             return sanitizedEquipment;
-        }
-
-        private static bool IsRealDefaultLoadoutEditorCommit()
-        {
-            return pitFireTeam.IsFollowerLoadoutRealTransferMode() && IsDefaultLoadoutEditorSelection();
         }
 
         private static JsonType.FlatItem[] CreateLoadoutEditorSaveStashItems()
@@ -2297,15 +2282,8 @@ namespace pitTeam.Patches
             return sanitizedStash;
         }
 
-        private static void CaptureLoadoutEditorInitialState(Profile editorProfile, bool realItemCommit)
+        private static void CaptureLoadoutEditorInitialState(Profile editorProfile)
         {
-            if (!realItemCommit)
-            {
-                LoadoutEditorInitialEquipmentItems = null;
-                LoadoutEditorInitialStashItems = null;
-                return;
-            }
-
             InventoryEquipment equipment = editorProfile?.Inventory?.Equipment;
             Item stash = editorProfile?.Inventory?.Stash;
             LoadoutEditorInitialEquipmentItems = equipment == null
@@ -2327,13 +2305,8 @@ namespace pitTeam.Patches
                 || !FlatItemArraysEqual(LoadoutEditorInitialStashItems, currentStash);
         }
 
-        private static bool HasPendingLoadoutEditorRealChanges()
+        private static bool HasPendingLoadoutEditorRealChanges(RepairItem[] repairKitsInfo = null)
         {
-            if (!IsRealDefaultLoadoutEditorCommit())
-            {
-                return false;
-            }
-
             try
             {
                 InventoryEquipment equipment = LoadoutEditorProfile?.Inventory?.Equipment;
@@ -2345,13 +2318,150 @@ namespace pitTeam.Patches
 
                 JsonType.FlatItem[] currentEquipment = Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(new Item[] { equipment });
                 JsonType.FlatItem[] currentStash = Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(new Item[] { stash });
-                return HasLoadoutEditorRealChanges(currentEquipment, currentStash);
+                bool equipmentChanged = !FlatItemArraysEqual(LoadoutEditorInitialEquipmentItems, currentEquipment);
+                bool stashChanged = !FlatItemArraysEqual(LoadoutEditorInitialStashItems, currentStash);
+                if (stashChanged && TryMatchNativeRepairKitReservation(
+                        LoadoutEditorInitialStashItems, currentStash, repairKitsInfo))
+                {
+                    stashChanged = false;
+                }
+                return equipmentChanged || stashChanged;
             }
             catch (Exception ex)
             {
                 pitFireTeam.Log.LogWarning($"[UI] Unable to compare loadout editor state before repair: {ex.Message}");
                 return true;
             }
+        }
+
+        private static bool TryMatchNativeRepairKitReservation(
+            JsonType.FlatItem[] baseline,
+            JsonType.FlatItem[] current,
+            RepairItem[] repairKitsInfo)
+        {
+            if (baseline == null || current == null || baseline.Length != current.Length
+                || !TryGetNativeRepairKitReservation(
+                    baseline, current, repairKitsInfo, out string kitId, out _, out _))
+                return false;
+
+            Dictionary<string, JsonType.FlatItem> before = ToFlatItemDictionary(baseline);
+            Dictionary<string, JsonType.FlatItem> after = ToFlatItemDictionary(current);
+            if (before.Count != baseline.Length || after.Count != current.Length || before.Count != after.Count)
+                return false;
+
+            bool foundReservation = false;
+            foreach (KeyValuePair<string, JsonType.FlatItem> entry in before)
+            {
+                if (!after.TryGetValue(entry.Key, out JsonType.FlatItem currentItem))
+                    return false;
+                if (FlatItemStateEquals(entry.Value, currentItem))
+                    continue;
+                if (foundReservation || !string.Equals(entry.Key, kitId, StringComparison.OrdinalIgnoreCase))
+                    return false;
+
+                foundReservation = true;
+            }
+
+            return foundReservation;
+        }
+
+        private static bool TryGetNativeRepairKitReservation(
+            JsonType.FlatItem[] baseline,
+            JsonType.FlatItem[] current,
+            RepairItem[] repairKitsInfo,
+            out string kitId,
+            out JsonType.FlatItem baselineKit,
+            out string resourceChange)
+        {
+            kitId = null;
+            baselineKit = null;
+            resourceChange = null;
+            if (baseline == null || current == null || repairKitsInfo == null || repairKitsInfo.Length == 0)
+                return false;
+
+            // RepairKitsCollection.RepairItems subtracts only the final selected kit before calling
+            // RepairController.RepairItemsByRepairKit. The server must charge the saved player kit once.
+            RepairItem finalKit = repairKitsInfo[repairKitsInfo.Length - 1];
+            if (finalKit == null || string.IsNullOrWhiteSpace(finalKit.Id)
+                || finalKit.Count <= 0f || float.IsNaN(finalKit.Count) || float.IsInfinity(finalKit.Count))
+                return false;
+
+            baselineKit = baseline.FirstOrDefault(item => item?._id != null
+                && string.Equals(item._id.ToString(), finalKit.Id, StringComparison.OrdinalIgnoreCase));
+            JsonType.FlatItem currentKit = current.FirstOrDefault(item => item?._id != null
+                && string.Equals(item._id.ToString(), finalKit.Id, StringComparison.OrdinalIgnoreCase));
+            if (!TryMatchRepairKitResourceChange(baselineKit, currentKit, finalKit.Count, out resourceChange))
+                return false;
+
+            kitId = finalKit.Id;
+            return true;
+        }
+
+        private static void RestoreNativeRepairKitReservationForCommit(
+            JsonType.FlatItem[] serializedStash,
+            RepairItem[] repairKitsInfo)
+        {
+            if (!TryGetNativeRepairKitReservation(
+                    LoadoutEditorInitialStashItems, serializedStash, repairKitsInfo,
+                    out string kitId, out JsonType.FlatItem baselineKit, out string resourceChange))
+                return;
+
+            for (int index = 0; index < serializedStash.Length; index++)
+            {
+                JsonType.FlatItem item = serializedStash[index];
+                if (item?._id == null || !string.Equals(item._id.ToString(), kitId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var correctedUpd = (Newtonsoft.Json.Linq.JObject)item.upd.JToken.DeepClone();
+                ((Newtonsoft.Json.Linq.JObject)correctedUpd["RepairKit"])["Resource"] =
+                    baselineKit.upd.JToken["RepairKit"]["Resource"].DeepClone();
+                item.upd = new UnparsedData { JToken = correctedUpd };
+                serializedStash[index] = item;
+                Modules.Logger.LogInfo($"[UI] Excluded native pre-request kit reservation from loadout commit: kit='{kitId}' {resourceChange}.");
+                return;
+            }
+        }
+
+        private static bool TryMatchRepairKitResourceChange(
+            JsonType.FlatItem baseline,
+            JsonType.FlatItem current,
+            float requestedAmount,
+            out string resourceChange)
+        {
+            resourceChange = null;
+            if (baseline == null || current == null
+                || !string.Equals(baseline._tpl.ToString(), current._tpl.ToString(), StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(GetParentId(baseline), GetParentId(current), StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(baseline.slotId, current.slotId, StringComparison.Ordinal)
+                || !JsonTokenEquals(baseline.location, current.location)
+                || !(baseline.upd?.JToken is Newtonsoft.Json.Linq.JObject beforeUpd)
+                || !(current.upd?.JToken is Newtonsoft.Json.Linq.JObject afterUpd)
+                || !(beforeUpd["RepairKit"] is Newtonsoft.Json.Linq.JObject beforeKit)
+                || !(afterUpd["RepairKit"] is Newtonsoft.Json.Linq.JObject afterKit)
+                || (beforeKit["Resource"]?.Type != Newtonsoft.Json.Linq.JTokenType.Float
+                    && beforeKit["Resource"]?.Type != Newtonsoft.Json.Linq.JTokenType.Integer)
+                || (afterKit["Resource"]?.Type != Newtonsoft.Json.Linq.JTokenType.Float
+                    && afterKit["Resource"]?.Type != Newtonsoft.Json.Linq.JTokenType.Integer))
+                return false;
+
+            float beforeResource = beforeKit["Resource"].ToObject<float>();
+            float afterResource = afterKit["Resource"].ToObject<float>();
+            float expectedResource = beforeResource - requestedAmount;
+            float tolerance = Math.Max(0.0001f, Math.Abs(expectedResource) * 0.000001f);
+            if (float.IsNaN(beforeResource) || float.IsInfinity(beforeResource)
+                || float.IsNaN(afterResource) || float.IsInfinity(afterResource)
+                || float.IsNaN(expectedResource) || float.IsInfinity(expectedResource)
+                || expectedResource < -tolerance
+                || Math.Abs(afterResource - expectedResource) > tolerance)
+                return false;
+
+            var normalizedAfter = (Newtonsoft.Json.Linq.JObject)afterUpd.DeepClone();
+            ((Newtonsoft.Json.Linq.JObject)normalizedAfter["RepairKit"])["Resource"] = beforeKit["Resource"].DeepClone();
+            if (!Newtonsoft.Json.Linq.JToken.DeepEquals(beforeUpd, normalizedAfter))
+                return false;
+
+            resourceChange = $"resource={beforeResource}->{afterResource} requested={requestedAmount}";
+            return true;
         }
 
         private static bool FlatItemArraysEqual(JsonType.FlatItem[] left, JsonType.FlatItem[] right)
@@ -2395,29 +2505,6 @@ namespace pitTeam.Patches
                 && JsonTokenEquals(left.upd, right.upd);
         }
 
-        private static EFT.UI.Builds.EquipmentBuild TryGetCustomBuildById(string buildId)
-        {
-            if (string.IsNullOrWhiteSpace(buildId) || ActiveProfileSession?.EquipmentBuildsStorage?.EquipmentBuilds == null)
-            {
-                return null;
-            }
-
-            foreach (KeyValuePair<MongoID, EFT.UI.Builds.EquipmentBuild> entry in ActiveProfileSession.EquipmentBuildsStorage.EquipmentBuilds)
-            {
-                if (entry.Value?.BuildType != EEquipmentBuildType.Custom)
-                {
-                    continue;
-                }
-
-                if (string.Equals(entry.Key.ToString(), buildId, StringComparison.OrdinalIgnoreCase))
-                {
-                    return entry.Value;
-                }
-            }
-
-            return null;
-        }
-
         private sealed class FriendlyTeammateDefaultEquipmentRequest
         {
             public string aid { get; set; }
@@ -2428,6 +2515,12 @@ namespace pitTeam.Patches
 
         private sealed class FriendlyTeammateDefaultEquipmentResponse
         {
+            public int insurancePaid { get; set; }
+            public JsonType.FlatItem[] insurancePlayerRoubles { get; set; }
+            public EFT.SkillsDescriptor insurancePlayerSkills { get; set; }
+            public Dictionary<string, EFT.TraderData> insurancePlayerTraders { get; set; }
+            public List<FriendlyTeammateInsuredItem> playerInsuredItems { get; set; }
+            public List<FriendlyTeammateInsuredItem> followerInsuredItems { get; set; }
             public bool realItemCommit { get; set; }
             public JsonType.FlatItem[] playerStashItems { get; set; }
             public JsonType.FlatItem[] playerNewStashItems { get; set; }
@@ -2453,47 +2546,6 @@ namespace pitTeam.Patches
             public JsonType.FlatItem[] playerNewStashItems { get; set; }
             public JsonType.FlatItem[] playerChangedStashItems { get; set; }
             public string[] playerDeletedStashItemIds { get; set; }
-        }
-
-        private static async Task<bool> ShowReplaceBuildPromptAsync()
-        {
-            if (ItemUiContext.Instance == null)
-            {
-                return false;
-            }
-
-            EFT.UI.DialogWindowContext messageWindow;
-            try
-            {
-                return await ItemUiContext.Instance.ShowMessageWindow(
-                    out messageWindow,
-                    "EquipmentBuild/ReplaceMessage".Localized(null),
-                    null,
-                    false);
-            }
-            catch (TaskCanceledException)
-            {
-                return false;
-            }
-        }
-
-        private static async Task PersistTeammateLoadoutSelectionAsync(string teammateAccountId, MongoID loadoutId)
-        {
-            string persistedLoadoutId = loadoutId.ToString();
-            if (string.IsNullOrWhiteSpace(teammateAccountId) || string.IsNullOrWhiteSpace(persistedLoadoutId))
-            {
-                return;
-            }
-
-            string responseJson = await Task.Run(() => RequestHandler.PostJson(
-                LoadoutRoute,
-                SerializeBody(new FriendlyTeammateLoadoutRequest
-                {
-                    aid = teammateAccountId,
-                    loadoutId = persistedLoadoutId
-                })));
-
-            EnsureBodySuccess(responseJson);
         }
 
         private static void RefreshCurrentTeammateLoadoutSelector(ResultProfile profile)

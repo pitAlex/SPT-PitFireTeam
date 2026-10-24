@@ -4,6 +4,7 @@ using SPTarkov.Server.Core.DI;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Spt.Mod;
 using SPTarkov.Server.Core.Models.Spt.Tables;
+using SPTarkov.Server.Core.Routers;
 using SPTarkov.Server.Core.Utils.Json;
 using System.IO;
 using pitTeam.Server.Services;
@@ -18,7 +19,7 @@ public record PitFireTeamServerMetadata : IModMetadata
     public string Name { get; init; } = "PitFireTeam";
     public string Author { get; init; } = "PitAlex";
     public List<string>? Contributors { get; init; }
-    public Version Version { get; init; } = new("0.10.3");
+    public Version Version { get; init; } = new("1.0.0");
     public Range SptVersion { get; init; } = new("~4.1.0");
     public bool HasPrepatcher { get; init; } = false;
     public List<string>? Incompatibilities { get; init; }
@@ -32,7 +33,8 @@ public class PitFireTeamServerPlugin(
     ISptLogger<PitFireTeamServerPlugin> logger,
     TradersTable traders,
     LocaleTable locales,
-    FriendlyServerSettingsService settingsService
+    FriendlyServerSettingsService settingsService,
+    ImageRouter imageRouter
 ) : IOnLoad
 {
     public Task OnLoadAsync(CancellationToken cancellationToken)
@@ -117,6 +119,9 @@ public class PitFireTeamServerPlugin(
                 return;
             }
 
+            // SPT matches image URLs without their extension; remote clients cannot use the local cache copy.
+            imageRouter.AddRoute(Path.ChangeExtension(FriendlyCourierTraderProfile.CourierAvatarPath, null), sourcePath);
+
             string targetDirectory = Path.Combine(serverRoot, "user", "sptappdata", "files", "trader", "avatar");
             Directory.CreateDirectory(targetDirectory);
 
@@ -140,6 +145,7 @@ public class PitFireTeamServerPostLoad(
     public Task OnLoadAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        teammateService.InitializeStorageForAllProfiles();
         teammateService.RecoverDuplicateTeammateItemsForAllProfiles();
         logger.Info("PitFireTeam loaded");
         return Task.CompletedTask;

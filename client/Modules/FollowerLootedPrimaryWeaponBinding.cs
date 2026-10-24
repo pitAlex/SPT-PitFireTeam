@@ -4,11 +4,37 @@ using EFT;
 using EFT.InventoryLogic;
 using pitTeam.Utils;
 using System;
+using System.Linq;
 
 namespace pitTeam.Modules
 {
     internal static class FollowerLootedPrimaryWeaponBinding
     {
+        // Manual exchange can remove/replace occupied slots, unlike add-only loot acquisition.
+        // Call only after inventory commit, with hands released and native weapon updates held.
+        internal static void ReconcileExchangedEquipment(BotOwner bot)
+        {
+            var manager = bot.WeaponManager;
+            var equipment = bot.GetPlayer.InventoryController.Inventory.Equipment;
+            EquipmentSlot? main = null;
+            foreach (EquipmentSlot slot in new[] { EquipmentSlot.FirstPrimaryWeapon, EquipmentSlot.SecondPrimaryWeapon, EquipmentSlot.Holster })
+            {
+                if (equipment.GetSlot(slot).ContainedItem is Weapon weapon)
+                {
+                    manager.info[slot] = new BotWeaponInfo(bot, weapon, slot, manager.ChangeToMode);
+                    if (main == null && !weapon.MissingVitalParts.Any()) main = slot;
+                }
+                else manager.info.Remove(slot);
+            }
+            if (!main.HasValue) throw new InvalidOperationException("Exchanged equipment has no complete firearm.");
+            manager.Selector.UpdateWeaponsList();
+            manager.Selector._mainWeapon = main.Value;
+            manager.Selector._lastEquipmentSlot = main.Value;
+            manager._currentWeaponInfo = manager.info[main.Value];
+            manager.Selector._nextChangeTime = 0f;
+            manager.Selector.IsWeaponReady = true;
+        }
+
         private const int SwitchMaxAttempts = 8;
         private const int TransientSwitchMaxAttempts = 40;
         private const int StuckSelectorRecoveryAttempt = 6;

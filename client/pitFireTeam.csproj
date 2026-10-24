@@ -4,7 +4,7 @@
         <OutputType>Library</OutputType>
         <RootNamespace>pitTeam</RootNamespace>
         <AssemblyName>pitFireTeam</AssemblyName>
-        <Version>0.10.3</Version>
+        <Version>1.0.0</Version>
         <LangVersion>latest</LangVersion>
         <Nullable>enable</Nullable>
         <NoWarn>$(NoWarn);CS0618;CS0649;CS8600;CS8601;CS8602;CS8604;CS8618;CS8620;CS8625</NoWarn>
@@ -13,6 +13,9 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <Compile Include="../shared/FriendlyEncounterPenaltyPolicy.cs" Link="Shared/FriendlyEncounterPenaltyPolicy.cs" />
+        <Compile Include="../shared/PmcKarmaPolicy.cs" Link="Shared/PmcKarmaPolicy.cs" />
+        <Compile Include="../shared/SelfDeterminationPolicy.cs" Link="Shared/SelfDeterminationPolicy.cs" />
         <Reference Include="0Harmony">
             <HintPath>libs\0Harmony.dll</HintPath>
         </Reference>

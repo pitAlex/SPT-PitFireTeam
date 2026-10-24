@@ -27,6 +27,11 @@ namespace pitTeam.Modules
         public string Voice { get; set; } = string.Empty;
         public string Head { get; set; } = string.Empty;
         public string ProfileJson { get; set; } = string.Empty;
+        public float? Aggression { get; set; }
+        public string[] GivenEquipmentSlots { get; set; } = new string[0];
+#if DEBUG
+        public bool DebugForceInvite { get; set; }
+#endif
     }
 
     internal class RecruitPickupRequest
@@ -61,6 +66,8 @@ namespace pitTeam.Modules
 
         public BossPlayers()
         {
+            FollowerEnemyTracking.BeginRaid();
+            FollowerSoundAwareness.ClearRaid();
             if (Instance == null)
             {
                 Instance = this;
@@ -77,6 +84,10 @@ namespace pitTeam.Modules
 
         public static void Dispose()
         {
+            FollowerHazardAvoidance.Reset();
+            AllegiancePmcFriendship.Reset();
+            AllegianceScavCargo.Reset();
+            AllegianceScavRelations.Reset();
             if (Instance != null)
             {
                 Instance.Destroy();
@@ -141,6 +152,12 @@ namespace pitTeam.Modules
             if (_bosses.ContainsKey(name))
             {
                 pitAIBossPlayer boss = _bosses[name];
+
+                // Settle/close any exchange before death-escape or progress captures equipment.
+                if (ReferenceEquals(TeammateGearSwap.Current?.Owner.Player, boss.realPlayer)) TeammateGearSwap.EndRaid();
+                // Player death can tear down recruits before LocalGame.Stop. Capture gifts
+                // while their live inventories still exist and before reports are sealed.
+                if (boss.realPlayer?.IsYourPlayer == true) GiveGearInsurance.EndRaid(boss.realPlayer.ProfileId);
 
                 List<BotOwner> ownersToRemove = new List<BotOwner>();
                 List<BotFollowerPlayer> followersToRemove = new List<BotFollowerPlayer>();
@@ -209,6 +226,8 @@ namespace pitTeam.Modules
         {
             if (IsDisposed) return;
 
+            FollowerQuestingBots.ClearRaid();
+
             if (_bosses.Count > 0)
             {
                 List<string> keys = new List<string>(_bosses.Keys);
@@ -217,6 +236,7 @@ namespace pitTeam.Modules
                     RemoveBossPlayer(key);
                 }
             }
+            SainAddonBridge.RaiseFollowerLifecycleEvent(null, FollowerLifecycleEvent.OnRaidEnd);
             _bosses.Clear();
             _removedBosses.Clear();
             _followers.Clear();
@@ -227,6 +247,8 @@ namespace pitTeam.Modules
             FollowerGrenadeCooldowns.ClearAll();
             FollowerGrenadeRuntimeGate.ClearAll();
             FollowerDeathEscapeResolver.ClearFallenSquadmateSnapshots();
+            FollowerEnemyTracking.EndRaid();
+            FollowerSoundAwareness.ClearRaid();
 
             IsDisposed = true;
             Instance = null;
@@ -239,7 +261,8 @@ namespace pitTeam.Modules
             WildSpawnType role = WildSpawnType.assault,
             string tactic = "Default",
             float aggression = 50f,
-            FollowerProficiencyModifierValues proficiency = null)
+            FollowerProficiencyModifierValues proficiency = null,
+            float selfDetermination = 50f)
         {
 
             BotFollowerPlayer? _follower = null;
@@ -259,8 +282,10 @@ namespace pitTeam.Modules
 
             if (!squadMate)
             {
-                tactic = "Default";
-                aggression = CreateRecruitCombatAggression();
+                // Capture native ownership before conversion/Init changes the bot's brain.
+                tactic = pitFireTeam.IsSainManTacticAvailable && BotFollowerPlayer.HasNativeSainBot(bot)
+                    ? "SainMan" : "Default";
+                aggression = CreateRecruitCombatAggression(bot);
                 proficiency = null;
             }
 
@@ -289,15 +314,18 @@ namespace pitTeam.Modules
 
             _follower.CombatTactic = BotFollowerPlayer.ParseCombatTactic(tactic);
             _follower.CombatAggression = aggression;
+            _follower.SelfDetermination = selfDetermination;
             _follower.Proficiency.ReplaceModifiers(proficiency);
 
             try
             {
+                FollowerQuestingBots.Pause(bot);
                 _follower.Init();
 
             }
             catch (Exception e)
             {
+                FollowerQuestingBots.Release(bot);
                 Modules.Logger.LogError("Failed to init follower");
                 Modules.Logger.LogError(e);
                 return null;
@@ -313,14 +341,26 @@ namespace pitTeam.Modules
                 }
             }
 
+            // Group reassignment and follower lookup must be complete before repairing
+            // relationships with already-selected Allegiance candidates.
+            AllegiancePmcFriendship.OnFollowerAdded(bot, player.realPlayer);
+            AllegianceScavRelations.OnFollowerAdded(bot, player, squadMate);
+            if (!squadMate) AllegianceScavCargo.OnRecruited(bot, player.realPlayer);
+
             // Fire lifecycle event for addon integration (cache registration, etc).
             SainAddonBridge.RaiseFollowerLifecycleEvent(bot, FollowerLifecycleEvent.OnRecruited);
 
             return _follower;
         }
 
-        private static float CreateRecruitCombatAggression()
+        private static float CreateRecruitCombatAggression(BotOwner bot)
         {
+            if (BotFollowerPlayer.TryGetNativeSainPersonality(bot, out string personality) &&
+                RecruitCombatAggression.TryMap(personality, out float mapped))
+            {
+                Modules.Logger.LogInfo($"[Recruitment] bot={bot.ProfileId} name={bot.Profile?.Nickname} nativePersonality={personality} savedAggression={mapped}");
+                return mapped;
+            }
             lock (RecruitAggressionRandomLock)
             {
                 return RecruitMinCombatAggression +
@@ -375,7 +415,14 @@ namespace pitTeam.Modules
 
                     if (!item.IsSquadMate)
                     {
-                        if (pitFireTeam.recruitPickup.Value && item.GetBoss()?.realPlayer?.Side != EPlayerSide.Savage)
+                        bool queueRecruit = GameplayModeRuntime.GetEffectiveValue(pitFireTeam.recruitPickup);
+#if DEBUG
+                        bool debugInvite = item.DebugForceRecruitInvite && !item.GetBot().IsDead &&
+                            item.GetBoss()?.realPlayer?.HealthController?.IsAlive == true;
+                        if (item.DebugForceRecruitInvite && !debugInvite) continue;
+                        queueRecruit |= debugInvite;
+#endif
+                        if (queueRecruit && item.GetBoss()?.realPlayer?.Side != EPlayerSide.Savage)
                         {
                             string voiceId = pr.Customization != null && pr.Customization.TryGetValue(EBodyModelPart.Voice, out MongoID voice) ? voice.ToString() : string.Empty;
                             string headId = pr.Customization != null && pr.Customization.TryGetValue(EBodyModelPart.Head, out MongoID head) ? head.ToString() : string.Empty;
@@ -395,6 +442,11 @@ namespace pitTeam.Modules
                                     Voice = voiceId,
                                     Head = headId,
                                     ProfileJson = CreateRecruitProfileJson(pr, _defaultJsonConverters),
+                                    Aggression = item.CombatAggression,
+                                    GivenEquipmentSlots = item.GivenEquipmentSlots.Select(slot => slot.ToString()).ToArray(),
+#if DEBUG
+                                    DebugForceInvite = debugInvite,
+#endif
                                 });
                             }
                             else
@@ -887,7 +939,7 @@ namespace pitTeam.Modules
 
         private static void PostRaidRequestAsync(string route, string json, string description)
         {
-            Task.Run(() =>
+            GameplayModeRuntime.RunRosterRequest(() =>
             {
                 try
                 {
@@ -949,23 +1001,28 @@ namespace pitTeam.Modules
                 }
             });
 
-            if (_follower != null)
+            try
             {
-                _followers.Remove(_follower);
-                if (bot?.ProfileId != null)
+                if (_follower != null)
                 {
-                    _followersByProfileId.Remove(bot.ProfileId);
-                }
-                if (player.bossGroup != null)
-                {
-                    player.bossGroup.RemoveAlly(bot);
+                    AllegianceScavRelations.OnRemoved(bot);
+                    _followers.Remove(_follower);
+                    if (bot?.ProfileId != null)
+                    {
+                        _followersByProfileId.Remove(bot.ProfileId);
+                    }
+                    if (player.bossGroup != null)
+                    {
+                        player.bossGroup.RemoveAlly(bot);
 
-                }
+                    }
 
-                player.NotifyFollowerCombatLayerReleased(bot, "followerRemoved");
-                player.RemoveFollower(bot);
-                bot.BotFollower.BossToFollow = null;
+                    player.NotifyFollowerCombatLayerReleased(bot, "followerRemoved");
+                    player.RemoveFollower(bot);
+                    bot.BotFollower.BossToFollow = null;
+                }
             }
+            finally { FollowerQuestingBots.Release(bot); }
         }
 
         public BotFollowerPlayer GetFollower(BotOwner bot)
@@ -1169,6 +1226,10 @@ namespace pitTeam.Modules
             Instance.RemoveBotFollower(bot, player);
         }
 
+        public static bool IsPlayerFollowerGroup(BotOwner bot, pitAIBossPlayer boss) =>
+            bot?.BotsGroup != null && boss != null &&
+            (bot.BotsGroup == boss.bossGroup || AllegianceScavRelations.OwnsGroup(bot, boss));
+
         public static pitAIBossPlayer AddPlayerAsBoss(Player player, BotsController botsController)
         {
             return Instance.AddBossPlayer(player, botsController);
@@ -1186,9 +1247,10 @@ namespace pitTeam.Modules
             WildSpawnType role = WildSpawnType.assault,
             string tactic = "Default",
             float aggression = 50f,
-            FollowerProficiencyModifierValues proficiency = null)
+            FollowerProficiencyModifierValues proficiency = null,
+            float selfDetermination = 50f)
         {
-            return Instance.AddBotFollower(bot, player, squadMate, role, tactic, aggression, proficiency);
+            return Instance.AddBotFollower(bot, player, squadMate, role, tactic, aggression, proficiency, selfDetermination);
         }
 
         public static void ShallBeFollower(string profileId)

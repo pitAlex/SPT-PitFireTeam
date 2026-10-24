@@ -22,10 +22,12 @@ namespace pitTeam.BigBrain.Actions
 {
     internal partial class GestureCommandAction
     {
+        private Dictionary<string, int>? scavLootPickupBefore;
         // Loose item pickup is a direct "pick this up" command, not the body/container looting
         // scenario. It stays separate from loot-search voice, delay, and filtering rules.
         private void HandleTakeLootItem()
         {
+            if (recruitGearInProgress) return;
             if (followerData == null)
             {
                 return;
@@ -198,6 +200,8 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
+                if (TryStartRecruitLooseEquipment(rootItem)) return;
+
                 if (rootItem is Weapon supportWeapon &&
                     IsShoulderWeaponCandidate(supportWeapon) &&
                     TryPrepareLoosePickupWeaponFromBackpack(
@@ -258,8 +262,8 @@ namespace pitTeam.BigBrain.Actions
 
             if (rootItem is Weapon weapon && IsShoulderWeaponCandidate(weapon))
             {
-                // A direct player order owns its physical destination even when automatic gear
-                // swapping is disabled. The shoulder used must truthfully communicate whether the
+                // A direct player order owns its physical destination regardless of pickup settings.
+                // The shoulder used must truthfully communicate whether the
                 // bot considers this weapon usable or merely held for later.
                 return TryBuildLooseWeaponPickupOperation(
                     weapon,
@@ -270,7 +274,6 @@ namespace pitTeam.BigBrain.Actions
             }
 
             if (rootItem is EFT.InventoryLogic.Magazine commandedMagazine &&
-                pitFireTeam.IsLootGearSwappingEnabled() &&
                 TryResolveCommandedMagazineOwner(
                     inventory.Inventory.Equipment,
                     commandedMagazine,
@@ -416,6 +419,11 @@ namespace pitTeam.BigBrain.Actions
             out EFT.InventoryLogic.IItemOperationResult? operation)
         {
             operation = null;
+            if (!PreservesEquippedMagazineReloadSpace(inventory?.Inventory?.Equipment, item, address))
+            {
+                return false;
+            }
+
             Diz.LanguageExtensions.OperationResult<EFT.InventoryLogic.MoveResult> moveResult = EFT.InventoryLogic.ItemManipulator.Move(item, address, inventory, true);
             if (moveResult.Failed ||
                 moveResult.Value.ItemsDestroyRequired ||
@@ -445,10 +453,8 @@ namespace pitTeam.BigBrain.Actions
             }
 
             int insertedCapacity = Math.Max(0, readiness.InsertedCapacity);
-            int ordinaryReference = Math.Max(0, readiness.OrdinaryReference);
-            int usableBasis = insertedCapacity > 0 && ordinaryReference > 0
-                ? Math.Min(insertedCapacity, ordinaryReference)
-                : Math.Max(insertedCapacity, ordinaryReference);
+            // Last-resort loose pickup is a placement safety exception, not primary readiness.
+            int usableBasis = Math.Min(30, insertedCapacity);
             return Math.Max(1, (usableBasis + 1) / 2);
         }
 
@@ -492,8 +498,16 @@ namespace pitTeam.BigBrain.Actions
                         ClearTakeLootState("TakeLoot:itemMoved");
                         return;
                     }
+
+                    if (!PreservesEquippedMagazineReloadSpace(inventory.Inventory.Equipment, rootItem, moveAction.To))
+                    {
+                        StopLootPickupState(botPlayer);
+                        ClearTakeLootState("TakeLoot:reloadLandingSpace");
+                        return;
+                    }
                 }
 
+                scavLootPickupBefore = AllegianceScavCargo.CaptureCommandedLoot(BotOwner);
                 inventory.RunNetworkTransaction(pickupAction, new Callback(result => CompleteLootPickup(result, botPlayer, rootItem)));
             }
             catch (Exception ex)
@@ -547,6 +561,8 @@ namespace pitTeam.BigBrain.Actions
 
         private void FinishLootPickupSuccess(Player? botPlayer, Item rootItem, string reason)
         {
+            AllegianceScavCargo.TrackCommandedLoot(BotOwner, rootItem, scavLootPickupBefore);
+            scavLootPickupBefore = null;
             botPlayer?.UpdateInteractionCast();
             InteractableObjects.ClearStrictCargoTree(BotOwner, rootItem);
             InteractableObjects.RegisterLootedWeaponTree(BotOwner, rootItem);
@@ -605,8 +621,7 @@ namespace pitTeam.BigBrain.Actions
 
         private void RegisterCommandedLooseMagazineForEquippedWeapon(Item item)
         {
-            if (!pitFireTeam.IsLootGearSwappingEnabled() ||
-                item is not EFT.InventoryLogic.Magazine magazine ||
+            if (item is not EFT.InventoryLogic.Magazine magazine ||
                 magazine.Parent == null)
             {
                 return;
@@ -935,10 +950,12 @@ namespace pitTeam.BigBrain.Actions
             }
 
             StopLootPickupState(BotOwner?.GetPlayer);
+            ResetRecruitGearCommand();
             lootPickupInProgress = false;
             lootPickupReadyAt = 0f;
             lootPickupAttemptStartedAt = 0f;
             activeLootItem = null;
+            scavLootPickupBefore = null;
             ResetLoosePickupBackpackSupport();
 
             if (BotOwner != null)

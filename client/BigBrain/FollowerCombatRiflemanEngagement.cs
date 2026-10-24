@@ -14,31 +14,11 @@ namespace pitTeam.BigBrain
     /// </summary>
     internal sealed class FollowerCombatRiflemanEngagement
     {
-        private const float ReferenceDistance = 80f;
         private const float CacheSeconds = 0.5f;
         private const float PositionToleranceSqr = 4f;
-        private const float EnemyGroupRadius = 17f;
-        private const float MaxRequiredAggression = 150f;
-        private const float EquipmentThreatScale = 10f;
-        private const float MinEquipmentThreatAdjustment = -6f;
-        private const float MaxEquipmentThreatAdjustment = 12f;
-        private const float RoleThreatScale = 12f;
-        private const float MaxRoleThreatAdjustment = 12f;
-        private const float IsolatedEnemyAdjustment = -5f;
-        private const float TwoEnemyAdjustment = 2f;
-        private const float ThreeEnemyAdjustment = 7f;
-        private const float GroupEnemyAdjustment = 12f;
-        private const float CautiousWeaponAdjustment = 4f;
-        private const float BlockedWeaponAdjustment = 12f;
-        private const float MinThreatAdjustment = -12f;
-        private const float MaxThreatAdjustment = 30f;
-        private const float LowThreatStyleThreshold = -2f;
-        private const float MinPlayerPullFactor = 0.35f;
-        private const float PlayerPullDistanceFloor = 10f;
-        private const float PlayerPullPenaltyScale = 0.5f;
-        private const float PlayerApproachBonusScale = 0.25f;
-        private const float MaxPlayerPullPenalty = 20f;
-        private const float MaxPlayerApproachBonus = 8f;
+        private const float EnemyGroupRadius = FollowerPushRiskPolicy.ClusterRadius;
+        private const float MaxRequiredAggression = FollowerPushRiskPolicy.MaxRequiredAggression;
+        private const float LowThreatStyleThreshold = FollowerPushRiskPolicy.LowThreatThreshold;
         private const float NavMeshSampleRadius = 2f;
 
         private readonly BotOwner botOwner;
@@ -50,6 +30,7 @@ namespace pitTeam.BigBrain
         private Vector3 cachedEnemyPosition;
         private Vector3 cachedBossPosition;
         private float cachedAggression = -1f;
+        private float cachedDetermination = -1f;
         private float cachedAt;
         private bool hasCachedEvaluation;
         private bool cachedEnemyVisible;
@@ -134,6 +115,7 @@ namespace pitTeam.BigBrain
         public Evaluation Evaluate(EnemyInfo goalEnemy)
         {
             float effectiveAggression = combatCommon.GetAggression01() * 100f;
+            float determination = BossPlayers.Instance?.GetFollower(botOwner)?.EffectiveSelfDetermination ?? 50f;
             Vector3 botPosition = botOwner.Position;
             Vector3 enemyPosition = FollowerCombatCommon.GetEnemyAnchor(goalEnemy);
             Vector3 bossPosition = combatCommon.GetRealBossPosition();
@@ -146,7 +128,7 @@ namespace pitTeam.BigBrain
             bool memoryOnly = goalEnemy == null || Enemy.IsMemoryOnlyAcquisitionWithoutPersonalContact(goalEnemy);
             bool hasReliableLocation = goalEnemy != null && combatCommon.HasReliablePersonalEnemyLocation(goalEnemy);
 
-            if (CanReuse(
+            if (Mathf.Approximately(cachedDetermination, determination) && CanReuse(
                     enemyProfileId,
                     botPosition,
                     enemyPosition,
@@ -179,6 +161,7 @@ namespace pitTeam.BigBrain
             cachedEnemyPosition = enemyPosition;
             cachedBossPosition = bossPosition;
             cachedAggression = effectiveAggression;
+            cachedDetermination = determination;
             cachedAt = Time.time;
             cachedEnemyVisible = goalEnemy?.IsVisible == true;
             cachedEnemyShootable = goalEnemy?.CanShoot == true;
@@ -299,20 +282,20 @@ namespace pitTeam.BigBrain
                     Vector3.Distance(enemyPosition, bossPosition));
             }
 
-            float distanceRequirement = enemyRouteDistance / ReferenceDistance * 100f;
             float threatAdjustment = CalculateThreatAdjustment(
                 goalEnemy,
                 out int enemyGroupSize,
                 out float equipmentPowerRatio,
                 out float roleThreatMultiplier,
                 out FollowerCombatCommon.AutoPushWeaponThreatPolicy weaponThreatPolicy);
+            float distanceRequirement = FollowerPushRiskPolicy.DistanceRequirement(
+                enemyRouteDistance, threatAdjustment, roleThreatMultiplier, (int)weaponThreatPolicy);
             float playerPullAdjustment = combatIndependent || !pathsComplete
                 ? 0f
-                : CalculatePlayerPullAdjustment(enemyRouteDistance, currentBossDistance, projectedBossPathDistance);
-            float requiredAggression = Mathf.Clamp(
-                distanceRequirement + threatAdjustment + playerPullAdjustment,
-                0f,
-                MaxRequiredAggression);
+                : CalculatePlayerPullAdjustment(enemyRouteDistance, currentBossDistance, projectedBossPathDistance) *
+                  (BossPlayers.Instance?.GetFollower(botOwner)?.BossInfluence ?? 1f);
+            float requiredAggression = FollowerPushRiskPolicy.Required(
+                enemyRouteDistance, threatAdjustment, playerPullAdjustment, roleThreatMultiplier, (int)weaponThreatPolicy);
 
             string blockReason = GetBlockReason(
                 goalEnemy,
@@ -322,6 +305,9 @@ namespace pitTeam.BigBrain
                 pathsComplete,
                 weaponThreatPolicy);
             bool allowsEngagement = string.IsNullOrEmpty(blockReason) && effectiveAggression >= requiredAggression;
+            if ((BossPlayers.Instance?.GetFollower(botOwner)?.EffectiveSelfDetermination ?? 50f) <= 0f &&
+                projectedBossPathDistance > regroupTriggerDistance && projectedBossPathDistance > currentBossDistance)
+            { allowsEngagement = false; blockReason = "closeEscort"; }
             Outcome outcome;
             string reason;
             if (allowsEngagement)
@@ -394,10 +380,7 @@ namespace pitTeam.BigBrain
         private float GetEffectiveRegroupTriggerDistance()
         {
             float triggerDistance = CombatDistanceConfiguration.Instance.GetBossRegroupTriggerDistance(botOwner);
-            return triggerDistance * Mathf.Lerp(
-                PickupFollowerPersonality.RegroupMaxTriggerMultiplier,
-                1f,
-                combatCommon.GetBossProtectionWillingness01());
+            return triggerDistance;
         }
 
         private bool TryGetPathDistance(Vector3 start, Vector3 destination, out float distance)
@@ -425,50 +408,17 @@ namespace pitTeam.BigBrain
             out float roleThreatMultiplier,
             out FollowerCombatCommon.AutoPushWeaponThreatPolicy weaponThreatPolicy)
         {
-            float followerPower = botOwner.AIData?.PowerOfEquipment ?? 0f;
-            float enemyPower = goalEnemy.Person?.AIData?.PowerOfEquipment ?? 0f;
-            equipmentPowerRatio = followerPower > 1f && enemyPower > 0f
-                ? enemyPower / followerPower
-                : 1f;
-            float equipmentAdjustment = Mathf.Clamp(
-                (equipmentPowerRatio - 1f) * EquipmentThreatScale,
-                MinEquipmentThreatAdjustment,
-                MaxEquipmentThreatAdjustment);
-
+            equipmentPowerRatio = FollowerPushRiskPolicy.EquipmentRatio(
+                botOwner.AIData?.PowerOfEquipment ?? 0f, goalEnemy.Person?.AIData?.PowerOfEquipment ?? 0f);
             WildSpawnType role = goalEnemy.Person?.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
             roleThreatMultiplier = GetCombatRoleThreatMultiplier(role);
-            float roleAdjustment = Mathf.Clamp(
-                (roleThreatMultiplier - 1f) * RoleThreatScale,
-                0f,
-                MaxRoleThreatAdjustment);
-
-            enemyGroupSize = Enemy.GetNearbyLivingGroupMemberCount(
-                goalEnemy,
-                FollowerCombatCommon.GetEnemyAnchor(goalEnemy),
-                EnemyGroupRadius);
-            float groupAdjustment = enemyGroupSize switch
-            {
-                <= 1 => IsolatedEnemyAdjustment,
-                2 => TwoEnemyAdjustment,
-                3 => ThreeEnemyAdjustment,
-                _ => GroupEnemyAdjustment
-            };
-
+            enemyGroupSize = Enemy.GetNearbyLivingGroupMemberCount(goalEnemy,
+                FollowerCombatCommon.GetEnemyAnchor(goalEnemy), EnemyGroupRadius);
             weaponThreatPolicy = combatCommon.GetAutoPushWeaponThreatPolicy(goalEnemy);
-            float weaponAdjustment = weaponThreatPolicy switch
-            {
-                FollowerCombatCommon.AutoPushWeaponThreatPolicy.Cautious => CautiousWeaponAdjustment,
-                FollowerCombatCommon.AutoPushWeaponThreatPolicy.VeryCloseOrOrderedOnly => BlockedWeaponAdjustment,
-                _ => 0f
-            };
-
-            return Mathf.Clamp(
-                equipmentAdjustment + roleAdjustment + groupAdjustment + weaponAdjustment,
-                MinThreatAdjustment,
-                MaxThreatAdjustment);
+            return FollowerPushRiskPolicy.Threat(equipmentPowerRatio, roleThreatMultiplier, enemyGroupSize, (int)weaponThreatPolicy);
         }
 
-        private static float GetCombatRoleThreatMultiplier(WildSpawnType role)
+        internal static float GetCombatRoleThreatMultiplier(WildSpawnType role)
         {
             float multiplier = FollowerDeathEscapeResolver.GetRouteThreatRoleMultiplier(role);
             if (multiplier > 0f)
@@ -490,21 +440,7 @@ namespace pitTeam.BigBrain
             float currentBossDistance,
             float projectedBossDistance)
         {
-            float extraBossDistance = projectedBossDistance - currentBossDistance;
-            if (extraBossDistance <= 0f)
-            {
-                return Mathf.Max(-MaxPlayerApproachBonus, extraBossDistance * PlayerApproachBonusScale);
-            }
-
-            float distanceFactor = Mathf.Lerp(
-                MinPlayerPullFactor,
-                1f,
-                Mathf.Clamp01(
-                    (enemyRouteDistance - PlayerPullDistanceFloor) /
-                    (ReferenceDistance - PlayerPullDistanceFloor)));
-            return Mathf.Min(
-                MaxPlayerPullPenalty,
-                extraBossDistance * PlayerPullPenaltyScale * distanceFactor);
+            return FollowerPushRiskPolicy.PlayerPull(enemyRouteDistance, currentBossDistance, projectedBossDistance);
         }
 
         private static string GetBlockReason(
@@ -566,6 +502,8 @@ namespace pitTeam.BigBrain
                     enemyRouteDistance = evaluation.EnemyRouteDistance,
                     distanceRequirement = evaluation.DistanceRequirement,
                     threatAdjustment = evaluation.ThreatAdjustment,
+                    threatRangeMultiplier = FollowerPushRiskPolicy.ThreatRangeMultiplier(
+                        evaluation.ThreatAdjustment, evaluation.RoleThreatMultiplier, (int)evaluation.WeaponThreatPolicy),
                     playerPullAdjustment = evaluation.PlayerPullAdjustment,
                     currentPlayerDistance = evaluation.CurrentBossDistance,
                     projectedPlayerDistance = evaluation.ProjectedBossDistance,

@@ -254,11 +254,8 @@ namespace pitTeam.BigBrain.Actions
                 goalEnemy.IsVisible &&
                 goalEnemy.CanShoot)
             {
-                if (!FollowerAimTargetPolicy.TrySelectFollowerShootPoint(
-                        goalEnemy,
-                        out Vector3 rawTarget,
-                        out bool hasShootPoint) ||
-                    !hasShootPoint)
+                Vector3 rawTarget = goalEnemy.GetVisiblePartToShoot();
+                if (rawTarget == Vector3.zero)
                 {
                     target = Vector3.zero;
                     suppression = false;

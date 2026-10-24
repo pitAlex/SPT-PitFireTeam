@@ -560,7 +560,7 @@ namespace pitTeam.Patches
         [PatchPostfix]
         private static void PatchPostfix(EFT.EftClientBackendSession __instance, RaidSettings settings)
         {
-            bool badGuy = pitFireTeam.badGuy.Value;
+            bool badGuy = GameplayModeRuntime.GetEffectiveValue(pitFireTeam.badGuy);
 
             Utils.SpawnHelper.spawnMemberIds.Clear();
             Utils.SpawnHelper.spawnMemberIdsScav.Clear();
@@ -702,7 +702,7 @@ namespace pitTeam.Patches
             {
                 Config = new Dictionary<string, object>
                 {
-                    { "pitFireTeam", pitFireTeam.pitFireTeamFLAG.Value },
+                    { "pitFireTeam", GameplayModeRuntime.GetEffectiveValue(pitFireTeam.pitFireTeamFLAG) },
                     { "badGuy", badGuy },
                     { "pmcArmbands", pitFireTeam.pmcArmbands.Value },
                     { "englishBear", pitFireTeam.englishBear.Value },
@@ -750,8 +750,8 @@ namespace pitTeam.Patches
  */
             //if (Utils.SpawnHelper.ScavSquadSize < 1) Utils.SpawnHelper.ScavSquad = false;
 
-            if (pitFireTeam.badGuy.Value) Utils.Utils.FlagSet("isBadGuy", true);
-            if (pitFireTeam.pitFireTeamFLAG.Value) Utils.Utils.FlagSet("pitFireTeam", true);
+            if (GameplayModeRuntime.GetEffectiveValue(pitFireTeam.badGuy)) Utils.Utils.FlagSet("isBadGuy", true);
+            if (GameplayModeRuntime.GetEffectiveValue(pitFireTeam.pitFireTeamFLAG)) Utils.Utils.FlagSet("pitFireTeam", true);
         }
     }
     /**

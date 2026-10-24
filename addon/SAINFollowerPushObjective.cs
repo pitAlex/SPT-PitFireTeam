@@ -1,0 +1,449 @@
+using EFT;
+using pitTeam.Components;
+using pitTeam.BigBrain;
+using pitTeam.Modules;
+using SAIN.Components;
+using SAIN.Models.Structs;
+using SAIN.Preset.Shared.Enums;
+using SAIN.SAINComponent.Classes.EnemyClasses;
+using SAIN.SAINComponent.SubComponents.CoverFinder;
+using UnityEngine;
+using UnityEngine.AI;
+
+namespace pitTeam.SAINAddon;
+
+internal enum SAINPushMode { None, Automatic, Ordered }
+internal enum SAINPushPhase { None, Approach, Pressure, Recovery, Assessing, Exhausted }
+internal enum SAINPushCommitment { None, Ordered, Recovery, NativeCombat, Fire, Movement, Arrival, Planning, Passive }
+
+// Core-style intent/commitment, executed by SAIN MoveToEngage, StandAndShoot,
+// SeekCover and native urgent actions. Never promotes a hidden live transform.
+internal sealed class SAINFollowerPushObjective(BotComponent bot)
+{
+    internal const float ContactGraceSeconds = 3f;
+    internal SAINPushMode Mode { get; private set; }
+    internal SAINPushPhase Phase { get; private set; }
+    internal bool Active => Mode != SAINPushMode.None;
+    internal bool Ordered => Mode == SAINPushMode.Ordered;
+    internal bool AwaitingTarget => Ordered && ((!targetBound && Time.time < bindUntil) ||
+        contactLostUntil >= 0f && Time.time < contactLostUntil);
+    internal bool Exhausted => Phase == SAINPushPhase.Exhausted;
+    internal bool OwnsMovement { get; private set; }
+    internal bool NativeEngagementAllowed { get; private set; }
+    internal SAINPushCommitment Commitment { get; private set; }
+    internal bool AllowsArbitration => Mode == SAINPushMode.Automatic && Commitment == SAINPushCommitment.Passive;
+    private float arbitrationCheckedAt = -1f;
+    internal bool HoldsPosition => Active && target != null && !AwaitingTarget && (Phase == SAINPushPhase.Pressure ||
+        Phase == SAINPushPhase.Approach && !Destination.HasValue) && target == bot.GoalEnemy;
+    internal string EnemyId { get; private set; }
+    internal string Reason { get; private set; }
+    internal Vector3? Destination { get; private set; }
+    private readonly SAINFollowerCoverFinder finder = new(bot);
+    private readonly SAINFollowerPushAssessment assessment = new(bot);
+    private readonly SAINFollowerApproachRoute approachRoute = new();
+    private bool riskHeld, localFiringCover, localFiringAttempted;
+    private Vector3 localFiringBoss;
+    private float riskRetryAt;
+    private string lastRiskReason;
+    private int lastRiskCount;
+    private bool lastRiskCautious;
+    private Enemy? target;
+    private Enemy? lastBoundTarget;
+    private float contactLostUntil = -1f;
+    private CoverPoint cover;
+    private Vector3 anchor, progress;
+    private float nextPlan, holdUntil, recoveryUntil, lastTick = -1f, activeSeconds, stalledSeconds, nextValidation;
+    private bool pressureLatch, targetBound;
+    private float bindUntil;
+    private BotFollowerPlayer? Follower => BossPlayers.Instance?.GetFollower(bot.BotOwner);
+
+    internal void BeginOrdered(SainPushOrder? order = null)
+    {
+        Follower?.TryConsumeOrderedPushCancelRequest(out _);
+        string id = order?.EnemyProfileId ?? bot.BotOwner.Memory?.GoalEnemy?.ProfileId;
+        if (string.IsNullOrEmpty(id) || bot.BotOwner.Memory?.GoalEnemy?.ProfileId != id) return;
+        if (Active && EnemyId == id) { Mode = SAINPushMode.Ordered; Record("orderedAgain"); return; }
+        bool reported = order.HasValue && TryReportCommandedPosition(order.Value);
+        Begin(SAINPushMode.Ordered, id);
+        if (reported && SainCombatRecorderBridge.IsRecording)
+            SainCombatRecorderBridge.RecordEvent(bot.BotOwner, "sainPushCommandReport",
+                new { enemyId = id, position = SAINFollowerRecorder.Point(order!.Value.LastKnownPosition) });
+    }
+
+    // The player's explicit push is one new squad report at an already remembered
+    // point. Never report the target's hidden transform or refresh it from polls.
+    private bool TryReportCommandedPosition(SainPushOrder order)
+    {
+        Vector3 known = order.LastKnownPosition;
+        if (!Finite(known) || known.sqrMagnitude <= 0.01f ||
+            bot.BotOwner.Memory?.GoalEnemy?.Person is not Player player ||
+            player.HealthController?.IsAlive != true) return false;
+        Enemy? enemy = bot.EnemyController.CheckAddEnemy(player);
+        if (enemy?.WasValid != true || !Enemy.IsEnemyActive(enemy) ||
+            enemy.EnemyInfo?.ProfileId != order.EnemyProfileId) return false;
+        if (enemy.EnemyKnown && SainEnemyTracking.Position(enemy).HasValue &&
+            Finite(SainEnemyTracking.Position(enemy).GetValueOrDefault())) return false;
+        enemy.KnownPlaces.UpdatePersonalHeardPosition(new SAINHearingReport
+        {
+            position = known,
+            soundType = SAINSoundType.None,
+            placeType = EEnemyPlaceType.Hearing,
+            isDanger = false,
+            shallReportToSquad = false,
+        }, Time.time);
+        return true;
+    }
+    private void Begin(SAINPushMode mode, string id)
+    {
+        Clear("replaced"); Mode = mode; EnemyId = id; nextPlan = 0f;
+        target = FindTarget(); targetBound = target != null; bindUntil = Time.time + 3f;
+        lastBoundTarget = target;
+        anchor = SainEnemyTracking.Position(target) ?? bot.Position;
+        Phase = SAINPushPhase.Approach; Record("begin");
+    }
+    private Enemy? FindTarget()
+    {
+        if (bot.GoalEnemy?.EnemyProfileId == EnemyId && Valid(bot.GoalEnemy)) return bot.GoalEnemy;
+        foreach (Enemy enemy in bot.EnemyController.KnownEnemies)
+            if (enemy?.EnemyProfileId == EnemyId && Valid(enemy)) return enemy;
+        return null;
+    }
+    private static bool Valid(Enemy? enemy) => enemy != null && enemy.WasValid && enemy.EnemyKnown &&
+        Enemy.IsEnemyActive(enemy) && enemy.EnemyPlayer?.HealthController?.IsAlive == true && SainEnemyTracking.Position(enemy).HasValue && Finite(SainEnemyTracking.Position(enemy).GetValueOrDefault());
+    private static bool Finite(Vector3 p) => !float.IsNaN(p.x) && !float.IsInfinity(p.x) &&
+        !float.IsNaN(p.y) && !float.IsInfinity(p.y) && !float.IsNaN(p.z) && !float.IsInfinity(p.z);
+
+    internal void Observe()
+    {
+        if (!Active) return;
+        var follower = Follower;
+        if (follower == null || bot.IsDead || !SainAddonBridge.IsSainManSelected(bot.BotOwner))
+        { Clear("combatEnded"); return; }
+        if (follower.TryConsumeOrderedPushCancelRequest(out string cancellation))
+        { Clear(cancellation); return; }
+        if (follower.TryGetActiveCommand(out _, out _) ||
+            (Ordered && (!follower.IsTemporaryCombatAggressionOverrideActive || follower.EffectiveCombatAggression < 100f)) ||
+            (!Ordered && (follower.CombatIndependent || follower.EffectiveCombatAggression <= 0f)))
+        { Clear("replacementOrder"); return; }
+        if (lastBoundTarget?.EnemyPlayer?.HealthController?.IsAlive == false)
+        { Clear("targetDead"); return; }
+        // A late poll cannot revive an order whose contact deadline already expired.
+        if (contactLostUntil >= 0f && Time.time >= contactLostUntil)
+        { Clear("targetLost"); return; }
+        target = FindTarget();
+        bool admitted = SAINFollowerCombatHandoff.AllowsEnemyCombat(bot.BotOwner);
+        if (target == null || !admitted)
+        {
+            if (Ordered && targetBound)
+            {
+                // Preserve intent and the existing leg budget, never stale advancement
+                // or enemy memory. Repeated polls/orders cannot extend this deadline.
+                target = null; OwnsMovement = NativeEngagementAllowed = false; Pause();
+                if (contactLostUntil < 0f)
+                { contactLostUntil = Time.time + ContactGraceSeconds; Record("contactInterrupted"); }
+            }
+            else if (!admitted) Clear("combatEnded");
+            else if (targetBound || Time.time >= bindUntil) Clear("targetLost");
+            return;
+        }
+        lastBoundTarget = target;
+        if (contactLostUntil >= 0f)
+        {
+            contactLostUntil = -1f; nextValidation = 0f;
+            Record("contactRestored");
+        }
+        if (!targetBound) { targetBound = true; anchor = SainEnemyTracking.Position(target).GetValueOrDefault(); }
+        Vector3 known = SainEnemyTracking.Position(target).GetValueOrDefault();
+        if ((known - anchor).sqrMagnitude >= 64f || (Exhausted && target.IsVisible && target.CanShoot))
+        {
+            ReleaseDestination(); localFiringAttempted = false; anchor = known; Phase = SAINPushPhase.Approach; nextPlan = 0f; Record("newContact");
+        }
+        if (localFiringAttempted && !Destination.HasValue &&
+            SainPlayerSquadBridge.TryGetPlayerLeader(bot.BotOwner, out Player leader) &&
+            (leader.Position - localFiringBoss).sqrMagnitude >=
+                SainRegroupBridge.BossMoveRefreshDistance * SainRegroupBridge.BossMoveRefreshDistance)
+        { localFiringAttempted = false; finder.Clear(); }
+    }
+
+    // Runs at SelectEnemy's result boundary, before SAIN publishes the chosen enemy.
+    // Native close combat, visible contacts and recent attackers retain priority.
+    internal Enemy? PreferEnemy(Enemy? native)
+    {
+        Observe();
+        if (!Active || target == null || native == null || native == target ||
+            !bot.EnemyController.KnownEnemies.Contains(target) || native.IsVisible || native.CanShoot ||
+            bot.Decision.DogFightDecision.DogFightActive || bot.Medical.TimeSinceShot < 2f ||
+            SainRegroupBridge.IsUnderFire(bot.BotOwner) || SainAddonBridge.IsUsingMedical(bot.BotOwner)) return native;
+        return target;
+    }
+
+    internal bool GetDecision(Enemy enemy, ECombatDecision solo, ESquadDecision squad, ESelfActionType self,
+        bool regroupActive, out ECombatDecision result)
+    {
+        try { return GetDecisionCore(enemy, solo, squad, self, regroupActive, out result); }
+        finally { RefreshCommitment(enemy, solo, self); }
+    }
+
+    // Evaluated at publication, before support admission and after push selection.
+    // Consumers share this result; snapshots never evaluate providers or readiness.
+    internal void RefreshCommitment(Enemy enemy, ECombatDecision solo, ESelfActionType self)
+    {
+        arbitrationCheckedAt = Time.time;
+        Commitment = GetCommitment(enemy, solo, self);
+    }
+
+    private SAINPushCommitment GetCommitment(Enemy enemy, ECombatDecision solo, ESelfActionType self)
+    {
+        if (!Active) return SAINPushCommitment.None;
+        if (Ordered) return SAINPushCommitment.Ordered;
+        if (self != ESelfActionType.None || SainAddonBridge.IsUsingMedical(bot.BotOwner) || assessment.SafetyBlocked ||
+            bot.BotOwner.WeaponManager?.Reload?.Reloading == true || bot.BotOwner.WeaponManager?.Selector?.IsChanging == true ||
+            SainRegroupBridge.IsUnderFire(bot.BotOwner) || bot.Medical.TimeSinceShot < 1f ||
+            solo == ECombatDecision.AvoidGrenade || solo == ECombatDecision.ThrowGrenade ||
+            solo == ECombatDecision.DogFight || solo == ECombatDecision.MeleeAttack ||
+            solo == ECombatDecision.FightZombies || solo == ECombatDecision.Retreat)
+            return SAINPushCommitment.Recovery;
+        if (enemy != target || enemy == null || solo == ECombatDecision.StandAndShoot || solo == ECombatDecision.ShootDistantEnemy)
+            return SAINPushCommitment.NativeCombat;
+        if (enemy.IsVisible && enemy.CanShoot) return SAINPushCommitment.Fire;
+        foreach (Enemy known in bot.EnemyController.KnownEnemies)
+            if (known != null && Enemy.IsEnemyActive(known) && known.EnemyPlayer?.HealthController?.IsAlive == true &&
+                known.IsVisible && known.CanShoot) return SAINPushCommitment.Fire;
+        if (Time.time < recoveryUntil) return SAINPushCommitment.Recovery;
+        if (bot.Mover.Moving || bot.Cover.CoverPoint_MovingTo != null) return SAINPushCommitment.Movement;
+        if (SAINFollowerRuntime.GetCover(bot.BotOwner)?.HoldsArrival(enemy) == true ||
+            Phase == SAINPushPhase.Pressure && Time.time < holdUntil) return SAINPushCommitment.Arrival;
+        if (Destination.HasValue) return SAINPushCommitment.Movement;
+        // A changed report may rename Recovery to Approach; it cannot renew recovery
+        // grace or make an unresolved readiness blocker productive again.
+        if (pressureLatch || Exhausted || Phase == SAINPushPhase.Assessing) return SAINPushCommitment.Passive;
+        return SAINPushCommitment.Planning;
+    }
+
+    private bool GetDecisionCore(Enemy enemy, ECombatDecision solo, ESquadDecision squad, ESelfActionType self,
+        bool regroupActive, out ECombatDecision result)
+    {
+        result = solo; OwnsMovement = false; NativeEngagementAllowed = false;
+        Observe();
+        bool urgent = self != ESelfActionType.None || SainAddonBridge.IsUsingMedical(bot.BotOwner) ||
+            solo == ECombatDecision.AvoidGrenade || solo == ECombatDecision.ThrowGrenade ||
+            solo == ECombatDecision.DogFight || solo == ECombatDecision.MeleeAttack ||
+            solo == ECombatDecision.FightZombies || solo == ECombatDecision.Retreat;
+        if (urgent || regroupActive) { Pause(); return false; }
+        if (AwaitingTarget && enemy?.EnemyProfileId == EnemyId)
+        { Pause(); result = ECombatDecision.SeekCover; return true; }
+        bool approach = (squad == ESquadDecision.None && (solo == ECombatDecision.Search || solo == ECombatDecision.RushEnemy)) ||
+            squad == ESquadDecision.PushSuppressedEnemy;
+        if (!Active && approach && Valid(enemy) && Follower?.CombatIndependent == false &&
+            Follower.EffectiveCombatAggression > 0f && !Follower.TryGetActiveCommand(out _, out _) &&
+            SAINFollowerRuntime.GetCover(bot.BotOwner)?.HoldsArrival(enemy) != true)
+            Begin(SAINPushMode.Automatic, enemy.EnemyProfileId);
+        if (!Active || target == null || enemy != target)
+        {
+            NativeEngagementAllowed = !AwaitingTarget && solo == ECombatDecision.MoveToEngage;
+            if (NativeEngagementAllowed && (Follower?.EffectiveSelfDetermination ?? 50f) <= 0f &&
+                bot.Decision.EnemyDecisions.FiringPosition is Vector3 position &&
+                SainPlayerSquadBridge.TryGetPlayerLeader(bot.BotOwner, out Player escortPlayer) &&
+                !pitTeam.Shared.SelfDeterminationPolicy.AllowsAutomaticPosition(0f,
+                    (bot.Position - escortPlayer.Position).sqrMagnitude, (position - escortPlayer.Position).sqrMagnitude))
+            { NativeEngagementAllowed = false; Pause(); result = ECombatDecision.SeekCover; return true; }
+            Pause(); return false;
+        }
+        if (!Ordered && squad != ESquadDecision.None && squad != ESquadDecision.PushSuppressedEnemy)
+        { Pause(); return false; }
+        if (solo == ECombatDecision.StandAndShoot || solo == ECombatDecision.ShootDistantEnemy)
+        { Pause(); return false; }
+        if (enemy.IsVisible && enemy.CanShoot)
+        {
+            Pause(); result = ECombatDecision.StandAndShoot; return true;
+        }
+        if (Exhausted) { Pause(); result = ECombatDecision.SeekCover; return true; }
+        assessment.Evaluate(enemy, Follower?.EffectiveCombatAggression ?? 50f, Follower?.CombatIndependent == true);
+        if (assessment.Reason != lastRiskReason || assessment.EnemyCount != lastRiskCount || assessment.Cautious != lastRiskCautious)
+        {
+            lastRiskReason = assessment.Reason; lastRiskCount = assessment.EnemyCount; lastRiskCautious = assessment.Cautious;
+            Record("risk." + assessment.Reason);
+        }
+        bool pressured = assessment.SafetyBlocked || assessment.WeaponBlocked;
+        if (pressured && !pressureLatch)
+        { recoveryUntil = Time.time + 3f; ReleaseDestination(); Phase = SAINPushPhase.Recovery; Record("pressureRecovery"); }
+        pressureLatch = pressured;
+        if (pressured || Time.time < recoveryUntil)
+        { Pause(); result = ECombatDecision.SeekCover; return true; }
+        if (Phase == SAINPushPhase.Recovery)
+        {
+            if ((bot.Mover.Moving && bot.Cover.CoverPoint_MovingTo != null) ||
+                SAINFollowerRuntime.GetCover(bot.BotOwner)?.HoldsArrival(enemy) == true)
+            { Pause(); result = ECombatDecision.SeekCover; return true; }
+            Phase = SAINPushPhase.Approach; nextPlan = 0f; Record("resume");
+        }
+        // Reassess ordinary risk between movement legs. Medical/weapon safety above
+        // can interrupt immediately; a score fluctuation cannot churn a committed path.
+        bool betweenLegs = !Destination.HasValue || Phase == SAINPushPhase.Pressure && Time.time >= holdUntil;
+        if (!Ordered && betweenLegs && !assessment.AllowsAutomatic)
+        {
+            // Full pursuit was rejected; a nearby firing cover is a separate, bounded
+            // option. Preserve its committed leg and arrival hold before falling back.
+            if (localFiringCover) ReleaseDestination();
+            HoldForAssessment(assessment.Reason);
+            result = RejectedAdvanceDecision(enemy);
+            return true;
+        }
+        if (riskHeld)
+        {
+            if ((bot.Mover.Moving && bot.CurrentAction is not SAINFollowerMoveToEngageAction) ||
+                SAINFollowerRuntime.GetCover(bot.BotOwner)?.HoldsArrival(enemy) == true)
+            { Pause(); result = ECombatDecision.SeekCover; return true; }
+            if (Time.time < riskRetryAt) { Pause(); result = ECombatDecision.SeekCover; return true; }
+            riskHeld = false; localFiringAttempted = false; Phase = SAINPushPhase.Approach; nextPlan = 0f;
+        }
+        // Preserve the separate native unreachable/sniper attempt and its failure latch.
+        if (SAINFollowerRuntime.GetEngageAttempt(bot.BotOwner)?.FailedFor(enemy) == true)
+        { Fail("firingPositionExhausted"); result = ECombatDecision.SeekCover; return true; }
+        if (enemy.Path.PathToEnemyStatus != NavMeshPathStatus.PathComplete)
+        { NativeEngagementAllowed = !AwaitingTarget && solo == ECombatDecision.MoveToEngage; Pause(); return false; }
+        if (Destination.HasValue && cover != null && Time.time >= nextValidation)
+        {
+            nextValidation = Time.time + 1f;
+            if (!finder.Validate(cover, enemy)) { Fail("coverInvalidated"); result = ECombatDecision.SeekCover; return true; }
+        }
+        if (Destination.HasValue && (Destination.Value - bot.Position).sqrMagnitude <= 4f && Phase != SAINPushPhase.Pressure)
+        { Phase = SAINPushPhase.Pressure; holdUntil = Time.time + 3f; Pause(); Record("arrivalHold"); }
+        if (Phase == SAINPushPhase.Pressure)
+        {
+            if (Time.time < holdUntil) { result = ECombatDecision.StandAndShoot; return true; }
+            if ((SainEnemyTracking.Position(enemy).GetValueOrDefault() - bot.Position).sqrMagnitude <= 9f)
+            { Fail("lastKnownReached"); result = ECombatDecision.SeekCover; return true; }
+            ReleaseDestination(); Phase = SAINPushPhase.Approach;
+        }
+        if (Destination.HasValue && cover == null && Phase == SAINPushPhase.Approach && Time.time >= nextPlan)
+        {
+            nextPlan = Time.time + 2f;
+            foreach (CoverPoint candidate in finder.FindForward(enemy))
+            {
+                ReleaseDestination(); cover = candidate; Commit(candidate.Position, "forwardCoverAvailable"); break;
+            }
+            if (finder.Pending) nextPlan = Time.time;
+        }
+        if (!Destination.HasValue && Time.time >= nextPlan)
+        {
+            nextPlan = Time.time + 2f;
+            Plan(enemy);
+        }
+        if (!Destination.HasValue) { result = Exhausted || riskHeld ? ECombatDecision.SeekCover : ECombatDecision.StandAndShoot; return true; }
+        OwnsMovement = true; result = ECombatDecision.MoveToEngage; return true;
+    }
+
+    private void Plan(Enemy enemy)
+    {
+        foreach (CoverPoint candidate in finder.FindForward(enemy))
+        { cover = candidate; Commit(candidate.Position, "forwardFiringCover"); return; }
+        if (finder.Pending) { nextPlan = Time.time; return; }
+        if (assessment.Cautious)
+        {
+            foreach (CoverPoint candidate in finder.FindForward(enemy, requireFiringLane: false))
+            { cover = candidate; Commit(candidate.Position, "cautiousApproachCover"); return; }
+            if (finder.Pending) { nextPlan = Time.time; return; }
+        }
+        // An admitted cautious push still gets the bounded remembered-position approach
+        // when protected forward cover is unavailable, as Core's cautious search does.
+        Vector3 known = SainEnemyTracking.Position(enemy).GetValueOrDefault();
+        Vector3 direction = known - bot.Position;
+        Vector3 provisional = bot.Position + direction.normalized * Mathf.Min(20f, direction.magnitude);
+        if (NavMesh.SamplePosition(provisional, out NavMeshHit hit, 2f, NavMesh.AllAreas) &&
+            SainRegroupBridge.TryGetDistance(bot.Position, hit.position, out float distance) && distance <= FollowerPushGeometry.MaxForwardRoute &&
+            (hit.position - known).magnitude < (bot.Position - known).magnitude &&
+            SainRegroupBridge.IsDestinationAvailable(bot.BotOwner, hit.position))
+        { Commit(hit.position, "provisionalAdvance"); return; }
+        // Core can follow a navigable detour when no forward cover/direct step works.
+        // Bound this to one committed leg toward the remembered location. Gait is selected by its action.
+        if (approachRoute.TryStep(bot.Position, known, out Vector3 step, out string failure) &&
+            SainRegroupBridge.IsDestinationAvailable(bot.BotOwner, step))
+        { Commit(step, "routeAdvance"); return; }
+        Fail(failure ?? "approachReserved");
+    }
+    private ECombatDecision RejectedAdvanceDecision(Enemy enemy)
+    {
+        if (!localFiringAttempted && assessment.Reason != "unreliableEnemyLocation" &&
+            SainPlayerSquadBridge.TryGetPlayerLeader(bot.BotOwner, out Player leader))
+        {
+            localFiringBoss = leader.Position;
+            float radius = Mathf.Max(2f, SainRegroupBridge.GetTriggerDistance(bot.BotOwner) - 2f);
+            foreach (CoverPoint candidate in finder.FindNearbyFiring(enemy, leader.Position, radius))
+            {
+                cover = candidate; localFiringAttempted = localFiringCover = true; riskHeld = false;
+                Commit(candidate.Position, "localFiringCover");
+                OwnsMovement = true;
+                return ECombatDecision.MoveToEngage;
+            }
+            if (finder.Pending)
+            {
+                Phase = SAINPushPhase.Approach;
+                if (Reason != "searchingLocalFiringCover") Record("searchingLocalFiringCover");
+                return ECombatDecision.StandAndShoot;
+            }
+            localFiringAttempted = true;
+        }
+        Phase = SAINPushPhase.Assessing;
+        return ECombatDecision.SeekCover;
+    }
+
+    private void HoldForAssessment(string reason)
+    {
+        if (!riskHeld)
+        {
+            // Retain a completed geometry scan when no destination was committed.
+            if (Destination.HasValue) ReleaseDestination();
+            OwnsMovement = false; riskHeld = true; riskRetryAt = Time.time + 3f;
+            Phase = SAINPushPhase.Assessing; Record("hold." + reason);
+        }
+        Pause();
+    }
+    private void Commit(Vector3 destination, string reason)
+    {
+        Destination = destination; progress = bot.Position; activeSeconds = stalledSeconds = 0f; lastTick = -1f;
+        Phase = SAINPushPhase.Approach; SainRegroupBridge.Claim(bot.BotOwner, destination); Record(reason);
+    }
+    internal Vector3? TickMovement()
+    {
+        if (!OwnsMovement || !Destination.HasValue) { Pause(); return null; }
+        float elapsed = lastTick < 0f ? 0f : Mathf.Max(0f, Time.time - lastTick); lastTick = Time.time;
+        activeSeconds += elapsed;
+        if ((bot.Position - progress).sqrMagnitude >= 0.5625f) { progress = bot.Position; stalledSeconds = 0f; }
+        else stalledSeconds += elapsed;
+        if (activeSeconds >= 20f || stalledSeconds >= 6f) { Fail(stalledSeconds >= 6f ? "noProgress" : "approachExpired"); return null; }
+        SainRegroupBridge.Claim(bot.BotOwner, Destination.Value);
+        return Destination;
+    }
+    internal void Pause() => lastTick = -1f;
+    internal void Fail(string reason)
+    {
+        if (Exhausted) return;
+        ReleaseDestination(); Phase = SAINPushPhase.Exhausted; Record(reason);
+    }
+    private void ReleaseDestination()
+    {
+        if (Destination.HasValue) SainRegroupBridge.Release(bot.BotOwner, Destination.Value);
+        Destination = null; cover = null; localFiringCover = false; OwnsMovement = false; Pause(); finder.Clear();
+    }
+    internal void Clear(string reason)
+    {
+        if (Active) Record(reason);
+        ReleaseDestination(); Mode = SAINPushMode.None; Phase = SAINPushPhase.None; EnemyId = null; target = null;
+        holdUntil = recoveryUntil = riskRetryAt = 0f; riskHeld = false; lastRiskReason = null;
+        pressureLatch = targetBound = localFiringAttempted = false; NativeEngagementAllowed = false;
+        lastBoundTarget = null; contactLostUntil = -1f;
+        Commitment = SAINPushCommitment.None; arbitrationCheckedAt = -1f;
+    }
+    internal object Snapshot => new { mode = Mode.ToString(), phase = Phase.ToString(), enemyId = EnemyId,
+        reason = Reason, destination = SAINFollowerRecorder.Point(Destination), activeSeconds, risk = assessment.Snapshot,
+        commitment = Commitment.ToString(), allowsArbitration = AllowsArbitration, arbitrationCheckedAt,
+        contactGraceRemaining = Mathf.Max(0f, contactLostUntil - Time.time),
+        arrivalHoldRemaining = Mathf.Max(0f, holdUntil - Time.time), recoveryRemaining = Mathf.Max(0f, recoveryUntil - Time.time) };
+    private void Record(string reason)
+    {
+        Reason = reason;
+        if (SainCombatRecorderBridge.IsRecording)
+            SainCombatRecorderBridge.RecordEvent(bot.BotOwner, "sainObjective", new { objective = "Push", reason, state = Snapshot });
+    }
+}

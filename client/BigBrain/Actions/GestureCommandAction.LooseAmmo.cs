@@ -186,9 +186,8 @@ namespace pitTeam.BigBrain.Actions
                 fastAccessMagazineEligibility: fastAccessMagazineEligibility);
             if (readiness?.Threshold > 0)
             {
-                // Two magazine equivalents make a weapon combat-ready; tactical stocking is a
-                // separate policy and continues until a third ordinary magazine is represented.
-                return readiness.Threshold + Math.Max(0, readiness.OrdinaryReference);
+                // Tactical stocking remains separate from readiness: carry a further half-target.
+                return readiness.Threshold + (readiness.Threshold + 1) / 2;
             }
 
             List<EFT.InventoryLogic.Magazine> availableMagazines = GetFastAccessMagazines(

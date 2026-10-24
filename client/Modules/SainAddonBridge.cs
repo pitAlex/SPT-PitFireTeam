@@ -1,37 +1,123 @@
 using System;
 using EFT;
+using UnityEngine;
 using pitTeam.Components;
 
 namespace pitTeam.Modules
 {
     public static class SainAddonBridge
     {
+        private static Func<BotOwner, Vector3?>? _getMovementCorner;
+        private static Action<BotOwner>? _releaseWireCover;
+        public static void RegisterMovementCornerProvider(Func<BotOwner, Vector3?> provider, Action<BotOwner> releaseWireCover)
+        {
+            _getMovementCorner = provider;
+            _releaseWireCover = releaseWireCover;
+        }
+        public static void UnregisterMovementCornerProvider(Func<BotOwner, Vector3?> provider)
+        {
+            if (_getMovementCorner == provider) { _getMovementCorner = null; _releaseWireCover = null; }
+        }
+        public static void ReleaseWireCover(BotOwner owner)
+        {
+            if (IsFollowerCombatEnabled(owner)) _releaseWireCover?.Invoke(owner);
+        }
+        // A handled null is authoritative: native EFT path state may be stale while SAIN owns movement.
+        public static bool TryGetMovementCorner(BotOwner owner, out Vector3? corner)
+        {
+            corner = null;
+            if (_getMovementCorner == null || !IsFollowerCombatEnabled(owner)) return false;
+            corner = _getMovementCorner(owner);
+            return true;
+        }
+
+        private static Func<BotOwner, object?>? _getSquadSnapshot;
+        public static bool HasSquadProvider => _getSquadSnapshot != null;
+        public static void RegisterSquadSnapshot(Func<BotOwner, object?> provider) => _getSquadSnapshot = provider;
+        public static void UnregisterSquadSnapshot(Func<BotOwner, object?> provider)
+        {
+            if (_getSquadSnapshot == provider) _getSquadSnapshot = null;
+        }
+        public static object? GetSquadSnapshot(BotOwner owner) => _getSquadSnapshot?.Invoke(owner);
+        private static Func<BotOwner, SainEnemyContact?>? _getEnemyContact;
+        private static bool _reportedContactFailure;
+
+        public static void RegisterEnemyContactProvider(Func<BotOwner, SainEnemyContact?> provider)
+        {
+            _getEnemyContact = provider;
+            _reportedContactFailure = false;
+        }
+
+        public static void UnregisterEnemyContactProvider(Func<BotOwner, SainEnemyContact?> provider)
+        {
+            if (_getEnemyContact == provider) _getEnemyContact = null;
+        }
+
+        // Handled with no contact is authoritative: never fall back to an EFT goal's live position.
+        public static bool TryGetEnemyContact(BotOwner owner, out SainEnemyContact? contact)
+        {
+            contact = null;
+            if (!IsFollowerCombatEnabled(owner)) return false;
+            try { contact = _getEnemyContact?.Invoke(owner); }
+            catch (Exception ex)
+            {
+                if (!_reportedContactFailure)
+                {
+                    _reportedContactFailure = true;
+                    Logger.LogError($"[SAIN] Status contact read failed: {ex}");
+                }
+            }
+            return true;
+        }
+
+        private static Func<BotOwner, bool>? _isReadyForCombat;
+        public static bool IsUsingMedical(BotOwner owner) => Utils.FollowerMedical.IsUsingMedical(owner);
+        public static bool HasAcceptedGoalEnemy(BotOwner owner) =>
+            BotFollowerPlayer.IsEnemyInfoAlive(owner?.Memory?.GoalEnemy);
+        public static void EndPostCombatFullHeal(BotOwner owner) => Utils.FollowerMedical.CompletePostCombatFullHeal(owner);
+        public static bool IsCombatReady(BotOwner owner) => _isReadyForCombat?.Invoke(owner) == true;
         private static Func<BotOwner, bool>? _isReadyForPatrolAfterCombat;
         private static Action<BotOwner>? _forceReleaseFollowerCombatState;
         private static Func<BotOwner, bool>? _tryResetFollowerDecisionState;
 
-        public static bool IsFollowerCombatEnabled => pitFireTeam.UseSainFollowerCombat;
+        public static bool IsSainManSelected(BotOwner botOwner) =>
+            pitFireTeam.IsSainManTacticAvailable && botOwner != null &&
+            BossPlayers.Instance?.GetFollower(botOwner)?.CombatTactic == FollowerCombatTactic.SainMan;
+
+        public static bool IsAddonTacticSelected(BotOwner botOwner) =>
+            pitFireTeam.IsSainManTacticAvailable && botOwner != null &&
+            BossPlayers.Instance?.GetFollower(botOwner) is { } follower &&
+            FollowerCombatTactics.UsesSainCombat(follower.CombatTactic);
+
+        public static bool IsShooterSelected(BotOwner botOwner) =>
+            BossPlayers.Instance?.GetFollower(botOwner)?.CombatTactic == FollowerCombatTactic.SAINShooter;
+
+        public static bool IsFollowerCombatEnabled(BotOwner botOwner) => pitFireTeam.UseSainFollowerCombat(botOwner);
 
         public static bool HasRuntimeCallbacks =>
             _isReadyForPatrolAfterCombat != null &&
             _forceReleaseFollowerCombatState != null &&
-            _tryResetFollowerDecisionState != null;
+            _tryResetFollowerDecisionState != null && _isReadyForCombat != null;
 
         public static void RegisterRuntimeCallbacks(
             Func<BotOwner, bool> isReadyForPatrolAfterCombat,
             Action<BotOwner> forceReleaseFollowerCombatState,
-            Func<BotOwner, bool> tryResetFollowerDecisionState)
+            Func<BotOwner, bool> tryResetFollowerDecisionState,
+            Func<BotOwner, bool> isReadyForCombat)
         {
             _isReadyForPatrolAfterCombat = isReadyForPatrolAfterCombat;
             _forceReleaseFollowerCombatState = forceReleaseFollowerCombatState;
             _tryResetFollowerDecisionState = tryResetFollowerDecisionState;
+            _isReadyForCombat = isReadyForCombat;
         }
 
         public static void UnregisterRuntimeCallbacks(
             Func<BotOwner, bool> isReadyForPatrolAfterCombat,
             Action<BotOwner> forceReleaseFollowerCombatState,
-            Func<BotOwner, bool> tryResetFollowerDecisionState)
+            Func<BotOwner, bool> tryResetFollowerDecisionState,
+            Func<BotOwner, bool> isReadyForCombat)
         {
+            if (_isReadyForCombat == isReadyForCombat) _isReadyForCombat = null;
             if (_isReadyForPatrolAfterCombat == isReadyForPatrolAfterCombat)
             {
                 _isReadyForPatrolAfterCombat = null;
@@ -51,7 +137,7 @@ namespace pitTeam.Modules
         public static bool TryIsReadyForPatrolAfterCombat(BotOwner botOwner, out bool ready)
         {
             ready = false;
-            if (!IsFollowerCombatEnabled || _isReadyForPatrolAfterCombat == null)
+            if (!IsFollowerCombatEnabled(botOwner) || _isReadyForPatrolAfterCombat == null)
             {
                 return false;
             }
@@ -62,7 +148,7 @@ namespace pitTeam.Modules
 
         public static bool TryForceReleaseFollowerCombatState(BotOwner botOwner)
         {
-            if (!IsFollowerCombatEnabled || _forceReleaseFollowerCombatState == null)
+            if (!IsFollowerCombatEnabled(botOwner) || _forceReleaseFollowerCombatState == null)
             {
                 return false;
             }
@@ -73,7 +159,7 @@ namespace pitTeam.Modules
 
         public static bool TryResetDecisionState(BotOwner botOwner)
         {
-            if (!IsFollowerCombatEnabled || _tryResetFollowerDecisionState == null)
+            if (!IsFollowerCombatEnabled(botOwner) || _tryResetFollowerDecisionState == null)
             {
                 return false;
             }
@@ -85,6 +171,25 @@ namespace pitTeam.Modules
         {
             Utils.FollowerMedical.BeginPostCombatFullHeal(botOwner);
         }
+
+        private static Func<BotOwner, bool>? _tryPushEnemy;
+        private static Func<BotOwner, SainPushOrder, bool>? _tryDirectedPushEnemy;
+        public static void RegisterPushEnemyHandler(Func<BotOwner, bool> handler) => _tryPushEnemy = handler;
+        public static void RegisterDirectedPushEnemyHandler(Func<BotOwner, SainPushOrder, bool> handler) => _tryDirectedPushEnemy = handler;
+        public static void UnregisterPushEnemyHandler(Func<BotOwner, bool> handler)
+        {
+            if (_tryPushEnemy == handler) _tryPushEnemy = null;
+        }
+        public static void UnregisterDirectedPushEnemyHandler(Func<BotOwner, SainPushOrder, bool> handler)
+        {
+            if (_tryDirectedPushEnemy == handler) _tryDirectedPushEnemy = null;
+        }
+
+        // Called after core command acceptance; the ready addon owns its interpretation.
+        public static bool TryPushEnemy(BotOwner owner) =>
+            IsFollowerCombatEnabled(owner) && _tryPushEnemy?.Invoke(owner) == true;
+        public static bool TryPushEnemy(BotOwner owner, SainPushOrder order) =>
+            IsFollowerCombatEnabled(owner) && _tryDirectedPushEnemy?.Invoke(owner, order) == true;
 
         // Generic event that addon can hook into for follower lifecycle changes.
         public static event Action<BotOwner, FollowerLifecycleEvent>? OnFollowerLifecycleEvent;
@@ -103,15 +208,45 @@ namespace pitTeam.Modules
         /// <summary>
         /// Raise the boss-group static update event (called from core boss-group paths).
         /// </summary>
+        public static void NotifyCombatEpisode(BotOwner owner, bool active)
+        {
+            if (owner?.BotFollower?.BossToFollow is not pitAIBossPlayer boss) return;
+            boss.NotifyAddonCombatEpisode(owner, active);
+        }
+
         public static void RaiseBossGroupStaticUpdate(pitAIBossPlayer boss)
         {
-            if (!IsFollowerCombatEnabled)
+            if (!pitFireTeam.IsSainFollowerCombatAvailable && !SainAddonBridge.HasSquadProvider)
             {
                 return;
             }
 
             OnBossGroupStaticUpdate?.Invoke(boss);
         }
+    }
+
+    // One command-time remembered point; no native SAIN references cross into core.
+    public readonly struct SainPushOrder(string enemyProfileId, Vector3 lastKnownPosition)
+    {
+        public string EnemyProfileId { get; } = enemyProfileId;
+        public Vector3 LastKnownPosition { get; } = lastKnownPosition;
+    }
+
+    // Passive status-report data; no native SAIN references cross into core.
+    public readonly struct SainEnemyContact
+    {
+        public SainEnemyContact(string profileId, Vector3 lastKnownPosition, Vector3? visiblePosition, float timeSinceSeen)
+        {
+            ProfileId = profileId;
+            LastKnownPosition = lastKnownPosition;
+            VisiblePosition = visiblePosition;
+            TimeSinceSeen = timeSinceSeen;
+        }
+
+        public string ProfileId { get; }
+        public Vector3 LastKnownPosition { get; }
+        public Vector3? VisiblePosition { get; }
+        public float TimeSinceSeen { get; }
     }
 
     /// <summary>

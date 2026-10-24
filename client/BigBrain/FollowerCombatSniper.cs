@@ -13,7 +13,6 @@ namespace pitTeam.BigBrain
     {
         private const float RepositionCooldownSeconds = 4f;
         private const float RegroupSameLevelTolerance = 1.75f;
-        private const float MarksmanDefaultAutoSearchAggression = 0.3f;
         private const float FireSupportSettleSeconds = 2.5f;
         private const string FireSupportHoldReason = "sniper.fireSupportHold";
         private const string NoActionHoldReason = "sniper.noActionHold";
@@ -50,6 +49,9 @@ namespace pitTeam.BigBrain
         private AICoreActionResult<BotLogicDecision, CoreActionResultParams>? preparedCloseSearchDecision;
         private Vector3 preparedCloseSearchPoint;
         private float closeSearchRetryUntil;
+        private EnemyInfo? rangeThreatEnemy;
+        private Vector3 rangeThreatAnchor;
+        private float rangeThreatUntil, rangeThreatMultiplier = 1f;
 
         public FollowerCombatSniper(BotOwner botOwner, FollowerCombatCommon combatCommon)
         {
@@ -351,7 +353,7 @@ namespace pitTeam.BigBrain
         {
             decision = default;
 
-            bool closeEnoughForSecondary = goalEnemy.Distance <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance();
+            bool closeEnoughForSecondary = pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance();
             bool offensiveSearchAllowed = ShouldUseOffensiveAutoSearch(goalEnemy);
             if (!closeEnoughForSecondary && !offensiveSearchAllowed)
             {
@@ -567,16 +569,19 @@ namespace pitTeam.BigBrain
 
         private bool IsWithinMarksmanAutoSearchDistance(EnemyInfo goalEnemy, float aggression)
         {
-            Enemy.EnemyDistance distance = Enemy.Distance(goalEnemy);
-            if (aggression <= MarksmanDefaultAutoSearchAggression + 0.01f)
+            if (goalEnemy == null || aggression <= 0.01f) return false;
+            Vector3 anchor = FollowerCombatCommon.GetEnemyAnchor(goalEnemy);
+            if (rangeThreatEnemy != goalEnemy || Time.time >= rangeThreatUntil ||
+                (anchor - rangeThreatAnchor).sqrMagnitude > 4f)
             {
-                return distance <= Enemy.EnemyDistance.Close;
+                rangeThreatEnemy = goalEnemy; rangeThreatAnchor = anchor; rangeThreatUntil = Time.time + 0.5f;
+                int localEnemies = Enemy.GetNearbyLivingGroupMemberCount(goalEnemy, anchor, MarksmanCloseSearchClusterRadius);
+                rangeThreatMultiplier = CombatCommon.GetApproachThreatRangeMultiplier(goalEnemy, localEnemies);
             }
-
-            Enemy.EnemyDistance maxDistance = CombatCommon.GetMaxPushDistance(
-                aggression,
-                FollowerCombatTactic.Balanced);
-            return distance <= maxDistance;
+            // Apply threat to the final distance, not to aggression or the route cap.
+            float maxDistance = FollowerPushRiskPolicy.MarksmanRange(aggression) * rangeThreatMultiplier;
+            float distance = FollowerEnemyTracking.Distance(goalEnemy);
+            return distance >= 0f && distance < maxDistance;
         }
 
         /// <summary>
@@ -607,7 +612,7 @@ namespace pitTeam.BigBrain
         /// </summary>
         private bool ShouldPreserveCloseQuarterWeaponFlow(EnemyInfo goalEnemy)
         {
-            if (goalEnemy == null || goalEnemy.Distance > CombatDistanceConfiguration.Instance.GetCloseQuarterDistance())
+            if (goalEnemy == null || pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) > CombatDistanceConfiguration.Instance.GetCloseQuarterDistance())
             {
                 return false;
             }
@@ -686,7 +691,7 @@ namespace pitTeam.BigBrain
         {
             return FollowerCombatCommon.HasActiveCombatEnemy(botOwner, goalEnemy) &&
                    goalEnemy != null &&
-                   goalEnemy.Distance <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance();
+                   pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance();
         }
 
         private void TrySwitchToPrimaryForSniperDecision()
@@ -823,7 +828,7 @@ namespace pitTeam.BigBrain
                 }
 
                 BotFollowerPlayer? followerData = BossPlayers.Instance?.GetFollower(follower);
-                if (followerData == null || followerData.CombatTactic != FollowerCombatTactic.Balanced)
+                if (followerData == null || followerData.CoreCombatTactic != FollowerCombatTactic.Balanced)
                 {
                     continue;
                 }
@@ -944,7 +949,7 @@ namespace pitTeam.BigBrain
         {
             if (!CombatCommon.HasActiveCombatEnemy(goalEnemy) ||
                 goalEnemy.IsVisible ||
-                goalEnemy.Distance > IndirectThreatSuppressMaxDistance ||
+                pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) > IndirectThreatSuppressMaxDistance ||
                 !CombatCommon.HasReliablePersonalEnemyLocation(goalEnemy))
             {
                 return false;
@@ -1409,7 +1414,7 @@ namespace pitTeam.BigBrain
             }
 
             if (pushEvent.IsSearchPush &&
-                goalEnemy.Distance <= MarksmanTeamSearchAutoMaxEnemyDistance &&
+                pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= MarksmanTeamSearchAutoMaxEnemyDistance &&
                 (BotOwner.Position - pushEvent.Owner.Position).sqrMagnitude <= 20f * 20f)
             {
                 if (CombatCommon.TryCreateTeamSearchSupportDecision(
@@ -2258,7 +2263,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            return goalEnemy.Distance <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance() ||
+            return pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance() ||
                    BotOwner.Memory.IsUnderFire ||
                    FollowerCombatCommon.WasHitRecently(BotOwner, 0.75f);
         }
@@ -2616,7 +2621,7 @@ namespace pitTeam.BigBrain
             EnemyInfo? goalEnemy = BotOwner.Memory.GoalEnemy;
             if (!CombatCommon.HasActiveCombatEnemy(goalEnemy) ||
                 goalEnemy == null ||
-                (goalEnemy.Distance > CombatDistanceConfiguration.Instance.GetCloseQuarterDistance() &&
+                (pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) > CombatDistanceConfiguration.Instance.GetCloseQuarterDistance() &&
                  (!preparedCloseSearchDecision.HasValue || !ShouldUseOffensiveAutoSearch(goalEnemy))))
             {
                 ClearCloseWeaponPreparation();

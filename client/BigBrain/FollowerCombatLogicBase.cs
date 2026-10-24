@@ -638,10 +638,11 @@ namespace pitTeam.BigBrain
         private void ActivateRegroupObjective(BotFollowerPlayer followerData)
         {
             bool tightRegroup = followerData.TightRegroupRequested;
+            bool determinationRegroup = followerData.DeterminationRegroupRequested;
             followerData.ClearOrderedPushTargetLock("CombatObjective:Regroup");
             combatCommon.ClearCommittedPushDecision("CombatObjective:Regroup");
             followerData.ClearCommand("CombatObjective:ConsumeRegroup");
-            ActivateRegroupObjective(forceReset: true, "activateRegroupOrder", tightRegroup);
+            ActivateRegroupObjective(forceReset: true, "activateRegroupOrder", tightRegroup, determinationRegroup);
             followerData.SetCombatRegroupBossAnchor(true);
         }
 
@@ -666,7 +667,8 @@ namespace pitTeam.BigBrain
         private void ActivateRegroupObjective(
             bool forceReset = false,
             string reason = "activateRegroup",
-            bool tightRegroup = false)
+            bool tightRegroup = false,
+            bool determinationRegroup = false)
         {
             if (currentObjective == CombatObjectiveKind.Regroup && !forceReset)
             {
@@ -678,7 +680,7 @@ namespace pitTeam.BigBrain
             DeactivateGrenadierForObjectiveSwitch(reason);
             if (regroupObjective is FollowerCombatRegroupObjective concreteRegroupObjective)
             {
-                concreteRegroupObjective.Activate(tightRegroup);
+                concreteRegroupObjective.Activate(tightRegroup, automatic: !forceReset || determinationRegroup);
             }
             else
             {
@@ -974,7 +976,7 @@ namespace pitTeam.BigBrain
                    FollowerCombatCommon.WasHitRecently(BotOwner, 0.75f) ||
                    (goalEnemy.IsVisible &&
                     goalEnemy.CanShoot &&
-                    goalEnemy.Distance <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance());
+                    pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= CombatDistanceConfiguration.Instance.GetCloseQuarterDistance());
         }
 
         protected void ActivatePrimaryObjectiveForStart()

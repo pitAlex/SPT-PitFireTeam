@@ -59,9 +59,12 @@ namespace pitTeam.Patches
 
     internal class FriendlyTeammateProfileOptions
     {
+        public List<FriendlyTeammateInsuredItem> InsuredItems { get; set; }
+        public List<FriendlyTeammateInsuredItem> PlayerInsuredItems { get; set; }
         public string CurrentLoadoutId { get; set; }
         public string CurrentTactic { get; set; }
         public float Aggression { get; set; } = 50f;
+        public float SelfDetermination { get; set; } = 50f;
         public FollowerProficiencyModifierValues Proficiency { get; set; } = new FollowerProficiencyModifierValues();
         public List<FriendlyTeammateLoadoutOption> Loadouts { get; set; }
         public List<FriendlyTeammateTacticOption> Tactics { get; set; }
@@ -83,12 +86,6 @@ namespace pitTeam.Patches
         public string[] suit { get; set; }
     }
 
-    internal class FriendlyTeammateLoadoutRequest
-    {
-        public string aid { get; set; }
-        public string loadoutId { get; set; }
-    }
-
     internal class FriendlyTeammateRenameRequest
     {
         public string aid { get; set; }
@@ -105,6 +102,7 @@ namespace pitTeam.Patches
     {
         public string aid { get; set; }
         public FollowerProficiencyModifierValues proficiency { get; set; }
+        public float? selfDetermination { get; set; }
     }
 
     internal class FriendlyTeammateTacticRequest
@@ -299,7 +297,6 @@ namespace pitTeam.Patches
         private const string OptionsRoute = "/singleplayer/pitfireteam/teammate/profile/options";
         private const string SuitRoute = "/singleplayer/pitfireteam/teammate/profile/suit";
         private const string RenameRoute = "/singleplayer/pitfireteam/teammate/profile/rename";
-        private const string LoadoutRoute = "/singleplayer/pitfireteam/teammate/profile/loadout";
         private const string DefaultEquipmentRoute = "/singleplayer/pitfireteam/teammate/profile/default-equipment";
         private const string RepairEquipmentRoute = "/singleplayer/pitfireteam/teammate/profile/repair-equipment";
         private const string AggressionRoute = "/singleplayer/pitfireteam/teammate/profile/aggression";
@@ -412,8 +409,6 @@ namespace pitTeam.Patches
             new Dictionary<string, Item>(StringComparer.OrdinalIgnoreCase);
         public static string ActiveTeammateLoadoutId { get; set; }
         public static string ActiveTeammateLoadoutName { get; set; }
-        public static string LoadoutEditorSourceLoadoutId { get; set; }
-        public static string LoadoutEditorSourceLoadoutName { get; set; }
         public static SkillsScreen SkillsPanel { get; set; }
         public static RectTransform SkillsPanelHost { get; set; }
         public static CustomTextMeshProUGUI OriginalNicknameLabel { get; set; }
@@ -957,6 +952,8 @@ namespace pitTeam.Patches
 
             RestoreHideoutButtonVisuals(__instance, profile);
 
+            if (TeammateHiringPreview.TryShow(__instance, profile, inventoryController, session)) return;
+
             if (ConsumePendingRecruitProfileView(profile.AccountId))
             {
                 HideProfileActions(__instance);
@@ -1035,10 +1032,7 @@ namespace pitTeam.Patches
                 ConfigureLoadoutPanel(loadoutPanel, clothingSelectionPanel);
                 DisplayLoadoutOptions(__instance, profile, inventoryController, session, loadoutPanel, playerModelWindow, options, replaceLoadoutDropdown: false);
                 ApplyLoadoutPanelLayout(loadoutPanel, clothingSelectionPanel);
-                if (pitFireTeam.IsFollowerLoadoutRealTransferMode())
-                {
-                    ReplaceLoadoutDropdownWithEditButton(__instance, profile, loadoutPanel);
-                }
+                ReplaceLoadoutDropdownWithEditButton(__instance, profile, loadoutPanel);
 
                 CreateProficiencyButton(__instance, clone, parent, profile, options);
                 CreateEditLoadoutButton(__instance, clone, parent, profile, 2);
@@ -1055,13 +1049,14 @@ namespace pitTeam.Patches
 
         private static bool IsMarksmanTactic(string tactic)
         {
-            return string.Equals(tactic, "marksman", StringComparison.OrdinalIgnoreCase);
+            return string.Equals(tactic, "marksman", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(tactic, "SAINShooter", StringComparison.OrdinalIgnoreCase);
         }
 
-        private static void SetProficiencyAggressionForTactic(bool isMarksman)
+        private static void SetProficiencyAggressionForTactic(string tactic)
         {
-            ActiveProfileTactic = isMarksman ? "Marksman" : "Rifleman";
-            ActiveProfileAggression = isMarksman ? 30f : 50f;
+            ActiveProfileTactic = tactic;
+            ActiveProfileAggression = IsMarksmanTactic(tactic) ? 30f : 50f;
             if (ProficiencyAggressionSlider != null)
             {
                 ProficiencyAggressionSlider.UpdateValue(ActiveProfileAggression, false, 0f, 100f);
@@ -1122,6 +1117,7 @@ namespace pitTeam.Patches
             Slider stockSlider = slider.GetComponentInChildren<Slider>(true);
             TMP_InputField valueInput = NumberSliderValueInputField?.GetValue(slider) as TMP_InputField;
             ConfigureSliderValueInputChrome(valueInput);
+            AddProficiencyPercentLabel(valueInput);
             if (stockSlider != null)
             {
                 stockSlider.interactable = interactable;
@@ -1282,6 +1278,15 @@ namespace pitTeam.Patches
             valueInput.colors = colors;
         }
 
+        private static void AddProficiencyPercentLabel(TMP_InputField input)
+        {
+            if (input?.transform is not RectTransform parent || parent.Find("pitFireTeam_Percent") != null) return;
+            var label = CreateAggressionLabel("pitFireTeam_Percent", parent, "%",
+                new Vector2(1f, .5f), new Vector2(1f, .5f), new Vector2(0f, .5f),
+                new Vector2(4f, 0f), new Vector2(22f, 28f), 18f, TextAlignmentOptions.MidlineLeft);
+            label.raycastTarget = false;
+        }
+
         private static void HideStockLabelContainers(Transform root, Transform exemptRoot)
         {
             if (root == null)
@@ -1428,6 +1433,14 @@ namespace pitTeam.Patches
                 return GetSocialUiText("ProfileTactic");
             }
 
+            if (string.Equals(tactic, "SAINShooter", StringComparison.OrdinalIgnoreCase))
+                return GetSocialUiText("ProfileTacticSAINShooter");
+
+            if (string.Equals(tactic, "SainMan", StringComparison.OrdinalIgnoreCase))
+            {
+                return GetSocialUiText("ProfileTacticSainMan");
+            }
+
             if (string.Equals(tactic, "marksman", StringComparison.OrdinalIgnoreCase))
             {
                 return GetSocialUiText("ProfileTacticMarksman");
@@ -1495,23 +1508,12 @@ namespace pitTeam.Patches
             button.name = "pitFireTeam_EditLoadoutButton";
             button.gameObject.SetActive(true);
             button.Interactable = true;
-            bool realTransferMode = pitFireTeam.IsFollowerLoadoutRealTransferMode();
-            button.SetRawText(
-                realTransferMode
-                    ? GetSocialUiText("BuyGearLoadout")
-                    : GetSocialUiText("EditLoadout"),
-                18);
+            button.SetRawText(GetSocialUiText("BuyGearLoadout"), 18);
             HideProfileButtonIconContainer(button);
             button.OnClick.RemoveAllListeners();
             button.OnClick.AddListener(() =>
             {
-                if (realTransferMode)
-                {
-                    TeammateEquipmentBuildsScreenFlow.Open(profile, session: ActiveProfileSession, inventoryController: ActiveProfileInventoryController);
-                    return;
-                }
-
-                ShowLoadoutEditorOverlay(screen, profile);
+                TeammateEquipmentBuildsScreenFlow.Open(profile, session: ActiveProfileSession, inventoryController: ActiveProfileInventoryController);
             });
 
             if (button.transform is RectTransform buttonRect && buttonTemplate.transform is RectTransform templateRect)
@@ -1672,6 +1674,7 @@ namespace pitTeam.Patches
 
         private static void ResetTeammateProfileUi(InventoryPlayerModelWithStatsWindow playerModelWindow)
         {
+            CloseLoadoutEditorInsurance();
             CloseProfileRecoveryOverlay();
             ResetProficiencyUi();
             playerModelWindow.OnCustomizationChanged -= PlayerModelWithStatsWindow_OnCustomizationChanged;
@@ -1820,6 +1823,7 @@ namespace pitTeam.Patches
         [PatchPostfix]
         private static void PatchPostfix(OtherPlayerProfileScreen __instance)
         {
+            TeammateHiringPreview.RestoreScreen(__instance);
             Action callback = OtherPlayerProfileScreenPatch.ActiveBackOverrideAction;
             OtherPlayerProfileScreenPatch.ActiveBackOverrideAction = null;
             OtherPlayerProfileScreenPatch.PendingBackOverrideAction = null;

@@ -5,6 +5,12 @@ namespace pitTeam.Server.Models;
 
 public record FriendlyTeammateCreateRequest : IRequestData
 {
+    [JsonPropertyName("quoteToken")]
+    public string? QuoteToken { get; set; }
+
+    [JsonPropertyName("withoutKit")]
+    public bool WithoutKit { get; set; }
+
     [JsonPropertyName("nickname")]
     public string? Nickname { get; set; }
 

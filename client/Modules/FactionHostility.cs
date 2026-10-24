@@ -266,17 +266,27 @@ namespace pitTeam.Modules
             }
         }
 
-        private static void EnsureNeutral(BotsGroup group, IPlayer neutral)
+        internal static void EnsureNeutral(BotsGroup group, IPlayer neutral)
         {
             if (group == null || neutral == null)
             {
                 return;
             }
 
-            if (group.Enemies?.ContainsKey(neutral) == true)
+            // EFT accepts both BotOwner and Player as IPlayer keys. Activation can
+            // insert the owner while relationship repair receives GetPlayer.
+            var aliases = new List<IPlayer>();
+            if (group.Enemies != null && !string.IsNullOrEmpty(neutral.ProfileId))
             {
-                group.RemoveEnemy(neutral);
+                foreach (var enemy in group.Enemies.Keys)
+                    if (enemy != neutral && enemy?.ProfileId == neutral.ProfileId)
+                        aliases.Add(enemy);
             }
+            foreach (var alias in aliases) group.RemoveEnemy(alias);
+
+            // Publish native OnEnemyRemove even if the dictionary entry is gone:
+            // external SAIN owns a separate enemy cache subscribed to this event.
+            group.RemoveEnemy(neutral);
 
             if (!string.IsNullOrEmpty(neutral.GroupId))
             {

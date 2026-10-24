@@ -1,5 +1,6 @@
 using Comfort.Common;
 using EFT;
+using EFT.InventoryLogic;
 using EFT.Quests;
 using pitTeam.Components;
 using pitTeam.Modules;
@@ -385,6 +386,7 @@ namespace pitTeam.Patches
         {
             if (FollowerTransitStateCache.TryConsumeProfile(aid, role, out Profile transitProfile))
             {
+                _ = Task.Run(() => FollowerInsuranceRaidDisplay.Refresh()); // Cosmetic lookup must not delay follower spawn.
                 await LoadFollowerProfileBundles(transitProfile);
                 return transitProfile;
             }
@@ -394,7 +396,7 @@ namespace pitTeam.Patches
             Dictionary<string, dynamic> customization = new Dictionary<string, dynamic>();
 
             // send health multiplier
-            customization["Health"] = pitFireTeam.heatlhMultiplier.Value;
+            customization["Health"] = GameplayModeRuntime.GetEffectiveValue(pitFireTeam.heatlhMultiplier);
             customization["English"] = pitFireTeam.englishBear.Value;
 
             var botPresets = botCreator?._creatorProfile as BotProfileClient;
@@ -444,6 +446,7 @@ namespace pitTeam.Patches
             }
 
             Profile profile = result.Select(descriptor => new Profile(descriptor)).ToList().PickRandom();
+            _ = Task.Run(() => FollowerInsuranceRaidDisplay.Refresh()); // Cosmetic lookup must not delay follower spawn.
             // process backend result
             await LoadFollowerProfileBundles(profile);
 
@@ -897,6 +900,14 @@ namespace pitTeam.Patches
             }
         }
 
+        internal static EPlayerSide ResolveFollowerSpawnSide(Profile profile, EPlayerSide leaderSide)
+        {
+            EPlayerSide? savedSide = profile?.Info?.Side;
+            return GameplayModeRuntime.IsAllegiance &&
+                   (savedSide == EPlayerSide.Bear || savedSide == EPlayerSide.Usec)
+                ? savedSide.Value : leaderSide;
+        }
+
         public async Task SpawnGroupBots(pitAIBossPlayer player)
         {
 
@@ -937,6 +948,7 @@ namespace pitTeam.Patches
             // remember what tactic this bot is associated with as the tactic will be set after spawn
             Dictionary<string, string> profileTactic = new Dictionary<string, string>();
             Dictionary<string, float> profileAggression = new Dictionary<string, float>();
+            Dictionary<string, float> profileDetermination = new Dictionary<string, float>();
             Dictionary<string, FollowerProficiencyModifierValues> profileProficiency =
                 new Dictionary<string, FollowerProficiencyModifierValues>();
 
@@ -977,6 +989,7 @@ namespace pitTeam.Patches
 
                 Dictionary<string, string> botsTactic = new Dictionary<string, string>();
                 Dictionary<string, float> botsAggression = new Dictionary<string, float>();
+                Dictionary<string, float> botsDetermination = new Dictionary<string, float>();
                 Dictionary<string, FollowerProficiencyModifierValues> botsProficiency =
                     new Dictionary<string, FollowerProficiencyModifierValues>();
 
@@ -989,6 +1002,7 @@ namespace pitTeam.Patches
                     {
                         botsTactic[item.Aid] = item.Tactic;
                         botsAggression[item.Aid] = item.Aggression;
+                        botsDetermination[item.Aid] = item.SelfDetermination;
                         botsProficiency[item.Aid] = item.Proficiency ?? new FollowerProficiencyModifierValues();
                     }
                 }
@@ -1029,6 +1043,7 @@ namespace pitTeam.Patches
                         profileProficiency[profile.Id] = botsProficiency.TryGetValue(aid, out FollowerProficiencyModifierValues proficiency)
                             ? proficiency
                             : new FollowerProficiencyModifierValues();
+                        profileDetermination[profile.Id] = botsDetermination.TryGetValue(aid, out float determination) ? determination : 50f;
                     }
                 }
 
@@ -1045,6 +1060,7 @@ namespace pitTeam.Patches
             botsData.Profiles.ForEach(async profile =>
             {
                 InteractableObjects.StoreEquipment(profile);
+                EPlayerSide followerSide = ResolveFollowerSpawnSide(profile, side);
 
                 Action<BotOwner> OnActivate = new Action<BotOwner>((BotOwner owner) =>
                 {
@@ -1092,7 +1108,8 @@ namespace pitTeam.Patches
 
                             Modules.Logger.LogInfo("Tactic is " + tactic);
 
-                            BossPlayers.AddFollower(me, player, true, botType, tactic, aggression, proficiency);
+                            BossPlayers.AddFollower(me, player, true, botType, tactic, aggression, proficiency,
+                                profileDetermination.TryGetValue(me.Profile.ProfileId, out float determination) ? determination : 50f);
 
                             TrySayFollowerReadyControlled(me, 2000);
 
@@ -1106,10 +1123,10 @@ namespace pitTeam.Patches
 
                     BotOwnerManualUpdatePatch.BotOwnerUpdate.Add(owner.ProfileId, OnBotState);
 
-                    // force player side on the bot
-                    if (owner.Side != side)
+                    // Allegiance squadmates retain their recruited faction.
+                    if (owner.Side != followerSide)
                     {
-                        owner.GetPlayer.Profile.Info.Side = side;
+                        owner.GetPlayer.Profile.Info.Side = followerSide;
                     }
 
                     botSpawnerClass.ActivateBotCallback(owner, botsData, new Action<BotOwner>((BotOwner follower) =>
@@ -1147,6 +1164,59 @@ namespace pitTeam.Patches
             });
         }
 
+#if DEBUG
+        internal static bool TryPrepareDebugRecruitProfile(Profile profile, EPlayerSide spawnSide, WildSpawnType role)
+        {
+            if (profile?.Info?.Settings?.Role != role) return false;
+            // SPT deliberately returns PMC profiles as Savage. Its normal ChooseProfile
+            // postfix assigns their faction from the role; this direct spawn skips that call.
+            if (role == WildSpawnType.pmcBEAR) profile.Info.Side = EPlayerSide.Bear;
+            else if (role == WildSpawnType.pmcUSEC) profile.Info.Side = EPlayerSide.Usec;
+            return profile.Info.Side == spawnSide;
+        }
+
+        internal static int PrepareDebugPmcBackpack(Profile profile)
+        {
+            if (profile?.Info == null || (profile.Info.Side != EPlayerSide.Usec && profile.Info.Side != EPlayerSide.Bear))
+                return 0;
+            // Test setup only: replace this unactivated profile's generated backpack and
+            // contents, not any live follower inventory or the shared item templates.
+            var slot = profile.Inventory?.Equipment?.GetSlot(EquipmentSlot.Backpack)
+                ?? throw new InvalidOperationException("Debug recruit has no backpack slot.");
+            var factory = Singleton<EFT.ItemFactory>.Instance;
+            var bag = factory.CreateItem(MongoID.Generate(true), "5b44c6ae86f7742d1627baea", null) as Backpack;
+            if (bag == null || bag.Grids.Sum(grid => grid.GridWidth * grid.GridHeight) <= 0)
+                throw new InvalidOperationException("Debug Beta 2 has no usable storage.");
+            int cargoCount = 0;
+            foreach (var grid in bag.Grids)
+                for (int cell = 0; cell < grid.GridWidth * grid.GridHeight; cell++)
+                {
+                    var cargo = factory.CreateItem(MongoID.Generate(true), "57347c5b245977448d35f6e1", null);
+                    var size = cargo.CalculateCellSize();
+                    if (size.X != 1 || size.Y != 1)
+                        throw new InvalidOperationException("Debug backpack filler must occupy one cell.");
+                    var address = grid.FindLocationForItem(cargo);
+                    if (address == null) throw new InvalidOperationException("Debug Beta 2 cargo does not fit.");
+                    var add = address.Add(cargo, false);
+                    if (add.Failed) throw new InvalidOperationException(add.Error.ToString());
+                    cargoCount++;
+                }
+            IOperationResult removed = null;
+            if (slot.ContainedItem != null)
+            {
+                var remove = slot.RemoveItem();
+                if (remove.Failed) throw new InvalidOperationException(remove.Error.ToString());
+                removed = remove.Value;
+            }
+            try
+            {
+                var equip = slot.Add(bag, false);
+                if (equip.Failed) throw new InvalidOperationException(equip.Error.ToString());
+            }
+            catch { removed?.RollBack(); throw; }
+            return cargoCount;
+        }
+
         public async Task<bool> SpawnDebugFollower(pitAIBossPlayer player, EPlayerSide spawnSide, Action<string> onFailure = null)
         {
             if (player == null || Controller == null || Controller.BotSpawner == null)
@@ -1179,9 +1249,10 @@ namespace pitTeam.Patches
                 _ => WildSpawnType.assault
             };
 
+            bool separateScavGroup = spawnSide == EPlayerSide.Savage && GameplayModeRuntime.IsAllegiance;
             BotSpawnParams spawnParams = new BotSpawnParams
             {
-                ShallBeGroup = new ShallBeGroupParams(true, false, Mathf.Max(2, player.Followers.Count + 2))
+                ShallBeGroup = separateScavGroup ? null : new ShallBeGroupParams(true, false, Mathf.Max(2, player.Followers.Count + 2))
             };
 
             IProfileData data = new IProfileData(spawnSide, role, BotDifficulty.hard, spawnSide == EPlayerSide.Savage ? 5f : 0f, spawnParams);
@@ -1203,11 +1274,11 @@ namespace pitTeam.Patches
             {
                 try
                 {
-                    IProfileData safeData = new IProfileData(EPlayerSide.Savage, WildSpawnType.assault, BotDifficulty.normal, 0f, spawnParams);
-                    profile = await GenerateDebugSpawnProfile(botCreator, safeData, EPlayerSide.Savage, WildSpawnType.assault, false, token, "SpawnDebugFollower");
+                    IProfileData safeData = new IProfileData(spawnSide, role, BotDifficulty.normal, 0f, spawnParams);
+                    profile = await GenerateDebugSpawnProfile(botCreator, safeData, spawnSide, role, false, token, "SpawnDebugFollower");
                     if (profile != null)
                     {
-                        Modules.Logger.LogInfo("SpawnDebugFollower used safe fallback profile (Savage/assault)");
+                        Modules.Logger.LogInfo($"SpawnDebugFollower used normal-difficulty fallback profile ({spawnSide}/{role})");
                     }
                 }
                 catch (Exception ex)
@@ -1223,8 +1294,35 @@ namespace pitTeam.Patches
                 return false;
             }
 
-            profile.Info.GroupId = player.realPlayer.GroupId;
-            profile.Info.TeamId = player.realPlayer.Profile.Info.TeamId;
+            EPlayerSide? generatedSide = profile.Info?.Side;
+            if (!TryPrepareDebugRecruitProfile(profile, spawnSide, role))
+            {
+                onFailure?.Invoke($"game profile role mismatch: requested={spawnSide}/{role}, received={profile.Info?.Side}/{profile.Info?.Settings?.Role}");
+                return false;
+            }
+            if (generatedSide != profile.Info.Side)
+                Modules.Logger.LogInfo($"[DebugRecruit] Applied SPT PMC side correction: {generatedSide}->{profile.Info.Side}, role={role}.");
+            if (spawnSide == EPlayerSide.Usec || spawnSide == EPlayerSide.Bear)
+            {
+                try
+                {
+                    int cargoCount = PrepareDebugPmcBackpack(profile);
+                    // Generation already pooled the original kit; also pool this new bag/cargo.
+                    await LoadFollowerProfileBundles(profile);
+                    Modules.Logger.LogInfo($"[DebugRecruit] Prepared Beta 2 backpack with {cargoCount} loose bolts for backpack-swap testing.");
+                }
+                catch (Exception ex)
+                {
+                    Modules.Logger.LogError("[DebugRecruit] Backpack test setup failed: " + ex);
+                    onFailure?.Invoke("Beta 2 backpack test setup failed");
+                    return false;
+                }
+            }
+            if (!separateScavGroup)
+            {
+                profile.Info.GroupId = player.realPlayer.GroupId;
+                profile.Info.TeamId = player.realPlayer.Profile.Info.TeamId;
+            }
             botsData.AddProfile(profile);
 
             AICorePoint closestCorePoint = GetClosestCorePoint(Controller, position);
@@ -1236,7 +1334,16 @@ namespace pitTeam.Patches
             botsData.AddPosition(position, closestCorePoint.Id);
 
             Func<BotOwner, BotZone, BotsGroup> groupAction = (BotOwner bt, BotZone zn) =>
-                GetPlayerGroup(player, bt, zn, Mathf.Max(2, player.Followers.Count + 2));
+            {
+                if (!separateScavGroup) return GetPlayerGroup(player, bt, zn, Mathf.Max(2, player.Followers.Count + 2));
+                var group = new BotsGroup(zn, botSpawnerClass.BotGame, bt,
+                    botSpawnerClass.GetBotEnemiesList(bt).ToList(), botSpawnerClass._deadBodiesController,
+                    botSpawnerClass._allPlayers, false);
+                group.TargetMembersCount = 1;
+                group.Lock();
+                botSpawnerClass.Groups.AddNoKey(group, zn);
+                return group;
+            };
 
             Action<BotOwner> onActivate = owner =>
             {
@@ -1252,8 +1359,14 @@ namespace pitTeam.Patches
                         me.Memory.DeleteInfoAboutEnemy(player.Player());
                         me.GetPlayer.ActiveHealthController.RestoreFullHealth();
 
+                        // Register before conversion so Scav diplomacy and cargo capture see
+                        // the same selected-friendly identity as an ordinary field recruit.
+                        AllegiancePmcFriendship.RegisterDebugRecruit(me, player.realPlayer);
                         WildSpawnType botRole = me.Profile.Info?.Settings?.Role ?? role;
-                        BossPlayers.AddFollower(me, player, true, botRole, "Default");
+                        var recruit = BossPlayers.AddFollower(me, player, false, botRole, "Default");
+                        if (recruit == null) throw new InvalidOperationException("Debug recruit conversion failed.");
+                        recruit.DebugForceRecruitInvite = spawnSide == EPlayerSide.Usec || spawnSide == EPlayerSide.Bear;
+                        Modules.Logger.LogInfo($"[DebugRecruit] Created field recruit '{me.ProfileId}' side={spawnSide} forceInvite={recruit.DebugForceRecruitInvite}.");
                         TrySayFollowerReadyControlled(me, 500);
                     }
                     catch (Exception ex)
@@ -1306,6 +1419,7 @@ namespace pitTeam.Patches
             return true;
         }
 
+#endif
         public async Task<bool> SpawnDebugScavEnemy(Vector3 position, Action<string> onFailure = null)
         {
             if (Controller == null || Controller.BotSpawner == null)
@@ -1431,6 +1545,11 @@ namespace pitTeam.Patches
             {
                 if (Controller == null)
                 {
+                    AllegiancePmcFriendship.Reset();
+                    AllegianceScavCargo.Reset();
+                    AllegianceScavRelations.Reset();
+                    FriendlyEncounterPenaltyRuntime.BeginRaid();
+                    PmcKarmaRuntime.BeginRaid(Utils.Utils.FlagGet("RaidTransit"));
                     PlayerKilledPatch.ResetKillMessageRaidState();
                     SquadRaidKillReport.BeginRaid(Utils.Utils.FlagGet("RaidTransit"));
                     new BossPlayers();
@@ -1580,6 +1699,9 @@ namespace pitTeam.Patches
         public static void Postfix(LocalGame __instance)
         {
             Instance = __instance;
+            FollowerInsuranceRaidReports.Reset();
+            GiveGearInsurance.Reset();
+            FollowerInsuranceRaidDisplay.Clear();
         }
     }
 
@@ -1592,6 +1714,7 @@ namespace pitTeam.Patches
         [PatchPostfix]
         private static void PatchPostfix(BotsEventsController __instance)
         {
+            FollowerInsuranceRaidReports.Begin(LocalGameCtorPatch.Instance);
             Utils.Utils.FlagSet("RaidTransit", false);
             try
             {
@@ -1717,6 +1840,9 @@ namespace pitTeam.Patches
             NpcMessage.Dispose();
             BossPlayers.Dispose();
 
+            FollowerInsuranceRaidReports.Complete();
+            FollowerInsuranceRaidDisplay.Clear();
+
             BotsControllerPatch.spawnedPlayers.Clear();
             BotsControllerPatch.followerCreationTask.Clear();
             BotsControllerPatch.alliesCreationTask.Clear();
@@ -1755,8 +1881,8 @@ namespace pitTeam.Patches
             if (raidTransit)
             {
                 Utils.Utils.FlagSet("RaidTransit", true);
-                Utils.Utils.FlagSet("isBadGuy", pitFireTeam.badGuy.Value || SpawnHelper.spawnMemberIdsBoss.Count > 0);
-                Utils.Utils.FlagSet("pitFireTeam", pitFireTeam.pitFireTeamFLAG.Value);
+                Utils.Utils.FlagSet("isBadGuy", GameplayModeRuntime.GetEffectiveValue(pitFireTeam.badGuy) || SpawnHelper.spawnMemberIdsBoss.Count > 0);
+                Utils.Utils.FlagSet("pitFireTeam", GameplayModeRuntime.GetEffectiveValue(pitFireTeam.pitFireTeamFLAG));
             }
 
             return true;

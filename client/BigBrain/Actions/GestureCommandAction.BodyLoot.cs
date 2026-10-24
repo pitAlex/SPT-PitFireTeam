@@ -64,7 +64,7 @@ namespace pitTeam.BigBrain.Actions
             float distance = Vector3.Distance(BotOwner.Position, bodyPosition);
             if (distance > 1.9f)
             {
-                bodyLootReadyAt = 0f;
+                // Moving back into reach must not erase an already-started search deadline.
                 BotOwner.GoToSomePointData.SetPoint(bodyPosition);
                 BotOwner.GoToSomePointData.UpdateToGo(false);
                 BotOwner.Steering.LookToMovingDirection();
@@ -146,6 +146,7 @@ namespace pitTeam.BigBrain.Actions
             InventoryEquipment followerEquipment)
         {
             bodyLootSearchStarted = true;
+            InitializeBodyWeaponSelection(corpseEquipment, followerEquipment);
             followerData?.BeginCommittedLootCommand(FollowerCommandType.TakeBodyGear);
 
             Item? soundSource = GetBestBodyLootSearchSoundSource(corpseEquipment);
@@ -167,7 +168,7 @@ namespace pitTeam.BigBrain.Actions
 
             if (followerData?.CanHandleBodyContainerLootCommands != true)
             {
-                reason = "TakeBodyGear:notSquadMate";
+                reason = "TakeBodyGear:spawnedTeammateAlive";
                 return false;
             }
 
@@ -191,6 +192,7 @@ namespace pitTeam.BigBrain.Actions
 
         private void TryStartNextBodyGearMove()
         {
+            if (recruitGearInProgress) return;
             try
             {
                 if (!TryGetBodyLootExecutionContext(out InventoryController? inventory, out InventoryEquipment? corpseEquipment, out InventoryEquipment? followerEquipment, out string reason))
@@ -206,7 +208,8 @@ namespace pitTeam.BigBrain.Actions
 
                 // Non-teammates are never treated as "take the whole kit." Search the body
                 // contents under the configured price/type filters, with dogtag handled specially.
-                if (!TeammateCorpseIdentity.IsTeammateCorpseEquipment(corpseEquipment))
+                if (!TeammateCorpseIdentity.IsTeammateCorpseEquipment(corpseEquipment) ||
+                    ActiveLootRequest?.Mode != FollowerLootMode.Normal)
                 {
                     TryStartNextFilteredBodyLootMove(inventory, corpseEquipment, followerEquipment);
                     return;
@@ -345,17 +348,19 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
+            if (TryStartRecruitBodyKit(corpseEquipment, followerEquipment)) return;
+
             if (TryStartPendingBodyGearSwapFollowUpMove(inventory, followerEquipment))
             {
                 return;
             }
 
-            if (TryStartPreferredBodyPrimaryWeaponMove(inventory, corpseEquipment, followerEquipment))
+            if (AllowsRequestedWeaponWork && TryStartPreferredBodyPrimaryWeaponMove(inventory, corpseEquipment, followerEquipment))
             {
                 return;
             }
 
-            if (TryStartBodyPrimaryTacticalAmmoMove(
+            if (AllowsRequestedWeaponWork && TryStartBodyPrimaryTacticalAmmoMove(
                     inventory,
                     corpseEquipment,
                     followerEquipment,
@@ -364,12 +369,12 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            if (TryStartBodyPrimaryTacticalMagazineMove(inventory, corpseEquipment, followerEquipment))
+            if (AllowsRequestedWeaponWork && TryStartBodyPrimaryTacticalMagazineMove(inventory, corpseEquipment, followerEquipment))
             {
                 return;
             }
 
-            if (TryStartBodyPrimaryTacticalAmmoMove(
+            if (AllowsRequestedWeaponWork && TryStartBodyPrimaryTacticalAmmoMove(
                     inventory,
                     corpseEquipment,
                     followerEquipment,
@@ -378,12 +383,12 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            if (TryStartEasyBodyWeaponEquipMove(inventory, corpseEquipment, followerEquipment))
+            if (AllowsRequestedWeaponWork && TryStartEasyBodyWeaponEquipMove(inventory, corpseEquipment, followerEquipment))
             {
                 return;
             }
 
-            if (TryStartBodySupportTacticalAmmoMove(
+            if (AllowsRequestedWeaponWork && TryStartBodySupportTacticalAmmoMove(
                     inventory,
                     corpseEquipment,
                     followerEquipment,
@@ -393,7 +398,7 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            if (TryStartBodySupportTacticalMagazineMove(
+            if (AllowsRequestedWeaponWork && TryStartBodySupportTacticalMagazineMove(
                     inventory,
                     corpseEquipment,
                     followerEquipment,
@@ -402,7 +407,7 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            if (TryStartBodySupportTacticalAmmoMove(
+            if (AllowsRequestedWeaponWork && TryStartBodySupportTacticalAmmoMove(
                     inventory,
                     corpseEquipment,
                     followerEquipment,
@@ -412,7 +417,7 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            if (TryStartBodySupportLooseFeedAmmoMove(
+            if (AllowsRequestedWeaponWork && TryStartBodySupportLooseFeedAmmoMove(
                     inventory,
                     corpseEquipment,
                     followerEquipment,
@@ -421,7 +426,7 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            if (TryStartBodySupportTacticalAmmoMove(
+            if (AllowsRequestedWeaponWork && TryStartBodySupportTacticalAmmoMove(
                     inventory,
                     corpseEquipment,
                     followerEquipment,
@@ -431,7 +436,7 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            if (TryStartBodySupportTacticalMagazineMove(
+            if (AllowsRequestedWeaponWork && TryStartBodySupportTacticalMagazineMove(
                     inventory,
                     corpseEquipment,
                     followerEquipment,
@@ -440,7 +445,7 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            if (TryStartBodySupportTacticalAmmoMove(
+            if (AllowsRequestedWeaponWork && TryStartBodySupportTacticalAmmoMove(
                     inventory,
                     corpseEquipment,
                     followerEquipment,
@@ -450,7 +455,7 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            if (TryStartBodySupportLooseFeedAmmoMove(
+            if (AllowsRequestedWeaponWork && TryStartBodySupportLooseFeedAmmoMove(
                     inventory,
                     corpseEquipment,
                     followerEquipment,
@@ -459,29 +464,29 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
-            if (TryStartEasyBodyTacticalVestMove(inventory, corpseEquipment, followerEquipment))
+            if (AllowsRequestedGearWork && TryStartEasyBodyTacticalVestMove(inventory, corpseEquipment, followerEquipment))
             {
                 return;
             }
 
             // Make an already-carried support weapon usable before considering another weapon.
             // This avoids choosing between weapon packages before comparison policy exists.
-            if (TryStartBodySecondaryWeaponPromotionMove(inventory, corpseEquipment, followerEquipment))
+            if (AllowsRequestedWeaponWork && TryStartBodySecondaryWeaponPromotionMove(inventory, corpseEquipment, followerEquipment))
             {
                 return;
             }
 
-            if (TryStartEasyBodyHolsterWeaponEquipMove(inventory, corpseEquipment, followerEquipment))
+            if (AllowsRequestedWeaponWork && TryStartEasyBodyHolsterWeaponEquipMove(inventory, corpseEquipment, followerEquipment))
             {
                 return;
             }
 
-            if (TryStartBodyBackpackCargoWeaponPromotionMove(inventory, corpseEquipment, followerEquipment))
+            if (AllowsRequestedWeaponWork && TryStartBodyBackpackCargoWeaponPromotionMove(inventory, corpseEquipment, followerEquipment))
             {
                 return;
             }
 
-            foreach (BodyGearCandidate candidate in GetFilteredBodyLootCandidates(corpseEquipment))
+            foreach (BodyGearCandidate candidate in OrderRequestedLoot(GetFilteredBodyLootCandidates(corpseEquipment)))
             {
                 if (!CanTryFilteredLootCandidate(candidate, bodyLootAttemptedItemIds) ||
                     IsLootNowInBotInventory(BotOwner?.GetPlayer, candidate.Item))
@@ -523,6 +528,7 @@ namespace pitTeam.BigBrain.Actions
                 return;
             }
 
+            if (ActiveLootRequest?.CompletePriority() == true) return;
             FinishBodyLootNoMoreMoves();
         }
 
@@ -645,6 +651,34 @@ namespace pitTeam.BigBrain.Actions
             if (candidate.Item == null)
             {
                 return false;
+            }
+
+            if (ActiveLootRequest?.SelectiveWeapons == true && candidate.Item is Weapon selectedWeapon)
+            {
+                if (candidate.Item.Id == ActiveLootRequest.SelectedLongGunId &&
+                    (!ActiveLootRequest.SelectedLongGunCanEquip ||
+                     (followerEquipment.GetSlot(EquipmentSlot.FirstPrimaryWeapon)?.ContainedItem != null &&
+                      followerEquipment.GetSlot(EquipmentSlot.SecondPrimaryWeapon)?.ContainedItem != null)))
+                {
+                    // Cargo means the chosen gun's existing tree only, not additional source magazines/ammo.
+                    return TryBuildFilteredLootCarryMove(inventory, followerEquipment, candidate,
+                        EquipmentSlot.Backpack, "selectiveWeaponCargo", out move);
+                }
+
+                if (candidate.Item.Id == ActiveLootRequest.SelectedPistolId)
+                {
+                    if (!CanAddHolsterWeapon(followerEquipment)) return false;
+                    var magazines = operationalMagazineCandidates ?? Enumerable.Empty<BodyGearCandidate>();
+                    var ammo = operationalAmmoCandidates?.ToList() ?? new List<BodyGearCandidate>();
+                    if (!TryBuildPhaseOneHolsterWeaponEquipMove(inventory, followerEquipment, candidate,
+                            magazines, ammo, out move, out OperationalMagazinePlan? magazinePlan)) return false;
+                    if (magazinePlan != null)
+                    {
+                        move = AppendWeaponLooseAmmoSupportFollowUps(move, followerEquipment, selectedWeapon,
+                            ammo, "selectedHolsterWeapon", GetOperationalMagazineCartridgeItems(magazinePlan));
+                    }
+                    return true;
+                }
             }
 
             // Filtered looting never uses the follower rig for generic cargo. Fast-access writes
@@ -811,6 +845,12 @@ namespace pitTeam.BigBrain.Actions
                 return false;
             }
 
+            if (!PreservesEquippedMagazineReloadSpace(inventory?.Inventory?.Equipment, item, address))
+            {
+                LogBodyGearMoveBuildRejection(inventory, candidate, address, "reloadLandingSpace", null, null);
+                return false;
+            }
+
             Diz.LanguageExtensions.OperationResult<EFT.InventoryLogic.MoveResult> moveResult = EFT.InventoryLogic.ItemManipulator.Move(item, address, inventory, true);
             if (moveResult.Failed)
             {
@@ -894,6 +934,7 @@ namespace pitTeam.BigBrain.Actions
             int moveGeneration = ++bodyLootMoveGeneration;
             activeBodyLootMoveGeneration = moveGeneration;
             activeBodyLootMove = move;
+            move.ScavCargoBefore = AllegianceScavCargo.CaptureCommandedLoot(BotOwner);
             RunBodyGearMoveTransaction(
                 inventory,
                 move,
@@ -981,6 +1022,8 @@ namespace pitTeam.BigBrain.Actions
                        IsLootNowInBotInventory(BotOwner?.GetPlayer, completedItem));
                 if (moveSucceeded)
                 {
+                    if (!move.IsStagingOperation)
+                        AllegianceScavCargo.TrackCommandedLoot(BotOwner, completedItem, move.ScavCargoBefore);
                     bool countsAsLootMove = !move.IsStagingOperation || !move.ReportAsLootNothing;
                     if (countsAsLootMove)
                     {
@@ -1131,8 +1174,9 @@ namespace pitTeam.BigBrain.Actions
             TryMarkBodyLootSearchedForBoss();
             InteractableObjects.MarkBodyLootTargetChecked(activeBodyLootCorpse);
 
-            if (bodyLootReportedMovesSucceeded > 0)
+            if (ActiveLootRequest?.HasSuccessfulLoot(bodyLootReportedMovesSucceeded) ?? bodyLootReportedMovesSucceeded > 0)
             {
+                BotOwner.BotTalk.TrySay(EPhraseTrigger.Ready, false);
                 ClearBodyLootState("TakeBodyGear:done");
                 QueuePostLootPrimaryWeaponSelection(primaryWeaponToSelect, "bodyLootComplete");
                 QueuePostLootSecondaryWeaponPromotion(secondaryWeaponToPromote, "bodyLootSecondaryPromotion");
@@ -1172,6 +1216,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             StopLootSearchSound();
+            ResetRecruitGearCommand();
             bodyLootMoveInProgress = false;
             activeBodyLootMoveGeneration = 0;
             activeBodyLootMove = null;

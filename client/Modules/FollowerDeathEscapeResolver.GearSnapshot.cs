@@ -39,7 +39,7 @@ namespace pitTeam.Modules
 
             try
             {
-                string[] trackedLootIdsArray = InteractableObjects.GetStoredItems(player.ProfileId)?
+                string[] trackedLootIdsArray = InteractableObjects.GetReturnItemIds(player.AIData?.BotOwner)
                     .Where(itemId => !string.IsNullOrWhiteSpace(itemId))
                     .Distinct(StringComparer.Ordinal)
                     .ToArray()
@@ -612,7 +612,7 @@ namespace pitTeam.Modules
                     continue;
                 }
 
-                foreach (string itemId in InteractableObjects.GetStoredItems(bot.ProfileId) ?? Enumerable.Empty<string>())
+                foreach (string itemId in InteractableObjects.GetReturnItemIds(bot))
                 {
                     tracked.Add(itemId);
                 }

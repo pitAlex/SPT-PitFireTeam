@@ -74,7 +74,8 @@ namespace pitTeam.BigBrain
             }
 
             FollowerRecovery.CheckReloadTimeout(BotOwner);
-            if (pitFireTeam.UseSainFollowerCombat)
+            FollowerEnemyTracking.Update(BotOwner);
+            if (pitFireTeam.UseSainFollowerCombat(BotOwner))
             {
                 return false;
             }
@@ -252,7 +253,7 @@ namespace pitTeam.BigBrain
 
             currentDecision = nextDecision;
             BattleRecorder.RecordDecisionSelected(BotOwner, lastDecision, nextDecision, combatLogic?.GetCurrentObjectiveName());
-            return CreateBigBrainAction(nextDecision);
+            return CreateBigBrainAction(BotOwner, nextDecision);
         }
 
         public override bool IsCurrentActionEnding()
@@ -678,6 +679,7 @@ namespace pitTeam.BigBrain
             }
 
             Player? target = Singleton<GameWorld>.Instance?.GetAlivePlayerByProfileID(targetProfileId);
+            if (!FollowerEnemyTracking.CanRestore(BotOwner, targetProfileId)) return false;
             if (target?.HealthController?.IsAlive != true)
             {
                 followerData.ClearOrderedPushTargetLock("OrderedPushTargetDead");
@@ -693,6 +695,8 @@ namespace pitTeam.BigBrain
             {
                 return false;
             }
+
+            if (!FollowerEnemyTracking.IsEligible(restored)) return false;
 
             restored.PriorityIndex = 0;
             restored.IgnoreUntilAggression = false;
@@ -912,7 +916,7 @@ namespace pitTeam.BigBrain
         private static FollowerCombatLogicBase Create(BotOwner botOwner)
         {
             BotFollowerPlayer? follower = BossPlayers.Instance?.GetFollower(botOwner);
-            FollowerCombatTactic tactic = follower?.CombatTactic ?? FollowerCombatTactic.Balanced;
+            FollowerCombatTactic tactic = follower?.CoreCombatTactic ?? FollowerCombatTactic.Balanced;
             return tactic switch
             {
                 FollowerCombatTactic.Balanced => new FollowerPmcCombatLogic(botOwner),
@@ -954,9 +958,9 @@ namespace pitTeam.BigBrain
             };
         }
 
-        private Action CreateBigBrainAction(AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
+        internal static Action CreateBigBrainAction(BotOwner botOwner, AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision, Func<Vector3, bool>? movementAllowed = null)
         {
-            FollowerCombatActionData actionData = new FollowerCombatActionData(decision.Action, decision.Reason, decision.Data);
+            FollowerCombatActionData actionData = new FollowerCombatActionData(decision.Action, decision.Reason, decision.Data, movementAllowed);
 
             if (decision.Action == BotLogicDecision.holdPosition &&
                 string.Equals(decision.Reason, LingerReason, StringComparison.Ordinal))
@@ -1003,7 +1007,7 @@ namespace pitTeam.BigBrain
                 case BotLogicDecision.healStimulators:
                     return new Action(typeof(HealStimulatorsAction), decision.Reason, actionData);
                 case BotLogicDecision.search:
-                    BotOwner.Tactic.SetTactic(BotsGroup.BotCurrentTactic.Attack);
+                    botOwner.Tactic.SetTactic(BotsGroup.BotCurrentTactic.Attack);
                     return new Action(typeof(CombatSearchAction), decision.Reason, actionData);
                 case BotLogicDecision.suppressGrenade:
                     return new Action(typeof(CombatSuppressGrenadeAction), decision.Reason, actionData);

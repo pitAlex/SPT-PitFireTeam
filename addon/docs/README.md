@@ -1,0 +1,19 @@
+# SAIN addon documentation
+
+The optional addon implements the **SAINGrunt** and **SAINShooter** follower combat policies using replicas of SAIN 4.5.1's solo and squad layers. It builds on [pitFireTeam core](../../docs/README.md); the external SAIN plugin is a separate dependency. Persisted `SainMan` identifiers remain stable.
+
+| Addon topic | Core base | Addon-specific scope |
+|---|---|---|
+| [Integration](Integration.md) | [Architecture](../../docs/Architecture.md), [SAIN compatibility](../../docs/SAIN-Compatibility.md) | Readiness, layer ownership, human leadership, hooks and lifecycle |
+| [Combat](Combat.md) | [Combat tactics](../../docs/Combat-Tactics.md) | SAIN knowledge/actions, objectives, cover, risk, medicine and recording |
+| [Squad support](Squad-Support.md) | [Combat tactics](../../docs/Combat-Tactics.md), [commands](../../docs/Commands.md) | Bounded ordered suppression and prepared ally firing support |
+| [Commands and status](Commands.md) | [Commands](../../docs/Commands.md) | Combat translations and passive native-contact reporting |
+| [Personalities and aggression](Personalities-and-Aggression.md) | [Core aggression](../../docs/Combat-Tactics.md), [proficiency](../../docs/Friendly-AI-Performance-Settings.md) | Loaded-preset tactical interpolation and restoration |
+| [Self-Determination](Self-Determination.md) | [Shared dependence](../../docs/Self-Determination.md) | Shared percentages, local cover/push/regroup and aggregate combat lifetime |
+| [Enemy Tracking](Enemy-Tracking.md) | [Shared tracking](../../docs/Enemy-Tracking.md) | Native Realistic semantics and follower-scoped Simple tactical projection |
+| [SAINShooter](SAINShooter.md) | [Core Marksman](../../docs/Combat-Tactics.md#marksman-combat-behavior) | Native Marksman adaptation, bounded support and explicit parity limits |
+| [References](References.md) | [Build baselines](../../docs/SPT-Compatibility.md) | Private 4.5.1 references, source provenance and attribution |
+| [Validation](Validation.md) | Core validation at the relevant shared boundary | Dated fixture/deployment evidence and raid limitations |
+| [Roadmap](Roadmap.md) | [Core roadmap](../../TASKS.md) | Deferred addon extensions and qualification |
+
+Read the core base first, then the addon differences. Do not copy core contracts into another addon handoff log. General external-SAIN fixes needed without this brain belong in core documentation and code.

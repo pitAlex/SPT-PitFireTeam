@@ -7,12 +7,13 @@ Date: 2026-07-30
 Document the current verified implementation of the `My Squad` experience as it exists today in `pitFireTeam`, split into:
 
 1. `Roster`
-2. `Settings`
-3. `Profile Screen`
+2. `Mode`
+3. `Settings`
+4. `Profile Screen`
 
 This is a current-state review, not a target design doc. It should be read alongside:
 
-- `docs/team-management-ui-investigation-2026-03-19.md` for the earlier stock-UI investigation and target direction
+- [Core architecture](Architecture.md) for current ownership and entry points
 - `docs/Loadout-Management.md` for the dedicated loadout-management mode behavior and implementation status
 - `docs/Team-Escape.md` for player-death squad escape and roster refresh behavior after escape outcomes
 
@@ -22,7 +23,7 @@ This is a current-state review, not a target design doc. It should be read along
 
 Today it is split across two UI hosts:
 
-- `MatchMakerSideSelectionScreen` in a custom "squad mode" for the `Roster` and `Settings` tabs
+- `MatchMakerSideSelectionScreen` in a custom "squad mode" for the `Roster`, `Settings` and `Mode` tabs
 - `OtherPlayerProfileScreen` for the selected teammate `Profile Screen`
 
 That means the current flow is:
@@ -30,7 +31,7 @@ That means the current flow is:
 1. main menu `My Squad` button
 2. open stock side-selection screen in squad mode
 3. hide native PMC/Scav selection widgets
-4. inject pitFireTeam roster/settings panels
+4. inject pitFireTeam roster/mode/settings panels
 5. open teammate profile from roster tile
 6. patch stock other-player profile into teammate management UI
 7. return back into `My Squad`
@@ -42,6 +43,8 @@ Authoritative files:
 - `client/Patches/MatchMakerSideSelectionScreenPatch.cs`
 - `client/Components/SquadControlMenuUi.cs`
 - `client/Components/SquadControlMenuUi.Roster.cs`
+- `client/Components/SquadControlMenuUi.Mode.cs`
+- `client/Components/SquadControlMenuUi.Onboarding.cs`
 - `client/Components/SquadControlMenuUi.Settings.cs`
 - `client/Components/SquadControlMenuUi.ContextMenu.cs`
 - `client/Components/SquadControlMenuUi.Backend.cs`
@@ -51,6 +54,16 @@ Authoritative files:
 - `server/Services/FriendlyLanguageService.cs`
 
 ## Entry Flow
+
+### Initial gameplay-mode choice
+
+The first My Squad visit for each player profile, including an existing account, shows only Guns for Hire and Allegiance cards until a choice succeeds. The ordinary panels, Roster/Settings/Mode tabs, Add Teammate and roster feedback remain hidden. The native My Squad caption and Back action remain available. A loading/error-and-retry state keeps the normal controls hidden if onboarding cannot be read.
+
+Each card is nominally 380 × 535 UI units, twice the roster-card width and 2.5 times its height. Its inset artwork is 284 × 355, loaded from `resources/guns-for-hire-card.png` or `resources/allegiance-card.png` (568 × 710 source images). Both cards fit uniformly into smaller screens without changing the artwork aspect ratio. They reuse roster background/corner decoration, portrait border, hover color/name-color feedback and hover sound. The bottom name label displays the localized mode name. Hover uses the same localized description as the normal Mode panel. Cards have a left-click choice action and no context menu, profile action, level, delete, auto-join or group controls.
+
+Choice controls are disabled while the coordinated mode transition and server-owned onboarding completion run. Successful completion refreshes My Squad into the selected mode's normal Roster view. Choosing the already-active default also completes the flow. Back before choosing leaves the choice pending. Late callbacks from a closed or replaced screen cannot paint its successor.
+
+Accounts with no roster in either mode receive one same-faction welcome friend invitation matching the player's PMC level, minimum 1, with a random kit generated at that level and zero starting skill progress. The normal screen's completed refresh acknowledges readiness, then delivery waits two seconds. Existing squads receive no welcome invitation. [Gameplay modes](Gameplay-Modes.md#first-my-squad-visit) owns eligibility and switching; [storage](Teammate-Storage.md#first-visit-and-welcome-invitation) owns persistence/recovery. The screen has not yet been qualified in EFT for layout, pointer interaction or native invitation display.
 
 ### Main menu entry
 
@@ -91,8 +104,9 @@ In squad mode it:
 
 - hides native side-selection widgets such as PMC/Scav panels, health/random controls, descriptions, and stock model views
 - rewrites the main caption to `My Squad`
-- spawns two stock-style animated tabs by cloning Ragfair toggles:
+- spawns three stock-style animated tabs by cloning Ragfair toggles, ordered left to right:
     - `Roster`
+    - `Mode`
     - `Settings`
 - injects the pitFireTeam panels into the live side-selection screen transform
 - rewires the stock back button so squad-mode back always exits to root and disables squad mode
@@ -141,6 +155,8 @@ Each tile is built from backend teammate data:
 
 The roster is rebuilt on first injection and on explicit refresh requests. It also supports lighter tile-only refreshes for specific account ids after profile-side edits.
 
+Roster entries use ascending profile registration time, then account id. Newly accepted raid recruits receive the acceptance timestamp so their captured bot registration date cannot place them ahead of existing squadmates. Opening a pending recruit preview does not change this timestamp. Previously accepted profiles retain their saved ordering.
+
 ### Tile composition
 
 Each roster entry is a runtime-created tile containing:
@@ -153,6 +169,8 @@ Each roster entry is a runtime-created tile containing:
 - delete button
 - auto-join badge
 - in-group badge
+
+For raid-recruited members with recorded `RecruitmentGearPrice` metadata (including a zero value), the root `UI.Image` on `pitFireTeam_RosterTile_<accountId>` uses faction RGBA colors: USEC `(0.025, 0.547, 1, 0.408)` and BEAR `(1, 0.287, 0, 0.408)`. Manually added members, legacy unmarked members and other sides keep the original neutral background. Hover/press styling restores the appropriate background and nickname color when the pointer leaves or the card is disabled. Cached cards therefore return without a stale highlight after closing the roster, switching tabs or viewing a member profile.
 
 Portraits are loaded asynchronously and sequentially. The queue fetches `GetOtherPlayerProfile(accountId)` and then uses `PlayerIconImage.SetPresetIcon(...)`.
 
@@ -174,6 +192,40 @@ The add button calls:
 - `AddTeammateCreationFlow.Start(SquadSideSelectionFlow.Open)`
 
 So teammate creation still reuses the stock account appearance flow, and successful completion returns back into `My Squad`.
+
+#### Hiring preview
+
+After choosing a head, voice and nickname, `NEXT` prepares a server-owned candidate and opens `OtherPlayerProfileScreen` in hiring-preview mode. This is the final step before the teammate is added. The layout is:
+
+```text
+                                               BACK
+                    REGENERATE
+              [rotatable character preview]
+                [nickname and experience]
+                 GEAR PRICE: … ₽
+              CANCEL     ADD TEAMMATE
+                  ADD WITH NO GEAR
+```
+
+The native faction emblem, nickname and experience remain with the model. Prestige, level and account-category icons are hidden. The former standalone nickname above the model is replaced by `REGENERATE`. Price and action rows use compact spacing, with the no-gear button centered beneath the first two buttons.
+
+| Action | Behavior |
+|---|---|
+| `REGENERATE` | Generates another profile and gear quote while retaining the chosen nickname, head and voice. Successful preparation replaces the previous pending candidate without charging or adding anyone. |
+| `BACK` | Returns to head/voice/name selection with the choices retained. |
+| `CANCEL` | Cancels the pending addition and returns to My Squad without payment. |
+| `ADD TEAMMATE` | Pays the quoted gear price from unlocked stash roubles and saves the exact previewed candidate. Refreshes the live stash and roster. |
+| `ADD WITH NO GEAR` | Adds the same candidate for free, preserving the knife and permanent equipment/identity slots while removing the kit and ordinary pocket/secure-container supplies. |
+
+Each manually generated candidate receives a fresh 6Kh5 Bayonet; knives are never charged. The no-gear action is shown only when the server advertises support. Both addition actions wait until the displayed model has loaded, and a failed regeneration keeps them disabled until another preview succeeds. Controls are disabled while requests are in progress.
+
+If the server finds insufficient spendable stash roubles, the vanilla message-window popup shows the localized insufficient-funds message. No payment or teammate is created, and the preview stays open. Pending candidates are not friends or squad members. Quotes expire after 30 minutes; confirmation also rejects a changed loadout mode or outdated pricing version.
+
+The server owns the price, candidate, funds check and receipt. See [Loadout Management](Loadout-Management.md#teammate-addition-cost) for the complete charged-slot list, price formula, no-gear retention and payment-recovery contract.
+
+The preview retains the stock drag-rotation input and model-loading spinner. Fetching the quote/profile uses the normal preloader. The closed appearance controller is removed from the preview's return history so Back can open a fresh appearance session without first reopening and closing the stale faction-selection state.
+
+Source: [AddTeammateCreationFlow](../client/Modules/AddTeammateCreationFlow.cs), [AddTeammateHeadSelectionPatch](../client/Patches/AddTeammateHeadSelectionPatch.cs) and [TeammateHiringPreview](../client/Modules/TeammateHiringPreview.cs). Hiring state and temporary profile-screen changes are restored when the preview closes.
 
 ### Tile interactions
 
@@ -217,17 +269,17 @@ On success the roster updates the badge immediately and also updates `TeammateAu
 
 Delete is a modal confirmation overlay on top of the roster tab.
 
-Confirmed behavior:
+The confirmation includes the stored deletion fee for raid recruits. Manual hires and legacy unmarked members keep the ordinary free-deletion prompt. Both include **The equipped items will be mailed via service.** immediately above **This cannot be undone**; the panel height accommodates the added line. Removing either member type returns the current saved gear through the courier, including attachments and contents. See [Raid-Recruit Deletion Fee](Loadout-Management.md#raid-recruit-deletion-fee) for how this amount is recorded and preserved.
 
-- the delete action resolves the live social member first
-- it then removes the teammate through stock social/friends removal flow
-- on success it refreshes the social list and rebuilds the roster
+The roster posts to `/singleplayer/pitfireteam/teammate/delete` and closes the confirmation and rebuilds the roster after the server confirms removal. Item-bearing responses use EFT JSON converters to retain stack counts and locations; shared stash refresh identifies the active stash root instead of relying on server array order. A subsequent live stash or friends-list refresh error cannot undo confirmed removal or keep its confirmation open; a stash refresh failure displays the existing restart-before-inventory-changes message. The native social `RemoveFromFriendsList` path is intercepted for teammates to use the same payment flow and fee confirmation; ordinary friends retain native removal. Insufficient funds use the vanilla message window and leave the member present. A shared client busy guard prevents duplicate in-flight submissions, and durable server/player receipts prevent repeat charges or duplicate courier kits after a lost response. If removal commits but delivery saving fails, a localized message explains that the member was removed and delivery remains pending; reopening My Squad retries it. A failed SPT save hash may require a server restart before the profile can be verified. See [equipment returns](Loadout-Management.md#equipment-return-on-member-removal) for item selection and recovery.
+
+Source: [TeammateDeletion](../client/Modules/TeammateDeletion.cs) and [server deletion service](../server/Services/FriendlyTeammateService.Deletion.cs).
 
 ### Current roster limitations
 
 - the roster itself does not contain a right-side detail pane; teammate detail still jumps into `OtherPlayerProfileScreen`
 - portrait loading is sequential and intentionally delayed, so large rosters are stable but not instant
-- delete still depends on social-list presence being valid at the moment of the action
+- paid deletion needs the active player inventory controller to refresh the live stash
 
 ## Part 2: Settings
 
@@ -319,8 +371,9 @@ Verified entry groups:
     - `npcSendMessage`
     - `pitFireTeamFLAG`
     - `badGuy`
+    - `friendlyEncounterChance` (5–80%, default 30%, shown with a percent suffix; editable in both gameplay modes; no effect in Guns for Hire while Friendly PMC Side or Bad Guy is on)
+    - `pmcArmbands` (when enabled, generated PMC inventories use blue USEC/red BEAR armbands, including Acid's Progressive Bot System; disabled leaves generator choices intact)
     - `factionHostilities`
-    - `pmcArmbands`
 - `Looting Settings`
     - `Minimum Price`
     - `Maximum Price`
@@ -329,15 +382,12 @@ Verified entry groups:
     - `Pickup Valuables`
     - `Pickup Weapons`
     - `Pickup Gear`
-    - `Allow Gear Swapping`
 - `Loadout Management`
-    - `Simple`
     - `Restricted`
-    - `Field Upkeep` (visible only while `Restricted` is active)
     - `Immersive`
     - `Realistic`
 - `Input Settings`
-    - `hideUnsupportedCommands`
+    - `hideUnsupportedCommands` (filters PMC phrase menus only; player Scav phrase menus retain all native groups)
     - `pingKey`
     - `contactKey`
     - `overThereKey`
@@ -350,10 +400,12 @@ Verified entry groups:
 
 ### Current control behavior
 
+Settings rows retain their minimum height and expand to fit the fully wrapped description at the available text width. Descriptions are not ellipsized; sliders remain aligned near the row header when a row grows.
+
 Supported control types:
 
 - `bool` -> toggle
-- ranged `int` -> slider
+- ranged `int` -> native numeric slider; percentage units use a separate non-interactive label, never a suffix in `NumberSlider.Show`'s numeric format. The native formatter compares text with the slider's numeric value; a suffix can reenter value callbacks while Show updates min before max. See `tests/Verify-NumberSlider.ps1` for initialization and manual-edit regression coverage.
 - loot price ranged `int` settings -> integer input field
 - hex color settings -> validated `#RRGGBB` input with a color preview
     - Status Report color applies to report text and the teammate outline
@@ -373,8 +425,7 @@ Fresh configurations and Reset to Defaults use:
 - Maximum Price: `5000000`
 - Pickup Food, Pickup Meds, and Pickup Gear: disabled
 - Pickup Weapons and Pickup Valuables: enabled
-- Loadout Management: `Restricted`
-- Field Upkeep: disabled
+- Loadout Management: `Immersive`
 
 ### Raid faction hostility setting
 
@@ -386,20 +437,18 @@ Fresh configurations and Reset to Defaults use:
 
 The group is hidden in raid-restricted settings contexts, including the in-raid `Squad Settings` overlay, so the loadout economy mode cannot be changed while a raid is active.
 
-It is rendered as four mutually exclusive rows using cloned Ragfair `UIAnimatedToggleSpawner` controls under one `ToggleGroup`:
-
-- `Simple`
+It is rendered as three mutually exclusive rows using cloned Ragfair `UIAnimatedToggleSpawner` controls under one `ToggleGroup`:
 - `Restricted`
 - `Immersive`
 - `Realistic` (stored internally as `Extreme`)
 
 The rows are intentionally vertical: each row shows the mode description on the left and the selectable mode toggle on the right.
 
-When `Restricted` is the active mode, a `Field Upkeep` checkbox row appears between `Restricted` and `Immersive`. It defaults off and uses the same settings-row layout as other checkbox settings instead of joining the radio `ToggleGroup`.
+`Restricted` always persists raid wear and consumed supplies while protecting gear from death loss and extraction. There is no separate `Field Upkeep` checkbox or config entry.
 
-Changing from `Simple` to a non-`Simple` mode opens a confirmation overlay before the setting is applied. The overlay warns that switching loadout management will switch all teammates to their `Default` loadout. `Continue` applies the mode and closes the overlay; the `X` cancels and leaves the previous mode selected. Other mode changes apply immediately because non-`Simple` modes already require `Default`.
+Changing modes applies immediately and syncs to the server. `Immersive` is the default in both Guns for Hire and Allegiance, and Loadout Management is editable outside raids in either mode. Both use one shared saved selection that persists across gameplay-mode switches. Existing saved choices are retained; all three modes edit real `Default` equipment. Legacy preset selections restore the saved `Default` automatically.
 
-When a mode change is applied, the client saves the BepInEx setting, syncs the new mode to the server, and rebuilds the settings entries so conditional rows such as `Field Upkeep` appear or disappear immediately. The settings scroll position is captured before this rebuild and restored after Unity finishes recalculating the layout, so the view does not jump back to the top.
+When a mode change is applied, the client saves the BepInEx setting, syncs the new mode to the server, and rebuilds the settings entries. The settings scroll position is captured before this rebuild and restored after Unity finishes recalculating the layout, so the view does not jump back to the top.
 
 ### Looting setting
 
@@ -418,7 +467,7 @@ The category checkboxes default on and are applied before price:
 - `Pickup Valuables` covers barter items, keys, special items, info items, money, and other non-gear loot.
 - `Pickup Weapons` covers weapons, ammunition, magazines, weapon mods, and grenades.
 - `Pickup Gear` covers helmets, body armor, armored rigs, and tactical rigs.
-- `Allow Gear Swapping` is the explicit gate for gear equip/swap behavior. `Simple` and `Restricted` only add gear into empty slots and return that added gear as tracked cargo, while `Immersive` and `Realistic` can also swap eligible gear into the teammate kit.
+- Empty-slot acquisition needs no separate toggle: `Pickup Weapons` or a weapon request enables weapon acquisition, and `Pickup Gear` or a gear request enables existing empty-vest acquisition. Occupied equipment is never replaced. Equipped acquisitions stay in the escaped teammate's kit in every mode; only loose cargo remains eligible for squad-member returns. Field recruits do not send returns.
 
 Crossing into or out of `Realistic` also strips the secure-container tree from saved teammate `Default` loadouts before the next profile/edit view can expose it.
 
@@ -448,7 +497,32 @@ The completed settings hierarchy is retained while its menu/raid restriction con
 - no per-setting dependency/disable logic beyond what each control directly supports
 - still tightly coupled to BepInEx config entries rather than a dedicated persisted UI model
 
-## Part 3: Profile Screen
+## Part 3: Mode
+
+The `Mode` tab follows `Settings` (Roster, Settings, Mode) and uses its own panel in the same side-selection host. Its shell matches the settings panel dimensions. After the initial mode choice, opening My Squad starts on `Roster`; switching tabs shows only the selected panel. All three panels are retracted when the host closes, and all three cloned tab controls are cleaned up.
+
+The panel contains two mutually exclusive, vertically arranged options:
+
+- `Guns for Hire` (initial selection)
+- `Allegiance`
+
+Gameplay behavior is documented separately in [Guns for Hire](Guns-for-Hire.md) and [Allegiance](Allegiance.md). [Gameplay modes](Gameplay-Modes.md) owns coordinated switching, separate rosters and settings restoration. Guns for Hire exposes Add Teammate; Allegiance hides it. Switching clears the outgoing squad selection and refreshes roster/social data, without deleting either roster. Switching is unavailable during raids; the in-raid Squad Settings overlay continues to show only Settings.
+
+The two options are stacked vertically in dark full-width rows with gold dividers. Each row has a location-screen radio indicator to the left of its name and description. Clicking the indicator or row selects that option and clears the other.
+
+The Guns for Hire description is: "Hire and equip your squad before deploying. Make Tarkov yours, and play by your own rules."
+
+The Allegiance description is: "Play by Tarkov's rules. Alliances are formed, not bought. Find your allies in the field, and escape together."
+
+Gameplay Mode and Enemy Tracking reuse the native location-time `Toggle` through [the shared radio helper](../client/Components/SquadControlMenuUi.RadioControls.cs). Each selector has its own `ToggleGroup`, with the cloned raid-time events replaced before activation. A circular radio fallback is used if the native prefab has not loaded. Names and descriptions use the central `socialUi` language entries and embedded English fallback. Existing raid restrictions and Allegiance setting locks remain enforced.
+
+### Friendly Encounters label
+
+The penalty amounts, triggers and real-time expiry are owned by [Allegiance](Allegiance.md#friendly-encounters-penalties).
+
+While a penalty is active, Roster displays a small red label beneath the Roster tab, aligned with its left edge: `-15% Friendly Encounters (24h)` for one active kill, or `-30% Friendly Encounters (24h)` for two. The label belongs to the roster panel rather than the moving card shell. Each kill adds a 15% relative reduction, stacking to a maximum of 100%, with independent expiry. The countdown shows the next expiry; the total is recalculated when that entry expires. Changing the chance slider changes the probability being reduced rather than the displayed reduction percentage. The displayed time rounds up in half-hour steps above two hours, 0.1-hour steps from two hours to one hour, and one-minute steps below one hour. Actual expiry is exact and the label disappears when no penalties remain. The countdown updates while Roster is open without per-frame string formatting or HTTP polling.
+
+## Part 4: Profile Screen
 
 ### What the profile screen is
 
@@ -485,10 +559,10 @@ For teammate profiles the patch:
 - clears the stock right-side profile content blocks
 - reuses the stock clothing panel for suit selection
 - combines unlocked BEAR, USEC, and Savage clothing with each teammate's persisted wardrobe while keeping each suite id unique, so generated clothing remains selectable even when the player has not unlocked it
-- injects a cloned second clothing-style row for loadout + tactic in `Simple`
+- injects a cloned second clothing-style row for equipment editing + tactic
 - replaces the loadout dropdown side with `EDIT LOADOUT` in `Restricted`, `Immersive`, and `Realistic`, leaving the tactic dropdown intact
 - injects a `PROFICIENCY` button row below that
-- injects an `Edit Loadout` button row below that in `Simple`, or a `KIT LOADOUTS` row in the real-transfer modes
+- injects a `KIT LOADOUTS` button row below that
 - clones and hosts a filtered `SkillsScreen`
 - moves the faction badge down to fit the custom rows
 - turns the stock hideout button into `EDIT NAME`
@@ -501,8 +575,8 @@ Verified persisted actions today:
     - `POST /singleplayer/pitfireteam/teammate/profile/suit`
 - rename
     - `POST /singleplayer/pitfireteam/teammate/profile/rename`
-- selected loadout from saved player equipment builds
-    - `POST /singleplayer/pitfireteam/teammate/profile/loadout`
+- real `Default` equipment transfer
+    - `POST /singleplayer/pitfireteam/teammate/profile/default-equipment`
 - tactic
     - `POST /singleplayer/pitfireteam/teammate/profile/tactic`
 - aggression
@@ -517,13 +591,6 @@ Pending recruit friend requests also open through `OtherPlayerProfileScreen`, bu
 ### Loadout and tactic selectors
 
 The loadout/tactic row is still based on `InventoryClothingSelectionPanel`.
-
-Upper control in `Simple`:
-
-- current teammate equipment selection
-- populated from:
-    - `Default`
-    - player custom equipment builds returned by the backend
 
 Upper control in `Restricted`, `Immersive`, and `Realistic`:
 
@@ -540,7 +607,7 @@ Lower dropdown:
     - `Marksman`
 - `Protector` is intentionally hidden for the beta release and old persisted values normalize back to `Rifleman`
 
-Loadout selection persists immediately through the backend and refreshes the live profile visualization.
+Equipment saves and kit purchases persist through the backend and refresh the live profile visualization.
 
 ### Proficiency dialog
 
@@ -552,7 +619,7 @@ Behavior:
 - marksman tactic uses aggression as a tactic-relative offensive auto-search control
 - `Vision`, `Precision`, and `Reaction` are functional `0..200` percentage sliders with neutral default `100`
 - `Vision` changes only the follower's detection-distance multiplier
-- `Precision` changes shot accuracy, contributes half of the final aim-speed multiplier, and sets a conservative head-target preference from `10%` at Precision `0` through `33%` at `100` to `60%` at `200`
+- `Precision` changes shot accuracy, contributes half of the final aim-speed multiplier, and sets a conservative native non-head-to-head enhancement chance from `10%` at Precision `0` through `40%` at `100` to `70%` at `200`
 - `Reaction` changes visual-recognition speed, contributes the other half of final aim speed, and scales the short direct-fire gate used by core close dogfights
 - the bottom `RESET` button restores Vision, Precision, and Reaction to `100`, restores Aggression to the active tactic's default (`50` for Rifleman or `30` for Marksman), updates all four visible sliders immediately, and persists one aggression update plus one proficiency-object update
 - the current values load from teammate profile options; changing any slider updates one follower-local proficiency object and persists the whole object after a short debounce
@@ -581,8 +648,8 @@ vision range factor = Vision / 100
 accuracy factor = Precision / 100
 recognition-speed factor = Reaction / 100
 aim-speed factor = (Precision + Reaction) / 200
-head preference = 10 + 0.23 * Precision                         (Precision 0..100)
-head preference = 33 + 0.27 * (Precision - 100)                (Precision 100..200)
+head preference = 10 + 0.30 * Precision                         (Precision 0..100)
+head preference = 40 + 0.30 * (Precision - 100)                (Precision 100..200)
 ```
 
 This means Precision `100` plus Reaction `100` keeps normal aim speed, either value at `200` while the other stays at `100` produces `1.5x` aim speed, and both at `200` are required for `2.0x` aim speed.
@@ -601,12 +668,12 @@ Concrete `Vision` distance examples:
 Meaning of each percentage:
 
 - `Vision`: multiplies only the finalized detection distance. `150` sees up to `1.5x` farther than that class's default; it does not make recognition faster.
-- `Precision`: multiplies shot-execution accuracy, tightening scatter, accelerating precision convergence, and reducing external-SAIN recoil at the core compatibility boundary. It supplies half of the combined aim-speed value and maps piecewise to a `10%` / `33%` / `60%` head preference at slider values `0` / `100` / `200`.
+- `Precision`: multiplies shot-execution accuracy, tightening scatter, accelerating precision convergence, and reducing external-SAIN recoil at the core compatibility boundary. It supplies half of the combined aim-speed value and maps piecewise to a `10%` / `40%` / `70%` chance to promote a native non-head target to a verified head target at slider values `0` / `100` / `200`.
 - `Reaction`: multiplies the visual visibility-gain rate and supplies the other half of combined aim speed. On the core combat path it also scales the `0.2s` close-dogfight direct-fire gate; this gate is `0.2s` at `100`, `0.1s` at `200`, and never delays the normal aim/shoot worker once that worker is independently ready.
 
-Vision, Precision, Reaction, and general compatibility with the external SAIN plugin are core-owned and must work in all three runtime modes: no SAIN, SAIN installed without the addon, and SAIN with the addon. The optional addon only replaces core combat with its custom SAIN Squad-derived follower layer and custom actions; it does not own calculation tuning, mutate shared SAIN settings, or change the percentage contract. The combined Precision/Reaction aim-speed factor is applied after the final EFT-or-SAIN aim-time calculation, and Precision's Accuracy factor is applied to SAIN's final calculated recoil by the main plugin rather than the addon.
+Vision, Precision, Reaction, and general compatibility with the external SAIN plugin are core-owned and must work in all three runtime modes: no SAIN, SAIN installed without the addon, and SAIN with the addon. The optional addon consumes this base proficiency contract; its [combat ownership](../addon/docs/Integration.md) does not change these percentages or shared presets. The combined Precision/Reaction aim-speed factor is applied after the final EFT-or-SAIN aim-time calculation, and Precision's Accuracy factor is applied to SAIN's final calculated recoil by the main plugin rather than the addon.
 
-Body-part selection filters to parts that are both visible and currently shootable before applying head preference. The probability therefore chooses only between valid firing solutions: a sole exposed head remains eligible regardless of the probability, a visible torso remains available when it has a real shot lane, and an occluded torso is never selected merely because the head-preference roll failed. The core direct-fire overlay uses this same selector rather than EFT's body-only `CurrentEnemyTargetPosition(false)` helper. The selected part remains stable for EFT's normal retarget interval, so this does not reroll on every shot. SAIN's global center-mass height clamp is bypassed only for pitFireTeam followers so it cannot move an already valid upper-body target back behind cover.
+EFT chooses the body part first. External-SAIN compatibility first prefers an eligible body point after native selection, retaining exposed-part fallback if the body is blocked. Precision then operates on that baseline; an already selected head is preserved without another probability roll. If it is not the head, Precision gets one opportunity per normal retarget interval to promote the choice to the head, and only when the shared correction verifies a visible, shootable head lane. A hidden head leaves the native target untouched; a sole exposed head can still replace an invalid covered-body fallback. The core direct-fire overlay calls EFT's native `GetVisiblePartToShoot()` selector rather than the body-only `CurrentEnemyTargetPosition(false)` helper, then receives the same enhancement. A promoted head stays selected for the retarget interval while it remains shootable, so this does not reroll on every shot. The older SAIN 4.5.0 global center-mass height clamp is corrected only when it lowers a head that SAIN already selected for a pitFireTeam follower.
 
 Reaction does **not** change EFT's `WAIT_NEW_SENSOR` or `WAIT_NEW__LOOK_SENSOR`. Those remain the game's independent ambient look/hearing refresh and stationary-cover look-switch timers.
 
@@ -647,7 +714,7 @@ The `Edit Loadout` button opens a full-screen modal overlay on top of the teamma
 The overlay currently builds:
 
 - draggable header bar
-- subtitle explaining whether the edit is cloned/local (`Simple`) or staged real item movement (`Restricted`, `Immersive`, `Realistic`)
+- subtitle explaining staged real item movement
 - left section: cloned fake player stash
 - right section: cloned follower inventory/equipment view
 - cancel button
@@ -657,7 +724,6 @@ Confirmed implementation details:
 
 - the left stash is a staged stash view built from the player stash
 - the right follower inventory is built from staged teammate equipment and a local editor inventory controller
-- `Simple` keeps clone/save behavior
 - `Restricted`, `Immersive`, and `Realistic` preserve item ids while editing `Default` so `Done` can commit real item movement
 - repair is available for repairable teammate gear in all modes; it updates teammate equipment and player repair resources, not saved player equipment presets
 - secure container is removed from the edited equipment before display/save except in `Realistic`
@@ -682,19 +748,11 @@ Verified save behavior:
 
 - the editor uses a staged local stash + follower equipment session
 - item edits stay local until `Done`
-- if the selected loadout is a custom player equipment build:
-    - `Done` opens the stock preset naming dialog
-    - saving with the same name overwrites that custom preset
-    - saving with a new name creates a new custom preset
-    - the teammate selected loadout is then updated to that saved preset
-- if the selected loadout is `Default`:
-    - the editor now opens the teammate's actual current default equipment instead of stale pre-switch profile equipment
-    - `Done` does not show the preset naming dialog
-    - it saves directly as the bot's default equipment and closes
-    - in `Restricted`, `Immersive`, and `Realistic`, the server also updates the real player stash and the client refreshes the live stash view from the server response
+- the editor opens the teammate's current `Default` equipment
+- `Done` saves teammate equipment and the real player stash, then refreshes the live stash view
+- no preset naming or overwrite dialog is shown
 
 ### Current limitations
 
 - real-item movement is currently limited to `Default`
-- custom player equipment build editing still uses the stock preset save flow
 - spawn preparation and death-stripping behavior are tracked separately in `docs/Loadout-Management.md`

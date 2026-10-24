@@ -1,4 +1,5 @@
 using EFT.UI.Gestures;
+using EFT;
 using EFT.UI;
 using HarmonyLib;
 using SPT.Reflection.Patching;
@@ -18,9 +19,10 @@ namespace pitTeam.Patches
 {
     internal static class CustomGestureText
     {
-        public static string ViewBackpackTextUpper()
+        public static string FollowerInteractionTextUpper(EPhraseTrigger phrase)
         {
-            return pitFireTeam.GetGestureText("ViewBackpack").ToUpperInvariant();
+            return pitFireTeam.GetGestureText(phrase == (EPhraseTrigger)CustomPhrases.GiveGear ? "GiveGear" :
+                phrase == (EPhraseTrigger)CustomPhrases.SwapGear ? "SwapGear" : "ViewBackpack").ToUpperInvariant();
         }
 
         public static void FitViewBackpackQuickText(CustomTextMeshProUGUI textField, GameObject? quickCommandObject = null)
@@ -78,7 +80,7 @@ namespace pitTeam.Patches
             var list_0 = (List<GesturesAudioItem>)AccessTools.Field(typeof(GesturesMenu), "_audioItems").GetValue(__instance);
             var list_1 = (List<GestureBaseItem>)AccessTools.Field(typeof(GesturesMenu), "_allItems").GetValue(__instance);
 
-            if (!pitFireTeam.hideUnsupportedCommands.Value) list_0.ForEach(item =>
+            if (!GestureMenuUnsupportedCommandVisibility.ShouldFilter(__instance)) list_0.ForEach(item =>
             {
                 if (item.gameObject.name == "ENEMY")
                 {
@@ -127,7 +129,7 @@ namespace pitTeam.Patches
         [PatchPrefix]
         private static bool PatchPrefix(GesturesMenu __instance, string localizationKey, GesturesAudioItem groupTemplate, ref EPhraseTrigger[] phrases)
         {
-            if (pitFireTeam.hideUnsupportedCommands.Value)
+            if (GestureMenuUnsupportedCommandVisibility.ShouldFilter(__instance))
             {
                 // modify phrases here
                 if (localizationKey == "COMMAND")
@@ -186,14 +188,28 @@ namespace pitTeam.Patches
                         EPhraseTrigger.OpenDoor
                     ];
                 }
-                else if (localizationKey == "HEALTH STATUS" || localizationKey == "REACTION")
+                else if (localizationKey == "REACTION")
+                {
+                    phrases = [EPhraseTrigger.Roger, EPhraseTrigger.Negative];
+                }
+                else if (localizationKey == "HEALTH STATUS")
                 {
                     return false;
                 }
 
             }
 
+            AddCooperationToHelpGroup(localizationKey, ref phrases);
             return true;
+        }
+
+        internal static void AddCooperationToHelpGroup(string localizationKey, ref EPhraseTrigger[] phrases)
+        {
+            if (localizationKey != "HELP" || phrases == null || Array.IndexOf(phrases, EPhraseTrigger.Cooperation) >= 0) return;
+            var expanded = new EPhraseTrigger[phrases.Length + 1];
+            Array.Copy(phrases, expanded, phrases.Length);
+            expanded[phrases.Length] = EPhraseTrigger.Cooperation;
+            phrases = expanded;
         }
     }
 
@@ -279,21 +295,82 @@ namespace pitTeam.Patches
         {
             return AccessTools.Method(typeof(GesturesMenu), "Init");
         }
+        [PatchPrefix]
+        private static void PatchPrefix(GesturesMenu __instance, EPlayerSide side)
+        {
+            GestureMenuUnsupportedCommandVisibility.PrepareForSideChange(__instance, side);
+        }
+
         [PatchPostfix]
         private static void PatchPostfix(GesturesMenu __instance)
         {
             GestureMenuUnsupportedCommandVisibility.Track(__instance);
             var hashSet_1 = (HashSet<EPhraseTrigger>)AccessTools.Field(typeof(GesturesMenu), "_availablePhrases").GetValue(__instance);
+            hashSet_1.Add(EPhraseTrigger.Cooperation);
             hashSet_1.Add((EPhraseTrigger)CustomPhrases.TeamStatus);
             hashSet_1.Add((EPhraseTrigger)CustomPhrases.ViewBackpack);
+            hashSet_1.Add((EPhraseTrigger)CustomPhrases.SwapGear);
+            hashSet_1.Add((EPhraseTrigger)CustomPhrases.GiveGear);
+        }
+    }
+
+    internal class GestureMenuCooperationPhrasePatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+        {
+            return AccessTools.Method(typeof(GesturesQuickPanel), nameof(GesturesQuickPanel.IsSituationalPhrase));
+        }
+
+        [PatchPrefix]
+        private static bool PatchPrefix(EPhraseTrigger phrase, ref bool __result)
+        {
+            // Native classification controls assignment, the marker and playback availability.
+            // Player.Say already pairs Cooperation with the Hello/Friendly gesture.
+            if (phrase != EPhraseTrigger.Cooperation) return true;
+            __result = false;
+            return false;
+        }
+    }
+
+    internal class GestureMenuCooperationVisibilityPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+        {
+            return AccessTools.Method(typeof(GesturesMenu), nameof(GesturesMenu.SetPhraseActive));
+        }
+
+        [PatchPrefix]
+        private static void PatchPrefix(EPhraseTrigger phrase, ref bool active)
+        {
+            // Quick-panel targeting must not hide the recruitment command in HELP.
+            if (phrase == EPhraseTrigger.Cooperation) active = true;
         }
     }
 
     internal static class GestureMenuUnsupportedCommandVisibility
     {
+        private static readonly FieldInfo SideField = AccessTools.Field(typeof(GesturesMenu), "_side");
         private static readonly FieldInfo AudioGroupsField = AccessTools.Field(typeof(GesturesMenu), "_audioItems");
         private static readonly FieldInfo AllItemsField = AccessTools.Field(typeof(GesturesMenu), "_allItems");
         private static readonly List<WeakReference<GesturesMenu>> TrackedMenus = new List<WeakReference<GesturesMenu>>();
+
+        internal static bool ShouldFilter(GesturesMenu menu)
+        {
+            return menu != null && ShouldFilterSide((EPlayerSide)SideField.GetValue(menu));
+        }
+
+        private static bool ShouldFilterSide(EPlayerSide side)
+        {
+            return pitFireTeam.hideUnsupportedCommands.Value &&
+                   (side == EPlayerSide.Usec || side == EPlayerSide.Bear);
+        }
+
+        internal static void PrepareForSideChange(GesturesMenu menu, EPlayerSide side)
+        {
+            if (menu == null || ShouldFilter(menu) == ShouldFilterSide(side)) return;
+            // Native Init reuses existing phrase groups. Rebuild them when PMC/Scav filtering differs.
+            ClearPhraseGroups(menu);
+        }
 
         public static void Track(GesturesMenu menu)
         {
@@ -399,14 +476,14 @@ namespace pitTeam.Patches
         [PatchPostfix]
         private static void PatchPostfix(GesturesQuickPanel __instance)
         {
-            if (__instance.PrioritizedCommand != (EPhraseTrigger)CustomPhrases.ViewBackpack)
+            if (!FollowerQuickInteractionRouter.IsHandledPhrase(__instance.PrioritizedCommand))
             {
                 return;
             }
 
             if (TextField.GetValue(__instance) is CustomTextMeshProUGUI textField)
             {
-                textField.text = CustomGestureText.ViewBackpackTextUpper();
+                textField.text = CustomGestureText.FollowerInteractionTextUpper(__instance.PrioritizedCommand);
                 CustomGestureText.FitViewBackpackQuickText(textField, QuickCommandObjectField.GetValue(__instance) as GameObject);
             }
         }
@@ -424,14 +501,14 @@ namespace pitTeam.Patches
         [PatchPostfix]
         private static void PatchPostfix(GesturesQuickPanelItem __instance, EPhraseTrigger trigger)
         {
-            if (trigger != (EPhraseTrigger)CustomPhrases.ViewBackpack)
+            if (!FollowerQuickInteractionRouter.IsHandledPhrase(trigger))
             {
                 return;
             }
 
             if (LabelField.GetValue(__instance) is CustomTextMeshProUGUI label)
             {
-                label.text = CustomGestureText.ViewBackpackTextUpper();
+                label.text = CustomGestureText.FollowerInteractionTextUpper(trigger);
                 CustomGestureText.FitViewBackpackQuickText(label, __instance.gameObject);
             }
         }
@@ -505,6 +582,18 @@ namespace pitTeam.Patches
                 return false;
             }
 
+            if (index == (int)(EPhraseTrigger)CustomPhrases.SwapGear)
+            {
+                __result = GetGestureText("SwapGear");
+                return false;
+            }
+
+            if (index == (int)(EPhraseTrigger)CustomPhrases.GiveGear)
+            {
+                __result = GetGestureText("GiveGear");
+                return false;
+            }
+
             if (index == (int)(EInteraction)CustomGestures.OverThere)
             {
                 __result = GetGestureText("OverThere");
@@ -545,6 +634,16 @@ namespace pitTeam.Patches
                 else if (trigger == (EPhraseTrigger)CustomPhrases.ViewBackpack)
                 {
                     __result = pitFireTeam.GetGestureText("ViewBackpack");
+                    return false;
+                }
+                else if (trigger == (EPhraseTrigger)CustomPhrases.SwapGear)
+                {
+                    __result = pitFireTeam.GetGestureText("SwapGear");
+                    return false;
+                }
+                else if (trigger == (EPhraseTrigger)CustomPhrases.GiveGear)
+                {
+                    __result = pitFireTeam.GetGestureText("GiveGear");
                     return false;
                 }
             }

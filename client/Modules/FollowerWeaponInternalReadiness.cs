@@ -96,11 +96,11 @@ namespace pitTeam.Modules
         {
             InternalReadinessScenario[] scenarios =
             {
-                new InternalReadinessScenario("IR-01", 8, 8, new[] { 8 }, 16, true, false),
-                new InternalReadinessScenario("IR-02", 8, 8, new[] { 7 }, 15, false, false),
-                new InternalReadinessScenario("IR-03", 8, 0, new[] { 8, 8 }, 16, true, true),
-                new InternalReadinessScenario("IR-04", 8, 9, new[] { 7 }, 16, true, false),
-                new InternalReadinessScenario("IR-05", 5, 5, new[] { 5 }, 10, true, false)
+                new InternalReadinessScenario("IR-01", 8, 8, new[] { 4 }, 12, true, false),
+                new InternalReadinessScenario("IR-02", 8, 8, new[] { 3 }, 11, false, false),
+                new InternalReadinessScenario("IR-03", 8, 0, new[] { 6, 6 }, 12, true, true),
+                new InternalReadinessScenario("IR-04", 8, 9, new[] { 3 }, 12, true, false),
+                new InternalReadinessScenario("IR-05", 5, 5, new[] { 5 }, 10, false, false)
             };
 
             List<string> failures = new List<string>();
@@ -109,7 +109,8 @@ namespace pitTeam.Modules
                 WeaponPrimaryReadinessSnapshot result = EvaluateFormula(
                     scenario.Capacity,
                     scenario.LoadedRounds,
-                    scenario.ReserveStacks);
+                    scenario.ReserveStacks,
+                    caliber: "Caliber12g");
                 if (result.TotalContribution != scenario.ExpectedTotal ||
                     result.PrimaryReady != scenario.ExpectedReady ||
                     result.RequiresMagazineLoad != scenario.ExpectedRequiresLoad)
@@ -144,14 +145,15 @@ namespace pitTeam.Modules
             }
 
             int loadedRounds = loadedRoundsOverride ?? magazineRounds + chamberRounds;
-            return EvaluateFormula(capacity, loadedRounds, reserveStacks, "internalMagazineCapacity");
+            return EvaluateFormula(capacity, loadedRounds, reserveStacks, "usableActualRounds", weapon.AmmoCaliber);
         }
 
-        private static WeaponPrimaryReadinessSnapshot EvaluateFormula(
+        internal static WeaponPrimaryReadinessSnapshot EvaluateFormula(
             int capacity,
             int loadedRounds,
             IEnumerable<int> reserveStacks,
-            string referenceReason = "provided")
+            string referenceReason = "provided",
+            string caliber = "")
         {
             int normalizedCapacity = Math.Max(0, capacity);
             int normalizedLoadedRounds = Math.Max(0, loadedRounds);
@@ -160,9 +162,15 @@ namespace pitTeam.Modules
                 .Select(count => Math.Max(0, count))
                 .ToList() ?? new List<int>();
             int reserveRounds = normalizedReserveStacks.Sum();
-            int threshold = normalizedCapacity > 0 ? normalizedCapacity * 2 : 0;
+            int threshold = FollowerWeaponAmmoReadinessPolicy.GetRequiredRounds(caliber);
+            if (threshold == 0)
+            {
+                // Specialized internal launchers (for example the M32 cylinder) keep their
+                // existing two-load contract; ordinary caliber thresholds do not govern them.
+                threshold = normalizedCapacity * 2;
+            }
             int total = normalizedLoadedRounds + reserveRounds;
-            bool primaryReady = normalizedCapacity > 0 && total >= threshold;
+            bool primaryReady = normalizedCapacity > 0 && threshold > 0 && total >= threshold;
             bool requiresLoad = primaryReady && normalizedLoadedRounds <= 0;
 
             string reason = normalizedCapacity <= 0
@@ -178,7 +186,6 @@ namespace pitTeam.Modules
             // Reuse the common readiness snapshot so primary binding and later promotion have one
             // contract. For internal feeds, the spare-round list represents loose reserve stacks.
             return new WeaponPrimaryReadinessSnapshot(
-                normalizedCapacity,
                 threshold,
                 hasInsertedMagazine: normalizedCapacity > 0,
                 insertedRounds: normalizedLoadedRounds,
@@ -191,7 +198,7 @@ namespace pitTeam.Modules
                 requiresMagazineLoad: requiresLoad,
                 reason: reason,
                 availableMagazineCount: normalizedReserveStacks.Count,
-                referenceReason: referenceReason,
+                referenceReason: $"caliber={caliber};{referenceReason}",
                 feedKind: "internalMagazine");
         }
 

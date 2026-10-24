@@ -93,9 +93,7 @@ namespace pitTeam.BigBrain.Actions
                     projectedBeforeTopOff.ToDiagnosticString());
             }
 
-            int reserveTargetRounds = ResolveMagazineTopOffReserveTargetRounds(
-                projectedBeforeTopOff,
-                targets);
+            int reserveTargetRounds = projectedBeforeTopOff.Threshold;
             List<EFT.InventoryLogic.Ammo> carriedAmmo = GetFollowerWeaponCartridgeItems(
                     followerEquipment,
                     weapon)
@@ -184,7 +182,7 @@ namespace pitTeam.BigBrain.Actions
             AddMagazineTopOffTarget(targets, targetIds, weapon, insertedMagazine, isInsertedMagazine: true);
             // Do not merge found rounds into the follower's pre-raid magazines. Keeping every
             // top-off target in the acquired weapon/source package preserves return bookkeeping in
-            // Simple and Restricted modes; existing fast-access mags still count for readiness.
+            // Restricted mode; existing fast-access mags still count for readiness.
             foreach (BodyGearCandidate candidate in refillPlan.FollowUps.Where(IsOperationalFastAccessFollowUp))
             {
                 AddMagazineTopOffTarget(
@@ -274,18 +272,6 @@ namespace pitTeam.BigBrain.Actions
             }
 
             return null;
-        }
-
-        private static int ResolveMagazineTopOffReserveTargetRounds(
-            WeaponPrimaryReadinessSnapshot projected,
-            IEnumerable<MagazineTopOffTarget> targets)
-        {
-            int largestAvailableCapacity = targets?
-                .Select(target => Math.Max(0, target?.Magazine?.MaxCount ?? 0))
-                .DefaultIfEmpty(0)
-                .Max() ?? 0;
-            int capacityThreshold = Math.Min(30, largestAvailableCapacity) * 2;
-            return Math.Max(projected?.Threshold ?? 0, capacityThreshold);
         }
 
         private static bool CanTopOffMagazineWithAmmo(
@@ -480,6 +466,27 @@ namespace pitTeam.BigBrain.Actions
                 $"ammo={DescribeLooseAmmo(ammo)} donor={DescribeLootDebugItem(donor)} " +
                 $"transfer={transferCount} roundsBefore={roundsBefore} " +
                 $"roundsAfterProjected={roundsBefore + transferCount}");
+            return true;
+        }
+
+        private static bool MarkRejectedMagazineTopOffSourceAttempted(
+            BodyGearCandidate candidate,
+            ISet<string> attemptedItemIds,
+            string reason)
+        {
+            if (candidate?.Item == null ||
+                string.IsNullOrEmpty(candidate.Item.Id) ||
+                attemptedItemIds == null ||
+                string.IsNullOrEmpty(reason) ||
+                !reason.StartsWith("applyRejected:", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            // The queued restore must still run, but an EFT-rejected ammo transaction cannot
+            // become viable during this search. Mark its source terminal so the next live-state
+            // planning pass does not detach and restore the same inserted magazine forever.
+            attemptedItemIds.Add(candidate.Item.Id);
             return true;
         }
 

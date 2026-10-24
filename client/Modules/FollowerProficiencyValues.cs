@@ -77,7 +77,7 @@ namespace pitTeam.Modules
 
         private void ApplyVanillaTacticValues()
         {
-            if (CombatTactic != FollowerCombatTactic.Marksman)
+            if (!FollowerCombatTactics.IsMarksman(CombatTactic))
             {
                 return;
             }
@@ -102,7 +102,7 @@ namespace pitTeam.Modules
 
         private void ApplySainTacticValues()
         {
-            if (CombatTactic != FollowerCombatTactic.Marksman)
+            if (!FollowerCombatTactics.IsMarksman(CombatTactic))
             {
                 return;
             }

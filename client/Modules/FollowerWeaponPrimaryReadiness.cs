@@ -7,9 +7,6 @@ namespace pitTeam.Modules
 {
     internal static class FollowerWeaponPrimaryReadiness
     {
-        private const int MaximumOrdinaryMagazineReference = 30;
-        private const int TinyMagazineReference = 5;
-
         internal static WeaponPrimaryReadinessSnapshot EvaluateActual(
             InventoryController inventory,
             Weapon weapon,
@@ -79,41 +76,33 @@ namespace pitTeam.Modules
         }
 
         internal static WeaponPrimaryReadinessSnapshot EvaluateFormula(
-            int ordinaryReference,
+            string caliber,
             bool hasInsertedMagazine,
             int insertedRounds,
             int insertedCapacity,
             IEnumerable<int> compatibleFastAccessRounds,
             int availableMagazineCount = 0,
-            string referenceReason = "provided")
+            string referenceReason = "provided",
+            int chamberRounds = 0)
         {
-            int reference = Math.Max(0, ordinaryReference);
             int normalizedInsertedRounds = hasInsertedMagazine ? Math.Max(0, insertedRounds) : 0;
             int normalizedInsertedCapacity = hasInsertedMagazine ? Math.Max(0, insertedCapacity) : 0;
-            bool usesTinyMagazineReserve = reference == TinyMagazineReference;
-            int threshold = reference > 0 ? reference * 2 : 0;
-            int insertedContribution = CalculateInsertedContribution(
-                reference,
-                hasInsertedMagazine,
-                normalizedInsertedRounds,
-                normalizedInsertedCapacity,
-                usesTinyMagazineReserve);
+            int threshold = FollowerWeaponAmmoReadinessPolicy.GetRequiredRounds(caliber);
+            int insertedContribution = normalizedInsertedRounds + Math.Max(0, chamberRounds);
 
             List<int> spareRounds = compatibleFastAccessRounds?
                 .Where(rounds => rounds > 0)
                 .Select(rounds => Math.Max(0, rounds))
                 .ToList() ?? new List<int>();
-            int spareContribution = usesTinyMagazineReserve
-                ? spareRounds.Count(rounds => rounds >= reference) * reference
-                : spareRounds.Sum();
+            int spareContribution = spareRounds.Sum();
             int totalContribution = insertedContribution + spareContribution;
-            bool primaryReady = reference > 0 && totalContribution >= threshold;
+            bool primaryReady = threshold > 0 && totalContribution >= threshold;
             bool requiresMagazineLoad = primaryReady && !hasInsertedMagazine;
 
             string reason;
-            if (reference <= 0)
+            if (threshold <= 0)
             {
-                reason = "ordinaryReferenceUnavailable";
+                reason = "unsupportedCaliber";
                 primaryReady = false;
                 requiresMagazineLoad = false;
             }
@@ -129,17 +118,12 @@ namespace pitTeam.Modules
             {
                 reason = "noInsertedMagazineOrFastAccessSpare";
             }
-            else if (usesTinyMagazineReserve)
-            {
-                reason = "tinyMagazineNeedsTwoFullEquivalents";
-            }
             else
             {
                 reason = "insufficientUsableRounds";
             }
 
             return new WeaponPrimaryReadinessSnapshot(
-                reference,
                 threshold,
                 hasInsertedMagazine,
                 normalizedInsertedRounds,
@@ -152,41 +136,35 @@ namespace pitTeam.Modules
                 requiresMagazineLoad,
                 reason,
                 availableMagazineCount,
-                referenceReason);
+                $"caliber={caliber};{referenceReason}",
+                chamberRounds: Math.Max(0, chamberRounds));
         }
 
         internal static void RunDeterministicSelfTests()
         {
             ReadinessScenario[] scenarios =
             {
-                new ReadinessScenario("WP-01", 30, true, 60, 60, Array.Empty<int>(), 60, true, false),
-                new ReadinessScenario("WP-02", 30, true, 45, 45, Array.Empty<int>(), 45, false, false),
-                new ReadinessScenario("WP-03", 30, true, 30, 30, new[] { 30 }, 60, true, false),
-                new ReadinessScenario("WP-04", 30, true, 20, 30, new[] { 30 }, 60, true, false),
-                new ReadinessScenario("WP-05", 30, true, 15, 30, new[] { 30 }, 60, true, false),
-                new ReadinessScenario("WP-06", 30, true, 14, 30, new[] { 30 }, 44, false, false),
-                new ReadinessScenario("WP-07", 30, true, 14, 30, new[] { 30, 16 }, 60, true, false),
-                new ReadinessScenario("WP-08", 30, false, 0, 0, new[] { 30, 30 }, 60, true, true),
-                new ReadinessScenario("WP-09", 30, false, 0, 0, new[] { 20, 20, 20 }, 60, true, true),
-                new ReadinessScenario("WP-10", 30, true, 30, 30, Array.Empty<int>(), 30, false, false),
-                new ReadinessScenario("WP-11", 30, true, 14, 30, new[] { 30, 16 }, 60, true, false),
-                new ReadinessScenario("WP-12", 24, true, 12, 24, new[] { 24 }, 48, true, false),
-                new ReadinessScenario("WP-13", 24, true, 11, 24, new[] { 24 }, 35, false, false),
-                new ReadinessScenario("WP-14", 30, true, 30, 60, Array.Empty<int>(), 30, false, false),
-                new ReadinessScenario("WP-15", 30, true, 31, 60, new[] { 29 }, 60, true, false),
-                new ReadinessScenario("WP-16", 5, true, 2, 5, new[] { 5, 5 }, 10, true, false),
-                new ReadinessScenario("WP-17", 5, true, 3, 5, new[] { 5, 5 }, 10, true, false),
-                new ReadinessScenario("WP-18", 5, true, 4, 5, new[] { 5 }, 10, true, false),
-                new ReadinessScenario("WP-19", 5, true, 5, 5, new[] { 5 }, 10, true, false),
-                new ReadinessScenario("WP-20", 5, true, 5, 5, new[] { 4 }, 5, false, false),
-                new ReadinessScenario("WP-21", 5, true, 3, 5, new[] { 5 }, 5, false, false)
+                new ReadinessScenario("WP-01", "Caliber556x45NATO", true, 60, 60, Array.Empty<int>(), 60, true, false),
+                new ReadinessScenario("WP-02", "Caliber556x45NATO", true, 15, 30, new[] { 30 }, 45, false, false),
+                new ReadinessScenario("WP-03", "Caliber556x45NATO", true, 30, 30, new[] { 30 }, 60, true, false),
+                new ReadinessScenario("WP-04", "Caliber9x39", true, 8, 20, new[] { 9 }, 17, false, false),
+                new ReadinessScenario("WP-05", "Caliber9x39", true, 20, 20, new[] { 20 }, 40, true, false),
+                new ReadinessScenario("WP-06", "Caliber9x19PARA", true, 19, 30, new[] { 20, 20 }, 59, false, false),
+                new ReadinessScenario("WP-07", "Caliber9x19PARA", true, 19, 30, new[] { 20, 20, 20 }, 79, true, false),
+                new ReadinessScenario("WP-08", "Caliber762x51", false, 0, 0, new[] { 15, 15 }, 30, true, true),
+                new ReadinessScenario("WP-09", "Caliber762x54R", true, 4, 5, new[] { 5 }, 9, false, false),
+                new ReadinessScenario("WP-10", "Caliber86x70", true, 5, 5, new[] { 5, 5, 5 }, 20, true, false),
+                new ReadinessScenario("WP-11", "Caliber12g", true, 2, 5, new[] { 5, 5 }, 12, true, false),
+                new ReadinessScenario("WP-12", "Caliber366TKM", true, 10, 10, new[] { 10, 10, 10 }, 40, true, false),
+                new ReadinessScenario("WP-13", "custom", true, 59, 100, Array.Empty<int>(), 59, false, false),
+                new ReadinessScenario("WP-14", "Caliber40x46", true, 60, 60, Array.Empty<int>(), 60, false, false)
             };
 
             List<string> failures = new List<string>();
             foreach (ReadinessScenario scenario in scenarios)
             {
                 WeaponPrimaryReadinessSnapshot result = EvaluateFormula(
-                    scenario.OrdinaryReference,
+                    scenario.Caliber,
                     scenario.HasInsertedMagazine,
                     scenario.InsertedRounds,
                     scenario.InsertedCapacity,
@@ -230,7 +208,7 @@ namespace pitTeam.Modules
         {
             if (weapon == null)
             {
-                return EvaluateFormula(0, false, 0, 0, Array.Empty<int>(), 0, "weaponMissing");
+                return EvaluateFormula(string.Empty, false, 0, 0, Array.Empty<int>(), 0, "weaponMissing");
             }
 
             Slot magazineSlot;
@@ -242,12 +220,12 @@ namespace pitTeam.Modules
             }
             catch (Exception ex)
             {
-                return EvaluateFormula(0, false, 0, 0, Array.Empty<int>(), 0, $"weaponRead:{ex.Message}");
+                return EvaluateFormula(string.Empty, false, 0, 0, Array.Empty<int>(), 0, $"weaponRead:{ex.Message}");
             }
 
             List<EFT.InventoryLogic.Magazine> compatibleMagazines = new List<EFT.InventoryLogic.Magazine>();
             HashSet<string> includedMagazineIds = new HashSet<string>(StringComparer.Ordinal);
-            string referenceReason = "availableLoadedMagazines";
+            string referenceReason = "usableActualRounds";
 
             if (inventory != null && magazineSlot != null)
             {
@@ -303,23 +281,21 @@ namespace pitTeam.Modules
                                           FollowerWeaponMagazineCompatibility.AreLoadedCartridgesCompatible(
                                               weapon,
                                               insertedMagazine);
-            int availableReference = ResolveAvailableOrdinaryReference(
-                insertedAmmoCompatible ? insertedMagazine : null,
-                compatibleMagazines,
-                out int availableMagazineCount);
-            if (availableReference <= 0)
-            {
-                referenceReason = $"{referenceReason};noneAvailable";
-            }
+            int availableMagazineCount = compatibleMagazines.Count +
+                                         (insertedAmmoCompatible && insertedMagazine?.Count > 0 ? 1 : 0);
+            int chamberRounds = weapon.Chambers?.Count(chamber =>
+                chamber?.ContainedItem is EFT.InventoryLogic.Ammo ammo && !ammo.IsUsed &&
+                FollowerWeaponLooseAmmoSupport.IsCartridgeCompatible(weapon, ammo)) ?? 0;
 
             WeaponPrimaryReadinessSnapshot result = EvaluateFormula(
-                availableReference,
+                weapon.AmmoCaliber,
                 insertedMagazine != null,
                 insertedAmmoCompatible ? insertedMagazine?.Count ?? 0 : 0,
                 insertedMagazine?.MaxCount ?? 0,
                 compatibleMagazines.Select(magazine => magazine.Count),
                 availableMagazineCount,
-                referenceReason);
+                referenceReason,
+                chamberRounds);
 
             if (insertedAmmoCompatible)
             {
@@ -329,7 +305,6 @@ namespace pitTeam.Modules
             // Compatible spares cannot make a weapon usable while a wrong-caliber magazine is
             // still installed. A later explicit magazine-swap phase may resolve that state.
             return new WeaponPrimaryReadinessSnapshot(
-                result.OrdinaryReference,
                 result.Threshold,
                 hasInsertedMagazine: true,
                 insertedRounds: 0,
@@ -343,32 +318,6 @@ namespace pitTeam.Modules
                 reason: "insertedAmmoIncompatible",
                 result.AvailableMagazineCount,
                 referenceReason: $"{result.ReferenceReason};insertedRounds={insertedMagazine?.Count ?? 0}");
-        }
-
-        private static int CalculateInsertedContribution(
-            int ordinaryReference,
-            bool hasInsertedMagazine,
-            int insertedRounds,
-            int insertedCapacity,
-            bool usesTinyMagazineReserve)
-        {
-            if (!hasInsertedMagazine || insertedRounds <= 0)
-            {
-                return 0;
-            }
-
-            // Tiny magazines are counted as whole magazine states. A nearly full inserted
-            // magazine (4/5 or 5/5) is one full equivalent; lower states require two full
-            // spares instead of combining partial rounds into an artificial full magazine.
-            if (usesTinyMagazineReserve)
-            {
-                return insertedRounds >= 4 ? ordinaryReference : 0;
-            }
-
-            bool atLeastHalfFull = insertedCapacity > 0 && insertedRounds * 2 >= insertedCapacity;
-            return atLeastHalfFull
-                ? Math.Max(ordinaryReference, insertedRounds)
-                : insertedRounds;
         }
 
         private static bool CanFitClonedItem(Item containerItem, Item item)
@@ -462,44 +411,11 @@ namespace pitTeam.Modules
             return false;
         }
 
-        private static int ResolveAvailableOrdinaryReference(
-            EFT.InventoryLogic.Magazine insertedMagazine,
-            IEnumerable<EFT.InventoryLogic.Magazine> compatibleMagazines,
-            out int availableMagazineCount)
-        {
-            int largestAvailableCapacity = 0;
-            availableMagazineCount = 0;
-
-            if (insertedMagazine?.Count > 0)
-            {
-                largestAvailableCapacity = Math.Max(0, insertedMagazine.MaxCount);
-                availableMagazineCount++;
-            }
-
-            if (compatibleMagazines != null)
-            {
-                foreach (EFT.InventoryLogic.Magazine magazine in compatibleMagazines)
-                {
-                    if (magazine?.Count <= 0)
-                    {
-                        continue;
-                    }
-
-                    largestAvailableCapacity = Math.Max(
-                        largestAvailableCapacity,
-                        Math.Max(0, magazine.MaxCount));
-                    availableMagazineCount++;
-                }
-            }
-
-            return Math.Min(MaximumOrdinaryMagazineReference, largestAvailableCapacity);
-        }
-
         private readonly struct ReadinessScenario
         {
             public ReadinessScenario(
                 string id,
-                int ordinaryReference,
+                string caliber,
                 bool hasInsertedMagazine,
                 int insertedRounds,
                 int insertedCapacity,
@@ -509,7 +425,7 @@ namespace pitTeam.Modules
                 bool expectedRequiresLoad)
             {
                 Id = id;
-                OrdinaryReference = ordinaryReference;
+                Caliber = caliber;
                 HasInsertedMagazine = hasInsertedMagazine;
                 InsertedRounds = insertedRounds;
                 InsertedCapacity = insertedCapacity;
@@ -520,7 +436,7 @@ namespace pitTeam.Modules
             }
 
             public string Id { get; }
-            public int OrdinaryReference { get; }
+            public string Caliber { get; }
             public bool HasInsertedMagazine { get; }
             public int InsertedRounds { get; }
             public int InsertedCapacity { get; }
@@ -534,7 +450,6 @@ namespace pitTeam.Modules
     internal sealed class WeaponPrimaryReadinessSnapshot
     {
         public WeaponPrimaryReadinessSnapshot(
-            int ordinaryReference,
             int threshold,
             bool hasInsertedMagazine,
             int insertedRounds,
@@ -548,9 +463,9 @@ namespace pitTeam.Modules
             string reason,
             int availableMagazineCount,
             string referenceReason,
-            string feedKind = "detachableMagazine")
+            string feedKind = "detachableMagazine",
+            int chamberRounds = 0)
         {
-            OrdinaryReference = ordinaryReference;
             Threshold = threshold;
             HasInsertedMagazine = hasInsertedMagazine;
             InsertedRounds = insertedRounds;
@@ -565,9 +480,9 @@ namespace pitTeam.Modules
             AvailableMagazineCount = availableMagazineCount;
             ReferenceReason = referenceReason;
             FeedKind = feedKind;
+            ChamberRounds = chamberRounds;
         }
 
-        public int OrdinaryReference { get; }
         public int Threshold { get; }
         public bool HasInsertedMagazine { get; }
         public int InsertedRounds { get; }
@@ -582,13 +497,14 @@ namespace pitTeam.Modules
         public int AvailableMagazineCount { get; }
         public string ReferenceReason { get; }
         public string FeedKind { get; }
+        public int ChamberRounds { get; }
 
         public string ToDiagnosticString()
         {
             if (string.Equals(FeedKind, "internalMagazine", StringComparison.Ordinal) ||
                 string.Equals(FeedKind, "chamberFed", StringComparison.Ordinal))
             {
-                return $"feed={FeedKind} capacity={OrdinaryReference} threshold={Threshold} " +
+                return $"feed={FeedKind} capacity={InsertedCapacity} threshold={Threshold} " +
                        $"loaded={InsertedRounds} reserveStacks={FastAccessMagazineRounds.Count} " +
                        $"reserveRounds={FastAccessContribution} total={TotalContribution} " +
                        $"primaryReady={PrimaryReady} requiresFeedLoad={RequiresMagazineLoad} " +
@@ -596,7 +512,7 @@ namespace pitTeam.Modules
             }
 
             string inserted = HasInsertedMagazine ? $"{InsertedRounds}/{InsertedCapacity}" : "none";
-            return $"feed={FeedKind} reference={OrdinaryReference} threshold={Threshold} inserted={inserted} " +
+            return $"feed={FeedKind} threshold={Threshold} inserted={inserted} chamberRounds={ChamberRounds} " +
                    $"insertedContribution={InsertedContribution} fastAccessMags={FastAccessMagazineRounds.Count} " +
                    $"fastAccessRounds={FastAccessContribution} total={TotalContribution} " +
                    $"primaryReady={PrimaryReady} requiresMagazineLoad={RequiresMagazineLoad} reason={Reason} " +

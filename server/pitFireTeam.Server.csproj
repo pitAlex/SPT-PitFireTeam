@@ -6,10 +6,19 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>pitFireTeam.Server</AssemblyName>
     <RootNamespace>pitTeam.Server</RootNamespace>
-    <Version>0.10.3</Version>
+    <Version>1.0.0</Version>
     <OutputType>Library</OutputType>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <SptReferenceRoot Condition="'$(SptReferenceRoot)' == ''">$(MSBuildProjectDirectory)/refs/4.1.0</SptReferenceRoot>
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../shared/FriendlyEncounterPenaltyPolicy.cs" Link="Shared/FriendlyEncounterPenaltyPolicy.cs" />
+    <Compile Include="../shared/PmcKarmaPolicy.cs" Link="Shared/PmcKarmaPolicy.cs" />
+    <Compile Include="../shared/SelfDeterminationPolicy.cs" Link="Shared/SelfDeterminationPolicy.cs" />
+    <Compile Include="../shared/GiveGearInvitePolicy.cs" Link="Shared/GiveGearInvitePolicy.cs" />
+    <PackageReference Include="LiteDB" Version="5.0.21" />
+    <PackageReference Include="HarmonyX" Version="2.16.1" />
+  </ItemGroup>
   <ItemGroup>
     <Reference Include="SPTarkov.Common">
       <HintPath>$(SptReferenceRoot)/SPTarkov.Common.dll</HintPath>

@@ -1,6 +1,7 @@
 using EFT;
 using HarmonyLib;
 using System;
+using System.Collections;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using UnityEngine;
@@ -26,6 +27,7 @@ namespace pitTeam.Modules
 
         private static Type? enemyControllerType;
         private static PropertyInfo? controllerGoalEnemyProperty;
+        private static PropertyInfo? controllerVisibleEnemiesProperty;
         private static FieldInfo? controllerGoalEnemyField;
         private static MethodInfo? controllerCheckAddEnemyMethod;
         private static MethodInfo? controllerChooseEnemyMethod;
@@ -36,6 +38,10 @@ namespace pitTeam.Modules
         private static PropertyInfo? enemyProfileIdProperty;
         private static PropertyInfo? enemyKnownProperty;
         private static PropertyInfo? enemyLastKnownPositionProperty;
+        private static PropertyInfo? enemyKnownPlacesProperty;
+        private static PropertyInfo? placesLastKnownProperty;
+        private static PropertyInfo? placesTimeProperty;
+        private static PropertyInfo? placePositionProperty;
         private static PropertyInfo? enemyInfoProperty;
         private static PropertyInfo? enemyLookingAtMeProperty;
         private static MethodInfo? enemyUpdateLastSeenPositionMethod;
@@ -48,6 +54,58 @@ namespace pitTeam.Modules
             public float RefreshAt;
             public bool HasValue;
             public bool LookingAtFollower;
+        }
+
+        // Recruitment reads native combat state before a bot becomes a follower. An EFT goal
+        // is not required, and this must not select or synchronize a SAIN enemy.
+        public static bool HasEnemy(BotOwner owner)
+        {
+            if (!pitFireTeam.IsSAINInstalled || owner == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                object? sainBot = TryGetSainBot(owner);
+                if (sainBot == null)
+                {
+                    return false;
+                }
+
+                ResolveSainBotAccessors(sainBot.GetType());
+                return sainBotHasEnemyProperty?.GetValue(sainBot) is bool hasEnemy && hasEnemy;
+            }
+            catch (Exception ex)
+            {
+                LogAccessorFailureOnce(ex);
+                return false;
+            }
+        }
+
+        // Passive social admission only. Never choose, update or synchronize an enemy.
+        internal static bool HasVisibleEnemy(BotOwner owner)
+        {
+            if (owner?.Memory?.GoalEnemy?.IsVisible == true) return true;
+            if (owner?.EnemiesController?.EnemyInfos != null)
+                foreach (var enemy in owner.EnemiesController.EnemyInfos.Values)
+                    if (enemy?.IsVisible == true) return true;
+            if (!pitFireTeam.IsSAINInstalled || owner == null) return false;
+            try
+            {
+                object? bot = TryGetSainBot(owner);
+                if (bot == null) return false;
+                ResolveSainBotAccessors(bot.GetType());
+                object? controller = sainBotEnemyControllerProperty?.GetValue(bot);
+                if (controller == null) return true;
+                ResolveEnemyControllerAccessors(controller.GetType());
+                return controllerVisibleEnemiesProperty?.GetValue(controller) is not ICollection visible || visible.Count > 0;
+            }
+            catch (Exception ex)
+            {
+                LogAccessorFailureOnce(ex);
+                return true; // Unavailable sight state must not authorize social speech.
+            }
         }
 
         // Diagnostics only: read the actual SAIN goal even when it differs from EFT's mirror.
@@ -75,6 +133,9 @@ namespace pitTeam.Modules
         }
 
         public static bool TrySyncEnemyState(BotOwner owner, Player enemyPlayer, bool prioritizeAsGoal)
+            => TrySyncEnemyState(owner, enemyPlayer, prioritizeAsGoal, enemyPlayer?.Position ?? default, Time.time);
+
+        public static bool TrySyncEnemyState(BotOwner owner, Player enemyPlayer, bool prioritizeAsGoal, Vector3 reportPosition, float observedAt)
         {
             if (!pitFireTeam.IsSAINInstalled ||
                 owner == null ||
@@ -121,7 +182,7 @@ namespace pitTeam.Modules
 
                 enemyUpdateLastSeenPositionMethod.Invoke(
                     sainEnemy,
-                    new object[] { enemyPlayer.Position, Time.time });
+                    new object[] { reportPosition, observedAt });
 
                 object? currentGoal = controllerGoalEnemyProperty?.GetValue(enemyController) ??
                                       controllerGoalEnemyField?.GetValue(enemyController);
@@ -196,6 +257,27 @@ namespace pitTeam.Modules
                 LogAccessorFailureOnce(ex);
                 return false;
             }
+        }
+
+        public static bool TryGetTrackingReport(BotOwner owner, EnemyInfo enemy, out Vector3 position, out float observedAt)
+        {
+            position = default; observedAt = -1f;
+            if (!pitFireTeam.IsSAINInstalled) return false;
+            try
+            {
+                if (!TryGetExactSainGoalEnemy(owner, enemy, out var native)) return false;
+                var places = enemyKnownPlacesProperty?.GetValue(native);
+                if (places == null) return false;
+                placesLastKnownProperty ??= AccessTools.Property(places.GetType(), "LastKnownPlace");
+                placesTimeProperty ??= AccessTools.Property(places.GetType(), "TimeLastKnownUpdated");
+                var place = placesLastKnownProperty?.GetValue(places);
+                if (place == null || placesTimeProperty?.GetValue(places) is not float time) return false;
+                placePositionProperty ??= AccessTools.Property(place.GetType(), "Position");
+                if (placePositionProperty?.GetValue(place) is not Vector3 point || !IsFinite(point)) return false;
+                position = point; observedAt = time;
+                return true;
+            }
+            catch (Exception ex) { LogAccessorFailureOnce(ex); return false; }
         }
 
         public static bool TryGetRetainedSameGoalEnemy(
@@ -373,6 +455,7 @@ namespace pitTeam.Modules
 
             enemyControllerType = runtimeType;
             controllerGoalEnemyProperty = AccessTools.Property(runtimeType, "GoalEnemy");
+            controllerVisibleEnemiesProperty = AccessTools.Property(runtimeType, "VisibleEnemies");
             controllerGoalEnemyField = AccessTools.Field(runtimeType, "_goalEnemy");
             controllerCheckAddEnemyMethod = AccessTools.Method(
                 runtimeType,
@@ -397,6 +480,7 @@ namespace pitTeam.Modules
             enemyProfileIdProperty = AccessTools.Property(runtimeType, "EnemyProfileId");
             enemyKnownProperty = AccessTools.Property(runtimeType, "EnemyKnown");
             enemyLastKnownPositionProperty = AccessTools.Property(runtimeType, "LastKnownPosition");
+            enemyKnownPlacesProperty = AccessTools.Property(runtimeType, "KnownPlaces");
             enemyInfoProperty = AccessTools.Property(runtimeType, "EnemyInfo");
             enemyLookingAtMeProperty = AccessTools.Property(runtimeType, "EnemyLookingAtMe");
             enemyUpdateLastSeenPositionMethod = AccessTools.Method(
