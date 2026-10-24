@@ -329,8 +329,6 @@ Searching takes time and plays a search sound. Combat can interrupt it. A comple
 | **CMD: Get Weapon** | Take weapons and suitable ammunition/magazines, without a general loot search. |
 | **CMD: Get Gear** | Take wearable gear and its contents, without a general loot search. |
 
-Look at an armed corpse with a living follower available and show the interaction menu with all five CMD options visible.
-
 Weapon options appear only while the corpse has a gun. All five use your character's **Check Him** voice line. They apply to this order only—your saved pickup settings stay unchanged.
 
 **Get Weapon** and **Get Gear** skip unrelated valuables, food, medicine, and dogtags.
@@ -382,7 +380,7 @@ A weapon carried as baggage is not automatically a usable combat upgrade. Listen
 - **Loot & Get Weapon** considers the selected corpse weapon together with compatible ammunition and magazines.
 - **Loot & Get Gear** considers the corpse's complete kit, **including weapons**, then continues normal looting.
 
-The body requests require no living spawned teammate. Loose-firearm orders do not have that restriction.
+Recruits handle these body orders only when no spawned teammate remains alive. Loose-firearm orders do not have that restriction.
 
 A recruit can switch to a better usable primary, improve his protection, or take a larger backpack if his belongings fit. He will not switch primary just because you pointed out a gun: it must be useful with the available supplies. Other items may become secondary equipment or baggage, or be left/dropped if they cannot be carried.
 
@@ -425,6 +423,8 @@ Combat, healing, or other busy states can prevent opening or cancel editing. If 
 Found a friendly PMC or Scav and recruited him during the raid? You can help him improve his equipment through **Give Gear**, which replaces **View Backpack** in his interaction dropdown. Unlike Swap Gear, you offer the items and let the recruit decide what to equip—you cannot take his existing equipment directly.
 
 Place your offering in the grid and press **Give Items** when ready. Nothing transfers before you confirm. He compares the offered equipment with his current kit and swaps to useful upgrades: a better weapon he has the magazines and ammunition to use, stronger protection, or a larger backpack that can hold his belongings. Suitable equipment can also fill empty slots, such as a missing headset or helmet.
+
+Headsets and glasses only fill empty slots; they do not replace ones he already wears. A better helmet can also be declined if it conflicts with protective face gear he is keeping.
 
 You can give him a complete kit at once, including a weapon, its magazines, and a vest to carry them. He considers those items together, so the new vest may make the new weapon usable. You can also improve his kit over several handovers: a weapon kept as baggage may become worth equipping when you later provide its missing magazines or ammunition, and a spare vest he carries may become useful when you give him better armor. A larger vest can improve storage without changing his protection, but he still needs room to support his weapon and reload.
 

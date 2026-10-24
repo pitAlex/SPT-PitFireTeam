@@ -6,7 +6,7 @@ It brings SAIN's individual and squad combat into pitFireTeam while keeping you 
 
 **Requires pitFireTeam, SAIN 4.5.1, and BigBrain.** Use an addon build that matches your pitFireTeam release. Installing SAIN alone does not unlock these tactics.
 
-**Choose your role:**
+**Choose your teammate's tactic:**
 
 - **SAINGrunt** — an all-purpose fighter for the Rifleman role. He supports the squad, suppresses enemies, and advances when his equipment and the fight allow it. Use **Go Forward** to pressure a known enemy, or **Regroup** to call him back.
 - **SAINShooter** — an alternative to Marksman, focused on ranged support, firing positions, and useful sightlines rather than assault pushes. Use **Need Sniper** to ask him to find a firing opportunity.
@@ -21,7 +21,7 @@ To use either tactic, open **My Squad → Roster**, view a teammate's profile, a
 - **Hold Position**, **On Your Own**, **Cover Me**, **Go Go Go**, and **Attention** retain their shared combat-setting effects.
 - **There**, **Come To Me**, **Regroup**, and **Exit Located** let you direct positioning, while **Status Report** keeps you informed.
 
-**Suppress** asks suitable teammates to put short pressure on a known enemy position. They can also support a nearby teammate's fight or advance when they have an opportunity. Healing, reloads, grenades, and immediate danger still take priority.
+**Suppress** asks suitable teammates to provide brief suppressive fire against a known enemy position. They can also support a nearby teammate's fight or advance when they have an opportunity. Healing, reloads, grenades, and immediate danger still take priority.
 
 **Preparing for heard threats:** followers may pause, face nearby hostile footsteps or voices, and move into defensive cover before seeing the enemy. These pauses can be preparation rather than a refusal to follow you; hearing someone does not give them sight through walls.
 
