@@ -200,7 +200,7 @@ namespace pitTeam.BigBrain.Actions
                     return;
                 }
 
-                if (TryStartRecruitLooseWeapon(rootItem)) return;
+                if (TryStartRecruitLooseEquipment(rootItem)) return;
 
                 if (rootItem is Weapon supportWeapon &&
                     IsShoulderWeaponCandidate(supportWeapon) &&

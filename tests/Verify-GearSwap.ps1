@@ -168,6 +168,18 @@ if ($LASTEXITCODE -ne 0) { throw 'Gear Swap body refresh fixture compilation fai
 & $bodyExe
 if ($LASTEXITCODE -ne 0) { throw 'Gear Swap body refresh fixture failed' }
 
+$binding = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/FollowerLootedPrimaryWeaponBinding.cs')
+$registration = (Get-Content -Raw (Join-Path $PSScriptRoot 'GearSwapWeaponRegistrationFixture.cs')).Replace('/* RECONCILE */',
+    (Get-Region $binding '        internal static void ReconcileExchangedEquipment(' '        private const int SwitchMaxAttempts'))
+$registrationSource = Join-Path $temporary 'GearSwapWeaponRegistration.cs'
+[IO.File]::WriteAllText($registrationSource, $registration)
+$registrationExe = Join-Path $temporary 'GearSwapWeaponRegistration.exe'
+$registrationArgs = @($arguments | Where-Object { $_ -notlike '/out:*' }) + "/out:$registrationExe"
+& dotnet @registrationArgs $registrationSource
+if ($LASTEXITCODE -ne 0) { throw 'Gear Swap weapon registration fixture compilation failed' }
+& $registrationExe
+if ($LASTEXITCODE -ne 0) { throw 'Gear Swap weapon registration fixture failed' }
+
 $newtonsoft = Join-Path $RepositoryRoot 'client/libs4.1/Newtonsoft.Json.dll'
 Copy-Item -LiteralPath $newtonsoft -Destination $temporary
 $snapshotExe = Join-Path $temporary 'GearSwapSnapshot.exe'

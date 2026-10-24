@@ -1,5 +1,6 @@
 using Comfort.Common;
 using EFT;
+using EFT.InventoryLogic;
 using EFT.Quests;
 using pitTeam.Components;
 using pitTeam.Modules;
@@ -1174,6 +1175,48 @@ namespace pitTeam.Patches
             return profile.Info.Side == spawnSide;
         }
 
+        internal static int PrepareDebugPmcBackpack(Profile profile)
+        {
+            if (profile?.Info == null || (profile.Info.Side != EPlayerSide.Usec && profile.Info.Side != EPlayerSide.Bear))
+                return 0;
+            // Test setup only: replace this unactivated profile's generated backpack and
+            // contents, not any live follower inventory or the shared item templates.
+            var slot = profile.Inventory?.Equipment?.GetSlot(EquipmentSlot.Backpack)
+                ?? throw new InvalidOperationException("Debug recruit has no backpack slot.");
+            var factory = Singleton<EFT.ItemFactory>.Instance;
+            var bag = factory.CreateItem(MongoID.Generate(true), "5b44c6ae86f7742d1627baea", null) as Backpack;
+            if (bag == null || bag.Grids.Sum(grid => grid.GridWidth * grid.GridHeight) <= 0)
+                throw new InvalidOperationException("Debug Beta 2 has no usable storage.");
+            int cargoCount = 0;
+            foreach (var grid in bag.Grids)
+                for (int cell = 0; cell < grid.GridWidth * grid.GridHeight; cell++)
+                {
+                    var cargo = factory.CreateItem(MongoID.Generate(true), "57347c5b245977448d35f6e1", null);
+                    var size = cargo.CalculateCellSize();
+                    if (size.X != 1 || size.Y != 1)
+                        throw new InvalidOperationException("Debug backpack filler must occupy one cell.");
+                    var address = grid.FindLocationForItem(cargo);
+                    if (address == null) throw new InvalidOperationException("Debug Beta 2 cargo does not fit.");
+                    var add = address.Add(cargo, false);
+                    if (add.Failed) throw new InvalidOperationException(add.Error.ToString());
+                    cargoCount++;
+                }
+            IOperationResult removed = null;
+            if (slot.ContainedItem != null)
+            {
+                var remove = slot.RemoveItem();
+                if (remove.Failed) throw new InvalidOperationException(remove.Error.ToString());
+                removed = remove.Value;
+            }
+            try
+            {
+                var equip = slot.Add(bag, false);
+                if (equip.Failed) throw new InvalidOperationException(equip.Error.ToString());
+            }
+            catch { removed?.RollBack(); throw; }
+            return cargoCount;
+        }
+
         public async Task<bool> SpawnDebugFollower(pitAIBossPlayer player, EPlayerSide spawnSide, Action<string> onFailure = null)
         {
             if (player == null || Controller == null || Controller.BotSpawner == null)
@@ -1259,6 +1302,22 @@ namespace pitTeam.Patches
             }
             if (generatedSide != profile.Info.Side)
                 Modules.Logger.LogInfo($"[DebugRecruit] Applied SPT PMC side correction: {generatedSide}->{profile.Info.Side}, role={role}.");
+            if (spawnSide == EPlayerSide.Usec || spawnSide == EPlayerSide.Bear)
+            {
+                try
+                {
+                    int cargoCount = PrepareDebugPmcBackpack(profile);
+                    // Generation already pooled the original kit; also pool this new bag/cargo.
+                    await LoadFollowerProfileBundles(profile);
+                    Modules.Logger.LogInfo($"[DebugRecruit] Prepared Beta 2 backpack with {cargoCount} loose bolts for backpack-swap testing.");
+                }
+                catch (Exception ex)
+                {
+                    Modules.Logger.LogError("[DebugRecruit] Backpack test setup failed: " + ex);
+                    onFailure?.Invoke("Beta 2 backpack test setup failed");
+                    return false;
+                }
+            }
             if (!separateScavGroup)
             {
                 profile.Info.GroupId = player.realPlayer.GroupId;

@@ -10,6 +10,7 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 | [SPT compatibility](SPT-Compatibility.md) | Build/reference baseline and packaging boundaries |
 | [Version 1 validation](validation/Release-1.0.0.md) | Dated release cleanup evidence and outstanding live qualification |
 | [SAIN compatibility](SAIN-Compatibility.md) | Core integration with the external plugin, including deferred shot-safety investigation |
+| [Questing Bots compatibility](Questing-Bots-Compatibility.md) | Optional objective suspension and restoration across follower ownership |
 | [Localization](Localization.md) | Centralized text and locale maintenance |
 | [Proficiency](Friendly-AI-Performance-Settings.md) | Vision, Precision and Reaction calculations and qualification |
 

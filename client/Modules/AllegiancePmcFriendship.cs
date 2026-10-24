@@ -22,6 +22,7 @@ namespace pitTeam.Modules
             internal float? RecruitmentChance;
             internal Action<BotOwner> MemberAdded;
             internal readonly AllegianceFriendlyGreeting Greeting = new AllegianceFriendlyGreeting();
+            internal readonly AllegianceCombatGreeting CombatGreeting = new AllegianceCombatGreeting();
             internal readonly FriendlyEncounterInteraction Interaction = new FriendlyEncounterInteraction();
         }
 
@@ -54,6 +55,7 @@ namespace pitTeam.Modules
             foreach (var decision in Decisions.Values)
             {
                 decision.Greeting.Cancel();
+                decision.CombatGreeting.Cancel();
                 decision.Interaction.Cancel(decision.Bot);
                 if (decision.MemberAdded != null) decision.Group.OnMemberAdd -= decision.MemberAdded;
             }
@@ -79,6 +81,7 @@ namespace pitTeam.Modules
             if (Decisions.TryGetValue(bot.ProfileId, out var previous))
             {
                 previous.Greeting.Cancel();
+                previous.CombatGreeting.Cancel();
                 previous.Interaction.Cancel(previous.Bot);
                 if (previous.MemberAdded != null) previous.Group.OnMemberAdd -= previous.MemberAdded;
             }
@@ -171,6 +174,7 @@ namespace pitTeam.Modules
             if (bot == null || string.IsNullOrEmpty(bot.ProfileId) || BossPlayers.IsFollower(bot) ||
                 !Decisions.TryGetValue(bot.ProfileId, out var decision) || decision.Bot != bot ||
                 !IsFriendly(bot)) return;
+            decision.CombatGreeting.Update(bot, Human);
             decision.Greeting.Update(bot, Human);
         }
 
@@ -185,6 +189,7 @@ namespace pitTeam.Modules
             if (Decisions.TryGetValue(follower.ProfileId, out var recruited) && recruited.Bot == follower)
             {
                 recruited.Greeting.Cancel();
+                recruited.CombatGreeting.Cancel();
                 recruited.Interaction.Cancel(follower);
             }
 
@@ -266,6 +271,7 @@ namespace pitTeam.Modules
             if (!IsRegularScav(bot)) BossPlayers.RememberRecruitmentDenial(bot.ProfileId);
             decision.Interaction.BeginRefusal(bot);
             decision.Greeting.Cancel();
+            decision.CombatGreeting.Cancel();
             RecordSelection(bot, "requestedRefusal", null, decision.RecruitmentChance, "acceptance");
         }
 
@@ -359,6 +365,7 @@ namespace pitTeam.Modules
         {
             decision.Friendly = false;
             decision.Greeting.Cancel();
+            decision.CombatGreeting.Cancel();
             decision.Interaction.Cancel(decision.Bot);
             // Reactivation and repeat requests cannot reroll this decision.
             Logger.LogInfo($"{LogPrefix} candidate={decision.Bot.ProfileId} friendship-revoked={reason}");

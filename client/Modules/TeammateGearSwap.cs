@@ -413,6 +413,7 @@ namespace pitTeam.Modules
                 committed = true;
                 _committed = true;
                 _applyScope.Commit();
+                if (Giving) DonationDiagnosticSnapshot("inventoryCommitted", bot.Inventory.Equipment, _donationOverflow);
                 // Establish provenance first: a visual/event subscriber failing must not lose returns.
                 var publicationErrors = new List<Exception>();
                 try { if (Giving) TrackDonation(); else TrackOwnership(); }
@@ -421,6 +422,7 @@ namespace pitTeam.Modules
                     try { TrackDonationInsurance(); }
                     catch (Exception ex) { publicationErrors.Add(ex); }
                 if (Giving) _donationDrops?.Commit();
+                if (Giving) DonationDiagnosticOutcome("phase=committed dropPublicationFinished=true");
                 // No await between mutation and publication. Native events update armor, visuals and weights.
                 foreach (IOperationResult result in applied)
                 {
@@ -444,6 +446,7 @@ namespace pitTeam.Modules
                     (draftError.Key == "SwapGearMagazineSpace" || draftError.Key == "SwapGearNeedsWeapon");
                 if (Giving && !committed)
                 {
+                    DonationDiagnosticOutcome("phase=applyRejected error=" + ex);
                     UndoDonationPlan();
                     keepDraft = !CommandLoot && !handsStarted && !_cancelled && !_closed &&
                         !(ex is GearSwapValidationException stale && stale.Key == "SwapGearStale");

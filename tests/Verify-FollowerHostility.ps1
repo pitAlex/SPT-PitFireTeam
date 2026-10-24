@@ -80,6 +80,9 @@ try {
     $dismiss=$followerSource.Substring($identityEnd,$followerSource.IndexOf('        private void ClearInvalidEnemyState()', $identityEnd)-$identityEnd)
     if($dismiss.IndexOf('RestoreProfileIdentity();') -lt 0 -or $dismiss.IndexOf('RestoreProfileIdentity();') -gt $dismiss.IndexOf('if (_bot.IsDead')) {throw 'Dismissal must restore profile identity before inactive/dead exit and native cleanup'}
     $bossSource=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Components/AIBossPlayer.cs')
+    $contactEligibility=[regex]::Match($bossSource,'(?ms)^        private bool IsEligibleBossDirectedContactTarget\(.*?^        \}').Value
+    if(!$contactEligibility){throw 'Contact candidate eligibility boundary changed'}
+    $fixture=$fixture.Replace('__CONTACT_ELIGIBILITY_METHOD__',$contactEligibility)
     $registration=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/BossPlayers.cs')
     $registerIndex=$registration.IndexOf('_followersByProfileId[bot.ProfileId] = _follower;')
     $repairIndex=$registration.IndexOf('AllegiancePmcFriendship.OnFollowerAdded(bot, player.realPlayer);')

@@ -1623,6 +1623,14 @@ namespace pitTeam.Components
                 return false;
             }
 
+            // Contact gathers every visible candidate in its cone. Merely standing
+            // beside the real target must not turn an encounter friend into an enemy.
+            if (AllegiancePmcFriendship.IsSelectedFriendly(candidateBot, requester) ||
+                AllegianceScavRelations.IsCalmedGroup(candidateBot.BotsGroup))
+            {
+                return false;
+            }
+
             bool alreadyHostile = bossGroup?.IsEnemy(candidate) == true ||
                                    bossGroup?.IsPlayerEnemy(candidate) == true ||
                                    candidateBot.BotsGroup?.IsEnemy(requester) == true ||

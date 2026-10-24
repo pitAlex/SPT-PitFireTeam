@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using EFT;
@@ -30,6 +31,7 @@ namespace EFT {
     public enum BodyPartType {body}
     public class BodyPart {public UnityEngine.Vector3 Position;}
     public enum EPlayerSide { Usec, Bear, Savage }
+    public enum EBotState { Active, Inactive }
     public enum EBodyPart { Chest }
     public enum EDamageType { Bullet }
     public enum EBodyPartColliderType { Chest }
@@ -78,6 +80,7 @@ namespace EFT {
         }
     }
     public class BotOwner : Player {
+        public EBotState BotState=EBotState.Active;
         public BotOwner() { IsAI = true; AIData.BotOwner = this; }
         public Player PlayerObject; public Player GetPlayer => PlayerObject ?? this; public bool IsDead; public BotsGroup BotsGroup;
         public SpawnData SpawnProfileData = new SpawnData();
@@ -133,7 +136,10 @@ public class BotsGroup {
 public class RequestController {public int Calls;public bool TryAskFollowMeRequest(Player player,BotOwner bot){Calls++;return true;}}
 namespace EFT.Interactive { }
 namespace pitTeam.Components {
-    public class pitAIBossPlayer { public Player realPlayer; public BotsGroup bossGroup; public List<BotOwner> Followers = new List<BotOwner>(); public int Engagements; public void MarkPlayerEngagement(Player enemy,string source) {Engagements++;} }
+    public class pitAIBossPlayer { public Player realPlayer; public BotsGroup bossGroup; public List<BotOwner> Followers = new List<BotOwner>(); public int Engagements; public void MarkPlayerEngagement(Player enemy,string source) {Engagements++;}
+        public bool CanContact(IPlayer requester,Player candidate)=>IsEligibleBossDirectedContactTarget(requester,candidate);
+        __CONTACT_ELIGIBILITY_METHOD__
+    }
     public class AIBossPlayerLogic {
         public pitAIBossPlayer _aiplayer; public float _lastTimeHit;
         __BOSS_HIT_METHOD__
@@ -166,6 +172,7 @@ namespace pitTeam.Utils {
 }
 namespace pitTeam.Modules {
     internal static class PmcKarmaRuntime { internal static void NoteFriendly(BotOwner bot) { } }
+    internal sealed class AllegianceCombatGreeting { internal void Cancel() {} internal void Update(BotOwner bot,Player human) {} }
     internal sealed class AllegianceFriendlyGreeting {
         internal static int Calls, Cancellations; private bool cancelled;
         internal void Cancel() { cancelled=true; Cancellations++; }
@@ -279,6 +286,21 @@ public static class HostilityChecks {
             AllegiancePmcFriendship.Reset();AllegiancePmcFriendship.Apply(failed);
             Check(AllegiancePmcFriendship.IsSelectedFriendly(failed,boss.realPlayer),"New raid clears prior decisions");
         }
+    }
+    private static void FriendlyContactExclusionChecks() {
+        Setup();GameplayModeRuntime.IsAllegiance=true;pitTeam.pitFireTeam.friendlyEncounterChance.Value=80;boss.realPlayer.Profile.FenceInfo.Standing=6;
+        var friendlyScav=Scav("contact-friendly-scav");var same=Solo("contact-friendly-pmc");var other=Solo("contact-friendly-opposite",EPlayerSide.Bear);
+        foreach(var friendly in new[]{friendlyScav,same,other}) {
+            AllegiancePmcFriendship.Apply(friendly);
+            Check(!boss.CanContact(boss.realPlayer,friendly),"Directed Contact excludes selected friendly Scavs and PMCs before hostile admission: "+friendly.ProfileId);
+            Check(AllegiancePmcFriendship.IsSelectedFriendly(friendly,boss.realPlayer),"Contact eligibility probing preserves selected friendship");
+        }
+        var hostile=Solo("contact-real-enemy",EPlayerSide.Bear);UnityEngine.Random.NextValue=1;AllegiancePmcFriendship.Apply(hostile);
+        Check(boss.CanContact(boss.realPlayer,hostile),"The actual hostile target remains eligible beside friendly candidates");
+        RecruitScavCompanion();var calmed=Scav("contact-calmed-scav");UnityEngine.Random.NextValue=0;AllegianceScavRelations.Apply(calmed);
+        Check(!boss.CanContact(boss.realPlayer,calmed),"Contact excludes Scavs calmed by the recruited companion");
+        friendlyScav.BotsGroup.AddEnemy(boss.realPlayer,EBotEnemyCause.followGetHit);
+        Check(boss.CanContact(boss.realPlayer,friendlyScav),"Real aggression can revoke friendship and restore Contact eligibility");
     }
     private static void ScavEncounterToggleChecks() {
         foreach(bool allegiance in new[]{false,true}) foreach(bool enabled in new[]{false,true}) {
@@ -1212,6 +1234,7 @@ public static class HostilityChecks {
         ScavEncounterChecks();
         EncounterChanceChecks();
         ScavEncounterToggleChecks();
+        FriendlyContactExclusionChecks();
         ScavAcceptanceChecks();
         ScavAcceptanceSettingOnlyChecks();
         ScavDiplomacyChecks();

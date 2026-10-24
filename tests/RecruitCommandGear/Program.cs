@@ -139,13 +139,14 @@ namespace pitTeam.BigBrain.Actions
                 Check(!TeammateGearSwap.Offered.Contains(inserted), "inserted magazine is not independently moved from selected weapon");
             }
             foreach (bool squad in new[] { false, true })
+            foreach (Item offered in new Item[] { new Weapon("loose"), new Magazine("loose-mag"), new Ammo("loose-ammo") })
             {
                 var action = new GestureCommandAction(); action.followerData.IsSquadMate = squad;
-                var gun = new Weapon("loose"); TeammateGearSwap.Reset();
-                Check(action.TryStartRecruitLooseWeapon(gun) == !squad, "loose upgrade is recruited-only");
+                var gun = offered; TeammateGearSwap.Reset();
+                Check(action.TryStartRecruitLooseEquipment(gun) == !squad, "loose weapon/magazine/ammo reevaluation is recruited-only");
                 if (!squad)
                 {
-                    Check(!TeammateGearSwap.Body && TeammateGearSwap.Offered.Single() == gun, "loose command offers exactly requested gun");
+                    Check(!TeammateGearSwap.Body && TeammateGearSwap.Offered.Single() == gun, "loose command offers exactly the requested item");
                     action.BotOwner.GetPlayer.Items.Add(gun); TeammateGearSwap.Complete(true);
                     Check(action.taken && !action.recruitGearInProgress, "loose pickup completes only after retained committed ownership");
                 }
@@ -153,7 +154,7 @@ namespace pitTeam.BigBrain.Actions
             foreach (bool unavailable in new[] { false, true })
             {
                 var action = new GestureCommandAction(); TeammateGearSwap.Reset(); TeammateGearSwap.Available = !unavailable;
-                action.TryStartRecruitLooseWeapon(new Weapon("rejected"));
+                action.TryStartRecruitLooseEquipment(new Weapon("rejected"));
                 if (!unavailable) TeammateGearSwap.Complete(false);
                 Check(!action.taken && action.ended != null && !action.recruitGearInProgress && action.BotOwner.BotTalk.Last == EPhraseTrigger.Negative,
                     "unavailable or rolled-back upgrade terminates safely without ordinary pickup fallback");
@@ -164,7 +165,7 @@ namespace pitTeam.BigBrain.Actions
                 var source = new InventoryEquipment(); var gun = new Weapon("late");
                 source.GetSlot(EquipmentSlot.FirstPrimaryWeapon).ContainedItem = gun;
                 TeammateGearSwap.Reset();
-                if (body) action.TryStartRecruitBodyKit(source, new()); else action.TryStartRecruitLooseWeapon(gun);
+                if (body) action.TryStartRecruitBodyKit(source, new()); else action.TryStartRecruitLooseEquipment(gun);
                 var replacement = new FollowerLootRequest(FollowerLootMode.LootAndGetWeapon);
                 action.ActiveLootRequest = replacement;
                 action.BotOwner.GetPlayer.Items.Add(gun);
@@ -180,9 +181,14 @@ namespace pitTeam.BigBrain.Actions
                 TeammateGearSwap.Reset(); TeammateGearSwap.Current = new object();
                 Check(action.TryStartRecruitBodyKit(new(), new()) && !action.recruitBodyKitAttempted && TeammateGearSwap.Calls == 0,
                     "other active exchange defers body kit without consuming its attempt");
-                Check(action.TryStartRecruitLooseWeapon(new Weapon("wait")) && !action.recruitGearInProgress && action.ended == null,
+                Check(action.TryStartRecruitLooseEquipment(new Weapon("wait")) && !action.recruitGearInProgress && action.ended == null,
                     "loose command waits for shared exchange instead of falsely refusing");
                 TeammateGearSwap.Reset();
+            }
+            {
+                var action = new GestureCommandAction(); TeammateGearSwap.Reset();
+                Check(!action.TryStartRecruitLooseEquipment(new SearchableItem("whole-backpack")) && TeammateGearSwap.Calls == 0,
+                    "Taking a whole backpack is still ordinary pickup, not automatic kit unpacking");
             }
             Console.WriteLine($"PASS: {checks} production recruit command routing/offer/callback checks; not live world ownership.");
         }

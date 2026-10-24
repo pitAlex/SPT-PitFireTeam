@@ -16,11 +16,48 @@ if ($planner.Contains('magazine.Apply(') -or $planner.Contains('TopOffInsertedMa
 foreach ($contract in @('FollowerWeaponSupplyBudget.Build', 'EquipmentSlot.SecuredContainer', '_temporarySecureItems', 'reserveReloadSpace: true')) {
     if (!$planner.Contains($contract)) { throw "Missing deferred supply/staging boundary: $contract" }
 }
+foreach ($contract in @('_vests.SelectMany(GridContents)', 'bool storageUpgrade', 'foreach (Item content in GridContents(rig).ToArray()) Stow(content)',
+    '_weapons.Concat(originalSupport.Values).Concat(new[] { primary })')) {
+    if (!$planner.Contains($contract)) { throw "Missing bounded packed-vest handling: $contract" }
+}
+foreach ($contract in @('Item replacedBackpack = UpgradeBackpack();', 'if (ReferenceEquals(item, replacedBackpack)) continue;',
+    'if (old != null) MoveToGrids(old, _overflow.Grids);', 'if (!address.Equals(item.CurrentAddress)) Move(item, address);')) {
+    if (!$planner.Contains($contract)) { throw "Missing backpack migration/drop or native no-op boundary: $contract" }
+}
+if ($planner.IndexOf('Item replacedBackpack = UpgradeBackpack();') -lt $planner.IndexOf('SupportSecondary(retained, finalPrimary')) {
+    throw 'Backpack migration must follow equipment/support decisions, so used versus unused packed gear has settled'
+}
+foreach ($contract in @('if (Equipped(slot) is Weapon retained)', 'SupportSecondary(retained, finalPrimary',
+    'PreservePrimarySupport(finalPrimary', 'Stow(candidate.GetCurrentMagazine())')) {
+    if (!$planner.Contains($contract)) { throw "Missing retained-secondary handover boundary: $contract" }
+}
+if (!$giving.Contains('foreach (Weapon weapon in FirearmSlots') -or !$giving.Contains('RegisterLootedWeaponMagazine(Bot, weapon, magazine)') -or
+    !$session.Contains('FollowerLootedPrimaryWeaponBinding.ReconcileExchangedEquipment(Bot)')) {
+    throw 'Every committed occupied firearm slot and compatible fast-access magazine must be registered'
+}
 foreach ($retired in @('TraceDonation(', '_donationTraceId', '_donationPlanNumber')) {
     if ($giving.Contains($retired)) { throw "Retired runtime Give Gear diagnostic remains: $retired" }
 }
 foreach ($retired in @('private readonly Action<string> _trace', 'Trace(', 'DescribeWeaponRange(', 'DescribeWeaponCadence(')) {
     if ($planner.Contains($retired)) { throw "Retired Give Gear comparison diagnostic remains: $retired" }
+}
+foreach ($contract in @('DonationDiagnosticSnapshot("beforePlan", FollowerEquipment, Donation)',
+    'DonationDiagnosticSnapshot("acceptedPlan", FollowerEquipment, _donationOverflow)',
+    'ItemBinarySerializer.SerializeItem(equipment, FullySearchedSearchController.Instance)',
+    '_donationDiagnosticLines++ < 256', 'snapshotsStillRecorded=true')) {
+    if (!$giving.Contains($contract)) { throw "Missing passive Give Gear diagnostics boundary: $contract" }
+}
+if (!$giving.Contains('BattleRecorder.RecordGiveGear(Bot, _donationDiagnosticId') -or
+    !(Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/BattleRecorder.GiveGear.cs')).Contains('WriteEventInternal("giveGear"')) {
+    throw 'Give Gear observations must also persist in the existing raid ledger when enabled'
+}
+foreach ($contract in @('inventoryCommitted', 'phase=committed dropPublicationFinished=true', 'phase=applyRejected')) {
+    if (!$session.Contains($contract)) { throw "Missing donation diagnostic outcome: $contract" }
+}
+foreach ($contract in @('category=helmet candidate=', 'rejected=notHigherProtection', 'helmet.removeNonProtectiveFaceCover',
+    'rejected=allPermittedTrialsFailed', 'incomingFront=', 'candidateCells=', 'errorType=', 'policy=emptySlotOnly',
+    'try { Diagnostic(message()); } catch { }')) {
+    if (!$planner.Contains($contract)) { throw "Missing passive planner comparison/rejection detail: $contract" }
 }
 $insurance = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/GiveGearInsurance.cs')
 $insuranceLedger = Get-Content -Raw (Join-Path $RepositoryRoot 'server/Services/FollowerInsuranceRaidDiagnostics.cs')

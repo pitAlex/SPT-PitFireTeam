@@ -99,6 +99,8 @@ Behavior:
 
 An accepted prioritized Contact target overrides a neutral relationship for all tactics. The target's group then recognizes the player and living followers as enemies; ordinary shared contact reports do not perform this override. Relationship changes do not grant visibility or firing permission.
 
+Automatic Contact candidate collection excludes selected friendly PMC/Scav encounters and ordinary/sniper Scav groups calmed by a living Scav companion, alongside existing follower/faction protections. A friendly standing in the same view cone as a hostile cannot become a Contact target. Real aggression can revoke that friendship/calming; hostile former allies remain eligible.
+
 
 Input:
 
@@ -922,7 +924,7 @@ Common command cleanup cases:
 
 `fs_spawnfollower` and `fs_spawnscavfollower` are compiled and registered only with the `DEBUG` symbol. In a raid they share the existing game-session bot-generation/activation flow near the player, then convert the bot with `squadMate: false`. These are field recruits for Give Gear testing, not spawned/saved squadmates; normal recruit initialization and inventory ownership apply.
 
-- `fs_spawnfollower`: in Allegiance, independently chooses USEC or BEAR with equal probability per invocation; in Guns for Hire, matches the player's faction. Generation retries preserve that requested faction/role rather than substituting a Scav.
+- `fs_spawnfollower`: in Allegiance, independently chooses USEC or BEAR with equal probability per invocation; in Guns for Hire, matches the player's faction. Generation retries preserve that requested faction/role rather than substituting a Scav. For the current backpack-swap test, a generated PMC keeps its normal worn kit but receives a Beta 2 filled completely with loose bolts (30 in its standard 5×6 grid; respects runtime grid resizing). This replaces only the unactivated test profile's generated backpack and its contents, with fresh item IDs; it does not copy 52sierra's lost kit or change live followers/shared templates. The replacement assets are loaded before activation. Offer an empty Attack 2 or Blackjack through Give Gear to exercise content migration and old-backpack cargo/drop handling. This test setup does not fix the handover bug.
 - SPT intentionally returns generated PMC profiles with raw side `Savage`. The direct Debug spawn applies SPT's normal `ChooseProfile` role-based correction (`pmcBEAR` → BEAR, `pmcUSEC` → USEC) before activation. Only a genuinely wrong/missing role or incompatible final side is rejected; raw `Savage` on a matching PMC role is not an error.
 - `fs_spawnscavfollower`: always requests a regular Savage/assault recruit with its normal generated equipment; no special rig, backpack or headwear override. In Allegiance it has a selected-friendly encounter identity and a locked, independent native Scav group before conversion, enabling the normal companion diplomacy and Fence cargo-capture path. Outside Allegiance it remains a field follower; this command does not enable Allegiance-only cargo/diplomacy rules in other modes.
 

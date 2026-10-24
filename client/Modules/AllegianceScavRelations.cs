@@ -130,6 +130,8 @@ namespace pitTeam.Modules
         private static bool IsNeutral(BotsGroup group) => HasLivingCompanion && group != null && OrdinaryGroup(group) &&
             Encounters.TryGetValue(group, out var encounter) && !encounter.Revoked && encounter.Roll < NeutralChance;
 
+        internal static bool IsCalmedGroup(BotsGroup group) => Enabled && IsNeutral(group);
+
         private static void MarkAggressive(BotsGroup group)
         {
             if (group == null) return;

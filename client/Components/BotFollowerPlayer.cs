@@ -499,23 +499,6 @@ namespace pitTeam.Components
                 }
             }*/
 
-            // followers should not be questing, so stop it (if questing mod is present)
-            /* Type questingBrain = Type.GetType("SPTQuestingBots.Components.BotObjectiveManager, SPTQuestingBots");
-             if (questingBrain != null && _bot.GetPlayer.gameObject.TryGetComponent(questingBrain, out var questingComponent))
-             {
-                 try
-                 {
-                     MethodInfo stopMethod = questingBrain.GetMethod("StopQuesting", BindingFlags.Public | BindingFlags.Instance);
-                     stopMethod?.Invoke(questingComponent, null);
-                     Modules.Logger.LogInfo("Questing stopped for " + _bot.Profile.Nickname);
-                 }
-                 catch (Exception ex)
-                 {
-                     Modules.Logger.LogError("Failed to stop questing");
-                     Modules.Logger.LogError(ex);
-                 }
-             }*/
-
             /// reset bot animation stances
             _bot.GetPlayer.MovementContext.SetPatrol(false);
             _bot.Tilt.Stop();
@@ -1225,6 +1208,7 @@ namespace pitTeam.Components
             }
             finally
             {
+                FollowerQuestingBots.Release(_bot);
                 FollowerSainProficiency.RestoreFollower(_bot);
 
                 // Fire lifecycle event for addon integration (cleanup, cache removal, etc).

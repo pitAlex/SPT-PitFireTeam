@@ -30,6 +30,22 @@ foreach ($configuration in @('Debug', 'Release')) {
         $spawner = $client.GetType('pitTeam.Patches.BotsControllerPatch')
         Check ((@($spawner.Methods | Where-Object Name -eq 'SpawnDebugFollower').Count -gt 0) -eq $debug) "$configuration spawn entry point scope"
         Check ((@($spawner.Methods | Where-Object Name -eq 'TryPrepareDebugRecruitProfile').Count -gt 0) -eq $debug) "$configuration SPT profile preparation scope"
+        Check ((@($spawner.Methods | Where-Object Name -eq 'PrepareDebugPmcBackpack').Count -gt 0) -eq $debug) "$configuration cargo-filled Beta 2 override follows DEBUG scope"
+        $clientStrings = @(AllTypes $client.Types | ForEach-Object { $_.Methods } | Where-Object HasBody |
+            ForEach-Object { $_.Body.Instructions } | Where-Object { $_.OpCode.Code -eq 'Ldstr' } | ForEach-Object Operand)
+        Check (($clientStrings.Contains('5b44c6ae86f7742d1627baea')) -eq $debug) "$configuration Beta 2 test template is Debug-only"
+        Check (($clientStrings.Contains('57347c5b245977448d35f6e1')) -eq $debug) "$configuration test cargo template is Debug-only"
+        $planner = $client.GetType('pitTeam.Modules.GiveGearPlanner')
+        Check ((@($planner.Fields | Where-Object Name -eq 'Diagnostic').Count -gt 0) -eq $debug) "$configuration planner diagnostic callback follows DEBUG scope"
+        $exchange = $client.GetType('pitTeam.Modules.TeammateGearSwap')
+        foreach ($diagnosticField in @('_donationDiagnosticId', '_donationDiagnosticLines')) {
+            Check ((@($exchange.Fields | Where-Object Name -eq $diagnosticField).Count -gt 0) -eq $debug) "$configuration handover recording field scope: $diagnosticField"
+        }
+        foreach ($diagnosticMethod in @('DonationDiagnosticWrite', 'DescribeDonationDiagnosticItem')) {
+            Check ((@($exchange.Methods | Where-Object Name -eq $diagnosticMethod).Count -gt 0) -eq $debug) "$configuration handover recording sink scope: $diagnosticMethod"
+        }
+        $recorder = $client.GetType('pitTeam.Modules.BattleRecorder')
+        Check ((@($recorder.Methods | Where-Object Name -eq 'RecordGiveGear').Count -gt 0) -eq $debug) "$configuration Give Gear raid-ledger entry point follows DEBUG scope"
         Check (@($spawner.Methods | Where-Object Name -eq 'PrepareDebugScavGear').Count -eq 0) "$configuration special Scav kit is removed"
         foreach ($method in @('SpawnRecruitConsoleCommandAsync', 'SpawnDebugFollower')) {
             $states = @(AllTypes $client.Types | Where-Object { $_.Name.StartsWith('<' + $method + '>') })
@@ -54,6 +70,10 @@ $first = $spawning.IndexOf('public async Task<bool> SpawnDebugFollower(')
 $last = $spawning.IndexOf('public async Task<bool> SpawnDebugScavEnemy(', $first)
 $spawn = $spawning.Substring($first, $last - $first)
 Check (!$spawning.Contains('PrepareDebugScavGear')) 'Debug Scav keeps its normal generated kit'
+Check ($spawn.Contains('if (spawnSide == EPlayerSide.Usec || spawnSide == EPlayerSide.Bear)') -and
+    $spawn.Contains('int cargoCount = PrepareDebugPmcBackpack(profile);') -and
+    $spawn.IndexOf('PrepareDebugPmcBackpack(profile)') -lt $spawn.IndexOf('botsData.AddProfile(profile)') -and
+    $spawn.IndexOf('await LoadFollowerProfileBundles(profile);', $spawn.IndexOf('PrepareDebugPmcBackpack(profile)')) -lt $spawn.IndexOf('botsData.AddProfile(profile)')) 'Only generated PMCs receive the Beta 2 setup, with bundles loaded before activation'
 Check ($spawn.Contains('BossPlayers.AddFollower(me, player, false, botRole, "Default")')) 'Command must use the actual field-recruit conversion path'
 Check (!$spawn.Contains('BossPlayers.AddFollower(me, player, true')) 'Command must not create a squadmate'
 Check ($spawn.Contains('recruit.DebugForceRecruitInvite = spawnSide == EPlayerSide.Usec || spawnSide == EPlayerSide.Bear')) 'Only command-spawned PMCs receive the Debug invitation marker'
@@ -102,3 +122,16 @@ foreach ($reference in @('mscorlib.dll','System.dll','System.Core.dll')) { $argu
 if ($LASTEXITCODE -ne 0) { throw 'Debug recruit fixture compilation failed' }
 & $exe
 if ($LASTEXITCODE -ne 0) { throw 'Debug recruit policy fixture failed' }
+
+$backpackPolicy = [regex]::Match($spawning, '(?ms)^        internal static int PrepareDebugPmcBackpack\(.*?^        \}').Value
+if (!$backpackPolicy) { throw 'Production Debug backpack setup boundary changed' }
+$backpackSource = Join-Path $temporary 'Backpack.cs'
+$backpackExe = Join-Path $temporary 'Backpack.exe'
+$backpackFixture = (Get-Content -Raw (Join-Path $PSScriptRoot 'DebugRecruitBackpackFixture.cs')).Replace('/* BACKPACK SETUP */', $backpackPolicy)
+[IO.File]::WriteAllText($backpackSource, $backpackFixture)
+$arguments = @($compiler, '/nologo', '/target:exe', '/langversion:latest', '/nostdlib+', "/out:$backpackExe")
+foreach ($reference in @('mscorlib.dll','System.dll','System.Core.dll')) { $arguments += "/reference:$(Join-Path $framework $reference)" }
+& dotnet @arguments $backpackSource
+if ($LASTEXITCODE -ne 0) { throw 'Debug backpack fixture compilation failed' }
+& $backpackExe
+if ($LASTEXITCODE -ne 0) { throw 'Debug backpack fixture failed' }

@@ -285,6 +285,9 @@ Repair follows the real teammate-equipment rule:
 - player repair kits and repair-related player profile changes are consumed through the stock repair service
 - saved player equipment presets are not changed by repair
 - pending staged inventory changes are committed through the real stash transfer before repair
+- after kit resources are synchronized, the editor captures the resulting stash/equipment as its saved baseline
+- EFT's repair UI subtracts the final selected kit's resource before invoking the patched repair method; that exact pending subtraction is excluded from the pre-repair loadout-change check only when every other staged item still matches. If another staged edit requires a commit, the outgoing stash snapshot omits this temporary kit subtraction, so the stock server repair remains the sole saved kit charge.
+- the editor captures its initial comparison baseline after its synchronous item panels have initialized. A kit-only repair response updates and verifies the selected live kit resources against the server's changed-item data; it does not rebuild or compare the whole player stash. Other repair responses first apply the server's exact new/changed/deleted item delta. A full stash refresh is only a fallback when that delta cannot be applied. If every refresh fails after a server-confirmed repair, the editor can close but further teammate loadout changes are blocked until a game restart; never retry the paid repair in that session. The editor's own kit resource and saved baseline update after every repair.
 
 ## Live Stash Refresh
 

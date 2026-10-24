@@ -15,6 +15,7 @@ This is the source map for pitFireTeam's main plugin. Detailed behavior belongs 
 | Acquisition and reaction | [FollowerCalcGoalEnemyAcquire](../client/Modules/FollowerCalcGoalEnemyAcquire.cs), [FollowerAwareness](../client/Utils/FollowerAwareness.cs), [Enemy](../client/Utils/Enemy.cs) |
 | UI and status | [SquadControlMenuUi](../client/Components/SquadControlMenuUi.cs), [PingTeamates](../client/Utils/PingTeamates.cs), [My Squad](My-Squad-Screen.md) |
 | Optional external-SAIN compatibility | [SAINPatches](../client/Patches/SAINPatches.cs), [compatibility contract](SAIN-Compatibility.md) |
+| Optional Questing Bots compatibility | [FollowerQuestingBots](../client/Modules/FollowerQuestingBots.cs), [objective handoff](Questing-Bots-Compatibility.md) |
 | Recording | [BattleRecorder](../client/Modules/BattleRecorder.cs), [core recording contract](Combat-Tactics.md#battle-recorder) |
 
 ## Lifecycle and invariants

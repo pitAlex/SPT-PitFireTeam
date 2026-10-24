@@ -68,6 +68,19 @@ namespace pitTeam.Modules
             // The existing pre-recruitment speech scope bypasses only this exact
             // phrase in SAIN. Ordinary bot speech and shared presets remain owned by SAIN.
             EPhraseTrigger phrase = bot.Side == EPlayerSide.Savage ? EPhraseTrigger.MumblePhrase : EPhraseTrigger.HoldFire;
+            if (!TrySpeak(bot, phrase)) return;
+
+            spokenCount++;
+            nextPhrase = now + UnityEngine.Random.Range(1f, 3f);
+            nextCheck = System.Math.Min(nextCheck, nextPhrase);
+            Logger.LogInfo($"[Allegiance] candidate={bot.ProfileId} greeting={phrase} count={spokenCount}/2");
+        }
+
+        internal static bool TrySpeak(BotOwner bot, EPhraseTrigger phrase)
+        {
+            var speaker = bot?.GetPlayer?.Speaker;
+            if (speaker == null || speaker.Speaking || speaker.Busy || bot.BotTalk == null ||
+                FollowerForcedPhraseGate.TryGetArmedPhrase(bot, out _)) return false;
             FollowerForcedPhraseGate.ArmRecruitmentResponse(bot, phrase, 0.9f);
             try
             {
@@ -82,12 +95,7 @@ namespace pitTeam.Modules
                 if (FollowerForcedPhraseGate.IsRecruitmentResponse(bot, phrase))
                     FollowerForcedPhraseGate.Clear(bot);
             }
-            if (!speaker.Speaking) return;
-
-            spokenCount++;
-            nextPhrase = now + UnityEngine.Random.Range(1f, 3f);
-            nextCheck = System.Math.Min(nextCheck, nextPhrase);
-            Logger.LogInfo($"[Allegiance] candidate={bot.ProfileId} greeting={phrase} count={spokenCount}/2");
+            return speaker.Speaking;
         }
 
         internal static bool HasSight(BotOwner bot, Player human, float range)
@@ -103,10 +111,16 @@ namespace pitTeam.Modules
         internal static bool CanSignal(BotOwner bot, bool allowHello = false, bool allowRefusal = false)
         {
             if (bot?.GetPlayer == null) return false;
+            return bot.Memory?.HaveEnemy != true && bot.Memory?.IsUnderFire != true &&
+                !SainGoalEnemyBridge.HasEnemy(bot) && CanUseSocialHands(bot, allowHello, allowRefusal);
+        }
+
+        internal static bool CanUseSocialHands(BotOwner bot, bool allowHello = false, bool allowRefusal = false)
+        {
+            if (bot?.GetPlayer == null) return false;
             var danger = bot.BewareGrenade?.GrenadeDangerPoint;
             // Passive state only: do not invoke medical or danger decision providers.
-            return bot.Memory?.HaveEnemy != true && bot.Memory?.IsUnderFire != true &&
-                !SainGoalEnemyBridge.HasEnemy(bot) && bot.ShootData?.Shooting != true &&
+            return bot.ShootData?.Shooting != true &&
                 !(danger != null && danger.Grenade != null && Time.time <= danger.EndTime) &&
                 !TeammateBackpackInspection.HasActiveOrPendingHealWork(bot) &&
                 bot.WeaponManager?.Grenades?.ThrowindNow != true &&

@@ -226,6 +226,8 @@ namespace pitTeam.Modules
         {
             if (IsDisposed) return;
 
+            FollowerQuestingBots.ClearRaid();
+
             if (_bosses.Count > 0)
             {
                 List<string> keys = new List<string>(_bosses.Keys);
@@ -317,11 +319,13 @@ namespace pitTeam.Modules
 
             try
             {
+                FollowerQuestingBots.Pause(bot);
                 _follower.Init();
 
             }
             catch (Exception e)
             {
+                FollowerQuestingBots.Release(bot);
                 Modules.Logger.LogError("Failed to init follower");
                 Modules.Logger.LogError(e);
                 return null;
@@ -997,24 +1001,28 @@ namespace pitTeam.Modules
                 }
             });
 
-            if (_follower != null)
+            try
             {
-                AllegianceScavRelations.OnRemoved(bot);
-                _followers.Remove(_follower);
-                if (bot?.ProfileId != null)
+                if (_follower != null)
                 {
-                    _followersByProfileId.Remove(bot.ProfileId);
-                }
-                if (player.bossGroup != null)
-                {
-                    player.bossGroup.RemoveAlly(bot);
+                    AllegianceScavRelations.OnRemoved(bot);
+                    _followers.Remove(_follower);
+                    if (bot?.ProfileId != null)
+                    {
+                        _followersByProfileId.Remove(bot.ProfileId);
+                    }
+                    if (player.bossGroup != null)
+                    {
+                        player.bossGroup.RemoveAlly(bot);
 
-                }
+                    }
 
-                player.NotifyFollowerCombatLayerReleased(bot, "followerRemoved");
-                player.RemoveFollower(bot);
-                bot.BotFollower.BossToFollow = null;
+                    player.NotifyFollowerCombatLayerReleased(bot, "followerRemoved");
+                    player.RemoveFollower(bot);
+                    bot.BotFollower.BossToFollow = null;
+                }
             }
+            finally { FollowerQuestingBots.Release(bot); }
         }
 
         public BotFollowerPlayer GetFollower(BotOwner bot)

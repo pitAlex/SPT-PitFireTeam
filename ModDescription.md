@@ -426,9 +426,19 @@ Found a friendly PMC or Scav and recruited him during the raid? You can help him
 
 Place your offering in the grid and press **Give Items** when ready. Nothing transfers before you confirm. He compares the offered equipment with his current kit and swaps to useful upgrades: a better weapon he has the magazines and ammunition to use, stronger protection, or a larger backpack that can hold his belongings. Suitable equipment can also fill empty slots, such as a missing headset or helmet.
 
-You can give him a complete kit at once, including a weapon, its magazines, and a vest to carry them. He considers those items together, so the new vest may make the new weapon usable. You can also improve his kit over several handovers: a weapon kept as baggage may become worth equipping when you later provide its missing magazines or ammunition. Items may be loose or directly inside an offered vest or backpack; bags inside other bags are not unpacked for upgrades.
+You can give him a complete kit at once, including a weapon, its magazines, and a vest to carry them. He considers those items together, so the new vest may make the new weapon usable. You can also improve his kit over several handovers: a weapon kept as baggage may become worth equipping when you later provide its missing magazines or ammunition, and a spare vest he carries may become useful when you give him better armor. A larger vest can improve storage without changing his protection, but he still needs room to support his weapon and reload.
 
-Giving an item does not guarantee he will equip it. Replaced equipment and anything he does not use are kept as baggage if there is room, otherwise dropped. **Check the ground after a handover.** See **After the raid** below for what PMCs keep and Scavs return.
+Items may be loose or directly inside an offered vest or backpack. He can also take magazines and ammo from a vest packed directly inside that backpack, even if he keeps his current vest. A full incoming vest can be rearranged to leave reload room; excess items are carried or dropped. Bags inside other bags are not unpacked for upgrades.
+
+**Recommended way to give gear**
+
+- Get both of you behind cover and out of enemy sight, away from an active fight. Let him finish healing or reloading first.
+- For the simplest handover, place each item directly in the donation grid. Keep weapons, magazines, ammunition, and gear separate rather than packing containers inside other containers.
+- Offer a weapon together with compatible magazines and ammunition, plus a suitable vest if he needs one to carry them.
+- Offer a replacement backpack empty. Give any other equipment separately rather than packing it inside the backpack.
+- After pressing **Give Items**, wait for the handover to finish before moving on or issuing another command.
+
+Giving an item does not guarantee he will equip it. Replaced equipment and anything he does not use are kept as baggage if there is room, otherwise dropped. When he upgrades his backpack, he moves his belongings into the new one and drops the emptied old bag. A packed backpack may be rejected even if it is larger: equipment he declines stays inside it and can leave too little room for his current belongings. The handover cannot know whether you meant those packed items as equipment or cargo, so an empty backpack is the clearest way to offer a storage upgrade. **Check the ground after a handover.** See **After the raid** below for what PMCs keep and Scavs return.
 
 ---
 
@@ -715,6 +725,8 @@ Do not rely on restarting to automatically repair missing items or delete duplic
 ### Conflicts with other mods
 
 Mods that change bot AI, spawning, factions, perception, grouping, or inventories can overlap with pitFireTeam. A mod appearing in the compatibility list does not cover every version, preset, or combination.
+
+**Custom spawning mods affect friendly encounters.** These encounters work only with bots spawned alone, not as part of a group. If your spawning mod or preset only spawns groups, there will be no friendly encounters. Make sure its settings allow solo PMC or Scav spawns for the encounters you want.
 
 If faction relationships behave unexpectedly, test with **Faction Hostilities** disabled under **Raid Settings**, especially if another mod also changes faction relationships. This setting repairs relationships; it does not make followers see enemies through obstacles.
 

@@ -223,12 +223,23 @@ public sealed class FriendlyScavCargoService(
             .Concat(request.TransferItems?.Values.SelectMany(x => x) ?? [])
             .Select(i => i.Id.ToString()).ToHashSet(StringComparer.OrdinalIgnoreCase);
         items.RemoveAll(i => alreadyReturned.Contains(i.Id.ToString()));
-        returns.FilterReturnItems(sessionId, items);
-        var ids = items.Select(i => i.Id.ToString()).ToHashSet(StringComparer.OrdinalIgnoreCase);
         string stash = new MongoId().ToString();
+        // The capture omits borrowed protected kit, but ordinary cargo still names
+        // that absent backpack/weapon as its parent. Detach those roots first so
+        // protection cannot spread from an excluded carrier into unrelated cargo.
+        // Actual protected IDs and descendants still present in the report are
+        // checked normally; no ownership/protection state is changed.
+        ReparentCargoRoots(items, stash);
+        returns.FilterReturnItems(sessionId, items);
+        ReparentCargoRoots(items, stash);
+        return items;
+    }
+
+    private static void ReparentCargoRoots(List<SPTarkov.Server.Core.Models.Eft.Common.Tables.Item> items, string stash)
+    {
+        var ids = items.Select(i => i.Id.ToString()).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var item in items)
             if (item.ParentId == null || !ids.Contains(item.ParentId)) { item.ParentId = stash; item.SlotId = "main"; item.Location = null; }
-        return items;
     }
 
     internal sealed record CoopCargoDelivery(MongoId MessageId,

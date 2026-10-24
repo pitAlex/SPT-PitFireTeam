@@ -22,9 +22,19 @@ namespace pitTeam.Patches
 {
     internal partial class OtherPlayerProfileScreenPatch
     {
+        // A repair can be saved server-side even when the live stash cannot be refreshed.
+        // In that case prevent another paid service or staged commit until restart.
+        private static bool RepairStashRefreshRequired;
+
         private static void ShowLoadoutEditorOverlay(OtherPlayerProfileScreen screen, ResultProfile profile)
         {
             CloseLoadoutEditorOverlay();
+            if (RepairStashRefreshRequired)
+            {
+                EFT.Communications.NotificationManager.DisplayWarningNotification(
+                    GetSocialUiText("LiveStashRefreshFailed"), ENotificationDurationType.Default);
+                return;
+            }
 
             if (screen == null || profile == null || ActiveProfileSession?.Profile?.Inventory?.Stash == null)
             {
@@ -322,6 +332,18 @@ namespace pitTeam.Patches
 
             TryBuildLoadoutEditorStashPanel(leftSection, editorProfile, editorInventoryController);
             TryBuildLoadoutEditorFollowerPanel(profile, rightSection, itemUiContext, editorProfile, editorInventoryController);
+
+            // Configure/Show can initialize item-component state (notably weapon attachments).
+            // Player interaction cannot begin until this synchronous build returns, so this is the
+            // first stable baseline for deciding whether the player actually edited the loadout.
+            try
+            {
+                CaptureLoadoutEditorInitialState(editorProfile);
+            }
+            catch (Exception ex)
+            {
+                pitFireTeam.Log.LogWarning($"[UI] Could not capture post-initialization loadout baseline: {ex.Message}");
+            }
         }
 
         private static bool TryCreateLoadoutEditorProfile(ResultProfile profile, out Profile editorProfile, out InventoryController editorInventoryController)
@@ -1000,6 +1022,7 @@ namespace pitTeam.Patches
 
             try
             {
+                EnsureRepairStashRefreshReady();
                 JsonType.FlatItem[] serializedEquipment = Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(
                     new Item[] { CreateSanitizedLoadoutEditorSaveEquipment() });
                 if (serializedEquipment == null || serializedEquipment.Length == 0)
@@ -1089,6 +1112,12 @@ namespace pitTeam.Patches
                 savedStashItems);
         }
 
+        private static void EnsureRepairStashRefreshReady()
+        {
+            if (RepairStashRefreshRequired)
+                throw CreateLiveStashRefreshException("A previous teammate repair stash refresh failed; restart the game before further loadout changes.");
+        }
+
         internal static void ApplyServerSavedPlayerStash(
             Profile activeProfile,
             InventoryController activeInventoryController,
@@ -1155,16 +1184,17 @@ namespace pitTeam.Patches
             ApplyServerSavedPlayerStashSnapshot(activeProfile, activeInventoryController, savedStashItems);
         }
 
-        // Server inventory arrays can put nested items before their stash root. The delta builder
-        // and snapshot/editor paths require root-first order, as produced by EFT.TreeToFlatItems.
+        // Server inventory arrays can put descendants before their parent. EFT's item factory
+        // expects a tree-ordered snapshot, as produced by TreeToFlatItems.
         private static JsonType.FlatItem[] NormalizePlayerStashSnapshot(JsonType.FlatItem[] items, string stashRootId)
         {
-            int rootIndex = Array.FindIndex(items, item => item != null
-                && string.Equals(item._id.ToString(), stashRootId, StringComparison.OrdinalIgnoreCase));
-            if (rootIndex < 0)
+            Dictionary<string, JsonType.FlatItem> byId = ToFlatItemDictionary(items);
+            if (!byId.ContainsKey(stashRootId) || byId.Count != items.Length)
                 throw CreateLiveStashRefreshException("Server-saved player stash did not contain the active stash root.");
-            if (rootIndex == 0) return items;
-            return new[] { items[rootIndex] }.Concat(items.Where((item, index) => index != rootIndex)).ToArray();
+            List<JsonType.FlatItem> ordered = ExpandFlatItemRoots(new[] { stashRootId }, byId);
+            if (ordered.Count != items.Length)
+                throw CreateLiveStashRefreshException("Server-saved player stash contained items outside the active stash tree.");
+            return ordered.ToArray();
         }
 
         private static void ApplyServerSavedPlayerStashSnapshot(
@@ -1175,6 +1205,8 @@ namespace pitTeam.Patches
             EFT.ItemFactory.FlatItemsToResultTree tree = Singleton<EFT.ItemFactory>.Instance.FlatItemsToTree(savedStashItems, false, null);
             if (tree.DeserializationErrors != null && tree.DeserializationErrors.Count > 0)
             {
+                foreach (var error in tree.DeserializationErrors)
+                    pitFireTeam.Log.LogWarning($"[UI] Server-saved stash item deserialization detail: {error}");
                 throw CreateLiveStashRefreshException(
                     $"Server-saved player stash contained {tree.DeserializationErrors.Count} deserialization error(s).");
             }
@@ -1283,7 +1315,7 @@ namespace pitTeam.Patches
             SetLoadoutEditorBusy(true);
             try
             {
-                IResult prepareResult = await PrepareLoadoutEditorRepairTargetAsync(itemToRepair.Id);
+                IResult prepareResult = await PrepareLoadoutEditorRepairTargetAsync(itemToRepair.Id, repairKitsInfo);
                 if (prepareResult.Failed)
                 {
                     return prepareResult;
@@ -1312,12 +1344,13 @@ namespace pitTeam.Patches
                 }
 
                 ApplyLoadoutEditorRepairResult(itemToRepair, data);
-                ApplyServerRepairPlayerStashChanges(data);
+                ApplyServerRepairPlayerStashChanges(data, repairKitsInfo);
                 ApplyServerRepairLoadoutEditorStashChanges(data);
-                CaptureLoadoutEditorInitialState(LoadoutEditorProfile);
                 SyncLoadoutEditorRepairKitsFromActiveProfile(repairKitsInfo);
+                // Kit resource synchronization can change the staged stash after its delta is applied.
+                // Capture the final state so the next repair does not re-commit unchanged equipment.
+                CaptureLoadoutEditorInitialState(LoadoutEditorProfile);
                 MarkSquadRosterDirty(ViewedProfile.AccountId);
-                Modules.Logger.LogInfo($"[UI] Repaired teammate loadout item '{itemToRepair.Id}' through teammate repair route.");
                 return SuccessfulResult.New;
             }
             catch (Exception ex)
@@ -1342,6 +1375,7 @@ namespace pitTeam.Patches
             SetLoadoutEditorBusy(true);
             try
             {
+                EnsureRepairStashRefreshReady();
                 IResult prepareResult = await PrepareLoadoutEditorRepairTargetAsync(itemToRepair.Id);
                 if (prepareResult.Failed)
                 {
@@ -1376,7 +1410,6 @@ namespace pitTeam.Patches
                 ApplyServerRepairLoadoutEditorStashChanges(data);
                 CaptureLoadoutEditorInitialState(LoadoutEditorProfile);
                 MarkSquadRosterDirty(ViewedProfile.AccountId);
-                Modules.Logger.LogInfo($"[UI] Repaired teammate loadout item '{itemToRepair.Id}' through teammate trader repair route.");
                 return SuccessfulResult.New;
             }
             catch (Exception ex)
@@ -1391,8 +1424,10 @@ namespace pitTeam.Patches
             }
         }
 
-        private static async Task<IResult> PrepareLoadoutEditorRepairTargetAsync(string targetItemId)
+        private static async Task<IResult> PrepareLoadoutEditorRepairTargetAsync(string targetItemId, RepairItem[] repairKitsInfo = null)
         {
+            if (RepairStashRefreshRequired)
+                return new FailedResult(GetSocialUiText("LiveStashRefreshFailed"), 0);
             if (InsurancePurchaseBusy || InsuranceRefreshRequiredForAid != null)
                 return new FailedResult(GetSocialUiText("FollowerInsuranceRefreshRequired"), 0);
             if (!TryGetLoadoutEditorEquipmentItem(targetItemId, out Item itemToRepair)
@@ -1401,12 +1436,12 @@ namespace pitTeam.Patches
                 return new FailedResult("This teammate loadout item must remain on teammate equipment to be repaired", 0);
             }
 
-            if (!ShouldCommitLoadoutEditorBeforeRepair(itemToRepair))
+            if (!ShouldCommitLoadoutEditorBeforeRepair(itemToRepair, repairKitsInfo))
             {
                 return SuccessfulResult.New;
             }
 
-            IResult commitResult = await CommitLoadoutEditorStateBeforeServiceAsync(ViewedProfile);
+            IResult commitResult = await CommitLoadoutEditorStateBeforeServiceAsync(ViewedProfile, repairKitsInfo);
             if (commitResult.Failed)
             {
                 return commitResult;
@@ -1422,13 +1457,13 @@ namespace pitTeam.Patches
             return SuccessfulResult.New;
         }
 
-        private static bool ShouldCommitLoadoutEditorBeforeRepair(Item item)
+        private static bool ShouldCommitLoadoutEditorBeforeRepair(Item item, RepairItem[] repairKitsInfo)
         {
-            return !IsLoadoutEditorEquipmentItemSavedToTeammateProfile(item)
-                || HasPendingLoadoutEditorRealChanges();
+            bool targetSaved = IsLoadoutEditorEquipmentItemSavedToTeammateProfile(item);
+            return !targetSaved || HasPendingLoadoutEditorRealChanges(repairKitsInfo);
         }
 
-        private static async Task<IResult> CommitLoadoutEditorStateBeforeServiceAsync(ResultProfile profile)
+        private static async Task<IResult> CommitLoadoutEditorStateBeforeServiceAsync(ResultProfile profile, RepairItem[] repairKitsInfo = null)
         {
             if (profile == null || LoadoutEditorProfile?.Inventory?.Equipment == null)
             {
@@ -1437,6 +1472,7 @@ namespace pitTeam.Patches
 
             try
             {
+                EnsureRepairStashRefreshReady();
                 JsonType.FlatItem[] serializedEquipment = Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(
                     new Item[] { CreateSanitizedLoadoutEditorSaveEquipment() });
                 if (serializedEquipment == null || serializedEquipment.Length == 0)
@@ -1445,6 +1481,7 @@ namespace pitTeam.Patches
                 }
 
                 JsonType.FlatItem[] serializedPlayerStash = CreateLoadoutEditorSaveStashItems();
+                RestoreNativeRepairKitReservationForCommit(serializedPlayerStash, repairKitsInfo);
 
                 Modules.Logger.LogInfo("[UI] Saving pending teammate loadout editor changes before a paid service.");
                 string responseJson = await Task.Run(() => RequestHandler.PostJson(
@@ -1508,6 +1545,7 @@ namespace pitTeam.Patches
             }
 
             // Compatibility fallback for older servers that only returned item-granular changes.
+            EnsureRepairStashRefreshReady();
             if (TryApplyPlayerStashDelta(
                     response?.playerNewStashItems,
                     response?.playerChangedStashItems,
@@ -1521,23 +1559,102 @@ namespace pitTeam.Patches
             return false;
         }
 
-        private static void ApplyServerRepairPlayerStashChanges(FriendlyTeammateRepairEquipmentResponse response)
+        private static void ApplyServerRepairPlayerStashChanges(
+            FriendlyTeammateRepairEquipmentResponse response, RepairItem[] repairKitsInfo = null)
         {
-            if (response?.playerStashItems != null && response.playerStashItems.Length > 0)
-            {
-                ApplyServerSavedPlayerStash(response.playerStashItems);
+            if (repairKitsInfo != null && TryApplyRepairKitResourceInPlace(response, repairKitsInfo))
                 return;
-            }
 
-            // Compatibility fallback for older servers that only returned item-granular changes.
+            // The repair response contains the exact saved player-item changes. Apply those
+            // before considering a full stash rebuild, which can encounter unrelated modded
+            // items that the live EFT item factory cannot deserialize.
             if (TryApplyPlayerStashDelta(
                     response?.playerNewStashItems,
                     response?.playerChangedStashItems,
                     response?.playerDeletedStashItemIds,
                     "teammate repair"))
-            {
                 return;
+
+            try
+            {
+                if (response?.playerStashItems == null || response.playerStashItems.Length == 0)
+                    throw CreateLiveStashRefreshException("Teammate repair returned no usable player stash change response.");
+                ApplyServerSavedPlayerStash(response.playerStashItems);
             }
+            catch
+            {
+                // The repair already committed server-side. Never permit another paid service
+                // or staged save against a client stash that could not be refreshed.
+                RepairStashRefreshRequired = true;
+                throw;
+            }
+        }
+
+        private static bool TryApplyRepairKitResourceInPlace(
+            FriendlyTeammateRepairEquipmentResponse response, RepairItem[] repairKitsInfo)
+        {
+            if (response?.playerChangedStashItems == null || response.playerChangedStashItems.Length == 0
+                || response.playerNewStashItems?.Length > 0 || response.playerDeletedStashItemIds?.Length > 0
+                || ActiveProfileSession?.Profile?.Inventory?.Stash == null)
+            {
+                return false;
+            }
+
+            var activeProfile = ActiveProfileSession.Profile;
+            var updates = new List<(EFT.InventoryLogic.RepairKit Kit, float Before, float After, JsonType.FlatItem Saved)>();
+            var seenIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var selectedIds = new HashSet<string>(repairKitsInfo.Where(kit => kit != null).Select(kit => kit.Id), StringComparer.OrdinalIgnoreCase);
+            foreach (JsonType.FlatItem changedItem in response.playerChangedStashItems)
+            {
+                string itemId = changedItem?._id.ToString();
+                if (string.IsNullOrWhiteSpace(itemId) || !selectedIds.Contains(itemId) || !seenIds.Add(itemId)
+                    || !(changedItem.upd?.JToken?["RepairKit"]?["Resource"] is Newtonsoft.Json.Linq.JToken resourceToken)
+                    || (resourceToken.Type != Newtonsoft.Json.Linq.JTokenType.Float
+                        && resourceToken.Type != Newtonsoft.Json.Linq.JTokenType.Integer))
+                {
+                    return false;
+                }
+
+                float savedResource = resourceToken.ToObject<float>();
+                EFT.InventoryLogic.RepairKit kit = activeProfile.Inventory.GetPlayerItems()
+                    .OfType<EFT.InventoryLogic.RepairKit>()
+                    .FirstOrDefault(item => string.Equals(item.Id, itemId, StringComparison.OrdinalIgnoreCase));
+                if (kit?.RepairKitComponent == null || float.IsNaN(savedResource)
+                    || float.IsInfinity(savedResource) || savedResource < 0f)
+                {
+                    return false;
+                }
+
+                updates.Add((kit, kit.RepairKitComponent.Resource, savedResource, changedItem));
+            }
+
+            try
+            {
+                foreach (var update in updates)
+                    update.Kit.RepairKitComponent.Resource = update.After;
+
+                foreach (var update in updates)
+                {
+                    JsonType.FlatItem live = Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(
+                        new Item[] { update.Kit }).FirstOrDefault(item => item?._id.ToString() == update.Kit.Id);
+                    if (live == null || !JsonTokenEquals(live.upd, update.Saved.upd))
+                        throw new InvalidOperationException($"Repair kit '{update.Kit.Id}' has additional saved changes; use the item delta.");
+                }
+                foreach (var update in updates)
+                {
+                    update.Kit.UpdateAttributes();
+                    update.Kit.RaiseRefreshEvent(true, true);
+                }
+                return true;
+            }
+            catch
+            {
+                // A saved kit can have additional changes; the item delta is authoritative.
+            }
+
+            foreach (var update in updates)
+                update.Kit.RepairKitComponent.Resource = update.Before;
+            return false;
         }
 
         private static bool TryApplyPlayerStashDelta(
@@ -1585,7 +1702,6 @@ namespace pitTeam.Patches
                     }
                 });
 
-                Modules.Logger.LogInfo($"[UI] Applied {reason} player stash delta: new={newItems.Length}, change={changedItems.Length}, del={deletedItems.Length}.");
                 return true;
             }
             catch (Exception ex)
@@ -2082,7 +2198,8 @@ namespace pitTeam.Patches
             return Newtonsoft.Json.Linq.JToken.DeepEquals(leftToken, rightToken);
         }
 
-        private static bool PlayerStashMatchesSavedSnapshot(Profile activeProfile, JsonType.FlatItem[] savedStashItems)
+        private static bool PlayerStashMatchesSavedSnapshot(
+            Profile activeProfile, JsonType.FlatItem[] savedStashItems, HashSet<string> kitUpdExceptions = null)
         {
             if (activeProfile?.Inventory?.Stash == null || savedStashItems == null || savedStashItems.Length == 0)
             {
@@ -2107,7 +2224,8 @@ namespace pitTeam.Patches
             {
                 if (!liveById.TryGetValue(savedEntry.Key, out JsonType.FlatItem liveItem)
                     || PlacementChanged(liveItem, savedEntry.Value)
-                    || !JsonTokenEquals(liveItem.upd, savedEntry.Value.upd))
+                    || (kitUpdExceptions?.Contains(savedEntry.Key) != true
+                        && !JsonTokenEquals(liveItem.upd, savedEntry.Value.upd)))
                 {
                     return false;
                 }
@@ -2187,7 +2305,7 @@ namespace pitTeam.Patches
                 || !FlatItemArraysEqual(LoadoutEditorInitialStashItems, currentStash);
         }
 
-        private static bool HasPendingLoadoutEditorRealChanges()
+        private static bool HasPendingLoadoutEditorRealChanges(RepairItem[] repairKitsInfo = null)
         {
             try
             {
@@ -2200,13 +2318,150 @@ namespace pitTeam.Patches
 
                 JsonType.FlatItem[] currentEquipment = Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(new Item[] { equipment });
                 JsonType.FlatItem[] currentStash = Singleton<EFT.ItemFactory>.Instance.TreeToFlatItems(new Item[] { stash });
-                return HasLoadoutEditorRealChanges(currentEquipment, currentStash);
+                bool equipmentChanged = !FlatItemArraysEqual(LoadoutEditorInitialEquipmentItems, currentEquipment);
+                bool stashChanged = !FlatItemArraysEqual(LoadoutEditorInitialStashItems, currentStash);
+                if (stashChanged && TryMatchNativeRepairKitReservation(
+                        LoadoutEditorInitialStashItems, currentStash, repairKitsInfo))
+                {
+                    stashChanged = false;
+                }
+                return equipmentChanged || stashChanged;
             }
             catch (Exception ex)
             {
                 pitFireTeam.Log.LogWarning($"[UI] Unable to compare loadout editor state before repair: {ex.Message}");
                 return true;
             }
+        }
+
+        private static bool TryMatchNativeRepairKitReservation(
+            JsonType.FlatItem[] baseline,
+            JsonType.FlatItem[] current,
+            RepairItem[] repairKitsInfo)
+        {
+            if (baseline == null || current == null || baseline.Length != current.Length
+                || !TryGetNativeRepairKitReservation(
+                    baseline, current, repairKitsInfo, out string kitId, out _, out _))
+                return false;
+
+            Dictionary<string, JsonType.FlatItem> before = ToFlatItemDictionary(baseline);
+            Dictionary<string, JsonType.FlatItem> after = ToFlatItemDictionary(current);
+            if (before.Count != baseline.Length || after.Count != current.Length || before.Count != after.Count)
+                return false;
+
+            bool foundReservation = false;
+            foreach (KeyValuePair<string, JsonType.FlatItem> entry in before)
+            {
+                if (!after.TryGetValue(entry.Key, out JsonType.FlatItem currentItem))
+                    return false;
+                if (FlatItemStateEquals(entry.Value, currentItem))
+                    continue;
+                if (foundReservation || !string.Equals(entry.Key, kitId, StringComparison.OrdinalIgnoreCase))
+                    return false;
+
+                foundReservation = true;
+            }
+
+            return foundReservation;
+        }
+
+        private static bool TryGetNativeRepairKitReservation(
+            JsonType.FlatItem[] baseline,
+            JsonType.FlatItem[] current,
+            RepairItem[] repairKitsInfo,
+            out string kitId,
+            out JsonType.FlatItem baselineKit,
+            out string resourceChange)
+        {
+            kitId = null;
+            baselineKit = null;
+            resourceChange = null;
+            if (baseline == null || current == null || repairKitsInfo == null || repairKitsInfo.Length == 0)
+                return false;
+
+            // RepairKitsCollection.RepairItems subtracts only the final selected kit before calling
+            // RepairController.RepairItemsByRepairKit. The server must charge the saved player kit once.
+            RepairItem finalKit = repairKitsInfo[repairKitsInfo.Length - 1];
+            if (finalKit == null || string.IsNullOrWhiteSpace(finalKit.Id)
+                || finalKit.Count <= 0f || float.IsNaN(finalKit.Count) || float.IsInfinity(finalKit.Count))
+                return false;
+
+            baselineKit = baseline.FirstOrDefault(item => item?._id != null
+                && string.Equals(item._id.ToString(), finalKit.Id, StringComparison.OrdinalIgnoreCase));
+            JsonType.FlatItem currentKit = current.FirstOrDefault(item => item?._id != null
+                && string.Equals(item._id.ToString(), finalKit.Id, StringComparison.OrdinalIgnoreCase));
+            if (!TryMatchRepairKitResourceChange(baselineKit, currentKit, finalKit.Count, out resourceChange))
+                return false;
+
+            kitId = finalKit.Id;
+            return true;
+        }
+
+        private static void RestoreNativeRepairKitReservationForCommit(
+            JsonType.FlatItem[] serializedStash,
+            RepairItem[] repairKitsInfo)
+        {
+            if (!TryGetNativeRepairKitReservation(
+                    LoadoutEditorInitialStashItems, serializedStash, repairKitsInfo,
+                    out string kitId, out JsonType.FlatItem baselineKit, out string resourceChange))
+                return;
+
+            for (int index = 0; index < serializedStash.Length; index++)
+            {
+                JsonType.FlatItem item = serializedStash[index];
+                if (item?._id == null || !string.Equals(item._id.ToString(), kitId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var correctedUpd = (Newtonsoft.Json.Linq.JObject)item.upd.JToken.DeepClone();
+                ((Newtonsoft.Json.Linq.JObject)correctedUpd["RepairKit"])["Resource"] =
+                    baselineKit.upd.JToken["RepairKit"]["Resource"].DeepClone();
+                item.upd = new UnparsedData { JToken = correctedUpd };
+                serializedStash[index] = item;
+                Modules.Logger.LogInfo($"[UI] Excluded native pre-request kit reservation from loadout commit: kit='{kitId}' {resourceChange}.");
+                return;
+            }
+        }
+
+        private static bool TryMatchRepairKitResourceChange(
+            JsonType.FlatItem baseline,
+            JsonType.FlatItem current,
+            float requestedAmount,
+            out string resourceChange)
+        {
+            resourceChange = null;
+            if (baseline == null || current == null
+                || !string.Equals(baseline._tpl.ToString(), current._tpl.ToString(), StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(GetParentId(baseline), GetParentId(current), StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(baseline.slotId, current.slotId, StringComparison.Ordinal)
+                || !JsonTokenEquals(baseline.location, current.location)
+                || !(baseline.upd?.JToken is Newtonsoft.Json.Linq.JObject beforeUpd)
+                || !(current.upd?.JToken is Newtonsoft.Json.Linq.JObject afterUpd)
+                || !(beforeUpd["RepairKit"] is Newtonsoft.Json.Linq.JObject beforeKit)
+                || !(afterUpd["RepairKit"] is Newtonsoft.Json.Linq.JObject afterKit)
+                || (beforeKit["Resource"]?.Type != Newtonsoft.Json.Linq.JTokenType.Float
+                    && beforeKit["Resource"]?.Type != Newtonsoft.Json.Linq.JTokenType.Integer)
+                || (afterKit["Resource"]?.Type != Newtonsoft.Json.Linq.JTokenType.Float
+                    && afterKit["Resource"]?.Type != Newtonsoft.Json.Linq.JTokenType.Integer))
+                return false;
+
+            float beforeResource = beforeKit["Resource"].ToObject<float>();
+            float afterResource = afterKit["Resource"].ToObject<float>();
+            float expectedResource = beforeResource - requestedAmount;
+            float tolerance = Math.Max(0.0001f, Math.Abs(expectedResource) * 0.000001f);
+            if (float.IsNaN(beforeResource) || float.IsInfinity(beforeResource)
+                || float.IsNaN(afterResource) || float.IsInfinity(afterResource)
+                || float.IsNaN(expectedResource) || float.IsInfinity(expectedResource)
+                || expectedResource < -tolerance
+                || Math.Abs(afterResource - expectedResource) > tolerance)
+                return false;
+
+            var normalizedAfter = (Newtonsoft.Json.Linq.JObject)afterUpd.DeepClone();
+            ((Newtonsoft.Json.Linq.JObject)normalizedAfter["RepairKit"])["Resource"] = beforeKit["Resource"].DeepClone();
+            if (!Newtonsoft.Json.Linq.JToken.DeepEquals(beforeUpd, normalizedAfter))
+                return false;
+
+            resourceChange = $"resource={beforeResource}->{afterResource} requested={requestedAmount}";
+            return true;
         }
 
         private static bool FlatItemArraysEqual(JsonType.FlatItem[] left, JsonType.FlatItem[] right)

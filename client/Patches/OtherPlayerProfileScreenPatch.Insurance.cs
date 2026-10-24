@@ -41,6 +41,7 @@ namespace pitTeam.Patches
             IResult result;
             try
             {
+                EnsureRepairStashRefreshReady();
                 var selected = items.Where(item => item?.Item != null && insurance.ItemTypeAvailableForInsurance(item)
                     && !insurance.Insured(item.Id)).ToList();
                 if (profile == null || !pitFireTeam.IsFollowerLoadoutLootableMode() || selected.Count == 0

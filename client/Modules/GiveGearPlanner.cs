@@ -30,11 +30,26 @@ namespace pitTeam.Modules
         private readonly Item[] _roots;
         private readonly Item[] _offered;
         private readonly Item[] _supplies;
+        private readonly Vest[] _vests;
         private readonly Weapon[] _weapons;
         internal readonly HashSet<string> OfferedWeaponIds;
         private readonly HashSet<string> _playerOwned;
         private readonly BotOwner _bot;
         private readonly HashSet<Item> _temporarySecureItems = new HashSet<Item>();
+#if DEBUG
+        internal Action<string> Diagnostic;
+#endif
+
+        [System.Diagnostics.Conditional("DEBUG")]
+        private void Diagnose(Func<string> message)
+        {
+#if DEBUG
+            // Diagnostics must never affect selection, rollback or ownership.
+            if (Diagnostic == null) return;
+            try { Diagnostic(message()); } catch { }
+#endif
+        }
+        private static string ItemLabel(Item item) => item == null ? "none" : item.GetType().Name + ":" + item.Id;
 
         internal GiveGearPlanner(InventoryController controller, SearchableItem offer, SearchableItem overflow,
             BotOwner bot, Action<GearSwapEdit> record, IEnumerable<string> playerOwned = null)
@@ -44,17 +59,23 @@ namespace pitTeam.Modules
             _bot = bot;
             _roots = offer.Grids.SelectMany(g => g.Items).ToArray();
             // Snapshot the original offering depth before planning moves any container.
-            // Every category may use immediate grid contents, never a second container's contents.
+            // General equipment may use immediate grid contents. Only eligible vests have
+            // an extra operational-supply scan; never discover candidates after moving a bag.
             _offered = _roots.Concat(_roots.OfType<SearchableItem>()
                 .SelectMany(i => i.Grids).SelectMany(g => g.Items)).Distinct().ToArray();
             _playerOwned = new HashSet<string>(playerOwned ?? _roots.SelectMany(TeammateGearSwap.Tree).Select(i => (string)i.Id));
             OfferedWeaponIds = new HashSet<string>(_offered.OfType<Weapon>().Select(w => (string)w.Id));
-            _supplies = _offered.Concat(CarriedSupplies()).Where(i => i is Magazine || i is Ammo).Distinct().ToArray();
+            _vests = _offered.Concat(new[] { EquipmentSlot.TacticalVest, EquipmentSlot.Pockets, EquipmentSlot.Backpack }
+                .Select(Equipped).SelectMany(GridContents)).OfType<Vest>().Distinct().ToArray();
+            _supplies = _offered.Concat(CarriedSupplies()).Concat(_vests.SelectMany(GridContents))
+                .Where(i => i is Magazine || i is Ammo).Distinct().ToArray();
             var previous = bot == null ? Enumerable.Empty<Weapon>() : GiveGearHistory.CarriedWeapons(bot, _kit);
             _weapons = _offered.OfType<Weapon>().Concat(previous).Distinct().Where(FunctionalWeapon).ToArray();
         }
 
         private Item Equipped(EquipmentSlot slot) => _kit.GetSlot(slot)?.ContainedItem;
+        private static IEnumerable<Item> GridContents(Item item) => item is SearchableItem container ?
+            container.Grids.SelectMany(grid => grid.Items) : Enumerable.Empty<Item>();
         private IEnumerable<Item> CarriedSupplies() => new[] { EquipmentSlot.TacticalVest, EquipmentSlot.Pockets,
             EquipmentSlot.Backpack, EquipmentSlot.SecuredContainer }.Select(Equipped).OfType<SearchableItem>()
             .SelectMany(i => i.Grids).SelectMany(g => g.Items);
@@ -69,13 +90,18 @@ namespace pitTeam.Modules
                 var primary = Equipped(EquipmentSlot.FirstPrimaryWeapon) as Weapon;
                 var originalSupport = SupportSlots.ToDictionary(slot => slot, slot => Equipped(slot) as Weapon);
                 bool currentPrimarySupported = ProjectedReady(primary);
+                Diagnose(() => $"phase=plan category=primary current={ItemLabel(primary)} ready={currentPrimarySupported} candidates={string.Join(",", _weapons.Select(ItemLabel))}");
                 bool checkedCurrentResupply = currentPrimarySupported;
                 foreach (Weapon candidate in _weapons.OrderByDescending(WeaponScore).ThenBy(w => (string)w.Id, StringComparer.Ordinal))
                 {
                     if (candidate == primary) continue;
                     if (!CanUseSlot(EquipmentSlot.FirstPrimaryWeapon, candidate))
+                    {
+                        Diagnose(() => $"phase=plan category=primary candidate={ItemLabel(candidate)} rejected=slotFilter");
                         continue;
+                    }
                     float candidateScore = WeaponScore(candidate), currentScore = WeaponScore(primary);
+                    Diagnose(() => $"phase=plan category=primary candidate={ItemLabel(candidate)} score={candidateScore} current={ItemLabel(primary)} currentScore={currentScore} required={currentScore * 1.10f + 1f}");
                     if (primary != null && candidateScore <= currentScore * 1.10f + 1f)
                     {
                         if (!checkedCurrentResupply)
@@ -89,13 +115,16 @@ namespace pitTeam.Modules
                             candidateScore = WeaponScore(candidate);
                         }
                         if (currentPrimarySupported && candidateScore <= currentScore * 1.10f + 1f)
+                        {
+                            Diagnose(() => $"phase=plan category=primary candidate={ItemLabel(candidate)} rejected=notBetter currentReady={currentPrimarySupported}");
                             continue;
+                        }
                     }
                     if (Try(() =>
                     {
                         Stow(primary); DeferSupportWeapons();
                         Equip(candidate, EquipmentSlot.FirstPrimaryWeapon); Support(candidate, true);
-                    })) break;
+                    }, "primary.currentOutfit")) break;
                     // Three bounded arrangements, not a cross-product outfit search.
                     if (TryOutfit(candidate, armoredRig: false) || TryOutfit(candidate, armoredRig: true)) break;
                 }
@@ -106,38 +135,72 @@ namespace pitTeam.Modules
                     foreach (var vest in _offered.OfType<Vest>().OrderByDescending(Capacity).ThenBy(v => (string)v.Id))
                         if (Try(() => { Equip(vest, EquipmentSlot.TacticalVest); RequireReloadSpace(); })) break;
                 UpgradeHelmet();
-                UpgradeBackpack();
                 foreach (EquipmentSlot slot in new[] { EquipmentSlot.Earpiece, EquipmentSlot.FaceCover, EquipmentSlot.Eyewear })
+                {
                     if (Equipped(slot) == null)
+                    {
                         foreach (Item item in _offered.Where(i => !IsEquipped(i) && CanUseSlot(slot, i)))
                             if (TryEquipEmptyAccessory(item, slot)) break;
+                    }
+                    else Diagnose(() => $"phase=plan category=accessory slot={slot} current={ItemLabel(Equipped(slot))} policy=emptySlotOnly");
+                }
 
                 // Existing primary/support readiness and shared reload-reserve policy own usability.
-                var supportCandidates = _weapons.Concat(_overflow.Grids.SelectMany(g => g.Items).OfType<Weapon>())
-                    .Concat(_temporarySecureItems.OfType<Weapon>())
-                    .Distinct().OrderByDescending(WeaponScore).ThenBy(w => (string)w.Id, StringComparer.Ordinal).ToArray();
+                // Staging a full vest must not turn a deeper packed weapon into an eligible
+                // acquisition. Only the original equipped guns and snapshotted candidates count.
+                var supportCandidates = _weapons.Concat(originalSupport.Values).Concat(new[] { primary })
+                    .OfType<Weapon>().Where(FunctionalWeapon).Distinct().OrderByDescending(WeaponScore).ThenBy(w => (string)w.Id, StringComparer.Ordinal).ToArray();
                 var finalPrimary = Equipped(EquipmentSlot.FirstPrimaryWeapon) as Weapon;
                 // A later supply-only handover still supports the retained primary before cargo.
                 if (finalPrimary != null) Try(() => Support(finalPrimary, true));
                 bool preservePrimaryReadiness = ProjectedReady(finalPrimary);
                 foreach (var slot in SupportSlots)
-                    if (Equipped(slot) == null)
-                        foreach (Weapon candidate in new[] { originalSupport[slot] }.Concat(supportCandidates)
-                            .Where(w => w != null && !IsEquipped(w)).Distinct())
-                            if (Try(() =>
-                            {
-                                Equip(candidate, slot); Support(candidate, false);
-                                if (preservePrimaryReadiness && !ProjectedReady(finalPrimary))
-                                    throw new InvalidOperationException("Optional support consumed required primary supplies.");
-                            })) break;
+                {
+                    if (Equipped(slot) is Weapon retained)
+                    {
+                        // A later supply-only gift must service a weapon already in this slot,
+                        // even when it is not a primary upgrade. Failed support leaves it intact.
+                        Try(() => SupportSecondary(retained, finalPrimary, preservePrimaryReadiness));
+                        continue;
+                    }
+                    foreach (Weapon candidate in new[] { originalSupport[slot] }.Concat(supportCandidates)
+                        .Where(w => w != null && !IsEquipped(w)).Distinct())
+                        if (Try(() =>
+                        {
+                            Equip(candidate, slot);
+                            SupportSecondary(candidate, finalPrimary, preservePrimaryReadiness);
+                        })) break;
+                }
 
+                // The second shoulder can carry a complete but unsupported gun. Its physical
+                // slot still receives a native BotWeaponInfo during committed reconciliation;
+                // storing it is not permission to select it or fabricate supplies.
+                if (Equipped(EquipmentSlot.SecondPrimaryWeapon) == null)
+                    foreach (Weapon candidate in new[] { originalSupport[EquipmentSlot.SecondPrimaryWeapon] }.Concat(supportCandidates)
+                        .Where(w => FunctionalWeapon(w) && !IsEquipped(w)).Distinct())
+                        if (Try(() =>
+                        {
+                            Equip(candidate, EquipmentSlot.SecondPrimaryWeapon);
+                            if (!GestureCommandAction.CanFitGearSwapReloadReserves(_kit) && candidate.GetCurrentMagazine() != null)
+                                Stow(candidate.GetCurrentMagazine());
+                            RequireReloadSpace();
+                            PreservePrimarySupport(finalPrimary, preservePrimaryReadiness);
+                        })) break;
+
+                // Decide equipment first: used items leave an offered bag, while unused
+                // contents still consume its storage during the migration trial.
+                Item replacedBackpack = UpgradeBackpack();
                 // Preserve the operational landing opening while adding ordinary cargo.
                 foreach (Item item in _roots.Concat(_overflow.Grids.SelectMany(g => g.Items).ToArray()).Concat(_temporarySecureItems).Distinct().ToArray())
                 {
+                    if (ReferenceEquals(item, replacedBackpack)) continue;
                     bool temporary = _temporarySecureItems.Contains(item) && ReferenceEquals(item.CurrentAddress?.Container.ParentItem, Equipped(EquipmentSlot.SecuredContainer));
                     if (InKit(item) && !temporary) continue;
-                    if (!Try(() => Carry(item)))
+                    if (!Try(() => Carry(item), "cargo." + ItemLabel(item)))
+                    {
                         MoveToGrids(item, _overflow.Grids);
+                        Diagnose(() => $"phase=plan category=disposition item={ItemLabel(item)} destination=dropEscrow");
+                    }
                 }
                 // No offering may survive in the temporary UI container after submission.
                 foreach (Item item in _offer.Grids.SelectMany(g => g.Items).ToArray()) Stow(item);
@@ -152,54 +215,66 @@ namespace pitTeam.Modules
             BodyArmorProtection oldProtection = EvaluateBodyProtection(oldArmor, oldRig);
             Item armor = armoredRig ? null : _offered.Where(i => !IsEquipped(i) && CanUseSlot(EquipmentSlot.ArmorVest, i))
                 .OrderByDescending(i => EvaluateBodyProtection(i).Score).ThenBy(i => (string)i.Id).FirstOrDefault();
-            Item rig = _offered.OfType<Vest>().Where(i => !IsEquipped(i) && (Protection(i) > 0) == armoredRig)
-                .OrderByDescending(i => armoredRig ? EvaluateBodyProtection(i).Score : Capacity(i)).ThenBy(i => (string)i.Id).FirstOrDefault();
-            if (armoredRig && rig == null) return false;
             if (!armoredRig && (armor == null || EvaluateBodyProtection(armor).Score < EvaluateBodyProtection(oldArmor).Score)) armor = oldArmor;
-            if (!armoredRig && armor == null && rig == null) return false;
-            BodyArmorProtection newProtection = armoredRig ? EvaluateBodyProtection(rig) : EvaluateBodyProtection(armor, rig ?? oldRig);
-            if (candidate != null ? newProtection.Score < oldProtection.Score : newProtection.Score <= oldProtection.Score &&
-                (oldArmor != null || oldRig != null || newProtection.Score > 0))
-                return false;
+            var rigs = _vests.Where(i => !IsEquipped(i) && (Protection(i) > 0) == armoredRig)
+                .OrderByDescending(i => armoredRig ? EvaluateBodyProtection(i).Score : Capacity(i))
+                .ThenBy(i => (string)i.Id).Cast<Item>().ToList();
+            // Try vests in a stable order with one best armor choice, not a cross-product.
+            // Retaining the current rig is also a valid separate-armor arrangement.
+            if (!armoredRig) rigs.Add(null);
             var previousPrimary = Equipped(EquipmentSlot.FirstPrimaryWeapon) as Weapon;
             var previousReadiness = previousPrimary == null ? null : FollowerWeaponPrimaryReadiness.EvaluateActual(_controller, previousPrimary);
             bool wasUsable = previousReadiness?.InsertedRounds > 0 || ProjectedReady(previousPrimary);
-            return Try(() =>
+            foreach (Item rig in rigs)
             {
-                // Only this trial defers optional support. A rejected outfit/primary restores it.
-                if (candidate != null || wasUsable) DeferSupportWeapons();
-                // Migrate existing loose contents; do not silently throw the bot's supplies with a shell.
-                var contents = oldRig is SearchableItem old ? old.Grids.SelectMany(g => g.Items).ToArray() : new Item[0];
-                Stow(oldArmor); Stow(oldRig);
-                if (armoredRig) Equip(rig, EquipmentSlot.TacticalVest);
-                else
+                if (!armoredRig && armor == null && rig == null) continue;
+                BodyArmorProtection newProtection = armoredRig ? EvaluateBodyProtection(rig) : EvaluateBodyProtection(armor, rig ?? oldRig);
+                bool storageUpgrade = rig != null && Capacity(rig) > Capacity(oldRig) && newProtection.Score >= oldProtection.Score;
+                Diagnose(() => $"phase=plan category=outfit candidateWeapon={ItemLabel(candidate)} armor={ItemLabel(armor)} vest={ItemLabel(rig)} armoredRig={armoredRig} incomingFront={newProtection.Front} incomingBack={newProtection.Back} incomingScore={newProtection.Score} currentArmor={ItemLabel(oldArmor)} currentVest={ItemLabel(oldRig)} currentFront={oldProtection.Front} currentBack={oldProtection.Back} currentScore={oldProtection.Score} incomingCells={Capacity(rig)} currentCells={Capacity(oldRig)} storageUpgrade={storageUpgrade}");
+                if (candidate != null ? newProtection.Score < oldProtection.Score : newProtection.Score <= oldProtection.Score &&
+                    !storageUpgrade && (oldArmor != null || oldRig != null || newProtection.Score > 0))
                 {
-                    if (armor != null) Equip(armor, EquipmentSlot.ArmorVest);
-                    if (rig != null) Equip(rig, EquipmentSlot.TacticalVest);
-                    else if (oldRig != null) Equip(oldRig, EquipmentSlot.TacticalVest);
+                    Diagnose(() => "phase=plan category=outfit rejected=protectionOrStorageNotBetter");
+                    continue;
                 }
-                // Selected primary support wins fast-access space before general old-rig contents.
-                if (rig is SearchableItem incoming && _offered.Contains(rig))
-                    foreach (Item content in incoming.Grids.SelectMany(g => g.Items).Where(_offered.Contains).ToArray()) Stow(content);
-                if (candidate != null)
+                if (Try(() =>
                 {
-                    Stow(Equipped(EquipmentSlot.FirstPrimaryWeapon));
-                    Equip(candidate, EquipmentSlot.FirstPrimaryWeapon);
-                }
-                var current = Equipped(EquipmentSlot.FirstPrimaryWeapon) as Weapon;
-                bool primaryFirst = current != null && (candidate != null || wasUsable);
-                if (primaryFirst)
-                    Support(current, candidate != null || previousReadiness?.PrimaryReady == true || ProjectedReady(current));
-                foreach (Item item in contents.Where(i => !InKit(i)))
-                {
-                    // Do not refill the new vest with the deferred weapon's spares before its
-                    // optional support pass. Generic cargo gets another chance after that pass.
-                    if (primaryFirst && item is Magazine magazine &&
-                        !FollowerWeaponMagazineCompatibility.IsMechanicallyCompatible(current, magazine)) Stow(item);
-                    else if (!Try(() => Carry(item))) Stow(item);
-                }
-                RequireReloadSpace();
-            });
+                    // Only this trial defers optional support. A rejected outfit/primary restores it.
+                    if (candidate != null || wasUsable) DeferSupportWeapons();
+                    // Migrate existing loose contents; do not silently throw the bot's supplies with a shell.
+                    var contents = GridContents(oldRig).ToArray();
+                    Stow(oldArmor); Stow(oldRig);
+                    if (armoredRig) Equip(rig, EquipmentSlot.TacticalVest);
+                    else
+                    {
+                        if (armor != null) Equip(armor, EquipmentSlot.ArmorVest);
+                        if (rig != null) Equip(rig, EquipmentSlot.TacticalVest);
+                        else if (oldRig != null) Equip(oldRig, EquipmentSlot.TacticalVest);
+                    }
+                    // A full vest is not an automatic rejection. Stage its direct contents intact,
+                    // then place primary support before cargo. This does not unpack deeper bags.
+                    foreach (Item content in GridContents(rig).ToArray()) Stow(content);
+                    if (candidate != null)
+                    {
+                        Stow(Equipped(EquipmentSlot.FirstPrimaryWeapon));
+                        Equip(candidate, EquipmentSlot.FirstPrimaryWeapon);
+                    }
+                    var current = Equipped(EquipmentSlot.FirstPrimaryWeapon) as Weapon;
+                    bool primaryFirst = current != null && (candidate != null || wasUsable);
+                    if (primaryFirst)
+                        Support(current, candidate != null || previousReadiness?.PrimaryReady == true || ProjectedReady(current));
+                    foreach (Item item in contents.Where(i => !InKit(i)))
+                    {
+                        // Do not refill the new vest with the deferred weapon's spares before its
+                        // optional support pass. Generic cargo gets another chance after that pass.
+                        if (primaryFirst && item is Magazine magazine &&
+                            !FollowerWeaponMagazineCompatibility.IsMechanicallyCompatible(current, magazine)) Stow(item);
+                        else if (!Try(() => Carry(item))) Stow(item);
+                    }
+                    RequireReloadSpace();
+                }, "outfit.nativeFitAndPrimarySupport")) return true;
+            }
+            return false;
         }
 
         private void DeferSupportWeapons()
@@ -217,25 +292,30 @@ namespace pitTeam.Modules
             foreach (Item helmet in _offered.Where(i => CanUseSlot(EquipmentSlot.Headwear, i))
                 .OrderByDescending(Protection).ThenBy(i => (string)i.Id))
             {
+                Diagnose(() => $"phase=plan category=helmet candidate={ItemLabel(helmet)} score={Protection(helmet)} current={ItemLabel(current)} currentScore={Protection(current)} faceCover={ItemLabel(Equipped(EquipmentSlot.FaceCover))} faceProtection={Protection(Equipped(EquipmentSlot.FaceCover))}");
                 if (Protection(helmet) <= Protection(current))
+                {
+                    Diagnose(() => "phase=plan category=helmet rejected=notHigherProtection");
                     continue;
-                if (Try(() => { Stow(current); Equip(helmet, EquipmentSlot.Headwear); })) break;
+                }
+                if (Try(() => { Stow(current); Equip(helmet, EquipmentSlot.Headwear); }, "helmet.keepFaceCover")) break;
                 Item faceCover = Equipped(EquipmentSlot.FaceCover);
                 // Let native equipment admission prove whether this cosmetic item is the blocker.
                 // Never strip protective face gear or leave it removed after a failed retry.
                 if (faceCover != null && Protection(faceCover) == 0 && Try(() =>
                 {
                     Stow(faceCover); Stow(current); Equip(helmet, EquipmentSlot.Headwear);
-                }))
+                }, "helmet.removeNonProtectiveFaceCover"))
                 {
                     break;
                 }
+                else Diagnose(() => $"phase=plan category=helmet rejected=allPermittedTrialsFailed faceCover={ItemLabel(faceCover)} removableCosmetic={faceCover != null && Protection(faceCover) == 0}");
             }
         }
 
         private bool TryEquipEmptyAccessory(Item item, EquipmentSlot slot)
         {
-            if (Try(() => Equip(item, slot))) return true;
+            if (Try(() => Equip(item, slot), "accessory." + slot)) return true;
             Item headwear = Equipped(EquipmentSlot.Headwear);
             // Mirror the helmet/cosmetic-face-cover retry, without overriding native admission
             // or stripping protective headwear for a mask. Other accessory conflicts stay native.
@@ -244,26 +324,38 @@ namespace pitTeam.Modules
             if (!Try(() =>
             {
                 Stow(headwear); Equip(item, slot);
-            })) return false;
+            }, "accessory.removeNonProtectiveHeadwear")) return false;
             return true;
         }
 
-        private void UpgradeBackpack()
+        private Item UpgradeBackpack()
         {
             var old = Equipped(EquipmentSlot.Backpack) as SearchableItem;
             foreach (var bag in _offered.OfType<Backpack>().OrderByDescending(Capacity)
                 .ThenBy(b => (string)b.Id))
             {
                 if (ReferenceEquals(old, bag)) continue;
+                Diagnose(() => $"phase=plan category=backpack candidate={ItemLabel(bag)} candidateCells={Capacity(bag)} current={ItemLabel(old)} currentCells={Capacity(old)} currentRoots={GridContents(old).Count()} incomingUnusedRoots={GridContents(bag).Count()}");
                 if (Capacity(bag) <= Capacity(old))
+                {
+                    Diagnose(() => "phase=plan category=backpack rejected=notLarger");
                     continue;
+                }
                 if (Try(() =>
                 {
                     var contents = old?.Grids.SelectMany(g => g.Items).ToArray() ?? new Item[0];
-                    Stow(old); Equip(bag, EquipmentSlot.Backpack);
+                    // A replaced backpack is always dropped empty, never carried as cargo.
+                    // Keep it in private drop escrow until the whole exchange commits.
+                    if (old != null) MoveToGrids(old, _overflow.Grids);
+                    Equip(bag, EquipmentSlot.Backpack);
                     foreach (Item item in contents) MoveToGrids(item, bag.Grids);
-                })) break;
+                }, "backpack.nativeEquipAndContentMigration"))
+                {
+                    Diagnose(() => $"phase=plan category=backpack accepted={ItemLabel(bag)} emptiedOldBagDrop={ItemLabel(old)}");
+                    return old;
+                }
             }
+            return null;
         }
 
         private void Support(Weapon weapon, bool primary)
@@ -335,6 +427,16 @@ namespace pitTeam.Modules
 
         private FollowerWeaponSupplyBudget SupplyBudget() => FollowerWeaponSupplyBudget.Build(_kit,
             ammoAllowed: ammo => !AllegianceScavCargo.HasMixedStack(_bot, ammo));
+        private void SupportSecondary(Weapon weapon, Weapon primary, bool preservePrimaryReadiness)
+        {
+            Support(weapon, false);
+            PreservePrimarySupport(primary, preservePrimaryReadiness);
+        }
+        private void PreservePrimarySupport(Weapon primary, bool preservePrimaryReadiness)
+        {
+            if (preservePrimaryReadiness && !ProjectedReady(primary))
+                throw new InvalidOperationException("Optional support consumed required primary supplies.");
+        }
         private bool ProjectedReady(Weapon weapon) => weapon != null &&
             FollowerWeaponAmmoReadinessPolicy.GetRequiredRounds(weapon.AmmoCaliber) > 0 &&
             (weapon.GetCurrentMagazine() == null || FastGrids().Any(grid => grid.FindLocationForItem(weapon.GetCurrentMagazine()) != null)) &&
@@ -377,7 +479,9 @@ namespace pitTeam.Modules
                 ItemAddress address = grid.FindLocationForItem(item);
                 if (address != null && Try(() =>
                 {
-                    Move(item, address);
+                    // Native grid search ignores the item being relocated and can return
+                    // its existing address. That is already satisfied, not a failed move.
+                    if (!address.Equals(item.CurrentAddress)) Move(item, address);
                     if (reserveReloadSpace) RequireReloadSpace();
                 })) return;
             }
@@ -403,7 +507,11 @@ namespace pitTeam.Modules
         private void Move(Item item, ItemAddress address)
         {
             var operation = ItemManipulator.Move(item, address, _controller, false);
-            if (operation.Failed) throw new InvalidOperationException(operation.Error.ToString());
+            if (operation.Failed)
+            {
+                Diagnose(() => $"phase=plan category=nativeMove item={ItemLabel(item)} from={item.CurrentAddress} to={address} errorType={operation.Error.GetType().Name} error={operation.Error}");
+                throw new InvalidOperationException(operation.Error.ToString());
+            }
             Record(operation.Value);
         }
         private void Record(IOperationResult operation)
@@ -417,14 +525,20 @@ namespace pitTeam.Modules
             }
             catch { operation.RollBack(); throw; }
         }
-        private bool Try(Action action)
+        private bool Try(Action action, string diagnosticContext = null)
         {
             int checkpoint = _operations.Count;
             var stagedBefore = new HashSet<Item>(_temporarySecureItems);
-            try { action(); return true; }
-            catch (InvalidOperationException)
+            try
+            {
+                action();
+                if (diagnosticContext != null) Diagnose(() => $"phase=plan trial={diagnosticContext} result=accepted");
+                return true;
+            }
+            catch (InvalidOperationException ex)
             {
                 RollbackTo(checkpoint); _temporarySecureItems.Clear(); _temporarySecureItems.UnionWith(stagedBefore);
+                if (diagnosticContext != null) Diagnose(() => $"phase=plan trial={diagnosticContext} result=rejected error={ex.Message}");
                 return false;
             }
             catch { RollbackTo(checkpoint); _temporarySecureItems.Clear(); _temporarySecureItems.UnionWith(stagedBefore); throw; }

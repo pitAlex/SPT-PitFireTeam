@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Newtonsoft.Json;
 using EFT;
 using EFT.InventoryLogic;
 
@@ -18,6 +19,10 @@ namespace pitTeam.Modules
         private Dictionary<string, int> _scavBeforeDonation;
         private HashSet<string> _offeredDonationIds;
         private HashSet<string> _borrowedDonationIds;
+#if DEBUG
+        private string _donationDiagnosticId;
+        private int _donationDiagnosticLines;
+#endif
         private void InitializeDonation()
         {
             _playerOwnedIds.UnionWith(AllegianceScavCargo.GetPureGivenIds(Bot));
@@ -65,9 +70,16 @@ namespace pitTeam.Modules
             _donationPlan = new GiveGearPlanner(BotDraft, Donation, _donationOverflow, Bot,
                 edit => { _edits.Add(edit); edit.UpdateProvenance(_playerOwnedIds); },
                 _playerOwnedIds);
+#if DEBUG
+            _donationDiagnosticId = Guid.NewGuid().ToString("N").Substring(0, 8);
+            _donationDiagnosticLines = 0;
+            _donationPlan.Diagnostic = message => DonationDiagnosticLine(message);
+#endif
+            DonationDiagnosticSnapshot("beforePlan", FollowerEquipment, Donation);
             _planningDonation = true;
             try { _donationPlan.Build(); }
             finally { _planningDonation = false; }
+            DonationDiagnosticSnapshot("acceptedPlan", FollowerEquipment, _donationOverflow);
             foreach (Item item in Tree(PlayerEquipment).Concat(Tree(FollowerEquipment)).Concat(Tree(Donation)).Concat(Tree(_donationOverflow)))
                 _draftItems[item.Id] = item;
         }
@@ -125,6 +137,83 @@ namespace pitTeam.Modules
                 Tree(Bot.GetPlayer.InventoryController.Inventory.Equipment)
                     .Where(i => _offeredDonationIds.Contains(i.Id) && !InteractableObjects.IsProtectedFollowerEquipment(i)).Select(i => (string)i.Id));
         }
+
+        [System.Diagnostics.Conditional("DEBUG")]
+        private void DonationDiagnosticLine(string message)
+        {
+#if DEBUG
+            if (_donationDiagnosticLines++ < 256) DonationDiagnosticWrite(message);
+            else if (_donationDiagnosticLines == 257) DonationDiagnosticWrite("phase=plan detailLimit=256 furtherTrialDetailsOmitted=true snapshotsStillRecorded=true");
+#endif
+        }
+
+        [System.Diagnostics.Conditional("DEBUG")]
+        private void DonationDiagnosticOutcome(string message)
+        {
+#if DEBUG
+            DonationDiagnosticWrite(message);
+#endif
+        }
+
+        [System.Diagnostics.Conditional("DEBUG")]
+        private void DonationDiagnosticSnapshot(string phase, InventoryEquipment equipment, Item other)
+        {
+#if DEBUG
+            if (!Giving || _donationDiagnosticId == null) return;
+            try
+            {
+                var data = new
+                {
+                    phase,
+                    otherRole = phase == "beforePlan" ? "offering" : "plannedDropRoots",
+                    // Full descriptors retain plates, durability, attachments, rounds,
+                    // grid positions and nested cargo, even without a later invitation.
+                    equipment = ItemBinarySerializer.SerializeItem(equipment, FullySearchedSearchController.Instance),
+                    other = ItemBinarySerializer.SerializeItem(other, FullySearchedSearchController.Instance),
+                    equipmentItems = Tree(equipment).Select(DescribeDonationDiagnosticItem).ToArray(),
+                    otherItems = Tree(other).Select(DescribeDonationDiagnosticItem).ToArray(),
+                    borrowedIds = _borrowedDonationIds?.OrderBy(id => id).ToArray(),
+                    offeredIds = _offeredDonationIds?.OrderBy(id => id).ToArray()
+                };
+                // Snapshots/outcomes are not subject to the trial-detail limit.
+                DonationDiagnosticWrite("snapshot=" + JsonConvert.SerializeObject(data), data);
+            }
+            catch (Exception ex) { DonationDiagnosticWrite($"phase={phase} snapshotError={ex.GetType().Name}:{ex.Message}"); }
+#endif
+        }
+
+#if DEBUG
+        private static object DescribeDonationDiagnosticItem(Item item)
+        {
+            var armor = item.GetItemComponent<ArmorComponent>();
+            var repair = item.GetItemComponent<RepairableComponent>();
+            return new
+            {
+                id = (string)item.Id, template = item.TemplateId.ToString(), name = item.Name.Localized(),
+                nativeType = item.GetType().Name, count = item.StackObjectsCount,
+                parent = item.CurrentAddress?.Container.ParentItem?.Id,
+                container = item.CurrentAddress?.Container.ID,
+                armorClass = armor?.ArmorClass, durability = repair?.Durability,
+                maximumDurability = repair?.TemplateDurability,
+                grids = (item as SearchableItem)?.Grids.Select(grid => new
+                {
+                    grid.ID, width = grid.GridWidth, height = grid.GridHeight,
+                    contents = grid.Items.Select(content => (string)content.Id).ToArray()
+                }).ToArray()
+            };
+        }
+
+        private void DonationDiagnosticWrite(string message, object snapshot = null)
+        {
+            if (_donationDiagnosticId == null) return;
+            // The normal raid ledger survives later game launches; the client log is
+            // also available when the player has disabled battle recording.
+            try { BattleRecorder.RecordGiveGear(Bot, _donationDiagnosticId, snapshot ?? new { message }); }
+            catch { }
+            try { Logger.LogInfo($"[GiveGear:{_donationDiagnosticId}] follower='{Bot?.Profile?.Nickname}' profile={Bot?.ProfileId} {message}"); }
+            catch { /* A diagnostic sink must not change equipment or ownership. */ }
+        }
+#endif
 
         private void AddLiveDonationContainers(Dictionary<string, Item> items)
         {

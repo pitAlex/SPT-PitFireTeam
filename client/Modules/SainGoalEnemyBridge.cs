@@ -1,6 +1,7 @@
 using EFT;
 using HarmonyLib;
 using System;
+using System.Collections;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using UnityEngine;
@@ -26,6 +27,7 @@ namespace pitTeam.Modules
 
         private static Type? enemyControllerType;
         private static PropertyInfo? controllerGoalEnemyProperty;
+        private static PropertyInfo? controllerVisibleEnemiesProperty;
         private static FieldInfo? controllerGoalEnemyField;
         private static MethodInfo? controllerCheckAddEnemyMethod;
         private static MethodInfo? controllerChooseEnemyMethod;
@@ -78,6 +80,31 @@ namespace pitTeam.Modules
             {
                 LogAccessorFailureOnce(ex);
                 return false;
+            }
+        }
+
+        // Passive social admission only. Never choose, update or synchronize an enemy.
+        internal static bool HasVisibleEnemy(BotOwner owner)
+        {
+            if (owner?.Memory?.GoalEnemy?.IsVisible == true) return true;
+            if (owner?.EnemiesController?.EnemyInfos != null)
+                foreach (var enemy in owner.EnemiesController.EnemyInfos.Values)
+                    if (enemy?.IsVisible == true) return true;
+            if (!pitFireTeam.IsSAINInstalled || owner == null) return false;
+            try
+            {
+                object? bot = TryGetSainBot(owner);
+                if (bot == null) return false;
+                ResolveSainBotAccessors(bot.GetType());
+                object? controller = sainBotEnemyControllerProperty?.GetValue(bot);
+                if (controller == null) return true;
+                ResolveEnemyControllerAccessors(controller.GetType());
+                return controllerVisibleEnemiesProperty?.GetValue(controller) is not ICollection visible || visible.Count > 0;
+            }
+            catch (Exception ex)
+            {
+                LogAccessorFailureOnce(ex);
+                return true; // Unavailable sight state must not authorize social speech.
             }
         }
 
@@ -428,6 +455,7 @@ namespace pitTeam.Modules
 
             enemyControllerType = runtimeType;
             controllerGoalEnemyProperty = AccessTools.Property(runtimeType, "GoalEnemy");
+            controllerVisibleEnemiesProperty = AccessTools.Property(runtimeType, "VisibleEnemies");
             controllerGoalEnemyField = AccessTools.Field(runtimeType, "_goalEnemy");
             controllerCheckAddEnemyMethod = AccessTools.Method(
                 runtimeType,

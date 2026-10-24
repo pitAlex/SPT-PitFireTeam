@@ -563,6 +563,58 @@ internal static class Program
                 Check(profile.DialogueRecords[fence].Messages!.Count==oldMessages && storage.ReadModeDocument<FriendlyScavCargoLedger>(id,"scav-cargo.json",true)!.State=="rejected",
                     "Player-Scav death/abandonment or native start/end side mismatch never returns cargo");
             }
+            // The Scav cargo snapshot excludes borrowed protected equipment but retains
+            // ordinary loot whose parent still points at that absent backpack/weapon.
+            settings.SaveAndApply(new() {GameplayMode="Allegiance"});
+            var borrowedBag=new MongoId();var borrowedWeapon=new MongoId();var protectedGift=new MongoId();
+            returns.RegisterProtectedRaidItemIds(id,[borrowedBag.ToString(),borrowedWeapon.ToString(),protectedGift.ToString()],"cargo regression");
+            List<Item> DetachedCargo() => Enumerable.Range(0,12).Select(index=>new Item {Id=new MongoId(),Template=tpl,
+                ParentId=(index==0 ? borrowedWeapon : borrowedBag).ToString(),SlotId=index==0 ? "patron_in_weapon" : "main",
+                Upd=new() {StackObjectsCount=index+1}}).ToList();
+            foreach(string route in new[]{"ordinary","co-op","transit","player-scav"}) {
+                bool playerScav=route=="player-scav";bool transit=route=="transit";
+                string raid="protected-parent-"+route;string exit=route=="co-op" ? "co-op" : "ordinary";
+                service.BeginRaid(id,$"{{\"err\":0,\"data\":{{\"serverId\":\"{raid}\"}}}}",new() {PlayerSide=playerScav ? "savage" : "pmc"});
+                var detached=DetachedCargo();
+                var nested=new Item {Id=new MongoId(),Template=tpl,ParentId=detached[1].Id.ToString(),SlotId="main",Upd=new() {StackObjectsCount=7}};
+                detached.Add(nested);
+                var protectedChild=new Item {Id=new MongoId(),Template=tpl,ParentId=protectedGift.ToString(),SlotId="mod"};
+                detached.Add(new() {Id=protectedGift,Template=tpl,ParentId=borrowedBag.ToString(),SlotId="main"});detached.Add(protectedChild);
+                var extracted=new Item {Id=new MongoId(),Template=tpl,ParentId="player-stash",SlotId="main"};
+                var btr=new Item {Id=new MongoId(),Template=tpl,ParentId="btr-stash",SlotId="main"};
+                detached.Add(extracted);detached.Add(btr);
+                var supplied=new FriendlyScavCargoRequest {ServerId=raid,ExitName=exit,Transit=transit,
+                    InsuranceReportId=Guid.NewGuid().ToString("N"),ScavProfileIds=["scav"],Items=detached};
+                string original=json.Serialize(supplied)!;
+                service.Queue(id,supplied);
+                end=new() {ServerId=raid,Results=new() {Result=transit ? ExitStatus.TRANSIT : ExitStatus.SURVIVED,ExitName=exit,
+                    Profile=new() {Info=new() {Side=playerScav ? "Savage" : "Usec"},Inventory=new() {Items=[extracted]}}},
+                    LocationTransit=transit ? new() : null,TransferItems=new() {["btr"]=[btr]}};
+                var prepare=AccessTools.Method(typeof(FriendlyScavCargoService),"PrepareItems");
+                var prepared=(List<Item>)prepare.Invoke(service,[id,supplied,end])!;
+                Check(prepared.Count==13,"Ordinary cargo survives an absent protected backpack/weapon parent: "+route);
+                var retained=prepared.Select(item=>item.Id).ToHashSet();
+                Check(detached.Take(13).All(item=>retained.Contains(item.Id)),"All twelve reported roots plus their ordinary child remain: "+route);
+                Check(prepared.All(item=>item.Id!=protectedGift && item.Id!=protectedChild.Id && item.Id!=extracted.Id && item.Id!=btr.Id),
+                    "Protected IDs/descendants and extracted/BTR duplicates stay excluded: "+route);
+                var preparedNested=prepared.Single(item=>item.Id==nested.Id);
+                Check(preparedNested.ParentId==detached[1].Id.ToString() && preparedNested.Upd!.StackObjectsCount==7,
+                    "Surviving nested cargo retains identity, hierarchy and quantity: "+route);
+                Check(prepared.Where(item=>item.Id!=nested.Id).All(item=>item.SlotId=="main" && item.Location==null &&
+                    !retained.Any(parent=>parent.ToString()==item.ParentId) && item.ParentId!=borrowedBag.ToString() && item.ParentId!=borrowedWeapon.ToString()),
+                    "Only detached roots move to the return stash before protection filtering: "+route);
+                int beforeMail=profile.DialogueRecords![fence].Messages!.Count;
+                if(route=="co-op")NativeGiftScoped();
+                service.FinishRaid(id,end);
+                var returned=profile.DialogueRecords[fence].Messages!.Last();
+                var delivered=storage.ReadModeDocument<FriendlyScavCargoLedger>(id,"scav-cargo.json",true)!;
+                Check(delivered.State=="complete" && delivered.DeliveredIds.Count==13 && delivered.ExpectedMailItemCount==(route=="co-op" ? 15 : 13),
+                    "Exact filtered source IDs and native mail count persist: "+route);
+                Check(returned.Items!.Data!.Count==(route=="co-op" ? 15 : 13),"Native Fence mail actually contains detached cargo: "+route);
+                Check(json.Serialize(supplied)==original,"Preparing/delivering detached cargo never mutates the captured report: "+route);
+                service.FinishRaid(id,end);restarted.FinishRaid(id,end);
+                Check(profile.DialogueRecords[fence].Messages!.Count==beforeMail+1,"Detached cargo replay/restart cannot duplicate delivery: "+route);
+            }
             Console.WriteLine("Temporary native cargo profiles: "+work);
         }
         finally {

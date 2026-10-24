@@ -13,10 +13,12 @@ namespace pitTeam.BigBrain.Actions
         private bool recruitGearInProgress, recruitBodyKitAttempted;
         private int recruitGearGeneration;
 
-        private bool TryStartRecruitLooseWeapon(Item item)
+        private bool TryStartRecruitLooseEquipment(Item item)
         {
-            if (followerData?.IsSquadMate != false || !(item is Weapon) ||
-                item.GetItemComponent<KnifeComponent>() != null) return false;
+            bool firearm = item is Weapon && item.GetItemComponent<KnifeComponent>() == null;
+            // Loose supplies use the same explicit reevaluation as Give Items. A previously
+            // carried secondary can become usable without a separate inventory scanner.
+            if (followerData?.IsSquadMate != false || (!firearm && !(item is Magazine) && !(item is Ammo))) return false;
             if (TeammateGearSwap.Current != null) return true;
             var target = activeLootItem;
             var request = ActiveLootRequest;

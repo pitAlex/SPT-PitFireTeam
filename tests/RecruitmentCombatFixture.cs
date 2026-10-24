@@ -73,7 +73,8 @@ namespace EFT
         public void Say(EPhraseTrigger phrase) { if (NativeSpeech.PlayerPrefix(this, phrase)) { Spoken = phrase==EPhraseTrigger.MumblePhrase ? EPhraseTrigger.OnMutter : phrase; VoiceCalls++; if(MarkSpeaking) Speaker.Speaking=true; } }
     }
     public class AIData { public BotOwner BotOwner; }
-    public class EnemyInfo { public string ProfileId; public Player Person; }
+    public class EnemyInfo { public string ProfileId; public Player Person; public bool IsVisible; }
+    public class EnemiesController { public Dictionary<IPlayer,EnemyInfo> EnemyInfos=new(); }
     public class Memory { public EnemyInfo GoalEnemy; public bool IsUnderFire; public bool HaveEnemy => GoalEnemy != null; }
     public class HandsController { public bool Busy; public FirearmsAnimator FirearmsAnimator = new(); public bool IsInInteractionStrictCheck() => Busy; }
     public class FirearmsAnimator { public bool Idle=true; public bool IsIdling() => Idle; }
@@ -136,6 +137,7 @@ namespace EFT
         public string ProfileId = "candidate"; public EPlayerSide Side; public Profile Profile = new();
         public bool IsDead, IsFollower; public EBotState BotState = EBotState.Active;
         public Player GetPlayer = new(); public Memory Memory = new(); public BotTalk BotTalk = new();
+        public EnemiesController EnemiesController=new();
         public Gesture Gesture = new(); public BotFollower BotFollower = new(); public Group BotsGroup;
         public Vector3 Position => GetPlayer.Position;
         public Transform WeaponRoot = new();
@@ -277,10 +279,12 @@ namespace SAIN.Plugin
     }
     public class NativeBot
     {
+        public NativeEnemyController EnemyController {get;set;} = new();
         public NativeInfo Info { get; set; } = new();
         public bool ActiveEnemy, Throw;
         public bool HasEnemy => Throw ? throw new InvalidOperationException("native probe failed") : ActiveEnemy;
     }
+    public class NativeEnemyController { public System.Collections.ICollection VisibleEnemies {get;set;} = new List<object>(); }
     public static class SAINEnableClass
     {
         public static NativeBot Bot;

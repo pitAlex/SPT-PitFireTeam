@@ -45,6 +45,7 @@ internal static class Fixture
         internal float? RecruitmentChance;
         internal Action<BotOwner> MemberAdded;
         internal readonly Greeting Greeting = new Greeting();
+        internal readonly Greeting CombatGreeting = new Greeting();
         internal readonly Interaction Interaction = new Interaction();
     }
     private static readonly Dictionary<string, Decision> Decisions = new Dictionary<string, Decision>();

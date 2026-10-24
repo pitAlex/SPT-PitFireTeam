@@ -158,7 +158,7 @@
     "Name": "阵营敌对关系",
     "Description": "启用补丁，尝试修复阵营之间的敌对关系未能始终正常生效的问题。"
   },
-  "PmcArmbands": {
+  "pmcArmbands": {
     "Name": "PMC 阵营臂章",
     "Description": "PMC 人机是否佩戴臂章（BEAR 为红色，USEC 为蓝色）。"
   },
