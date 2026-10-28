@@ -4,6 +4,8 @@ Status: implemented; deferred-ammunition transfer, registered-secondary, packed-
 
 This document owns the current Core Give Gear contract. The approved disposition, nesting, invitation and insurance rules are collected in section 10. Dated evidence belongs in the [validation ledger](validation/Give-Gear.md); build/fixture success does not establish live raid behavior.
 
+Optional gameplay addons may register an immutable `CompanionGearPolicy` for a role. Core applies it when building both manual and recruited command-gear plans; it does not depend on an addon assembly. A fixed-equipment policy preserves the worn kit, permits removable body-plate upgrades through the shared condition-aware protection comparison and a bounded-score empty secondary slot, and accepts offered hand grenades into existing vest/pocket grids only while preserving native reload landing space. It suppresses ordinary acquisition/cargo paths for that recipient. Mode changes/unregistration release the policy. [Going Rogue](../going-rogue/README.md#mode-and-profiles) owns Knight's exact restrictions and score tolerance; the ordinary recruit contract below is unchanged.
+
 Related contracts: [Swap Gear](Swap-Gear.md), [looting](looting/Looting.md), [primary acquisition](looting/Weapon-Pickup-Primary-Slot-Available.md), [secondary support](looting/Weapon-Pickup-Secondary-Slot.md), [holster support](looting/Weapon-Pickup-Holster-Slot.md), [loadout ownership](Loadout-Management.md) and [friendly Scav cargo](looting/Friendly-Scav-Cargo.md).
 
 ## 1. Purpose and scope

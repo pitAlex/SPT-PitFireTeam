@@ -22,7 +22,7 @@ $sniperMethods = @(
     'PrepareFiringPositionArrivalWait', 'EndFiringPositionArrival', 'ClearFiringPositionArrivalCommitments'
 ) | ForEach-Object { Get-ArrivalMethod $sniperSource $_ }
 $commonMethods = @(
-    'TryCreateLocalFiringPositionAdjustment', 'TryFindSupportFiringPosition',
+    'TryCreateLocalFiringPositionAdjustment', 'TryCreateAssignedFiringPositionDecision', 'TryPlanAssignedFiringPositionDecision', 'TryFindSupportFiringPosition',
     'IsWithinLocalFiringPositionRadius', 'EndLocalFiringPositionAdjustment'
 ) | ForEach-Object { Get-ArrivalMethod $commonSource $_ }
 $harness = @'
@@ -110,6 +110,7 @@ public class ArrivalCommon {
     private static Vector3 GetEnemyAnchor(EnemyInfo e)=>e.Anchor;
     private Vector3 GetBossPosition()=>new Vector3(-70,0,0);
     private void SetCoverTactic(BotsGroup.BotCurrentTactic t){}
+    private bool TrySelectSupportFiringPositionMove(Vector3 enemy,Vector3 point,string reason,out BotLogicDecision action,out string moveReason){action=BotLogicDecision.goToPoint;moveReason=reason;return true;}
     private void AddBattlefieldFiringCandidates(List<Vector3> c,Vector3 a,Vector3 b,Vector3 e,Vector3 d,Vector3 s){}
     private bool IsBlockedTacticalPoint(Vector3 c)=>Blocked;
     private bool IsMarksmanFiringPositionAllowed(EnemyInfo e,Vector3 c)=>!WrongPolicy;
@@ -289,6 +290,22 @@ public static class MarksmanArrivalChecks {
         h=Fresh();h.End(Travel());adjust=SelectPrepared(h);h.BotOwner.Position=h.BotOwner.GoToSomePointData.Point-new Vector3(2,0,0);
         Check(h.End(adjust).Value&&SelectPrepared(h).Action==BotLogicDecision.holdPosition,"Adjustment_ArrivalUsesTwoMeters");
 
+        h=Fresh();var assigned=new Vector3(8,0,0);
+        Check(h.CombatCommon.TryCreateAssignedFiringPositionDecision(h.BotOwner.Memory.GoalEnemy,assigned,"knightPosition",out keep,false,false) &&
+            h.BotOwner.GoToSomePointData.Point.x==8 && NavMesh.Samples==1,"KnightAssignment_UsesExactAssignedCandidate_NotEnemyAnchorOrOrdinaryCandidates");
+        foreach(string reject in new[]{"alreadyArrived","noPath","longPath","noLane","blocked","wrongLevel","alternateThreat","marksmanPolicy","nonFinite"}){
+            h=Fresh();var common=h.CombatCommon;NavMesh.PinnedPoint=assigned;
+            if(reject=="alreadyArrived")NavMesh.PinnedPoint=new Vector3(2,0,0);
+            if(reject=="noPath")Utils.Utils.Complete=false;
+            if(reject=="longPath")Utils.Utils.NavDistance=45.01f;
+            if(reject=="noLane")Utils.Utils.Lane=false;
+            if(reject=="blocked")common.Blocked=true;
+            if(reject=="wrongLevel")NavMesh.PinnedPoint=new Vector3(8,3,0);
+            if(reject=="alternateThreat")common.AlternateThreat=true;
+            if(reject=="marksmanPolicy")common.WrongPolicy=true;
+            if(reject=="nonFinite")NavMesh.PinnedPoint=Vector3.positiveInfinity;
+            Check(!common.TryCreateAssignedFiringPositionDecision(h.BotOwner.Memory.GoalEnemy,assigned,"knightPosition",out keep,false,true),"KnightAssignment_Rejects_"+reject);
+        }
         var state=new pitTeam.BigBrain.FiringPositionArrivalState();
         Check(state.Begin(new Vector3(3,0,0),"enemy","source","prefix")&&state.TryAdjust(new Vector3(8,0,0)),"State_FirstAdjustmentAccepted");
         Check(!state.TryAdjust(new Vector3(9,0,0))&&!state.Begin(new Vector3(10,0,0),"enemy","source","prefix")&&state.Origin.x==3,"State_CannotReadjustOrRecenter");

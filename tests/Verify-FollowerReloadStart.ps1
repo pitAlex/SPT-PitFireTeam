@@ -1,7 +1,8 @@
 param(
     [string]$RepositoryRoot = (Split-Path $PSScriptRoot -Parent),
     [string]$GameRoot = 'E:/SPTushanka',
-    [string]$NativeSource = 'F:/Projects/SPT-Tarkov/SPT-4.1.3/CLIENT-4.1.3/Assembly-CSharp/EFT/Player.cs'
+    [string]$NativeSource = 'F:/Projects/SPT-Tarkov/SPT-4.1.3/CLIENT-4.1.3/Assembly-CSharp/EFT/Player.cs',
+    [string]$SainMoverSource = 'F:/Projects/SPT-Tarkov/SPT-4.1.3/SAIN-4.5.1/SAIN/Classes/Bot/Mover/SAINMoverClass.cs'
 )
 $ErrorActionPreference = 'Stop'
 function Get-Region([string]$source, [string]$start, [string]$end) {
@@ -28,14 +29,12 @@ foreach ($forbidden in @('Reloading =', 'FastForwardCurrentState(', 'ForceStopIn
 if (!$patrol.Contains('if (TryHandleSkippedReloadStart()) return;') -or
     !$patrol.Contains('OutOfCombatReloadMaxFailedReloadsPerWeapon = 2')) { throw 'Existing bounded patrol budget required' }
 $retry = Get-Region $patrol '        private bool TryHandleSkippedReloadStart()' '        private bool ShouldReloadCurrentWeaponOutOfCombat()'
-$stationary = Get-Region $patrol '        private void ArmStationaryPatrolReloadRecovery()' '        private bool TryHandleSkippedReloadStart()'
-if (!$patrol.Contains('if (TryRecoverStationaryPatrolReload()) return;') -or
-    !$patrol.Contains('ArmStationaryPatrolReloadRecovery();')) { throw 'Missing patrol stationary recovery wiring' }
+if ($patrol.Contains('TryRecoverStationaryPatrolReload') -or $patrol.Contains('stationaryReloadRecoveryAt')) { throw 'Obsolete brain-reset reload workaround remains' }
 $native = Get-Content -Raw $NativeSource
 $nativeReload = Get-Region $native 'public virtual void ReloadMag(Magazine magazine, ItemAddress itemAddress, Callback callback)' 'public virtual void QuickReloadMag('
 # Decompile uses tabs; accept its exact method region without retyping the implementation.
 if (!$nativeReload.Contains('ForceStopInteractions()') -or !$nativeReload.Contains('IsInteractionPlaying')) { throw 'Native silent-branch contract changed' }
-$reload = (Get-Content -Raw (Join-Path $PSScriptRoot 'FollowerReloadStartFixture.cs')).Replace('/* NATIVE RELOAD */', $nativeReload).Replace('/* PATROL RETRY */', $retry).Replace('/* STATIONARY RELOAD */', $stationary)
+$reload = (Get-Content -Raw (Join-Path $PSScriptRoot 'FollowerReloadStartFixture.cs')).Replace('/* NATIVE RELOAD */', $nativeReload).Replace('/* PATROL RETRY */', $retry)
 $sdk = dotnet --list-sdks | Select-Object -Last 1
 if ($sdk -notmatch '^(\S+) \[(.+)\]$') { throw 'SDK missing' }
 $compiler = Join-Path $Matches[2] ($Matches[1] + '/Roslyn/bincore/csc.dll')
@@ -58,6 +57,13 @@ $oldGate = $gate.Replace('bot.WeaponManager?._currentWeaponInfo?.Reload?.Reloadi
 if ($oldGate -eq $gate) { throw 'Active reload gate missing' }
 Run-Fixture 'OldAdmission' ((Get-Content -Raw (Join-Path $PSScriptRoot 'GearSwapAdmissionFixture.cs')).Replace('/* GATE */', $oldGate)) @() @('--old')
 Run-Fixture 'ReloadStart' $reload @($patchPath, (Join-Path $RepositoryRoot 'client/Modules/FollowerReloadStartRecovery.cs'))
+$reloadSource = Get-Content -Raw (Join-Path (Split-Path (Split-Path $NativeSource -Parent) -Parent) 'BotReload.cs')
+$nativeFlag = Get-Region $reloadSource 'public bool Reloading' 'public BotReload('
+$nativeStance = Get-Region (Get-Content -Raw $SainMoverSource) '    private void UpdateStance(float time)' '    private void CheckSetBotToNavMesh()'
+$stancePatch = Join-Path $RepositoryRoot 'client/Patches/FollowerReloadStancePatch.cs'
+if (!(Get-Content -Raw (Join-Path $RepositoryRoot 'client/friendlyPlugin.cs')).Contains('new FollowerReloadStancePatch().Enable()')) { throw 'Reload stance patch not registered' }
+$stanceFixture = (Get-Content -Raw (Join-Path $PSScriptRoot 'FollowerReloadStanceFixture.cs')).Replace('/* NATIVE RELOADING */', $nativeFlag).Replace('/* SAIN UPDATE STANCE */', $nativeStance)
+Run-Fixture 'ReloadStance' $stanceFixture @($stancePatch)
 Add-Type -Path (Join-Path $RepositoryRoot 'client/libs/Mono.Cecil.dll')
 $module = [Mono.Cecil.ModuleDefinition]::ReadModule((Join-Path $GameRoot 'EscapeFromTarkov_Data/Managed/Assembly-CSharp.dll'))
 try {
@@ -78,5 +84,30 @@ try {
     foreach ($owner in @('BotWeaponManager', 'BotReload', 'EFT.AnimatedInteractionsSubsystem.AnimatedInteractions')) {
         if (!$module.GetType($owner)) { throw "Installed native type missing: $owner" }
     }
-    Write-Output 'Installed callback/idle/hands metadata verified; source fixtures do not establish Mattdokn raid causality.'
+    $nativeReloadType = $module.GetType('BotReload')
+    $setter = ($nativeReloadType.Properties | Where-Object Name -eq 'Reloading').SetMethod
+    if (!$setter -or $setter.Parameters.Count -ne 1 -or $setter.Parameters[0].Name -ne 'value') { throw 'Installed Reloading setter changed' }
+    $startCalls = @((($nativeReloadType.Methods | Where-Object Name -eq 'Reload').Body.Instructions) | Where-Object { $_.Operand -is [Mono.Cecil.MethodReference] } | ForEach-Object { $_.Operand.Name })
+    $flagIndex = [Array]::IndexOf($startCalls, 'set_Reloading')
+    foreach ($call in @('ReloadMagazine', 'ReloadAmmo')) {
+        if ($flagIndex -lt 0 -or [Array]::IndexOf($startCalls, $call) -le $flagIndex) { throw "Installed reload flag no longer precedes $call" }
+    }
+    $movement = $module.GetType('EFT.MovementContext')
+    if (!($movement.Properties | Where-Object Name -eq 'BlockFirearms') -or !($movement.Methods | Where-Object Name -eq 'SetPatrol')) { throw 'Installed native stance boundary changed' }
+    Write-Output 'Installed callback/idle/hands and reload-before-animation/stance metadata verified; live stationary reload still needs raid qualification.'
 } finally { $module.Dispose() }
+$sainDll = Join-Path $GameRoot 'BepInEx/plugins/SAIN/SAIN.dll'
+if (Test-Path -LiteralPath $sainDll) {
+    $sainModule = [Mono.Cecil.ModuleDefinition]::ReadModule($sainDll)
+    try {
+        $mover = $sainModule.GetType('SAIN.SAINComponent.Classes.Mover.SAINMoverClass')
+        $update = $mover.Methods | Where-Object Name -eq 'UpdateStance'
+        $instructions = @($update.Body.Instructions)
+        $canSet = $instructions | Where-Object { $_.Operand -is [Mono.Cecil.MethodReference] -and $_.Operand.Name -eq 'CanSetPatrol' }
+        $latchRead = $instructions | Where-Object { $_.Operand -is [Mono.Cecil.FieldReference] -and $_.Operand.Name -eq '_isInPatrol' }
+        $equalBranch = $latchRead.Next
+        if (!$canSet -or !$latchRead -or $equalBranch.OpCode.Code -notin @('Beq', 'Beq_S') -or
+            $equalBranch.Operand.Offset -le $canSet.Offset) { throw 'Installed SAIN no longer has the verified already-relaxed stance bypass' }
+        Write-Output 'Installed SAIN UpdateStance equality branch skips CanSetPatrol, matching the source regression fixture.'
+    } finally { $sainModule.Dispose() }
+}

@@ -2,6 +2,14 @@
 
 Current policy (2026-09-09): import once and retain the original JSON folder with a .backup suffix. **No automatic deletion.**
 
+## Offline editing utility
+
+For supported head, level/XP, skill, health and pocket edits, use the [server-hosted teammate editor](Teammate-Web-Editor.md). It keeps database ownership with the running server and excludes deletion and general equipment changes.
+
+The [Database Tool](../tools/DatabaseTool/README.md) lists editable documents, exports readable JSON and imports validated changes using the production storage/encryption implementation. Close Tarkov and SPT first. It checks profile identity and stale exports, preserves internal records and creates an exact encrypted backup before atomically replacing the database. Validation covers JSON structure and existing identities, not every EFT item or statistic rule.
+
+The portable Windows package includes its runtime and needs no game installation, server DLL or manually supplied key. Exports contain private plaintext profile data. See [dated validation](validation/Database-Tool.md) for synthetic test coverage; no live player database was edited during qualification.
+
 ## Location and lifecycle
 
 Each player profile owns `Resources/teammates/<profileId>.db` for Guns for Hire and `Resources/teammates-allegiance/<profileId>.db` for Allegiance in the server mod directory. Database caches include the mode root. Allegiance starts empty and never imports the Guns for Hire legacy files. All teammate documents, including equipment, settings, and recruitment requests, follow the active database. Account-id allocation checks both roots to keep identities distinct. Mode changes and teammate route operations share a request gate so an operation cannot cross database roots while it runs.
@@ -48,6 +56,14 @@ The normal startup log reports only that the database is ready; it does not anno
 status or repeat an import count on every launch.
 
 ## Representation and protection
+
+`pending-treatment.json` stores the current Therapist HP quote/payment intent and its completion receipt. Payment records the before/after rouble and Therapist states before saving the player JSON. Recovery finishes treatment only after verifying the charged player file, or returns an unpaid intent to pending when the original player state is still present. Conflicting states fail closed. The teammate's restored health and completed receipt commit in one database batch without replacing gear/settings. The UI never injects test injuries.
+
+[Raid health](Teammate-Health.md) saves canonical HP and clears effects after final outcomes. The internal `health/raid-outcomes-v1` set commits each native raid identity/teammate pair with its profile; repeated reports leave subsequent healing intact. Its non-JSON internal key is excluded from the offline utility's editable documents.
+
+`Health.UpdateTime` checkpoints passive HP recovery. Lightweight health reads, quotes and treatment apply elapsed native loops using per-part rates and the player's hideout bonuses/Hideout Management skill. Each catch-up saves only the selected teammate document and retains fractional-loop time; no background writer or player-health mutation is required. Payment recovery always reconciles before passive recovery can change its health snapshot. Quote validation permits only deterministic elapsed healing and charges the reduced current cost when it does not exceed the confirmed quote. Legacy zero/missing/future checkpoints initialize without granting elapsed HP. Profiles with persistent effects are retained without guessing effect recovery rules. The open Debug UI polls on the native loop interval; closed profiles catch up on their next read.
+
+The optional [Going Rogue addon](../going-rogue/README.md) selects `Resources/teammates-going-rogue` with the same encrypted database format. Its onboarding and cargo receipts address that exact mode; neither built-in roster is imported. A companion seed receipt commits with its profile/settings/preview equipment and prevents duplicate test companions. Registered companions may request native equipment generation for each raid; their stored preview is not a permanent loadout and raid-outcome equipment persistence skips that policy. The [addon contract](../going-rogue/docs/Knight-Combat.md#raid-allegiance-and-spawning) owns the current roles and restrictions. Going Rogue is outside launcher wipe handling in this phase.
 
 ### First visit and welcome invitation
 

@@ -138,6 +138,11 @@ namespace pitTeam.Patches
             }
 
             GameObject root = ResolveProfileSectionRoot(screen.transform, target.transform);
+            HideProfileElement(root);
+        }
+
+        private static void HideProfileElement(GameObject root)
+        {
             if (root == null || HiddenRightSideRoots.ContainsKey(root))
             {
                 return;
@@ -491,6 +496,12 @@ namespace pitTeam.Patches
             try
             {
                 if (screen == null || profile == null || panel == null)
+                {
+                    return;
+                }
+
+                // Once arranged, this slot holds Proficiency; the editor button lives in the next row.
+                if (ProficiencyButton != null && ProficiencyButton.transform.parent == panel.transform.Find("Upper"))
                 {
                     return;
                 }

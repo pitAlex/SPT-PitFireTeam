@@ -38,6 +38,8 @@ internal static class ModeStorageTests
                 DispatchProxy.Create<ISptLogger<FriendlyTeammateStorage>, TestLogger>(), settings);
             var session = new MongoId("aaaaaaaaaaaaaaaaaaaaaaaa");
             storage.InitializeProfile(session);
+            GoingRogueModeTests.Run(storage, settings, new JsonUtil([new SptJsonConverterRegistrator()]), check);
+            TeammateVoiceTests.Run(storage, settings, new JsonUtil([new SptJsonConverterRegistrator()]), check);
             RestrictedEquipmentPersistenceTests.Run(storage, settings, new JsonUtil([new SptJsonConverterRegistrator()]), session, check);
             RecruitProtectionTests.Run(storage, settings, new JsonUtil([new SptJsonConverterRegistrator()]), session, check);
             DebugRecruitInviteTests.Run(check);

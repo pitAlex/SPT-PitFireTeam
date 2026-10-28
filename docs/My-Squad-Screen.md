@@ -50,10 +50,13 @@ Authoritative files:
 - `client/Components/SquadControlMenuUi.Backend.cs`
 - `client/Patches/OtherPlayerProfileScreenPatch.cs`
 - `client/Patches/OtherPlayerProfileScreenPatch.LoadoutUi.cs`
+- `client/Patches/OtherPlayerProfileScreenPatch.VoiceUi.cs`
 - `server/Resources/lang/*.json`
 - `server/Services/FriendlyLanguageService.cs`
 
 ## Entry Flow
+
+The optional [Going Rogue addon](../going-rogue/README.md) adds a third Mode choice and onboarding card. Its initial profile-testing companions use server-provided Proficiency-only permissions, show role-focused boss skills and use addon-supplied roster colors. Boss level/XP use the native cap independently of skill values. Managed profiles/previews hide View Hideout; ordinary player profiles retain the native action. The addon guide owns this phase's scope and pending qualification.
 
 ### Initial gameplay-mode choice
 
@@ -171,6 +174,10 @@ Each roster entry is a runtime-created tile containing:
 - in-group badge
 
 For raid-recruited members with recorded `RecruitmentGearPrice` metadata (including a zero value), the root `UI.Image` on `pitFireTeam_RosterTile_<accountId>` uses faction RGBA colors: USEC `(0.025, 0.547, 1, 0.408)` and BEAR `(1, 0.287, 0, 0.408)`. Manually added members, legacy unmarked members and other sides keep the original neutral background. Hover/press styling restores the appropriate background and nickname color when the pointer leaves or the card is disabled. Cached cards therefore return without a stale highlight after closing the roster, switching tabs or viewing a member profile.
+
+Wounded teammates tint the native `PortraitRoot/Portrait/Background` image reddish until every body part reaches full HP. The outer tile keeps its faction/companion colour and usual hover/press styling. A lightweight mode-gated `/singleplayer/pitfireteam/teammates/health` poll updates the visible roster every three seconds, recolouring existing portrait backgrounds without regenerating portraits. Hidden rosters do not poll; failed requests back off for 30 seconds, and stale screen/mode responses are ignored. Completed recovery or treatment restores the portrait background's original colour. Fully healed profiles are not rewritten just to advance their timestamp.
+
+Invites use the server's current recovered health rather than trusting cached card colour. Wounded teammates receive the native decline and the localized message `{0} is still wounded and cannot join a raid yet`. Auto-join skips them without clearing their preference, and the spawn endpoint independently rejects wounded profiles. Companion availability and proper-kit checks remain separate requirements; see [health readiness](Teammate-Health.md#raid-readiness).
 
 Portraits are loaded asynchronously and sequentially. The queue fetches `GetOtherPlayerProfile(accountId)` and then uses `PlayerIconImage.SetPresetIcon(...)`.
 
@@ -444,7 +451,7 @@ It is rendered as three mutually exclusive rows using cloned Ragfair `UIAnimated
 
 The rows are intentionally vertical: each row shows the mode description on the left and the selectable mode toggle on the right.
 
-`Restricted` always persists raid wear and consumed supplies while protecting gear from death loss and extraction. There is no separate `Field Upkeep` checkbox or config entry.
+When Restricted is selected, a nested Field Upkeep checkbox appears between Restricted and Immersive, outside the radio ToggleGroup. It defaults off. Enabled, it preserves raid wear and consumed supplies while gear remains protected from death loss and extraction; disabled, raid outcomes retain the saved kit unchanged. It is shared across both gameplay modes. The Loadout Management section remains unavailable in raid-restricted settings contexts.
 
 Changing modes applies immediately and syncs to the server. `Immersive` is the default in both Guns for Hire and Allegiance, and Loadout Management is editable outside raids in either mode. Both use one shared saved selection that persists across gameplay-mode switches. Existing saved choices are retained; all three modes edit real `Default` equipment. Legacy preset selections restore the saved `Default` automatically.
 
@@ -556,16 +563,15 @@ If those conditions fail, the stock profile mostly stays in charge.
 For teammate profiles the patch:
 
 - hides stock report actions
+- hides View Hideout as shared teammate presentation before selecting the ordinary or Proficiency-only layout; suppression does not depend on rename controls
 - clears the stock right-side profile content blocks
 - reuses the stock clothing panel for suit selection
 - combines unlocked BEAR, USEC, and Savage clothing with each teammate's persisted wardrobe while keeping each suite id unique, so generated clothing remains selectable even when the player has not unlocked it
-- injects a cloned second clothing-style row for equipment editing + tactic
-- replaces the loadout dropdown side with `EDIT LOADOUT` in `Restricted`, `Immersive`, and `Realistic`, leaving the tactic dropdown intact
-- injects a `PROFICIENCY` button row below that
-- injects a `KIT LOADOUTS` button row below that
+- arranges four two-column rows: top/bottom clothing selectors, `PROFICIENCY`/tactic, `EDIT LOADOUT`/`KIT LOADOUTS`, then `EDIT NAME`/voice
+- preserves the native selector geometry, row spacing and live action callbacks when placing the buttons
 - clones and hosts a filtered `SkillsScreen`
 - moves the faction badge down to fit the custom rows
-- turns the stock hideout button into `EDIT NAME`
+- clones the stock hideout button for `EDIT NAME`, beside a native-style voice dropdown
 
 ### Persisted profile actions
 
@@ -575,6 +581,8 @@ Verified persisted actions today:
     - `POST /singleplayer/pitfireteam/teammate/profile/suit`
 - rename
     - `POST /singleplayer/pitfireteam/teammate/profile/rename`
+- voice
+    - `POST /singleplayer/pitfireteam/teammate/profile/voice`
 - real `Default` equipment transfer
     - `POST /singleplayer/pitfireteam/teammate/profile/default-equipment`
 - tactic
@@ -691,16 +699,42 @@ Confirmed implementation:
 - persists through the teammate rename route
 - refreshes social list and squad roster state after success
 
+### Voice selector
+
+The name row contains `[EDIT NAME] [voice dropdown]`. The dropdown reuses the stock clothing `DropDownBox`, with localized names from all voice templates loaded by `CustomizationSolver`. USEC, BEAR, Scav, boss and factionless voices can be selected for any teammate, including voices outside the default account choices. Opening the screen never changes the current voice automatically.
+
+The voice selector uses `resources/voice.png` in the native icon frame, preserving aspect ratio and matching the tactic selector's tint. Its icon does not intercept pointer events.
+
+Selecting another voice saves its customization ID to the selected teammate through the mode-gated voice route. The server verifies that it is an existing voice template and saves it in the teammate database without a faction restriction. A failed save restores the previous selection and displays a localized error. A successful save updates the viewed profile and plays EFT's native voice preview. Preview failure does not undo a saved change. The change applies when the teammate next spawns; it does not modify an active follower or the player's voice.
+
+The row disposes its dropdown subscription and popup when destroyed, including profile close and rebuild. Pending recruit previews and ordinary player profiles retain their existing behavior. Layout, popup interaction, preview audio and next-raid speech still require in-game qualification.
+
 ### Skills panel
 
 The profile patch also clones a stock `SkillsScreen`, builds a filtered skills profile snapshot, and shows follower-relevant skills inside the profile right side.
 
 This is teammate-only UI and is destroyed/reset on profile close.
 
+The Debug health UI adds a localized `HEAL` button to the right of the name/EXP block, with total health on the left. Both align vertically with the combined visible name and EXP bounds. They live in an owned overlay host with `LayoutElement.ignoreLayout`, so the profile's native layout cannot append HEAL below its controls. Placement measures the health icon/numbers and button label rather than assuming their root pivots match their visible content. It loads the selected teammate's saved health through `/singleplayer/pitfireteam/teammate/health`; there are no generated sample injuries in the UI. Healthy teammates have no health overlay.
+
+HEAL requests a two-minute server quote, then asks for confirmation with the rouble cost. The HP-only price follows native `HealthObserver`/`HealthTreatmentServiceView`: rounded missing HP per body part, the configured health-point price, Therapist's current loyalty healing coefficient, the player's Charisma discounts, and the player's new-character free-treatment eligibility. Payment uses unlocked stash roubles and counts toward Therapist turnover. The server saves the player's payment before atomically committing restored teammate HP and its receipt. Retries of the completed token cannot charge twice; a lost response reads authoritative payment/health before another service or equipment save is allowed. The player's own health is never treated. Existing effects are rejected in this HP-only pass rather than removed without a quoted effect price.
+
+After saved treatment succeeds, the UI animates to the returned HP and hides the button, total health and body-part bars only after all seven displayed fills finish and every part has full HP. Profile close cancels only the visual wait; the saved transaction remains valid. Reopening/restarting reads saved health, so it cannot recreate the test injuries. The first real payment and reopen flow were observed live: one 7,635-rouble treatment completed. Its whole-stash refresh needed the existing snapshot fallback; treatment now uses the shared, verified money-only update path, preserving other stash item instances.
+
+Saved HP regenerates using the native `OfflineHealthController.Regeneration` body-part values and loop interval with the paying player's active HealthRegeneration bonuses and Hideout Management boost. The server stores a recovery checkpoint in `Health.UpdateTime`, applies completed elapsed loops when health is read/quoted/treated, caps each part at its own maximum and retains the unfinished-loop remainder. Invalid/legacy timestamps start a clock without granting past recovery. The UI polls lightweight health/rate responses on that interval and logs the server total beside the player's actual native regeneration rate for qualification. Profile close stops polling; recovery catches up when reopened, including after restarting. A completed natural recovery uses the same full-health/animation hiding gate as paid healing. Recovery polls carry no inventory snapshot.
+
+The total-health widget enables its existing `Buff` child and exposes the server regeneration rate through the display controller's `HealthRate`, converted from HP/second to native HP/minute. `BuffableHealthParameterPanel.SetBuffValue` supplies the blue positive value, two-decimal formatting and up-arrow animation; polling updates the rate when hideout bonuses change. The indicator uses the same total regeneration-capacity convention as the player's widget, and its arrow animates while HP is below maximum. Other profile/skills snapshots retain their default zero rate. The existing footer placement and full-health hiding behavior are unchanged.
+
+Natural recovery can reduce treatment cost while confirmation is open. The server validates that any intervening saved health change is the expected elapsed regeneration, recalculates the current cost, and charges no more than the confirmed quote. Actual new injuries, changed maxima or effects invalidate the quote. [Raid HP retention](Teammate-Health.md) supplies HP-only outcomes and clears effects at raid end; ordinary saved-teammate activation preserves its recovered health rather than restoring full HP.
+
+Custom clothing without an armband mesh mapping keeps EFT's native first-mesh fallback in menu previews. The compatibility prefix resolves that supported key before native dressing and reports each missing body mapping once; live player/bot dressing and saved clothing remain unchanged. The updated money path, regeneration rate equality, live polling and preview fallback still need in-game qualification.
+
 ### Current profile limitations
 
+Debug builds overlay native body-part health bars on the existing left character preview for injured saved teammates. The source is `Menu UI/UI/MatchMaker Side Selection Screen/PMCs/Button/Health Panel`, bound by `MatchMakerSideSelectionScreen._healthPanel`. Its CanvasGroup alpha controls visibility; its silhouette is hidden. Placement uses the rendered ancestor RawImage (`PMCPlayerMV` in side selection), not the inner `PlayerMVObject` 3D transform. Placement waits one frame for layout and preserves native widget scale through the source/target world scales rather than sizing widgets from changing viewport heights. The skills panel stays visible. Closing the profile cancels pending placement and disposes the overlay. Raid-retained HP feeds the existing passive recovery and paid HP treatment. Effects are intentionally discarded after raids; stash-medkit treatment remains unimplemented.
+
 - teammate profile still lives inside `OtherPlayerProfileScreen`, not a dedicated squad detail screen
-- voice/head editing is not implemented in this screen
+- head editing is not implemented in this screen
 - right-side content is heavily patched and reset-sensitive, so this remains a fragile area
 
 ## Current Custom Loadout Editor Status

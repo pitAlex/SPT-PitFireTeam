@@ -53,6 +53,7 @@ public record FriendlyTeammateDeathEscapeEntry
     public bool HasSecureMeds { get; set; }
 
     public bool VitalsDestroyed { get; set; }
+    public FriendlyTeammateRaidHealth? RaidHealth { get; set; }
 
     public List<Item>? EquipmentItems { get; set; }
 

@@ -1,6 +1,6 @@
 # Gameplay modes
 
-pitFireTeam has two gameplay modes. Each player profile chooses one on its first **My Squad** visit; later changes use **My Squad → Mode**.
+pitFireTeam has two built-in gameplay modes. Each player profile chooses one on its first **My Squad** visit; later changes use **My Squad → Mode**. The optional [Going Rogue addon](../going-rogue/README.md) adds a third mode with its own database and initially uses Allegiance's settings/encounter policy.
 
 | Behavior | [Guns for Hire](Guns-for-Hire.md) | [Allegiance](Allegiance.md) |
 |---|---|---|
@@ -40,6 +40,8 @@ Switching clears the outgoing squad selection, refreshes roster/social data and 
 The selected mode persists in the hidden `00 GameplayMode` config entry. Before entering Allegiance, [GameplayModeRuntime](../client/Modules/GameplayModeRuntime.cs) atomically snapshots only the nine settings in [Allegiance's fixed-value policy](Allegiance.md#settings-policy) to `<config path>.guns-for-hire.json`. Returning to Guns for Hire restores those preferences, including after restarting the game. Every setting outside that policy is shared: changing it in either mode keeps the latest saved value in the other mode. Shared settings and the mode itself are never captured or restored; shared entries in older, broader snapshots are ignored during validation and restoration.
 
 Allegiance leaves saved config preferences intact. Gameplay consumers, the Settings UI and server synchronization resolve its fixed values through `GameplayModeRuntime.GetEffectiveValue`. Editing or reloading the BepInEx cfg cannot override those values while Allegiance is active. The fixed-value table belongs to [Allegiance](Allegiance.md#settings-policy).
+
+Field Upkeep is one shared preference in both gameplay modes. Its checkbox appears only under Restricted, defaults off and affects only Restricted raid wear/supply persistence.
 
 Loadout Management is not mode-locked. Both modes default to Immersive and use one shared saved Restricted, Immersive or Realistic choice. Changing it in either gameplay mode persists across restarts and mode switches; switching never restores a separate loadout policy.
 

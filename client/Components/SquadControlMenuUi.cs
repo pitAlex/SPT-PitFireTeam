@@ -306,6 +306,8 @@ namespace pitTeam.Components
             public int Level { get; set; }
             public string Side { get; set; } = string.Empty;
             public int? RecruitmentGearPrice { get; set; }
+            public string PortraitColor { get; set; }
+            public bool IsWounded { get; set; }
             public bool AutoJoinEnabled { get; set; }
             public bool HasProperRaidKit { get; set; } = true;
         }
@@ -671,6 +673,7 @@ namespace pitTeam.Components
         private void Update()
         {
             UpdateRosterPenaltyLabel();
+            UpdateRosterHealth();
             if (raidSettingsOverlayActive && UnityEngine.Input.GetKeyDown(KeyCode.Escape))
             {
                 HideRaidSettingsOverlay();

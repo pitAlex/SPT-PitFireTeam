@@ -73,12 +73,13 @@ namespace pitTeam.Components
             RectTransform rect = onboardingPanel.GetComponent<RectTransform>();
             rect.SetParent(host, false);
             rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = new Vector2(820f, 535f);
+            float width = GameplayModeAddons.IsAvailable(GameplayMode.GoingRogue) ? 1240f : 820f;
+            rect.sizeDelta = new Vector2(width, 535f);
             rect.anchoredPosition = new Vector2(0f, -12f);
             if (host is RectTransform hostRect && hostRect.rect.height > 1f)
             {
                 float fit = Mathf.Min(1f, Mathf.Max(0.5f, (hostRect.rect.height - 230f) / 535f),
-                    Mathf.Max(0.5f, (hostRect.rect.width - 100f) / 820f));
+                    Mathf.Max(0.5f, (hostRect.rect.width - 100f) / width));
                 rect.localScale = new Vector3(fit, fit, 1f);
             }
         }
@@ -116,8 +117,10 @@ namespace pitTeam.Components
         private void BuildOnboardingCards()
         {
             ClearOnboardingContent();
-            CreateModeCard(GameplayMode.GunsForHire, -210f, "SquadControlModeGunsForHire", "SquadControlModeGunsForHireDescription");
-            CreateModeCard(GameplayMode.Allegiance, 210f, "SquadControlModeAllegiance", "SquadControlModeAllegianceDescription");
+            bool rogue = GameplayModeAddons.IsAvailable(GameplayMode.GoingRogue);
+            CreateModeCard(GameplayMode.GunsForHire, rogue ? -420f : -210f, "SquadControlModeGunsForHire", "SquadControlModeGunsForHireDescription");
+            CreateModeCard(GameplayMode.Allegiance, rogue ? 0f : 210f, "SquadControlModeAllegiance", "SquadControlModeAllegianceDescription");
+            if (rogue) CreateModeCard(GameplayMode.GoingRogue, 420f, "SquadControlModeGoingRogue", null);
         }
 
         private void CreateModeCard(GameplayMode mode, float x, string nameKey, string descriptionKey)
@@ -154,7 +157,9 @@ namespace pitTeam.Components
             artwork.transform.SetParent(portrait, false);
             Stretch(artwork.GetComponent<RectTransform>());
             Image image = artwork.GetComponent<Image>();
-            image.sprite = LoadModeCardSprite(mode);
+            // Going Rogue artwork and description will be supplied in a later phase.
+            image.sprite = mode == GameplayMode.GoingRogue ? null : LoadModeCardSprite(mode);
+            image.color = mode == GameplayMode.GoingRogue ? Color.clear : Color.white;
             image.preserveAspect = true;
             image.raycastTarget = false;
 
@@ -166,7 +171,7 @@ namespace pitTeam.Components
             name.alignment = TextAlignmentOptions.Bottom;
             card.AddComponent<RosterTileHoverController>().Configure(background, name, normal,
                 new Color(0.6235f, 0.6157f, 0.5647f, 1f), new Color(0.16f, 0.16f, 0.16f, 0.99f));
-            card.AddComponent<TooltipHoverController>().Configure(GetSocialUiText(descriptionKey));
+            if (descriptionKey != null) card.AddComponent<TooltipHoverController>().Configure(GetSocialUiText(descriptionKey));
             Button button = card.GetComponent<Button>();
             button.transition = Selectable.Transition.None;
             button.targetGraphic = background;

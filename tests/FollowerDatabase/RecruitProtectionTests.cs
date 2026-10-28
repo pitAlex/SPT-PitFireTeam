@@ -49,7 +49,7 @@ internal static class RecruitProtectionTests
         {
             settings.SaveAndApply(new() { LoadoutManagementMode = mode });
             var candidate = Candidate();
-            check(Clean(candidate) == (mode == "Restricted"), mode + " respects existing equipment ownership mode");
+            check(Clean(candidate), mode + " enforces explicitly registered raid protection");
             var result = json.Deserialize<BotBase>(candidate.ProfileJson)!;
             var resultItems = result.Inventory!.Items!;
             if (mode == "Restricted")
@@ -66,8 +66,15 @@ internal static class RecruitProtectionTests
                 check(!json.Deserialize<BotBase>(storage.Read<List<FriendlyRecruitRequestEntry>>(session, "protected-invite-test.json")!.Single().ProfileJson)!
                     .Inventory!.Items!.Any(item => item.Id == gun.Id), "Sanitized pending capture persists without protected copies");
             }
-            else check(resultItems.Count == recruit.Inventory!.Items!.Count && candidate.GivenEquipmentSlots.Length == 3,
-                mode + " retains legitimate recovered field gear and donation credit");
+            else
+            {
+                check(resultItems.Count == recruit.Inventory!.Items!.Count - 2 && candidate.GivenEquipmentSlots.Length == 3 &&
+                    resultItems.Any(item => item.Id == givenGun.Id) && resultItems.Any(item => item.Id == givenHelmet.Id),
+                    mode + " retains ordinary recovered field gear and donation credit");
+                check(!resultItems.Any(item => item.Id == liveOnly.Id || item.Id == liveChild.Id),
+                    mode + " cannot launder registered boss equipment through a recruit");
+                check(!Clean(candidate), mode + " registered raid protection is idempotent");
+            }
             check(json.Serialize(storage.Read<BotBase>(session, "992.json")) == originalJson, "Original fallen teammate equipment never changed");
         }
         if (previousRegistration == null) registrations.TryRemove(session.ToString(), out _);

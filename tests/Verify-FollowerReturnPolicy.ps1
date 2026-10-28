@@ -16,6 +16,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Return policy fixture compilation failed' }
 & $exe
 if ($LASTEXITCODE -ne 0) { throw 'Return policy fixture failed' }
 $source = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/InteractableObjects.cs')
+if ($source -notmatch '(?s)private static bool IsReturnSquadMember\(BotOwner bot\).*?follower is not BossFollowerPlayer && follower.IsSquadMate;') {
+    throw 'Boss allies must be excluded explicitly from loot return membership'
+}
 foreach ($signature in @('public static void StoreItem(BotOwner bot, Item item)',
     'internal static void StoreGearSwapReturnItems(BotOwner bot, IEnumerable<Item> items)',
     'internal static List<string> GetReturnItemIds(BotOwner bot)',

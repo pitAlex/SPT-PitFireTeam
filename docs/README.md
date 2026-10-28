@@ -9,6 +9,8 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 | [Architecture](Architecture.md) | Client/server ownership, lifecycle invariants and source map |
 | [SPT compatibility](SPT-Compatibility.md) | Build/reference baseline and packaging boundaries |
 | [Version 1 validation](validation/Release-1.0.0.md) | Dated release cleanup evidence and outstanding live qualification |
+| [Core 1.0.1 validation](validation/Release-1.0.1.md) | Field Upkeep restoration, persistence checks and deployment evidence |
+| [Core 1.1.0 validation](validation/Release-1.1.0.md) | Teammate workshop release description, compiled versions and matching addon deployment |
 | [SAIN compatibility](SAIN-Compatibility.md) | Core integration with the external plugin, including deferred shot-safety investigation |
 | [Questing Bots compatibility](Questing-Bots-Compatibility.md) | Optional objective suspension and restoration across follower ownership |
 | [Localization](Localization.md) | Centralized text and locale maintenance |
@@ -31,6 +33,7 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 | [Holster support](looting/Weapon-Pickup-Holster-Slot.md) | Shared support planner and pistol qualification |
 | [Suppression](Suppression.md) | Core player-facing suppression guide |
 | [Team Escape](Team-Escape.md) | Escape rolls, recovery, results and notifications |
+| [Raid kill results](Raid-Results.md) | Native victim rows grouped by saved teammate or allied boss, independent of boss squadmate classification |
 | [PMC karma](PMC-Karma.md) | Independent friendly-kill, recruited extraction and peaceful Allegiance recovery rules |
 | [Fence karma](Fence-Karma.md) | Intentional friendly Scav kills, extraction standing and inspected native reputation values |
 
@@ -45,12 +48,17 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 | [Give Gear](Give-Gear-Spec.md) | Staged field-recruit donations, primary-first kit selection, PMC gifts/invitations, Scav returns and remaining qualification cases |
 | [Follower Insurance](Follower-Insurance.md) | Purchase, policy transfers, raid evidence, settlement and stock trader returns |
 | [Teammate Storage](Teammate-Storage.md) | Database representation, migration and recovery |
+| [Teammate Health](Teammate-Health.md) | HP-only raid retention, spawn normalization, recovery and treatment |
+| [Teammate web editor](Teammate-Web-Editor.md) | Server-hosted name, head, voice, level/XP, skills, health and pockets editor with equipment restrictions |
+| [Database Tool](../tools/DatabaseTool/README.md) | Offline encrypted database export, JSON editing, validated import and backups |
 
 ## Shared tactical settings
 
 - [Self-Determination](Self-Determination.md): saved combat dependence, command overrides, initial calibration and churn safeguards, with a separate addon adaptation.
 
 ## Proposals and unfinished work
+
+- [Going Rogue](../going-rogue/README.md): optional third mode, companion permissions and Knight/Big Pipe combat integration.
 
 - [Core roadmap](../TASKS.md): retained product proposals and future work.
 - [Addon roadmap](../addon/docs/Roadmap.md): addon-specific gaps and raid qualification.

@@ -39,6 +39,7 @@ namespace pitTeam.BigBrain
         private readonly FiringPositionArrivalState firingPositionArrival = new FiringPositionArrivalState();
         private readonly BotOwner BotOwner;
         private readonly FollowerCombatCommon CombatCommon;
+        private readonly Func<EnemyInfo, AICoreActionResult<BotLogicDecision, CoreActionResultParams>?> companionPosition;
         private AICoreActionResult<BotLogicDecision, CoreActionResultParams>? currentEndSourceDecision;
         private float noActionFallbackUntil;
         private float nextFiringPositionAllowedTime;
@@ -54,9 +55,14 @@ namespace pitTeam.BigBrain
         private float rangeThreatUntil, rangeThreatMultiplier = 1f;
 
         public FollowerCombatSniper(BotOwner botOwner, FollowerCombatCommon combatCommon)
+            : this(botOwner, combatCommon, null) { }
+
+        internal FollowerCombatSniper(BotOwner botOwner, FollowerCombatCommon combatCommon,
+            Func<EnemyInfo, AICoreActionResult<BotLogicDecision, CoreActionResultParams>?> positionPolicy)
         {
             BotOwner = botOwner;
             CombatCommon = combatCommon;
+            companionPosition = positionPolicy;
         }
 
         public void Reset()
@@ -310,6 +316,15 @@ namespace pitTeam.BigBrain
             if (TryGetBossUnderAttackDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> bossSupport))
             {
                 return bossSupport;
+            }
+
+            // Companion positioning runs only after survival, close weapons, commitments and
+            // player help. Do not renew character-specific positioning when separation already
+            // calls for regroup; the ordinary shot/pressure/cover gates below still retain priority.
+            if (companionPosition != null && !ShouldRegroupForBossDistance())
+            {
+                var companion = companionPosition(goalEnemy);
+                if (companion.HasValue) return companion.Value;
             }
 
             if (TryGetVisibleDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> visible))
@@ -2555,8 +2570,9 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEnd("sniperMedicalRetryDogFight", true);
             }
 
-            // Pressure recovery is a fallback only after a due medical retry has had its turn.
-            if (!CombatCommon.IsHealDecisionRetryBlocked)
+            // Capture the deadline before a failed provider call rearms it; probe once.
+            bool retryWasDue = !CombatCommon.IsHealDecisionRetryBlocked;
+            if (CombatCommon.IsActivelyUsingMedical || retryWasDue)
             {
                 AICoreActionResult<BotLogicDecision, CoreActionResultParams>? healDecision =
                     CombatCommon.TryGetNeedHealDecision();
@@ -2570,6 +2586,10 @@ namespace pitTeam.BigBrain
                 }
             }
 
+            if (CombatCommon.IsActivelyUsingMedical || CombatCommon.HasReachedSafeHealPosition(goalEnemy))
+                return CombatCommon.HasActiveOrPendingHealWork()
+                    ? FollowerCombatCommon.Continue() : new AICoreActionEnd("sniperMedicalRetryCleared", true);
+
             AICoreActionResult<BotLogicDecision, CoreActionResultParams>? immediateShoot =
                 CombatCommon.TryGetImmediateShootDecision("sniper.medicalRetryImmediateShoot");
             if (immediateShoot != null &&
@@ -2581,8 +2601,8 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEnd("sniperMedicalRetryImmediateShoot", true);
             }
 
-            if (TryGetRecoverDecision(
-                    goalEnemy,
+            if (CombatCommon.TryGetMedicalRetryRecoveryDecision(
+                    goalEnemy, retryWasDue,
                     out AICoreActionResult<BotLogicDecision, CoreActionResultParams> recoveryDecision) &&
                 CombatCommon.TryPrepareDecisionTransition(
                     currentDecision,

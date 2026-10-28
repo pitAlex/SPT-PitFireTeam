@@ -39,6 +39,7 @@ namespace pitTeam.Server.Services;
 public partial class FriendlyTeammateService(
     BotGenerator botGenerator,
     GlobalTable globalTable,
+    TemplateTable templateTable,
     FriendlyTeammateStorage storage,
     HashUtil hashUtil,
     JsonUtil jsonUtil,
@@ -46,6 +47,7 @@ public partial class FriendlyTeammateService(
     TraderHelper traderHelper,
     RagfairConfig ragfairConfig,
     HideoutTable hideoutTable,
+    HealthConfig healthConfig,
     InventoryHelper inventoryHelper,
     MailSendService mailSendService,
     NotifierHelper notifierHelper,
@@ -467,16 +469,27 @@ public partial class FriendlyTeammateService(
     public List<object> ListTeammates(MongoId sessionId)
     {
         return LoadTeammates(sessionId)
-            .Select(teammate => ToTeammateSummary(teammate, GetTeammateSettings(sessionId, teammate)))
+            .Select(teammate =>
+            {
+                AdvanceTeammateRecovery(sessionId, teammate);
+                return ToTeammateSummary(teammate, GetTeammateSettings(sessionId, teammate));
+            })
             .ToList();
     }
+
+    public List<object> GetTeammateHealthStates(MongoId sessionId) => LoadTeammates(sessionId).Select(teammate =>
+    {
+        AdvanceTeammateRecovery(sessionId, teammate);
+        return (object)new { Aid = teammate.Aid?.ToString(), IsWounded = FriendlyTeammateRegeneration.IsWounded(teammate.Health) };
+    }).ToList();
 
     public HashSet<string> GetProtectedTeammateItemIdsForExtraction(MongoId sessionId)
     {
         string mode = NormalizeLoadoutManagementMode(settingsService.LoadSettings().LoadoutManagementMode);
         if (IsImmersiveLikeLoadoutManagementMode(mode))
         {
-            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            return LoadTeammates(sessionId).Where(teammate => CompanionPolicy(teammate)?.ProtectSpawnInventory == true)
+                .SelectMany(GetProtectedSpawnItemIdsForExtraction).ToHashSet(StringComparer.OrdinalIgnoreCase);
         }
 
         HashSet<string> itemIds = new(StringComparer.OrdinalIgnoreCase);
@@ -490,6 +503,14 @@ public partial class FriendlyTeammateService(
 
     public HashSet<string> GetProtectedSpawnItemIdsForExtraction(BotBase? profile)
     {
+        if (profile != null && CompanionPolicy(profile)?.ProtectSpawnInventory == true)
+        {
+            string? equipment = profile.Inventory?.Equipment?.ToString();
+            return (profile.Inventory?.Items ?? []).Where(item => item?.Id != null &&
+                    !string.Equals(item.Id.ToString(), equipment, StringComparison.OrdinalIgnoreCase) &&
+                    !IsCompanionLootConsumable(item))
+                .Select(item => item.Id.ToString()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
         string mode = NormalizeLoadoutManagementMode(settingsService.LoadSettings().LoadoutManagementMode);
         if (IsImmersiveLikeLoadoutManagementMode(mode))
         {
@@ -531,7 +552,8 @@ public partial class FriendlyTeammateService(
                 continue;
             }
 
-            HashSet<string> itemIds = GetProtectedTeammateItemIds(teammate);
+            HashSet<string> itemIds = CompanionPolicy(teammate)?.ProtectSpawnInventory == true
+                ? GetProtectedSpawnItemIdsForExtraction(teammate) : GetProtectedTeammateItemIds(teammate);
             if (itemIds.Count > 0)
             {
                 itemIdsByAid[aid] = itemIds;
@@ -540,6 +562,12 @@ public partial class FriendlyTeammateService(
 
         return itemIdsByAid;
     }
+
+    private bool IsCompanionLootConsumable(Item item) => item?.Template != null &&
+        (itemHelper.IsOfBaseclass(item.Template, BaseClasses.AMMO) ||
+         itemHelper.IsOfBaseclass(item.Template, BaseClasses.MEDS) ||
+         itemHelper.IsOfBaseclass(item.Template, BaseClasses.FOOD_DRINK) ||
+         itemHelper.IsOfBaseclass(item.Template, BaseClasses.THROW_WEAP));
 
     private static HashSet<string> GetProtectedTeammateItemIds(BotBase? teammate)
     {
@@ -644,13 +672,17 @@ public partial class FriendlyTeammateService(
         var accountIds = new List<string>();
         foreach (var teammate in LoadTeammates(sessionId))
         {
+            if (CompanionPolicy(teammate)?.RaidReady == false) continue;
             if (!GetTeammateSettings(sessionId, teammate).AutoJoinEnabled)
             {
                 continue;
             }
 
+            AdvanceTeammateRecovery(sessionId, teammate);
+            if (FriendlyTeammateRegeneration.IsWounded(teammate.Health)) continue;
+
             var preparedTeammate = PrepareTeammateForFetch(teammate);
-            if (!HasProperRaidKit(preparedTeammate))
+            if (!HasRaidEquipmentOrGenerator(preparedTeammate))
             {
                 logger.Info($"Skipped auto-join for teammate '{GetTeammateDisplayName(preparedTeammate)}' because their Default loadout has no primary or pistol weapon.");
                 continue;
@@ -820,6 +852,7 @@ public partial class FriendlyTeammateService(
                 return new FriendlyTeammateFollowerDetailsResponse
                 {
                     Aid = teammate.Aid?.ToString() ?? string.Empty,
+                    Role = teammate.Info?.Settings?.Role ?? string.Empty,
                     Tactic = NormalizeCombatTactic(settings.CombatTactic),
                     Aggression = NormalizeAggression(settings.Aggression),
                     SelfDetermination = pitTeam.Shared.SelfDeterminationPolicy.Normalize(settings.SelfDetermination),
@@ -854,6 +887,9 @@ public partial class FriendlyTeammateService(
 
         var response = new FriendlyTeammateProfileOptionsResponse
         {
+            ProficiencyOnly = CompanionPolicy(teammate)?.ProficiencyOnly == true,
+            HideRaidStats = CompanionPolicy(teammate)?.HideRaidStats == true,
+            VisibleSkills = CompanionPolicy(teammate)?.GetVisibleSkills?.Invoke().ToList() ?? [],
             InsuredItems = settings.InsuredItems.ToList(),
             PlayerInsuredItems = FriendlyTeammateInsuranceService.GetPlayerPolicies(GetPlayerProfile(sessionId)),
             CurrentLoadoutId = DefaultLoadoutId,
@@ -887,6 +923,7 @@ public partial class FriendlyTeammateService(
     public void SetTeammateSuit(MongoId sessionId, FriendlyTeammateSuitRequest request)
     {
         var teammate = FindByAccountId(sessionId, request.Aid);
+        RequireCompanionCustomizationAllowed(teammate);
         if (request.Suit == null || request.Suit.Length < 2)
         {
             throw new FriendlyTeammateException("Missing teammate suit values");
@@ -906,6 +943,7 @@ public partial class FriendlyTeammateService(
     public void RenameTeammate(MongoId sessionId, FriendlyTeammateRenameRequest request)
     {
         var teammate = FindByAccountId(sessionId, request.Aid);
+        RequireCompanionCustomizationAllowed(teammate);
         var nickname = NormalizeRequiredValue(request.Nickname, "nickname");
 
         EnsureNicknameIsUnique(sessionId, nickname, teammate.Aid);
@@ -914,6 +952,23 @@ public partial class FriendlyTeammateService(
         teammate.Info.Nickname = nickname;
         teammate.Info.LowerNickname = nickname.ToLowerInvariant();
 
+        SaveTeammate(sessionId, teammate);
+    }
+
+    public void SetTeammateVoice(MongoId sessionId, FriendlyTeammateVoiceRequest request)
+    {
+        var teammate = FindByAccountId(sessionId, request.Aid);
+        RequireCompanionCustomizationAllowed(teammate);
+        string voice = NormalizeRequiredValue(request.Voice, "voice");
+        // EFT stores the voice customization ID, not the spoken voice/prefab name.
+        var template = templateTable.Customization.Values.FirstOrDefault(item => item.Id.ToString() == voice);
+        if (!FriendlyTeammateIdentityPolicy.IsVoice(template))
+        {
+            throw new FriendlyTeammateException("VoiceChangeFailed");
+        }
+
+        teammate.Customization ??= new CommonCustomization();
+        teammate.Customization.Voice = template.Id;
         SaveTeammate(sessionId, teammate);
     }
 
@@ -933,6 +988,7 @@ public partial class FriendlyTeammateService(
 
     public FriendlyTeammateDefaultEquipmentResponse SaveTeammateDefaultEquipment(MongoId sessionId, FriendlyTeammateDefaultEquipmentRequest request)
     {
+        RequireCompanionCustomizationAllowed(FindByAccountId(sessionId, request.Aid));
         if (!request.RealItemCommit)
         {
             throw new FriendlyTeammateException(GetLanguageValue(
@@ -955,6 +1011,7 @@ public partial class FriendlyTeammateService(
     public FriendlyTeammateBuyKitResponse BuyTeammateKit(MongoId sessionId, FriendlyTeammateBuyKitRequest request)
     {
         var teammate = FindByAccountId(sessionId, request.Aid);
+        RequireCompanionCustomizationAllowed(teammate);
         string mode = NormalizeLoadoutManagementMode(settingsService.LoadSettings().LoadoutManagementMode);
         var buildItems = request.Items?.Where(item => item != null).ToList();
         if (buildItems == null || buildItems.Count == 0)
@@ -1022,6 +1079,7 @@ public partial class FriendlyTeammateService(
     public FriendlyTeammateRepairEquipmentResponse RepairTeammateDefaultEquipment(MongoId sessionId, FriendlyTeammateRepairEquipmentRequest request)
     {
         var teammate = FindByAccountId(sessionId, request.Aid);
+        RequireCompanionCustomizationAllowed(teammate);
         string targetItemId = NormalizeRequiredValue(request.Target, "target");
         var repairKits = request.RepairKitsInfo?.Where(kit => kit != null).ToList();
         bool repairWithKit = repairKits is { Count: > 0 };
@@ -1336,6 +1394,7 @@ public partial class FriendlyTeammateService(
     public void SetTeammateTactic(MongoId sessionId, FriendlyTeammateTacticRequest request)
     {
         var teammate = FindByAccountId(sessionId, request.Aid);
+        RequireCompanionCustomizationAllowed(teammate);
         var settings = GetTeammateSettings(sessionId, teammate);
         settings.CombatTactic = NormalizeCombatTactic(request.Tactic);
         settings.Aggression = GetDefaultAggressionForTactic(settings.CombatTactic);
@@ -1389,9 +1448,21 @@ public partial class FriendlyTeammateService(
             return false;
         }
 
+        AdvanceTeammateRecovery(sessionId, teammate!);
         var preparedTeammate = PrepareTeammateForFetch(teammate!);
         groupCharacter = ToGroupCharacter(preparedTeammate);
-        if (!HasProperRaidKit(preparedTeammate))
+        if (CompanionPolicy(teammate!)?.RaidReady == false)
+        {
+            rejectionReason = GetLanguageValue(languageService.GetStringMap(sessionId, "socialUi"), "CompanionCombatUnavailable", "CompanionCombatUnavailable");
+            return false;
+        }
+        if (FriendlyTeammateRegeneration.IsWounded(teammate!.Health))
+        {
+            rejectionReason = string.Format(GetLanguageValue(languageService.GetStringMap(sessionId, "socialUi"),
+                "TeammateStillWounded", "TeammateStillWounded"), GetTeammateDisplayName(preparedTeammate));
+            return false;
+        }
+        if (!HasRaidEquipmentOrGenerator(preparedTeammate))
         {
             rejectionReason = $"Cannot add {GetTeammateDisplayName(preparedTeammate)} to the raid group without a proper kit.";
             return false;
@@ -1408,7 +1479,19 @@ public partial class FriendlyTeammateService(
             return false;
         }
 
-        profile = PrepareTeammateForFetch(teammate!, healthMultiplier, refillMagazinesForSpawn: true);
+        if (CompanionPolicy(teammate!)?.RaidReady == false) return false;
+        RecoverTeammateTreatment(sessionId);
+        // The native raid-start gate is already active while profiles are fetched. This is
+        // the last off-raid recovery checkpoint before that saved health enters the raid.
+        AdvanceTeammateRecovery(sessionId, teammate!, raidSpawn: true);
+        if (FriendlyTeammateRegeneration.IsWounded(teammate!.Health))
+        {
+            logger.Info($"[TeammateHealth] Refused wounded teammate spawn: aid={accountId}");
+            return false;
+        }
+        profile = CompanionPolicy(teammate!)?.GenerateEquipmentEachRaid == true
+            ? PrepareNativeCompanionForRaid(sessionId, teammate!, healthMultiplier)
+            : PrepareTeammateForFetch(teammate!, healthMultiplier, refillMagazinesForSpawn: true);
         return true;
     }
 
@@ -1421,6 +1504,10 @@ public partial class FriendlyTeammateService(
         // Temporarily disabled: this floor baseline can over-inflate teammate skills.
         // ApplyPmcFollowerSkillBaseline(clone);
         ApplyTemporaryHealthMultiplier(clone, healthMultiplier);
+        foreach (var part in clone.Health?.BodyParts?.Values.AsEnumerable() ?? []) part.Effects = null;
+        // Companion equipment shown off-raid is only a preview. Do not provision or
+        // repair it as a managed loadout; the native generator supplies each raid's kit.
+        if (CompanionPolicy(teammate)?.GenerateEquipmentEachRaid == true) return clone;
         EnsureFollowerHasPockets(clone);
 
         var mode = NormalizeLoadoutManagementMode(settingsService.LoadSettings().LoadoutManagementMode);
@@ -1467,7 +1554,8 @@ public partial class FriendlyTeammateService(
 
     public FriendlyTeammateDeathEscapeSummary PersistDeathEscapeOutcomes(
         MongoId sessionId,
-        IEnumerable<FriendlyTeammateDeathEscapeEntry>? entries)
+        IEnumerable<FriendlyTeammateDeathEscapeEntry>? entries,
+        string? raidId = null)
     {
         lock (RaidResultPersistenceLock)
         {
@@ -1479,6 +1567,8 @@ public partial class FriendlyTeammateService(
 
             Dictionary<string, HashSet<string>> protectedTeammateItemIdsByAid =
                 BuildProtectedTeammateItemIdsByAid(sessionId);
+            const string healthReceiptsDocument = "health/raid-outcomes-v1";
+            var healthReceipts = storage.Read<HashSet<string>>(sessionId, healthReceiptsDocument) ?? [];
 
             foreach (var entry in entries)
             {
@@ -1512,20 +1602,25 @@ public partial class FriendlyTeammateService(
                 // Escape rolls are server-owned by the time outcomes are persisted. Client-provided
                 // live raid state is only input data for ResolveRaidOutcomes().
                 ApplyFollowerRaidOutcomeStats(teammate, entry.Escaped);
-                // Raid outcomes do not persist health. Ordinary follower activation restores full
-                // health; saving a failed escape as zero only left a misleading dead profile.
+                string? healthReceipt = string.IsNullOrWhiteSpace(raidId) ? null : raidId + "/" + entry.Aid;
+                bool retainedHealth = healthReceipt != null && !healthReceipts.Contains(healthReceipt)
+                    && FriendlyTeammateRaidHealthPolicy.Apply(teammate.Health, entry.RaidHealth, entry.Escaped,
+                        healthConfig.HealthMultipliers.Blacked, healthConfig.HealthMultipliers.Death, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+                if (retainedHealth) healthReceipts.Add(healthReceipt!);
+                else if (entry.RaidHealth != null && healthReceipt != null && !healthReceipts.Contains(healthReceipt))
+                    logger.Warning($"[TeammateHealth] Invalid raid HP snapshot ignored: aid={entry.Aid} raid={raidId}");
 
-                // Surviving Default loadouts keep the in-raid state in every equipment mode.
-                ApplyImmersiveEscapedDefaultEquipmentState(sessionId, teammate, entry, protectedTeammateItemIdsByAid);
-
-                // Restricted protects gear from death loss, but still needs the
-                // death-time equipment state so used consumables and durability loss cannot be duplicated.
-                ApplyRestrictedGearMaintenanceDeathEquipmentState(sessionId, teammate, entry, protectedTeammateItemIdsByAid);
-
-                // Immersive/Extreme loss is applied after the health/death outcome so the teammate's
-                // saved Default equipment reflects the post-raid penalty instead of regenerating gear.
-                ApplyImmersiveDefaultGearLoss(sessionId, teammate, entry);
-                SaveTeammate(sessionId, teammate);
+                // Fresh companion equipment is raid-local, never a persistent Default loadout.
+                if (CompanionPolicy(teammate)?.GenerateEquipmentEachRaid != true)
+                {
+                    ApplyImmersiveEscapedDefaultEquipmentState(sessionId, teammate, entry, protectedTeammateItemIdsByAid);
+                    ApplyRestrictedGearMaintenanceDeathEquipmentState(sessionId, teammate, entry, protectedTeammateItemIdsByAid);
+                    ApplyImmersiveDefaultGearLoss(sessionId, teammate, entry);
+                }
+                SaveTeammate(sessionId, teammate, retainedHealth
+                    ? new Dictionary<string, string> { [healthReceiptsDocument] = jsonUtil.Serialize(healthReceipts)! } : null);
+                if (retainedHealth)
+                    logger.Info($"[TeammateHealth] Saved HP-only raid outcome: aid={entry.Aid} escaped={entry.Escaped} raid={raidId} effects=cleared hp={string.Join(",", FriendlyTeammateTreatmentPricing.BodyParts.Select(part => $"{part}:{teammate.Health!.BodyParts![part].Health!.Current:0.##}/{teammate.Health.BodyParts[part].Health!.Maximum:0.##}"))}");
             }
 
             return summary;
@@ -1584,6 +1679,7 @@ public partial class FriendlyTeammateService(
             AliveSquadmates = entry.AliveSquadmates,
             HasSecureMeds = entry.HasSecureMeds,
             VitalsDestroyed = entry.VitalsDestroyed,
+            RaidHealth = entry.RaidHealth,
             EquipmentItems = entry.EquipmentItems,
             TrackedItemIds = entry.TrackedItemIds,
         };
@@ -1708,6 +1804,7 @@ public partial class FriendlyTeammateService(
         FriendlyServerSettingsRequest serverSettings = settingsService.LoadSettings();
         string mode = NormalizeLoadoutManagementMode(serverSettings.LoadoutManagementMode);
 
+        if (!ShouldPersistEscapedDefaultEquipmentState(mode, serverSettings)) return;
         var settings = GetTeammateSettings(sessionId, teammate);
         if (!string.Equals(settings.SelectedLoadoutId, DefaultLoadoutId, StringComparison.OrdinalIgnoreCase))
         {
@@ -1770,7 +1867,7 @@ public partial class FriendlyTeammateService(
 
         FriendlyServerSettingsRequest serverSettings = settingsService.LoadSettings();
         string mode = NormalizeLoadoutManagementMode(serverSettings.LoadoutManagementMode);
-        if (!IsRestrictedLoadoutManagementMode(mode))
+        if (!ShouldPersistRestrictedGearMaintenanceDeathEquipmentState(mode, serverSettings))
         {
             return;
         }
@@ -1987,7 +2084,7 @@ public partial class FriendlyTeammateService(
             },
         });
 
-        logger.Debug($"Injected managed secure container for teammate '{profile.Aid}' in non-Realistic loadout mode.");
+        logger.Debug($"Injected managed secure container for teammate '{profile.Aid}'.");
     }
 
     private static string GetEquipmentRootId(BotBase profile)
@@ -2822,6 +2919,17 @@ public partial class FriendlyTeammateService(
         return string.Equals(mode, "Restricted", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool ShouldPersistEscapedDefaultEquipmentState(string mode, FriendlyServerSettingsRequest settings)
+    {
+        return IsImmersiveLikeLoadoutManagementMode(mode)
+            || (IsRestrictedLoadoutManagementMode(mode) && settings.RestrictedGearMaintenance == true);
+    }
+
+    private static bool ShouldPersistRestrictedGearMaintenanceDeathEquipmentState(string mode, FriendlyServerSettingsRequest settings)
+    {
+        return IsRestrictedLoadoutManagementMode(mode) && settings.RestrictedGearMaintenance == true;
+    }
+
     private void EnsureFollowerHasSecureContainerSupplies(BotBase profile)
     {
         if (profile?.Inventory?.Items == null)
@@ -3385,10 +3493,8 @@ public partial class FriendlyTeammateService(
 
     private void EnsureNicknameIsUnique(MongoId sessionId, string nickname, int? ignoreAid = null)
     {
-        var exists = LoadTeammates(sessionId).Any(profile =>
-            (!ignoreAid.HasValue || profile.Aid != ignoreAid.Value) &&
-            string.Equals(profile.Info?.Nickname, nickname, StringComparison.OrdinalIgnoreCase)
-        );
+        var exists = FriendlyTeammateIdentityPolicy.NicknameInUse(LoadTeammates(sessionId)
+            .Where(profile => !ignoreAid.HasValue || profile.Aid != ignoreAid.Value).Select(profile => profile.Info?.Nickname), nickname);
 
         if (exists)
         {
@@ -4204,12 +4310,18 @@ public partial class FriendlyTeammateService(
 
     private List<BotBase> LoadTeammates(MongoId sessionId)
     {
+        if (!FriendlyGameplayModeAddons.IsAvailable(settingsService.LoadSettings().GameplayMode))
+            throw new FriendlyTeammateException("GameplayModeSwitchFailed");
+        EnsureModeCompanions(sessionId);
+        RecoverTeammateTreatment(sessionId);
         RecoverTeammateDeletion(sessionId);
         var teammates = storage.ReadProfiles(sessionId);
         foreach (var teammate in teammates)
         {
             RecoverTeammateProfileIfNeeded(sessionId, teammate);
             RestoreLegacyPresetSelection(sessionId, teammate);
+            if (CompanionPolicy(teammate)?.PrepareProfile?.Invoke(teammate) == true)
+                SaveTeammate(sessionId, teammate);
         }
 
         return teammates
@@ -4268,11 +4380,12 @@ public partial class FriendlyTeammateService(
         return teammate != null;
     }
 
-    private void SaveTeammate(MongoId sessionId, BotBase teammate) =>
-        storage.WriteBatch(sessionId, new Dictionary<string, string>
-        {
-            [GetTeammateDocumentKey(teammate)] = SerializeTeammate(teammate)
-        });
+    private void SaveTeammate(MongoId sessionId, BotBase teammate, Dictionary<string, string>? additionalDocuments = null)
+    {
+        var documents = additionalDocuments == null ? new Dictionary<string, string>() : new Dictionary<string, string>(additionalDocuments);
+        documents[GetTeammateDocumentKey(teammate)] = SerializeTeammate(teammate);
+        storage.WriteBatch(sessionId, documents);
+    }
 
     private string SerializeTeammate(BotBase teammate)
     {
@@ -4280,7 +4393,10 @@ public partial class FriendlyTeammateService(
 
         // Restricted/Immersive use a temporary managed secure container only on the spawn clone.
         // Do not persist generated meds/ammo, or a stale hidden container, into the teammate profile.
-        if (!IsCurrentLoadoutManagementModeExtreme() && RemoveSecureContainerTree(teammate))
+        // Fresh-kit companions instead retain their complete last raid kit as a viewing snapshot;
+        // that snapshot is never used to equip their next raid.
+        if (!IsCurrentLoadoutManagementModeExtreme() &&
+            CompanionPolicy(teammate)?.GenerateEquipmentEachRaid != true && RemoveSecureContainerTree(teammate))
         {
             logger.Info($"Removed non-Realistic secure container tree before saving teammate '{teammate.Aid}'.");
         }
@@ -4302,6 +4418,7 @@ public partial class FriendlyTeammateService(
 
     private string NormalizeRequiredValue(string? value, string fieldName)
     {
+        if (fieldName == "nickname") return FriendlyTeammateIdentityPolicy.NormalizeNickname(value);
         var normalized = value?.Trim();
         if (string.IsNullOrWhiteSpace(normalized))
         {
@@ -4400,8 +4517,10 @@ public partial class FriendlyTeammateService(
                 SelectedMemberCategory = MemberCategory.Unheard,
             },
             AutoJoinEnabled = settings.AutoJoinEnabled,
+            PortraitColor = CompanionPolicy(teammate)?.PortraitColor,
+            IsWounded = FriendlyTeammateRegeneration.IsWounded(teammate.Health),
             RecruitmentGearPrice = settings.RecruitmentGearPrice,
-            HasProperRaidKit = HasProperRaidKit(PrepareTeammateForFetch(teammate)),
+            HasProperRaidKit = HasRaidEquipmentOrGenerator(PrepareTeammateForFetch(teammate)),
         };
     }
 
@@ -4529,7 +4648,8 @@ public partial class FriendlyTeammateService(
 
     private void ApplyTemporaryHealthMultiplier(BotBase teammate, double? healthMultiplier)
     {
-        if (healthMultiplier is null || Math.Abs(healthMultiplier.Value - 1d) < 0.0001d)
+        if (healthMultiplier is null || !double.IsFinite(healthMultiplier.Value) || healthMultiplier <= 0
+            || Math.Abs(healthMultiplier.Value - 1d) < 0.0001d)
         {
             return;
         }
@@ -4549,7 +4669,7 @@ public partial class FriendlyTeammateService(
             }
 
             health.Maximum *= healthMultiplier.Value;
-            health.Current = health.Maximum;
+            health.Current *= healthMultiplier.Value;
         }
     }
 

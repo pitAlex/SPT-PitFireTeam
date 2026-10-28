@@ -26,8 +26,10 @@ namespace pitTeam.Components
                 rival.Memory.AddEnemy(enemy, groupInfo, false);
             }
         }
-        public BossFollowerPlayer(BotOwner bot, pitAIBossPlayer player, WildSpawnType bossRole) : base(bot, player, false, bossRole)
+        public BossFollowerPlayer(BotOwner bot, pitAIBossPlayer player, WildSpawnType bossRole,
+            bool savedCombatPreferences = false) : base(bot, player, false, bossRole)
         {
+            UsesSavedCombatPreferences = savedCombatPreferences;
 
             NpcMessage.RemoveNpc(bot.ProfileId, false);
 

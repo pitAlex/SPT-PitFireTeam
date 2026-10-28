@@ -27,10 +27,12 @@ public class FriendlySquadOnboardingService(
         {
             var state = Load(sessionId);
             if (state.FirstTimeVisit) return Response(state);
-            if (mode is not ("GunsForHire" or "Allegiance") || mode != settingsService.LoadSettings().GameplayMode
+            if (!FriendlyGameplayModeAddons.IsAvailable(mode) || mode != settingsService.LoadSettings().GameplayMode
                 || FriendlyModeRequestGate.HasActiveRaid)
                 throw new InvalidOperationException("The selected gameplay mode is not ready for onboarding.");
 
+            if (FriendlyGameplayModeAddons.Companions(mode).Any(companion => companion.SeedForTesting))
+                teammateService.ListTeammates(sessionId); // Prepare addon companions before the welcome decision.
             bool existingSquad = storage.HasTeammatesInEitherMode(sessionId);
             // Generate once, then durably record the exact profile before exposing completion.
             state.GameplayMode = mode;
@@ -66,10 +68,10 @@ public class FriendlySquadOnboardingService(
                 || DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < state.InviteDueAtMilliseconds)
                 return Response(state);
 
-            bool allegiance = state.GameplayMode == "Allegiance";
+            string mode = state.GameplayMode;
             // This target-mode receipt commits with the inbox. It survives acceptance and
             // decline, closing the cross-database crash window without resurrecting an invite.
-            var receipt = storage.ReadModeDocument<FriendlySquadOnboardingState>(sessionId, DeliveryDocument, allegiance);
+            var receipt = storage.ReadModeDocument<FriendlySquadOnboardingState>(sessionId, DeliveryDocument, mode);
             if (receipt?.WelcomeState == "delivered")
             {
                 state.WelcomeState = "delivered";
@@ -81,10 +83,10 @@ public class FriendlySquadOnboardingService(
             else
             {
                 var candidate = state.WelcomeCandidate ?? throw new InvalidDataException("Welcome candidate is missing.");
-                var requests = storage.ReadModeDocument<List<FriendlyRecruitRequestEntry>>(sessionId, RequestsDocument, allegiance) ?? [];
+                var requests = storage.ReadModeDocument<List<FriendlyRecruitRequestEntry>>(sessionId, RequestsDocument, mode) ?? [];
                 if (!requests.Any(entry => entry.ProfileId == candidate.ProfileId)) requests.Add(candidate);
                 state.WelcomeState = "delivered";
-                storage.WriteModeDocuments(sessionId, allegiance, new Dictionary<string, string>
+                storage.WriteModeDocuments(sessionId, mode, new Dictionary<string, string>
                 {
                     [RequestsDocument] = jsonUtil.Serialize(requests)!,
                     [DeliveryDocument] = jsonUtil.Serialize(new FriendlySquadOnboardingState { WelcomeState = "delivered" })!

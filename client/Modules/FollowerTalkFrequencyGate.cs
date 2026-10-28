@@ -16,6 +16,13 @@ namespace pitTeam.Modules
                 return false;
             }
 
+            // Allied bosses keep their native combat chatter without the follower percentage roll.
+            if (owner.Profile?.Info?.Settings != null &&
+                Utils.Props.BossFollowersType.Contains(owner.Profile.Info.Settings.Role))
+            {
+                return false;
+            }
+
             // First-contact callouts are tactical information, not ambient combat chatter. They are
             // still deduplicated by FollowerContactPhraseGate and explicitly suppressed for player
             // Contact / Over There commands, but the trash-talk percentage must not mute them.

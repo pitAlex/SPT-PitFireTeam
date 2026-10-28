@@ -66,6 +66,7 @@ namespace pitTeam.Components
         protected BotSettingsInGameModif settingModif;
 
         protected bool _IsSquadMate = false;
+        protected bool UsesSavedCombatPreferences { get; set; }
         internal readonly HashSet<EquipmentSlot> GivenEquipmentSlots = new HashSet<EquipmentSlot>();
         internal readonly HashSet<string> GivenGearWeaponIds = new HashSet<string>(StringComparer.Ordinal);
 #if DEBUG
@@ -86,10 +87,13 @@ namespace pitTeam.Components
             }
         }
 
+        internal bool ReportsRaidKills => IsSquadMate || this is BossFollowerPlayer;
+
         public bool CanHandleBodyContainerLootCommands
         {
             get
             {
+                if (!AllowsBodyContainerLootCommands) return false;
                 if (IsSpawnedSquadMate)
                 {
                     return true;
@@ -102,6 +106,9 @@ namespace pitTeam.Components
                            BossPlayers.Instance.GetFollower(bot)?.IsSpawnedSquadMate == true);
             }
         }
+
+        internal bool AllowsBodyContainerLootCommands =>
+            GameplayModeAddons.GetCompanionGearPolicy(_botRole.ToString())?.AllowBodyContainerLootCommands != false;
 
         internal bool IsSpawnedSquadMate
         {
@@ -212,12 +219,12 @@ namespace pitTeam.Components
 
         public float SelfDetermination
         {
-            get => _IsSquadMate ? _selfDetermination : 50f;
+            get => UsesSavedCombatPreferences ? _selfDetermination : 50f;
             set => _selfDetermination = pitTeam.Shared.SelfDeterminationPolicy.Normalize(value);
         }
         public float EffectiveSelfDetermination => _combatDeterminationOverride ?? SelfDetermination;
         public bool HasDeterminationOverride => _combatDeterminationOverride.HasValue;
-        public string DeterminationSource => !_combatDeterminationOverride.HasValue ? (_IsSquadMate ? "saved" : "pickupBaseline")
+        public string DeterminationSource => !_combatDeterminationOverride.HasValue ? (UsesSavedCombatPreferences ? "saved" : "pickupBaseline")
             : _combatDeterminationOverride.Value == 100f ? "OnYourOwn" : _combatDeterminationOverride.Value == 20f ? "CoverMe" : "command";
         public float BossInfluence => pitTeam.Shared.SelfDeterminationPolicy.BossInfluence(EffectiveSelfDetermination);
         public bool HasCombatPercentageOverrides => _combatDeterminationOverride.HasValue || _temporaryCombatAggressionOverrideActive;
@@ -355,6 +362,7 @@ namespace pitTeam.Components
             Proficiency = FollowerProficiency.DefaultValues.Clone();
 
             _IsSquadMate = isSquad;
+            UsesSavedCombatPreferences = isSquad;
             CaptureInitialHolsterWeapon(finalAttempt: false);
 
             if (player.realPlayer.Side != EPlayerSide.Savage) NpcMessage.AddNpc(bot, isSquad);
@@ -664,9 +672,12 @@ namespace pitTeam.Components
 
             var _bots = _bot.BotsController.BotSpawner._bots;
             var _rougeTypes = Utils.Props.BossFollowersType.ToList();
+            if (GameplayModeAddons.IsRogueRaid) _rougeTypes.Clear();
             _rougeTypes.Add(WildSpawnType.exUsec);
 
-            bool friendsWithRogue = !Utils.Props.BossFollowersType.Contains(_botRole) && Utils.Utils.PlayerHasKnightQuest(_player.realPlayer.Profile);
+            bool friendsWithRogue = GameplayModeAddons.IsExUsecFriendlyRaid ||
+                (!GameplayModeAddons.IsRogueRaid && !Utils.Props.BossFollowersType.Contains(_botRole) &&
+                 Utils.Utils.PlayerHasKnightQuest(_player.realPlayer.Profile));
 
             if (friendsWithRogue)
             {

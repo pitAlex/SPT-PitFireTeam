@@ -67,3 +67,8 @@ types
 # Test project build outputs (all configurations and target frameworks)
 /tests/**/bin/
 /tests/**/obj/
+/tools/**/bin/
+/tools/**/obj/
+/going-rogue/**/bin/
+/going-rogue/**/obj/
+/artifacts/

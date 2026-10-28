@@ -2,6 +2,10 @@ namespace pitTeam.Server.Models;
 
 public record FriendlyTeammateProfileOptionsResponse
 {
+    public bool ProficiencyOnly { get; set; }
+    public bool HideSkills { get; set; }
+    public bool HideRaidStats { get; set; }
+    public List<string> VisibleSkills { get; set; } = [];
     public List<FriendlyTeammateInsuredItem> InsuredItems { get; set; } = [];
     public List<FriendlyTeammateInsuredItem> PlayerInsuredItems { get; set; } = [];
     public string CurrentLoadoutId { get; set; } = string.Empty;

@@ -2,6 +2,7 @@ using BepInEx.Configuration;
 using Newtonsoft.Json.Linq;
 using pitTeam;
 using pitTeam.Modules;
+using pitTeam.GoingRogue;
 using UnityEngine;
 
 internal static class Program
@@ -15,17 +16,151 @@ internal static class Program
     }
     public static async Task Main()
     {
+        KnightCombatScopeTests.Run(Check);
+        await SpawnPreflightTests.Run(Check);
+        bool Selects(IEnumerable<string> accounts, string json, bool goonsOnly = false)
+        {
+            var selection = new pitTeam.GoingRogue.RogueSelectionState();
+            selection.Begin(accounts);
+            selection.Resolve(json);
+            return goonsOnly ? selection.HasGoons : selection.HasRogues;
+        }
+        foreach (string role in new[] { "bossKnight", "followerBigPipe", "followerBirdEye", "exUsec" })
+            Check(Selects(new[] { "generated-aid" },
+                "[{\"Aid\":\"generated-aid\",\"Role\":\"" + role + "\"}]"), "saved role activates Rogue context: " + role);
+        Check(Selects(new[] { "generated-aid" },
+            "{\"data\":[{\"aid\":\"generated-aid\",\"role\":\"bossKnight\"}]}"), "wrapped camel-case roster metadata is supported");
+        await Reject(() => Task.Run(() => Selects(new[] { "different-aid" },
+            "[{\"Aid\":\"generated-aid\",\"Role\":\"bossKnight\"}]")), "missing selected account cannot be treated as a resolved empty raid");
+        Check(pitTeam.GoingRogue.RogueRosterSelection.IsRole("bossknight") &&
+            !pitTeam.GoingRogue.RogueRosterSelection.IsRole("bossKnightFollower"), "native role casing is accepted without broad boss matching");
+        Check(!Selects(new[] { "generated-aid" },
+            "[{\"Aid\":\"generated-aid\",\"Role\":\"pmcUSEC\"}]"), "ordinary PMC does not activate Rogue context");
+        Check(Selects(new[] { "generated-aid" },
+            "[{\"Aid\":\"generated-aid\",\"Role\":\"bossKnight\"}]", goonsOnly: true), "saved Knight activates hostile-Goons blocking");
+        Check(!Selects(new[] { "generated-aid" },
+            "[{\"Aid\":\"generated-aid\",\"Role\":\"exUsec\"}]", goonsOnly: true), "exUsec alone does not block Goons waves");
         var directory = Path.GetFullPath(Path.Combine("tests", "artifacts", "gameplay-modes", Guid.NewGuid().ToString("N")));
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "test.cfg");
         var config = Bind(path);
+        Check(!pitFireTeam.restrictedGearMaintenance.Value, "Field Upkeep defaults off");
+        pitFireTeam.restrictedGearMaintenance.Value = true;
         var custom = config.Bind("Other", "Untouched", 17);
         GameplayModeRuntime.Initialize(config);
+        await Reject(() => GameplayModeRuntime.ChangeAsync(GameplayMode.GoingRogue), "Going Rogue requires its addon");
         var modeSpecificKeys = new HashSet<string> { "BadGuy", "Friendly", "Tracking", "Pickup", "Tiered", "Maximum", "Recruit", "TeamEscape", "TeamEscapeUseAnyExtract" };
         var original = config.Where(pair => pair.Key.Section == "Game" && modeSpecificKeys.Contains(pair.Key.Key)).ToDictionary(pair => pair.Key, pair => pair.Value.GetSerializedValue());
         Check(pitFireTeam.friendlyEncounterChance.Value == 30 && !GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyEncounterChance), "friendly chance defaults to 30 and is editable in Guns for Hire");
         Check(pitFireTeam.friendlyScavEncounters.Value && GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyScavEncounters), "Scav encounters default on but the toggle is unavailable in Guns for Hire");
         await GameplayModeRuntime.ChangeAsync(GameplayMode.Allegiance);
+        string beforeRogue = File.ReadAllText(path + ".guns-for-hire.json");
+        bool roguePresent = false;
+        GameplayModeAddons.Register(GameplayMode.GoingRogue, () => roguePresent, () => roguePresent, exUsecFriendly: false,
+            gearPolicy: pitTeam.GoingRogue.GoonGearPolicy.ForRole);
+        Check(GameplayModeAddons.GetCompanionGearPolicy("bossKnight") == null, "Knight's gear restrictions do not affect another mode");
+        SPT.Common.Http.RequestHandler.GoingRogueAvailable = false;
+        await Reject(() => GameplayModeRuntime.ChangeAsync(GameplayMode.GoingRogue), "Going Rogue requires the server addon too");
+        SPT.Common.Http.RequestHandler.GoingRogueAvailable = true;
+        await GameplayModeRuntime.ChangeAsync(GameplayMode.GoingRogue);
+        Check(GameplayModeRuntime.IsGoingRogue && GameplayModeRuntime.IsAllegiance && SPT.Common.Http.RequestHandler.Mode == "GoingRogue",
+            "Going Rogue selects its own identity with Allegiance policy");
+        Check(GameplayModeRuntime.IsLocked(pitFireTeam.maximumPickup) && GameplayModeRuntime.GetEffectiveValue(pitFireTeam.maximumPickup) == 2,
+            "Going Rogue shares Allegiance setting locks");
+        Check(File.ReadAllText(path + ".guns-for-hire.json") == beforeRogue, "locked-mode transitions preserve the Guns for Hire snapshot");
+        config = Bind(path);
+        custom = config.Bind("Other", "Untouched", 17);
+        GameplayModeRuntime.Initialize(config);
+        await GameplayModeRuntime.SynchronizeAsync();
+        Check(GameplayModeRuntime.IsGoingRogue && GameplayModeRuntime.GetEffectiveValue(pitFireTeam.maximumPickup) == 2,
+            "Going Rogue survives config restart with the same settings policy");
+        Check(!GameplayModeAddons.IsRogueRaid, "empty Going Rogue raids do not force Bad Guy");
+        roguePresent = true;
+        Check(GameplayModeAddons.IsRogueRaid && !GameplayModeRuntime.GetEffectiveValue(pitFireTeam.badGuy), "rogue presence keeps Allegiance Bad Guy off for Scav encounter diplomacy");
+        Check(GameplayModeAddons.HasSelectedBossCompanions && !GameplayModeAddons.IsExUsecFriendlyRaid,
+            "Knight blocks hostile Goons while exUsec friendship remains deferred");
+        Check(!GameplayModeAddons.IsSpawnCombatReady("knight", "bossKnight"), "missing readiness provider cannot announce Knight");
+        Check(GameplayModeAddons.GetCompanionGearPolicy("bossKnight")?.KeepEquipment == true &&
+            GameplayModeAddons.GetCompanionGearPolicy("bossKnight").AllowVestPlateUpgrades &&
+            !GameplayModeAddons.GetCompanionGearPolicy("bossKnight").AllowBodyContainerLootCommands &&
+            GameplayModeAddons.GetCompanionGearPolicy("bossKnight").AllowsSecondaryScore(100, 95),
+            "Going Rogue supplies Knight's fixed-kit, plate-upgrade and near-score secondary policy");
+        Check(new[] { "followerBigPipe", "followerBirdEye" }.All(role =>
+            GameplayModeAddons.GetCompanionGearPolicy(role)?.KeepEquipment == true), "managed Goons share fixed-kit restrictions");
+        Check(new[] { "pmcUSEC", "exUsec", null }.All(role =>
+            GameplayModeAddons.GetCompanionGearPolicy(role) == null), "Goon gear restriction does not leak to ordinary roles");
+        bool claimed = false;
+        GameplayModeAddons.RegisterCommandPolicy(GameplayMode.GoingRogue, GoonCommandPolicy.ForRole);
+        Check(GameplayModeAddons.EvaluateAdvanceOrder(new CompanionAdvanceOrderContext()) == null, "advance-order arbitration is absent by default");
+        GameplayModeAddons.RegisterAdvanceOrderPolicy(GameplayMode.GoingRogue, _ => true);
+        Check(GameplayModeAddons.EvaluateAdvanceOrder(new CompanionAdvanceOrderContext()) == true, "registered optional advance-order arbitration is used");
+        GameplayModeAddons.RegisterAdvanceOrderPolicy(GameplayMode.GoingRogue, _ => throw new Exception("test arbitration failure"));
+        Check(GameplayModeAddons.EvaluateAdvanceOrder(new CompanionAdvanceOrderContext()) == false, "failing optional command arbitration refuses safely");
+        GameplayModeAddons.RegisterAdvanceOrderPolicy(GameplayMode.GoingRogue, null);
+        foreach (string role in new[] { "bossKnight", "followerBigPipe", "followerBirdEye" })
+            Check(GameplayModeAddons.GetCompanionCommandPolicy(role)?.AlwaysAcceptCombatPoint == true,
+                role + " accepts valid combat point orders without a pickup roll");
+        var assaultPolicy = GameplayModeAddons.GetCompanionCommandPolicy("bossKnight");
+        Check(assaultPolicy.RelativeCombatPower("pmcUSEC") == 1.5f && assaultPolicy.RelativeCombatPower("assault") == 2f,
+            "registered assault bosses carry explicit PMC/Scav combat confidence");
+        Check(assaultPolicy.RelativeCombatPower("bossSanitar") == 1f && assaultPolicy.RelativeCombatPower("exUsec") == 1f,
+            "bosses and elite roles receive no ordinary-target confidence discount");
+        Check(GameplayModeAddons.GetCompanionCommandPolicy("followerBirdEye").RelativeCombatPower("assault") == 1f,
+            "Birdeye cannot inherit assault confidence");
+        Check(assaultPolicy.AllowsPush && GameplayModeAddons.GetCompanionCommandPolicy("followerBigPipe").AllowsPush &&
+            !GameplayModeAddons.GetCompanionCommandPolicy("followerBirdEye").AllowsPush,
+            "assault Goons allow confidence-based push while Birdeye refuses");
+        Check(assaultPolicy.PushAcceptanceChance(200, 100, -5) == 1f &&
+            assaultPolicy.PushAcceptanceChance(100, 100, 0) > assaultPolicy.PushAcceptanceChance(50, 100, 0),
+            "equipment advantage raises assault-boss confidence");
+        Check(assaultPolicy.PushAcceptanceChance(100, 100, 20) < assaultPolicy.PushAcceptanceChance(100, 100, 0),
+            "positive enemy threat lowers assault-boss willingness");
+        Check(assaultPolicy.PushAcceptanceChance(float.NaN, 100, 0) == 0f &&
+            assaultPolicy.PushAcceptanceChance(100, 100, float.PositiveInfinity) == 0f,
+            "invalid confidence/threat inputs fail closed");
+        Check(GoonCommandPolicy.ForRole("followerBigPipe", false).PushAcceptanceChance(1, 999, 999) == 1f,
+            "Big Pipe without Knight always accepts an admitted Go Forward order");
+        Check(ReferenceEquals(GoonCommandPolicy.ForRole("followerBigPipe", true), assaultPolicy),
+            "Big Pipe with Knight uses Knight's confidence policy");
+        Check(ReferenceEquals(GoonCommandPolicy.ForRole("bossKnight", false), assaultPolicy) &&
+            !GoonCommandPolicy.ForRole("followerBirdEye", false).AllowsPush &&
+            !GoonCommandPolicy.ForRole("followerBirdEye", true).AllowsPush,
+            "Knight and sniper Birdeye retain their existing role-specific command rules");
+        Check(GameplayModeAddons.GetCompanionCommandPolicy("exUsec") == null &&
+            GameplayModeAddons.GetCompanionCommandPolicy("pmcUSEC") == null,
+            "boss command policy does not leak to other roles");
+        bool released = false;
+        GameplayModeAddons.Register(GameplayMode.GoingRogue, () => roguePresent, () => roguePresent,
+            resolveSelection: _ => { }, companionReady: (id, role) => claimed,
+            abortCompanion: _ => released = true);
+        Check(GameplayModeAddons.GetCompanionCommandPolicy("bossKnight") == null,
+            "replacing a registration cannot keep an abandoned command policy");
+        Check(!GameplayModeAddons.IsSpawnCombatReady("knight", "bossKnight"), "unclaimed Knight remains pending");
+        claimed = true;
+        Check(GameplayModeAddons.IsSpawnCombatReady("knight", "bossKnight"), "claimed Knight satisfies readiness");
+        GameplayModeAddons.AbortSpawn("knight");
+        Check(released, "spawn failure releases the addon combat owner");
+        SPT.Common.Http.RequestHandler.GoingRogueAvailable = false;
+        await GameplayModeRuntime.SynchronizeAsync();
+        Check(GameplayModeRuntime.Current == GameplayMode.GunsForHire && !GameplayModeAddons.IsRogueRaid,
+            "missing server addon returns to Guns for Hire without retaining Rogue flags");
+        SPT.Common.Http.RequestHandler.GoingRogueAvailable = true;
+        await GameplayModeRuntime.ChangeAsync(GameplayMode.GoingRogue);
+        GameplayModeAddons.Unregister(GameplayMode.GoingRogue);
+        await GameplayModeRuntime.SynchronizeAsync();
+        Check(GameplayModeRuntime.Current == GameplayMode.GunsForHire && !GameplayModeAddons.IsRogueRaid,
+            "missing client addon returns to Guns for Hire without retaining Rogue flags");
+        GameplayModeAddons.Register(GameplayMode.GoingRogue, () => roguePresent);
+        GameplayModeAddons.RegisterCommandPolicy(GameplayMode.GoingRogue, GoonCommandPolicy.ForRole);
+        await GameplayModeRuntime.ChangeAsync(GameplayMode.GoingRogue);
+        await GameplayModeRuntime.ChangeAsync(GameplayMode.Allegiance);
+        Check(GameplayModeAddons.GetCompanionCommandPolicy("bossKnight") == null,
+            "registered Goon willingness cannot affect Allegiance");
+        Check(!GameplayModeAddons.IsRogueRaid && File.ReadAllText(path + ".guns-for-hire.json") == beforeRogue,
+            "leaving Going Rogue releases raid policy and preserves original preferences");
+        GameplayModeAddons.Unregister(GameplayMode.GoingRogue);
+        Check(GameplayModeAddons.GetCompanionCommandPolicy("bossKnight") == null,
+            "unregister removes companion command willingness");
         Check(!GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyEncounterChance), "friendly chance is enabled in Allegiance");
         Check(!GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyScavEncounters), "Scav encounters are editable in Allegiance");
         pitFireTeam.friendlyScavEncounters.Value = false;
@@ -34,6 +169,8 @@ internal static class Program
         Check(SPT.Common.Http.RequestHandler.Mode == "Allegiance", "server mode follows client");
         Check(original.All(pair => config[pair.Key].GetSerializedValue() == pair.Value), "entering Allegiance preserves saved mode-specific preferences");
         Check(SPT.Common.Http.RequestHandler.Loadout == "Restricted", "Allegiance synchronization preserves the saved loadout choice");
+        Check(SPT.Common.Http.RequestHandler.FieldUpkeep && !GameplayModeRuntime.IsLocked(pitFireTeam.restrictedGearMaintenance),
+            "Field Upkeep is shared, editable and synchronized in Allegiance");
         Check(!GameplayModeRuntime.GetEffectiveValue(pitFireTeam.badGuy) && !GameplayModeRuntime.GetEffectiveValue(pitFireTeam.pitFireTeamFLAG), "Allegiance friendliness locks");
         Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.enemyTracking) == EnemyTrackingMode.Realistic, "realistic tracking");
         Check(GameplayModeRuntime.GetEffectiveValue(pitFireTeam.pickupEnabled) && GameplayModeRuntime.GetEffectiveValue(pitFireTeam.tieredPickup) && GameplayModeRuntime.GetEffectiveValue(pitFireTeam.recruitPickup), "pickup locks");
@@ -113,11 +250,16 @@ internal static class Program
             legacySnapshot.Add(JObject.FromObject(new { Section = pair.Key.Section, Key = pair.Key.Key, Value = "invalid-legacy-shared-value" }));
         File.WriteAllText(path + ".guns-for-hire.json", legacySnapshot.ToString());
         await GameplayModeRuntime.ChangeAsync(GameplayMode.GunsForHire);
+        Check(pitFireTeam.restrictedGearMaintenance.Value && SPT.Common.Http.RequestHandler.FieldUpkeep,
+            "Field Upkeep survives mode changes as one shared preference");
         Check(pitFireTeam.loadoutManagementMode.Value == LoadoutManagementMode.Immersive && SPT.Common.Http.RequestHandler.Loadout == "Immersive", "returning to Guns for Hire ignores legacy shared snapshot values and retains the current loadout choice");
         Check(pitFireTeam.friendlyEncounterChance.Value == 45 && !GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyEncounterChance), "returning to Guns for Hire retains and enables the shared encounter preference");
         Check(!pitFireTeam.friendlyScavEncounters.Value && GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyScavEncounters), "Guns for Hire retains the disabled Scav preference while making its control unavailable");
         Check(original.All(pair => config[pair.Key].GetSerializedValue() == pair.Value), "restart restores every original mode-specific setting");
         Check(shared.All(pair => config[pair.Key].GetSerializedValue() == pair.Value), "returning to Guns for Hire ignores all legacy shared entries and preserves current shared settings");
+        pitFireTeam.restrictedGearMaintenance.Value = false;
+        await GameplayModeRuntime.SynchronizeAsync();
+        Check(!SPT.Common.Http.RequestHandler.FieldUpkeep, "disabled Field Upkeep reaches the server");
         Check(!GameplayModeRuntime.GetEffectiveValue(pitFireTeam.teamEscape) && GameplayModeRuntime.GetEffectiveValue(pitFireTeam.teamEscapeUseAnyExtract), "Guns for Hire restores both Team Escape preferences");
         pitFireTeam.maximumPickup.Value = 5;
         pitFireTeam.loadoutManagementMode.Value = LoadoutManagementMode.Extreme;
@@ -176,6 +318,7 @@ internal static class Program
         pitFireTeam.teamEscape = c.Bind("Game", "TeamEscape", false);
         pitFireTeam.teamEscapeUseAnyExtract = c.Bind("Game", "TeamEscapeUseAnyExtract", true);
         pitFireTeam.loadoutManagementMode = c.Bind("Game", "Loadout", LoadoutManagementMode.Restricted);
+        pitFireTeam.restrictedGearMaintenance = c.Bind("Game", "FieldUpkeep", false);
         pitFireTeam.healKey = c.Bind("Game", "Heal", new KeyboardShortcut(KeyCode.H));
         pitFireTeam.heatlhMultiplier = c.Bind("Game", "Health", 3);
         pitFireTeam.friendlyEncounterChance = c.Bind("Game", "FriendlyEncounterChance", 30, new ConfigDescription("", new AcceptableValueRange<int>(5,80)));
@@ -193,7 +336,7 @@ namespace pitTeam
     public static class pitFireTeam
     {
         public static ConfigEntry<bool> badGuy, pitFireTeamFLAG, pickupEnabled, tieredPickup, recruitPickup, pmcArmbands;
-        public static ConfigEntry<bool> teamEscape, teamEscapeUseAnyExtract, friendlyScavEncounters;
+        public static ConfigEntry<bool> teamEscape, teamEscapeUseAnyExtract, friendlyScavEncounters, restrictedGearMaintenance;
         public static ConfigEntry<int> maximumPickup, heatlhMultiplier, friendlyEncounterChance;
         public static ConfigEntry<EnemyTrackingMode> enemyTracking;
         public static ConfigEntry<LoadoutManagementMode> loadoutManagementMode;
@@ -209,6 +352,7 @@ namespace pitTeam.Modules
     public enum EnemyTrackingMode { Simple, Realistic }
     internal static class FollowerInsuranceRaidReports { internal static Task WaitForPendingReportsAsync() => Task.CompletedTask; }
 }
+namespace pitTeam.Utils { internal static class SpawnHelper { public static readonly List<int> spawnMemberIdsBoss = new(); } }
 namespace pitTeam.Components { public static class SquadControlMenuUi { public static bool InRaid; public static bool IsGameRaidActive() => InRaid; } }
 namespace SPT.Common.Http
 {
@@ -216,15 +360,18 @@ namespace SPT.Common.Http
     {
         public static string Mode = "GunsForHire";
         public static string Loadout;
+        public static bool FieldUpkeep;
         public static bool FailBeforeCommit, LoseResponse;
+        public static bool GoingRogueAvailable = true;
         public static string PostJson(string url, string body)
         {
             if (FailBeforeCommit) throw new IOException("Simulated server failure");
             Mode = JObject.Parse(body)["gameplayMode"].ToString();
             Loadout = JObject.Parse(body)["loadoutManagementMode"].ToString();
+            FieldUpkeep = JObject.Parse(body)["restrictedGearMaintenance"].Value<bool>();
             if (LoseResponse) throw new IOException("Simulated lost response");
             return "{\"err\":0,\"data\":null}";
         }
-        public static string GetJson(string url) => "{\"gameplayMode\":\"" + Mode + "\"}";
+        public static string GetJson(string url) => "{\"gameplayMode\":\"" + Mode + "\",\"availableModes\":[\"GunsForHire\",\"Allegiance\"" + (GoingRogueAvailable ? ",\"GoingRogue\"" : "") + "]}";
     }
 }

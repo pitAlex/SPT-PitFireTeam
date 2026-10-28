@@ -37,21 +37,26 @@ namespace pitTeam.Modules
 
         public override void Execute(AbstractOperation operation, Callback callback)
         {
-            if (Session == null || Session.Applying || !_pending.TryGetValue(operation, out GearSwapEdit edit))
-            {
-                callback?.Invoke(new FailedResult(pitFireTeam.GetSocialUiText("SwapGearActionBlocked"), 0));
-                return;
-            }
+            _pending.TryGetValue(operation, out GearSwapEdit edit);
             _pending.Remove(operation);
+            IResult result = new FailedResult(pitFireTeam.GetSocialUiText("SwapGearActionBlocked"), 0);
+            operation.Status = EOperationStatus.Started;
             try
             {
-                Session.Stage(edit, this);
-                callback?.Invoke(SuccessfulResult.New);
+                if (Session != null && !Session.Applying && edit != null)
+                {
+                    Session.Stage(edit, this);
+                    result = SuccessfulResult.New;
+                }
             }
             catch (Exception)
             {
-                callback?.Invoke(new FailedResult(pitFireTeam.GetSocialUiText("SwapGearActionBlocked"), 0));
+                // Rejected edits never enter native async execution.
             }
+            operation.Status = result.Succeed ? EOperationStatus.Succeeded : EOperationStatus.Failed;
+            operation.Dispose();
+            // A UI callback exception must not be caught as an edit failure and invoked again.
+            callback?.Invoke(result);
         }
 
         private sealed class DraftOperation : AbstractOperation

@@ -95,6 +95,16 @@ public class FriendlyLanguageService(ISptLogger<FriendlyLanguageService> logger)
         return values;
     }
 
+    // Browser language is independent of the game's remembered per-session locale.
+    public Dictionary<string, string> GetEditorText(string locale)
+    {
+        string directory = Path.Combine(AppContext.BaseDirectory, "user", "mods", ModFolderName, "Resources", LanguageFolderName);
+        var fallback = LoadLanguageFile(directory, "en") ?? CloneObject(embeddedEnglishFallback) ?? [];
+        var selected = LoadLanguageFile(directory, NormalizeLocale(locale)) ?? [];
+        MergeMissingValues(selected, fallback);
+        return (selected["socialUi"] as JsonObject ?? []).ToDictionary(p => p.Key, p => p.Value?.GetValue<string>() ?? p.Key);
+    }
+
     private JsonObject GetSessionLanguage(MongoId sessionId)
     {
         string locale = sessionLocales.TryGetValue(sessionId.ToString(), out string? savedLocale)

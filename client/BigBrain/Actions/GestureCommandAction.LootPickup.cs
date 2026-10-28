@@ -201,6 +201,12 @@ namespace pitTeam.BigBrain.Actions
                 }
 
                 if (TryStartRecruitLooseEquipment(rootItem)) return;
+                if (UsesFixedCompanionGear)
+                {
+                    BotOwner.BotTalk.TrySay(EPhraseTrigger.Negative, false);
+                    ClearTakeLootState("TakeLoot:companionEquipmentFixed");
+                    return;
+                }
 
                 if (rootItem is Weapon supportWeapon &&
                     IsShoulderWeaponCandidate(supportWeapon) &&

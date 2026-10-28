@@ -3,6 +3,7 @@ namespace pitTeam.Server.Models;
 public record FriendlyTeammateFollowerDetailsResponse
 {
     public string Aid { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
 
     public string Tactic { get; set; } = string.Empty;
 

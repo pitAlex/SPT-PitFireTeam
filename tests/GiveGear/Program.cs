@@ -11,6 +11,12 @@ public enum EArmorPlateCollider
 }
 public enum EBodyPartColliderType { RibcageUp, RibcageLow, SpineTop, SpineDown, LeftSideChestDown, NeckFront }
 
+public class ArmorSlot(Item parent) : Slot(parent, EquipmentSlot.ArmorVest)
+{
+    public bool Locked;
+    public override bool CanAccept(Item item) => item is ArmorPlate plate && plate.Fits;
+}
+
 static class Program
 {
     static int checks;
@@ -25,6 +31,7 @@ static class Program
         }
         Check(GiveGearInvitePolicy.Apply(-20, new[] { "FirstPrimaryWeapon" }) == 10, "Invalid base does not erase a real slot bonus");
         CheckBackpackReplacement();
+        CheckFixedCompanionEquipment();
 #if DEBUG
         CheckGearDiagnostics();
 #endif
@@ -649,6 +656,152 @@ static class Program
                 "Secure-staged primary demotion rolls back exactly");
         }
     }
+    static void CheckFixedCompanionEquipment()
+    {
+        var policy = new CompanionGearPolicy(true, true, 0.10f);
+        foreach (bool space in new[] { true, false })
+        {
+            var s = new Scenario { GearPolicy = policy };
+            var primary = Gun("grenade-primary", 40); s.Equip(primary, EquipmentSlot.FirstPrimaryWeapon);
+            var rig = (SearchableItem)s.Get(EquipmentSlot.TacticalVest);
+            var backpack = s.Get(EquipmentSlot.Backpack);
+            if (!space) rig.Grids = new[] { new Grid(rig, 1, 2) }; // Only the magazine's landing space remains.
+            var grenade = new ThrowWeap("offered-grenade"); s.Offer(grenade);
+            s.Run(); s.AssertConserved();
+            Check(s.InFastAccess(grenade) == space && s.InOverflow(grenade) != space,
+                "Grenade intake requires real fast-access room beyond the retained reload reserve");
+            Check(s.Get(EquipmentSlot.FirstPrimaryWeapon) == primary && s.Get(EquipmentSlot.TacticalVest) == rig &&
+                s.Get(EquipmentSlot.Backpack) == backpack && !TeammateGearSwap.Tree(backpack).Contains(grenade),
+                "Grenade resupply preserves the fixed kit and never uses backpack cargo space");
+            Check(pitTeam.BigBrain.Actions.GestureCommandAction.CanFitGearSwapReloadReserves(s.Controller.Inventory.Equipment),
+                "Accepted or rejected grenade leaves native magazine landing space available");
+            s.Plan.Rollback(); Check(s.InOffer(grenade), "Grenade acceptance/rejection rolls back to the original offered item");
+        }
+        {
+            var s = new Scenario { GearPolicy = policy };
+            var primary = Gun("grenade-pocket-primary", 40); s.Equip(primary, EquipmentSlot.FirstPrimaryWeapon);
+            var rig = (SearchableItem)s.Get(EquipmentSlot.TacticalVest);
+            rig.Grids = new[] { new Grid(rig, 1, 2) };
+            var pockets = Bag("grenade-pockets", 1, 1); pockets.AcceptedSlot = EquipmentSlot.Pockets; s.Equip(pockets, EquipmentSlot.Pockets);
+            var grenade = new ThrowWeap("pocket-grenade"); s.Offer(grenade);
+            s.Run(); s.AssertConserved();
+            Check(pockets.Grids[0].Items.Contains(grenade), "Pocket placement works when rig cells are reserved for reload");
+            s.Plan.Rollback(); Check(s.InOffer(grenade), "Pocket grenade transfer rolls back exactly");
+        }
+        Check(policy.AllowsSecondaryScore(100, 90) && policy.AllowsSecondaryScore(100, 110) &&
+            !policy.AllowsSecondaryScore(100, 89) && !policy.AllowsSecondaryScore(100, 111) &&
+            !policy.AllowsSecondaryScore(0, 0) && !policy.AllowsSecondaryScore(100, float.NaN), "Secondary score window is finite and within ten percent");
+        foreach (bool occupied in new[] { false, true })
+        {
+            var s = new Scenario { GearPolicy = policy };
+            var primary = Gun("fixed-primary", 40); s.Equip(primary, EquipmentSlot.FirstPrimaryWeapon);
+            var helmet = Armor("fixed-helmet", 1, 0, EquipmentSlot.Headwear); s.Equip(helmet, EquipmentSlot.Headwear);
+            var vest = (Vest)s.Get(EquipmentSlot.TacticalVest); var bag = s.Get(EquipmentSlot.Backpack);
+            var secondary = Gun("fixed-existing-secondary", 40);
+            if (occupied) s.Equip(secondary, EquipmentSlot.SecondPrimaryWeapon);
+            var candidate = Gun("fixed-matching-secondary", 40);
+            s.Offer(candidate); s.Offer(Armor("better-helmet", 6, 1, EquipmentSlot.Headwear));
+            s.Offer(Rig("better-vest", 6, 1, 6, 1, 8, 8)); s.Offer(Bag("bigger-backpack", 10, 10));
+            s.Run(); s.AssertConserved();
+            Check(s.Get(EquipmentSlot.FirstPrimaryWeapon) == primary && s.Get(EquipmentSlot.Headwear) == helmet &&
+                s.Get(EquipmentSlot.TacticalVest) == vest && s.Get(EquipmentSlot.Backpack) == bag,
+                "Fixed kit retains primary, consumed helmet, vest and backpack identities");
+            Check(s.Get(EquipmentSlot.SecondPrimaryWeapon) == (occupied ? secondary : candidate),
+                "Only an empty shoulder slot accepts a near-score secondary");
+            Check(!TeammateGearSwap.Tree(bag).Any(item => item.Id == "better-helmet" || item.Id == "bigger-backpack"),
+                "Rejected gifts never become backpack cargo");
+            s.Plan.Rollback(); Check(s.InOffer(candidate), "Fixed-kit rollback returns the offered secondary");
+        }
+        foreach (int penetration in new[] { 1, 200 })
+        {
+            var s = new Scenario { GearPolicy = policy };
+            var primary = Gun("score-primary", 40); s.Equip(primary, EquipmentSlot.FirstPrimaryWeapon);
+            var candidate = Gun("outside-score-window", penetration); s.Offer(candidate);
+            s.Run(); s.AssertConserved();
+            Check(s.Get(EquipmentSlot.FirstPrimaryWeapon) == primary && s.Get(EquipmentSlot.SecondPrimaryWeapon) == null && s.InOverflow(candidate),
+                "Neither a much weaker nor much stronger gift replaces the fixed primary or fills the secondary");
+        }
+        foreach (bool compatible in new[] { true, false })
+        {
+            var s = new Scenario { GearPolicy = policy };
+            var vest = (Vest)s.Get(EquipmentSlot.TacticalVest);
+            var consumed = new ArmorPlate("consumed", 0); var healthy = new ArmorPlate("healthy", 20);
+            var front = new ArmorSlot(vest); var back = new ArmorSlot(vest); vest.Slots.Add(front); vest.Slots.Add(back);
+            front.Put(consumed); back.Put(healthy);
+            var donor = new ArmorPlate("offered-plate", 30) { Fits = compatible }; s.Offer(donor);
+            s.Run(); s.AssertConserved();
+            Check(s.Get(EquipmentSlot.TacticalVest) == vest && back.ContainedItem == healthy &&
+                front.ContainedItem == (compatible ? donor : consumed), "A depleted compatible removable vest plate can be restored");
+            Check(compatible ? s.InOverflow(consumed) : s.InOverflow(donor), "Depleted/rejected plates keep one real disposition");
+            s.Plan.Rollback();
+            Check(front.ContainedItem == consumed && back.ContainedItem == healthy && s.InOffer(donor), "Plate rollback restores exact carrier/plate identities");
+        }
+        foreach (var test in new (int CurrentClass, float CurrentDurability, int IncomingClass, float IncomingDurability, bool Accept)[] {
+            (5, 10f, 5, 20f, true),
+            (5, 20f, 5, 10f, false), (5, 20f, 5, 20f, false),
+            (4, 30f, 5, 30f, true), (6, 30f, 5, 30f, false), (6, 0f, 4, 5f, true),
+            (5, 20f, 6, 0f, false) })
+        {
+            var s = new Scenario { GearPolicy = policy };
+            var vest = (Vest)s.Get(EquipmentSlot.TacticalVest);
+            var current = new ArmorPlate("current-compared-plate", test.CurrentDurability);
+            current.Armor.ArmorClass = test.CurrentClass;
+            var slot = new ArmorSlot(vest); vest.Slots.Add(slot); slot.Put(current);
+            var incoming = new ArmorPlate("incoming-compared-plate", test.IncomingDurability);
+            incoming.Armor.ArmorClass = test.IncomingClass; s.Offer(incoming);
+            s.Run(); s.AssertConserved();
+            Check(slot.ContainedItem == (test.Accept ? incoming : current) && s.Get(EquipmentSlot.TacticalVest) == vest,
+                "Retained vest plate changes only for strictly better condition-aware protection");
+            s.Plan.Rollback();
+            Check(slot.ContainedItem == current && s.InOffer(incoming), "Plate comparison rollback restores exact original ownership");
+        }
+        {
+            var s = new Scenario(false) { GearPolicy = policy };
+            var primary = Gun("no-room-primary", 40); s.Equip(primary, EquipmentSlot.FirstPrimaryWeapon);
+            var candidate = Gun("no-room-secondary", 40); s.Offer(candidate);
+            s.Run(); s.AssertConserved();
+            Check(s.Get(EquipmentSlot.SecondPrimaryWeapon) == null && s.Get(EquipmentSlot.FirstPrimaryWeapon) == primary && s.InOverflow(candidate),
+                "A near-score secondary is refused when reload landing space does not fit");
+        }
+        {
+            var s = new Scenario { GearPolicy = policy };
+            var primary = Gun("low-stock-primary", 40); s.Equip(primary, EquipmentSlot.FirstPrimaryWeapon);
+            foreach (var round in primary.GetCurrentMagazine().Cartridges.Items) round.StackObjectsCount = 0;
+            var reserve = Mag("only-primary-spare", 40); s.AddFast(reserve);
+            var candidate = Gun("empty-near-score-secondary", 40);
+            foreach (var round in candidate.GetCurrentMagazine().Cartridges.Items) round.StackObjectsCount = 0;
+            s.Offer(candidate); s.Run(); s.AssertConserved();
+            Check(s.Get(EquipmentSlot.SecondPrimaryWeapon) == null && s.InFastAccess(reserve) && reserve.Count == 30,
+                "Optional secondary cannot consume the primary's existing supply even below full readiness");
+        }
+        {
+            var s = new Scenario { GearPolicy = policy };
+            var vest = (Vest)s.Get(EquipmentSlot.TacticalVest);
+            var consumed = new ArmorPlate("locked-consumed", 0); var locked = new ArmorSlot(vest) { Locked = true };
+            vest.Slots.Add(locked); locked.Put(consumed);
+            var helmet = new CompoundItem("fixed-plated-helmet") { AcceptedSlot = EquipmentSlot.Headwear };
+            var helmetSlot = new ArmorSlot(helmet); var helmetPlate = new ArmorPlate("depleted-helmet-plate", 0);
+            helmet.Slots.Add(helmetSlot); helmetSlot.Put(helmetPlate); s.Equip(helmet, EquipmentSlot.Headwear);
+            var donor = new ArmorPlate("unused-fresh-plate", 30); s.Offer(donor);
+            s.Run(); s.AssertConserved();
+            Check(locked.ContainedItem == consumed && helmetSlot.ContainedItem == helmetPlate && s.InOverflow(donor),
+                "Locked body plates and all helmet parts remain untouched even when depleted");
+        }
+        {
+            var s = new Scenario { GearPolicy = policy };
+            var vest = (Vest)s.Get(EquipmentSlot.TacticalVest);
+            var old = new ArmorPlate("worn-out-front", 0); var front = new ArmorSlot(vest); vest.Slots.Add(front); front.Put(old);
+            var donorVest = new Vest("offered-donor-vest"); donorVest.Grids = new[] { new Grid(donorVest, 4, 4) };
+            var donorSlot = new ArmorSlot(donorVest); donorVest.Slots.Add(donorSlot);
+            var plate = new ArmorPlate("installed-offered-plate", 30); donorSlot.Put(plate); s.Offer(donorVest);
+            s.Run(); s.AssertConserved();
+            Check(s.Get(EquipmentSlot.TacticalVest) == vest && front.ContainedItem == plate && donorSlot.ContainedItem == null &&
+                s.InOverflow(donorVest) && s.InOverflow(old), "A supplied carrier can donate a direct removable plate without replacing Knight's vest");
+            s.Plan.Rollback(); Check(front.ContainedItem == old && donorSlot.ContainedItem == plate && s.InOffer(donorVest),
+                "Donor-carrier rollback restores original plate nesting");
+        }
+    }
+
     static Weapon Gun(string id, int pen) { var gun = new Weapon(id); gun.Magazine.Put(Mag(id + "-loaded", pen)); return gun; }
     static Weapon FamilyGun(string id, int pen, string family, int magazineWidth = 1, int magazineHeight = 2)
     {
@@ -1373,6 +1526,7 @@ static class Program
         public InventoryController Controller = new();
         public SearchableItem OfferRoot = new("offer"), Overflow = new("overflow");
         public GiveGearPlanner Plan;
+        public CompanionGearPolicy GearPolicy;
         public BotOwner Bot = new();
         readonly List<Item> initialRoots = new();
         HashSet<string> expectedIds;
@@ -1411,7 +1565,7 @@ static class Program
             expectedRounds = TeammateGearSwap.Tree(Controller.Inventory.Equipment).Concat(TeammateGearSwap.Tree(OfferRoot))
                 .Concat(TeammateGearSwap.Tree(Overflow)).OfType<Ammo>().Sum(a => a.StackObjectsCount);
             Plan = new GiveGearPlanner(Controller, OfferRoot, Overflow, Bot, edit => { if (edit.SplitItem != null) NativeSplits.Add(edit.SplitItem.Id); },
-                TeammateGearSwap.Tree(OfferRoot).Where(i => !BorrowedIds.Contains(i.Id)).Select(i => i.Id));
+                TeammateGearSwap.Tree(OfferRoot).Where(i => !BorrowedIds.Contains(i.Id)).Select(i => i.Id), GearPolicy);
 #if DEBUG
             Plan.Diagnostic = Diagnostic;
 #endif
@@ -1470,7 +1624,7 @@ namespace EFT.InventoryLogic
     {
         public Item ParentItem { get; } public EquipmentSlot Name; public Item ContainedItem;
         public Slot(Item parent, EquipmentSlot name) { ParentItem = parent; Name = name; }
-        public bool CanAccept(Item item) => ParentItem is Weapon ? item is Magazine : item is Weapon w ?
+        public virtual bool CanAccept(Item item) => ParentItem is Weapon ? item is Magazine : item is Weapon w ?
             (Name == EquipmentSlot.Holster ? w.Pistol : Name is EquipmentSlot.FirstPrimaryWeapon or EquipmentSlot.SecondPrimaryWeapon && !w.Pistol) : item.AcceptedSlot == Name;
         public ItemAddress CreateItemAddress() => new() { Container = this };
         public void Take(Item item) { if (ContainedItem != item) throw new Exception("Wrong slot source"); ContainedItem = null; item.CurrentAddress = null; }
@@ -1526,6 +1680,13 @@ namespace EFT.InventoryLogic
         }
     }
     public class Ammo : Item { public bool IsUsed; public string WeaponFamily = "shared"; public int PenetrationPower, Damage = 40; public Ammo(string id) : base(id) { Width = Height = 1; } }
+    public class ThrowWeap : Item { public ThrowWeap(string id) : base(id) { Width = Height = 1; } }
+    public class ArmorPlate : Item
+    {
+        public bool Fits = true;
+        public ArmorPlate(string id, float durability) : base(id)
+        { Width = Height = 1; Armor = new ArmorComponent { ArmorClass = 5 }; Repair = new RepairableComponent { Durability = durability, TemplateDurability = 30 }; }
+    }
     public class WeaponTemplate
     {
         public bool BoltAction;

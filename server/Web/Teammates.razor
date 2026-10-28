@@ -1,0 +1,193 @@
+@page "/pitfireteam"
+@attribute [Authorize(Policy = "Administrator")]
+@layout SPTarkov.Server.Web.Layout.BaseMudBlazorLayout
+@inject FriendlyTeammateEditorService Editor
+@inject FriendlyLanguageService Languages
+@inject SPTarkov.Common.Models.Logging.ISptLogger<Teammates> Logger
+
+<PageTitle>-P|T- FireTeam</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="pt-8 pb-8">
+    <MudPaper Outlined="true" Class="pa-6 mb-5">
+        <MudText Typo="Typo.h3">-P|T- FireTeam</MudText>
+        <MudText Typo="Typo.subtitle1" Class="mb-4">@T("EditorSubtitle")</MudText>
+        <MudGrid>
+            <MudItem xs="12" md="5">
+                <MudSelect T="string" Label="@T("EditorPlayer")" Value="@_player" ValueChanged="ChangePlayer" Disabled="@_busy">
+                    @foreach (var player in _players) { <MudSelectItem Value="@player.Id">@player.Label</MudSelectItem> }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudSelect T="string" Label="@T("EditorRoster")" Value="@_mode" ValueChanged="ChangeMode" Disabled="@_busy">
+                    @foreach (var mode in _modes) { <MudSelectItem Value="@mode.Id">@ModeName(mode.Id)</MudSelectItem> }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudSelect T="string" Label="@T("EditorLanguage")" Value="@_locale" ValueChanged="ChangeLanguage">
+                    <MudSelectItem Value="@("en")">English</MudSelectItem>
+                    <MudSelectItem Value="@("ru")">Русский</MudSelectItem>
+                    <MudSelectItem Value="@("chs")">简体中文</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+    <MudAlert Severity="Severity.Info" Class="mb-4">@T("EditorNextRaid")</MudAlert>
+    @if (!string.IsNullOrEmpty(_message))
+    {
+        <MudAlert Severity="@(_failed ? Severity.Error : Severity.Success)" Class="mb-4">@T(_message)</MudAlert>
+    }
+    @if (_busy) { <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" /> }
+    <MudGrid>
+        <MudItem xs="12" md="3">
+            <MudPaper Outlined="true" Class="pa-4">
+                <MudText Typo="Typo.h5" Class="mb-3">@T("EditorTeammates")</MudText>
+                @foreach (var teammate in _roster)
+                {
+                    <MudTooltip Inline="false" Text="@(teammate.Editable ? string.Empty : T("EditorManagedCompanion"))">
+                        <MudButton FullWidth="true" Class="mb-2" Variant="@(teammate.Aid == _aid ? Variant.Filled : Variant.Outlined)"
+                                   Color="Color.Primary" Disabled="@(_busy || !teammate.Editable)" OnClick="@(() => Load(teammate.Aid))">@teammate.Name</MudButton>
+                    </MudTooltip>
+                }
+                @if (_roster.Count == 0 && !_busy) { <MudText>@T("EditorEmpty")</MudText> }
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="9">
+            @if (_draft != null)
+            {
+                <MudPaper Outlined="true" Class="pa-5" @key="_draft">
+                    <MudText Typo="Typo.h5" Class="mb-4">@_roster.FirstOrDefault(t => t.Aid == _aid)?.Name</MudText>
+                    <MudForm @ref="_form">
+                        <MudTabs KeepPanelsAlive="true" Outlined="true">
+                            <MudTabPanel Text="@T("EditorCharacter")">
+                                <MudTextField T="string" Label="@T("EditorName")" @bind-Value="_draft.Nickname" Required="true" RequiredError="@T("EditorInvalidName")" Disabled="@_busy" Class="mt-4" />
+                                <MudSelect T="string" Label="@T("EditorVoice")" @bind-Value="_draft.VoiceId" Disabled="@_busy" Class="mt-4">
+                                    @if (!_voices.Any(v => v.Id == _draft.VoiceId)) { <MudSelectItem Value="@_draft.VoiceId">@_draft.VoiceId</MudSelectItem> }
+                                    @foreach (var voice in _voices) { <MudSelectItem Value="@voice.Id">@voice.Label</MudSelectItem> }
+                                </MudSelect>
+                                <MudSelect T="string" Label="@T("EditorHead")" @bind-Value="_draft.HeadId" Disabled="@_busy" Class="mt-4">
+                                    @if (!_heads.Any(h => h.Id == _draft.HeadId)) { <MudSelectItem Value="@_draft.HeadId">@_draft.HeadId</MudSelectItem> }
+                                    @foreach (var head in _heads) { <MudSelectItem Value="@head.Id">@head.Label</MudSelectItem> }
+                                </MudSelect>
+                                <MudGrid Class="mt-2">
+                                    <MudItem xs="12" sm="6"><MudNumericField T="int" Label="@T("EditorLevel")" Value="_draft.Level" ValueChanged="SetLevel" Min="1" Max="@_levelXp.Length" Disabled="@_busy" /></MudItem>
+                                    <MudItem xs="12" sm="6"><MudNumericField T="int" Label="@T("EditorXp")" Value="_draft.Experience" ValueChanged="SetXp" Min="0" Disabled="@_busy" /></MudItem>
+                                </MudGrid>
+                                <MudSelect T="string" Label="@T("EditorPockets")" @bind-Value="_draft.PocketId" Disabled="@(_busy || string.IsNullOrEmpty(_draft.PocketId))" Class="mt-4">
+                                    @if (!_pockets.ContainsKey(_draft.PocketId)) { <MudSelectItem Value="@_draft.PocketId">@_draft.PocketId</MudSelectItem> }
+                                    @foreach (var pocket in _pockets.Values) { <MudSelectItem Value="@pocket.Id">@pocket.Label</MudSelectItem> }
+                                </MudSelect>
+                                <MudText Typo="Typo.caption" Class="mt-2">@T("EditorPocketHelp")</MudText>
+                            </MudTabPanel>
+                            <MudTabPanel Text="@T("EditorSkills")">
+                                <MudText Typo="Typo.body2" Class="mt-4 mb-4">@T("EditorSkillHelp")</MudText>
+                                <MudTextField T="string" Label="@T("EditorFilter")" @bind-Value="_filter" Immediate="true" Class="mb-4" />
+                                <MudGrid>
+                                    @foreach (var skill in _draft.Skills.Where(s => string.IsNullOrEmpty(_filter) || s.Id.Contains(_filter, StringComparison.OrdinalIgnoreCase)))
+                                    {
+                                        <MudItem xs="12" sm="6" @key="skill"><MudNumericField T="double" Label="@(skill.Id + (skill.Group == "Mastering" ? " · " + T("EditorMastering") : ""))" @bind-Value="skill.Progress" Min="0" Max="@(skill.Group == "Common" ? 5100d : 10000000d)" Disabled="@_busy" /></MudItem>
+                                    }
+                                </MudGrid>
+                            </MudTabPanel>
+                            <MudTabPanel Text="@T("EditorHealth")">
+                                <MudGrid Class="mt-4">
+                                    @foreach (var part in _draft.BodyParts)
+                                    {
+                                        <MudItem xs="12" sm="4"><MudText Typo="Typo.subtitle1" Class="mt-4">@part.Name</MudText></MudItem>
+                                        <MudItem xs="6" sm="4"><MudNumericField T="double" Label="@T("EditorCurrent")" @bind-Value="part.Current" Min="0" Max="@part.Maximum" Disabled="@_busy" /></MudItem>
+                                        <MudItem xs="6" sm="4"><MudNumericField T="double" Label="@T("EditorMaximum")" @bind-Value="part.Maximum" Min="1" Max="10000" Disabled="@_busy" /></MudItem>
+                                    }
+                                </MudGrid>
+                            </MudTabPanel>
+                        </MudTabs>
+                    </MudForm>
+                    <MudStack Row="true" Class="mt-5">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@_busy" OnClick="Save">@T("EditorSave")</MudButton>
+                        <MudButton Variant="Variant.Outlined" Disabled="@_busy" OnClick="@(() => Load(_aid))">@T("EditorReload")</MudButton>
+                    </MudStack>
+                </MudPaper>
+            }
+        </MudItem>
+    </MudGrid>
+</MudContainer>
+
+@code {
+    private List<TeammateEditorChoice> _players = [], _modes = [], _heads = [], _voices = [];
+    private List<TeammateEditorSummary> _roster = [];
+    private Dictionary<string, TeammateEditorPocket> _pockets = [];
+    private Dictionary<string, string> _text = [];
+    private int[] _levelXp = [];
+    private string _player = "", _mode = "GunsForHire", _locale = "en", _message = "", _filter = "";
+    private int _aid;
+    private bool _busy, _failed;
+    private MudForm? _form;
+    private TeammateEditorDraft? _draft;
+    private string T(string key) => _text.GetValueOrDefault(key, key);
+    private string ModeName(string mode) => T("SquadControlMode" + mode);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locale = System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName switch { "ru" => "ru", "zh" => "chs", _ => "en" };
+        ChangeLanguage(_locale);
+        await Attempt(async () =>
+        {
+            _players = Editor.Players().ToList(); _modes = Editor.Modes().ToList();
+            _pockets = Editor.Pockets(); _levelXp = Editor.LevelExperience();
+            _player = _players.FirstOrDefault()?.Id ?? "";
+            if (_player != "") _roster = await Editor.Roster(_player, _mode);
+        });
+    }
+    private void ChangeLanguage(string locale)
+    {
+        _locale = locale;
+        _text = Languages.GetEditorText(locale);
+        _heads = Editor.Heads(locale).ToList();
+        _voices = Editor.Voices(locale).ToList();
+    }
+    private async Task ChangePlayer(string player) { _player = player; await Refresh(); }
+    private async Task ChangeMode(string mode) { _mode = mode; await Refresh(); }
+    private async Task Refresh()
+    {
+        _draft = null; _aid = 0; _roster = [];
+        if (_player != "") await Attempt(async () => _roster = await Editor.Roster(_player, _mode));
+    }
+    private async Task Load(int aid)
+    {
+        _draft = null; _filter = "";
+        await Attempt(async () => { _draft = await Editor.Load(_player, _mode, aid); _aid = aid; });
+    }
+    private void SetLevel(int level)
+    {
+        if (_draft == null || level < 1 || level > _levelXp.Length) return;
+        _draft.Level = level; _draft.Experience = _levelXp[level - 1];
+    }
+    private void SetXp(int xp)
+    {
+        if (_draft == null || xp < 0) return;
+        _draft.Experience = xp;
+        _draft.Level = Math.Max(1, Array.FindLastIndex(_levelXp, value => value <= xp) + 1);
+    }
+    private async Task Save()
+    {
+        if (_draft == null || _form == null) return;
+        await _form.ValidateAsync();
+        if (!_form.IsValid) { _failed = true; _message = "EditorInvalid"; return; }
+        await Attempt(async () =>
+        {
+            _draft = await Editor.Save(_player, _mode, _aid, _draft);
+            _roster = await Editor.Roster(_player, _mode);
+            _message = "EditorSaved";
+        });
+    }
+    private async Task Attempt(Func<Task> action)
+    {
+        if (_busy) return;
+        _busy = true; _message = ""; _failed = false;
+        try { await action(); }
+        catch (Exception ex)
+        {
+            _failed = true; _message = ex is InvalidDataException && _text.ContainsKey(ex.Message) ? ex.Message : "EditorFailed";
+            Logger.Warning($"[TeammateEditor] {_player}/{_mode}/{_aid}: {ex}");
+        }
+        finally { _busy = false; }
+    }
+}

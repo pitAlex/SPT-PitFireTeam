@@ -31,6 +31,90 @@ namespace pitTeam.Components
 {
     internal partial class SquadControlMenuUi
     {
+        private sealed class RosterHealthTile
+        {
+            internal SquadRosterEntry Entry;
+            internal Image PortraitBackground;
+            internal Color HealthyPortraitBackgroundColor;
+        }
+
+        private sealed class RosterHealthState
+        {
+            public string Aid;
+            public bool IsWounded;
+        }
+
+        private sealed class RosterHealthResponse
+        {
+            public int err;
+            public string errmsg;
+            public List<RosterHealthState> data;
+        }
+
+        private readonly Dictionary<string, RosterHealthTile> rosterHealthTiles = new Dictionary<string, RosterHealthTile>(StringComparer.Ordinal);
+        private bool rosterHealthRefreshBusy;
+        private float nextRosterHealthRefresh;
+
+        private void UpdateRosterHealth()
+        {
+            if (rosterPanel == null || !rosterPanel.activeInHierarchy || rosterHealthTiles.Count == 0
+                || GameplayModeRuntime.IsSwitching || rosterHealthRefreshBusy || Time.unscaledTime < nextRosterHealthRefresh)
+                return;
+            nextRosterHealthRefresh = Time.unscaledTime + 3f;
+            _ = RefreshRosterHealthAsync();
+        }
+
+        private async Task RefreshRosterHealthAsync()
+        {
+            rosterHealthRefreshBusy = true;
+            int version = rosterBuildVersion;
+            try
+            {
+                string json = await Task.Run(() => RequestHandler.GetJson(TeammatesRoute + "/health"));
+                var response = JsonConvert.DeserializeObject<RosterHealthResponse>(json);
+                if (response == null || response.err != 0 || response.data == null)
+                    throw new InvalidOperationException(response?.errmsg ?? "Roster health response unavailable");
+                if (this == null || rosterPanel == null || !rosterPanel.activeInHierarchy || version != rosterBuildVersion || GameplayModeRuntime.IsSwitching)
+                    return;
+                foreach (var state in response.data)
+                {
+                    if (state?.Aid == null || !rosterHealthTiles.TryGetValue(state.Aid, out var tile)
+                        || tile.Entry.IsWounded == state.IsWounded)
+                        continue;
+                    tile.Entry.IsWounded = state.IsWounded;
+                    ApplyPortraitHealthTint(tile);
+                }
+            }
+            catch (Exception ex)
+            {
+                nextRosterHealthRefresh = Time.unscaledTime + 30f;
+                pitFireTeam.Log.LogWarning($"[UI] Roster health refresh failed: {ex.Message}");
+            }
+            finally { rosterHealthRefreshBusy = false; }
+        }
+
+        private static void ResolveRosterTileColors(SquadRosterEntry entry, out Color normal, out Color hover, out Color pressed)
+        {
+            normal = entry.RecruitmentGearPrice.HasValue && string.Equals(entry.Side, "Usec", StringComparison.OrdinalIgnoreCase)
+                ? new Color(0.025f, 0.547f, 1f, 0.408f)
+                : entry.RecruitmentGearPrice.HasValue && string.Equals(entry.Side, "Bear", StringComparison.OrdinalIgnoreCase)
+                    ? new Color(1f, 0.287f, 0f, 0.408f)
+                    : new Color(0.045f, 0.045f, 0.045f, 0.97f);
+            if (!string.IsNullOrWhiteSpace(entry.PortraitColor) && ColorUtility.TryParseHtmlString(entry.PortraitColor, out Color companionColor))
+                normal = new Color(companionColor.r, companionColor.g, companionColor.b, normal.a);
+            hover = new Color(0.6235f, 0.6157f, 0.5647f, 1f);
+            pressed = new Color(0.16f, 0.16f, 0.16f, 0.99f);
+        }
+
+        private static void ApplyPortraitHealthTint(RosterHealthTile tile)
+        {
+            if (tile.PortraitBackground == null)
+                return;
+            tile.PortraitBackground.color = tile.Entry.IsWounded
+                ? new Color(0.55f, 0.10f, 0.10f, tile.HealthyPortraitBackgroundColor.a)
+                : tile.HealthyPortraitBackgroundColor;
+        }
+
         private void RebuildRosterTiles()
         {
             if (rosterGridRoot == null)
@@ -42,6 +126,8 @@ namespace pitTeam.Components
             ClosePortraitContextMenu();
             CancelPortraitQueue();
             portraitLoadingIndicators.Clear();
+            rosterHealthTiles.Clear();
+            nextRosterHealthRefresh = Time.unscaledTime + 3f;
             autoJoinRequestsInFlight.Clear();
             groupRequestsInFlight.Clear();
             rosterBuildVersion++;
@@ -194,6 +280,8 @@ namespace pitTeam.Components
                                 Level = level,
                                 Side = teammate?["Info"]?["Side"]?.ToString() ?? teammate?["info"]?["side"]?.ToString() ?? string.Empty,
                                 RecruitmentGearPrice = (teammate?["RecruitmentGearPrice"] ?? teammate?["recruitmentGearPrice"])?.Value<int?>(),
+                                PortraitColor = (teammate?["PortraitColor"] ?? teammate?["portraitColor"])?.ToString(),
+                                IsWounded = ParseBool((teammate?["IsWounded"] ?? teammate?["isWounded"])?.ToString()),
                                 AutoJoinEnabled = ParseBool(teammate?["AutoJoinEnabled"]?.ToString() ?? teammate?["autoJoinEnabled"]?.ToString()),
                                 HasProperRaidKit = ParseBool(teammate?["HasProperRaidKit"]?.ToString() ?? teammate?["hasProperRaidKit"]?.ToString(), defaultValue: true)
                             });
@@ -328,13 +416,7 @@ namespace pitTeam.Components
             layoutElement.flexibleHeight = 0f;
 
             Image tileBackground = tileObject.GetComponent<Image>();
-            Color normalColor = entry.RecruitmentGearPrice.HasValue && string.Equals(entry.Side, "Usec", StringComparison.OrdinalIgnoreCase)
-                ? new Color(0.025f, 0.547f, 1f, 0.408f)
-                : entry.RecruitmentGearPrice.HasValue && string.Equals(entry.Side, "Bear", StringComparison.OrdinalIgnoreCase)
-                    ? new Color(1f, 0.287f, 0f, 0.408f)
-                    : new Color(0.045f, 0.045f, 0.045f, 0.97f);
-            Color hoverColor = new Color(0.6235f, 0.6157f, 0.5647f, 1f);
-            Color pressedColor = new Color(0.16f, 0.16f, 0.16f, 0.99f);
+            ResolveRosterTileColors(entry, out Color normalColor, out Color hoverColor, out Color pressedColor);
             tileBackground.color = normalColor;
 
             GameObject tileOverlayObject = new GameObject("BackgroundOverlay", typeof(RectTransform), typeof(Image));
@@ -375,6 +457,15 @@ namespace pitTeam.Components
             tileContextController.OnRightClick = eventData => ShowPortraitContextMenu(entry, eventData);
 
             RectTransform portraitHost = CreatePortraitHost(tileRect, entry.Level, out PlayerIconImage iconImage);
+            Image portraitBackground = portraitHost.Find("Portrait/Background")?.GetComponent<Image>();
+            var healthTile = new RosterHealthTile
+            {
+                Entry = entry,
+                PortraitBackground = portraitBackground,
+                HealthyPortraitBackgroundColor = portraitBackground != null ? portraitBackground.color : Color.white
+            };
+            rosterHealthTiles[entry.AccountId] = healthTile;
+            ApplyPortraitHealthTint(healthTile);
             RegisterPortraitLoadingIndicator(entry.AccountId, iconImage?._progress);
             AttachPortraitProfileTrigger(portraitHost, entry);
             CreateRemoveButton(tileRect, entry);

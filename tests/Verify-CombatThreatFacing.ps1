@@ -9,6 +9,7 @@ $runSource = Get-Content -Raw (Join-Path $actionRoot 'CombatRunToEnemyAction.cs'
 $walkSource = Get-Content -Raw (Join-Path $actionRoot 'CombatGoToEnemyAction.cs')
 $holdSource = Get-Content -Raw (Join-Path $actionRoot 'CombatHoldPositionAction.cs')
 $dogSource = Get-Content -Raw (Join-Path $actionRoot 'CombatDogFightAction.cs')
+$commonSource = Get-Content -Raw (Join-Path $RepositoryRoot 'client/BigBrain/FollowerCombatCommon.cs')
 function Get-CombatMethod([string]$Source, [string]$Name) {
     $pattern = '(?ms)^        (?:public|private|internal)[^\r\n]*\b' + [regex]::Escape($Name) + '\(.*?^        \}'
     $matches = [regex]::Matches($Source, $pattern)
@@ -25,7 +26,8 @@ $walkMethods = @('TryGetEnemyLookAnchor', 'TryGetOwnedEnemyLookDirection', 'Flat
     ForEach-Object { Get-CombatMethod $walkSource $_ }
 $holdMethods = @('GetEnemyLookPoint', 'TryLookTowardEnemy', 'Look', 'LookInRandomDirection', 'TryGetClosestAllyLookPoint', 'TryCollectClosestAllyFromEnumerable', 'TryUpdateClosestAlly') | ForEach-Object { (Get-CombatMethod $holdSource $_).Replace('public override void Look()', 'public void UpdateLook()') }
 $holdConstants = [regex]::Matches($holdSource, '(?m)^        private const float [^\r\n]+') | ForEach-Object { $_.Value }
-$dogMethods = @('MaintainThreatFacing', 'GetLookAngleToPoint') | ForEach-Object { Get-CombatMethod $dogSource $_ }
+$dogMethods = @('Stop', 'MaintainThreatFacing', 'GetLookAngleToPoint', 'UpdateContactMovement', 'IsUnsafeCloseThreatFacing') | ForEach-Object { Get-CombatMethod $dogSource $_ }
+$dogContact = Get-CombatMethod $commonSource 'HasLostDogFightContact'
 $runConstants = [regex]::Matches($runSource, '(?m)^        private const float [^\r\n]+') | ForEach-Object { $_.Value }
 $lookEnum = [regex]::Match($runSource, '(?ms)^        private enum RunLookMode.*?^        \}').Value
 $harness = @'
@@ -72,9 +74,11 @@ namespace UnityEngine.AI {
     }
 }
 namespace EFT {
+    public enum BotDogFightStatus {none,dogFight}
+    public class DogState {public BotDogFightStatus DogFightState=BotDogFightStatus.dogFight;public bool _pursuitInProgress=true;}
     public class EnemyInfo {
         public string ProfileId="enemy"; public Person Person=new Person();
-        public bool IsVisible,CanShoot; public float PersonalLastSeenTime;
+        public bool IsVisible,CanShoot; public float PersonalLastSeenTime,Distance=10;
         public Vector3 PersonalLastPos,EnemyLastPositionReal,CurrPosition;
         public GroupInfo? GroupInfo=new GroupInfo();
         public Vector3 GetBodyPartPosition()=>CurrPosition+Vector3.up*1.6f;
@@ -83,7 +87,7 @@ namespace EFT {
     public class Health { public bool IsAlive=true; }
     public class Transform { public Vector3 position,forward=new Vector3(1,0,0); }
     public class GroupInfo { public float EnemyLastSeenTimeReal,EnemyLastSeenTimeSense; }
-    public class Mover { public bool HasPathAndNoComplete=true,Sprinting; public Vector3 DirCurPoint; public Vector3? TargetPoint=new Vector3(190,0,-36); }
+    public class Mover { public bool HasPathAndNoComplete=true,Sprinting,Stopped; public Vector3 DirCurPoint; public Vector3? TargetPoint=new Vector3(190,0,-36); public void Stop(){Stopped=true;HasPathAndNoComplete=false;} }
     public class LookData { public void SetLookPointByHearing(object? p){} }
     public class Observer { public void Stop(){} }
     public class Memory { public Observer botObserveData=new Observer(); public EnemyInfo? GoalEnemy,LastEnemy; }
@@ -95,6 +99,7 @@ namespace EFT {
     }
     public class BotsGroup { public BotOwner[] Members=Array.Empty<BotOwner>(); public IEnumerable? Allies; public int MembersCount=>Members.Length; public BotOwner Member(int i)=>Members[i]; }
     public class BotOwner {
+        public DogState DogFight=new DogState();
         public bool IsDead,IsFollower=true; public BotsGroup? BotsGroup;
         public Transform? WeaponRoot; public Transform Transform=new Transform();
         public Vector3 Position=new Vector3(160,0,-24),LookDirection=new Vector3(1,0,0);
@@ -103,7 +108,10 @@ namespace EFT {
         public void StopMove(){Stopped=true;Mover.HasPathAndNoComplete=false;} public void SetPose(float p){}
     }
 }
-namespace pitTeam.Modules { public static class BossPlayers { public static bool IsFollower(BotOwner b)=>b.IsFollower; } }
+namespace pitTeam.Modules {
+    public static class BossPlayers { public static bool IsFollower(BotOwner b)=>b.IsFollower; }
+    public static class FollowerEnemyTracking {public static float Distance(EnemyInfo enemy)=>enemy.Distance;}
+}
 namespace pitTeam.Components { public static class BotFollowerPlayer { public static bool TryApplyCommandLookOverride(BotOwner b)=>false; } }
 namespace pitTeam.Utils {
     public static class FollowerAwareness {
@@ -116,6 +124,10 @@ namespace pitTeam.Utils {
 public static class MyExtensions { public static float Random(float a,float b)=>a; }
 namespace pitTeam.BigBrain {
     public static class FollowerCombatCommon {
+        public static bool PointBlank;
+        private static bool IsPointBlankContactWithoutHardSeparation(BotOwner owner,EnemyInfo? enemy)=>PointBlank;
+        public static bool LostDogContact(BotOwner owner,EnemyInfo? enemy)=>HasLostDogFightContact(owner,enemy);
+        __DOG_CONTACT__
         public static bool IsFinite(Vector3 v)=>!float.IsNaN(v.x)&&!float.IsInfinity(v.x)&&!float.IsNaN(v.y)&&!float.IsInfinity(v.y)&&!float.IsNaN(v.z)&&!float.IsInfinity(v.z);
         public static Vector3 GetEnemyCurrentPosition(EnemyInfo e)=>e.CurrPosition;
     }
@@ -154,10 +166,19 @@ namespace pitTeam.BigBrain.Actions {
         public bool Look()=>TryLookTowardEnemy();
         __HOLD_METHODS__
     }
-    public class DogHarness {
+    public class DogBase {public int BaseStops;public virtual void Stop()=>BaseStops++;}
+    public class DogHarness : DogBase {
         public BotOwner BotOwner=new BotOwner();
+        private const float MoveUpdateFallbackDelay=0.33f,CloseContactFireDistance=18f,UnsafeCloseThreatLookAngle=70f;
+        private enum DogFightMoveStatus {None,BackingUp}
+        private DogFightMoveStatus moveStatus=DogFightMoveStatus.BackingUp;private float nextMoveUpdateTime;
+        public int MoveCalls;public bool Advance;
+        public int ShootStops;private void StopCombatShooting()=>ShootStops++;private void ResetImmediateFireReactionGate(){}
+        private bool UpdateSainLikeMovement(EnemyInfo? e,bool allowAdvance){MoveCalls++;Advance=allowAdvance;return true;}
         public void Look(EnemyInfo e)=>MaintainThreatFacing(e);
         public float Angle(Vector3 point)=>GetLookAngleToPoint(point);
+        public bool Move(EnemyInfo e,bool advance,bool bearing,bool fire)=>UpdateContactMovement(e,advance,bearing,fire);
+        public bool Unsafe(EnemyInfo e)=>IsUnsafeCloseThreatFacing(e);
         __DOG_METHODS__
     }
     public static class ThreatFacingChecks {
@@ -320,6 +341,22 @@ namespace pitTeam.BigBrain.Actions {
             Check(Same(dog.BotOwner.Steering.Point,pitTeam.Utils.FollowerAwareness.Threat),"Dogfight_PreservesFreshIncomingFireLook");
             pitTeam.Utils.FollowerAwareness.HasThreat=false;dog.BotOwner.Position=new Vector3(100,0,100);dog.BotOwner.LookDirection=new Vector3(1,0,0);dog.BotOwner.WeaponRoot=new Transform{position=new Vector3(100,1.2f,100)};
             Check(dog.Angle(new Vector3(104,1.2f,100))<0.001f,"Dogfight_AngleUsesWeaponOrigin");
+            e=Enemy(5);dog=new DogHarness();
+            Check(FollowerCombatCommon.LostDogContact(dog.BotOwner,e),"Dogfight_StaleBearingEndsBeforeDistanceDrivenRetreat");
+            Check(!dog.Move(e,true,false,false)&&dog.BotOwner.Mover.Stopped&&dog.MoveCalls==0,"Dogfight_StaleBearingCannotKeepMovingAlongOldRoute");
+            e.IsVisible=true;Check(!FollowerCombatCommon.LostDogContact(dog.BotOwner,e),"Dogfight_VisibleContactRemainsActive");
+            dog=new DogHarness();Check(dog.Move(e,false,true,false)&&dog.MoveCalls==1&&!dog.Advance,"Dogfight_ReloadEvasionCannotBecomeForwardMovement");
+            dog=new DogHarness();Check(dog.Move(e,true,false,true),"Dogfight_AdmittedPointBlankFireCanOwnMovement");
+            dog.Stop();Check(dog.BotOwner.Mover.Stopped&&dog.ShootStops==1&&dog.BaseStops==1&&dog.BotOwner.DogFight.DogFightState==BotDogFightStatus.none&&!dog.BotOwner.DogFight._pursuitInProgress,"Dogfight_StopReleasesOldMovementBeforeSearchSuccessor");
+            e.IsVisible=false;pitTeam.Utils.FollowerAwareness.HasThreat=true;
+            Check(!FollowerCombatCommon.LostDogContact(dog.BotOwner,e),"Dogfight_ConcreteIncomingFireRetainsItsBearing");
+            pitTeam.Utils.FollowerAwareness.HasThreat=false;FollowerCombatCommon.PointBlank=true;
+            Check(!FollowerCombatCommon.LostDogContact(dog.BotOwner,e),"Dogfight_PointBlankContactKeepsItsSpecialOwner");FollowerCombatCommon.PointBlank=false;
+            foreach(float distance in new[]{5f,10f,17.9f,18f,18.1f}) {
+                e=Enemy();e.IsVisible=true;e.Distance=distance;e.CurrPosition=new Vector3(10,0,0);
+                dog=new DogHarness();dog.BotOwner.Position=Vector3.zero;dog.BotOwner.LookDirection=new Vector3(-1,0,0);
+                Check(dog.Unsafe(e)==(distance<=18f),"Dogfight_BackFacingMoveVetoCoversOrdinaryCloseRange_"+distance);
+            }
             var enemyPoint=new Vector3(187,0,-36);NavMesh.Sample=new Vector3(179,0,-36);
             Check(RunHarness.Sample(NavMesh.Sample,enemyPoint,out point)&&Same(point,NavMesh.Sample),"RunSample_ReturnsValidatedPointNotOrigin");
             foreach(float distance in new[]{5f,10f}) {
@@ -336,7 +373,7 @@ namespace pitTeam.BigBrain.Actions {
 }
 '@
 $lookSource = $lookSource -replace '(?m)^using [^;]+;\r?\n', ''
-$harness = $harness.Replace('__RUN_CONSTANTS__', ($runConstants -join "`n")).Replace('__LOOK_ENUM__', $lookEnum).
+$harness = $harness.Replace('__DOG_CONTACT__',$dogContact).Replace('__RUN_CONSTANTS__', ($runConstants -join "`n")).Replace('__LOOK_ENUM__', $lookEnum).
     Replace('__HOLD_CONSTANTS__', ($holdConstants -join "`n")).Replace('__RUN_METHODS__', ($runMethods -join "`n")).Replace('__WALK_METHODS__', ($walkMethods -join "`n")).Replace('__HOLD_METHODS__', ($holdMethods -join "`n")).Replace('__DOG_METHODS__', ($dogMethods -join "`n"))
 Add-Type -TypeDefinition ($harness + "`n" + $lookSource) -Language CSharp
 $count = [pitTeam.BigBrain.Actions.ThreatFacingChecks]::Run()

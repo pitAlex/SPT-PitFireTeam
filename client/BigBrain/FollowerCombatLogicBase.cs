@@ -206,7 +206,11 @@ namespace pitTeam.BigBrain
             // GoalEnemy can disappear between clustered contacts while incoming fire is still
             // concrete. This recovery is shared survival work, not ordered-objective completion,
             // but a renewed push order must still be able to restart the ordered mission.
-            if (FollowerCombatCommon.IsNoEnemyThreatCoverReason(currentDecision.Reason))
+            // A recovery reason can outlive the missing-enemy interval that created it.
+            // Once real contact returns, normal command/objective interrupts own this action;
+            // otherwise a committed arrival hold swallows Regroup until its lease expires.
+            if (!combatCommon.HasActiveCombatEnemy(goalEnemy) &&
+                FollowerCombatCommon.IsNoEnemyThreatCoverReason(currentDecision.Reason))
             {
                 if (goalEnemy != null &&
                     ShouldConsumePushCommand(followerData, goalEnemy) &&
@@ -986,7 +990,7 @@ namespace pitTeam.BigBrain
             BattleRecorder.RecordObjectiveSwitch(BotOwner, GetCurrentObjectiveName(), "combatStart");
         }
 
-        private void ActivatePrimaryObjective(string reason = "returnPrimary")
+        protected void ActivatePrimaryObjective(string reason = "returnPrimary")
         {
             if (currentObjective == CombatObjectiveKind.Default)
             {

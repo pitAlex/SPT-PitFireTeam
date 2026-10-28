@@ -69,7 +69,7 @@ namespace pitTeam.Modules
                 !_playerOwnedIds.Contains(i.Id)).Select(i => (string)i.Id));
             _donationPlan = new GiveGearPlanner(BotDraft, Donation, _donationOverflow, Bot,
                 edit => { _edits.Add(edit); edit.UpdateProvenance(_playerOwnedIds); },
-                _playerOwnedIds);
+                _playerOwnedIds, GameplayModeAddons.GetCompanionGearPolicy(Bot.Profile.Info.Settings.Role.ToString()));
 #if DEBUG
             _donationDiagnosticId = Guid.NewGuid().ToString("N").Substring(0, 8);
             _donationDiagnosticLines = 0;

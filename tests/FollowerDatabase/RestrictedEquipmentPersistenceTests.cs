@@ -35,12 +35,15 @@ internal static class RestrictedEquipmentPersistenceTests
             Upd = new Upd { StackObjectsCount = 1 }
         };
 
+        check(new FriendlyServerSettingsRequest().RestrictedGearMaintenance == false, "Field Upkeep defaults off");
         foreach (string legacyValue in new[] { "false", "true", "null" })
         {
             settings.SaveAndApply(JsonSerializer.Deserialize<FriendlyServerSettingsRequest>(
                 "{\"loadoutManagementMode\":\"Restricted\",\"restrictedGearMaintenance\":" + legacyValue + "}")!);
-            check(!JsonSerializer.Serialize(settings.LoadSettings()).Contains("restrictedGearMaintenance"),
-                "obsolete upkeep field is ignored and omitted on save: " + legacyValue);
+            bool upkeep = legacyValue == "true";
+            check((settings.LoadSettings().RestrictedGearMaintenance == true) == upkeep
+                && JsonSerializer.Serialize(settings.LoadSettings()).Contains("restrictedGearMaintenance"),
+                "Field Upkeep preference survives settings save: " + legacyValue);
             foreach (bool escaped in new[] { true, false })
             {
                 Item root = New(), armor = New(root.Id.ToString(), "ArmorVest"), pockets = New(root.Id.ToString(), "Pockets");
@@ -66,15 +69,17 @@ internal static class RestrictedEquipmentPersistenceTests
                     Aid = "880", Escaped = escaped, EquipmentItems = live, TrackedItemIds = [cargo.Id.ToString()]
                 };
                 var protectedIds = new Dictionary<string, HashSet<string>> { ["881"] = [otherGear.Id.ToString()] };
+                storage.Write(session, "880-equipment.json", cloner.Clone(teammate.Inventory.Items)!);
                 Invoke(service, "ApplyImmersiveEscapedDefaultEquipmentState", session, teammate, entry, protectedIds);
                 Invoke(service, "ApplyRestrictedGearMaintenanceDeathEquipmentState", session, teammate, entry, protectedIds);
                 Invoke(service, "ApplyImmersiveDefaultGearLoss", session, teammate, entry);
                 var saved = storage.Read<List<Item>>(session, "880-equipment.json")!;
-                string scenario = $"Restricted escaped={escaped}, legacy upkeep={legacyValue}";
-                check(saved.Single(item => item.Id == armor.Id).Upd!.Repairable!.Durability == 25, scenario + " persists durability");
-                check(saved.Single(item => item.Id == meds.Id).Upd!.MedKit!.HpResource == 35, scenario + " persists spent medicine");
-                check(saved.Single(item => item.Id == ammo.Id).Upd!.StackObjectsCount == 4, scenario + " persists spent ammunition");
-                check(saved.Any(item => item.Id == acquired.Id) && saved.Any(item => item.Id == attachment.Id), scenario + " retains acquired equipment");
+                string scenario = $"Restricted escaped={escaped}, upkeep={legacyValue}";
+                check(saved.Single(item => item.Id == armor.Id).Upd!.Repairable!.Durability == (upkeep ? 25 : 60), scenario + " applies durability according to upkeep");
+                check(saved.Single(item => item.Id == meds.Id).Upd!.MedKit!.HpResource == (upkeep ? 35 : 100), scenario + " applies medicine use according to upkeep");
+                check(saved.Single(item => item.Id == ammo.Id).Upd!.StackObjectsCount == (upkeep ? 4 : 30), scenario + " applies ammunition use according to upkeep");
+                check(saved.Any(item => item.Id == acquired.Id) == upkeep && saved.Any(item => item.Id == attachment.Id) == upkeep,
+                    scenario + " only replaces equipment from the raid snapshot when upkeep is on");
                 check(!saved.Any(item => new[] { cargo.Id, cargoChild.Id, otherGear.Id, otherChild.Id, secure.Id, secureMed.Id }.Contains(item.Id)),
                     scenario + " filters tracked cargo, other teammate gear and managed secure supplies");
                 check(teammate.Inventory.Items.Any(item => item.Id == armor.Id), scenario + " never applies Immersive death loss");
@@ -82,6 +87,11 @@ internal static class RestrictedEquipmentPersistenceTests
                     scenario + " leaves baseline and input snapshots detached");
             }
         }
+        var escapedPolicy = typeof(FriendlyTeammateService).GetMethod("ShouldPersistEscapedDefaultEquipmentState", BindingFlags.Static | BindingFlags.NonPublic)!;
+        foreach (string mode in new[] { "Immersive", "Extreme" })
+            foreach (bool upkeep in new[] { false, true })
+                check((bool)escapedPolicy.Invoke(null, [mode, new FriendlyServerSettingsRequest { RestrictedGearMaintenance = upkeep }])!,
+                    mode + " persistence does not depend on Field Upkeep");
         settings.SaveAndApply(new());
     }
 

@@ -17,10 +17,12 @@ public class FriendlyTeammateStorage(FileUtil fileUtil, JsonUtil jsonUtil, ISptL
 {
     private readonly object sync = new();
     private readonly Dictionary<string, TeammateDatabase> databases = new(StringComparer.Ordinal);
-    private string GetRoot(bool allegiance) => Path.Combine(fileUtil.GetModPath("pitFireTeam-ServerMod"), "Resources", allegiance ? "teammates-allegiance" : "teammates");
-    private string RootDirectory => GetRoot(settingsService.LoadSettings().IsAllegiance);
+    private string GetRoot(bool allegiance) => GetRoot(allegiance ? "Allegiance" : "GunsForHire");
+    private string GetRoot(string mode) => Path.Combine(fileUtil.GetModPath("pitFireTeam-ServerMod"), "Resources", pitTeam.Shared.GameplayModePolicy.StorageDirectory(mode));
+    private string RootDirectory => GetRoot(settingsService.LoadSettings().GameplayMode);
 
     public void PrepareMode(MongoId sessionId, bool allegiance) => GetDatabase(sessionId, allegiance);
+    public void PrepareMode(MongoId sessionId, string mode) => GetDatabase(sessionId, mode);
 
     public void InitializeAllProfiles(IEnumerable<MongoId> profileIds)
     {
@@ -56,6 +58,9 @@ public class FriendlyTeammateStorage(FileUtil fileUtil, JsonUtil jsonUtil, ISptL
     public List<BotBase> ReadProfiles(MongoId sessionId) => GetDatabase(sessionId).ReadProfiles()
         .Select(entry => Deserialize<BotBase>(entry.Value, entry.Key)).ToList();
 
+    public IReadOnlyDictionary<string, string> ReadModeProfiles(MongoId sessionId, string mode) =>
+        GetDatabase(sessionId, mode).ReadProfiles();
+
     // Account-wide mod state lives in the canonical Guns for Hire database, independently
     // of the active roster. Explicit mode access never changes the global mode selection.
     public T? ReadSharedDocument<T>(MongoId sessionId, string name) where T : class =>
@@ -68,24 +73,31 @@ public class FriendlyTeammateStorage(FileUtil fileUtil, JsonUtil jsonUtil, ISptL
         });
 
     public bool HasTeammatesInEitherMode(MongoId sessionId) =>
-        GetDatabase(sessionId, false).ReadProfiles().Count > 0 || GetDatabase(sessionId, true).ReadProfiles().Count > 0;
+        pitTeam.Shared.GameplayModePolicy.Modes
+            .Where(mode => FriendlyGameplayModeAddons.IsAvailable(mode) || File.Exists(Path.Combine(GetRoot(mode), sessionId + ".db")))
+            .Any(mode => GetDatabase(sessionId, mode).ReadProfiles().Count > 0);
 
-    public T? ReadModeDocument<T>(MongoId sessionId, string name, bool allegiance) where T : class
+    public T? ReadModeDocument<T>(MongoId sessionId, string name, bool allegiance) where T : class =>
+        ReadModeDocument<T>(sessionId, name, allegiance ? "Allegiance" : "GunsForHire");
+
+    public T? ReadModeDocument<T>(MongoId sessionId, string name, string mode) where T : class
     {
-        string? json = GetDatabase(sessionId, allegiance).Read(name);
+        string? json = GetDatabase(sessionId, mode).Read(name);
         return json == null ? null : Deserialize<T>(json, name);
     }
 
     public void WriteModeDocuments(MongoId sessionId, bool allegiance, IReadOnlyDictionary<string, string> documents) =>
         GetDatabase(sessionId, allegiance).WriteBatch(documents);
+    public void WriteModeDocuments(MongoId sessionId, string mode, IReadOnlyDictionary<string, string> documents, bool backupPrevious = false) =>
+        GetDatabase(sessionId, mode).WriteBatch(documents, backupPrevious);
 
     public HashSet<int> GetAllAccountIds()
     {
         var result = new HashSet<int>();
-        foreach (bool allegiance in new[] { false, true })
-        foreach (string profileId in GetStoredProfileIds(GetRoot(allegiance)))
+        foreach (string mode in pitTeam.Shared.GameplayModePolicy.Modes)
+        foreach (string profileId in GetStoredProfileIds(GetRoot(mode)))
         {
-            foreach (var entry in GetDatabase(new MongoId(profileId), allegiance).ReadProfiles())
+            foreach (var entry in GetDatabase(new MongoId(profileId), mode).ReadProfiles())
             {
                 var teammate = Deserialize<BotBase>(entry.Value, entry.Key);
                 if (teammate.Aid is > 0) result.Add(teammate.Aid.Value);
@@ -114,12 +126,14 @@ public class FriendlyTeammateStorage(FileUtil fileUtil, JsonUtil jsonUtil, ISptL
     public bool DeleteTeammate(MongoId sessionId, int aid, IReadOnlyDictionary<string, string>? receipt = null) =>
         GetDatabase(sessionId).DeleteTeammate(aid, receipt);
 
-    private TeammateDatabase GetDatabase(MongoId sessionId) => GetDatabase(sessionId, settingsService.LoadSettings().IsAllegiance);
+    private TeammateDatabase GetDatabase(MongoId sessionId) => GetDatabase(sessionId, settingsService.LoadSettings().GameplayMode);
 
-    private TeammateDatabase GetDatabase(MongoId sessionId, bool allegiance)
+    private TeammateDatabase GetDatabase(MongoId sessionId, bool allegiance) => GetDatabase(sessionId, allegiance ? "Allegiance" : "GunsForHire");
+
+    private TeammateDatabase GetDatabase(MongoId sessionId, string mode)
     {
         string profileId = sessionId.ToString();
-        string root = GetRoot(allegiance);
+        string root = GetRoot(mode);
         string cacheKey = root + "/" + profileId;
         lock (sync)
         {
@@ -127,9 +141,9 @@ public class FriendlyTeammateStorage(FileUtil fileUtil, JsonUtil jsonUtil, ISptL
             var database = new TeammateDatabase(root, profileId);
             try
             {
-                database.Initialize(() => allegiance ? new Dictionary<string, string>() : LoadLegacyDocuments(profileId));
+                database.Initialize(() => mode == "GunsForHire" ? LoadLegacyDocuments(profileId) : new Dictionary<string, string>());
                 databases.Add(cacheKey, database);
-                if (!allegiance) TryBackupImportedDirectory(database);
+                if (mode == "GunsForHire") TryBackupImportedDirectory(database);
                 logger.Info($"Teammate database ready: '{database.DatabasePath}'.");
                 return database;
             }

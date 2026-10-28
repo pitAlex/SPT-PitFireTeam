@@ -12,13 +12,16 @@ namespace pitTeam.BigBrain.Actions
     {
         private bool recruitGearInProgress, recruitBodyKitAttempted;
         private int recruitGearGeneration;
+        private bool UsesFixedCompanionGear => GameplayModeAddons.GetCompanionGearPolicy(
+            BotOwner?.Profile?.Info?.Settings?.Role.ToString())?.KeepEquipment == true;
 
         private bool TryStartRecruitLooseEquipment(Item item)
         {
             bool firearm = item is Weapon && item.GetItemComponent<KnifeComponent>() == null;
             // Loose supplies use the same explicit reevaluation as Give Items. A previously
             // carried secondary can become usable without a separate inventory scanner.
-            if (followerData?.IsSquadMate != false || (!firearm && !(item is Magazine) && !(item is Ammo))) return false;
+            if (followerData?.IsSquadMate != false || (!firearm && !(item is Magazine) && !(item is Ammo) &&
+                !(UsesFixedCompanionGear && (item is ArmorPlate || item is ThrowWeap)))) return false;
             if (TeammateGearSwap.Current != null) return true;
             var target = activeLootItem;
             var request = ActiveLootRequest;

@@ -34,6 +34,33 @@ namespace pitTeam.BigBrain.Actions
         {
             int checks = 0;
             void Check(bool value, string label) { if (!value) throw new Exception(label); checks++; }
+            foreach (bool accepted in new[] { true, false })
+            {
+                var action = new GestureCommandAction { ActiveLootRequest = new(FollowerLootMode.Normal) };
+                action.BotOwner.Profile.Info.Settings.Role = "bossKnight";
+                var grenade = new ThrowWeap("loose-knight-grenade"); TeammateGearSwap.Reset();
+                Check(action.TryStartRecruitLooseEquipment(grenade) && TeammateGearSwap.Calls == 1 &&
+                    TeammateGearSwap.Offered.Single() == grenade, "Knight's loose grenade uses the restricted Give Gear transaction");
+                if (accepted) action.BotOwner.GetPlayer.Items.Add(grenade);
+                TeammateGearSwap.Complete(accepted);
+                Check(accepted ? action.taken && action.ended == "TakeLoot:done" : action.ended == "TakeLoot:recruitUpgradeRejected",
+                    "Grenade completion confirms real inventory ownership or rejects without generic cargo fallback");
+                var ordinary = new GestureCommandAction(); TeammateGearSwap.Reset();
+                Check(!ordinary.TryStartRecruitLooseEquipment(grenade) && TeammateGearSwap.Calls == 0,
+                    "Ordinary recruit grenade pickup retains its existing path");
+            }
+            {
+                var action = new GestureCommandAction { ActiveLootRequest = new(FollowerLootMode.Normal) };
+                action.BotOwner.Profile.Info.Settings.Role = "bossKnight";
+                var plate = new ArmorPlate("offered-knight-plate"); TeammateGearSwap.Reset();
+                Check(action.TryStartRecruitLooseEquipment(plate) && TeammateGearSwap.Calls == 1 &&
+                    TeammateGearSwap.Offered.Single() == plate, "Knight's offered plate uses the restricted Give Gear transaction");
+                TeammateGearSwap.Complete(false);
+                Check(action.ended == "TakeLoot:recruitUpgradeRejected", "A rejected companion plate cannot fall through to generic cargo pickup");
+                var ordinary = new GestureCommandAction(); TeammateGearSwap.Reset();
+                Check(!ordinary.TryStartRecruitLooseEquipment(plate) && TeammateGearSwap.Calls == 0,
+                    "Ordinary recruits retain their existing loose-plate pickup path");
+            }
             foreach (var mode in new[] { FollowerLootMode.LootAndGetWeapon, FollowerLootMode.LootAndGetGear })
             {
                 var action = new GestureCommandAction { ActiveLootRequest = new(mode) };
@@ -201,7 +228,10 @@ namespace EFT
     public enum EPhraseTrigger { Negative, LootWeapon, LootGeneric }
     public class Player { public HashSet<Item> Items = new(); }
     public class Talk { public EPhraseTrigger Last; public void TrySay(EPhraseTrigger phrase, bool unused) => Last = phrase; }
-    public class BotOwner { public UnityEngine.Vector3 Position; public Player GetPlayer = new(); public Talk BotTalk = new(); }
+    public class Profile { public Info Info = new(); }
+    public class Info { public Settings Settings = new(); }
+    public class Settings { public string Role = "pmcUSEC"; }
+    public class BotOwner { public Profile Profile = new(); public UnityEngine.Vector3 Position; public Player GetPlayer = new(); public Talk BotTalk = new(); }
     public class Target { public object gameObject = new(); public UnityEngine.Transform transform = new(); }
 }
 namespace EFT.InventoryLogic
@@ -211,6 +241,8 @@ namespace EFT.InventoryLogic
     public class Weapon(string id) : Item(id) { public string Family = "default"; }
     public class Magazine(string id) : Item(id) { public string Family = "default"; }
     public class Ammo(string id) : Item(id) { public string Family = "default"; }
+    public class ArmorPlate(string id) : Item(id) { }
+    public class ThrowWeap(string id) : Item(id) { }
     public class Grid { public List<Item> Items = new(); }
     public class SearchableItem(string id) : Item(id) { public Grid[] Grids = { new() }; }
     public class Slot { public Item ContainedItem; }
@@ -229,6 +261,11 @@ namespace UnityEngine
 }
 namespace pitTeam.Modules
 {
+    internal static class GameplayModeAddons
+    {
+        private static readonly CompanionGearPolicy Fixed = new(true, true, 0.10f);
+        internal static CompanionGearPolicy GetCompanionGearPolicy(string role) => role == "bossKnight" ? Fixed : null;
+    }
     internal static class InteractableObjects { internal static bool IsProtectedFollowerEquipment(Item item) => item.Protected; }
     internal static class GiveGearPlanner { public static readonly EquipmentSlot[] EquipmentSlots = Enum.GetValues<EquipmentSlot>()
         .Where(s => s != EquipmentSlot.Pockets && s != EquipmentSlot.SecuredContainer).ToArray(); }

@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings><Nullable>annotations</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../going-rogue/client/Combat/BirdEyeCombatLayer.cs" Link="BirdEyeCombatLayer.cs" />
+    <Compile Include="../../going-rogue/client/Combat/BirdEyeNativePatches.cs" Link="BirdEyeNativePatches.cs" />
+    <Compile Include="../../going-rogue/client/Combat/BirdEyeCombatLogic.cs" Link="BirdEyeCombatLogic.cs" />
+    <Compile Include="../../going-rogue/client/Combat/BirdEyeCombatObjective.cs" Link="BirdEyeCombatObjective.cs" />
+    <Compile Include="../../going-rogue/client/Combat/BirdEyeSniperPositioning.cs" Link="BirdEyeSniperPositioning.cs" />
+    <Compile Include="../../going-rogue/client/Combat/KnightCombatObjective.cs" Link="KnightCombatObjective.cs" />
+    <Compile Include="../../going-rogue/client/Combat/GoonCombatObjective.cs" Link="GoonCombatObjective.cs" />
+    <Compile Include="../../going-rogue/client/Combat/IGoonCombatSelector.cs" Link="IGoonCombatSelector.cs" />
+    <Compile Include="../../going-rogue/client/Combat/BigPipeDecisionPolicy.cs" Link="BigPipeDecisionPolicy.cs" />
+    <Compile Include="../../going-rogue/client/Combat/BigPipeVanillaCombat.cs" Link="BigPipeVanillaCombat.cs" />
+    <Compile Include="../../going-rogue/client/Combat/BigPipeCombatObjective.cs" Link="BigPipeCombatObjective.cs" />
+    <Compile Include="../../going-rogue/client/Combat/BigPipeCombatLogic.cs" Link="BigPipeCombatLogic.cs" />
+    <Compile Include="../../going-rogue/client/Combat/GoonCombatScope.cs" Link="GoonCombatScope.cs" />
+    <Compile Include="../../going-rogue/client/GoonCombatConfidence.cs" Link="GoonCombatConfidence.cs" />
+    <Compile Include="../../going-rogue/client/Combat/GoonCombatThreat.cs" Link="GoonCombatThreat.cs" />
+    <Compile Include="../../client/BigBrain/FollowerPushRiskPolicy.cs" Link="FollowerPushRiskPolicy.cs" />
+    <Compile Include="../../going-rogue/client/Combat/GoonCombatLayer.cs" Link="GoonCombatLayer.cs" />
+    <Compile Include="../../going-rogue/client/Combat/BigPipeCombatLayer.cs" Link="BigPipeCombatLayer.cs" />
+    <Compile Include="../../going-rogue/client/Combat/BigPipeNativePatches.cs" Link="BigPipeNativePatches.cs" />
+    <Compile Include="../../going-rogue/client/Combat/KnightCombatLogic.cs" Link="KnightCombatLogic.cs" />
+    <Compile Include="../../going-rogue/client/Combat/KnightVanillaCombat.Caution.cs" Link="KnightVanillaCombat.Caution.cs" />
+    <Compile Include="../../going-rogue/client/Combat/GoonLayerLease.cs" Link="GoonLayerLease.cs" />
+    <Compile Include="../../client/BigBrain/FollowerCombatSupportPlanner.cs" Link="FollowerCombatSupportPlanner.cs" />
+    <Compile Include="../../client/BigBrain/CommittedCoverPhaseState.cs" Link="CommittedCoverPhaseState.cs" />
+  </ItemGroup>
+</Project>

@@ -560,8 +560,6 @@ namespace pitTeam.Patches
         [PatchPostfix]
         private static void PatchPostfix(EFT.EftClientBackendSession __instance, RaidSettings settings)
         {
-            bool badGuy = GameplayModeRuntime.GetEffectiveValue(pitFireTeam.badGuy);
-
             Utils.SpawnHelper.spawnMemberIds.Clear();
             Utils.SpawnHelper.spawnMemberIdsScav.Clear();
             Utils.SpawnHelper.spawnMemberIdsBoss.Clear();
@@ -596,8 +594,9 @@ namespace pitTeam.Patches
                 }
             }
 
-            // spawning with a Goon will turn bad guy flag on
-            if (SpawnHelper.spawnMemberIdsBoss.Count > 0)
+            // Legacy boss companions retain their policy; Going Rogue uses encounter diplomacy.
+            bool badGuy = GameplayModeRuntime.GetEffectiveValue(pitFireTeam.badGuy);
+            if (SpawnHelper.spawnMemberIdsBoss.Count > 0 && !GameplayModeRuntime.IsGoingRogue)
             {
                 badGuy = true;
                 Utils.Utils.FlagSet("isBadGuy", true);
@@ -637,9 +636,11 @@ namespace pitTeam.Patches
                                         Utils.Utils.FlagSet("questGoons", true);
                                         // - when doing Goons quests, we reset any other companions
                                         SpawnHelper.spawnMemberIdsBoss.Clear();
-                                        // - when doing Goons quests, we are always bad guys
-                                        Utils.Utils.FlagSet("isBadGuy", true);
-                                        badGuy = true;
+                                        if (!GameplayModeRuntime.IsGoingRogue)
+                                        {
+                                            Utils.Utils.FlagSet("isBadGuy", true);
+                                            badGuy = true;
+                                        }
 
                                         if (item.Key == "Knight")
                                         {

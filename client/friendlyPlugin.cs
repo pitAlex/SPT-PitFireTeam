@@ -122,6 +122,7 @@ namespace pitTeam
         public Dictionary<string, string> equipmentLock { get; set; }
         public Dictionary<string, string> loadoutManagement { get; set; }
         public Dictionary<string, string> loadoutManagementRestricted { get; set; }
+        public Dictionary<string, string> loadoutManagementRestrictedGearMaintenance { get; set; }
         public Dictionary<string, string> loadoutManagementImmersive { get; set; }
         public Dictionary<string, string> loadoutManagementExtreme { get; set; }
         public Dictionary<string, string> npcSendMessage { get; set; }
@@ -205,7 +206,7 @@ namespace pitTeam
         public string Message { get; set; }
     }
 
-    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "1.0.0")]
+    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "1.1.0")]
     [BepInDependency("xyz.drakia.bigbrain")]
     [BepInDependency(pitFireTeam.SainPluginId, BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency(pitFireTeam.MenuOverhaulPluginId, BepInDependency.DependencyFlags.SoftDependency)]
@@ -265,6 +266,7 @@ namespace pitTeam
         public static ConfigEntry<bool> englishBear;
         public static ConfigEntry<bool> pmcArmbands;
         public static ConfigEntry<LoadoutManagementMode> loadoutManagementMode;
+        public static ConfigEntry<bool> restrictedGearMaintenance;
 
         public static ConfigEntry<bool> botPrefetch;
 
@@ -376,6 +378,9 @@ namespace pitTeam
             new BotOwnerIsFolowerPatch().Enable();
             new BotOwnerManualUpdatePatch().Enable();
             new BotOwnerActivatePatch().Enable();
+            new FollowerFoundInRaidPatch().Enable();
+            new FollowerHumanPatrolChooserPatch().Enable();
+            new FollowerNativeBrainActivationPatch().Enable();
             new SessionLoadBotsEnglishVoicePatch().Enable();
             new LootPatrolActiveLayerListPatch().Enable();
             new LootPatrolDecisionBypassPatch().Enable();
@@ -438,6 +443,7 @@ namespace pitTeam
             new GearSwapDiscardPatch().Enable();
             new GearSwapModifyPatch().Enable();
             new GearSwapDestinationPatch().Enable();
+            new GearSwapStackTransferPatch().Enable();
             new GearSwapWeaponUpdatePatch().Enable();
             new GearSwapHealthUsePatch().Enable();
             new GearSwapTabPatch().Enable();
@@ -484,6 +490,7 @@ namespace pitTeam
             new FollowerSupportNoAmmoMainSwitchPolicyPatch().Enable();
             new FollowerHoldLingerReloadSuppressPatch().Enable();
             new FollowerMagazineReloadStartPatch().Enable();
+            new FollowerReloadStancePatch().Enable();
             new FollowerMagazineSupplyPatch().Enable();
             new FollowerCombatReloadPermissionPatch().Enable();
             new FollowerLauncherNoAmmoSwitchPatch().Enable();
@@ -617,6 +624,7 @@ namespace pitTeam
 
             new FriendlyDropdownNamePatch().Enable();
             new OtherPlayerProfileScreenPatch().Enable();
+            new ArmBandPreviewBodyFallbackPatch().Enable();
             new OtherPlayerProfileScreenClosePatch().Enable();
             new LoadoutEditorUnloadAmmoPatch().Enable();
             new LoadoutEditorRepairContextInteractionPatch().Enable();
@@ -653,6 +661,8 @@ namespace pitTeam
         private void Start()
         {
             RefreshPluginFlags();
+            // Optional mode plugins register in Awake; all Awake calls precede Start.
+            SyncServerSettings();
             if (IsSeparateHostilityInstalled && factionHostilities?.Value == true)
             {
                 Log.LogWarning(
@@ -1241,6 +1251,8 @@ namespace pitTeam
             pmcArmbands.SettingChanged += (_, _) => SyncServerSettings();
 
             loadoutManagementMode = Config.Bind("", "14 LoadoutManagement", DefaultLoadoutManagementMode, new ConfigDescription(optionsLang.loadoutManagement["Description"], null, CreateConfigAttributes(-1005, false, optionsLang.loadoutManagement)));
+            restrictedGearMaintenance = Config.Bind("", "14 LoadoutManagementRestrictedGearMaintenance", false, new ConfigDescription(optionsLang.loadoutManagementRestrictedGearMaintenance["Description"], null, CreateConfigAttributes(-1005, false, optionsLang.loadoutManagementRestrictedGearMaintenance)));
+            restrictedGearMaintenance.SettingChanged += (_, _) => SyncServerSettings();
             if (!Enum.IsDefined(typeof(LoadoutManagementMode), loadoutManagementMode.Value))
             {
                 loadoutManagementMode.Value = DefaultLoadoutManagementMode;
@@ -1307,7 +1319,6 @@ namespace pitTeam
             GameplayModeRuntime.Initialize(Config);
             Config.SaveOnConfigSet = true;
             Config.Save();
-            SyncServerSettings();
         }
 
         private void OnHideUnsupportedCommandsChanged(object sender, EventArgs e)

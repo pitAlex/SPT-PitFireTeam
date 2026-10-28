@@ -47,7 +47,7 @@ namespace pitTeam.Patches
         }
     }
 
-    internal class BotsControllerPatch : ModulePatch
+    internal partial class BotsControllerPatch : ModulePatch
     {
         public static BotsControllerPatch Instance;
 
@@ -384,6 +384,7 @@ namespace pitTeam.Patches
         /** Fetch Follower Profile data along with custom appearance from server */
         private async Task<Profile> FetchMemberProfile(string aid, Profile boss, BotCreator botCreator, EPlayerSide side, WildSpawnType role, BotSpawnParams spawnParams)
         {
+            bool savedTeammate = !string.IsNullOrWhiteSpace(aid) && side != EPlayerSide.Savage;
             if (FollowerTransitStateCache.TryConsumeProfile(aid, role, out Profile transitProfile))
             {
                 _ = Task.Run(() => FollowerInsuranceRaidDisplay.Refresh()); // Cosmetic lookup must not delay follower spawn.
@@ -446,6 +447,7 @@ namespace pitTeam.Patches
             }
 
             Profile profile = result.Select(descriptor => new Profile(descriptor)).ToList().PickRandom();
+            if (savedTeammate) FollowerRaidHealthRetention.RegisterSavedProfile(profile);
             _ = Task.Run(() => FollowerInsuranceRaidDisplay.Refresh()); // Cosmetic lookup must not delay follower spawn.
             // process backend result
             await LoadFollowerProfileBundles(profile);
@@ -808,7 +810,8 @@ namespace pitTeam.Patches
 
                                 if (!FollowerTransitStateCache.IsTransitSpawnProfile(me.ProfileId))
                                 {
-                                    me.GetPlayer.ActiveHealthController.RestoreFullHealth(); // ensure bot has full health
+                                    if (!FollowerRaidHealthRetention.Begin(me))
+                                        me.GetPlayer.ActiveHealthController.RestoreFullHealth();
                                 }
                                 else
                                 {
@@ -911,6 +914,10 @@ namespace pitTeam.Patches
         public async Task SpawnGroupBots(pitAIBossPlayer player)
         {
 
+            var raidController = Controller;
+            var selectedAccounts = SpawnHelper.spawnMemberIds.ToArray();
+            bool RaidValid() => ReferenceEquals(Controller, raidController) &&
+                ReferenceEquals(BossPlayers.GetBoss(player.realPlayer.ProfileId), player);
             CancelToken token = new CancelToken();
 
             BotSpawner botSpawnerClass = Controller.BotSpawner;
@@ -969,7 +976,7 @@ namespace pitTeam.Patches
             }
             else
             {
-                memberCount = SpawnHelper.spawnMemberIds.Count;
+                memberCount = selectedAccounts.Length;
 
                 BotSpawnParams @params = new BotSpawnParams();
                 @params.ShallBeGroup = new ShallBeGroupParams(true, false, memberCount + 1);
@@ -983,67 +990,42 @@ namespace pitTeam.Patches
                 }
                 catch (Exception ex)
                 {
-                    Modules.Logger.LogError(ex);
+                    ReportSpawnFailure(string.Join(", ", selectedAccounts), ex, player);
                     return;
                 }
 
-                Dictionary<string, string> botsTactic = new Dictionary<string, string>();
-                Dictionary<string, float> botsAggression = new Dictionary<string, float>();
-                Dictionary<string, float> botsDetermination = new Dictionary<string, float>();
-                Dictionary<string, FollowerProficiencyModifierValues> botsProficiency =
-                    new Dictionary<string, FollowerProficiencyModifierValues>();
-
+                Dictionary<string, BotDetails> savedSettings;
                 try
                 {
-                    string tacticsBE = RequestHandler.GetJson("/client/game/bot/followerdetails");
-
-                    List<BotDetails> BETactics = DeserializeFollowerDetails(tacticsBE);
-                    foreach (var item in BETactics)
-                    {
-                        botsTactic[item.Aid] = item.Tactic;
-                        botsAggression[item.Aid] = item.Aggression;
-                        botsDetermination[item.Aid] = item.SelfDetermination;
-                        botsProficiency[item.Aid] = item.Proficiency ?? new FollowerProficiencyModifierValues();
-                    }
+                    var missing = selectedAccounts.Where(id => !botsProfile.ContainsKey(id)).ToArray();
+                    if (missing.Length > 0) throw new InvalidOperationException("Selected follower profiles missing: " + string.Join(",", missing));
+                    savedSettings = await LoadSavedSpawnSettings(selectedAccounts, RaidValid);
+                    foreach (var pair in botsProfile)
+                        if (!string.Equals(savedSettings[pair.Key].Role, pair.Value.Info?.Settings?.Role.ToString(), StringComparison.OrdinalIgnoreCase))
+                            throw new InvalidOperationException("Follower role does not match metadata: " + pair.Key);
                 }
                 catch (Exception ex)
                 {
-                    Modules.Logger.LogError(ex);
+                    ReportSpawnFailure(string.Join(", ", selectedAccounts.Select(id =>
+                        botsProfile.TryGetValue(id, out var bot) ? bot.Nickname : id)), ex, player);
+                    return;
                 }
-
 
                 botsData = await BotCreationData.Create(data, botCreator, 0, botSpawnerClass);
 
+                if (!RaidValid()) return;
                 followerCreationTask.Remove(player.realPlayer.ProfileId);
 
-                foreach (var aid in Utils.SpawnHelper.spawnMemberIds)
+                foreach (var aid in selectedAccounts)
                 {
                     if (botsProfile.TryGetValue(aid, out Profile profile))
                     {
                         botsData.AddProfile(profile);
-                        // see what tactic this follower will have
-                        if (botsTactic.TryGetValue(aid, out string tactic))
-                        {
-                            profileTactic[profile.Id] = tactic;
-                        }
-                        else
-                        {
-                            profileTactic[profile.Id] = "Default";
-                        }
-
-                        if (botsAggression.TryGetValue(aid, out float aggression))
-                        {
-                            profileAggression[profile.Id] = aggression;
-                        }
-                        else
-                        {
-                            profileAggression[profile.Id] = 50f;
-                        }
-
-                        profileProficiency[profile.Id] = botsProficiency.TryGetValue(aid, out FollowerProficiencyModifierValues proficiency)
-                            ? proficiency
-                            : new FollowerProficiencyModifierValues();
-                        profileDetermination[profile.Id] = botsDetermination.TryGetValue(aid, out float determination) ? determination : 50f;
+                        var settings = savedSettings[aid];
+                        profileTactic[profile.Id] = settings.Tactic;
+                        profileAggression[profile.Id] = settings.Aggression;
+                        profileProficiency[profile.Id] = settings.Proficiency;
+                        profileDetermination[profile.Id] = settings.SelfDetermination;
                     }
                 }
 
@@ -1057,96 +1039,99 @@ namespace pitTeam.Patches
             var closestCorePoint = GetClosestCorePoint(Controller, position);
             botsData.AddPosition(position, closestCorePoint.Id);
 
-            botsData.Profiles.ForEach(async profile =>
+            await Task.WhenAll(botsData.Profiles.Select(async profile =>
             {
-                InteractableObjects.StoreEquipment(profile);
-                EPlayerSide followerSide = ResolveFollowerSpawnSide(profile, side);
-
-                Action<BotOwner> OnActivate = new Action<BotOwner>((BotOwner owner) =>
-                {
-
-                    bool shallBeGroup = botsData.SpawnParams?.ShallBeGroup != null;
-
-                    Stopwatch stopWatch = new Stopwatch();
-                    stopWatch.Start();
-
-                    Action<BotOwner> OnBotState = new Action<BotOwner>((BotOwner me) =>
-                    {
-                        BotOwnerManualUpdatePatch.BotOwnerUpdate.Remove(me.ProfileId); // clear watcher
-                        try
-                        {
-                            me.Memory.DeleteInfoAboutEnemy(player.Player()); // prevent attack of player on spawn
-
-                            if (!FollowerTransitStateCache.IsTransitSpawnProfile(me.ProfileId))
-                            {
-                                me.GetPlayer.ActiveHealthController.RestoreFullHealth(); // ensure bot has full health
-                            }
-                            else
-                            {
-                                Modules.Logger.LogInfo($"[Transit] Preserved carried health for '{me.Profile?.Nickname ?? me.ProfileId}'.");
-                            }
-
-                            string tactic = null;
-                            profileTactic.TryGetValue(me.Profile.ProfileId, out tactic);
-
-                            if (tactic == null) tactic = "Default";
-                            profileAggression.TryGetValue(me.Profile.ProfileId, out float aggression);
-                            if (aggression <= 0f && !profileAggression.ContainsKey(me.Profile.ProfileId))
-                            {
-                                aggression = 50f;
-                            }
-                            profileProficiency.TryGetValue(
-                                me.Profile.ProfileId,
-                                out FollowerProficiencyModifierValues proficiency);
-
-                            WildSpawnType botType = type;
-
-                            if (me.Profile.Info?.Settings?.Role != null)
-                            {
-                                botType = me.Profile.Info.Settings.Role;
-                            }
-
-                            Modules.Logger.LogInfo("Tactic is " + tactic);
-
-                            BossPlayers.AddFollower(me, player, true, botType, tactic, aggression, proficiency,
-                                profileDetermination.TryGetValue(me.Profile.ProfileId, out float determination) ? determination : 50f);
-
-                            TrySayFollowerReadyControlled(me, 2000);
-
-                        }
-                        catch (Exception ex)
-                        {
-                            Modules.Logger.LogError("Failed to add " + me.Profile.Nickname + " as follower");
-                            Modules.Logger.LogError(ex);
-                        }
-                    });
-
-                    BotOwnerManualUpdatePatch.BotOwnerUpdate.Add(owner.ProfileId, OnBotState);
-
-                    // Allegiance squadmates retain their recruited faction.
-                    if (owner.Side != followerSide)
-                    {
-                        owner.GetPlayer.Profile.Info.Side = followerSide;
-                    }
-
-                    botSpawnerClass.ActivateBotCallback(owner, botsData, new Action<BotOwner>((BotOwner follower) =>
-                    {
-                        Modules.Logger.LogInfo("Follower " + follower.Profile.Nickname + " spawned");
-
-                    }), shallBeGroup, stopWatch);
-
-                });
-
-                Modules.Logger.LogInfo("Trying to spawn " + profile.Nickname + " follower");
-
-                int _inSpawnProcess = botSpawnerClass._inSpawnProcess;
-                botSpawnerClass._inSpawnProcess = _inSpawnProcess + 1;
-
-                // activate the bot
-                BossPlayers.ShallBeFollower(profile.ProfileId);
+                BotOwner activatedOwner = null;
+                var registration = new TaskCompletionSource<BotFollowerPlayer>();
+                string expectedRole = profile.Info?.Settings?.Role.ToString();
                 try
                 {
-                    await ActivateBotAtPosition(
+                    InteractableObjects.StoreEquipment(profile);
+                    EPlayerSide followerSide = ResolveFollowerSpawnSide(profile, side);
+
+                    Action<BotOwner> OnActivate = new Action<BotOwner>((BotOwner owner) =>
+                    {
+                        activatedOwner = owner;
+                        bool shallBeGroup = botsData.SpawnParams?.ShallBeGroup != null;
+
+                        Stopwatch stopWatch = new Stopwatch();
+                        stopWatch.Start();
+
+                        Action<BotOwner> OnBotState = new Action<BotOwner>((BotOwner me) =>
+                        {
+                            BotOwnerManualUpdatePatch.BotOwnerUpdate.Remove(me.ProfileId); // clear watcher
+                            try
+                            {
+                                me.Memory.DeleteInfoAboutEnemy(player.Player()); // prevent attack of player on spawn
+
+                                if (!FollowerTransitStateCache.IsTransitSpawnProfile(me.ProfileId))
+                                {
+                                    if (!FollowerRaidHealthRetention.Begin(me))
+                                        me.GetPlayer.ActiveHealthController.RestoreFullHealth();
+                                }
+                                else
+                                {
+                                    Modules.Logger.LogInfo($"[Transit] Preserved carried health for '{me.Profile?.Nickname ?? me.ProfileId}'.");
+                                }
+
+                                string key = profile.ProfileId;
+                                bool saved = side != EPlayerSide.Savage;
+                                if (saved && !string.Equals(me.ProfileId, key, StringComparison.Ordinal))
+                                    throw new InvalidOperationException("Activated follower identity changed");
+                                string tactic = saved ? profileTactic[key] :
+                                    (profileTactic.TryGetValue(key, out var scavTactic) ? scavTactic : "Default");
+                                float aggression = saved ? profileAggression[key] : 50f;
+                                var proficiency = saved ? profileProficiency[key] : null;
+                                float determination = saved ? profileDetermination[key] : 50f;
+
+                                WildSpawnType botType = type;
+
+                                if (me.Profile.Info?.Settings?.Role != null)
+                                {
+                                    botType = me.Profile.Info.Settings.Role;
+                                }
+                                if (saved && !string.Equals(botType.ToString(), expectedRole, StringComparison.OrdinalIgnoreCase))
+                                    throw new InvalidOperationException("Activated follower role changed");
+
+                                Modules.Logger.LogInfo("Tactic is " + tactic);
+
+                                var follower = BossPlayers.AddFollower(me, player, true, botType, tactic, aggression, proficiency,
+                                    determination);
+
+                                if (follower == null) throw new InvalidOperationException("Follower initialization returned no registered follower");
+                                registration.TrySetResult(follower);
+
+                            }
+                            catch (Exception ex)
+                            {
+                                registration.TrySetException(ex);
+                            }
+                        });
+
+                        BotOwnerManualUpdatePatch.BotOwnerUpdate.Add(owner.ProfileId, OnBotState);
+
+                        // Allegiance squadmates retain their recruited faction.
+                        if (owner.Side != followerSide)
+                        {
+                            owner.GetPlayer.Profile.Info.Side = followerSide;
+                        }
+
+                        botSpawnerClass.ActivateBotCallback(owner, botsData, new Action<BotOwner>((BotOwner follower) =>
+                        {
+                            Modules.Logger.LogInfo($"[FollowerSpawn] Native creation complete: profile={follower.ProfileId}, role={follower.Profile.Info.Settings.Role}, state={follower.BotState}, game={botCreator._game.Status}");
+
+                        }), shallBeGroup, stopWatch);
+
+                    });
+
+                    Modules.Logger.LogInfo("Trying to spawn " + profile.Nickname + " follower");
+
+                    int _inSpawnProcess = botSpawnerClass._inSpawnProcess;
+                    botSpawnerClass._inSpawnProcess = _inSpawnProcess + 1;
+
+                    // activate the bot
+                    BossPlayers.ShallBeFollower(profile.ProfileId);
+                    bool activated = await ActivateBotAtPosition(
                         botCreator,
                         profile,
                         new spawnPosition(position, botsData.GetPosition().CorePointId, false),
@@ -1155,13 +1140,25 @@ namespace pitTeam.Patches
                         OnActivate,
                         token.GetCancelToken()
                     );
+                    if (!activated) throw new InvalidOperationException("Follower activation failed");
+                    bool SpawnValid() => RaidValid() && activatedOwner != null && !activatedOwner.IsDead &&
+                        activatedOwner.GetPlayer?.HealthController?.IsAlive == true &&
+                        botCreator._game.Status != GameStatus.Stopped && botCreator._game.Status != GameStatus.Stopping &&
+                        botCreator._game.Status != GameStatus.SoftStopping;
+                    await CompleteSavedFollowerSpawn(registration.Task, () => activatedOwner, player, expectedRole,
+                        SpawnValid, () => botCreator._game.Status == GameStatus.Started);
                 }
                 catch (Exception ex)
                 {
-                    Modules.Logger.LogError(ex);
+                    if (registration.Task.IsFaulted) _ = registration.Task.Exception;
+                    var failed = activatedOwner ?? Controller?.BotSpawner?._bots?.BotOwners
+                        .FirstOrDefault(bot => bot.ProfileId == profile.ProfileId);
+                    Modules.Logger.LogInfo($"[FollowerSpawn] Failure context: profile={profile.ProfileId}, role={expectedRole}, state={failed?.BotState}, game={botCreator?._game?.Status}, registration={registration.Task.Status}, watcher={BotOwnerManualUpdatePatch.BotOwnerUpdate.ContainsKey(profile.ProfileId)}");
+                    BossPlayers.AbortSpawnFollower(profile.ProfileId, failed, player);
+                    ReportSpawnFailure(profile.Nickname, ex, player);
                 }
 
-            });
+            }));
         }
 
 #if DEBUG
@@ -1616,23 +1613,28 @@ namespace pitTeam.Patches
 
         }
 
-        private static void TrySayFollowerReadyControlled(BotOwner bot, int delayMs)
+        private static void TrySayFollowerReadyControlled(BotOwner bot, int delayMs, Func<bool> ready = null)
         {
-            if (bot == null || bot.IsDead || bot.BotState != EBotState.Active)
+            if (bot == null || bot.IsDead || bot.BotState != EBotState.Active || ready?.Invoke() == false)
             {
                 return;
             }
 
-            FollowerForcedPhraseGate.Arm(bot, EPhraseTrigger.Ready, 1.5f);
             Utils.Utils.SetTimeout(() =>
             {
-                if (bot == null || bot.IsDead || bot.BotState != EBotState.Active)
+                if (bot == null || bot.IsDead || bot.BotState != EBotState.Active || ready?.Invoke() == false)
                 {
                     return;
                 }
 
-                bot.BotTalk.TrySay(EPhraseTrigger.Ready, false);
-                FollowerForcedPhraseGate.Clear(bot);
+                // Native Goons use the old recruited-boss greeting; their voice packs
+                // do not provide the ordinary teammate Ready response.
+                EPhraseTrigger phrase = Utils.Props.BossFollowersType.Contains(bot.Profile.Info.Settings.Role)
+                    ? EPhraseTrigger.MumblePhrase
+                    : EPhraseTrigger.Ready;
+                FollowerForcedPhraseGate.Arm(bot, phrase, 1.5f);
+                try { bot.BotTalk.TrySay(phrase, false); }
+                finally { FollowerForcedPhraseGate.Clear(bot); }
             }, delayMs);
         }
     }
@@ -1667,13 +1669,12 @@ namespace pitTeam.Patches
                 // do not spawn the Goons if we are running with them
                 if (
                     wave.BossType == WildSpawnType.bossKnight &&
-                    (SpawnHelper.spawnMemberIdsBoss.Contains(WildSpawnType.followerBigPipe) ||
-                     SpawnHelper.spawnMemberIdsBoss.Contains(WildSpawnType.followerBirdEye) ||
-                     SpawnHelper.spawnMemberIdsBoss.Contains(WildSpawnType.bossKnight))
+                    GameplayModeAddons.HasSelectedBossCompanions
                 )
                 {
                     wave.ShallSpawn = false;
                     wave.ForceSpawn = false;
+                    continue;
                 }
                 // increase the chance of spawning a boss based on player quests
                 if (Utils.Utils.FlagGet("questGoons")) player.Profile.QuestsData.ForEach(quest =>
@@ -1749,6 +1750,13 @@ namespace pitTeam.Patches
                 }
             });
 
+            if (GameplayModeAddons.HasSelectedBossCompanions)
+            {
+                var spawner = BotsControllerPatch.Controller.BotSpawner;
+                var blocked = spawner._blockedRoles.Select(role => role.ToString());
+                spawner.SetBlockedRoles(blocked.Concat(new[] { "bossKnight", "followerBirdEye", "followerBigPipe" }).Distinct().ToArray());
+            }
+
             if (SpawnHelper.spawnMemberIds.Count > 0)
             {
                 Modules.Logger.LogInfo("Start Squad Spawn");
@@ -1769,8 +1777,6 @@ namespace pitTeam.Patches
             else if (SpawnHelper.spawnMemberIdsBoss.Count > 0)
             {
                 Modules.Logger.LogInfo("Start Boss Ally Spawn");
-
-                BotsControllerPatch.Controller.BotSpawner.SetBlockedRoles(new string[] { "bossKnight", "followerBirdEye", "followerBigPipe" });
 
                 BotsControllerPatch.alliesCreationTask.Clear();
 
@@ -1867,6 +1873,7 @@ namespace pitTeam.Patches
                 SpawnHelper.spawnMemberIdsScav.Clear();
                 SpawnHelper.spawnMemberIdsBoss.Clear();
                 FollowerTransitStateCache.Clear();
+                FollowerRaidHealthRetention.Clear();
             }
 
 
@@ -1881,7 +1888,8 @@ namespace pitTeam.Patches
             if (raidTransit)
             {
                 Utils.Utils.FlagSet("RaidTransit", true);
-                Utils.Utils.FlagSet("isBadGuy", GameplayModeRuntime.GetEffectiveValue(pitFireTeam.badGuy) || SpawnHelper.spawnMemberIdsBoss.Count > 0);
+                Utils.Utils.FlagSet("isBadGuy", GameplayModeRuntime.GetEffectiveValue(pitFireTeam.badGuy) ||
+                    (SpawnHelper.spawnMemberIdsBoss.Count > 0 && !GameplayModeRuntime.IsGoingRogue));
                 Utils.Utils.FlagSet("pitFireTeam", GameplayModeRuntime.GetEffectiveValue(pitFireTeam.pitFireTeamFLAG));
             }
 

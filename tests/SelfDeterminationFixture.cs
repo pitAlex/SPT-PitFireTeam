@@ -8,6 +8,7 @@ public sealed class BotOwner {public string ProfileId;public Follower State;}
 public sealed class BossPlayers {public static BossPlayers Instance=new BossPlayers();public Follower GetFollower(BotOwner owner)=>owner.State;}
 public sealed class Follower {
     public bool _IsSquadMate=true;private float _selfDetermination=50;private float? _combatDeterminationOverride;
+    public bool SavedBossPreferences;private bool UsesSavedCombatPreferences=>_IsSquadMate||SavedBossPreferences;
     private bool _combatRegroupUsesBossAnchor;private float _combatAggression=50,_temporaryCombatAggressionOverride,_temporaryCombatAggressionClearAfter;
     private bool _temporaryCombatAggressionOverrideActive;public Boss _player;
     private void ClearVanillaRequestState(object request,string source){} private void UpdateTemporaryCombatAggressionClearDelay(){}
@@ -60,6 +61,8 @@ public static class Program {
         a.State.ResetCombatPercentageOverrides("Attention");Check(a.State.EffectiveSelfDetermination==65&&a.State.EffectiveCombatAggression==37&&!a.State.HasCombatPercentageOverrides,"Attention restores both saved values immediately");
         a.State.SelfDetermination=0;a.State.SetCombatIndependent(false);Check(a.State.EffectiveSelfDetermination==20,"Cover Me raises zero to exactly twenty");
         a.State._IsSquadMate=false;a.State.SelfDetermination=90;a.State.ClearCombatDeterminationOverride();Check(a.State.SelfDetermination==50,"pickup fixed fifty baseline");
+        a.State.SavedBossPreferences=true;Check(a.State.SelfDetermination==90&&a.State.DeterminationSource=="saved"&&!a.State._IsSquadMate,"saved boss proficiency works without squadmate classification");
+        a.State.SavedBossPreferences=false;
         a.State.SetCombatIndependent(true);Check(a.State.EffectiveSelfDetermination==100,"accepted pickup command can override baseline");
         squad.CoreEnter(a);squad.NotifyAddonCombatEpisode(b,true);b.State.SetCombatIndependent(false);b.State.SetTemporaryCombatAggressionOverride(100,"GoForward");
         squad.CoreExit(a);a.State.ClearActiveCombatIndependent();a.State.ClearCombatIndependent();Time.time=10;squad.Tick();

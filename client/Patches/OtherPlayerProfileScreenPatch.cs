@@ -59,6 +59,10 @@ namespace pitTeam.Patches
 
     internal class FriendlyTeammateProfileOptions
     {
+        public bool ProficiencyOnly { get; set; }
+        public bool HideSkills { get; set; }
+        public bool HideRaidStats { get; set; }
+        public List<string> VisibleSkills { get; set; }
         public List<FriendlyTeammateInsuredItem> InsuredItems { get; set; }
         public List<FriendlyTeammateInsuredItem> PlayerInsuredItems { get; set; }
         public string CurrentLoadoutId { get; set; }
@@ -201,11 +205,13 @@ namespace pitTeam.Patches
         {
             private readonly Profile.HealthInfo _health;
             private readonly EFT.HealthInfoAdapter _snapshot;
+            private readonly Func<float> _healthRate;
 
-            public ProfileSkillsHealthController(Profile.HealthInfo health)
+            public ProfileSkillsHealthController(Profile.HealthInfo health, Func<float> healthRate = null)
             {
                 _health = health ?? throw new ArgumentNullException(nameof(health));
                 _snapshot = new EFT.HealthInfoAdapter(health);
+                _healthRate = healthRate;
             }
 
             public event Action<EFT.HealthSystem.IHealthEffect> EffectAddedEvent { add { } remove { } }
@@ -229,7 +235,7 @@ namespace pitTeam.Patches
 
             public float FallSafeHeight { set { } }
             public bool IsAlive => GetBodyPartHealth(EBodyPart.Common).Current > 0f;
-            public float HealthRate => 0f;
+            public float HealthRate => _healthRate?.Invoke() ?? 0f;
             public float EnergyRate => 0f;
             public float HydrationRate => 0f;
             public float TemperatureRate => 0f;
@@ -307,6 +313,7 @@ namespace pitTeam.Patches
         private static readonly FieldInfo PlayerModelWindowField = AccessTools.Field(typeof(OtherPlayerProfileScreen), "_playerModelWithStatsWindow");
         private static readonly FieldInfo ClothingPanelField = AccessTools.Field(typeof(InventoryPlayerModelWithStatsWindow), "_clothingPanel");
         private static readonly FieldInfo NicknameLabelField = AccessTools.Field(typeof(InventoryPlayerModelWithStatsWindow), "_nicknameLabel");
+        private static readonly FieldInfo ShortStatsPanelField = AccessTools.Field(typeof(InventoryPlayerModelWithStatsWindow), "_shortStatsPanel");
         private static readonly FieldInfo NicknameFieldInputField = AccessTools.Field(typeof(NicknameField), "_inputField");
         private static readonly FieldInfo NicknameFieldStatusLabelField = AccessTools.Field(typeof(NicknameField), "_statusLabel");
         private static readonly FieldInfo NicknameFieldUsedSymbolsField = AccessTools.Field(typeof(NicknameField), "_usedSymbolsCount");
@@ -952,10 +959,15 @@ namespace pitTeam.Patches
 
             RestoreHideoutButtonVisuals(__instance, profile);
 
-            if (TeammateHiringPreview.TryShow(__instance, profile, inventoryController, session)) return;
+            if (TeammateHiringPreview.TryShow(__instance, profile, inventoryController, session))
+            {
+                HideStockHideoutButtonPanel(HideoutButtonField?.GetValue(__instance) as DefaultUIButton);
+                return;
+            }
 
             if (ConsumePendingRecruitProfileView(profile.AccountId))
             {
+                HideStockHideoutButtonPanel(HideoutButtonField?.GetValue(__instance) as DefaultUIButton);
                 HideProfileActions(__instance);
                 ClearProfileRightSideContent(__instance);
                 DisplaySkillsPanel(__instance, profile, session);
@@ -967,6 +979,10 @@ namespace pitTeam.Patches
             {
                 return;
             }
+            // Shared teammate presentation must run before the Proficiency-only layout returns.
+            HideStockHideoutButtonPanel(HideoutButtonField?.GetValue(__instance) as DefaultUIButton);
+            if (options.HideRaidStats)
+                HideProfileElement((ShortStatsPanelField?.GetValue(playerModelWindow) as Component)?.gameObject);
 
             if (options.Loadouts == null || options.Loadouts.Count == 0)
             {
@@ -988,6 +1004,18 @@ namespace pitTeam.Patches
             RememberActiveBackendInventoryController(session, inventoryController);
             ActiveProfileSession = session;
             ActiveProfilePlayerModelWindow = playerModelWindow;
+            if (options.ProficiencyOnly)
+            {
+                HideProfileActions(__instance);
+                ClearProfileRightSideContent(__instance);
+                if (options.HideSkills) ClearSkillsPanel();
+                clothingPanel.gameObject.SetActive(false);
+                CreateProficiencyButton(__instance, clothingPanel, parent, profile, options);
+                if (ProficiencyButtonRoot is RectTransform proficiencyRow)
+                    proficiencyRow.anchoredPosition = clothingPanel.anchoredPosition;
+                if (!options.HideSkills) DisplaySkillsPanel(__instance, profile, session, options.VisibleSkills);
+                return;
+            }
             playerModelWindow.OnCustomizationChanged -= PlayerModelWithStatsWindow_OnCustomizationChanged;
             playerModelWindow.OnCustomizationChanged += PlayerModelWithStatsWindow_OnCustomizationChanged;
 
@@ -1037,7 +1065,11 @@ namespace pitTeam.Patches
                 CreateProficiencyButton(__instance, clone, parent, profile, options);
                 CreateEditLoadoutButton(__instance, clone, parent, profile, 2);
                 CreateEditNameButton(__instance, clone, parent, profile, 3);
+                ArrangeProfileControlRows();
                 DisplaySkillsPanel(__instance, profile, session);
+#if DEBUG
+                DisplayHealthPreview(__instance, profile, session);
+#endif
                 ShowProfileRecoveryOverlay(__instance, options.RecoveryNotice);
             }
             catch (Exception ex)
@@ -1530,9 +1562,9 @@ namespace pitTeam.Patches
             EditLoadoutButton = button;
         }
 
-        internal static IHealthController CreateProfileHealthController(Profile.HealthInfo health)
+        internal static IHealthController CreateProfileHealthController(Profile.HealthInfo health, Func<float> healthRate = null)
         {
-            return new ProfileSkillsHealthController(health ?? new Profile.HealthInfo());
+            return new ProfileSkillsHealthController(health ?? new Profile.HealthInfo(), healthRate);
         }
 
         private static Vector2 GetProfileControlRowOffset(RectTransform reference, int rowOffset)
@@ -1674,6 +1706,9 @@ namespace pitTeam.Patches
 
         private static void ResetTeammateProfileUi(InventoryPlayerModelWithStatsWindow playerModelWindow)
         {
+#if DEBUG
+            CloseHealthPreview();
+#endif
             CloseLoadoutEditorInsurance();
             CloseProfileRecoveryOverlay();
             ResetProficiencyUi();
@@ -1824,6 +1859,9 @@ namespace pitTeam.Patches
         private static void PatchPostfix(OtherPlayerProfileScreen __instance)
         {
             TeammateHiringPreview.RestoreScreen(__instance);
+#if DEBUG
+            OtherPlayerProfileScreenPatch.CloseHealthPreview();
+#endif
             Action callback = OtherPlayerProfileScreenPatch.ActiveBackOverrideAction;
             OtherPlayerProfileScreenPatch.ActiveBackOverrideAction = null;
             OtherPlayerProfileScreenPatch.PendingBackOverrideAction = null;
@@ -1908,17 +1946,7 @@ namespace pitTeam.Patches
                 OtherPlayerProfileScreenPatch.EditLoadoutButtonRoot = null;
             }
 
-            if (OtherPlayerProfileScreenPatch.SkillsPanel != null)
-            {
-                GameObject.Destroy(OtherPlayerProfileScreenPatch.SkillsPanel.gameObject);
-                OtherPlayerProfileScreenPatch.SkillsPanel = null;
-            }
-
-            if (OtherPlayerProfileScreenPatch.SkillsPanelHost != null)
-            {
-                GameObject.Destroy(OtherPlayerProfileScreenPatch.SkillsPanelHost.gameObject);
-                OtherPlayerProfileScreenPatch.SkillsPanelHost = null;
-            }
+            OtherPlayerProfileScreenPatch.ClearSkillsPanel();
 
             if (transitioningToBuildsScreen || callback == null)
             {

@@ -3,5 +3,6 @@
   <ItemGroup>
     <Compile Include="../../client/BigBrain/Actions/GestureCommandAction.RecruitGear.cs" Link="Production/RecruitGear.cs" />
     <Compile Include="../../client/Modules/FollowerLootRequest.cs" Link="Production/FollowerLootRequest.cs" />
+    <Compile Include="../../client/Modules/CompanionGearPolicy.cs" Link="Production/CompanionGearPolicy.cs" />
   </ItemGroup>
 </Project>

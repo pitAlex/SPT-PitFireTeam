@@ -168,7 +168,8 @@ namespace pitTeam.BigBrain.Actions
 
             if (followerData?.CanHandleBodyContainerLootCommands != true)
             {
-                reason = "TakeBodyGear:spawnedTeammateAlive";
+                reason = followerData?.AllowsBodyContainerLootCommands == false
+                    ? "TakeBodyGear:companionPolicy" : "TakeBodyGear:spawnedTeammateAlive";
                 return false;
             }
 
@@ -198,6 +199,14 @@ namespace pitTeam.BigBrain.Actions
                 if (!TryGetBodyLootExecutionContext(out InventoryController? inventory, out InventoryEquipment? corpseEquipment, out InventoryEquipment? followerEquipment, out string reason))
                 {
                     ClearBodyLootState(reason);
+                    return;
+                }
+
+                if (UsesFixedCompanionGear)
+                {
+                    if (TryStartRecruitBodyKit(corpseEquipment, followerEquipment)) return;
+                    ClearBodyLootState(ActiveLootRequest?.GearExchangeCommitted == true
+                        ? "TakeBodyGear:done" : "TakeBodyGear:companionEquipmentFixed");
                     return;
                 }
 

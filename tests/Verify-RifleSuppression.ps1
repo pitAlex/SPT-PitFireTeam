@@ -10,7 +10,7 @@ function Read-Method([string]$Path, [string]$Name) {
 $common = Join-Path $RepositoryRoot 'client/BigBrain/FollowerCombatCommon.cs'
 $action = Join-Path $RepositoryRoot 'client/BigBrain/Actions/CombatSuppressFireAction.cs'
 $objective = Join-Path $RepositoryRoot 'client/BigBrain/FollowerCombatOrderedPushObjective.cs'
-$commonMethods = @('TryGetSuppressTarget', 'TryCreateSuppressDecision', 'TryCreateOrderedSuppressWeaponFallbackDecision', 'IsFollowerSuppressReason', 'IsRecoverySuppressReason', 'IsAutonomousSuppressReason', 'IsAutoSuppressReason', 'IsBossProtectionSuppressReason', 'IsOrderedSuppressReason', 'IsGrenadeLauncherSuppressReason') | ForEach-Object { Read-Method $common $_ }
+$commonMethods = @('TryPrepareSuppressReloadRetreat', 'TryGetSuppressTarget', 'TryCreateSuppressDecision', 'TryCreateOrderedSuppressWeaponFallbackDecision', 'IsFollowerSuppressReason', 'IsRecoverySuppressReason', 'IsAutonomousSuppressReason', 'IsAutoSuppressReason', 'IsBossProtectionSuppressReason', 'IsOrderedSuppressReason', 'IsGrenadeLauncherSuppressReason') | ForEach-Object { Read-Method $common $_ }
 $actionMethods = @('Update', 'IsFollowerSuppressActive', 'TryGetSuppressTargetForAction') | ForEach-Object { Read-Method $action $_ }
 $objectiveMethods = @('EndPressureRecovery', 'TryCreatePressureRecoveryFallback', 'IsOrderedPushSuppressReason') | ForEach-Object { Read-Method $objective $_ }
 $policy = Get-Content -Raw (Join-Path $RepositoryRoot 'client/BigBrain/FollowerSuppressTargetPolicy.cs')

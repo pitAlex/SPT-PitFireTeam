@@ -4,6 +4,7 @@ using EFT.HealthSystem;
 using EFT.UI;
 using HarmonyLib;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using UnityEngine;
@@ -13,7 +14,15 @@ namespace pitTeam.Patches
 {
     internal partial class OtherPlayerProfileScreenPatch
     {
-        private static void DisplaySkillsPanel(OtherPlayerProfileScreen screen, ResultProfile profile, EFT.IEftSession session)
+        internal static void ClearSkillsPanel()
+        {
+            if (SkillsPanel != null) GameObject.Destroy(SkillsPanel.gameObject);
+            SkillsPanel = null;
+            if (SkillsPanelHost != null) GameObject.Destroy(SkillsPanelHost.gameObject);
+            SkillsPanelHost = null;
+        }
+
+        private static void DisplaySkillsPanel(OtherPlayerProfileScreen screen, ResultProfile profile, EFT.IEftSession session, IEnumerable<string> visibleSkills = null)
         {
             if (screen == null || profile?.Skills == null || session?.Profile == null)
             {
@@ -28,17 +37,7 @@ namespace pitTeam.Patches
                 return;
             }
 
-            if (SkillsPanel != null)
-            {
-                GameObject.Destroy(SkillsPanel.gameObject);
-                SkillsPanel = null;
-            }
-
-            if (SkillsPanelHost != null)
-            {
-                GameObject.Destroy(SkillsPanelHost.gameObject);
-                SkillsPanelHost = null;
-            }
+            ClearSkillsPanel();
 
             GameObject hostObject = new GameObject("pitFireTeam_ProfileSkillsHost", typeof(RectTransform));
             hostObject.transform.SetParent(hostParent, false);
@@ -53,7 +52,7 @@ namespace pitTeam.Patches
                 ConfigureInjectedSkillsScreenRect(screen, cloneRect);
             }
 
-            Profile skillsProfile = BuildSkillsProfile(session.Profile, profile.Skills);
+            Profile skillsProfile = BuildSkillsProfile(session.Profile, profile.Skills, visibleSkills);
 
             if (!TryInitializeSkillsScreen(clone))
             {
@@ -93,7 +92,7 @@ namespace pitTeam.Patches
             Modules.Logger.LogInfo($"[UI] Profile skills panel shown for '{profile.AccountId}'.");
         }
 
-        private static Profile BuildSkillsProfile(Profile sessionProfile, SkillManager sourceSkills)
+        private static Profile BuildSkillsProfile(Profile sessionProfile, SkillManager sourceSkills, IEnumerable<string> visibleSkills = null)
         {
             Profile skillsProfile = sessionProfile?.Clone();
             if (skillsProfile?.Skills == null || sourceSkills == null)
@@ -101,23 +100,27 @@ namespace pitTeam.Patches
                 return skillsProfile;
             }
 
+            var focus = visibleSkills == null ? null : new HashSet<string>(visibleSkills, StringComparer.OrdinalIgnoreCase);
+            // A boss view must never inherit unrelated skill progress from the player's clone.
+            if (focus?.Count > 0)
+                foreach (var skill in skillsProfile.Skills.Skills) if (skill != null) skill.Current = 0f;
             skillsProfile.Skills.ApplyChanges(sourceSkills);
-            FilterHiddenSkills(skillsProfile.Skills);
+            FilterHiddenSkills(skillsProfile.Skills, focus);
             return skillsProfile;
         }
 
-        private static void FilterHiddenSkills(SkillManager skillManager)
+        private static void FilterHiddenSkills(SkillManager skillManager, HashSet<string> focus = null)
         {
             if (skillManager == null)
             {
                 return;
             }
 
-            ReplaceSkillArray(SkillManagerDisplayListField, skillManager);
-            ReplaceSkillArray(SkillManagerSkillsField, skillManager);
+            ReplaceSkillArray(SkillManagerDisplayListField, skillManager, focus);
+            ReplaceSkillArray(SkillManagerSkillsField, skillManager, focus);
         }
 
-        private static void ReplaceSkillArray(FieldInfo field, SkillManager skillManager)
+        private static void ReplaceSkillArray(FieldInfo field, SkillManager skillManager, HashSet<string> focus = null)
         {
             if (field?.GetValue(skillManager) is not EFT.Skill[] skills)
             {
@@ -126,6 +129,7 @@ namespace pitTeam.Patches
 
             EFT.Skill[] filtered = skills
                 .Where(skill => skill != null && !skill.Locked && !HiddenFollowerSkills.Contains(skill.Id))
+                .Where(skill => focus == null || focus.Count == 0 || focus.Contains(skill.Id.ToString()))
                 .ToArray();
 
             field.SetValue(skillManager, filtered);

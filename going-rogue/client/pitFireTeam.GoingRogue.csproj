@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>pitFireTeam.GoingRogue</AssemblyName>
+    <Version>0.1.0</Version>
+    <BuildSAINAddon>false</BuildSAINAddon>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../client/pitFireTeam.csproj" AdditionalProperties="BuildSAINAddon=false" Private="false" />
+    <Reference Include="BepInEx"><HintPath>../../client/libs4.1/BepInEx.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="DrakiaXYZ-BigBrain"><HintPath>../../client/libs4.1/DrakiaXYZ-BigBrain.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Assembly-CSharp"><HintPath>../../client/libs4.1/Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>../../client/libs/UnityEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>../../client/libs/UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.AIModule"><HintPath>../../client/libs/UnityEngine.AIModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.PhysicsModule"><HintPath>../../client/libs/UnityEngine.PhysicsModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Comfort"><HintPath>../../client/libs/Comfort.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>../../client/libs/0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="spt-common"><HintPath>../../client/libs4.1/spt4.1.0/spt-common.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Newtonsoft.Json"><HintPath>../../client/libs4.1/Newtonsoft.Json.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

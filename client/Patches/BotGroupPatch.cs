@@ -47,7 +47,7 @@ namespace pitTeam.Patches
 
         private static bool IsRogueFriendlyType(WildSpawnType role)
         {
-            return role == WildSpawnType.exUsec || Utils.Props.BossFollowersType.Contains(role);
+            return role == WildSpawnType.exUsec || (!GameplayModeAddons.IsRogueRaid && Utils.Props.BossFollowersType.Contains(role));
         }
 
         private static bool RequiresAwarenessGate(EBotEnemyCause cause)

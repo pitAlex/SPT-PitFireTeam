@@ -33,6 +33,7 @@ The in-game **My Squad** screen is your squad management hub. Choose between **G
 - **Field recruitment** - recruit friendly PMCs during raids. Eligible PMC recruits may later request to join your permanent squad.
 - `≥ v. 1.0.0` **Friendly Scav encounters** - meet and recruit friendly solo Scavs in Allegiance. Scav companions remain raid-only allies rather than permanent squad members.
 - **Teammate customization** - rename teammates, change clothing and equipment, select combat tactics, and tune Aggression, Vision, Precision, and Reaction.
+- `≥ v. 1.1.0` **Teammate workshop** - customize saved teammates from your server's web page: names, heads, voices, level, skills, health and pocket size, while keeping their equipment intact.
 - `≥ v. 1.0.0` **Self-Determination** - tune how independently each saved teammate acts in combat, separately from Aggression, with temporary command overrides.
 - `≥ v. 1.0.0` **Loadout management and insurance** - equip teammates from your stash, purchase kits, and insure their equipment under your chosen loadout rules.
 - `≥ v. 1.0.0` **In-raid equipment exchange** - use **Swap Gear** to rearrange a spawned teammate's equipment and inventory, then confirm when ready.
@@ -130,9 +131,15 @@ You can switch modes outside raids. Settings that Allegiance does not lock are s
 
 ## Squad Customization
 
+### Teammate workshop
+
+`≥ v. 1.1.0` Open **PitFireTeam** on your SPT server's home page, or visit `https://127.0.0.1:6969/pitfireteam`, to edit saved teammates' names, heads, voices, level, experience, skills, health and pocket size. Head and voice options use the game's localized names. Close Tarkov while editing, save your changes, then launch the game to use them. The workshop keeps their equipment and pocket contents; teammates cannot be deleted there.
+
+### Teammate profiles
+
 Right-click a teammate's portrait in **My Squad → Roster** and select **View profile** to rename them, change their clothing, choose a tactic, adjust Proficiency, or view their skills.
 
-Use **Edit Loadout** and **Kit Loadouts** to manage equipment; the next tab explains those options. Head and voice are chosen during hiring and cannot be changed afterward. These profile controls are for roster members, not temporary raid recruits.
+Use **Edit Loadout** and **Kit Loadouts** to manage equipment; the next tab explains those options. Voices can also be changed from the profile's voice dropdown. Use the teammate workshop to change a saved teammate's head. These profile controls are for roster members, not temporary raid recruits.
 
 ### Combat tactics
 
@@ -163,13 +170,15 @@ Some combat commands temporarily change Aggression or Self-Determination. They d
 
 This is separate from your gameplay mode. **Guns for Hire** and **Allegiance** share the same choice, and switching between them does not reset it. **Immersive** is the default.
 
+**In Restricted and Immersive, you do not need to supply reserve ammo for saved teammates' primary weapons.** They deploy with ammunition in a hidden secure container and use it to refill their magazines. Equip a loaded weapon and compatible magazines; the reserve matches the ammo loaded in the weapon and is supplied automatically each raid. It is finite, so very long fights can still use it up. Field recruits need their own supplies.
+
 ![Loadout Management](https://iili.io/BpKDP4I.md.png)
 
 ### Restricted
 
 **Gear comes from your stash and is kept if the teammate dies, but cannot be extracted as player loot.**
 
-Raid wear and consumed supplies still persist. Taking a fallen teammate's protected kit does not remove it from their saved equipment or let you keep a free copy after extraction. Insurance is unavailable because the kit is already protected from death loss.
+Enable **Field Upkeep** to keep raid wear and spent supplies between raids. It is off by default. Taking a fallen teammate's protected kit does not remove it from their saved equipment or let you keep a free copy after extraction. Insurance is unavailable because the kit is already protected from death loss.
 
 ### Immersive — default
 
@@ -193,7 +202,7 @@ All three choices use real equipment:
 
 **Confirming a repair or insurance purchase also saves any pending loadout changes.** Closing the editor afterward does not undo those transfers or the paid service.
 
-In Restricted and Immersive, the secure container is managed automatically and excluded from editing and kit purchases. It provides primary-weapon ammunition and basic medical support, including a Grizzly and surgery kit unless equivalent medicine is already in the backpack. Bring extra supplies for long raids and check custom weapon/ammo setups. Temporary recruits do not receive this automatic support.
+In Restricted and Immersive, the secure container is managed automatically and excluded from editing and kit purchases. Alongside the primary-weapon reserve ammo, it provides basic medical support, including a Grizzly and surgery kit unless equivalent medicine is already in the backpack. Bring extra supplies for long raids, secondary weapons, or field recruits.
 
 ### Teammate insurance
 
@@ -476,7 +485,7 @@ Lead the squad rather than constantly steering every movement. Teammates react t
 2. Check each teammate's tactic, equipment, and Proficiency.
 3. Choose your **Loadout Management** rules before risking gear.
 4. Use **Invite to group** or **Auto Join**, then check the pre-raid group.
-5. Bring compatible magazines, ammunition, medicine, and enough carrying space. Insure gear where available.
+5. Equip compatible magazines and leave enough carrying space. Restricted and Immersive supply saved teammates' primary-weapon reserve ammo and basic medicine automatically; provide your own supplies in Realistic and for field recruits. Insure gear where available.
 
 Removing a teammate from the current group prevents Auto Join from immediately adding them again. Re-add them manually or toggle Auto Join when you want them back.
 

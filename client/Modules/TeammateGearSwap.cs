@@ -317,6 +317,11 @@ namespace pitTeam.Modules
         internal bool CanPlaceDraft(ItemAddress address) => Giving ? (_planningDonation ?
             address != null && _draftItems.ContainsKey(address.Container.ParentItem.Id) : CanPlaceDonation(address)) :
             CanPlace(address, PlayerEquipment, FollowerEquipment, AllowBackpackSwap);
+        internal bool CanCombineDraftStacks(Item source, Item target) =>
+            !_closed && !_cancelled && !Applying && IsDraft(source) && IsDraft(target) &&
+            CanEditDraft(source) && CanEditDraft(target) &&
+            GearSwapEdit.CanCombineStacks(_playerOwnedIds, source.Id, target.Id);
+
         internal bool CanEditPlateSlot(Slot slot, bool allowCommit = false)
         {
             if (_closed || _cancelled || !(slot is ArmorSlot) || slot.Locked || slot.ParentItem == null) return false;

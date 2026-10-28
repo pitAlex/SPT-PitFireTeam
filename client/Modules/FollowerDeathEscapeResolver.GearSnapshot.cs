@@ -39,6 +39,19 @@ namespace pitTeam.Modules
 
             try
             {
+                FollowerRaidHealthRetention.RecordFallen(player);
+                // Keep the health/outcome identity even if later gear serialization fails.
+                lock (FallenSnapshotLock)
+                {
+                    if (!FallenSquadmateInfos.Any(info => info.ProfileId == player.ProfileId))
+                        FallenSquadmateInfos.Add(new FallenSquadmateInfo
+                        {
+                            Aid = player.Profile?.AccountId ?? player.ProfileId,
+                            ProfileId = player.ProfileId,
+                            Nickname = player.Profile?.Nickname ?? "Squadmate",
+                            Position = player.Position
+                        });
+                }
                 string[] trackedLootIdsArray = InteractableObjects.GetReturnItemIds(player.AIData?.BotOwner)
                     .Where(itemId => !string.IsNullOrWhiteSpace(itemId))
                     .Distinct(StringComparer.Ordinal)
@@ -185,6 +198,7 @@ namespace pitTeam.Modules
                     ExtractName = string.Empty,
                     Distance = 0f,
                     HealthRatio = 0f,
+                    RaidHealth = FollowerRaidHealthRetention.GetFallen(fallen.Aid, fallen.ProfileId),
                     EquipmentPower = 0f,
                     EnemyAveragePower = 0f,
                     AliveSquadmates = 0,

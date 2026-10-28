@@ -50,8 +50,7 @@ namespace pitTeam.Patches
         {
             if (target is not Corpse || owner?.Player?.IsYourPlayer != true || owner.Player.HealthController?.IsAlive != true)
                 return false;
-            return BossPlayers.GetBoss(owner.Player.ProfileId)?.Followers
-                .Any(bot => bot != null && !bot.IsDead) == true;
+            return FollowerLootCommandPolicy.HasBodyContainerSupport(BossPlayers.GetBoss(owner.Player.ProfileId)?.Followers);
         }
 
         internal static bool HasWeapon(Corpse corpse)
@@ -66,7 +65,16 @@ namespace pitTeam.Patches
             try
             {
                 // Capture the displayed target; never dispatch against the mutable quick-menu target.
-                if (!CanShow(owner, target) || !ReferenceEquals(owner.Player.InteractableObject, target)) return;
+                if (!ReferenceEquals(owner?.Player?.InteractableObject, target)) return;
+                if (!CanShow(owner, target))
+                {
+                    if (owner?.Player?.IsYourPlayer == true && owner.Player.HealthController?.IsAlive == true)
+                    {
+                        var unavailableBoss = BossPlayers.GetBoss(owner.Player.ProfileId);
+                        FollowerLootCommandPolicy.TryRefuseBodyContainer(owner.Player, unavailableBoss?.realPlayer, unavailableBoss?.Followers);
+                    }
+                    return;
+                }
                 if ((mode == FollowerLootMode.GetWeapon || mode == FollowerLootMode.LootAndGetWeapon) &&
                     !HasWeapon(target as Corpse)) return;
                 var boss = BossPlayers.GetBoss(owner.Player.ProfileId);

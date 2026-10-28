@@ -12,7 +12,7 @@ using UnityEngine;
 
 namespace pitTeam.Modules
 {
-    public enum GameplayMode { GunsForHire, Allegiance }
+    public enum GameplayMode { GunsForHire, Allegiance, GoingRogue }
 
     internal static class GameplayModeRuntime
     {
@@ -43,7 +43,8 @@ namespace pitTeam.Modules
         private static ConfigEntry<GameplayMode> modeEntry;
         private static Dictionary<ConfigEntryBase, object> lockedValues;
         public static GameplayMode Current { get; private set; }
-        public static bool IsAllegiance => Current == GameplayMode.Allegiance;
+        public static bool IsAllegiance => Current == GameplayMode.Allegiance || Current == GameplayMode.GoingRogue;
+        public static bool IsGoingRogue => Current == GameplayMode.GoingRogue;
         public static bool IsApplying { get; private set; }
         public static bool IsSwitching { get; private set; }
         private static string SnapshotPath => config.ConfigFilePath + ".guns-for-hire.json";
@@ -53,6 +54,19 @@ namespace pitTeam.Modules
             public string Section;
             public string Key;
             public string Value;
+        }
+
+        private sealed class ModeRejectedException : InvalidOperationException
+        {
+            public ModeRejectedException(string message) : base(message) { }
+        }
+
+        private static async Task<bool> IsServerModeAvailableAsync(GameplayMode mode)
+        {
+            if (mode != GameplayMode.GoingRogue) return true;
+            string response = await Task.Run(() => RequestHandler.GetJson("/singleplayer/pitfireteam/gameplay-mode"));
+            JToken root = JToken.Parse(response);
+            return ((root["data"] ?? root)["availableModes"] as JArray)?.Any(value => value.ToString() == mode.ToString()) == true;
         }
 
         public static void Initialize(ConfigFile settings)
@@ -157,6 +171,7 @@ namespace pitTeam.Modules
 
         public static async Task ChangeAsync(GameplayMode next)
         {
+            if (!GameplayModeAddons.IsAvailable(next)) throw new InvalidOperationException("Gameplay mode addon is unavailable.");
             if (IsSwitching || next == Current) return;
             if (Components.SquadControlMenuUi.IsGameRaidActive()) throw new InvalidOperationException("Cannot change gameplay mode during a raid.");
             IsSwitching = true;
@@ -165,10 +180,11 @@ namespace pitTeam.Modules
             List<SavedValue> before = null;
             try
             {
+                if (!await IsServerModeAvailableAsync(next)) throw new ModeRejectedException("Gameplay mode server addon is unavailable.");
                 await WaitForRosterRequestsAsync();
                 before = Capture();
                 var restored = next == GameplayMode.GunsForHire ? ReadSnapshot() : before;
-                if (next == GameplayMode.Allegiance) SaveSnapshot(before);
+                if (previous == GameplayMode.GunsForHire && next != GameplayMode.GunsForHire) SaveSnapshot(before);
                 Apply(() =>
                 {
                     Current = next;
@@ -176,6 +192,7 @@ namespace pitTeam.Modules
                     modeEntry.Value = Current;
                 });
                 try { await SendSettingsAsync(); }
+                catch (ModeRejectedException) { throw; }
                 catch
                 {
                     // A lost HTTP response may follow a committed server switch. Query before rolling back.
@@ -203,6 +220,11 @@ namespace pitTeam.Modules
         public static async Task SynchronizeAsync()
         {
             if (IsApplying || IsSwitching || config == null) return;
+            if (!GameplayModeAddons.IsAvailable(Current) || !await IsServerModeAvailableAsync(Current))
+            {
+                await ChangeAsync(GameplayMode.GunsForHire);
+                return;
+            }
             await SyncGate.WaitAsync();
             try { await SendSettingsAsync(); await FriendlyEncounterPenaltyRuntime.ReloadAsync(); }
             finally { SyncGate.Release(); }
@@ -214,12 +236,13 @@ namespace pitTeam.Modules
             {
                 gameplayMode = Current.ToString(),
                 pmcArmbands = pitFireTeam.pmcArmbands.Value,
-                loadoutManagementMode = GetEffectiveValue(pitFireTeam.loadoutManagementMode).ToString()
+                loadoutManagementMode = GetEffectiveValue(pitFireTeam.loadoutManagementMode).ToString(),
+                restrictedGearMaintenance = GetEffectiveValue(pitFireTeam.restrictedGearMaintenance, false)
             });
             return Task.Run(() =>
             {
                 var response = JObject.Parse(RequestHandler.PostJson("/singleplayer/pitfireteam/settings", body));
-                if (response["err"]?.Value<int>() != 0) throw new InvalidOperationException(response["errmsg"]?.ToString() ?? "Mode synchronization failed.");
+                if (response["err"]?.Value<int>() != 0) throw new ModeRejectedException(response["errmsg"]?.ToString() ?? "Mode synchronization failed.");
             });
         }
     }

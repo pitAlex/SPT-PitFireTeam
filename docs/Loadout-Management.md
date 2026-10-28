@@ -19,6 +19,8 @@ See `docs/Buy Screen.md` for the current stock `EquipmentBuildsScreen` reuse, bu
 
 See `docs/Team-Escape.md` for the player-death squad escape, recovered death-gear mail, and escape outcome persistence behavior.
 
+Optional mode companions may protect their native spawn inventory in every mode. Going Rogue Goons use this exception with an ammo/meds/food/grenade whitelist and exact spawn IDs, preserving later gifts. They do not send teammate loot returns. See [Going Rogue](../going-rogue/README.md#mode-and-profiles) for the companion contract.
+
 Equipped weapons keep their exact registered spare magazines directly in tactical-vest or normal pocket grids, including loaded rounds, under every loadout mode. This applies to acquired primary/secondary weapons and holster weapons as well as manual gear exchange. Unregistered magazines, backpack/secure/nested-container cargo and registrations for weapons no longer equipped remain subject to ordinary return filtering. Return mail and equipment snapshots share this classification; other-teammate protected-gear exclusions remain unchanged. See [looting bookkeeping](looting/Looting.md#tracking-and-return-bookkeeping).
 
 See [Follower Insurance](Follower-Insurance.md) for real purchases, persistent exact-item policies, transfer safety, and stock trader returns for verified raid losses. Insurance confirmation commits pending loadout changes like repair and keeps the editor open after refreshing live and staged payment state.
@@ -54,12 +56,12 @@ Target behavior:
 - any gear used for a follower loadout is taken from the player's stash
 - gear is not lost on follower death
 - spawned follower gear cannot be extracted with
-- raid damage and consumed non-secure-container supplies always persist without enabling death gear loss
+- optional Field Upkeep preserves raid damage and consumed non-secure-container supplies without enabling death gear loss
 
 Current phase behavior:
 
 - mode exists in UI and server settings
-- wear and tear is part of `Restricted`; there is no separate `Field Upkeep` setting or checkbox
+- a nested `Field Upkeep` checkbox appears under Restricted only while that policy is selected; it is off by default
 - switching to this mode preserves each teammate's current `Default` gear and selects `Default`
 - the teammate profile hides the saved-loadout dropdown and shows the `KIT LOADOUTS` button
 - buying a kit sends the teammate's previous active `Default` kit back through the pitFireTeam courier before equipping the newly purchased kit
@@ -68,11 +70,11 @@ Current phase behavior:
 - items moved onto the teammate are removed from the player stash
 - items moved back from the teammate are returned to the player stash
 - spawned follower gear is protected from raid loss and cannot be extracted with
-- escaped `Default` teammates always persist their live in-raid equipment state like `Immersive`, with tracked follower-loot/player-given item ids, other teammates' protected gear ids, and the non-Realistic managed secure-container tree stripped before saving
+- with Field Upkeep enabled, escaped `Default` teammates persist their live in-raid equipment state like `Immersive`, with tracked follower-loot/player-given item ids, other teammates' protected gear ids, and the non-Realistic managed secure-container tree stripped before saving
 - original saved magazines remain protected during upkeep after extraction or death: missing magazine shells are restored empty, while surviving magazines retain their live cartridges; acquired loot magazines are not restored
 - magazine recovery uses free compatible grid space or the magazine's original empty weapon slot; if recovery cannot fit safely, maintenance retains the previous saved equipment and logs the failure instead of committing magazine loss
 - `Restricted` does not enable death gear loss; dead teammates are not stripped down like `Immersive`
-- if a `Default` teammate dies, the server saves that teammate's death-time equipment state so durability/resource changes at death are preserved, but later corpse looting cannot consume or move the fallen teammate's saved gear
+- if a `Default` teammate dies with Field Upkeep enabled, the server saves that teammate's death-time equipment state so durability/resource changes at death are preserved, but later corpse looting cannot consume or move the fallen teammate's saved gear
 
 ### Immersive
 
@@ -135,7 +137,7 @@ When `loadoutManagementMode` changes:
 
 Every teammate is migrated on load: a legacy custom preset selection restores the saved `Default` equipment before the profile can be viewed, edited, purchased over, delivered, or spawned. The profile is saved before the selection so an interrupted migration can retry. The saved `Default` snapshot is preserved. No custom preset can be selected for free, and clone-only equipment saves are rejected by the server.
 
-Restricted maintenance is unconditional. The client no longer binds or sends `restrictedGearMaintenance`, and the server ignores that obsolete field in older settings files or requests, including saved `false` values. Saving settings removes the obsolete field from server JSON. Existing saved equipment is preserved until a valid raid snapshot is persisted.
+The client binds and sends `restrictedGearMaintenance`, default false. In Restricted, enabling Field Upkeep persists filtered live equipment state on extraction and the captured equipment state on death. Disabling it keeps the saved Default kit unchanged by raid outcomes. Missing or null server values mean disabled. The preference is shared across Guns for Hire and Allegiance and has no effect on Immersive/Realistic persistence. Toggling it does not immediately alter existing equipment snapshots.
 
 ## Real Default Loadout Commit
 
@@ -311,7 +313,11 @@ Important behavior:
 
 ## Spawn Preparation
 
+[Teammate health](Teammate-Health.md) owns HP retention independently of equipment mode and Field Upkeep. Spawn preparation catches up saved recovery and scales current/maximum HP together; activation keeps saved-teammate injuries. HP-only raid outcomes clear effects without changing the gear-persistence rules below.
+
 Follower spawn preparation currently uses the saved teammate profile clone before returning follower details to the client.
+
+At native PMC brain activation, [FollowerFoundInRaidPatch](../client/Patches/FollowerFoundInRaidPatch.cs) exempts Core-marked follower spawns from SPT's generated-PMC inventory FIR rewrite. The existing `ShallBeFollower` marker is established before activation, so this also works before follower registration and when reusing a transit profile. Saved equipment and every nested container item retain their incoming `SpawnedInSession` values; non-FIR stash cargo cannot become FIR simply by entering in a teammate's backpack. Carried loot retains its existing status through transit. Dogtags still receive SPT's normal FIR flag. Ordinary generated PMCs retain SPT's normal equipment/loot classification, and field recruitment does not retroactively rewrite an already spawned inventory.
 
 For every mode:
 
@@ -390,7 +396,7 @@ If the player also dies in the same raid, already-dead teammates are still sent 
 
 Current escape-state persistence applies only to teammates whose selected loadout is `Default`.
 
-When an `Immersive`, `Realistic` / internal `Extreme`, or `Restricted` teammate survives/extracts:
+When an `Immersive`, `Realistic` / internal `Extreme`, or `Restricted` teammate with Field Upkeep enabled survives/extracts:
 
 - the client sends the teammate's live equipment snapshot to the server
 - follower progress and live-equipment persistence are serialized on the server so their independent post-raid requests cannot overwrite each other
@@ -400,9 +406,9 @@ When an `Immersive`, `Realistic` / internal `Extreme`, or `Restricted` teammate 
 - durability, remaining ammo, and consumed meds from the teammate's actual raid equipment are preserved
 - non-Realistic modes still strip the secure-container tree before saving; Realistic keeps it
 
-Newly equipped gear and slotted attachments remain in the filtered live snapshot in every mode. Return admission checks saved squad membership first; field recruits send no loot returns, avoiding duplication with their later invitation profile.
+Newly equipped gear and slotted attachments remain in the filtered live snapshot whenever raid equipment persistence is enabled. Return admission checks saved squad membership first; field recruits send no loot returns, avoiding duplication with their later invitation profile.
 
-When a `Restricted` teammate dies while using `Default`:
+When a `Restricted` teammate dies while using `Default` with Field Upkeep enabled:
 
 - the fallen teammate's full equipment state is captured at death time
 - the server saves that death-time state instead of reading the corpse after players or surviving teammates may have looted it
@@ -410,13 +416,9 @@ When a `Restricted` teammate dies while using `Default`:
 - protected teammate gear is still stripped from the extracted player profile and from escaped teammate equipment snapshots
 - death gear loss is still not enabled; this is maintenance-state persistence, not Immersive loss
 
-### Restricted consolidation validation
+### Field Upkeep validation
 
-2026-10-12: core client and server Debug builds passed. The server build reported only `NU1900` because the NuGet vulnerability feed was unavailable. `tests/FollowerDatabase` mode smoke checks passed 163 assertions, including 45 checks of Restricted extraction/death persistence through the production equipment methods and encrypted Default snapshot storage. Legacy upkeep values `false`, `true`, and `null` are ignored; durability, medicine and ammunition use persist while equipment is retained and tracked cargo, other teammates' protected gear, and managed secure supplies are filtered. The old acquired-equipment-only branch and its fixture were removed.
-
-Gameplay settings passed 64 checks, Restricted magazine recovery passed 20, and follower return policy passed 28 plus membership/snapshot source guards. These checks do not establish the in-game Settings layout or live raid persistence. Fresh extraction and follower-death tests remain required, including worn armor, spent supplies, ejected magazines, and protected gear taken from a fallen teammate.
-
-Debug deployment was deferred because Tarkov and the SPT server were running. No installed DLLs or locale files were changed by this task.
+See [Core 1.0.1 validation](validation/Release-1.0.1.md) for restored upkeep, settings synchronization, persistence and deployment evidence. The on/off extraction and death behavior still requires fresh raid qualification.
 
 ## Current Gaps
 

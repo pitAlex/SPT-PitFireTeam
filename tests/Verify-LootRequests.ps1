@@ -46,6 +46,18 @@ if ($eligibilityStart -lt 0 -or $eligibilityEnd -le $eligibilityStart) { throw '
 $eligibilityFixture = Get-Content -Raw (Join-Path $PSScriptRoot 'LootFollowerEligibilityFixture.cs')
 $eligibilityCode = $eligibilityFixture.Replace('/* LOOT_ELIGIBILITY_MEMBERS */',
     $followerSource.Substring($eligibilityStart, $eligibilityEnd - $eligibilityStart))
+$lootInteraction = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Patches/FollowerLootInteractionPatch.cs')
+$visibility = [regex]::Match($lootInteraction, '(?ms)^        internal static bool CanShow\(.*?^        \}').Value
+$quickPanel = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Patches/QuickPanelPatch.cs')
+$quickGate = [regex]::Match($quickPanel, '(?ms)^                    bool canCommandBodyContainer =.*?;').Value
+$quickFlags = [regex]::Matches($quickPanel, '(?m)^                    __instance.SetPhraseActive\(EPhraseTrigger\.(?:LootKey|LootMoney|LootWeapon|LootGeneric|LootBody|CheckHim|LootContainer),[^\r\n]+').Value
+if (!$visibility -or !$quickGate -or $quickFlags.Count -ne 7) { throw 'Missing production loot prompt boundaries' }
+$eligibilityCode = $eligibilityCode.Replace('/* CMD_VISIBILITY */', $visibility).Replace('/* QUICK_VISIBILITY */', $quickGate + "`n" + ($quickFlags -join "`n"))
+$bossCommands = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Components/AIBossPlayer.cs')
+foreach ($commandMethod in @('ApplyTakeBodyGearCommand', 'ApplyTakeContainerLootCommand')) {
+    $dispatch = [regex]::Match($bossCommands, '(?ms)^        internal void ' + $commandMethod + '\(.*?^        \}').Value
+    if (!$dispatch.Contains('FollowerLootCommandPolicy.TryRefuseBodyContainer(requester, realPlayer, Followers)')) { throw "Missing native Negative refusal before $commandMethod assignment" }
+}
 $eligibilitySource = Join-Path $temporary 'LootFollowerEligibility.cs'
 $eligibilityExe = Join-Path $temporary 'LootFollowerEligibility.exe'
 [IO.File]::WriteAllText($eligibilitySource, $eligibilityCode)
@@ -53,7 +65,7 @@ $eligibilityArguments = @($compiler, '/nologo', '/target:exe', '/langversion:lat
 foreach ($reference in @('mscorlib.dll', 'System.dll', 'System.Core.dll')) {
     $eligibilityArguments += "/reference:$(Join-Path $framework $reference)"
 }
-& dotnet @eligibilityArguments $eligibilitySource
+& dotnet @eligibilityArguments $eligibilitySource (Join-Path $RepositoryRoot 'client/Modules/CompanionGearPolicy.cs') (Join-Path $RepositoryRoot 'going-rogue/client/GoonGearPolicy.cs') (Join-Path $RepositoryRoot 'client/Modules/FollowerLootCommandPolicy.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Loot eligibility fixture compilation failed' }
 & $eligibilityExe
 if ($LASTEXITCODE -ne 0) { throw 'Loot eligibility fixture failed' }

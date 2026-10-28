@@ -11,8 +11,6 @@ public partial class FriendlyTeammateService
     internal bool SanitizeRecruitCandidateEquipment(MongoId sessionId, FriendlyRecruitPickupCandidate candidate)
     {
         if (!TryDeserializeRecruitProfile(candidate, out var recruit) || recruit.Inventory?.Items == null) return false;
-        if (IsImmersiveLikeLoadoutManagementMode(NormalizeLoadoutManagementMode(settingsService.LoadSettings().LoadoutManagementMode)))
-            return false;
         var protectedIds = GetProtectedTeammateItemIdsForExtraction(sessionId);
         protectedIds.UnionWith(FriendlyPostRaidService.SnapshotProtectedRaidItemIds(sessionId));
         if (protectedIds.Count == 0) return false;

@@ -97,7 +97,7 @@ public class FriendlyPostRaidCallbacks(
             entries = teammateService.ResolveRaidOutcomes(entries).Entries;
         }
 
-        FriendlyTeammateDeathEscapeSummary summary = teammateService.PersistDeathEscapeOutcomes(sessionId, entries);
+        FriendlyTeammateDeathEscapeSummary summary = teammateService.PersistDeathEscapeOutcomes(sessionId, entries, request.InsuranceServerId);
         insuranceDiagnostics.ObserveOutcomes(sessionId, entries, request.InsuranceServerId, request.InsuranceReportId);
         if (request.Notify)
         {

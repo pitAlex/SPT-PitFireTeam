@@ -28,6 +28,9 @@ namespace pitTeam.BigBrain
 
         private FollowerCombatLogicBase? combatLogic;
         private readonly string brainShortName;
+        private readonly Func<BotOwner, FollowerCombatLogicBase>? addonLogicFactory;
+        private readonly Func<BotOwner, AICoreActionResult<BotLogicDecision, CoreActionResultParams>, Action>? addonActionFactory;
+        private readonly string layerName;
 
         private AICoreActionResult<BotLogicDecision, CoreActionResultParams>? currentDecision;
         private AICoreActionResult<BotLogicDecision, CoreActionResultParams>? lastDecision;
@@ -40,15 +43,25 @@ namespace pitTeam.BigBrain
         private bool combatLogicResetForInactive;
         private bool retainedLayerRearmPending;
 
-        public FollowerCombatLayer(BotOwner botOwner, int priority) : base(botOwner, priority)
+        public FollowerCombatLayer(BotOwner botOwner, int priority) : this(botOwner, priority, null, null, "pitTeam.FollowerCombat")
         {
+        }
+
+        internal FollowerCombatLayer(BotOwner botOwner, int priority,
+            Func<BotOwner, FollowerCombatLogicBase>? logicFactory,
+            Func<BotOwner, AICoreActionResult<BotLogicDecision, CoreActionResultParams>, Action>? actionFactory,
+            string name) : base(botOwner, priority)
+        {
+            addonLogicFactory = logicFactory;
+            addonActionFactory = actionFactory;
+            layerName = name;
             brainShortName = botOwner?.Brain?.BaseBrain?.ShortName() ?? string.Empty;
-            combatLogic = CreateCombatLogic(BotOwner, brainShortName);
+            combatLogic = addonLogicFactory?.Invoke(BotOwner) ?? CreateCombatLogic(BotOwner, brainShortName);
         }
 
         public override string GetName()
         {
-            return "pitTeam.FollowerCombat";
+            return layerName;
         }
 
         public override bool IsActive()
@@ -75,7 +88,7 @@ namespace pitTeam.BigBrain
 
             FollowerRecovery.CheckReloadTimeout(BotOwner);
             FollowerEnemyTracking.Update(BotOwner);
-            if (pitFireTeam.UseSainFollowerCombat(BotOwner))
+            if (addonLogicFactory == null && pitFireTeam.UseSainFollowerCombat(BotOwner))
             {
                 return false;
             }
@@ -155,7 +168,8 @@ namespace pitTeam.BigBrain
             BotOwner?.GetPlayer?.MovementContext?.SetPatrol(false);
             ClearFollowerCommandOnCombatTransition(transitionReason);
             FollowerGrenadeRuntimeGate.EnforceDisabled(BotOwner);
-            combatLogic = CreateCombatLogic(BotOwner, brainShortName);
+            if (addonLogicFactory != null) combatLogic?.Reset();
+            combatLogic = addonLogicFactory?.Invoke(BotOwner) ?? CreateCombatLogic(BotOwner, brainShortName);
             combatLogic?.Reset();
             combatLogic?.StartDecision();
             BattleRecorder.RecordCombatLayerState(BotOwner, true, recorderReason);
@@ -253,7 +267,7 @@ namespace pitTeam.BigBrain
 
             currentDecision = nextDecision;
             BattleRecorder.RecordDecisionSelected(BotOwner, lastDecision, nextDecision, combatLogic?.GetCurrentObjectiveName());
-            return CreateBigBrainAction(BotOwner, nextDecision);
+            return addonActionFactory?.Invoke(BotOwner, nextDecision) ?? CreateBigBrainAction(BotOwner, nextDecision);
         }
 
         public override bool IsCurrentActionEnding()

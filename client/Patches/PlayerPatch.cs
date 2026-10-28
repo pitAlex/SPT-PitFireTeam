@@ -339,12 +339,14 @@ namespace pitTeam.Patches
                 }
 
                 BotFollowerPlayer follower = BossPlayers.GetFollowers().Find(fl => fl.GetBot().ProfileId == followerPlayer.ProfileId);
-                if (follower == null || !follower.IsSquadMate)
+                if (follower == null)
                 {
                     return;
                 }
 
-                SquadRaidKillReport.RecordTeammateKill(followerPlayer, __instance);
+                if (follower.ReportsRaidKills)
+                    SquadRaidKillReport.RecordTeammateKill(followerPlayer, __instance);
+                if (!follower.IsSquadMate) return;
                 TryCreditFollowerKillQuestProgress(__instance, followerPlayer, follower, damageInfo, bodyPart);
 
                 EPlayerSide killedPlayerSide = __instance.Side;
@@ -594,6 +596,9 @@ namespace pitTeam.Patches
         private static string GetKillMessageKind(Player victim, IPlayer aggressor)
         {
             BotFollowerPlayer follower = BossPlayers.GetFollowerByProfileId(victim.ProfileId);
+            if (follower != null && victim.Profile?.Info?.Settings != null &&
+                Utils.Props.BossFollowersType.Contains(victim.Profile.Info.Settings.Role))
+                return string.Empty;
             if (GameplayModeRuntime.IsAllegiance && follower != null)
                 return !follower.IsSquadMate && follower.GetBoss()?.realPlayer?.ProfileId == aggressor.ProfileId
                     ? "traitor" : string.Empty;

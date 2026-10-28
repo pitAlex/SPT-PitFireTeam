@@ -171,6 +171,13 @@ namespace pitTeam.Utils {
     }
 }
 namespace pitTeam.Modules {
+    // Hostility/selection tests control this external admission boundary. The production
+    // population scanner and capacity policy have their own native-world fixture.
+    public static class FriendlyEncounterPopulation {
+        public static bool Allowed=true,UseReal;public static int Queries;
+        public static bool CanAdmit(BotOwner bot,out int alive,out int friendly,out int limit){Queries++;if(UseReal)return FriendlyEncounterPopulationCounter.CanAdmit(bot,out alive,out friendly,out limit);alive=10;friendly=0;limit=3;return Allowed;}
+        public static bool CanAdmitGroup(BotsGroup group,out int alive,out int friendly,out int limit){if(UseReal){Queries++;return FriendlyEncounterPopulationCounter.CanAdmitGroup(group,out alive,out friendly,out limit);}return CanAdmit(group.Member(0),out alive,out friendly,out limit);}
+    }
     internal static class PmcKarmaRuntime { internal static void NoteFriendly(BotOwner bot) { } }
     internal sealed class AllegianceCombatGreeting { internal void Cancel() {} internal void Update(BotOwner bot,Player human) {} }
     internal sealed class AllegianceFriendlyGreeting {
@@ -192,6 +199,7 @@ namespace pitTeam.Modules {
     public static class Logger { public static int Errors; public static void LogError(object s) { Errors++; } public static void LogInfo(string s) { } }
     public static class BattleRecorder { public static void RecordFriendlyEncounter(BotOwner bot,string stage,Func<object> details) { } }
     public static class GameplayModeRuntime { public static bool IsAllegiance;public static bool GetEffectiveValue(pitTeam.pitFireTeam.BoolSetting entry)=>entry.Value; }
+    public static class GameplayModeAddons { public static bool IsRogueRaid; }
     public static class BossPlayers {
         public static HashSet<string> Denied=new();
         public static bool HasDeniedRecruitment(string id)=>Denied.Contains(id);
@@ -236,6 +244,8 @@ public static class HostilityChecks {
     private static pitAIBossPlayer boss; private static BotsGroup outside; private static BotOwner rogue, first, second;
     private static void Check(bool value, string name) { checks++; if (!value) throw new Exception(name); }
     private static void Setup() {
+        FriendlyEncounterPopulation.Allowed=true;FriendlyEncounterPopulation.UseReal=false;FriendlyEncounterPopulation.Queries=0;
+        GameplayModeAddons.IsRogueRaid=false;
         BossPlayers.Denied.Clear();pitTeam.pitFireTeam.tieredPickup.Value=true;
         AllegianceScavRelations.Reset(); BossPlayers.Registered.Clear(); pitTeam.Utils.Utils.Timers.Clear();
         AllegiancePmcFriendship.Reset(); GameplayModeRuntime.IsAllegiance=false; UnityEngine.Random.Rolls=0; UnityEngine.Random.NextValue=0f;
@@ -407,7 +417,9 @@ public static class HostilityChecks {
             pitTeam.pitFireTeam.friendlyEncounterChance.Value=chancePercent;
             boss.realPlayer.Profile.FenceInfo.Standing=reputation;FriendlyEncounterPenaltyRuntime.Points=penalty;
             float opposite=chancePercent<=10 ? chancePercent/100f : chancePercent<30 ? (10f+(chancePercent-10)/4f)/100f : chancePercent/200f;
-            float chance=(float)Math.Min(1d,opposite*Math.Max(0d,Math.Min(6d,reputation)))*(1f-penalty/100f);
+            double rep=Math.Max(0d,Math.Min(6d,reputation));
+            double multiplier=rep<=1d?rep:1d+(rep-1d)/5d;
+            float chance=(float)Math.Min(1d,opposite*multiplier)*(1f-penalty/100f);
             UnityEngine.Random.NextValue=Math.Min(1f,Math.Max(0f,chance+offset));var bot=Scav("scav");AllegiancePmcFriendship.Apply(bot);
             Check(AllegiancePmcFriendship.IsSelectedFriendly(bot,boss.realPlayer)==(chance>=1f||(chance>0&&offset<0)),"Scav chance follows side curve times Fence standing, then relative penalties");
             Check(bot.Side==EPlayerSide.Savage && bot.Profile.Info.Settings.Role==WildSpawnType.assault,"Scav native identity retained");
@@ -415,7 +427,8 @@ public static class HostilityChecks {
         foreach(double invalid in new[]{double.NaN,double.PositiveInfinity,double.NegativeInfinity})
             Check(ScavFenceKarma.EncounterChance(0.15f,invalid)==0,"Invalid Fence standing falls back to zero reputation");
         Check(Math.Abs(ScavFenceKarma.EncounterChance(0.15f,0.2d)-0.03f)<0.000001,"Default 15% Scav base times 0.2 reputation gives 3%");
-        Check(Math.Abs(ScavFenceKarma.EncounterChance(0.15f,6d)-0.90f)<0.000001,"Default Scav base times reputation 6 gives 90%");
+        Check(Math.Abs(ScavFenceKarma.EncounterChance(0.15f,6d)-0.30f)<0.000001,"Fence reputation 6 caps the multiplier at 2x");
+        Check(Math.Abs(ScavFenceKarma.EncounterChance(0.1125f,4.89d)-0.200025f)<0.000001,"Current 4.89 reputation and 15% setting produce about 20% chance");
         Setup();GameplayModeRuntime.IsAllegiance=true;boss.realPlayer.Profile.FenceInfo.Standing=0;
         UnityEngine.Random.NextValue=0.2f;var fixedRoll=Scav("standing-change");AllegiancePmcFriendship.Apply(fixedRoll);
         boss.realPlayer.Profile.FenceInfo.Standing=6;AllegiancePmcFriendship.Apply(fixedRoll);
@@ -1160,7 +1173,116 @@ public static class HostilityChecks {
             "Directed Cooperate reaches the active interaction bot from 12m");
         Check(!AllegiancePmcFriendship.HandleEncounterPhrase(boss.realPlayer,EPhraseTrigger.Cooperation),"Inactive interaction falls back to the existing manual recruitment receiver");
     }
+    private static void RealPopulationAdmissionChecks() {
+        Setup();GameplayModeRuntime.IsAllegiance=true;pitTeam.pitFireTeam.friendlyEncounterChance.Value=55;boss.realPlayer.Profile.FenceInfo.Standing=6;
+        FriendlyEncounterPopulation.UseReal=true;var world=Comfort.Common.Singleton<GameWorld>.Instance;
+        var bots=new List<BotOwner>();for(int i=0;i<10;i++)bots.Add(Scav("actual-cap-"+i));world.AllAlivePlayersList.AddRange(bots);
+        foreach(var bot in bots)AllegiancePmcFriendship.Apply(bot);
+        Check(bots.Count(bot=>AllegiancePmcFriendship.IsSelectedFriendly(bot,boss.realPlayer))==5,
+            "real selection plus real population scanner admits five of ten successful 55% Scav rolls");
+        Check(UnityEngine.Random.Rolls==10,"real population cap preserves one roll per eligible spawn");
+        bots[8].IsDead=bots[9].IsDead=true;
+        var late=Scav("actual-cap-late");world.AllAlivePlayersList.Add(late);AllegiancePmcFriendship.Apply(late);
+        Check(!AllegiancePmcFriendship.IsSelectedFriendly(late,boss.realPlayer),"real late spawn is blocked after hostile deaths leave five friendlies above capacity");
+        Check(bots.Take(5).All(bot=>AllegiancePmcFriendship.IsSelectedFriendly(bot,boss.realPlayer)),"real population shrink leaves established friendships intact");
+        Setup();GameplayModeRuntime.IsAllegiance=true;pitTeam.pitFireTeam.friendlyEncounterChance.Value=15;FriendlyEncounterPopulation.UseReal=true;
+        world=Comfort.Common.Singleton<GameWorld>.Instance;bots=new List<BotOwner>();
+        for(int i=0;i<10;i++)bots.Add(Solo("actual-pmc-"+i,i%2==0?EPlayerSide.Usec:EPlayerSide.Bear));world.AllAlivePlayersList.AddRange(bots);
+        foreach(var bot in bots)AllegiancePmcFriendship.Apply(bot);
+        Check(bots.Count(bot=>AllegiancePmcFriendship.IsSelectedFriendly(bot,boss.realPlayer))==2,"real solo PMC selection shares two minimum slots across USEC/BEAR");
+        Setup();RecruitScavCompanion();pitTeam.pitFireTeam.friendlyEncounterChance.Value=30;boss.realPlayer.Profile.FenceInfo.Standing=6;
+        FriendlyEncounterPopulation.UseReal=true;world=Comfort.Common.Singleton<GameWorld>.Instance;bots=new List<BotOwner>();
+        for(int i=0;i<10;i++)bots.Add(Scav("actual-calming-"+i));world.AllAlivePlayersList.AddRange(bots);
+        AllegiancePmcFriendship.Apply(bots[0]);AllegiancePmcFriendship.Apply(bots[1]);
+        bots[3].BotsGroup=bots[2].BotsGroup;bots[2].BotsGroup.Members.Add(bots[3]);
+        AllegianceScavRelations.Apply(bots[2]);
+        Check(!AllegianceScavRelations.IsCalmedGroup(bots[2].BotsGroup),"real calming scanner refuses two-member group with only one shared slot");
+        AllegianceScavRelations.Apply(bots[4]);AllegiancePmcFriendship.Apply(bots[5]);
+        Check(AllegianceScavRelations.IsCalmedGroup(bots[4].BotsGroup)&&!AllegiancePmcFriendship.IsSelectedFriendly(bots[5],boss.realPlayer),
+            "real calming consumes the last shared slot before subsequent ordinary encounter selection");
+    }
+    private static void PopulationAdmissionChecks() {
+        Setup();GameplayModeRuntime.IsAllegiance=true;boss.realPlayer.Profile.FenceInfo.Standing=6;
+        var denied=Scav("quota-denied");denied.BotsGroup.Enemies[boss.realPlayer]=new();
+        FriendlyEncounterPopulation.Allowed=false;AllegiancePmcFriendship.Apply(denied);
+        Check(!AllegiancePmcFriendship.IsSelectedFriendly(denied,boss.realPlayer) && denied.BotsGroup.IsEnemy(boss.realPlayer),
+            "passing roll cannot neutralize an encounter when population admission fails");
+        Check(UnityEngine.Random.Rolls==1&&FriendlyEncounterPopulation.Queries==1,"population veto is checked after one successful chance roll");
+        FriendlyEncounterPopulation.Allowed=true;AllegiancePmcFriendship.Apply(denied);
+        Check(!AllegiancePmcFriendship.IsSelectedFriendly(denied,boss.realPlayer)&&UnityEngine.Random.Rolls==1&&FriendlyEncounterPopulation.Queries==1,
+            "later capacity does not reroll or reconsider a previously quota-rejected spawn");
+        var retained=Scav("quota-grandfathered");AllegiancePmcFriendship.Apply(retained);
+        FriendlyEncounterPopulation.Allowed=false;AllegiancePmcFriendship.Apply(retained);
+        Check(AllegiancePmcFriendship.IsSelectedFriendly(retained,boss.realPlayer),"population shrink never revokes an existing selected friendship");
+        Setup();GameplayModeRuntime.IsAllegiance=true;boss.realPlayer.Profile.FenceInfo.Standing=6;UnityEngine.Random.NextValue=1;
+        AllegiancePmcFriendship.Apply(Scav("roll-failed-before-quota"));
+        Check(FriendlyEncounterPopulation.Queries==0,"capacity cannot turn a failed roll into guaranteed friendship");
+        Setup();RecruitScavCompanion();var blocked=Scav("calming-cap-denied");
+        FriendlyEncounterPopulation.Allowed=false;AllegianceScavRelations.Apply(blocked);
+        Check(!AllegianceScavRelations.IsCalmedGroup(blocked.BotsGroup),"recruited Scav calming cannot bypass the shared population budget");
+        FriendlyEncounterPopulation.Allowed=true;AllegianceScavRelations.Apply(blocked);
+        Check(!AllegianceScavRelations.IsCalmedGroup(blocked.BotsGroup),"calming admission is not retried after a quota refusal");
+        var calm=Scav("calming-grandfathered");AllegianceScavRelations.Apply(calm);
+        Check(calm.BotsGroup.Locked,"accepted calming group is locked against later native spawn reuse");
+        FriendlyEncounterPopulation.Allowed=false;AllegianceScavRelations.Apply(calm);
+        Check(AllegianceScavRelations.IsCalmedGroup(calm.BotsGroup),"population shrink preserves already-calmed Scav groups");
+        Setup();RecruitScavCompanion();var pending=Scav("calming-group-pending");pending.BotsGroup.TargetMembersCount=2;
+        int oldRolls=UnityEngine.Random.Rolls;AllegianceScavRelations.Apply(pending);
+        Check(UnityEngine.Random.Rolls==oldRolls&&!AllegianceScavRelations.IsCalmedGroup(pending.BotsGroup),"pending authored group waits until whole group size is available for quota admission");
+        var partner=Scav("calming-group-partner");partner.BotsGroup=pending.BotsGroup;pending.BotsGroup.Members.Add(partner);
+        AllegianceScavRelations.Apply(partner);
+        Check(UnityEngine.Random.Rolls==oldRolls+1&&pending.BotsGroup.Locked&&AllegianceScavRelations.IsCalmedGroup(pending.BotsGroup),"completed authored group rolls once and reserves its full quota size");
+    }
+    private static void RogueScavEncounterChecks() {
+        foreach(var role in new[]{WildSpawnType.bossKnight,WildSpawnType.followerBigPipe,WildSpawnType.followerBirdEye})
+        foreach(var side in new[]{EPlayerSide.Savage,EPlayerSide.Usec,EPlayerSide.Bear}) {
+            Setup();GameplayModeRuntime.IsAllegiance=true;GameplayModeAddons.IsRogueRaid=true;
+            first.Profile.Info.Settings.Role=role;first.Profile.Info.Side=side;
+            var hostile=Scav("goon-not-scav-"+role+side);hostile.BotsGroup.Enemies[boss.realPlayer]=new();
+            AllegianceScavRelations.OnFollowerAdded(first,boss,false);
+            int goonRolls=UnityEngine.Random.Rolls;UnityEngine.Random.NextValue=0;
+            AllegianceScavRelations.Apply(hostile);
+            Check(!AllegiancePmcFriendship.IsRegularScav(first) && !AllegianceScavRelations.KeepSeparateGroup(first,boss.realPlayer,false),
+                "Goon cannot masquerade as recruited ordinary Scav regardless of presentation side: "+role+"/"+side);
+            Check(UnityEngine.Random.Rolls==goonRolls && !AllegianceScavRelations.IsCalmedGroup(hostile.BotsGroup) && hostile.BotsGroup.IsEnemy(boss.realPlayer),
+                "Goon cannot enable 75% companion calming or remove hostile Scav aggression: "+role+"/"+side);
+        }
+        Setup();GameplayModeRuntime.IsAllegiance=true;GameplayModeAddons.IsRogueRaid=true;
+        first.Profile.Info.Settings.Role=WildSpawnType.bossKnight;second.Profile.Info.Settings.Role=WildSpawnType.followerBigPipe;
+        boss.realPlayer.Profile.FenceInfo.Standing=6;pitTeam.pitFireTeam.friendlyEncounterChance.Value=80;
+        foreach(var side in new[]{EPlayerSide.Usec,EPlayerSide.Bear}) {
+            var pmc=Solo("rogue-pmc-"+side,side);AllegiancePmcFriendship.Apply(pmc);
+            Check(!AllegiancePmcFriendship.IsSelectedFriendly(pmc,boss.realPlayer) && !AllegiancePmcFriendship.CanRecruit(pmc,boss.realPlayer),"Goons still exclude PMC encounters: "+side);
+        }
+        Check(UnityEngine.Random.Rolls==0,"Excluded PMC encounters do not consume friendship rolls");
+        var scav=Scav("rogue-scav");pitTeam.pitFireTeam.friendlyScavEncounters.Value=false;AllegiancePmcFriendship.Apply(scav);
+        Check(UnityEngine.Random.Rolls==0 && !AllegiancePmcFriendship.IsSelectedFriendly(scav,boss.realPlayer),"Goons respect the disabled friendly Scav setting");
+        pitTeam.pitFireTeam.friendlyScavEncounters.Value=true;
+        scav.BotsGroup.Enemies[boss.realPlayer]=new BotGroupEnemyInfo();scav.BotsGroup.Enemies[first]=new BotGroupEnemyInfo();
+        boss.bossGroup.Enemies[scav]=new BotGroupEnemyInfo();first.Memory.GoalEnemy=new EnemyInfo{ProfileId=scav.ProfileId};
+        AllegiancePmcFriendship.Apply(scav);AllegiancePmcFriendship.Apply(scav);
+        Check(UnityEngine.Random.Rolls==1 && AllegiancePmcFriendship.IsSelectedFriendly(scav,boss.realPlayer),"Goons allow one sticky native Scav encounter roll");
+        Check(scav.BotsGroup.Neutrals.ContainsKey(boss.realPlayer) && scav.BotsGroup.Neutrals.ContainsKey(first) && scav.BotsGroup.Neutrals.ContainsKey(second) && boss.bossGroup.Neutrals.ContainsKey(scav),"Selected Scav is neutral to the human, Knight and Big Pipe in both directions");
+        Check(first.Memory.GoalEnemy==null && !scav.BotsGroup.IsEnemy(first) && !boss.bossGroup.IsEnemy(scav),"Selected Scav repairs pre-existing Goon setup hostility");
+        Check(!scav.BotsGroup.AddEnemy(first,EBotEnemyCause.initial) && !boss.bossGroup.AddEnemy(scav,EBotEnemyCause.initial),"Ambient Goon/Scav scans preserve selected friendship");
+        Check(AllegianceScavRelations.KeepSeparateGroup(scav,boss.realPlayer,false),"Selected Scav keeps native group diplomacy when recruited alongside Goons");
+        RecruitScavCompanion("rogue-scav-companion");
+        var calmed=Scav("rogue-calmed-group");AllegianceScavRelations.Apply(calmed);
+        Check(AllegianceScavRelations.IsCalmedGroup(calmed.BotsGroup),"Recruited Scav diplomacy works while Goons are present");
+        FollowerGroupHostility.OnDamage(first,scav);AllegiancePmcFriendship.Apply(scav);
+        Check(!AllegiancePmcFriendship.IsSelectedFriendly(scav,boss.realPlayer) && scav.BotsGroup.IsEnemy(boss.realPlayer) && boss.bossGroup.IsEnemy(scav),"Actual attack on Knight revokes Scav friendship for the squad");
+        Setup();GameplayModeRuntime.IsAllegiance=true;GameplayModeAddons.IsRogueRaid=true;boss.realPlayer.Profile.FenceInfo.Standing=0;
+        var noStanding=Scav("rogue-zero-fence");AllegiancePmcFriendship.Apply(noStanding);
+        Check(!AllegiancePmcFriendship.IsSelectedFriendly(noStanding,boss.realPlayer),"Goons preserve zero-Fence encounter probability");
+        var grouped=Scav("rogue-grouped");grouped.BotsGroup.TargetMembersCount=2;int rolls=UnityEngine.Random.Rolls;AllegiancePmcFriendship.Apply(grouped);
+        Check(UnityEngine.Random.Rolls==rolls && !AllegiancePmcFriendship.CanRecruit(grouped,boss.realPlayer),"Goons preserve grouped-Scav exclusion");
+    }
     public static void Main() {
+        Setup();GameplayModeRuntime.IsAllegiance=true;GameplayModeAddons.IsRogueRaid=true;
+        Check(AllegiancePmcFriendship.IsEnabled,"Rogue companions retain the Scav encounter service");
+        var rolePolicy=typeof(BotGroupAddEnemyPatch).GetMethod("IsRogueFriendlyType",BindingFlags.NonPublic|BindingFlags.Static);
+        Check((bool)rolePolicy.Invoke(null,new object[]{WildSpawnType.exUsec}),"Rogue raid protects exact exUsec role");
+        Check(!(bool)rolePolicy.Invoke(null,new object[]{WildSpawnType.bossKnight}),"Rogue raid does not exempt unrelated wild Goons by role");
         var h=new Harmony("pit.tests.hostility");
         h.Patch(AccessTools.Method(typeof(Player),nameof(Player.ApplyDamageInfo)),new HarmonyMethod(typeof(AllegianceScavTrustDamagePatch),"PatchPrefix"));
         h.Patch(AccessTools.Method(typeof(BotsGroup),nameof(BotsGroup.AddEnemy)),new HarmonyMethod(typeof(BotGroupAddEnemyPatch),"PatchPrefix"),new HarmonyMethod(typeof(BotGroupAddEnemyPatch),"PatchPostfix"));
@@ -1231,6 +1353,9 @@ public static class HostilityChecks {
         Setup();FollowerGroupHostility.OnDamage(rogue,new BotOwner{ProfileId="stranger"});
         Check(outside.Enemies.Count==0&&boss.bossGroup.Enemies.Count==0,"ordinary AI damage remains native");
         AllegianceChecks();
+        RogueScavEncounterChecks();
+        PopulationAdmissionChecks();
+        RealPopulationAdmissionChecks();
         ScavEncounterChecks();
         EncounterChanceChecks();
         ScavEncounterToggleChecks();

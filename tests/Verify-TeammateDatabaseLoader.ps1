@@ -3,6 +3,8 @@ param(
     [string]$ServerBuildDirectory = (Join-Path (Split-Path $PSScriptRoot -Parent) 'server/bin/Debug/net10.0')
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Find-AspNetRuntime.ps1')
+$aspNetRuntime = Find-AspNetRuntime
 $ServerRuntimeRoot = (Resolve-Path -LiteralPath $ServerRuntimeRoot).Path
 $ServerBuildDirectory = (Resolve-Path -LiteralPath $ServerBuildDirectory).Path
 $testRoot = Join-Path $PSScriptRoot ('artifacts/database-loader/' + [Guid]::NewGuid().ToString('N'))
@@ -24,18 +26,19 @@ namespace PitFireTeam.DatabaseSmoke {
     public sealed class Loader : AssemblyLoadContext {
         private readonly string runtime;
         private readonly string mod;
-        private Loader(string runtime, string mod) : base("teammate-database-smoke", true) {
-            this.runtime = runtime; this.mod = mod;
+        private readonly string aspNet;
+        private Loader(string runtime, string mod, string aspNet) : base("teammate-database-smoke", true) {
+            this.runtime = runtime; this.mod = mod; this.aspNet = aspNet;
         }
         protected override Assembly Load(AssemblyName name) {
-            foreach (string root in new[] { mod, runtime }) {
+            foreach (string root in new[] { mod, runtime, aspNet }) {
                 string path = Path.Combine(root, name.Name + ".dll");
                 if (File.Exists(path)) return LoadFromAssemblyPath(path);
             }
             return null;
         }
-        public static string Run(string runtime, string mod, string databases) {
-            var context = new Loader(runtime, mod);
+        public static string Run(string runtime, string mod, string databases, string aspNet) {
+            var context = new Loader(runtime, mod, aspNet);
             try {
                 var assemblies = Directory.GetFiles(mod, "*.dll").Select(context.LoadFromAssemblyPath).ToArray();
                 int types = assemblies.Sum(a => a.GetTypes().Length);
@@ -56,4 +59,4 @@ namespace PitFireTeam.DatabaseSmoke {
     }
 }
 '@
-[PitFireTeam.DatabaseSmoke.Loader]::Run($ServerRuntimeRoot, $modDirectory, (Join-Path $testRoot 'databases'))
+[PitFireTeam.DatabaseSmoke.Loader]::Run($ServerRuntimeRoot, $modDirectory, (Join-Path $testRoot 'databases'), $aspNetRuntime)

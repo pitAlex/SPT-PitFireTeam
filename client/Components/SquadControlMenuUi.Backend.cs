@@ -40,7 +40,8 @@ namespace pitTeam.Components
                 return;
             }
 
-            if (!entry.HasProperRaidKit)
+            // Wounded invites go to the server for a fresh recovery check and native decline.
+            if (!entry.HasProperRaidKit && !entry.IsWounded)
             {
                 string message = $"Cannot add {entry.Nickname} to the raid group without a proper kit.";
                 AddTeammateCreationFlow.ShowToast(message);

@@ -31,8 +31,6 @@ namespace pitTeam.BigBrain
         private const float VisibleAlignedFireMaxDistance = 35f;
         private const float VisibleAlignedFireMaxAngle = 12f;
         private const float AutoSuppressRetryCooldownSeconds = 3.5f;
-        private const float AllyPushSupportMaxStraightDistance = 45f;
-        private const float AllyPushSupportMaxNavDistance = 65f;
         private const float HardRecoveryCloseThreatDistance = 10f;
         private const float AutomaticSecondaryRecentSeenHoldSeconds = 2.25f;
         private const float HoldPositionLocalSupportMaxNavDistance = 28f;
@@ -48,6 +46,7 @@ namespace pitTeam.BigBrain
         private readonly BotOwner botOwner;
         private readonly FollowerCombatCommon combatCommon;
         private readonly FollowerCombatPush combatPush;
+        private readonly FollowerCombatSupportPlanner supportPlanner;
         private readonly CommittedCoverPhaseState shootCoverSettlePhase = new CommittedCoverPhaseState();
         private readonly CommittedCoverPhaseState coverIntentPhase = new CommittedCoverPhaseState();
 
@@ -100,6 +99,7 @@ namespace pitTeam.BigBrain
             this.botOwner = botOwner;
             this.combatCommon = combatCommon;
             this.combatPush = new FollowerCombatPush(botOwner, combatCommon);
+            supportPlanner = new FollowerCombatSupportPlanner(botOwner, combatCommon);
         }
 
         /// <summary>
@@ -690,111 +690,17 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            if (TryBuildAndCommitPushSupportDecision(out decision))
+            if (supportPlanner.TryBuild(out decision))
             {
                 CommitCoverIntent(CoverIntentKind.Support);
                 return true;
             }
 
-            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? allySupportDecision =
-                combatCommon.TryGetAllyEngagementSupportDecision();
-            if (allySupportDecision == null)
+            if (retryOnFailure)
             {
-                if (retryOnFailure)
-                {
-                    supportIntentRetryUntil = Mathf.Max(supportIntentRetryUntil, Time.time + SupportBreakRetryCooldownSeconds);
-                }
-
-                return false;
+                supportIntentRetryUntil = Mathf.Max(supportIntentRetryUntil, Time.time + SupportBreakRetryCooldownSeconds);
             }
-
-            CommitCoverIntent(CoverIntentKind.Support);
-            decision = allySupportDecision.Value;
-            return true;
-        }
-
-        private bool TryBuildAndCommitPushSupportDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
-        {
-            decision = default;
-            // Rifleman helper path: consume another follower's active autonomous push event and
-            // convert it into support. This branch never emits a new push event and never chooses
-            // direct go-to-enemy/run-to-enemy as its support objective.
-            if (!combatCommon.TryGetNearbyActivePushEventForCurrentEnemy(
-                    AllyPushSupportMaxStraightDistance,
-                    AllyPushSupportMaxNavDistance,
-                    out CombatEvents.PushEvent pushEvent))
-            {
-                return false;
-            }
-
-            EnemyInfo? goalEnemy = botOwner.Memory.GoalEnemy;
-            if (!combatCommon.HasActiveCombatEnemy(goalEnemy))
-            {
-                return false;
-            }
-
-            if (combatCommon.CanShootFromCurrentCover(out _))
-            {
-                // Best support is doing nothing fancy: stay in cover and shoot if this position
-                // already contributes to the pusher's fight.
-                combatCommon.ExtendCommittedCover();
-                decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
-                    BotLogicDecision.shootFromCover,
-                    "allyPushSupport.currentCover");
-                return true;
-            }
-
-            AICoreActionResult<BotLogicDecision, CoreActionResultParams>? immediate =
-                combatCommon.TryGetImmediateShootDecision("allyPushSupport.immediateShoot");
-            if (immediate != null)
-            {
-                decision = immediate.Value;
-                return true;
-            }
-
-            if (pushEvent.IsSearchPush && combatCommon.HasCommittedPosition(out decision))
-            {
-                // The search leader's event remains active while this follower settles. Preserve
-                // the arrival hold before any support branch is allowed to generate another point.
-                return true;
-            }
-
-            if (pushEvent.IsSearchPush &&
-                (botOwner.Position - pushEvent.Owner.Position).sqrMagnitude <= 20f * 20f &&
-                combatCommon.TryCreateTeamSearchSupportDecision(
-                    pushEvent,
-                    goalEnemy,
-                    "allyPushSupport.teamSearch",
-                    out decision))
-            {
-                // Search pushes use a small flank/backstop point near the pusher, not the enemy.
-                return true;
-            }
-
-            if (combatCommon.TryCommitPushSupportCover(
-                    goalEnemy,
-                    pushEvent.Owner.Position,
-                    pushEvent.EnemyPosition,
-                    pushEvent.Destination,
-                    "allyPushSupport.cover",
-                    out string coverReason))
-            {
-                // Normal support push: take a cover that can watch the enemy or pusher destination.
-                decision = combatCommon.CreateMoveToCommittedCoverDecision(coverReason);
-                return true;
-            }
-
-            Vector3 supportAnchor = FollowerCombatCommon.IsFinite(pushEvent.EnemyPosition)
-                ? pushEvent.EnemyPosition
-                : pushEvent.Destination;
-            // Final fallback is still a support firing point, not a direct assault push.
-            return combatCommon.TryCreateSupportFiringPositionDecision(
-                goalEnemy,
-                supportAnchor,
-                "allyPushSupport.position",
-                out decision,
-                preferBackline: false,
-                enforceMarksmanPositionPolicy: false);
+            return false;
         }
 
         private bool TryPrepareAllySupportBreak(
@@ -2068,47 +1974,17 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEnd("medicalRetryCombatEnded", true);
             }
 
-            if (combatCommon.IsActivelyUsingMedical &&
-                TryGetHealDecision(
-                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> activeHealDecision) &&
-                combatCommon.TryPrepareDecisionTransition(
-                    currentDecision,
-                    "medicalRetryActiveHeal",
-                    activeHealDecision))
-            {
-                return new AICoreActionEnd("medicalRetryActiveHeal", true);
-            }
-
-            if (combatCommon.HasReachedSafeHealPosition(goalEnemy))
-            {
-                if (combatCommon.IsHealDecisionRetryBlocked)
-                {
-                    return FollowerCombatCommon.Continue();
-                }
-
-                if (TryGetHealDecision(
-                        out AICoreActionResult<BotLogicDecision, CoreActionResultParams> reachedCoverHealDecision) &&
-                    combatCommon.TryPrepareDecisionTransition(
-                        currentDecision,
-                        "medicalRetrySafeCoverReady",
-                        reachedCoverHealDecision))
-                {
-                    return new AICoreActionEnd("medicalRetrySafeCoverReady", true);
-                }
-            }
-
-            // Once the retry is due, look for the medical successor before generic pressure
-            // recovery. A repeated no-cover suppression fallback must not starve this search.
-            if (!combatCommon.IsHealDecisionRetryBlocked &&
-                TryGetHealDecision(
-                    out AICoreActionResult<BotLogicDecision, CoreActionResultParams> healDecision) &&
-                combatCommon.TryPrepareDecisionTransition(
-                    currentDecision,
-                    "medicalRetryReady",
-                    healDecision))
+            bool retryWasDue = !combatCommon.IsHealDecisionRetryBlocked;
+            if ((combatCommon.IsActivelyUsingMedical || retryWasDue) &&
+                TryGetHealDecision(out var healDecision) &&
+                combatCommon.TryPrepareDecisionTransition(currentDecision, "medicalRetryReady", healDecision))
             {
                 return new AICoreActionEnd("medicalRetryReady", true);
             }
+
+            if (combatCommon.IsActivelyUsingMedical || combatCommon.HasReachedSafeHealPosition(goalEnemy))
+                return combatCommon.HasActiveOrPendingHealWork()
+                    ? FollowerCombatCommon.Continue() : new AICoreActionEnd("medicalRetryCleared", true);
 
             if (TryGetImmediateFightDecision(
                     out AICoreActionResult<BotLogicDecision, CoreActionResultParams> immediateFight) &&
@@ -2120,8 +1996,8 @@ namespace pitTeam.BigBrain
                 return new AICoreActionEnd("medicalRetryImmediateFight", true);
             }
 
-            if (TryGetRecoverDecision(
-                    goalEnemy,
+            if (combatCommon.TryGetMedicalRetryRecoveryDecision(
+                    goalEnemy, retryWasDue,
                     out AICoreActionResult<BotLogicDecision, CoreActionResultParams> recoveryDecision) &&
                 combatCommon.TryPrepareDecisionTransition(
                     currentDecision,

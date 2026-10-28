@@ -2,7 +2,11 @@
 
 **Scope:** compatibility owned by pitFireTeam core and needed whether the optional addon is installed or not. SAIN means the external `me.sol.sain` plugin. The addon is a separate combat brain documented under [addon/docs](../addon/docs/README.md).
 
+Core also owns the [reload stance boundary](Combat-Tactics.md): an accepted active follower reload leaves the relaxed hands stance before native animation starts. This applies to Core, Going Rogue and ready SAIN-addon followers. It repairs SAIN 4.5.1's already-relaxed stance latch through native EFT APIs without changing ordinary bots or shared SAIN settings.
+
 ## Runtime ownership
+
+Registered allied Goons (Knight, Big Pipe and Birdeye) retain native EFT combat trash talk regardless of the Followers trash talk percentage. Core's frequency gate exempts their native roles; ordinary followers still use the configured percentage. Existing command silence, forced-reply priority and tactical callout gates remain in effect. External SAIN speech routing continues to leave follower speech with EFT.
 
 | Runtime | Follower combat owner |
 |---|---|

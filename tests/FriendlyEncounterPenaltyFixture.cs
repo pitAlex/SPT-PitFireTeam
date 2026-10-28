@@ -11,12 +11,15 @@ using pitTeam.Shared;
 using SPT.Common.Http;
 
 namespace EFT {
+    public enum WildSpawnType {assault,pmcBEAR,bossKnight,followerBigPipe,followerBirdEye}
+    public class Settings {public WildSpawnType Role=WildSpawnType.pmcBEAR;}
     public enum EPlayerSide {Usec,Bear,Savage}
     public interface IPlayer {bool IsYourPlayer{get;} string ProfileId{get;} EPlayerSide Side{get;}}
-    public class Info {public string Nickname="recruit";}
+    public class Info {public string Nickname="recruit";public Settings Settings=new Settings();}
     public class Profile {public Info Info=new Info();}
     public class Player : IPlayer {public bool IsYourPlayer{get;set;} public bool IsAI=true;public string ProfileId{get;set;} public string AccountId="123";public EPlayerSide Side{get;set;} public Profile Profile=new Profile();}
 }
+namespace pitTeam.Utils {public static class Props {public static readonly List<WildSpawnType> BossFollowersType=new List<WildSpawnType>{WildSpawnType.bossKnight,WildSpawnType.followerBigPipe,WildSpawnType.followerBirdEye};}}
 namespace UnityEngine {public static class Random {public static int Range(int min,int max)=>min;}}
 namespace pitTeam.Components {
     public class Boss {public Player realPlayer;}
@@ -90,6 +93,12 @@ public static class PenaltyChecks {
         FriendlyEncounterPenaltyRuntime.ReloadAsync().GetAwaiter().GetResult();
     }
     public static void Main() {
+        foreach(var role in new[]{WildSpawnType.bossKnight,WildSpawnType.followerBigPipe,WildSpawnType.followerBirdEye}) {
+            Reset();var ally=Recruit("goon-"+role);ally.Profile.Info.Settings.Role=role;
+            pitTeam.Patches.KillBoundary.Record(ally,Human);GameplayModeRuntime.WaitReports();
+            Check(RequestHandler.Posts.Count==0 && FriendlyEncounterPenaltyRuntime.GetReductionPercent()==0,
+                "recruited boss ally kill has no traitor report or encounter penalty: "+role);
+        }
         Reset();var victim=Recruit("recruit");pitTeam.Patches.KillBoundary.Record(victim,Human);GameplayModeRuntime.WaitReports();
         Check(RequestHandler.Posts.Count==1 && (string)RequestHandler.Posts[0]["messageKind"]=="traitor","Allegiance opposite-faction recruit uses existing traitor report despite disabled Friendly PMC Side context");
         Check(FriendlyEncounterPenaltyRuntime.GetReductionPercent()==15,"traitor kill immediately reduces friendly chances");

@@ -8,6 +8,7 @@ This document records compile-time boundaries, not a promise that every SPT/SAIN
 - [Client](../client/pitFireTeam.csproj) targets .NET Framework 4.7.2. Direct SPT common/reflection references live in `client/libs4.1/spt4.1.0` and must have assembly version `4.1.0.0`.
 - Changed game assemblies use `client/libs4.1`; byte-identical older references may remain in `client/libs`. This is separate from the minimum SPT API baseline.
 - [Server](../server/pitFireTeam.Server.csproj) targets .NET 10 and validates private references under `server/refs/4.1.0` (or `SptReferenceRoot`) at `4.1.0.0`.
+- The teammate web editor also compiles against `SPTarkov.Server.Web` 4.1.0.0 and MudBlazor 9.7.0, matching the inspected 4.1.0 baseline and installed 4.1.6 assemblies. The Web reference was provisioned from the existing private 4.1.0 compatibility-audit bundle. ASP.NET Core and MudBlazor are supplied by SPT; do not deploy private SPT references or replace its MudBlazor DLL. PowerShell loader checks discover the installed ASP.NET Core 10 shared runtime to reproduce the web host's assembly resolution.
 - Installed runtime versions and source snapshots do not replace minimum compile references. Verify actual references and supported runtime behavior before declaring another version supported.
 
 ## Optional dependencies

@@ -110,6 +110,16 @@ public sealed class TeammateDatabase
         }
     }
 
+    /// <summary>Authenticated snapshot for offline support tools; includes internal records.</summary>
+    public Dictionary<string, string> ReadDocuments()
+    {
+        lock (sync)
+        {
+            using var database = Open();
+            return ReadAll(database.GetCollection("documents"));
+        }
+    }
+
     public void WriteBatch(IReadOnlyDictionary<string, string> documents, bool backupPrevious = false)
     {
         lock (sync)

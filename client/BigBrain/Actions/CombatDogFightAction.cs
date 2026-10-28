@@ -62,6 +62,7 @@ namespace pitTeam.BigBrain.Actions
         public override void Stop()
         {
             StopCombatShooting();
+            BotOwner?.Mover?.Stop();
             moveStatus = DogFightMoveStatus.None;
             nextMoveUpdateTime = 0f;
             ResetImmediateFireReactionGate();
@@ -91,7 +92,6 @@ namespace pitTeam.BigBrain.Actions
             // Dogfight is about weapon control, not travel speed. Keep movement slow and update a
             // short SAIN-like dodge destination without giving up a settled firing pose first.
             BotOwner.Mover.SetTargetMoveSpeed(1f);
-            bool unsafeCloseFacing = IsUnsafeCloseThreatFacing(goalEnemy);
             bool hasConfirmedShot = goalEnemy != null && goalEnemy.CanShoot && goalEnemy.IsVisible;
             bool hasPointBlankContactShot = false;
             Vector3 pointBlankContactTarget = Vector3.zero;
@@ -111,9 +111,10 @@ namespace pitTeam.BigBrain.Actions
                         out recentContactTarget);
                 }
             }
+            bool hasThreatFacing = false;
             if (ShouldLockDogFightLook(goalEnemy))
             {
-                MaintainThreatFacing(goalEnemy!);
+                hasThreatFacing = MaintainThreatFacing(goalEnemy!);
             }
 
             bool reloadNoCoverEvasion =
@@ -122,17 +123,17 @@ namespace pitTeam.BigBrain.Actions
                     reason,
                     FollowerCombatCommon.ReloadNoCoverCloseVisibleEvasionReason,
                     System.StringComparison.Ordinal);
-            bool hasAcceptedMovement = UpdateSainLikeMovement(
-                goalEnemy,
-                allowAdvance: !reloadNoCoverEvasion);
             bool hasFireContact = hasConfirmedShot || hasPointBlankContactShot || hasRecentContactShot;
+            bool hasAcceptedMovement = UpdateContactMovement(
+                goalEnemy,
+                allowAdvance: !reloadNoCoverEvasion, hasThreatFacing, hasFireContact);
             bool immediateFireReactionReady = UpdateImmediateFireReactionGate(goalEnemy, hasFireContact);
 
             // Close retreat movement is dangerous if it turns the bot away from the attacker.
             // A nearby door can also make EFT immediately cancel an otherwise accepted dodge.
             // In either case, revoke the mobile posture and retry from the existing firing pose.
             if (hasAcceptedMovement &&
-                ((hasFireContact && unsafeCloseFacing && IsUnsafeCloseThreatFacing(goalEnemy)) ||
+                (((hasThreatFacing || hasFireContact) && IsUnsafeCloseThreatFacing(goalEnemy)) ||
                  BotOwner.DoorOpener.DogFightHaveNearestDoor()))
             {
                 BotOwner.Mover.Stop();
@@ -277,6 +278,18 @@ namespace pitTeam.BigBrain.Actions
             immediateFireContactActive = false;
             immediateFireEnemyProfileId = string.Empty;
             immediateFireReadyTime = 0f;
+        }
+
+        private bool UpdateContactMovement(EnemyInfo? goalEnemy, bool allowAdvance, bool hasThreatFacing, bool hasFireContact)
+        {
+            if (!hasThreatFacing && !hasFireContact)
+            {
+                BotOwner.Mover.Stop();
+                moveStatus = DogFightMoveStatus.None;
+                nextMoveUpdateTime = Time.time + MoveUpdateFallbackDelay;
+                return false;
+            }
+            return UpdateSainLikeMovement(goalEnemy, allowAdvance);
         }
 
         private bool UpdateSainLikeMovement(EnemyInfo? goalEnemy, bool allowAdvance)
@@ -490,7 +503,7 @@ namespace pitTeam.BigBrain.Actions
         private bool IsUnsafeCloseThreatFacing(EnemyInfo? goalEnemy)
         {
             return goalEnemy != null &&
-                   pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= UnsafeCloseThreatDistance &&
+                   pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= CloseContactFireDistance &&
                    CombatAttackMoveLook.GetThreatLookAngle(BotOwner, goalEnemy) > UnsafeCloseThreatLookAngle;
         }
 
@@ -499,12 +512,11 @@ namespace pitTeam.BigBrain.Actions
             return goalEnemy?.Person?.HealthController?.IsAlive == true;
         }
 
-        private void MaintainThreatFacing(EnemyInfo goalEnemy)
+        private bool MaintainThreatFacing(EnemyInfo goalEnemy)
         {
-            if (!CombatAttackMoveLook.TryLookThreatFacing(BotOwner, goalEnemy, allowHardTurn: true))
-            {
-                CombatAttackMoveLook.LookAlongMovementOrLevel(BotOwner);
-            }
+            if (CombatAttackMoveLook.TryLookThreatFacing(BotOwner, goalEnemy, allowHardTurn: true)) return true;
+            CombatAttackMoveLook.LookAlongMovementOrLevel(BotOwner);
+            return false;
         }
 
         private float GetLookAngleToPoint(Vector3 point)

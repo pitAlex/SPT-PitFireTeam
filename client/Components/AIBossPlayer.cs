@@ -85,6 +85,7 @@ namespace pitTeam.Components
         private const float ContactHelpCancelMaxDistance = 50f;
         private float _ignoreNextThereGestureUntil;
         private float _nextThereGestureAt;
+        private int _advanceOrderSequence;
         private float _lastTeamStatusCommandAt = -999f;
         private float _lastAttentionCommandAt = -999f;
         private float _lastContactPhraseAt = -999f;
@@ -2303,6 +2304,7 @@ namespace pitTeam.Components
 
         internal void ApplyTakeBodyGearCommand(IPlayer requester, Corpse target = null, FollowerLootMode mode = FollowerLootMode.Normal)
         {
+            if (FollowerLootCommandPolicy.TryRefuseBodyContainer(requester, realPlayer, Followers)) return;
             if (requester == null)
             {
                 LogLootAssignment("body", null, 0f, "requesterMissing");
@@ -2383,6 +2385,7 @@ namespace pitTeam.Components
 
         internal void ApplyTakeContainerLootCommand(IPlayer requester, LootableContainer target = null, FollowerLootMode mode = FollowerLootMode.Normal)
         {
+            if (FollowerLootCommandPolicy.TryRefuseBodyContainer(requester, realPlayer, Followers)) return;
             if (requester == null)
             {
                 return;
@@ -2501,7 +2504,7 @@ namespace pitTeam.Components
 
                 if (requireSquadMate && !followerData.CanHandleBodyContainerLootCommands)
                 {
-                    LogLootCandidate(command, follower, "rejected", "spawnedTeammateAlive");
+                    LogLootCandidate(command, follower, "rejected", followerData.AllowsBodyContainerLootCommands ? "spawnedTeammateAlive" : "companionPolicy");
                     continue;
                 }
 
@@ -2589,7 +2592,7 @@ namespace pitTeam.Components
 
                 if (requireSquadMate && !followerData.CanHandleBodyContainerLootCommands)
                 {
-                    LogLootCandidate(command, follower, "rejected", "spawnedTeammateAlive");
+                    LogLootCandidate(command, follower, "rejected", followerData.AllowsBodyContainerLootCommands ? "spawnedTeammateAlive" : "companionPolicy");
                     continue;
                 }
 
@@ -3272,12 +3275,6 @@ namespace pitTeam.Components
             }
 
             bool combatCommand = HasActiveCombatEnemy(closestFollower);
-            if (combatCommand && IsPickedUpFollower(followerData))
-            {
-                closestFollower.BotTalk.TrySay(EPhraseTrigger.Negative, false);
-                closestFollower.Gesture.TryGestus(EInteraction.NoGesture, false);
-                return;
-            }
 
             Vector3 commandTarget;
             bool hasTarget = combatCommand
@@ -3307,6 +3304,16 @@ namespace pitTeam.Components
                     requester,
                     commandTarget,
                     true);
+                closestFollower.BotTalk.TrySay(EPhraseTrigger.Negative, false);
+                closestFollower.Gesture.TryGestus(EInteraction.NoGesture, false);
+                return;
+            }
+
+            if (combatCommand && !TryAcceptCombatAdvanceOrder(closestFollower, followerData, requester,
+                    closestFollower.Memory?.GoalEnemy, pointedMove: true))
+            {
+                RecordCommandSourceDiagnostic(closestFollower, FollowerCommandType.CombatMoveToPointTactical,
+                    "ThereGesture", "refusedCombatPoint", requester, commandTarget, true);
                 closestFollower.BotTalk.TrySay(EPhraseTrigger.Negative, false);
                 closestFollower.Gesture.TryGestus(EInteraction.NoGesture, false);
                 return;
@@ -3670,6 +3677,7 @@ namespace pitTeam.Components
             if (requester == null) return;
             if (Time.time < _nextThereGestureAt) return;
             _nextThereGestureAt = Time.time + 0.6f;
+            int orderSequence = unchecked(++_advanceOrderSequence);
 
             BotOwner focusedFollower = null;
             if (requester is Player requesterPlayer)
@@ -3704,26 +3712,11 @@ namespace pitTeam.Components
 
                 if (hasCombatEnemy || directedGrunt)
                 {
-                    if (IsPickedUpFollower(followerData))
+                    if (!TryAcceptCombatAdvanceOrder(follower, followerData, requester,
+                            directedInfo ?? goalEnemy, pointedMove: false, orderSequence: orderSequence))
                     {
-                        if (RollPickupFollowerPushAcceptance(follower, followerData, requester, directedInfo ?? goalEnemy))
-                        {
-                            bool issued = directedGrunt
-                                ? directedInfo != null && followerData.TrySetSainPushEnemy(
-                                    new SainPushOrder(squadTarget!.Enemy.ProfileId, squadTarget.LastKnownPosition),
-                                    directedInfo)
-                                : hasCombatEnemy;
-                            if (!directedGrunt && issued) followerData.SetPushEnemy(12f);
-                            if (issued) followerData.SetTemporaryCombatAggressionOverride(100f, "GoForward");
-                            follower.BotTalk.TrySay(issued ? EPhraseTrigger.Going : EPhraseTrigger.Negative, false);
-                            follower.Gesture.TryGestus(issued ? EInteraction.OkGesture : EInteraction.NoGesture, false);
-                        }
-                        else
-                        {
-                            follower.BotTalk.TrySay(EPhraseTrigger.Negative, false);
-                            follower.Gesture.TryGestus(EInteraction.NoGesture, false);
-                        }
-
+                        follower.BotTalk.TrySay(EPhraseTrigger.Negative, false);
+                        follower.Gesture.TryGestus(EInteraction.NoGesture, false);
                         continue;
                     }
 
@@ -3786,7 +3779,22 @@ namespace pitTeam.Components
         private void ApplySuppressPhrase(IPlayer requester)
         {
             if (requester == null) return;
-            if (Time.time < _nextThereGestureAt) return;
+            foreach (BotOwner follower in Followers)
+            {
+                if (follower == null || follower.IsDead || follower.BotState != EBotState.Active) continue;
+                RecordCommandSourceDiagnostic(follower, FollowerCommandType.SuppressEnemy,
+                    "SuppressPhrase", "received", requester, null, combatCommand: true);
+            }
+            if (Time.time < _nextThereGestureAt)
+            {
+                foreach (BotOwner follower in Followers)
+                {
+                    if (follower == null || follower.IsDead || follower.BotState != EBotState.Active) continue;
+                    RecordCommandSourceDiagnostic(follower, FollowerCommandType.SuppressEnemy,
+                        "SuppressPhrase", "debounced", requester, null, combatCommand: true);
+                }
+                return;
+            }
             _nextThereGestureAt = Time.time + 0.6f;
 
             List<Player> bossVisibleEnemies = GetSuppressionVisibleEnemies(requester);
@@ -3798,13 +3806,19 @@ namespace pitTeam.Components
             foreach (BotOwner follower in Followers)
             {
                 if (follower == null || follower.IsDead || follower.BotState != EBotState.Active) continue;
-                if (IsFollowerLockedByLootCommand(follower)) continue;
 
                 float bossDistanceSqr = (follower.Position - requester.Position).sqrMagnitude;
                 if (bossDistanceSqr < closestResponseDistanceSqr)
                 {
                     closestResponseFollower = follower;
                     closestResponseDistanceSqr = bossDistanceSqr;
+                }
+
+                if (IsFollowerLockedByLootCommand(follower))
+                {
+                    RecordCommandSourceDiagnostic(follower, FollowerCommandType.SuppressEnemy,
+                        "SuppressPhrase", "busy.lootCommand", requester, null, combatCommand: true);
+                    continue;
                 }
 
                 BotFollowerPlayer followerData = BossPlayers.Instance?.GetFollower(follower);
@@ -3816,6 +3830,8 @@ namespace pitTeam.Components
                                              FollowerCombatCommon.HasLoadedAutomaticMarksmanSupportWeapon(follower);
                 if (isMarksman && !useAutomaticSecondary)
                 {
+                    RecordCommandSourceDiagnostic(follower, FollowerCommandType.SuppressEnemy,
+                        "SuppressPhrase", "unsupportedMarksmanWeapon", requester, null, combatCommand: true);
                     continue;
                 }
 
@@ -3823,6 +3839,8 @@ namespace pitTeam.Components
                 bool hasLauncher = !isMarksman && FollowerCombatCommon.HasUsableEquippedGrenadeLauncher(follower);
                 if (!hasSuppressWeapon && !hasLauncher && !useAutomaticSecondary)
                 {
+                    RecordCommandSourceDiagnostic(follower, FollowerCommandType.SuppressEnemy,
+                        "SuppressPhrase", "weaponUnavailable", requester, null, combatCommand: true);
                     continue;
                 }
 
@@ -3907,6 +3925,8 @@ namespace pitTeam.Components
                     SuppressCommandCandidate candidate = suppressCandidates[i];
                     if (IsUnavailableForHarmonizedSuppression(candidate.Follower))
                     {
+                        RecordCommandSourceDiagnostic(candidate.Follower, FollowerCommandType.SuppressEnemy,
+                            "SuppressPhrase", "busy.followerLocal", requester, null, combatCommand: true);
                         continue;
                     }
 
@@ -3944,8 +3964,20 @@ namespace pitTeam.Components
 
             if (!willSupress && closestResponseFollower != null)
             {
-                closestResponseFollower.BotTalk.TrySay(EPhraseTrigger.Negative, true);
+                ReplyToSuppressionCommand(closestResponseFollower, accepted: false, "noViableSuppressor");
             }
+        }
+
+        private static void ReplyToSuppressionCommand(BotOwner follower, bool accepted, string reason)
+        {
+            if (follower == null || follower.IsDead || follower.BotState != EBotState.Active) return;
+            EPhraseTrigger phrase = accepted ? EPhraseTrigger.Covering : EPhraseTrigger.Negative;
+            // A command reply should not be discarded by the group's ambient chatter cooldown.
+            // Native actor speech/silence scheduling remains authoritative; the gesture is independent.
+            follower.BotTalk?.TrySay(phrase, false);
+            follower.Gesture?.TryGestus(accepted ? EInteraction.OkGesture : EInteraction.NoGesture, false);
+            BattleRecorder.RecordCommandDiagnostic(follower, FollowerCommandType.SuppressEnemy,
+                "responseRequested", reason, () => new { accepted, phrase = phrase.ToString(), withGroupDelay = false });
         }
 
         private List<Player> GetSuppressionVisibleEnemies(IPlayer requester)
@@ -4370,7 +4402,7 @@ namespace pitTeam.Components
                 forceWeapon,
                 useAutomaticSecondary,
                 requestedEnemy?.ProfileId);
-            follower.BotTalk.TrySay(EPhraseTrigger.Covering, true);
+            ReplyToSuppressionCommand(follower, accepted: true, "orderAccepted");
             return true;
         }
 
@@ -4832,7 +4864,8 @@ namespace pitTeam.Components
             BotOwner follower,
             BotFollowerPlayer followerData,
             IPlayer requester,
-            EnemyInfo? goalEnemy)
+            EnemyInfo? goalEnemy,
+            string source = "GoForward")
         {
             int followerLevel = GetFollowerLevel(follower);
             int playerLevel = GetPlayerLevel(requester ?? followerData?.GetBoss()?.realPlayer);
@@ -4847,7 +4880,80 @@ namespace pitTeam.Components
                 followerPower,
                 enemyPower);
 
-            return RollPickupFollowerOrder(follower, "Push", chance, "GoForward", levelDelta, independence, followerPower, enemyPower);
+            return RollPickupFollowerOrder(follower, "Push", chance, source, levelDelta, independence, followerPower, enemyPower);
+        }
+
+        private static bool TryAcceptCombatAdvanceOrder(
+            BotOwner follower, BotFollowerPlayer followerData, IPlayer requester, EnemyInfo? enemy, bool pointedMove,
+            int orderSequence = 0, bool consultLeadership = true)
+        {
+            if (follower == null || followerData == null) return false;
+            CompanionCommandPolicy policy = GameplayModeAddons.GetCompanionCommandPolicy(
+                follower.Profile?.Info?.Settings?.Role.ToString() ?? string.Empty);
+            if (pointedMove && policy?.AlwaysAcceptCombatPoint == true) return true;
+
+            // A directed position is not an enemy assault: snipers may accept a point move,
+            // while Go Forward must never create an unconsumable sniper PushEnemy order.
+            if (!pointedMove && (policy != null ? !policy.AllowsPush :
+                FollowerCombatTactics.IsMarksman(followerData.CombatTactic))) return false;
+
+            if (!pointedMove && policy?.AllowsPush == true)
+            {
+                if (enemy?.Person?.HealthController?.IsAlive != true || !FollowerEnemyTracking.IsEligible(enemy))
+                    return false;
+                if (consultLeadership)
+                {
+                    bool? verdict = GameplayModeAddons.EvaluateAdvanceOrder(new CompanionAdvanceOrderContext(
+                        follower, requester, enemy, orderSequence, (actor, target) => TryAcceptCombatAdvanceOrder(
+                            actor, BossPlayers.Instance?.GetFollower(actor), requester, target, false, orderSequence, false)));
+                    if (verdict.HasValue)
+                    {
+                        BattleRecorder.RecordCommandDiagnostic(follower, FollowerCommandType.PushEnemy, "acceptance",
+                            verdict.Value ? "companionLeadership.accept" : "companionLeadership.refuse",
+                            () => new { orderSequence, enemy = enemy.ProfileId });
+                        return verdict.Value;
+                    }
+                }
+                float ownPower = GetEquipmentPower(follower);
+                float enemyPower = GetEnemyEquipmentPower(enemy);
+                WildSpawnType enemyRole = enemy.Person.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
+                string enemyRoleName = enemy.Person.Profile?.Info?.Settings?.Role.ToString() ?? string.Empty;
+                float roleConfidence = policy.RelativeCombatPower(enemyRoleName);
+                float effectiveOwnPower = ownPower * roleConfidence;
+                float roleThreat = FollowerCombatRiflemanEngagement.GetCombatRoleThreatMultiplier(
+                    enemyRole);
+                int knownEnemies = CountKnownAdvanceEnemies(follower, enemy);
+                float threat = FollowerPushRiskPolicy.Threat(
+                    FollowerPushRiskPolicy.EquipmentRatio(effectiveOwnPower, enemyPower), roleThreat, knownEnemies, 0);
+                float chance = policy.PushAcceptanceChance(effectiveOwnPower, enemyPower, threat);
+                float roll = UnityEngine.Random.value;
+                bool accepted = chance >= 1f || roll < chance;
+                BattleRecorder.RecordCommandDiagnostic(follower, FollowerCommandType.PushEnemy,
+                    "acceptance", accepted ? "companionConfidence.accept" : "companionConfidence.refuse",
+                    () => new { ownPower, enemyPower, enemyRole = enemyRoleName, roleConfidence, effectiveOwnPower,
+                        roleThreat, knownEnemies, threat, chance, roll });
+                return accepted;
+            }
+
+            return !IsPickedUpFollower(followerData) || RollPickupFollowerPushAcceptance(
+                follower, followerData, requester, enemy, pointedMove ? "ThereGesture" : "GoForward");
+        }
+
+        internal static int CountKnownAdvanceEnemies(BotOwner follower, EnemyInfo target)
+        {
+            if (follower.EnemiesController?.EnemyInfos == null ||
+                !FollowerEnemyTracking.TryGetKnownPosition(target, out Vector3 anchor, out _)) return 1;
+            HashSet<string> profiles = new HashSet<string>(StringComparer.Ordinal);
+            profiles.Add(target.ProfileId);
+            foreach (EnemyInfo known in follower.EnemiesController.EnemyInfos.Values)
+            {
+                if (known?.Person?.HealthController?.IsAlive != true || !FollowerEnemyTracking.IsEligible(known) ||
+                    !FollowerEnemyTracking.TryGetKnownPosition(known, out Vector3 position, out _) ||
+                    (position - anchor).sqrMagnitude > FollowerPushRiskPolicy.ClusterRadius * FollowerPushRiskPolicy.ClusterRadius)
+                    continue;
+                profiles.Add(known.ProfileId);
+            }
+            return Math.Max(1, profiles.Count);
         }
 
         private static bool RollPickupFollowerOrder(
@@ -5348,6 +5454,13 @@ namespace pitTeam.Components
             bot.PatrollingData.Disable();
         }
 
+        internal void ReleaseFailedFollower(BotOwner bot)
+        {
+            UnhookFollowerDeath(bot);
+            Followers.Remove(bot);
+            NotifyFollowerCombatLayerReleased(bot, "spawnAborted");
+        }
+
         private sealed class FallenFollowerInfo
         {
             public string DeadFollowerProfileId;
@@ -5437,7 +5550,7 @@ namespace pitTeam.Components
             {
                 foreach (var item in _aiplayer.Followers)
                 {
-                    if (item.IsRole(WildSpawnType.bossKnight))
+                    if (item.IsRole(WildSpawnType.bossKnight) && item.Boss?.BossLogic != null && !item.Boss.IamBoss)
                     {
                         item.Boss.BossLogic.Activate();
                         break;
@@ -5452,7 +5565,7 @@ namespace pitTeam.Components
             {
                 foreach (var item in _aiplayer.Followers)
                 {
-                    if (item.IsRole(WildSpawnType.bossKnight))
+                    if (item.IsRole(WildSpawnType.bossKnight) && item.Boss?.BossLogic != null && !item.Boss.IamBoss)
                     {
                         item.Boss.BossLogic.BossLogicUpdate();
                         break;
