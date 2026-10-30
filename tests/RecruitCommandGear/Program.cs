@@ -34,6 +34,24 @@ namespace pitTeam.BigBrain.Actions
         {
             int checks = 0;
             void Check(bool value, string label) { if (!value) throw new Exception(label); checks++; }
+            foreach (string role in new[] { "bossKnight", "followerBigPipe", "followerBirdEye" })
+            foreach (bool accepted in new[] { true, false })
+            {
+                var action = new GestureCommandAction { ActiveLootRequest = new(FollowerLootMode.Normal) };
+                action.BotOwner.Profile.Info.Settings.Role = role;
+                var medical = new Meds("loose-adrenaline"); TeammateGearSwap.Reset();
+                Check(action.TryStartRecruitLooseEquipment(medical) && TeammateGearSwap.Calls == 1 &&
+                    TeammateGearSwap.Offered.Single() == medical, "Each Goon's loose medicine uses the shared restricted transaction");
+                if (accepted) action.BotOwner.GetPlayer.Items.Add(medical);
+                TeammateGearSwap.Complete(accepted);
+                Check(accepted ? action.taken && action.ended == "TakeLoot:done" : action.ended == "TakeLoot:recruitUpgradeRejected",
+                    "Medical completion confirms ownership or rejects without a cargo fallback");
+            }
+            {
+                var ordinary = new GestureCommandAction(); TeammateGearSwap.Reset();
+                Check(!ordinary.TryStartRecruitLooseEquipment(new Meds("ordinary-medicine")) && TeammateGearSwap.Calls == 0,
+                    "Ordinary recruit medical pickup retains its existing path");
+            }
             foreach (bool accepted in new[] { true, false })
             {
                 var action = new GestureCommandAction { ActiveLootRequest = new(FollowerLootMode.Normal) };
@@ -243,6 +261,7 @@ namespace EFT.InventoryLogic
     public class Ammo(string id) : Item(id) { public string Family = "default"; }
     public class ArmorPlate(string id) : Item(id) { }
     public class ThrowWeap(string id) : Item(id) { }
+    public class Meds(string id) : Item(id) { }
     public class Grid { public List<Item> Items = new(); }
     public class SearchableItem(string id) : Item(id) { public Grid[] Grids = { new() }; }
     public class Slot { public Item ContainedItem; }
@@ -264,7 +283,8 @@ namespace pitTeam.Modules
     internal static class GameplayModeAddons
     {
         private static readonly CompanionGearPolicy Fixed = new(true, true, 0.10f);
-        internal static CompanionGearPolicy GetCompanionGearPolicy(string role) => role == "bossKnight" ? Fixed : null;
+        internal static CompanionGearPolicy GetCompanionGearPolicy(string role) =>
+            role is "bossKnight" or "followerBigPipe" or "followerBirdEye" ? Fixed : null;
     }
     internal static class InteractableObjects { internal static bool IsProtectedFollowerEquipment(Item item) => item.Protected; }
     internal static class GiveGearPlanner { public static readonly EquipmentSlot[] EquipmentSlots = Enum.GetValues<EquipmentSlot>()

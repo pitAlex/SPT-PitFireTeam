@@ -20,6 +20,11 @@ namespace pitTeam.Utils
             if (!Finite(origin) || !Finite(direction) || direction.sqrMagnitude <= 0.0001f)
                 return true;
 
+            var action = owner.Brain?.Agent?.LastResult().Action;
+            suppression |= action == BotLogicDecision.attackMovingWithSuppress || action == BotLogicDecision.suppressFire;
+            if (suppression && FollowerShotSafety.IsFriendlyInSuppressionLane(owner, origin, origin + direction * 1000f))
+                return true;
+
             // A projectile can continue past its aim point. Only squad members are
             // examined, so checking the entire forward lane adds no world query.
             if (FollowerShotSafety.IsFriendlyInAimLane(owner, origin, direction, float.MaxValue))

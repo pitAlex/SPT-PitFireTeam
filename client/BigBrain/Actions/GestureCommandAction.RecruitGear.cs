@@ -21,7 +21,7 @@ namespace pitTeam.BigBrain.Actions
             // Loose supplies use the same explicit reevaluation as Give Items. A previously
             // carried secondary can become usable without a separate inventory scanner.
             if (followerData?.IsSquadMate != false || (!firearm && !(item is Magazine) && !(item is Ammo) &&
-                !(UsesFixedCompanionGear && (item is ArmorPlate || item is ThrowWeap)))) return false;
+                !(UsesFixedCompanionGear && (item is ArmorPlate || item is ThrowWeap || item is Meds)))) return false;
             if (TeammateGearSwap.Current != null) return true;
             var target = activeLootItem;
             var request = ActiveLootRequest;

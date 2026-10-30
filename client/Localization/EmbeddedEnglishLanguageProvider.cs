@@ -74,7 +74,7 @@ namespace pitTeam.Localization
                     "Switch between Simple and Realistic enemy tracking. Simple tracks the enemy’s current position regardless of when they were last seen or reported. Realistic uses positions reported through sight or sound, or the enemy’s last known position."),
                 friendlyEncounterChance = Entry(
                     "Friendly Encounter Chance",
-                    "Sets the base friendship chance and the maximum percentage of living bots that may become friendly. Scavs and solo PMCs use separate limits; PMCs have at least two available slots. Existing friendships stay when population falls, but new ones need room.\nGuns for Hire: same-side PMC encounters only, when Friendly PMC Side and Bad Guy are off.\nAllegiance: opposite-side PMCs use a reduced chance. Fence reputation modifies Scav chance, up to 2x, without increasing the population limit."),
+                    "Sets the base friendship chance and the maximum share of living bots selected as ordinary friendly encounters. Scavs and solo PMCs use separate limits; PMCs have at least two available slots. Existing friendships stay when population falls, but new ones need room. Scav-companion neutrality uses its separate trust rule.\nGuns for Hire: same-side PMC encounters only, when Friendly PMC Side and Bad Guy are off.\nAllegiance: opposite-side PMCs use a reduced chance. Fence reputation modifies Scav chance, up to 2x, without increasing the population limit."),
                 friendlyScavEncounters = Entry(
                     "Friendly Scav encounters",
                     "In Allegiance mode only, allow friendly Scav encounters that follow the same rules as opposite-faction encounters."),
@@ -149,7 +149,7 @@ namespace pitTeam.Localization
                     "Gear comes from your stash and cannot be extracted with. Gear is kept if a teammate dies."),
                 loadoutManagementRestrictedGearMaintenance = Entry(
                     "Field Upkeep",
-                    "Track raid wear and spent supplies for teammates while their gear remains protected from death loss and extraction."),
+                    "Track raid wear, spent supplies and follower injuries while gear remains protected from death loss and extraction. Wounded followers must be healed or recover before joining another raid. Turning this off stops retaining new raid injuries; existing wounds still need healing or recovery."),
                 loadoutManagementImmersive = Entry(
                     "Immersive",
                     "Same as Restricted, but teammate gear behaves like real raid equipment. Equipment can become damaged, dead teammates lose their gear, and you can extract with their items."),
@@ -475,6 +475,10 @@ namespace pitTeam.Localization
                     ["SquadControlModeGunsForHireDescription"] = "Hire and equip your squad before deploying. Make Tarkov yours, and play by your own rules.",
                     ["SquadControlModeAllegiance"] = "Allegiance",
                     ["SquadControlModeGoingRogue"] = "Going Rogue",
+                    ["GoingRogueKnightTraderName"] = "Knight",
+                    ["GoingRogueKnightTraderLocation"] = "Unknown",
+                    ["GoingRogueKnightTraderDescription"] = "Commander of the Goons squad. Available in Going Rogue from level 20.",
+                    ["GoingRogueKnightTraderLocked"] = "Knight is only available in Going Rogue from level 20.",
                     ["SettingsUnavailableInGoingRogue"] = "this option is not available in Going Rogue Mode",
                     ["CompanionCustomizationLocked"] = "Only Proficiency can be changed for this companion.",
                     ["CompanionCombatUnavailable"] = "This companion is available for profile testing. Raid support is not ready yet.",

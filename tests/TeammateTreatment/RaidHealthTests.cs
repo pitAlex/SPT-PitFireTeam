@@ -3,6 +3,7 @@ using pitTeam.Server.Services;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Common;
 using SPTarkov.Server.Core.Models.Eft.Common.Tables;
+using SPTarkov.Server.Core.Models.Enums;
 using SPTarkov.Server.Core.Models.Spt.Config;
 using SPTarkov.Server.Core.Utils;
 
@@ -64,9 +65,9 @@ internal static partial class Program
         var resolved = service.ResolveRaidOutcomes([new() { Aid = "991", RaidHealth = Snapshot(), RollEscape = false }]);
         Check(resolved.Entries[0].RaidHealth!.BodyParts!["Head"].SpawnMaximum == 120, "Team Escape resolution preserves the per-part HP snapshot");
 
-        // Real encrypted-profile commit/receipt path, independent of gear-maintenance mode.
+        // Real encrypted-profile commit/receipt path with upkeep enabled.
         var previous = settings.LoadSettings();
-        settings.SaveAndApply(new() { GameplayMode = "GunsForHire", LoadoutManagementMode = "Restricted", RestrictedGearMaintenance = false });
+        settings.SaveAndApply(new() { GameplayMode = "GunsForHire", LoadoutManagementMode = "Restricted", RestrictedGearMaintenance = true });
         var profile = new BotBase
         {
             Aid = 991, Id = new MongoId(), Info = new() { Side = "Usec", Nickname = "HP retention test", Settings = new() },
@@ -77,7 +78,7 @@ internal static partial class Program
         service.PersistDeathEscapeOutcomes(session, [entry], "raid-hp-test");
         var persisted = storage.Read<BotBase>(session, "991.json")!;
         Check(persisted.Health!.BodyParts!["Head"].Health!.Current == 30 && persisted.Health.BodyParts.Values.All(p => p.Effects == null),
-            "real outcome service saves HP and clears effects even with Restricted upkeep disabled");
+            "Restricted upkeep saves HP and clears effects when enabled");
         Check(storage.Read<HashSet<string>>(session, "health/raid-outcomes-v1")!.Contains("raid-hp-test/991"),
             "health result and deduplication receipt are saved together");
         persisted.Health.BodyParts["Head"].Health!.Current = 55;
@@ -89,6 +90,41 @@ internal static partial class Program
         service.PersistDeathEscapeOutcomes(session, [entry], "next-raid-hp-test");
         Check(storage.Read<BotBase>(session, "991.json")!.Health!.BodyParts!.Values.All(p => Math.Abs(p.Health!.Current!.Value - 60 * nativeConfig.HealthMultipliers.Death) < 1e-9),
             "a new lost raid applies the configured native death penalty");
+        foreach (bool? upkeep in new bool?[] { false, null })
+        {
+            string healthBefore = json.Serialize(storage.Read<BotBase>(session, "991.json")!.Health)!;
+            settings.SaveAndApply(new() { GameplayMode = "GunsForHire", LoadoutManagementMode = "Restricted", RestrictedGearMaintenance = upkeep });
+            Check(json.Serialize(storage.Read<BotBase>(session, "991.json")!.Health) == healthBefore,
+                "disabling upkeep does not heal existing wounds");
+            foreach (bool escaped in new[] { true, false })
+            {
+                string ignoredRaid = $"disabled-hp-{upkeep}-{escaped}";
+                entry.Escaped = escaped;
+                service.PersistDeathEscapeOutcomes(session, [entry], ignoredRaid);
+                Check(json.Serialize(storage.Read<BotBase>(session, "991.json")!.Health) == healthBefore,
+                    "disabled or unset Restricted upkeep leaves saved HP and recovery timestamp untouched after extraction or death");
+                Check(storage.Read<HashSet<string>>(session, "health/raid-outcomes-v1")!.Contains(ignoredRaid + "/991"),
+                    "discarded health outcome is receipted without changing existing wounds");
+                settings.SaveAndApply(new() { GameplayMode = "GunsForHire", LoadoutManagementMode = "Restricted", RestrictedGearMaintenance = true });
+                service.PersistDeathEscapeOutcomes(session, [entry], ignoredRaid);
+                Check(json.Serialize(storage.Read<BotBase>(session, "991.json")!.Health) == healthBefore,
+                    "re-enabling upkeep cannot apply a retry of a previously discarded raid injury");
+                settings.SaveAndApply(new() { GameplayMode = "GunsForHire", LoadoutManagementMode = "Restricted", RestrictedGearMaintenance = upkeep });
+            }
+        }
+        foreach (string mode in new[] { "Immersive", "Extreme" })
+        {
+            settings.SaveAndApply(new() { GameplayMode = "GunsForHire", LoadoutManagementMode = mode, RestrictedGearMaintenance = false });
+            foreach (bool escaped in new[] { true, false })
+            {
+                entry.Escaped = escaped;
+                service.PersistDeathEscapeOutcomes(session, [entry], $"automatic-hp-{mode}-{escaped}");
+                double expected = escaped ? 30 : 60 * nativeConfig.HealthMultipliers.Death;
+                Check(storage.Read<BotBase>(session, "991.json")!.Health!.BodyParts!.Values.All(p => Math.Abs(p.Health!.Current!.Value - expected) < 1e-9),
+                    "Immersive/Realistic automatically retain extraction and death injuries regardless of the Restricted checkbox");
+            }
+        }
+        settings.SaveAndApply(new() { GameplayMode = "GunsForHire", LoadoutManagementMode = "Restricted", RestrictedGearMaintenance = false });
         persisted = storage.Read<BotBase>(session, "991.json")!;
         foreach (var part in persisted.Health!.BodyParts!.Values) part.Health!.Current = 30;
         persisted.Health.UpdateTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -102,6 +138,18 @@ internal static partial class Program
         Check(storage.Read<BotBase>(session, "991.json")!.Health!.BodyParts!["Head"].Health!.Maximum == 60,
             "spawn multiplier never inflates the saved teammate maximum");
         TestWoundedAdmission(service, storage, json, session, persisted);
+        var stillInjured = storage.Read<BotBase>(session, "991.json")!;
+        foreach (var part in stillInjured.Health!.BodyParts!.Values) part.Health!.Current = 30;
+        stillInjured.Health.UpdateTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        storage.Write(session, "991.json", stillInjured);
+        int fundsBefore = (int)player.Inventory!.Items!.Single(i => i.Template == Money.ROUBLES).Upd!.StackObjectsCount!;
+        var quote = service.GetTeammateHealth(session, new() { Aid = "991" }, true);
+        service.HealTeammate(session, new() { Aid = "991", QuoteToken = quote.QuoteToken });
+        var treatment = storage.Read<FriendlyTeammateTreatmentJournal>(session, "pending-treatment.json")!;
+        Check(FriendlyTeammateTreatmentPricing.MissingHealth(storage.Read<BotBase>(session, "991.json")!.Health) == 0
+            && treatment.Price > 0 && treatment.Price <= quote.Price
+            && player.Inventory.Items!.Single(i => i.Template == Money.ROUBLES).Upd!.StackObjectsCount == fundsBefore - treatment.Price,
+            "existing wounds can still be healed by Therapist for money with upkeep disabled");
         storage.DeleteTeammate(session, 991);
         settings.SaveAndApply(previous);
     }

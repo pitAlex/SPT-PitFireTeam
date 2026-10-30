@@ -66,9 +66,9 @@ namespace pitTeam.Patches
 
                             EFT.PlayerVisualRepresentation playerVisualization = new EFT.PlayerVisualRepresentation(new JsonType.PlayerInfo
                             {
-                                Level = isBoss ? 60 : info.Level,
-                                MemberCategory = isBoss ? EMemberCategory.Sherpa : ((info.Side != EPlayerSide.Savage) ? info.SelectedMemberCategory : EMemberCategory.Default),
-                                SelectedMemberCategory = isBoss ? EMemberCategory.Sherpa : info.SelectedMemberCategory,
+                                Level = info.Level,
+                                MemberCategory = (info.Side != EPlayerSide.Savage) ? info.SelectedMemberCategory : EMemberCategory.Default,
+                                SelectedMemberCategory = info.SelectedMemberCategory,
                                 Nickname = info.Nickname,
                                 Side = info.Side,
                                 Health = transitProfile.Health
@@ -80,10 +80,10 @@ namespace pitTeam.Patches
                                 Id = transitProfile.Id,
                                 Info = new JsonType.PlayerInfo
                                 {
-                                    Level = isBoss ? 60 : info.Level,
+                                    Level = info.Level,
                                     PrestigeLevel = info.PrestigeLevel,
-                                    MemberCategory = isBoss ? EMemberCategory.Sherpa : info.MemberCategory,
-                                    SelectedMemberCategory = isBoss ? EMemberCategory.Sherpa : info.SelectedMemberCategory,
+                                    MemberCategory = info.MemberCategory,
+                                    SelectedMemberCategory = info.SelectedMemberCategory,
                                     Nickname = transitProfile.GetCorrectedNickname(),
                                     Side = info.Side,
                                     SavageLockTime = player.Profile.Info.SavageLockTime,

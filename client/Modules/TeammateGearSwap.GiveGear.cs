@@ -19,8 +19,8 @@ namespace pitTeam.Modules
         private Dictionary<string, int> _scavBeforeDonation;
         private HashSet<string> _offeredDonationIds;
         private HashSet<string> _borrowedDonationIds;
-#if DEBUG
         private string _donationDiagnosticId;
+#if DEBUG
         private int _donationDiagnosticLines;
 #endif
         private void InitializeDonation()
@@ -70,12 +70,13 @@ namespace pitTeam.Modules
             _donationPlan = new GiveGearPlanner(BotDraft, Donation, _donationOverflow, Bot,
                 edit => { _edits.Add(edit); edit.UpdateProvenance(_playerOwnedIds); },
                 _playerOwnedIds, GameplayModeAddons.GetCompanionGearPolicy(Bot.Profile.Info.Settings.Role.ToString()));
-#if DEBUG
             _donationDiagnosticId = Guid.NewGuid().ToString("N").Substring(0, 8);
+#if DEBUG
             _donationDiagnosticLines = 0;
             _donationPlan.Diagnostic = message => DonationDiagnosticLine(message);
 #endif
             DonationDiagnosticSnapshot("beforePlan", FollowerEquipment, Donation);
+            DonationDiagnosticComparison("draftBaselineMismatch", "follower", _botBefore, () => Snapshot(FollowerEquipment));
             _planningDonation = true;
             try { _donationPlan.Build(); }
             finally { _planningDonation = false; }
@@ -153,6 +154,25 @@ namespace pitTeam.Modules
 #if DEBUG
             DonationDiagnosticWrite(message);
 #endif
+        }
+
+        private void DonationDiagnosticComparison(string phase, string side, string expected, Func<string> actualSnapshot)
+        {
+            if (!Giving || _donationDiagnosticId == null) return;
+            try
+            {
+                string actual = actualSnapshot();
+                if (expected == actual) return;
+                var data = new { phase, side, differences = GearSwapSnapshot.DescribeDifferences(expected, actual) };
+                Logger.LogError($"[GiveGear:{_donationDiagnosticId}] follower='{Bot?.Profile?.Nickname}' profile={Bot?.ProfileId} comparison=" + JsonConvert.SerializeObject(data));
+#if DEBUG
+                try { BattleRecorder.RecordGiveGear(Bot, _donationDiagnosticId, data); } catch { }
+#endif
+            }
+            catch (Exception ex)
+            {
+                try { Logger.LogError($"[GiveGear:{_donationDiagnosticId}] phase={phase} side={side} comparisonError={ex.GetType().Name}:{ex.Message}"); } catch { }
+            }
         }
 
         [System.Diagnostics.Conditional("DEBUG")]

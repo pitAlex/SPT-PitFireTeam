@@ -937,3 +937,7 @@ Common command cleanup cases:
 A command-created PMC has a raid-local Debug invitation marker. On living post-raid capture it can submit a candidate even if the ordinary pickup-invitation setting is disabled. The Debug server still validates the candidate, filters Restricted protected equipment, captures the actual current kit and calculates/logs the ordinary donation-adjusted chance, but bypasses that recruit's chance roll. It prioritizes marked recruits within the existing one-invitation-per-raid selection; multiple command-created PMCs do not produce multiple invitations from one capture. Normal recruits keep their ordinary settings/chance and Scavs never gain a PMC invitation.
 
 The command handlers, faction policy, test encounter registration, spawn entry point, marker and server bypass are absent from Release builds. Both client and server must be Debug for the deterministic test invitation. No roster entry is created until the normal invitation is accepted. Existing `fs_spawnscav` remains the separate enemy-spawn command and is unchanged.
+
+## Follower teleport placement
+
+The Debug teleport command samples spread positions only on the player's nearby NavMesh level, checks a direct NavMesh connection, ground support and standing capsule clearance, and preserves spacing. If no safe spot is found, that follower stays in place. No fallback may select another floor or an unsupported exact player position. Placement diagnostics include player and target positions.

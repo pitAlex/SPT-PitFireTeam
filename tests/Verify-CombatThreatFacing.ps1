@@ -110,7 +110,15 @@ namespace EFT {
 }
 namespace pitTeam.Modules {
     public static class BossPlayers { public static bool IsFollower(BotOwner b)=>b.IsFollower; }
-    public static class FollowerEnemyTracking {public static float Distance(EnemyInfo enemy)=>enemy.Distance;}
+    public static class FollowerEnemyTracking {
+        public static bool Realistic,Eligible=true,Searched,Known=true;
+        public static Vector3 KnownPosition;public static float ObservedAt;
+        public static float Distance(EnemyInfo enemy)=>enemy.Distance;
+        public static bool IsRealistic(EnemyInfo enemy)=>Realistic;
+        public static bool IsEligible(EnemyInfo enemy)=>Eligible;
+        public static bool IsSearched(EnemyInfo enemy)=>Searched;
+        public static bool TryGetKnownPosition(EnemyInfo enemy,out Vector3 point,out float observedAt){point=KnownPosition;observedAt=ObservedAt;return Known;}
+    }
 }
 namespace pitTeam.Components { public static class BotFollowerPlayer { public static bool TryApplyCommandLookOverride(BotOwner b)=>false; } }
 namespace pitTeam.Utils {
@@ -161,9 +169,10 @@ namespace pitTeam.BigBrain.Actions {
         public BotOwner _owner=new BotOwner(); public bool Cleared,Applied;
         private bool CanKeepCurrentLook(EnemyInfo e)=>true;
         private bool TryAcquireNewLook(EnemyInfo e)=>true;
-        private void ApplyCurrentLook(){Applied=true;}
+        private void ApplyCurrentLook(){Applied=true;_owner.Steering.LookToPoint(GetEnemyLookPoint((_owner.Memory.GoalEnemy??_owner.Memory.LastEnemy)!));}
         private void ClearCurrentLook(){Cleared=true;}
         public bool Look()=>TryLookTowardEnemy();
+        public Vector3 Point(EnemyInfo enemy)=>GetEnemyLookPoint(enemy);
         __HOLD_METHODS__
     }
     public class DogBase {public int BaseStops;public virtual void Stop()=>BaseStops++;}
@@ -332,6 +341,35 @@ namespace pitTeam.BigBrain.Actions {
             hold._owner.Memory.GoalEnemy=null;pitTeam.Utils.FollowerAwareness.HasThreat=true;pitTeam.Utils.FollowerAwareness.Threat=new Vector3(90,1,100);hold.UpdateLook();
             Check(Same(hold._owner.Steering.Point,pitTeam.Utils.FollowerAwareness.Threat),"Hold_FreshThreatPreemptsAllyFallback");
             pitTeam.Utils.FollowerAwareness.HasThreat=false;
+            __RETAINED_HOLD_CASES__
+            Time.time=500f;
+            FollowerEnemyTracking.Realistic=true;FollowerEnemyTracking.Eligible=true;FollowerEnemyTracking.Searched=false;FollowerEnemyTracking.Known=true;
+            FollowerEnemyTracking.KnownPosition=new Vector3(140,0,-24);FollowerEnemyTracking.ObservedAt=480f;
+            e=Enemy(20);hold=new HoldHarness();hold._owner.Memory.GoalEnemy=e;
+            Check(CombatAttackMoveLook.TryGetHoldThreatLookPoint(hold._owner,e,out point)&&Same(point,FollowerEnemyTracking.KnownPosition+Vector3.up*.8f),"Hold_AdmittedMemoryOutlivesShortSteeringFreshness");
+            Check(!CombatAttackMoveLook.TryGetReliableThreatLookPoint(hold._owner,e,out _),"HoldFix_DoesNotExtendAttackMoveFreshness");
+            FollowerEnemyTracking.Eligible=false;
+            Check(!CombatAttackMoveLook.TryGetHoldThreatLookPoint(hold._owner,e,out _),"Hold_ExpiredContactCannotOwnFacing");FollowerEnemyTracking.Eligible=true;
+            FollowerEnemyTracking.Searched=true;
+            Check(!CombatAttackMoveLook.TryGetHoldThreatLookPoint(hold._owner,e,out _),"Hold_SearchedContactCannotOwnFacing");FollowerEnemyTracking.Searched=false;
+            FollowerEnemyTracking.Known=false;
+            Check(!CombatAttackMoveLook.TryGetHoldThreatLookPoint(hold._owner,e,out _),"Hold_NoReportDoesNotUseHiddenLiveTransform");FollowerEnemyTracking.Known=true;
+            FollowerEnemyTracking.ObservedAt=Time.time+1;
+            Check(!CombatAttackMoveLook.TryGetHoldThreatLookPoint(hold._owner,e,out _),"Hold_FutureObservationDoesNotOwnFacing");FollowerEnemyTracking.ObservedAt=480f;
+            e.Person.HealthController.IsAlive=false;
+            Check(!CombatAttackMoveLook.TryGetHoldThreatLookPoint(hold._owner,e,out _),"Hold_DeadContactCannotOwnFacing");e.Person.HealthController.IsAlive=true;
+            FollowerEnemyTracking.KnownPosition=new Vector3(float.NaN,0,1);
+            Check(!CombatAttackMoveLook.TryGetHoldThreatLookPoint(hold._owner,e,out _),"Hold_NonfiniteReportRejected");
+            FollowerEnemyTracking.KnownPosition=new Vector3(140,0,-24);
+            hold._owner.Position=FollowerEnemyTracking.KnownPosition;
+            Check(!CombatAttackMoveLook.TryGetHoldThreatLookPoint(hold._owner,e,out _),"Hold_VisitedReportIsRetired");
+            hold._owner.Position=new Vector3(100,0,-24);
+            Check(!CombatAttackMoveLook.TryGetHoldThreatLookPoint(hold._owner,e,out _),"Hold_MovingAwayDoesNotReviveVisitedReport");
+            FollowerEnemyTracking.ObservedAt=Time.time-1;
+            Check(CombatAttackMoveLook.TryGetHoldThreatLookPoint(hold._owner,e,out _),"Hold_NewObservationCanRenewFacing");
+            e.IsVisible=true;e.CurrPosition=new Vector3(120,5,-24);
+            Check(CombatAttackMoveLook.TryGetHoldThreatLookPoint(hold._owner,e,out point)&&Same(point,e.GetBodyPartPosition()),"Hold_RealSightUsesVisibleBodyRatherThanRememberedPosition");
+            FollowerEnemyTracking.Realistic=false;
             var dog=new DogHarness();e=Enemy(5);dog.BotOwner.LookDirection=new Vector3(1,5,0);
             dog.Look(e);
             Check(dog.BotOwner.Steering.Mode=="direction"&&Math.Abs(dog.BotOwner.Steering.Point.y)<0.00001f,"Dogfight_StaleContactFallsBackToLevelMovement");
@@ -373,6 +411,28 @@ namespace pitTeam.BigBrain.Actions {
 }
 '@
 $lookSource = $lookSource -replace '(?m)^using [^;]+;\r?\n', ''
+function FacingFloat($number) { ([single]$number).ToString('R',[Globalization.CultureInfo]::InvariantCulture)+'f' }
+function FacingVector($point) { 'new Vector3('+ (FacingFloat $point.x)+','+(FacingFloat $point.y)+','+(FacingFloat $point.z)+')' }
+$capturedCases=@(Get-Content -Raw (Join-Path $PSScriptRoot 'fixtures/combat/knight-arrival-facing.json') | ConvertFrom-Json)
+$capturedCode=@();$caseIndex=0
+foreach($case in $capturedCases){
+    $capturedCode+=@"
+            Time.time=$(FacingFloat $case.time);
+            FollowerEnemyTracking.Realistic=true;FollowerEnemyTracking.Eligible=true;FollowerEnemyTracking.Searched=false;FollowerEnemyTracking.Known=true;
+            FollowerEnemyTracking.KnownPosition=$(FacingVector $case.reportedPosition);FollowerEnemyTracking.ObservedAt=$(FacingFloat $case.observedAt);
+            hold=new HoldHarness();hold._owner.Position=$(FacingVector $case.botPosition);hold._owner.WeaponRoot=null;
+            e=Enemy();e.PersonalLastSeenTime=$(FacingFloat $case.personalSeenTime);e.GroupInfo!.EnemyLastSeenTimeReal=$(FacingFloat $case.groupSeenTime);
+            e.PersonalLastPos=e.EnemyLastPositionReal=$(FacingVector $case.legacyPosition);e.CurrPosition=$(FacingVector $case.hiddenLivePosition);hold._owner.Memory.GoalEnemy=e;
+            var capturedAlly$caseIndex=new BotOwner{Position=$(FacingVector $case.allyPosition),WeaponRoot=new Transform{position=$(FacingVector $case.allyLookPoint)}};
+            hold._owner.BotsGroup=new BotsGroup{Members=new[]{hold._owner,capturedAlly$caseIndex}};
+            Check(hold.AllyPoint(out point)&&Same(point,$(FacingVector $case.allyLookPoint)),"CapturedArrival_$caseIndex`_OldAllyFallbackMatchesRecord");
+            Check(!CombatAttackMoveLook.TryGetReliableThreatLookPoint(hold._owner,e,out _),"CapturedArrival_$caseIndex`_OldSteeringWindowMissesAdmittedContact");
+            Check(Same(hold.Point(e),FollowerEnemyTracking.KnownPosition+Vector3.up*.8f),"CapturedArrival_$caseIndex`_UsesAdmittedContact");
+            hold.UpdateLook();Check(hold.Applied&&Same(hold._owner.Steering.Point,FollowerEnemyTracking.KnownPosition+Vector3.up*.8f),"CapturedArrival_$caseIndex`_ContactPreemptsRearAlly");
+"@
+    $caseIndex++
+}
+$harness=$harness.Replace('__RETAINED_HOLD_CASES__',($capturedCode -join "`n"))
 $harness = $harness.Replace('__DOG_CONTACT__',$dogContact).Replace('__RUN_CONSTANTS__', ($runConstants -join "`n")).Replace('__LOOK_ENUM__', $lookEnum).
     Replace('__HOLD_CONSTANTS__', ($holdConstants -join "`n")).Replace('__RUN_METHODS__', ($runMethods -join "`n")).Replace('__WALK_METHODS__', ($walkMethods -join "`n")).Replace('__HOLD_METHODS__', ($holdMethods -join "`n")).Replace('__DOG_METHODS__', ($dogMethods -join "`n"))
 Add-Type -TypeDefinition ($harness + "`n" + $lookSource) -Language CSharp

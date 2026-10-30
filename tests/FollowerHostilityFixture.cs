@@ -176,7 +176,6 @@ namespace pitTeam.Modules {
     public static class FriendlyEncounterPopulation {
         public static bool Allowed=true,UseReal;public static int Queries;
         public static bool CanAdmit(BotOwner bot,out int alive,out int friendly,out int limit){Queries++;if(UseReal)return FriendlyEncounterPopulationCounter.CanAdmit(bot,out alive,out friendly,out limit);alive=10;friendly=0;limit=3;return Allowed;}
-        public static bool CanAdmitGroup(BotsGroup group,out int alive,out int friendly,out int limit){if(UseReal){Queries++;return FriendlyEncounterPopulationCounter.CanAdmitGroup(group,out alive,out friendly,out limit);}return CanAdmit(group.Member(0),out alive,out friendly,out limit);}
     }
     internal static class PmcKarmaRuntime { internal static void NoteFriendly(BotOwner bot) { } }
     internal sealed class AllegianceCombatGreeting { internal void Cancel() {} internal void Update(BotOwner bot,Player human) {} }
@@ -1196,10 +1195,21 @@ public static class HostilityChecks {
         AllegiancePmcFriendship.Apply(bots[0]);AllegiancePmcFriendship.Apply(bots[1]);
         bots[3].BotsGroup=bots[2].BotsGroup;bots[2].BotsGroup.Members.Add(bots[3]);
         AllegianceScavRelations.Apply(bots[2]);
-        Check(!AllegianceScavRelations.IsCalmedGroup(bots[2].BotsGroup),"real calming scanner refuses two-member group with only one shared slot");
+        Check(AllegianceScavRelations.IsCalmedGroup(bots[2].BotsGroup),"Scav companion calms the whole group independently of ordinary encounter capacity");
         AllegianceScavRelations.Apply(bots[4]);AllegiancePmcFriendship.Apply(bots[5]);
-        Check(AllegianceScavRelations.IsCalmedGroup(bots[4].BotsGroup)&&!AllegiancePmcFriendship.IsSelectedFriendly(bots[5],boss.realPlayer),
-            "real calming consumes the last shared slot before subsequent ordinary encounter selection");
+        Check(AllegianceScavRelations.IsCalmedGroup(bots[4].BotsGroup)&&AllegiancePmcFriendship.IsSelectedFriendly(bots[5],boss.realPlayer),
+            "companion neutrality does not consume ordinary encounter slots");
+        AllegiancePmcFriendship.Apply(bots[6]);
+        Check(!AllegiancePmcFriendship.IsSelectedFriendly(bots[6],boss.realPlayer),"ordinary encounter selection still respects its cap alongside a Scav companion");
+        Setup();RecruitScavCompanion();pitTeam.pitFireTeam.friendlyEncounterChance.Value=15;boss.realPlayer.Profile.FenceInfo.Standing=6;
+        FriendlyEncounterPopulation.UseReal=true;world=Comfort.Common.Singleton<GameWorld>.Instance;bots=new List<BotOwner>();
+        for(int i=0;i<12;i++)bots.Add(Scav("reported-calming-"+i));world.AllAlivePlayersList.AddRange(bots);
+        AllegiancePmcFriendship.Apply(bots[0]);
+        foreach(var bot in bots)AllegianceScavRelations.Apply(bot);
+        Check(bots.All(bot=>AllegianceScavRelations.IsCalmedGroup(bot.BotsGroup)),"reported one-slot/twelve-Scav case retains companion neutrality for every passing group roll");
+        Check(bots.Skip(1).All(bot=>!AllegiancePmcFriendship.IsSelectedFriendly(bot,boss.realPlayer)),"companion neutrality does not grant independent recruitable encounter status");
+        Check(!FriendlyEncounterPopulation.CanAdmit(bots[1],out int live,out int selected,out int capacity)&&live==12&&selected==1&&capacity==1,
+            "reported case keeps one selected encounter slot while companion neutrality remains independent");
     }
     private static void PopulationAdmissionChecks() {
         Setup();GameplayModeRuntime.IsAllegiance=true;boss.realPlayer.Profile.FenceInfo.Standing=6;
@@ -1218,20 +1228,26 @@ public static class HostilityChecks {
         AllegiancePmcFriendship.Apply(Scav("roll-failed-before-quota"));
         Check(FriendlyEncounterPopulation.Queries==0,"capacity cannot turn a failed roll into guaranteed friendship");
         Setup();RecruitScavCompanion();var blocked=Scav("calming-cap-denied");
+        int calmingQuotaQueries=FriendlyEncounterPopulation.Queries;
         FriendlyEncounterPopulation.Allowed=false;AllegianceScavRelations.Apply(blocked);
-        Check(!AllegianceScavRelations.IsCalmedGroup(blocked.BotsGroup),"recruited Scav calming cannot bypass the shared population budget");
+        Check(AllegianceScavRelations.IsCalmedGroup(blocked.BotsGroup)&&FriendlyEncounterPopulation.Queries==calmingQuotaQueries,"companion calming bypasses ordinary encounter quota entirely");
+        int calmRolls=UnityEngine.Random.Rolls;
         FriendlyEncounterPopulation.Allowed=true;AllegianceScavRelations.Apply(blocked);
-        Check(!AllegianceScavRelations.IsCalmedGroup(blocked.BotsGroup),"calming admission is not retried after a quota refusal");
+        Check(AllegianceScavRelations.IsCalmedGroup(blocked.BotsGroup)&&UnityEngine.Random.Rolls==calmRolls,"quota changes do not reroll companion neutrality");
         var calm=Scav("calming-grandfathered");AllegianceScavRelations.Apply(calm);
-        Check(calm.BotsGroup.Locked,"accepted calming group is locked against later native spawn reuse");
+        Check(!calm.BotsGroup.Locked,"companion calming does not take ownership of native group reuse");
         FriendlyEncounterPopulation.Allowed=false;AllegianceScavRelations.Apply(calm);
         Check(AllegianceScavRelations.IsCalmedGroup(calm.BotsGroup),"population shrink preserves already-calmed Scav groups");
         Setup();RecruitScavCompanion();var pending=Scav("calming-group-pending");pending.BotsGroup.TargetMembersCount=2;
         int oldRolls=UnityEngine.Random.Rolls;AllegianceScavRelations.Apply(pending);
-        Check(UnityEngine.Random.Rolls==oldRolls&&!AllegianceScavRelations.IsCalmedGroup(pending.BotsGroup),"pending authored group waits until whole group size is available for quota admission");
+        Check(UnityEngine.Random.Rolls==oldRolls+1&&AllegianceScavRelations.IsCalmedGroup(pending.BotsGroup),"companion neutrality need not wait for a whole group quota reservation");
         var partner=Scav("calming-group-partner");partner.BotsGroup=pending.BotsGroup;pending.BotsGroup.Members.Add(partner);
         AllegianceScavRelations.Apply(partner);
-        Check(UnityEngine.Random.Rolls==oldRolls+1&&pending.BotsGroup.Locked&&AllegianceScavRelations.IsCalmedGroup(pending.BotsGroup),"completed authored group rolls once and reserves its full quota size");
+        Check(UnityEngine.Random.Rolls==oldRolls+1&&!pending.BotsGroup.Locked&&AllegianceScavRelations.IsCalmedGroup(pending.BotsGroup),"later native group members share its existing neutrality roll without a new quota decision");
+        Setup();RecruitScavCompanion();FriendlyEncounterPopulation.Allowed=false;
+        UnityEngine.Random.NextValue=0.76f;var fails=Scav("calming-roll-76");AllegianceScavRelations.Apply(fails);
+        UnityEngine.Random.NextValue=0.74f;var passes=Scav("calming-roll-74");AllegianceScavRelations.Apply(passes);
+        Check(!AllegianceScavRelations.IsCalmedGroup(fails.BotsGroup)&&AllegianceScavRelations.IsCalmedGroup(passes.BotsGroup),"independent companion calming still obeys its 75 percent roll");
     }
     private static void RogueScavEncounterChecks() {
         foreach(var role in new[]{WildSpawnType.bossKnight,WildSpawnType.followerBigPipe,WildSpawnType.followerBirdEye})

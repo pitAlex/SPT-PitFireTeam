@@ -1,4 +1,3 @@
-#if DEBUG
 using EFT;
 using EFT.UI;
 using EFT.UI.Health;
@@ -28,6 +27,8 @@ namespace pitTeam.Patches
         private static void DisplayHealthPreview(OtherPlayerProfileScreen screen, OtherPlayerProfile profile, IEftSession session)
         {
             CloseHealthPreview();
+            // Field Upkeep gates new raid injuries on the server. Existing wounds must
+            // remain visible and treatable even after the player disables it.
             if (pitFireTeam.Instance != null)
                 HealthPreviewCoroutine = pitFireTeam.Instance.StartCoroutine(DisplayHealthPreviewDeferred(screen, profile, session));
         }
@@ -77,12 +78,14 @@ namespace pitTeam.Patches
                     ShowHealthPreview(screen, profile, session, response.health, (float)(response.regenerationPerSecond?.Values.Sum() ?? 0) * 60f);
                     if (HealthPreviewPanel != null)
                     {
+#if DEBUG
                         float nativeHealth, energy, hydration;
                         EFT.HealthSystem.OfflineHealthController.CalculateRegenRatesPerSecond(out nativeHealth, out energy, out hydration);
                         double teammateHealth = response.regenerationPerSecond?.Values.Sum() ?? 0;
                         Modules.Logger.LogInfo($"[TeammateRecovery] aid={profile.AccountId} playerHpPerHour={nativeHealth * 3600f:F3} teammateHpPerHour={teammateHealth * 3600d:F3}");
                         if (Math.Abs(nativeHealth - teammateHealth) > 0.0001)
                             pitFireTeam.Log.LogWarning("[TeammateRecovery] Player's native rate differs from the server rate; check active hideout bonuses.");
+#endif
                         _ = RefreshHealthPreviewAsync(profile, response.health, HealthPreviewPanel, HealthPreviewGeneration, response.loopSeconds);
                     }
                 }
@@ -390,4 +393,3 @@ namespace pitTeam.Patches
         }
     }
 }
-#endif

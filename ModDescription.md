@@ -36,6 +36,7 @@ The in-game **My Squad** screen is your squad management hub. Choose between **G
 - `≥ v. 1.1.0` **Teammate workshop** - customize saved teammates from your server's web page: names, heads, voices, level, skills, health and pocket size, while keeping their equipment intact.
 - `≥ v. 1.0.0` **Self-Determination** - tune how independently each saved teammate acts in combat, separately from Aggression, with temporary command overrides.
 - `≥ v. 1.0.0` **Loadout management and insurance** - equip teammates from your stash, purchase kits, and insure their equipment under your chosen loadout rules.
+- `≥ v. 1.1.0` **Persistent teammate health** - carry raid injuries between raids, recover with your hideout bonuses, or pay to heal wounded teammates. Direct treatment currently uses money only; stash medkits are not supported yet.
 - `≥ v. 1.0.0` **In-raid equipment exchange** - use **Swap Gear** to rearrange a spawned teammate's equipment and inventory, then confirm when ready.
 - `≥ v. 1.0.0` **Give Gear** - offer equipment to recruited PMCs and Scavs, who evaluate weapons, protection, ammunition support, and storage before deciding what to equip.
 - **Weapon-aware combat** - teammate decisions consider weapon role, caliber, magazine capacity, ammo penetration, and secondary weapon options.
@@ -178,7 +179,7 @@ This is separate from your gameplay mode. **Guns for Hire** and **Allegiance** s
 
 **Gear comes from your stash and is kept if the teammate dies, but cannot be extracted as player loot.**
 
-Enable **Field Upkeep** to keep raid wear and spent supplies between raids. It is off by default. Taking a fallen teammate's protected kit does not remove it from their saved equipment or let you keep a free copy after extraction. Insurance is unavailable because the kit is already protected from death loss.
+Enable **Field Upkeep** to keep raid wear, spent supplies and teammate injuries between raids. It is off by default. Taking a fallen teammate's protected kit does not remove it from their saved equipment or let you keep a free copy after extraction. Insurance is unavailable because the kit is already protected from death loss.
 
 ### Immersive — default
 
@@ -213,6 +214,14 @@ An insured item stays insured when you move it between yourself and a teammate, 
 Lost insured gear uses the trader's normal return chance, delay, and mail. Gear brought out by you or another teammate does not produce an extra insurance copy. Returned items must be insured again.
 
 Equipment a teammate keeps and loot they return are not the same thing. See **Looting** for acquired gear, ammunition, PMC gifts, and Scav returns.
+
+## Teammate Health
+
+`≥ v. 1.1.0` Saved teammates retain their body-part injuries after raids when **Field Upkeep** is enabled in Restricted. Immersive and Realistic retain injuries automatically. Bleeding, fractures and other temporary effects are cleared after the raid.
+
+Wounded teammates have a reddish portrait background and cannot join another raid until fully recovered. Their health recovers over time with your hideout bonuses. To heal them immediately, open their profile and press **HEAL** to confirm the rouble cost, which uses Therapist's healing prices and your discounts.
+
+**Current limitation: direct post-raid treatment is available only for money. You cannot use medkits from your stash to heal teammates yet.** Turning Field Upkeep off stops retaining new raid injuries in Restricted; it does not heal existing wounds. Those teammates still need paid treatment or time to recover.
 
 ## Squad Commands
 
@@ -698,6 +707,10 @@ PMC karma is separate. Killing a friendly PMC or PMC recruit costs **0.025**; ex
 Fence reputation, PMC karma, and the timed encounter penalty are three different systems.
 
 ## Known Issues and Conflicts
+
+### BTR transport
+
+Followers do not board or travel with you in the BTR. Vanilla bots automatically avoid the vehicle, and its passenger system does not support AI followers without custom handling. There are currently no plans to add follower BTR transport because of the implementation and testing effort involved.
 
 ### Stuck reloads and equipment interactions
 

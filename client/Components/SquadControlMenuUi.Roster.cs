@@ -36,6 +36,25 @@ namespace pitTeam.Components
             internal SquadRosterEntry Entry;
             internal Image PortraitBackground;
             internal Color HealthyPortraitBackgroundColor;
+            internal Outline PortraitBorder;
+            internal Color HealthyPortraitBorderColor;
+        }
+
+        // The roster is reparented into side selection while its MenuScreen owner
+        // is inactive. Its visible panel must own the polling lifecycle.
+        private sealed class RosterHealthRefreshController : MonoBehaviour
+        {
+            internal SquadControlMenuUi Owner;
+
+            private void OnEnable()
+            {
+                if (Owner != null) Owner.nextRosterHealthRefresh = 0f;
+            }
+
+            private void Update()
+            {
+                if (Owner != null) Owner.UpdateRosterHealth();
+            }
         }
 
         private sealed class RosterHealthState
@@ -54,6 +73,15 @@ namespace pitTeam.Components
         private readonly Dictionary<string, RosterHealthTile> rosterHealthTiles = new Dictionary<string, RosterHealthTile>(StringComparer.Ordinal);
         private bool rosterHealthRefreshBusy;
         private float nextRosterHealthRefresh;
+
+        private void RefreshVisibleRosterHealth()
+        {
+            var controller = rosterPanel.GetComponent<RosterHealthRefreshController>()
+                ?? rosterPanel.AddComponent<RosterHealthRefreshController>();
+            controller.Owner = this;
+            nextRosterHealthRefresh = 0f;
+            UpdateRosterHealth();
+        }
 
         private void UpdateRosterHealth()
         {
@@ -108,11 +136,14 @@ namespace pitTeam.Components
 
         private static void ApplyPortraitHealthTint(RosterHealthTile tile)
         {
-            if (tile.PortraitBackground == null)
-                return;
-            tile.PortraitBackground.color = tile.Entry.IsWounded
-                ? new Color(0.55f, 0.10f, 0.10f, tile.HealthyPortraitBackgroundColor.a)
-                : tile.HealthyPortraitBackgroundColor;
+            if (tile.PortraitBackground != null)
+                tile.PortraitBackground.color = tile.Entry.IsWounded
+                    ? new Color(0.65f, 0.10f, 0.10f, 1f)
+                    : tile.HealthyPortraitBackgroundColor;
+            if (tile.PortraitBorder != null)
+                tile.PortraitBorder.effectColor = tile.Entry.IsWounded
+                    ? new Color(0.75f, 0.10f, 0.10f, 1f)
+                    : tile.HealthyPortraitBorderColor;
         }
 
         private void RebuildRosterTiles()
@@ -458,11 +489,14 @@ namespace pitTeam.Components
 
             RectTransform portraitHost = CreatePortraitHost(tileRect, entry.Level, out PlayerIconImage iconImage);
             Image portraitBackground = portraitHost.Find("Portrait/Background")?.GetComponent<Image>();
+            Outline portraitBorder = portraitHost.Find("pitFireTeam_PortraitBorder")?.GetComponent<Outline>();
             var healthTile = new RosterHealthTile
             {
                 Entry = entry,
                 PortraitBackground = portraitBackground,
-                HealthyPortraitBackgroundColor = portraitBackground != null ? portraitBackground.color : Color.white
+                HealthyPortraitBackgroundColor = portraitBackground != null ? portraitBackground.color : Color.white,
+                PortraitBorder = portraitBorder,
+                HealthyPortraitBorderColor = portraitBorder != null ? portraitBorder.effectColor : Color.white
             };
             rosterHealthTiles[entry.AccountId] = healthTile;
             ApplyPortraitHealthTint(healthTile);

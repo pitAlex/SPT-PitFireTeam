@@ -1569,6 +1569,9 @@ public partial class FriendlyTeammateService(
                 BuildProtectedTeammateItemIdsByAid(sessionId);
             const string healthReceiptsDocument = "health/raid-outcomes-v1";
             var healthReceipts = storage.Read<HashSet<string>>(sessionId, healthReceiptsDocument) ?? [];
+            var serverSettings = settingsService.LoadSettings();
+            bool retainRaidHealth = ShouldPersistRaidWear(
+                NormalizeLoadoutManagementMode(serverSettings.LoadoutManagementMode), serverSettings);
 
             foreach (var entry in entries)
             {
@@ -1603,11 +1606,15 @@ public partial class FriendlyTeammateService(
                 // live raid state is only input data for ResolveRaidOutcomes().
                 ApplyFollowerRaidOutcomeStats(teammate, entry.Escaped);
                 string? healthReceipt = string.IsNullOrWhiteSpace(raidId) ? null : raidId + "/" + entry.Aid;
-                bool retainedHealth = healthReceipt != null && !healthReceipts.Contains(healthReceipt)
+                bool newHealthOutcome = healthReceipt != null && !healthReceipts.Contains(healthReceipt);
+                bool retainedHealth = retainRaidHealth && newHealthOutcome
                     && FriendlyTeammateRaidHealthPolicy.Apply(teammate.Health, entry.RaidHealth, entry.Escaped,
                         healthConfig.HealthMultipliers.Blacked, healthConfig.HealthMultipliers.Death, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
-                if (retainedHealth) healthReceipts.Add(healthReceipt!);
-                else if (entry.RaidHealth != null && healthReceipt != null && !healthReceipts.Contains(healthReceipt))
+                // Consume disabled outcomes too: a retry after enabling upkeep must not restore
+                // injuries from a raid whose health result was already discarded.
+                bool completedHealthOutcome = newHealthOutcome && (retainedHealth || !retainRaidHealth);
+                if (completedHealthOutcome) healthReceipts.Add(healthReceipt!);
+                else if (retainRaidHealth && entry.RaidHealth != null && newHealthOutcome)
                     logger.Warning($"[TeammateHealth] Invalid raid HP snapshot ignored: aid={entry.Aid} raid={raidId}");
 
                 // Fresh companion equipment is raid-local, never a persistent Default loadout.
@@ -1617,7 +1624,7 @@ public partial class FriendlyTeammateService(
                     ApplyRestrictedGearMaintenanceDeathEquipmentState(sessionId, teammate, entry, protectedTeammateItemIdsByAid);
                     ApplyImmersiveDefaultGearLoss(sessionId, teammate, entry);
                 }
-                SaveTeammate(sessionId, teammate, retainedHealth
+                SaveTeammate(sessionId, teammate, completedHealthOutcome
                     ? new Dictionary<string, string> { [healthReceiptsDocument] = jsonUtil.Serialize(healthReceipts)! } : null);
                 if (retainedHealth)
                     logger.Info($"[TeammateHealth] Saved HP-only raid outcome: aid={entry.Aid} escaped={entry.Escaped} raid={raidId} effects=cleared hp={string.Join(",", FriendlyTeammateTreatmentPricing.BodyParts.Select(part => $"{part}:{teammate.Health!.BodyParts![part].Health!.Current:0.##}/{teammate.Health.BodyParts[part].Health!.Maximum:0.##}"))}");
@@ -1804,7 +1811,7 @@ public partial class FriendlyTeammateService(
         FriendlyServerSettingsRequest serverSettings = settingsService.LoadSettings();
         string mode = NormalizeLoadoutManagementMode(serverSettings.LoadoutManagementMode);
 
-        if (!ShouldPersistEscapedDefaultEquipmentState(mode, serverSettings)) return;
+        if (!ShouldPersistRaidWear(mode, serverSettings)) return;
         var settings = GetTeammateSettings(sessionId, teammate);
         if (!string.Equals(settings.SelectedLoadoutId, DefaultLoadoutId, StringComparison.OrdinalIgnoreCase))
         {
@@ -2919,7 +2926,7 @@ public partial class FriendlyTeammateService(
         return string.Equals(mode, "Restricted", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool ShouldPersistEscapedDefaultEquipmentState(string mode, FriendlyServerSettingsRequest settings)
+    private static bool ShouldPersistRaidWear(string mode, FriendlyServerSettingsRequest settings)
     {
         return IsImmersiveLikeLoadoutManagementMode(mode)
             || (IsRestrictedLoadoutManagementMode(mode) && settings.RestrictedGearMaintenance == true);

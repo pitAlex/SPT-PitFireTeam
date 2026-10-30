@@ -734,7 +734,7 @@ namespace pitTeam.BigBrain.Actions
 
         private Vector3 GetEnemyLookPoint(EnemyInfo enemy)
         {
-            return CombatAttackMoveLook.TryGetReliableThreatLookPoint(_owner, enemy, out Vector3 point)
+            return CombatAttackMoveLook.TryGetHoldThreatLookPoint(_owner, enemy, out Vector3 point)
                 ? point
                 : Vector3.zero;
         }

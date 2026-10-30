@@ -473,7 +473,8 @@ namespace pitTeam.Modules
                     FollowerMovementSkillProgress movementProgress = CalculateFollowerMovementSkillProgress(item.GetBot());
                     List<object> skills = new List<object>();
 
-                    pr.Skills.DisplayList.ExecuteForEach(skill =>
+                    var liveSkills = item.GetBot().GetPlayer?.Skills ?? pr.Skills;
+                    liveSkills.DisplayList.ExecuteForEach(skill =>
                     {
                         float baseCurrent = UnityEngine.Mathf.Max(0f, skill.Current - skill.PointsEarned);
                         float progress = skill.ProgressValue;
@@ -511,8 +512,8 @@ namespace pitTeam.Modules
                         skills.Add(new
                         {
                             Id = ESkillId.BotReload,
-                            Current = pr.Skills.BotReload.Current,
-                            Progress = pr.Skills.BotReload.ProgressValue,
+                            Current = liveSkills.BotReload.Current,
+                            Progress = liveSkills.BotReload.ProgressValue,
                             PointsEarnedDuringSession = 0,
                         });
                     }

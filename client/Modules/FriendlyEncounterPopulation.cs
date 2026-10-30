@@ -10,13 +10,6 @@ namespace pitTeam.Modules
         internal static bool CanAdmit(BotOwner candidate, out int alive, out int friendly, out int limit)
             => CanAdmit(new[] { candidate }, out alive, out friendly, out limit);
 
-        internal static bool CanAdmitGroup(BotsGroup group, out int alive, out int friendly, out int limit)
-        {
-            var members = new List<BotOwner>();
-            for (int i = 0; i < group.MembersCount; i++) members.Add(group.Member(i));
-            return CanAdmit(members, out alive, out friendly, out limit);
-        }
-
         private static bool IsScav(BotOwner bot) => bot.Side == EPlayerSide.Savage &&
             (bot.Profile?.Info?.Settings?.Role == WildSpawnType.assault ||
              bot.Profile?.Info?.Settings?.Role == WildSpawnType.marksman ||
@@ -31,8 +24,9 @@ namespace pitTeam.Modules
                  bot.Profile?.Info?.Settings?.Role == WildSpawnType.pmcBEAR) &&
                 !AllegiancePmcFriendship.IsGrouped(bot));
 
-        private static bool Friendly(BotOwner bot) => AllegiancePmcFriendship.HasPopulationFriendship(bot) ||
-            AllegianceScavRelations.IsCalmedGroup(bot.BotsGroup);
+        // Count selected encounters only. Companion-granted neutrality has its own trust rule
+        // and does not make a group a selected/recruitable encounter.
+        private static bool Friendly(BotOwner bot) => AllegiancePmcFriendship.HasPopulationFriendship(bot);
 
         private static bool CanAdmit(IList<BotOwner> candidates, out int alive, out int friendly, out int limit)
         {

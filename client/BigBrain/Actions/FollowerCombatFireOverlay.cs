@@ -185,6 +185,12 @@ namespace pitTeam.BigBrain.Actions
             }
 
             float targetDistance = targetDirection.magnitude;
+            if (suppression && FollowerShotSafety.IsFriendlyInSuppressionLane(
+                    botOwner, fireOrigin, fireOrigin + aimDirection.normalized * targetDistance))
+            {
+                Stop("friendlyActualSuppressionLane", actionReason, target, targetReason: targetReason);
+                return true;
+            }
             if (FollowerShotSafety.IsFriendlyInAimLane(
                     botOwner,
                     fireOrigin,

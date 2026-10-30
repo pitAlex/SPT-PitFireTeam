@@ -1014,6 +1014,7 @@ namespace pitTeam.Patches
                 if (ProficiencyButtonRoot is RectTransform proficiencyRow)
                     proficiencyRow.anchoredPosition = clothingPanel.anchoredPosition;
                 if (!options.HideSkills) DisplaySkillsPanel(__instance, profile, session, options.VisibleSkills);
+                DisplayHealthPreview(__instance, profile, session);
                 return;
             }
             playerModelWindow.OnCustomizationChanged -= PlayerModelWithStatsWindow_OnCustomizationChanged;
@@ -1067,9 +1068,7 @@ namespace pitTeam.Patches
                 CreateEditNameButton(__instance, clone, parent, profile, 3);
                 ArrangeProfileControlRows();
                 DisplaySkillsPanel(__instance, profile, session);
-#if DEBUG
                 DisplayHealthPreview(__instance, profile, session);
-#endif
                 ShowProfileRecoveryOverlay(__instance, options.RecoveryNotice);
             }
             catch (Exception ex)
@@ -1706,9 +1705,7 @@ namespace pitTeam.Patches
 
         private static void ResetTeammateProfileUi(InventoryPlayerModelWithStatsWindow playerModelWindow)
         {
-#if DEBUG
             CloseHealthPreview();
-#endif
             CloseLoadoutEditorInsurance();
             CloseProfileRecoveryOverlay();
             ResetProficiencyUi();
@@ -1859,9 +1856,7 @@ namespace pitTeam.Patches
         private static void PatchPostfix(OtherPlayerProfileScreen __instance)
         {
             TeammateHiringPreview.RestoreScreen(__instance);
-#if DEBUG
             OtherPlayerProfileScreenPatch.CloseHealthPreview();
-#endif
             Action callback = OtherPlayerProfileScreenPatch.ActiveBackOverrideAction;
             OtherPlayerProfileScreenPatch.ActiveBackOverrideAction = null;
             OtherPlayerProfileScreenPatch.PendingBackOverrideAction = null;

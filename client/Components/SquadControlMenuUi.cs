@@ -673,7 +673,6 @@ namespace pitTeam.Components
         private void Update()
         {
             UpdateRosterPenaltyLabel();
-            UpdateRosterHealth();
             if (raidSettingsOverlayActive && UnityEngine.Input.GetKeyDown(KeyCode.Escape))
             {
                 HideRaidSettingsOverlay();
@@ -1373,6 +1372,7 @@ namespace pitTeam.Components
             }
             if (tab == Tab.Roster)
             {
+                if (rosterPanel != null) RefreshVisibleRosterHealth();
                 UpdateRosterPenaltyLabel(true);
                 _ = FriendlyEncounterPenaltyRuntime.ReloadAsync();
             }

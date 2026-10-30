@@ -68,7 +68,7 @@
     "Name": "敌人追踪",
     "Description": "在简单和真实敌人追踪模式之间切换。简单模式追踪敌人的当前位置，不受最后一次目击或报告时间的影响。真实模式使用通过目击或声音报告的位置，或敌人的最后已知位置。"
   },
-  "friendlyEncounterChance": {"Name": "友好相遇概率", "Description": "设置友好相遇的基础概率，以及存活 AI 中可新成为友军的最大比例。Scav 与单独行动的 PMC 分别计算上限；PMC 至少保留两个可用名额。存活数量减少不会取消现有友好关系，但新的友好相遇需要空余名额。\nGuns for Hire：仅影响同阵营 PMC，且需关闭「同阵营 PMC 友好」和「恶人」。\nAllegiance：敌对阵营 PMC 使用较低概率。Fence 声望调整 Scav 的友好概率，最高为 2 倍，但不会提高数量上限。"},
+  "friendlyEncounterChance": {"Name": "友好相遇概率", "Description": "设置普通友好相遇的基础概率，以及存活 AI 中可被选为友好相遇的最大比例。Scav 与单独行动的 PMC 分别计算上限；PMC 至少保留两个可用名额。存活数量减少不会取消现有友好关系，但新的友好相遇需要空余名额。Scav 同伴带来的中立关系使用独立的信任规则。\nGuns for Hire：仅影响同阵营 PMC，且需关闭「同阵营 PMC 友好」和「恶人」。\nAllegiance：敌对阵营 PMC 使用较低概率。Fence 声望调整 Scav 的友好概率，最高为 2 倍，但不会提高数量上限。"},
   "healthMultiplier": {
     "Name": "小队生命倍率",
     "Description": "战局开始时，您的队员的每个身体部位的生命值会分别和本生命倍率相乘。"
@@ -134,7 +134,7 @@
     "Name": "受限",
     "Description": "装备来自你的仓库，无法带出战局。队员阵亡时装备不会丢失。"
   },
-  "loadoutManagementRestrictedGearMaintenance": {"Name": "野外维护", "Description": "跟踪小队成员在战局中的装备损耗及消耗品使用情况，其装备仍受保护，不会因阵亡丢失或带出。"},
+  "loadoutManagementRestrictedGearMaintenance": {"Name": "野外维护", "Description": "保存战局中的装备损耗、物资消耗及队员伤势。装备仍受保护，不会因阵亡丢失或带出。受伤队员必须接受治疗或恢复后才能再次加入战局。关闭此选项将停止保存新的战局伤势，但现有伤势仍需治疗或恢复。"},
   "loadoutManagementImmersive": {
     "Name": "沉浸",
     "Description": "与受限模式相同，但小队成员装备的行为与现实战局装备一致。装备会损坏，阵亡的小队成员会丢失装备，你也可以带出他们的物品。"
@@ -239,6 +239,10 @@
     "WantToHeal": "需要治疗"
   },
   "socialUi": {
+    "GoingRogueKnightTraderName": "骑士",
+    "GoingRogueKnightTraderLocation": "未知",
+    "GoingRogueKnightTraderDescription": "三名游荡者首领的队长。在 Going Rogue 模式中达到20级后可解锁。",
+    "GoingRogueKnightTraderLocked": "骑士仅在 Going Rogue 模式中达到20级后可用。",
     "ProfileHeal": "治疗",
     "TeammateStillWounded": "{0} 仍然受伤，暂时无法加入战局",
     "ProfileHealingTitle": "医疗站治疗",

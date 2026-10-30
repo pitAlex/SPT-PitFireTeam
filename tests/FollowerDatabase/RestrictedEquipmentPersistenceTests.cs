@@ -87,7 +87,7 @@ internal static class RestrictedEquipmentPersistenceTests
                     scenario + " leaves baseline and input snapshots detached");
             }
         }
-        var escapedPolicy = typeof(FriendlyTeammateService).GetMethod("ShouldPersistEscapedDefaultEquipmentState", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var escapedPolicy = typeof(FriendlyTeammateService).GetMethod("ShouldPersistRaidWear", BindingFlags.Static | BindingFlags.NonPublic)!;
         foreach (string mode in new[] { "Immersive", "Extreme" })
             foreach (bool upkeep in new[] { false, true })
                 check((bool)escapedPolicy.Invoke(null, [mode, new FriendlyServerSettingsRequest { RestrictedGearMaintenance = upkeep }])!,

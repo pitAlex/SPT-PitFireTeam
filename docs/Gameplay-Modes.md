@@ -41,7 +41,7 @@ The selected mode persists in the hidden `00 GameplayMode` config entry. Before 
 
 Allegiance leaves saved config preferences intact. Gameplay consumers, the Settings UI and server synchronization resolve its fixed values through `GameplayModeRuntime.GetEffectiveValue`. Editing or reloading the BepInEx cfg cannot override those values while Allegiance is active. The fixed-value table belongs to [Allegiance](Allegiance.md#settings-policy).
 
-Field Upkeep is one shared preference in both gameplay modes. Its checkbox appears only under Restricted, defaults off and affects only Restricted raid wear/supply persistence.
+Field Upkeep is one shared preference in both gameplay modes. Its checkbox appears only under Restricted, defaults off and controls Restricted raid wear, spent supplies and post-raid HP retention. Immersive/Realistic retain injuries automatically. Disabling it stops new Restricted raid HP changes; existing wounds still require treatment or passive recovery before another raid.
 
 Loadout Management is not mode-locked. Both modes default to Immersive and use one shared saved Restricted, Immersive or Realistic choice. Changing it in either gameplay mode persists across restarts and mode switches; switching never restores a separate loadout policy.
 

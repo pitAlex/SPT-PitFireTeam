@@ -32,6 +32,9 @@ Factory (day/night), Labs and Labyrinth share the compact-map profile in `Combat
 
 ## Friendly-fire prevention
 
+Suppression checks both intended and actual muzzle directions, including animated teammate head/body positions and head clearance beside the muzzle. Native trigger/automatic-round admission also respects Core suppression intent. Incoming-fire evidence is separate from hearing/voice orientation: only actual hits and qualified hostile near misses authorize a short blind defensive response. Hearing cannot refresh that permission or pose as recent incoming-fire pressure; source death, despawn or friendship cancels it.
+
+
 Core owns shared follower firing safety for ordinary fire and suppression, including the optional SAIN brain. `FollowerShootDataSafetyPatch` checks the actual muzzle lane before burst admission and reconciles blocked results after other HarmonyX prefixes run. `FollowerFirearmTriggerSafetyPatch` also guards direct trigger requests. `FollowerFirearmUpdateSafetyPatch` rechecks held fire before the current weapon operation updates, using the live SAIN manual target when available or the ready native aiming endpoint. These guards release fire through the native stop path; ordinary bots and human firing remain outside their scope.
 
 `FollowerAutomaticFireSafetyPatch` additionally checks each automatic/fixed-burst round at `AutomaticFireOperation.InternalOnFireEvent`, before inventory operations consume ammunition. Unsafe rounds use the operation's native `SwitchToIdling` transition. This covers internally reasserted burst triggers and multiple rounds within one update without skipping a late ballistic call or a pending chamber/ejection update. Single-shot operations that already consumed/prepared their cartridge are allowed to complete; projectiles already released cannot be recalled.
@@ -431,6 +434,10 @@ Arrival holders break for:
 
 If the follower is in cover and only under fire, the hold is extended instead of ended. Suppression against valid cover is treated as a reason to stay down, rescan, and look toward recent incoming-fire points, not as proof that the cover failed.
 
+Hold-facing in Realistic tracking uses the same eligible reported contact as pursuit, including native hearing reports. It does not expire that look solely because the short attack-movement steering freshness window elapsed. Visible enemies retain visible-body targeting; expired/searched/dead contacts and already-visited remembered points cannot regain hold-facing without new evidence. Command looks, target handoff and urgent threat priorities remain above this look. This changes orientation only, preserving arrival-hold duration, posture and permission to fire.
+
+Recorded examples and qualification are in [hold-facing validation](validation/Combat-Hold-Facing.md).
+
 ## Cover Contract
 
 [Self-Determination](Self-Determination.md) supplies shared combat dependence, ordinary player-separation/cover weighting and automatic regroup calibration independently of Aggression. Automatic regroup and Cover Me capture their completion envelope on activation; explicit normal/tight orders retain their own distances. Productive commitments, medical arrival and real shot safety retain the lifecycle below.
@@ -822,6 +829,8 @@ Core combat/patrol medical cover and addon cover selection reject wire-covered p
 The layer sits above follower combat/request layers and below native danger escape. It preserves orders, enemies and tracking, yields to grenade/BTR escape and throwing hands, and lets new player orders or active medical use interrupt proactive bypasses. Probes run at most twice per second, navigation attempts at most once per two seconds, and committed paths are not rebuilt per frame. No-progress and total-time limits release failed movement. `tests/Verify-FollowerHazardAvoidance.ps1` covers production discovery, geometry, planning and layer/action boundaries; live native movement, SAIN handoff and medical animation still require a raid test.
 
 ## Peaceful sound orientation
+
+All registered followers, including saved/recruited PMCs, Scavs and allied bosses, suppress native random patrol head scanning. `FollowerPatrolHeadLookPatch` centres only `BotHeadData`'s horizontal target while the actor is active, peacefully in Patrol state and still registered as that exact follower. Native head rotation centres smoothly; native enemy-visibility and combat-state transitions retain ownership. Ordinary bots, dismissed/pending/foreign actors and other head states stay native. This is Core behavior independent of gameplay mode, tactic or optional addons. It does not change peaceful flags, body/weapon steering, command looks, hearing or shared presets. [Validation](validation/Follower-Head-Look.md) distinguishes controlled native-controller checks from live presentation.
 
 Core followers briefly hold a bearing toward personally heard movement, bushes and voices within 25 m. Audible gunfire qualifies only when the shooter faces the follower, player or a living squadmate (30-degree half-cone including elevation); distant unrelated gunfire does not turn them. Core observes the external SAIN plugin's actual audibility result when installed, including without the addon. Without SAIN, existing game hearing events supply audibility. These peaceful reactions do not acquire targets, pursue sounds or grant firing permission. Actual bullet-impact and damage reactions remain separate.
 

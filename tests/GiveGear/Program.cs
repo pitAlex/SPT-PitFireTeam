@@ -32,6 +32,7 @@ static class Program
         Check(GiveGearInvitePolicy.Apply(-20, new[] { "FirstPrimaryWeapon" }) == 10, "Invalid base does not erase a real slot bonus");
         CheckBackpackReplacement();
         CheckFixedCompanionEquipment();
+        CheckFixedCompanionSupplies();
 #if DEBUG
         CheckGearDiagnostics();
 #endif
@@ -656,9 +657,132 @@ static class Program
                 "Secure-staged primary demotion rolls back exactly");
         }
     }
+    static void CheckFixedCompanionSupplies()
+    {
+        var policy = new CompanionGearPolicy(true, true, 0.10f);
+        {
+            var s = new Scenario { GearPolicy = policy };
+            var primary = FamilyGun("new-secondary-primary", 40, "primary"); s.Equip(primary, EquipmentSlot.FirstPrimaryWeapon);
+            s.AddFast(FamilyMag("new-secondary-primary-spare", 40, "primary"));
+            var secondary = FamilyGun("new-secondary-gift", 40, "secondary");
+            var magazine = FamilyMag("new-secondary-spare", 40, "secondary");
+            s.Offer(secondary); s.Offer(magazine); s.Run(); s.AssertConserved();
+            Check(s.Get(EquipmentSlot.SecondPrimaryWeapon) == secondary && s.InFastAccess(magazine),
+                "Fixed kit can accept a qualifying secondary together with its compatible spare magazine");
+            Check(s.Get(EquipmentSlot.FirstPrimaryWeapon) == primary && primary.GetCurrentMagazine().Count == 30,
+                "Secondary package leaves the primary and its ammunition intact");
+            s.Plan.Rollback(); Check(s.InOffer(secondary) && s.InOffer(magazine), "New secondary package rolls back exactly");
+        }
+        {
+            var s = new Scenario { GearPolicy = policy };
+            var primary = Gun("depleted-primary", 40); primary.GetCurrentMagazine().Cartridges.Items.Clear();
+            s.Equip(primary, EquipmentSlot.FirstPrimaryWeapon);
+            var small = new Ammo("small-useful-gift") { StackObjectsCount = 3 }; s.Offer(small);
+            s.Run(); s.AssertConserved();
+            Check(s.InKit(small) && primary.GetCurrentMagazine().Count == 0 && small.StackObjectsCount == 3,
+                "Small compatible ammo gift is accepted for a depleted primary without packing its inserted magazine");
+            s.Plan.Rollback(); Check(s.InOffer(small), "Depleted-primary supply gift rolls back exactly");
+        }
+        {
+            var s = new Scenario { GearPolicy = policy };
+            s.Equip(Gun("secure-ammo-primary", 40), EquipmentSlot.FirstPrimaryWeapon);
+            var rig = (SearchableItem)s.Get(EquipmentSlot.TacticalVest); rig.Grids = new[] { new Grid(rig, 1, 2) };
+            var secure = Bag("ammo-secure", 1, 1); secure.AcceptedSlot = EquipmentSlot.SecuredContainer;
+            s.Equip(secure, EquipmentSlot.SecuredContainer);
+            var ammo = new Ammo("secure-ammo-gift"); s.Offer(ammo); s.Run(); s.AssertConserved();
+            Check(secure.Grids[0].Items.Contains(ammo) &&
+                pitTeam.BigBrain.Actions.GestureCommandAction.CanFitGearSwapReloadReserves(s.Controller.Inventory.Equipment),
+                "Compatible ammo falls back to the boss secure container without using the reload opening");
+            s.Plan.Rollback(); Check(s.InOffer(ammo), "Secure ammunition placement rolls back exactly");
+        }
+        foreach (bool room in new[] { true, false })
+        foreach (bool secure in new[] { false, true })
+        {
+            var s = new Scenario { GearPolicy = policy };
+            var primary = Gun("medical-primary", 40); s.Equip(primary, EquipmentSlot.FirstPrimaryWeapon);
+            var rig = (SearchableItem)s.Get(EquipmentSlot.TacticalVest);
+            if (!room) rig.Grids = new[] { new Grid(rig, 1, 2) };
+            if (secure) { var bag = Bag("boss-secure", 2, 2); bag.AcceptedSlot = EquipmentSlot.SecuredContainer; s.Equip(bag, EquipmentSlot.SecuredContainer); }
+            var medicine = new Meds("adrenaline"); s.Offer(medicine);
+            var other = new Item("unwanted-cargo"); s.Offer(other);
+            s.Run(); s.AssertConserved();
+            Check(s.InKit(medicine) == (room || secure), "Boss medical supply uses real vest/pocket or secure capacity");
+            Check(!TeammateGearSwap.Tree(s.Get(EquipmentSlot.Backpack)).Contains(medicine) && s.InOverflow(other),
+                "Medical exception does not admit backpack cargo or unrelated items");
+            Check(pitTeam.BigBrain.Actions.GestureCommandAction.CanFitGearSwapReloadReserves(s.Controller.Inventory.Equipment),
+                "Medical placement preserves the primary magazine landing opening");
+            Check(!s.Plan.OnlyPlateUpgrades, "Medical supply does not receive the plate-only validation exception");
+            s.Plan.Rollback(); Check(s.InOffer(medicine), "Accepted or rejected medical supply rolls back exactly");
+        }
+        foreach (bool secondary in new[] { false, true })
+        foreach (bool room in new[] { false, true })
+        {
+            var s = new Scenario { GearPolicy = policy };
+            var primary = FamilyGun("supply-primary", 40, "primary"); s.Equip(primary, EquipmentSlot.FirstPrimaryWeapon);
+            var target = secondary ? FamilyGun("existing-secondary", 40, "secondary") : primary;
+            if (secondary) s.Equip(target, EquipmentSlot.SecondPrimaryWeapon);
+            var inserted = target.GetCurrentMagazine();
+            var rig = (SearchableItem)s.Get(EquipmentSlot.TacticalVest);
+            if (!room) rig.Grids = new[] { new Grid(rig, 1, 2) };
+            var magazine = FamilyMag("later-compatible-magazine", 40, target.MagazineFamily);
+            var wrong = FamilyMag("wrong-magazine", 40, "unrelated");
+            var wrongRounds = FamilyMag("wrong-loaded-rounds", 40, target.MagazineFamily); wrongRounds.LoadedCartridgesCompatible = false;
+            var ammo = new Ammo("compatible-ammunition") { WeaponFamily = target.MagazineFamily, StackObjectsCount = 3 };
+            var wrongAmmo = new Ammo("wrong-ammunition") { WeaponFamily = "unrelated" };
+            s.Offer(magazine); s.Offer(wrong); s.Offer(wrongRounds); s.Offer(ammo); s.Offer(wrongAmmo);
+            s.Run(); s.AssertConserved();
+            Check(s.InFastAccess(magazine) == room && s.InKit(ammo) == room,
+                "Later compatible primary/secondary magazines and even small ammo supplies require actual room");
+            Check(s.InOverflow(wrong) && s.InOverflow(wrongRounds) && s.InOverflow(wrongAmmo),
+                "Boss resupply rejects incompatible magazines, cartridges and ammunition");
+            Check(target.GetCurrentMagazine() == inserted && inserted.Count == 30 && ammo.StackObjectsCount == 3,
+                "Resupply never cycles the inserted magazine, packs rounds or changes stack quantities");
+            Check(s.Get(EquipmentSlot.FirstPrimaryWeapon) == primary &&
+                (!secondary || s.Get(EquipmentSlot.SecondPrimaryWeapon) == target), "Supply-only handover preserves equipped weapons");
+            Check(pitTeam.BigBrain.Actions.GestureCommandAction.CanFitGearSwapReloadReserves(s.Controller.Inventory.Equipment),
+                "Additional magazines preserve the shared native reload opening");
+            s.Plan.Rollback(); Check(s.InOffer(magazine) && s.InOffer(ammo), "Supply-only handover rolls back exactly");
+        }
+    }
+
     static void CheckFixedCompanionEquipment()
     {
         var policy = new CompanionGearPolicy(true, true, 0.10f);
+        foreach (bool includeRejectedGear in new[] { false, true })
+        {
+            var s = new Scenario { GearPolicy = policy };
+            var primary = Gun("packed-plate-primary", 40); s.Equip(primary, EquipmentSlot.FirstPrimaryWeapon);
+            var rig = (Vest)s.Get(EquipmentSlot.TacticalVest); rig.Grids = new[] { new Grid(rig, 1, 2) };
+            var spare = Mag("packed-plate-spare", 40); s.AddFast(spare);
+            var pockets = Bag("packed-plate-pockets", 1, 2); pockets.AcceptedSlot = EquipmentSlot.Pockets;
+            var grenade1 = new ThrowWeap("packed-pocket-grenade-one"); var grenade2 = new ThrowWeap("packed-pocket-grenade-two");
+            pockets.Grids[0].Put(grenade1); pockets.Grids[0].Put(grenade2); s.Equip(pockets, EquipmentSlot.Pockets);
+            var oldPlate = new ArmorPlate("packed-old-plate", 0); var slot = new ArmorSlot(rig); rig.Slots.Add(slot); slot.Put(oldPlate);
+            var incoming = new ArmorPlate("packed-new-plate", 30); s.Offer(incoming);
+            if (includeRejectedGear) { s.Offer(new ThrowWeap("packed-rejected-grenade")); s.Offer(Gun("packed-rejected-secondary", 40)); }
+            Check(!pitTeam.BigBrain.Actions.GestureCommandAction.CanFitGearSwapReloadReserves(s.Controller.Inventory.Equipment),
+                "Reported generated-kit geometry starts with no reload opening in vest or pockets");
+            s.Run(); s.AssertConserved();
+            Check(s.Plan.OnlyPlateUpgrades && slot.ContainedItem == incoming && s.InOverflow(oldPlate),
+                "Actual accepted plate replacement is classified independently of full magazines and rejected offerings");
+            Check(s.Get(EquipmentSlot.FirstPrimaryWeapon) == primary && s.Get(EquipmentSlot.TacticalVest) == rig &&
+                s.InFastAccess(spare) && pockets.Grids[0].Items.Contains(grenade1) && pockets.Grids[0].Items.Contains(grenade2) &&
+                !pitTeam.BigBrain.Actions.GestureCommandAction.CanFitGearSwapReloadReserves(s.Controller.Inventory.Equipment),
+                "Plate-only planning leaves existing weapons, magazines and packed fast-access layout untouched");
+            s.Plan.Rollback();
+            Check(!s.Plan.OnlyPlateUpgrades && slot.ContainedItem == oldPlate && s.InOffer(incoming),
+                "Rollback restores exact plates and clears the plate-only classification");
+        }
+        {
+            var s = new Scenario { GearPolicy = policy };
+            s.Equip(Gun("mixed-plate-primary", 40), EquipmentSlot.FirstPrimaryWeapon);
+            var rig = (Vest)s.Get(EquipmentSlot.TacticalVest);
+            var slot = new ArmorSlot(rig); rig.Slots.Add(slot); slot.Put(new ArmorPlate("mixed-old-plate", 0));
+            var incoming = new ArmorPlate("mixed-new-plate", 30); var grenade = new ThrowWeap("mixed-accepted-grenade");
+            s.Offer(incoming); s.Offer(grenade); s.Run(); s.AssertConserved();
+            Check(!s.Plan.OnlyPlateUpgrades && slot.ContainedItem == incoming && s.InFastAccess(grenade),
+                "Accepted plate plus grenade retains the normal reload-space validation path");
+        }
         foreach (bool space in new[] { true, false })
         {
             var s = new Scenario { GearPolicy = policy };
@@ -1681,6 +1805,7 @@ namespace EFT.InventoryLogic
     }
     public class Ammo : Item { public bool IsUsed; public string WeaponFamily = "shared"; public int PenetrationPower, Damage = 40; public Ammo(string id) : base(id) { Width = Height = 1; } }
     public class ThrowWeap : Item { public ThrowWeap(string id) : base(id) { Width = Height = 1; } }
+    public class Meds : Item { public Meds(string id) : base(id) { Width = Height = 1; } }
     public class ArmorPlate : Item
     {
         public bool Fits = true;

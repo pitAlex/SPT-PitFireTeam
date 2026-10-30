@@ -247,6 +247,12 @@ namespace pitTeam.Patches
 
         }
 
+        [PatchTranspiler]
+        private static IEnumerable<CodeInstruction> PatchTranspiler(IEnumerable<CodeInstruction> instructions)
+        {
+            return FollowerActivationDiagnostics.Transpile(instructions);
+        }
+
         [PatchPostfix]
         private static void PatchPostfix(BotOwner __instance)
         {

@@ -56,7 +56,7 @@ Target behavior:
 - any gear used for a follower loadout is taken from the player's stash
 - gear is not lost on follower death
 - spawned follower gear cannot be extracted with
-- optional Field Upkeep preserves raid damage and consumed non-secure-container supplies without enabling death gear loss
+- optional Field Upkeep preserves raid damage, consumed non-secure-container supplies and follower injuries without enabling death gear loss; wounded followers need treatment or passive recovery before another raid
 
 Current phase behavior:
 
@@ -137,7 +137,7 @@ When `loadoutManagementMode` changes:
 
 Every teammate is migrated on load: a legacy custom preset selection restores the saved `Default` equipment before the profile can be viewed, edited, purchased over, delivered, or spawned. The profile is saved before the selection so an interrupted migration can retry. The saved `Default` snapshot is preserved. No custom preset can be selected for free, and clone-only equipment saves are rejected by the server.
 
-The client binds and sends `restrictedGearMaintenance`, default false. In Restricted, enabling Field Upkeep persists filtered live equipment state on extraction and the captured equipment state on death. Disabling it keeps the saved Default kit unchanged by raid outcomes. Missing or null server values mean disabled. The preference is shared across Guns for Hire and Allegiance and has no effect on Immersive/Realistic persistence. Toggling it does not immediately alter existing equipment snapshots.
+The client binds and sends `restrictedGearMaintenance`, default false. In Restricted, enabling Field Upkeep persists filtered live equipment state on extraction, the captured equipment state on death and HP-only raid injuries. Disabling it keeps the saved Default kit and health unchanged by subsequent raid outcomes; existing injuries still require treatment or passive recovery and block new raid admission until fully healed. Missing or null server values mean disabled. The preference is shared across Guns for Hire and Allegiance and has no effect on automatic Immersive/Realistic persistence. Toggling it does not immediately alter existing equipment or health snapshots.
 
 ## Real Default Loadout Commit
 
@@ -313,7 +313,7 @@ Important behavior:
 
 ## Spawn Preparation
 
-[Teammate health](Teammate-Health.md) owns HP retention independently of equipment mode and Field Upkeep. Spawn preparation catches up saved recovery and scales current/maximum HP together; activation keeps saved-teammate injuries. HP-only raid outcomes clear effects without changing the gear-persistence rules below.
+[Teammate health](Teammate-Health.md) owns HP retention: Restricted requires Field Upkeep, while Immersive/Realistic retain injuries automatically. This gate applies only when accepting raid outcomes; existing wounds remain after disabling upkeep. Spawn preparation catches up saved recovery and scales current/maximum HP together; activation keeps saved-teammate injuries. Accepted HP-only raid outcomes clear effects without changing the gear-persistence rules below.
 
 Follower spawn preparation currently uses the saved teammate profile clone before returning follower details to the client.
 

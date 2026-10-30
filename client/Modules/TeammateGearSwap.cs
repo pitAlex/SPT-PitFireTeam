@@ -408,6 +408,8 @@ namespace pitTeam.Modules
                             string followerActual = Snapshot(bot.Inventory.Equipment), followerExpected = Snapshot(FollowerEquipment);
                             if ((!CommandLoot && playerActual != playerExpected) || followerActual != followerExpected)
                             {
+                                DonationDiagnosticComparison("replayMismatch", "player", playerExpected, () => playerActual);
+                                DonationDiagnosticComparison("replayMismatch", "follower", followerExpected, () => followerActual);
                                 throw new InvalidOperationException("Replay did not match the accepted draft.");
                             }
                             ValidateCommandReplay();
@@ -503,6 +505,9 @@ namespace pitTeam.Modules
             if (!Giving && !FirearmSlots.Select(s => FollowerEquipment.GetSlot(s).ContainedItem).OfType<Weapon>()
                 .Any(w => !w.MissingVitalParts.Any()))
                 throw new GearSwapValidationException("SwapGearNeedsWeapon");
+            // Installed plate replacements leave firearms and fast-access grids unchanged.
+            // An existing packed generated kit must not veto that independent upgrade.
+            if (Giving && _donationPlan?.OnlyPlateUpgrades == true) return;
             bool magazineRoom = pitTeam.BigBrain.Actions.GestureCommandAction.CanFitGearSwapReloadReserves(FollowerEquipment);
             if (!magazineRoom)
                 throw new GearSwapValidationException("SwapGearMagazineSpace");

@@ -24,7 +24,6 @@ namespace pitTeam.Modules
         {
             internal float Roll;
             internal bool Revoked;
-            internal bool PopulationDecided, PopulationAccepted;
             internal readonly List<BorrowedNeutral> Borrowed = new List<BorrowedNeutral>();
         }
         private sealed class BorrowedNeutral
@@ -129,7 +128,7 @@ namespace pitTeam.Modules
         }
 
         private static bool IsNeutral(BotsGroup group) => HasLivingCompanion && group != null && OrdinaryGroup(group) &&
-            Encounters.TryGetValue(group, out var encounter) && !encounter.Revoked && encounter.Roll < NeutralChance && encounter.PopulationAccepted;
+            Encounters.TryGetValue(group, out var encounter) && !encounter.Revoked && encounter.Roll < NeutralChance;
 
         internal static bool IsCalmedGroup(BotsGroup group) => Enabled && IsNeutral(group);
 
@@ -156,22 +155,11 @@ namespace pitTeam.Modules
                 return;
             }
             if (!HasLivingCompanion) return;
-            // Wait for an authored group to finish spawning before reserving its whole size.
-            if (!Encounters.ContainsKey(group) && group.TargetMembersCount > group.MembersCount) return;
             if (!Encounters.ContainsKey(group))
             {
                 Encounters.Add(group, new Encounter { Roll = UnityEngine.Random.value, Revoked = AggressiveGroups.Contains(group) });
-            }
-            var admission = Encounters[group];
-            if (!admission.PopulationDecided)
-            {
-                admission.PopulationDecided = true;
-                if (!admission.Revoked && admission.Roll < NeutralChance)
-                {
-                    admission.PopulationAccepted = FriendlyEncounterPopulation.CanAdmitGroup(group, out int alive, out int friendly, out int limit);
-                    if (admission.PopulationAccepted) group.Lock();
-                    Logger.LogInfo($"[ScavRelations] group={group.Id} neutral={admission.PopulationAccepted} kills={neutralKills} population={friendly}/{alive} limit={limit}");
-                }
+                // A living Scav's diplomacy is independent of random friendly encounter slots.
+                Logger.LogInfo($"[ScavRelations] group={group.Id} neutral={IsNeutral(group)} kills={neutralKills} source=companion roll={Encounters[group].Roll:F3} chance={NeutralChance:F3}");
             }
             if (!IsNeutral(group))
             {
@@ -213,7 +201,6 @@ namespace pitTeam.Modules
             {
                 var borrowed = encounter.Borrowed.ToArray();
                 encounter.Borrowed.Clear();
-                encounter.PopulationDecided = encounter.PopulationAccepted = false;
                 foreach (var relation in borrowed)
                 {
                     var group = relation.Group;

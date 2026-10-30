@@ -6,6 +6,7 @@ using EFT;
 using HarmonyLib;
 using pitTeam.Components;
 using pitTeam.Patches;
+using pitTeam.Utils;
 using UnityEngine;
 using SAIN.Components;
 using SAIN.Models.Enums;
@@ -149,6 +150,18 @@ public static class FireSafetyChecks
         owner.GetPlayer.HandsController = null; gun.ManualUpdate(0.1f);
         Check(gun.Updates > 0, "stale controller update remains native during hands teardown");
         Check(pitTeam.Modules.BattleRecorder.Calls == 0, "friendly-fire guards add no shot-recording events");
+        owner=Spawn("head-check");
+        var ally=Leader(owner);
+        ally.MainParts=new Dictionary<BodyPartType,BodyPart>{{BodyPartType.head,new BodyPart{Position=new Vector3(-.2f,1,0)}}};
+        Check(FollowerShotSafety.IsFriendlyInSuppressionLane(owner,new Vector3(0,1,0),point),
+            "suppression rejects an actual teammate head immediately behind the muzzle");
+        owner.Brain.Agent.Action=BotLogicDecision.attackMovingWithSuppress;
+        Check(!owner.ShootData.Shoot(),"core suppression muzzle clearance is enforced at native trigger admission");
+        owner.Brain.Agent.Action=BotLogicDecision.none;
+        ally.MainParts[BodyPartType.head].Position=new Vector3(5,1,0);
+        Check(FollowerShotSafety.IsFriendlyInShotLane(owner,new Vector3(0,1,0),point),
+            "actual animated head position blocks fire even when feet are outside the lane");
+        ally.MainParts=null;
         Console.WriteLine(count + " shared firing safety checks passed.");
     }
 }
@@ -177,8 +190,11 @@ namespace EFT
 {
     public class AIData {public BotOwner BotOwner; public Player Player;}
     public class Health {public bool IsAlive=true;}
+    public enum BodyPartType { body,head }
+    public class BodyPart {public Vector3 Position;}
     public class Player
     {
+        public Dictionary<BodyPartType,BodyPart> MainParts;
         public string ProfileId; public AIData AIData; public Health HealthController=new Health(); public Transform Transform=new Transform();
         public Vector3 LookDirection=new Vector3(1,0,0),LocalShotDirection=new Vector3(1,0,0); public object HandsController;
         public Bones PlayerBones=new Bones();
@@ -210,8 +226,13 @@ namespace EFT
     public class AimManager {public Aim CurrentAiming=new Aim();}
     public class WeaponManager {public Player.FirearmController ShootController;}
     public class Sensor {public Vector3 ShootStartPos;}
+    public enum BotLogicDecision {none,attackMovingWithSuppress,suppressFire}
+    public class Brain {public Agent Agent=new Agent();}
+    public class Agent {public BotLogicDecision Action;public Result LastResult()=>new Result{Action=Action};}
+    public struct Result {public BotLogicDecision Action;}
     public class BotOwner
     {
+        public Brain Brain=new Brain();
         public string ProfileId{get;set;} public bool IsFollower=true,IsDead;public Player GetPlayer;public AIData AIData;
         public BotFollower BotFollower;public ShootData ShootData;public WeaponManager WeaponManager=new WeaponManager();
         public AimManager AimingManager=new AimManager();public Sensor LookSensor=new Sensor();public BotComponent Sain;

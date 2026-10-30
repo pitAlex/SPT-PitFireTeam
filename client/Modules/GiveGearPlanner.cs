@@ -33,6 +33,7 @@ namespace pitTeam.Modules
         private readonly Vest[] _vests;
         private readonly Weapon[] _weapons;
         internal readonly HashSet<string> OfferedWeaponIds;
+        internal bool OnlyPlateUpgrades { get; private set; }
         private readonly HashSet<string> _playerOwned;
         private readonly BotOwner _bot;
         private readonly CompanionGearPolicy _gearPolicy;
@@ -247,7 +248,16 @@ namespace pitTeam.Modules
                 }
             }
 
+            int plateEditCount = _edits.Count;
             var primary = Equipped(EquipmentSlot.FirstPrimaryWeapon) as Weapon;
+            // Supply-only gifts also service retained firearms, without cycling their
+            // inserted magazines or requiring a small useful gift to restore readiness.
+            foreach (var slot in new[] { EquipmentSlot.FirstPrimaryWeapon, EquipmentSlot.SecondPrimaryWeapon, EquipmentSlot.Holster })
+                if (Equipped(slot) is Weapon retained && _supplies.Any(item => !InKit(item) &&
+                    (item is Magazine magazine && FollowerWeaponMagazineCompatibility.IsMechanicallyCompatible(retained, magazine) &&
+                        FollowerWeaponMagazineCompatibility.AreLoadedCartridgesCompatible(retained, magazine) ||
+                     item is Ammo ammo && FollowerWeaponLooseAmmoSupport.IsCompatible(retained, ammo))))
+                    Try(() => Support(retained, slot == EquipmentSlot.FirstPrimaryWeapon, resupplyOnly: true), "fixedKit.weaponSupply");
             bool preservePrimaryReadiness = ProjectedReady(primary);
             if (primary != null && Equipped(EquipmentSlot.SecondPrimaryWeapon) == null)
             {
@@ -272,6 +282,13 @@ namespace pitTeam.Modules
             foreach (var grenade in _offered.OfType<ThrowWeap>().OrderBy(item => (string)item.Id))
                 if (!InFastAccess(grenade))
                     Try(() => MoveToGrids(grenade, FastGrids(), reserveReloadSpace: true), "fixedKit.grenadeSupply");
+
+            foreach (var medicine in _offered.OfType<Meds>().OrderBy(item => (string)item.Id))
+                if (!InKit(medicine)) Try(() => Carry(medicine), "fixedKit.medicalSupply");
+
+            // Classify accepted follower changes, not the offered items. Rejected secondary or
+            // grenade trials roll their edits back; disposition below only moves rejected offers.
+            OnlyPlateUpgrades = plateEditCount > 0 && _edits.Count == plateEditCount;
 
             // Rejected offerings use the existing drop escrow, never the companion's
             // backpack. Accepted weapon/plate descendants have already left these roots.
@@ -432,10 +449,10 @@ namespace pitTeam.Modules
             return null;
         }
 
-        private void Support(Weapon weapon, bool primary)
+        private void Support(Weapon weapon, bool primary, bool resupplyOnly = false)
         {
             if (!FunctionalWeapon(weapon)) throw new InvalidOperationException("Incomplete or broken weapon.");
-            if (primary)
+            if (primary && !resupplyOnly)
             {
                 var retained = new[] { EquipmentSlot.SecondPrimaryWeapon, EquipmentSlot.Holster }
                     .Select(Equipped).OfType<Weapon>().ToArray();
@@ -447,15 +464,16 @@ namespace pitTeam.Modules
             if (!FollowerWeaponLooseFeedReadiness.IsSupported(weapon))
             {
                 var magazines = _supplies.Concat(FastGrids().SelectMany(grid => grid.Items)).OfType<Magazine>().Distinct().Where(m =>
+                    (!resupplyOnly || !InKit(m)) &&
                     FollowerWeaponMagazineCompatibility.IsMechanicallyCompatible(weapon, m) &&
                     FollowerWeaponMagazineCompatibility.AreLoadedCartridgesCompatible(weapon, m))
                     .OrderByDescending(m => m.Count).ThenBy(m => (string)m.Id).ToList();
                 var current = weapon.GetCurrentMagazine();
-                if (current != null && !FollowerWeaponMagazineCompatibility.AreLoadedCartridgesCompatible(weapon, current))
+                if (!resupplyOnly && current != null && !FollowerWeaponMagazineCompatibility.AreLoadedCartridgesCompatible(weapon, current))
                 {
                     Stow(current); current = null;
                 }
-                if (current == null || current.Count == 0 && magazines.Any(m => m.Count > 0))
+                if (!resupplyOnly && (current == null || current.Count == 0 && magazines.Any(m => m.Count > 0)))
                 {
                     var loaded = magazines.FirstOrDefault(m => m.Count > 0);
                     if (loaded == null && magazines.Count == 0) throw new InvalidOperationException("No compatible magazine.");
@@ -482,7 +500,7 @@ namespace pitTeam.Modules
                 if (!InKit(ammo)) Try(() => Carry(ammo));
             var budget = SupplyBudget();
             var seated = weapon.GetCurrentMagazine();
-            if (!FollowerWeaponLooseFeedReadiness.IsSupported(weapon) && seated != null &&
+            if (!resupplyOnly && !FollowerWeaponLooseFeedReadiness.IsSupported(weapon) && seated != null &&
                 _supplies.OfType<Ammo>().Any(ammo => budget.Fill(seated, ammo) > 0) &&
                 !FastGrids().SelectMany(grid => grid.Items).OfType<Magazine>().Any(mag => budget.Owns(weapon, mag)))
             {
@@ -493,6 +511,7 @@ namespace pitTeam.Modules
                     throw new InvalidOperationException("Deferred magazine refill has no reload landing space.");
             }
             RequireReloadSpace();
+            if (resupplyOnly) return;
             int projectedRounds = SupplyBudget().Rounds(weapon);
             int threshold = FollowerWeaponAmmoReadinessPolicy.GetRequiredRounds(weapon.AmmoCaliber);
             bool usable = primary ? threshold > 0 && projectedRounds >= threshold : projectedRounds > 0;
@@ -527,8 +546,13 @@ namespace pitTeam.Modules
         {
             if (_gearPolicy?.KeepEquipment == true)
             {
-                if (item is Ammo) MoveToGrids(item, FastGrids(), reserveReloadSpace: true);
-                else throw new InvalidOperationException("Fixed companion equipment does not accept cargo.");
+                if (!(item is Ammo) && !(item is Meds))
+                    throw new InvalidOperationException("Fixed companion equipment does not accept cargo.");
+                if (Try(() => MoveToGrids(item, FastGrids(), reserveReloadSpace: true))) return;
+                var bossSecure = Equipped(EquipmentSlot.SecuredContainer) as SearchableItem;
+                if (bossSecure == null) throw new InvalidOperationException("No fitting medical/ammunition supply location.");
+                MoveToGrids(item, bossSecure.Grids);
+                RequireReloadSpace();
                 return;
             }
             var roots = new[] { EquipmentSlot.Backpack, EquipmentSlot.TacticalVest, EquipmentSlot.Pockets }
@@ -623,7 +647,11 @@ namespace pitTeam.Modules
             }
             catch { RollbackTo(checkpoint); _temporarySecureItems.Clear(); _temporarySecureItems.UnionWith(stagedBefore); throw; }
         }
-        internal void Rollback() => RollbackTo(0);
+        internal void Rollback()
+        {
+            OnlyPlateUpgrades = false;
+            RollbackTo(0);
+        }
         private void RollbackTo(int checkpoint)
         {
             for (int index = _operations.Count - 1; index >= checkpoint; index--)

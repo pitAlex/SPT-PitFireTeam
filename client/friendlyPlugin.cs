@@ -508,6 +508,7 @@ namespace pitTeam
             new FollowerGrenadeReleasePatch().Enable();
             new FollowerGrenadeSpawnPatch().Enable();
             new FollowerMedicalCancelPatch().Enable();
+            new FollowerPatrolHeadLookPatch().Enable();
             new FollowerPoisonImmunityPatch().Enable();
             new FollowerHazardMovementPatch().Enable();
             new FollowerBarbedWireContactPatch().Enable();
@@ -1395,25 +1396,33 @@ namespace pitTeam
                     if (follower != null && follower.GetBot().HealthController.IsAlive && !follower.GetBot().DoorOpener.Interacting)
                     {
                         BotOwner bot = follower.GetBot();
-                        Vector3 target = FindTeleportSpot(position, reservedSpots, followerIndex);
+                        if (!TryFindTeleportSpot(position, reservedSpots, followerIndex, out Vector3 target))
+                        {
+                            Modules.Logger.LogInfo($"[Teleport] No supported same-floor space for {bot.Profile.Nickname}; placement skipped.");
+                            continue;
+                        }
                         followerIndex++;
 
                         follower.BeginTeleportGrace(target);
                         bot.Mover.Stop();
                         bot.GetPlayer.Teleport(target);
+                        Modules.Logger.LogInfo($"[Teleport] {bot.Profile.Nickname} player={position} target={target}");
                         reservedSpots.Add(target);
                     }
                 }
             }
         }
 
-        private static Vector3 FindTeleportSpot(Vector3 playerPosition, List<Vector3> reservedSpots, int index)
+        private static bool TryFindTeleportSpot(Vector3 playerPosition, List<Vector3> reservedSpots, int index, out Vector3 target)
         {
+            target = default;
             const float minDistanceToPlayer = 2f;
             const float minDistanceBetweenFollowers = 1.6f;
             const float sampleRadius = 1.4f;
             const float baseRadius = 2.25f;
             const float ringStep = 1.4f;
+            if (!NavMesh.SamplePosition(playerPosition, out NavMeshHit playerFloor, 0.65f, NavMesh.AllAreas) ||
+                Mathf.Abs(playerFloor.position.y - playerPosition.y) > 0.65f) return false;
 
             float seedAngle = UnityEngine.Random.Range(0f, 360f);
 
@@ -1427,6 +1436,14 @@ namespace pitTeam
 
                 if (NavMesh.SamplePosition(candidate, out NavMeshHit hit, sampleRadius, NavMesh.AllAreas))
                 {
+                    if (Mathf.Abs(hit.position.y - playerFloor.position.y) > 0.65f ||
+                        NavMesh.Raycast(playerFloor.position, hit.position, out _, NavMesh.AllAreas) ||
+                        !Physics.Raycast(hit.position + Vector3.up * 0.35f, Vector3.down, out RaycastHit support,
+                            0.8f, LayersMaskController.HighPolyWithTerrainMask, QueryTriggerInteraction.Ignore) ||
+                        Mathf.Abs(support.point.y - hit.position.y) > 0.35f ||
+                        Physics.CheckCapsule(hit.position + Vector3.up * 0.4f, hit.position + Vector3.up * 1.45f,
+                            0.28f, LayersMaskController.HighPolyWithTerrainMask, QueryTriggerInteraction.Ignore))
+                        continue;
                     if ((hit.position - playerPosition).sqrMagnitude < minDistanceToPlayer * minDistanceToPlayer)
                     {
                         continue;
@@ -1443,17 +1460,13 @@ namespace pitTeam
                     }
                     if (!overlaps)
                     {
-                        return hit.position;
+                        target = hit.position;
+                        return true;
                     }
                 }
             }
 
-            // Fallback near player if no valid spread point is found.
-            if (NavMesh.SamplePosition(playerPosition, out NavMeshHit fallbackHit, 1.2f, NavMesh.AllAreas))
-            {
-                return fallbackHit.position;
-            }
-            return playerPosition;
+            return false;
         }
 
         private void _BotHeal()

@@ -40,7 +40,7 @@ Fence standing modifies the Scav base supplied by [Friendly Encounter Chance](Al
 
 At a slider value of 15%, the Scav base is 11.25%: standing 4.89 now gives approximately **20.0025%**, and standing 6 gives 22.5%, before penalties. At an 80% slider the maximum is 80%, from its 40% Scav base times 2. Standard starting standing 0 still gives zero chance, and standing 0.2 still gives 3% at the default. Missing/non-finite standing falls back to zero. Each eligible profile rolls once, retaining all role/group/trust exclusions. Standing changes affect future rolls only.
 
-The slider independently limits new friendly Scav admissions as a share of living ordinary Scavs. Fence standing and encounter penalties do not change that numerical limit. Existing selected/calmed friendships survive population drops; new admissions stay blocked while the live friendly count is at or above capacity. There is no lifetime count limit. See [population admission](Allegiance.md#finding-friendly-pmcs) for denominator and PMC-minimum rules.
+The slider independently limits new friendly Scav admissions as a share of living ordinary Scavs. Fence standing and encounter penalties do not change that numerical limit. Companion-granted Scav neutrality is independent of this encounter limit. Existing selected friendships survive population drops; new admissions stay blocked while the live friendly count is at or above capacity. There is no lifetime count limit. See [population admission](Allegiance.md#finding-friendly-pmcs) for denominator and PMC-minimum rules.
 
 ## Native reference values
 
