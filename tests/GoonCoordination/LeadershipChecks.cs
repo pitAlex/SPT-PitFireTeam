@@ -43,6 +43,39 @@ internal static class LeadershipChecks
     }
     internal static void Run()
     {
+        {
+            var auto=new Squad();
+            Check(!GoonPushLeadership.CanAutonomousAdvance(auto.Pipe,auto.Enemy),"Pipe waits until Knight has actually published a tactical decision");
+            GoonPushLeadership.PublishAutonomousIntent(auto.Knight,auto.Enemy.ProfileId,false);
+            Check(!GoonPushLeadership.CanAutonomousAdvance(auto.Pipe,auto.Enemy),"Knight hold/refusal blocks autonomous search");
+            GoonPushLeadership.PublishAutonomousIntent(auto.Knight,auto.Enemy.ProfileId,true);
+            Check(GoonPushLeadership.CanAutonomousAdvance(auto.Pipe,auto.Enemy),"Knight advance/covering fire permits autonomous support");
+            Check(!GoonPushLeadership.TryGetSearchLeader(auto.Pipe,auto.Enemy,out _),"covering-fire permission does not invent a group-search mission");
+            GoonPushLeadership.PublishAutonomousIntent(auto.Knight,auto.Enemy.ProfileId,true,searching:true);
+            Check(GoonPushLeadership.TryGetSearchLeader(auto.Pipe,auto.Enemy,out var searchLead) && searchLead==auto.Knight,
+                "Knight searching the same known enemy positively supplies the group-search leader");
+            auto.Enemy.Eligible=false;
+            Check(!GoonPushLeadership.TryGetSearchLeader(auto.Pipe,auto.Enemy,out _),"group search still requires an admitted target");auto.Enemy.Eligible=true;
+            auto.Knight.Memory.IsUnderFire=true;
+            Check(!GoonPushLeadership.CanAutonomousAdvance(auto.Pipe,auto.Enemy),"fresh Knight pressure invalidates advance permission");auto.Knight.Memory.IsUnderFire=false;
+            auto.Knight.RecentHit=true;
+            Check(!GoonPushLeadership.CanAutonomousAdvance(auto.Pipe,auto.Enemy),"a fresh hit invalidates permission before Knight selects a successor");auto.Knight.RecentHit=false;
+            auto.Knight.Medecine.Using=true;
+            Check(!GoonPushLeadership.CanAutonomousAdvance(auto.Pipe,auto.Enemy),"Knight treatment invalidates stale advance permission");auto.Knight.Medecine.Using=false;
+            GoonPushLeadership.PublishAutonomousIntent(auto.Knight,"other-target",true);
+            Check(!GoonPushLeadership.CanAutonomousAdvance(auto.Pipe,auto.Enemy),"another target's intent cannot authorize an approach");
+            auto.Knight.Position=new Vector3(51,0,0);
+            Check(GoonPushLeadership.CanAutonomousAdvance(auto.Pipe,auto.Enemy),"nearby Pipe delegates when Knight is beyond 50m");
+            auto.Pipe.Position=new Vector3(31,0,0);
+            Check(!GoonPushLeadership.CanAutonomousAdvance(auto.Pipe,auto.Enemy),"remote Pipe does not gain the player delegation exception");
+            auto.Pipe.Position=default;auto.Knight.Position=default;
+            auto.Knight.Memory.GoalEnemy=new EnemyInfo{ProfileId="different",Person=new Player(),IsVisible=true};
+            Check(GoonPushLeadership.CanAutonomousAdvance(auto.Pipe,auto.Enemy),"nearby Pipe can support the player while Knight fights another target");
+            auto.Knight.Memory.GoalEnemy=auto.Enemy;GoonPushLeadership.ClearAutonomousIntent(auto.Knight);
+            Check(!GoonPushLeadership.CanAutonomousAdvance(auto.Pipe,auto.Enemy),"cleared combat intent cannot resume an old approach");
+            auto.Knight.IsDead=true;
+            Check(GoonPushLeadership.CanAutonomousAdvance(auto.Pipe,auto.Enemy),"Pipe regains independence without a living Knight");
+        }
         foreach (bool answer in new[] { false, true })
         foreach (bool pipeFirst in new[] { false, true })
         {
@@ -98,6 +131,11 @@ internal static class LeadershipChecks
             Check(!KnightSquadCoordinator.TryGetPushOverride(squad.Pipe, out _, out _), "a requested recalculation is not yet an actionable position");
             squad.Knight.Boss.BossLogic.UpdatePositions(true);
             Check(KnightSquadCoordinator.TryGetPushOverride(squad.Pipe, out _, out _), "published fresh member directive can supersede the player push");
+            squad.Human.Logic.IsHitted=true;
+            Check(!KnightSquadCoordinator.TryGetPushOverride(squad.Pipe,out _,out _),"protective mode prioritizes the player's injury");
+            squad.Follower.Independent=true;
+            Check(KnightSquadCoordinator.TryGetPushOverride(squad.Pipe,out _,out _),"independent unit retains Knight's directive while ordinary ally support handles player pressure");
+            squad.Follower.Independent=false;squad.Human.Logic.IsHitted=false;
             squad.Knight.IsDead = true;
             Check(!KnightSquadCoordinator.TryGetPushOverride(squad.Pipe, out _, out _), "dead Knight cannot publish a stale takeover");
             squad.Knight.IsDead = false;

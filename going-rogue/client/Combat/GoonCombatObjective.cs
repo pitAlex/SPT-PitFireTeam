@@ -20,6 +20,7 @@ namespace pitTeam.GoingRogue.Combat
         private float coverArrivedAt = -1f;
         private float coverBreakRetryAt;
         private string preparedEnemy;
+        private readonly GoonIndependentPursuit independentPursuit;
 
         internal GoonCombatObjective(BotOwner owner, FollowerCombatCommon common, IGoonCombatSelector selector, string actorPrefix) : base(owner, common)
         {
@@ -27,10 +28,13 @@ namespace pitTeam.GoingRogue.Combat
             prefix = actorPrefix + ".";
             helpCoverReason = "protectBossSupportCover." + actorPrefix;
             support = new FollowerCombatSupportPlanner(owner, common);
+            independentPursuit = new GoonIndependentPursuit(owner, common, prefix + "onYourOwn.pursuit", 10f);
         }
 
         public override void Reset()
         {
+            independentPursuit.Reset();
+            GoonPushLeadership.ClearAutonomousIntent(BotOwner);
             vanilla.Dispose();
             supportPhase.Reset();
             preparedSupport = null;
@@ -50,11 +54,16 @@ namespace pitTeam.GoingRogue.Combat
             coverArrivedAt = -1f;
             coverBreakRetryAt = 0f;
             knightPositionRetryAt = 0f;
-            vanilla.Begin(CombatCommon);
+            // Resuming after Regroup/Help is not a new combat episode. In particular,
+            // Knight must not get another native ten-second fight opener here.
+            vanilla.LastSelectedDecision = null;
+            vanilla.InvalidatePosition();
         }
 
         public override void Deactivate()
         {
+            independentPursuit.Reset();
+            GoonPushLeadership.ClearAutonomousIntent(BotOwner);
             preparedSupport = null;
             supportPhase.Clear();
             vanilla.InvalidatePosition();
@@ -107,17 +116,26 @@ namespace pitTeam.GoingRogue.Combat
             }
 
             if (TryHelpLeader(enemy, out var help)) return help;
-            if (TryRejoinLeader(enemy, out var rejoin)) return rejoin;
             if (TryKnightPosition(out var knightPosition)) return knightPosition;
+            if (TryGetGroupSearchDecision(enemy, out var groupSearch)) return groupSearch;
+            if (TryRejoinLeader(enemy, out var rejoin)) return rejoin;
             if (CanSupport() && TryGetRoleSupportDecision(enemy, out var roleSupport)) return roleSupport;
             if (TrySupport(out var assistance)) return assistance;
             if (CombatCommon.TryActivateFollowerGrenade(enemy, out grenade)) return grenade;
+            if (independentPursuit.TryGetDecision(out var pursuit)) return pursuit;
             return vanilla.GetDecision();
         }
 
         protected virtual bool TryGetRoleSupportDecision(EnemyInfo enemy,
             out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         { decision = default; return false; }
+
+        protected virtual bool TryGetGroupSearchDecision(EnemyInfo enemy,
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
+        { decision = default; return false; }
+
+        protected virtual bool TryGroupSearchTransition(AICoreActionResult<BotLogicDecision, CoreActionResultParams> current,
+            out AICoreActionEnd end) { end = default; return false; }
 
         private bool TryRejoinLeader(EnemyInfo enemy,
             out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
@@ -151,7 +169,7 @@ namespace pitTeam.GoingRogue.Combat
         private bool TryHelpLeader(EnemyInfo enemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
-            if (Time.time < helpRetryAt || BotOwner.Memory.IsUnderFire ||
+            if (FollowerCombatAnchor.IsCombatIndependent(BotOwner) || Time.time < helpRetryAt || BotOwner.Memory.IsUnderFire ||
                 (enemy.IsVisible && enemy.CanShoot) ||
                 BotOwner.BotFollower?.BossToFollow is not pitAIBossPlayer boss ||
                 boss.GetBossLogic()?.IsHitted != true) return false;
@@ -218,15 +236,22 @@ namespace pitTeam.GoingRogue.Combat
                 return CombatCommon.EndWeaponPreparationHold(current.Reason);
             if (current.Reason == FollowerCombatCommon.HealRetryHoldReason)
                 return EndMedicalRetryHold(current);
-            if (current.Reason == FollowerCombatCommon.RecoveryNoCoverThreatHoldReason)
-                return CombatCommon.EndRecoveryNoCoverThreatHold();
             // A search/hold may outlive the emergency pistol draw. Prepare one real
             // successor so the shared driver can consume it before resuming the old action.
             if (!FollowerCombatCommon.IsMedicalDecision(current) && CanSupport() &&
                 CombatCommon.TryGetCombatLongGunPreparationDecision(BotOwner.Memory.GoalEnemy,
-                    orderedPush: false, out var weaponPreparation) &&
-                CombatCommon.TryPrepareDecisionTransition(current, prefix + "prepareLongGun", weaponPreparation))
-                return new AICoreActionEnd(prefix + "prepareLongGun", true);
+                    orderedPush: false, out var weaponPreparation))
+                return CombatCommon.TryPrepareDecisionTransition(current, prefix + "prepareLongGun", weaponPreparation)
+                    ? new AICoreActionEnd(prefix + "prepareLongGun", true) : FollowerCombatCommon.Continue();
+            if (TryGroupSearchTransition(current, out var groupSearchEnd)) return groupSearchEnd;
+            if (independentPursuit.TryReleaseHold(current, out var pursuitEnd)) return pursuitEnd;
+            if (current.Reason == FollowerCombatCommon.RecoveryNoCoverThreatHoldReason)
+                return CombatCommon.EndRecoveryNoCoverThreatHold();
+            if (current.Action == BotLogicDecision.holdPosition &&
+                current.Reason?.StartsWith(prefix + "pressureSearch", StringComparison.Ordinal) == true)
+                return new AICoreActionEnd(prefix + "searchRetry", Time.time >= vanilla.RetryUntil ||
+                    !CombatCommon.HasActiveCombatEnemy() || CombatCommon.HasActiveOrPendingHealWork() && !BotOwner.Medecine.Using ||
+                    CombatCommon.HasRecoveryPressure(1f) || BotOwner.Memory.GoalEnemy?.IsVisible == true && BotOwner.Memory.GoalEnemy.CanShoot);
             if (current.Reason == prefix + "noCover" || current.Reason == prefix + "medicalDeferred")
             {
                 return new AICoreActionEnd(prefix + "retry", Time.time >= vanilla.RetryUntil ||
@@ -265,9 +290,16 @@ namespace pitTeam.GoingRogue.Combat
                 }
                 return FollowerCombatCommon.Continue();
             }
+            if (vanilla is BigPipeVanillaCombat &&
+                (current.Action == BotLogicDecision.search || current.Action == BotLogicDecision.goToEnemy) &&
+                current.Reason?.StartsWith(prefix, StringComparison.Ordinal) == true)
+                return vanilla.ShallEndCurrentDecision(current);
             // Native stationary-fire/hold timing belongs to the role selector; common movement and
             // medical end rules retain arrival, treatment, target and safety ownership.
-            if (current.Reason?.StartsWith(prefix + "native.", StringComparison.Ordinal) == true &&
+            if ((current.Reason?.StartsWith(prefix + "native.", StringComparison.Ordinal) == true ||
+                 current.Reason?.StartsWith(prefix + "staleContactSearch.", StringComparison.Ordinal) == true ||
+                 current.Reason?.StartsWith(prefix + "pressureSearch.", StringComparison.Ordinal) == true ||
+                 current.Reason == prefix + "knightLead") &&
                 (current.Action == BotLogicDecision.holdPosition || current.Action == BotLogicDecision.shootFromPlace ||
                  current.Action == BotLogicDecision.shootFromCover || current.Action == BotLogicDecision.lay))
             {
@@ -326,6 +358,7 @@ namespace pitTeam.GoingRogue.Combat
         public override void DecisionChanged(AICoreActionResult<BotLogicDecision, CoreActionResultParams>? previous,
             AICoreActionResult<BotLogicDecision, CoreActionResultParams> next)
         {
+            independentPursuit.DecisionChanged(next);
             vanilla.LastSelectedDecision = next.Action;
             CombatCommon.HandleSharedDecisionChanged(next);
             CombatCommon.HandleCommittedCoverDecisionChanged(next);
@@ -333,6 +366,17 @@ namespace pitTeam.GoingRogue.Combat
             if (CombatCommon.ShouldCommitMovementDecision(next, false)) CombatCommon.CommitMovement(next);
             else if (!CombatCommon.IsSameCommittedMovement(next)) CombatCommon.ClearCommittedMovement();
             CombatCommon.UpdateRecoveryNoCoverCommitment(next);
+            if (BotOwner.Profile.Info.Settings.Role == WildSpawnType.bossKnight)
+            {
+                var enemy = BotOwner.Memory.GoalEnemy;
+                bool pursuit = next.Reason?.StartsWith(prefix + "onYourOwn.pursuit", StringComparison.Ordinal) == true;
+                bool advances = pursuit || next.Action == BotLogicDecision.search || next.Action == BotLogicDecision.runToEnemy ||
+                    next.Action == BotLogicDecision.goToEnemy || next.Reason?.StartsWith("knight.cover.", StringComparison.Ordinal) == true;
+                bool coveringFire = (next.Action == BotLogicDecision.shootFromPlace || next.Action == BotLogicDecision.shootFromCover) &&
+                    enemy?.IsVisible == true && enemy.CanShoot;
+                GoonPushLeadership.PublishAutonomousIntent(BotOwner, enemy?.ProfileId, advances || coveringFire,
+                    searching: pursuit || next.Action == BotLogicDecision.search);
+            }
         }
 
         private AICoreActionResult<BotLogicDecision, CoreActionResultParams> Hold(string reason)

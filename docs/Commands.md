@@ -197,7 +197,7 @@ State:
 
 - Does not create `FollowerCommandType` state.
 - Sets `BotFollowerPlayer.CanPatrol` true for selected out-of-combat followers.
-- In combat, sets effective Self-Determination to 100% while leaving Aggression unchanged; see [shared settings and lifetime](Self-Determination.md#settings-and-commands).
+- In combat, sets effective Self-Determination to 100%. Aggression stays unchanged for ordinary followers; Going Rogue Goons receive a 70% temporary override; see [shared settings and lifetime](Self-Determination.md#settings-and-commands).
 
 Targeting:
 
@@ -205,10 +205,11 @@ Targeting:
 
 Behavior:
 
-- Peaceful use clears current request command state and temporary combat aggression override. Combat use changes only determination.
+- Peaceful use clears current request command state and temporary combat aggression override. Combat use sets determination to 100%; Going Rogue Goons additionally receive the addon-owned 70% temporary aggression override.
 - Enables patrol-radius intent in `FollowAction`.
 - `FollowMe` / `Cooperation` clears this mode.
 - Combat use does not create a request command; it only asks the current combat layer to stop anchoring behavior around the boss.
+- Going Rogue Goons use that independence to pursue admitted contacts beyond normal escort caution. Knight leads, Pipe follows his published advance, and Birdeye closes to native sniper distance. Safe settled idle holds require a prepared navigation successor; useful fire, medicine, reloads, danger and explicit commands retain priority. Peaceful patrol and battle-wide override/reset lifetimes are unchanged.
 
 ### Cover Me
 

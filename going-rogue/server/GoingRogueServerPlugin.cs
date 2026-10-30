@@ -3,6 +3,8 @@ using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.DI;
 using SPTarkov.Server.Core.Models.Spt.Mod;
 using SPTarkov.Server.Core.Models.Spt.Tables;
+using SPTarkov.Server.Core.Helpers.Items;
+using SPTarkov.Server.Core.Helpers.Profile;
 using Range = SemanticVersioning.Range;
 using Version = SemanticVersioning.Version;
 
@@ -18,25 +20,26 @@ public record GoingRogueMetadata : IModMetadata
     public Range SptVersion { get; init; } = new("~4.1.0");
     public bool HasPrepatcher { get; init; }
     public List<string>? Incompatibilities { get; init; }
-    public Dictionary<string, Range>? ModDependencies { get; init; } = new() { ["xyz.pit.fireteam"] = new(">=1.0.1") };
+    public Dictionary<string, Range>? ModDependencies { get; init; } = new() { ["xyz.pit.fireteam"] = new(">=1.1.0") };
     public string? Url { get; init; }
     public string License { get; init; } = "MIT";
 }
 
 [Injectable(TypePriority = OnLoadOrder.Preload)]
-public sealed class GoingRogueServerPlugin(GlobalTable globals, BotTable bots) : IOnLoad
+public sealed class GoingRogueServerPlugin(GlobalTable globals, BotTable bots, ItemHelper itemHelper, InventoryHelper inventoryHelper) : IOnLoad
 {
     public Task OnLoadAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var profiles = new BossProfilePolicy(globals, bots);
+        var magazines = new BossMagazineProvisioning(itemHelper, inventoryHelper);
         FriendlyGameplayModeAddons.Register("GoingRogue", [
-            new("bossKnight", "Knight", "#667D91", ProficiencyOnly: true, SeedForTesting: true, RaidReady: true)
-                { HideRaidStats = true, GenerateEquipmentEachRaid = true, ProtectSpawnInventory = true, IgnoreEncounterKillPenalty = true, PrepareProfile = profiles.Apply, GeneratedSkillsVersion = "native-v1", AdoptGeneratedSkills = profiles.AdoptGeneratedSkills, GetVisibleSkills = () => profiles.VisibleSkills("bossKnight") },
-            new("followerBigPipe", "Big Pipe", "#C9A044", ProficiencyOnly: true, SeedForTesting: true, RaidReady: true)
-                { HideRaidStats = true, GenerateEquipmentEachRaid = true, ProtectSpawnInventory = true, IgnoreEncounterKillPenalty = true, PrepareProfile = profiles.Apply, GeneratedSkillsVersion = "native-v1", AdoptGeneratedSkills = profiles.AdoptGeneratedSkills, GetVisibleSkills = () => profiles.VisibleSkills("followerBigPipe") },
-            new("followerBirdEye", "Birdeye", "#789B78", ProficiencyOnly: true, SeedForTesting: true, RaidReady: true)
-                { HideRaidStats = true, GenerateEquipmentEachRaid = true, ProtectSpawnInventory = true, IgnoreEncounterKillPenalty = true, PrepareProfile = profiles.Apply, GeneratedSkillsVersion = "native-v1", AdoptGeneratedSkills = profiles.AdoptGeneratedSkills, GetVisibleSkills = () => profiles.VisibleSkills("followerBirdEye") },
+            new("bossKnight", "Knight", "#667D91", ProficiencyOnly: true, SeedForTesting: false, RaidReady: true)
+                { HideRaidStats = true, GenerateEquipmentEachRaid = true, ProtectSpawnInventory = true, IgnoreEncounterKillPenalty = true, PrepareProfile = profiles.Apply, PrepareRaidEquipment = magazines.Ensure, GeneratedSkillsVersion = "native-v1", AdoptGeneratedSkills = profiles.AdoptGeneratedSkills, GetVisibleSkills = () => profiles.VisibleSkills("bossKnight"), CanSpawnForQuest = KnightQuestModule.CanSpawnKnight },
+            new("followerBigPipe", "Big Pipe", "#C9A044", ProficiencyOnly: true, SeedForTesting: false, RaidReady: true)
+                { HideRaidStats = true, GenerateEquipmentEachRaid = true, ProtectSpawnInventory = true, IgnoreEncounterKillPenalty = true, PrepareProfile = profiles.Apply, PrepareRaidEquipment = magazines.Ensure, GeneratedSkillsVersion = "native-v1", AdoptGeneratedSkills = profiles.AdoptGeneratedSkills, GetVisibleSkills = () => profiles.VisibleSkills("followerBigPipe") },
+            new("followerBirdEye", "Birdeye", "#789B78", ProficiencyOnly: true, SeedForTesting: false, RaidReady: true)
+                { HideRaidStats = true, GenerateEquipmentEachRaid = true, ProtectSpawnInventory = true, IgnoreEncounterKillPenalty = true, PrepareProfile = profiles.Apply, PrepareRaidEquipment = magazines.Ensure, GeneratedSkillsVersion = "native-v1", AdoptGeneratedSkills = profiles.AdoptGeneratedSkills, GetVisibleSkills = () => profiles.VisibleSkills("followerBirdEye") },
             new("exUsec", "", "#2D9C9A")
         ]);
         return Task.CompletedTask;

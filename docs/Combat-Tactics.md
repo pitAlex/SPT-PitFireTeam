@@ -440,6 +440,10 @@ Recorded examples and qualification are in [hold-facing validation](validation/C
 
 ## Cover Contract
 
+Core splits existing contact advance into a non-publishing `TryPlanContactAdvanceDecision` and explicit `CommitContactAdvancePoint`; ordinary callers retain the same create-and-publish wrapper. Optional companion hold handoffs can therefore prepare a successor before releasing existing commitments. The planner retains known-contact admission, projected 20m steps, standoff, floor, complete-path and teammate fire-lane gates; it does not grant sight or permission to fire.
+
+Core also supplies `TryPlanCombatFollowDecision` for optional companion squad-search policies. This only plans a bounded, complete-path movement point behind an allied leader using admitted enemy memory; it never grants personal sight, shot permission or a firing position. Both this planner and short contact-advance planning require physical floor support within half a meter of the sampled destination, using the native player-collision mask, ignoring triggers and rejecting steep faces. A complete NavMesh path alone does not establish physical support. Going Rogue owns its [Knight/Pipe group-search policy](../going-rogue/docs/BigPipe-Combat.md#joining-knights-search).
+
 [Self-Determination](Self-Determination.md) supplies shared combat dependence, ordinary player-separation/cover weighting and automatic regroup calibration independently of Aggression. Automatic regroup and Cover Me capture their completion envelope on activation; explicit normal/tight orders retain their own distances. Productive commitments, medical arrival and real shot safety retain the lifecycle below.
 
 Cover is a shared lifecycle, not tactic-local geometry.

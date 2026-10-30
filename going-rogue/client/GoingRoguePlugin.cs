@@ -24,10 +24,12 @@ public sealed class GoingRoguePlugin : BaseUnityPlugin
             resolveSelection: RogueRaidContext.ResolveSelection,
             companionReady: (id, role) => !RogueRosterSelection.IsGoonRole(role) || GoonCombatLayer.IsSpawnReady(id, role),
             abortCompanion: GoonCombatLayer.AbortSpawn,
-            gearPolicy: GoonGearPolicy.ForRole);
+            gearPolicy: GoonGearPolicy.ForRole,
+            ownsCombat: RogueRosterSelection.IsGoonRole);
         GameplayModeAddons.RegisterCommandPolicy(GameplayMode.GoingRogue,
             role => GoonCommandPolicy.ForRole(role, KnightSquadCoordinator.HasLocalKnight()));
         GameplayModeAddons.RegisterAdvanceOrderPolicy(GameplayMode.GoingRogue, GoonPushLeadership.Evaluate);
+        GameplayModeAddons.RegisterQuestCompanionPolicy(GameplayMode.GoingRogue, Quests.KnightQuestPolicy.UsesMap);
         harmony = new Harmony("xyz.pit.fireteam.goingrogue");
         harmony.PatchAll(typeof(GoingRoguePlugin).Assembly);
         BrainManager.AddCustomLayer(typeof(KnightCombatLayer), new List<string> { "Knight" },
@@ -42,6 +44,7 @@ public sealed class GoingRoguePlugin : BaseUnityPlugin
     {
         if (Time.time < nextRefresh) return;
         nextRefresh = Time.time + 0.25f;
+        Trading.KnightTraderVisibility.RefreshMode();
         GoonCombatLayer.RefreshAll();
     }
     private void OnDestroy()
@@ -50,6 +53,7 @@ public sealed class GoingRoguePlugin : BaseUnityPlugin
         GoonCombatLayer.ReleaseAll();
         harmony?.UnpatchSelf();
         RogueRaidContext.Reset();
+        Quests.KnightQuestRuntime.Reset();
         GameplayModeAddons.Unregister(GameplayMode.GoingRogue);
     }
     private static bool HasRogueCompanions() => RogueRaidContext.IsPresent || GameplayModeAddons.HasSelectedBossCompanions ||

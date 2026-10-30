@@ -35,7 +35,10 @@ try {
     $game = $resolver.Resolve($gameRef).MainModule
     foreach ($pair in @(@('BotBoss','get_Followers'), @('BotBoss','ManualUpdate'), @('BotBoss','OfferSelf'),
         @('BossKnight','CalcOptimalPositions'), @('BossKnight','ForceRecalcShootPos'), @('BossKnightLayersStrategy','ForceRecalcShootPos'),
-        @('EFT.EftClientBackendSession','SendRaidSettings'), @('BigPipeBotWeaponSelector','ManualUpdate'))) {
+        @('EFT.EftClientBackendSession','SendRaidSettings'), @('BigPipeBotWeaponSelector','ManualUpdate'),
+        @('EFT.UI.MerchantsList','Show'), @('EFT.UI.TraderScreensGroup','get_TradersList'),
+        @('EFT.UI.TraderScreensGroup','SelectTrader'), @('EFT.UI.TraderScreensGroup','Show'), @('EFT.UI.TradingScreen','Show'),
+        @('EFT.Quests.ConditionCounterManager','Test'), @('EFT.Player','OnBeenKilledByAggressor'))) {
         $type = $game.GetType($pair[0])
         if (!$type -or !($type.Methods | Where-Object Name -eq $pair[1])) { throw "Missing Harmony boundary: $pair" }
     }
@@ -53,7 +56,17 @@ try {
     if (!($coreType.Methods | Where-Object Name -eq 'AddFollower')) { throw 'Missing Core conversion hook' }
     $followerType=$resolver.Resolve($coreRef).MainModule.GetType('pitTeam.Components.BotFollowerPlayer')
     if (!($followerType.Methods | Where-Object {$_.Name -eq 'Init' -and !$_.HasParameters})) { throw 'Missing Birdeye follower Init patch boundary' }
-    Write-Output "PASS: $count addon Core/installed EFT/BigBrain/Harmony API references and 10 patch targets resolved. No typed SAIN dependency."
+    $screenShow=@($game.GetType('EFT.UI.TradingScreen').Methods | Where-Object {
+        $_.Name -eq 'Show' -and ($_.Parameters.ParameterType.FullName -join ',') -eq 'EFT.UI.TradingScreen/TradingScreenController'
+    })
+    if($screenShow.Count -ne 1){throw 'TradingScreen controller Show overload changed'}
+    $rememberedTrader=$game.GetType('EFT.UI.MerchantsList').Fields | Where-Object Name -eq '_currentTrader'
+    if(!$rememberedTrader -or $rememberedTrader.FieldType.FullName -ne 'EFT.Trading.Trader'){throw 'MerchantsList remembered trader field changed'}
+    $counterTest=@($game.GetType('EFT.Quests.ConditionCounterManager').Methods | Where-Object {
+        $_.Name -eq 'Test' -and $_.IsStatic -and ($_.Parameters.ParameterType.FullName -join ',') -eq 'System.Int32,EFT.Quests.TaskConditionCounter,EFT.Quests.ConditionCheck[]'
+    })
+    if($counterTest.Count -ne 1){throw 'Native static quest counter Test overload changed'}
+    Write-Output "PASS: $count addon Core/installed EFT/BigBrain/Harmony API references and 17 patch targets resolved. No typed SAIN dependency."
 }
 finally { $module.Dispose(); $resolver.Dispose() }
 

@@ -11,6 +11,7 @@
     <Compile Include="../../going-rogue/client/Combat/BirdEyeSniperPositioning.cs" Link="BirdEyeSniperPositioning.cs" />
     <Compile Include="../../going-rogue/client/Combat/KnightCombatObjective.cs" Link="KnightCombatObjective.cs" />
     <Compile Include="../../going-rogue/client/Combat/GoonCombatObjective.cs" Link="GoonCombatObjective.cs" />
+    <Compile Include="../../going-rogue/client/Combat/GoonIndependentPursuit.cs" Link="GoonIndependentPursuit.cs" />
     <Compile Include="../../going-rogue/client/Combat/IGoonCombatSelector.cs" Link="IGoonCombatSelector.cs" />
     <Compile Include="../../going-rogue/client/Combat/BigPipeDecisionPolicy.cs" Link="BigPipeDecisionPolicy.cs" />
     <Compile Include="../../going-rogue/client/Combat/BigPipeVanillaCombat.cs" Link="BigPipeVanillaCombat.cs" />
@@ -21,6 +22,7 @@
     <Compile Include="../../going-rogue/client/Combat/GoonCombatThreat.cs" Link="GoonCombatThreat.cs" />
     <Compile Include="../../client/BigBrain/FollowerPushRiskPolicy.cs" Link="FollowerPushRiskPolicy.cs" />
     <Compile Include="../../going-rogue/client/Combat/GoonCombatLayer.cs" Link="GoonCombatLayer.cs" />
+    <Compile Include="../../going-rogue/client/Combat/GoonUnitTactics.cs" Link="GoonUnitTactics.cs" />
     <Compile Include="../../going-rogue/client/Combat/BigPipeCombatLayer.cs" Link="BigPipeCombatLayer.cs" />
     <Compile Include="../../going-rogue/client/Combat/BigPipeNativePatches.cs" Link="BigPipeNativePatches.cs" />
     <Compile Include="../../going-rogue/client/Combat/KnightCombatLogic.cs" Link="KnightCombatLogic.cs" />

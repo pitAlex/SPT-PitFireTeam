@@ -8,6 +8,56 @@ internal static class BigPipeChecks
 {
     internal static void Run(Action<bool,string> check)
     {
+        {
+            Time.time=100;var bot=new BotOwner();var common=new FollowerCombatCommon{LowThreat=true};
+            var selector=new BigPipeVanillaCombat(bot);selector.Begin(common);
+            GoonPushLeadership.AdvanceAllowed=false;
+            var wait=selector.GetDecision();
+            check(wait.Reason=="bigPipe.knightLead" && !selector.ShallEndCurrentDecision(wait).Value,"Pipe does not begin an autonomous search ahead of Knight");
+            Time.time=101.1f;check(selector.ShallEndCurrentDecision(wait).Value,"Knight leadership wait has a bounded retry");
+            GoonPushLeadership.AdvanceAllowed=true;
+            var advance=selector.GetDecision();
+            check(advance.Reason.StartsWith("bigPipe.pressureSearch"),"Pipe can advance after Knight authorizes the approach");
+            GoonPushLeadership.AdvanceAllowed=false;
+            check(selector.ShallEndCurrentDecision(advance).Value && common.PreparedTransition?.Reason=="bigPipe.knightLead",
+                "revoked Knight intent prepares a concrete wait before ending a running search");
+            GoonPushLeadership.AdvanceAllowed=true;
+        }
+        {
+            Time.time=100;var bot=new BotOwner();var common=new FollowerCombatCommon{LowThreat=true};
+            var objective=new BigPipeCombatObjective(bot,common);objective.StartDecision();
+            GoonPushLeadership.AdvanceAllowed=true;
+            var advance=objective.GetDecision(bot.Memory.GoalEnemy);
+            GoonPushLeadership.AdvanceAllowed=false;
+            check(objective.ShallEndCurrentDecision(advance).Value && common.PreparedTransition?.Reason=="bigPipe.knightLead",
+                "shared objective routes the running Pipe search through the real leadership interruption");
+            GoonPushLeadership.AdvanceAllowed=true;
+        }
+        {
+            Time.time=100;
+            var bot=new BotOwner();bot.Memory.GoalEnemy.TimeLastSeenReal=0;
+            var common=new FollowerCombatCommon{SearchBlocked=true};
+            var selector=new BigPipeVanillaCombat(bot);selector.Begin(common);
+            var hold=selector.GetDecision();
+            check(hold.Reason=="bigPipe.native.search.completed","completed search produces a retry hold");
+            for(int i=0;i<30;i++)
+            {
+                Time.time=100+i/60f;
+                check(!selector.ShallEndCurrentDecision(hold).Value,"unchanged completed search remains stable across frames");
+            }
+            Time.time=101.01f;
+            check(selector.ShallEndCurrentDecision(hold).Value,"completed search retries after bounded wait");
+            Time.time=100.2f;bot.Memory.GoalEnemy.IsVisible=bot.Memory.GoalEnemy.CanShoot=true;
+            check(selector.ShallEndCurrentDecision(hold).Value,"a real shot immediately interrupts completed-search wait");
+            bot.Memory.GoalEnemy.IsVisible=bot.Memory.GoalEnemy.CanShoot=false;Time.time=200;
+            var objective=new BigPipeCombatObjective(bot,common);objective.StartDecision();
+            var objectiveHold=objective.GetDecision(bot.Memory.GoalEnemy);
+            check(objective.ShallEndCurrentDecision(objectiveHold).Reason=="bigPipe.searchRetry",
+                "production objective dispatch preserves the native-search retry owner");
+            objectiveHold.Reason="bigPipe.staleContactSearch.completed";
+            check(objective.ShallEndCurrentDecision(objectiveHold).Reason=="bigPipe.searchRetry",
+                "production objective dispatch preserves the stale-contact retry owner");
+        }
         var cases = new[] {
             (false,false,20f,false,false,0f,1f,BigPipeFightChoice.Search),
             (false,false,1f,true,false,0f,1f,BigPipeFightChoice.ReloadHold),

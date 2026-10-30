@@ -10,20 +10,26 @@ Saved teammates have a Self-Determination slider under Proficiency, from 0 to 10
 
 | Combat command | Determination | Aggression |
 |---|---|---|
-| On Your Own | 100% | Unchanged |
+| On Your Own | 100% | Unchanged; Going Rogue Goons: 70% |
 | Cover Me | Exactly 20% | Unchanged |
 | Hold Position | Unchanged | 0% |
 | Go Forward | Unchanged | 100% |
 | Go Go Go | Initially configured value | Initially configured value |
 | Attention | Initially configured value | Initially configured value |
 
-Overrides are follower-local and survive enemy changes, individual kills, action changes and individual follower handoffs. Core and addon combat registrations are tracked separately, including during a brain switch. After the whole squad has no registered combat or pending EFT combat context for two seconds, both overrides reset. This quiet confirmation preserves existing handoff grace; repeated polling does not renew an already completed reset. Go Go Go and Attention clear both immediately. Commands never overwrite saved percentages.
+Overrides are follower-local and survive enemy changes, individual kills, action changes and individual follower handoffs. Core and addon combat registrations are tracked separately, including during a brain switch. After the whole squad has no registered combat or pending EFT combat context for two seconds, both overrides reset. This quiet confirmation preserves existing handoff grace; repeated polling does not renew an already completed reset. Go Go Go and Attention clear both immediately. Commands never overwrite saved percentages. Going Rogue registers an optional command policy for Knight, Big Pipe and Birdeye: combat On Your Own sets aggression to exactly 70% alongside the existing 100% determination override. These use the same follower-local lifetime and reset; peaceful use and ordinary followers retain their existing behavior.
 
 Cover Me cancels conflicting push pressure and issues one regroup using the 20% completion envelope. Even a saved value of zero becomes exactly 20. Repeating the same Cover Me override does not restart the regroup or its hold. Its completion distance is captured on activation, so changing a percentage cannot expand a productive leg's arrival envelope. Ordinary and tight Regroup retain their command-owned distances. Accepted explicit destinations retain the real player anchor even at 100; percentage resets do not erase that anchor.
 
-Go Forward retains existing tactic eligibility and ordered-push execution. Rejected directed orders do not set the aggression override. Peaceful commands retain their movement meaning; peaceful patrol does not supply a combat percentage override. Outside combat and at the next battle's entry, percentages resolve to their saved values.
+Go Forward retains existing tactic eligibility and ordered-push execution. Rejected directed orders do not set the aggression override. Peaceful commands retain their movement meaning; peaceful patrol does not supply a combat percentage override. Outside combat and at the next battle's entry, percentages resolve to their saved values unless an optional companion runtime baseline is active as described below.
 
 ## Policy and initial calibration
+
+Optional companion brains may supply runtime aggression/determination through `SetCompanionCombatPreferences` and must clear them on release. Effective values resolve in this order: player command override, companion runtime baseline, saved preferences (or the normal pickup baseline). Command resets clear only their own layer; they do not write saved values or erase an active companion baseline. Core has no role-specific policy here. Going Rogue owns the [Knight-led unit composition and death rules](../going-rogue/docs/Knight-Combat.md#solo-protection-and-goon-unit-initiative); without that baseline the existing table and reset behavior apply unchanged.
+
+A companion may also supply a runtime leader with `SetCompanionCombatLeader`. `FollowerCombatAnchor` validates that the leader is alive, active, finite and registered to the same human owner before using it ahead of ordinary nearest-ally anchoring. Ordinary peaceful `FollowAction` uses that leader's player object without changing the native boss/group link; a self-led commander still follows the human peacefully. Pending commands, consumed player Regroup and dependent determination retain the real human anchor. Clearing companion preferences also clears the leader reference. Absent or invalid references leave ordinary following available. Marksman automatic distance-regroup is disabled at full independence; explicit player Regroup uses its existing separate path.
+
+Regroup remembers whether activation was automatic. When full independence makes an automatic regroup obsolete, its own ordinary regroup action may complete through the normal objective lifecycle after protected medical, weapon/grenade work and airborne movement. Explicit/consumed player Regroup is excluded. Shared medical actions are evaluated by their existing end handler before this completion check. This removes only the regroup's local target/claim/move state and does not clear enemy memory.
 
 `shared/SelfDeterminationPolicy.cs` supplies normalization, influence and distance calibration. The dependence weight is `2 * (1 - determination / 100)`: 2 at zero, 1 at fifty and 0 at one hundred. It scales the existing player-separation cost independently of aggression. Both brains reuse cached navigation rather than recomputing routes merely because an intermediate percentage changes.
 

@@ -19,6 +19,7 @@ namespace pitTeam.GoingRogue.Combat
         private GoonLayerLease lease;
         private bool started, suspended, faulted, spawnReady;
         private int positionRevision;
+        private float nextFaultLogAt;
         protected GoonCombatLayer(BotOwner owner, int priority, string nativeRole, string nativeBrain, string actorName)
             : base(owner, priority)
         {
@@ -71,9 +72,10 @@ namespace pitTeam.GoingRogue.Combat
                     layer.faulted = true; layer.Release();
                 }
             }
+            GoonUnitTactics.RefreshAll();
         }
         internal static void ReleaseAll()
-        { foreach (var layer in Layers.Values.ToArray()) layer.Release(); Layers.Clear(); }
+        { foreach (var layer in Layers.Values.ToArray()) layer.Release(); Layers.Clear(); GoonUnitTactics.Reset(); }
         private void Refresh()
         {
             if (!IsEligible()) { Release(); faulted = false; return; }
@@ -92,6 +94,7 @@ namespace pitTeam.GoingRogue.Combat
         private void Release()
         {
             spawnReady = false;
+            GoonUnitTactics.Release(BotOwner);
             Cleanup(() => { if (started) BotOwner?.Brain?.Agent?.Deactivate(GetName()); }, "action"); started = false;
             Cleanup(() => driver?.Stop(), "driver"); suspended = false;
             Cleanup(ReleaseRole, "role coordination");
@@ -118,8 +121,24 @@ namespace pitTeam.GoingRogue.Combat
             }
             else driver.Stop();
         }
-        public override bool IsCurrentActionEnding() => !IsEligible() || driver == null || driver.IsCurrentActionEnding();
-        public override Action GetNextAction() => driver.GetNextAction();
+        public override bool IsCurrentActionEnding()
+        {
+            try { return !IsEligible() || driver == null || driver.IsCurrentActionEnding(); }
+            catch (Exception ex) { ReportCombatFault("decision end", ex); throw; }
+        }
+        public override Action GetNextAction()
+        {
+            try { return driver.GetNextAction(); }
+            catch (Exception ex) { ReportCombatFault("decision/action", ex); throw; }
+        }
+        private void ReportCombatFault(string stage, Exception ex)
+        {
+            if (UnityEngine.Time.time < nextFaultLogAt) return;
+            nextFaultLogAt = UnityEngine.Time.time + 5f;
+            // Read existing state only; diagnostics never invoke a selector or medical provider.
+            Logger.LogError($"[GoingRogue] {actor} {stage} follower={BotOwner?.ProfileId} " +
+                $"goal={BotOwner?.Memory?.GoalEnemy?.ProfileId} ready={spawnReady} suspended={suspended}: {ex}");
+        }
         public override void BuildDebugText(StringBuilder builder) => driver?.BuildDebugText(builder);
     }
 }

@@ -61,6 +61,8 @@ internal static class Program
         }
         Check(!KnightSquadCoordinator.TryGetMemberPosition(bird, out _) && native.Listeners == 0, "release removes orders and native event subscription");
         LeadershipChecks.Run();
+        OrderFreshnessChecks.Run();
+        UnitTacticsChecks.Run();
         Console.WriteLine($"PASS: {checks} production Knight coordination, shared push verdict and delegation checks; controlled EFT inputs.");
     }
 }
@@ -89,7 +91,7 @@ namespace EFT
     public class BotOwner
     {
         static int next; public int Id = ++next; public string ProfileId = Guid.NewGuid().ToString();
-        public bool IsDead; public EBotState BotState; public Profile Profile = new(); public Player GetPlayer = new();
+        public bool IsDead, RecentHit; public EBotState BotState; public Profile Profile = new(); public Player GetPlayer = new();
         public Memory Memory = new(); public Medecine Medecine = new(); public Enemies EnemiesController = new();
         public BotBoss Boss = new(); public Follower BotFollower = new(); public Vector3 Position;
     }
@@ -114,6 +116,13 @@ namespace pitTeam.Components
     public class pitAIBossPlayer { public Player realPlayer = new();public BossLogic Logic=new();public BossLogic GetBossLogic()=>Logic; }
     public class BotFollowerPlayer
     {
+        public float? UnitAggression,UnitDetermination;public int DeathResets;public bool CommandOverride;
+        public BotOwner CompanionLeader;
+        public void SetCompanionCombatLeader(BotOwner leader)=>CompanionLeader=leader;
+        public bool Independent;
+        public void SetCompanionCombatPreferences(float aggression,float determination){UnitAggression=aggression;UnitDetermination=determination;}
+        public void ClearCompanionCombatPreferences(){UnitAggression=UnitDetermination=null;CompanionLeader=null;}
+        public void ResetCombatPercentageOverrides(string source){CommandOverride=false;if(source=="KnightDied")DeathResets++;}
         public BotOwner Bot; public pitAIBossPlayer Leader; public FollowerCommandType Command;
         public int PushEnemyIssueSequence;public bool HasOrderedPushCancelRequest, HasOrderedPushTargetLock, CombatRegroupUsesBossAnchor;
         public BotOwner GetBot() => Bot; public pitAIBossPlayer GetBoss() => Leader;
@@ -122,11 +131,14 @@ namespace pitTeam.Components
 }
 namespace pitTeam.Modules
 {
+    public enum GameplayMode {GoingRogue,Allegiance}
+    public static class GameplayModeAddons {public static GameplayMode Current=GameplayMode.GoingRogue;}
     public enum FollowerCommandType { None, Regroup, PushEnemy }
     public static class FollowerEnemyTracking {
         public static bool IsEligible(EnemyInfo enemy)=>enemy.Eligible;
-        public static bool TryGetKnownPosition(EnemyInfo enemy,out Vector3 point,out string reason){point=default;reason="";return enemy.Known;}
+        public static bool TryGetKnownPosition(EnemyInfo enemy,out Vector3 point,out string reason){point=enemy.Person?.Position ?? default;reason="";return enemy.Known;}
     }
+    public static class FollowerCombatAnchor {public static bool IsCombatIndependent(BotOwner bot)=>BossPlayers.Instance.GetFollower(bot) is {} f && (f.Independent||f.UnitDetermination==100);}
     public class BossPlayers
     {
         public static BossPlayers Instance = new(); public static List<BotFollowerPlayer> Followers = new();
@@ -138,11 +150,13 @@ namespace pitTeam.BigBrain
 {
     public class FollowerCombatCommon(BotOwner owner)
     {
+        public static bool WasHitRecently(BotOwner bot,float seconds)=>bot.RecentHit;
         public static bool IsFinite(Vector3 p) => float.IsFinite(p.x) && float.IsFinite(p.y) && float.IsFinite(p.z);
         public bool TryUseSupportGoalEnemy(BotOwner enemy, string reason, out EnemyInfo info) { info=owner.Memory.GoalEnemy; return true; }
     }
 }
 namespace pitTeam.GoingRogue.Combat
 {
+    public static class GoonCombatLayer { public static HashSet<BotOwner> Owned=new(); public static bool IsOwned(BotOwner bot,string role)=>Owned.Contains(bot); }
     public static class KnightCombatLayer { public static HashSet<BotOwner> Owned = new(); public static bool IsOwned(BotOwner bot) => Owned.Contains(bot) && !bot.IsDead; }
 }

@@ -57,12 +57,18 @@ internal static class Program
         string beforeRogue = File.ReadAllText(path + ".guns-for-hire.json");
         bool roguePresent = false;
         GameplayModeAddons.Register(GameplayMode.GoingRogue, () => roguePresent, () => roguePresent, exUsecFriendly: false,
-            gearPolicy: pitTeam.GoingRogue.GoonGearPolicy.ForRole);
+            gearPolicy: pitTeam.GoingRogue.GoonGearPolicy.ForRole,
+            ownsCombat: RogueRosterSelection.IsGoonRole);
+        Check(!GameplayModeAddons.OwnsCompanionCombat("bossKnight"), "companion combat ownership is mode scoped");
         Check(GameplayModeAddons.GetCompanionGearPolicy("bossKnight") == null, "Knight's gear restrictions do not affect another mode");
         SPT.Common.Http.RequestHandler.GoingRogueAvailable = false;
         await Reject(() => GameplayModeRuntime.ChangeAsync(GameplayMode.GoingRogue), "Going Rogue requires the server addon too");
         SPT.Common.Http.RequestHandler.GoingRogueAvailable = true;
         await GameplayModeRuntime.ChangeAsync(GameplayMode.GoingRogue);
+        Check(new[]{"bossKnight","followerBigPipe","followerBirdEye"}.All(GameplayModeAddons.OwnsCompanionCombat),
+            "all managed Goons own combat independently of a stale saved SAIN tactic");
+        Check(!GameplayModeAddons.OwnsCompanionCombat("exUsec") && !GameplayModeAddons.OwnsCompanionCombat(null),
+            "ordinary followers retain their selected combat owner");
         Check(GameplayModeRuntime.IsGoingRogue && GameplayModeRuntime.IsAllegiance && SPT.Common.Http.RequestHandler.Mode == "GoingRogue",
             "Going Rogue selects its own identity with Allegiance policy");
         Check(GameplayModeRuntime.IsLocked(pitFireTeam.maximumPickup) && GameplayModeRuntime.GetEffectiveValue(pitFireTeam.maximumPickup) == 2,
@@ -98,8 +104,12 @@ internal static class Program
         Check(GameplayModeAddons.EvaluateAdvanceOrder(new CompanionAdvanceOrderContext()) == false, "failing optional command arbitration refuses safely");
         GameplayModeAddons.RegisterAdvanceOrderPolicy(GameplayMode.GoingRogue, null);
         foreach (string role in new[] { "bossKnight", "followerBigPipe", "followerBirdEye" })
+        {
             Check(GameplayModeAddons.GetCompanionCommandPolicy(role)?.AlwaysAcceptCombatPoint == true,
                 role + " accepts valid combat point orders without a pickup roll");
+            Check(GameplayModeAddons.GetCompanionCommandPolicy(role)?.OnYourOwnAggression == 70f,
+                role + " has the addon-owned 70 percent On Your Own aggression policy");
+        }
         var assaultPolicy = GameplayModeAddons.GetCompanionCommandPolicy("bossKnight");
         Check(assaultPolicy.RelativeCombatPower("pmcUSEC") == 1.5f && assaultPolicy.RelativeCombatPower("assault") == 2f,
             "registered assault bosses carry explicit PMC/Scav combat confidence");

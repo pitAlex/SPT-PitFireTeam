@@ -19,7 +19,7 @@ internal static class RogueRaidContext
     internal static bool IsPresent => Selection.HasRogues || Converting.Count > 0;
     internal static bool HasGoons => Selection.HasGoons || Converting.Any(bot => RogueRosterSelection.IsGoonRole(bot?.Profile?.Info?.Settings?.Role.ToString()));
     internal static void ResolveSelection(string json) => Selection.Resolve(json);
-    internal static void Reset() { Selection.Begin(new string[0]); Converting.Clear(); Combat.GoonPushLeadership.Reset(); }
+    internal static void Reset() { Selection.Begin(new string[0]); Converting.Clear(); Combat.GoonPushLeadership.Reset(); Quests.KnightQuestRuntime.Reset(); }
 
     [HarmonyPatch(typeof(EftClientBackendSession), nameof(EftClientBackendSession.SendRaidSettings))]
     private static class RaidSelectionPatch
@@ -45,6 +45,10 @@ internal static class RogueRaidContext
     [HarmonyPatch(typeof(BossPlayers), nameof(BossPlayers.AddFollower))]
     private static class FollowerConversionPatch
     {
+        private static void Postfix(BotOwner bot, pitAIBossPlayer player, BotFollowerPlayer __result)
+        {
+            if (__result != null) Quests.KnightQuestRuntime.RegisterKnight(bot, player?.realPlayer);
+        }
         private static void Prefix(BotOwner bot, pitAIBossPlayer player, ref bool __state)
         {
             __state = GameplayModeAddons.Current == GameplayMode.GoingRogue && player?.realPlayer?.IsYourPlayer == true &&

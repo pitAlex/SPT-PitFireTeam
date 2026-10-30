@@ -16,6 +16,18 @@ namespace pitTeam.Modules
         private static Func<string, CompanionGearPolicy> companionGearPolicy;
         private static Func<string, CompanionCommandPolicy> companionCommandPolicy;
         private static Func<CompanionAdvanceOrderContext, bool?> advanceOrderPolicy;
+        private static Func<string, bool> companionCombatPolicy;
+        private static Func<string, string, bool> questCompanionPolicy;
+
+        public static void RegisterQuestCompanionPolicy(GameplayMode mode, Func<string, string, bool> policy)
+        {
+            if (mode != GameplayMode.GoingRogue || !Registered.Contains(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
+            questCompanionPolicy = policy;
+        }
+        internal static bool CanSpawnQuestCompanion(string quest, string location) =>
+            Current == GameplayMode.GoingRogue && Registered.Contains(Current) && questCompanionPolicy?.Invoke(quest, location) == true;
+        public static bool OwnsCompanionCombat(string role) =>
+            Registered.Contains(Current) && companionCombatPolicy?.Invoke(role) == true;
         public static GameplayMode Current => GameplayModeRuntime.Current;
         public static bool HasSelectedBossCompanions => Utils.SpawnHelper.spawnMemberIdsBoss.Count > 0 ||
             (Current == GameplayMode.GoingRogue && Registered.Contains(Current) && goonCompanionsPresent?.Invoke() == true);
@@ -24,7 +36,8 @@ namespace pitTeam.Modules
         public static void Register(GameplayMode mode, Func<bool> companionsPresent = null,
             Func<bool> goonsPresent = null, bool exUsecFriendly = false,
             Action<string> resolveSelection = null, Func<string, string, bool> companionReady = null,
-            Action<string> abortCompanion = null, Func<string, CompanionGearPolicy> gearPolicy = null)
+            Action<string> abortCompanion = null, Func<string, CompanionGearPolicy> gearPolicy = null,
+            Func<string, bool> ownsCombat = null)
         {
             if (mode != GameplayMode.GoingRogue) throw new ArgumentOutOfRangeException(nameof(mode));
             Registered.Add(mode);
@@ -35,11 +48,14 @@ namespace pitTeam.Modules
             spawnReady = companionReady;
             abortSpawn = abortCompanion;
             companionGearPolicy = gearPolicy;
+            companionCombatPolicy = ownsCombat;
             companionCommandPolicy = null;
             advanceOrderPolicy = null;
+            questCompanionPolicy = null;
         }
         public static void Unregister(GameplayMode mode)
         {
+            questCompanionPolicy = null;
             Registered.Remove(mode);
             rogueCompanionsPresent = goonCompanionsPresent = null;
             exUsecFriendshipEnabled = false;
@@ -47,6 +63,7 @@ namespace pitTeam.Modules
             spawnReady = null;
             abortSpawn = null;
             companionGearPolicy = null;
+            companionCombatPolicy = null;
             companionCommandPolicy = null;
             advanceOrderPolicy = null;
         }

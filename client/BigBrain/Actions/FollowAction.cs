@@ -222,7 +222,7 @@ namespace pitTeam.BigBrain.Actions
             }
 
             bossData = boss;
-            bossPlayer = boss.realPlayer;
+            bossPlayer = FollowerCombatAnchor.GetFollowPlayer(BotOwner, boss.realPlayer);
             return true;
         }
 

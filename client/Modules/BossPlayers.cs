@@ -186,7 +186,7 @@ namespace pitTeam.Modules
 
                     if (followersToRemove.Count > 0)
                     {
-                        SaveFollowersProgress(died ? followersToRemove.FindAll(fl => fl.IsSquadMate) : followersToRemove);
+                        SaveFollowersProgress(died ? followersToRemove.FindAll(fl => fl.HasPersistentProgress) : followersToRemove);
                     }
                 }
 
@@ -409,12 +409,13 @@ namespace pitTeam.Modules
                     Profile pr = item.GetBot().Profile;
                     WildSpawnType role = pr.Info.Settings.Role;
 
-                    if (Utils.Props.BossFollowersType.Contains(role) || item.GetBot().Side == EPlayerSide.Savage)
+                    if (item.GetBot().Side == EPlayerSide.Savage ||
+                        (Utils.Props.BossFollowersType.Contains(role) && !item.HasPersistentProgress))
                     {
                         continue;
                     }
 
-                    if (!item.IsSquadMate)
+                    if (!item.HasPersistentProgress)
                     {
                         bool queueRecruit = GameplayModeRuntime.GetEffectiveValue(pitFireTeam.recruitPickup);
 #if DEBUG

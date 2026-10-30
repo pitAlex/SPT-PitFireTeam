@@ -25,3 +25,12 @@ Knight's published firing assignment takes priority over Birdeye's autonomous di
 The server marks Birdeye raid-ready and hides his top profile statistics. Existing native raid kit generation, last-kit preview, boss container/reserves, Proficiency-only editing, fixed gear/donation restrictions, native spawn-inventory protection and no loot returns apply. Birdeye uses the same one-time automatic test-roster seed as Knight and Big Pipe. Existing members are acknowledged without duplication; removing a seeded member preserves the receipt and does not grant him again.
 
 Production fixtures cover the addon policy, native geometry, Knight assignment, guarded routing, secondary preparation/retention, primary return, shared arrival behavior, lifecycle and native-layer restoration. Installed metadata checks resolve the compiled EFT/Core/BigBrain APIs and the follower Init patch. Native navigation, actual weapon draws/reloads, simultaneous Goons fights, suppression/Need Sniper reception, external SAIN configurations and command timing require live raid qualification. See [validation](../Validation.md).
+
+## Team engagement
+
+After shared survival, weapon and help priorities, Birdeye can make a bounded approach while another living group member sees the same opponent and the group report is under ten seconds old. Core uses admitted contact memory, a complete NavMesh path and player firing-lane clearance; a step is at most 20m and stops at least 30m from the known contact. This is movement, not permission to fire. Knight assignments keep priority. Stale/different contacts retain sniper positioning.
+
+
+### On Your Own
+
+Independent Birdeye can close on a distant admitted contact in bounded navigation steps instead of repeatedly selecting a stationary sniper fallback. He retains the native 60m preferred sniper envelope and Knight's advance permission; existing recent-team-contact aggression keeps its native 30m stop. Assigned Knight firing positions, useful shots, close secondary handling, medicine, reloads and explicit commands retain priority. Automatic human-protection diversion is disabled by independence, while explicit Need Help remains available. The shared Marksman end provider runs before an optional safe idle-hold handoff; ordinary sniper positioning resumes when no independent step is appropriate.

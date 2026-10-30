@@ -785,15 +785,15 @@ public partial class FriendlyTeammateService(
         return inventoryItems.RemoveAll(item => item?.Id != null && removeIds.Contains(item.Id.ToString())) > 0;
     }
 
-    private BotBase GenerateTeammateBot(MongoId sessionId, BotGenerationDetails details)
+    private BotBase GenerateTeammateBot(MongoId sessionId, BotGenerationDetails details, GetRaidConfigurationRequestData? configuration = null)
     {
         var raidData = profileActivityService.GetProfileActivityRaidData(sessionId);
         var previousRaidConfiguration = raidData.RaidConfiguration;
         var createdTemporaryRaidConfiguration = previousRaidConfiguration == null;
 
-        if (createdTemporaryRaidConfiguration)
+        if (createdTemporaryRaidConfiguration || configuration != null)
         {
-            raidData.RaidConfiguration = CreateMenuTeammateGenerationRaidConfiguration();
+            raidData.RaidConfiguration = configuration ?? CreateMenuTeammateGenerationRaidConfiguration();
         }
 
         try
@@ -802,7 +802,7 @@ public partial class FriendlyTeammateService(
         }
         finally
         {
-            if (createdTemporaryRaidConfiguration)
+            if (createdTemporaryRaidConfiguration || configuration != null)
             {
                 raidData.RaidConfiguration = previousRaidConfiguration;
             }
@@ -1471,7 +1471,7 @@ public partial class FriendlyTeammateService(
         return true;
     }
 
-    public bool TryGetSpawnProfile(MongoId sessionId, string? accountId, double? healthMultiplier, out BotBase? profile)
+    public bool TryGetSpawnProfile(MongoId sessionId, string? accountId, double? healthMultiplier, out BotBase? profile, string? preparationToken = null)
     {
         profile = null;
         if (!TryFindByAccountId(sessionId, accountId, out var teammate))
@@ -1489,9 +1489,11 @@ public partial class FriendlyTeammateService(
             logger.Info($"[TeammateHealth] Refused wounded teammate spawn: aid={accountId}");
             return false;
         }
-        profile = CompanionPolicy(teammate!)?.GenerateEquipmentEachRaid == true
-            ? PrepareNativeCompanionForRaid(sessionId, teammate!, healthMultiplier)
-            : PrepareTeammateForFetch(teammate!, healthMultiplier, refillMagazinesForSpawn: true);
+        if (CompanionPolicy(teammate!)?.GenerateEquipmentEachRaid == true)
+            profile = string.IsNullOrEmpty(preparationToken)
+                ? PrepareNativeCompanionForRaid(sessionId, teammate!, healthMultiplier)
+                : PreparedCompanionForSpawn(sessionId, teammate!, healthMultiplier, preparationToken);
+        else profile = PrepareTeammateForFetch(teammate!, healthMultiplier, refillMagazinesForSpawn: true);
         return true;
     }
 
@@ -3675,6 +3677,7 @@ public partial class FriendlyTeammateService(
             RecalculateTeammateLevel(teammate);
         }
 
+        CompanionPolicy(teammate)?.PrepareProfile?.Invoke(teammate);
         ApplyFollowerLifetimeProgress(teammate, progressEntry);
 
         if (progressEntry.Skills == null || progressEntry.Skills.Count == 0)
@@ -4500,8 +4503,8 @@ public partial class FriendlyTeammateService(
                 Nickname = info.Nickname,
                 Side = info.Side,
                 Level = info.Level,
-                MemberCategory = MemberCategory.Unheard,
-                SelectedMemberCategory = MemberCategory.Unheard,
+                MemberCategory = CompanionPolicy(teammate) != null ? info.MemberCategory ?? MemberCategory.Unheard : MemberCategory.Unheard,
+                SelectedMemberCategory = CompanionPolicy(teammate) != null ? info.SelectedMemberCategory ?? info.MemberCategory ?? MemberCategory.Unheard : MemberCategory.Unheard,
             },
         };
     }
@@ -4520,8 +4523,8 @@ public partial class FriendlyTeammateService(
                 Nickname = info.Nickname,
                 Side = info.Side,
                 Level = info.Level,
-                MemberCategory = MemberCategory.Unheard,
-                SelectedMemberCategory = MemberCategory.Unheard,
+                MemberCategory = CompanionPolicy(teammate) != null ? info.MemberCategory ?? MemberCategory.Unheard : MemberCategory.Unheard,
+                SelectedMemberCategory = CompanionPolicy(teammate) != null ? info.SelectedMemberCategory ?? info.MemberCategory ?? MemberCategory.Unheard : MemberCategory.Unheard,
             },
             AutoJoinEnabled = settings.AutoJoinEnabled,
             PortraitColor = CompanionPolicy(teammate)?.PortraitColor,
@@ -4558,7 +4561,7 @@ public partial class FriendlyTeammateService(
                 Nickname = info.Nickname,
                 Side = info.Side,
                 Experience = info.Experience,
-                MemberCategory = (int)MemberCategory.Unheard,
+                MemberCategory = (int)(CompanionPolicy(teammate) != null ? info.MemberCategory ?? MemberCategory.Unheard : MemberCategory.Unheard),
                 BannedState = info.BannedState,
                 BannedUntil = info.BannedUntil,
                 RegistrationDate = info.RegistrationDate,
@@ -4619,7 +4622,7 @@ public partial class FriendlyTeammateService(
                 SavageNickname = info.Nickname,
                 Side = info.Side,
                 Level = info.Level,
-                MemberCategory = MemberCategory.Unheard,
+                MemberCategory = CompanionPolicy(teammate) != null ? info.MemberCategory ?? MemberCategory.Unheard : MemberCategory.Unheard,
                 GameVersion = info.GameVersion,
                 HasCoopExtension = info.HasCoopExtension,
             },
@@ -4630,7 +4633,7 @@ public partial class FriendlyTeammateService(
                     Nickname = info.Nickname,
                     Side = info.Side,
                     Level = info.Level,
-                    MemberCategory = MemberCategory.Unheard,
+                    MemberCategory = CompanionPolicy(teammate) != null ? info.MemberCategory ?? MemberCategory.Unheard : MemberCategory.Unheard,
                     GameVersion = info.GameVersion,
                 },
                 Customization = new SPTarkov.Server.Core.Models.Eft.Match.Customization

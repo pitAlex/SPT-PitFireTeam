@@ -2199,6 +2199,9 @@ namespace pitTeam.Components
                 if (combatContext)
                 {
                     followerData.SetCombatIndependent(true);
+                    var policy = GameplayModeAddons.GetCompanionCommandPolicy(follower.Profile?.Info?.Settings?.Role.ToString());
+                    if (policy?.OnYourOwnAggression is float aggression)
+                        followerData.SetTemporaryCombatAggressionOverride(aggression, "OnYourOwn");
                 }
                 else
                 {
@@ -3004,7 +3007,7 @@ namespace pitTeam.Components
                 }
 
                 BotFollowerPlayer follower = BossPlayers.GetFollowerByProfileId(deadFollower.ProfileId);
-                if (follower == null || !follower.IsSquadMate)
+                if (follower == null || !follower.HasPersistentProgress)
                 {
                     return;
                 }

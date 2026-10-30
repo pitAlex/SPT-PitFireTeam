@@ -54,6 +54,7 @@ namespace pitTeam.BigBrain
         private bool hasArrivalCoverSectorAnchor;
         private bool tightRegroup;
         private float automaticCompletion;
+        private bool automaticRegroup;
 
         private enum RegroupBossDirection
         {
@@ -85,6 +86,7 @@ namespace pitTeam.BigBrain
             hasArrivalCoverSectorAnchor = false;
             tightRegroup = false;
             automaticCompletion = 0f;
+            automaticRegroup = false;
             ResetWithdrawProgressTracking();
         }
 
@@ -99,6 +101,7 @@ namespace pitTeam.BigBrain
             // previous bossward targets and recompute from current combat geometry.
             Reset();
             this.tightRegroup = tightRegroup;
+            automaticRegroup = automatic;
             if (automatic)
             {
                 var follower = BossPlayers.Instance?.GetFollower(BotOwner);
@@ -216,6 +219,14 @@ namespace pitTeam.BigBrain
             if (FollowerCombatCommon.IsMedicalDecision(currentDecision))
             {
                 return CombatCommon.ShallEndCurrentDecision(currentDecision);
+            }
+
+            if (ShouldReleaseAutomaticRegroup(currentDecision))
+            {
+                complete = true;
+                ClearCurrentTarget();
+                ClearCommittedRegroupMove();
+                return new AICoreActionEnd("regroupIndependent", true);
             }
 
             if (!CombatCommon.HasActiveCombatEnemy(goalEnemy))
@@ -490,6 +501,22 @@ namespace pitTeam.BigBrain
 
             CombatCommon.HoldFor(Mathf.Max(0.1f, arrivedSettleUntil - Time.time));
             return new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.holdPosition, reason);
+        }
+
+        private bool ShouldReleaseAutomaticRegroup(AICoreActionResult<BotLogicDecision, CoreActionResultParams> current)
+        {
+            return automaticRegroup && IsRegroupReason(current.Reason) &&
+                FollowerCombatAnchor.IsCombatIndependent(BotOwner) &&
+                BossPlayers.Instance?.GetFollower(BotOwner)?.CombatRegroupUsesBossAnchor != true &&
+                !FollowerCombatCommon.IsMedicalDecision(current) &&
+                !FollowerCombatCommon.IsReloadHoldReason(current.Reason) &&
+                !FollowerCombatCommon.IsWeaponPreparationHoldReason(current.Reason) &&
+                BotOwner.GetPlayer?.MovementContext?.IsGrounded == true &&
+                !BotOwner.Medecine.Using && BotOwner.WeaponManager.Reload?.Reloading != true &&
+                BotOwner.WeaponManager.Selector?.IsChanging != true &&
+                (BotOwner.WeaponManager.ShootController as Player.FirearmController)?.IsInReloadOperation() != true &&
+                BotOwner.WeaponManager.Grenades?.ThrowindNow != true &&
+                BotOwner.WeaponManager.Grenades?.ReadyToThrow != true;
         }
 
         private bool TryGetCommittedRegroupMove(

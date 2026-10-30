@@ -6,10 +6,10 @@ namespace pitTeam.GoingRogue
     internal static class GoonCommandPolicy
     {
         private static readonly CompanionCommandPolicy Assault = new CompanionCommandPolicy(true, PushChance,
-            GoonCombatConfidence.PowerMultiplier);
-        private static readonly CompanionCommandPolicy Sniper = new CompanionCommandPolicy(true, null);
+            GoonCombatConfidence.PowerMultiplier, onYourOwnAggression: 70f);
+        private static readonly CompanionCommandPolicy Sniper = new CompanionCommandPolicy(true, null, null, onYourOwnAggression: 70f);
         private static readonly CompanionCommandPolicy IndependentPipe = new CompanionCommandPolicy(true,
-            (_, _, _) => 1f, GoonCombatConfidence.PowerMultiplier);
+            (_, _, _) => 1f, GoonCombatConfidence.PowerMultiplier, onYourOwnAggression: 70f);
 
         internal static CompanionCommandPolicy ForRole(string role)
             => ForRole(role, knightPresent: true);

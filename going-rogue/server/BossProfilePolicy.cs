@@ -54,12 +54,15 @@ public sealed class BossProfilePolicy(GlobalTable globals, BotTable bots)
         if (!LegacySkillFloors.ContainsKey(role)) return false;
         var experience = globals.Configuration.Exp.Level.ExperienceTable;
         if (experience.Length == 0) throw new InvalidDataException("Character experience table is empty.");
-        // EFT ProfileInfo.GetLevel returns table.Length after every XP threshold is met.
-        int maximumLevel = experience.Length;
-        int maximumExperience = experience.Sum(entry => entry.Experience);
-        bool changed = profile.Info!.Level != maximumLevel || profile.Info.Experience != maximumExperience;
+        // The legacy Goons are level 60. Keep XP consistent with the native level lookup.
+        int maximumLevel = Math.Min(60, experience.Length);
+        int maximumExperience = experience.Take(maximumLevel).Sum(entry => entry.Experience);
+        bool changed = profile.Info!.Level != maximumLevel || profile.Info.Experience != maximumExperience ||
+            profile.Info.MemberCategory != MemberCategory.Sherpa || profile.Info.SelectedMemberCategory != MemberCategory.Sherpa;
         profile.Info.Level = maximumLevel;
         profile.Info.Experience = maximumExperience;
+        profile.Info.MemberCategory = MemberCategory.Sherpa;
+        profile.Info.SelectedMemberCategory = MemberCategory.Sherpa;
 
         return changed;
     }

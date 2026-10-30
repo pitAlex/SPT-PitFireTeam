@@ -1,6 +1,7 @@
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Common.Tables;
 using SPTarkov.Server.Core.Models.Spt.Bots;
+using SPTarkov.Server.Core.Models.Eft.Match;
 
 namespace pitTeam.Server.Services;
 
@@ -9,7 +10,8 @@ public partial class FriendlyTeammateService
     private bool HasRaidEquipmentOrGenerator(BotBase teammate) =>
         CompanionPolicy(teammate)?.GenerateEquipmentEachRaid == true || HasProperRaidKit(teammate);
 
-    private BotBase PrepareNativeCompanionForRaid(MongoId sessionId, BotBase teammate, double? healthMultiplier)
+    private BotBase PrepareNativeCompanionForRaid(MongoId sessionId, BotBase teammate, double? healthMultiplier,
+        GetRaidConfigurationRequestData? configuration = null)
     {
         var player = GetPlayerProfile(sessionId);
         var generated = GenerateTeammateBot(sessionId, new BotGenerationDetails
@@ -18,9 +20,9 @@ public partial class FriendlyTeammateService
             PlayerLevel = Math.Max(1, player.Info?.Level ?? 1), PlayerName = player.Info?.Nickname,
             BotCountToGenerate = 1, BotDifficulty = "hard", IsPlayerScav = false,
             AllPmcsHaveSameNameAsPlayer = false,
-            Location = profileActivityService.GetProfileActivityRaidData(sessionId).RaidConfiguration?.Location
+            Location = configuration?.Location ?? profileActivityService.GetProfileActivityRaidData(sessionId).RaidConfiguration?.Location
                 ?? TeammateGenerationLocation
-        });
+        }, configuration);
         if (!HasProperRaidKit(generated))
             throw new InvalidOperationException($"Native companion generation returned no firearm: {teammate.Info.Settings.Role}");
         teammate = PrepareCompanionGeneratedSkills(sessionId, teammate, generated);
@@ -84,6 +86,7 @@ public partial class FriendlyTeammateService
         RemoveSecureContainerTree(clone);
         EnsureManagedSecureContainer(clone);
         EnsureFollowerHasSecureContainerSupplies(clone);
+        CompanionPolicy(clone)?.PrepareRaidEquipment?.Invoke(clone);
         ApplyTemporaryHealthMultiplier(clone, healthMultiplier);
         foreach (var part in clone.Health?.BodyParts?.Values.AsEnumerable() ?? []) part.Effects = null;
         return clone;

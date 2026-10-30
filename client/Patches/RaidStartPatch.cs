@@ -309,7 +309,7 @@ namespace pitTeam.Patches
             }
         }
 
-        public static void RefreshLoadedTeammateVisuals(EFT.UI.Matchmaker.MatchmakerPlayersController controller)
+        public static void RefreshLoadedTeammateVisuals(EFT.UI.Matchmaker.MatchmakerPlayersController controller, bool preserveVisualBindings = false)
         {
             if (controller?.CurrentPlayer?.Info == null || MainMenuControllerPatch.GroupPlayers == null || MainMenuControllerPatch.GroupPlayers.Count == 0)
             {
@@ -336,6 +336,18 @@ namespace pitTeam.Patches
                 EFT.UI.Matchmaker.RaidPlayer refreshed = BuildGroupPlayer(accountId, controller.CurrentPlayer);
                 if (refreshed == null)
                 {
+                    continue;
+                }
+
+                if (preserveVisualBindings && controller.GroupPlayers?.FirstOrDefault(player => player?.AccountId == accountId) is { } bound)
+                {
+                    // Native previews subscribe to this RaidPlayer's VisualChanged.
+                    // Replacing it with the same account ID does not redraw the model.
+                    // Preserve ready/leader state while refreshing visual/info bindings.
+                    bound.Info = refreshed.Info;
+                    bound.UpdateVisualRepresentation(refreshed.PlayerVisualRepresentation);
+                    bound.InfoChanged.Invoke();
+                    ReplaceOrAddPlayer(MainMenuControllerPatch.GroupPlayers, bound);
                     continue;
                 }
 
@@ -460,8 +472,8 @@ namespace pitTeam.Patches
                 {
                     Level = playerVisualization.Info.Level,
                     PrestigeLevel = playerVisualization.Info.PrestigeLevel,
-                    MemberCategory = EMemberCategory.Unheard,
-                    SelectedMemberCategory = EMemberCategory.Unheard,
+                    MemberCategory = playerVisualization.Info.MemberCategory,
+                    SelectedMemberCategory = playerVisualization.Info.SelectedMemberCategory,
                     Nickname = playerVisualization.Info.Nickname ?? accountId,
                     Side = playerVisualization.Info.Side,
                     SavageLockTime = currentPlayer.Info.SavageLockTime,
@@ -470,8 +482,6 @@ namespace pitTeam.Patches
                     HasCoopExtension = currentPlayer.Info.HasCoopExtension,
                     Health = SyntheticTeammateVisualHealth.CloneHealth(normalizedHealth)
                 };
-                playerVisualization.Info.MemberCategory = EMemberCategory.Unheard;
-                playerVisualization.Info.SelectedMemberCategory = EMemberCategory.Unheard;
 
                 return new EFT.UI.Matchmaker.RaidPlayer(new EFT.GroupPlayer
                 {
@@ -607,7 +617,9 @@ namespace pitTeam.Patches
             // see if user is to spawn with a Goon do to questing
             List<string> questCompanions = new List<string>();
 
-            if (profile.TryGetTraderInfo(Utils.Props.KnightTrader, out var traderInfo) && !traderInfo.Disabled)
+            if (GameplayModeRuntime.IsGoingRogue && settings.IsPmc &&
+                MainMenuControllerPatch.GroupPlayers.Count == 0 &&
+                profile.TryGetTraderInfo(Utils.Props.KnightTrader, out var traderInfo) && !traderInfo.Disabled)
             {
                 profile.QuestsData.ForEach(quest =>
                 {
@@ -618,7 +630,8 @@ namespace pitTeam.Patches
                         {
                             if (item1 == quest.Id)
                             {
-                                if (quest.Status == EFT.Quests.EQuestStatus.Started)
+                                if (quest.Status == EFT.Quests.EQuestStatus.Started &&
+                                    GameplayModeAddons.CanSpawnQuestCompanion(quest.Id, settings.LocationId))
                                 {
                                     bool isGoonQuest = true;
 
@@ -636,11 +649,6 @@ namespace pitTeam.Patches
                                         Utils.Utils.FlagSet("questGoons", true);
                                         // - when doing Goons quests, we reset any other companions
                                         SpawnHelper.spawnMemberIdsBoss.Clear();
-                                        if (!GameplayModeRuntime.IsGoingRogue)
-                                        {
-                                            Utils.Utils.FlagSet("isBadGuy", true);
-                                            badGuy = true;
-                                        }
 
                                         if (item.Key == "Knight")
                                         {
@@ -675,6 +683,7 @@ namespace pitTeam.Patches
 
             if (questCompanions.Count > 0)
             {
+                Modules.Logger.LogInfo($"[QuestCompanion] selected mode=GoingRogue location={settings.LocationId} roles={string.Join(",", questCompanions)} selectedMembers=0");
                 questCompanions.ForEach(companion =>
                 {
                     if (companion == "bossKnight")
@@ -798,6 +807,7 @@ namespace pitTeam.Patches
             {
                 MainMenuControllerPatch.GroupPlayers.Add(player);
             }
+            CompanionAcceptScreenPreparation.MemberAdded(__instance);
         }
 
         private static void NormalizeTeammateIconCategory(EFT.UI.Matchmaker.RaidPlayer player)
@@ -813,16 +823,18 @@ namespace pitTeam.Patches
                 return;
             }
 
+            EMemberCategory category = player.Info?.SelectedMemberCategory ??
+                player.PlayerVisualRepresentation?.Info?.MemberCategory ?? EMemberCategory.Unheard;
             if (player.Info != null)
             {
-                player.Info.MemberCategory = EMemberCategory.Unheard;
-                player.Info.SelectedMemberCategory = EMemberCategory.Unheard;
+                player.Info.MemberCategory = category;
+                player.Info.SelectedMemberCategory = category;
             }
 
             if (player.PlayerVisualRepresentation?.Info != null)
             {
-                player.PlayerVisualRepresentation.Info.MemberCategory = EMemberCategory.Unheard;
-                player.PlayerVisualRepresentation.Info.SelectedMemberCategory = EMemberCategory.Unheard;
+                player.PlayerVisualRepresentation.Info.MemberCategory = category;
+                player.PlayerVisualRepresentation.Info.SelectedMemberCategory = category;
             }
         }
 
@@ -897,6 +909,7 @@ namespace pitTeam.Patches
         private static void PatchPrefix(EFT.UI.Matchmaker.MatchmakerPlayersController __instance, bool revertSettings = true)
         {
             MainMenuControllerPatch.GroupPlayers.Clear();
+            CompanionAcceptScreenPreparation.GroupRemoved(__instance);
         }
     }
 
@@ -971,6 +984,7 @@ namespace pitTeam.Patches
 
             TeammateAutoJoinRuntime.MarkSuppressed(id);
             MainMenuControllerPatch.GroupPlayers.RemoveFirst(x => x?.AccountId == id);
+            CompanionRaidPreparation.Remove(id);
 
             EFT.UI.Matchmaker.IMatchmakerController controller = __instance._matchmakerPlayersController;
             if (controller?.GroupPlayers == null || controller.GroupPlayers.All(player => player?.AccountId != id))
@@ -987,6 +1001,43 @@ namespace pitTeam.Patches
             EFT.UI.BaseContextInteractions.RequestGlobalRedraw();
             return false;
         }
+    }
+
+    internal static class CompanionAcceptScreenPreparation
+    {
+        private static MatchMakerAcceptScreen _screen;
+        private static RaidSettings _settings;
+        private static EFT.UI.Matchmaker.MatchmakerPlayersController _controller;
+        internal static void Begin(MatchMakerAcceptScreen screen, RaidSettings settings, EFT.UI.Matchmaker.MatchmakerPlayersController controller)
+        { _screen = screen; _settings = settings; _controller = controller; }
+        internal static void End(MatchMakerAcceptScreen screen)
+        { if (ReferenceEquals(_screen, screen)) { _screen = null; _settings = null; _controller = null; } }
+        internal static void MemberAdded(EFT.UI.Matchmaker.MatchmakerPlayersController controller)
+        {
+            if (_screen != null && GameplayModeAddons.Current == GameplayMode.GoingRogue) Refresh(controller);
+        }
+        internal static void GroupRemoved(EFT.UI.Matchmaker.MatchmakerPlayersController controller)
+        {
+            if (_screen != null && ReferenceEquals(controller, _controller)) CompanionRaidPreparation.RemoveAll();
+        }
+        internal static void Refresh(EFT.UI.Matchmaker.MatchmakerPlayersController controller)
+        {
+            if (_screen == null || _settings == null || controller?.CurrentPlayer == null || !ReferenceEquals(controller, _controller)) return;
+            try
+            {
+                if (SyntheticTeammateRaidGuard.HasSyntheticTeammates()) _settings.RaidMode = ERaidMode.Local;
+                CompanionRaidPreparation.Prepare(_settings, MainMenuControllerPatch.GroupPlayers.Where(player => player != null).Select(player => player.AccountId));
+                SyntheticTeammateAutoJoinLoader.RefreshLoadedTeammateVisuals(controller, preserveVisualBindings: true);
+            }
+            catch (Exception ex) { Modules.Logger.LogError("[CompanionRaidKit] Accept-screen group refresh failed: " + ex); }
+        }
+    }
+
+    internal class CompanionAcceptScreenClosePatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod() => AccessTools.Method(typeof(MatchMakerAcceptScreen), nameof(MatchMakerAcceptScreen.Close));
+        [PatchPrefix]
+        private static void Prefix(MatchMakerAcceptScreen __instance) => CompanionAcceptScreenPreparation.End(__instance);
     }
 
     /** Ensure raid loading screen reflects the correct number of players based on raid group instead of original group **/
@@ -1145,8 +1196,9 @@ namespace pitTeam.Patches
             try
             {
                 EFT.UI.Matchmaker.MatchmakerPlayersController controller = AccessTools.Field(typeof(MatchMakerAcceptScreen), "MatchmakerPlayersController")?.GetValue(__instance) as EFT.UI.Matchmaker.MatchmakerPlayersController;
+                CompanionAcceptScreenPreparation.Begin(__instance, raidSettings, controller);
                 SyntheticTeammateAutoJoinLoader.EnsureLoaded(controller);
-                SyntheticTeammateAutoJoinLoader.RefreshLoadedTeammateVisuals(controller);
+                CompanionAcceptScreenPreparation.Refresh(controller);
 
                 if (!SyntheticTeammateRaidGuard.HasSyntheticTeammates())
                 {

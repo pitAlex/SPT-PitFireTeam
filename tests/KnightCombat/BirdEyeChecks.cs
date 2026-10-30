@@ -20,6 +20,22 @@ internal static class BirdEyeChecks
         }
         {
             var(bot,common,policy,_)=Setup();
+            var mate=new BotOwner(); mate.Memory.GoalEnemy.IsVisible=true;
+            bot.BotsGroup.Members.AddRange(new[]{bot,mate});
+            bot.Memory.GoalEnemy.GroupInfo.EnemyLastSeenTimeReal=Time.time-1;
+            common.ContactAdvance=true;
+            check(policy.GetDecision(bot.Memory.GoalEnemy)?.Reason=="sniper.birdEye.teamAdvance",
+                "Birdeye advances on admitted contact while a teammate sees the same enemy");
+            mate.Memory.GoalEnemy.ProfileId="other";policy.Reset();
+            check(policy.GetDecision(bot.Memory.GoalEnemy)?.Reason!="sniper.birdEye.teamAdvance",
+                "a different teammate fight cannot authorize advancing toward Birdeye's enemy");
+            mate.Memory.GoalEnemy.ProfileId=bot.Memory.GoalEnemy.ProfileId;
+            bot.Memory.GoalEnemy.GroupInfo.EnemyLastSeenTimeReal=Time.time-11;policy.Reset();
+            check(policy.GetDecision(bot.Memory.GoalEnemy)?.Reason!="sniper.birdEye.teamAdvance",
+                "stale group reports cannot start a native-style team advance");
+        }
+        {
+            var(bot,common,policy,_)=Setup();
             check(policy.GetDecision(bot.Memory.GoalEnemy).HasValue,"Birdeye uses admitted native-distance firing position");
             check(common.AssignedPoint.x==40 && common.AssignedBackline && common.AssignedSniper,
                 "native preferred 60m geometry retains Core backline and Marksman admission");

@@ -18,7 +18,12 @@ internal sealed class BirdEyeCombatObjective : FollowerCombatObjectiveBase
     public override void StartDecision() => CombatCommon.ClearInitialDecision();
     public override AICoreActionResult<BotLogicDecision, CoreActionResultParams> GetDecision(EnemyInfo enemy) => sniper.GetDecision(enemy);
     public override AICoreActionEnd ShallEndCurrentDecision(AICoreActionResult<BotLogicDecision, CoreActionResultParams> current)
-        => sniper.ShallEndCurrentDecision(current);
+    {
+        var sharedEnd = sniper.ShallEndCurrentDecision(current);
+        if (sharedEnd.Value) return sharedEnd;
+        return positioning.TryReleasePursuitHold(current, out var end) ? end : sharedEnd;
+    }
     public override void DecisionChanged(AICoreActionResult<BotLogicDecision, CoreActionResultParams>? previous,
-        AICoreActionResult<BotLogicDecision, CoreActionResultParams> next) => sniper.DecisionChanged(previous, next);
+        AICoreActionResult<BotLogicDecision, CoreActionResultParams> next)
+    { positioning.DecisionChanged(next); sniper.DecisionChanged(previous, next); }
 }

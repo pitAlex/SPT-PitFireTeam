@@ -248,6 +248,43 @@ foreach (var action in new[] { BotLogicDecision.dogFight, BotLogicDecision.heal,
         "caution cannot override urgent or non-pursuit decision: " + action);
     Check(c.Calls.Count == 0, "non-pursuit decision does not probe planners");
 }
+foreach (string mode in new[] { "safe", "pressure", "far", "highThreat", "blocked" })
+{
+    var (bot,c,objective)=Setup();
+    var adapter=new KnightVanillaCombat(bot,76);adapter.Begin(c);
+    c.LowThreat=mode!="highThreat";c.RecoveryPressure=mode=="pressure";
+    c.SearchBlocked=mode=="blocked";bot.Memory.GoalEnemy.Distance=mode=="far"?96f:20f;
+    Check(adapter.TryAdaptCautiousDecision(bot.Memory.GoalEnemy,new(BotLogicDecision.holdPosition,"periodWait"),out var next),"exposed native wait has one adapted owner");
+    if(mode is "safe" or "blocked")
+    {
+        Check(next.Reason.StartsWith("knight.pressureSearch"),"safe wait uses known-position search rather than recovery: "+mode);
+        if(mode=="blocked")
+        {
+            Time.time=100.5f;Check(!objective.ShallEndCurrentDecision(next).Value,"blocked safe search retains one-second retry");
+            Time.time=101.1f;Check(objective.ShallEndCurrentDecision(next).Value,"blocked safe search retries after finite deadline");
+        }
+    }
+    else Check(next.Reason==FollowerCombatCommon.RecoveryNoCoverThreatHoldReason,"unsafe wait preserves recovery instead of forced advance: "+mode);
+}
+{
+    var (bot,c,objective)=Setup();int begins=KnightVanillaCombat.Begins;
+    bot.Profile.Info.Settings.Role=WildSpawnType.bossKnight;
+    objective.Deactivate();objective.Activate();
+    Check(KnightVanillaCombat.Begins==begins,"objective resume cannot reset native combat-entry timing");
+    objective.DecisionChanged(null,new(BotLogicDecision.search,"knight.pressureSearch"));
+    Check(GoonPushLeadership.PublishedAdvance,"Knight's selected search publishes advance authority");
+    objective.DecisionChanged(null,new(BotLogicDecision.runToCover,"knight.cover.am2"));
+    Check(GoonPushLeadership.PublishedAdvance,"admitted Knight combat-cover movement permits coordinated advance");
+    bot.Memory.GoalEnemy.IsVisible=bot.Memory.GoalEnemy.CanShoot=true;
+    objective.DecisionChanged(null,new(BotLogicDecision.shootFromCover,"knight.coverFire"));
+    Check(GoonPushLeadership.PublishedAdvance,"Knight can authorize an advance while providing visible covering fire");
+    objective.DecisionChanged(null,new(BotLogicDecision.runToCover,"recovery.retreatWeakCover.run"));
+    Check(!GoonPushLeadership.PublishedAdvance,"recovery movement cannot authorize Pipe's assault");
+    objective.DecisionChanged(null,new(BotLogicDecision.holdPosition,"knight.coverArrival"));
+    Check(!GoonPushLeadership.PublishedAdvance,"Knight's arrival hold is not a fresh advance order");
+    objective.Deactivate();Check(GoonPushLeadership.PublishedTarget==null,"Regroup/Help deactivation clears published authority");
+    objective.StartDecision();Check(KnightVanillaCombat.Begins==begins+1,"a genuinely new combat episode still initializes native selector");
+}
 {
     var logic = new KnightCombatLogic(new BotOwner());
     var follower = new BotFollowerPlayer { Command = FollowerCommandType.PushEnemy };
@@ -258,10 +295,12 @@ foreach (var action in new[] { BotLogicDecision.dogFight, BotLogicDecision.heal,
     Check(!logic.ProbePush(follower) && !logic.ProbePush(null), "Knight cannot invent a push without an accepted command");
 }
 BigPipeChecks.Run(Check);
+GroupSearchChecks.Run(Check);
 LifecycleChecks.Run(Check);
 CommittedHoldChecks.Run(Check);
 ConfidenceChecks.Run(Check);
 PushLeadershipHandoffChecks.Run(Check);
 BirdEyeChecks.Run(Check);
 GoonRejoinChecks.Run(Check);
+IndependentPursuitChecks.Run(Check);
 Console.WriteLine($"PASS: {checks} production Knight/Big Pipe objective/support/caution/lease/command checks. Stubbed EFT inputs; no Unity raid simulation.");

@@ -82,10 +82,12 @@ namespace pitTeam.Modules
 
         public static bool IsSainManSelected(BotOwner botOwner) =>
             pitFireTeam.IsSainManTacticAvailable && botOwner != null &&
+            !GameplayModeAddons.OwnsCompanionCombat(botOwner.Profile?.Info?.Settings?.Role.ToString()) &&
             BossPlayers.Instance?.GetFollower(botOwner)?.CombatTactic == FollowerCombatTactic.SainMan;
 
         public static bool IsAddonTacticSelected(BotOwner botOwner) =>
             pitFireTeam.IsSainManTacticAvailable && botOwner != null &&
+            !GameplayModeAddons.OwnsCompanionCombat(botOwner.Profile?.Info?.Settings?.Role.ToString()) &&
             BossPlayers.Instance?.GetFollower(botOwner) is { } follower &&
             FollowerCombatTactics.UsesSainCombat(follower.CombatTactic);
 

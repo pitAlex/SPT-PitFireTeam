@@ -7,10 +7,12 @@
     <BuildSAINAddon>false</BuildSAINAddon>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../shared/KnightQuestPolicy.cs" Link="Quests/KnightQuestPolicy.cs" />
     <ProjectReference Include="../../client/pitFireTeam.csproj" AdditionalProperties="BuildSAINAddon=false" Private="false" />
     <Reference Include="BepInEx"><HintPath>../../client/libs4.1/BepInEx.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="DrakiaXYZ-BigBrain"><HintPath>../../client/libs4.1/DrakiaXYZ-BigBrain.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Assembly-CSharp"><HintPath>../../client/libs4.1/Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Sirenix.Serialization"><HintPath>../../client/libs4.1/Sirenix.Serialization.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine"><HintPath>../../client/libs/UnityEngine.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.CoreModule"><HintPath>../../client/libs/UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.AIModule"><HintPath>../../client/libs/UnityEngine.AIModule.dll</HintPath><Private>false</Private></Reference>

@@ -1,0 +1,81 @@
+{
+	"price": {
+		"_tpl": "5696686a4bdc2da3298b456a",
+		"count": 240
+	},
+	"level": 2,
+	"item": [
+		{
+			"_id": "679bb41b2808577d70032e06",
+			"_tpl": "5ba26383d4351e00334c93d9",
+			"parentId": "hideout",
+			"slotId": "hideout",
+			"upd": {
+				"Repairable": {
+					"MaxDurability": 100,
+					"Durability": 100
+				},
+				"Foldable": {
+					"Folded": false
+				},
+				"FireMode": {
+					"FireMode": "fullauto"
+				},
+				"StackObjectsCount": 5,
+				"UnlimitedCount": false,
+				"BuyRestrictionMax": 5,
+				"BuyRestrictionCurrent": 0
+			}
+		},
+		{
+			"_id": "679bb41b2808577d70032e07",
+			"_tpl": "5ba26586d4351e44f824b340",
+			"slotId": "mod_magazine",
+			"parentId": "679bb41b2808577d70032e06"
+		},
+		{
+			"_id": "679bb41b2808577d70032e08",
+			"_tpl": "5ba26acdd4351e003562908e",
+			"slotId": "mod_muzzle",
+			"parentId": "679bb41b2808577d70032e06"
+		},
+		{
+			"_id": "679bb41b2808577d70032e09",
+			"_tpl": "570fd79bd2720bc7458b4583",
+			"slotId": "mod_scope",
+			"upd": {
+				"Sight": {
+					"ScopesCurrentCalibPointIndexes": [0],
+					"ScopesSelectedModes": [0],
+					"SelectedScope": 0,
+					"ScopeZoomValue": 0
+				}
+			},
+			"parentId": "679bb41b2808577d70032e06"
+		},
+		{
+			"_id": "679bb41b2808577d70032e0a",
+			"_tpl": "5cc9c20cd7f00c001336c65d",
+			"slotId": "mod_tactical_001",
+			"upd": {
+				"Light": {
+					"IsActive": true,
+					"SelectedMode": 0
+				}
+			},
+			"parentId": "679bb41b2808577d70032e06"
+		},
+		{
+			"_id": "679bb41b2808577d70032e0b",
+			"_tpl": "5bcf0213d4351e0085327c17",
+			"slotId": "mod_stock",
+			"parentId": "679bb41b2808577d70032e06"
+		},
+		{
+			"_id": "679bb41b2808577d70032e0c",
+			"_tpl": "5ba26ae8d4351e00367f9bdb",
+			"slotId": "mod_muzzle",
+			"parentId": "679bb41b2808577d70032e08"
+		}
+	]
+}

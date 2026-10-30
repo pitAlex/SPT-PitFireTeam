@@ -9125,6 +9125,87 @@ namespace pitTeam.BigBrain
             return true;
         }
 
+        // A short approach to admitted contact memory is movement, not a firing position.
+        // Used when a companion supports a teammate's active fight but cannot yet see it.
+        internal bool TryCreateContactAdvanceDecision(EnemyInfo enemy, float stopDistance, string reason,
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
+        {
+            if (!TryPlanContactAdvanceDecision(enemy, stopDistance, reason, out var point, out decision)) return false;
+            CommitContactAdvancePoint(point);
+            return true;
+        }
+
+        internal void CommitContactAdvancePoint(Vector3 point)
+        {
+            botOwner.GoToSomePointData.SetPoint(point);
+            SetCoverTactic(BotsGroup.BotCurrentTactic.Attack);
+        }
+
+        // NavMesh polygons can exist without a supporting player-collision floor.
+        // Keep short tactical destinations on walkable physical ground near the sample.
+        internal static bool HasSupportedCombatGround(Vector3 point)
+        {
+            return IsFinite(point) &&
+                Physics.Raycast(point + Vector3.up * 0.5f, Vector3.down, out RaycastHit hit, 1f,
+                    LayersMaskController.PlayerCollisionsMask, QueryTriggerInteraction.Ignore) &&
+                IsFinite(hit.point) && Mathf.Abs(hit.point.y - point.y) <= 0.5f && hit.normal.y >= 0.5f;
+        }
+
+        internal bool TryPlanContactAdvanceDecision(EnemyInfo enemy, float stopDistance, string reason, out Vector3 point,
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
+        {
+            point = default;
+            decision = default;
+            if (!HasActiveCombatEnemy(enemy) ||
+                !FollowerEnemyTracking.TryGetKnownPosition(enemy, out var anchor, out _) || !IsFinite(anchor)) return false;
+            Vector3 offset = anchor - botOwner.Position;
+            offset.y = 0f;
+            float distance = offset.magnitude;
+            if (distance <= stopDistance + 2f) return false;
+            float step = Mathf.Min(20f, distance - stopDistance);
+            Vector3 candidate = botOwner.Position + offset.normalized * step;
+            if (!NavMesh.SamplePosition(candidate, out NavMeshHit hit, 1.5f, NavMesh.AllAreas) ||
+                Mathf.Abs(hit.position.y - candidate.y) > 1.25f ||
+                (hit.position - botOwner.Position).sqrMagnitude < 4f ||
+                Vector3.Distance(hit.position, anchor) < stopDistance || !HasSupportedCombatGround(hit.position) ||
+                IsBossFireLaneMovementRisk(hit.position, anchor, includePath: true)) return false;
+            var path = new NavMeshPath();
+            if (!NavMesh.CalculatePath(botOwner.Position, hit.position, NavMesh.AllAreas, path) ||
+                path.status != NavMeshPathStatus.PathComplete) return false;
+            point = hit.position;
+            decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.goToPoint, reason);
+            return true;
+        }
+
+        // Companion group-search travel is not a firing-position request. The allied
+        // leader's physical position is legitimate; the enemy still requires admitted memory.
+        internal bool TryPlanCombatFollowDecision(EnemyInfo enemy, Vector3 leaderPosition, string reason,
+            out Vector3 point, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
+        {
+            point = default;
+            decision = default;
+            if (!HasActiveCombatEnemy(enemy) || !IsFinite(leaderPosition) ||
+                !FollowerEnemyTracking.TryGetKnownPosition(enemy, out var anchor, out _) || !IsFinite(anchor)) return false;
+            Vector3 offset = botOwner.Position - leaderPosition;
+            if (offset.sqrMagnitude <= 16f) return false;
+            offset.y = 0f;
+            if (offset.sqrMagnitude < 0.01f) offset = Vector3.right;
+            Vector3 desired = leaderPosition + offset.normalized * 3f;
+            Vector3 candidate = Vector3.MoveTowards(botOwner.Position, desired, 20f);
+            if (!NavMesh.SamplePosition(candidate, out NavMeshHit hit, 1.5f, NavMesh.AllAreas) ||
+                Mathf.Abs(hit.position.y - candidate.y) > 1.25f ||
+                (hit.position - botOwner.Position).sqrMagnitude < 4f ||
+                (hit.position - botOwner.Position).sqrMagnitude > 400f ||
+                Vector3.Distance(hit.position, leaderPosition) < 2f || !HasSupportedCombatGround(hit.position) ||
+                IsBossFireLaneMovementRisk(hit.position, anchor, includePath: true)) return false;
+            var path = new NavMeshPath();
+            if (!NavMesh.CalculatePath(botOwner.Position, hit.position, NavMesh.AllAreas, path) ||
+                path.status != NavMeshPathStatus.PathComplete) return false;
+            point = hit.position;
+            decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.goToPoint, reason);
+            return true;
+        }
+
         internal bool TryCreateAssignedFiringPositionDecision(
             EnemyInfo enemy, Vector3 assignedPoint, string reason,
             out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision,

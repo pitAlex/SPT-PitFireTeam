@@ -36,6 +36,7 @@ namespace pitTeam.Modules
     {
         public static BossPlayers Instance=new();
         public Dictionary<BotOwner,BotFollowerPlayer> Followers=new();
+        public static IEnumerable<BotFollowerPlayer> GetFollowers()=>Instance.Followers.Values;
         public BotFollowerPlayer GetFollower(BotOwner owner)=>Followers.GetValueOrDefault(owner);
     }
     public static class FollowerRecovery { public static int Stops; public static void StopShooting(BotOwner owner)=>Stops++; }

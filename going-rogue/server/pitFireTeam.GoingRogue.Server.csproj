@@ -8,8 +8,17 @@
     <Version>0.1.0</Version>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Resources/traderKnight/**/*.json" />
+    <EmbeddedResource Include="Resources/quests/*.json" />
+    <Content Include="Resources/quests/*.jpg" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="../shared/KnightQuestPolicy.cs" Link="Quests/KnightQuestPolicy.cs" />
+    <Content Include="Resources/avatars/knight.jpg" CopyToOutputDirectory="PreserveNewest" />
+    <InternalsVisibleTo Include="KnightTrader" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../../server/pitFireTeam.Server.csproj" Private="false" />
     <Reference Include="SPTarkov.DI"><HintPath>../../server/refs/4.1.0/SPTarkov.DI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="SPTarkov.Common"><HintPath>../../server/refs/4.1.0/SPTarkov.Common.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="SPTarkov.Server.Core"><HintPath>../../server/refs/4.1.0/SPTarkov.Server.Core.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="SemanticVersioning"><HintPath>../../server/refs/4.1.0/SemanticVersioning.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>

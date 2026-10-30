@@ -4,6 +4,8 @@
 
 Going Rogue starts with Allegiance's encounter and recruitment rules, then gradually becomes Rogue through Knight's quests.
 
+The [first three quests](docs/Knight-Quests.md) now have native objectives and rewards. Quest 3's map item placement still needs the user-supplied container ID; no container binding or loot injection is active yet. Their future friendship/recruitment milestones below remain disabled during this testing phase.
+
 ## While accompanied by the Goons
 
 - Ordinary Scavs can occasionally be friendly.

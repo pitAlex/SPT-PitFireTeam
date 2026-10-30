@@ -41,11 +41,15 @@ namespace EFT {
     public class FileSettings { public Mind Mind=new Mind(); }
     public class Settings { public FileSettings FileSettings=new FileSettings(); }
     public partial class BotOwner {
+        public OwnerProfile Profile=new OwnerProfile();
         public string ProfileId="selected"; public bool IsDead, Active=true, IsFollower=true, FriendlyInLane, UsingMedical; public Vector3 LookDirection=new Vector3(0,0,1);
         public Player GetPlayer=new Player(); public Memory Memory=new Memory(); public Settings Settings=new Settings();
         public BotComponent Sain; public BotFollowerPlayer Follower; public Player Leader=new Player();
         public Medicine Medecine=new Medicine(); public int RecoveryStarts,RecoveryEnds; public bool RecoveryActive;
     }
+    public class OwnerProfile {public OwnerProfileInfo Info=new OwnerProfileInfo();}
+    public class OwnerProfileInfo {public OwnerProfileSettings Settings=new OwnerProfileSettings();}
+    public class OwnerProfileSettings {public WildSpawnType Role=WildSpawnType.pmc;}
 }
 namespace DrakiaXYZ.BigBrain.Brains {
     public class CustomLayer {
@@ -194,6 +198,7 @@ namespace pitTeam.Components {
     }
 }
 namespace pitTeam.Modules {
+    public static class GameplayModeAddons {public static bool OwnsCompanionCombat(string role)=>false;}
     public static class Logger {
         public static List<string> Errors=new List<string>();public static void LogInfo(string text){}
         public static void LogError(string text){Errors.Add(text);}

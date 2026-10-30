@@ -14,6 +14,10 @@ public class FriendlyTeammateMatchRouter(JsonUtil jsonUtil, FriendlyTeammateMatc
     : StaticRouter(
         jsonUtil,
         [
+            new RouteAction<FriendlyCompanionRaidPreparationRequest>(
+                "/client/game/bot/followerprepare",
+                async (url, info, sessionId, output, cancellationToken) => await FriendlyModeRequestGate.Run(() => callbacks.PrepareCompanionRaid(info, sessionId))
+            ),
             new RouteAction<MatchGroupInviteSendRequest>(
                 "/client/match/group/invite/send",
                 async (url, info, sessionId, output, cancellationToken) => await FriendlyModeRequestGate.Run(() => callbacks.SendGroupInvite(url, info, sessionId, output))

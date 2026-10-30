@@ -1,5 +1,7 @@
 using EFT;
 using pitTeam.Utils;
+using pitTeam.Modules;
+using UnityEngine;
 
 namespace pitTeam.GoingRogue.Combat
 {
@@ -19,14 +21,28 @@ namespace pitTeam.GoingRogue.Combat
             // The old Knight layer gated autonomous pursuit on distance and local threat.
             // Boss-relative ordinary-target confidence retains that distance/pressure gate.
             // Explicit Push has a separate objective and does not pass through this adapter.
-            if (pursuit && Enemy.Distance(enemy) < Enemy.EnemyDistance.Far &&
-                !common.HasRecoveryPressure(1f) &&
-                GoonCombatThreat.IsLowThreat(_owner, enemy, common)) return false;
+            bool safeAdvance = !common.HasRecoveryPressure(1f) &&
+                (FollowerCombatAnchor.IsCombatIndependent(_owner) ||
+                 Enemy.Distance(enemy) < Enemy.EnemyDistance.Far && GoonCombatThreat.IsLowThreat(_owner, enemy, common));
+            if (pursuit && safeAdvance) return false;
 
             if (common.CanShootFromCurrentCover(out _))
             {
                 decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(
                     BotLogicDecision.shootFromCover, "knight.cautiousCoverFire");
+                return true;
+            }
+
+            if (exposedHold && safeAdvance)
+            {
+                // A calm native wait with no cover must not become a recovery loop.
+                // Core searches the admitted remembered point and owns path/shot safety.
+                decision = common.CreateMemoryOnlyEnemySearchDecision(enemy, "knight.pressureSearch");
+                if (decision.Action == BotLogicDecision.holdPosition)
+                {
+                    RetryUntil = Time.time + 1f;
+                    common.HoldFor(1f);
+                }
                 return true;
             }
 

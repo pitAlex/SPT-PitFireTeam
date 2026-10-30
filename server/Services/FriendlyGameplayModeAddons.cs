@@ -13,6 +13,8 @@ public sealed record FriendlyModeCompanion(string Role, string Nickname, string 
     public Func<IReadOnlyList<string>>? GetVisibleSkills { get; init; }
     public string? GeneratedSkillsVersion { get; init; }
     public Action<BotBase, BotBase>? AdoptGeneratedSkills { get; init; }
+    public Action<BotBase>? PrepareRaidEquipment { get; init; }
+    public Func<BotBase, string, bool>? CanSpawnForQuest { get; init; }
 }
 
 public static class FriendlyGameplayModeAddons

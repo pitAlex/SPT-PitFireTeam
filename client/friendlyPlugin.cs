@@ -589,6 +589,7 @@ namespace pitTeam
             new SelectSpawnPointPatch().Enable();
 
             new MatchmakerTimeHasComeShowPatch().Enable();
+            new CompanionAcceptScreenClosePatch().Enable();
             new PartyInfoPanelEquipmentHealthPatch().Enable();
             new MenuScreenShowSquadControlPatch().Enable();
             new MenuScreenReconnectVisibilitySquadControlPatch().Enable();

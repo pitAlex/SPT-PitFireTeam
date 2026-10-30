@@ -6,6 +6,7 @@
   <ItemGroup>
     <Compile Include="../../going-rogue/client/Combat/KnightSquadCoordinator.cs" Link="KnightSquadCoordinator.cs" />
     <Compile Include="../../going-rogue/client/Combat/GoonPushLeadership.cs" Link="GoonPushLeadership.cs" />
+    <Compile Include="../../going-rogue/client/Combat/GoonUnitTactics.cs" Link="GoonUnitTactics.cs" />
     <Compile Include="../../client/Modules/CompanionAdvanceOrderContext.cs" Link="CompanionAdvanceOrderContext.cs" />
   </ItemGroup>
 </Project>

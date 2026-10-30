@@ -1,5 +1,10 @@
 # Core 1.1.0 validation
 
+## 2026-10-29 — generated Goon spare-magazine safeguard and activation diagnostics deployed
+
+Going Rogue owns its post-generation spare-magazine provisioning; Core adds only the optional raid-equipment callback on an isolated companion spawn clone before preview persistence. [Going Rogue validation](../../going-rogue/Validation.md#2026-10-29-generated-goon-spare-magazines--deployed) records the kit contract and controlled native inventory coverage. Final checks: **508** gameplay/storage, **16** real-Harmony activation diagnostic checks, clean compiler results (cached NuGet NU1900 vulnerability-feed warnings), and installed SPT 4.1.6 compatibility. All **8** Core/Going Rogue client/server DLL/PDB files were deployed after stopped-process checks, backed up and SHA-256 verified. Manifest: `tests/artifacts/goon-spare-magazines-deploy-e3b3f5906afc4b0cadbd799f9fa6e353/manifest.json`. The earlier testing deferral below is superseded by the user's instruction to deploy with everything closed. No game/server was launched. Actual next-raid spare use and Birdeye's underlying native exception remain pending live reproduction.
+
+
 ## 2026-10-29 — pending follower native activation diagnostics; not deployed
 
 Birdeye accepted the invitation before Customs `20261029-040159-bigmap.jsonl`. Native creation completed while `NonActive`, then the registration failure context reported `ActiveFail`, `watcher=True`, and an unresolved activation task. The same identity had successfully registered in the preceding Customs raid. EFT `BotOwner.method_10` catches and discards `Exception` before setting `ActiveFail`; no original exception survives in this record. The nearby animator missing-handler errors only log and are not evidence of the throwing subsystem.

@@ -17,11 +17,12 @@ namespace pitTeam.GoingRogue.Combat
         private bool hasSuppressPoint;
         private string staleHoldEnemy;
         private float staleHoldReport;
+        private float nextLeadershipCheck;
         public BotLogicDecision? LastSelectedDecision { get; set; }
         public float RetryUntil { get; private set; }
 
         internal BigPipeVanillaCombat(BotOwner bot) { owner = bot; }
-        public void Begin(FollowerCombatCommon context) { common = context; LastSelectedDecision = null; }
+        public void Begin(FollowerCombatCommon context) { common = context; LastSelectedDecision = null; nextLeadershipCheck = 0f; }
         public void InvalidatePosition() { }
         public void Dispose() { common = null; LastSelectedDecision = null; nextSuppressAt = 0f; hasSuppressPoint = false; staleHoldEnemy = null; }
 
@@ -48,7 +49,7 @@ namespace pitTeam.GoingRogue.Combat
                 return common.CreateNoCoverRecoveryDecision(enemy);
             }
             if (choice == BigPipeFightChoice.Search)
-                return common.CreateMemoryOnlyEnemySearchDecision(enemy, "bigPipe.native.search");
+                return Search(enemy, "bigPipe.native.search");
             if (choice == BigPipeFightChoice.ReloadHold) return Hold("bigPipe.native.waitReload", 1f);
             if (choice == BigPipeFightChoice.Shoot)
                 return Decision(BotLogicDecision.shootFromPlace, "bigPipe.native.ShootFromPl8");
@@ -57,7 +58,7 @@ namespace pitTeam.GoingRogue.Combat
             if (choice == BigPipeFightChoice.StaleContactHold)
             {
                 if (string.Equals(staleHoldEnemy, enemy.ProfileId, System.StringComparison.Ordinal) && staleHoldReport == groupReport)
-                    return common.CreateMemoryOnlyEnemySearchDecision(enemy, "bigPipe.staleContactSearch");
+                    return Search(enemy, "bigPipe.staleContactSearch");
                 staleHoldEnemy = enemy.ProfileId; staleHoldReport = groupReport;
                 return Hold("bigPipe.native.KILLA_CLOSEATTACK_TIMES", bossSettings.KILLA_CLOSEATTACK_DELAY);
             }
@@ -83,23 +84,47 @@ namespace pitTeam.GoingRogue.Combat
                 return suppress;
             }
 
-            if (Enemy.Distance(enemy) >= Enemy.EnemyDistance.Far || common.HasRecoveryPressure(1f) ||
-                !GoonCombatThreat.IsLowThreat(owner, enemy, common))
+            if (common.HasRecoveryPressure(1f) || !FollowerCombatAnchor.IsCombatIndependent(owner) &&
+                (Enemy.Distance(enemy) >= Enemy.EnemyDistance.Far || !GoonCombatThreat.IsLowThreat(owner, enemy, common)))
             {
                 if (common.TryGetCommittedRecoveryDecision(enemy, out var recovery)) return recovery;
                 return common.CreateNoCoverRecoveryDecision(enemy);
             }
-            return common.CreateMemoryOnlyEnemySearchDecision(enemy, "bigPipe.pressureSearch");
+            return Search(enemy, "bigPipe.pressureSearch");
         }
 
         public AICoreActionEnd ShallEndCurrentDecision(AICoreActionResult<BotLogicDecision, CoreActionResultParams> current)
         {
             var enemy = owner.Memory.GoalEnemy;
             if (!common.HasActiveCombatEnemy(enemy)) return new AICoreActionEnd("bigPipe.enemyGone", true);
+            if ((current.Action == BotLogicDecision.search || current.Action == BotLogicDecision.goToEnemy) &&
+                current.Reason?.StartsWith("bigPipe.", System.StringComparison.Ordinal) == true && Time.time >= nextLeadershipCheck)
+            {
+                nextLeadershipCheck = Time.time + 0.25f;
+                if (!GoonPushLeadership.CanAutonomousAdvance(owner, enemy) &&
+                    common.TryPrepareDecisionTransition(current, "bigPipe.knightLead", Hold("bigPipe.knightLead", 1f)))
+                    return new AICoreActionEnd("bigPipe.knightLead", true);
+            }
+            if (current.Action == BotLogicDecision.holdPosition &&
+                current.Reason != null && current.Reason.StartsWith("bigPipe.", System.StringComparison.Ordinal) &&
+                current.Reason.IndexOf("search", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                return new AICoreActionEnd("bigPipe.searchRetry", Time.time >= RetryUntil || enemy.IsVisible && enemy.CanShoot);
             if (current.Action == BotLogicDecision.holdPosition)
                 return new AICoreActionEnd("bigPipe.holdReady", Time.time >= RetryUntil ||
                     common.HasRecoveryPressure(1f) || enemy.IsVisible && enemy.CanShoot && !owner.WeaponManager.Reload.Reloading);
             return common.ShallEndCurrentDecision(current);
+        }
+
+        private AICoreActionResult<BotLogicDecision, CoreActionResultParams> Search(EnemyInfo enemy, string reason)
+        {
+            if (!GoonPushLeadership.CanAutonomousAdvance(owner, enemy)) return Hold("bigPipe.knightLead", 1f);
+            var decision = common.CreateMemoryOnlyEnemySearchDecision(enemy, reason);
+            if (decision.Action == BotLogicDecision.holdPosition && decision.Reason.StartsWith("bigPipe.", System.StringComparison.Ordinal))
+            {
+                RetryUntil = Time.time + 1f;
+                common.HoldFor(1f);
+            }
+            return decision;
         }
 
         private AICoreActionResult<BotLogicDecision, CoreActionResultParams> Hold(string reason, float seconds)

@@ -20,7 +20,14 @@ internal sealed class KnightSquadCoordinator : IDisposable
     private readonly Dictionary<BotOwner, FollowerCombatCommon> contacts = new();
     private float nextRefresh;
     private bool refreshPositions;
-    private readonly Dictionary<BotOwner, (string Enemy, Vector3 Point, int Directive, float PublishedAt)> orders = new();
+    private sealed class MemberOrder
+    {
+        internal string Enemy;
+        internal Vector3 Point, KnightAnchor, EnemyAnchor;
+        internal int Directive;
+        internal float PublishedAt;
+    }
+    private readonly Dictionary<BotOwner, MemberOrder> orders = new();
     private readonly Dictionary<BotOwner, int> pendingDirectives = new();
     private int nextDirective;
     internal readonly List<BotOwner> Members = new();
@@ -47,12 +54,11 @@ internal sealed class KnightSquadCoordinator : IDisposable
         foreach (var pair in Owners)
             if (KnightCombatLayer.IsOwned(pair.Key) && pair.Value.IsMember(member) &&
                 BossPlayers.Instance.GetFollower(member).CombatRegroupUsesBossAnchor != true &&
-                BossPlayers.Instance.GetFollower(member).GetBoss()?.GetBossLogic()?.IsHitted != true &&
+                (BossPlayers.Instance.GetFollower(member).GetBoss()?.GetBossLogic()?.IsHitted != true ||
+                 FollowerCombatAnchor.IsCombatIndependent(member)) &&
                 !(BossPlayers.Instance.GetFollower(member).TryPeekActiveCommand(out var command, out _, out _) && command != FollowerCommandType.None) &&
                 pair.Value.orders.TryGetValue(member, out var order) &&
-                order.Enemy == pair.Key.Memory.GoalEnemy?.ProfileId && order.Enemy == member.Memory.GoalEnemy?.ProfileId &&
-                pair.Key.Memory.GoalEnemy?.Person?.HealthController?.IsAlive == true &&
-                FollowerCombatCommon.IsFinite(order.Point))
+                pair.Value.IsOrderCurrent(member, order) && order.Enemy == member.Memory.GoalEnemy?.ProfileId)
             { position = order.Point; return true; }
         return false;
     }
@@ -79,8 +85,7 @@ internal sealed class KnightSquadCoordinator : IDisposable
         {
             var coordinator = pair.Value;
             if (!KnightCombatLayer.IsOwned(pair.Key) || !coordinator.IsMember(member) ||
-                !coordinator.orders.TryGetValue(member, out var order) || order.Enemy != pair.Key.Memory.GoalEnemy?.ProfileId ||
-                !FollowerCombatCommon.IsFinite(order.Point) ||
+                !coordinator.orders.TryGetValue(member, out var order) || !coordinator.IsOrderCurrent(member, order) ||
                 !GoonPushLeadership.CanSupersede(member, order.Enemy, order.Directive, order.PublishedAt)) continue;
             target = GoonPushLeadership.KnownTarget(member, order.Enemy);
             if (target == null) continue;
@@ -95,6 +100,17 @@ internal sealed class KnightSquadCoordinator : IDisposable
         member.BotState == EBotState.Active && member.GetPlayer?.HealthController?.IsAlive == true &&
         Members.Contains(member) && BossPlayers.Instance?.GetFollower(owner)?.GetBoss() is { } leader &&
         ReferenceEquals(BossPlayers.Instance.GetFollower(member)?.GetBoss(), leader);
+
+    private bool IsOrderCurrent(BotOwner member, MemberOrder order)
+    {
+        var goal = owner.Memory.GoalEnemy;
+        return IsMember(member) && goal?.ProfileId == order.Enemy && goal.Person?.HealthController?.IsAlive == true &&
+            Time.time >= order.PublishedAt && Time.time - order.PublishedAt <= 8f &&
+            FollowerCombatCommon.IsFinite(order.Point) &&
+            (owner.Position - order.KnightAnchor).sqrMagnitude <= 8f * 8f &&
+            FollowerEnemyTracking.TryGetKnownPosition(goal, out var anchor, out _) &&
+            (anchor - order.EnemyAnchor).sqrMagnitude <= 10f * 10f;
+    }
 
     internal bool RequestMemberPositionRefresh(int memberId)
     {
@@ -134,6 +150,8 @@ internal sealed class KnightSquadCoordinator : IDisposable
             if (!boss.FollowersPositions.ContainsKey(member))
             { boss.FollowersPositions[member] = member.Position; refreshPositions = true; }
             boss.SetFightPosition(member.Memory.IsInCover && member.Memory.GoalEnemy?.CanShoot == true, member);
+            if (orders.TryGetValue(member, out var order) && !IsOrderCurrent(member, order))
+            { orders.Remove(member); refreshPositions = true; }
         }
         ShareAdmittedTarget();
         if (refreshPositions)
@@ -145,15 +163,20 @@ internal sealed class KnightSquadCoordinator : IDisposable
 
     private void OnPositionsRecalculated()
     {
-        var previous = new Dictionary<BotOwner, (string Enemy, Vector3 Point, int Directive, float PublishedAt)>(orders);
+        var previous = new Dictionary<BotOwner, MemberOrder>(orders);
         orders.Clear();
         var goal = owner.Memory.GoalEnemy;
-        if (goal?.Person?.HealthController?.IsAlive != true) return;
+        if (goal?.Person?.HealthController?.IsAlive != true ||
+            !FollowerEnemyTracking.TryGetKnownPosition(goal, out var anchor, out _)) return;
         foreach (var member in Members)
             if (IsMember(member) && boss.FollowersPositions.TryGetValue(member, out var point) && FollowerCombatCommon.IsFinite(point))
-                orders[member] = (goal.ProfileId, point,
-                    pendingDirectives.TryGetValue(member, out var revision) ? revision :
-                        previous.TryGetValue(member, out var old) ? old.Directive : 0, Time.time);
+                orders[member] = new MemberOrder
+                {
+                    Enemy = goal.ProfileId, Point = point, KnightAnchor = owner.Position, EnemyAnchor = anchor,
+                    Directive = pendingDirectives.TryGetValue(member, out var revision) ? revision :
+                        previous.TryGetValue(member, out var old) ? old.Directive : 0,
+                    PublishedAt = Time.time
+                };
         pendingDirectives.Clear();
         ShareAdmittedTarget();
     }
@@ -167,7 +190,8 @@ internal sealed class KnightSquadCoordinator : IDisposable
         {
             var follower = BossPlayers.Instance?.GetFollower(member);
             if (follower == null || follower.TryPeekActiveCommand(out var command, out _, out _) && command != FollowerCommandType.None ||
-                follower.GetBoss()?.GetBossLogic()?.IsHitted == true || follower.HasOrderedPushTargetLock || follower.CombatRegroupUsesBossAnchor ||
+                follower.GetBoss()?.GetBossLogic()?.IsHitted == true && !FollowerCombatAnchor.IsCombatIndependent(member) ||
+                follower.HasOrderedPushTargetLock || follower.CombatRegroupUsesBossAnchor ||
                 member.Medecine.Using || member.Memory.IsUnderFire || member.Memory.GoalEnemy?.IsVisible == true ||
                 (member.Memory.GoalEnemy != null && Time.time - member.Memory.GoalEnemy.PersonalLastSeenTime < 2.5f)) continue;
             if (!member.EnemiesController.EnemyInfos.Values.Any(info => info.ProfileId == enemy.ProfileId)) continue;

@@ -28,7 +28,28 @@ internal static class GoingRogueModeTests
         foreach (string role in new[] { "bossknight", "followerbigpipe", "followerbirdeye" })
             bots.Types[role] = json.Deserialize<BotType>(File.ReadAllText(Path.Combine(database, "bots", "types", role + ".json")));
         string nativeKnight = json.Serialize(bots.Types["bossknight"])!;
-        new GoingRogueServerPlugin(globals, bots).OnLoadAsync(CancellationToken.None).GetAwaiter().GetResult();
+        var templates = (TemplateTable)RuntimeHelpers.GetUninitializedObject(typeof(TemplateTable));
+        typeof(TemplateTable).GetProperty(nameof(TemplateTable.Items))!.SetValue(templates,
+            json.Deserialize<Dictionary<MongoId, TemplateItem>>(File.ReadAllText(Path.Combine(database, "templates", "items.json")))!);
+        var baseClasses = (ItemBaseClassService)typeof(ItemBaseClassService).GetConstructors().Single().Invoke(
+            typeof(ItemBaseClassService).GetConstructors().Single().GetParameters().Select(parameter =>
+                parameter.Name == "templateTable" ? (object)templates : null).ToArray());
+        baseClasses.HydrateItemBaseClassCache();
+        var itemHelper = (ItemHelper)typeof(ItemHelper).GetConstructors().Single().Invoke(
+            typeof(ItemHelper).GetConstructors().Single().GetParameters().Select(parameter => parameter.Name switch
+            {
+                "templateTable" => (object)templates, "itemBaseClassService" => baseClasses,
+                "randomUtil" => new RandomUtil(DispatchProxy.Create<ISptLogger<RandomUtil>, TestLogger>(), new FastCloner()), _ => null
+            }).ToArray());
+        var inventoryHelper = (SPTarkov.Server.Core.Helpers.Profile.InventoryHelper)typeof(SPTarkov.Server.Core.Helpers.Profile.InventoryHelper)
+            .GetConstructors().Single().Invoke(typeof(SPTarkov.Server.Core.Helpers.Profile.InventoryHelper).GetConstructors().Single()
+                .GetParameters().Select(parameter => parameter.Name switch
+                {
+                    "itemHelper" => (object)itemHelper,
+                    "logger" => DispatchProxy.Create<ISptLogger<SPTarkov.Server.Core.Helpers.Profile.InventoryHelper>, TestLogger>(),
+                    "cloner" => new FastCloner(), _ => null
+                }).ToArray());
+        new GoingRogueServerPlugin(globals, bots, itemHelper, inventoryHelper).OnLoadAsync(CancellationToken.None).GetAwaiter().GetResult();
         var bosses = new Dictionary<string, BotBase>();
         foreach (var companion in FriendlyGameplayModeAddons.Companions("GoingRogue").Where(companion => companion.ProficiencyOnly))
         {
@@ -36,9 +57,9 @@ internal static class GoingRogueModeTests
                 Skills = new() { Common = [new() { Id = SkillTypes.Assault, Progress = 17.25 }, new() { Id = SkillTypes.RecoilControl, Progress = 31.5 }], Mastering = [], Points = 2 } };
             string generatedSkills = json.Serialize(boss.Skills)!;
             check(companion.PrepareProfile!(boss), "low-level boss profile is repaired: " + companion.Role);
-            check(boss.Info.Level == globals.Configuration.Exp.Level.ExperienceTable.Length &&
-                boss.Info.Experience == globals.Configuration.Exp.Level.ExperienceTable.Sum(entry => entry.Experience),
-                "boss level and XP use the actual client XP-table cap: " + companion.Role);
+            check(boss.Info.Level == Math.Min(60, globals.Configuration.Exp.Level.ExperienceTable.Length) &&
+                boss.Info.Experience == globals.Configuration.Exp.Level.ExperienceTable.Take(boss.Info.Level.Value).Sum(entry => entry.Experience),
+                "boss level and XP consistently use legacy level 60: " + companion.Role);
             check(json.Serialize(boss.Skills) == generatedSkills, "profile preparation preserves generated skill values exactly: " + companion.Role);
             string skillSnapshot = json.Serialize(boss.Skills)!;
             boss.Info.Level = 1; boss.Info.Experience = 0;
@@ -76,18 +97,6 @@ internal static class GoingRogueModeTests
             typeof(FriendlyTeammateInsuranceService).GetConstructors().Single().GetParameters().Select(parameter =>
                 parameter.Name == "settingsService" ? (object)settings : null).ToArray());
         var ammoTemplate = new MongoId("54527a984bdc2d4e668b4567"); // Native 5.56 M855.
-        var templates = (TemplateTable)RuntimeHelpers.GetUninitializedObject(typeof(TemplateTable));
-        typeof(TemplateTable).GetProperty(nameof(TemplateTable.Items))!.SetValue(templates,
-            json.Deserialize<Dictionary<MongoId, TemplateItem>>(File.ReadAllText(Path.Combine(database, "templates", "items.json")))!);
-        var baseClasses = (ItemBaseClassService)typeof(ItemBaseClassService).GetConstructors().Single().Invoke(
-            typeof(ItemBaseClassService).GetConstructors().Single().GetParameters().Select(parameter =>
-                parameter.Name == "templateTable" ? (object)templates : null).ToArray());
-        baseClasses.HydrateItemBaseClassCache();
-        var itemHelper = (ItemHelper)typeof(ItemHelper).GetConstructors().Single().Invoke(
-            typeof(ItemHelper).GetConstructors().Single().GetParameters().Select(parameter => parameter.Name switch
-            {
-                "templateTable" => (object)templates, "itemBaseClassService" => baseClasses, _ => null
-            }).ToArray());
         var service = (FriendlyTeammateService)typeof(FriendlyTeammateService).GetConstructors().Single().Invoke(
             typeof(FriendlyTeammateService).GetConstructors().Single().GetParameters().Select(parameter => parameter.Name switch
             {
@@ -106,6 +115,15 @@ internal static class GoingRogueModeTests
         });
         check(policy.ProficiencyOnly && policy.RaidReady && policy.PortraitColor == "#667D91", "Knight has the addon profile and raid-readiness policy");
         check(policy.GenerateEquipmentEachRaid, "Knight uses native equipment generation for each raid");
+        check(FriendlyGameplayModeAddons.Companions("GoingRogue").All(companion => !companion.SeedForTesting), "test Goons are no longer added automatically to any roster");
+        check(policy.CanSpawnForQuest != null && FriendlyGameplayModeAddons.Companions("GoingRogue").Where(companion => companion.Role != "bossKnight")
+            .All(companion => companion.CanSpawnForQuest == null), "only Knight is authorized for the first two quest deployments");
+        check(!service.TryGetQuestCompanionProfile(session, "bossKnight", null, 1, null, out _) &&
+            !service.TryGetQuestCompanionProfile(session, "bossKnight", "123", 0, null, out _), "selected-member requests cannot use temporary quest generation");
+        check(FriendlyGameplayModeAddons.Companions("GoingRogue").Where(companion => companion.ProficiencyOnly)
+            .All(companion => companion.PrepareRaidEquipment != null), "all three Goons register raid-only spare provisioning");
+        check(FriendlyGameplayModeAddons.Companions("GoingRogue").Single(companion => companion.Role == "exUsec")
+            .PrepareRaidEquipment == null, "exUsec has no Goon spare-magazine policy");
         check(policy.ProtectSpawnInventory, "Knight protects native inventory independently of loadout mode");
         var equipmentReady = typeof(FriendlyTeammateService).GetMethod("HasRaidEquipmentOrGenerator", BindingFlags.Instance | BindingFlags.NonPublic)!;
         check((bool)equipmentReady.Invoke(service, [knight])!, "Knight can be invited with no permanent equipment");
@@ -113,22 +131,33 @@ internal static class GoingRogueModeTests
         string beforeSpawn = json.Serialize(knight)!;
         BotBase NativeKit()
         {
-            var root = new MongoId(); var weapon = new MongoId();
+            var root = new MongoId(); var weapon = new MongoId(); var magazine = new MongoId();
             return new()
             {
                 Info = new() { Settings = new() { Role = "bossKnight" } },
                 Inventory = new() { Equipment = root, Items = [
                     new() { Id = root, Template = new MongoId("55d7217a4bdc2d86028b456d") },
                     new() { Id = weapon, Template = new MongoId("5447a9cd4bdc2dbd208b4567"), ParentId = root.ToString(), SlotId = "FirstPrimaryWeapon" },
-                    new() { Id = new MongoId(), Template = ammoTemplate, ParentId = weapon.ToString(), SlotId = "patron_in_weapon", Upd = new() { StackObjectsCount = 1 } }
+                    new() { Id = new MongoId(), Template = ammoTemplate, ParentId = weapon.ToString(), SlotId = "patron_in_weapon", Upd = new() { StackObjectsCount = 1 } },
+                    new() { Id = magazine, Template = new MongoId("55d4887d4bdc2d962f8b4570"), ParentId = weapon.ToString(), SlotId = "mod_magazine" },
+                    new() { Id = new MongoId(), Template = ammoTemplate, ParentId = magazine.ToString(), SlotId = "cartridges", Upd = new() { StackObjectsCount = 30 } },
+                    new() { Id = new MongoId(), Template = new MongoId("5af99e9186f7747c447120b8"), ParentId = root.ToString(), SlotId = "Pockets" }
                 ] }
             };
         }
         var nativeOne = NativeKit(); var nativeTwo = NativeKit();
+        nativeOne.Skills = new() { Common = [new() { Id = SkillTypes.Vitality, Progress = 999 }], Mastering = [], Points = 0 };
+        BossMagazineProvisioningTests.Run(new BossMagazineProvisioning(itemHelper, inventoryHelper), itemHelper,
+            NativeKit, json, check);
         var firstSpawn = (BotBase)merge.Invoke(service, [knight, nativeOne, null])!;
         var secondSpawn = (BotBase)merge.Invoke(service, [knight, nativeTwo, null])!;
+        CompanionRaidPreparationTests.Run(service, session, knight, firstSpawn, secondSpawn, json, check);
+        check(firstSpawn.Inventory!.Items!.Count(item => item.Template.ToString() == "55d4887d4bdc2d962f8b4570") == 2,
+            "Core invokes addon equipment provisioning before preview persistence");
         check(firstSpawn.Id == knight.Id && firstSpawn.Aid == knight.Aid && firstSpawn.Info!.Settings!.Role == "bossKnight",
             "fresh raid equipment preserves Knight's roster identity and native role");
+        check(json.Serialize(firstSpawn.Skills) == json.Serialize(knight.Skills),
+            "a new generator skill roll cannot replace the saved companion skills");
         check(firstSpawn.Inventory!.Equipment == nativeOne.Inventory!.Equipment &&
             secondSpawn.Inventory!.Equipment == nativeTwo.Inventory!.Equipment &&
             firstSpawn.Inventory.Equipment != secondSpawn.Inventory.Equipment,
@@ -196,7 +225,7 @@ internal static class GoingRogueModeTests
             "spawn preview cannot write a same-account roster in another mode");
         settings.SaveAndApply(new() { GameplayMode = "GoingRogue" });
         firstSpawn.Inventory.Items!.Clear();
-        check(nativeOne.Inventory.Items!.Count == 3 && secondSpawn.Inventory!.Items!.Count > 3 && json.Serialize(knight) == beforeSpawn,
+        check(nativeOne.Inventory.Items!.Count == 6 && secondSpawn.Inventory!.Items!.Count > 3 && json.Serialize(knight) == beforeSpawn,
             "raid equipment is isolated from the generated template, next raid and persistent profile");
         foreach (string mode in new[] { "Restricted", "Immersive", "Extreme" })
         {
@@ -302,7 +331,7 @@ internal static class GoingRogueModeTests
         storage.DeleteTeammate(session, 124);
         // Keep the later general migration assertion tied to the progressed value.
         var migrated = storage.ReadProfiles(session).Single();
-        check(migrated.Info!.Level == globals.Configuration.Exp.Level.ExperienceTable.Length &&
+        check(migrated.Info!.Level == Math.Min(60, globals.Configuration.Exp.Level.ExperienceTable.Length) &&
             migrated.Skills!.Common.Any(skill => skill.Id == SkillTypes.RecoilControl && skill.Progress == 153.75),
             "native-skill correction and level preparation preserve roster identity and receipts");
         var keptSettings = storage.Read<FriendlyTeammateSettings>(session, "123-settings.json")!;
@@ -311,22 +340,34 @@ internal static class GoingRogueModeTests
         var projected = (GetOtherProfileResponse)typeof(FriendlyTeammateService)
             .GetMethod("ToOtherProfileResponse", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(service, [migrated])!;
         check(projected.Info!.Experience == migrated.Info.Experience,
-            "managed profile projection preserves maximum-level XP");
+            "managed profile projection preserves legacy boss level XP");
+        check(migrated.Info.MemberCategory == MemberCategory.Sherpa &&
+            migrated.Info.SelectedMemberCategory == MemberCategory.Sherpa &&
+            projected.Info.MemberCategory == (int)MemberCategory.Sherpa,
+            "saved and viewed Goons use the legacy special Sherpa category");
+        foreach (string projection in new[] { "ToFriendSummary", "ToGroupCharacter", "ToTeammateSummary" })
+        {
+            var method = typeof(FriendlyTeammateService).GetMethod(projection, BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var dto = method.Invoke(service, method.GetParameters().Length == 1 ? [migrated] : [migrated, null])!;
+            var info = dto.GetType().GetProperty("Info")!.GetValue(dto)!;
+            check(Convert.ToInt32(info.GetType().GetProperty("MemberCategory")!.GetValue(info)) == (int)MemberCategory.Sherpa,
+                "special boss category survives projection: " + projection);
+        }
         check(policy.GetVisibleSkills!().Contains("Assault") && !policy.GetVisibleSkills().Contains("Sniper"),
             "Knight's visible skills focus on his assault role");
         check(FriendlyGameplayModeAddons.Companions("GoingRogue").Single(item => item.Role == "followerBigPipe") is
-            { RaidReady: true, SeedForTesting: true, ProtectSpawnInventory: true, HideRaidStats: true }, "Big Pipe is enabled for protected raid testing");
+            { RaidReady: true, SeedForTesting: false, ProtectSpawnInventory: true, HideRaidStats: true }, "Big Pipe retains protected combat support without test seeding");
         check(FriendlyGameplayModeAddons.Companions("GoingRogue").Single(item => item.Role == "followerBirdEye") is
-            { RaidReady: true, SeedForTesting: true, HideRaidStats: true, ProtectSpawnInventory: true, ProficiencyOnly: true, GenerateEquipmentEachRaid: true },
+            { RaidReady: true, SeedForTesting: false, HideRaidStats: true, ProtectSpawnInventory: true, ProficiencyOnly: true, GenerateEquipmentEachRaid: true },
             "Birdeye's implemented brain enables protected native-kit raid spawning with boss presentation");
         check(service.ListFollowerDetails(session).Single().Role == "bossKnight", "saved native role reaches raid-selection metadata");
         service.SetTeammateProficiency(session, new() { Aid = "123", Proficiency = new() });
         check(storage.Exists(session, "123-settings.json"), "Knight proficiency remains editable");
-        check(storage.ReadProfiles(session).Count == 1 && storage.Exists(session, "addon-companion-bossknight.json"),
-            "an existing Knight is acknowledged once without generating a duplicate");
+        check(storage.ReadProfiles(session).Count == 1 && !storage.Exists(session, "addon-companion-bossknight.json"),
+            "an existing Knight is retained without a duplicate or new seed receipt");
         storage.DeleteTeammate(session, 123);
-        check(service.ListTeammates(session).Count == 0 && storage.Exists(session, "addon-companion-bossknight.json"),
-            "removing a test companion preserves the seed receipt and does not regrant it");
+        check(service.ListTeammates(session).Count == 0 && !storage.Exists(session, "addon-companion-bossknight.json"),
+            "removing Knight cannot trigger a new seed grant");
         var bigPipeSession = new MongoId("c1c1c1c1c1c1c1c1c1c1c1c1");
         storage.InitializeProfile(bigPipeSession);
         storage.Write(bigPipeSession, "addon-companion-bossknight.json", new { initialized = true });
@@ -335,7 +376,7 @@ internal static class GoingRogueModeTests
         bigPipe.Id = new MongoId(); bigPipe.Aid = 125; bigPipe.Inventory = new() { Items = [] };
         storage.Write(bigPipeSession, "125.json", bigPipe);
         check(service.ListFollowerDetails(bigPipeSession).Single().Role == "followerBigPipe" &&
-            storage.Exists(bigPipeSession, "addon-companion-followerbigpipe.json"), "existing Big Pipe is seeded once and reaches raid-selection metadata");
+            !storage.Exists(bigPipeSession, "addon-companion-followerbigpipe.json"), "existing Big Pipe reaches raid-selection metadata without a seed grant");
         storage.DeleteTeammate(bigPipeSession, 125);
         check(service.ListTeammates(bigPipeSession).Count == 0, "Big Pipe seed receipt prevents regrant after removal");
         var birdEyeSession = new MongoId("c3c3c3c3c3c3c3c3c3c3c3c3");
@@ -346,7 +387,7 @@ internal static class GoingRogueModeTests
         birdEye.Id = new MongoId(); birdEye.Aid = 126; birdEye.Inventory = new() { Items = [] };
         storage.Write(birdEyeSession, "126.json", birdEye);
         check(service.ListFollowerDetails(birdEyeSession).Single().Role == "followerBirdEye" &&
-            storage.Exists(birdEyeSession, "addon-companion-followerbirdeye.json"), "existing Birdeye is acknowledged once and reaches raid selection");
+            !storage.Exists(birdEyeSession, "addon-companion-followerbirdeye.json"), "existing Birdeye reaches raid selection without a seed grant");
         check(storage.ReadProfiles(birdEyeSession).Count == 1, "Birdeye test seed does not duplicate an existing member");
         storage.DeleteTeammate(birdEyeSession, 126);
         check(service.ListTeammates(birdEyeSession).Count == 0, "Birdeye seed receipt prevents regrant after removal");

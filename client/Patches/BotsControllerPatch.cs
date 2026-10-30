@@ -432,7 +432,11 @@ namespace pitTeam.Patches
                         { "Info",  new BotGenerateRequestParams<List<EFT.CountTypeBotWave>>(limit) },
                         { "MemberId", aid },
                         { "ScavId", scavId},
-                        { "Custom", customization }
+                        { "Custom", customization },
+                        { "PreparationToken", CompanionRaidPreparation.TokenFor(aid) },
+                        { "QuestCompanionRole", !savedTeammate && Utils.Utils.FlagGet("questGoons") &&
+                            SpawnHelper.spawnMemberIdsBoss.Contains(role) ? role.ToString() : null },
+                        { "SelectedMemberCount", MainMenuControllerPatch.GroupPlayers.Count }
                     },
                     Retries = new byte?(SendRequest.DefaultRetries)
                 });
@@ -744,12 +748,16 @@ namespace pitTeam.Patches
                 bossAlly.AddPosition(position, closestCorePoint.Id);
 
 
-                bossAlly.Profiles.ForEach(async profile =>
+                var spawnWorld = Singleton<GameWorld>.Instance;
+                await Task.WhenAll(bossAlly.Profiles.Select(async profile =>
                 {
+                    BotOwner activatedOwner = null;
+                    var registration = new TaskCompletionSource<BotFollowerPlayer>();
 
                     InteractableObjects.StoreEquipment(profile);
 
-                    if (!FollowerTransitStateCache.IsTransitSpawnProfile(profile.ProfileId))
+                    if (!FollowerTransitStateCache.IsTransitSpawnProfile(profile.ProfileId) &&
+                        !GameplayModeAddons.OwnsCompanionCombat(profile.Info.Settings.Role.ToString()))
                     {
                         // normalize boss followers health
                         foreach (EBodyPart part in Enum.GetValues(typeof(EBodyPart)))
@@ -785,7 +793,7 @@ namespace pitTeam.Patches
                     }
                     else
                     {
-                        Modules.Logger.LogInfo($"[Transit] Preserving carried health for boss follower '{profile.Nickname ?? profile.ProfileId}'.");
+                        Modules.Logger.LogInfo($"[FollowerSpawn] Preserving native/carried health for boss follower '{profile.Nickname ?? profile.ProfileId}'.");
                     }
 
                     WildSpawnType botRole = profile.Info.Settings.Role;
@@ -799,6 +807,7 @@ namespace pitTeam.Patches
 
                     Action<BotOwner> OnActivate = new Action<BotOwner>((BotOwner owner) =>
                     {
+                        activatedOwner = owner;
                         Action<BotOwner> OnBotState = new Action<BotOwner>((BotOwner me) =>
                         {
                             BotOwnerManualUpdatePatch.BotOwnerUpdate.Remove(me.ProfileId); // clear watcher
@@ -845,7 +854,9 @@ namespace pitTeam.Patches
 
                                 }
                                 // make bot boss a follower
-                                BossPlayers.AddFollower(me, player, false, botRole);
+                                var follower = BossPlayers.AddFollower(me, player, false, botRole);
+                                if (follower == null) throw new InvalidOperationException("Quest companion registration returned no follower");
+                                registration.TrySetResult(follower);
                                 me.BotTalk.SetSilence(0f);
                                 Utils.Utils.SetTimeout(() =>
                                 {
@@ -859,7 +870,7 @@ namespace pitTeam.Patches
                             {
                                 Modules.Logger.LogError("Failed to add " + me.Profile.Nickname + " as ally");
                                 Modules.Logger.LogError(ex);
-                                //task.SetResult(false);
+                                registration.TrySetException(ex);
                             }
                         });
 
@@ -885,7 +896,7 @@ namespace pitTeam.Patches
                     });
                     // activate the boss bot
                     BossPlayers.ShallBeFollower(profile.ProfileId);
-                    await ActivateBotAtPosition(
+                    bool activated = await ActivateBotAtPosition(
                         botCreator,
                         profile,
                         new spawnPosition(position, closestCorePoint.Id, false),
@@ -894,12 +905,20 @@ namespace pitTeam.Patches
                         OnActivate,
                         token.GetCancelToken()
                     );
-                });
+                    if (!activated) throw new InvalidOperationException("Quest companion activation failed");
+                    bool Valid() => Singleton<GameWorld>.Instantiated && ReferenceEquals(Singleton<GameWorld>.Instance, spawnWorld) && activatedOwner != null &&
+                        !activatedOwner.IsDead && activatedOwner.GetPlayer?.HealthController?.IsAlive == true &&
+                        botCreator._game.Status != GameStatus.Stopped && botCreator._game.Status != GameStatus.Stopping &&
+                        botCreator._game.Status != GameStatus.SoftStopping;
+                    await CompleteSavedFollowerSpawn(registration.Task, () => activatedOwner, player, botRole.ToString(),
+                        Valid, () => botCreator._game.Status == GameStatus.Started);
+                }));
             }
             catch (Exception ex)
             {
                 Modules.Logger.LogError("Failed to spawn boss follower");
                 Modules.Logger.LogError(ex);
+                ReportSpawnFailure(boss.ToString(), ex, player);
             }
         }
 
@@ -1851,6 +1870,7 @@ namespace pitTeam.Patches
 
             BotsControllerPatch.spawnedPlayers.Clear();
             BotsControllerPatch.followerCreationTask.Clear();
+            CompanionRaidPreparation.Reset();
             BotsControllerPatch.alliesCreationTask.Clear();
             BotsControllerPatch.bossCreationTask.Clear();
 

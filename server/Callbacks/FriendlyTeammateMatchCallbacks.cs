@@ -8,6 +8,7 @@ using SPTarkov.Server.Core.Models.Eft.Match;
 using SPTarkov.Server.Core.Models.Eft.Ws;
 using SPTarkov.Server.Core.Services.Commerce;
 using SPTarkov.Server.Core.Utils;
+using SPTarkov.Server.Core.Helpers.InRaid;
 
 namespace pitTeam.Server.Callbacks;
 
@@ -18,7 +19,8 @@ public class FriendlyTeammateMatchCallbacks(
     FollowerInsuranceRaidDiagnostics insuranceDiagnostics,
     HttpResponseUtil httpResponseUtil,
     NotificationSendHelper notificationSendHelper,
-    MailSendService mailSendService
+    MailSendService mailSendService,
+    WeatherHelper weatherHelper
 )
 {
     public ValueTask<string> SendGroupInvite(
@@ -89,7 +91,11 @@ public class FriendlyTeammateMatchCallbacks(
         FriendlyTeammateFollowerGenerateRequest request,
         MongoId sessionId)
     {
-        if (!teammateService.TryGetSpawnProfile(sessionId, request.MemberId, request.Custom?.Health, out var teammate))
+        var found = string.IsNullOrWhiteSpace(request.QuestCompanionRole)
+            ? teammateService.TryGetSpawnProfile(sessionId, request.MemberId, request.Custom?.Health, out var teammate, request.PreparationToken)
+            : teammateService.TryGetQuestCompanionProfile(sessionId, request.QuestCompanionRole, request.MemberId,
+                request.SelectedMemberCount, request.Custom?.Health, out teammate);
+        if (!found)
         {
             return new ValueTask<string>(httpResponseUtil.GetBody(Array.Empty<object>()));
         }
@@ -109,6 +115,13 @@ public class FriendlyTeammateMatchCallbacks(
     {
         var details = teammateService.ListFollowerDetails(sessionId);
         return new ValueTask<string>(httpResponseUtil.GetBody(details));
+    }
+
+    public ValueTask<string> PrepareCompanionRaid(FriendlyCompanionRaidPreparationRequest request, MongoId sessionId)
+    {
+        if (request.RaidConfiguration is { Location: { Length: > 0 } location } configuration)
+            configuration.IsNightRaid = weatherHelper.IsNightTime(configuration.TimeVariant, location);
+        return new(httpResponseUtil.GetBody(teammateService.PrepareCompanionRaid(sessionId, request)));
     }
 
     public ValueTask<string> PersistFollowerProgress(

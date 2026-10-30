@@ -75,6 +75,7 @@ public class FriendlyPostRaidCallbacks(
 
     public ValueTask<string> EndLocalRaid(string url, EndLocalRaidRequestData request, MongoId sessionId, string? output)
     {
+        teammateService.ClearCompanionRaidPreparation(sessionId);
         postRaidService.RemoveProtectedTeammateItemsFromExtractedProfile(sessionId, request);
         postRaidService.HandleEndLocalRaidKillMessages(sessionId, request);
         scavCargo.FinishRaid(sessionId, request);

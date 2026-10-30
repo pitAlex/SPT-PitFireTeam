@@ -9,6 +9,7 @@ namespace pitTeam.Modules
         private readonly Func<string, float> combatPowerMultiplier;
         public bool AlwaysAcceptCombatPoint { get; }
         public bool AllowsPush => pushAcceptance != null;
+        public float? OnYourOwnAggression { get; }
 
         public CompanionCommandPolicy(bool alwaysAcceptCombatPoint,
             Func<float, float, float, float> pushAcceptance)
@@ -16,10 +17,18 @@ namespace pitTeam.Modules
 
         public CompanionCommandPolicy(bool alwaysAcceptCombatPoint,
             Func<float, float, float, float> pushAcceptance, Func<string, float> combatPowerMultiplier)
+            : this(alwaysAcceptCombatPoint, pushAcceptance, combatPowerMultiplier, null) { }
+
+        public CompanionCommandPolicy(bool alwaysAcceptCombatPoint,
+            Func<float, float, float, float> pushAcceptance, Func<string, float> combatPowerMultiplier,
+            float? onYourOwnAggression)
         {
             AlwaysAcceptCombatPoint = alwaysAcceptCombatPoint;
             this.pushAcceptance = pushAcceptance;
             this.combatPowerMultiplier = combatPowerMultiplier;
+            OnYourOwnAggression = onYourOwnAggression.HasValue &&
+                !float.IsNaN(onYourOwnAggression.Value) && !float.IsInfinity(onYourOwnAggression.Value)
+                ? Math.Max(0f, Math.Min(100f, onYourOwnAggression.Value)) : (float?)null;
         }
 
         public float RelativeCombatPower(string enemyRole)
