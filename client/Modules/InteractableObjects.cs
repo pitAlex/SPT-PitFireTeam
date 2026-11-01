@@ -58,6 +58,7 @@ namespace pitTeam.Modules
         private Dictionary<string, Dictionary<string, object>>? _followersWithLoot;
 
         private Dictionary<string, List<string>>? _followersEquipment;
+        private readonly HashSet<string> _bossProtectedProfiles = new HashSet<string>(StringComparer.Ordinal);
 
         private bool _isBossDead = false;
         private static readonly bool EnableBackendItemReturn = true;
@@ -726,6 +727,7 @@ namespace pitTeam.Modules
             _lootContainerPositionsByBot?.Clear();
             _checkedBodyLootTargetIds?.Clear();
             _checkedContainerLootTargetIds?.Clear();
+            _bossProtectedProfiles.Clear();
 
             _currDoor = null;
             _doorsToOpen?.Clear();
@@ -795,6 +797,7 @@ namespace pitTeam.Modules
                             ExtractName = string.Empty,
                             Distance = 0d,
                             HealthRatio = CalculateHealthRatio(bot),
+                            RaidHealth = FollowerRaidHealthRetention.Capture(bot.GetPlayer),
                             EquipmentPower = 0d,
                             EnemyAveragePower = 0d,
                             AliveSquadmates = 0,
@@ -2182,11 +2185,6 @@ namespace pitTeam.Modules
             HashSet<string> treeIds,
             List<string> trackedReturnIds)
         {
-            if (pitFireTeam.IsFollowerLoadoutLootableMode())
-            {
-                return false;
-            }
-
             HashSet<string> protectedFollowerGearIds = GetProtectedFollowerEquipmentIds();
             if (protectedFollowerGearIds.Count == 0 || !treeIds.Overlaps(protectedFollowerGearIds))
             {
@@ -2236,7 +2234,7 @@ namespace pitTeam.Modules
 
         public static bool IsProtectedFollowerEquipment(Item item)
         {
-            if (item == null || string.IsNullOrWhiteSpace(item.Id) || pitFireTeam.IsFollowerLoadoutLootableMode())
+            if (item == null || string.IsNullOrWhiteSpace(item.Id))
             {
                 return false;
             }
@@ -2253,8 +2251,10 @@ namespace pitTeam.Modules
                 return ids;
             }
 
-            foreach (List<string> followerGearIds in Instance._followersEquipment.Values)
+            foreach (var entry in Instance._followersEquipment)
             {
+                if (pitFireTeam.IsFollowerLoadoutLootableMode() && !Instance._bossProtectedProfiles.Contains(entry.Key)) continue;
+                List<string> followerGearIds = entry.Value;
                 if (followerGearIds == null)
                 {
                     continue;
@@ -2369,7 +2369,8 @@ namespace pitTeam.Modules
         }
 
         private static bool IsReturnSquadMember(BotOwner bot) =>
-            bot != null && BossPlayers.Instance?.GetFollower(bot)?.IsSquadMate == true;
+            bot != null && BossPlayers.Instance?.GetFollower(bot) is BotFollowerPlayer follower &&
+            follower is not BossFollowerPlayer && follower.IsSquadMate;
 
         internal static List<string> GetReturnItemIds(BotOwner bot)
         {
@@ -2574,6 +2575,8 @@ namespace pitTeam.Modules
                 return;
             }
 
+            bool protectedBoss = Utils.Props.BossFollowersType.Contains(profile.Info.Settings.Role);
+            if (protectedBoss) Instance._bossProtectedProfiles.Add(profile.ProfileId);
             if (!Instance._followersEquipment.ContainsKey(profile.ProfileId))
             {
                 if (FollowerTransitStateCache.TryConsumeProtectedEquipmentIds(profile, out List<string> carriedProtectedItems))
@@ -2587,7 +2590,12 @@ namespace pitTeam.Modules
                 }
 
                 HashSet<string> items = new HashSet<string>(StringComparer.Ordinal);
-                foreach (EquipmentSlot slotType in Enum.GetValues(typeof(EquipmentSlot)))
+                if (protectedBoss)
+                {
+                    items.UnionWith(profile.Inventory.Equipment.GetAllItems().Where(item =>
+                        !ReferenceEquals(item, profile.Inventory.Equipment) && !IsBossLootConsumable(item)).Select(item => (string)item.Id));
+                }
+                else foreach (EquipmentSlot slotType in Enum.GetValues(typeof(EquipmentSlot)))
                 {
                     if (
                         slotType == EquipmentSlot.Dogtag ||
@@ -2617,6 +2625,9 @@ namespace pitTeam.Modules
                 }
             }
         }
+
+        private static bool IsBossLootConsumable(Item item) =>
+            item is Ammo || item is Meds || item is FoodDrink || item is ThrowWeap;
 
         private static void RestoreTransitTrackedReturnItems(Profile profile)
         {

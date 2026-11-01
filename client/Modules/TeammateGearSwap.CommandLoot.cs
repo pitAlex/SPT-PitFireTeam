@@ -101,7 +101,8 @@ namespace pitTeam.Modules
         {
             string reason = UnsafeReason(Owner, Bot, Follower, Applying, giving: true, commandLoot: true);
             if (reason != null) return reason;
-            if (_commandBody && !Follower.CanHandleBodyContainerLootCommands) return "spawnedTeammateAvailable";
+            if (_commandBody && !Follower.CanHandleBodyContainerLootCommands)
+                return Follower.AllowsBodyContainerLootCommands ? "spawnedTeammateAvailable" : "companionPolicy";
             return _commandAvailable?.Invoke() == false ? "commandSourceUnavailable" : null;
         }
 

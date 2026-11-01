@@ -38,7 +38,7 @@ public class FriendlyServerSettingsService(
             string json = File.ReadAllText(path);
             var settings = JsonSerializer.Deserialize<FriendlyServerSettingsRequest>(json, JsonOptions)
                 ?? throw new InvalidDataException("Empty gameplay settings.");
-            if (settings.GameplayMode is not ("GunsForHire" or "Allegiance"))
+            if (!pitTeam.Shared.GameplayModePolicy.IsKnown(settings.GameplayMode))
                 throw new InvalidDataException("Invalid gameplay mode.");
             return settings;
         }

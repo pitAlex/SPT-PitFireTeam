@@ -6,6 +6,13 @@ $giving = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/TeammateGe
 $action = Get-Content -Raw (Join-Path $RepositoryRoot 'client/BigBrain/Actions/GestureCommandAction.RecruitGear.cs')
 $patches = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Patches/TeammateGearSwapPatch.cs')
 $body = Get-Content -Raw (Join-Path $RepositoryRoot 'client/BigBrain/Actions/GestureCommandAction.BodyLoot.cs')
+$fixedStart = $body.IndexOf('private void TryStartNextBodyGearMove()')
+$fixedGate = $body.IndexOf('if (UsesFixedCompanionGear)', $fixedStart)
+if ($fixedGate -lt 0 -or $fixedGate -gt $body.IndexOf('if (TryStartPendingBodyLootMove(inventory))', $fixedStart) -or
+    !(Get-Content -Raw (Join-Path $RepositoryRoot 'client/BigBrain/Actions/GestureCommandAction.ContainerLoot.cs')).Contains('TakeContainerLoot:companionEquipmentFixed') -or
+    !$giving.Contains('GameplayModeAddons.GetCompanionGearPolicy(Bot.Profile.Info.Settings.Role.ToString())')) {
+    throw 'Fixed companion acquisition must use the restricted planner before legacy gear/cargo work'
+}
 if (!$action.Contains('ActiveLootRequest?.CompleteGearExchange()') -or
     !$action.Contains('ActiveLootRequest?.GearExchangeCommitted == true') -or
     !$body.Contains('ActiveLootRequest?.HasSuccessfulLoot(bodyLootReportedMovesSucceeded)') -or

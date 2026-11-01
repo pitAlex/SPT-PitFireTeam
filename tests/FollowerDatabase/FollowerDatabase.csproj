@@ -8,6 +8,7 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="../../server/pitFireTeam.Server.csproj" />
+    <ProjectReference Include="../../going-rogue/server/pitFireTeam.GoingRogue.Server.csproj" />
     <Reference Include="SPTarkov.Server.Core"><HintPath>../../server/refs/4.1.0/SPTarkov.Server.Core.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="SPTarkov.DI"><HintPath>../../server/refs/4.1.0/SPTarkov.DI.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="SPTarkov.Common"><HintPath>../../server/refs/4.1.0/SPTarkov.Common.dll</HintPath><Private>false</Private></Reference>

@@ -5,6 +5,15 @@ namespace pitTeam.Server.Models;
 
 public record FriendlyTeammateFollowerGenerateRequest : IRequestData
 {
+    [JsonPropertyName("QuestCompanionRole")]
+    public string? QuestCompanionRole { get; set; }
+
+    [JsonPropertyName("SelectedMemberCount")]
+    public int SelectedMemberCount { get; set; }
+
+    [JsonPropertyName("PreparationToken")]
+    public string? PreparationToken { get; set; }
+
     [JsonPropertyName("MemberId")]
     public string? MemberId { get; set; }
 

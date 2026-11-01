@@ -32,13 +32,22 @@ both roles, an empty shoulder-support slot and its executable magazine package
 are resolved first. Secondary maintenance then finishes before holster
 maintenance begins.
 
-For an equipped pistol, maintenance tops off the inserted magazine through the
-same detach/load/restore transaction used by the primary planner. Compatible
+During tactical weapon pickup, inserted-magazine top-off uses the same
+detach/load/restore transaction as the primary planner. Compatible
 spares are placed next, including an empty spare when compatible ammunition can
 fill it, and remaining loose rounds are considered afterward. Fast-access
 placement prefers exact-size rig grids, keeping 1x1 pistol magazines and ammo
 out of larger cells when suitable 1x1 cells remain. Every plan still preserves
 the largest shared reload landing opening required by the equipped weapons.
+
+Autonomous finite-ammunition refill operates only on loose magazines. It prepares
+a compatible spare, lets EFT perform the normal magazine swap, and refills the
+ejected magazine after reload and hands readiness settle. Both the carried-weapon
+pass and the shared native-refill callback reject magazines still inside a weapon.
+Loose rounds alone do not qualify a detachable-magazine weapon for a patrol reload;
+it needs a better usable spare. Internal/chamber-fed weapons retain their normal
+loose-ammunition reloads. With no spare or legal reload opening, maintenance leaves
+the installed magazine and ammunition untouched.
 
 ## Phase 1 Tests
 

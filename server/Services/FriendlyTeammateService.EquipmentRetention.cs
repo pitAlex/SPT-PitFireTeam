@@ -6,7 +6,7 @@ namespace pitTeam.Server.Services;
 
 public partial class FriendlyTeammateService
 {
-    private void StripToPermanentEquipment(BotBase teammate, bool keepSecureContainer, bool clearSecureContents = false)
+    private void StripToPermanentEquipment(BotBase teammate, bool keepSecureContainer, bool keepOnlyKnife = false)
     {
         teammate.Inventory ??= new BotBaseInventory { Items = [] };
         teammate.Inventory.Items ??= [];
@@ -24,13 +24,12 @@ public partial class FriendlyTeammateService
         var keepIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { rootId };
         foreach (var preservedItem in teammate.Inventory.Items.Where(item =>
                      !string.IsNullOrWhiteSpace(item?.SlotId) &&
-                     IsPermanentTeammateEquipmentSlot(item.SlotId, keepSecureContainer)).ToList())
+                     IsPermanentTeammateEquipmentSlot(item.SlotId, keepSecureContainer, keepOnlyKnife)).ToList())
         {
-            // Keep permanent containers anchored, while removing ordinary pocket cargo.
-            // Hiring without a kit also empties the secure container; death loss retains its
-            // existing behavior. Special-slot trees are preserved separately.
-            if (IsPocketsSlotItem(preservedItem)
-                || (clearSecureContents && string.Equals(preservedItem.SlotId, nameof(EquipmentSlots.SecuredContainer), StringComparison.OrdinalIgnoreCase)))
+            // Pockets are structural, not a grant of gear. Gearless hiring keeps them empty;
+            // its stricter slot policy excludes armbands, containers and special-slot items.
+            // Ordinary death retention keeps its existing permanent-item policy.
+            if (IsPocketsSlotItem(preservedItem))
             {
                 keepIds.Add(preservedItem.Id.ToString());
                 continue;
@@ -67,16 +66,15 @@ public partial class FriendlyTeammateService
         return string.Equals(item?.SlotId, nameof(EquipmentSlots.Pockets), StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsPermanentTeammateEquipmentSlot(string? slotId, bool keepSecureContainer)
+    private static bool IsPermanentTeammateEquipmentSlot(string? slotId, bool keepSecureContainer, bool keepOnlyKnife)
     {
         return !string.IsNullOrWhiteSpace(slotId)
             && (slotId.Contains("Dogtag", StringComparison.OrdinalIgnoreCase)
-                || slotId.Contains("SpecialSlot", StringComparison.OrdinalIgnoreCase)
-                || (keepSecureContainer && slotId.Contains("SecuredContainer", StringComparison.OrdinalIgnoreCase))
+                || (!keepOnlyKnife && slotId.Contains("SpecialSlot", StringComparison.OrdinalIgnoreCase))
+                || (!keepOnlyKnife && keepSecureContainer && slotId.Contains("SecuredContainer", StringComparison.OrdinalIgnoreCase))
                 || string.Equals(slotId, nameof(EquipmentSlots.Pockets), StringComparison.OrdinalIgnoreCase)
                 || string.Equals(slotId, nameof(EquipmentSlots.Scabbard), StringComparison.OrdinalIgnoreCase)
-                || string.Equals(slotId, "ArmBand", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(slotId, "Armband", StringComparison.OrdinalIgnoreCase));
+                || (!keepOnlyKnife && string.Equals(slotId, "ArmBand", StringComparison.OrdinalIgnoreCase)));
     }
 
     private static bool RemoveItemTreesById(List<Item>? inventoryItems, IEnumerable<string>? rootItemIds)

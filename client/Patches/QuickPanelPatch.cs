@@ -86,6 +86,8 @@ namespace pitTeam.Patches
                     bool canLootContainer = lootContainer != null &&
                                             lootContainer.isActiveAndEnabled &&
                                             lootContainer.DoorState != EDoorState.Locked;
+                    bool canCommandBodyContainer = !FollowerLootCommandPolicy.HasRestrictedOnlyFollowers(
+                        BossPlayers.GetBoss(player.ProfileId)?.Followers);
 
                     // Commanded follower looting uses the same world target for key, money, weapon,
                     // and generic loot phrases. Keep it pinned for any loot phrase the panel exposes.
@@ -102,9 +104,9 @@ namespace pitTeam.Patches
                     __instance.SetPhraseActive(EPhraseTrigger.LootWeapon, flag3);
                     __instance.SetPhraseActive(EPhraseTrigger.LootGeneric, corpse == null && lootContainer == null && lootItem != null && !flag && !flag2 && !flag3);
                     // Body phrases are routed to a follower body-gear recovery command, not vanilla bot corpse work.
-                    __instance.SetPhraseActive(EPhraseTrigger.LootBody, corpse != null);
-                    __instance.SetPhraseActive(EPhraseTrigger.CheckHim, corpse != null);
-                    __instance.SetPhraseActive(EPhraseTrigger.LootContainer, canLootContainer);
+                    __instance.SetPhraseActive(EPhraseTrigger.LootBody, corpse != null && canCommandBodyContainer);
+                    __instance.SetPhraseActive(EPhraseTrigger.CheckHim, corpse != null && canCommandBodyContainer);
+                    __instance.SetPhraseActive(EPhraseTrigger.LootContainer, canLootContainer && canCommandBodyContainer);
                 }
                 catch (Exception e)
                 {

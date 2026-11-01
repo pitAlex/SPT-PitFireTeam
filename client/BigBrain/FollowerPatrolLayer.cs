@@ -131,10 +131,6 @@ namespace pitTeam.BigBrain
         private EquipmentSlot? returnAfterTopOffSlot = null;
         private EquipmentSlot? patrolReloadFinalSlot = null;
         private string? reloadingWeaponId = null;
-        private float stationaryReloadRecoveryAt;
-        private Vector3 stationaryReloadStartPosition;
-        private string? stationaryReloadWeaponId;
-        private int stationaryReloadLoadedCount;
         private float nextPatrolLauncherFallbackRecordAt = 0f;
         private float nextStowedTacticalDeviceCheckAt = 0f;
         private float nextHealWorkRefreshAt = 0f;
@@ -1067,8 +1063,6 @@ namespace pitTeam.BigBrain
             returnAfterTopOffSlot = null;
             patrolReloadFinalSlot = null;
             reloadingWeaponId = null;
-            stationaryReloadRecoveryAt = 0f;
-            stationaryReloadWeaponId = null;
             nextPatrolLauncherFallbackRecordAt = 0f;
             nextReloadCheckAt = Time.time + OutOfCombatReloadInitialCooldown;
             nextMagazineFillCheckAt = Time.time + OutOfCombatReloadInitialCooldown;
@@ -1213,6 +1207,13 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
+            // The patrol reload queue owns this temporary draw and its return. Do not
+            // let combat's launcher fallback fight a queued switch or native reload.
+            Weapon? supportLauncher = GetWeaponInSlot(EquipmentSlot.SecondPrimaryWeapon);
+            if (IsPatrolSupportLauncher(EquipmentSlot.SecondPrimaryWeapon, supportLauncher) &&
+                (forcedTopOffSlot == EquipmentSlot.SecondPrimaryWeapon || returnAfterTopOffSlot.HasValue ||
+                 reloadingInProgress && reloadingWeaponId == supportLauncher!.Id)) return false;
+
             bool switchRequested = FollowerCombatCommon.TrySwitchSelectedGrenadeLauncherToPrimaryForOpportunity(
                 BotOwner,
                 goalEnemy: null,
@@ -1281,7 +1282,19 @@ namespace pitTeam.BigBrain
             int supplyRevision = FollowerOutOfCombatReloadPolicy.SupplyRevision(BotOwner);
             if (_supplyRevision != supplyRevision) { _supplyRevision = supplyRevision; ResetReloadState(); }
             Utils.FollowerRecovery.CheckReloadTimeout(BotOwner);
-            if (TryRecoverStationaryPatrolReload()) return;
+            var selector = BotOwner.WeaponManager.Selector;
+            if (!reloadingInProgress && BotOwner.WeaponManager.Reload?.Reloading != true &&
+                forcedTopOffSlot == EquipmentSlot.SecondPrimaryWeapon &&
+                IsPatrolSupportLauncher(EquipmentSlot.SecondPrimaryWeapon, GetWeaponInSlot(EquipmentSlot.SecondPrimaryWeapon)) &&
+                !IsSafeForPatrolSupportLauncher())
+            {
+                // Safety can change while the draw settles. Return through the same queue;
+                // never cancel a native reload that has already begun.
+                forcedTopOffSlot = null;
+                TryCompleteReturnAfterTopOffSwitch(selector);
+                nextReloadCheckAt = Time.time + 0.25f;
+                return;
+            }
             if (Time.time < nextReloadCheckAt)
             {
                 return;
@@ -1297,7 +1310,6 @@ namespace pitTeam.BigBrain
                 return;
             }
 
-            var selector = BotOwner.WeaponManager.Selector;
             CapturePatrolReloadFinalSlot(selector);
 
             if (!reloadingInProgress &&
@@ -1321,7 +1333,8 @@ namespace pitTeam.BigBrain
             {
                 // EFT reload completion is not just BotReload.Reloading. Wait for hands/weapon readiness
                 // before returning to the previous slot or advancing to the next maintenance slot.
-                if (BotOwner.WeaponManager.Reload.Reloading || !BotOwner.WeaponManager.IsWeaponReady)
+                if (BotOwner.WeaponManager.Reload.Reloading || !BotOwner.WeaponManager.IsWeaponReady ||
+                    (BotOwner.WeaponManager.ShootController as Player.FirearmController)?.IsInReloadOperation() == true)
                 {
                     return;
                 }
@@ -1359,7 +1372,8 @@ namespace pitTeam.BigBrain
                 return;
             }
 
-            // First consume compatible loose ammo into inserted/spare magazines for all carried weapons.
+            // First prepare loose spare magazines from carried ammo. The native reload swaps one
+            // into the weapon; the ejected magazine is refilled only after that reload settles.
             // Reload-switch decisions below then compare already-prepared magazines.
             if (!triedFillMagazines)
             {
@@ -1383,10 +1397,6 @@ namespace pitTeam.BigBrain
                 reloadSlotsTried.Add(currentSlot);
                 reloadingInProgress = TryForceReloadCurrentWeaponOutOfCombat();
                 reloadingWeaponId = reloadingInProgress ? currentWeaponId : null;
-                if (reloadingInProgress)
-                {
-                    ArmStationaryPatrolReloadRecovery();
-                }
                 if (!reloadingInProgress)
                 {
                     RecordOutOfCombatReloadFailure(currentSlot, currentWeapon, "reloadRejected");
@@ -1436,46 +1446,6 @@ namespace pitTeam.BigBrain
             nextReloadCheckAt = Time.time + OutOfCombatReloadFullCycleCooldown;
         }
 
-        private void ArmStationaryPatrolReloadRecovery()
-        {
-            Weapon? weapon = BotOwner.WeaponManager.CurrentWeapon;
-            if (weapon == null) return;
-            stationaryReloadStartPosition = BotOwner.Position;
-            stationaryReloadWeaponId = weapon.Id;
-            stationaryReloadLoadedCount = weapon.GetCurrentMagazineCount();
-            stationaryReloadRecoveryAt = Time.time + 1f;
-        }
-
-        private bool TryRecoverStationaryPatrolReload()
-        {
-            if (stationaryReloadRecoveryAt <= 0f) return false;
-
-            Weapon? weapon = BotOwner.WeaponManager.CurrentWeapon;
-            float now = Time.time;
-            // This is one peaceful movement/brain nudge, never a native reload cancellation.
-            // Discard old observations after another action owned the follower for a while.
-            if (BotOwner.IsDead || BotOwner.BotState != EBotState.Active ||
-                BotFollowerPlayer.IsEnemyInfoAlive(BotOwner.Memory?.GoalEnemy) ||
-                BotOwner.Medecine?.Using == true || weapon == null ||
-                weapon.Id != stationaryReloadWeaponId ||
-                weapon.GetCurrentMagazineCount() > stationaryReloadLoadedCount ||
-                (BotOwner.Position - stationaryReloadStartPosition).sqrMagnitude > 0.01f ||
-                now > stationaryReloadRecoveryAt + 1f)
-            {
-                stationaryReloadRecoveryAt = 0f;
-                stationaryReloadWeaponId = null;
-                return false;
-            }
-
-            if (now < stationaryReloadRecoveryAt) return false;
-            string? weaponId = stationaryReloadWeaponId;
-            stationaryReloadRecoveryAt = 0f;
-            stationaryReloadWeaponId = null;
-            Utils.FollowerRecovery.SoftReset(BotOwner);
-            BattleRecorder.RecordAmmoRefill(BotOwner, "recovery", "stationaryReload", () => new { weaponId });
-            return true;
-        }
-
         private bool TryHandleSkippedReloadStart()
         {
             if (BotOwner.WeaponManager.Reload.Reloading) return false;
@@ -1522,6 +1492,8 @@ namespace pitTeam.BigBrain
             }
 
             EquipmentSlot currentSlot = BotOwner.WeaponManager.Selector?.LastEquipmentSlot ?? EquipmentSlot.FirstPrimaryWeapon;
+            if (IsPatrolSupportLauncher(currentSlot, currentWeapon))
+                return CanMaintainPatrolSupportLauncher(currentSlot, currentWeapon);
             bool reloadLootedPrimaryLauncher = CanReloadLootedFirstPrimaryLauncher(currentSlot, currentWeapon);
             bool reloadLootedPrimaryPackage = CanReloadLootedWeaponPackage(currentSlot, currentWeapon);
             if (InteractableObjects.IsLootedWeapon(BotOwner, currentWeapon) &&
@@ -1589,6 +1561,15 @@ namespace pitTeam.BigBrain
             }
 
             EquipmentSlot currentSlot = BotOwner.WeaponManager.Selector?.LastEquipmentSlot ?? EquipmentSlot.FirstPrimaryWeapon;
+            if (IsPatrolSupportLauncher(currentSlot, currentWeapon))
+            {
+                if (!CanMaintainPatrolSupportLauncher(currentSlot, currentWeapon)) return false;
+                bool started = FollowerCombatCommon.TryStartActiveGrenadeLauncherLooseAmmoReload(
+                    BotOwner, currentWeapon, out string blockReason);
+                BattleRecorder.RecordGrenadeEvent(BotOwner, "launcherPatrolReload",
+                    $"started={started}:block={blockReason}");
+                return started;
+            }
             if (InteractableObjects.IsLootedWeapon(BotOwner, currentWeapon))
             {
                 if (CanReloadLootedFirstPrimaryLauncher(currentSlot, currentWeapon))
@@ -1665,6 +1646,11 @@ namespace pitTeam.BigBrain
             {
                 return false;
             }
+
+            // Defer optional launcher maintenance without consuming its per-window
+            // budget while the primary, safety or another command still has priority.
+            if (IsPatrolSupportLauncher(slot, weapon) &&
+                (!IsReloadSlotProcessed(EquipmentSlot.FirstPrimaryWeapon) || !IsSafeForPatrolSupportLauncher())) return false;
 
             if (reloadSlotsTried.Contains(slot))
             {
@@ -1756,6 +1742,10 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
+            if (IsPatrolSupportLauncher(slot, weapon))
+                return !IsOutOfCombatReloadGiveUpActive(slot, weapon) && !IsReloadSlotRetryCoolingDown(slot) &&
+                       CanMaintainPatrolSupportLauncher(slot, weapon);
+
             bool reloadLootedPrimaryLauncher = CanReloadLootedFirstPrimaryLauncher(slot, weapon);
             bool reloadLootedPrimaryPackage = CanReloadLootedWeaponPackage(slot, weapon);
             if (InteractableObjects.IsLootedWeapon(BotOwner, weapon) &&
@@ -1786,6 +1776,31 @@ namespace pitTeam.BigBrain
             }
 
             return FollowerOutOfCombatReloadPolicy.CanTopOffWeapon(BotOwner, weapon);
+        }
+
+        private bool IsPatrolSupportLauncher(EquipmentSlot slot, Weapon? weapon) =>
+            slot == EquipmentSlot.SecondPrimaryWeapon && weapon != null &&
+            FollowerCombatCommon.IsGrenadeLauncherWeapon(weapon) &&
+            !FollowerCombatCommon.IsSingleUseLauncherWeapon(weapon) &&
+            !InteractableObjects.IsLootedWeapon(BotOwner, weapon);
+
+        private bool CanMaintainPatrolSupportLauncher(EquipmentSlot slot, Weapon weapon) =>
+            IsPatrolSupportLauncher(slot, weapon) && IsReloadSlotProcessed(EquipmentSlot.FirstPrimaryWeapon) &&
+            !IsOutOfCombatReloadGiveUpActive(slot, weapon) && !IsReloadSlotRetryCoolingDown(slot) &&
+            IsSafeForPatrolSupportLauncher() && FollowerCombatCommon.CanReloadGrenadeLauncherFromLooseAmmo(BotOwner, weapon);
+
+        private bool IsSafeForPatrolSupportLauncher()
+        {
+            if (BotOwner == null || BotOwner.IsDead || BotOwner.Memory.IsUnderFire ||
+                BotFollowerPlayer.IsEnemyInfoAlive(BotOwner.Memory.GoalEnemy) || HasVisibleKnownEnemy() ||
+                FollowerCombatCommon.WasHitRecently(BotOwner, 3f) ||
+                BotOwner.BewareGrenade?.ShallRunAway() == true || BotOwner.BewareBTR?.ShallRunAway() == true ||
+                BotOwner.WeaponManager?.Grenades?.ThrowindNow == true || BotOwner.WeaponManager?.Grenades?.ReadyToThrow == true ||
+                Utils.FollowerMedical.IsUsingMedical(BotOwner) || BotOwner.Medecine?.FirstAid?.Have2Do == true ||
+                BotOwner.Medecine?.SurgicalKit?.HaveWork == true) return false;
+            var follower = followerData ?? BossPlayers.Instance?.GetFollower(BotOwner);
+            return follower != null && !follower.IsBackpackInspectionActive &&
+                !(follower.TryPeekActiveCommand(out var command, out _, out _) && command != FollowerCommandType.None);
         }
 
         private bool CanReloadLootedFirstPrimaryLauncher(EquipmentSlot slot, Weapon weapon)
@@ -2141,7 +2156,8 @@ namespace pitTeam.BigBrain
             if (IsLauncherWeapon(weapon))
             {
                 // EFT's launcher reload checks can trigger automatic weapon switching when a
-                // one-shot launcher cannot reload. Launcher use stays owned by combat objectives.
+                // one-shot launcher cannot reload. Reusable owned support launchers use the
+                // explicit patrol queue admission instead of this generic rifle top-off path.
                 return false;
             }
 
@@ -2150,6 +2166,11 @@ namespace pitTeam.BigBrain
             if (HasBetterMagazine(botOwner, weapon))
             {
                 return true;
+            }
+
+            if (weapon.ReloadMode == Weapon.EReloadMode.ExternalMagazine)
+            {
+                return false;
             }
 
             EFT.InventoryLogic.Magazine? currentMagazine = weapon.GetCurrentMagazine();
@@ -2237,12 +2258,6 @@ namespace pitTeam.BigBrain
                         });
                     // Chamber/internal non-launcher weapons have no magazine top-off stage; their normal reload consumes loose ammo.
                     continue;
-                }
-
-                EFT.InventoryLogic.Magazine? currentMagazine = weapon.GetCurrentMagazine();
-                if (currentMagazine != null && currentMagazine.Count < currentMagazine.MaxCount)
-                {
-                    filledAny |= TryFillMagazineWithLooseAmmo(botOwner, currentMagazine, weapon, budget);
                 }
 
                 filledAny |= TryFillReachableSpareMagazines(botOwner, weapon, budget);
@@ -2335,6 +2350,7 @@ namespace pitTeam.BigBrain
                 TeammateGearSwap.Current?.Bot == botOwner ||
                 weapon == null ||
                 magazine?.Cartridges?.Filters == null ||
+                IsInstalledInWeaponTree(magazine) ||
                 magazine.MaxCount <= 0 ||
                 magazine.Count >= magazine.MaxCount)
             {

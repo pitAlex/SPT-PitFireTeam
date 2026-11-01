@@ -23,6 +23,23 @@ public class FriendlyTeammateCallbacks(
     ISptLogger<FriendlyTeammateCallbacks> logger
 )
 {
+    public ValueTask<string> Treatment(string url, FriendlyTeammateTreatmentRequest request, MongoId sessionId)
+    {
+        try
+        {
+            var response = url.EndsWith("/heal", StringComparison.Ordinal)
+                ? teammateService.HealTeammate(sessionId, request)
+                : teammateService.GetTeammateHealth(sessionId, request, url.EndsWith("/quote", StringComparison.Ordinal));
+            return new(httpResponse.GetBody(response));
+        }
+        catch (Exception ex)
+        {
+            logger.Warning($"[TeammateTreatment] aid='{request.Aid}' failed: {ex}");
+            return new(httpResponse.GetBody<object?>(null, err: BackendErrorCodes.UnknownTradingError,
+                errmsg: ex is FriendlyTeammateException ? ex.Message : "ProfileHealingFailed"));
+        }
+    }
+
     public ValueTask<string> InsureEquipment(string url, FriendlyTeammateInsuranceRequest request, MongoId sessionId)
     {
         try
@@ -98,19 +115,23 @@ public class FriendlyTeammateCallbacks(
         return new ValueTask<string>(httpResponse.GetBody(teammateService.ListTeammates(sessionId)));
     }
 
+    public ValueTask<string> HealthStates(string url, EmptyRequestData _, MongoId sessionId)
+        => new(httpResponse.GetBody(teammateService.GetTeammateHealthStates(sessionId)));
+
     public ValueTask<string> ListAutoJoin(string url, EmptyRequestData _, MongoId sessionId)
     {
         return new ValueTask<string>(httpResponse.GetBody(teammateService.GetAutoJoinTeammateAccountIds(sessionId)));
     }
 
     public ValueTask<string> GetGameplayMode(string url, EmptyRequestData request, MongoId sessionId)
-        => new(httpResponse.GetBody(new { gameplayMode = settingsService.LoadSettings().GameplayMode }));
+        => new(httpResponse.GetBody(new { gameplayMode = settingsService.LoadSettings().GameplayMode,
+            availableModes = pitTeam.Shared.GameplayModePolicy.Modes.Where(FriendlyGameplayModeAddons.IsAvailable).ToArray() }));
 
     public ValueTask<string> SetServerSettings(string url, FriendlyServerSettingsRequest request, MongoId sessionId)
     {
         try
         {
-            if (request.GameplayMode is not ("GunsForHire" or "Allegiance"))
+            if (!FriendlyGameplayModeAddons.IsAvailable(request.GameplayMode))
                 throw new FriendlyTeammateException("GameplayModeSwitchFailed");
             var previous = settingsService.LoadSettings();
             bool changingMode = previous.GameplayMode != request.GameplayMode;
@@ -118,9 +139,13 @@ public class FriendlyTeammateCallbacks(
                 throw new FriendlyTeammateException("SettingsUnavailableDuringRaid");
             if (changingMode)
             {
-                teammateService.RecoverTeammateCreation(sessionId);
-                teammateService.RecoverTeammateDeletion(sessionId);
-                storage.PrepareMode(sessionId, request.IsAllegiance);
+                if (FriendlyGameplayModeAddons.IsAvailable(previous.GameplayMode))
+                {
+                    teammateService.RecoverTeammateTreatment(sessionId);
+                    teammateService.RecoverTeammateCreation(sessionId);
+                    teammateService.RecoverTeammateDeletion(sessionId);
+                }
+                storage.PrepareMode(sessionId, request.GameplayMode);
             }
               settingsService.SaveAndApply(request);
               if (changingMode) FriendlyModeRequestGate.ModeChanged();
@@ -205,6 +230,20 @@ public class FriendlyTeammateCallbacks(
         catch (FriendlyTeammateException ex)
         {
             return new ValueTask<string>(httpResponse.GetBody<object?>(null, err: BackendErrorCodes.UnknownTradingError, errmsg: ex.Message));
+        }
+    }
+
+    public ValueTask<string> SetVoice(string url, FriendlyTeammateVoiceRequest request, MongoId sessionId)
+    {
+        try
+        {
+            teammateService.SetTeammateVoice(sessionId, request);
+            return new(httpResponse.NullResponse());
+        }
+        catch (Exception ex)
+        {
+            logger.Warning($"Teammate voice update failed: {ex}");
+            return new(httpResponse.GetBody<object?>(null, err: BackendErrorCodes.UnknownTradingError, errmsg: "VoiceChangeFailed"));
         }
     }
 

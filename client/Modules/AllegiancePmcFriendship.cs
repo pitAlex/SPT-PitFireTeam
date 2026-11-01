@@ -33,7 +33,8 @@ namespace pitTeam.Modules
         internal static bool IsEnabled => GameplayModeRuntime.IsAllegiance ||
             (!Utils.Utils.FlagGet("pitFireTeam") && !Utils.Utils.FlagGet("isBadGuy"));
 
-        internal static float GetSameSideChance() => Math.Max(5, Math.Min(80, pitFireTeam.friendlyEncounterChance?.Value ?? 30)) / 100f;
+        internal static int GetSettingPercent() => Math.Max(5, Math.Min(80, pitFireTeam.friendlyEncounterChance?.Value ?? 30));
+        internal static float GetSameSideChance() => GetSettingPercent() / 100f;
         internal static float GetOppositeSideChance(float sameSideChance) => sameSideChance <= 0.10f
             ? sameSideChance : sameSideChance < 0.30f
                 ? 0.10f + (sameSideChance - 0.10f) * 0.25f : sameSideChance * 0.5f;
@@ -70,7 +71,7 @@ namespace pitTeam.Modules
         internal static bool IsRegularScav(BotOwner bot) => bot?.Side == EPlayerSide.Savage &&
             bot.Profile?.Info?.Settings?.Role == WildSpawnType.assault;
 
-        private static bool IsCandidate(BotOwner bot) => IsPmc(bot) ||
+        private static bool IsCandidate(BotOwner bot) => (!GameplayModeAddons.IsRogueRaid && IsPmc(bot)) ||
             (GameplayModeRuntime.IsAllegiance && (pitFireTeam.friendlyScavEncounters?.Value ?? true) && IsRegularScav(bot));
 
 #if DEBUG
@@ -93,7 +94,7 @@ namespace pitTeam.Modules
         }
 #endif
 
-        private static bool IsGrouped(BotOwner bot)
+        internal static bool IsGrouped(BotOwner bot)
         {
             var group = bot.BotsGroup;
             var original = bot.SpawnProfileData?.SpawnParams?.ShallBeGroup;
@@ -126,7 +127,15 @@ namespace pitTeam.Modules
                 // finding a friendly Scav, not whether that Scav wants to join.
                 if (IsRegularScav(bot))
                     decision.RecruitmentChance = ScavFenceKarma.RecruitmentAcceptanceChance(GetSameSideChance());
-                decision.Friendly = chance >= 1f || roll < chance;
+                bool passedRoll = chance >= 1f || roll < chance;
+                int? populationAlive = null, populationFriendly = null, populationLimit = null;
+                bool populationBlocked = false;
+                if (passedRoll)
+                {
+                    populationBlocked = !FriendlyEncounterPopulation.CanAdmit(bot, out int alive, out int friendly, out int limit);
+                    populationAlive = alive; populationFriendly = friendly; populationLimit = limit;
+                    decision.Friendly = !populationBlocked;
+                }
                 if (decision.Friendly)
                 {
                     // Reserve this raid-local solo group. Native spawn lookup skips locked
@@ -151,7 +160,8 @@ namespace pitTeam.Modules
                     decision.Group.OnMemberAdd += decision.MemberAdded;
                 }
                 Logger.LogInfo($"{LogPrefix} candidate={bot.ProfileId} side={bot.Side} playerSide={human.Side} roll={roll:F3} chance={chance:F2} friendly={decision.Friendly}");
-                RecordSelection(bot, decision.Friendly ? "selected" : "failedRoll", roll, chance);
+                RecordSelection(bot, populationBlocked ? "populationCap" : decision.Friendly ? "selected" : "failedRoll", roll, chance,
+                    populationAlive: populationAlive, populationFriendly: populationFriendly, populationLimit: populationLimit);
             }
             if (!IsFriendly(bot)) return;
 
@@ -221,6 +231,11 @@ namespace pitTeam.Modules
             if (!BossPlayers.IsFollower(bot) && IsGrouped(bot)) Revoke(decision, "grouped");
             return decision.Friendly;
         }
+
+        // Passive quota count: eligibility is inspected without revoking or selecting anything.
+        internal static bool HasPopulationFriendship(BotOwner bot) => bot != null &&
+            Decisions.TryGetValue(bot.ProfileId, out var decision) && decision.Bot == bot && decision.Friendly &&
+            !AllegianceScavRelations.RefusesRecruitment(bot) && !IsGrouped(bot);
 
         internal static bool CanRecruit(BotOwner bot, IPlayer player) =>
             !AllegianceScavRelations.RefusesRecruitment(bot) &&
@@ -373,13 +388,15 @@ namespace pitTeam.Modules
         }
 
         [System.Diagnostics.Conditional("DEBUG")]
-        private static void RecordSelection(BotOwner bot, string reason, float? roll = null, float? chance = null, string stage = "selection")
+        private static void RecordSelection(BotOwner bot, string reason, float? roll = null, float? chance = null, string stage = "selection",
+            int? populationAlive = null, int? populationFriendly = null, int? populationLimit = null)
         {
             BattleRecorder.RecordFriendlyEncounter(bot, stage, () => new
             {
                 reason, roll, chance, role = bot.Profile?.Info?.Settings?.Role.ToString(),
                 side = bot.Side.ToString(), groupId = bot.BotsGroup?.Id,
-                members = bot.BotsGroup?.MembersCount, kind = IsRegularScav(bot) ? "scav" : "pmc"
+                members = bot.BotsGroup?.MembersCount, kind = IsRegularScav(bot) ? "scav" : "pmc",
+                populationAlive, populationFriendly, populationLimit
             });
         }
 

@@ -1,0 +1,43 @@
+{
+  "_changeWeaponName": false,
+  "_encyclopedia": "64e3b0f4e3b6f5a4a37e8c1d",
+  "_id": "64f8a0c2a3d4e7b980123456",
+  "_items": [
+    {
+      "_id": "5f4d5a9b2d4f1e1234567890",
+      "_tpl": "64e3b0f4e3b6f5a4a37e8c1d",
+      "upd": {
+        "FireMode": {
+          "FireMode": "single"
+        }
+      }
+    },
+    {
+      "_id": "5e1f9b8c0d2a4f1b8a123789",
+      "_tpl": "571659bb2459771fb2755a12",
+      "parentId": "5f4d5a9b2d4f1e1234567890",
+      "slotId": "mod_pistol_grip"
+    },
+    {
+      "_id": "603d1e2a8f4b9c8d12345678",
+      "_tpl": "55d4ae6c4bdc2d8b2f8b456e",
+      "parentId": "5f4d5a9b2d4f1e1234567890",
+      "slotId": "mod_stock"
+    },
+    {
+      "_id": "59a1f7b3c2d0e8a5b7c9d123",
+      "_tpl": "627bce33f21bc425b06ab967",
+      "parentId": "5f4d5a9b2d4f1e1234567890",
+      "slotId": "mod_magazine"
+    },
+    {
+      "_id": "5b8d2a4f1a3c8e7d9b123456",
+      "_tpl": "6284bd5f95250a29bc628a30",
+      "parentId": "5f4d5a9b2d4f1e1234567890",
+      "slotId": "mod_scope"
+    }
+  ],
+  "_name": "MGL_PIPE_default",
+  "_parent": "5f4d5a9b2d4f1e1234567890",
+  "_type": "Preset"
+}

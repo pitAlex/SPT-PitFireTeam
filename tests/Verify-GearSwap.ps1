@@ -132,6 +132,17 @@ if ($LASTEXITCODE -ne 0) { throw 'Gear Swap controller fixture compilation faile
 & $controllerExe
 if ($LASTEXITCODE -ne 0) { throw 'Gear Swap controller fixture failed' }
 
+$ammo = (Get-Content -Raw (Join-Path $PSScriptRoot 'GearSwapAmmoFixture.cs')).Replace('/* STACK POLICY */',
+    (Get-Region $session '        internal bool CanCombineDraftStacks(' '        internal bool CanEditPlateSlot('))
+$ammoSource = Join-Path $temporary 'GearSwapAmmo.cs'
+[IO.File]::WriteAllText($ammoSource, $ammo)
+$ammoExe = Join-Path $temporary 'GearSwapAmmo.exe'
+$ammoArgs = @($arguments | Where-Object { $_ -notlike '/out:*' }) + "/out:$ammoExe"
+& dotnet @ammoArgs $ammoSource (Join-Path $RepositoryRoot 'client/Modules/GearSwapEdit.cs') (Join-Path $RepositoryRoot 'client/Patches/GearSwapStackTransferPatch.cs')
+if ($LASTEXITCODE -ne 0) { throw 'Gear Swap ammunition fixture compilation failed' }
+& $ammoExe
+if ($LASTEXITCODE -ne 0) { throw 'Gear Swap ammunition fixture failed' }
+
 $pockets = Get-Content -Raw (Join-Path $PSScriptRoot 'GearSwapPocketsFixture.cs')
 $pockets = $pockets.Replace('/* POCKETS PATCH */', (Get-Region $panel '    internal sealed class GearSwapPocketSpecialSlotsPatch' '    internal sealed class GearSwapArmorSlotPatch'))
 $pocketsSource = Join-Path $temporary 'GearSwapPockets.cs'
@@ -239,6 +250,7 @@ try {
         @('EFT.InventoryLogic.ItemManipulator', 'Discard', 4),
         @('EFT.InventoryLogic.ItemManipulator', 'CanModifyItem', 4),
         @('EFT.InventoryLogic.ItemManipulator', 'CanTransferTo', 3),
+        @('EFT.InventoryLogic.ItemManipulator', 'TransferMaxStackCount', 5),
         @('EFT.UI.DragAndDrop.ComplexStashPanel', 'Show', 6),
         @('EFT.UI.DragAndDrop.ComplexStashPanel', 'Close', 0),
         @('EFT.UI.DragAndDrop.SearchableSlotView', 'ShowContent', 1),
@@ -276,7 +288,7 @@ if (Test-Path -LiteralPath $sainPath) {
 }
 foreach ($language in @('en', 'ru', 'chs')) {
     $locale = Get-Content -Raw -Encoding UTF8 (Join-Path $RepositoryRoot "server/Resources/lang/$language.json") | ConvertFrom-Json
-    foreach ($key in @('SwapGearApply', 'SwapGearTransferInProgress', 'SwapGearStale', 'SwapGearNeedsWeapon', 'SwapGearMagazineSpace', 'SwapGearRecoveryFailed', 'SwapGearUnavailable', 'SwapGearActionBlocked', 'SwapGearApplyFailed', 'SwapGearRefreshFailed')) {
+    foreach ($key in @('SwapGearApply', 'SwapGearTransferInProgress', 'SwapGearStale', 'SwapGearNeedsWeapon', 'SwapGearMagazineSpace', 'SwapGearRecoveryFailed', 'SwapGearUnavailable', 'SwapGearActionBlocked', 'SwapGearMixedStacks', 'SwapGearApplyFailed', 'SwapGearRefreshFailed')) {
         if (!$locale.socialUi.$key) { throw "Missing $language localization $key" }
     }
 }

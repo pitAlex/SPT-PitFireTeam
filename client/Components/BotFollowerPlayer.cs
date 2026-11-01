@@ -66,6 +66,9 @@ namespace pitTeam.Components
         protected BotSettingsInGameModif settingModif;
 
         protected bool _IsSquadMate = false;
+        protected bool UsesSavedCombatPreferences { get; set; }
+        // Saved boss allies retain progression without acquiring squadmate loot/command privileges.
+        internal bool HasPersistentProgress => IsSquadMate || UsesSavedCombatPreferences;
         internal readonly HashSet<EquipmentSlot> GivenEquipmentSlots = new HashSet<EquipmentSlot>();
         internal readonly HashSet<string> GivenGearWeaponIds = new HashSet<string>(StringComparer.Ordinal);
 #if DEBUG
@@ -86,10 +89,13 @@ namespace pitTeam.Components
             }
         }
 
+        internal bool ReportsRaidKills => IsSquadMate || this is BossFollowerPlayer;
+
         public bool CanHandleBodyContainerLootCommands
         {
             get
             {
+                if (!AllowsBodyContainerLootCommands) return false;
                 if (IsSpawnedSquadMate)
                 {
                     return true;
@@ -102,6 +108,9 @@ namespace pitTeam.Components
                            BossPlayers.Instance.GetFollower(bot)?.IsSpawnedSquadMate == true);
             }
         }
+
+        internal bool AllowsBodyContainerLootCommands =>
+            GameplayModeAddons.GetCompanionGearPolicy(_botRole.ToString())?.AllowBodyContainerLootCommands != false;
 
         internal bool IsSpawnedSquadMate
         {
@@ -190,6 +199,8 @@ namespace pitTeam.Components
         private static MethodInfo? _getSainByProfileMethod;
         private static bool _sainAddonPatrolBridgeErrorLogged;
         private float _combatAggression = 50f;
+        private float? _companionCombatAggression;
+        private float? _companionCombatDetermination;
         private bool _temporaryCombatAggressionOverrideActive;
         private float _temporaryCombatAggressionOverride;
         private float _temporaryCombatAggressionClearAfter;
@@ -212,12 +223,12 @@ namespace pitTeam.Components
 
         public float SelfDetermination
         {
-            get => _IsSquadMate ? _selfDetermination : 50f;
+            get => UsesSavedCombatPreferences ? _selfDetermination : 50f;
             set => _selfDetermination = pitTeam.Shared.SelfDeterminationPolicy.Normalize(value);
         }
-        public float EffectiveSelfDetermination => _combatDeterminationOverride ?? SelfDetermination;
+        public float EffectiveSelfDetermination => _combatDeterminationOverride ?? _companionCombatDetermination ?? SelfDetermination;
         public bool HasDeterminationOverride => _combatDeterminationOverride.HasValue;
-        public string DeterminationSource => !_combatDeterminationOverride.HasValue ? (_IsSquadMate ? "saved" : "pickupBaseline")
+        public string DeterminationSource => !_combatDeterminationOverride.HasValue ? (_companionCombatDetermination.HasValue ? "companion" : UsesSavedCombatPreferences ? "saved" : "pickupBaseline")
             : _combatDeterminationOverride.Value == 100f ? "OnYourOwn" : _combatDeterminationOverride.Value == 20f ? "CoverMe" : "command";
         public float BossInfluence => pitTeam.Shared.SelfDeterminationPolicy.BossInfluence(EffectiveSelfDetermination);
         public bool HasCombatPercentageOverrides => _combatDeterminationOverride.HasValue || _temporaryCombatAggressionOverrideActive;
@@ -228,6 +239,27 @@ namespace pitTeam.Components
             ClearCombatDeterminationOverride();
             ClearTemporaryCombatAggressionOverride(source);
         }
+
+        // Optional companion brains own this runtime baseline. Explicit command
+        // overrides remain above it, and neither layer changes saved proficiency.
+        public void SetCompanionCombatPreferences(float aggression, float determination)
+        {
+            if (float.IsNaN(aggression) || float.IsInfinity(aggression) ||
+                float.IsNaN(determination) || float.IsInfinity(determination))
+            { ClearCompanionCombatPreferences(); return; }
+            _companionCombatAggression = Mathf.Clamp(aggression, 0f, 100f);
+            _companionCombatDetermination = pitTeam.Shared.SelfDeterminationPolicy.Normalize(determination);
+        }
+
+        public void ClearCompanionCombatPreferences()
+        {
+            _companionCombatAggression = null;
+            _companionCombatDetermination = null;
+            CompanionCombatLeader = null;
+        }
+
+        public BotOwner? CompanionCombatLeader { get; private set; }
+        public void SetCompanionCombatLeader(BotOwner? leader) => CompanionCombatLeader = leader;
 
         public bool CombatIndependent
         {
@@ -264,7 +296,7 @@ namespace pitTeam.Components
                 UpdateTemporaryCombatAggressionClearDelay();
                 return _temporaryCombatAggressionOverrideActive
                     ? _temporaryCombatAggressionOverride
-                    : _combatAggression;
+                    : _companionCombatAggression ?? _combatAggression;
             }
         }
 
@@ -355,6 +387,7 @@ namespace pitTeam.Components
             Proficiency = FollowerProficiency.DefaultValues.Clone();
 
             _IsSquadMate = isSquad;
+            UsesSavedCombatPreferences = isSquad;
             CaptureInitialHolsterWeapon(finalAttempt: false);
 
             if (player.realPlayer.Side != EPlayerSide.Savage) NpcMessage.AddNpc(bot, isSquad);
@@ -664,9 +697,12 @@ namespace pitTeam.Components
 
             var _bots = _bot.BotsController.BotSpawner._bots;
             var _rougeTypes = Utils.Props.BossFollowersType.ToList();
+            if (GameplayModeAddons.IsRogueRaid) _rougeTypes.Clear();
             _rougeTypes.Add(WildSpawnType.exUsec);
 
-            bool friendsWithRogue = !Utils.Props.BossFollowersType.Contains(_botRole) && Utils.Utils.PlayerHasKnightQuest(_player.realPlayer.Profile);
+            bool friendsWithRogue = GameplayModeAddons.IsExUsecFriendlyRaid ||
+                (!GameplayModeAddons.IsRogueRaid && !Utils.Props.BossFollowersType.Contains(_botRole) &&
+                 Utils.Utils.PlayerHasKnightQuest(_player.realPlayer.Profile));
 
             if (friendsWithRogue)
             {

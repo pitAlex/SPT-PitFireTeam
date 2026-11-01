@@ -180,7 +180,8 @@ namespace pitTeam.Patches
            new Action<BotOwner>((BotOwner bot) =>
            {
 
-               bool isRogue = Utils.Props.BossFollowersType.ToList().AddItem(WildSpawnType.exUsec).Contains(bot.Profile.Info.Settings.Role);
+               bool isRogue = bot.Profile.Info.Settings.Role == WildSpawnType.exUsec ||
+                   (!GameplayModeAddons.IsRogueRaid && Utils.Props.BossFollowersType.Contains(bot.Profile.Info.Settings.Role));
 
                 if(Utils.Utils.FlagGet("pitFireTeam") && (bot.Side == EPlayerSide.Bear || bot.Side == EPlayerSide.Usec))
                 {
@@ -244,6 +245,12 @@ namespace pitTeam.Patches
         {
             return AccessTools.Method(typeof(BotOwner), "method_10");
 
+        }
+
+        [PatchTranspiler]
+        private static IEnumerable<CodeInstruction> PatchTranspiler(IEnumerable<CodeInstruction> instructions)
+        {
+            return FollowerActivationDiagnostics.Transpile(instructions);
         }
 
         [PatchPostfix]

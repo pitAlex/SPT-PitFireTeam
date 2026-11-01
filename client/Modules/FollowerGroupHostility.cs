@@ -31,7 +31,7 @@ namespace pitTeam.Modules
             // Mirror the same initial protections as BotGroupAddEnemyPatch before asking
             // native policy. In particular, an AI's own side is not its player's side.
             if (IsProtected(group.InitialBotType)) return false;
-            if ((group.InitialBotType == WildSpawnType.exUsec || Props.BossFollowersType.Contains(group.InitialBotType)) &&
+            if ((group.InitialBotType == WildSpawnType.exUsec || (!GameplayModeAddons.IsRogueRaid && Props.BossFollowersType.Contains(group.InitialBotType))) &&
                 Utils.Utils.PlayerHasKnightQuest(boss.realPlayer.Profile)) return false;
             if (group.Side == boss.realPlayer.Side &&
                 (group.Side == EPlayerSide.Usec || group.Side == EPlayerSide.Bear) &&

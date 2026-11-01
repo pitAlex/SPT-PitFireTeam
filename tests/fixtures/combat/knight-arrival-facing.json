@@ -1,0 +1,82 @@
+[
+  {
+    "record": "20261030-000219-bigmap",
+    "seq": 779,
+    "time": 299.51297,
+    "botPosition": {
+      "x": -235.807922,
+      "y": 1.326683,
+      "z": -207.717819
+    },
+    "reportedPosition": {
+      "x": -307.272247,
+      "y": 0.920345,
+      "z": -190.019592
+    },
+    "observedAt": 293.493835,
+    "hiddenLivePosition": {
+      "x": -303.059082,
+      "y": 0.9229517,
+      "z": -190.832581
+    },
+    "allyPosition": {
+      "x": -201.638092,
+      "y": 0.8773795,
+      "z": -201.371536
+    },
+    "allyLookPoint": {
+      "x": -201.682388,
+      "y": 2.29467225,
+      "z": -201.180374
+    },
+    "recordedLookAngle": 142.827957,
+    "reason": "committedPositionHold.tacticalPoint",
+    "personalSeenTime": 0.0,
+    "groupSeenTime": 0.0,
+    "legacyPosition": {
+      "x": 0.0,
+      "y": 0.0,
+      "z": 0.0
+    }
+  },
+  {
+    "record": "20261029-224913-Woods",
+    "seq": 1370,
+    "time": 295.592743,
+    "botPosition": {
+      "x": -353.786652,
+      "y": 14.8456478,
+      "z": -424.374847
+    },
+    "reportedPosition": {
+      "x": -349.66922,
+      "y": 13.5933924,
+      "z": -460.467163
+    },
+    "observedAt": 279.5773,
+    "hiddenLivePosition": {
+      "x": -382.22113,
+      "y": 12.4416466,
+      "z": -489.88385
+    },
+    "allyPosition": {
+      "x": -353.3086,
+      "y": 14.6804457,
+      "z": -411.347961
+    },
+    "allyLookPoint": {
+      "x": -353.492035,
+      "y": 15.5727177,
+      "z": -411.560242
+    },
+    "recordedLookAngle": 157.164474,
+    "reason": "committedPositionHold.tacticalPoint",
+    "personalSeenTime": 279.5773,
+    "groupSeenTime": 279.5773,
+    "legacyPosition": {
+      "x": -349.66922,
+      "y": 13.5933924,
+      "z": -460.467163
+    }
+  }
+]

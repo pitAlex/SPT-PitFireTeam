@@ -186,7 +186,7 @@ namespace pitTeam.Modules
 
                     if (followersToRemove.Count > 0)
                     {
-                        SaveFollowersProgress(died ? followersToRemove.FindAll(fl => fl.IsSquadMate) : followersToRemove);
+                        SaveFollowersProgress(died ? followersToRemove.FindAll(fl => fl.HasPersistentProgress) : followersToRemove);
                     }
                 }
 
@@ -308,7 +308,7 @@ namespace pitTeam.Modules
             }
             else
             {
-                _follower = new BossFollowerPlayer(bot, player, role);
+                _follower = new BossFollowerPlayer(bot, player, role, savedCombatPreferences: squadMate);
 
             }
 
@@ -328,6 +328,7 @@ namespace pitTeam.Modules
                 FollowerQuestingBots.Release(bot);
                 Modules.Logger.LogError("Failed to init follower");
                 Modules.Logger.LogError(e);
+                if (squadMate) AbortSpawnFollower(bot.ProfileId, bot, player, _follower);
                 return null;
             }
 
@@ -335,7 +336,7 @@ namespace pitTeam.Modules
             if (bot?.ProfileId != null)
             {
                 _followersByProfileId[bot.ProfileId] = _follower;
-                if (squadMate)
+                if (_follower.ReportsRaidKills)
                 {
                     SquadRaidKillReport.RegisterTeammate(bot.ProfileId, bot.Profile?.Nickname);
                 }
@@ -408,12 +409,13 @@ namespace pitTeam.Modules
                     Profile pr = item.GetBot().Profile;
                     WildSpawnType role = pr.Info.Settings.Role;
 
-                    if (Utils.Props.BossFollowersType.Contains(role) || item.GetBot().Side == EPlayerSide.Savage)
+                    if (item.GetBot().Side == EPlayerSide.Savage ||
+                        (Utils.Props.BossFollowersType.Contains(role) && !item.HasPersistentProgress))
                     {
                         continue;
                     }
 
-                    if (!item.IsSquadMate)
+                    if (!item.HasPersistentProgress)
                     {
                         bool queueRecruit = GameplayModeRuntime.GetEffectiveValue(pitFireTeam.recruitPickup);
 #if DEBUG
@@ -472,7 +474,8 @@ namespace pitTeam.Modules
                     FollowerMovementSkillProgress movementProgress = CalculateFollowerMovementSkillProgress(item.GetBot());
                     List<object> skills = new List<object>();
 
-                    pr.Skills.DisplayList.ExecuteForEach(skill =>
+                    var liveSkills = item.GetBot().GetPlayer?.Skills ?? pr.Skills;
+                    liveSkills.DisplayList.ExecuteForEach(skill =>
                     {
                         float baseCurrent = UnityEngine.Mathf.Max(0f, skill.Current - skill.PointsEarned);
                         float progress = skill.ProgressValue;
@@ -510,8 +513,8 @@ namespace pitTeam.Modules
                         skills.Add(new
                         {
                             Id = ESkillId.BotReload,
-                            Current = pr.Skills.BotReload.Current,
-                            Progress = pr.Skills.BotReload.ProgressValue,
+                            Current = liveSkills.BotReload.Current,
+                            Progress = liveSkills.BotReload.ProgressValue,
                             PointsEarnedDuringSession = 0,
                         });
                     }
@@ -1224,6 +1227,52 @@ namespace pitTeam.Modules
         {
             if (Instance == null) return;
             Instance.RemoveBotFollower(bot, player);
+        }
+
+        // Roll back only the actor created for this saved-profile spawn. This is a
+        // failed spawn, not a death/escape outcome or a normal recruit dismissal.
+        internal static void AbortSpawnFollower(string profileId, BotOwner bot, pitAIBossPlayer player,
+            BotFollowerPlayer partial = null)
+        {
+            // An awaited preparation can finish after raid teardown. Never remove a
+            // new raid's registration when the persistent profile ID is reused.
+            if (Instance == null || player?.realPlayer == null ||
+                !ReferenceEquals(GetBoss(player.realPlayer.ProfileId), player)) return;
+            void Cleanup(Action action, string stage)
+            {
+                try { action(); }
+                catch (Exception ex) { Modules.Logger.LogError($"[FollowerSpawn] Cleanup {stage} failed for {profileId}: {ex}"); }
+            }
+            Cleanup(() => GameplayModeAddons.AbortSpawn(profileId), "combat");
+            var follower = partial ?? Instance._followers.FirstOrDefault(item => ReferenceEquals(item.GetBot(), bot));
+            if (Instance != null)
+            {
+                if (follower != null) Instance._followers.Remove(follower);
+                if (Instance._followersByProfileId.TryGetValue(profileId, out var cached) && ReferenceEquals(cached.GetBot(), bot))
+                    Instance._followersByProfileId.Remove(profileId);
+                Instance._shallBeFollower.Remove(profileId);
+            }
+            Cleanup(() => player?.ReleaseFailedFollower(bot), "leader");
+            if (bot != null)
+            {
+                Cleanup(() => { if (bot.BotFollower != null) bot.BotFollower.BossToFollow = null; }, "follower link");
+                if (bot.BotState != EBotState.Disposed)
+                {
+                    try { bot.LeaveData.RemoveFromMap(); }
+                    catch (Exception ex)
+                    {
+                        Modules.Logger.LogError($"[FollowerSpawn] Native despawn failed for {profileId}: {ex}");
+                        Cleanup(() => bot.Dispose(), "AI disposal");
+                        Cleanup(() => bot.BotsController.BotSpawner.BotGame.BotDespawn(bot), "despawn");
+                    }
+                }
+                // Disposed actors take Dismiss's cleanup-only path, without rejoining a raid group.
+                if (bot.BotState == EBotState.Disposed) Cleanup(() => follower?.Dismiss(), "follower runtime");
+                Cleanup(() => FollowerQuestingBots.Release(bot), "questing");
+            }
+            Cleanup(() => Patches.BotOwnerManualUpdatePatch.BotOwnerUpdate.Remove(profileId), "watcher");
+            Cleanup(() => InteractableObjects.ClearStoredItems(profileId), "equipment cache");
+            Cleanup(() => NpcMessage.RemoveNpc(profileId, false), "social runtime");
         }
 
         public static bool IsPlayerFollowerGroup(BotOwner bot, pitAIBossPlayer boss) =>

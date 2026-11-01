@@ -20,10 +20,13 @@ namespace pitTeam.Utils
             public int DamageRevision;
             public float ThreatenedUntil;
             public bool HasThreatLookPoint;
+            public float ThreatLookUntil;
             public Vector3 ThreatLookPoint;
             public float ThreatSourceDistance = float.MaxValue;
-            public bool HasThreatSource;
-            public Player? ThreatSource;
+            public float IncomingFireUntil;
+            public Vector3 IncomingFirePoint;
+            public Player? IncomingFireSource;
+            public bool HasIncomingFireSource;
             public float LastSoundTime;
             public float LastGunshotTime;
             public float NextBulletReactionAt;
@@ -70,7 +73,7 @@ namespace pitTeam.Utils
             var state = GetState(bot);
             if (state == null ||
                 !state.HasThreatLookPoint ||
-                Mathf.Max(state.DamagedUntil, state.ThreatenedUntil) <= Time.time)
+                state.ThreatLookUntil <= Time.time)
             {
                 return false;
             }
@@ -154,24 +157,28 @@ namespace pitTeam.Utils
             out bool sourceKnownDead)
         {
             sourceKnownDead = false;
-            if (!TryGetRecentThreatLookPoint(bot, out lookPoint))
+            lookPoint = Vector3.zero;
+            State state = GetState(bot);
+            if (state == null || state.IncomingFireUntil <= Time.time ||
+                !FollowerCombatCommon.IsFinite(state.IncomingFirePoint) || state.IncomingFirePoint == Vector3.zero)
             {
                 return false;
             }
-
-            State state = GetState(bot);
-            if (state == null || !state.HasThreatSource)
+            lookPoint = state.IncomingFirePoint;
+            if (!state.HasIncomingFireSource)
             {
                 return true;
             }
 
-            Player? source = state.ThreatSource;
-            if (source?.HealthController?.IsAlive == true)
+            Player? source = state.IncomingFireSource;
+            if (source?.HealthController?.IsAlive == true && source.gameObject.activeInHierarchy &&
+                !BossPlayers.IsPlayerBoss(source.ProfileId) && !BossPlayers.IsFollowerProfileId(source.ProfileId) &&
+                (bot.EnemiesController.IsEnemy(source) || IsHostileToBossGroup(bot, source)))
             {
                 return true;
             }
 
-            sourceKnownDead = true;
+            sourceKnownDead = source?.HealthController?.IsAlive != true;
             lookPoint = Vector3.zero;
             return false;
         }
@@ -317,7 +324,7 @@ namespace pitTeam.Utils
 
             if (lookPoint != Vector3.zero)
             {
-                RegisterThreatLookPoint(bot, lookPoint, 3f, threatSource: shooter);
+                RegisterThreatLookPoint(bot, lookPoint, 3f, threatSource: shooter, incomingFire: true);
                 RegisterDamage(bot, 3f);
             }
             else
@@ -498,7 +505,7 @@ namespace pitTeam.Utils
             random.y = 0f;
             random = random.normalized * dispersion;
             Vector3 estimatedShooterPos = shooter.Transform.position + random;
-            RegisterThreatLookPoint(bot, estimatedShooterPos, 3f, threatSource: shooter);
+            RegisterThreatLookPoint(bot, estimatedShooterPos, 3f, threatSource: shooter, incomingFire: true);
 
             bool acquired = TryAutoAcquireCloseThreat(bot, shooter, Mathf.Sqrt(distanceSqr));
             if (acquired)
@@ -518,7 +525,8 @@ namespace pitTeam.Utils
             Vector3 lookPoint,
             float duration,
             float sourceDistance = float.MaxValue,
-            Player? threatSource = null)
+            Player? threatSource = null,
+            bool incomingFire = false)
         {
             var state = GetState(bot);
             if (state == null)
@@ -526,12 +534,20 @@ namespace pitTeam.Utils
                 return;
             }
 
-            state.ThreatenedUntil = Time.time + duration;
+            state.ThreatLookUntil = Time.time + duration;
             state.ThreatLookPoint = lookPoint;
             state.HasThreatLookPoint = true;
             state.ThreatSourceDistance = sourceDistance;
-            state.HasThreatSource = threatSource != null;
-            state.ThreatSource = threatSource;
+            // Hearing/voice orientation must neither grant blind-fire permission nor extend
+            // the lifetime of a real hit/near-miss bearing. Keep the evidence independent.
+            if (incomingFire)
+            {
+                state.ThreatenedUntil = Time.time + duration;
+                state.IncomingFireUntil = Time.time + duration;
+                state.IncomingFirePoint = lookPoint;
+                state.IncomingFireSource = threatSource;
+                state.HasIncomingFireSource = threatSource != null;
+            }
         }
 
         private static void RegisterDamage(BotOwner bot, float duration)

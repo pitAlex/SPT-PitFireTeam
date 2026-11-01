@@ -595,6 +595,18 @@ namespace pitTeam.Utils
             Vector3 feet = ally.Transform.position;
             Vector3 torso = feet + Vector3.up * 1.0f;
             Vector3 head = feet + Vector3.up * 1.55f;
+            if (ally.MainParts != null)
+            {
+                if (ally.MainParts.TryGetValue(BodyPartType.body, out var bodyPart) && bodyPart != null)
+                    torso = bodyPart.Position;
+                if (ally.MainParts.TryGetValue(BodyPartType.head, out var headPart) && headPart != null)
+                    head = headPart.Position;
+            }
+
+            // Suppression is inappropriate with a teammate's head immediately beside
+            // the muzzle, including just behind its projected firing segment.
+            if (laneRadius >= SuppressionLaneRadius && (head - origin).sqrMagnitude < 1.25f * 1.25f)
+                return true;
 
             return IsPointInLane(origin, dir, maxDistance, feet, laneRadius, closeFrontDistance, closeFrontDot, distancePadding) ||
                    IsPointInLane(origin, dir, maxDistance, torso, laneRadius, closeFrontDistance, closeFrontDot, distancePadding) ||

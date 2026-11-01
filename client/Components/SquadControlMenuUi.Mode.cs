@@ -35,6 +35,8 @@ namespace pitTeam.Components
             float firstRowY = -86f;
             CreateModeChoice(panelRect, group, GameplayMode.GunsForHire, "SquadControlModeGunsForHire", "SquadControlModeGunsForHireDescription", firstRowY);
             CreateModeChoice(panelRect, group, GameplayMode.Allegiance, "SquadControlModeAllegiance", "SquadControlModeAllegianceDescription", firstRowY - SettingsRowHeight - SettingsSpacing);
+            if (GameplayModeAddons.IsAvailable(GameplayMode.GoingRogue))
+                CreateModeChoice(panelRect, group, GameplayMode.GoingRogue, "SquadControlModeGoingRogue", null, firstRowY - 2f * (SettingsRowHeight + SettingsSpacing));
             RefreshModeChoices();
         }
 
@@ -65,7 +67,7 @@ namespace pitTeam.Components
             nameLabel.fontWeight = FontWeight.SemiBold;
             nameLabel.fontSize = 20f;
 
-            GameObject descriptionObject = CreateText("Description", GetSocialUiText(descriptionKey), 16f, TextAlignmentOptions.TopLeft);
+            GameObject descriptionObject = CreateText("Description", descriptionKey == null ? string.Empty : GetSocialUiText(descriptionKey), 16f, TextAlignmentOptions.TopLeft);
             descriptionObject.transform.SetParent(choiceRect, false);
             RectTransform descriptionRect = descriptionObject.GetComponent<RectTransform>();
             descriptionRect.anchorMin = Vector2.zero;

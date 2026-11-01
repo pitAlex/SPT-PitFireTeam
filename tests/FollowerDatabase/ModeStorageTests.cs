@@ -38,6 +38,8 @@ internal static class ModeStorageTests
                 DispatchProxy.Create<ISptLogger<FriendlyTeammateStorage>, TestLogger>(), settings);
             var session = new MongoId("aaaaaaaaaaaaaaaaaaaaaaaa");
             storage.InitializeProfile(session);
+            GoingRogueModeTests.Run(storage, settings, new JsonUtil([new SptJsonConverterRegistrator()]), check);
+            TeammateVoiceTests.Run(storage, settings, new JsonUtil([new SptJsonConverterRegistrator()]), check);
             RestrictedEquipmentPersistenceTests.Run(storage, settings, new JsonUtil([new SptJsonConverterRegistrator()]), session, check);
             RecruitProtectionTests.Run(storage, settings, new JsonUtil([new SptJsonConverterRegistrator()]), session, check);
             DebugRecruitInviteTests.Run(check);
@@ -113,6 +115,7 @@ internal static class ModeStorageTests
             FriendlyModeRequestGate.EndRaid(session.ToString());
             check(!FriendlyModeRequestGate.HasActiveRaid, "server releases raid restriction");
             SquadOnboardingTests.Run(storage, settings, new JsonUtil([new SptJsonConverterRegistrator()]), check);
+            AddonOnboardingTests.Run(storage, settings, new JsonUtil([new SptJsonConverterRegistrator()]), check);
             await ProfileWipeTests.Run(storage, settings, new JsonUtil([new SptJsonConverterRegistrator()]), check);
         }
         finally

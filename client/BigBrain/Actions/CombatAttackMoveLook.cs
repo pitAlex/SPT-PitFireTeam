@@ -89,6 +89,23 @@ namespace pitTeam.BigBrain.Actions
             return (lookPoint - GetLookOrigin(botOwner)).sqrMagnitude > 0.01f;
         }
 
+        // Stationary combat holds use the same admitted memory as their pursuit
+        // planner. The short steering freshness window is not a contact lifetime.
+        public static bool TryGetHoldThreatLookPoint(BotOwner botOwner, EnemyInfo? enemy, out Vector3 lookPoint)
+        {
+            lookPoint = Vector3.zero;
+            if (botOwner == null || enemy?.Person?.HealthController?.IsAlive != true) return false;
+            if (enemy.IsVisible || !global::pitTeam.Modules.FollowerEnemyTracking.IsRealistic(enemy))
+                return TryGetReliableThreatLookPoint(botOwner, enemy, out lookPoint);
+            if (!global::pitTeam.Modules.FollowerEnemyTracking.IsEligible(enemy) ||
+                global::pitTeam.Modules.FollowerEnemyTracking.IsSearched(enemy) ||
+                !global::pitTeam.Modules.FollowerEnemyTracking.TryGetKnownPosition(enemy, out Vector3 position, out float observedAt) ||
+                observedAt < 0f || observedAt > Time.time || !FollowerCombatCommon.IsFinite(position) || position.sqrMagnitude <= 0.01f ||
+                !IsRememberedPointUseful(botOwner, enemy, ref position, observedAt)) return false;
+            lookPoint = position + Vector3.up * 0.8f;
+            return (lookPoint - GetLookOrigin(botOwner)).sqrMagnitude > 0.01f;
+        }
+
         private static bool TryGetRecentThreatPosition(EnemyInfo goalEnemy, float maxAge, out Vector3 position, out float reportTime)
         {
             position = Vector3.zero;

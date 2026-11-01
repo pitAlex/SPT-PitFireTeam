@@ -6,6 +6,19 @@
     <Nullable>disable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../shared/GameplayModePolicy.cs" Link="GameplayModePolicy.cs" />
+    <Compile Include="../../going-rogue/client/Combat/GoonCombatScope.cs" Link="GoonCombatScope.cs" />
+    <Compile Include="../../going-rogue/client/RogueRosterSelection.cs" Link="RogueRosterSelection.cs" />
+    <Compile Include="../../going-rogue/client/RogueSelectionState.cs" Link="RogueSelectionState.cs" />
+    <Compile Include="../../client/Modules/FollowerSpawnMetadata.cs" Link="FollowerSpawnMetadata.cs" />
+    <Compile Include="../../client/Modules/FollowerSpawnReadiness.cs" Link="FollowerSpawnReadiness.cs" />
+    <Compile Include="../../client/Modules/GameplayModeAddons.cs" Link="GameplayModeAddons.cs" />
+    <Compile Include="../../client/Modules/CompanionGearPolicy.cs" Link="CompanionGearPolicy.cs" />
+    <Compile Include="../../client/Modules/CompanionCommandPolicy.cs" Link="CompanionCommandPolicy.cs" />
+    <Compile Include="../../going-rogue/client/GoonCommandPolicy.cs" Link="GoonCommandPolicy.cs" />
+    <Compile Include="../../going-rogue/client/GoonCombatConfidence.cs" Link="GoonCombatConfidence.cs" />
+    <Compile Include="../../client/BigBrain/FollowerPushRiskPolicy.cs" Link="FollowerPushRiskPolicy.cs" />
+    <Compile Include="../../going-rogue/client/GoonGearPolicy.cs" Link="GoonGearPolicy.cs" />
     <Compile Include="../../client/Modules/GameplayModeRuntime.cs" Link="GameplayModeRuntime.cs" />
     <Reference Include="BepInEx"><HintPath>../../client/libs4.1/BepInEx.dll</HintPath></Reference>
     <Reference Include="Newtonsoft.Json"><HintPath>../../client/libs4.1/Newtonsoft.Json.dll</HintPath></Reference>

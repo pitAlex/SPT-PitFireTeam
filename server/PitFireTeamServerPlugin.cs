@@ -13,13 +13,16 @@ using Version = SemanticVersioning.Version;
 
 namespace pitTeam.Server;
 
-public record PitFireTeamServerMetadata : IModMetadata
+public record PitFireTeamServerMetadata : IModMetadata, SPTarkov.Server.Web.IModBlazorMetadata
 {
+    public string? WWWRootUrl { get; init; }
+    public string? HomePage { get; init; } = "/pitfireteam";
+    public string? HomePageDescription { get; init; } = "Teammate editor";
     public string ModGuid { get; init; } = "xyz.pit.fireteam";
     public string Name { get; init; } = "PitFireTeam";
     public string Author { get; init; } = "PitAlex";
     public List<string>? Contributors { get; init; }
-    public Version Version { get; init; } = new("1.0.0");
+    public Version Version { get; init; } = new("1.1.0");
     public Range SptVersion { get; init; } = new("~4.1.0");
     public bool HasPrepatcher { get; init; } = false;
     public List<string>? Incompatibilities { get; init; }

@@ -1,3 +1,4 @@
+#nullable enable annotations
 using System;
 using System.Collections.Generic;
 using pitTeam.Shared;
@@ -8,8 +9,10 @@ public sealed class BotOwner {public string ProfileId;public Follower State;}
 public sealed class BossPlayers {public static BossPlayers Instance=new BossPlayers();public Follower GetFollower(BotOwner owner)=>owner.State;}
 public sealed class Follower {
     public bool _IsSquadMate=true;private float _selfDetermination=50;private float? _combatDeterminationOverride;
+    public bool SavedBossPreferences;private bool UsesSavedCombatPreferences=>_IsSquadMate||SavedBossPreferences;
     private bool _combatRegroupUsesBossAnchor;private float _combatAggression=50,_temporaryCombatAggressionOverride,_temporaryCombatAggressionClearAfter;
     private bool _temporaryCombatAggressionOverrideActive;public Boss _player;
+    private float? _companionCombatAggression, _companionCombatDetermination;
     private void ClearVanillaRequestState(object request,string source){} private void UpdateTemporaryCombatAggressionClearDelay(){}
 __PROPERTIES__
 __METHODS__
@@ -52,6 +55,25 @@ public static class Program {
         squad.CoreEnter(a);squad.NotifyAddonCombatEpisode(a,true);squad.CoreExit(a);
         Check(squad.HasFollowerCombat,"same follower Core-to-addon handoff retains combat registration");squad.NotifyAddonCombatEpisode(a,false);
         a.State.SetCombatIndependent(true);Check(a.State.CombatIndependent&&a.State.EffectiveSelfDetermination==100&&a.State.EffectiveCombatAggression==37,"On Your Own changes determination only");
+        a.State.ResetCombatPercentageOverrides("unitSetup");
+        a.State.SetCompanionCombatPreferences(70,100);
+        Check(a.State.CombatIndependent&&a.State.EffectiveCombatAggression==70&&a.State.DeterminationSource=="companion","companion unit stance supplies runtime baseline");
+        Check(a.State.SelfDetermination==65&&a.State.CombatAggression==37,"companion stance preserves saved proficiency");
+        a.State.SetCombatIndependent(false);a.State.SetTemporaryCombatAggressionOverride(0,"HoldPosition");
+        Check(a.State.EffectiveSelfDetermination==20&&a.State.EffectiveCombatAggression==0,"explicit cover and hold override companion unit stance");
+        a.State.ClearCompanionCombatPreferences();
+        Check(a.State.EffectiveSelfDetermination==20&&a.State.EffectiveCombatAggression==0,"composition changes cannot erase player command overrides");
+        a.State.SetCompanionCombatPreferences(70,100);a.State.ResetCombatPercentageOverrides("commandCompleted");
+        Check(a.State.EffectiveSelfDetermination==100&&a.State.EffectiveCombatAggression==70,"command reset reveals current unit baseline");
+        a.State.SetCompanionCombatLeader(b);
+        a.State.ClearCompanionCombatPreferences();
+        Check(a.State.CompanionCombatLeader==null,"unit release also clears the runtime movement leader");
+        Check(a.State.EffectiveSelfDetermination==65&&a.State.EffectiveCombatAggression==37,"unit release restores exact saved settings");
+        foreach(float bad in new[]{float.NaN,float.PositiveInfinity,float.NegativeInfinity}){
+            a.State.SetCompanionCombatPreferences(bad,100);Check(a.State.EffectiveCombatAggression==37,"invalid companion aggression falls back to saved");
+            a.State.SetCompanionCombatPreferences(70,bad);Check(a.State.EffectiveSelfDetermination==65,"invalid companion determination falls back to saved");
+        }
+        a.State.SetCombatIndependent(true);
         a.State.SetTemporaryCombatAggressionOverride(100,"GoForward");Check(a.State.EffectiveSelfDetermination==100&&a.State.EffectiveCombatAggression==100,"Go Forward changes aggression only");
         a.State.SetCombatIndependent(false);Check(a.State.EffectiveSelfDetermination==20&&a.State.EffectiveCombatAggression==100&&!a.State.CombatIndependent,"Cover Me exact twenty independently of aggression");
         a.State.SetTemporaryCombatAggressionOverride(0,"HoldPosition");Check(a.State.EffectiveSelfDetermination==20&&a.State.EffectiveCombatAggression==0,"Hold Position preserves determination");
@@ -60,6 +82,8 @@ public static class Program {
         a.State.ResetCombatPercentageOverrides("Attention");Check(a.State.EffectiveSelfDetermination==65&&a.State.EffectiveCombatAggression==37&&!a.State.HasCombatPercentageOverrides,"Attention restores both saved values immediately");
         a.State.SelfDetermination=0;a.State.SetCombatIndependent(false);Check(a.State.EffectiveSelfDetermination==20,"Cover Me raises zero to exactly twenty");
         a.State._IsSquadMate=false;a.State.SelfDetermination=90;a.State.ClearCombatDeterminationOverride();Check(a.State.SelfDetermination==50,"pickup fixed fifty baseline");
+        a.State.SavedBossPreferences=true;Check(a.State.SelfDetermination==90&&a.State.DeterminationSource=="saved"&&!a.State._IsSquadMate,"saved boss proficiency works without squadmate classification");
+        a.State.SavedBossPreferences=false;
         a.State.SetCombatIndependent(true);Check(a.State.EffectiveSelfDetermination==100,"accepted pickup command can override baseline");
         squad.CoreEnter(a);squad.NotifyAddonCombatEpisode(b,true);b.State.SetCombatIndependent(false);b.State.SetTemporaryCombatAggressionOverride(100,"GoForward");
         squad.CoreExit(a);a.State.ClearActiveCombatIndependent();a.State.ClearCombatIndependent();Time.time=10;squad.Tick();
@@ -70,6 +94,16 @@ public static class Program {
         Time.time=22;squad.Tick();Check(b.State.EffectiveCombatAggression==100,"quiet confirmation does not reset prematurely");
         Time.time=23.1f;squad.Tick();Check(a.State.EffectiveSelfDetermination==50&&b.State.EffectiveSelfDetermination==50&&b.State.EffectiveCombatAggression==50,"whole squad end resets both settings");
         squad.CoreEnter(a);a.State.SetCombatIndependent(false);Time.time=24;squad.CoreExit(a);squad.Tick();Time.time=26.1f;squad.Tick();Check(a.State.EffectiveSelfDetermination==50,"new episode rearms quiet reset");
+        var goon = new Follower { _IsSquadMate = false, SavedBossPreferences = true };
+        goon.CombatAggression = 41; goon.SelfDetermination = 62;
+        goon.SetCombatIndependent(true); goon.SetTemporaryCombatAggressionOverride(70, "OnYourOwn");
+        Check(goon.EffectiveCombatAggression == 70 && goon.EffectiveSelfDetermination == 100,
+            "Goon On Your Own applies both temporary percentages");
+        Check(goon.CombatAggression == 41 && goon.SelfDetermination == 62,
+            "Goon command preserves saved proficiency percentages");
+        goon.ResetCombatPercentageOverrides("squadCombatEnded");
+        Check(goon.EffectiveCombatAggression == 41 && goon.EffectiveSelfDetermination == 62 && !goon.HasCombatPercentageOverrides,
+            "battle reset restores both saved Goon percentages");
         Console.WriteLine("Passed "+checks+" production state and calibration checks.");
     }
 }

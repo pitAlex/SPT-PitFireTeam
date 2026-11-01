@@ -100,6 +100,10 @@ try {
     $arguments=@($compiler,'/nologo','/target:exe','/langversion:latest','/nullable:annotations','/nostdlib+',"/out:$exe","/reference:$harmony")
     foreach($reference in @('mscorlib.dll','System.dll','System.Core.dll')){$arguments+='/reference:'+(Join-Path $framework $reference)}
     $arguments+=@((Join-Path $temporary 'GroupPatch.cs'),(Join-Path $temporary 'Fixture.cs'),(Join-Path $RepositoryRoot 'client/Modules/FollowerGroupHostility.cs'),(Join-Path $RepositoryRoot 'client/Modules/AllegiancePmcFriendship.cs'),(Join-Path $RepositoryRoot 'client/Modules/AllegianceScavRelations.cs'),(Join-Path $RepositoryRoot 'client/Modules/ScavFenceKarma.cs'),(Join-Path $RepositoryRoot 'client/Patches/AllegianceScavTrustDamagePatch.cs'),(Join-Path $RepositoryRoot 'client/Modules/BotOwnerUpdateHub.cs'),(Join-Path $RepositoryRoot 'shared/FriendlyEncounterPenaltyPolicy.cs'))
+    $population=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/FriendlyEncounterPopulation.cs')
+    $population=[regex]::Replace($population,'\bFriendlyEncounterPopulation\b','FriendlyEncounterPopulationCounter')
+    Set-Content -LiteralPath (Join-Path $temporary 'Population.cs') -Value $population
+    $arguments+=@((Join-Path $temporary 'Population.cs'),(Join-Path $RepositoryRoot 'client/Modules/FriendlyEncounterPopulationPolicy.cs'))
     & dotnet @arguments
     if($LASTEXITCODE -ne 0){throw 'Hostility fixture compilation failed'}
     & $exe

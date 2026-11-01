@@ -9125,6 +9125,117 @@ namespace pitTeam.BigBrain
             return true;
         }
 
+        // A short approach to admitted contact memory is movement, not a firing position.
+        // Used when a companion supports a teammate's active fight but cannot yet see it.
+        internal bool TryCreateContactAdvanceDecision(EnemyInfo enemy, float stopDistance, string reason,
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
+        {
+            if (!TryPlanContactAdvanceDecision(enemy, stopDistance, reason, out var point, out decision)) return false;
+            CommitContactAdvancePoint(point);
+            return true;
+        }
+
+        internal void CommitContactAdvancePoint(Vector3 point)
+        {
+            botOwner.GoToSomePointData.SetPoint(point);
+            SetCoverTactic(BotsGroup.BotCurrentTactic.Attack);
+        }
+
+        // NavMesh polygons can exist without a supporting player-collision floor.
+        // Keep short tactical destinations on walkable physical ground near the sample.
+        internal static bool HasSupportedCombatGround(Vector3 point)
+        {
+            return IsFinite(point) &&
+                Physics.Raycast(point + Vector3.up * 0.5f, Vector3.down, out RaycastHit hit, 1f,
+                    LayersMaskController.PlayerCollisionsMask, QueryTriggerInteraction.Ignore) &&
+                IsFinite(hit.point) && Mathf.Abs(hit.point.y - point.y) <= 0.5f && hit.normal.y >= 0.5f;
+        }
+
+        internal bool TryPlanContactAdvanceDecision(EnemyInfo enemy, float stopDistance, string reason, out Vector3 point,
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
+        {
+            point = default;
+            decision = default;
+            if (!HasActiveCombatEnemy(enemy) ||
+                !FollowerEnemyTracking.TryGetKnownPosition(enemy, out var anchor, out _) || !IsFinite(anchor)) return false;
+            Vector3 offset = anchor - botOwner.Position;
+            offset.y = 0f;
+            float distance = offset.magnitude;
+            if (distance <= stopDistance + 2f) return false;
+            float step = Mathf.Min(20f, distance - stopDistance);
+            Vector3 candidate = botOwner.Position + offset.normalized * step;
+            if (!NavMesh.SamplePosition(candidate, out NavMeshHit hit, 1.5f, NavMesh.AllAreas) ||
+                Mathf.Abs(hit.position.y - candidate.y) > 1.25f ||
+                (hit.position - botOwner.Position).sqrMagnitude < 4f ||
+                Vector3.Distance(hit.position, anchor) < stopDistance || !HasSupportedCombatGround(hit.position) ||
+                IsBossFireLaneMovementRisk(hit.position, anchor, includePath: true)) return false;
+            var path = new NavMeshPath();
+            if (!NavMesh.CalculatePath(botOwner.Position, hit.position, NavMesh.AllAreas, path) ||
+                path.status != NavMeshPathStatus.PathComplete) return false;
+            point = hit.position;
+            decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.goToPoint, reason);
+            return true;
+        }
+
+        // Companion group-search travel is not a firing-position request. The allied
+        // leader's physical position is legitimate; the enemy still requires admitted memory.
+        internal bool TryPlanCombatFollowDecision(EnemyInfo enemy, Vector3 leaderPosition, string reason,
+            out Vector3 point, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
+        {
+            point = default;
+            decision = default;
+            if (!HasActiveCombatEnemy(enemy) || !IsFinite(leaderPosition) ||
+                !FollowerEnemyTracking.TryGetKnownPosition(enemy, out var anchor, out _) || !IsFinite(anchor)) return false;
+            Vector3 offset = botOwner.Position - leaderPosition;
+            if (offset.sqrMagnitude <= 16f) return false;
+            offset.y = 0f;
+            if (offset.sqrMagnitude < 0.01f) offset = Vector3.right;
+            Vector3 desired = leaderPosition + offset.normalized * 3f;
+            Vector3 candidate = Vector3.MoveTowards(botOwner.Position, desired, 20f);
+            if (!NavMesh.SamplePosition(candidate, out NavMeshHit hit, 1.5f, NavMesh.AllAreas) ||
+                Mathf.Abs(hit.position.y - candidate.y) > 1.25f ||
+                (hit.position - botOwner.Position).sqrMagnitude < 4f ||
+                (hit.position - botOwner.Position).sqrMagnitude > 400f ||
+                Vector3.Distance(hit.position, leaderPosition) < 2f || !HasSupportedCombatGround(hit.position) ||
+                IsBossFireLaneMovementRisk(hit.position, anchor, includePath: true)) return false;
+            var path = new NavMeshPath();
+            if (!NavMesh.CalculatePath(botOwner.Position, hit.position, NavMesh.AllAreas, path) ||
+                path.status != NavMeshPathStatus.PathComplete) return false;
+            point = hit.position;
+            decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.goToPoint, reason);
+            return true;
+        }
+
+        internal bool TryCreateAssignedFiringPositionDecision(
+            EnemyInfo enemy, Vector3 assignedPoint, string reason,
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision,
+            bool preferBackline, bool enforceMarksmanPositionPolicy)
+        {
+            if (!TryPlanAssignedFiringPositionDecision(enemy, assignedPoint, reason, out var point,
+                    out decision, preferBackline, enforceMarksmanPositionPolicy)) return false;
+            botOwner.GoToSomePointData.SetPoint(point);
+            SetCoverTactic(BotsGroup.BotCurrentTactic.Attack);
+            return true;
+        }
+
+        internal bool TryPlanAssignedFiringPositionDecision(
+            EnemyInfo enemy, Vector3 assignedPoint, string reason, out Vector3 point,
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision,
+            bool preferBackline, bool enforceMarksmanPositionPolicy)
+        {
+            point = default;
+            decision = default;
+            if (!HasActiveCombatEnemy(enemy) || !IsFinite(assignedPoint)) return false;
+            Vector3 anchor = GetEnemyAnchor(enemy);
+            if (!IsFinite(anchor) || !TryFindSupportFiringPosition(enemy, anchor,
+                    preferBackline, enforceMarksmanPositionPolicy, false, false, 45f,
+                    out point, minDisplacement: 2f, assignedPosition: assignedPoint) ||
+                !TrySelectSupportFiringPositionMove(anchor, point, reason, out var action, out var moveReason))
+                return false;
+            decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(action, moveReason);
+            return true;
+        }
+
         private bool TrySelectSupportFiringPositionMove(
             Vector3 enemyAnchor,
             Vector3 supportPoint,
@@ -9229,7 +9340,8 @@ namespace pitTeam.BigBrain
             Vector3? localSearchOrigin = null,
             float localSearchRadius = 0f,
             float minEnemyDistance = 0f,
-            bool commandSupport = false)
+            bool commandSupport = false,
+            Vector3? assignedPosition = null)
         {
             supportPoint = Vector3.zero;
             Vector3 bossPosition = GetBossPosition();
@@ -9287,6 +9399,12 @@ namespace pitTeam.BigBrain
                             new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * radius);
                     }
                 }
+            }
+
+            if (assignedPosition.HasValue)
+            {
+                candidates.Clear();
+                candidates.Add(assignedPosition.Value);
             }
 
             ShootToPoint shootPoint = new ShootToPoint(enemyAnchor + Vector3.up * 1.1f, 1f);
@@ -9995,6 +10113,30 @@ namespace pitTeam.BigBrain
         {
             preparedDecisionTransition = null;
             deferredDecisionTransition = null;
+        }
+
+        // Explicit leadership reassignment replaces a mission rather than briefly interrupting it
+        // for self-defense. Use an existing admitted contact; never acquire or clear enemy memory.
+        internal bool TryPrepareAdmittedTargetTransition(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> current,
+            string reason, EnemyInfo target,
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> next)
+        {
+            if (!HasActiveCombatEnemy(target) || !FollowerEnemyTracking.IsEligible(target) ||
+                !FollowerEnemyTracking.TryGetKnownPosition(target, out _, out _) ||
+                botOwner.EnemiesController?.EnemyInfos == null ||
+                !botOwner.EnemiesController.EnemyInfos.TryGetValue(target.Person, out var tracked) ||
+                !ReferenceEquals(tracked, target)) return false;
+            var previous = botOwner.Memory.GoalEnemy;
+            using (FollowerCombatTargetCommitments.BeginAuthoritativeGoalSet())
+            using (FollowerGoalEnemyTracker.Begin("FollowerCombatCommon.TryPrepareAdmittedTargetTransition", reason))
+            {
+                botOwner.Memory.GoalEnemy = target;
+                if (ReferenceEquals(botOwner.Memory.GoalEnemy, target) && TryPrepareDecisionTransition(current, reason, next))
+                    return true;
+                botOwner.Memory.GoalEnemy = previous;
+                return false;
+            }
         }
 
         public bool TryPrepareDecisionTransition(
@@ -13366,7 +13508,7 @@ namespace pitTeam.BigBrain
                    Vector3.Distance(destination, bossPosition) <= maxBossDistance;
         }
 
-        private bool IsWithinCommittedCoverArrivalHoldDistance(CustomNavigationPoint? cover)
+        internal bool IsWithinCommittedCoverArrivalHoldDistance(CustomNavigationPoint? cover)
         {
             return cover != null &&
                    IsFinite(cover.Position) &&
@@ -15697,6 +15839,23 @@ namespace pitTeam.BigBrain
             return IsHealDecisionRetryBlocked && HasActiveOrPendingHealWork();
         }
 
+        public bool TryGetMedicalRetryRecoveryDecision(
+            EnemyInfo goalEnemy,
+            bool retryWasDue,
+            out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
+        {
+            decision = default;
+            if (IsActivelyUsingMedical || !HasActiveOrPendingHealWork() ||
+                HasReachedSafeHealPosition(goalEnemy)) return false;
+
+            // Capture retryWasDue before the medical provider runs: a failed search arms
+            // another cooldown, but should still get a chance to leave its exposed position.
+            if (!retryWasDue && !HasRecoveryPressure(1f) && !IsFollowerCriticallyWounded()) return false;
+            if (!TryGetCommittedRecoveryDecision(goalEnemy, out decision))
+                decision = CreateNoCoverRecoveryDecision(goalEnemy);
+            return true;
+        }
+
         /// <summary>
         /// Check if follower is injured and should avoid aggressive advances.
         /// Prefers cover-holding or cautious movement when injured and under recent fire.
@@ -15775,6 +15934,12 @@ namespace pitTeam.BigBrain
             };
         }
 
+        private static bool HasLostDogFightContact(BotOwner owner, EnemyInfo? enemy)
+        {
+            return !IsPointBlankContactWithoutHardSeparation(owner, enemy) &&
+                   !Actions.CombatAttackMoveLook.TryGetCombatThreatLookPoint(owner, enemy, out _);
+        }
+
         public AICoreActionEnd EndDogFight(
             AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
         {
@@ -15851,6 +16016,12 @@ namespace pitTeam.BigBrain
                     "pointBlankContactLost");
                 ClearDogFightState();
                 return new AICoreActionEnd("pointBlankContactLost", true);
+            }
+
+            if (HasLostDogFightContact(botOwner, goalEnemy))
+            {
+                ClearDogFightState();
+                return new AICoreActionEnd("dogFightContactLost", true);
             }
 
             if ((goalEnemy == null || pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) > botOwner.Settings.FileSettings.Mind.DOG_FIGHT_OUT) &&
@@ -16693,6 +16864,23 @@ namespace pitTeam.BigBrain
             return Continue();
         }
 
+        private bool TryPrepareSuppressReloadRetreat(string? reason, EnemyInfo goalEnemy, out AICoreActionEnd end)
+        {
+            end = Continue();
+            const string endReason = "followerSuppressReloadRetreat";
+            var current = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.suppressFire, reason);
+            if (!CanAttemptDecisionTransition(current, endReason, goalEnemy)) return false;
+            if (TryGetReloadRetreatDecision(goalEnemy, out var reload) &&
+                (reload.Action != current.Action || !string.Equals(reload.Reason, current.Reason, StringComparison.Ordinal)) &&
+                TryPrepareDecisionTransition(current, endReason, reload))
+            {
+                end = new AICoreActionEnd(endReason, true);
+                return true;
+            }
+            DeferDecisionTransition(current, endReason, goalEnemy);
+            return false;
+        }
+
         public AICoreActionEnd EndSuppressFire(string? reason = null)
         {
             if (IsFollowerSuppressReason(reason))
@@ -16836,10 +17024,11 @@ namespace pitTeam.BigBrain
 
             if (!launcherSuppress &&
                 suppressElapsed >= protectedSeconds &&
-                ShouldSeekReloadRetreat(goalEnemy))
+                ShouldSeekReloadRetreat(goalEnemy) &&
+                TryPrepareSuppressReloadRetreat(reason, goalEnemy, out var reloadEnd))
             {
                 followerData?.ClearCommand("SuppressEnemy:reloadRetreat");
-                return new AICoreActionEnd("followerSuppressReloadRetreat", true);
+                return reloadEnd;
             }
 
             if (botOwner.SuppressShoot.Complete)

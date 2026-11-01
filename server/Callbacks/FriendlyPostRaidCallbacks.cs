@@ -75,6 +75,7 @@ public class FriendlyPostRaidCallbacks(
 
     public ValueTask<string> EndLocalRaid(string url, EndLocalRaidRequestData request, MongoId sessionId, string? output)
     {
+        teammateService.ClearCompanionRaidPreparation(sessionId);
         postRaidService.RemoveProtectedTeammateItemsFromExtractedProfile(sessionId, request);
         postRaidService.HandleEndLocalRaidKillMessages(sessionId, request);
         scavCargo.FinishRaid(sessionId, request);
@@ -97,7 +98,7 @@ public class FriendlyPostRaidCallbacks(
             entries = teammateService.ResolveRaidOutcomes(entries).Entries;
         }
 
-        FriendlyTeammateDeathEscapeSummary summary = teammateService.PersistDeathEscapeOutcomes(sessionId, entries);
+        FriendlyTeammateDeathEscapeSummary summary = teammateService.PersistDeathEscapeOutcomes(sessionId, entries, request.InsuranceServerId);
         insuranceDiagnostics.ObserveOutcomes(sessionId, entries, request.InsuranceServerId, request.InsuranceReportId);
         if (request.Notify)
         {

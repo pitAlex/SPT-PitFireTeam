@@ -64,7 +64,7 @@ Related summaries:
 
 ## Command Ownership
 
-All looting commands are request-layer commands executed by `GestureCommandAction` out of combat.
+All looting commands are request-layer commands executed by `GestureCommandAction` out of combat. Optional companion policy can forbid body/container orders independently of saved/recruited classification. Knight forbids them in Going Rogue. The existing `CanHandleBodyContainerLootCommands` gate enforces this before the recruit fallback and is reused by assignment, reservations, execution and command gear replay. Corpse CMD visibility and quick body/container prompts observe the same permission; loose-loot commands retain their existing gates. Fixed-kit loose grenades use the restricted Give Gear transaction and may enter vest/pocket grids without replacing equipment, consuming reload space or using backpack cargo. Actual inventory ownership must be confirmed before pickup success. When no capable follower can take the order, a living active restricted companion responds with native `Negative` before any target reservation or command mutation. An eligible mixed-squad recipient prevents an unrelated refusal. Captured stale CMD callbacks revalidate the target and give the same refusal when appropriate.
 
 Quick-interaction loot selections enter `AIBossPlayer` through the player's `OnPhraseSay` event. Diagnostic builds trace the menu action, current and stored target, phrase arrival, follower eligibility, target reservation, and accepted command state.
 
@@ -350,7 +350,7 @@ Equipped gear is kept in every mode:
 
 - Only add into empty equipment slots. Raw Restricted acquisition tracking remains available if the item later becomes cargo; final return filtering excludes equipment still occupying a gear slot.
 - A seated magazine and its loaded ammunition stay with the weapon. Exact magazines registered to a retained first-primary, second-primary or holster weapon also stay in the kit while directly in the equipped vest or normal pocket grids, even when empty or previously tracked as player-owned cargo. Their loaded rounds follow the magazine. Registration for a weapon no longer equipped does not qualify. Backpack, secure-container, nested-container and unregistered magazines remain cargo; nested-root checks prevent duplicate delivery. The same final filter supplies return mail and equipment/death-escape snapshots, preventing retained magazines from also being returned.
-- Saved squad members persist retained equipment through the escaped Default snapshot, including raid wear and consumed supplies in Restricted. Field recruits do not enter the mail-return path.
+- Saved squad members persist retained equipment through the escaped Default snapshot, including raid wear and consumed supplies in Restricted when Field Upkeep is enabled. Field recruits do not enter the mail-return path.
 
 Weapon trees are also registered through `RegisterLootedWeaponTree(...)` so patrol reload maintenance can treat picked-up weapons as carried loot and avoid wasting spawned magazines on them.
 

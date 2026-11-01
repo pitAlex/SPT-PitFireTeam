@@ -6,7 +6,7 @@ Addon adaptations are in [SAIN addon commands](../addon/docs/Commands.md). Share
 
 This document summarizes boss-issued follower commands as implemented in the client runtime.
 
-Detailed looting behavior, the five corpse-only CMD action-menu requests, filtered-loot rules, and empty-slot acquisition rules are tracked in [Looting](looting/Looting.md). Containers and loose items retain their normal player interactions and existing follower quick/voice commands; no CMD actions are appended to their interaction menus.
+Detailed looting behavior, the five corpse-only CMD action-menu requests, filtered-loot rules, and empty-slot acquisition rules are tracked in [Looting](looting/Looting.md). Containers and loose items retain their normal player interactions and existing follower quick/voice commands; no CMD actions are appended to their interaction menus. Knight's Going Rogue policy excludes body/container orders: a Knight-only squad hides corpse CMD rows and the body/container quick prompts, while loose-loot prompts remain available. Explicit unsupported orders receive his native Negative response; eligible other followers in a mixed squad can still perform the order.
 
 Authoritative files:
 
@@ -40,6 +40,7 @@ There are three execution paths:
 2. **Core combat**
    - `FollowerCombatLogicBase` owns objective selection and command handoff.
    - `RegroupNearBoss`, `SuppressEnemy`, and `NeedSniper` are consumed into combat objectives.
+   - A committed recovery action may retain its `noEnemyThreatCover` reason after contact returns. Once a real active enemy is present, normal command/objective interrupts own it again; that historical reason cannot bypass Regroup. Actual no-enemy recovery retains its shared survival handling.
    - `PushEnemy` is consumed into the ordered-push objective.
    - Combat gesture commands (`CombatComeToBossCover`, `CombatMoveToPointTactical`) break hold commitments and ordinary combat movement, while protected movement such as heal relocation is allowed to finish.
 
@@ -196,7 +197,7 @@ State:
 
 - Does not create `FollowerCommandType` state.
 - Sets `BotFollowerPlayer.CanPatrol` true for selected out-of-combat followers.
-- In combat, sets effective Self-Determination to 100% while leaving Aggression unchanged; see [shared settings and lifetime](Self-Determination.md#settings-and-commands).
+- In combat, sets effective Self-Determination to 100%. Aggression stays unchanged for ordinary followers; Going Rogue Goons receive a 70% temporary override; see [shared settings and lifetime](Self-Determination.md#settings-and-commands).
 
 Targeting:
 
@@ -204,10 +205,11 @@ Targeting:
 
 Behavior:
 
-- Peaceful use clears current request command state and temporary combat aggression override. Combat use changes only determination.
+- Peaceful use clears current request command state and temporary combat aggression override. Combat use sets determination to 100%; Going Rogue Goons additionally receive the addon-owned 70% temporary aggression override.
 - Enables patrol-radius intent in `FollowAction`.
 - `FollowMe` / `Cooperation` clears this mode.
 - Combat use does not create a request command; it only asks the current combat layer to stop anchoring behavior around the boss.
+- Going Rogue Goons use that independence to pursue admitted contacts beyond normal escort caution. Knight leads, Pipe follows his published advance, and Birdeye closes to native sniper distance. Safe settled idle holds require a prepared navigation successor; useful fire, medicine, reloads, danger and explicit commands retain priority. Peaceful patrol and battle-wide override/reset lifetimes are unchanged.
 
 ### Cover Me
 
@@ -374,6 +376,8 @@ Combat variant:
 
 - Becomes `PushEnemy` when the follower has active combat enemy state. Ready SAINGrunts also accept a squad-selected, already-admitted target; see [addon Go Forward](../addon/docs/Commands.md#go-forward). Core tactics keep their per-follower target.
 - An accepted combat Go Forward sets effective Aggression to 100% without changing Self-Determination. Go Go Go or aggregate combat end restores the saved value.
+- Optional companion leadership may share a verdict across one command broadcast and replace an accepted push through a prepared, admitted-target handoff. Going Rogue gives Knight push leadership with local Big Pipe delegation; player Need Help and Regroup retain priority. See [Going Rogue command hierarchy](../going-rogue/docs/Knight-Combat.md#combat-command-willingness).
+- Marksman/SAINShooter followers explicitly refuse combat Go Forward rather than acknowledging an unsupported push. Optional companion policy may define role-specific willingness and target-role relative combat power; Going Rogue Knight/Big Pipe factor their boss advantage against ordinary PMCs/Scavs into equipment confidence and known enemy threat. Birdeye refuses assault pushes. The addon owns the role factors; actual equipment, skills and health are unchanged.
 
 ### Regroup Phrase Outside Combat
 
@@ -706,6 +710,7 @@ Picked-up follower behavior:
 
 - Picked-up followers can now accept or refuse the ordered push instead of always refusing it.
 - Acceptance is based on a personality-weighted roll using follower level versus player level and follower gear power versus the current enemy's gear power.
+- Combat `There` uses this same acceptance roll for ordinary picked-up members, then retains the selected point as `CombatMoveToPointTactical`; it does not become an enemy push or set Aggression to 100%. Saved squadmates retain point-order acceptance. Going Rogue overrides willingness for all three Goons so valid combat point orders are always accepted, including Birdeye.
 - Better gear relative to the enemy increases push acceptance.
 - Lower-level picked-up followers are more likely to get scared and refuse; higher-level picked-up followers may refuse because they are cocky or independent.
 - Outside direct orders, the same personality model makes picked-up followers less boss-centered than saved squadmates. Low-protection pickups delay autonomous regroup and may ignore boss-under-attack support opportunities.
@@ -728,7 +733,7 @@ Core behavior:
 Marksman behavior:
 
 - Generic push is not a direct marksman assault.
-- Marksman support logic may clear unsupported push/suppress commands or turn the situation into support/reposition behavior.
+- Combat Go Forward explicitly answers Negative for ordinary Marksman/SAINShooter followers instead of storing an unsupported push. Point movement remains a separate order. Marksman support retains its own suppression/reposition behavior.
 
 Addon push: see [SAINGrunt Go Forward](../addon/docs/Commands.md#go-forward).
 
@@ -773,6 +778,7 @@ Targeting:
 - Squad suppression allows no more than one grenadier. The selected grenadier is scored by its own usable hostile target distance, direct launch lane, friendly impact safety, and friendly lane safety.
 - Rifleman/default followers use suppress-capable current weapons. A directed same-target Marksman may accept with a loaded automatic second primary; without a crosshair target, Marksmen join only when there is no active Rifleman/default in the squad.
 - A directed order that cannot find a matching/safely retaskable follower, and a follower-local order with no viable suppressor, produces one `Negative` response.
+- Suppression acceptance requests native `Covering` plus an OK gesture; refusal requests `Negative` plus a No gesture. These explicit replies bypass the ambient group-talk cooldown, while native actor speech scheduling and silence remain authoritative. A busy looter may refuse without replacing the loot task. Debug recording captures receipt, debounce, follower-local busy/weapon exclusions and `responseRequested`; requesting a reply does not establish that an audio clip played.
 
 Core behavior:
 
@@ -874,6 +880,7 @@ Core behavior:
 - Same hold/settle and movement-interrupt rules as combat `ComeWithMe`.
 - On consume, `FollowerCombatCommon.TryCreateBossCommandTacticalPointDecision(...)` sets `GoToSomePointData` and returns `BotLogicDecision.goToPointTactical`.
 - Invalid target produces `Negative` and `NoGesture`.
+- Confidence controls willingness only. Gesture reception/range, loot reservations, the 30m point limit, navigation validity, protected medical relocation and shot safety retain their own gates. The optional [Going Rogue policy](../going-rogue/docs/Knight-Combat.md#combat-command-willingness) supplies Goon exceptions without changing their recruited-member classification.
 
 
 ## Receiver Patches And Vanilla Forwarding
@@ -931,3 +938,7 @@ Common command cleanup cases:
 A command-created PMC has a raid-local Debug invitation marker. On living post-raid capture it can submit a candidate even if the ordinary pickup-invitation setting is disabled. The Debug server still validates the candidate, filters Restricted protected equipment, captures the actual current kit and calculates/logs the ordinary donation-adjusted chance, but bypasses that recruit's chance roll. It prioritizes marked recruits within the existing one-invitation-per-raid selection; multiple command-created PMCs do not produce multiple invitations from one capture. Normal recruits keep their ordinary settings/chance and Scavs never gain a PMC invitation.
 
 The command handlers, faction policy, test encounter registration, spawn entry point, marker and server bypass are absent from Release builds. Both client and server must be Debug for the deterministic test invitation. No roster entry is created until the normal invitation is accepted. Existing `fs_spawnscav` remains the separate enemy-spawn command and is unchanged.
+
+## Follower teleport placement
+
+The Debug teleport command samples spread positions only on the player's nearby NavMesh level, checks a direct NavMesh connection, ground support and standing capsule clearance, and preserves spacing. If no safe spot is found, that follower stays in place. No fallback may select another floor or an unsupported exact player position. Placement diagnostics include player and target positions.

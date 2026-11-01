@@ -14,7 +14,8 @@ public partial class FriendlyTeammateService
     private FriendlyTeammateDeletionJournal PrepareTeammateRemovalDelivery(MongoId sessionId, BotBase teammate, int price)
     {
         var journal = new FriendlyTeammateDeletionJournal { Aid = teammate.Aid!.Value, Price = price };
-        var items = BuildCurrentTeammateKitDeliveryItems(teammate, IsCurrentLoadoutManagementModeExtreme());
+        var items = BuildCurrentTeammateKitDeliveryItems(teammate, IsCurrentLoadoutManagementModeExtreme(),
+            GetAutomaticallySuppliedEquipmentIds(sessionId, teammate));
         if (items.Count == 0) return journal;
         journal.DeliverySourceIds = items.Select(item => item.Id.ToString()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var ids = journal.DeliverySourceIds.ToHashSet(StringComparer.OrdinalIgnoreCase);

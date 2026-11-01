@@ -158,7 +158,8 @@ namespace pitTeam.Modules
             if (!Encounters.ContainsKey(group))
             {
                 Encounters.Add(group, new Encounter { Roll = UnityEngine.Random.value, Revoked = AggressiveGroups.Contains(group) });
-                Logger.LogInfo($"[ScavRelations] group={group.Id} neutral={IsNeutral(group)} kills={neutralKills}");
+                // A living Scav's diplomacy is independent of random friendly encounter slots.
+                Logger.LogInfo($"[ScavRelations] group={group.Id} neutral={IsNeutral(group)} kills={neutralKills} source=companion roll={Encounters[group].Roll:F3} chance={NeutralChance:F3}");
             }
             if (!IsNeutral(group))
             {

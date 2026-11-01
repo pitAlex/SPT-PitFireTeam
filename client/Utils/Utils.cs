@@ -11,6 +11,7 @@ namespace pitTeam.Utils
     internal class BotDetails
     {
         public string Aid { get; set; }
+        public string Role { get; set; }
         public string Tactic { get; set; }
 
         public float Aggression { get; set; }
@@ -161,6 +162,7 @@ namespace pitTeam.Utils
 
         public static bool FlagGet(string flag)
         {
+            if (flag == "friendlyExUsec") return Modules.GameplayModeAddons.IsExUsecFriendlyRaid;
             flags.TryGetValue(flag, out var value);
             return value || false;
         }
@@ -189,6 +191,8 @@ namespace pitTeam.Utils
 
         public static bool PlayerHasKnightQuest(Profile playerProfile)
         {
+            // Optional-mode friendship is raid-scoped and must never enter the quest cache.
+            if (Modules.GameplayModeAddons.IsRogueRaid) return Modules.GameplayModeAddons.IsExUsecFriendlyRaid;
             if (FlagGet("knightKiller_" + playerProfile.ProfileId)) return false;
 
             if (FlagGet("knightFriend_" + playerProfile.ProfileId)) return true;

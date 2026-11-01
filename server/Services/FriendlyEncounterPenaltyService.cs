@@ -30,6 +30,9 @@ public class FriendlyEncounterPenaltyService(FriendlyTeammateStorage storage, Fr
         if (string.IsNullOrWhiteSpace(request.RaidId) || request.RaidId.Length > 128 ||
             string.IsNullOrWhiteSpace(request.VictimProfileId) || request.VictimProfileId.Length > 128 || request.KilledAtUnixMs <= 0)
             throw new ArgumentException("Invalid recruited-follower kill identity.");
+        if (storage.ReadProfiles(sessionId).Any(profile => profile.Id.ToString() == request.VictimProfileId &&
+            FriendlyGameplayModeAddons.Policy(settings.LoadSettings().GameplayMode, profile)?.IgnoreEncounterKillPenalty == true))
+            return state;
         string id = request.RaidId + "/" + request.VictimProfileId;
         long expires = Math.Min(now, request.KilledAtUnixMs) + FriendlyEncounterPenaltyPolicy.DurationMs;
         if (expires > now && !state.Entries.Any(entry => entry.Id == id))

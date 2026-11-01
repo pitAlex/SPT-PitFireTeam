@@ -53,7 +53,6 @@ namespace pitTeam.Patches
             OriginalHideoutButtonText ??= hideoutButton.HeaderText;
             OriginalHideoutButtonFontSize ??= hideoutButton.HeaderSize;
 
-            HideStockHideoutButtonPanel(hideoutButton);
         }
 
         private static void CreateEditNameButton(OtherPlayerProfileScreen screen, RectTransform loadoutSelector, Transform parent, ResultProfile profile, int rowOffset = 1)
@@ -116,6 +115,7 @@ namespace pitTeam.Patches
 
             NicknameRenameButtonRoot = rowClone;
             NicknameRenameButton = button;
+            ConfigureVoiceDropdown(screen, rowClone, button, profile);
         }
 
         private static void HideHideoutButtonDecorations(DefaultUIButton button)

@@ -1,0 +1,1749 @@
+{
+  "source": "20261029-165703-Sandbox_high / 9050396d beforePlan",
+  "role": "bossKnight",
+  "equipment": {
+    "Id": "6ae35ebf79d9e791f8bc3149",
+    "TemplateId": "55d7217a4bdc2d86028b456d",
+    "StackCount": 1,
+    "SpawnedInSession": false,
+    "ActiveCamora": 0,
+    "IsUnderBarrelDeviceActive": false,
+    "Malfunction": null,
+    "UnsearchedInfo": null,
+    "Components": null,
+    "Slots": [
+      {
+        "SlotNumber": 0,
+        "ContainedItem": {
+          "Id": "6ae35ebf79d9e791f8bc3108",
+          "TemplateId": "5dcbd56fdbd3d91b3e5468d5",
+          "StackCount": 1,
+          "SpawnedInSession": false,
+          "ActiveCamora": 0,
+          "IsUnderBarrelDeviceActive": false,
+          "Malfunction": {
+            "Malfunction": 0,
+            "LastShotOverheat": 18.0899868,
+            "LastShotTime": 44.177,
+            "SlideOnOverheatReached": false,
+            "PlayersWhoKnowAboutMalfunction": [],
+            "PlayersWhoKnowMalfType": [],
+            "PlayersReducedMalfChances": {},
+            "AmmoToFireTemplateId": null,
+            "AmmoWillBeLoadedToChamberTemplateId": null,
+            "AmmoMalfunctionedTemplateId": null
+          },
+          "UnsearchedInfo": null,
+          "Components": [
+            {
+              "Durability": 94.6212,
+              "MaxDurability": 100.0
+            },
+            {
+              "FireMode": "single"
+            }
+          ],
+          "Slots": [
+            {
+              "SlotNumber": 0,
+              "ContainedItem": {
+                "Id": "6ae35ebf79d9e791f8bc310b",
+                "TemplateId": "5dcbd6dddbd3d91b3e5468de",
+                "StackCount": 1,
+                "SpawnedInSession": false,
+                "ActiveCamora": 0,
+                "IsUnderBarrelDeviceActive": false,
+                "Malfunction": null,
+                "UnsearchedInfo": null,
+                "Components": null,
+                "Slots": null,
+                "ShellsInWeapon": null,
+                "Grids": null,
+                "StackSlots": null
+              }
+            },
+            {
+              "SlotNumber": 1,
+              "ContainedItem": {
+                "Id": "6ae35ebf79d9e791f8bc3113",
+                "TemplateId": "65293c38fc460e50a509cb25",
+                "StackCount": 1,
+                "SpawnedInSession": false,
+                "ActiveCamora": 0,
+                "IsUnderBarrelDeviceActive": false,
+                "Malfunction": null,
+                "UnsearchedInfo": null,
+                "Components": [
+                  {
+                    "Name": "",
+                    "Color": 0
+                  }
+                ],
+                "Slots": null,
+                "ShellsInWeapon": null,
+                "Grids": null,
+                "StackSlots": [
+                  {
+                    "SlotNumber": 0,
+                    "ContainedItems": [
+                      {
+                        "Id": "6ae35ebf79d9e791f8bc3114",
+                        "TemplateId": "58dd3ad986f77403051cba8f",
+                        "StackCount": 20,
+                        "SpawnedInSession": false,
+                        "ActiveCamora": 0,
+                        "IsUnderBarrelDeviceActive": false,
+                        "Malfunction": null,
+                        "UnsearchedInfo": null,
+                        "Components": null,
+                        "Slots": null,
+                        "ShellsInWeapon": null,
+                        "Grids": null,
+                        "StackSlots": null
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "SlotNumber": 2,
+              "ContainedItem": {
+                "Id": "6ae35ebf79d9e791f8bc3109",
+                "TemplateId": "5dcbd6b46ec07c0c4347a564",
+                "StackCount": 1,
+                "SpawnedInSession": false,
+                "ActiveCamora": 0,
+                "IsUnderBarrelDeviceActive": false,
+                "Malfunction": null,
+                "UnsearchedInfo": null,
+                "Components": null,
+                "Slots": null,
+                "ShellsInWeapon": null,
+                "Grids": null,
+                "StackSlots": null
+              }
+            },
+            {
+              "SlotNumber": 3,
+              "ContainedItem": {
+                "Id": "6ae35ebf79d9e791f8bc310a",
+                "TemplateId": "5dcbe9431e1f4616d354987e",
+                "StackCount": 1,
+                "SpawnedInSession": false,
+                "ActiveCamora": 0,
+                "IsUnderBarrelDeviceActive": false,
+                "Malfunction": null,
+                "UnsearchedInfo": null,
+                "Components": [],
+                "Slots": null,
+                "ShellsInWeapon": null,
+                "Grids": null,
+                "StackSlots": null
+              }
+            },
+            {
+              "SlotNumber": 4,
+              "ContainedItem": {
+                "Id": "6ae35ebf79d9e791f8bc310c",
+                "TemplateId": "5b3b99265acfc4704b4a1afb",
+                "StackCount": 1,
+                "SpawnedInSession": false,
+                "ActiveCamora": 0,
+                "IsUnderBarrelDeviceActive": false,
+                "Malfunction": null,
+                "UnsearchedInfo": null,
+                "Components": null,
+                "Slots": [
+                  {
+                    "SlotNumber": 0,
+                    "ContainedItem": {
+                      "Id": "6ae35ebf79d9e791f8bc310d",
+                      "TemplateId": "618ba27d9008e4636a67f61d",
+                      "StackCount": 1,
+                      "SpawnedInSession": false,
+                      "ActiveCamora": 0,
+                      "IsUnderBarrelDeviceActive": false,
+                      "Malfunction": null,
+                      "UnsearchedInfo": null,
+                      "Components": [
+                        {
+                          "SelectedSightScope": 0,
+                          "ScopesSelectedModes": [
+                            0
+                          ],
+                          "ScopesSelectedCalibPoints": [
+                            0
+                          ],
+                          "ScopeZoomValue": 26.5
+                        }
+                      ],
+                      "Slots": null,
+                      "ShellsInWeapon": null,
+                      "Grids": null,
+                      "StackSlots": null
+                    }
+                  }
+                ],
+                "ShellsInWeapon": null,
+                "Grids": null,
+                "StackSlots": null
+              }
+            },
+            {
+              "SlotNumber": 5,
+              "ContainedItem": {
+                "Id": "6ae35ebf79d9e791f8bc3110",
+                "TemplateId": "5c18b9192e2216398b5a8104",
+                "StackCount": 1,
+                "SpawnedInSession": false,
+                "ActiveCamora": 0,
+                "IsUnderBarrelDeviceActive": false,
+                "Malfunction": null,
+                "UnsearchedInfo": null,
+                "Components": [
+                  {
+                    "SelectedSightScope": 0,
+                    "ScopesSelectedModes": [
+                      0
+                    ],
+                    "ScopesSelectedCalibPoints": [
+                      0
+                    ],
+                    "ScopeZoomValue": 0.0
+                  }
+                ],
+                "Slots": null,
+                "ShellsInWeapon": null,
+                "Grids": null,
+                "StackSlots": null
+              }
+            },
+            {
+              "SlotNumber": 6,
+              "ContainedItem": {
+                "Id": "6ae35ec30bfc18aa6400000e",
+                "TemplateId": "58dd3ad986f77403051cba8f",
+                "StackCount": 1,
+                "SpawnedInSession": false,
+                "ActiveCamora": 0,
+                "IsUnderBarrelDeviceActive": false,
+                "Malfunction": null,
+                "UnsearchedInfo": null,
+                "Components": null,
+                "Slots": null,
+                "ShellsInWeapon": null,
+                "Grids": null,
+                "StackSlots": null
+              }
+            }
+          ],
+          "ShellsInWeapon": null,
+          "Grids": null,
+          "StackSlots": null
+        }
+      },
+      {
+        "SlotNumber": 2,
+        "ContainedItem": {
+          "Id": "6ae35ebf79d9e791f8bc3129",
+          "TemplateId": "5a17f98cfcdbcb0980087290",
+          "StackCount": 1,
+          "SpawnedInSession": false,
+          "ActiveCamora": 0,
+          "IsUnderBarrelDeviceActive": false,
+          "Malfunction": {
+            "Malfunction": 0,
+            "LastShotOverheat": 0.0,
+            "LastShotTime": 0.0,
+            "SlideOnOverheatReached": false,
+            "PlayersWhoKnowAboutMalfunction": [],
+            "PlayersWhoKnowMalfType": [],
+            "PlayersReducedMalfChances": {},
+            "AmmoToFireTemplateId": null,
+            "AmmoWillBeLoadedToChamberTemplateId": null,
+            "AmmoMalfunctionedTemplateId": null
+          },
+          "UnsearchedInfo": null,
+          "Components": [
+            {
+              "Durability": 99.0,
+              "MaxDurability": 99.0
+            },
+            {
+              "FireMode": "single"
+            }
+          ],
+          "Slots": [
+            {
+              "SlotNumber": 0,
+              "ContainedItem": {
+                "Id": "6ae35ebf79d9e791f8bc312c",
+                "TemplateId": "5a17fb03fcdbcbcae668728f",
+                "StackCount": 1,
+                "SpawnedInSession": false,
+                "ActiveCamora": 0,
+                "IsUnderBarrelDeviceActive": false,
+                "Malfunction": null,
+                "UnsearchedInfo": null,
+                "Components": [
+                  {
+                    "Name": "",
+                    "Color": 0
+                  }
+                ],
+                "Slots": null,
+                "ShellsInWeapon": null,
+                "Grids": null,
+                "StackSlots": [
+                  {
+                    "SlotNumber": 0,
+                    "ContainedItems": [
+                      {
+                        "Id": "6ae35ebf79d9e791f8bc312e",
+                        "TemplateId": "573718ba2459775a75491131",
+                        "StackCount": 20,
+                        "SpawnedInSession": false,
+                        "ActiveCamora": 0,
+                        "IsUnderBarrelDeviceActive": false,
+                        "Malfunction": null,
+                        "UnsearchedInfo": null,
+                        "Components": null,
+                        "Slots": null,
+                        "ShellsInWeapon": null,
+                        "Grids": null,
+                        "StackSlots": null
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "SlotNumber": 1,
+              "ContainedItem": {
+                "Id": "6ae35ebf79d9e791f8bc312b",
+                "TemplateId": "5a17fb9dfcdbcbcae6687291",
+                "StackCount": 1,
+                "SpawnedInSession": false,
+                "ActiveCamora": 0,
+                "IsUnderBarrelDeviceActive": false,
+                "Malfunction": null,
+                "UnsearchedInfo": null,
+                "Components": [],
+                "Slots": null,
+                "ShellsInWeapon": null,
+                "Grids": null,
+                "StackSlots": null
+              }
+            },
+            {
+              "SlotNumber": 2,
+              "ContainedItem": {
+                "Id": "6ae35ebf79d9e791f8bc312a",
+                "TemplateId": "5a17fc70fcdbcb0176308b3d",
+                "StackCount": 1,
+                "SpawnedInSession": false,
+                "ActiveCamora": 0,
+                "IsUnderBarrelDeviceActive": false,
+                "Malfunction": null,
+                "UnsearchedInfo": null,
+                "Components": null,
+                "Slots": null,
+                "ShellsInWeapon": null,
+                "Grids": null,
+                "StackSlots": null
+              }
+            },
+            {
+              "SlotNumber": 4,
+              "ContainedItem": {
+                "Id": "6ae35ebf79d9e791f8bc312d",
+                "TemplateId": "5aba637ad8ce87001773e17f",
+                "StackCount": 1,
+                "SpawnedInSession": false,
+                "ActiveCamora": 0,
+                "IsUnderBarrelDeviceActive": false,
+                "Malfunction": null,
+                "UnsearchedInfo": null,
+                "Components": [
+                  {
+                    "SelectedSightScope": 0,
+                    "ScopesSelectedModes": [
+                      0
+                    ],
+                    "ScopesSelectedCalibPoints": [
+                      0
+                    ],
+                    "ScopeZoomValue": 0.0
+                  }
+                ],
+                "Slots": null,
+                "ShellsInWeapon": null,
+                "Grids": null,
+                "StackSlots": null
+              }
+            },
+            {
+              "SlotNumber": 5,
+              "ContainedItem": {
+                "Id": "6ae35ebf79d9e791f8bc312f",
+                "TemplateId": "573718ba2459775a75491131",
+                "StackCount": 1,
+                "SpawnedInSession": false,
+                "ActiveCamora": 0,
+                "IsUnderBarrelDeviceActive": false,
+                "Malfunction": null,
+                "UnsearchedInfo": null,
+                "Components": null,
+                "Slots": null,
+                "ShellsInWeapon": null,
+                "Grids": null,
+                "StackSlots": null
+              }
+            }
+          ],
+          "ShellsInWeapon": null,
+          "Grids": null,
+          "StackSlots": null
+        }
+      },
+      {
+        "SlotNumber": 4,
+        "ContainedItem": {
+          "Id": "6ae35ebf79d9e791f8bc30fe",
+          "TemplateId": "62963c18dbc8ab5f0d382d0b",
+          "StackCount": 1,
+          "SpawnedInSession": false,
+          "ActiveCamora": 0,
+          "IsUnderBarrelDeviceActive": false,
+          "Malfunction": null,
+          "UnsearchedInfo": null,
+          "Components": [
+            {
+              "Durability": 49.91201,
+              "MaxDurability": 50.91201
+            }
+          ],
+          "Slots": null,
+          "ShellsInWeapon": null,
+          "Grids": null,
+          "StackSlots": null
+        }
+      },
+      {
+        "SlotNumber": 6,
+        "ContainedItem": {
+          "Id": "6ae35ebf79d9e791f8bc30ff",
+          "TemplateId": "628b9c7d45122232a872358f",
+          "StackCount": 1,
+          "SpawnedInSession": false,
+          "ActiveCamora": 0,
+          "IsUnderBarrelDeviceActive": false,
+          "Malfunction": null,
+          "UnsearchedInfo": null,
+          "Components": [],
+          "Slots": [
+            {
+              "SlotNumber": 0,
+              "ContainedItem": {
+                "Id": "6ae35ebf79d9e791f8bc3100",
+                "TemplateId": "655746010177119f4a097ff7",
+                "StackCount": 1,
+                "SpawnedInSession": false,
+                "ActiveCamora": 0,
+                "IsUnderBarrelDeviceActive": false,
+                "Malfunction": null,
+                "UnsearchedInfo": null,
+                "Components": [
+                  {
+                    "Durability": 42.221035,
+                    "MaxDurability": 49.93154
+                  }
+                ],
+                "Slots": null,
+                "ShellsInWeapon": null,
+                "Grids": null,
+                "StackSlots": null
+              }
+            },
+            {
+              "SlotNumber": 1,
+              "ContainedItem": {
+                "Id": "6ae35ebf79d9e791f8bc3101",
+                "TemplateId": "656f9d5900d62bcd2e02407c",
+                "StackCount": 1,
+                "SpawnedInSession": false,
+                "ActiveCamora": 0,
+                "IsUnderBarrelDeviceActive": false,
+                "Malfunction": null,
+                "UnsearchedInfo": null,
+                "Components": [
+                  {
+                    "Durability": 38.52879,
+                    "MaxDurability": 41.52879
+                  }
+                ],
+                "Slots": null,
+                "ShellsInWeapon": null,
+                "Grids": null,
+                "StackSlots": null
+              }
+            },
+            {
+              "SlotNumber": 2,
+              "ContainedItem": {
+                "Id": "6ae35ebf79d9e791f8bc3102",
+                "TemplateId": "6557458f83942d705f0c4962",
+                "StackCount": 1,
+                "SpawnedInSession": false,
+                "ActiveCamora": 0,
+                "IsUnderBarrelDeviceActive": false,
+                "Malfunction": null,
+                "UnsearchedInfo": null,
+                "Components": [
+                  {
+                    "Durability": 12.0,
+                    "MaxDurability": 13.77363
+                  }
+                ],
+                "Slots": null,
+                "ShellsInWeapon": null,
+                "Grids": null,
+                "StackSlots": null
+              }
+            },
+            {
+              "SlotNumber": 3,
+              "ContainedItem": {
+                "Id": "6ae35ebf79d9e791f8bc3103",
+                "TemplateId": "6557458f83942d705f0c4962",
+                "StackCount": 1,
+                "SpawnedInSession": false,
+                "ActiveCamora": 0,
+                "IsUnderBarrelDeviceActive": false,
+                "Malfunction": null,
+                "UnsearchedInfo": null,
+                "Components": [
+                  {
+                    "Durability": 12.55355,
+                    "MaxDurability": 14.55355
+                  }
+                ],
+                "Slots": null,
+                "ShellsInWeapon": null,
+                "Grids": null,
+                "StackSlots": null
+              }
+            },
+            {
+              "SlotNumber": 4,
+              "ContainedItem": {
+                "Id": "6ae35ebf79d9e791f8bc3105",
+                "TemplateId": "6575f24ff6a13a7b7100b09e",
+                "StackCount": 1,
+                "SpawnedInSession": false,
+                "ActiveCamora": 0,
+                "IsUnderBarrelDeviceActive": false,
+                "Malfunction": null,
+                "UnsearchedInfo": null,
+                "Components": [
+                  {
+                    "Durability": 31.99571,
+                    "MaxDurability": 32.99571
+                  }
+                ],
+                "Slots": null,
+                "ShellsInWeapon": null,
+                "Grids": null,
+                "StackSlots": null
+              }
+            },
+            {
+              "SlotNumber": 5,
+              "ContainedItem": {
+                "Id": "6ae35ebf79d9e791f8bc3104",
+                "TemplateId": "6575f25ada698a4e98067836",
+                "StackCount": 1,
+                "SpawnedInSession": false,
+                "ActiveCamora": 0,
+                "IsUnderBarrelDeviceActive": false,
+                "Malfunction": null,
+                "UnsearchedInfo": null,
+                "Components": [
+                  {
+                    "Durability": 28.96189,
+                    "MaxDurability": 32.96189
+                  }
+                ],
+                "Slots": null,
+                "ShellsInWeapon": null,
+                "Grids": null,
+                "StackSlots": null
+              }
+            },
+            {
+              "SlotNumber": 6,
+              "ContainedItem": {
+                "Id": "6ae35ebf79d9e791f8bc3106",
+                "TemplateId": "6575f2649cfdfe416f0399b8",
+                "StackCount": 1,
+                "SpawnedInSession": false,
+                "ActiveCamora": 0,
+                "IsUnderBarrelDeviceActive": false,
+                "Malfunction": null,
+                "UnsearchedInfo": null,
+                "Components": [
+                  {
+                    "Durability": 9.0,
+                    "MaxDurability": 11.15932
+                  }
+                ],
+                "Slots": null,
+                "ShellsInWeapon": null,
+                "Grids": null,
+                "StackSlots": null
+              }
+            },
+            {
+              "SlotNumber": 7,
+              "ContainedItem": {
+                "Id": "6ae35ebf79d9e791f8bc3107",
+                "TemplateId": "6575f26d9c7cad336508e480",
+                "StackCount": 1,
+                "SpawnedInSession": false,
+                "ActiveCamora": 0,
+                "IsUnderBarrelDeviceActive": false,
+                "Malfunction": null,
+                "UnsearchedInfo": null,
+                "Components": [
+                  {
+                    "Durability": 10.0,
+                    "MaxDurability": 11.55429
+                  }
+                ],
+                "Slots": null,
+                "ShellsInWeapon": null,
+                "Grids": null,
+                "StackSlots": null
+              }
+            }
+          ],
+          "ShellsInWeapon": null,
+          "Grids": [
+            {
+              "GridNumber": 8,
+              "ContainedItems": [
+                {
+                  "Item": {
+                    "Id": "6ae35ebf79d9e791f8bc3130",
+                    "TemplateId": "5a17fb03fcdbcbcae668728f",
+                    "StackCount": 1,
+                    "SpawnedInSession": false,
+                    "ActiveCamora": 0,
+                    "IsUnderBarrelDeviceActive": false,
+                    "Malfunction": null,
+                    "UnsearchedInfo": null,
+                    "Components": [
+                      {
+                        "Name": "",
+                        "Color": 0
+                      }
+                    ],
+                    "Slots": null,
+                    "ShellsInWeapon": null,
+                    "Grids": null,
+                    "StackSlots": [
+                      {
+                        "SlotNumber": 0,
+                        "ContainedItems": [
+                          {
+                            "Id": "6ae35ebf79d9e791f8bc3131",
+                            "TemplateId": "573718ba2459775a75491131",
+                            "StackCount": 20,
+                            "SpawnedInSession": false,
+                            "ActiveCamora": 0,
+                            "IsUnderBarrelDeviceActive": false,
+                            "Malfunction": null,
+                            "UnsearchedInfo": null,
+                            "Components": null,
+                            "Slots": null,
+                            "ShellsInWeapon": null,
+                            "Grids": null,
+                            "StackSlots": null
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "X": 0,
+                  "Y": 2,
+                  "Horizontal": true,
+                  "Location": {
+                    "x": 0,
+                    "y": 2,
+                    "r": "Horizontal"
+                  }
+                }
+              ]
+            },
+            {
+              "GridNumber": 9,
+              "ContainedItems": [
+                {
+                  "Item": {
+                    "Id": "6ae35ebf79d9e791f8bc310e",
+                    "TemplateId": "65293c38fc460e50a509cb25",
+                    "StackCount": 1,
+                    "SpawnedInSession": false,
+                    "ActiveCamora": 0,
+                    "IsUnderBarrelDeviceActive": false,
+                    "Malfunction": null,
+                    "UnsearchedInfo": null,
+                    "Components": [
+                      {
+                        "Name": "",
+                        "Color": 0
+                      }
+                    ],
+                    "Slots": null,
+                    "ShellsInWeapon": null,
+                    "Grids": null,
+                    "StackSlots": null
+                  },
+                  "X": 0,
+                  "Y": 0,
+                  "Horizontal": true,
+                  "Location": {
+                    "x": 0,
+                    "y": 0,
+                    "r": "Horizontal"
+                  }
+                }
+              ]
+            }
+          ],
+          "StackSlots": null
+        }
+      },
+      {
+        "SlotNumber": 7,
+        "ContainedItem": {
+          "Id": "6ae35ebf79d9e791f8bc314a",
+          "TemplateId": "5c0a794586f77461c458f892",
+          "StackCount": 1,
+          "SpawnedInSession": false,
+          "ActiveCamora": 0,
+          "IsUnderBarrelDeviceActive": false,
+          "Malfunction": null,
+          "UnsearchedInfo": null,
+          "Components": [],
+          "Slots": null,
+          "ShellsInWeapon": null,
+          "Grids": [
+            {
+              "GridNumber": 0,
+              "ContainedItems": [
+                {
+                  "Item": {
+                    "Id": "6ae35ebf79d9e791f8bc314b",
+                    "TemplateId": "590c657e86f77412b013051d",
+                    "StackCount": 1,
+                    "SpawnedInSession": false,
+                    "ActiveCamora": 0,
+                    "IsUnderBarrelDeviceActive": false,
+                    "Malfunction": null,
+                    "UnsearchedInfo": null,
+                    "Components": [
+                      {
+                        "HpResource": 1704.0
+                      }
+                    ],
+                    "Slots": null,
+                    "ShellsInWeapon": null,
+                    "Grids": null,
+                    "StackSlots": null
+                  },
+                  "X": 0,
+                  "Y": 0,
+                  "Horizontal": true,
+                  "Location": {
+                    "x": 0,
+                    "y": 0,
+                    "r": "Horizontal"
+                  }
+                },
+                {
+                  "Item": {
+                    "Id": "6ae35ebf79d9e791f8bc314c",
+                    "TemplateId": "5d02797c86f774203f38e30a",
+                    "StackCount": 1,
+                    "SpawnedInSession": false,
+                    "ActiveCamora": 0,
+                    "IsUnderBarrelDeviceActive": false,
+                    "Malfunction": null,
+                    "UnsearchedInfo": null,
+                    "Components": [
+                      {
+                        "HpResource": 9.0
+                      }
+                    ],
+                    "Slots": null,
+                    "ShellsInWeapon": null,
+                    "Grids": null,
+                    "StackSlots": null
+                  },
+                  "X": 0,
+                  "Y": 2,
+                  "Horizontal": true,
+                  "Location": {
+                    "x": 0,
+                    "y": 2,
+                    "r": "Horizontal"
+                  }
+                },
+                {
+                  "Item": {
+                    "Id": "6ae35ebf79d9e791f8bc314d",
+                    "TemplateId": "58dd3ad986f77403051cba8f",
+                    "StackCount": 10,
+                    "SpawnedInSession": false,
+                    "ActiveCamora": 0,
+                    "IsUnderBarrelDeviceActive": false,
+                    "Malfunction": null,
+                    "UnsearchedInfo": null,
+                    "Components": null,
+                    "Slots": null,
+                    "ShellsInWeapon": null,
+                    "Grids": null,
+                    "StackSlots": null
+                  },
+                  "X": 2,
+                  "Y": 0,
+                  "Horizontal": true,
+                  "Location": {
+                    "x": 2,
+                    "y": 0,
+                    "r": "Horizontal"
+                  }
+                },
+                {
+                  "Item": {
+                    "Id": "6ae35ebf79d9e791f8bc314e",
+                    "TemplateId": "58dd3ad986f77403051cba8f",
+                    "StackCount": 40,
+                    "SpawnedInSession": false,
+                    "ActiveCamora": 0,
+                    "IsUnderBarrelDeviceActive": false,
+                    "Malfunction": null,
+                    "UnsearchedInfo": null,
+                    "Components": null,
+                    "Slots": null,
+                    "ShellsInWeapon": null,
+                    "Grids": null,
+                    "StackSlots": null
+                  },
+                  "X": 3,
+                  "Y": 0,
+                  "Horizontal": true,
+                  "Location": {
+                    "x": 3,
+                    "y": 0,
+                    "r": "Horizontal"
+                  }
+                },
+                {
+                  "Item": {
+                    "Id": "6ae35ebf79d9e791f8bc314f",
+                    "TemplateId": "58dd3ad986f77403051cba8f",
+                    "StackCount": 40,
+                    "SpawnedInSession": false,
+                    "ActiveCamora": 0,
+                    "IsUnderBarrelDeviceActive": false,
+                    "Malfunction": null,
+                    "UnsearchedInfo": null,
+                    "Components": null,
+                    "Slots": null,
+                    "ShellsInWeapon": null,
+                    "Grids": null,
+                    "StackSlots": null
+                  },
+                  "X": 2,
+                  "Y": 1,
+                  "Horizontal": true,
+                  "Location": {
+                    "x": 2,
+                    "y": 1,
+                    "r": "Horizontal"
+                  }
+                },
+                {
+                  "Item": {
+                    "Id": "6ae35ebf79d9e791f8bc3150",
+                    "TemplateId": "58dd3ad986f77403051cba8f",
+                    "StackCount": 40,
+                    "SpawnedInSession": false,
+                    "ActiveCamora": 0,
+                    "IsUnderBarrelDeviceActive": false,
+                    "Malfunction": null,
+                    "UnsearchedInfo": null,
+                    "Components": null,
+                    "Slots": null,
+                    "ShellsInWeapon": null,
+                    "Grids": null,
+                    "StackSlots": null
+                  },
+                  "X": 3,
+                  "Y": 1,
+                  "Horizontal": true,
+                  "Location": {
+                    "x": 3,
+                    "y": 1,
+                    "r": "Horizontal"
+                  }
+                },
+                {
+                  "Item": {
+                    "Id": "6ae35ebf79d9e791f8bc3151",
+                    "TemplateId": "58dd3ad986f77403051cba8f",
+                    "StackCount": 40,
+                    "SpawnedInSession": false,
+                    "ActiveCamora": 0,
+                    "IsUnderBarrelDeviceActive": false,
+                    "Malfunction": null,
+                    "UnsearchedInfo": null,
+                    "Components": null,
+                    "Slots": null,
+                    "ShellsInWeapon": null,
+                    "Grids": null,
+                    "StackSlots": null
+                  },
+                  "X": 3,
+                  "Y": 2,
+                  "Horizontal": true,
+                  "Location": {
+                    "x": 3,
+                    "y": 2,
+                    "r": "Horizontal"
+                  }
+                },
+                {
+                  "Item": {
+                    "Id": "6ae35ebf79d9e791f8bc3152",
+                    "TemplateId": "58dd3ad986f77403051cba8f",
+                    "StackCount": 40,
+                    "SpawnedInSession": false,
+                    "ActiveCamora": 0,
+                    "IsUnderBarrelDeviceActive": false,
+                    "Malfunction": null,
+                    "UnsearchedInfo": null,
+                    "Components": null,
+                    "Slots": null,
+                    "ShellsInWeapon": null,
+                    "Grids": null,
+                    "StackSlots": null
+                  },
+                  "X": 0,
+                  "Y": 3,
+                  "Horizontal": true,
+                  "Location": {
+                    "x": 0,
+                    "y": 3,
+                    "r": "Horizontal"
+                  }
+                },
+                {
+                  "Item": {
+                    "Id": "6ae35ebf79d9e791f8bc3153",
+                    "TemplateId": "58dd3ad986f77403051cba8f",
+                    "StackCount": 40,
+                    "SpawnedInSession": false,
+                    "ActiveCamora": 0,
+                    "IsUnderBarrelDeviceActive": false,
+                    "Malfunction": null,
+                    "UnsearchedInfo": null,
+                    "Components": null,
+                    "Slots": null,
+                    "ShellsInWeapon": null,
+                    "Grids": null,
+                    "StackSlots": null
+                  },
+                  "X": 1,
+                  "Y": 3,
+                  "Horizontal": true,
+                  "Location": {
+                    "x": 1,
+                    "y": 3,
+                    "r": "Horizontal"
+                  }
+                },
+                {
+                  "Item": {
+                    "Id": "6ae35ebf79d9e791f8bc3154",
+                    "TemplateId": "58dd3ad986f77403051cba8f",
+                    "StackCount": 40,
+                    "SpawnedInSession": false,
+                    "ActiveCamora": 0,
+                    "IsUnderBarrelDeviceActive": false,
+                    "Malfunction": null,
+                    "UnsearchedInfo": null,
+                    "Components": null,
+                    "Slots": null,
+                    "ShellsInWeapon": null,
+                    "Grids": null,
+                    "StackSlots": null
+                  },
+                  "X": 2,
+                  "Y": 3,
+                  "Horizontal": true,
+                  "Location": {
+                    "x": 2,
+                    "y": 3,
+                    "r": "Horizontal"
+                  }
+                },
+                {
+                  "Item": {
+                    "Id": "6ae35ebf79d9e791f8bc3155",
+                    "TemplateId": "58dd3ad986f77403051cba8f",
+                    "StackCount": 40,
+                    "SpawnedInSession": false,
+                    "ActiveCamora": 0,
+                    "IsUnderBarrelDeviceActive": false,
+                    "Malfunction": null,
+                    "UnsearchedInfo": null,
+                    "Components": null,
+                    "Slots": null,
+                    "ShellsInWeapon": null,
+                    "Grids": null,
+                    "StackSlots": null
+                  },
+                  "X": 3,
+                  "Y": 3,
+                  "Horizontal": true,
+                  "Location": {
+                    "x": 3,
+                    "y": 3,
+                    "r": "Horizontal"
+                  }
+                },
+                {
+                  "Item": {
+                    "Id": "6ae35ebf79d9e791f8bc3156",
+                    "TemplateId": "58dd3ad986f77403051cba8f",
+                    "StackCount": 40,
+                    "SpawnedInSession": false,
+                    "ActiveCamora": 0,
+                    "IsUnderBarrelDeviceActive": false,
+                    "Malfunction": null,
+                    "UnsearchedInfo": null,
+                    "Components": null,
+                    "Slots": null,
+                    "ShellsInWeapon": null,
+                    "Grids": null,
+                    "StackSlots": null
+                  },
+                  "X": 0,
+                  "Y": 4,
+                  "Horizontal": true,
+                  "Location": {
+                    "x": 0,
+                    "y": 4,
+                    "r": "Horizontal"
+                  }
+                }
+              ]
+            }
+          ],
+          "StackSlots": null
+        }
+      },
+      {
+        "SlotNumber": 10,
+        "ContainedItem": {
+          "Id": "6ae35ebf79d9e791f8bc30fd",
+          "TemplateId": "5af99e9186f7747c447120b8",
+          "StackCount": 1,
+          "SpawnedInSession": false,
+          "ActiveCamora": 0,
+          "IsUnderBarrelDeviceActive": false,
+          "Malfunction": null,
+          "UnsearchedInfo": null,
+          "Components": [],
+          "Slots": null,
+          "ShellsInWeapon": null,
+          "Grids": [
+            {
+              "GridNumber": 0,
+              "ContainedItems": [
+                {
+                  "Item": {
+                    "Id": "6ae35ebf79d9e791f8bc3146",
+                    "TemplateId": "637b6179104668754b72f8f5",
+                    "StackCount": 1,
+                    "SpawnedInSession": false,
+                    "ActiveCamora": 0,
+                    "IsUnderBarrelDeviceActive": false,
+                    "Malfunction": null,
+                    "UnsearchedInfo": null,
+                    "Components": [],
+                    "Slots": null,
+                    "ShellsInWeapon": null,
+                    "Grids": null,
+                    "StackSlots": null
+                  },
+                  "X": 0,
+                  "Y": 0,
+                  "Horizontal": true,
+                  "Location": {
+                    "x": 0,
+                    "y": 0,
+                    "r": "Horizontal"
+                  }
+                },
+                {
+                  "Item": {
+                    "Id": "6ae35ebf79d9e791f8bc3147",
+                    "TemplateId": "5448be9a4bdc2dfd2f8b456a",
+                    "StackCount": 1,
+                    "SpawnedInSession": false,
+                    "ActiveCamora": 0,
+                    "IsUnderBarrelDeviceActive": false,
+                    "Malfunction": null,
+                    "UnsearchedInfo": null,
+                    "Components": null,
+                    "Slots": null,
+                    "ShellsInWeapon": null,
+                    "Grids": null,
+                    "StackSlots": null
+                  },
+                  "X": 0,
+                  "Y": 1,
+                  "Horizontal": true,
+                  "Location": {
+                    "x": 0,
+                    "y": 1,
+                    "r": "Horizontal"
+                  }
+                }
+              ]
+            },
+            {
+              "GridNumber": 1,
+              "ContainedItems": [
+                {
+                  "Item": {
+                    "Id": "6ae35ebf79d9e791f8bc3148",
+                    "TemplateId": "63a39c7964283b5e9c56b280",
+                    "StackCount": 1,
+                    "SpawnedInSession": false,
+                    "ActiveCamora": 0,
+                    "IsUnderBarrelDeviceActive": false,
+                    "Malfunction": null,
+                    "UnsearchedInfo": null,
+                    "Components": [
+                      {
+                        "NumberOfUsages": 0
+                      }
+                    ],
+                    "Slots": null,
+                    "ShellsInWeapon": null,
+                    "Grids": null,
+                    "StackSlots": null
+                  },
+                  "X": 0,
+                  "Y": 0,
+                  "Horizontal": true,
+                  "Location": {
+                    "x": 0,
+                    "y": 0,
+                    "r": "Horizontal"
+                  }
+                }
+              ]
+            }
+          ],
+          "StackSlots": null
+        }
+      }
+    ],
+    "ShellsInWeapon": null,
+    "Grids": null,
+    "StackSlots": null
+  },
+  "plate": {
+    "Id": "6ae35eb479d9e791f8bc2a8b",
+    "TemplateId": "656fb0bd7c2d57afe200c0dc",
+    "StackCount": 1,
+    "SpawnedInSession": false,
+    "ActiveCamora": 0,
+    "IsUnderBarrelDeviceActive": false,
+    "Malfunction": null,
+    "UnsearchedInfo": null,
+    "Components": [
+      {
+        "Durability": 40.36823,
+        "MaxDurability": 44.36823
+      }
+    ],
+    "Slots": null,
+    "ShellsInWeapon": null,
+    "Grids": null,
+    "StackSlots": null
+  },
+  "layout": [
+    {
+      "id": "6ae35ebf79d9e791f8bc3149",
+      "template": "55d7217a4bdc2d86028b456d",
+      "nativeType": "InventoryEquipment",
+      "parent": "6ae35ebf79d9e791f8bc3149",
+      "container": "6ade7a1f53459f12388788e7",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3108",
+      "template": "5dcbd56fdbd3d91b3e5468d5",
+      "nativeType": "AssaultRifle",
+      "parent": "6ae35ebf79d9e791f8bc3149",
+      "container": "FirstPrimaryWeapon",
+      "armorClass": null,
+      "maximumDurability": 100,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc310b",
+      "template": "5dcbd6dddbd3d91b3e5468de",
+      "nativeType": "PistolGrip",
+      "parent": "6ae35ebf79d9e791f8bc3108",
+      "container": "mod_pistol_grip",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3113",
+      "template": "65293c38fc460e50a509cb25",
+      "nativeType": "Magazine",
+      "parent": "6ae35ebf79d9e791f8bc3108",
+      "container": "mod_magazine",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3114",
+      "template": "58dd3ad986f77403051cba8f",
+      "nativeType": "Ammo",
+      "parent": "6ae35ebf79d9e791f8bc3113",
+      "container": "cartridges",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3109",
+      "template": "5dcbd6b46ec07c0c4347a564",
+      "nativeType": "Handguard",
+      "parent": "6ae35ebf79d9e791f8bc3108",
+      "container": "mod_handguard",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc310a",
+      "template": "5dcbe9431e1f4616d354987e",
+      "nativeType": "Barrel",
+      "parent": "6ae35ebf79d9e791f8bc3108",
+      "container": "mod_barrel",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc310c",
+      "template": "5b3b99265acfc4704b4a1afb",
+      "nativeType": "Mount",
+      "parent": "6ae35ebf79d9e791f8bc3108",
+      "container": "mod_scope",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc310d",
+      "template": "618ba27d9008e4636a67f61d",
+      "nativeType": "OpticScope",
+      "parent": "6ae35ebf79d9e791f8bc310c",
+      "container": "mod_scope",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3110",
+      "template": "5c18b9192e2216398b5a8104",
+      "nativeType": "IronSight",
+      "parent": "6ae35ebf79d9e791f8bc3108",
+      "container": "mod_sight_rear",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ec30bfc18aa6400000e",
+      "template": "58dd3ad986f77403051cba8f",
+      "nativeType": "Ammo",
+      "parent": "6ae35ebf79d9e791f8bc3108",
+      "container": "patron_in_weapon",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3129",
+      "template": "5a17f98cfcdbcb0980087290",
+      "nativeType": "Pistol",
+      "parent": "6ae35ebf79d9e791f8bc3149",
+      "container": "Holster",
+      "armorClass": null,
+      "maximumDurability": 100,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc312c",
+      "template": "5a17fb03fcdbcbcae668728f",
+      "nativeType": "Magazine",
+      "parent": "6ae35ebf79d9e791f8bc3129",
+      "container": "mod_magazine",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc312e",
+      "template": "573718ba2459775a75491131",
+      "nativeType": "Ammo",
+      "parent": "6ae35ebf79d9e791f8bc312c",
+      "container": "cartridges",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc312b",
+      "template": "5a17fb9dfcdbcbcae6687291",
+      "nativeType": "Stock",
+      "parent": "6ae35ebf79d9e791f8bc3129",
+      "container": "mod_stock",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc312a",
+      "template": "5a17fc70fcdbcb0176308b3d",
+      "nativeType": "PistolGrip",
+      "parent": "6ae35ebf79d9e791f8bc3129",
+      "container": "mod_pistol_grip",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc312d",
+      "template": "5aba637ad8ce87001773e17f",
+      "nativeType": "IronSight",
+      "parent": "6ae35ebf79d9e791f8bc3129",
+      "container": "mod_sight_rear",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc312f",
+      "template": "573718ba2459775a75491131",
+      "nativeType": "Ammo",
+      "parent": "6ae35ebf79d9e791f8bc3129",
+      "container": "patron_in_weapon",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc30fe",
+      "template": "62963c18dbc8ab5f0d382d0b",
+      "nativeType": "FaceCover",
+      "parent": "6ae35ebf79d9e791f8bc3149",
+      "container": "FaceCover",
+      "armorClass": 1,
+      "maximumDurability": 55,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc30ff",
+      "template": "628b9c7d45122232a872358f",
+      "nativeType": "Vest",
+      "parent": "6ae35ebf79d9e791f8bc3149",
+      "container": "TacticalVest",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": [
+        {
+          "ID": "1",
+          "width": 1,
+          "height": 3
+        },
+        {
+          "ID": "2",
+          "width": 1,
+          "height": 2
+        },
+        {
+          "ID": "3",
+          "width": 1,
+          "height": 2
+        },
+        {
+          "ID": "4",
+          "width": 1,
+          "height": 2
+        },
+        {
+          "ID": "5",
+          "width": 1,
+          "height": 3
+        },
+        {
+          "ID": "6",
+          "width": 1,
+          "height": 2
+        },
+        {
+          "ID": "7",
+          "width": 1,
+          "height": 2
+        },
+        {
+          "ID": "8",
+          "width": 1,
+          "height": 2
+        }
+      ]
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3100",
+      "template": "655746010177119f4a097ff7",
+      "nativeType": "ArmorPlate",
+      "parent": "6ae35ebf79d9e791f8bc30ff",
+      "container": "Front_plate",
+      "armorClass": 5,
+      "maximumDurability": 50,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3101",
+      "template": "656f9d5900d62bcd2e02407c",
+      "nativeType": "ArmorPlate",
+      "parent": "6ae35ebf79d9e791f8bc30ff",
+      "container": "Back_plate",
+      "armorClass": 3,
+      "maximumDurability": 45,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3102",
+      "template": "6557458f83942d705f0c4962",
+      "nativeType": "ArmorPlate",
+      "parent": "6ae35ebf79d9e791f8bc30ff",
+      "container": "Left_side_plate",
+      "armorClass": 5,
+      "maximumDurability": 15,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3103",
+      "template": "6557458f83942d705f0c4962",
+      "nativeType": "ArmorPlate",
+      "parent": "6ae35ebf79d9e791f8bc30ff",
+      "container": "Right_side_plate",
+      "armorClass": 5,
+      "maximumDurability": 15,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3105",
+      "template": "6575f24ff6a13a7b7100b09e",
+      "nativeType": "BuiltInInserts",
+      "parent": "6ae35ebf79d9e791f8bc30ff",
+      "container": "Soft_armor_front",
+      "armorClass": 3,
+      "maximumDurability": 33,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3104",
+      "template": "6575f25ada698a4e98067836",
+      "nativeType": "BuiltInInserts",
+      "parent": "6ae35ebf79d9e791f8bc30ff",
+      "container": "Soft_armor_back",
+      "armorClass": 3,
+      "maximumDurability": 33,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3106",
+      "template": "6575f2649cfdfe416f0399b8",
+      "nativeType": "BuiltInInserts",
+      "parent": "6ae35ebf79d9e791f8bc30ff",
+      "container": "Soft_armor_left",
+      "armorClass": 3,
+      "maximumDurability": 12,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3107",
+      "template": "6575f26d9c7cad336508e480",
+      "nativeType": "BuiltInInserts",
+      "parent": "6ae35ebf79d9e791f8bc30ff",
+      "container": "soft_armor_right",
+      "armorClass": 3,
+      "maximumDurability": 12,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3130",
+      "template": "5a17fb03fcdbcbcae668728f",
+      "nativeType": "Magazine",
+      "parent": "6ae35ebf79d9e791f8bc30ff",
+      "container": "1",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3131",
+      "template": "573718ba2459775a75491131",
+      "nativeType": "Ammo",
+      "parent": "6ae35ebf79d9e791f8bc3130",
+      "container": "cartridges",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc310e",
+      "template": "65293c38fc460e50a509cb25",
+      "nativeType": "Magazine",
+      "parent": "6ae35ebf79d9e791f8bc30ff",
+      "container": "2",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc314a",
+      "template": "5c0a794586f77461c458f892",
+      "nativeType": "MobContainer",
+      "parent": "6ae35ebf79d9e791f8bc3149",
+      "container": "SecuredContainer",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": [
+        {
+          "ID": "main",
+          "width": 4,
+          "height": 90
+        }
+      ]
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc314b",
+      "template": "590c657e86f77412b013051d",
+      "nativeType": "MedKit",
+      "parent": "6ae35ebf79d9e791f8bc314a",
+      "container": "main",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc314c",
+      "template": "5d02797c86f774203f38e30a",
+      "nativeType": "Medical",
+      "parent": "6ae35ebf79d9e791f8bc314a",
+      "container": "main",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc314d",
+      "template": "58dd3ad986f77403051cba8f",
+      "nativeType": "Ammo",
+      "parent": "6ae35ebf79d9e791f8bc314a",
+      "container": "main",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc314e",
+      "template": "58dd3ad986f77403051cba8f",
+      "nativeType": "Ammo",
+      "parent": "6ae35ebf79d9e791f8bc314a",
+      "container": "main",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc314f",
+      "template": "58dd3ad986f77403051cba8f",
+      "nativeType": "Ammo",
+      "parent": "6ae35ebf79d9e791f8bc314a",
+      "container": "main",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3150",
+      "template": "58dd3ad986f77403051cba8f",
+      "nativeType": "Ammo",
+      "parent": "6ae35ebf79d9e791f8bc314a",
+      "container": "main",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3151",
+      "template": "58dd3ad986f77403051cba8f",
+      "nativeType": "Ammo",
+      "parent": "6ae35ebf79d9e791f8bc314a",
+      "container": "main",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3152",
+      "template": "58dd3ad986f77403051cba8f",
+      "nativeType": "Ammo",
+      "parent": "6ae35ebf79d9e791f8bc314a",
+      "container": "main",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3153",
+      "template": "58dd3ad986f77403051cba8f",
+      "nativeType": "Ammo",
+      "parent": "6ae35ebf79d9e791f8bc314a",
+      "container": "main",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3154",
+      "template": "58dd3ad986f77403051cba8f",
+      "nativeType": "Ammo",
+      "parent": "6ae35ebf79d9e791f8bc314a",
+      "container": "main",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3155",
+      "template": "58dd3ad986f77403051cba8f",
+      "nativeType": "Ammo",
+      "parent": "6ae35ebf79d9e791f8bc314a",
+      "container": "main",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3156",
+      "template": "58dd3ad986f77403051cba8f",
+      "nativeType": "Ammo",
+      "parent": "6ae35ebf79d9e791f8bc314a",
+      "container": "main",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc30fd",
+      "template": "5af99e9186f7747c447120b8",
+      "nativeType": "Pockets",
+      "parent": "6ae35ebf79d9e791f8bc3149",
+      "container": "Pockets",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": [
+        {
+          "ID": "pocket1",
+          "width": 1,
+          "height": 2
+        },
+        {
+          "ID": "pocket2",
+          "width": 1,
+          "height": 2
+        },
+        {
+          "ID": "pocket3",
+          "width": 1,
+          "height": 2
+        },
+        {
+          "ID": "pocket4",
+          "width": 1,
+          "height": 2
+        },
+        {
+          "ID": "pocket5",
+          "width": 1,
+          "height": 2
+        }
+      ]
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3146",
+      "template": "637b6179104668754b72f8f5",
+      "nativeType": "Stimulator",
+      "parent": "6ae35ebf79d9e791f8bc30fd",
+      "container": "pocket1",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3147",
+      "template": "5448be9a4bdc2dfd2f8b456a",
+      "nativeType": "ThrowWeap",
+      "parent": "6ae35ebf79d9e791f8bc30fd",
+      "container": "pocket1",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    },
+    {
+      "id": "6ae35ebf79d9e791f8bc3148",
+      "template": "63a39c7964283b5e9c56b280",
+      "nativeType": "KeyMechanical",
+      "parent": "6ae35ebf79d9e791f8bc30fd",
+      "container": "pocket2",
+      "armorClass": null,
+      "maximumDurability": null,
+      "grids": null
+    }
+  ]
+}

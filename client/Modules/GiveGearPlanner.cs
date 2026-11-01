@@ -33,8 +33,10 @@ namespace pitTeam.Modules
         private readonly Vest[] _vests;
         private readonly Weapon[] _weapons;
         internal readonly HashSet<string> OfferedWeaponIds;
+        internal bool OnlyPlateUpgrades { get; private set; }
         private readonly HashSet<string> _playerOwned;
         private readonly BotOwner _bot;
+        private readonly CompanionGearPolicy _gearPolicy;
         private readonly HashSet<Item> _temporarySecureItems = new HashSet<Item>();
 #if DEBUG
         internal Action<string> Diagnostic;
@@ -52,11 +54,13 @@ namespace pitTeam.Modules
         private static string ItemLabel(Item item) => item == null ? "none" : item.GetType().Name + ":" + item.Id;
 
         internal GiveGearPlanner(InventoryController controller, SearchableItem offer, SearchableItem overflow,
-            BotOwner bot, Action<GearSwapEdit> record, IEnumerable<string> playerOwned = null)
+            BotOwner bot, Action<GearSwapEdit> record, IEnumerable<string> playerOwned = null,
+            CompanionGearPolicy gearPolicy = null)
         {
             _controller = controller; _kit = controller.Inventory.Equipment;
             _offer = offer; _overflow = overflow; _record = record;
             _bot = bot;
+            _gearPolicy = gearPolicy;
             _roots = offer.Grids.SelectMany(g => g.Items).ToArray();
             // Snapshot the original offering depth before planning moves any container.
             // General equipment may use immediate grid contents. Only eligible vests have
@@ -87,6 +91,12 @@ namespace pitTeam.Modules
         {
             try
             {
+                if (_gearPolicy?.KeepEquipment == true)
+                {
+                    BuildFixedEquipmentPlan();
+                    foreach (var edit in _edits) _record(edit);
+                    return;
+                }
                 var primary = Equipped(EquipmentSlot.FirstPrimaryWeapon) as Weapon;
                 var originalSupport = SupportSlots.ToDictionary(slot => slot, slot => Equipped(slot) as Weapon);
                 bool currentPrimarySupported = ProjectedReady(primary);
@@ -207,6 +217,87 @@ namespace pitTeam.Modules
                 foreach (var edit in _edits) _record(edit);
             }
             catch { Rollback(); throw; }
+        }
+
+        private void BuildFixedEquipmentPlan()
+        {
+            if (_gearPolicy.AllowVestPlateUpgrades)
+            {
+                // Only direct removable plates of the offered wearables are donors. The
+                // worn carrier, soft armor and all helmet parts stay put. Compare each
+                // removable body plate with the existing condition-aware protection score.
+                var plates = _offered.OfType<ArmorPlate>().Concat(_offered.OfType<CompoundItem>()
+                    .SelectMany(item => item.Slots).Select(slot => slot.ContainedItem).OfType<ArmorPlate>())
+                    .Distinct().Where(plate => plate.GetItemComponent<RepairableComponent>()?.Durability > 0f)
+                    .OrderByDescending(Protection).ThenBy(plate => (string)plate.Id).ToArray();
+                foreach (var carrier in new[] { EquipmentSlot.ArmorVest, EquipmentSlot.TacticalVest }
+                    .Select(Equipped).OfType<CompoundItem>())
+                {
+                    foreach (var slot in carrier.Slots.OfType<ArmorSlot>())
+                    {
+                        if (slot.Locked || slot.ContainedItem is not ArmorPlate current) continue;
+                        float currentProtection = Protection(current);
+                        foreach (var plate in plates.Where(plate => !InKit(plate) && Protection(plate) > currentProtection))
+                            if (Try(() =>
+                            {
+                                MoveToGrids(current, _overflow.Grids);
+                                if (!slot.CanAccept(plate)) throw new InvalidOperationException("Plate does not fit the retained vest.");
+                                Move(plate, slot.CreateItemAddress());
+                            }, "fixedKit.plateUpgrade")) break;
+                    }
+                }
+            }
+
+            int plateEditCount = _edits.Count;
+            var primary = Equipped(EquipmentSlot.FirstPrimaryWeapon) as Weapon;
+            // Supply-only gifts also service retained firearms, without cycling their
+            // inserted magazines or requiring a small useful gift to restore readiness.
+            foreach (var slot in new[] { EquipmentSlot.FirstPrimaryWeapon, EquipmentSlot.SecondPrimaryWeapon, EquipmentSlot.Holster })
+                if (Equipped(slot) is Weapon retained && _supplies.Any(item => !InKit(item) &&
+                    (item is Magazine magazine && FollowerWeaponMagazineCompatibility.IsMechanicallyCompatible(retained, magazine) &&
+                        FollowerWeaponMagazineCompatibility.AreLoadedCartridgesCompatible(retained, magazine) ||
+                     item is Ammo ammo && FollowerWeaponLooseAmmoSupport.IsCompatible(retained, ammo))))
+                    Try(() => Support(retained, slot == EquipmentSlot.FirstPrimaryWeapon, resupplyOnly: true), "fixedKit.weaponSupply");
+            bool preservePrimaryReadiness = ProjectedReady(primary);
+            if (primary != null && Equipped(EquipmentSlot.SecondPrimaryWeapon) == null)
+            {
+                float primaryScore = WeaponScore(primary);
+                int primarySupply = SupplyBudget().Rounds(primary);
+                foreach (var candidate in _weapons.Where(weapon => !IsEquipped(weapon) &&
+                        CanUseSlot(EquipmentSlot.SecondPrimaryWeapon, weapon) &&
+                        _gearPolicy.AllowsSecondaryScore(primaryScore, WeaponScore(weapon)))
+                    .OrderByDescending(WeaponScore).ThenBy(weapon => (string)weapon.Id))
+                    if (Try(() =>
+                    {
+                        Equip(candidate, EquipmentSlot.SecondPrimaryWeapon);
+                        SupportSecondary(candidate, primary, preservePrimaryReadiness);
+                        if (SupplyBudget().Rounds(primary) < primarySupply)
+                            throw new InvalidOperationException("Optional companion weapon consumed the primary's existing supplies.");
+                        RequireReloadSpace();
+                    }, "fixedKit.secondary")) break;
+            }
+
+            // Grenades are consumable resupply, not replacement equipment or cargo.
+            // Every accepted throwable must leave the native magazine landing space intact.
+            foreach (var grenade in _offered.OfType<ThrowWeap>().OrderBy(item => (string)item.Id))
+                if (!InFastAccess(grenade))
+                    Try(() => MoveToGrids(grenade, FastGrids(), reserveReloadSpace: true), "fixedKit.grenadeSupply");
+
+            foreach (var medicine in _offered.OfType<Meds>().OrderBy(item => (string)item.Id))
+                if (!InKit(medicine)) Try(() => Carry(medicine), "fixedKit.medicalSupply");
+
+            // Classify accepted follower changes, not the offered items. Rejected secondary or
+            // grenade trials roll their edits back; disposition below only moves rejected offers.
+            OnlyPlateUpgrades = plateEditCount > 0 && _edits.Count == plateEditCount;
+
+            // Rejected offerings use the existing drop escrow, never the companion's
+            // backpack. Accepted weapon/plate descendants have already left these roots.
+            foreach (var item in _roots.Concat(_temporarySecureItems).Distinct().ToArray())
+            {
+                bool staged = _temporarySecureItems.Contains(item) && ReferenceEquals(
+                    item.CurrentAddress?.Container.ParentItem, Equipped(EquipmentSlot.SecuredContainer));
+                if (!InKit(item) || staged) MoveToGrids(item, _overflow.Grids);
+            }
         }
 
         private bool TryOutfit(Weapon candidate, bool armoredRig)
@@ -358,10 +449,10 @@ namespace pitTeam.Modules
             return null;
         }
 
-        private void Support(Weapon weapon, bool primary)
+        private void Support(Weapon weapon, bool primary, bool resupplyOnly = false)
         {
             if (!FunctionalWeapon(weapon)) throw new InvalidOperationException("Incomplete or broken weapon.");
-            if (primary)
+            if (primary && !resupplyOnly)
             {
                 var retained = new[] { EquipmentSlot.SecondPrimaryWeapon, EquipmentSlot.Holster }
                     .Select(Equipped).OfType<Weapon>().ToArray();
@@ -373,15 +464,16 @@ namespace pitTeam.Modules
             if (!FollowerWeaponLooseFeedReadiness.IsSupported(weapon))
             {
                 var magazines = _supplies.Concat(FastGrids().SelectMany(grid => grid.Items)).OfType<Magazine>().Distinct().Where(m =>
+                    (!resupplyOnly || !InKit(m)) &&
                     FollowerWeaponMagazineCompatibility.IsMechanicallyCompatible(weapon, m) &&
                     FollowerWeaponMagazineCompatibility.AreLoadedCartridgesCompatible(weapon, m))
                     .OrderByDescending(m => m.Count).ThenBy(m => (string)m.Id).ToList();
                 var current = weapon.GetCurrentMagazine();
-                if (current != null && !FollowerWeaponMagazineCompatibility.AreLoadedCartridgesCompatible(weapon, current))
+                if (!resupplyOnly && current != null && !FollowerWeaponMagazineCompatibility.AreLoadedCartridgesCompatible(weapon, current))
                 {
                     Stow(current); current = null;
                 }
-                if (current == null || current.Count == 0 && magazines.Any(m => m.Count > 0))
+                if (!resupplyOnly && (current == null || current.Count == 0 && magazines.Any(m => m.Count > 0)))
                 {
                     var loaded = magazines.FirstOrDefault(m => m.Count > 0);
                     if (loaded == null && magazines.Count == 0) throw new InvalidOperationException("No compatible magazine.");
@@ -408,7 +500,7 @@ namespace pitTeam.Modules
                 if (!InKit(ammo)) Try(() => Carry(ammo));
             var budget = SupplyBudget();
             var seated = weapon.GetCurrentMagazine();
-            if (!FollowerWeaponLooseFeedReadiness.IsSupported(weapon) && seated != null &&
+            if (!resupplyOnly && !FollowerWeaponLooseFeedReadiness.IsSupported(weapon) && seated != null &&
                 _supplies.OfType<Ammo>().Any(ammo => budget.Fill(seated, ammo) > 0) &&
                 !FastGrids().SelectMany(grid => grid.Items).OfType<Magazine>().Any(mag => budget.Owns(weapon, mag)))
             {
@@ -419,6 +511,7 @@ namespace pitTeam.Modules
                     throw new InvalidOperationException("Deferred magazine refill has no reload landing space.");
             }
             RequireReloadSpace();
+            if (resupplyOnly) return;
             int projectedRounds = SupplyBudget().Rounds(weapon);
             int threshold = FollowerWeaponAmmoReadinessPolicy.GetRequiredRounds(weapon.AmmoCaliber);
             bool usable = primary ? threshold > 0 && projectedRounds >= threshold : projectedRounds > 0;
@@ -451,6 +544,17 @@ namespace pitTeam.Modules
         }
         private void Carry(Item item)
         {
+            if (_gearPolicy?.KeepEquipment == true)
+            {
+                if (!(item is Ammo) && !(item is Meds))
+                    throw new InvalidOperationException("Fixed companion equipment does not accept cargo.");
+                if (Try(() => MoveToGrids(item, FastGrids(), reserveReloadSpace: true))) return;
+                var bossSecure = Equipped(EquipmentSlot.SecuredContainer) as SearchableItem;
+                if (bossSecure == null) throw new InvalidOperationException("No fitting medical/ammunition supply location.");
+                MoveToGrids(item, bossSecure.Grids);
+                RequireReloadSpace();
+                return;
+            }
             var roots = new[] { EquipmentSlot.Backpack, EquipmentSlot.TacticalVest, EquipmentSlot.Pockets }
                 .Select(Equipped).OfType<SearchableItem>().Where(r => !ReferenceEquals(r, item));
             if (item is Ammo)
@@ -543,7 +647,11 @@ namespace pitTeam.Modules
             }
             catch { RollbackTo(checkpoint); _temporarySecureItems.Clear(); _temporarySecureItems.UnionWith(stagedBefore); throw; }
         }
-        internal void Rollback() => RollbackTo(0);
+        internal void Rollback()
+        {
+            OnlyPlateUpgrades = false;
+            RollbackTo(0);
+        }
         private void RollbackTo(int checkpoint)
         {
             for (int index = _operations.Count - 1; index >= checkpoint; index--)

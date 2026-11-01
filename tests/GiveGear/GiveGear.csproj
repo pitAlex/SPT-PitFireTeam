@@ -2,6 +2,7 @@
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>disable</Nullable></PropertyGroup>
   <ItemGroup>
     <Compile Include="../../client/Modules/GiveGearPlanner.cs" Link="Production/GiveGearPlanner.cs" />
+    <Compile Include="../../client/Modules/CompanionGearPolicy.cs" Link="Production/CompanionGearPolicy.cs" />
     <Compile Include="../../client/Modules/FollowerWeaponSupplyBudget.cs" Link="Production/FollowerWeaponSupplyBudget.cs" />
     <Compile Include="../../client/Modules/GearSwapTransaction.cs" Link="Production/GearSwapTransaction.cs" />
     <Compile Include="../../shared/GiveGearInvitePolicy.cs" Link="Production/GiveGearInvitePolicy.cs" />

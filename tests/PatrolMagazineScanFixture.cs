@@ -1,28 +1,88 @@
+#nullable enable annotations
 using System;
 using System.Collections.Generic;
 using EFT;
 using EFT.InventoryLogic;
 using UnityEngine;
 using pitTeam.Modules;
+using Modules = pitTeam.Modules;
 
 namespace EFT.InventoryLogic
 {
-    public class Item { }
+    public class Item
+    {
+        public string Id = Guid.NewGuid().ToString(), TemplateId = "nativeTemplate";
+        public Address Parent = new Address();
+        public List<Item> ParentItems = new List<Item>();
+        public virtual IEnumerable<Item> GetAllParentItems() => ParentItems;
+    }
+    public class Container { public Item ParentItem; }
+    public class Address { public Container Container = new Container(); }
+    public class Filter { public bool CheckItemFilter(Ammo ammo) => true; }
+    public class Cartridges { public Filter Filters = new Filter(); }
+    public class Ammo : Item
+    {
+        public InventoryController Inventory;
+        public int StackObjectsCount => Inventory.Reserve;
+        public ApplyResult CheckAction(object action) => new ApplyResult();
+    }
     public class Magazine : Item
     {
         public int Count, MaxCount = 30;
         public bool Installed, Compatible = true;
+        public Cartridges Cartridges = new Cartridges();
+        public override IEnumerable<Item> GetAllParentItems()
+        {
+            if (Installed) yield return new Weapon();
+            foreach (Item parent in ParentItems) yield return parent;
+        }
+        public ApplyResult Apply(InventoryController inventory, Ammo ammo, int rounds, bool simulate)
+        {
+            inventory.Applies++;
+            if (Installed) throw new Exception("Packing an installed magazine is illegal");
+            return new ApplyResult { Magazine = this, Ammo = ammo, Rounds = rounds };
+        }
     }
-    public class Slot { }
+    public class Slot { public Item ContainedItem; }
+    public enum EquipmentSlot { FirstPrimaryWeapon, SecondPrimaryWeapon, Holster }
+    public class Equipment
+    {
+        public Slot Primary = new Slot();
+        public Slot GetSlot(EquipmentSlot slot) => slot == EquipmentSlot.FirstPrimaryWeapon ? Primary : new Slot();
+    }
     public class Weapon : Item
     {
+        public enum EReloadMode { ExternalMagazine, InternalMagazine }
+        public EReloadMode ReloadMode;
+        public Magazine Inserted;
         public Slot MagazineSlot = new Slot();
         public Slot GetMagazineSlot() => MagazineSlot;
+        public Magazine GetCurrentMagazine() => Inserted;
+    }
+    public class ApplyResult
+    {
+        public bool Failed; public bool Succeeded => !Failed; public object Error;
+        public Magazine Magazine; public Ammo Ammo; public int Rounds;
     }
     public class InventoryController
     {
         public readonly List<Magazine> Items = new List<Magazine>();
-        public int Reserve = 60, Checks, Filled;
+        public int Reserve = 60, Checks, Filled, Applies;
+        public InventoryController Inventory => this;
+        public Equipment Equipment = new Equipment();
+        public bool Examined(Item item) => true;
+        public void GetAcceptableItemsNonAlloc<T>(object slots, List<T> result, Predicate<T> predicate, object ignored) where T : Item
+        {
+            T ammo = new Ammo { Inventory = this } as T;
+            if (ammo != null && predicate(ammo)) result.Add(ammo);
+        }
+        public void TryRunNetworkTransaction(ApplyResult result, Comfort.Common.Callback callback)
+        {
+            if (result.Magazine.Installed) throw new Exception("Magazine was inserted before transaction");
+            if (result.Rounds > Reserve) throw new Exception("Refill invented ammunition");
+            Reserve -= result.Rounds; result.Magazine.Count += result.Rounds; Filled++;
+            callback(new Comfort.Common.Completion { Succeed = true });
+        }
         // EFT walks the live container.Items collection before invoking the predicate.
         public void GetReachableItemsOfTypeNonAlloc<T>(IList<T> result, Predicate<T> predicate) where T : Item
         {
@@ -50,15 +110,38 @@ namespace EFT.InventoryLogic
 }
 namespace EFT
 {
-    public class Player { public InventoryController InventoryController = new InventoryController(); }
+    public class Player
+    {
+        public InventoryController InventoryController = new InventoryController();
+        public class FirearmController { public bool ReloadOperation; public bool IsInReloadOperation() => ReloadOperation; }
+    }
     public class ReloadState { public bool Reloading; }
-    public class WeaponManager { public bool IsWeaponReady = true; public ReloadState Reload = new ReloadState(); }
+    public class WeaponManager { public bool IsWeaponReady = true; public ReloadState Reload = new ReloadState(); public Player.FirearmController ShootController = new Player.FirearmController(); }
     public class BotOwner { public Player GetPlayer = new Player(); public WeaponManager WeaponManager = new WeaponManager(); }
+}
+public class BotReload { public static object _availableEquipmentSlots = new object(); }
+namespace Comfort.Common
+{
+    public class Completion { public bool Succeed; }
+    public delegate void Callback(Completion completion);
 }
 namespace UnityEngine { public static class Time { public static float time = 100; } }
 namespace pitTeam.Modules
 {
-    public class FollowerWeaponSupplyBudget { }
+    public class FollowerWeaponSupplyBudget
+    {
+        public bool Owns(Weapon weapon, Magazine magazine) => true;
+        public int Fill(Magazine magazine, Ammo ammo) => Math.Min(magazine.MaxCount - magazine.Count, ammo.StackObjectsCount);
+    }
+    public class TeammateGearSwap { public static TeammateGearSwap Current; public BotOwner Bot; }
+    public static class InteractableObjects { public static bool IsLootedWeapon(BotOwner bot, Weapon weapon) => false; }
+    public static class AllegianceScavCargo
+    {
+        public static object CaptureCommandedLoot(BotOwner bot) => new object();
+        public static HashSet<string> GetPureGivenIds(BotOwner bot) => new HashSet<string>();
+        public static void TrackMagazineRefill(BotOwner bot, Magazine mag, object before, bool given) { }
+    }
+    public static class Logger { public static void LogError(string message) { throw new Exception(message); } }
     public static class BattleRecorder
     {
         public static void RecordAmmoRefill(BotOwner owner, string stage, string reason, Func<object> details) { }
@@ -70,7 +153,7 @@ public static class FollowerOutOfCombatReloadPolicy
     public static bool TryFillCarriedWeaponMagazines(BotOwner owner)
     {
         Passes++;
-        return PatrolMagazineScanChecks.FillSpares(owner);
+        return PatrolMagazineScanChecks.FillCarried(owner);
     }
 }
 public class ReloadCompletionChecks
@@ -93,17 +176,23 @@ public class ReloadCompletionChecks
 public static class PatrolMagazineScanChecks
 {
     /* SPARE_FILL */
-    private static bool IsInstalledInWeaponTree(Item item) => ((Magazine)item).Installed;
+    /* CARRIED_FILL */
+    /* REFILL */
+    /* CAN_TOP_OFF */
+    private static readonly EquipmentSlot[] WeaponSlotsToTopOff = { EquipmentSlot.FirstPrimaryWeapon, EquipmentSlot.SecondPrimaryWeapon, EquipmentSlot.Holster };
+    private static bool IsLauncherWeapon(Weapon weapon) => false;
+    private static int GetCurrentLoadedCount(Weapon weapon) => weapon.Inserted?.Count ?? 0;
+    private static int GetCurrentCapacity(Weapon weapon, Magazine magazine) => magazine?.MaxCount ?? 0;
+    private static bool HasCompatibleLooseAmmo(BotOwner bot, Weapon weapon, Magazine magazine) => bot.GetPlayer.InventoryController.Reserve > 0;
+    private static bool HasBetterMagazine(BotOwner bot, Weapon weapon) => bot.GetPlayer.InventoryController.Items.Exists(mag => !mag.Installed && mag.Compatible && mag.Count > GetCurrentLoadedCount(weapon));
+    private static FollowerWeaponSupplyBudget BuildRefillBudget(BotOwner bot) => new FollowerWeaponSupplyBudget();
+    /* INSTALLED */
     public static bool FillSpares(BotOwner owner) => TryFillReachableSpareMagazines(owner, new Weapon());
-    private static bool TryFillMagazineWithLooseAmmo(BotOwner owner, Magazine magazine, Weapon weapon, FollowerWeaponSupplyBudget budget)
+    public static bool FillCarried(BotOwner owner)
     {
         var inventory = owner.GetPlayer.InventoryController;
-        int rounds = Math.Min(magazine.MaxCount - magazine.Count, inventory.Reserve);
-        if (rounds <= 0) return false;
-        inventory.Reserve -= rounds;
-        magazine.Count += rounds;
-        inventory.Filled++;
-        return true;
+        if (inventory.Equipment.Primary.ContainedItem == null) inventory.Equipment.Primary.ContainedItem = new Weapon();
+        return TryFillCarriedWeaponMagazines(owner);
     }
     private static int checks;
     private static void Check(bool value, string message)
@@ -150,6 +239,10 @@ public static class PatrolMagazineScanChecks
         completion.Tick();
         Check(FollowerOutOfCombatReloadPolicy.Passes == 0 && removed.Count == 12, "Unsettled hands must not refill the removed magazine");
         completion.BotOwner.WeaponManager.IsWeaponReady = true;
+        completion.BotOwner.WeaponManager.ShootController.ReloadOperation = true;
+        completion.Tick();
+        Check(FollowerOutOfCombatReloadPolicy.Passes == 0 && completion.Processed == 0, "Native watchdog clearing Reloading must not finish a live hands reload or start inventory packing");
+        completion.BotOwner.WeaponManager.ShootController.ReloadOperation = false;
         completion.Tick();
         Check(removed.Count == 30 && reloadInventory.Reserve == 574, "Settled reload must fill the removed magazine from reserve");
         Check(inserted.Count == 30 && FollowerOutOfCombatReloadPolicy.Passes == 1, "Completion performs one fill pass and preserves the inserted magazine");
@@ -157,6 +250,28 @@ public static class PatrolMagazineScanChecks
         Check(completion.nextReloadCheckAt == 102 && completion.nextMagazineFillCheckAt == 130, "Existing completion cooldowns must be retained");
         completion.Tick();
         Check(FollowerOutOfCombatReloadPolicy.Passes == 1 && reloadInventory.Reserve == 574, "Later patrol ticks must not repeat completion refill or consume more reserve");
+
+        var rifle = new Weapon { Inserted = new Magazine { Installed = true, Count = 0 } };
+        var guarded = new BotOwner(); var guardInventory = guarded.GetPlayer.InventoryController;
+        guardInventory.Equipment.Primary.ContainedItem = rifle;
+        guardInventory.Items.Add(rifle.Inserted);
+        Check(!TryFillMagazineWithLooseAmmo(guarded, rifle.Inserted, rifle), "Direct native refill callbacks cannot pack an inserted magazine");
+        var nested = new Magazine(); nested.ParentItems.Add(new Item()); nested.ParentItems.Add(rifle);
+        Check(!TryFillMagazineWithLooseAmmo(guarded, nested, rifle), "A magazine nested anywhere under a weapon remains protected");
+        Check(!TryFillCarriedWeaponMagazines(guarded) && guardInventory.Applies == 0 && guardInventory.Reserve == 60,
+            "Carried-weapon pass never submits an installed magazine to Apply");
+        Check(!CanTopOffWeapon(guarded, rifle), "Loose ammo without a spare is not an executable detachable-magazine reload");
+        rifle.ReloadMode = Weapon.EReloadMode.InternalMagazine;
+        Check(CanTopOffWeapon(guarded, rifle), "Internal-feed weapons retain their native loose-ammunition reload");
+        rifle.ReloadMode = Weapon.EReloadMode.ExternalMagazine;
+        var spare = new Magazine { Count = 7 };
+        guardInventory.Items.Add(spare);
+        Check(TryFillCarriedWeaponMagazines(guarded) && spare.Count == 30 && rifle.Inserted.Count == 0 && guardInventory.Reserve == 37,
+            "An empty rifle stays untouched while its loose spare is prepared with finite ammunition");
+        Check(CanTopOffWeapon(guarded, rifle), "A prepared spare enables the ordinary magazine swap");
+        var ejected = rifle.Inserted; ejected.Installed = false; spare.Installed = true; rifle.Inserted = spare;
+        Check(TryFillCarriedWeaponMagazines(guarded) && ejected.Count == 30 && spare.Count == 30 && guardInventory.Reserve == 7,
+            "After native ejection the old magazine can be packed legally without touching the newly inserted spare");
         return checks;
     }
 }

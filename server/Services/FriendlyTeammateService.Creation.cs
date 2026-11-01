@@ -76,7 +76,7 @@ public partial class FriendlyTeammateService
                 // Commit the stripped candidate/default and receipt in the same database batch.
                 // No player payment/save is needed. Failure leaves the original quote intact.
                 var withoutKit = cloner.Clone(quote)!;
-                StripToPermanentEquipment(withoutKit.Teammate, keepSecureContainer: true, clearSecureContents: true);
+                StripToPermanentEquipment(withoutKit.Teammate, keepSecureContainer: false, keepOnlyKnife: true);
                 withoutKit.WithoutKit = true;
                 withoutKit.Price = 0;
                 CompleteTeammateCreation(sessionId, withoutKit);
@@ -164,10 +164,35 @@ public partial class FriendlyTeammateService
     private void CompleteTeammateCreation(MongoId sessionId, FriendlyTeammateCreationQuote quote)
     {
         quote.State = "complete";
+        var settings = CreateDefaultTeammateSettings(quote.Teammate.Customization);
+        settings.AutomaticallySuppliedEquipmentIds = GetAutomaticallySuppliedHiringEquipmentIds(quote.Teammate);
         SaveTeammateWithDefaultEquipment(sessionId, quote.Teammate, IsExtremeLoadoutManagementMode(quote.Mode),
-            CreateDefaultTeammateSettings(quote.Teammate.Customization),
+            settings,
             new Dictionary<string, string> { [CreationDocument] = jsonUtil.Serialize(quote)! });
         logger.Info($"Created teammate '{quote.Teammate.Aid}' price={quote.Price} withoutKit={quote.WithoutKit} quote={quote.Token}");
+    }
+
+    private static List<string> GetAutomaticallySuppliedHiringEquipmentIds(BotBase teammate)
+    {
+        string root = GetEquipmentRootId(teammate);
+        return (teammate.Inventory?.Items ?? []).Where(item =>
+                string.Equals(item.ParentId, root, StringComparison.OrdinalIgnoreCase)
+                && (string.Equals(item.SlotId, "Scabbard", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(item.SlotId, "ArmBand", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(item.SlotId, "SecuredContainer", StringComparison.OrdinalIgnoreCase)))
+            .Select(item => item.Id.ToString()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private HashSet<string> GetAutomaticallySuppliedEquipmentIds(MongoId sessionId, BotBase teammate)
+    {
+        var ids = (GetTeammateSettings(sessionId, teammate).AutomaticallySuppliedEquipmentIds ?? [])
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // A completed legacy quote proves the supplied identities for that exact hire.
+        // Other legacy gear has no reliable provenance and must not be guessed from its template.
+        var creation = storage.Read<FriendlyTeammateCreationQuote>(sessionId, CreationDocument);
+        if (creation?.State == "complete" && creation.Teammate.Aid == teammate.Aid)
+            ids.UnionWith(GetAutomaticallySuppliedHiringEquipmentIds(creation.Teammate));
+        return ids;
     }
 
     private static string CreationMoneySignature(PmcData player) => string.Join(";", player.Inventory?.Items?

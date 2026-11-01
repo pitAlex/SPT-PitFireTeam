@@ -15,6 +15,18 @@ public class FriendlyTeammateStaticRouter(JsonUtil jsonUtil, FriendlyTeammateCal
     : StaticRouter(
         jsonUtil,
         [
+            new RouteAction<FriendlyTeammateTreatmentRequest>(
+                "/singleplayer/pitfireteam/teammate/health",
+                async (url, info, sessionId, output, cancellationToken) => await FriendlyModeRequestGate.Run(() => callbacks.Treatment(url, info, sessionId))
+            ),
+            new RouteAction<FriendlyTeammateTreatmentRequest>(
+                "/singleplayer/pitfireteam/teammate/health/quote",
+                async (url, info, sessionId, output, cancellationToken) => await FriendlyModeRequestGate.Run(() => callbacks.Treatment(url, info, sessionId))
+            ),
+            new RouteAction<FriendlyTeammateTreatmentRequest>(
+                "/singleplayer/pitfireteam/teammate/health/heal",
+                async (url, info, sessionId, output, cancellationToken) => await FriendlyModeRequestGate.Run(() => callbacks.Treatment(url, info, sessionId))
+            ),
             new RouteAction<EmptyRequestData>(
                 "/client/game/start",
                 (url, info, sessionId, output, cancellationToken) => FriendlyModeRequestGate.Run(() =>
@@ -44,6 +56,10 @@ public class FriendlyTeammateStaticRouter(JsonUtil jsonUtil, FriendlyTeammateCal
             new RouteAction<EmptyRequestData>(
                 "/singleplayer/pitfireteam/teammates",
                 async (url, info, sessionId, output, cancellationToken) => await FriendlyModeRequestGate.Run(() => callbacks.List(url, info, sessionId))
+            ),
+            new RouteAction<EmptyRequestData>(
+                "/singleplayer/pitfireteam/teammates/health",
+                async (url, info, sessionId, output, cancellationToken) => await FriendlyModeRequestGate.Run(() => callbacks.HealthStates(url, info, sessionId))
             ),
             new RouteAction<EmptyRequestData>(
                 "/singleplayer/autoteam",
@@ -84,6 +100,10 @@ public class FriendlyTeammateStaticRouter(JsonUtil jsonUtil, FriendlyTeammateCal
             new RouteAction<FriendlyTeammateRenameRequest>(
                 "/singleplayer/pitfireteam/teammate/profile/rename",
                 async (url, info, sessionId, output, cancellationToken) => await FriendlyModeRequestGate.Run(() => callbacks.Rename(url, info, sessionId))
+            ),
+            new RouteAction<FriendlyTeammateVoiceRequest>(
+                "/singleplayer/pitfireteam/teammate/profile/voice",
+                async (url, info, sessionId, output, cancellationToken) => await FriendlyModeRequestGate.Run(() => callbacks.SetVoice(url, info, sessionId))
             ),
             new RouteAction<FriendlyTeammateLoadoutRequest>(
                 "/singleplayer/pitfireteam/teammate/profile/loadout",

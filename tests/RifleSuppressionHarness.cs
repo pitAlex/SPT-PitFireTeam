@@ -85,6 +85,14 @@ namespace pitTeam.BigBrain {
         public BotOwner botOwner = new BotOwner();
         public bool AllowLane=true;
         public bool PendingPrimaryFallback;
+        public bool ReloadAllowed,SameReload,Prepared,TransitionAllowed=true;public int ReloadProbes;public float DeferredUntil;
+        private bool CanAttemptDecisionTransition(AICoreActionResult<BotLogicDecision,CoreActionResultParams> source,string reason,EnemyInfo enemy)=>Time.time>=DeferredUntil;
+        private void DeferDecisionTransition(AICoreActionResult<BotLogicDecision,CoreActionResultParams> source,string reason,EnemyInfo enemy)=>DeferredUntil=Time.time+1;
+        private bool TryGetReloadRetreatDecision(EnemyInfo enemy,out AICoreActionResult<BotLogicDecision,CoreActionResultParams> next)
+        {ReloadProbes++;next=new AICoreActionResult<BotLogicDecision,CoreActionResultParams>(SameReload?BotLogicDecision.suppressFire:BotLogicDecision.holdPosition,SameReload?"recovery.noCoverSuppress.move":"reloadInCover");return ReloadAllowed;}
+        private bool TryPrepareDecisionTransition(AICoreActionResult<BotLogicDecision,CoreActionResultParams> source,string reason,AICoreActionResult<BotLogicDecision,CoreActionResultParams> next)
+        {Prepared=TransitionAllowed;return Prepared;}
+        public bool ReloadEnd(EnemyInfo enemy,out AICoreActionEnd end)=>TryPrepareSuppressReloadRetreat("recovery.noCoverSuppress.move",enemy,out end);
         public AICoreActionEnd SuppressEnd;
         public Vector3 SelectedPoint;
         private const string GrenadeLauncherSuppressReasonToken = ".grenadeLauncher";
@@ -225,6 +233,15 @@ public static class RifleSuppressionChecks {
         Check(!objective.End(reasons[0],e).Value,"valid burst continues during recovery");
         Time.time=103;
         Check(objective.End(reasons[0],e).Reason=="orderedPressureRecoveryComplete","recovery keeps original deadline");
+        Time.time=100;common=new FollowerCombatCommon();
+        Check(!common.ReloadEnd(e,out var reloadEnd)&&!reloadEnd.Value&&!common.Prepared,"suppression cannot end for unavailable reload successor");
+        Check(!common.ReloadEnd(e,out _)&&common.ReloadProbes==1,"failed suppression reload handoff backs off instead of reprobeing every frame");
+        Time.time=101.1f;common.ReloadAllowed=true;
+        Check(common.ReloadEnd(e,out reloadEnd)&&reloadEnd.Value&&common.Prepared&&reloadEnd.Reason=="followerSuppressReloadRetreat","real reload successor is prepared before releasing suppression");
+        common=new FollowerCombatCommon{ReloadAllowed=true,SameReload=true};
+        Check(!common.ReloadEnd(e,out reloadEnd)&&!reloadEnd.Value&&!common.Prepared,"identical suppression cannot masquerade as reload progress");
+        common=new FollowerCombatCommon{ReloadAllowed=true,TransitionAllowed=false};
+        Check(!common.ReloadEnd(e,out reloadEnd)&&!reloadEnd.Value&&common.DeferredUntil>Time.time,"failed publication cannot release current suppression");
         return count;
     }
 }

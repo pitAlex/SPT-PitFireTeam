@@ -74,7 +74,11 @@ namespace pitTeam.Server.Constants
 namespace pitTeam.Server.Models
 {
     public record FriendlyRecruitRequestEntry { public string ProfileId { get; set; } = ""; public string AccountId { get; set; } = ""; public string ProfileJson { get; set; } = ""; public int? RecruitmentGearPrice { get; set; } }
-    public record FixtureTeammateSettings { public int? RecruitmentGearPrice { get; set; } }
+    public record FixtureTeammateSettings
+    {
+        public int? RecruitmentGearPrice { get; set; }
+        public List<string> AutomaticallySuppliedEquipmentIds { get; set; } = [];
+    }
     public record FriendlyTeammateBuyKitResponse { public List<Item>? PlayerStashItems { get; set; } }
     public sealed class FriendlyTeammateException(string message) : Exception(message);
 }
@@ -174,13 +178,14 @@ namespace pitTeam.Server.Services
         }
         private static List<Item> GetPlayerStashItems(PmcData player) => player.Inventory.Items;
         private void EnsureNicknameIsUnique(MongoId _, string name) { if (DuplicateNickname) throw new FriendlyTeammateException("duplicate"); }
-        private static object CreateDefaultTeammateSettings(object _) => new();
+        private static FixtureTeammateSettings CreateDefaultTeammateSettings(object _) => new();
         private void SaveTeammateWithDefaultEquipment(MongoId id, BotBase bot, bool extreme, object settings, IReadOnlyDictionary<string, string> extra)
         {
             if (FailTeammateSave) throw new IOException("Injected teammate storage failure");
             var documents = extra.ToDictionary();
             documents.Add($"{bot.Aid}.json", JsonSerializer.Serialize(bot));
             documents.Add($"{bot.Aid}-equipment.json", JsonSerializer.Serialize(bot.Inventory.Items));
+            documents.Add($"{bot.Aid}-settings.json", JsonSerializer.Serialize(settings));
             storage.Database.WriteBatch(documents);
         }
         private static void DeductRoublesFromPlayerStash(PmcData player, int amount)

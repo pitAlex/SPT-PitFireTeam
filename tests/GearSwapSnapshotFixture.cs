@@ -93,9 +93,41 @@ internal static class GearSwapSnapshotChecks
         try
         {
             CheckGridComparison();
+            CheckDifferenceDiagnostics();
             Console.WriteLine("Gear Swap snapshot normalization: " + checks + " assertions passed.");
             return 0;
         }
         catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+    }
+
+    private static void CheckDifferenceDiagnostics()
+    {
+        var before = new JObject { ["Id"]="knight-equipment", ["Slots"]=new JArray(new JObject
+        { ["SlotNumber"]=3, ["ContainedItem"]=new JObject { ["Id"]="vest", ["Slots"]=new JArray(new JObject
+          { ["ContainedItem"]=new JObject { ["Id"]="plate", ["Components"]=new JArray(new JObject { ["Durability"]=40 }) } }) } }) };
+        string expected=before.ToString(Formatting.None);
+        var changed=(JObject)before.DeepClone();changed.SelectToken("Slots[0].ContainedItem.Slots[0].ContainedItem.Components[0].Durability").Replace(39);
+        string actual=changed.ToString(Formatting.None);
+        var differences=GearSwapSnapshot.DescribeDifferences(expected,actual);
+        Check(differences.Length==1&&differences[0].Contains("expectedItem=plate actualItem=plate")&&
+            differences[0].Contains("/Components/0/Durability")&&differences[0].Contains("expected=40 actual=39"),
+            "Replay diagnostics identify nested plate, exact field and both values");
+        Check(expected!=actual&&Canonical(before)!=Canonical(changed),"Diagnostics do not approve or normalize away a real mismatch");
+        Check(before.ToString(Formatting.None)==expected&&changed.ToString(Formatting.None)==actual,"Difference reporting leaves descriptors untouched");
+        Check(GearSwapSnapshot.DescribeDifferences(expected,expected).Length==0,"Matching snapshots emit no differences");
+        var a=new JObject { ["Id"]="rifle", ["StackSlots"]=new JArray(1,2), ["Malfunction"]=new JObject { ["LastShotTime"]=10 } };
+        var b=(JObject)a.DeepClone();b["StackSlots"]=new JArray(2,1);b["Malfunction"]["LastShotTime"]=11;
+        Check(GearSwapSnapshot.DescribeDifferences(a.ToString(Formatting.None),b.ToString(Formatting.None)).Length==3,
+            "Ordered cartridge and unrelated weapon runtime differences remain visible");
+        Check(GearSwapSnapshot.DescribeDifferences(a.ToString(Formatting.None),b.ToString(Formatting.None),1).Length==1,"Difference output obeys its bound");
+        Check(GearSwapSnapshot.DescribeDifferences(a.ToString(Formatting.None),b.ToString(Formatting.None),0).Length==1,"A zero requested bound still reports one useful difference");
+        var longA=new JObject { ["Id"]="item", ["Value"]=new string('a',1000) };
+        var longB=new JObject { ["Id"]="item", ["Value"]=new string('b',1000) };
+        Check(GearSwapSnapshot.DescribeDifferences(longA.ToString(),longB.ToString()).Single().Length<430,"Scalar values cannot flood the diagnostic log");
+        var reordered=new JObject { ["Slots"]=before["Slots"].DeepClone(), ["Id"]="knight-equipment" };
+        Check(GearSwapSnapshot.DescribeDifferences(expected,reordered.ToString(Formatting.None)).Single().Contains("structuredValuesEqual=true"),
+            "Text-only serialization differences are distinguished without weakening equality");
+        Check(GearSwapSnapshot.DescribeDifferences("{\"Value\":null}","{}").Single().Contains("actual=<missing>"),"Missing and null values remain distinct");
+        Check(GearSwapSnapshot.DescribeDifferences("{\"Slots\":[1,2]}","{\"Slots\":[1]}").Single().Contains("/Slots/length"),"Missing item/slot array lengths remain visible");
     }
 }

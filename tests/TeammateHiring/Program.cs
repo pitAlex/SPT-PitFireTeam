@@ -210,7 +210,7 @@ foreach (string mode in new[] { "Restricted", "Immersive", "Extreme" })
     bare.CreateTeammate(session, new() { QuoteToken = barePreview.QuoteToken, WithoutKit = true });
     var receipt = bare.storage.Read<FriendlyTeammateCreationQuote>(session, "pending-creation.json")!;
     var retained = receipt.Teammate.Inventory.Items.Select(i => i.Id).ToHashSet();
-    Check(retained.SetEquals(new[] { "equipment", "knife", "dogtag", "armband", "pockets", "special", "specialPart", "secure" }), $"{mode}: no-kit preserves permanent identity slots and empties cargo without orphaned gear");
+    Check(retained.SetEquals(new[] { "equipment", "knife", "dogtag", "pockets" }), $"{mode}: no-kit keeps only a knife and empty structural identity slots, without armband, secure container or special items");
     Check(receipt.WithoutKit && receipt.Price == 0 && receipt.State == "complete"
         && Money(bare) == 0 && bare.saveServer.Saves == 0, $"{mode}: no-kit works without funds and never saves or debits player money");
     Check(receipt.Teammate.Inventory.Equipment!.ToString() == "equipment"
@@ -223,6 +223,95 @@ foreach (string mode in new[] { "Restricted", "Immersive", "Extreme" })
     Check(bare.storage.Database.ReadProfiles().Count == 1 && Money(bare) == 0 && bare.saveServer.Saves == 0,
         $"{mode}: retries and switching buttons cannot duplicate the no-kit hire or charge afterward");
 }
+foreach (string mode in new[] { "Restricted", "Immersive", "Extreme" })
+{
+    var bareRemoval = Service("no-kit-removal-" + mode);
+    bareRemoval.settingsService.LoadoutManagementMode = mode;
+    bareRemoval.GeneratedItems = [
+        I("equipment", "root", "", "hideout"),
+        I("pockets", "pockets", "equipment", "Pockets"),
+        I("band", "band", "equipment", "ArmBand"),
+        I("secure", "container", "equipment", "SecuredContainer")
+    ];
+    var bareRemovalPreview = Prepare(bareRemoval);
+    bareRemoval.CreateTeammate(session, new() { QuoteToken = bareRemovalPreview.QuoteToken, WithoutKit = true });
+    bareRemoval.DeleteTeammateWithPayment(session, new() { AccountId = bareRemovalPreview.Aid });
+    var receipt = bareRemoval.storage.Read<FriendlyTeammateDeletionJournal>(session, "pending-deletion.json")!;
+    Check(receipt.State == "complete" && receipt.Delivery == null && receipt.DeliverySourceIds.Count == 0,
+        $"{mode}: creating and deleting a gearless teammate cannot mint a knife, armband or secure container");
+    Check(Money(bareRemoval) == 1000 && bareRemoval.notificationSendHelper.Messages.Count == 0,
+        $"{mode}: removing a gearless hire remains free and sends no equipment mail");
+}
+foreach (string mode in new[] { "Restricted", "Immersive", "Extreme" })
+foreach (bool paid in new[] { false, true })
+foreach (bool replace in new[] { false, true })
+{
+    var ownership = Service($"supplied-equipment-{mode}-{paid}-{replace}");
+    ownership.settingsService.LoadoutManagementMode = mode;
+    ownership.GeneratedItems = [
+        I("equipment", "root", "", "hideout"), I("gun", "weapon", "equipment", "FirstPrimaryWeapon"),
+        I("pockets", "pockets", "equipment", "Pockets"),
+        I("band", "band", "equipment", "ArmBand"), I("secure", "container", "equipment", "SecuredContainer")
+    ];
+    var quote = Prepare(ownership);
+    ownership.CreateTeammate(session, new() { QuoteToken = quote.QuoteToken, WithoutKit = !paid });
+    var settings = ownership.storage.Read<FixtureTeammateSettings>(session, $"{quote.Aid}-settings.json")!;
+    var saved = ownership.storage.Read<BotBase>(session, $"{quote.Aid}.json")!;
+    Check(settings.AutomaticallySuppliedEquipmentIds.Count == (paid ? 3 : 1),
+        "Paid hires record their supplied identities; gearless hires record only their knife");
+    var knife = saved.Inventory.Items.Single(item => item.SlotId == "Scabbard");
+    if (replace)
+    {
+        // Same templates, different identities: these items belong to the player.
+        saved.Inventory.Items.RemoveAll(item => settings.AutomaticallySuppliedEquipmentIds.Contains(item.Id));
+        saved.Inventory.Items.AddRange([
+            I("playerKnife", knife.Template, "equipment", "Scabbard"),
+            I("playerBand", "band", "equipment", "ArmBand"),
+            I("playerSecure", "container", "equipment", "SecuredContainer")
+        ]);
+    }
+    saved.Inventory.Items.AddRange([
+        I("playerPack", "pack", "equipment", "Backpack"),
+        I("playerCargo", "loot", "playerPack", "main")
+    ]);
+    if (paid || replace)
+        saved.Inventory.Items.Add(I("playerSecureCargo", "secureLoot", replace ? "playerSecure" : "secure", "main"));
+    ownership.storage.Write(session, $"{quote.Aid}.json", saved);
+    Prepare(ownership); // Replace the last creation quote: persisted ownership must stand alone.
+    ownership.DeleteTeammateWithPayment(session, new() { AccountId = quote.Aid });
+    var delivery = ownership.storage.Read<FriendlyTeammateDeletionJournal>(session, "pending-deletion.json")!;
+    var expected = new HashSet<string> { "playerPack", "playerCargo" };
+    if (paid) expected.Add("gun");
+    if (replace) expected.UnionWith(new[] { "playerKnife", "playerBand" });
+    if (mode == "Extreme")
+    {
+        if (paid || replace) expected.Add("playerSecureCargo");
+        if (replace) expected.Add("playerSecure");
+    }
+    Check(delivery.DeliverySourceIds.ToHashSet().SetEquals(expected),
+        $"{mode}/{paid}/{replace}: only automatic identities are excluded; supplied replacements and ordinary gear return");
+    var returned = delivery.Delivery!.Items!.Data!;
+    Check(returned.All(item => item.ParentId == delivery.Delivery.Items.Stash!.ToString()
+        || returned.Any(parent => parent.Id == item.ParentId)), "Excluding an automatic container never orphans returned cargo");
+    if (paid && !replace && mode == "Extreme")
+        Check(returned.Single(item => item.Template == "secureLoot").ParentId == delivery.Delivery.Items.Stash!.ToString(),
+            "Cargo from an automatic secure container returns as an independent mail root");
+    Check(Money(ownership) == (paid ? 900 : 1000), "Supply filtering never changes hire payment or free deletion");
+    ownership.DeleteTeammateWithPayment(session, new() { AccountId = quote.Aid });
+    Check(Mail(ownership).Count == 1, "Repeated deletion cannot remail the filtered equipment");
+}
+var legacySupplies = Service("legacy-supplies-with-receipt");
+legacySupplies.settingsService.LoadoutManagementMode = "Extreme";
+legacySupplies.GeneratedItems = [
+    I("equipment", "root", "", "hideout"), I("pockets", "pockets", "equipment", "Pockets"),
+    I("band", "band", "equipment", "ArmBand"), I("secure", "container", "equipment", "SecuredContainer")
+];
+var legacyQuote = Prepare(legacySupplies);
+legacySupplies.CreateTeammate(session, new() { QuoteToken = legacyQuote.QuoteToken, WithoutKit = true });
+legacySupplies.storage.Write(session, $"{legacyQuote.Aid}-settings.json", new FixtureTeammateSettings());
+legacySupplies.DeleteTeammateWithPayment(session, new() { AccountId = legacyQuote.Aid });
+Check(legacySupplies.storage.Read<FriendlyTeammateDeletionJournal>(session, "pending-deletion.json")!.Delivery == null,
+    "A matching completed legacy hire receipt proves its automatic identities without a settings migration");
 var bareFailure = Service("no-kit-failure");
 var bareFailurePreview = Prepare(bareFailure);
 bareFailure.FailTeammateSave = true;

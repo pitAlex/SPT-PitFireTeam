@@ -409,6 +409,11 @@ namespace pitTeam.Components
             {
                 string loadoutSection = pitFireTeam.GetLanguageText(language => language.loadoutManagementSettings);
                 yield return new SquadSettingEntry { SectionTitle = loadoutSection, LoadoutMode = LoadoutManagementMode.Restricted };
+                if (GameplayModeRuntime.GetEffectiveValue(pitFireTeam.loadoutManagementMode) == LoadoutManagementMode.Restricted &&
+                    pitFireTeam.restrictedGearMaintenance != null)
+                {
+                    yield return new SquadSettingEntry { SectionTitle = loadoutSection, Entry = pitFireTeam.restrictedGearMaintenance };
+                }
                 yield return new SquadSettingEntry { SectionTitle = loadoutSection, LoadoutMode = LoadoutManagementMode.Immersive };
                 yield return new SquadSettingEntry { SectionTitle = loadoutSection, LoadoutMode = LoadoutManagementMode.Extreme };
             }
@@ -681,7 +686,8 @@ namespace pitTeam.Components
 
         private static bool IsNestedSettingsEntry(ConfigEntryBase entry)
         {
-            return entry == pitFireTeam.friendlyScavEncounters
+            return entry == pitFireTeam.restrictedGearMaintenance
+                || entry == pitFireTeam.friendlyScavEncounters
                 || entry == pitFireTeam.statusReportHealthColoring
                 || entry == pitFireTeam.statusReportFullHealthColor
                 || entry == pitFireTeam.statusReportMediumHealthColor
@@ -981,7 +987,7 @@ namespace pitTeam.Components
 
             ProfileTooltipHoverController tooltipHover = tooltipAreaObject.AddComponent<ProfileTooltipHoverController>();
             string tooltipKey = GameplayModeRuntime.IsSettingUnavailableInCurrentMode(entry)
-                ? GameplayModeRuntime.IsAllegiance ? "SettingsUnavailableInAllegiance" : "SettingsUnavailableInGunsForHire"
+                ? GameplayModeRuntime.IsGoingRogue ? "SettingsUnavailableInGoingRogue" : GameplayModeRuntime.IsAllegiance ? "SettingsUnavailableInAllegiance" : "SettingsUnavailableInGunsForHire"
                 : "SettingsUnavailableDuringRaid";
             tooltipHover.Configure(GetSocialUiText(tooltipKey));
         }
@@ -2623,6 +2629,7 @@ namespace pitTeam.Components
             }
 
             if (entry == pitFireTeam.scanDistance) return language.scanDistance;
+            if (entry == pitFireTeam.restrictedGearMaintenance) return language.loadoutManagementRestrictedGearMaintenance;
             if (entry == pitFireTeam.patrolRadius) return language.patrolRadius;
             if (entry == pitFireTeam.followDistance) return language.followDistance;
             if (entry == pitFireTeam.regroupRadius) return language.regroupRadius;

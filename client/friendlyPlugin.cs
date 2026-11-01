@@ -122,6 +122,7 @@ namespace pitTeam
         public Dictionary<string, string> equipmentLock { get; set; }
         public Dictionary<string, string> loadoutManagement { get; set; }
         public Dictionary<string, string> loadoutManagementRestricted { get; set; }
+        public Dictionary<string, string> loadoutManagementRestrictedGearMaintenance { get; set; }
         public Dictionary<string, string> loadoutManagementImmersive { get; set; }
         public Dictionary<string, string> loadoutManagementExtreme { get; set; }
         public Dictionary<string, string> npcSendMessage { get; set; }
@@ -205,7 +206,7 @@ namespace pitTeam
         public string Message { get; set; }
     }
 
-    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "1.0.0")]
+    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "1.1.0")]
     [BepInDependency("xyz.drakia.bigbrain")]
     [BepInDependency(pitFireTeam.SainPluginId, BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency(pitFireTeam.MenuOverhaulPluginId, BepInDependency.DependencyFlags.SoftDependency)]
@@ -265,6 +266,7 @@ namespace pitTeam
         public static ConfigEntry<bool> englishBear;
         public static ConfigEntry<bool> pmcArmbands;
         public static ConfigEntry<LoadoutManagementMode> loadoutManagementMode;
+        public static ConfigEntry<bool> restrictedGearMaintenance;
 
         public static ConfigEntry<bool> botPrefetch;
 
@@ -376,6 +378,9 @@ namespace pitTeam
             new BotOwnerIsFolowerPatch().Enable();
             new BotOwnerManualUpdatePatch().Enable();
             new BotOwnerActivatePatch().Enable();
+            new FollowerFoundInRaidPatch().Enable();
+            new FollowerHumanPatrolChooserPatch().Enable();
+            new FollowerNativeBrainActivationPatch().Enable();
             new SessionLoadBotsEnglishVoicePatch().Enable();
             new LootPatrolActiveLayerListPatch().Enable();
             new LootPatrolDecisionBypassPatch().Enable();
@@ -438,6 +443,7 @@ namespace pitTeam
             new GearSwapDiscardPatch().Enable();
             new GearSwapModifyPatch().Enable();
             new GearSwapDestinationPatch().Enable();
+            new GearSwapStackTransferPatch().Enable();
             new GearSwapWeaponUpdatePatch().Enable();
             new GearSwapHealthUsePatch().Enable();
             new GearSwapTabPatch().Enable();
@@ -484,6 +490,7 @@ namespace pitTeam
             new FollowerSupportNoAmmoMainSwitchPolicyPatch().Enable();
             new FollowerHoldLingerReloadSuppressPatch().Enable();
             new FollowerMagazineReloadStartPatch().Enable();
+            new FollowerReloadStancePatch().Enable();
             new FollowerMagazineSupplyPatch().Enable();
             new FollowerCombatReloadPermissionPatch().Enable();
             new FollowerLauncherNoAmmoSwitchPatch().Enable();
@@ -501,6 +508,7 @@ namespace pitTeam
             new FollowerGrenadeReleasePatch().Enable();
             new FollowerGrenadeSpawnPatch().Enable();
             new FollowerMedicalCancelPatch().Enable();
+            new FollowerPatrolHeadLookPatch().Enable();
             new FollowerPoisonImmunityPatch().Enable();
             new FollowerHazardMovementPatch().Enable();
             new FollowerBarbedWireContactPatch().Enable();
@@ -564,7 +572,7 @@ namespace pitTeam
             new RaidStartPatch().Enable();
             new MainMenuControllerPatch().Enable();
             new MainMenuControllerReadyScreenGatePatch().Enable();
-            new TarkovApplicationOnlineFallbackPatch().Enable();
+            new TarkovApplicationLocalRaidStartPatch().Enable();
             // Compatibility guard: hideout/trader-scene cleanup can null-ref while
             // the teammate flow forces the raid into local mode. Keep this narrow
             // so only that synthetic raid-start unload window is affected.
@@ -581,6 +589,7 @@ namespace pitTeam
             new SelectSpawnPointPatch().Enable();
 
             new MatchmakerTimeHasComeShowPatch().Enable();
+            new CompanionAcceptScreenClosePatch().Enable();
             new PartyInfoPanelEquipmentHealthPatch().Enable();
             new MenuScreenShowSquadControlPatch().Enable();
             new MenuScreenReconnectVisibilitySquadControlPatch().Enable();
@@ -617,6 +626,7 @@ namespace pitTeam
 
             new FriendlyDropdownNamePatch().Enable();
             new OtherPlayerProfileScreenPatch().Enable();
+            new ArmBandPreviewBodyFallbackPatch().Enable();
             new OtherPlayerProfileScreenClosePatch().Enable();
             new LoadoutEditorUnloadAmmoPatch().Enable();
             new LoadoutEditorRepairContextInteractionPatch().Enable();
@@ -653,6 +663,8 @@ namespace pitTeam
         private void Start()
         {
             RefreshPluginFlags();
+            // Optional mode plugins register in Awake; all Awake calls precede Start.
+            SyncServerSettings();
             if (IsSeparateHostilityInstalled && factionHostilities?.Value == true)
             {
                 Log.LogWarning(
@@ -1241,6 +1253,8 @@ namespace pitTeam
             pmcArmbands.SettingChanged += (_, _) => SyncServerSettings();
 
             loadoutManagementMode = Config.Bind("", "14 LoadoutManagement", DefaultLoadoutManagementMode, new ConfigDescription(optionsLang.loadoutManagement["Description"], null, CreateConfigAttributes(-1005, false, optionsLang.loadoutManagement)));
+            restrictedGearMaintenance = Config.Bind("", "14 LoadoutManagementRestrictedGearMaintenance", false, new ConfigDescription(optionsLang.loadoutManagementRestrictedGearMaintenance["Description"], null, CreateConfigAttributes(-1005, false, optionsLang.loadoutManagementRestrictedGearMaintenance)));
+            restrictedGearMaintenance.SettingChanged += (_, _) => SyncServerSettings();
             if (!Enum.IsDefined(typeof(LoadoutManagementMode), loadoutManagementMode.Value))
             {
                 loadoutManagementMode.Value = DefaultLoadoutManagementMode;
@@ -1307,7 +1321,6 @@ namespace pitTeam
             GameplayModeRuntime.Initialize(Config);
             Config.SaveOnConfigSet = true;
             Config.Save();
-            SyncServerSettings();
         }
 
         private void OnHideUnsupportedCommandsChanged(object sender, EventArgs e)
@@ -1384,25 +1397,33 @@ namespace pitTeam
                     if (follower != null && follower.GetBot().HealthController.IsAlive && !follower.GetBot().DoorOpener.Interacting)
                     {
                         BotOwner bot = follower.GetBot();
-                        Vector3 target = FindTeleportSpot(position, reservedSpots, followerIndex);
+                        if (!TryFindTeleportSpot(position, reservedSpots, followerIndex, out Vector3 target))
+                        {
+                            Modules.Logger.LogInfo($"[Teleport] No supported same-floor space for {bot.Profile.Nickname}; placement skipped.");
+                            continue;
+                        }
                         followerIndex++;
 
                         follower.BeginTeleportGrace(target);
                         bot.Mover.Stop();
                         bot.GetPlayer.Teleport(target);
+                        Modules.Logger.LogInfo($"[Teleport] {bot.Profile.Nickname} player={position} target={target}");
                         reservedSpots.Add(target);
                     }
                 }
             }
         }
 
-        private static Vector3 FindTeleportSpot(Vector3 playerPosition, List<Vector3> reservedSpots, int index)
+        private static bool TryFindTeleportSpot(Vector3 playerPosition, List<Vector3> reservedSpots, int index, out Vector3 target)
         {
+            target = default;
             const float minDistanceToPlayer = 2f;
             const float minDistanceBetweenFollowers = 1.6f;
             const float sampleRadius = 1.4f;
             const float baseRadius = 2.25f;
             const float ringStep = 1.4f;
+            if (!NavMesh.SamplePosition(playerPosition, out NavMeshHit playerFloor, 0.65f, NavMesh.AllAreas) ||
+                Mathf.Abs(playerFloor.position.y - playerPosition.y) > 0.65f) return false;
 
             float seedAngle = UnityEngine.Random.Range(0f, 360f);
 
@@ -1416,6 +1437,14 @@ namespace pitTeam
 
                 if (NavMesh.SamplePosition(candidate, out NavMeshHit hit, sampleRadius, NavMesh.AllAreas))
                 {
+                    if (Mathf.Abs(hit.position.y - playerFloor.position.y) > 0.65f ||
+                        NavMesh.Raycast(playerFloor.position, hit.position, out _, NavMesh.AllAreas) ||
+                        !Physics.Raycast(hit.position + Vector3.up * 0.35f, Vector3.down, out RaycastHit support,
+                            0.8f, LayersMaskController.HighPolyWithTerrainMask, QueryTriggerInteraction.Ignore) ||
+                        Mathf.Abs(support.point.y - hit.position.y) > 0.35f ||
+                        Physics.CheckCapsule(hit.position + Vector3.up * 0.4f, hit.position + Vector3.up * 1.45f,
+                            0.28f, LayersMaskController.HighPolyWithTerrainMask, QueryTriggerInteraction.Ignore))
+                        continue;
                     if ((hit.position - playerPosition).sqrMagnitude < minDistanceToPlayer * minDistanceToPlayer)
                     {
                         continue;
@@ -1432,17 +1461,13 @@ namespace pitTeam
                     }
                     if (!overlaps)
                     {
-                        return hit.position;
+                        target = hit.position;
+                        return true;
                     }
                 }
             }
 
-            // Fallback near player if no valid spread point is found.
-            if (NavMesh.SamplePosition(playerPosition, out NavMeshHit fallbackHit, 1.2f, NavMesh.AllAreas))
-            {
-                return fallbackHit.position;
-            }
-            return playerPosition;
+            return false;
         }
 
         private void _BotHeal()

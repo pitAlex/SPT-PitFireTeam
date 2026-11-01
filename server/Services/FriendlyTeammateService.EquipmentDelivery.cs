@@ -4,7 +4,8 @@ namespace pitTeam.Server.Services;
 
 public partial class FriendlyTeammateService
 {
-    private List<Item> BuildCurrentTeammateKitDeliveryItems(BotBase teammate, bool includeSecureContainer)
+    private List<Item> BuildCurrentTeammateKitDeliveryItems(BotBase teammate, bool includeSecureContainer,
+        IEnumerable<string>? automaticallySuppliedEquipmentIds)
     {
         var items = teammate.Inventory?.Items;
         if (items == null || items.Count == 0)
@@ -13,6 +14,8 @@ public partial class FriendlyTeammateService
         }
 
         string equipmentRootId = GetEquipmentRootId(teammate);
+        var automaticIds = (automaticallySuppliedEquipmentIds ?? [])
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var deliveryItems = new List<Item>();
         foreach (var slotItem in items.Where(item =>
                      item?.ParentId != null
@@ -43,6 +46,15 @@ public partial class FriendlyTeammateService
             AddDeliveryItemTree(items, slotItem, deliveryItems);
         }
 
+        // Filter identities across the complete trees: moving free equipment into a bag
+        // must not turn it into a reward. Hoist retained cargo out of an excluded shell.
+        deliveryItems.RemoveAll(item => automaticIds.Contains(item.Id.ToString()));
+        foreach (var item in deliveryItems.Where(item => item.ParentId != null && automaticIds.Contains(item.ParentId)))
+        {
+            item.ParentId = null;
+            item.SlotId = null;
+            item.Location = null;
+        }
         return deliveryItems;
     }
 

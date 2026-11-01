@@ -117,7 +117,7 @@ namespace pitTeam.Modules
                     raidId = currentRaidId,
                     locationId = currentLocationId,
                     file = currentFilePath,
-                    schemaVersion = 14,
+                    schemaVersion = 15,
                     snapshotIntervalMs = GetSnapshotIntervalMs(),
                     followerWeaponActivityProbeMs = Mathf.RoundToInt(FollowerWeaponActivityProbeSeconds * 1000f),
                     goalEnemyTransitionCoalesceMs = Mathf.RoundToInt(GoalEnemyTransitionCoalesceSeconds * 1000f)
@@ -1115,6 +1115,9 @@ namespace pitTeam.Modules
                 : -1;
             bool shooting = shootData?.Shooting == true;
             bool reloading = weaponManager?.Reload?.Reloading == true;
+            var hands = owner.GetPlayer?.HandsController as Player.FirearmController;
+            string? handsOperation = hands?.CurrentOperation?.GetType().Name;
+            bool patrolStance = owner.GetPlayer?.MovementContext?._isInPatrol == true;
             float lastTriggerPressedTime = shootData?.LastTriggerPressd ?? 0f;
 
             if (!state.HasWeaponActivitySample)
@@ -1125,6 +1128,8 @@ namespace pitTeam.Modules
                 state.LastWeaponActivityTriggerPressedTime = lastTriggerPressedTime;
                 state.LastWeaponActivityWeaponId = activeWeaponId;
                 state.LastWeaponActivityLoadedRounds = loadedRounds;
+                state.LastWeaponActivityHandsOperation = handsOperation;
+                state.LastWeaponActivityPatrolStance = patrolStance;
                 return;
             }
 
@@ -1140,7 +1145,10 @@ namespace pitTeam.Modules
                                        state.LastWeaponActivityLoadedRounds >= 0 &&
                                        loadedRounds != state.LastWeaponActivityLoadedRounds;
 
-            if (shootingChanged || reloadingChanged || triggerAdvanced || weaponChanged || loadedRoundsChanged)
+            bool handsOperationChanged = !string.Equals(handsOperation, state.LastWeaponActivityHandsOperation, StringComparison.Ordinal);
+            bool patrolStanceChanged = patrolStance != state.LastWeaponActivityPatrolStance;
+            if (shootingChanged || reloadingChanged || triggerAdvanced || weaponChanged || loadedRoundsChanged ||
+                handsOperationChanged || patrolStanceChanged)
             {
                 WriteEventInternal("followerWeaponActivity", owner, new
                 {
@@ -1151,11 +1159,15 @@ namespace pitTeam.Modules
                         reloadingChanged,
                         triggerAdvanced,
                         weaponChanged,
-                        loadedRoundsChanged
+                        loadedRoundsChanged,
+                        handsOperationChanged,
+                        patrolStanceChanged
                     },
                     previous = new
                     {
                         shooting = state.LastWeaponActivityShooting,
+                        handsOperation = state.LastWeaponActivityHandsOperation,
+                        patrolStance = state.LastWeaponActivityPatrolStance,
                         reloading = state.LastWeaponActivityReloading,
                         lastTriggerPressedTime = state.LastWeaponActivityTriggerPressedTime > 0f
                             ? SanitizeFloat(state.LastWeaponActivityTriggerPressedTime)
@@ -1168,6 +1180,10 @@ namespace pitTeam.Modules
                     current = new
                     {
                         shooting,
+                        handsOperation,
+                        handsReloading = hands?.IsInReloadOperation() == true,
+                        patrolStance,
+                        blockFirearms = owner.GetPlayer?.MovementContext?.BlockFirearms == true,
                         reloading,
                         lastTriggerPressedTime = lastTriggerPressedTime > 0f
                             ? SanitizeFloat(lastTriggerPressedTime)
@@ -1186,6 +1202,8 @@ namespace pitTeam.Modules
             state.LastWeaponActivityTriggerPressedTime = lastTriggerPressedTime;
             state.LastWeaponActivityWeaponId = activeWeaponId;
             state.LastWeaponActivityLoadedRounds = loadedRounds;
+            state.LastWeaponActivityHandsOperation = handsOperation;
+            state.LastWeaponActivityPatrolStance = patrolStance;
         }
 
         private static object CreateBotSnapshot(BotOwner bot, RecorderFollowerState state)
@@ -2617,6 +2635,8 @@ namespace pitTeam.Modules
             public bool HasWeaponActivitySample;
             public bool LastWeaponActivityShooting;
             public bool LastWeaponActivityReloading;
+            public string? LastWeaponActivityHandsOperation;
+            public bool LastWeaponActivityPatrolStance;
             public float LastWeaponActivityTriggerPressedTime;
             public string? LastWeaponActivityWeaponId;
             public int LastWeaponActivityLoadedRounds = -1;

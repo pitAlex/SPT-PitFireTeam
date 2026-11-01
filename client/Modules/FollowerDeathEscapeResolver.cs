@@ -56,6 +56,7 @@ namespace pitTeam.Modules
         public int AliveSquadmates { get; set; }
         public bool HasSecureMeds { get; set; }
         public bool VitalsDestroyed { get; set; }
+        public FollowerRaidHealth RaidHealth { get; set; }
         public JsonType.FlatItem[] EquipmentItems { get; set; }
         public string[] TrackedItemIds { get; set; }
     }
@@ -221,6 +222,7 @@ namespace pitTeam.Modules
                         AliveSquadmates = aliveCount,
                         HasSecureMeds = readiness.HasSecureMeds,
                         VitalsDestroyed = readiness.VitalsDestroyed,
+                        RaidHealth = FollowerRaidHealthRetention.Capture(bot.GetPlayer),
                         EquipmentItems = null,
                         TrackedItemIds = alive ? GetTrackedFollowerItemIds(bot) : Array.Empty<string>()
                     });
@@ -312,6 +314,7 @@ namespace pitTeam.Modules
                     AliveSquadmates = aliveCount,
                     HasSecureMeds = readiness.HasSecureMeds,
                     VitalsDestroyed = readiness.VitalsDestroyed,
+                    RaidHealth = FollowerRaidHealthRetention.Capture(bot.GetPlayer),
                     EquipmentItems = null,
                     TrackedItemIds = Array.Empty<string>()
                 });

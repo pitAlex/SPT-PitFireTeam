@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk.Razor">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <LangVersion>latest</LangVersion>
@@ -6,12 +6,15 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>pitFireTeam.Server</AssemblyName>
     <RootNamespace>pitTeam.Server</RootNamespace>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <OutputType>Library</OutputType>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <SptReferenceRoot Condition="'$(SptReferenceRoot)' == ''">$(MSBuildProjectDirectory)/refs/4.1.0</SptReferenceRoot>
   </PropertyGroup>
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="MudBlazor" Version="9.7.0" ExcludeAssets="runtime" />
+    <Compile Include="../shared/GameplayModePolicy.cs" Link="Shared/GameplayModePolicy.cs" />
     <Compile Include="../shared/FriendlyEncounterPenaltyPolicy.cs" Link="Shared/FriendlyEncounterPenaltyPolicy.cs" />
     <Compile Include="../shared/PmcKarmaPolicy.cs" Link="Shared/PmcKarmaPolicy.cs" />
     <Compile Include="../shared/SelfDeterminationPolicy.cs" Link="Shared/SelfDeterminationPolicy.cs" />
@@ -20,6 +23,10 @@
     <PackageReference Include="HarmonyX" Version="2.16.1" />
   </ItemGroup>
   <ItemGroup>
+    <Reference Include="SPTarkov.Server.Web">
+      <HintPath>$(SptReferenceRoot)/SPTarkov.Server.Web.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="SPTarkov.Common">
       <HintPath>$(SptReferenceRoot)/SPTarkov.Common.dll</HintPath>
       <Private>false</Private>
@@ -46,6 +53,7 @@
       <RequiredSptReference Include="$(SptReferenceRoot)/SPTarkov.Common.dll" />
       <RequiredSptReference Include="$(SptReferenceRoot)/SPTarkov.DI.dll" />
       <RequiredSptReference Include="$(SptReferenceRoot)/SPTarkov.Server.Core.dll" />
+      <RequiredSptReference Include="$(SptReferenceRoot)/SPTarkov.Server.Web.dll" />
       <RequiredSptReference Include="$(SptReferenceRoot)/SemanticVersioning.dll" />
     </ItemGroup>
     <Error

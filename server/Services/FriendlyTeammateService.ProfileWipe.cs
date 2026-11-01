@@ -9,6 +9,7 @@ public partial class FriendlyTeammateService
     {
         lock (CreationLock)
         {
+            ClearCompanionRaidPreparation(sessionId);
             storage.WipeProfile(sessionId);
             foreach (string key in profileRecoveryNotices.Keys
                 .Where(key => key.StartsWith(sessionId + ":", StringComparison.OrdinalIgnoreCase)).ToArray())

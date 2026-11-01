@@ -30,6 +30,11 @@ namespace pitTeam.BigBrain.Actions
             {
                 return;
             }
+            if (UsesFixedCompanionGear)
+            {
+                ClearContainerLootState("TakeContainerLoot:companionEquipmentFixed");
+                return;
+            }
 
             if (!CanContinueContainerLootCommand(out string? guardFailureReason))
             {
@@ -202,7 +207,8 @@ namespace pitTeam.BigBrain.Actions
 
             if (followerData?.CanHandleBodyContainerLootCommands != true)
             {
-                reason = "TakeContainerLoot:spawnedTeammateAlive";
+                reason = followerData?.AllowsBodyContainerLootCommands == false
+                    ? "TakeContainerLoot:companionPolicy" : "TakeContainerLoot:spawnedTeammateAlive";
                 return false;
             }
 

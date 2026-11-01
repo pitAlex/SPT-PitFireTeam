@@ -23,6 +23,7 @@ namespace Comfort.Common
 }
 namespace EFT
 {
+    public enum EOperationStatus { Started, Succeeded, Failed }
     public class Profile { }
     public class InventoryOperationDescriptor { }
 }
@@ -60,6 +61,7 @@ namespace EFT.InventoryLogic.Operations
     public class BaseInventoryCommand { }
     public abstract class AbstractOperation
     {
+        public EOperationStatus Status;
         protected AbstractOperation(ushort id, InventoryController controller) { }
         public abstract void ExecuteInternal(Callback callback);
         public abstract InventoryOperationDescriptor ToDescriptor();
@@ -119,6 +121,7 @@ static class GearSwapControllerFixture
         Check(success, "move accepted: " + from + " -> " + to);
         Check(controller.ActiveEvents == 0, "completed move leaves no stale busy markers");
         Check(controller.BeginCount == controller.CompleteCount, "every Begin has exactly one completion");
+        Check(operation.Status == EOperationStatus.Succeeded, "successful draft token completed");
     }
     static void Main(string[] args)
     {
@@ -163,6 +166,14 @@ static class GearSwapControllerFixture
         bool failed = false;
         controller.Execute(rejected, result => failed = !result.Succeed);
         Check(failed && controller.ActiveEvents == 0, "unsupported action leaves no busy event");
+        Check(rejected.Status == EOperationStatus.Failed, "rejected token completed");
+        int callbackCount = 0;
+        var callbackThrows = controller.ConvertOperationResultToOperation(new TestMove { From = "botSecondary", To = "freeCell" });
+        try { controller.Execute(callbackThrows, result => { callbackCount++; throw new ApplicationException("UI subscriber"); }); }
+        catch (ApplicationException) { }
+        Check(callbackCount == 1, "throwing completion callback must never be invoked twice");
+        Check(callbackThrows.Status == EOperationStatus.Succeeded, "UI callback cannot change committed draft outcome");
+        controller.Execute(callbackThrows, result => Check(!result.Succeed, "completed token cannot replay"));
         var occupied = controller.ConvertOperationResultToOperation(new TestMove { From = "botSecondary", To = "botPrimary" });
         failed = false;
         controller.Execute(occupied, result => failed = !result.Succeed);
@@ -171,6 +182,8 @@ static class GearSwapControllerFixture
         var duringApply = controller.ConvertOperationResultToOperation(new TestMove { From = "botPrimary", To = "backpack" });
         controller.Execute(duringApply, result => failed = !result.Succeed);
         Check(failed && controller.ActiveEvents == 0, "Apply-time edit rejected without busy event");
+        controller.Session.Applying = false;
+        controller.Execute(duringApply, result => Check(!result.Succeed, "rejected Apply-time token cannot replay later"));
         var followerSlot = new Slot { ParentItem = controller.Session.FollowerEquipment };
         Check(controller.IsAllowedToSeeSlot(followerSlot, EquipmentSlot.Holster), "recruited container holster visible");
         Check(controller.IsAllowedToSeeEquipmentSlot(followerSlot, EquipmentSlot.Holster), "recruited equipment holster visible");

@@ -11,10 +11,13 @@ public record FriendlyServerSettingsRequest : IRequestData
     public string GameplayMode { get; set; } = "GunsForHire";
 
     [JsonIgnore]
-    public bool IsAllegiance => GameplayMode == "Allegiance";
+    public bool IsAllegiance => pitTeam.Shared.GameplayModePolicy.UsesAllegianceRules(GameplayMode);
 
     [JsonPropertyName("pmcArmbands")]
     public bool PmcArmbands { get; set; } = true;
+
+    [JsonPropertyName("restrictedGearMaintenance")]
+    public bool? RestrictedGearMaintenance { get; set; } = false;
 
     private string loadoutManagementMode = DefaultLoadoutManagementMode;
 

@@ -1,0 +1,172 @@
+{
+	"price": {
+		"_tpl": "5696686a4bdc2da3298b456a",
+		"count": 1000
+	},
+	"level": 2,
+	"item": [
+		{
+			"_id": "6781fcce618f8c5f9a09486d",
+			"_tpl": "606587252535c57a13424cfd",
+			"parentId": "hideout",
+			"slotId": "hideout",
+			"upd": {
+				"Repairable": {
+					"MaxDurability": 100,
+					"Durability": 100
+				},
+				"FireMode": {
+					"FireMode": "fullauto"
+				},
+				"StackObjectsCount": 5,
+				"UnlimitedCount": false,
+				"BuyRestrictionMax": 5,
+				"BuyRestrictionCurrent": 0
+			}
+		},
+		{
+			"_id": "6781fa7d228c503c600bd799",
+			"_tpl": "5d025cc1d7ad1a53845279ef",
+			"slotId": "mod_pistol_grip",
+			"parentId": "6781fcce618f8c5f9a09486d"
+		},
+		{
+			"_id": "6781fa7d228c503c600bd79a",
+			"_tpl": "6272874a6c47bd74f92e2087",
+			"slotId": "mod_magazine",
+			"parentId": "6781fcce618f8c5f9a09486d"
+		},
+		{
+			"_id": "6781fa7d228c503c600bd79b",
+			"_tpl": "606587a88900dc2d9a55b659",
+			"slotId": "mod_reciever",
+			"parentId": "6781fcce618f8c5f9a09486d"
+		},
+		{
+			"_id": "6781fa7d228c503c600bd79c",
+			"_tpl": "5c793fb92e221644f31bfb64",
+			"slotId": "mod_stock_001",
+			"parentId": "6781fcce618f8c5f9a09486d"
+		},
+		{
+			"_id": "6781fa7d228c503c600bd79d",
+			"_tpl": "606587bd6d0bd7580617bacc",
+			"slotId": "mod_charge",
+			"parentId": "6781fcce618f8c5f9a09486d"
+		},
+		{
+			"_id": "6781fa7d228c503c600bd7a0",
+			"_tpl": "57ac965c24597706be5f975c",
+			"slotId": "mod_scope",
+			"upd": {
+				"Sight": {
+					"ScopesCurrentCalibPointIndexes": [0, 0],
+					"ScopesSelectedModes": [0, 0],
+					"SelectedScope": 0,
+					"ScopeZoomValue": 0
+				}
+			},
+			"parentId": "6781fa7d228c503c600bd79b"
+		},
+		{
+			"_id": "6781fa7d228c503c600bd7a1",
+			"_tpl": "60658776f2cb2e02a42ace2b",
+			"slotId": "mod_barrel",
+			"parentId": "6781fa7d228c503c600bd79b"
+		},
+		{
+			"_id": "6781fa7d228c503c600bd7a2",
+			"_tpl": "6065880c132d4d12c81fd8da",
+			"slotId": "mod_handguard",
+			"parentId": "6781fa7d228c503c600bd79b"
+		},
+		{
+			"_id": "6781fa7d228c503c600bd7a3",
+			"_tpl": "5bc09a18d4351e003562b68e",
+			"slotId": "mod_sight_rear",
+			"upd": {
+				"Sight": {
+					"ScopesCurrentCalibPointIndexes": [0],
+					"ScopesSelectedModes": [0],
+					"SelectedScope": 0,
+					"ScopeZoomValue": 0
+				}
+			},
+			"parentId": "6781fa7d228c503c600bd79b"
+		},
+		{
+			"_id": "6781fa7d228c503c600bd7a4",
+			"_tpl": "6516e91f609aaf354b34b3e2",
+			"slotId": "mod_stock_000",
+			"parentId": "6781fa7d228c503c600bd79c"
+		},
+		{
+			"_id": "6781fa7d228c503c600bd7a5",
+			"_tpl": "5fbe7618d6fa9c00c571bb6c",
+			"slotId": "mod_muzzle",
+			"parentId": "6781fa7d228c503c600bd7a1"
+		},
+		{
+			"_id": "6781fa7d228c503c600bd7a6",
+			"_tpl": "6065dc8a132d4d12c81fd8e3",
+			"slotId": "mod_gas_block",
+			"parentId": "6781fa7d228c503c600bd7a1"
+		},
+		{
+			"_id": "6781fa7d228c503c600bd7a7",
+			"_tpl": "6269220d70b6c02e665f2635",
+			"slotId": "mod_mount_000",
+			"parentId": "6781fa7d228c503c600bd7a2"
+		},
+		{
+			"_id": "6781fa7d228c503c600bd7a8",
+			"_tpl": "6269220d70b6c02e665f2635",
+			"slotId": "mod_mount_001",
+			"parentId": "6781fa7d228c503c600bd7a2"
+		},
+		{
+			"_id": "6781fa7d228c503c600bd7a9",
+			"_tpl": "57cffb66245977632f391a99",
+			"slotId": "mod_foregrip",
+			"parentId": "6781fa7d228c503c600bd7a2"
+		},
+		{
+			"_id": "6781fa7d228c503c600bd7aa",
+			"_tpl": "5bc09a30d4351e00367fb7c8",
+			"slotId": "mod_sight_front",
+			"upd": {
+				"Sight": {
+					"ScopesCurrentCalibPointIndexes": [0],
+					"ScopesSelectedModes": [0],
+					"SelectedScope": 0,
+					"ScopeZoomValue": 0
+				}
+			},
+			"parentId": "6781fa7d228c503c600bd7a2"
+		},
+		{
+			"_id": "6781fa7d228c503c600bd7ab",
+			"_tpl": "6272370ee4013c5d7e31f418",
+			"slotId": "mod_tactical",
+			"upd": {
+				"Light": {
+					"IsActive": true,
+					"SelectedMode": 2
+				}
+			},
+			"parentId": "6781fa7d228c503c600bd7a7"
+		},
+		{
+			"_id": "6781fa7d228c503c600bd7ac",
+			"_tpl": "6272370ee4013c5d7e31f418",
+			"slotId": "mod_tactical",
+			"upd": {
+				"Light": {
+					"IsActive": true,
+					"SelectedMode": 1
+				}
+			},
+			"parentId": "6781fa7d228c503c600bd7a8"
+		}
+	]
+}

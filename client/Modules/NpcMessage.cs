@@ -234,6 +234,7 @@ namespace pitTeam.Modules
                         ExtractName = string.Empty,
                         Distance = 0d,
                         HealthRatio = 0d,
+                        RaidHealth = FollowerRaidHealthRetention.GetFallen(member.Aid, member.ProfileId),
                         EquipmentPower = 0d,
                         EnemyAveragePower = 0d,
                         AliveSquadmates = 0,

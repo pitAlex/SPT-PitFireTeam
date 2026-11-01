@@ -20,9 +20,12 @@ namespace pitTeam.Modules
         {
             // A single merged item ID cannot express two different post-raid ownership rules.
             if ((_kind == Kind.Merge || _kind == Kind.Transfer) &&
-                playerOwned.Contains(_item) != playerOwned.Contains(_other))
+                !CanCombineStacks(playerOwned, _item, _other))
                 throw new InvalidOperationException("Keep player-owned and follower-owned stacks separate.");
         }
+
+        internal static bool CanCombineStacks(HashSet<string> playerOwned, string source, string target) =>
+            playerOwned.Contains(source) == playerOwned.Contains(target);
 
         internal void UpdateProvenance(HashSet<string> playerOwned)
         {
@@ -32,6 +35,11 @@ namespace pitTeam.Modules
 
         internal static GearSwapEdit Capture(IOperationResult result)
         {
+            // Native magazine results only decorate a synchronous move/split/merge/transfer.
+            // Journal that inner edit so draft and live replay share identities and rollback;
+            // do not construct native async operations (their constructors publish Begin).
+            if (result is ILoadMagOperationResult load) result = load.OperationResult;
+            else if (result is IUnloadMagOperationResult unload) result = unload.OperationResult;
             if (result is IPossibleDestroyResult destroy && destroy.ItemsDestroyRequired)
                 throw new InvalidOperationException("Swap Gear never destroys items.");
             switch (result)

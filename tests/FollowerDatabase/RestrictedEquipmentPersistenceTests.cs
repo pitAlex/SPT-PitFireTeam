@@ -23,10 +23,16 @@ internal static class RestrictedEquipmentPersistenceTests
             .SetValue(baseClasses, new Dictionary<MongoId, HashSet<MongoId>> { [template] = [] });
         var itemHelper = Construct<ItemHelper>(name => name == "itemBaseClassService" ? baseClasses : null);
         var cloner = new FastCloner();
+        var insurance = Construct<FriendlyTeammateInsuranceService>(name => name switch
+        {
+            "settingsService" => settings,
+            "logger" => DispatchProxy.Create<ISptLogger<FriendlyTeammateInsuranceService>, TestLogger>(), _ => null
+        });
         var service = Construct<FriendlyTeammateService>(name => name switch
         {
             "storage" => storage, "settingsService" => settings, "jsonUtil" => json,
             "itemHelper" => itemHelper, "cloner" => cloner,
+            "teammateInsuranceService" => insurance,
             "logger" => DispatchProxy.Create<ISptLogger<FriendlyTeammateService>, TestLogger>(), _ => null
         });
         Item New(string? parent = null, string? slot = null) => new()
@@ -35,12 +41,33 @@ internal static class RestrictedEquipmentPersistenceTests
             Upd = new Upd { StackObjectsCount = 1 }
         };
 
+        settings.SaveAndApply(new() { LoadoutManagementMode = "Extreme" });
+        foreach (int level in new[] { 1, 14, 15, 29, 30, 60 })
+        {
+            Item root = New(), pockets = New(root.Id.ToString(), "Pockets"), knife = New(root.Id.ToString(), "Scabbard");
+            Item secure = New(root.Id.ToString(), "SecuredContainer"), cargo = New(secure.Id.ToString(), "main");
+            var candidate = new BotBase { Aid = 881, Info = new() { Level = level },
+                Inventory = new() { Equipment = root.Id, Items = [root, pockets, knife, secure, cargo] } };
+            Invoke(service, "PrepareNewTeammateDefaultForCurrentLoadoutMode", candidate);
+            check(candidate.Inventory.Items.Select(item => item.Id).ToHashSet().SetEquals(new[] { root.Id, pockets.Id, knife.Id }),
+                $"Realistic level {level}: new teammate has no generated secure container or container cargo");
+            Invoke(service, "SaveDefaultEquipmentSnapshot", session, candidate, true, true);
+            Invoke(service, "SaveTeammate", session, candidate, null!);
+            check(storage.Read<BotBase>(session, "881.json")!.Inventory!.Items!.All(item => item.SlotId != "SecuredContainer")
+                && storage.Read<List<Item>>(session, "881-equipment.json")!.All(item => item.SlotId != "SecuredContainer"),
+                $"Realistic level {level}: profile and Default cannot restore a generated container");
+        }
+        storage.DeleteTeammate(session, 881, new Dictionary<string, string>());
+
+        check(new FriendlyServerSettingsRequest().RestrictedGearMaintenance == false, "Field Upkeep defaults off");
         foreach (string legacyValue in new[] { "false", "true", "null" })
         {
             settings.SaveAndApply(JsonSerializer.Deserialize<FriendlyServerSettingsRequest>(
                 "{\"loadoutManagementMode\":\"Restricted\",\"restrictedGearMaintenance\":" + legacyValue + "}")!);
-            check(!JsonSerializer.Serialize(settings.LoadSettings()).Contains("restrictedGearMaintenance"),
-                "obsolete upkeep field is ignored and omitted on save: " + legacyValue);
+            bool upkeep = legacyValue == "true";
+            check((settings.LoadSettings().RestrictedGearMaintenance == true) == upkeep
+                && JsonSerializer.Serialize(settings.LoadSettings()).Contains("restrictedGearMaintenance"),
+                "Field Upkeep preference survives settings save: " + legacyValue);
             foreach (bool escaped in new[] { true, false })
             {
                 Item root = New(), armor = New(root.Id.ToString(), "ArmorVest"), pockets = New(root.Id.ToString(), "Pockets");
@@ -66,22 +93,33 @@ internal static class RestrictedEquipmentPersistenceTests
                     Aid = "880", Escaped = escaped, EquipmentItems = live, TrackedItemIds = [cargo.Id.ToString()]
                 };
                 var protectedIds = new Dictionary<string, HashSet<string>> { ["881"] = [otherGear.Id.ToString()] };
+                storage.Write(session, "880-equipment.json", cloner.Clone(teammate.Inventory.Items)!);
                 Invoke(service, "ApplyImmersiveEscapedDefaultEquipmentState", session, teammate, entry, protectedIds);
                 Invoke(service, "ApplyRestrictedGearMaintenanceDeathEquipmentState", session, teammate, entry, protectedIds);
                 Invoke(service, "ApplyImmersiveDefaultGearLoss", session, teammate, entry);
                 var saved = storage.Read<List<Item>>(session, "880-equipment.json")!;
-                string scenario = $"Restricted escaped={escaped}, legacy upkeep={legacyValue}";
-                check(saved.Single(item => item.Id == armor.Id).Upd!.Repairable!.Durability == 25, scenario + " persists durability");
-                check(saved.Single(item => item.Id == meds.Id).Upd!.MedKit!.HpResource == 35, scenario + " persists spent medicine");
-                check(saved.Single(item => item.Id == ammo.Id).Upd!.StackObjectsCount == 4, scenario + " persists spent ammunition");
-                check(saved.Any(item => item.Id == acquired.Id) && saved.Any(item => item.Id == attachment.Id), scenario + " retains acquired equipment");
+                string scenario = $"Restricted escaped={escaped}, upkeep={legacyValue}";
+                check(saved.Single(item => item.Id == armor.Id).Upd!.Repairable!.Durability == (upkeep ? 25 : 60), scenario + " applies durability according to upkeep");
+                check(saved.Single(item => item.Id == meds.Id).Upd!.MedKit!.HpResource == (upkeep ? 35 : 100), scenario + " applies medicine use according to upkeep");
+                check(saved.Single(item => item.Id == ammo.Id).Upd!.StackObjectsCount == (upkeep ? 4 : 30), scenario + " applies ammunition use according to upkeep");
+                check(saved.Any(item => item.Id == acquired.Id) == upkeep && saved.Any(item => item.Id == attachment.Id) == upkeep,
+                    scenario + " only replaces equipment from the raid snapshot when upkeep is on");
                 check(!saved.Any(item => new[] { cargo.Id, cargoChild.Id, otherGear.Id, otherChild.Id, secure.Id, secureMed.Id }.Contains(item.Id)),
                     scenario + " filters tracked cargo, other teammate gear and managed secure supplies");
                 check(teammate.Inventory.Items.Any(item => item.Id == armor.Id), scenario + " never applies Immersive death loss");
+                if (upkeep)
+                    check(storage.Read<FriendlyTeammateSettings>(session, "880-settings.json")!.AutomaticallySuppliedEquipmentIds
+                            .Contains(saved.Single(item => item.SlotId == "Scabbard").Id.ToString()),
+                        scenario + " records a generated fallback knife as automatic equipment");
                 check(armor.Upd.Repairable.Durability == 60 && live.Single(item => item.Id == armor.Id).Upd!.Repairable!.Durability == 25,
                     scenario + " leaves baseline and input snapshots detached");
             }
         }
+        var escapedPolicy = typeof(FriendlyTeammateService).GetMethod("ShouldPersistRaidWear", BindingFlags.Static | BindingFlags.NonPublic)!;
+        foreach (string mode in new[] { "Immersive", "Extreme" })
+            foreach (bool upkeep in new[] { false, true })
+                check((bool)escapedPolicy.Invoke(null, [mode, new FriendlyServerSettingsRequest { RestrictedGearMaintenance = upkeep }])!,
+                    mode + " persistence does not depend on Field Upkeep");
         settings.SaveAndApply(new());
     }
 

@@ -7,6 +7,8 @@ public record FriendlySquadOnboardingRequest : IRequestData
 {
     [JsonPropertyName("gameplayMode")]
     public string GameplayMode { get; set; } = string.Empty;
+    [JsonPropertyName("modeChoices")]
+    public List<string>? ModeChoices { get; set; }
 }
 
 public record FriendlySquadOnboardingState
@@ -18,6 +20,8 @@ public record FriendlySquadOnboardingState
     public string WelcomeState { get; set; } = string.Empty;
     public long InviteDueAtMilliseconds { get; set; }
     public FriendlyRecruitRequestEntry? WelcomeCandidate { get; set; }
+    public bool GoingRogueChoiceCompleted { get; set; }
+    public string? AddonChoiceFromMode { get; set; }
 }
 
 public record FriendlySquadOnboardingResponse
@@ -30,4 +34,8 @@ public record FriendlySquadOnboardingResponse
     public int DelayMilliseconds { get; set; }
     [JsonPropertyName("invitationDelivered")]
     public bool InvitationDelivered { get; set; }
+    [JsonPropertyName("modeChoices")]
+    public IReadOnlyList<string> ModeChoices { get; set; } = [];
+    [JsonPropertyName("addonChoiceRequired")]
+    public bool AddonChoiceRequired { get; set; }
 }

@@ -9,6 +9,8 @@ param(
 )
 # Checks real binaries. Does not start the game/server or simulate raid behavior.
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Find-AspNetRuntime.ps1')
+$aspNetRuntime = Find-AspNetRuntime
 if (!$ServerDll) { $ServerDll = Join-Path $RepositoryRoot 'server/bin/Debug/net10.0/pitFireTeam.Server.dll' }
 if (!$ClientDll) { $ClientDll = Join-Path $RepositoryRoot 'client/bin/Debug/net472/pitFireTeam.dll' }
 $ServerRuntimeRoot = (Resolve-Path -LiteralPath $ServerRuntimeRoot).Path
@@ -66,16 +68,18 @@ using System.Runtime.Loader;
 namespace PitFireTeam.SptCompatibilityTests {
     public sealed class Loader : AssemblyLoadContext {
         private readonly string root;
-        private Loader(string root) : base("pitFireTeam-compatibility", true) { this.root = root; }
+        private readonly string aspNet;
+        private Loader(string root, string aspNet) : base("pitFireTeam-compatibility", true) { this.root = root; this.aspNet = aspNet; }
         protected override Assembly Load(AssemblyName name) {
             string path = Path.Combine(root, name.Name + ".dll");
+            if (!File.Exists(path)) path = Path.Combine(aspNet, name.Name + ".dll");
             if (!File.Exists(path)) return null;
             // Do not let a custom resolver override the normal minimum-version rule.
             if (AssemblyName.GetAssemblyName(path).Version < name.Version) return null;
             return LoadFromAssemblyPath(path);
         }
-        public static string Smoke(string root, string modPath) {
-            var context = new Loader(root);
+        public static string Smoke(string root, string modPath, string aspNet) {
+            var context = new Loader(root, aspNet);
             try {
                 var core = context.LoadFromAssemblyPath(Path.Combine(root, "SPTarkov.Server.Core.dll"));
                 var contract = core.GetType("SPTarkov.Server.Core.Models.Spt.Mod.IModMetadata", true);
@@ -102,8 +106,8 @@ namespace PitFireTeam.SptCompatibilityTests {
 "@
 }
 
-Test-MemberReferences $ServerDll @($ServerRuntimeRoot, [IO.Path]::GetDirectoryName([object].Assembly.Location)) $false
-[PitFireTeam.SptCompatibilityTests.Loader]::Smoke($ServerRuntimeRoot, $ServerDll)
+Test-MemberReferences $ServerDll @($ServerRuntimeRoot, $aspNetRuntime, [IO.Path]::GetDirectoryName([object].Assembly.Location)) $false
+[PitFireTeam.SptCompatibilityTests.Loader]::Smoke($ServerRuntimeRoot, $ServerDll, $aspNetRuntime)
 if ($ClientGameAssembly) {
     $ClientGameAssembly = (Resolve-Path -LiteralPath $ClientGameAssembly).Path
     if ([IO.Path]::GetFileName($ClientGameAssembly) -ne 'Assembly-CSharp.dll') { throw 'ClientGameAssembly must be named Assembly-CSharp.dll.' }

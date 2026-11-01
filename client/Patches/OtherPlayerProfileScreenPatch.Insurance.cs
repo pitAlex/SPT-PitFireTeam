@@ -166,8 +166,13 @@ namespace pitTeam.Patches
 
         private static void ApplyInsurancePaymentState(FriendlyTeammateDefaultEquipmentResponse response)
         {
-            var player = ActiveProfileSession?.Profile;
-            var controller = ResolveActiveProfileInventoryControllerForBackendUpdate(player, ActiveProfileInventoryController)
+            ApplyPlayerRoublePaymentState(ActiveProfileSession, ActiveProfileInventoryController, response);
+        }
+
+        private static void ApplyPlayerRoublePaymentState(IEftSession session, InventoryController inventory, FriendlyTeammateDefaultEquipmentResponse response)
+        {
+            var player = session?.Profile;
+            var controller = ResolveActiveProfileInventoryControllerForBackendUpdate(player, inventory)
                 as OfflineInventoryController;
             if (player?.Inventory == null || controller == null || response.insurancePlayerRoubles == null)
                 throw new InvalidOperationException("FollowerInsuranceRefreshRequired");
@@ -178,7 +183,7 @@ namespace pitTeam.Patches
                 CurrencyUtil.TryGetCurrencyType(new MongoID?(item.TemplateId), out ECurrencyType currency)
                 && currency == ECurrencyType.RUB).ToDictionary(item => item.Id);
             var savedIds = response.insurancePlayerRoubles.Select(item => item._id.ToString()).ToHashSet();
-            var updater = new EFT.ProfileUpdatesHandler(player, controller, null, ActiveProfileSession.RagFair);
+            var updater = new EFT.ProfileUpdatesHandler(player, controller, null, session.RagFair);
             ((EFT.IProfileUpdatesHandler)updater).UpdateProfile(new EFT.ProfileChanges
             {
                 Stash = new EFT.StashChangesResponse
@@ -190,6 +195,13 @@ namespace pitTeam.Patches
                 Skills = response.insurancePlayerSkills,
                 TradersData = response.insurancePlayerTraders
             });
+            var updatedMoney = player.Inventory.AllRealPlayerItems.Where(item =>
+                CurrencyUtil.TryGetCurrencyType(new MongoID?(item.TemplateId), out ECurrencyType currency)
+                && currency == ECurrencyType.RUB).ToDictionary(item => item.Id);
+            if (!updatedMoney.Keys.ToHashSet().SetEquals(savedIds) || response.insurancePlayerRoubles.Any(saved =>
+                updatedMoney[saved._id.ToString()].StackObjectsCount != (int?)(saved.upd?.JToken?["StackObjectsCount"] ?? 1)))
+                throw CreateLiveStashRefreshException("Money-only payment refresh did not match the server-saved roubles.");
+            Modules.Logger.LogInfo("[UI] Applied verified money-only payment refresh.");
         }
 
         private static void OpenLoadoutEditorInsurance(string accountId)
