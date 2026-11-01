@@ -4,7 +4,7 @@
 
 Going Rogue starts with Allegiance's encounter and recruitment rules, then gradually becomes Rogue through Knight's quests.
 
-The [first three quests](docs/Knight-Quests.md) now have native objectives and rewards. Quest 3's map item placement still needs the user-supplied container ID; no container binding or loot injection is active yet. Their future friendship/recruitment milestones below remain disabled during this testing phase.
+The [first three quests](docs/Knight-Quests.md) now have native objectives and rewards. Quest 3 now places its launcher through a saved selection from the three supplied Streets sports bags. Their future friendship/recruitment milestones below remain disabled during this testing phase.
 
 ## While accompanied by the Goons
 
@@ -13,6 +13,10 @@ The [first three quests](docs/Knight-Quests.md) now have native objectives and r
 - Everyone else is hostile; friendly PMC encounters do not occur.
 
 Friendly relationships and willingness to join are separate: an exUsec being friendly does not guarantee recruitment acceptance.
+
+## Future companion quests
+
+When porting Birdeye's quests, admit automatic companions only while their relevant map objective remains unfinished, using the same native-completion lookup as Competition. The old Birdeye tasks are each scoped to a single map; no additional multi-map spawn rule is needed by the currently implemented first three quests. Do not add new quest IDs to live admission before their content is implemented.
 
 ## Knight quest progression
 

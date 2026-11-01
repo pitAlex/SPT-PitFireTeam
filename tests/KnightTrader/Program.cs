@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.Loader;
+using System.Text.Json.Nodes;
 using HarmonyLib;
 using pitTeam.GoingRogue.Server;
 using pitTeam.Server.Services;
@@ -52,6 +53,7 @@ internal static class Program
         typeof(TemplateTable).GetProperty(nameof(TemplateTable.Handbook))!.SetValue(templates,
             json.Deserialize<HandbookBase>(File.ReadAllText(Path.Combine(runtime, "SPT_Data/database/templates/handbook.json"))));
         var globals = json.Deserialize<GlobalTable>(File.ReadAllText(Path.Combine(runtime, "SPT_Data/database/globals.json")))!;
+        GoonHeadwearChecks.Run(runtime,json,globals,Check);
         var catalog = KnightTraderCatalog.Create(json, templates);
         Check(catalog.Base.Id == "67768b19fa281ca31708b187" && catalog.Base.Currency == CurrencyType.USD, "legacy identity and USD currency retained");
         Check(catalog.Base.UnlockedByDefault == false && catalog.Base.IsAvailableInPVE, "modern PVE visibility and actual default lock");
@@ -112,6 +114,12 @@ internal static class Program
             var language = new FriendlyLanguageService(DispatchProxy.Create<ISptLogger<FriendlyLanguageService>, TestLogger>());
             var response = Construct<HttpResponseUtil>(new() { ["jsonUtil"] = json });
             var access = new KnightTraderAccess(settings, profiles, traders, language, response);
+            var sessionRouter = new KnightSessionRouter(json, response, access);
+            JsonNode SessionState()
+            {
+                string payload = (string)sessionRouter.HandleStaticAsync("/singleplayer/going-rogue/knight/session", "{}", session, "").AsTask().GetAwaiter().GetResult();
+                return JsonNode.Parse(payload)!["data"]!;
+            }
             var router = new ImageRouterService();
             var localeTable = new LocaleTable { Global = new() {
                 ["en"] = new(() => new GlobalLocaleDictionary()), ["ru"] = new(() => new GlobalLocaleDictionary()),
@@ -139,6 +147,9 @@ internal static class Program
             }
             Level(19);
             Check(knight.Unlocked == false, "installed native LevelUp hook locks level 19");
+            var sessionState = SessionState();
+            Check(sessionState["mode"]!.GetValue<string>() == "GoingRogue" && !sessionState["unlocked"]!.GetValue<bool>(),
+                "real session route publishes authoritative level-19 lock with client field names");
             var cloned = profiles.GetCompleteProfile(session);
             Check(cloned[0].TradersInfo![KnightTraderCatalog.Id].Unlocked == false && cloned[0].TradersInfo![KnightTraderCatalog.Id].LoyaltyLevel == null,
                 "real profile projection retains native sanitation and publishes the access lock");
@@ -156,6 +167,8 @@ internal static class Program
             Check(access.Admit(other, session, new()), "other traders bypass addon admission entirely");
             Level(20);
             Check(knight.Unlocked == true && access.CanTrade(session), "level 20 unlocks without granting standing/sales");
+            Check(SessionState()["unlocked"]!.GetValue<bool>() && knight.Standing == 0.5 && knight.SalesSum == 4567,
+                "live session route unlocks level 20 without changing progression");
             Check(access.Admit(KnightTraderCatalog.Id, session, new()), "unlocked trade delegates to native execution");
             Check(profiles.GetCompleteProfile(session)[0].TradersInfo![KnightTraderCatalog.Id].Unlocked == true, "profile refresh publishes unlock");
             foreach (var (standing, sales, tier) in new[] { (0.3, 0d, 1), (0.5, 0d, 2), (1.49, 7000d, 2), (1.5, 6999d, 2), (1.5, 7000d, 3) })
@@ -166,10 +179,14 @@ internal static class Program
             }
             Mode("Allegiance");
             Check(!access.CanTrade(session) && knight.Unlocked == false, "switching away from Going Rogue relocks access");
+            sessionState = SessionState();
+            Check(sessionState["mode"]!.GetValue<string>() == "Allegiance" && !sessionState["unlocked"]!.GetValue<bool>(),
+                "session route relocks native access immediately after a mode switch");
             Check(nativeAssort.GetAssort(session, KnightTraderCatalog.Id).Items.Count == 0, "other modes cannot query stock with a stale unlocked UI");
             Mode("GoingRogue");
             Check(access.CanTrade(session) && knight.Standing == 1.5 && knight.SalesSum == 7000, "mode return retains native progression");
             knight.Disabled = true;
+            Check(SessionState()["disabled"]!.GetValue<bool>(), "session refresh preserves native disabled status separately from unlock");
             Check(!access.CanTrade(session), "native disabled status still refuses trade above level 20");
             profile.TradersInfo!.Remove(KnightTraderCatalog.Id);
             access.Synchronize(session);
@@ -177,6 +194,7 @@ internal static class Program
             Check(initialized.Unlocked == true && initialized.SalesSum == 0 && initialized.Standing == 0,
                 "actual native ResetTrader initializes absent Knight without invented standing or trade totals");
             QuestChecks.Run(json, templates, globals, localeTable, router, profiles, settings, access, profile, session, Check, Mode);
+            LauncherLootChecks.Run(runtime, json, templates, globals, profiles, settings, profile, session, Check, Mode);
         }
         finally
         {

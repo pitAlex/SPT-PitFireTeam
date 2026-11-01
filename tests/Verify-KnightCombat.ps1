@@ -62,6 +62,13 @@ try {
     if($screenShow.Count -ne 1){throw 'TradingScreen controller Show overload changed'}
     $rememberedTrader=$game.GetType('EFT.UI.MerchantsList').Fields | Where-Object Name -eq '_currentTrader'
     if(!$rememberedTrader -or $rememberedTrader.FieldType.FullName -ne 'EFT.Trading.Trader'){throw 'MerchantsList remembered trader field changed'}
+    $appType=$game.GetType('EFT.TarkovApplication')
+    $menu=$null
+    while($appType -and !$menu){
+        $menu=$appType.Fields|Where-Object Name -eq '_menuOperation'
+        $appType=if($appType.BaseType){$appType.BaseType.Resolve()}else{$null}
+    }
+    if(!$menu -or $menu.FieldType.FullName -ne 'EFT.MainMenuShowOperation'){throw 'Native lobby menu field for mode-session refresh changed'}
     $counterTest=@($game.GetType('EFT.Quests.ConditionCounterManager').Methods | Where-Object {
         $_.Name -eq 'Test' -and $_.IsStatic -and ($_.Parameters.ParameterType.FullName -join ',') -eq 'System.Int32,EFT.Quests.TaskConditionCounter,EFT.Quests.ConditionCheck[]'
     })

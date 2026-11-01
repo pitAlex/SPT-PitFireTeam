@@ -46,6 +46,14 @@ internal static class VisibilityChecks
         var screen = new TradingScreen();
         screen.Show(new TradingScreen.TradingScreenController { Tab = TradingScreen.ETradingScreenTab.FleaMarket });
         GameplayModeAddons.Current = GameplayMode.GoingRogue;
+        GameplayModeRuntime.IsApplying = true;
+        KnightTraderVisibility.RefreshMode();
+        Check(screen.Refreshes == 0, "visibility waits while mode preferences are being applied");
+        GameplayModeRuntime.IsApplying = false;
+        GameplayModeRuntime.IsSwitching = true;
+        KnightTraderVisibility.RefreshMode();
+        Check(screen.Refreshes == 0, "visibility waits until the server/native-session mode transition completes");
+        GameplayModeRuntime.IsSwitching = false;
         KnightTraderVisibility.RefreshMode();
         Check(screen.Refreshes == 1 && screen.LastTab == TradingScreen.ETradingScreenTab.FleaMarket, "open flea tab survives mode refresh");
         KnightTraderVisibility.RefreshMode();
@@ -82,6 +90,7 @@ namespace pitTeam.Modules
 {
     public enum GameplayMode { GunsForHire, Allegiance, GoingRogue }
     public static class GameplayModeAddons { public static GameplayMode Current; }
+    internal static class GameplayModeRuntime { internal static bool IsSwitching, IsApplying; }
     public static class Logger { public static List<string> Errors = new List<string>(); public static void LogError(string text) => Errors.Add(text); }
 }
 namespace pitTeam.Utils { public static class Props { public const string KnightTrader = "67768b19fa281ca31708b187"; } }

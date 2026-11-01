@@ -41,6 +41,14 @@ public sealed class KnightTraderAccess(
             info.Unlocked == true && info.Disabled != true;
     }
 
+    internal KnightTraderSessionState SessionState(MongoId sessionId)
+    {
+        Synchronize(sessionId);
+        TraderInfo? info = null;
+        profiles.GetPmcProfile(sessionId)?.TradersInfo?.TryGetValue(KnightTraderCatalog.Id, out info);
+        return new(settings.LoadSettings().GameplayMode, info?.Unlocked == true, info?.Disabled == true);
+    }
+
     internal bool Admit(MongoId traderId, MongoId sessionId, ItemEventRouterResponse output)
     {
         if (traderId != KnightTraderCatalog.Id || CanTrade(sessionId)) return true;

@@ -33,14 +33,45 @@ internal static class QuestChecks
         MongoId session, Action<bool, string> check, Action<string> mode)
     {
         var definitions = KnightQuestModule.ReadQuests(json);
+        var english = KnightQuestModule.ReadLocales(json)["en"];
+        foreach (var row in new[] { ("67768ec3fa281ca31708b190", "Woods"), ("67768f38fa281ca31708b194", "Shoreline"), ("6776900dfa281ca31708b198", "Lighthouse") })
+            check(english[row.Item1] == $"Eliminate 5 targets on {row.Item2} while teamed up with Knight", "original competition objective text restored: " + row.Item2);
         var questPlayer = new BotBase
         {
             Info = new() { Level = 20 },
             TradersInfo = new() { [KnightTraderCatalog.Id] = new() { Disabled = false } },
             Quests = [new() { QId = new(KnightQuestPolicy.Competition), StartTime = 1, Status = QuestStatusEnum.Started, StatusTimers = [] }]
         };
+        foreach(var status in new[]{QuestStatusEnum.AvailableForStart,QuestStatusEnum.Started,QuestStatusEnum.AvailableForFinish,QuestStatusEnum.Success,QuestStatusEnum.Fail})
+        {
+            questPlayer.Quests[0].Status=status;
+            check(KnightQuestModule.CanJoinKnightRoster(questPlayer)==(status==QuestStatusEnum.Success),"only completed-and-handed-in competition unlocks permanent Knight: "+status);
+        }
+        foreach(var unlock in new[]{(KnightQuestPolicy.BadgeBandit,(Func<BotBase,bool>)KnightQuestModule.CanJoinBigPipeRoster),(KnightQuestPolicy.AFavor,(Func<BotBase,bool>)KnightQuestModule.CanJoinBirdeyeRoster)})
+        {
+            questPlayer.Quests[0].QId=new(unlock.Item1);
+            foreach(var status in new[]{QuestStatusEnum.Started,QuestStatusEnum.AvailableForFinish,QuestStatusEnum.Success})
+            foreach(double standing in new[]{0.49,0.5,1.0})
+            {
+                questPlayer.Quests[0].Status=status;questPlayer.TradersInfo[KnightTraderCatalog.Id].Standing=standing;
+                check(unlock.Item2(questPlayer)==(status==QuestStatusEnum.Success && standing>=0.5),"legacy follower unlock uses its own quest success and standing: "+unlock.Item1+"/"+status+"/"+standing);
+            }
+        }
+        questPlayer.Quests[0].QId=new(KnightQuestPolicy.Competition);
+        questPlayer.Quests[0].Status=QuestStatusEnum.Started;
+        check(!KnightQuestModule.CanJoinKnightRoster(new BotBase()),"missing quest progress never grants Knight");
         foreach (string map in new[] { "woods", "shoreline", "LIGHTHOUSE" })
             check(KnightQuestModule.CanSpawnKnight(questPlayer, map), "active first quest authorizes native Knight on objective map " + map);
+        var objectiveMaps=new[]{("woods",KnightQuestPolicy.WoodsKills),("shoreline",KnightQuestPolicy.ShorelineKills),("lighthouse",KnightQuestPolicy.LighthouseKills)};
+        for(int mask=0;mask<8;mask++)
+        {
+            questPlayer.Quests[0].CompletedConditions=objectiveMaps.Where((_,i)=>(mask&(1<<i))!=0).Select(row=>row.Item2).ToList();
+            for(int i=0;i<3;i++)
+                check(KnightQuestModule.CanSpawnKnight(questPlayer,objectiveMaps[i].Item1)==((mask&(1<<i))==0),"server independently gates each map's completed objective: "+mask+"/"+objectiveMaps[i].Item1);
+        }
+        questPlayer.Quests[0].CompletedConditions=["67768e78fa281ca31708b18f"];
+        check(KnightQuestModule.CanSpawnKnight(questPlayer,"woods"),"nested counter identity is not mistaken for a completed objective");
+        questPlayer.Quests[0].CompletedConditions=null;
         foreach (string map in new[] { "bigmap", "factory4_day", "" })
             check(!KnightQuestModule.CanSpawnKnight(questPlayer, map), "first quest cannot spawn Knight on non-objective map " + map);
         foreach (var status in new[] { QuestStatusEnum.AvailableForStart, QuestStatusEnum.AvailableForFinish, QuestStatusEnum.Success, QuestStatusEnum.Fail })
@@ -57,6 +88,11 @@ internal static class QuestChecks
         questPlayer.Info.Level = 20;
         questPlayer.Quests[0].QId = new(KnightQuestPolicy.MyLand);
         check(KnightQuestModule.CanSpawnKnight(questPlayer, "bigmap") && !KnightQuestModule.CanSpawnKnight(questPlayer, "woods"), "second quest authorizes Customs only");
+        questPlayer.Quests[0].CompletedConditions=[KnightQuestPolicy.MyLandKills];
+        check(!KnightQuestModule.CanSpawnKnight(questPlayer,"bigmap"),"completed My Land objective also has no automatic companion work left");
+        questPlayer.Quests[0].CompletedConditions=null;
+        foreach(var row in objectiveMaps)
+            check(definitions[new(KnightQuestPolicy.Competition)].Conditions.AvailableForFinish!.Any(c=>c.Id.ToString()==row.Item2),"spawn completion mapping uses the native objective id for "+row.Item1);
         check(definitions.Count == 3 && definitions.ContainsKey(new(KnightQuestPolicy.Competition)) && definitions.ContainsKey(new(KnightQuestPolicy.MyLand)) &&
             definitions.ContainsKey(new(KnightQuestPolicy.Thieves)), "all three exact legacy quest IDs retained");
         var first = definitions[new(KnightQuestPolicy.Competition)];
@@ -108,8 +144,8 @@ internal static class QuestChecks
         {
             check(templates.Quests.Count == 3, "real native quest service registers all three tasks");
             var launcher = templates.Items[new(KnightQuestPolicy.StolenLauncher)];
-            check(launcher.Properties!.QuestItem == true && launcher.Properties.IsUngivable == true && launcher.Properties.IsUnbuyable == true &&
-                launcher.Properties.Width == 4 && launcher.Properties.Height == 1, "native item clone retains the legacy special quest item flags and size");
+            check(launcher.Properties!.QuestItem == false && launcher.Properties.IsUngivable == true && launcher.Properties.IsUnbuyable == true &&
+                launcher.Properties.Width == 4 && launcher.Properties.Height == 1, "special launcher uses ordinary inventory placement while retaining transfer/purchase restrictions and size");
             check(json.Serialize(templates.Items[new(KnightQuestItemCatalog.NativeLauncher)]) == baseLauncher &&
                 !ReferenceEquals(launcher.Properties, templates.Items[new(KnightQuestItemCatalog.NativeLauncher)].Properties), "custom launcher never mutates the ordinary M32A1");
             check(pmc.GlobalLootBlacklist.Contains(new(KnightQuestPolicy.StolenLauncher)) &&

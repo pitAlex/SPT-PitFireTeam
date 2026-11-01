@@ -49,7 +49,10 @@ internal static class GoingRogueModeTests
                     "logger" => DispatchProxy.Create<ISptLogger<SPTarkov.Server.Core.Helpers.Profile.InventoryHelper>, TestLogger>(),
                     "cloner" => new FastCloner(), _ => null
                 }).ToArray());
-        new GoingRogueServerPlugin(globals, bots, itemHelper, inventoryHelper).OnLoadAsync(CancellationToken.None).GetAwaiter().GetResult();
+        new GoingRogueServerPlugin(globals, bots, itemHelper, inventoryHelper,
+            json.Deserialize<SPTarkov.Server.Core.Models.Spt.Config.BotConfig>(File.ReadAllText(Path.Combine(Path.GetDirectoryName(database)!, "configs", "bot.json")))!,
+            (SPTarkov.Server.Core.Generators.Bot.BotInventoryGenerator)RuntimeHelpers.GetUninitializedObject(typeof(SPTarkov.Server.Core.Generators.Bot.BotInventoryGenerator)),
+            (SPTarkov.Server.Core.Helpers.Bot.BotHelper)RuntimeHelpers.GetUninitializedObject(typeof(SPTarkov.Server.Core.Helpers.Bot.BotHelper))).OnLoadAsync(CancellationToken.None).GetAwaiter().GetResult();
         var bosses = new Dictionary<string, BotBase>();
         foreach (var companion in FriendlyGameplayModeAddons.Companions("GoingRogue").Where(companion => companion.ProficiencyOnly))
         {

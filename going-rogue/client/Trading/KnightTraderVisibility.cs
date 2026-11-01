@@ -35,6 +35,7 @@ internal static class KnightTraderVisibility
 
     internal static void RefreshMode()
     {
+        if (GameplayModeRuntime.IsSwitching || GameplayModeRuntime.IsApplying) return;
         var mode = GameplayModeAddons.Current;
         if (displayedMode == mode) return;
         displayedMode = mode;

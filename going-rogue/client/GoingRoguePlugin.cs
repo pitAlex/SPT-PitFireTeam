@@ -29,7 +29,10 @@ public sealed class GoingRoguePlugin : BaseUnityPlugin
         GameplayModeAddons.RegisterCommandPolicy(GameplayMode.GoingRogue,
             role => GoonCommandPolicy.ForRole(role, KnightSquadCoordinator.HasLocalKnight()));
         GameplayModeAddons.RegisterAdvanceOrderPolicy(GameplayMode.GoingRogue, GoonPushLeadership.Evaluate);
-        GameplayModeAddons.RegisterQuestCompanionPolicy(GameplayMode.GoingRogue, Quests.KnightQuestPolicy.UsesMap);
+        GameplayModeAddons.RegisterQuestCompanionProgressPolicy(GameplayMode.GoingRogue, Quests.KnightQuestPolicy.NeedsCompanion);
+        GameplayModeAddons.RegisterModeCard(GameplayMode.GoingRogue,
+            System.IO.Path.Combine(System.IO.Path.GetDirectoryName(typeof(GoingRoguePlugin).Assembly.Location), "going-rogue-card.png"));
+        GameplayModeAddons.RegisterSessionRefresh(GameplayMode.GoingRogue, Trading.KnightSessionRefresh.RefreshAsync);
         harmony = new Harmony("xyz.pit.fireteam.goingrogue");
         harmony.PatchAll(typeof(GoingRoguePlugin).Assembly);
         BrainManager.AddCustomLayer(typeof(KnightCombatLayer), new List<string> { "Knight" },

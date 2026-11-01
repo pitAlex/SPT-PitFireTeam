@@ -1,9 +1,13 @@
+#nullable enable
+
 namespace pitTeam.GoingRogue.Quests;
 
 internal static class KnightQuestPolicy
 {
     internal const string Competition = "6775d9957e2dbcb3bd0a02c7";
     internal const string MyLand = "6775da597e2dbcb3bd0a02c9";
+    internal const string BadgeBandit = "67768936fa281ca31708b17c";
+    internal const string AFavor = "67768a41fa281ca31708b182";
     internal const string Thieves = "677687f2fa281ca31708b17a";
     internal const string StolenLauncher = "64e3b0f4e3b6f5a4a37e8c1d";
     internal const string WoodsKills = "67768ec3fa281ca31708b190";
@@ -32,10 +36,19 @@ internal static class KnightQuestPolicy
             (PlayerKills(counter) ? playerKill : playerKill || knightKill);
     }
 
-    internal static bool UsesMap(string quest, string location)
+    internal static string? ObjectiveForMap(string quest, string location)
     {
         string map = (location ?? "").ToLowerInvariant();
-        return quest == Competition ? map == "woods" || map == "shoreline" || map == "lighthouse" :
-            quest == MyLand && map == "bigmap";
+        if (quest == Competition)
+            return map == "woods" ? WoodsKills : map == "shoreline" ? ShorelineKills : map == "lighthouse" ? LighthouseKills : null;
+        return quest == MyLand && map == "bigmap" ? MyLandKills : null;
+    }
+
+    internal static bool UsesMap(string quest, string location) => ObjectiveForMap(quest, location) != null;
+
+    internal static bool NeedsCompanion(string quest, string location, System.Func<string, bool> objectiveCompleted)
+    {
+        string? objective = ObjectiveForMap(quest, location);
+        return objective != null && objectiveCompleted != null && !objectiveCompleted(objective);
     }
 }

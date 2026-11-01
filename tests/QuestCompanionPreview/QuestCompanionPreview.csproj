@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net472</TargetFramework><LangVersion>latest</LangVersion><ImplicitUsings>enable</ImplicitUsings><Nullable>disable</Nullable></PropertyGroup>
+  <PropertyGroup Condition="'$(NativeTransliterationSource)' != ''"><DefineConstants>$(DefineConstants);NATIVE_TRANSLITERATION</DefineConstants></PropertyGroup>
+  <PropertyGroup><GameRoot Condition="'$(GameRoot)' == ''">E:/SPTushanka</GameRoot></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../going-rogue/shared/KnightQuestPolicy.cs" Link="KnightQuestPolicy.cs" />
+    <Compile Include="../../client/Modules/QuestCompanionPreview.cs" Link="QuestCompanionPreview.cs" />
+    <Compile Include="../../client/Patches/SyntheticTeammateRaidGuard.cs" Link="SyntheticTeammateRaidGuard.cs" />
+    <None Include="$(GameRoot)/BepInEx/core/Mono*.dll" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Reference Include="0Harmony"><HintPath>../../client/libs/0Harmony.dll</HintPath></Reference>
+    <Compile Include="$(NativeTransliterationSource)" Link="NativeTransliteration.cs" Condition="'$(NativeTransliterationSource)' != ''" />
+    <Reference Include="Newtonsoft.Json"><HintPath>../../client/libs4.1/Newtonsoft.Json.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

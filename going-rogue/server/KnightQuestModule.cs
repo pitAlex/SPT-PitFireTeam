@@ -28,10 +28,18 @@ public sealed class KnightQuestModule(CustomQuestService quests, TemplateTable t
 {
     private static KnightQuestModule? active;
     private bool IsGoingRogue => settings.LoadSettings().GameplayMode == "GoingRogue";
+    private static bool Completed(BotBase player, string id) => player.Quests?.Any(quest =>
+        quest.QId.ToString() == id && quest.Status == QuestStatusEnum.Success) == true;
+    private static bool HasFollowerStanding(BotBase player) =>
+        player.TradersInfo?.TryGetValue(KnightTraderCatalog.Id, out var trader) == true && trader.Standing >= 0.5;
+    internal static bool CanJoinKnightRoster(BotBase player) => Completed(player, KnightQuestPolicy.Competition);
+    internal static bool CanJoinBigPipeRoster(BotBase player) => Completed(player, KnightQuestPolicy.BadgeBandit) && HasFollowerStanding(player);
+    internal static bool CanJoinBirdeyeRoster(BotBase player) => Completed(player, KnightQuestPolicy.AFavor) && HasFollowerStanding(player);
+
     internal static bool CanSpawnKnight(BotBase player, string location) =>
         player.Info?.Level >= KnightTraderCatalog.UnlockLevel &&
         player.Quests?.Any(quest => quest.Status == QuestStatusEnum.Started &&
-            KnightQuestPolicy.UsesMap(quest.QId.ToString(), location)) == true &&
+            KnightQuestPolicy.NeedsCompanion(quest.QId.ToString(), location, objective => quest.CompletedConditions?.Contains(objective) == true)) == true &&
         player.TradersInfo?.TryGetValue(KnightTraderCatalog.Id, out var trader) == true && trader.Disabled != true;
     internal static Dictionary<MongoId, Quest> ReadQuests(JsonUtil json) => Read<Dictionary<MongoId, Quest>>(json, "KnightQuests.json");
     internal static Dictionary<string, Dictionary<string, string>> ReadLocales(JsonUtil json) =>
@@ -66,7 +74,7 @@ public sealed class KnightQuestModule(CustomQuestService quests, TemplateTable t
         }
         foreach (var (route, path) in artwork) images.AddRoute(Path.ChangeExtension(route, null), path);
         Install();
-        logger.Info("Registered Knight quests 1–3 with native objectives, rewards and quest images. Quest 3 container placement is not configured yet.");
+        logger.Info("Registered Knight quests 1–3 with native objectives, rewards and quest images.");
         return Task.CompletedTask;
     }
 

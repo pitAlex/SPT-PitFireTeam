@@ -35,7 +35,8 @@ internal static class KnightQuestItemCatalog
             };
         }
         // Clone the current game's weapon definition, retaining modern fields/filters.
-        // Only the legacy quest-item differences are imposed on this independent item.
+        // Keep this a normal inventory weapon: native QuestItem=true restricts
+        // movement to the separate quest stash and prevents ordinary pickup/equip.
         var result = items.CreateItemFromClone(new()
         {
             NewId = new(KnightQuestPolicy.StolenLauncher), ItemTplToClone = new(NativeLauncher),
@@ -43,7 +44,7 @@ internal static class KnightQuestItemCatalog
             NewItemName = "weapon_milkor_m32a1_bigpipe_quest",
             OverrideProperties = new TemplateItemProperties
             {
-                QuestItem = true, IsUngivable = true, IsUnbuyable = true,
+                QuestItem = false, IsUngivable = true, IsUnbuyable = true,
                 Width = 4, Height = 1, ExaminedByDefault = true
             },
             AddToFleaPriceDb = false, AddToWeaponShelf = false,
