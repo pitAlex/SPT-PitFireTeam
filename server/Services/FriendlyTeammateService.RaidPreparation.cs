@@ -15,6 +15,7 @@ public partial class FriendlyTeammateService
         public Dictionary<string, BotBase> Kits { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, string> JoinRevisions { get; } = new(StringComparer.Ordinal);
         public HashSet<string> RetiredRevisions { get; } = new(StringComparer.Ordinal);
+        public BotBase? QuestCompanion { get; set; }
     }
     private readonly Dictionary<string, PreparedCompanionRaid> preparedCompanionRaids = new(StringComparer.Ordinal);
 
@@ -68,7 +69,15 @@ public partial class FriendlyTeammateService
                 logger.Info($"[CompanionRaidKit] prepared token={request.Token} aid={account} equipment={generated.Inventory?.Equipment}");
             }
         }
-        return new(request.Token, members.Where(preparation.Kits.ContainsKey).ToArray());
+        if (members.Length != 0 || string.IsNullOrWhiteSpace(request.QuestCompanionRole)) preparation.QuestCompanion = null;
+        else
+        {
+            var policy = EligibleQuestCompanion(sessionId, request.QuestCompanionRole, configuration);
+            if (policy == null) preparation.QuestCompanion = null;
+            else if (preparation.QuestCompanion?.Info?.Settings?.Role != policy.Role)
+                preparation.QuestCompanion = GenerateQuestCompanion(sessionId, policy, configuration, null);
+        }
+        return new(request.Token, members.Where(preparation.Kits.ContainsKey).ToArray(), cloner.Clone(preparation.QuestCompanion));
     }
 
     private BotBase PreparedCompanionForSpawn(MongoId sessionId, BotBase teammate, double? healthMultiplier, string token)

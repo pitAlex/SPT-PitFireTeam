@@ -21,9 +21,12 @@ public partial class FriendlyTeammateService
             try
             {
                 foreach (var companion in FriendlyGameplayModeAddons.Companions(settingsService.LoadSettings().GameplayMode)
-                    .Where(companion => companion.SeedForTesting))
+                    .Where(companion => companion.SeedForTesting || companion.CanJoinRoster != null &&
+                        profileHelper?.GetPmcProfile(sessionId) is { } player && companion.CanJoinRoster(player)))
                 {
-                    string receipt = $"addon-companion-{companion.Role.ToLowerInvariant()}.json";
+                    // Quest unlocks have separate receipts from retired test grants.
+                    string grant = companion.SeedForTesting ? "companion" : "quest-companion";
+                    string receipt = $"addon-{grant}-{companion.Role.ToLowerInvariant()}.json";
                     if (storage.Exists(sessionId, receipt)) continue;
                     if (storage.ReadProfiles(sessionId).Any(profile => CompanionPolicy(profile)?.Role == companion.Role))
                     {
@@ -44,6 +47,8 @@ public partial class FriendlyTeammateService
                     teammate.Info.Nickname = companion.Nickname;
                     teammate.Info.LowerNickname = companion.Nickname.ToLowerInvariant();
                     companion.PrepareProfile?.Invoke(teammate);
+                    if (!companion.SeedForTesting)
+                        teammate = MergeGeneratedCompanionEquipment(teammate, teammate, null);
                     var settings = CreateDefaultTeammateSettings(teammate.Customization);
                     var receipts = new Dictionary<string, string> { [receipt] = "{\"initialized\":true}" };
                     string? skillsReceipt = CompanionSkillsReceipt(teammate, companion);

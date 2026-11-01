@@ -37,6 +37,8 @@
         <MudAlert Severity="@(_failed ? Severity.Error : Severity.Success)" Class="mb-4">@T(_message)</MudAlert>
     }
     @if (_busy) { <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" /> }
+    @if (_message != "EditorInRaid")
+    {
     <MudGrid>
         <MudItem xs="12" md="3">
             <MudPaper Outlined="true" Class="pa-4">
@@ -108,6 +110,7 @@
             }
         </MudItem>
     </MudGrid>
+    }
 </MudContainer>
 
 @code {

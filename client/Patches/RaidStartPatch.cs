@@ -25,64 +25,6 @@ using ResultProfile = EFT.OtherPlayerProfile;
 
 namespace pitTeam.Patches
 {
-    internal static class SyntheticTeammateRaidGuard
-    {
-        private static readonly TimeSpan SyntheticRaidStartErrorWindow = TimeSpan.FromSeconds(30);
-        private static DateTime _lastSyntheticRaidStartUtc = DateTime.MinValue;
-
-        private static readonly MethodInfo LocalRaidStartMethod = AccessTools.Method(typeof(TarkovApplication), nameof(TarkovApplication.LocalGameMatching), new Type[]
-        {
-            typeof(TimeAndWeatherSettings),
-            typeof(bool)
-        });
-
-        public static bool HasSyntheticTeammates()
-        {
-            return MainMenuControllerPatch.GroupPlayers != null && MainMenuControllerPatch.GroupPlayers.Count > 0;
-        }
-
-        public static bool TryForceLocalRaid(TarkovApplication application, string reason)
-        {
-            if (application == null || !HasSyntheticTeammates())
-            {
-                return false;
-            }
-
-            RaidSettings raidSettings = AccessTools.Field(typeof(TarkovApplication), "_raidSettings").GetValue(application) as RaidSettings;
-            if (raidSettings == null)
-            {
-                pitFireTeam.Log.LogWarning($"[Raid] Failed to force local raid at {reason}: raid settings missing.");
-                return false;
-            }
-
-            raidSettings.RaidMode = ERaidMode.Local;
-            raidSettings.IsPveOffline = true;
-            _lastSyntheticRaidStartUtc = DateTime.UtcNow;
-            Modules.Logger.LogInfo($"[Raid] Forced local teammate raid at {reason}. groupPlayers={MainMenuControllerPatch.GroupPlayers.Count}");
-            return true;
-        }
-
-        public static bool IsRecentSyntheticRaidStart()
-        {
-            return HasSyntheticTeammates() && DateTime.UtcNow - _lastSyntheticRaidStartUtc <= SyntheticRaidStartErrorWindow;
-        }
-
-        public static Task StartLocalRaid(TarkovApplication application)
-        {
-            RaidSettings raidSettings = AccessTools.Field(typeof(TarkovApplication), "_raidSettings").GetValue(application) as RaidSettings;
-            if (raidSettings == null)
-            {
-                throw new InvalidOperationException("Raid settings missing while starting local teammate raid.");
-            }
-
-            return (Task)LocalRaidStartMethod.Invoke(application, new object[]
-            {
-                raidSettings.TimeAndWeatherSettings,
-                false
-            });
-        }
-    }
-
     // Finalizer-only compatibility patch for raid startup. We still let EFT run
     // HideoutGame.Dispose normally, then suppress only the known null-ref that can
     // happen when hideout/trader-scene unload races our synthetic local raid start.
@@ -388,7 +330,7 @@ namespace pitTeam.Patches
             players.Add(teammate);
         }
 
-        private static void EnsureLocalGroupOwner(EFT.UI.Matchmaker.MatchmakerPlayersController controller)
+        internal static void EnsureLocalGroupOwner(EFT.UI.Matchmaker.MatchmakerPlayersController controller)
         {
             if (controller?.CurrentPlayer == null || controller.GroupPlayers == null || controller.Group == null)
             {
@@ -520,6 +462,12 @@ namespace pitTeam.Patches
             return AccessTools.Method(typeof(MatchMakerPlayerPreview), nameof(MatchMakerPlayerPreview.Show));
         }
 
+        [PatchPrefix]
+        private static void PatchPrefix(EFT.UI.Matchmaker.RaidPlayer player, ref EFT.UI.Matchmaker.RaidGroupContextInteractions contextInteractions)
+        {
+            if (QuestCompanionPreview.IsPreview(player?.AccountId)) contextInteractions = null;
+        }
+
         [PatchPostfix]
         private static void PatchPostfix(MatchMakerPlayerPreview __instance, EFT.UI.Matchmaker.RaidPlayer player)
         {
@@ -532,7 +480,7 @@ namespace pitTeam.Patches
 
                 string accountId = player?.AccountId ?? string.Empty;
                 bool isTeammate = !string.IsNullOrWhiteSpace(accountId)
-                    && MainMenuControllerPatch.GroupPlayers.Any(groupPlayer => groupPlayer?.AccountId == accountId);
+                    && (QuestCompanionPreview.IsPreview(accountId) || MainMenuControllerPatch.GroupPlayers.Any(groupPlayer => groupPlayer?.AccountId == accountId));
                 TextMeshProUGUI statusField = AccessTools.Field(typeof(MatchMakerPlayerPreview), "_groupStatusField")?.GetValue(__instance) as TextMeshProUGUI;
                 if (statusField != null)
                 {
@@ -614,71 +562,12 @@ namespace pitTeam.Patches
 
             Profile profile = __instance.GetProfileBySide(ESideType.Pmc);
 
-            // see if user is to spawn with a Goon do to questing
-            List<string> questCompanions = new List<string>();
-
-            if (GameplayModeRuntime.IsGoingRogue && settings.IsPmc &&
-                MainMenuControllerPatch.GroupPlayers.Count == 0 &&
-                profile.TryGetTraderInfo(Utils.Props.KnightTrader, out var traderInfo) && !traderInfo.Disabled)
+            // Preview and spawn share exactly the same solo/quest/map admission.
+            List<string> questCompanions = QuestCompanionPreview.RolesFor(profile, settings);
+            if (questCompanions.Count > 0)
             {
-                profile.QuestsData.ForEach(quest =>
-                {
-
-                    foreach (var item in Utils. Props.Quests)
-                    {
-                        foreach (var item1 in item.Value)
-                        {
-                            if (item1 == quest.Id)
-                            {
-                                if (quest.Status == EFT.Quests.EQuestStatus.Started &&
-                                    GameplayModeAddons.CanSpawnQuestCompanion(quest.Id, settings.LocationId))
-                                {
-                                    bool isGoonQuest = true;
-
-                                    if (Utils.Props.QuestsLocations.TryGetValue(quest.Id, out List<string> locations))
-                                    {
-                                        isGoonQuest = false;
-                                        if (locations.Contains(settings.LocationId.ToLower()))
-                                        {
-                                            isGoonQuest = true;
-                                        }
-                                    }
-
-                                    if (Utils.SpawnHelper.spawnMemberIds.Count < 1 && isGoonQuest)
-                                    {
-                                        Utils.Utils.FlagSet("questGoons", true);
-                                        // - when doing Goons quests, we reset any other companions
-                                        SpawnHelper.spawnMemberIdsBoss.Clear();
-
-                                        if (item.Key == "Knight")
-                                        {
-                                            if (!questCompanions.Contains("bossKnight"))
-                                            {
-                                                questCompanions.Add("bossKnight");
-                                            }
-                                        }
-                                        else if (item.Key == "BigPipe")
-                                        {
-                                            if (!questCompanions.Contains("followerBigPipe"))
-                                            {
-                                                questCompanions.Add("followerBigPipe");
-                                            }
-                                        }
-                                        else if (item.Key == "BirdEye")
-                                        {
-                                            if (!questCompanions.Contains("followerBirdEye"))
-                                            {
-                                                questCompanions.Add("followerBirdEye");
-                                            }
-                                        }
-
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                });
+                Utils.Utils.FlagSet("questGoons", true);
+                SpawnHelper.spawnMemberIdsBoss.Clear();
             }
 
             if (questCompanions.Count > 0)
@@ -799,6 +688,7 @@ namespace pitTeam.Patches
         [PatchPostfix]
         private static void PatchPostfix(EFT.UI.Matchmaker.MatchmakerPlayersController __instance, EFT.UI.Matchmaker.RaidPlayer player)
         {
+            if (QuestCompanionPreview.IsPreview(player?.AccountId)) return;
             NormalizeTeammateIconCategory(player);
             EnsureTeammateVisualHealth(__instance, player);
             TeammateAutoJoinRuntime.ClearSuppression(player?.AccountId);
@@ -911,11 +801,13 @@ namespace pitTeam.Patches
             MainMenuControllerPatch.GroupPlayers.Clear();
             CompanionAcceptScreenPreparation.GroupRemoved(__instance);
         }
+        [PatchPostfix]
+        private static void PatchPostfix(EFT.UI.Matchmaker.MatchmakerPlayersController __instance) => CompanionAcceptScreenPreparation.Refresh(__instance);
     }
 
     /**
-     * Keep the stock ready-screen gate on the local branch by hiding synthetic teammates
-     * from the temporary stock group-count check, then restoring them immediately after.
+     * Keep both settings copies local for companion confirmation. The launch guard
+     * rechecks current admission after native Ready has applied offline settings.
      */
     internal class MainMenuControllerReadyScreenGatePatch : ModulePatch
     {
@@ -933,12 +825,7 @@ namespace pitTeam.Patches
             }
 
             RaidSettings raidSettings = __instance.raidSettings_0;
-            if (raidSettings == null || MainMenuControllerPatch.GroupPlayers.Count < 1)
-            {
-                return;
-            }
-
-            raidSettings.RaidMode = ERaidMode.Local;
+            SyntheticTeammateRaidGuard.KeepLocal(__instance.iEftSession?.Profile, raidSettings, __instance.raidSettings_1);
         }
     }
     /**
@@ -971,6 +858,7 @@ namespace pitTeam.Patches
         private static bool PatchPrefix(EFT.UI.Matchmaker.RaidGroupContextInteractions __instance)
         {
             string id = __instance._selectedPlayer.AccountId;
+            if (QuestCompanionPreview.IsPreview(id)) return false;
             if (string.IsNullOrWhiteSpace(id))
             {
                 return true;
@@ -999,6 +887,7 @@ namespace pitTeam.Patches
             }
 
             EFT.UI.BaseContextInteractions.RequestGlobalRedraw();
+            CompanionAcceptScreenPreparation.Refresh(controller as EFT.UI.Matchmaker.MatchmakerPlayersController);
             return false;
         }
     }
@@ -1006,14 +895,22 @@ namespace pitTeam.Patches
     internal static class CompanionAcceptScreenPreparation
     {
         private static MatchMakerAcceptScreen _screen;
-        private static RaidSettings _settings;
+        private static RaidSettings _settings, _offlineSettings;
         private static EFT.UI.Matchmaker.MatchmakerPlayersController _controller;
-        internal static void Begin(MatchMakerAcceptScreen screen, RaidSettings settings, EFT.UI.Matchmaker.MatchmakerPlayersController controller)
-        { _screen = screen; _settings = settings; _controller = controller; }
+        private static Profile _profile;
+        internal static void Begin(MatchMakerAcceptScreen screen, RaidSettings settings, RaidSettings offlineSettings, EFT.UI.Matchmaker.MatchmakerPlayersController controller, Profile profile)
+        { _screen = screen; _settings = settings; _offlineSettings = offlineSettings; _controller = controller; _profile = profile; }
         internal static void End(MatchMakerAcceptScreen screen)
-        { if (ReferenceEquals(_screen, screen)) { _screen = null; _settings = null; _controller = null; } }
+        { if (ReferenceEquals(_screen, screen)) { _screen = null; _settings = null; _offlineSettings = null; _controller = null; _profile = null; QuestCompanionPreview.Remove(); } }
         internal static void MemberAdded(EFT.UI.Matchmaker.MatchmakerPlayersController controller)
         {
+            // Invitations may arrive after backing out of confirmation. Invalidate
+            // the automatic ally then too, without preparing gear for the old map.
+            if (MainMenuControllerPatch.GroupPlayers.Count > 0)
+            {
+                QuestCompanionPreview.Remove();
+                CompanionRaidPreparation.InvalidateQuest();
+            }
             if (_screen != null && GameplayModeAddons.Current == GameplayMode.GoingRogue) Refresh(controller);
         }
         internal static void GroupRemoved(EFT.UI.Matchmaker.MatchmakerPlayersController controller)
@@ -1025,8 +922,10 @@ namespace pitTeam.Patches
             if (_screen == null || _settings == null || controller?.CurrentPlayer == null || !ReferenceEquals(controller, _controller)) return;
             try
             {
-                if (SyntheticTeammateRaidGuard.HasSyntheticTeammates()) _settings.RaidMode = ERaidMode.Local;
-                CompanionRaidPreparation.Prepare(_settings, MainMenuControllerPatch.GroupPlayers.Where(player => player != null).Select(player => player.AccountId));
+                SyntheticTeammateRaidGuard.KeepLocal(_profile, _settings, _offlineSettings);
+                string questRole = QuestCompanionPreview.RolesFor(_profile, _settings).FirstOrDefault();
+                CompanionRaidPreparation.Prepare(_settings, MainMenuControllerPatch.GroupPlayers.Where(player => player != null).Select(player => player.AccountId), questRole);
+                QuestCompanionPreview.Refresh(controller, questRole);
                 SyntheticTeammateAutoJoinLoader.RefreshLoadedTeammateVisuals(controller, preserveVisualBindings: true);
             }
             catch (Exception ex) { Modules.Logger.LogError("[CompanionRaidKit] Accept-screen group refresh failed: " + ex); }
@@ -1057,6 +956,8 @@ namespace pitTeam.Patches
         {
             if (!raidSettings.IsPmc) MainMenuControllerPatch.GroupPlayers.Clear();
             SyntheticTeammateAutoJoinLoader.RefreshLoadedTeammateVisuals(matchmaker);
+            if (!raidSettings.isInTransition && !Utils.Utils.FlagGet("RaidTransit"))
+                QuestCompanionPreview.Refresh(matchmaker, QuestCompanionPreview.RolesFor(session.Profile, raidSettings).FirstOrDefault());
 
             if (matchmaker?.GroupPlayers?.List == null)
             {
@@ -1184,6 +1085,7 @@ namespace pitTeam.Patches
 
     internal class MatchMakerAcceptScreenPatch : ModulePatch
     {
+        private static readonly FieldInfo UiLifetimeField = AccessTools.Field(typeof(MatchMakerAcceptScreen), "UI");
         protected override MethodBase GetTargetMethod()
         {
             return AccessTools.Method(typeof(MatchMakerAcceptScreen), "Show", new Type[] { typeof(EFT.IEftSession), typeof(RaidSettings), typeof(RaidSettings) });
@@ -1196,7 +1098,7 @@ namespace pitTeam.Patches
             try
             {
                 EFT.UI.Matchmaker.MatchmakerPlayersController controller = AccessTools.Field(typeof(MatchMakerAcceptScreen), "MatchmakerPlayersController")?.GetValue(__instance) as EFT.UI.Matchmaker.MatchmakerPlayersController;
-                CompanionAcceptScreenPreparation.Begin(__instance, raidSettings, controller);
+                CompanionAcceptScreenPreparation.Begin(__instance, raidSettings, offlineRaidSettings, controller, session.Profile);
                 SyntheticTeammateAutoJoinLoader.EnsureLoaded(controller);
                 CompanionAcceptScreenPreparation.Refresh(controller);
 
@@ -1259,6 +1161,14 @@ namespace pitTeam.Patches
 
                 // Rebuild the entire group preview with updated controller.GroupPlayers
                 groupPreview.Show(string_2, controller, raidSettings_0, new Func<EFT.UI.Matchmaker.RaidPlayer, bool, bool, EFT.UI.Matchmaker.RaidGroupContextInteractions>(controller.GetContextInteractions));
+                // EFT only owns this disposable in its non-local branch. We reopen
+                // the local group preview above, so give it the same close lifetime.
+                if (raidSettings_0.Local)
+                {
+                    var lifetime = UiLifetimeField?.GetValue(__instance) as EFT.UI.UIParent;
+                    if (lifetime == null) throw new InvalidOperationException("Confirmation screen UI lifetime is unavailable.");
+                    lifetime.AddDisposable<MatchMakerGroupPreview>(groupPreview);
+                }
 
                 Modules.Logger.LogInfo($"[UI] Rebuilt group preview with {controller.GroupPlayers.Count} players");
             }
@@ -1267,30 +1177,6 @@ namespace pitTeam.Patches
                 pitFireTeam.Log.LogWarning("[UI] Failed to rebuild group preview in postfix");
                 pitFireTeam.Log.LogError(ex);
             }
-        }
-    }
-
-    internal class TarkovApplicationOnlineFallbackPatch : ModulePatch
-    {
-        protected override MethodBase GetTargetMethod()
-        {
-            return AccessTools.Method(typeof(TarkovApplication), nameof(TarkovApplication.NetworkGameMatching), new Type[]
-            {
-                typeof(string),
-                typeof(EMatchingType)
-            });
-        }
-
-        [PatchPrefix]
-        private static bool PatchPrefix(TarkovApplication __instance, ref Task __result)
-        {
-            if (!SyntheticTeammateRaidGuard.TryForceLocalRaid(__instance, "TarkovApplication.method_42"))
-            {
-                return true;
-            }
-
-            __result = SyntheticTeammateRaidGuard.StartLocalRaid(__instance);
-            return false;
         }
     }
 

@@ -395,7 +395,7 @@ namespace pitTeam.Localization
                     ["EditorPlayer"] = "Player",
                     ["EditorRoster"] = "Roster",
                     ["EditorLanguage"] = "Language",
-                    ["EditorNextRaid"] = "Close Tarkov while editing your squad. Changes take effect on the next deployment.",
+                    ["EditorNextRaid"] = "You need to restart the game client for changes to take effect.",
                     ["EditorTeammates"] = "Teammates",
                     ["EditorEmpty"] = "No teammates in this roster.",
                     ["EditorCharacter"] = "Character",

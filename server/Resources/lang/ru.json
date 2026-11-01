@@ -187,7 +187,7 @@
     "EditorPlayer": "Игрок",
     "EditorRoster": "Состав",
     "EditorLanguage": "Язык",
-    "EditorNextRaid": "Закройте Tarkov перед редактированием отряда. Изменения вступят в силу при следующем выходе в рейд.",
+    "EditorNextRaid": "Чтобы изменения вступили в силу, необходимо перезапустить игровой клиент.",
     "EditorTeammates": "Бойцы",
     "EditorEmpty": "В этом составе нет бойцов.",
     "EditorCharacter": "Персонаж",

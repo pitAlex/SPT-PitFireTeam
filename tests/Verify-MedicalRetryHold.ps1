@@ -9,8 +9,9 @@ function Method([string]$path, [string]$name) {
 $fixture = Get-Content -Raw (Join-Path $PSScriptRoot 'MedicalRetryHoldFixture.cs')
 $fixture = $fixture.Replace('/* COMMON RECOVERY */', (Method 'client/BigBrain/FollowerCombatCommon.cs' 'TryGetMedicalRetryRecoveryDecision'))
 $fixture = $fixture.Replace('/* RIFLEMAN END */', (Method 'client/BigBrain/FollowerCombatDefault.cs' 'EndMedicalRetryHold'))
+$fixture = $fixture.Replace('/* RIFLEMAN HOLD END */', (Method 'client/BigBrain/FollowerCombatDefault.cs' 'EndHoldPosition'))
 $fixture = $fixture.Replace('/* MARKSMAN END */', (Method 'client/BigBrain/FollowerCombatSniper.cs' 'EndMedicalRetryHold'))
 $fixture = $fixture.Replace('/* KNIGHT END */', (Method 'going-rogue/client/Combat/GoonCombatObjective.cs' 'EndMedicalRetryHold'))
 Add-Type -TypeDefinition $fixture -Language CSharp -CompilerOptions '/nullable:annotations'
 $count = [MedicalRetryHoldChecks]::Run()
-Write-Output "PASS: $count production Rifleman/Marksman/Knight medical retry and shared recovery checks. Stubbed treatment/navigation inputs; no Unity raid simulation."
+Write-Output "PASS: $count production Rifleman/Marksman/Knight medical retry, passive-hold handoff and shared recovery checks. Stubbed treatment/navigation inputs; no Unity raid simulation."

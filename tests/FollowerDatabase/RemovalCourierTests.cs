@@ -25,6 +25,13 @@ internal static class RemovalCourierTests
             var storage = new FriendlyTeammateStorage(new FileUtil(), json,
                 DispatchProxy.Create<ISptLogger<FriendlyTeammateStorage>, TestLogger>(), ModeStorageTests.CreateSettings());
             storage.InitializeProfile(session);
+            storage.Write(session, "701-settings.json", new FriendlyTeammateSettings
+            {
+                AutomaticallySuppliedEquipmentIds = ["automatic-knife", "automatic-band", "automatic-container"]
+            });
+            check(storage.Read<FriendlyTeammateSettings>(session, "701-settings.json")!.AutomaticallySuppliedEquipmentIds
+                    .SequenceEqual(new[] { "automatic-knife", "automatic-band", "automatic-container" }),
+                "native SPT JSON and encrypted settings retain supplied-item identities across reload");
             var cloner = new FastCloner();
             var constructor = typeof(FriendlyTeammateService).GetConstructors().Single();
             var service = (FriendlyTeammateService)constructor.Invoke(constructor.GetParameters().Select(parameter => parameter.Name switch
@@ -46,11 +53,30 @@ internal static class RemovalCourierTests
                 new Item { Id = tag, Template = new MongoId(), ParentId = equipment, SlotId = "Dogtag" }
             ] } };
             var selector = typeof(FriendlyTeammateService).GetMethod("BuildCurrentTeammateKitDeliveryItems", BindingFlags.NonPublic | BindingFlags.Instance)!;
-            var items = (List<Item>)selector.Invoke(service, [teammate, false])!;
+            var items = (List<Item>)selector.Invoke(service, [teammate, false, null])!;
             check(items.Count == 3 && items[0].Id == gun && items[0].ParentId == null, "native selection puts the actual weapon root before its previously preceding attachment");
             check(items.Single(item => item.Id == scope).ParentId == gun.ToString() && items.Single(item => item.Id == med).ParentId == null,
                 "native selection preserves mounted children and returns pocket contents as a root");
             check(teammate.Inventory.Items.Single(item => item.Id == gun).ParentId == equipment.ToString(), "FastCloner keeps saved equipment immutable during preparation");
+            var automaticContainer = new MongoId();
+            var automaticKnife = new MongoId();
+            var containerCargo = new MongoId();
+            var replacementKnife = new MongoId();
+            var knifeTemplate = new MongoId();
+            teammate.Inventory.Items.AddRange([
+                new Item { Id = automaticContainer, Template = new MongoId(), ParentId = equipment, SlotId = "SecuredContainer" },
+                new Item { Id = containerCargo, Template = new MongoId(), ParentId = automaticContainer, SlotId = "main" },
+                new Item { Id = automaticKnife, Template = knifeTemplate, ParentId = automaticContainer, SlotId = "main" },
+                new Item { Id = replacementKnife, Template = knifeTemplate, ParentId = equipment, SlotId = "Scabbard" }
+            ]);
+            var filtered = (List<Item>)selector.Invoke(service,
+                [teammate, true, new[] { automaticContainer.ToString(), automaticKnife.ToString() }])!;
+            check(!filtered.Any(item => item.Id == automaticContainer || item.Id == automaticKnife)
+                && filtered.Any(item => item.Id == replacementKnife),
+                "native selector excludes supplied identities even after nesting, preserving same-template replacements");
+            check(filtered.Single(item => item.Id == containerCargo).ParentId == null
+                && teammate.Inventory.Items.Single(item => item.Id == containerCargo).ParentId == automaticContainer.ToString(),
+                "native selector hoists returned cargo without changing the original container tree");
             var helperConstructor = typeof(ItemHelper).GetConstructors().Single();
             var helper = (ItemHelper)helperConstructor.Invoke(new object?[helperConstructor.GetParameters().Length]);
             var normalized = helper.ReplaceIDs(items, null).ToList();

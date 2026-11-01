@@ -1,5 +1,15 @@
 # Teammate web editor validation
 
+## 2026-10-30 — Explicit game-client restart notice — deployed
+
+The notice now reads only "You need to restart the game client for changes to take effect." Updated EN/RU/CHS and the embedded English fallback. Debug client compilation passes with zero warnings/errors; exact English/fallback equality and translated JSON parsing pass. Deployed the client DLL/PDB and three locale files with stopped-process guards and verified backups; all five installed hashes and the exact installed English sentence were independently checked. Manifest: `tests/artifacts/editor-client-restart-deployed-02ce517f769648b0a6c49b67fb66ef3d/manifest.json`.
+
+## 2026-10-30 — Hide unavailable roster during a raid — deployed
+
+The page now omits the teammate-list/edit grid while the existing `EditorInRaid` error is displayed. The localized finish-the-raid alert and player/roster/language selectors remain visible; a blocked roster request no longer presents an empty teammate list as if the player had no squad. Service admission, persistence and other error handling are unchanged.
+
+Debug Razor/server compilation passes with zero errors and one cached NU1900 advisory-feed warning. All **89** existing editor checks pass. With Tarkov/SPT stopped, deployed only the server DLL/PDB using verified backups and per-copy process/hash guards; both installed hashes were independently verified. Manifest: `tests/artifacts/editor-raid-block-deployed-7441b70f83b247c2a845cdfb99f5cf7b/manifest.json`. No server was launched or live profile edited. Browser presentation was not exercised.
+
 ## 2026-10-26 — optional-mode labels and managed companions
 
 The roster dropdown now resolves the central `SquadControlMode*` display names, showing **Going Rogue** while preserving its stored `GoingRogue` identifier. Companion eligibility comes from the addon's registered `ProficiencyOnly` role policy through Core's shared role lookup. Managed companions are disabled in the list with a localized explanation; both Load and Save reject them before loading equipment. Renaming a Goon does not bypass the policy. Ordinary recruits remain editable.

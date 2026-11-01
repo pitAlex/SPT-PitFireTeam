@@ -572,7 +572,7 @@ namespace pitTeam
             new RaidStartPatch().Enable();
             new MainMenuControllerPatch().Enable();
             new MainMenuControllerReadyScreenGatePatch().Enable();
-            new TarkovApplicationOnlineFallbackPatch().Enable();
+            new TarkovApplicationLocalRaidStartPatch().Enable();
             // Compatibility guard: hideout/trader-scene cleanup can null-ref while
             // the teammate flow forces the raid into local mode. Keep this narrow
             // so only that synthetic raid-start unload window is affected.

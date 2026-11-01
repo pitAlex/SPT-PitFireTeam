@@ -85,7 +85,7 @@ namespace pitTeam.Components
 
         private void UpdateRosterHealth()
         {
-            if (rosterPanel == null || !rosterPanel.activeInHierarchy || rosterHealthTiles.Count == 0
+            if (rosterPanel == null || !rosterPanel.activeInHierarchy
                 || GameplayModeRuntime.IsSwitching || rosterHealthRefreshBusy || Time.unscaledTime < nextRosterHealthRefresh)
                 return;
             nextRosterHealthRefresh = Time.unscaledTime + 3f;
@@ -104,6 +104,13 @@ namespace pitTeam.Components
                     throw new InvalidOperationException(response?.errmsg ?? "Roster health response unavailable");
                 if (this == null || rosterPanel == null || !rosterPanel.activeInHierarchy || version != rosterBuildVersion || GameplayModeRuntime.IsSwitching)
                     return;
+                var accounts = new HashSet<string>(response.data.Where(state => !string.IsNullOrWhiteSpace(state?.Aid))
+                    .Select(state => state.Aid), StringComparer.Ordinal);
+                if (!accounts.SetEquals(rosterHealthTiles.Keys))
+                {
+                    SocialNetworkClassPatch.RefreshFriendsListAndSquadRoster();
+                    return;
+                }
                 foreach (var state in response.data)
                 {
                     if (state?.Aid == null || !rosterHealthTiles.TryGetValue(state.Aid, out var tile)

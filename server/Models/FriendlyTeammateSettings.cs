@@ -5,6 +5,10 @@ public record FriendlyTeammateSettings
     // Null means no recruitment debt (manual hires and legacy members).
     public int? RecruitmentGearPrice { get; set; }
 
+    // Generated identity/support equipment is usable by the teammate, not a courier reward.
+    // Item IDs preserve returns for player-supplied replacements, including identical templates.
+    public List<string> AutomaticallySuppliedEquipmentIds { get; set; } = [];
+
     public List<FriendlyTeammateInsuredItem> InsuredItems { get; set; } = [];
     public string SelectedLoadoutId { get; set; } = string.Empty;
     public bool AutoJoinEnabled { get; set; }

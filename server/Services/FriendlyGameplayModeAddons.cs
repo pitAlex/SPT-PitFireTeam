@@ -15,6 +15,7 @@ public sealed record FriendlyModeCompanion(string Role, string Nickname, string 
     public Action<BotBase, BotBase>? AdoptGeneratedSkills { get; init; }
     public Action<BotBase>? PrepareRaidEquipment { get; init; }
     public Func<BotBase, string, bool>? CanSpawnForQuest { get; init; }
+    public Func<BotBase, bool>? CanJoinRoster { get; init; }
 }
 
 public static class FriendlyGameplayModeAddons

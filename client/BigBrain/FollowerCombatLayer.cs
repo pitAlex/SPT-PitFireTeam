@@ -99,6 +99,15 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
+            // Enemy loss and linger expiry must not release a running treatment. Pending
+            // work keeps its bounded admission window; active controllers use the medical
+            // watchdog and action end rules, not the post-combat handoff deadline.
+            if (IsCombatTreatmentRunning())
+            {
+                ClearLinger();
+                return true;
+            }
+
             if (lingerArmed && IsLingerExpired() && !HasCurrentLiveGoalEnemy() && !TryKeepActiveForOrderedPush())
             {
                 CompletePostCombatLinger(LingerExpiredReason, allowRetainedLayerRearm: true);
@@ -794,6 +803,11 @@ namespace pitTeam.BigBrain
 
         private bool ShouldKeepCombatLayerForMedicalWork()
         {
+            if (IsCombatTreatmentRunning())
+            {
+                return true;
+            }
+
             if (!HasPendingMedicalWork())
             {
                 ClearMedicalKeepActive();
@@ -831,6 +845,12 @@ namespace pitTeam.BigBrain
             }
 
             return true;
+        }
+
+        private bool IsCombatTreatmentRunning()
+        {
+            return (hadCombatSinceActivation || IsHealingDecision(currentDecision)) &&
+                   Utils.FollowerMedical.IsUsingMedical(BotOwner);
         }
 
         private static bool IsHealingDecision(AICoreActionResult<BotLogicDecision, CoreActionResultParams>? decision)

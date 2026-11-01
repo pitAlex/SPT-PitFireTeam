@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace pitTeam.Modules
 {
@@ -7,6 +8,22 @@ namespace pitTeam.Modules
     public static class GameplayModeAddons
     {
         private static readonly HashSet<GameplayMode> Registered = new HashSet<GameplayMode>();
+        private static readonly Dictionary<GameplayMode, string> ModeCards = new Dictionary<GameplayMode, string>();
+        private static Func<Task> sessionRefresh;
+        public static void RegisterSessionRefresh(GameplayMode mode, Func<Task> refresh)
+        {
+            if (mode != GameplayMode.GoingRogue || !Registered.Contains(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
+            sessionRefresh = refresh;
+        }
+        internal static bool HasSessionRefresh => Registered.Contains(GameplayMode.GoingRogue) && sessionRefresh != null;
+        internal static Task RefreshSessionAsync() => HasSessionRefresh
+            ? sessionRefresh() : Task.CompletedTask;
+        public static void RegisterModeCard(GameplayMode mode, string path)
+        {
+            if (!Registered.Contains(mode) || string.IsNullOrWhiteSpace(path)) throw new ArgumentException("Registered mode artwork is required.");
+            ModeCards[mode] = path;
+        }
+        internal static string ModeCardPath(GameplayMode mode) => Registered.Contains(mode) && ModeCards.TryGetValue(mode, out var path) ? path : null;
         private static Func<bool> rogueCompanionsPresent;
         private static Func<bool> goonCompanionsPresent;
         private static bool exUsecFriendshipEnabled;
@@ -18,14 +35,27 @@ namespace pitTeam.Modules
         private static Func<CompanionAdvanceOrderContext, bool?> advanceOrderPolicy;
         private static Func<string, bool> companionCombatPolicy;
         private static Func<string, string, bool> questCompanionPolicy;
+        private static Func<string, string, Func<string, bool>, bool> questCompanionProgressPolicy;
 
         public static void RegisterQuestCompanionPolicy(GameplayMode mode, Func<string, string, bool> policy)
         {
             if (mode != GameplayMode.GoingRogue || !Registered.Contains(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
             questCompanionPolicy = policy;
+            questCompanionProgressPolicy = null;
         }
-        internal static bool CanSpawnQuestCompanion(string quest, string location) =>
-            Current == GameplayMode.GoingRogue && Registered.Contains(Current) && questCompanionPolicy?.Invoke(quest, location) == true;
+        public static void RegisterQuestCompanionProgressPolicy(GameplayMode mode, Func<string, string, Func<string, bool>, bool> policy)
+        {
+            if (mode != GameplayMode.GoingRogue || !Registered.Contains(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
+            questCompanionProgressPolicy = policy;
+            questCompanionPolicy = null;
+        }
+        internal static bool CanSpawnQuestCompanion(string quest, string location, Func<string, bool> objectiveCompleted = null)
+        {
+            if (Current != GameplayMode.GoingRogue || !Registered.Contains(Current)) return false;
+            return questCompanionProgressPolicy != null
+                ? objectiveCompleted != null && questCompanionProgressPolicy(quest, location, objectiveCompleted)
+                : questCompanionPolicy?.Invoke(quest, location) == true;
+        }
         public static bool OwnsCompanionCombat(string role) =>
             Registered.Contains(Current) && companionCombatPolicy?.Invoke(role) == true;
         public static GameplayMode Current => GameplayModeRuntime.Current;
@@ -41,6 +71,8 @@ namespace pitTeam.Modules
         {
             if (mode != GameplayMode.GoingRogue) throw new ArgumentOutOfRangeException(nameof(mode));
             Registered.Add(mode);
+            ModeCards.Remove(mode);
+            sessionRefresh = null;
             rogueCompanionsPresent = companionsPresent;
             goonCompanionsPresent = goonsPresent;
             exUsecFriendshipEnabled = exUsecFriendly;
@@ -52,11 +84,15 @@ namespace pitTeam.Modules
             companionCommandPolicy = null;
             advanceOrderPolicy = null;
             questCompanionPolicy = null;
+            questCompanionProgressPolicy = null;
         }
         public static void Unregister(GameplayMode mode)
         {
             questCompanionPolicy = null;
+            questCompanionProgressPolicy = null;
             Registered.Remove(mode);
+            ModeCards.Remove(mode);
+            sessionRefresh = null;
             rogueCompanionsPresent = goonCompanionsPresent = null;
             exUsecFriendshipEnabled = false;
             resolveSpawnSelection = null;

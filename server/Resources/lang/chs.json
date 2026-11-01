@@ -315,7 +315,7 @@
     "EditorPlayer": "玩家",
     "EditorRoster": "名册",
     "EditorLanguage": "语言",
-    "EditorNextRaid": "编辑小队时请关闭 Tarkov。更改将在下次部署时生效。",
+    "EditorNextRaid": "你需要重启游戏客户端才能使更改生效。",
     "EditorTeammates": "队员",
     "EditorEmpty": "此名册中没有队员。",
     "EditorCharacter": "角色",

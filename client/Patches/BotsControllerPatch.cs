@@ -433,7 +433,7 @@ namespace pitTeam.Patches
                         { "MemberId", aid },
                         { "ScavId", scavId},
                         { "Custom", customization },
-                        { "PreparationToken", CompanionRaidPreparation.TokenFor(aid) },
+                        { "PreparationToken", savedTeammate ? CompanionRaidPreparation.TokenFor(aid) : CompanionRaidPreparation.QuestTokenFor(role.ToString()) },
                         { "QuestCompanionRole", !savedTeammate && Utils.Utils.FlagGet("questGoons") &&
                             SpawnHelper.spawnMemberIdsBoss.Contains(role) ? role.ToString() : null },
                         { "SelectedMemberCount", MainMenuControllerPatch.GroupPlayers.Count }

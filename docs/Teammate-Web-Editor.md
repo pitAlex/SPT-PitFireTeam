@@ -2,7 +2,7 @@
 
 Open `/pitfireteam` on the SPT server, for example `https://127.0.0.1:6969/pitfireteam`. The server landing page also lists **PitFireTeam**. This page uses SPT's Blazor/MudBlazor layout and administrator authorization; it does not replace the in-game settings screen.
 
-Close Tarkov while editing. Keep the server running, choose the player and roster, then choose a saved teammate. Changes apply when the game next loads the teammate. The browser language selector provides English, Russian and Simplified Chinese without changing the game's locale.
+Choose the player and roster, then choose a saved teammate. You need to restart the game client for changes to take effect. The browser language selector provides English, Russian and Simplified Chinese without changing the game's locale.
 
 Mode labels use the shared localized display names, including **Going Rogue**. Optional modes appear only after their addon registers with Core. Requests for an unavailable mode are rejected before opening or initializing its database, and the editor has no assembly dependency on the addon.
 
@@ -22,5 +22,7 @@ The editor supports:
 There is no teammate deletion, creation, faction change, combat-record editor, Proficiency/Aggression editor or equipment editor. The server accepts a narrow edit model rather than a replacement profile or inventory. The pocket shell is the sole inventory exception; guns, armor, ammunition, item identities, locations, condition, ownership and insurance are retained.
 
 Loads and saves share the mode/request gate with in-game operations and use explicit roster storage without changing the active gameplay mode. An active raid blocks editing. A revision of both the profile and Default snapshot prevents one browser tab overwriting a newer save or an in-game equipment change. Native treatment payment recovery also blocks saves while incomplete. Valid changes use the existing encrypted database transaction and previous-document recovery backups; the editor never rewrites the database file externally.
+
+When a request is blocked by an active raid, the page shows the localized finish-the-raid message and hides the teammate list and edit panel. It does not display an empty-roster state for that error. Player, roster and language selectors remain available for retrying after the raid.
 
 Implementation: [page](../server/Web/Teammates.razor), [service](../server/Services/FriendlyTeammateEditorService.cs), [edit policy](../server/Services/FriendlyTeammateEditorPolicy.cs), [validation](validation/Teammate-Web-Editor.md). [Teammate Storage](Teammate-Storage.md) owns the database contract.

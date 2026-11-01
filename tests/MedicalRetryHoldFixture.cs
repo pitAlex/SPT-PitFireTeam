@@ -13,11 +13,29 @@ public struct AICoreActionEnd
     public string Reason; public bool Value;
     public AICoreActionEnd(string reason, bool value) { Reason = reason; Value = value; }
 }
-public class EnemyInfo { }
-public class Memory { public EnemyInfo GoalEnemy = new EnemyInfo(); }
+public class EnemyInfo { public bool IsVisible; }
+public class Memory { public EnemyInfo GoalEnemy = new EnemyInfo(); public bool IsInCover; }
 public class BotOwner { public Memory Memory = new Memory(); }
+public static class FollowerAwareness { public static bool WasRecentlyDamaged(BotOwner bot) => false; }
 public class FollowerCombatCommon
 {
+    public const string RecoveryNoCoverThreatHoldReason = "recovery.noCoverThreatHold", HealRetryHoldReason = "medicalRetryHold";
+    public bool Gesture;
+    public void ValidateCommittedCover() { }
+    public bool IsCommittedHolderReason(string reason) => reason.StartsWith("committedPositionHold", StringComparison.Ordinal);
+    public bool HasActiveCombatGestureOrder() => Gesture;
+    public void ClearCommittedCover() { }
+    public bool HasCommittedCover() => false;
+    public bool IsBotInCommittedCover() => false;
+    public void HoldCoverForMaxDuration() { }
+    public static bool IsReloadHoldReason(string reason) => reason == "reloadInCover";
+    public static bool IsWeaponPreparationHoldReason(string reason) => reason == "prepareWeapon";
+    public static bool IsRecoveryManeuverReason(string reason) => reason.StartsWith("recovery.", StringComparison.Ordinal);
+    public static bool WasHitRecently(BotOwner bot, float seconds) => false;
+    public AICoreActionEnd EndRecoveryNoCoverThreatHold() => Continue();
+    public AICoreActionEnd EndReloadHold(AICoreActionResult<BotLogicDecision, CoreActionResultParams> current) => Continue();
+    public AICoreActionEnd EndWeaponPreparationHold(string reason) => Continue();
+    public AICoreActionEnd EndBaseHoldPosition(string reason) => Continue();
     public bool IsHealDecisionRetryBlocked, IsActivelyUsingMedical, HaveWork = true,
         Safe, Pressure, Critical, Ready, RecoveryMove = true, Immediate, DogFight;
     public int Probes, CoverSearches;
@@ -53,6 +71,23 @@ public class FollowerCombatCommon
 }
 public class RiflemanRetry
 {
+    private const string ShootCoverHoldReason = "shootCoverHold";
+    public int AdvanceProbes;
+    private void ClearCoverIntent() { }
+    private bool HasActivePushOrder() => false;
+    private bool IsBossHoldReason(string reason) => reason == "bossHold" || reason == "bossHoldOpen" || reason == "bossHold.open";
+    private bool IsCoverHoldReason(string reason) => reason == "coverHold" || IsBossHoldReason(reason);
+    private bool ShouldBreakForBossUnderAttack(EnemyInfo enemy) => false;
+    private bool ShouldBreakCommittedCoverForBossObjective(EnemyInfo enemy) => false;
+    private bool TryPrepareRecentHitHoldBreak(EnemyInfo enemy, out AICoreActionEnd end) { end = default; return false; }
+    private bool TryPrepareAllySupportBreak(string reason, bool clear, out AICoreActionEnd end) { end = default; return false; }
+    private bool TryPrepareAdvanceBreak(EnemyInfo enemy, string reason, out AICoreActionEnd end) { AdvanceProbes++; end = default; return false; }
+    private bool TryPrepareVisibleHoldBreak(EnemyInfo enemy, out AICoreActionEnd end) { end = default; return false; }
+    private bool TryPrepareHoldPositionLocalSupportBreak(EnemyInfo enemy, string reason, out AICoreActionEnd end) { end = default; return false; }
+    private bool IsHoldReactionRetrySuppressed(EnemyInfo enemy) => true;
+    private AICoreActionEnd EndCommittedHolder(string reason) => FollowerCombatCommon.Continue();
+    private AICoreActionEnd EndShootCoverHoldPosition() => FollowerCombatCommon.Continue();
+    public AICoreActionEnd RunHold(string reason) => EndHoldPosition(new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.holdPosition, reason));
     public readonly FollowerCombatCommon combatCommon;
     public readonly BotOwner botOwner = new BotOwner();
     public RiflemanRetry(FollowerCombatCommon c) { combatCommon = c; }
@@ -64,6 +99,7 @@ public class RiflemanRetry
     { decision = default; return false; }
     public AICoreActionEnd Run() => EndMedicalRetryHold(default);
     /* RIFLEMAN END */
+    /* RIFLEMAN HOLD END */
 }
 public class MarksmanRetry
 {
@@ -117,6 +153,53 @@ public static class MedicalRetryHoldChecks
                 check(c.Prepared?.Reason == (scenario == "noCover" ? "recoveryNoCoverThreatHold" : "recoveryCover"),"shared cover or bounded fallback owns successor");
                 if (scenario == "quietFailed") check(c.IsHealDecisionRetryBlocked,"captured due retry survives provider rearming cooldown");
             }
+        }
+        foreach (string reason in new[] { "bossHoldOpen", "bossHold", "bossHold.open", "coverHold" })
+        {
+            var c = new FollowerCombatCommon { HaveWork = false };
+            var rifleman = new RiflemanRetry(c);
+            Action<bool,string> check = (ok,why) => { checks++; if (!ok) throw new Exception(reason+": "+why); };
+            check(!rifleman.RunHold(reason).Value && c.Probes == 0 && rifleman.AdvanceProbes == 1,
+                "initial no-work hold keeps existing advance retry behavior");
+            c.HaveWork = true;
+            c.Ready = true;
+            var end = rifleman.RunHold(reason);
+            check(end.Value && end.Reason == "medicalRetryReady" && c.Prepared?.Action == BotLogicDecision.heal,
+                "renewed treatment interrupts the existing hold with a prepared medical successor");
+            check(c.Probes == 1 && rifleman.AdvanceProbes == 1,
+                "medical handoff probes once before the suppressed advance retry");
+
+            c = new FollowerCombatCommon { IsHealDecisionRetryBlocked = true };
+            rifleman = new RiflemanRetry(c);
+            bool stayedInHold = true;
+            for (int i = 0; i < 100; i++)
+                stayedInHold &= !rifleman.RunHold(reason).Value;
+            check(stayedInHold, "medical cooldown retains one stable hold across repeated evaluations");
+            check(c.Probes == 0 && c.CoverSearches == 0 && rifleman.AdvanceProbes == 0,
+                "blocked medical retry does not poll providers or restart advance");
+            c.IsHealDecisionRetryBlocked = false;
+            c.Ready = true;
+            check(rifleman.RunHold(reason).Value && c.Probes == 1 && c.Prepared?.Action == BotLogicDecision.heal,
+                "treatment starts when the existing cooldown expires");
+
+            c = new FollowerCombatCommon();
+            rifleman = new RiflemanRetry(c);
+            check(rifleman.RunHold(reason).Value && c.Probes == 1 && c.CoverSearches == 1 &&
+                c.Prepared?.Action == BotLogicDecision.runToCover,
+                "quiet exposed failed treatment uses existing medical recovery planning");
+
+            c = new FollowerCombatCommon { Safe = true, IsHealDecisionRetryBlocked = true };
+            rifleman = new RiflemanRetry(c);
+            check(!rifleman.RunHold(reason).Value && c.Probes == 0 && c.CoverSearches == 0,
+                "safe treatment destination is retained while retry is blocked");
+        }
+        foreach (string reason in new[] { "committedPositionHold.point", "reloadInCover", "prepareWeapon", "shootCoverHold", "recovery.noCoverThreatHold" })
+        {
+            var c = new FollowerCombatCommon { Ready = true };
+            var rifleman = new RiflemanRetry(c);
+            checks++;
+            if (rifleman.RunHold(reason).Value || c.Probes != 0 || c.Prepared.HasValue)
+                throw new Exception(reason+": specialized hold ownership must retain its existing dispatcher");
         }
         return checks;
     }

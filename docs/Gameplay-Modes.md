@@ -19,7 +19,9 @@ Each linked guide owns its mode's gameplay behavior. [My Squad](My-Squad-Screen.
 
 ## First My Squad visit
 
-Until the initial choice succeeds, My Squad hides its normal panels and tabs and presents two mode cards. Existing accounts also make this choice once; closing the screen before choosing leaves it pending. Choosing the already-active Guns for Hire default still confirms the mode with the server and completes onboarding.
+Until the initial choice succeeds, My Squad hides its normal panels and tabs and presents Guns for Hire and Allegiance cards, plus Going Rogue when both addon components are available. Existing accounts also make this initial choice once; closing the screen before choosing leaves it pending. Choosing the already-active Guns for Hire default still confirms the mode with the server and completes onboarding.
+
+An existing user installing Going Rogue later receives a separate one-time choice between the current mode and Going Rogue on the next My Squad visit. Either selection acknowledges that installation for the player profile across modes and restarts. Back leaves it pending. This uses the normal immediate coordinated mode transition and never repeats initial onboarding or the welcome gift. A player already using Going Rogue is acknowledged without presenting duplicate cards. Missing client/server addon components cannot acknowledge a Going Rogue card the player could not choose.
 
 The server persists `firstTimeVisit = true` when the initial choice completes, once per player profile across both mode databases. A squad in either database suppresses the welcome invitation, including when the newly selected roster is empty. Existing rosters are retained.
 
@@ -50,6 +52,8 @@ Mode changes use the coordinated transition rather than a live cfg reload. Reloa
 ## Transition coordination
 
 Transitions wait for registered post-raid reports and serialize server settings requests. The server serializes teammate operations with database selection so a request cannot cross roster roots while it runs. A lost settings response is checked against the server's actual mode before rolling back; a failed transition restores the preceding client mode/settings and attempts server reconciliation. These rules are implemented by [GameplayModeRuntime](../client/Modules/GameplayModeRuntime.cs) and the existing teammate operation gate.
+
+When a registered addon supplies a session refresh, the transition awaits it after server confirmation and before reporting success. It runs when entering or leaving the optional mode, and rollback refreshes the preceding state too. Optional callbacks are cleared when their registration is removed or replaced, and unavailable server addons cannot block fallback with an absent endpoint. [Going Rogue's Knight refresh](../going-rogue/docs/Knight-Trader.md#registration-and-access) owns its native trader/quest synchronization; Core has no typed dependency on it.
 
 ## Shared boundaries
 

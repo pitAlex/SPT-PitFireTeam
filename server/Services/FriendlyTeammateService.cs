@@ -706,42 +706,8 @@ public partial class FriendlyTeammateService(
             return;
         }
 
-        AssignInitialRealisticSecureContainer(teammate);
-    }
-
-    private void AssignInitialRealisticSecureContainer(BotBase teammate)
-    {
-        teammate.Inventory ??= new BotBaseInventory { Items = [] };
-        teammate.Inventory.Items ??= [];
-        if (teammate.Inventory.Items.Count == 0)
-        {
-            return;
-        }
-
+        // Realistic starts without a secure container; players may supply their own.
         RemoveSecureContainerTree(teammate);
-
-        int level = Math.Max(1, teammate.Info?.Level ?? 1);
-        string templateId = level < 15
-            ? FriendlyItemTemplateIds.SecureContainer.Beta
-            : level < 30
-                ? FriendlyItemTemplateIds.SecureContainer.Epsilon
-                : FriendlyItemTemplateIds.SecureContainer.Gamma;
-
-        teammate.Inventory.Items.Add(new Item
-        {
-            Id = new MongoId(),
-            Template = new MongoId(templateId),
-            ParentId = GetEquipmentRootId(teammate),
-            SlotId = nameof(EquipmentSlots.SecuredContainer),
-            Location = null,
-            Upd = new Upd
-            {
-                StackObjectsCount = 1,
-                SpawnedInSession = false,
-            },
-        });
-
-        logger.Info($"Assigned initial Realistic secure container '{templateId}' to teammate '{teammate.Aid}' at level {level}.");
     }
 
     private static bool RemoveSecureContainerTree(BotBase teammate)
@@ -1045,7 +1011,8 @@ public partial class FriendlyTeammateService(
             var normalizedBuild = itemHelper.ReplaceIDs(clonedBuild, playerPmc).ToList();
             MongoId rootId = normalizedBuild.First().Id;
 
-            List<Item> previousKitDeliveryItems = BuildCurrentTeammateKitDeliveryItems(teammate, includeSecureContainer: IsExtremeLoadoutManagementMode(mode));
+            List<Item> previousKitDeliveryItems = BuildCurrentTeammateKitDeliveryItems(teammate, IsExtremeLoadoutManagementMode(mode),
+                GetAutomaticallySuppliedEquipmentIds(sessionId, teammate));
             teammate.Inventory.Items = MergeEquipmentWithPreservedSpecialItems(
                 teammate.Inventory.Items,
                 normalizedBuild,
@@ -1339,6 +1306,8 @@ public partial class FriendlyTeammateService(
             teammate.Inventory.Equipment = teammate.Inventory.Items.First().Id;
 
             settings.SelectedLoadoutId = DefaultLoadoutId;
+            settings.AutomaticallySuppliedEquipmentIds = (settings.AutomaticallySuppliedEquipmentIds ?? [])
+                .Select(id => remappedTeammateItemIds.GetValueOrDefault(id, id)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             teammateInsuranceService.ReconcileEquipmentCommit(playerPmc, teammate, settings,
                 originalPlayerItems.Select(item => item.Id.ToString()).ToHashSet(StringComparer.OrdinalIgnoreCase),
                 currentTeammateItemIds, remappedTeammateItemIds);
@@ -1493,7 +1462,17 @@ public partial class FriendlyTeammateService(
             profile = string.IsNullOrEmpty(preparationToken)
                 ? PrepareNativeCompanionForRaid(sessionId, teammate!, healthMultiplier)
                 : PreparedCompanionForSpawn(sessionId, teammate!, healthMultiplier, preparationToken);
-        else profile = PrepareTeammateForFetch(teammate!, healthMultiplier, refillMagazinesForSpawn: true);
+        else
+        {
+            profile = PrepareTeammateForFetch(teammate!, healthMultiplier, refillMagazinesForSpawn: true);
+            var savedIds = (teammate!.Inventory?.Items ?? []).Select(item => item.Id.ToString())
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            RecordAutomaticallySuppliedEquipment(sessionId, teammate,
+                (profile.Inventory?.Items ?? []).Where(item =>
+                        string.Equals(item.SlotId, nameof(EquipmentSlots.Scabbard), StringComparison.OrdinalIgnoreCase)
+                        && !savedIds.Contains(item.Id.ToString()))
+                    .Select(item => item.Id.ToString()));
+        }
         return true;
     }
 
@@ -1858,7 +1837,7 @@ public partial class FriendlyTeammateService(
             RemoveSecureContainerTree(teammate);
         }
 
-        EnsureFollowerHasScabbardKnife(teammate);
+        EnsureSavedFollowerHasScabbardKnife(sessionId, teammate);
         SaveDefaultEquipmentSnapshot(sessionId, teammate, overwrite: true, includeSecureContainer: keepSecureContainer);
         logger.Info($"Persisted escaped Default equipment state for teammate '{teammate.Aid}' in loadout management mode '{mode}'.");
     }
@@ -1920,7 +1899,7 @@ public partial class FriendlyTeammateService(
         teammate.Inventory.Equipment = teammate.Inventory.Items.First().Id;
 
         RemoveSecureContainerTree(teammate);
-        EnsureFollowerHasScabbardKnife(teammate);
+        EnsureSavedFollowerHasScabbardKnife(sessionId, teammate);
         SaveDefaultEquipmentSnapshot(sessionId, teammate, overwrite: true, includeSecureContainer: false);
         logger.Info($"Persisted fallen Default equipment maintenance state for teammate '{teammate.Aid}' in loadout management mode '{mode}'.");
     }
@@ -1989,6 +1968,27 @@ public partial class FriendlyTeammateService(
         StripToPermanentEquipment(teammate, keepSecureContainer);
         SaveDefaultEquipmentSnapshot(sessionId, teammate, overwrite: true, includeSecureContainer: keepSecureContainer);
         logger.Info($"Stripped teammate '{teammate.Aid}' default equipment after death in loadout management mode '{mode}'.");
+    }
+
+    private void RecordAutomaticallySuppliedEquipment(MongoId sessionId, BotBase teammate, IEnumerable<string> itemIds)
+    {
+        var additions = itemIds.ToList();
+        if (additions.Count == 0) return;
+        var settings = GetTeammateSettings(sessionId, teammate);
+        var recorded = (settings.AutomaticallySuppliedEquipmentIds ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        bool changed = false;
+        foreach (string id in additions) changed |= recorded.Add(id);
+        if (!changed) return;
+        settings.AutomaticallySuppliedEquipmentIds = recorded.ToList();
+        SaveTeammateSettings(sessionId, teammate, settings);
+    }
+
+    private void EnsureSavedFollowerHasScabbardKnife(MongoId sessionId, BotBase teammate)
+    {
+        var before = (teammate.Inventory?.Items ?? []).Select(item => item.Id.ToString()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        EnsureFollowerHasScabbardKnife(teammate);
+        RecordAutomaticallySuppliedEquipment(sessionId, teammate,
+            GetAutomaticallySuppliedHiringEquipmentIds(teammate).Where(id => !before.Contains(id)));
     }
 
     private void EnsureFollowerHasScabbardKnife(BotBase profile)

@@ -94,7 +94,7 @@ public class FriendlyTeammateMatchCallbacks(
         var found = string.IsNullOrWhiteSpace(request.QuestCompanionRole)
             ? teammateService.TryGetSpawnProfile(sessionId, request.MemberId, request.Custom?.Health, out var teammate, request.PreparationToken)
             : teammateService.TryGetQuestCompanionProfile(sessionId, request.QuestCompanionRole, request.MemberId,
-                request.SelectedMemberCount, request.Custom?.Health, out teammate);
+                request.SelectedMemberCount, request.Custom?.Health, out teammate, request.PreparationToken);
         if (!found)
         {
             return new ValueTask<string>(httpResponseUtil.GetBody(Array.Empty<object>()));

@@ -18,7 +18,7 @@ public class FriendlySquadOnboardingRouter(JsonUtil jsonUtil, HttpResponseUtil h
         new RouteAction<EmptyRequestData>("/singleplayer/pitfireteam/squad-onboarding",
             (url, info, sessionId, output, cancellationToken) => Run(sessionId, () => onboarding.GetStatus(sessionId), http, logger)),
         new RouteAction<FriendlySquadOnboardingRequest>("/singleplayer/pitfireteam/squad-onboarding/complete",
-            (url, info, sessionId, output, cancellationToken) => Run(sessionId, () => onboarding.Complete(sessionId, info.GameplayMode), http, logger)),
+            (url, info, sessionId, output, cancellationToken) => Run(sessionId, () => onboarding.Complete(sessionId, info.GameplayMode, info.ModeChoices), http, logger)),
         new RouteAction<EmptyRequestData>("/singleplayer/pitfireteam/squad-onboarding/refreshed",
             (url, info, sessionId, output, cancellationToken) => ScreenRefreshed(sessionId, onboarding, http, logger)),
         new RouteAction<EmptyRequestData>("/singleplayer/pitfireteam/squad-onboarding/deliver",

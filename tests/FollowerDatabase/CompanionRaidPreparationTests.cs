@@ -46,6 +46,21 @@ internal static class CompanionRaidPreparationTests
             check(result.Id==current.Id && result.Aid==current.Aid && json.Serialize(result.Skills)==json.Serialize(current.Skills),
                 "prepared inventory does not replace saved identity or current earned skills");
             check(json.Serialize(result.Health)==json.Serialize(current.Health),"prepared inventory does not restore old cached health");
+            var questSpawn = typeof(FriendlyTeammateService).GetMethod("PreparedQuestCompanionForSpawn", flags)!;
+            type.GetProperty("QuestCompanion")!.SetValue(preparation,new FastCloner().Clone(kit));
+            BotBase Quest(MongoId account, string attempt, string role, GetRaidConfigurationRequestData raid) =>
+                (BotBase)questSpawn.Invoke(service,[account,role,raid,null,attempt])!;
+            var quest = Quest(session,token,"bossKnight",configuration);
+            check(json.Serialize(quest)==json.Serialize(kit),"temporary quest spawn reuses the entire displayed native profile without saving or rerolling");
+            quest.Inventory!.Items!.RemoveAt(1);
+            check(json.Serialize(Quest(session,token,"bossKnight",configuration))==json.Serialize(kit),"quest spawn is an independent clone of the preview reservation");
+            Reject(()=>Quest(new MongoId(),token,"bossKnight",configuration),"quest reservation is player scoped");
+            Reject(()=>Quest(session,"stale","bossKnight",configuration),"quest reservation rejects stale tokens");
+            Reject(()=>Quest(session,token,"followerBigPipe",configuration),"quest reservation cannot spawn a different role");
+            Reject(()=>Quest(session,token,"bossKnight",configuration with {Location="woods"}),"quest reservation rejects a changed map");
+            Reject(()=>Quest(session,token,"bossKnight",configuration with {TimeVariant=DateTimeEnum.PAST}),"quest reservation rejects a changed time");
+            service.PrepareCompanionRaid(session,request);
+            check(type.GetProperty("QuestCompanion")!.GetValue(preparation)==null,"a selected teammate removes the automatic ally reservation");
             result.Inventory!.Items!.RemoveAt(1);
             var retry = (BotBase)spawn.Invoke(service,[session,current,null,token])!;
             check(json.Serialize(retry.Inventory)==json.Serialize(kit.Inventory),"spawn mutations cannot alter the reserved kit or a retry");

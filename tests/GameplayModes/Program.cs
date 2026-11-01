@@ -59,12 +59,23 @@ internal static class Program
         GameplayModeAddons.Register(GameplayMode.GoingRogue, () => roguePresent, () => roguePresent, exUsecFriendly: false,
             gearPolicy: pitTeam.GoingRogue.GoonGearPolicy.ForRole,
             ownsCombat: RogueRosterSelection.IsGoonRole);
+        GameplayModeAddons.RegisterModeCard(GameplayMode.GoingRogue,"addon/going-rogue-card.png");
+        Check(GameplayModeAddons.ModeCardPath(GameplayMode.GoingRogue)=="addon/going-rogue-card.png", "registered addon owns its onboarding artwork path");
         Check(!GameplayModeAddons.OwnsCompanionCombat("bossKnight"), "companion combat ownership is mode scoped");
         Check(GameplayModeAddons.GetCompanionGearPolicy("bossKnight") == null, "Knight's gear restrictions do not affect another mode");
         SPT.Common.Http.RequestHandler.GoingRogueAvailable = false;
         await Reject(() => GameplayModeRuntime.ChangeAsync(GameplayMode.GoingRogue), "Going Rogue requires the server addon too");
         SPT.Common.Http.RequestHandler.GoingRogueAvailable = true;
         await GameplayModeRuntime.ChangeAsync(GameplayMode.GoingRogue);
+        GameplayModeAddons.RegisterQuestCompanionPolicy(GameplayMode.GoingRogue,(quest,map)=>true);
+        Check(GameplayModeAddons.CanSpawnQuestCompanion("test","woods"),"legacy map-only quest callback stays compatible");
+        GameplayModeAddons.RegisterQuestCompanionProgressPolicy(GameplayMode.GoingRogue,(quest,map,completed)=>!completed("objective"));
+        Check(!GameplayModeAddons.CanSpawnQuestCompanion("test","woods"),"progress-aware companion callback requires a current completion reader");
+        Check(GameplayModeAddons.CanSpawnQuestCompanion("test","woods",_=>false) && !GameplayModeAddons.CanSpawnQuestCompanion("test","woods",_=>true),"addon can admit only unfinished native objectives");
+        GameplayModeAddons.RegisterQuestCompanionPolicy(GameplayMode.GoingRogue,(quest,map)=>true);
+        Check(GameplayModeAddons.CanSpawnQuestCompanion("test","woods",_=>true),"replacing a progress policy clears its old callback");
+        GameplayModeAddons.RegisterQuestCompanionPolicy(GameplayMode.GoingRogue,null);
+        Check(!GameplayModeAddons.CanSpawnQuestCompanion("test","woods",_=>false),"cleared quest callback cannot retain automatic companion admission");
         Check(new[]{"bossKnight","followerBigPipe","followerBirdEye"}.All(GameplayModeAddons.OwnsCompanionCombat),
             "all managed Goons own combat independently of a stale saved SAIN tactic");
         Check(!GameplayModeAddons.OwnsCompanionCombat("exUsec") && !GameplayModeAddons.OwnsCompanionCombat(null),
@@ -157,6 +168,7 @@ internal static class Program
         SPT.Common.Http.RequestHandler.GoingRogueAvailable = true;
         await GameplayModeRuntime.ChangeAsync(GameplayMode.GoingRogue);
         GameplayModeAddons.Unregister(GameplayMode.GoingRogue);
+        Check(GameplayModeAddons.ModeCardPath(GameplayMode.GoingRogue)==null,"removing the addon releases its artwork registration");
         await GameplayModeRuntime.SynchronizeAsync();
         Check(GameplayModeRuntime.Current == GameplayMode.GunsForHire && !GameplayModeAddons.IsRogueRaid,
             "missing client addon returns to Guns for Hire without retaining Rogue flags");
@@ -313,6 +325,37 @@ internal static class Program
         release.Set();
         await Task.WhenAll(request, changing);
         Check(GameplayModeRuntime.IsAllegiance, "mode proceeds after delayed requests finish");
+        var refreshedModes=new List<string>();
+        GameplayModeAddons.Register(GameplayMode.GoingRogue);
+        GameplayModeAddons.RegisterSessionRefresh(GameplayMode.GoingRogue,() =>
+        {
+            Check(SPT.Common.Http.RequestHandler.Mode==GameplayModeRuntime.Current.ToString(),"addon session refresh follows confirmed server settings");
+            refreshedModes.Add(GameplayModeRuntime.Current.ToString());return Task.CompletedTask;
+        });
+        await GameplayModeRuntime.ChangeAsync(GameplayMode.GoingRogue);
+        await GameplayModeRuntime.ChangeAsync(GameplayMode.Allegiance);
+        Check(refreshedModes.SequenceEqual(new[]{"GoingRogue","Allegiance"}),"optional session refresh runs entering and leaving its mode");
+        refreshedModes.Clear();
+        GameplayModeAddons.RegisterSessionRefresh(GameplayMode.GoingRogue,() =>
+        {
+            refreshedModes.Add(GameplayModeRuntime.Current.ToString());
+            if(GameplayModeRuntime.IsGoingRogue)throw new IOException("simulated native session refresh failure");
+            return Task.CompletedTask;
+        });
+        await Reject(()=>GameplayModeRuntime.ChangeAsync(GameplayMode.GoingRogue),"a failed native session refresh cannot report a successful switch");
+        Check(GameplayModeRuntime.Current==GameplayMode.Allegiance && SPT.Common.Http.RequestHandler.Mode=="Allegiance" &&
+            refreshedModes.SequenceEqual(new[]{"GoingRogue","Allegiance"}),"rollback restores server/client mode and refreshes the preceding native session");
+        int nativeRefreshes=0;
+        GameplayModeAddons.RegisterSessionRefresh(GameplayMode.GoingRogue,()=>{nativeRefreshes++;return Task.CompletedTask;});
+        await GameplayModeRuntime.ChangeAsync(GameplayMode.GoingRogue);
+        SPT.Common.Http.RequestHandler.GoingRogueAvailable=false;
+        await GameplayModeRuntime.SynchronizeAsync();
+        Check(GameplayModeRuntime.Current==GameplayMode.GunsForHire && nativeRefreshes==1,
+            "a missing server addon cannot block built-in-mode fallback with an unavailable session endpoint");
+        SPT.Common.Http.RequestHandler.GoingRogueAvailable=true;
+        GameplayModeAddons.Unregister(GameplayMode.GoingRogue);
+        await GameplayModeAddons.RefreshSessionAsync();
+        Check(refreshedModes.Count==2,"removing the addon clears its session refresh callback");
         Console.WriteLine($"PASS: {checks} gameplay config checks. Artifacts: {directory}");
     }
     static ConfigFile Bind(string path)

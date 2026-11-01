@@ -23,10 +23,16 @@ internal static class RestrictedEquipmentPersistenceTests
             .SetValue(baseClasses, new Dictionary<MongoId, HashSet<MongoId>> { [template] = [] });
         var itemHelper = Construct<ItemHelper>(name => name == "itemBaseClassService" ? baseClasses : null);
         var cloner = new FastCloner();
+        var insurance = Construct<FriendlyTeammateInsuranceService>(name => name switch
+        {
+            "settingsService" => settings,
+            "logger" => DispatchProxy.Create<ISptLogger<FriendlyTeammateInsuranceService>, TestLogger>(), _ => null
+        });
         var service = Construct<FriendlyTeammateService>(name => name switch
         {
             "storage" => storage, "settingsService" => settings, "jsonUtil" => json,
             "itemHelper" => itemHelper, "cloner" => cloner,
+            "teammateInsuranceService" => insurance,
             "logger" => DispatchProxy.Create<ISptLogger<FriendlyTeammateService>, TestLogger>(), _ => null
         });
         Item New(string? parent = null, string? slot = null) => new()
@@ -34,6 +40,24 @@ internal static class RestrictedEquipmentPersistenceTests
             Id = new MongoId(), Template = template, ParentId = parent, SlotId = slot,
             Upd = new Upd { StackObjectsCount = 1 }
         };
+
+        settings.SaveAndApply(new() { LoadoutManagementMode = "Extreme" });
+        foreach (int level in new[] { 1, 14, 15, 29, 30, 60 })
+        {
+            Item root = New(), pockets = New(root.Id.ToString(), "Pockets"), knife = New(root.Id.ToString(), "Scabbard");
+            Item secure = New(root.Id.ToString(), "SecuredContainer"), cargo = New(secure.Id.ToString(), "main");
+            var candidate = new BotBase { Aid = 881, Info = new() { Level = level },
+                Inventory = new() { Equipment = root.Id, Items = [root, pockets, knife, secure, cargo] } };
+            Invoke(service, "PrepareNewTeammateDefaultForCurrentLoadoutMode", candidate);
+            check(candidate.Inventory.Items.Select(item => item.Id).ToHashSet().SetEquals(new[] { root.Id, pockets.Id, knife.Id }),
+                $"Realistic level {level}: new teammate has no generated secure container or container cargo");
+            Invoke(service, "SaveDefaultEquipmentSnapshot", session, candidate, true, true);
+            Invoke(service, "SaveTeammate", session, candidate, null!);
+            check(storage.Read<BotBase>(session, "881.json")!.Inventory!.Items!.All(item => item.SlotId != "SecuredContainer")
+                && storage.Read<List<Item>>(session, "881-equipment.json")!.All(item => item.SlotId != "SecuredContainer"),
+                $"Realistic level {level}: profile and Default cannot restore a generated container");
+        }
+        storage.DeleteTeammate(session, 881, new Dictionary<string, string>());
 
         check(new FriendlyServerSettingsRequest().RestrictedGearMaintenance == false, "Field Upkeep defaults off");
         foreach (string legacyValue in new[] { "false", "true", "null" })
@@ -83,6 +107,10 @@ internal static class RestrictedEquipmentPersistenceTests
                 check(!saved.Any(item => new[] { cargo.Id, cargoChild.Id, otherGear.Id, otherChild.Id, secure.Id, secureMed.Id }.Contains(item.Id)),
                     scenario + " filters tracked cargo, other teammate gear and managed secure supplies");
                 check(teammate.Inventory.Items.Any(item => item.Id == armor.Id), scenario + " never applies Immersive death loss");
+                if (upkeep)
+                    check(storage.Read<FriendlyTeammateSettings>(session, "880-settings.json")!.AutomaticallySuppliedEquipmentIds
+                            .Contains(saved.Single(item => item.SlotId == "Scabbard").Id.ToString()),
+                        scenario + " records a generated fallback knife as automatic equipment");
                 check(armor.Upd.Repairable.Durability == 60 && live.Single(item => item.Id == armor.Id).Upd!.Repairable!.Durability == 25,
                     scenario + " leaves baseline and input snapshots detached");
             }

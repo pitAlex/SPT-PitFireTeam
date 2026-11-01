@@ -15,10 +15,21 @@ namespace pitTeam.Modules
         private static GameplayMode _mode;
         private static RaidSettings _settings;
         private static string _configuration, _sentMembership;
+        private static string _questRole;
+        internal static JToken QuestProfile { get; private set; }
 
-        internal static void Reset() { _token = _configuration = _sentMembership = null; _settings = null; Members.Clear(); }
+        internal static void Reset() { _token = _configuration = _sentMembership = _questRole = null; QuestProfile = null; _settings = null; Members.Clear(); }
         internal static string TokenFor(string account) => _mode == GameplayModeAddons.Current &&
             account != null && Members.ContainsKey(account) ? _token : null;
+        internal static string QuestTokenFor(string role) => _mode == GameplayModeAddons.Current && role == _questRole ? _token : null;
+
+        internal static void InvalidateQuest()
+        {
+            if (_questRole == null && QuestProfile == null) return;
+            _questRole = null;
+            QuestProfile = null;
+            _sentMembership = null;
+        }
 
         internal static void Remove(string account)
         {
@@ -41,7 +52,7 @@ namespace pitTeam.Modules
             }
         }
 
-        internal static void Prepare(RaidSettings settings, IEnumerable<string> accounts)
+        internal static void Prepare(RaidSettings settings, IEnumerable<string> accounts, string questRole = null)
         {
             if (settings?.IsPmc != true || settings.isInTransition || Utils.Utils.FlagGet("RaidTransit") ||
                 GameplayModeAddons.Current != GameplayMode.GoingRogue || !GameplayModeAddons.IsAvailable(GameplayMode.GoingRogue)) return;
@@ -52,7 +63,8 @@ namespace pitTeam.Modules
             string configuration = raidConfiguration.ToString(Formatting.None);
             if (_token != null && (_mode != GameplayModeAddons.Current || _configuration != configuration)) Reset();
             var selected = new HashSet<string>(accounts.Where(account => !string.IsNullOrWhiteSpace(account)), StringComparer.Ordinal);
-            if (_token == null && selected.Count == 0) return;
+            if (selected.Count != 0) questRole = null;
+            if (_token == null && selected.Count == 0 && questRole == null) return;
             _mode = GameplayModeAddons.Current;
             _settings = settings;
             _configuration = configuration;
@@ -62,16 +74,20 @@ namespace pitTeam.Modules
                 if (!Members.ContainsKey(account)) Members.Add(account, Guid.NewGuid().ToString("N"));
             // Repeated views retain each join revision. Rejoining after removal
             // changes only that member, even if a release response was lost.
-            string membership = string.Join(";", Members.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => pair.Key + ":" + pair.Value));
+            string membership = string.Join(";", Members.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => pair.Key + ":" + pair.Value)) + "|" + questRole;
             if (_sentMembership == membership) return;
             _sentMembership = membership;
+            _questRole = questRole;
+            QuestProfile = null;
             try
             {
                 string response = RequestHandler.PostJson("/client/game/bot/followerprepare", JsonConvert.SerializeObject(new
-                { token = _token, members = Members.Keys.ToArray(), memberRevisions = Members, raidConfiguration }));
+                { token = _token, members = Members.Keys.ToArray(), memberRevisions = Members, raidConfiguration, questCompanionRole = questRole }));
                 var body = JObject.Parse(response);
                 if ((int?)body["err"] != 0 || !string.Equals((string)(body["data"]?["Token"] ?? body["data"]?["token"]), _token, StringComparison.Ordinal))
                     throw new InvalidOperationException("Companion preparation was not acknowledged: " + (string)body["errmsg"]);
+                QuestProfile = body["data"]?["QuestCompanion"] ?? body["data"]?["questCompanion"];
+                if (QuestProfile?.Type == JTokenType.Null) QuestProfile = null;
                 Logger.LogInfo($"[CompanionRaidKit] acceptScreen token={_token} members={Members.Count} location={settings.LocationId}");
             }
             catch (Exception ex)

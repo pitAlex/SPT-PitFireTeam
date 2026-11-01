@@ -714,9 +714,11 @@ Followers do not board or travel with you in the BTR. Vanilla bots automatically
 
 ### Stuck reloads and equipment interactions
 
-A follower can occasionally say he is changing magazines but remain stuck without finishing the reload, even outside combat. This can prevent **Swap Gear** or **Give Gear** from opening, or produce a busy/in-danger warning when the area appears safe.
+A follower can occasionally say he is changing magazines but remain stuck without finishing the reload, even outside combat. This can prevent **Swap Gear** or **Give Gear** from opening, hide the **Give Gear** option entirely for a recruited PMC or Scav, or produce a busy/in-danger warning when the area appears safe.
 
 **Workaround:** issue **Attention**, give him time to finish the reload and return to his weapon, then try again. Sometimes moving on with the follower also allows the reload to complete.
+
+If **Give Gear** stays missing afterward, keep the session logs and report it. A missing option alone does not confirm a stuck reload.
 
 This remains a known issue. Swap Gear and Give Gear also deliberately refuse to open during real combat, healing, reloads, or other busy actions; those normal restrictions are not the same as a stuck reload.
 

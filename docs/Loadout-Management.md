@@ -115,7 +115,7 @@ Current phase behavior:
 - switching into or out of this mode strips any existing secure-container tree from saved teammate `Default` loadouts to prevent carrying a hidden managed container into the editable Realistic slot
 - the teammate profile hides the saved-loadout dropdown and shows the `KIT LOADOUTS` button
 - buying a kit sends the teammate's previous active `Default` kit back through the pitFireTeam courier before equipping the newly purchased kit; the editable secure container is included in that delivery
-- newly created teammates receive an initial editable secure container based on level: Beta below 15, Epsilon below 30, Gamma at 30+
+- newly created teammates receive no secure container in Realistic; the editable slot is available for a player-supplied container
 - editing `Default` uses real player stash item ids instead of cloned ids
 - the edit-loadout panel shows the teammate secure container slot so it can be edited
 - pressing `Done` commits real item movement between the player stash and teammate default equipment
@@ -216,9 +216,11 @@ This is a configured equipment valuation, not a lookup of the cheapest live flea
 
 ### Add With No Gear
 
-`withoutKit: true` confirms the same candidate for **zero roubles**, with no player-money save. The shared permanent-equipment retention helper keeps the equipment root, dogtag, knife, armband and special-slot trees, plus the pockets and secure-container shells. Ordinary kit and ordinary pocket/secure-container cargo are removed. Special-slot trees are preserved separately, including when attached to pockets.
+`withoutKit: true` confirms the same candidate for **zero roubles**, with no player-money save. The teammate keeps only the knife as usable equipment. The equipment root, dogtag and empty pockets remain as structural identity items; armbands, special-slot items, secure containers and all cargo are removed in every loadout mode. Realistic also starts without a secure container when hiring with the generated kit. Existing death-retention rules are separate and unchanged.
 
 The stripped profile, stripped `Default` snapshot and completion receipt are saved in one teammate-database transaction, so the discarded kit cannot return through Default restoration. A failed save retains the original pending candidate and price. The client offers this action only when preparation advertises `supportsWithoutKit`, preventing an older server from ignoring the flag and treating the request as a paid hire.
+
+Manual hires record the item identities of any automatically supplied knife, armband or secure-container shell in the same settings transaction; a new gearless hire records only its knife. These free items are not courier rewards when the member is removed or a purchased kit replaces the current kit. Player-supplied replacements remain returnable, including replacements using the same templates. The older recorded container identities still protect pre-existing hires.
 
 ### Payment and recovery
 
@@ -249,7 +251,9 @@ The recorded amount is fixed: changing equipment, moving gear into the player's 
 
 Removing either a normal or raid-recruited member sends the current saved equipment through the pitFireTeam courier. This applies to existing members without a migration. Both roster and social confirmations include **The equipped items will be mailed via service.** above **This cannot be undone**. Raid recruits still show and pay their recorded fee; manual hires and legacy unmarked members remain free to remove. A declined invitation or in-raid dismissal does not deliver a saved member kit.
 
-The shared kit-delivery selector returns equipped items with complete attachment, armor-insert/plate and container-content trees, including loaded ammo, consumables, knife, armband and special-slot items. Pocket contents return individually; the structural equipment root, pockets shell and dogtag are excluded. The hidden managed secure container and its supplies are excluded outside Realistic; the editable secure-container tree returns in Realistic. Item condition and remaining stack counts are preserved. Only the current saved inventory is returned, never the separate Default snapshot, starting recruit inventory, or a newly generated loadout.
+The shared kit-delivery selector returns equipped items with complete attachment, armor-insert/plate and container-content trees, including loaded ammo, consumables and special-slot items. Pocket contents return individually; the structural equipment root, pockets shell and dogtag are excluded. Recorded automatically supplied knife, armband and secure-container identities are excluded throughout the selected trees, including after moving them into another container. Player-supplied replacements return normally. The hidden managed secure container and its supplies are excluded outside Realistic; in Realistic, a player-supplied container returns with its contents, while retained cargo inside an automatically supplied shell returns as separate roots. Item condition and remaining stack counts are preserved. Only the current saved inventory is returned, never the separate Default snapshot, starting recruit inventory, or a newly generated loadout.
+
+Fallback knives generated during saved-follower spawning or raid-outcome repair also record their new identities; real loadout ID-collision remapping carries that ownership forward. For pre-existing hires, a matching completed creation quote can prove the automatically supplied identities. Older equipment without that receipt or recorded ownership retains its previous return eligibility: template names alone cannot distinguish a free item from a player-supplied replacement. Already prepared courier messages retain their original transaction and are not rewritten.
 
 Preparation clones each tree and assigns fresh item IDs with one native mail stash root. It finds each actual root by ID rather than assuming the first saved array entry is the root. Existing player/member ownership collisions block preparation. The player stash does not need space because the return is a mail attachment, with the same 24-hour pickup window as existing kit courier deliveries. The pickup window begins when mail is attached, including when a pending outbox resumes after a restart.
 
@@ -275,7 +279,7 @@ When the user confirms a purchase:
 6. the player profile and teammate profile are saved together
 7. the saved player stash snapshot is returned to the client for live refresh
 
-The old-kit delivery intentionally does not include the teammate equipment root or dogtag. Pocket contents and special-slot items are delivered as normal reward roots. Non-Realistic managed secure containers are skipped because they are generated support inventory, while Realistic secure containers and their contents are delivered because Realistic treats that slot as player-like gear.
+The old-kit delivery intentionally does not include the teammate equipment root or dogtag. Pocket contents and special-slot items are delivered as normal reward roots. Automatically supplied items use the same identity filter as member-removal returns. Non-Realistic managed secure containers are skipped because they are generated support inventory; Realistic returns player-supplied containers and retained contents without granting automatically supplied shells.
 
 ## Repair
 

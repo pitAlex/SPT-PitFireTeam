@@ -9,8 +9,9 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 | [Architecture](Architecture.md) | Client/server ownership, lifecycle invariants and source map |
 | [SPT compatibility](SPT-Compatibility.md) | Build/reference baseline and packaging boundaries |
 | [Version 1 validation](validation/Release-1.0.0.md) | Dated release cleanup evidence and outstanding live qualification |
+| [Core 1.1.0 release notes](releases/Release-1.1.0.md) | Player-facing Core changes, Field Upkeep, health and separate Goons-addon scope |
 | [Core 1.0.1 validation](validation/Release-1.0.1.md) | Field Upkeep restoration, persistence checks and deployment evidence |
-| [Core 1.1.0 validation](validation/Release-1.1.0.md) | Teammate workshop release description, compiled versions and matching addon deployment |
+| [Core 1.1.0 validation](validation/Release-1.1.0.md) | Dated Core release, health, fixes and optional-addon compatibility evidence |
 | [SAIN compatibility](SAIN-Compatibility.md) | Core integration with the external plugin, including deferred shot-safety investigation |
 | [Questing Bots compatibility](Questing-Bots-Compatibility.md) | Optional objective suspension and restoration across follower ownership |
 | [Localization](Localization.md) | Centralized text and locale maintenance |

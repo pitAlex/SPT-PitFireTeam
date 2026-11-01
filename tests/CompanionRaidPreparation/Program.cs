@@ -70,6 +70,30 @@ CompanionRaidPreparation.Prepare(settings,["123"]);
 Check(CompanionRaidPreparation.TokenFor("123")!=lost && CompanionRaidPreparation.TokenFor("123")!=first,"new matching discards the old attempt");
 CompanionRaidPreparation.Reset();
 Check(CompanionRaidPreparation.TokenFor("123")==null,"raid cleanup removes the token");
+CompanionRaidPreparation.Prepare(settings,[],"bossKnight");
+string questToken=CompanionRaidPreparation.QuestTokenFor("bossKnight");
+Check(!string.IsNullOrEmpty(questToken) && CompanionRaidPreparation.QuestProfile!=null,"solo quest reservation is prepared without a selected account");
+Check(CompanionRaidPreparation.TokenFor("123")==null && CompanionRaidPreparation.QuestTokenFor("followerBigPipe")==null,"temporary quest token cannot become a selected-member or other-role reservation");
+int questCalls=SPT.Common.Http.RequestHandler.Calls;
+CompanionRaidPreparation.Prepare(settings,[],"bossKnight");
+Check(SPT.Common.Http.RequestHandler.Calls==questCalls && CompanionRaidPreparation.QuestTokenFor("bossKnight")==questToken,"profile redisplay retains the exact temporary quest reservation");
+CompanionRaidPreparation.InvalidateQuest();
+Check(CompanionRaidPreparation.QuestTokenFor("bossKnight")==null && CompanionRaidPreparation.QuestProfile==null && SPT.Common.Http.RequestHandler.Calls==questCalls,
+    "invitation outside confirmation invalidates automatic Knight immediately without preparing an old-map kit");
+CompanionRaidPreparation.Prepare(settings,["123"],"bossKnight");
+Check(CompanionRaidPreparation.QuestTokenFor("bossKnight")==null && CompanionRaidPreparation.QuestProfile==null && SPT.Common.Http.RequestHandler.LastRequest["questCompanionRole"].Type==JTokenType.Null,"inviting a member suppresses and releases automatic Knight");
+CompanionRaidPreparation.Prepare(settings,[],"bossKnight");
+Check(CompanionRaidPreparation.QuestProfile!=null,"removing the selected party restores eligible automatic preparation");
+CompanionRaidPreparation.Prepare(settings,[]);
+Check(CompanionRaidPreparation.QuestTokenFor("bossKnight")==null && CompanionRaidPreparation.QuestProfile==null,"quest eligibility loss releases temporary preview");
+CompanionRaidPreparation.Prepare(settings,[],"bossKnight");
+settings.LocationId="factory4_day";
+CompanionRaidPreparation.Prepare(settings,[]);
+Check(CompanionRaidPreparation.QuestTokenFor("bossKnight")==null && CompanionRaidPreparation.QuestProfile==null,"back to a non-quest map discards the previous quest profile and token");
+CompanionRaidPreparation.Reset();SPT.Common.Http.RequestHandler.Fail=true;
+CompanionRaidPreparation.Prepare(settings,[],"bossKnight");
+Check(CompanionRaidPreparation.QuestProfile==null && !string.IsNullOrEmpty(CompanionRaidPreparation.QuestTokenFor("bossKnight")),"failed quest preparation has no fabricated preview and retains a strict spawn token");
+CompanionRaidPreparation.Reset();SPT.Common.Http.RequestHandler.Fail=false;
 Console.WriteLine($"PASS: {checks} production client reservation checks; controlled HTTP/raid-setting doubles, not Unity loading behavior.");
 
 namespace EFT {internal class RaidSettings {[JsonIgnore] public bool IsPmc,isInTransition;[JsonProperty("location")] public string LocationId;[JsonProperty("keyId")] public string KeyId;}}
@@ -95,7 +119,7 @@ namespace SPT.Common.Http
             Calls++;
             var data=JObject.Parse(request);LastRequest=data;
             if(Fail)throw new Exception("Lost preparation response");
-            return new JObject{["err"]=0,["data"]=new JObject{["Token"]=data["token"]}}.ToString(Formatting.None);
+            return new JObject{["err"]=0,["data"]=new JObject{["Token"]=data["token"], ["QuestCompanion"]=data["questCompanionRole"]?.Type==JTokenType.String ? new JObject{["_id"]="reserved-knight"} : JValue.CreateNull()}}.ToString(Formatting.None);
         }
     }
 }

@@ -178,6 +178,7 @@ namespace pitTeam.Modules
             await SyncGate.WaitAsync();
             GameplayMode previous = Current;
             List<SavedValue> before = null;
+            bool refreshSession = false;
             try
             {
                 if (!await IsServerModeAvailableAsync(next)) throw new ModeRejectedException("Gameplay mode server addon is unavailable.");
@@ -201,6 +202,9 @@ namespace pitTeam.Modules
                     string actual = (root["data"] ?? root)["gameplayMode"]?.ToString();
                     if (!string.Equals(actual, Current.ToString(), StringComparison.Ordinal)) throw;
                 }
+                refreshSession = GameplayModeAddons.HasSessionRefresh &&
+                    (next == GameplayMode.GoingRogue || await IsServerModeAvailableAsync(GameplayMode.GoingRogue));
+                if (refreshSession) await GameplayModeAddons.RefreshSessionAsync();
                 await FriendlyEncounterPenaltyRuntime.ReloadAsync();
             }
             catch
@@ -209,7 +213,7 @@ namespace pitTeam.Modules
                 {
                     Apply(() => { Current = previous; Restore(before); modeEntry.Value = previous; });
                     // Reconcile an ambiguous lost response with the restored client state.
-                    try { await SendSettingsAsync(); }
+                    try { await SendSettingsAsync(); if (refreshSession) await GameplayModeAddons.RefreshSessionAsync(); }
                     catch (Exception ex) { pitFireTeam.Log.LogError("Mode rollback synchronization failed: " + ex); }
                 }
                 throw;

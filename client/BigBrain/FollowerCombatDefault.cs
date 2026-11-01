@@ -1844,6 +1844,13 @@ namespace pitTeam.BigBrain
                 return EndShootCoverHoldPosition();
             }
 
+            // A native treatment can finish before its next body part becomes pending. Reuse the
+            // medical retry handoff before passive advance retries can keep this hold alive.
+            if (IsCoverHoldReason(reason) && combatCommon.HasActiveOrPendingHealWork())
+            {
+                return EndMedicalRetryHold(currentDecision);
+            }
+
             bool isCoverHoldReason = IsCoverHoldReason(reason);
             bool isHoldingInCover = isCoverHoldReason ||
                                     botOwner.Memory.IsInCover ||
