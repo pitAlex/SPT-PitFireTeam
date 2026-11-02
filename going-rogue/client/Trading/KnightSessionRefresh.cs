@@ -34,7 +34,7 @@ internal static class KnightSessionRefresh
         if ((int?)body["err"] != 0 || (string)state?["mode"] != mode.ToString() ||
             state?["unlocked"]?.Type != JTokenType.Boolean || state?["disabled"]?.Type != JTokenType.Boolean)
             throw new InvalidOperationException("Knight access refresh was not acknowledged for the active mode.");
-        var templates = mode == GameplayMode.GoingRogue ? await session.RequestQuestsTemplates(true) : null;
+        var templates = mode == GameplayMode.Allegiance ? await session.RequestQuestsTemplates(true) : null;
         if (GameplayModeAddons.Current != mode || !ReferenceEquals(app.GetClientBackEndSession(), session) || !ReferenceEquals(session.Profile, profile) ||
             !ReferenceEquals(menu.QuestController?.Quests, book))
             throw new InvalidOperationException("Knight refresh session changed while loading.");

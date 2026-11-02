@@ -24,7 +24,6 @@ namespace pitTeam.Components
         private bool onboardingVisible;
         private bool onboardingBusy;
         private bool rosterLoadSucceeded;
-        private bool onboardingAddonChoice;
         private readonly List<GameplayMode> onboardingChoices = new List<GameplayMode>();
         private int welcomeDeliveryVisit = -1;
 
@@ -42,14 +41,13 @@ namespace pitTeam.Components
                 JObject state = await SendOnboardingAsync(string.Empty);
                 if (!IsSquadVisitCurrent(version)) return true;
                 bool firstChoice = state["firstTimeVisit"]?.Value<bool>() != true;
-                onboardingAddonChoice = !firstChoice && state["addonChoiceRequired"]?.Value<bool>() == true;
                 onboardingChoices.Clear();
                 var offered = (state["modeChoices"] as JArray)?.Select(value => value.ToString())
                     ?? (firstChoice ? Enum.GetNames(typeof(GameplayMode)) : Array.Empty<string>());
                 foreach (string id in offered)
                     if (Enum.TryParse(id, out GameplayMode mode) && Enum.IsDefined(typeof(GameplayMode), mode) &&
                         GameplayModeAddons.IsAvailable(mode) && !onboardingChoices.Contains(mode)) onboardingChoices.Add(mode);
-                if (firstChoice || (onboardingAddonChoice && onboardingChoices.Count > 1))
+                if (firstChoice)
                 {
                     BuildOnboardingCards();
                     return true;
@@ -83,7 +81,7 @@ namespace pitTeam.Components
             RectTransform rect = onboardingPanel.GetComponent<RectTransform>();
             rect.SetParent(host, false);
             rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
-            ResizeOnboardingPanel(GameplayModeAddons.IsAvailable(GameplayMode.GoingRogue) ? 3 : 2);
+            ResizeOnboardingPanel(2);
         }
 
         private void ResizeOnboardingPanel(int choices)
@@ -140,7 +138,7 @@ namespace pitTeam.Components
                 GameplayMode mode = onboardingChoices[index];
                 string label = "SquadControlMode" + mode;
                 CreateModeCard(mode, (index - (onboardingChoices.Count - 1) * 0.5f) * 420f, label,
-                    mode == GameplayMode.GoingRogue ? null : label + "Description");
+                    label + "Description");
             }
         }
 
@@ -203,7 +201,7 @@ namespace pitTeam.Components
         {
             if (modeCardSprites.TryGetValue(mode, out Sprite sprite) && sprite != null) return sprite;
             string filename = mode == GameplayMode.Allegiance ? "allegiance-card.png" : "guns-for-hire-card.png";
-            string path = mode == GameplayMode.GoingRogue ? GameplayModeAddons.ModeCardPath(mode) :
+            string path = GameplayModeAddons.ModeCardPath(mode) ??
                 new[] { Path.Combine(PluginDirectory, filename), Path.Combine(PluginDirectory, "resources", filename),
                 Path.Combine(Directory.GetParent(PluginDirectory)?.FullName ?? PluginDirectory, "resources", filename) }.FirstOrDefault(File.Exists);
             if (path == null || !File.Exists(path)) throw new FileNotFoundException("Mode card artwork is missing.", path ?? filename);
@@ -231,8 +229,7 @@ namespace pitTeam.Components
             {
                 await ApplyGameplayModeAsync(mode);
                 JObject state = await SendOnboardingAsync("/complete", new { gameplayMode = mode.ToString(), modeChoices = onboardingChoices.Select(choice => choice.ToString()).ToArray() });
-                if (state["firstTimeVisit"]?.Value<bool>() != true ||
-                    (onboardingAddonChoice && state["addonChoiceRequired"]?.Value<bool>() == true))
+                if (state["firstTimeVisit"]?.Value<bool>() != true)
                     throw new InvalidOperationException("Onboarding did not complete.");
                 if (!IsSquadVisitCurrent(version)) return;
                 RequestRosterRefreshNowOrNextInject();

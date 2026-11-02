@@ -19,7 +19,7 @@ Check(QuestCompanionPreview.RolesFor(profile,settings).Count==0,"finished task d
 profile.Info.Level=19;Check(QuestCompanionPreview.RolesFor(profile,settings).Count==0,"level gate matches server");profile.Info.Level=20;
 profile.Trader.Disabled=true;Check(QuestCompanionPreview.RolesFor(profile,settings).Count==0,"disabled trader denies preview");profile.Trader.Disabled=false;
 settings.IsPmc=false;Check(QuestCompanionPreview.RolesFor(profile,settings).Count==0,"Scav raids excluded");settings.IsPmc=true;
-GameplayModeRuntime.IsGoingRogue=false;Check(QuestCompanionPreview.RolesFor(profile,settings).Count==0,"other modes excluded");GameplayModeRuntime.IsGoingRogue=true;
+GameplayModeRuntime.IsGoingRogueActive=false;Check(QuestCompanionPreview.RolesFor(profile,settings).Count==0,"other modes excluded");GameplayModeRuntime.IsGoingRogueActive=true;
 Check(QuestCompanionPreview.RolesFor(null,settings).Count==0,"missing profile excluded safely");
 var maps=new[]{"woods","shoreline","lighthouse"};
 var objectives=new[]{KnightQuestPolicy.WoodsKills,KnightQuestPolicy.ShorelineKills,KnightQuestPolicy.LighthouseKills};
@@ -83,6 +83,46 @@ MainMenuControllerPatch.GroupPlayers.Clear();controller.GroupPlayers.Remove(invi
 QuestCompanionPreview.Refresh(controller,"bossKnight");
 Check(controller.GroupPlayers.Count==1,"failed or denied preparation cannot show a fabricated Knight");
 LocalRaidChecks.Run(Check, profile, settings);
+profile.QuestsData = [new(){Id=KnightQuestPolicy.BadgeBandit,Status=EFT.Quests.EQuestStatus.Started}];
+settings.LocationId="tarkovstreets";
+var goonRoles=QuestCompanionPreview.RolesFor(profile,settings);
+Check(goonRoles.Count==3 && goonRoles.Contains("bossKnight") && goonRoles.Contains("followerBigPipe") && goonRoles.Contains("followerBirdEye"),"Badge Bandit selects all three Goons on Streets");
+foreach(var role in goonRoles) CompanionRaidPreparation.Profiles[role]=JObject.FromObject(new EFT.ProfileDescriptor {Id="quest-"+role,AccountId="quest-aid-"+role,Info=new(){Level=60,Nickname=role}});
+QuestCompanionPreview.RefreshAll(controller,goonRoles);
+Check(controller.GroupPlayers.Count==4 && goonRoles.All(role=>QuestCompanionPreview.IsPreview("quest-aid-"+role)),"all three reserved Goon models appear without becoming invited roster members");
+QuestCompanionPreview.RefreshAll(controller,goonRoles);
+Check(controller.GroupPlayers.Count==4,"redisplay does not duplicate any Goon visual");
+profile.QuestsData[0].CompletedConditions.Add(new MongoID(KnightQuestPolicy.BadgeBanditKills));
+QuestCompanionPreview.RefreshAll(controller,QuestCompanionPreview.RolesFor(profile,settings));
+Check(controller.GroupPlayers.Count==1 && goonRoles.All(role=>!QuestCompanionPreview.IsPreview("quest-aid-"+role)),"completed Kollontay objective clears every automatic Goon visual");
+profile.QuestsData=[new(){Id=KnightQuestPolicy.EnemySpotted,Status=EFT.Quests.EQuestStatus.Started}];settings.LocationId="woods";
+var birdRoles=QuestCompanionPreview.RolesFor(profile,settings);
+Check(birdRoles.SequenceEqual(new[]{"followerBirdEye"}),"Enemy Spotted selects only Birdeye for solo Woods");
+QuestCompanionPreview.RefreshAll(controller,birdRoles);
+Check(controller.GroupPlayers.Count==2 && QuestCompanionPreview.IsPreview("quest-aid-followerBirdEye"),"reserved Birdeye appears in confirmation without an invitation");
+QuestCompanionPreview.Remove();QuestCompanionPreview.RefreshAll(controller,QuestCompanionPreview.RolesFor(profile,settings));
+Check(controller.GroupPlayers.Count==2,"loading restores the same reserved quest Birdeye");
+settings.LocationId="shoreline";Check(QuestCompanionPreview.RolesFor(profile,settings).Count==0,"quest Birdeye does not deploy to another map");settings.LocationId="woods";
+MainMenuControllerPatch.GroupPlayers.Add(invited);Check(QuestCompanionPreview.RolesFor(profile,settings).Count==0,"any invited member suppresses automatic quest Birdeye");MainMenuControllerPatch.GroupPlayers.Clear();
+profile.QuestsData[0].CompletedConditions.Add(new MongoID(KnightQuestPolicy.EnemySpottedKills));
+QuestCompanionPreview.RefreshAll(controller,QuestCompanionPreview.RolesFor(profile,settings));
+Check(controller.GroupPlayers.Count==1,"completed Enemy Spotted objective removes automatic Birdeye preview");
+profile.QuestsData=[new(){Id=KnightQuestPolicy.OffLimits,Status=EFT.Quests.EQuestStatus.Started}];settings.LocationId="shoreline";
+var pierRoles=QuestCompanionPreview.RolesFor(profile,settings);
+Check(pierRoles.Count==2 && pierRoles.Contains("followerBigPipe") && pierRoles.Contains("followerBirdEye") && !pierRoles.Contains("bossKnight"),"Off Limits selects only Pipe and Birdeye on Shoreline");
+QuestCompanionPreview.RefreshAll(controller,pierRoles);Check(controller.GroupPlayers.Count==3,"confirmation shows both reserved pier companions");
+QuestCompanionPreview.Remove();QuestCompanionPreview.RefreshAll(controller,QuestCompanionPreview.RolesFor(profile,settings));Check(controller.GroupPlayers.Count==3,"loading restores the same reserved pair");
+settings.LocationId="woods";Check(QuestCompanionPreview.RolesFor(profile,settings).Count==0,"pier quest cannot deploy pair on Woods");settings.LocationId="shoreline";
+MainMenuControllerPatch.GroupPlayers.Add(invited);Check(QuestCompanionPreview.RolesFor(profile,settings).Count==0,"invited member suppresses the automatic pier pair");MainMenuControllerPatch.GroupPlayers.Clear();
+profile.QuestsData[0].CompletedConditions.Add(new MongoID(KnightQuestPolicy.OffLimitsKills));QuestCompanionPreview.RefreshAll(controller,QuestCompanionPreview.RolesFor(profile,settings));
+Check(controller.GroupPlayers.Count==1,"finished pier objective removes both automatic previews");
+profile.QuestsData=[new(){Id=KnightQuestPolicy.AFavor,Status=EFT.Quests.EQuestStatus.Started}];settings.LocationId="lighthouse";
+Check(QuestCompanionPreview.RolesFor(profile,settings).SequenceEqual(new[]{"followerBirdEye"}),"Partizan hunt selects only Birdeye on Lighthouse");
+QuestCompanionPreview.RefreshAll(controller,QuestCompanionPreview.RolesFor(profile,settings));Check(controller.GroupPlayers.Count==2,"hunt Birdeye appears in confirmation");
+QuestCompanionPreview.Remove();QuestCompanionPreview.RefreshAll(controller,QuestCompanionPreview.RolesFor(profile,settings));Check(controller.GroupPlayers.Count==2,"hunt Birdeye restores for loading");
+settings.LocationId="woods";QuestCompanionPreview.RefreshAll(controller,QuestCompanionPreview.RolesFor(profile,settings));Check(controller.GroupPlayers.Count==1,"returning to Woods removes hunt Birdeye");settings.LocationId="lighthouse";
+MainMenuControllerPatch.GroupPlayers.Add(invited);Check(QuestCompanionPreview.RolesFor(profile,settings).Count==0,"invitation suppresses automatic hunt companion");MainMenuControllerPatch.GroupPlayers.Clear();
+profile.QuestsData[0].CompletedConditions.Add(new MongoID(KnightQuestPolicy.AFavorKills));Check(QuestCompanionPreview.RolesFor(profile,settings).Count==0,"completed hunt does not auto-spawn Birdeye");
 Console.WriteLine($"PASS: {checks} production quest preview checks; native visual construction is a host double, not Unity rendering evidence.");
 
 namespace EFT
@@ -114,9 +154,9 @@ namespace EFT.UI.Matchmaker
 }
 namespace pitTeam.Modules
 {
-    internal static class GameplayModeRuntime {internal static bool IsGoingRogue=true;}
+    internal static class GameplayModeRuntime {internal static bool IsGoingRogueActive=true;}
     internal static class GameplayModeAddons {internal static bool CanSpawnQuestCompanion(string quest,string map,Func<string,bool> completed)=>KnightQuestPolicy.NeedsCompanion(quest,map,completed);}
-    internal static class CompanionRaidPreparation {internal static JToken QuestProfile;}
+    internal static class CompanionRaidPreparation {internal static JToken QuestProfile; internal static Dictionary<string,JToken> Profiles=new(); internal static JToken QuestProfileFor(string role)=>Profiles.TryGetValue(role,out var p)?p:null;}
     internal static class Logger {internal static void LogInfo(string message){}}
 }
 namespace pitTeam.Patches
@@ -130,8 +170,8 @@ namespace pitTeam.Utils
     internal static class Props
     {
         internal static string KnightTrader="knight";
-        internal static Dictionary<string,List<string>> Quests=new(){{"Knight",[KnightQuestPolicy.Competition,KnightQuestPolicy.MyLand]}};
-        internal static Dictionary<string,List<string>> QuestsLocations=new(){{KnightQuestPolicy.Competition,["woods","shoreline","lighthouse"]},{KnightQuestPolicy.MyLand,["bigmap"]}};
+        internal static Dictionary<string,List<string>> Quests=new(){{"Knight",[KnightQuestPolicy.Competition,KnightQuestPolicy.MyLand,KnightQuestPolicy.BadgeBandit]},{"BigPipe",[KnightQuestPolicy.BadgeBandit,KnightQuestPolicy.OffLimits]},{"BirdEye",[KnightQuestPolicy.BadgeBandit,KnightQuestPolicy.EnemySpotted,KnightQuestPolicy.OffLimits,KnightQuestPolicy.AFavor]}};
+        internal static Dictionary<string,List<string>> QuestsLocations=new(){{KnightQuestPolicy.Competition,["woods","shoreline","lighthouse"]},{KnightQuestPolicy.MyLand,["bigmap"]},{KnightQuestPolicy.BadgeBandit,["tarkovstreets"]},{KnightQuestPolicy.EnemySpotted,["woods"]},{KnightQuestPolicy.OffLimits,["shoreline"]},{KnightQuestPolicy.AFavor,["lighthouse"]}};
     }
 }
 

@@ -23,10 +23,11 @@ public static class FriendlyGameplayModeAddons
     private static readonly Dictionary<string, IReadOnlyList<FriendlyModeCompanion>> Modes = new(StringComparer.Ordinal);
     public static void Register(string mode, IReadOnlyList<FriendlyModeCompanion> companions)
     {
-        if (mode != pitTeam.Shared.GameplayModePolicy.GoingRogue) throw new ArgumentOutOfRangeException(nameof(mode));
+        if (mode != pitTeam.Shared.GameplayModePolicy.Allegiance) throw new ArgumentOutOfRangeException(nameof(mode));
         Modes.Add(mode, companions);
     }
-    public static bool IsAvailable(string mode) => mode is "GunsForHire" or "Allegiance" || Modes.ContainsKey(mode);
+    public static bool HasExtension(string mode) => Modes.ContainsKey(mode);
+    public static bool IsAvailable(string mode) => mode is "GunsForHire" or "Allegiance";
     public static IReadOnlyList<FriendlyModeCompanion> Companions(string mode) => Modes.TryGetValue(mode, out var value) ? value : [];
     public static FriendlyModeCompanion? Policy(string mode, BotBase profile) => PolicyForRole(mode, profile.Info?.Settings?.Role);
     public static FriendlyModeCompanion? PolicyForRole(string mode, string? role) => Companions(mode)

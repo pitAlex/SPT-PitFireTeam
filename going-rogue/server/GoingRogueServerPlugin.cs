@@ -43,13 +43,13 @@ public sealed class GoingRogueServerPlugin(GlobalTable globals, BotTable bots, I
             headwear.Ensure(profile);
             magazines.Ensure(profile);
         }
-        FriendlyGameplayModeAddons.Register("GoingRogue", [
+        FriendlyGameplayModeAddons.Register("Allegiance", [
             new("bossKnight", "Knight", "#667D91", ProficiencyOnly: true, SeedForTesting: false, RaidReady: true)
                 { HideRaidStats = true, GenerateEquipmentEachRaid = true, ProtectSpawnInventory = true, IgnoreEncounterKillPenalty = true, PrepareProfile = profiles.Apply, PrepareRaidEquipment = PrepareRaidEquipment, GeneratedSkillsVersion = "native-v1", AdoptGeneratedSkills = profiles.AdoptGeneratedSkills, GetVisibleSkills = () => profiles.VisibleSkills("bossKnight"), CanSpawnForQuest = KnightQuestModule.CanSpawnKnight, CanJoinRoster = KnightQuestModule.CanJoinKnightRoster },
             new("followerBigPipe", "Big Pipe", "#C9A044", ProficiencyOnly: true, SeedForTesting: false, RaidReady: true)
-                { HideRaidStats = true, GenerateEquipmentEachRaid = true, ProtectSpawnInventory = true, IgnoreEncounterKillPenalty = true, PrepareProfile = profiles.Apply, PrepareRaidEquipment = PrepareRaidEquipment, GeneratedSkillsVersion = "native-v1", AdoptGeneratedSkills = profiles.AdoptGeneratedSkills, GetVisibleSkills = () => profiles.VisibleSkills("followerBigPipe"), CanJoinRoster = KnightQuestModule.CanJoinBigPipeRoster },
+                { HideRaidStats = true, GenerateEquipmentEachRaid = true, ProtectSpawnInventory = true, IgnoreEncounterKillPenalty = true, PrepareProfile = profiles.Apply, PrepareRaidEquipment = PrepareRaidEquipment, GeneratedSkillsVersion = "native-v1", AdoptGeneratedSkills = profiles.AdoptGeneratedSkills, GetVisibleSkills = () => profiles.VisibleSkills("followerBigPipe"), CanSpawnForQuest = KnightQuestModule.CanSpawnGoon, CanJoinRoster = KnightQuestModule.CanJoinBigPipeRoster },
             new("followerBirdEye", "Birdeye", "#789B78", ProficiencyOnly: true, SeedForTesting: false, RaidReady: true)
-                { HideRaidStats = true, GenerateEquipmentEachRaid = true, ProtectSpawnInventory = true, IgnoreEncounterKillPenalty = true, PrepareProfile = profiles.Apply, PrepareRaidEquipment = PrepareRaidEquipment, GeneratedSkillsVersion = "native-v1", AdoptGeneratedSkills = profiles.AdoptGeneratedSkills, GetVisibleSkills = () => profiles.VisibleSkills("followerBirdEye"), CanJoinRoster = KnightQuestModule.CanJoinBirdeyeRoster },
+                { HideRaidStats = true, GenerateEquipmentEachRaid = true, ProtectSpawnInventory = true, IgnoreEncounterKillPenalty = true, PrepareProfile = profiles.Apply, PrepareRaidEquipment = PrepareRaidEquipment, GeneratedSkillsVersion = "native-v1", AdoptGeneratedSkills = profiles.AdoptGeneratedSkills, GetVisibleSkills = () => profiles.VisibleSkills("followerBirdEye"), CanSpawnForQuest = KnightQuestModule.CanSpawnBirdeye, CanJoinRoster = KnightQuestModule.CanJoinBirdeyeRoster },
             new("exUsec", "", "#2D9C9A")
         ]);
         return Task.CompletedTask;

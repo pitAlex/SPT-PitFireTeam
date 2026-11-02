@@ -12,7 +12,7 @@ internal static class BirdEyeFollowerTacticPatch
     {
         // Conversion has not entered the registry yet. Normalize before native template
         // capture and command routing, without writing the saved profile's locked tactic.
-        if (GameplayModeAddons.Current == GameplayMode.GoingRogue &&
+        if (GameplayModeAddons.Current == GameplayMode.Allegiance &&
             __instance.GetBoss()?.realPlayer?.IsYourPlayer == true &&
             __instance.GetBot()?.Profile?.Info?.Settings?.Role == WildSpawnType.followerBirdEye)
             __instance.SetCombatTacticFromString("Marksman");

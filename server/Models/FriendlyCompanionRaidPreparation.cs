@@ -11,7 +11,8 @@ public record FriendlyCompanionRaidPreparationRequest : IRequestData
     [JsonPropertyName("members")] public List<string> Members { get; set; } = [];
     [JsonPropertyName("memberRevisions")] public Dictionary<string, string> MemberRevisions { get; set; } = new(StringComparer.Ordinal);
     [JsonPropertyName("raidConfiguration")] public GetRaidConfigurationRequestData? RaidConfiguration { get; set; }
+    [JsonPropertyName("questCompanionRoles")] public List<string>? QuestCompanionRoles { get; set; }
     [JsonPropertyName("questCompanionRole")] public string? QuestCompanionRole { get; set; }
 }
 
-public record FriendlyCompanionRaidPreparationResponse(string Token, IReadOnlyList<string> Members, BotBase? QuestCompanion = null);
+public record FriendlyCompanionRaidPreparationResponse(string Token, IReadOnlyList<string> Members, BotBase? QuestCompanion = null, IReadOnlyList<BotBase>? QuestCompanions = null);

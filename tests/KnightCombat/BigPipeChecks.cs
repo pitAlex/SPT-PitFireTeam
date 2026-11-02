@@ -198,12 +198,12 @@ internal static class BigPipeChecks
         }
         foreach(var(role,brain) in new[]{("bossKnight","Knight"),("followerBigPipe","BigPipe")})
         {
-            check(GoonCombatScope.Matches(role,brain,"GoingRogue",role,brain,true,true,true),"Goon scope admits its exact managed role: "+role);
-            check(!GoonCombatScope.Matches(role,brain,"Allegiance",role,brain,true,true,true),"Goon scope excludes other modes");
-            check(!GoonCombatScope.Matches(role,brain,"GoingRogue",role,brain,false,true,true),"Goon scope excludes hostile/non-followers");
-            check(!GoonCombatScope.Matches(role,brain,"GoingRogue",role,brain,true,false,true),"Goon scope excludes inactive/dead actors");
-            check(!GoonCombatScope.Matches(role,brain,"GoingRogue",role,brain,true,true,false),"Goon scope excludes unrelated leaders");
-            check(!GoonCombatScope.Matches(role,brain,"GoingRogue",role,"Other",true,true,true),"Goon scope excludes replaced brains");
+            check(GoonCombatScope.Matches(role,brain,"Allegiance",role,brain,true,true,true),"Goon scope admits its exact managed role: "+role);
+            check(!GoonCombatScope.Matches(role,brain,"GunsForHire",role,brain,true,true,true),"Goon scope excludes other modes");
+            check(!GoonCombatScope.Matches(role,brain,"Allegiance",role,brain,false,true,true),"Goon scope excludes hostile/non-followers");
+            check(!GoonCombatScope.Matches(role,brain,"Allegiance",role,brain,true,false,true),"Goon scope excludes inactive/dead actors");
+            check(!GoonCombatScope.Matches(role,brain,"Allegiance",role,brain,true,true,false),"Goon scope excludes unrelated leaders");
+            check(!GoonCombatScope.Matches(role,brain,"Allegiance",role,"Other",true,true,true),"Goon scope excludes replaced brains");
         }
         KnightSquadCoordinator.Assigned=false;
     }

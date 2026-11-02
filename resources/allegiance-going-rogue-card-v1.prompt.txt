@@ -1,0 +1,9 @@
+Generated with the built-in image_gen tool.
+
+Use case: compositing.
+Edit the supplied two images into one finished portrait game card, preserving the 4:5 aspect ratio.
+Image 1 (allegiance-card.png) is the edit target: preserve the two soldiers, their likenesses, poses, equipment, weapons, relative side-by-side arrangement, and the distressed metallic FIRETEAM title along the bottom.
+Image 2 (going-rogue-card.png) supplies Knight's specific skull-mask head, dreadlocks, pale eyes, worn ivory skull texture and dark silhouette.
+Replace the entire city skyline and large P emblem of image 1 with a black atmospheric background and Knight's imposing head centered ABOVE the soldiers. Knight looks directly forward toward the viewer, his head pitched slightly forward/down, chin tucked, looking out from under his brow. Keep his recognizable mask accurately based on image 2.
+Critical composition: Knight occupies the upper part of the portrait. His eyes, nose and skull teeth must remain completely unobstructed. Position the two soldiers together in the lower part, beneath the visible skull mask, inside the dark negative-space area below its jaw. Leave a small clear dark separation between Knight's lowest ivory teeth and the tops of the soldiers' heads. No soldier overlaps the visible ivory mask or face. Knight's dark dreadlocks and shadow can frame the lower pair on the outside. Adjust scale and vertical placement of the existing soldiers as needed to make all three subjects readable without overlap.
+Retain the original gritty realistic game-poster finish, muted olive and tan gear, charcoal blacks, ivory mask, subtle smoky darkness, coherent dramatic lighting. Exact text: "FIRETEAM" at the bottom, matching image 1. No city, no P emblem, no additional text or subjects.

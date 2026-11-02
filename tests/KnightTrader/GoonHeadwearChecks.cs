@@ -93,10 +93,10 @@ internal static class GoonHeadwearChecks
             foreach(var role in roles)
             {
                 var profile=Profile(role);profile.Inventory!.Items!.RemoveAll(item=>item.SlotId=="FirstPrimaryWeapon");requests.Clear();
-                FriendlyGameplayModeAddons.PolicyForRole("GoingRogue",role)!.PrepareRaidEquipment!(profile);
+                FriendlyGameplayModeAddons.PolicyForRole("Allegiance",role)!.PrepareRaidEquipment!(profile);
                 check(requests.Count==4 && !BossHeadwearPolicy.NeedsRestore(profile),"registered raid-equipment callback corrects headgear before magazine provisioning: "+role);
             }
-            check(FriendlyGameplayModeAddons.PolicyForRole("GoingRogue","exUsec")!.PrepareRaidEquipment==null,"ordinary exUsec policy receives no headwear exception");
+            check(FriendlyGameplayModeAddons.PolicyForRole("Allegiance","exUsec")!.PrepareRaidEquipment==null,"ordinary exUsec policy receives no headwear exception");
         }
         finally{harmony.UnpatchSelf();generation=null;}
     }

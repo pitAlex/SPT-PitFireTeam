@@ -7,8 +7,16 @@ namespace pitTeam.Server.Services;
 
 public partial class FriendlyTeammateService
 {
+    private bool IsCompanionRaidReady(BotBase teammate)
+    {
+        var policy = CompanionPolicy(teammate);
+        string role = teammate.Info?.Settings?.Role?.ToLowerInvariant() ?? "";
+        return role is "bossknight" or "followerbigpipe" or "followerbirdeye"
+            ? policy?.RaidReady == true : policy?.RaidReady != false;
+    }
+
     private bool HasRaidEquipmentOrGenerator(BotBase teammate) =>
-        CompanionPolicy(teammate)?.GenerateEquipmentEachRaid == true || HasProperRaidKit(teammate);
+        IsCompanionRaidReady(teammate) && (CompanionPolicy(teammate)?.GenerateEquipmentEachRaid == true || HasProperRaidKit(teammate));
 
     private BotBase PrepareNativeCompanionForRaid(MongoId sessionId, BotBase teammate, double? healthMultiplier,
         GetRaidConfigurationRequestData? configuration = null)

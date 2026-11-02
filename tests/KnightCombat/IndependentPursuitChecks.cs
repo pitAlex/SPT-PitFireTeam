@@ -133,6 +133,42 @@ internal static class IndependentPursuitChecks
             check(native.GetDecision().Reason.StartsWith("bigPipe.pressureSearch"),
                 "independent Pipe native fallback removes distant/high-threat escort veto");
         }
+        foreach (string gate in new[] { "clear", "knight", "cautious", "far", "unknown", "weapon", "group", "elite", "heal", "pressure", "reload", "command", "arrival" })
+        {
+            var (bot,c,f,pursuit)=Setup(WildSpawnType.followerBigPipe);
+            FollowerCombatAnchor.Independent=false;
+            var enemy=bot.Memory.GoalEnemy;enemy.Distance=40;enemy.Anchor=new(40,0,0);
+            enemy.Person.Profile.Info.Settings.Role=WildSpawnType.assault;enemy.MemoryOnly=true;
+            switch(gate)
+            {
+                case "knight": GoonPushLeadership.Knight=new BotOwner();break;
+                case "cautious": c.Aggression=0.59f;break;
+                case "far": enemy.Distance=61;break;
+                case "unknown": enemy.Known=false;break;
+                case "weapon": c.BlockWeaponThreat=true;break;
+                case "group": bot.KnownEnemies=3;break;
+                case "elite": enemy.Person.Profile.Info.Settings.Role=WildSpawnType.bossSanitar;break;
+                case "heal": c.HealWork=true;break;
+                case "pressure": c.RecoveryPressure=true;break;
+                case "reload": bot.WeaponManager.Reload.Reloading=true;break;
+                case "command": f.Command=FollowerCommandType.Regroup;break;
+                case "arrival": f.CombatRegroupUsesBossAnchor=true;break;
+            }
+            bool allowed=pursuit.TryGetDecision(out var next);
+            check(allowed==(gate=="clear"),"solo Pipe bounded initiative and safety gate: "+gate);
+            if(allowed)
+            {
+                check(next.Reason=="bigPipe.autonomousAdvance" && c.AdvanceStop==10,"solo approach has distinct diagnostics and ordinary standoff");
+                pursuit.DecisionChanged(next);check(FollowerEnemyTracking.GroupSearching,"solo movement retains search tracking ownership");
+                pursuit.Reset();
+                check(!FollowerCombatAnchor.Independent,"solo advance never changes determination/independence");
+                f.Boss.Logic.IsHitted=true;f.Boss.Attacker=new BotOwner();c.AdmittedThreat=enemy;
+                var objective=new BigPipeCombatObjective(bot,c);objective.StartDecision();
+                check(objective.GetDecision(enemy).Reason=="bigPipe.autonomousAdvance","nearby solo Pipe does not repeatedly regroup during help fallback");
+                objective.Deactivate();
+            }
+            GoonPushLeadership.Knight=null;
+        }
         FollowerCombatAnchor.Independent = false; GoonPushLeadership.AdvanceAllowed = true;
         FollowerEnemyTracking.GroupSearching = false;
     }

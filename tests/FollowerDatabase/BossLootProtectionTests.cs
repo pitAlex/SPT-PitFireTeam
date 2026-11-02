@@ -41,7 +41,7 @@ internal static class BossLootProtectionTests
         {
             foreach (string mode in new[] { "Restricted", "Immersive", "Extreme" })
             {
-                settings.SaveAndApply(new() { GameplayMode = "GoingRogue", LoadoutManagementMode = mode });
+                settings.SaveAndApply(new() { GameplayMode = "Allegiance", LoadoutManagementMode = mode });
                 var protectedIds = service.GetProtectedSpawnItemIdsForExtraction(raid);
                 foreach (var item in new[] { vest, plate, coin, key, raid.Inventory.Items[1] })
                     check(protectedIds.Contains(item.Id.ToString()), mode + " native non-consumable is protected: " + item.Template);
@@ -67,7 +67,7 @@ internal static class BossLootProtectionTests
         finally
         {
             storage.Write(session, "123.json", saved);
-            settings.SaveAndApply(new() { GameplayMode = "GoingRogue" });
+            settings.SaveAndApply(new() { GameplayMode = "Allegiance" });
         }
     }
 }

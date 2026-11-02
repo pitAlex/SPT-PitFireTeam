@@ -281,7 +281,7 @@ public sealed class FriendlyScavCargoService(
         }
     }
 
-    private string CargoMode => settings.LoadSettings().GameplayMode == "GoingRogue" ? "GoingRogue" : "Allegiance";
+    private string CargoMode => "Allegiance";
     private FriendlyScavCargoLedger? Read(MongoId id) => storage.ReadModeDocument<FriendlyScavCargoLedger>(id, Document, CargoMode);
     private void Write(MongoId id, FriendlyScavCargoLedger ledger) => storage.WriteModeDocuments(id, CargoMode,
         new Dictionary<string, string> { [Document] = json.Serialize(ledger)! });

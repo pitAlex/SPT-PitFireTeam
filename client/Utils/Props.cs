@@ -164,7 +164,7 @@ namespace pitTeam.Utils
             },
             {
                 "67768a41fa281ca31708b182",
-                new List<string> { "woods" }
+                new List<string> { "lighthouse" }
             }
         };
 
@@ -236,7 +236,7 @@ namespace pitTeam.Utils
                 new List<string> { "67768936fa281ca31708b17c" }
             },
             {
-                WildSpawnType.bossKojaniy,
+                WildSpawnType.bossPartisan,
                 new List<string> { "67768a41fa281ca31708b182" }
             }
         };

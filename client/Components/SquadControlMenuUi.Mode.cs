@@ -35,8 +35,6 @@ namespace pitTeam.Components
             float firstRowY = -86f;
             CreateModeChoice(panelRect, group, GameplayMode.GunsForHire, "SquadControlModeGunsForHire", "SquadControlModeGunsForHireDescription", firstRowY);
             CreateModeChoice(panelRect, group, GameplayMode.Allegiance, "SquadControlModeAllegiance", "SquadControlModeAllegianceDescription", firstRowY - SettingsRowHeight - SettingsSpacing);
-            if (GameplayModeAddons.IsAvailable(GameplayMode.GoingRogue))
-                CreateModeChoice(panelRect, group, GameplayMode.GoingRogue, "SquadControlModeGoingRogue", null, firstRowY - 2f * (SettingsRowHeight + SettingsSpacing));
             RefreshModeChoices();
         }
 

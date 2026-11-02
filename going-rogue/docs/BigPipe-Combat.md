@@ -83,3 +83,9 @@ Unchanged completed or blocked native/stale/pressure searches hold for one secon
 ### On Your Own
 
 The shared Goon independent-pursuit route removes Pipe's ordinary escort distance/low-threat veto while combat independence is active. Knight's published search still owns leadership: group-follow remains the first search option and independent approach still requires his advance permission or the existing delegation exceptions. Native firing, launcher opportunities, grenade/weapon recovery, medical/damage handling and explicit commands retain priority. The shared [pursuit handoff contract](Knight-Combat.md#on-your-own-pursuit) owns idle-hold release and bounded known-contact navigation.
+
+### Initiative without Knight
+
+Without a living managed Knight, Pipe can use the same bounded pursuit planner in ordinary mode against favourable ordinary Scav/PMC contacts within 60m, when effective aggression is at least 60%. The existing boss-relative equipment, weapon-threat and two-contact confidence gates apply. An admitted reported location is enough to plan movement; it never supplies personal visibility or permission to fire. The reason is `bigPipe.autonomousAdvance`, with the usual 10m stop distance. Saved aggression/determination and combat independence are not changed.
+
+Urgent medical/reload/danger/pressure work, useful current fire, existing commitments, explicit commands and consumed Regroup ownership retain priority. When the existing automatic help path has no shot, suppression or support position and Pipe is already within 10m of the player, a qualifying solo advance can run instead of repeatedly reactivating Regroup. Distant rejoining and explicit help/Regroup routing retain their owners. Knight's presence disables this ordinary-mode exception; unit stance, target-specific leadership and group search continue unchanged. Birdeye and Knight do not receive this solo assault policy.

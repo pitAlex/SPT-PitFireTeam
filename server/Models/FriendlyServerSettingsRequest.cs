@@ -7,8 +7,9 @@ public record FriendlyServerSettingsRequest : IRequestData
 {
     public const string DefaultLoadoutManagementMode = "Immersive";
 
+    private string gameplayMode = "GunsForHire";
     [JsonPropertyName("gameplayMode")]
-    public string GameplayMode { get; set; } = "GunsForHire";
+    public string GameplayMode { get => gameplayMode; set => gameplayMode = pitTeam.Shared.GameplayModePolicy.Normalize(value); }
 
     [JsonIgnore]
     public bool IsAllegiance => pitTeam.Shared.GameplayModePolicy.UsesAllegianceRules(GameplayMode);

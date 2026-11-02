@@ -18,11 +18,11 @@ internal static class KnightTraderVisibility
     private static TradingScreen.ETradingScreenTab displayedTab;
 
     internal static bool IsVisible(Trader trader, GameplayMode mode) =>
-        mode == GameplayMode.GoingRogue || trader == null ||
+        mode == GameplayMode.Allegiance || trader == null ||
         !string.Equals(trader.Id, pitTeam.Utils.Props.KnightTrader, StringComparison.Ordinal);
 
     internal static IEnumerable<Trader> Filter(IEnumerable<Trader> traders, GameplayMode mode) =>
-        traders == null || mode == GameplayMode.GoingRogue ? traders : traders.Where(trader => IsVisible(trader, mode)).ToArray();
+        traders == null || mode == GameplayMode.Allegiance ? traders : traders.Where(trader => IsVisible(trader, mode)).ToArray();
 
     internal static void Opened(TradingScreen value, TradingScreen.ETradingScreenTab tab)
     {

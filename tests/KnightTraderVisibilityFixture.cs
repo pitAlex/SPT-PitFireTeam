@@ -26,12 +26,15 @@ internal static class VisibilityChecks
         {
             GameplayModeAddons.Current = mode;
             list.Show(registered);
-            Check(list.Displayed.Contains(knight) == (mode == GameplayMode.GoingRogue), "merchant visibility follows mode: " + mode);
-            Check(details.TradersList.Contains(knight) == (mode == GameplayMode.GoingRogue), "navigation strip follows mode: " + mode);
+            Check(list.Displayed.Contains(knight) == (mode == GameplayMode.Allegiance), "merchant visibility follows mode: " + mode);
+            Check(details.TradersList.Contains(knight) == (mode == GameplayMode.Allegiance), "navigation strip follows mode: " + mode);
             Check(list.Displayed.Contains(ordinary) && list.Displayed.Contains(locked), "other traders keep native visibility: " + mode);
             Check(registered.Count == 3 && registered[1] == knight && !knight.Info.Available, "registered trader and lock remain untouched: " + mode);
         }
         GameplayModeAddons.Current = GameplayMode.Allegiance;
+        list.Remember(knight); list.Show(registered);
+        Check(list.Remembered == knight, "Allegiance retains its visible remembered Knight");
+        GameplayModeAddons.Current = GameplayMode.GunsForHire;
         list.Remember(knight); list.Show(registered);
         Check(list.Remembered == null, "remembered hidden Knight cannot suppress rendering of all other cards");
         list.Remember(ordinary); list.Show(registered);
@@ -41,11 +44,11 @@ internal static class VisibilityChecks
         details.SelectTrader(locked);
         Check(details.Selected == locked, "other trader selections retain native behavior");
         Check(KnightTraderVisibility.Filter(null, GameplayMode.Allegiance) == null, "null list retains native handling");
-        Check(ReferenceEquals(KnightTraderVisibility.Filter(registered, GameplayMode.GoingRogue), registered), "Going Rogue retains the native list reference");
+        Check(ReferenceEquals(KnightTraderVisibility.Filter(registered, GameplayMode.Allegiance), registered), "Going Rogue retains the native list reference");
 
         var screen = new TradingScreen();
         screen.Show(new TradingScreen.TradingScreenController { Tab = TradingScreen.ETradingScreenTab.FleaMarket });
-        GameplayModeAddons.Current = GameplayMode.GoingRogue;
+        GameplayModeAddons.Current = GameplayMode.Allegiance;
         GameplayModeRuntime.IsApplying = true;
         KnightTraderVisibility.RefreshMode();
         Check(screen.Refreshes == 0, "visibility waits while mode preferences are being applied");
@@ -63,18 +66,18 @@ internal static class VisibilityChecks
         KnightTraderVisibility.RefreshMode();
         Check(screen.Refreshes == 1, "closed screen is not reopened");
 
-        GameplayModeAddons.Current = GameplayMode.GoingRogue;
+        GameplayModeAddons.Current = GameplayMode.Allegiance;
         KnightTraderVisibility.RefreshMode();
         details.gameObject.activeInHierarchy = true;
         details.Show();
-        GameplayModeAddons.Current = GameplayMode.Allegiance;
+        GameplayModeAddons.Current = GameplayMode.GunsForHire;
         KnightTraderVisibility.RefreshMode();
         Check(TradingScreen.TradersScreenController.Opened == 1, "open trader details refresh through the native traders controller");
         Check(registered.Count == 3 && registered.Contains(knight), "detail refresh never unregisters Knight");
         details.gameObject.activeInHierarchy = false;
         screen.gameObject.activeInHierarchy = true;
         screen.ThrowOnRefresh = true;
-        GameplayModeAddons.Current = GameplayMode.GoingRogue;
+        GameplayModeAddons.Current = GameplayMode.Allegiance;
         KnightTraderVisibility.RefreshMode();
         Check(Logger.Errors.Count == 1, "UI transition failure is contained and diagnosed");
         KnightTraderVisibility.RefreshMode();
@@ -88,7 +91,7 @@ internal static class VisibilityChecks
 }
 namespace pitTeam.Modules
 {
-    public enum GameplayMode { GunsForHire, Allegiance, GoingRogue }
+    public enum GameplayMode { GunsForHire, Allegiance }
     public static class GameplayModeAddons { public static GameplayMode Current; }
     internal static class GameplayModeRuntime { internal static bool IsSwitching, IsApplying; }
     public static class Logger { public static List<string> Errors = new List<string>(); public static void LogError(string text) => Errors.Add(text); }

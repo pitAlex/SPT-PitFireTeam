@@ -59,10 +59,10 @@ internal static class UnitTacticsChecks
         trio[0].CommandOverride=trio[2].CommandOverride=true;GoonUnitTactics.Reset();
         Check(trio[0].UnitDetermination==null&&trio[2].UnitDetermination==null&&trio[0].CommandOverride&&trio[2].CommandOverride,
             "mode/raid teardown removes only the addon baseline, not player command state");
-        GoonUnitTactics.RefreshAll();GameplayModeAddons.Current=GameplayMode.Allegiance;GoonUnitTactics.RefreshAll();
+        GoonUnitTactics.RefreshAll();GameplayModeAddons.Current=GameplayMode.GoingRogue;GoonUnitTactics.RefreshAll();
         Check(trio[0].UnitDetermination==null&&trio[2].UnitDetermination==null&&trio[2].CommandOverride,
             "mode switching clears unit stance even before native layer teardown");
-        GameplayModeAddons.Current=GameplayMode.GoingRogue;
+        GameplayModeAddons.Current=GameplayMode.Allegiance;
         GoonUnitTactics.Reset();BossPlayers.Followers.Clear();GoonCombatLayer.Owned.Clear();
     }
 }

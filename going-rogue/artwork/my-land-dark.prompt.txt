@@ -1,0 +1,6 @@
+Tool: built-in image_gen (edit)
+Source: server/Resources/quests/KnightMyLandQuest.png
+Style reference: artwork/off-limits-pier-v2.png
+Production export: server/Resources/quests/KnightMyLandQuest.jpg, 314x177
+
+Edit image 1, the Customs Stronghold scene for the My Land quest. Image 2 is ONLY a style reference: match its dark, gritty Escape from Tarkov cinematic grading and softly blackened edges. Preserve image 1's exact stronghold architecture, camera angle, framing, roof trusses, concrete and brick walls, graffiti, stacked shipping containers, cranes, machinery, industrial skyline and vegetation. Do not import any objects or people from image 2. Replace the bright sunny golden postcard tone with subdued cool-neutral colors, desaturated autumn foliage, darker moody overcast daylight, restrained highlights and realistic weathered textures. Add cinematic atmospheric depth without obscuring the recognizable central stronghold. Apply the same substantial smooth feathered vignette as image 2: all four edges and corners gradually fade to near-black, strongest at corners, while the central building remains readable. No hard border, no letterbox bars, no text overlays, no new characters, no explosions or additional narrative elements. Maintain the landscape 16:9 composition suitable for final 314x177 quest-card export.

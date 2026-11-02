@@ -1,0 +1,27 @@
+[
+    {
+        "ZoneId": "pier_zone01",
+        "ZoneName": "pier_zone01",
+        "ZoneLocation": "Shoreline",
+        "ZoneType": "botkillzone",
+        "FlareType": "",
+        "Position": {
+          "X": "-324.9464",
+          "Y": "-62.07625",
+          "Z": "520.8833",
+          "W": "0"
+        },
+        "Rotation": {
+          "X": "3.694647E-08",
+          "Y": "0.4226183",
+          "Z": "-7.923195E-08",
+          "W": "-0.9063078"
+        },
+        "Scale": {
+          "X": "55",
+          "Y": "17.75",
+          "Z": "112",
+          "W": "0"
+        }
+    }
+]

@@ -20,7 +20,7 @@ internal static class GoonUnitTactics
 
     internal static void RefreshAll()
     {
-        if (GameplayModeAddons.Current != GameplayMode.GoingRogue) { Reset(); return; }
+        if (GameplayModeAddons.Current != GameplayMode.Allegiance) { Reset(); return; }
         var registered = BossPlayers.GetFollowers().Where(f => f.GetBoss()?.realPlayer?.IsYourPlayer == true &&
             f.GetBot() is { } bot && IsGoon(bot)).ToArray();
         var actors = registered.Where(f => f.GetBot() is { } bot &&
@@ -52,7 +52,7 @@ internal static class GoonUnitTactics
             old.Applied = false;
             // Retain only the leader identity during a temporary gap. This catches a
             // later confirmed death without keeping the unit stance or renewing orders.
-            if (!knightDied && next == null && GameplayModeAddons.Current == GameplayMode.GoingRogue &&
+            if (!knightDied && next == null && GameplayModeAddons.Current == GameplayMode.Allegiance &&
                 !entry.Key.IsDead && entry.Key.GetPlayer?.HealthController?.IsAlive != false &&
                 registered.Contains(old.Follower) && registered.Any(f => f.GetBot() == old.Knight &&
                     ReferenceEquals(f.GetBoss(), old.Follower.GetBoss()))) continue;

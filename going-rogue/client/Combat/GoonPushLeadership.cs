@@ -32,6 +32,10 @@ internal static class GoonPushLeadership
     }
     internal static void ClearAutonomousIntent(BotOwner owner) => AutonomousIntents.Remove(owner);
 
+    internal static bool HasAutonomousAdvanceIntent(BotOwner actor, string target)
+        => actor != null && AutonomousIntents.TryGetValue(actor, out var intent) &&
+           intent.Target == target && intent.Advance;
+
     internal static bool TryGetSearchLeader(BotOwner member, EnemyInfo target, out BotOwner knight)
     {
         knight = FindKnight(member);

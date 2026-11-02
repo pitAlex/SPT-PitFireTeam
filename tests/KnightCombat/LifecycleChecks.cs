@@ -19,7 +19,7 @@ internal static class LifecycleChecks
         (BotOwner bot,Layer layer,BigPipeFightLayer fight) Setup(bool registered=true)
         {
             GoonCombatLayer.ReleaseAll();BossPlayers.Instance.Followers.Clear();
-            GameplayModeAddons.Current=GameplayMode.GoingRogue;
+            GameplayModeAddons.Current=GameplayMode.Allegiance;
             pitTeam.GoingRogue.GoingRoguePlugin.CombatEnabled=true;
             var bot=new BotOwner();var fight=new BigPipeFightLayer();
             foreach(var item in new AICoreLayer<BotLogicDecision>[]{new("Danger",80),new("Maintenance",78),fight,new PeacefulRequestLayer()})
@@ -52,7 +52,7 @@ internal static class LifecycleChecks
             {
                 case "wrongRole":bot.Profile.Info.Settings.Role=WildSpawnType.assault;break;
                 case "wrongBrain":bot.Brain.BaseBrain.BrainName="Other";break;
-                case "otherMode":GameplayModeAddons.Current=GameplayMode.Allegiance;break;
+                case "otherMode":GameplayModeAddons.Current=GameplayMode.GoingRogue;break;
                 case "otherLeader":BossPlayers.Instance.Followers[bot].Boss.realPlayer.IsYourPlayer=false;break;
                 case "inactive":bot.BotState=EBotState.NonActive;break;
                 case "dead":bot.IsDead=true;break;
@@ -67,7 +67,7 @@ internal static class LifecycleChecks
             var(bot,layer,fight)=Setup();GoonCombatLayer.RefreshAll();var driver=FollowerCombatLayer.Last;var brain=bot.Brain.BaseBrain;
             if(scenario=="replacement")bot.Brain.BaseBrain=new();
             if(scenario=="fault")layer.FailRefresh=true;
-            if(scenario=="modeExit")GameplayModeAddons.Current=GameplayMode.Allegiance;
+            if(scenario=="modeExit")GameplayModeAddons.Current=GameplayMode.GoingRogue;
             if(scenario=="dead")bot.IsDead=true;
             GoonCombatLayer.RefreshAll();
             check(!GoonCombatLayer.IsOwned(bot,"followerBigPipe") && !GoonCombatLayer.IsSpawnReady(bot.ProfileId,"followerBigPipe") && driver.Stops==1,"ownership loss/fault stops driver and revokes readiness: "+scenario);
@@ -86,6 +86,6 @@ internal static class LifecycleChecks
             GoonCombatLayer.AbortSpawn(bot.ProfileId);
             check(AllowsNative(bot),"releasing managed Big Pipe restores native weapon selection");
         }
-        GoonCombatLayer.ReleaseAll();GameplayModeAddons.Current=GameplayMode.GoingRogue;
+        GoonCombatLayer.ReleaseAll();GameplayModeAddons.Current=GameplayMode.Allegiance;
     }
 }

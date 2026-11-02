@@ -6,7 +6,7 @@ namespace pitTeam.GoingRogue.Combat
     {
         internal static bool Matches(string expectedRole, string expectedBrain, string mode, string role, string brain,
             bool registeredFollower, bool livingActiveBot, bool humanLeader) =>
-            string.Equals(mode, "GoingRogue", StringComparison.Ordinal) &&
+            string.Equals(mode, "Allegiance", StringComparison.Ordinal) &&
             string.Equals(role, expectedRole, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(brain, expectedBrain, StringComparison.Ordinal) &&
             registeredFollower && livingActiveBot && humanLeader;

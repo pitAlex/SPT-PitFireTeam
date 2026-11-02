@@ -241,8 +241,8 @@
   "socialUi": {
     "GoingRogueKnightTraderName": "骑士",
     "GoingRogueKnightTraderLocation": "未知",
-    "GoingRogueKnightTraderDescription": "三名游荡者首领的队长。在 Going Rogue 模式中达到20级后可解锁。",
-    "GoingRogueKnightTraderLocked": "骑士仅在 Going Rogue 模式中达到20级后可用。",
+    "GoingRogueKnightTraderDescription": "三名游荡者首领的队长。在 Allegiance 模式中达到20级后可解锁。",
+    "GoingRogueKnightTraderLocked": "骑士仅在 Allegiance 模式中达到20级后可用。",
     "ProfileHeal": "治疗",
     "TeammateStillWounded": "{0} 仍然受伤，暂时无法加入战局",
     "ProfileHealingTitle": "医疗站治疗",

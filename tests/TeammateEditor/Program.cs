@@ -180,13 +180,13 @@ internal static class Program
             await Refuses(() => service.Save(session.ToString(), "GoingRogue", 123, loaded), "EditorNotFound");
             Check(!Directory.EnumerateDirectories(work, "teammates-going-rogue", SearchOption.AllDirectories).Any(), "Absent addon requests never initialize its database directory");
             Check(!AppDomain.CurrentDomain.GetAssemblies().Any(a => a.GetName().Name == "pitFireTeam.GoingRogue.Server"), "Editor has not loaded the optional addon assembly");
-            FriendlyGameplayModeAddons.Register("GoingRogue", [
+            FriendlyGameplayModeAddons.Register("Allegiance", [
                 new("bossKnight", "Knight", "", ProficiencyOnly: true),
                 new("followerBigPipe", "Big Pipe", "", ProficiencyOnly: true),
                 new("followerBirdEye", "Birdeye", "", ProficiencyOnly: true),
                 new("exUsec", "", "")
             ]);
-            Check(service.Modes().Any(m => m.Id == "GoingRogue"), "Registered addon mode is offered");
+            Check(service.Modes().Select(m => m.Id).SequenceEqual(new[] { "GunsForHire", "Allegiance" }), "Registered extension keeps exactly the two built-in modes");
             var rogueDocuments = new Dictionary<string, string>();
             int bossAid = 200;
             foreach (string role in new[] { "bossKnight", "followerBigPipe", "FOLLOWERBIRDEYE", "exUsec" })
@@ -197,23 +197,23 @@ internal static class Program
                 boss["Info"]!["Settings"] = new JsonObject { ["Role"] = role };
                 rogueDocuments[bossAid++ + ".json"] = boss.ToJsonString();
             }
-            storage.WriteModeDocuments(session, "GoingRogue", rogueDocuments);
-            var rogueRoster = await service.Roster(session.ToString(), "GoingRogue");
+            storage.WriteModeDocuments(session, "Allegiance", rogueDocuments);
+            var rogueRoster = await service.Roster(session.ToString(), "Allegiance");
             foreach (int protectedAid in new[] { 200, 201, 202 })
             {
                 Check(!rogueRoster.Single(t => t.Aid == protectedAid).Editable, "Renamed managed companion remains disabled: " + protectedAid);
-                await Refuses(() => service.Load(session.ToString(), "GoingRogue", protectedAid), "EditorManagedCompanion");
+                await Refuses(() => service.Load(session.ToString(), "Allegiance", protectedAid), "EditorManagedCompanion");
                 var bypass = FriendlyTeammateEditorPolicy.Read(rogueDocuments[protectedAid + ".json"], null);
                 bypass.Nickname = "Attempted bypass";
-                await Refuses(() => service.Save(session.ToString(), "GoingRogue", protectedAid, bypass), "EditorManagedCompanion");
+                await Refuses(() => service.Save(session.ToString(), "Allegiance", protectedAid, bypass), "EditorManagedCompanion");
                 Check(JsonNode.DeepEquals(JsonNode.Parse(rogueDocuments[protectedAid + ".json"]),
-                    storage.ReadModeDocument<JsonObject>(session, protectedAid + ".json", "GoingRogue")), "Protected companion unchanged: " + protectedAid);
+                    storage.ReadModeDocument<JsonObject>(session, protectedAid + ".json", "Allegiance")), "Protected companion unchanged: " + protectedAid);
             }
             Check(rogueRoster.Single(t => t.Aid == 203).Editable, "Ordinary addon recruit remains editable");
-            var ordinaryRogue = await service.Load(session.ToString(), "GoingRogue", 203);
+            var ordinaryRogue = await service.Load(session.ToString(), "Allegiance", 203);
             ordinaryRogue.Nickname = "Ordinary Rogue";
-            await service.Save(session.ToString(), "GoingRogue", 203, ordinaryRogue);
-            Check((await service.Load(session.ToString(), "GoingRogue", 203)).Nickname == "Ordinary Rogue", "Ordinary addon recruit saves normally");
+            await service.Save(session.ToString(), "Allegiance", 203, ordinaryRogue);
+            Check((await service.Load(session.ToString(), "Allegiance", 203)).Nickname == "Ordinary Rogue", "Ordinary addon recruit saves normally");
             Check((await service.Roster(session.ToString(), "GunsForHire")).All(t => t.Editable), "Base rosters retain editor access");
             Check(!AppDomain.CurrentDomain.GetAssemblies().Any(a => a.GetName().Name == "pitFireTeam.GoingRogue.Server"), "Capability checks do not load the optional addon assembly");
         }

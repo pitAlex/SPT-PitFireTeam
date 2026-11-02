@@ -4,7 +4,7 @@ Open `/pitfireteam` on the SPT server, for example `https://127.0.0.1:6969/pitfi
 
 Choose the player and roster, then choose a saved teammate. You need to restart the game client for changes to take effect. The browser language selector provides English, Russian and Simplified Chinese without changing the game's locale.
 
-Mode labels use the shared localized display names, including **Going Rogue**. Optional modes appear only after their addon registers with Core. Requests for an unavailable mode are rejected before opening or initializing its database, and the editor has no assembly dependency on the addon.
+Mode labels use the shared localized Guns for Hire and Allegiance names. Going Rogue extends Allegiance and does not add a roster option. Retired mode requests are rejected before opening or initializing another database; the editor has no assembly dependency on the addon.
 
 Registered companions restricted to Proficiency customization appear disabled with an explanation. They cannot be loaded or saved through the web editor, including direct requests using their account IDs. Eligibility follows the addon's registered role policy, so renaming a companion cannot bypass it. Ordinary recruits remain editable. Going Rogue uses this restriction for Knight, Big Pipe and Birdeye; see the [addon contract](../going-rogue/README.md).
 

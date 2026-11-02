@@ -672,7 +672,7 @@ public partial class FriendlyTeammateService(
         var accountIds = new List<string>();
         foreach (var teammate in LoadTeammates(sessionId))
         {
-            if (CompanionPolicy(teammate)?.RaidReady == false) continue;
+            if (!IsCompanionRaidReady(teammate)) continue;
             if (!GetTeammateSettings(sessionId, teammate).AutoJoinEnabled)
             {
                 continue;
@@ -1420,7 +1420,7 @@ public partial class FriendlyTeammateService(
         AdvanceTeammateRecovery(sessionId, teammate!);
         var preparedTeammate = PrepareTeammateForFetch(teammate!);
         groupCharacter = ToGroupCharacter(preparedTeammate);
-        if (CompanionPolicy(teammate!)?.RaidReady == false)
+        if (!IsCompanionRaidReady(teammate!))
         {
             rejectionReason = GetLanguageValue(languageService.GetStringMap(sessionId, "socialUi"), "CompanionCombatUnavailable", "CompanionCombatUnavailable");
             return false;
@@ -1448,7 +1448,7 @@ public partial class FriendlyTeammateService(
             return false;
         }
 
-        if (CompanionPolicy(teammate!)?.RaidReady == false) return false;
+        if (!IsCompanionRaidReady(teammate!)) return false;
         RecoverTeammateTreatment(sessionId);
         // The native raid-start gate is already active while profiles are fetched. This is
         // the last off-raid recovery checkpoint before that saved health enters the raid.

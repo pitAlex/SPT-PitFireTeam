@@ -10,12 +10,16 @@ using UnityEngine;
 
 namespace pitTeam.GoingRogue.Quests;
 
-// Native counters own progress and saving. This only supplies companion admission and Knight kill input.
+// Native counters own progress and saving. This only supplies companion admission and Goon kill input.
 internal static class KnightQuestRuntime
 {
     [ThreadStatic] private static bool forwardingKnightKill;
+    [ThreadStatic] private static string forwardedCounter;
     private static WeakReference<GameWorld> raid;
     private static bool knightParticipated;
+    private static bool goonParticipated;
+    private static bool birdeyeParticipated;
+    private static bool pipeParticipated;
     private static readonly HashSet<string> creditedDeaths = new HashSet<string>(StringComparer.Ordinal);
 
     internal static void Reset()
@@ -23,7 +27,11 @@ internal static class KnightQuestRuntime
         raid = null;
         creditedDeaths.Clear();
         forwardingKnightKill = false;
+        forwardedCounter = null;
         knightParticipated = false;
+        goonParticipated = false;
+        birdeyeParticipated = false;
+        pipeParticipated = false;
     }
 
     private static void ObserveRaid(GameWorld world)
@@ -32,15 +40,21 @@ internal static class KnightQuestRuntime
         raid = new WeakReference<GameWorld>(world);
         creditedDeaths.Clear();
         knightParticipated = false;
+        goonParticipated = false;
+        birdeyeParticipated = false;
+        pipeParticipated = false;
     }
 
     internal static void RegisterKnight(BotOwner bot, Player player)
     {
-        if (!GameplayModeRuntime.IsGoingRogue || player?.IsYourPlayer != true ||
-            bot?.Profile?.Info?.Settings?.Role != WildSpawnType.bossKnight) return;
+        if (!GameplayModeRuntime.IsAllegiance || player?.IsYourPlayer != true ||
+            !IsGoon(bot?.Profile?.Info?.Settings?.Role)) return;
         ObserveRaid(player.GameWorld);
-        knightParticipated = true;
-        pitTeam.Modules.Logger.LogInfo("[GoingRogueQuests] Knight joined quest-capable raid profile=" + bot.ProfileId);
+        goonParticipated = true;
+        if (bot.Profile.Info.Settings.Role == WildSpawnType.bossKnight) knightParticipated = true;
+        if (bot.Profile.Info.Settings.Role == WildSpawnType.followerBirdEye) birdeyeParticipated = true;
+        if (bot.Profile.Info.Settings.Role == WildSpawnType.followerBigPipe) pipeParticipated = true;
+        pitTeam.Modules.Logger.LogInfo("[GoingRogueQuests] Goon joined quest-capable raid profile=" + bot.ProfileId);
     }
 
     private static Player LocalPlayer => Singleton<GameWorld>.Instantiated ? Singleton<GameWorld>.Instance.MainPlayer : null;
@@ -49,24 +63,41 @@ internal static class KnightQuestRuntime
         .Select(f => f.GetBot())
         .FirstOrDefault(bot => bot != null && !bot.IsDead && bot.Profile.Info.Settings.Role == WildSpawnType.bossKnight);
 
+    private static bool IsGoon(WildSpawnType? role) => role == WildSpawnType.bossKnight ||
+        role == WildSpawnType.followerBigPipe || role == WildSpawnType.followerBirdEye;
+    private static IEnumerable<BotOwner> Goons(Player player) => BossPlayers.GetFollowers()
+        .Where(f => f.GetBoss()?.realPlayer == player).Select(f => f.GetBot())
+        .Where(bot => bot != null && !bot.IsDead && IsGoon(bot.Profile.Info.Settings.Role));
+
     internal static bool AdmitCounter(TaskConditionCounter counter)
     {
         string id = counter?.Id.ToString();
         // A synthetic Knight event must never credit vanilla or unrelated addon quests.
-        if (forwardingKnightKill && id != KnightQuestPolicy.MyLandKills) return false;
+        if (forwardingKnightKill && id != forwardedCounter) return false;
         if (!KnightQuestPolicy.OwnsCounter(id)) return true;
         var player = LocalPlayer;
         var owner = player?.QuestController;
         // Never alter AI quest books or non-local profiles that happen to contain these IDs.
         if (owner?.Quests == null || !owner.Quests.Any(q => ReferenceEquals(q, counter.Conditional))) return false;
         ObserveRaid(player.GameWorld);
-        var knight = Knight(player);
+        bool badge = id == KnightQuestPolicy.BadgeBanditKills || id == KnightQuestPolicy.BadgeBanditFailure;
+        bool birdeye = id == KnightQuestPolicy.EnemySpottedKills || id == KnightQuestPolicy.EnemySpottedFailure ||
+            id == KnightQuestPolicy.AFavorKills || id == KnightQuestPolicy.AFavorFailure;
+        bool pier = id == KnightQuestPolicy.OffLimitsKills || id == KnightQuestPolicy.OffLimitsFailure;
+        var pair = pier ? Goons(player).Where(bot => bot.Profile.Info.Settings.Role == WildSpawnType.followerBigPipe ||
+            bot.Profile.Info.Settings.Role == WildSpawnType.followerBirdEye).ToArray() : Array.Empty<BotOwner>();
+        bool hasPair = pair.Any(bot => bot.Profile.Info.Settings.Role == WildSpawnType.followerBigPipe) &&
+            pair.Any(bot => bot.Profile.Info.Settings.Role == WildSpawnType.followerBirdEye);
+        var knight = pier ? hasPair ? pair.OrderBy(bot => Vector3.Distance(bot.Position, player.Position)).First() : null :
+            badge ? Goons(player).OrderBy(bot => Vector3.Distance(bot.Position, player.Position)).FirstOrDefault() :
+            birdeye ? Goons(player).FirstOrDefault(bot => bot.Profile.Info.Settings.Role == WildSpawnType.followerBirdEye) : Knight(player);
         string source = owner.Profile?.Id;
-        return KnightQuestPolicy.CanCredit(id, GameplayModeRuntime.IsGoingRogue,
+        return KnightQuestPolicy.CanCredit(id, GameplayModeRuntime.IsAllegiance,
             player.HealthController?.IsAlive == true, knight != null,
             knight == null ? float.PositiveInfinity : Vector3.Distance(knight.Position, player.Position),
             !forwardingKnightKill && source == player.ProfileId,
-            forwardingKnightKill || source == knight?.ProfileId, knightParticipated);
+            forwardingKnightKill || (badge || pier ? Goons(player).Any(bot => bot.ProfileId == source) : source == knight?.ProfileId),
+            pier ? pipeParticipated && birdeyeParticipated : badge ? goonParticipated : birdeye ? birdeyeParticipated : knightParticipated);
     }
 
     internal sealed class DeathInput
@@ -76,36 +107,47 @@ internal static class KnightQuestRuntime
         internal Player Killer;
         internal List<string> Zones;
         internal bool KnightDied;
+        internal bool GoonDied;
+        internal bool BirdeyeDied;
+        internal bool PipeDied;
     }
 
     internal static DeathInput CaptureDeath(Player victim, IPlayer aggressor)
     {
-        if (!GameplayModeRuntime.IsGoingRogue) return null;
+        if (!GameplayModeRuntime.IsAllegiance) return null;
         var player = LocalPlayer;
         if (player?.QuestController == null || player.Side == EPlayerSide.Savage || victim == null) return null;
         ObserveRaid(victim.GameWorld);
         // Capture ownership before native death cleanup removes Knight from the follower registry.
         var follower = BossPlayers.GetFollowers().FirstOrDefault(f => f.GetBoss()?.realPlayer == player &&
-            f.GetBot()?.Profile.Info.Settings.Role == WildSpawnType.bossKnight &&
+            IsGoon(f.GetBot()?.Profile.Info.Settings.Role) &&
             (f.GetBot().ProfileId == victim.ProfileId || f.GetBot().ProfileId == aggressor?.ProfileId));
         if (follower == null) return null;
         var knight = follower.GetBot();
         bool died = knight.ProfileId == victim.ProfileId;
-        if (!died && (knight.IsDead || Vector3.Distance(knight.Position, player.Position) > 80f ||
+        bool closeEnough = Goons(player).Any(bot => Vector3.Distance(bot.Position, player.Position) <= 80f) ||
+            knight.Profile.Info.Settings.Role == WildSpawnType.followerBirdEye && Vector3.Distance(knight.Position, player.Position) <= 120f;
+        if (!died && (knight.IsDead || !closeEnough ||
             victim.IsYourPlayer || BossPlayers.GetFollowers().Any(f => f.GetBoss()?.realPlayer == player && f.GetBot()?.ProfileId == victim.ProfileId))) return null;
         return new DeathInput { Player = player, Victim = victim, Killer = knight.GetPlayer,
-            KnightDied = died, Zones = new List<string>(victim.TriggerZones ?? new List<string>()) };
+            GoonDied = died, KnightDied = died && knight.Profile.Info.Settings.Role == WildSpawnType.bossKnight,
+            BirdeyeDied = died && knight.Profile.Info.Settings.Role == WildSpawnType.followerBirdEye,
+            PipeDied = died && knight.Profile.Info.Settings.Role == WildSpawnType.followerBigPipe,
+            Zones = new List<string>(victim.TriggerZones ?? new List<string>()) };
     }
 
     internal static void CompleteDeath(DeathInput input, EFT.Ballistics.DamageInfo damage, EBodyPart bodyPart)
     {
-        if (!GameplayModeRuntime.IsGoingRogue || input == null || !creditedDeaths.Add(input.Victim.ProfileId)) return;
+        if (!GameplayModeRuntime.IsAllegiance || input == null || !creditedDeaths.Add(input.Victim.ProfileId)) return;
         try
         {
             var controller = input.Player.QuestController;
-            if (input.KnightDied)
+            if (input.GoonDied || input.KnightDied)
             {
-                foreach (var quest in controller.Quests.Where(q => KnightQuestPolicy.Owns(q.Id) &&
+                foreach (var quest in controller.Quests.Where(q => (q.Id == KnightQuestPolicy.BadgeBandit ||
+                    input.KnightDied && (q.Id == KnightQuestPolicy.Competition || q.Id == KnightQuestPolicy.MyLand) ||
+                    input.BirdeyeDied && (q.Id == KnightQuestPolicy.EnemySpotted || q.Id == KnightQuestPolicy.AFavor) ||
+                    (input.PipeDied || input.BirdeyeDied) && q.Id == KnightQuestPolicy.OffLimits) &&
                     KnightQuestPolicy.UsesMap(q.Id, input.Player.Location) &&
                     (q.QuestStatus == EQuestStatus.Started || q.QuestStatus == EQuestStatus.AvailableForFinish)).ToArray())
                     quest.SetStatus(EQuestStatus.Fail, true, false);
@@ -113,21 +155,33 @@ internal static class KnightQuestRuntime
             }
             var victim = input.Victim;
             var killer = input.Killer;
-            // Submit only the native My Land counter. No profile substitution or global quest forwarding.
-            var questMyLand = controller.Quests.FirstOrDefault(q => q.Id == KnightQuestPolicy.MyLand && q.QuestStatus == EQuestStatus.Started);
-            if (questMyLand == null) return;
-            var hit = controller.CheckHitConditionCounter("Any", victim.Inventory.EquippedInSlotsTemplateIds,
-                damage.Weapon, bodyPart, Vector3.Distance(killer.Position, victim.Position),
-                victim.Profile.Info.Settings.Role.ToString(), victim.CurrentHour, victim.HealthController?.BodyPartEffects);
-            if (hit == null) return;
-            forwardingKnightKill = true;
-            questMyLand.ConditionCountersManager.Test(1,
-                new ConditionCheck(typeof(ConditionKills)).Test(hit),
-                new ConditionCheck(typeof(ConditionLocation)).Test(killer.Location),
-                new ConditionCheck(typeof(ConditionInZone)).Test(input.Zones));
+            var candidates = controller.Quests.Where(q => q.QuestStatus == EQuestStatus.Started &&
+                (q.Id == KnightQuestPolicy.BadgeBandit || q.Id == KnightQuestPolicy.OffLimits &&
+                    Vector3.Distance(killer.Position, input.Player.Position) <= (killer.Profile.Info.Settings.Role == WildSpawnType.followerBirdEye ? 120f : 80f) ||
+                    (q.Id == KnightQuestPolicy.EnemySpotted || q.Id == KnightQuestPolicy.AFavor) && killer.Profile.Info.Settings.Role == WildSpawnType.followerBirdEye || q.Id == KnightQuestPolicy.MyLand &&
+                    killer.Profile.Info.Settings.Role == WildSpawnType.bossKnight)).ToArray();
+            if (candidates.Length == 0) return;
+            foreach (var quest in candidates)
+            {
+                bool birdeyeQuest = quest.Id == KnightQuestPolicy.EnemySpotted;
+                string target = quest.Id == KnightQuestPolicy.MyLand || quest.Id == KnightQuestPolicy.OffLimits ? "Any" :
+                    victim.Side == EPlayerSide.Savage ? "Savage" : birdeyeQuest ? "AnyPmc" : "Any";
+                var hit = controller.CheckHitConditionCounter(target, victim.Inventory.EquippedInSlotsTemplateIds,
+                    damage.Weapon, bodyPart, Vector3.Distance(killer.Position, victim.Position),
+                    victim.Profile.Info.Settings.Role.ToString(), victim.CurrentHour, victim.HealthController?.BodyPartEffects);
+                if (hit == null) continue;
+                forwardingKnightKill = true;
+                forwardedCounter = quest.Id == KnightQuestPolicy.AFavor ? KnightQuestPolicy.AFavorKills :
+                    quest.Id == KnightQuestPolicy.OffLimits ? KnightQuestPolicy.OffLimitsKills :
+                    birdeyeQuest ? KnightQuestPolicy.EnemySpottedKills : quest.Id == KnightQuestPolicy.MyLand ? KnightQuestPolicy.MyLandKills : KnightQuestPolicy.BadgeBanditKills;
+                quest.ConditionCountersManager.Test(1,
+                    new ConditionCheck(typeof(ConditionKills)).Test(hit),
+                    new ConditionCheck(typeof(ConditionLocation)).Test(killer.Location),
+                    new ConditionCheck(typeof(ConditionInZone)).Test(input.Zones));
+            }
         }
         catch (Exception ex) { pitTeam.Modules.Logger.LogError("[GoingRogueQuests] Companion death/kill processing failed: " + ex); }
-        finally { forwardingKnightKill = false; }
+        finally { forwardingKnightKill = false; forwardedCounter = null; }
     }
 }
 

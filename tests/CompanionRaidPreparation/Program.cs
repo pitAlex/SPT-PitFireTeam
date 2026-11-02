@@ -37,12 +37,12 @@ settings.LocationId="woods";
 CompanionRaidPreparation.Prepare(settings,["123","456"]);
 Check(CompanionRaidPreparation.TokenFor("123")!=first,"a changed map configuration cannot reuse earlier equipment");
 int calls=SPT.Common.Http.RequestHandler.Calls;
-GameplayModeAddons.Current=GameplayMode.Allegiance;
+GameplayModeAddons.Current=GameplayMode.GunsForHire;
 Check(CompanionRaidPreparation.TokenFor("123")==null,"mode changes hide the old reservation");
 CompanionRaidPreparation.Reset();
 CompanionRaidPreparation.Prepare(settings,["123"]);
 Check(SPT.Common.Http.RequestHandler.Calls==calls,"ordinary modes keep their existing spawn flow");
-GameplayModeAddons.Current=GameplayMode.GoingRogue;GameplayModeAddons.Available=false;
+GameplayModeAddons.Current=GameplayMode.Allegiance;GameplayModeAddons.Available=false;
 CompanionRaidPreparation.Prepare(settings,["123"]);
 Check(SPT.Common.Http.RequestHandler.Calls==calls,"absent addon does not initialize preparation");
 GameplayModeAddons.Available=true;settings.IsPmc=false;
@@ -94,18 +94,31 @@ CompanionRaidPreparation.Reset();SPT.Common.Http.RequestHandler.Fail=true;
 CompanionRaidPreparation.Prepare(settings,[],"bossKnight");
 Check(CompanionRaidPreparation.QuestProfile==null && !string.IsNullOrEmpty(CompanionRaidPreparation.QuestTokenFor("bossKnight")),"failed quest preparation has no fabricated preview and retains a strict spawn token");
 CompanionRaidPreparation.Reset();SPT.Common.Http.RequestHandler.Fail=false;
+CompanionRaidPreparation.Prepare(settings,[],questRoles:new[]{"bossKnight","followerBigPipe","followerBirdEye"});
+Check(new[]{"bossKnight","followerBigPipe","followerBirdEye"}.All(role=>CompanionRaidPreparation.QuestProfileFor(role)!=null && CompanionRaidPreparation.QuestTokenFor(role)!=null),"all three Goons receive distinct prepared profiles under the same raid token");
+var preparedPipe=CompanionRaidPreparation.QuestProfileFor("followerBigPipe").ToString();
+int threeCalls=SPT.Common.Http.RequestHandler.Calls;
+CompanionRaidPreparation.Prepare(settings,[],questRoles:new[]{"followerBirdEye","bossKnight","followerBigPipe"});
+Check(SPT.Common.Http.RequestHandler.Calls==threeCalls && CompanionRaidPreparation.QuestProfileFor("followerBigPipe").ToString()==preparedPipe,"changing role iteration order cannot reroll reserved quest kits");
+CompanionRaidPreparation.InvalidateQuest();
+Check(new[]{"bossKnight","followerBigPipe","followerBirdEye"}.All(role=>CompanionRaidPreparation.QuestProfileFor(role)==null && CompanionRaidPreparation.QuestTokenFor(role)==null),"invitation clears every quest companion reservation locally");
+SPT.Common.Http.RequestHandler.Fail=true;
+CompanionRaidPreparation.Prepare(settings,[],questRoles:new[]{"bossKnight","followerBigPipe","followerBirdEye"});
+Check(new[]{"bossKnight","followerBigPipe","followerBirdEye"}.All(role=>CompanionRaidPreparation.QuestTokenFor(role)!=null && CompanionRaidPreparation.QuestProfileFor(role)==null),"lost multi-Goon response retains strict tokens for all roles, preventing generation at spawn");
+SPT.Common.Http.RequestHandler.Fail=false;
 Console.WriteLine($"PASS: {checks} production client reservation checks; controlled HTTP/raid-setting doubles, not Unity loading behavior.");
 
 namespace EFT {internal class RaidSettings {[JsonIgnore] public bool IsPmc,isInTransition;[JsonProperty("location")] public string LocationId;[JsonProperty("keyId")] public string KeyId;}}
 namespace pitTeam.Utils {internal static class Utils {internal static bool Transit;internal static bool FlagGet(string key)=>Transit;}}
 namespace pitTeam.Modules
 {
-    internal enum GameplayMode {GoingRogue,Allegiance}
+    internal enum GameplayMode {GunsForHire,Allegiance}
     internal static class GameplayModeAddons
     {
-        internal static GameplayMode Current=GameplayMode.GoingRogue;
+        internal static GameplayMode Current=GameplayMode.Allegiance;
         internal static bool Available=true;
-        internal static bool IsAvailable(GameplayMode mode)=>Available;
+        internal static bool IsAvailable(GameplayMode mode)=>true;
+        internal static bool HasExtension(GameplayMode mode)=>Available;
     }
     internal static class Logger {internal static int Errors;internal static void LogInfo(string value){} internal static void LogError(string value){Errors++;}}
 }
@@ -119,7 +132,8 @@ namespace SPT.Common.Http
             Calls++;
             var data=JObject.Parse(request);LastRequest=data;
             if(Fail)throw new Exception("Lost preparation response");
-            return new JObject{["err"]=0,["data"]=new JObject{["Token"]=data["token"], ["QuestCompanion"]=data["questCompanionRole"]?.Type==JTokenType.String ? new JObject{["_id"]="reserved-knight"} : JValue.CreateNull()}}.ToString(Formatting.None);
+            var companions=new JArray((data["questCompanionRoles"] as JArray ?? new JArray()).Select(role=>new JObject{["_id"]="reserved-"+(string)role,["Info"]=new JObject{["Settings"]=new JObject{["Role"]=role.DeepClone()}}}));
+            return new JObject{["err"]=0,["data"]=new JObject{["Token"]=data["token"], ["QuestCompanions"]=companions, ["QuestCompanion"]=data["questCompanionRole"]?.Type==JTokenType.String ? new JObject{["_id"]="reserved-knight"} : JValue.CreateNull()}}.ToString(Formatting.None);
         }
     }
 }

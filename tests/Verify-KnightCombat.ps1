@@ -1,10 +1,12 @@
 param(
     [Parameter(Mandatory)][string]$GameRoot,
-    [string]$RepositoryRoot = (Split-Path $PSScriptRoot -Parent)
+    [string]$RepositoryRoot = (Split-Path $PSScriptRoot -Parent),
+    [string]$CoreOutputDirectory,
+    [string]$AddonAssembly
 )
 $ErrorActionPreference = 'Stop'
-$addon = Join-Path $RepositoryRoot 'going-rogue/client/bin/Debug/net472/pitFireTeam.GoingRogue.dll'
-$core = Join-Path $RepositoryRoot 'client/bin/Debug/net472'
+$addon = if ($AddonAssembly) { $AddonAssembly } else { Join-Path $RepositoryRoot 'going-rogue/client/bin/Debug/net472/pitFireTeam.GoingRogue.dll' }
+$core = if ($CoreOutputDirectory) { $CoreOutputDirectory } else { Join-Path $RepositoryRoot 'client/bin/Debug/net472' }
 [Reflection.Assembly]::LoadFrom((Join-Path $RepositoryRoot 'client/libs/Mono.Cecil.dll')) | Out-Null
 $resolver = [Mono.Cecil.DefaultAssemblyResolver]::new()
 foreach ($root in @($resolver.GetSearchDirectories())) { $resolver.RemoveSearchDirectory($root) }
@@ -35,18 +37,22 @@ try {
     $game = $resolver.Resolve($gameRef).MainModule
     foreach ($pair in @(@('BotBoss','get_Followers'), @('BotBoss','ManualUpdate'), @('BotBoss','OfferSelf'),
         @('BossKnight','CalcOptimalPositions'), @('BossKnight','ForceRecalcShootPos'), @('BossKnightLayersStrategy','ForceRecalcShootPos'),
-        @('EFT.EftClientBackendSession','SendRaidSettings'), @('BigPipeBotWeaponSelector','ManualUpdate'),
+        @('EFT.EftClientBackendSession','SendRaidSettings'), @('BossSpawnScenario','Init'), @('BigPipeBotWeaponSelector','ManualUpdate'),
         @('EFT.UI.MerchantsList','Show'), @('EFT.UI.TraderScreensGroup','get_TradersList'),
         @('EFT.UI.TraderScreensGroup','SelectTrader'), @('EFT.UI.TraderScreensGroup','Show'), @('EFT.UI.TradingScreen','Show'),
         @('EFT.Quests.ConditionCounterManager','Test'), @('EFT.Player','OnBeenKilledByAggressor'))) {
         $type = $game.GetType($pair[0])
         if (!$type -or !($type.Methods | Where-Object Name -eq $pair[1])) { throw "Missing Harmony boundary: $pair" }
     }
+    $init=@($game.GetType('BossSpawnScenario').Methods | Where-Object {$_.Name -eq 'Init' -and ($_.Parameters.ParameterType.FullName -join ',') -eq 'BossLocationSpawn[]'})
+    if($init.Count -ne 1){throw 'Native boss wave Init signature changed'}
     $selectorType = $game.GetType('BotWeaponSelector')
     $ownerField = $null
     while ($selectorType -and !$ownerField) {
         $ownerField = $selectorType.Fields | Where-Object Name -eq '_owner'
-        $selectorType = if ($selectorType.BaseType) { $selectorType.BaseType.Resolve() } else { $null }
+        $init=@($game.GetType('BossSpawnScenario').Methods | Where-Object {$_.Name -eq 'Init' -and ($_.Parameters.ParameterType.FullName -join ',') -eq 'BossLocationSpawn[]'})
+    if($init.Count -ne 1){throw 'Native boss wave Init signature changed'}
+    $selectorType = if ($selectorType.BaseType) { $selectorType.BaseType.Resolve() } else { $null }
     }
     if (!$ownerField -or $ownerField.FieldType.FullName -ne 'EFT.BotOwner') {
         throw 'Missing native selector owner field used by the shared scoped weapon-switch helper'
@@ -73,7 +79,7 @@ try {
         $_.Name -eq 'Test' -and $_.IsStatic -and ($_.Parameters.ParameterType.FullName -join ',') -eq 'System.Int32,EFT.Quests.TaskConditionCounter,EFT.Quests.ConditionCheck[]'
     })
     if($counterTest.Count -ne 1){throw 'Native static quest counter Test overload changed'}
-    Write-Output "PASS: $count addon Core/installed EFT/BigBrain/Harmony API references and 17 patch targets resolved. No typed SAIN dependency."
+    Write-Output "PASS: $count addon Core/installed EFT/BigBrain/Harmony API references and 18 patch targets resolved. No typed SAIN dependency."
 }
 finally { $module.Dispose(); $resolver.Dispose() }
 

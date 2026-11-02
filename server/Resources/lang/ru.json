@@ -79,8 +79,8 @@
   "socialUi": {
     "GoingRogueKnightTraderName": "Найт",
     "GoingRogueKnightTraderLocation": "Неизвестно",
-    "GoingRogueKnightTraderDescription": "Командир отряда Отступников. Доступен в режиме Going Rogue с 20-го уровня.",
-    "GoingRogueKnightTraderLocked": "Найт доступен только в режиме Going Rogue с 20-го уровня.",
+    "GoingRogueKnightTraderDescription": "Командир отряда Отступников. Доступен в режиме Allegiance с 20-го уровня.",
+    "GoingRogueKnightTraderLocked": "Найт доступен только в режиме Allegiance с 20-го уровня.",
     "ProfileHeal": "ЛЕЧИТЬ",
     "TeammateStillWounded": "{0} ещё ранен и пока не может присоединиться к рейду",
     "ProfileHealingTitle": "Лечение у Терапевта",

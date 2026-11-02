@@ -52,7 +52,7 @@ internal static class LocalRaidChecks
         NativeUnchanged("completed objective on the selected map");
         profile.QuestsData[0].CompletedConditions.Clear();
         settings.LocationId="factory";NativeUnchanged("back to a non-quest map");settings.LocationId="woods";
-        GameplayModeRuntime.IsGoingRogue=false;NativeUnchanged("switch to Allegiance");GameplayModeRuntime.IsGoingRogue=true;
+        GameplayModeRuntime.IsGoingRogueActive=false;NativeUnchanged("switch to Allegiance");GameplayModeRuntime.IsGoingRogueActive=true;
         settings.IsPmc=false;NativeUnchanged("Scav side");settings.IsPmc=true;
         profile.QuestsData[0].Status=EFT.Quests.EQuestStatus.Success;NativeUnchanged("completed quest");profile.QuestsData[0].Status=EFT.Quests.EQuestStatus.Started;
         profile.Trader.Disabled=true;NativeUnchanged("disabled Knight");profile.Trader.Disabled=false;
@@ -62,7 +62,7 @@ internal static class LocalRaidChecks
         check(app.NetworkCalls==before+1,"missing session profile cannot reuse cached quest admission");app.Session.Profile=profile;
         foreach(bool goingRogue in new[]{true,false})
         {
-            GameplayModeRuntime.IsGoingRogue=goingRogue;
+            GameplayModeRuntime.IsGoingRogueActive=goingRogue;
             MainMenuControllerPatch.GroupPlayers.Add(new RaidPlayer(new(){Id="invited",AccountId="saved-member"}));
             settings.RaidMode=ERaidMode.Online;offline.RaidMode=ERaidMode.Online;
             check(SyntheticTeammateRaidGuard.KeepLocal(profile,settings,offline) && settings.Local && offline.Local,
@@ -71,7 +71,7 @@ internal static class LocalRaidChecks
             check(app.LocalCalls==local+1,"saved teammate starts through the native local branch");
             MainMenuControllerPatch.GroupPlayers.Clear();
         }
-        GameplayModeRuntime.IsGoingRogue=true;
+        GameplayModeRuntime.IsGoingRogueActive=true;
         check(!SyntheticTeammateRaidGuard.TryForceLocalRaid(null,"test"),"missing application is safe");
         check(!SyntheticTeammateRaidGuard.TryForceLocalRaid(new TarkovApplication(null,profile),"test"),"missing raid settings is safe");
     }

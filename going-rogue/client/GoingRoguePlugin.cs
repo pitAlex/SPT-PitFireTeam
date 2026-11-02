@@ -20,19 +20,17 @@ public sealed class GoingRoguePlugin : BaseUnityPlugin
     internal static bool CombatEnabled { get; private set; }
     private void Awake()
     {
-        GameplayModeAddons.Register(GameplayMode.GoingRogue, HasRogueCompanions, HasGoonCompanions, exUsecFriendly: false,
+        GameplayModeAddons.Register(GameplayMode.Allegiance, HasRogueCompanions, HasGoonCompanions, exUsecFriendly: false,
             resolveSelection: RogueRaidContext.ResolveSelection,
             companionReady: (id, role) => !RogueRosterSelection.IsGoonRole(role) || GoonCombatLayer.IsSpawnReady(id, role),
             abortCompanion: GoonCombatLayer.AbortSpawn,
             gearPolicy: GoonGearPolicy.ForRole,
             ownsCombat: RogueRosterSelection.IsGoonRole);
-        GameplayModeAddons.RegisterCommandPolicy(GameplayMode.GoingRogue,
+        GameplayModeAddons.RegisterCommandPolicy(GameplayMode.Allegiance,
             role => GoonCommandPolicy.ForRole(role, KnightSquadCoordinator.HasLocalKnight()));
-        GameplayModeAddons.RegisterAdvanceOrderPolicy(GameplayMode.GoingRogue, GoonPushLeadership.Evaluate);
-        GameplayModeAddons.RegisterQuestCompanionProgressPolicy(GameplayMode.GoingRogue, Quests.KnightQuestPolicy.NeedsCompanion);
-        GameplayModeAddons.RegisterModeCard(GameplayMode.GoingRogue,
-            System.IO.Path.Combine(System.IO.Path.GetDirectoryName(typeof(GoingRoguePlugin).Assembly.Location), "going-rogue-card.png"));
-        GameplayModeAddons.RegisterSessionRefresh(GameplayMode.GoingRogue, Trading.KnightSessionRefresh.RefreshAsync);
+        GameplayModeAddons.RegisterAdvanceOrderPolicy(GameplayMode.Allegiance, GoonPushLeadership.Evaluate);
+        GameplayModeAddons.RegisterQuestCompanionProgressPolicy(GameplayMode.Allegiance, Quests.KnightQuestPolicy.NeedsCompanion);
+        GameplayModeAddons.RegisterSessionRefresh(GameplayMode.Allegiance, Trading.KnightSessionRefresh.RefreshAsync);
         harmony = new Harmony("xyz.pit.fireteam.goingrogue");
         harmony.PatchAll(typeof(GoingRoguePlugin).Assembly);
         BrainManager.AddCustomLayer(typeof(KnightCombatLayer), new List<string> { "Knight" },
@@ -53,11 +51,13 @@ public sealed class GoingRoguePlugin : BaseUnityPlugin
     private void OnDestroy()
     {
         CombatEnabled = false;
+        Quests.KnightQuestZones.Reset();
+        Quests.PartizanQuestSpawn.Reset();
         GoonCombatLayer.ReleaseAll();
         harmony?.UnpatchSelf();
         RogueRaidContext.Reset();
         Quests.KnightQuestRuntime.Reset();
-        GameplayModeAddons.Unregister(GameplayMode.GoingRogue);
+        GameplayModeAddons.Unregister(GameplayMode.Allegiance);
     }
     private static bool HasRogueCompanions() => RogueRaidContext.IsPresent || GameplayModeAddons.HasSelectedBossCompanions ||
         BossPlayers.GetFollowers().Any(follower => follower.GetBoss()?.realPlayer?.IsYourPlayer == true &&

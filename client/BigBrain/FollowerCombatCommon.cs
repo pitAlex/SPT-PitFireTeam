@@ -9218,6 +9218,26 @@ namespace pitTeam.BigBrain
             return true;
         }
 
+        // Commit only to admitted tracked evidence, after the movement plan succeeds.
+        // Rejected target changes never publish movement or clear living enemy memory.
+        internal bool TryCommitCompanionSupportPoint(EnemyInfo enemy, Vector3 point)
+        {
+            if (!HasActiveCombatEnemy(enemy) || !IsFinite(point) ||
+                !ReferenceEquals(GetTrackedEnemyByProfileId(enemy.ProfileId), enemy) ||
+                !FollowerEnemyTracking.IsEligible(enemy) ||
+                !FollowerEnemyTracking.TryGetKnownPosition(enemy, out _, out _) ||
+                FollowerCombatTargetCommitments.HasMission(botOwner) &&
+                    !FollowerCombatTargetCommitments.IsMissionTarget(botOwner, enemy)) return false;
+            if (!ReferenceEquals(botOwner.Memory.GoalEnemy, enemy))
+            {
+                using (FollowerGoalEnemyTracker.Begin("FollowerCombatCommon.CompanionSupport", "admittedSupport"))
+                    botOwner.Memory.GoalEnemy = enemy;
+                if (!ReferenceEquals(botOwner.Memory.GoalEnemy, enemy)) return false;
+            }
+            CommitContactAdvancePoint(point);
+            return true;
+        }
+
         internal bool TryPlanAssignedFiringPositionDecision(
             EnemyInfo enemy, Vector3 assignedPoint, string reason, out Vector3 point,
             out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision,
@@ -13883,7 +13903,7 @@ namespace pitTeam.BigBrain
             return false;
         }
 
-        private EnemyInfo? GetTrackedEnemyByProfileId(string enemyProfileId)
+        internal EnemyInfo? GetTrackedEnemyByProfileId(string enemyProfileId)
         {
             if (string.IsNullOrEmpty(enemyProfileId) || botOwner.EnemiesController?.EnemyInfos == null)
             {

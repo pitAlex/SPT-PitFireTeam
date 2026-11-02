@@ -27,7 +27,7 @@ internal static class RogueRaidContext
         private static void Prefix(RaidSettings settings)
         {
             Reset();
-            if (GameplayModeAddons.Current != GameplayMode.GoingRogue || !settings.IsPmc) return;
+            if (GameplayModeAddons.Current != GameplayMode.Allegiance || !settings.IsPmc) return;
             var accounts = new HashSet<string>(MainMenuControllerPatch.GroupPlayers.Select(player => player.AccountId));
             Selection.Begin(accounts);
             if (accounts.Count == 0) return;
@@ -51,7 +51,7 @@ internal static class RogueRaidContext
         }
         private static void Prefix(BotOwner bot, pitAIBossPlayer player, ref bool __state)
         {
-            __state = GameplayModeAddons.Current == GameplayMode.GoingRogue && player?.realPlayer?.IsYourPlayer == true &&
+            __state = GameplayModeAddons.Current == GameplayMode.Allegiance && player?.realPlayer?.IsYourPlayer == true &&
                 RogueRosterSelection.IsRole(bot?.Profile?.Info?.Settings?.Role.ToString()) && Converting.Add(bot);
         }
         private static void Finalizer(BotOwner bot, bool __state)

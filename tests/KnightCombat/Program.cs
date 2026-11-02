@@ -303,4 +303,5 @@ PushLeadershipHandoffChecks.Run(Check);
 BirdEyeChecks.Run(Check);
 GoonRejoinChecks.Run(Check);
 IndependentPursuitChecks.Run(Check);
+BirdEyeSupportChecks.Run(Check);
 Console.WriteLine($"PASS: {checks} production Knight/Big Pipe objective/support/caution/lease/command checks. Stubbed EFT inputs; no Unity raid simulation.");

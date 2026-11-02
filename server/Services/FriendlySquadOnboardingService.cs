@@ -15,31 +15,9 @@ public class FriendlySquadOnboardingService(
     private const string StateDocument = "squad-onboarding.json";
     private const string DeliveryDocument = "welcome-invitation-delivery.json";
     private const string RequestsDocument = "recruit-requests.json";
-    private const string GoingRogue = pitTeam.Shared.GameplayModePolicy.GoingRogue;
-
     public FriendlySquadOnboardingResponse GetStatus(MongoId sessionId)
     {
-        lock (FriendlyTeammateService.CreationLock)
-        {
-            var state = Load(sessionId);
-            if (state.FirstTimeVisit && !state.GoingRogueChoiceCompleted && FriendlyGameplayModeAddons.IsAvailable(GoingRogue))
-            {
-                string current = settingsService.LoadSettings().GameplayMode;
-                // Profiles already using the addon have made this choice. Preserve
-                // a pending offer during a lost-completion-response recovery.
-                if (current == GoingRogue && state.AddonChoiceFromMode == null)
-                {
-                    state.GoingRogueChoiceCompleted = true;
-                    Save(sessionId, state);
-                }
-                else if (current != GoingRogue && state.AddonChoiceFromMode != current)
-                {
-                    state.AddonChoiceFromMode = current;
-                    Save(sessionId, state);
-                }
-            }
-            return Response(state);
-        }
+        lock (FriendlyTeammateService.CreationLock) return Response(Load(sessionId));
     }
 
     public FriendlySquadOnboardingResponse Complete(MongoId sessionId, string mode, IReadOnlyCollection<string>? shownModes = null)
@@ -47,19 +25,7 @@ public class FriendlySquadOnboardingService(
         lock (FriendlyTeammateService.CreationLock)
         {
             var state = Load(sessionId);
-            if (state.FirstTimeVisit)
-            {
-                if (state.GoingRogueChoiceCompleted || state.AddonChoiceFromMode == null || shownModes == null) return Response(state);
-                if (!FriendlyGameplayModeAddons.IsAvailable(GoingRogue) || !FriendlyGameplayModeAddons.IsAvailable(mode) ||
-                    (mode != state.AddonChoiceFromMode && mode != GoingRogue) ||
-                    mode != settingsService.LoadSettings().GameplayMode || FriendlyModeRequestGate.HasActiveRaid ||
-                    shownModes?.Contains(GoingRogue) != true)
-                    throw new InvalidOperationException("The addon gameplay choice is not ready.");
-                state.GoingRogueChoiceCompleted = true;
-                state.AddonChoiceFromMode = null;
-                Save(sessionId, state);
-                return Response(state);
-            }
+            if (state.FirstTimeVisit) return Response(state);
             if (!FriendlyGameplayModeAddons.IsAvailable(mode) || mode != settingsService.LoadSettings().GameplayMode
                 || FriendlyModeRequestGate.HasActiveRaid)
                 throw new InvalidOperationException("The selected gameplay mode is not ready for onboarding.");
@@ -72,9 +38,6 @@ public class FriendlySquadOnboardingService(
             state.WelcomeCandidate = existingSquad ? null : teammateService.PrepareWelcomeInvitation(sessionId);
             state.WelcomeState = existingSquad ? "skipped" : "waiting-refresh";
             state.FirstTimeVisit = true;
-            // Only acknowledge the addon if both sides could actually offer it.
-            state.GoingRogueChoiceCompleted = FriendlyGameplayModeAddons.IsAvailable(GoingRogue) &&
-                (mode == GoingRogue || shownModes?.Contains(GoingRogue) == true);
             Save(sessionId, state);
             return Response(state);
         }
@@ -135,7 +98,12 @@ public class FriendlySquadOnboardingService(
     }
 
     private FriendlySquadOnboardingState Load(MongoId sessionId) =>
-        storage.ReadSharedDocument<FriendlySquadOnboardingState>(sessionId, StateDocument) ?? new();
+        NormalizeState(storage.ReadSharedDocument<FriendlySquadOnboardingState>(sessionId, StateDocument) ?? new());
+    private static FriendlySquadOnboardingState NormalizeState(FriendlySquadOnboardingState state)
+    {
+        state.GameplayMode = pitTeam.Shared.GameplayModePolicy.Normalize(state.GameplayMode);
+        return state;
+    }
     private void Save(MongoId sessionId, FriendlySquadOnboardingState state) =>
         storage.WriteSharedDocument(sessionId, StateDocument, state);
     private bool IsActivePending(FriendlySquadOnboardingState state) =>
@@ -147,11 +115,6 @@ public class FriendlySquadOnboardingService(
         WelcomePending = IsActivePending(state),
         DelayMilliseconds = (int)Math.Clamp(state.InviteDueAtMilliseconds - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), 0L, 2000L),
         InvitationDelivered = state.WelcomeState == "delivered",
-        ModeChoices = !state.FirstTimeVisit
-            ? pitTeam.Shared.GameplayModePolicy.Modes.Where(FriendlyGameplayModeAddons.IsAvailable).ToArray()
-            : HasAddonChoice(state) ? new[] { state.AddonChoiceFromMode!, GoingRogue } : [],
-        AddonChoiceRequired = HasAddonChoice(state)
+        ModeChoices = !state.FirstTimeVisit ? pitTeam.Shared.GameplayModePolicy.Modes : []
     };
-    private static bool HasAddonChoice(FriendlySquadOnboardingState state) => state.FirstTimeVisit &&
-        !state.GoingRogueChoiceCompleted && state.AddonChoiceFromMode != null && FriendlyGameplayModeAddons.IsAvailable(GoingRogue);
 }

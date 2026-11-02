@@ -29,7 +29,7 @@ $fixture = @'
 using System;
 using System.Collections.Generic;
 using System.Linq;
-public enum WildSpawnType { bossKnight, bossOther }
+public enum WildSpawnType { bossKnight, bossOther, bossKolontay }
 public enum EPlayerSide { Usec, Savage }
 public enum EQuestStatus { Started }
 public class AbstractGame {}
@@ -44,7 +44,7 @@ public class BossSpawnScenario { public List<Wave> BossSpawnWaves=new List<Wave>
 public static class GameplayModeAddons { public static bool HasSelectedBossCompanions; }
 namespace Utils {
     public static class Utils { public static bool Quest;public static bool FlagGet(string flag)=>Quest; }
-    public static class Props { public static Dictionary<WildSpawnType,List<string>> QuestBosses=new Dictionary<WildSpawnType,List<string>>{{WildSpawnType.bossKnight,new List<string>{"quest"}}}; }
+    public static class Props { public static Dictionary<WildSpawnType,List<string>> QuestBosses=new Dictionary<WildSpawnType,List<string>>{{WildSpawnType.bossKnight,new List<string>{"quest"}},{WildSpawnType.bossKolontay,new List<string>{"quest"}}}; }
 }
 public class Fixture {
 __METHOD__
@@ -63,6 +63,10 @@ __METHOD__
         Check(normal.ShallSpawn&&normal.ForceSpawn,"ordinary Goons remain available without selected companion");
         Utils.Utils.Quest=true;normal.ShallSpawn=false;PatchPrefix(new BossSpawnScenario{BossSpawnWaves=new List<Wave>{normal}});
         Check(normal.ShallSpawn,"legacy quest override still works outside companion raids");
+        GameplayModeAddons.HasSelectedBossCompanions=true;
+        var kollontay=new Wave{BossType=WildSpawnType.bossKolontay,ShallSpawn=false,ForceSpawn=false};
+        PatchPrefix(new BossSpawnScenario{BossSpawnWaves=new List<Wave>{kollontay}});
+        Check(kollontay.ShallSpawn,"automatic Goon quest raid enables its native Kollontay wave while blocking hostile Goons");
         Console.WriteLine("PASS: "+checks+" production Goons wave checks; native role gate precedes saved-profile spawning.");
     }
 }

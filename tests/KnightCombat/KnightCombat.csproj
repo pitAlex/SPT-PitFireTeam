@@ -9,6 +9,7 @@
     <Compile Include="../../going-rogue/client/Combat/BirdEyeCombatLogic.cs" Link="BirdEyeCombatLogic.cs" />
     <Compile Include="../../going-rogue/client/Combat/BirdEyeCombatObjective.cs" Link="BirdEyeCombatObjective.cs" />
     <Compile Include="../../going-rogue/client/Combat/BirdEyeSniperPositioning.cs" Link="BirdEyeSniperPositioning.cs" />
+    <Compile Include="../../going-rogue/client/Combat/BirdEyeSupportPriority.cs" Link="BirdEyeSupportPriority.cs" />
     <Compile Include="../../going-rogue/client/Combat/KnightCombatObjective.cs" Link="KnightCombatObjective.cs" />
     <Compile Include="../../going-rogue/client/Combat/GoonCombatObjective.cs" Link="GoonCombatObjective.cs" />
     <Compile Include="../../going-rogue/client/Combat/GoonIndependentPursuit.cs" Link="GoonIndependentPursuit.cs" />

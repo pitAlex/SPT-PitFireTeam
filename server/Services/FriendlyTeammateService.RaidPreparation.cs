@@ -16,6 +16,7 @@ public partial class FriendlyTeammateService
         public Dictionary<string, string> JoinRevisions { get; } = new(StringComparer.Ordinal);
         public HashSet<string> RetiredRevisions { get; } = new(StringComparer.Ordinal);
         public BotBase? QuestCompanion { get; set; }
+        public Dictionary<string, BotBase> QuestCompanions { get; } = new(StringComparer.OrdinalIgnoreCase);
     }
     private readonly Dictionary<string, PreparedCompanionRaid> preparedCompanionRaids = new(StringComparer.Ordinal);
 
@@ -49,7 +50,7 @@ public partial class FriendlyTeammateService
         foreach (string account in members)
         {
             if (!TryFindByAccountId(sessionId, account, out var teammate) || CompanionPolicy(teammate!)?.GenerateEquipmentEachRaid != true) continue;
-            if (CompanionPolicy(teammate!)?.RaidReady == false) throw new InvalidOperationException("Companion is not raid ready");
+            if (!IsCompanionRaidReady(teammate!)) throw new InvalidOperationException("Companion is not raid ready");
             if (!preparation.Kits.ContainsKey(account) || !preparation.JoinRevisions.TryGetValue(account, out string? revision) || revision != request.MemberRevisions[account])
             {
                 // A failed rejoin generation must not leave the previous join's
@@ -69,15 +70,32 @@ public partial class FriendlyTeammateService
                 logger.Info($"[CompanionRaidKit] prepared token={request.Token} aid={account} equipment={generated.Inventory?.Equipment}");
             }
         }
-        if (members.Length != 0 || string.IsNullOrWhiteSpace(request.QuestCompanionRole)) preparation.QuestCompanion = null;
-        else
+        var questRoles = (request.QuestCompanionRoles ?? (string.IsNullOrWhiteSpace(request.QuestCompanionRole)
+            ? [] : new List<string> { request.QuestCompanionRole })).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (questRoles.Length > 3 || questRoles.Any(string.IsNullOrWhiteSpace)) throw new InvalidOperationException("Invalid quest companion roles");
+        if (members.Length != 0) questRoles = [];
+        if (preparation.QuestCompanion?.Info?.Settings?.Role is { } previousRole && questRoles.Contains(previousRole, StringComparer.OrdinalIgnoreCase))
+            preparation.QuestCompanions.TryAdd(previousRole, preparation.QuestCompanion);
+        foreach (var removed in preparation.QuestCompanions.Keys.Except(questRoles, StringComparer.OrdinalIgnoreCase).ToArray())
+            preparation.QuestCompanions.Remove(removed);
+        foreach (var role in questRoles)
         {
-            var policy = EligibleQuestCompanion(sessionId, request.QuestCompanionRole, configuration);
-            if (policy == null) preparation.QuestCompanion = null;
-            else if (preparation.QuestCompanion?.Info?.Settings?.Role != policy.Role)
-                preparation.QuestCompanion = GenerateQuestCompanion(sessionId, policy, configuration, null);
+            var policy = EligibleQuestCompanion(sessionId, role, configuration);
+            if (policy == null) preparation.QuestCompanions.Remove(role);
+            else if (!preparation.QuestCompanions.ContainsKey(role))
+            {
+                var generated = GenerateQuestCompanion(sessionId, policy, configuration, null);
+                for (int attempt = 0; preparation.QuestCompanions.Values.Any(p => p.Aid == generated.Aid); attempt++)
+                {
+                    if (attempt >= 8) throw new InvalidOperationException("Duplicate quest companion account identity");
+                    generated.Aid = GetUniqueAccountId(sessionId);
+                }
+                preparation.QuestCompanions.Add(role, generated);
+            }
         }
-        return new(request.Token, members.Where(preparation.Kits.ContainsKey).ToArray(), cloner.Clone(preparation.QuestCompanion));
+        preparation.QuestCompanion = questRoles.Select(role => preparation.QuestCompanions.GetValueOrDefault(role)).FirstOrDefault(profile => profile != null);
+        return new(request.Token, members.Where(preparation.Kits.ContainsKey).ToArray(), cloner.Clone(preparation.QuestCompanion),
+            cloner.Clone(preparation.QuestCompanions.Values.ToList()));
     }
 
     private BotBase PreparedCompanionForSpawn(MongoId sessionId, BotBase teammate, double? healthMultiplier, string token)

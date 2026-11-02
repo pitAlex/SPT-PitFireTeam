@@ -8,6 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Content Include="Resources/going-rogue-card.png" Link="going-rogue-card.png" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="Resources/quests/FriendlyPMC_Zones.json" />
     <Compile Include="../shared/KnightQuestPolicy.cs" Link="Quests/KnightQuestPolicy.cs" />
     <ProjectReference Include="../../client/pitFireTeam.csproj" AdditionalProperties="BuildSAINAddon=false" Private="false" />
     <Reference Include="BepInEx"><HintPath>../../client/libs4.1/BepInEx.dll</HintPath><Private>false</Private></Reference>

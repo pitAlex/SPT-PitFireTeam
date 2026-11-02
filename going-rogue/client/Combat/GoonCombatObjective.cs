@@ -188,6 +188,10 @@ namespace pitTeam.GoingRogue.Combat
                 decision = CombatCommon.CreateMoveToCommittedCoverDecision(reason);
                 return true;
             }
+            // A nearby solo Pipe has already answered protection by reaching the player.
+            // Let him counter the favourable contact instead of repeatedly re-entering Regroup.
+            if ((BotOwner.Position - CombatCommon.GetBossPosition()).sqrMagnitude <= 100f &&
+                GoonIndependentPursuit.CanSoloPipeAdvance(BotOwner, CombatCommon, threat)) return false;
             decision = CombatCommon.CreateRegroupObjectiveDecision();
             return true;
         }
@@ -366,12 +370,15 @@ namespace pitTeam.GoingRogue.Combat
             if (CombatCommon.ShouldCommitMovementDecision(next, false)) CombatCommon.CommitMovement(next);
             else if (!CombatCommon.IsSameCommittedMovement(next)) CombatCommon.ClearCommittedMovement();
             CombatCommon.UpdateRecoveryNoCoverCommitment(next);
-            if (BotOwner.Profile.Info.Settings.Role == WildSpawnType.bossKnight)
+            if (BotOwner.Profile.Info.Settings.Role is WildSpawnType.bossKnight or WildSpawnType.followerBigPipe)
             {
                 var enemy = BotOwner.Memory.GoalEnemy;
                 bool pursuit = next.Reason?.StartsWith(prefix + "onYourOwn.pursuit", StringComparison.Ordinal) == true;
                 bool advances = pursuit || next.Action == BotLogicDecision.search || next.Action == BotLogicDecision.runToEnemy ||
-                    next.Action == BotLogicDecision.goToEnemy || next.Reason?.StartsWith("knight.cover.", StringComparison.Ordinal) == true;
+                    next.Action == BotLogicDecision.goToEnemy || next.Reason?.StartsWith("knight.cover.", StringComparison.Ordinal) == true ||
+                    next.Reason?.StartsWith("bigPipe.autonomousAdvance", StringComparison.Ordinal) == true ||
+                    next.Reason?.StartsWith("bigPipe.cover.toSFC", StringComparison.Ordinal) == true ||
+                    next.Action == BotLogicDecision.goToPoint && next.Reason?.StartsWith("bigPipe.groupSearch", StringComparison.Ordinal) == true;
                 bool coveringFire = (next.Action == BotLogicDecision.shootFromPlace || next.Action == BotLogicDecision.shootFromCover) &&
                     enemy?.IsVisible == true && enemy.CanShoot;
                 GoonPushLeadership.PublishAutonomousIntent(BotOwner, enemy?.ProfileId, advances || coveringFire,

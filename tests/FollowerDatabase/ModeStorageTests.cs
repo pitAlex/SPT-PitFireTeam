@@ -32,6 +32,8 @@ internal static class ModeStorageTests
                 FriendlyServerSettingsRequest.NormalizeLoadoutManagementMode("invalid") == "Immersive" &&
                 FriendlyServerSettingsRequest.NormalizeLoadoutManagementMode("Simple") == "Restricted",
                 "missing and invalid loadouts use the default while legacy Simple remains Restricted");
+            check(new FriendlyServerSettingsRequest { GameplayMode = "GoingRogue" }.GameplayMode == "Allegiance", "legacy saved mode normalizes to Allegiance");
+            check(pitTeam.Shared.GameplayModePolicy.Modes.SequenceEqual(new[] { "GunsForHire", "Allegiance" }), "server exposes only two modes");
             settings.SaveAndApply(new());
             StorageConcurrencyTests.Run(work, check);
             var storage = new FriendlyTeammateStorage(new FileUtil(), new JsonUtil([new SptJsonConverterRegistrator()]),

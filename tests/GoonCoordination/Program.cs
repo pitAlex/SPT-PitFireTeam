@@ -132,7 +132,7 @@ namespace pitTeam.Components
 namespace pitTeam.Modules
 {
     public enum GameplayMode {GoingRogue,Allegiance}
-    public static class GameplayModeAddons {public static GameplayMode Current=GameplayMode.GoingRogue;}
+    public static class GameplayModeAddons {public static GameplayMode Current=GameplayMode.Allegiance;}
     public enum FollowerCommandType { None, Regroup, PushEnemy }
     public static class FollowerEnemyTracking {
         public static bool IsEligible(EnemyInfo enemy)=>enemy.Eligible;

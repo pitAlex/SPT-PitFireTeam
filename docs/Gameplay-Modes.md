@@ -1,6 +1,6 @@
 # Gameplay modes
 
-pitFireTeam has two built-in gameplay modes. Each player profile chooses one on its first **My Squad** visit; later changes use **My Squad → Mode**. The optional [Going Rogue addon](../going-rogue/README.md) adds a third mode with its own database and initially uses Allegiance's settings/encounter policy.
+pitFireTeam has two built-in gameplay modes. Each player profile chooses one on its first **My Squad** visit; later changes use **My Squad → Mode**. The optional [Going Rogue addon](../going-rogue/README.md) extends Allegiance with Knight and the Goons, their quests and trader. It does not add another mode or roster database.
 
 | Behavior | [Guns for Hire](Guns-for-Hire.md) | [Allegiance](Allegiance.md) |
 |---|---|---|
@@ -19,9 +19,9 @@ Each linked guide owns its mode's gameplay behavior. [My Squad](My-Squad-Screen.
 
 ## First My Squad visit
 
-Until the initial choice succeeds, My Squad hides its normal panels and tabs and presents Guns for Hire and Allegiance cards, plus Going Rogue when both addon components are available. Existing accounts also make this initial choice once; closing the screen before choosing leaves it pending. Choosing the already-active Guns for Hire default still confirms the mode with the server and completes onboarding.
+Until the initial choice succeeds, My Squad hides its normal panels and tabs and presents exactly two cards: Guns for Hire and Allegiance. An addon may supply Allegiance artwork without changing its name or adding a card. Existing accounts also make this initial choice once; closing the screen before choosing leaves it pending. Choosing the already-active Guns for Hire default still confirms the mode with the server and completes onboarding.
 
-An existing user installing Going Rogue later receives a separate one-time choice between the current mode and Going Rogue on the next My Squad visit. Either selection acknowledges that installation for the player profile across modes and restarts. Back leaves it pending. This uses the normal immediate coordinated mode transition and never repeats initial onboarding or the welcome gift. A player already using Going Rogue is acknowledged without presenting duplicate cards. Missing client/server addon components cannot acknowledge a Going Rogue card the player could not choose.
+Installing Going Rogue later does not present another onboarding choice. Existing first-visit/welcome state remains authoritative.
 
 The server persists `firstTimeVisit = true` when the initial choice completes, once per player profile across both mode databases. A squad in either database suppresses the welcome invitation, including when the newly selected roster is empty. Existing rosters are retained.
 

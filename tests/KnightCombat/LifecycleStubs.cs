@@ -31,7 +31,7 @@ namespace DrakiaXYZ.BigBrain.Brains
 namespace pitTeam.Modules
 {
     public enum GameplayMode { GoingRogue, Allegiance }
-    public static class GameplayModeAddons { public static GameplayMode Current=GameplayMode.GoingRogue; }
+    public static class GameplayModeAddons { public static GameplayMode Current=GameplayMode.Allegiance; }
     public class BossPlayers
     {
         public static BossPlayers Instance=new();

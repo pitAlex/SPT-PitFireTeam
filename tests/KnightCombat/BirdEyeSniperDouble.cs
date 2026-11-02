@@ -11,7 +11,7 @@ internal sealed class FollowerCombatSniper
     internal int Resets, Changes, Ends;
     private readonly Func<EnemyInfo,AICoreActionResult<BotLogicDecision,CoreActionResultParams>?> positioning;
     internal FollowerCombatSniper(BotOwner owner,FollowerCombatCommon common,
-        Func<EnemyInfo,AICoreActionResult<BotLogicDecision,CoreActionResultParams>?> positioning)
+        Func<EnemyInfo,AICoreActionResult<BotLogicDecision,CoreActionResultParams>?> positioning, Func<bool> activeSupport = null)
     {Last=this;this.positioning=positioning;}
     internal void Reset()=>Resets++;
     internal void DecisionChanged(AICoreActionResult<BotLogicDecision,CoreActionResultParams>? previous,

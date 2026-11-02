@@ -21,13 +21,13 @@ try {
     $raid=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Patches/RaidStartPatch.cs')
     $preview=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/QuestCompanionPreview.cs')
     if(!$raid.Contains('QuestCompanionPreview.RolesFor(profile, settings)') -or
-        !$preview.Contains('!GameplayModeRuntime.IsGoingRogue') -or !$preview.Contains('settings?.IsPmc != true') -or
+        !$preview.Contains('!GameplayModeRuntime.IsGoingRogueActive') -or !$preview.Contains('settings?.IsPmc != true') -or
         !$preview.Contains('MainMenuControllerPatch.GroupPlayers.Count != 0') -or
         !$preview.Contains('GameplayModeAddons.CanSpawnQuestCompanion(quest.Id, settings.LocationId,')) {throw 'Missing shared Going Rogue/solo/map quest preview and spawn admission'}
     $plugin=Get-Content -Raw (Join-Path $RepositoryRoot 'going-rogue/client/GoingRoguePlugin.cs')
     $module=Get-Content -Raw (Join-Path $RepositoryRoot 'going-rogue/server/KnightQuestModule.cs')
     if(!$preview.Contains('quest.CompletedConditions?.Contains(new MongoID(objective))') -or
-       !$plugin.Contains('RegisterQuestCompanionProgressPolicy(GameplayMode.GoingRogue, Quests.KnightQuestPolicy.NeedsCompanion)') -or
+       !$plugin.Contains('RegisterQuestCompanionProgressPolicy(GameplayMode.Allegiance, Quests.KnightQuestPolicy.NeedsCompanion)') -or
        !$module.Contains('KnightQuestPolicy.NeedsCompanion(quest.QId.ToString(), location, objective => quest.CompletedConditions?.Contains(objective) == true)')){throw 'Preview and server must share current native per-objective completion admission'}
     $server=Get-Content -Raw (Join-Path $RepositoryRoot 'going-rogue/server/GoingRogueServerPlugin.cs')
     if($server.Contains('SeedForTesting: true') -or !$server.Contains('CanSpawnForQuest = KnightQuestModule.CanSpawnKnight')) {throw 'Quest test Goons must not be reseeded; native quest authorization required'}
