@@ -4051,7 +4051,7 @@ namespace pitTeam.BigBrain
             }
 
             if (cover == null &&
-                TryAssignRetreatAttackCover(goalEnemy, requireShootLane, GetCombatCoverMaxDistanceSqr(), false))
+                TrySelectRetreatAttackCover(goalEnemy, requireShootLane, GetCombatCoverMaxDistanceSqr(), false, true, recoveryManeuver))
             {
                 CustomNavigationPoint? retreatCover = botOwner.Memory.CurCustomCoverPoint;
                 if ((!recoveryManeuver || !IsBlockedRecoveryCover(retreatCover)) &&
@@ -6725,7 +6725,7 @@ namespace pitTeam.BigBrain
 
         public bool TryGetSuppressTarget(EnemyInfo goalEnemy, out Vector3 suppressTarget)
         {
-            return FollowerSuppressTargetPolicy.TryGetTarget(goalEnemy, out suppressTarget);
+            return FollowerSuppressTargetPolicy.TryGetTargetForOwner(botOwner, goalEnemy, out suppressTarget);
         }
 
         private bool CanAcquireCommittedCover()
@@ -12647,6 +12647,18 @@ namespace pitTeam.BigBrain
             bool allowSpotted = false,
             bool allowWeakCoverFallback = true)
         {
+            return TrySelectRetreatAttackCover(goalEnemy, requireShootLane, maxBossDistanceSqr,
+                allowSpotted, allowWeakCoverFallback, recoveryManeuver: false);
+        }
+
+        private bool TrySelectRetreatAttackCover(
+            EnemyInfo goalEnemy,
+            bool requireShootLane,
+            float maxBossDistanceSqr,
+            bool allowSpotted,
+            bool allowWeakCoverFallback,
+            bool recoveryManeuver)
+        {
             lastAssignedRetreatCoverWasWeak = false;
             Vector3 bossPosition = GetBossPosition();
             Vector3 enemyPosition = IsFinite(pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy)) ? pitTeam.Modules.FollowerEnemyTracking.Position(goalEnemy) : goalEnemy.EnemyLastPositionReal;
@@ -12671,6 +12683,8 @@ namespace pitTeam.BigBrain
                 requireShootLane ? CoverShootType.shoot : CoverShootType.hide,
                 CoverSearchIntent.RunToCover);
 
+            HashSet<int>? rejectedRoutes = recoveryManeuver ? new HashSet<int>() : null;
+
             bool IsEligible(CustomNavigationPoint point)
             {
                 if (!IsCoverUsable(point, allowSpotted))
@@ -12679,6 +12693,11 @@ namespace pitTeam.BigBrain
                 }
 
                 if ((point.Position - botOwner.Position).sqrMagnitude > maxBossDistanceSqr)
+                {
+                    return false;
+                }
+
+                if (recoveryManeuver && (IsBlockedRecoveryCover(point) || rejectedRoutes!.Contains(point.Id)))
                 {
                     return false;
                 }
@@ -12706,27 +12725,37 @@ namespace pitTeam.BigBrain
                        Vector3.Distance(point.Position, retreatAnchor) * CombatCoverCenterDistanceWeight;
             }
 
-            CustomNavigationPoint? retreatCover = requireShootLane
-                ? SelectBestEvaluatedCover(retreatAnchor, 18f, searchType, IsEligible, Score)
-                : SelectBestThreatCover(
-                    retreatAnchor,
-                    18f,
-                    searchType,
-                    enemyPosition,
-                    goalEnemy.ProfileId,
-                    IsEligible,
-                    Score,
-                    allowWeakCoverFallback,
-                    out lastAssignedRetreatCoverWasWeak);
-
-            if (retreatCover == null)
+            // Re-rank the cached pool after an unsafe route, without publishing it. Bound
+            // expensive path/physics probes rather than checking every cover's route.
+            for (int attempt = 0; attempt < (recoveryManeuver ? 4 : 1); attempt++)
             {
-                return false;
-            }
+                CustomNavigationPoint? retreatCover = requireShootLane
+                    ? SelectBestEvaluatedCover(retreatAnchor, 18f, searchType, IsEligible, Score)
+                    : SelectBestThreatCover(
+                        retreatAnchor,
+                        18f,
+                        searchType,
+                        enemyPosition,
+                        goalEnemy.ProfileId,
+                        IsEligible,
+                        Score,
+                        allowWeakCoverFallback,
+                        out lastAssignedRetreatCoverWasWeak);
 
-            botOwner.Memory.BotCurrentCoverInfo.Spotted();
-            botOwner.Memory.BotCurrentCoverInfo.SetCover(retreatCover, true);
-            return true;
+                if (retreatCover == null) return false;
+                if (recoveryManeuver && IsUnsafeRecoveryCoverPath(goalEnemy, retreatCover))
+                {
+                    rejectedRoutes!.Add(retreatCover.Id);
+                    BattleRecorder.RecordCommitmentEvent(botOwner, "recovery", "rejectCover", "unsafeThreatPath",
+                        target: retreatCover.Position, coverId: retreatCover.Id);
+                    continue;
+                }
+
+                botOwner.Memory.BotCurrentCoverInfo.Spotted();
+                botOwner.Memory.BotCurrentCoverInfo.SetCover(retreatCover, true);
+                return true;
+            }
+            return false;
         }
 
         /// <summary>

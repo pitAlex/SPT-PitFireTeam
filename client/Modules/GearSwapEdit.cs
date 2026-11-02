@@ -16,6 +16,25 @@ namespace pitTeam.Modules
         private int _count;
         private bool _fold;
 
+        internal IEnumerable<string> AffectedItemIds
+        {
+            get
+            {
+                yield return _item;
+                if (_other != null) yield return _other;
+                if (_created != null) yield return _created;
+            }
+        }
+
+        internal IEnumerable<string> DestinationParentIds
+        {
+            get
+            {
+                if (_to != null) yield return _to.ParentId;
+                if (_toOther != null) yield return _toOther.ParentId;
+            }
+        }
+
         internal void ValidateProvenance(HashSet<string> playerOwned)
         {
             // A single merged item ID cannot express two different post-raid ownership rules.
@@ -102,6 +121,7 @@ namespace pitTeam.Modules
         {
             private readonly string _parent, _container;
             private readonly ItemAddressDescriptor _descriptor;
+            internal string ParentId => _parent;
             internal Address(ItemAddress address)
             {
                 _parent = address.Container.ParentItem.Id;

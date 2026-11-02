@@ -284,6 +284,18 @@ namespace pitTeam.Modules
             GearSwapSnapshot.Normalize(JsonConvert.SerializeObject(
                 ItemBinarySerializer.SerializeItem(equipment, FullySearchedSearchController.Instance)));
 
+        private static string SnapshotReplay(GearSwapReplayScope scope, Dictionary<string, Item> items) =>
+            scope.Snapshot(id => Snapshot(items[id]), id =>
+            {
+                var address = items[id].CurrentAddress;
+                return address == null ? null : JsonConvert.SerializeObject(new
+                {
+                    ParentId = (string)address.Container.ParentItem.Id,
+                    ContainerId = address.Container.ID,
+                    Location = address.ToDescriptor()
+                });
+            });
+
         internal static bool CanEdit(Item item, InventoryEquipment player, InventoryEquipment bot,
             bool allowBackpack = false)
         {
@@ -391,12 +403,15 @@ namespace pitTeam.Modules
                 var items = Index(player.Inventory.Equipment, bot.Inventory.Equipment);
                 AddCommandSource(items);
                 if (Giving) AddLiveDonationContainers(items);
+                var replayScope = Giving ? new GearSwapReplayScope() : null;
                 List<IOperationResult> applied;
                 Mutating = true;
                 try
                 {
                     applied = GearSwapTransaction.Execute(_edits.Select(edit => (Func<IOperationResult>)(() =>
                     {
+                        replayScope?.Include(edit.AffectedItemIds, edit.DestinationParentIds,
+                            id => items.TryGetValue(id, out Item item) ? (string)item.CurrentAddress?.Container.ParentItem.Id : null);
                         var result = edit.Execute(items, actor,
                             i => Giving ? CanReplayDonation(i, null, items) : CanEdit(i, player.Inventory.Equipment, bot.Inventory.Equipment, AllowBackpackSwap),
                             a => Giving ? CanReplayDonation(null, a, items) : CanPlace(a, player.Inventory.Equipment, bot.Inventory.Equipment, AllowBackpackSwap));
@@ -404,13 +419,23 @@ namespace pitTeam.Modules
                     })),
                         result => result.RollBack(), () =>
                         {
-                            string playerActual = Snapshot(player.Inventory.Equipment), playerExpected = Snapshot(PlayerEquipment);
-                            string followerActual = Snapshot(bot.Inventory.Equipment), followerExpected = Snapshot(FollowerEquipment);
-                            if ((!CommandLoot && playerActual != playerExpected) || followerActual != followerExpected)
+                            if (replayScope != null)
                             {
-                                DonationDiagnosticComparison("replayMismatch", "player", playerExpected, () => playerActual);
-                                DonationDiagnosticComparison("replayMismatch", "follower", followerExpected, () => followerActual);
-                                throw new InvalidOperationException("Replay did not match the accepted draft.");
+                                string expected = SnapshotReplay(replayScope, _draftItems);
+                                string actual = SnapshotReplay(replayScope, items);
+                                if (expected != actual)
+                                {
+                                    DonationDiagnosticComparison("replayMismatch", "affectedItemsAndContainers", expected, () => actual);
+                                    throw new InvalidOperationException("Replay did not match the accepted edits.");
+                                }
+                            }
+                            else
+                            {
+                                // Manual Swap Gear can edit the full inventories.
+                                string playerActual = Snapshot(player.Inventory.Equipment), playerExpected = Snapshot(PlayerEquipment);
+                                string followerActual = Snapshot(bot.Inventory.Equipment), followerExpected = Snapshot(FollowerEquipment);
+                                if ((!CommandLoot && playerActual != playerExpected) || followerActual != followerExpected)
+                                    throw new InvalidOperationException("Replay did not match the accepted draft.");
                             }
                             ValidateCommandReplay();
                             if (Giving) PrepareDonationDrops(items);

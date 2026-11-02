@@ -39,6 +39,14 @@ foreach ($contract in @('if (CommandLoot) return;', 'if (!CommandLoot) await Emp
     '(!CommandLoot && _playerBefore != Snapshot(', '(!CommandLoot && playerActual != playerExpected)')) {
     if (!$core.Contains($contract)) { throw "Headless commands must preserve editor/player ownership: $contract" }
 }
+foreach ($contract in @('var replayScope = Giving ? new GearSwapReplayScope() : null;',
+    'replayScope?.Include(edit.AffectedItemIds, edit.DestinationParentIds,',
+    'SnapshotReplay(replayScope, _draftItems)', 'SnapshotReplay(replayScope, items)')) {
+    if (!$core.Contains($contract)) { throw "Give Gear must validate its accepted edits and affected containers: $contract" }
+}
+if ($core.IndexOf('replayScope?.Include(') -gt $core.IndexOf('var result = edit.Execute(items, actor,')) {
+    throw 'Replay scope must capture source containers before each edit moves the item'
+}
 if (!$giving.Contains('new GiveGearPlanner(BotDraft') -or !$giving.Contains('TrackDonationInsurance()') -or
     !$giving.Contains('GiveGearContainer.Create(Donation.Id, CommandLoot ? 64 : 10, CommandLoot ? 64 : 12,') -or
     !$action.Contains('generation != recruitGearGeneration') -or !$action.Contains('ActiveLootRequest?.CompletePriority()') -or

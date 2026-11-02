@@ -48,6 +48,8 @@ If the launcher cannot be used safely, the teammate may fall back to normal weap
 
 Ordinary weapon suppression follows the same physical boundary: a direct lane or foliage-only obstruction is allowed, but a wall, vehicle, or building blocks the trigger. This lane is revalidated after movement and immediately before every suppress shot.
 
+Teammates can also return suppression toward fresh incoming-fire evidence without first seeing the attacker. That report remains brief and approximate. When it matches their selected attacker, the shared planner can seek a safe firing position; friendly lanes, hard obstacles and weapon readiness still take precedence.
+
 ## Marksmen
 
 Marksmen are precision support, not the normal suppression role.

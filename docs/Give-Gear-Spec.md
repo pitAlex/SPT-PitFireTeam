@@ -10,6 +10,8 @@ Fixed-kit resupply uses the existing weapon support planner in supply-only mode 
 
 When the accepted companion plan only replaces installed plates, final Apply skips the magazine-space check: equipped firearms and vest/pocket storage remain unchanged. Classification follows accepted changes, so rejected extra offerings do not disqualify a plate-only plan. An accepted secondary weapon or grenade retains normal reload-space validation. Normal Swap Gear validation is unchanged, and rollback clears the plate-only classification along with the staged changes.
 
+Give Gear's post-replay validation follows the accepted edit journal for every handover. Each moved/changed/created item must match its complete draft subtree and final address. Each source and destination container must match direct item membership, slot/cartridge order and grid coordinates, including the offer and drop escrow. Unchanged sibling item internals are outside this replay scope: a plate-only exchange cannot fail because an untouched rifle magazine has a different clone representation. Moving a whole weapon, rig or backpack still validates all of its contents. Opening/live-state, command-source, ownership, empty-offer/drop-escrow and rollback checks remain active; manual Swap Gear retains full-inventory draft equality.
+
 Related contracts: [Swap Gear](Swap-Gear.md), [looting](looting/Looting.md), [primary acquisition](looting/Weapon-Pickup-Primary-Slot-Available.md), [secondary support](looting/Weapon-Pickup-Secondary-Slot.md), [holster support](looting/Weapon-Pickup-Holster-Slot.md), [loadout ownership](Loadout-Management.md) and [friendly Scav cargo](looting/Friendly-Scav-Cargo.md).
 
 ## 1. Purpose and scope

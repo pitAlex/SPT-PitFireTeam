@@ -183,6 +183,18 @@ namespace pitTeam.Utils
             return false;
         }
 
+        // A suppression action belongs to its selected enemy. Incoming fire from another
+        // source may orient the actor, but must not silently retarget that action.
+        internal static bool TryGetIncomingFireSuppressTarget(BotOwner bot, EnemyInfo? enemy, out Vector3 target)
+        {
+            target = Vector3.zero;
+            State state = GetState(bot);
+            return enemy?.Person?.HealthController?.IsAlive == true && state != null &&
+                   state.HasIncomingFireSource && state.IncomingFireSource != null &&
+                   string.Equals(state.IncomingFireSource.ProfileId, enemy.ProfileId, System.StringComparison.Ordinal) &&
+                   TryGetRecentFireThreatLookPoint(bot, out target, out _);
+        }
+
         /// <summary>
         /// Publishes a short, frozen bearing when a marksman-like attacker hits the player boss.
         /// This is orientation evidence only: it does not make the attacker visible, repair personal
@@ -504,7 +516,9 @@ namespace pitTeam.Utils
             Vector3 random = Random.onUnitSphere;
             random.y = 0f;
             random = random.normalized * dispersion;
-            Vector3 estimatedShooterPos = shooter.Transform.position + random;
+            // This frozen estimate is also used for return suppression. A root/foot point
+            // makes a valid bearing fail its firing ray against the ground.
+            Vector3 estimatedShooterPos = shooter.Transform.position + random + BotOwner.STAY_HEIGHT;
             RegisterThreatLookPoint(bot, estimatedShooterPos, 3f, threatSource: shooter, incomingFire: true);
 
             bool acquired = TryAutoAcquireCloseThreat(bot, shooter, Mathf.Sqrt(distanceSqr));

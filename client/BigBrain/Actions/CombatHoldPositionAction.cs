@@ -75,7 +75,8 @@ namespace pitTeam.BigBrain.Actions
             fireOverlay.Update(
                 BotOwner.Memory?.GoalEnemy,
                 reason,
-                allowThreatSuppression: recoveryNoCover || BotOwner.Memory?.IsUnderFire == true,
+                allowThreatSuppression: recoveryNoCover || BotOwner.Memory?.IsUnderFire == true ||
+                                        FollowerAwareness.WasRecentlyThreatened(BotOwner),
                 forceThreatLook: true,
                 out _);
         }

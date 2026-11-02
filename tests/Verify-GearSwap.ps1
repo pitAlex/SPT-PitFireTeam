@@ -201,6 +201,13 @@ if ($LASTEXITCODE -ne 0) { throw 'Gear Swap snapshot normalization fixture compi
 & $snapshotExe
 if ($LASTEXITCODE -ne 0) { throw 'Gear Swap snapshot normalization fixture failed' }
 
+$scopeExe = Join-Path $temporary 'GearSwapReplayScope.exe'
+$scopeArgs = @($snapshotArgs | Where-Object { $_ -notlike '/out:*' }) + "/out:$scopeExe"
+& dotnet @scopeArgs (Join-Path $PSScriptRoot 'GearSwapReplayScopeFixture.cs') (Join-Path $RepositoryRoot 'client/Modules/GearSwapReplayScope.cs') (Join-Path $RepositoryRoot 'client/Modules/GearSwapSnapshot.cs') (Join-Path $RepositoryRoot 'client/Modules/GearSwapTransaction.cs')
+if ($LASTEXITCODE -ne 0) { throw 'Gear Swap replay-scope fixture compilation failed' }
+& $scopeExe
+if ($LASTEXITCODE -ne 0) { throw 'Gear Swap replay-scope fixture failed' }
+
 $itemClone = Get-Content -Raw (Join-Path $PSScriptRoot 'GearSwapItemCloneFixture.cs')
 $itemClone = $itemClone.Replace('/* ITEM CLONE */', (Get-Region $session '        private static Item Clone(Item source)' '        internal static IEnumerable<Item> Tree('))
 $itemCloneSource = Join-Path $temporary 'GearSwapItemClone.cs'

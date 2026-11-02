@@ -163,6 +163,7 @@ static class GearSwapAmmoFixture
         var controller = new InventoryController();
         var owned = new HashSet<string>();
         var edit = GearSwapEdit.Capture(new LoadMagOperationResult(new TransferResult { Item = draft["loose"], TargetItem = draft["loaded"], Count = 20 }));
+        Check(new HashSet<string>(edit.AffectedItemIds).SetEquals(new[] { "loose", "loaded" }), "partial transfer scope includes both stacks");
         edit.ValidateProvenance(owned);
         edit.Execute(draft, controller, _ => true, _ => true);
         Check(draft["loose"].Count == 40 && draft["loaded"].Count == 30, "magazine top-off staged");
@@ -176,6 +177,8 @@ static class GearSwapAmmoFixture
         var split = GearSwapEdit.Capture(new LoadMagOperationResult(new SplitResult { Item = draft["loose"],
             ResultItem = new Item { Id = "splitId" }, Count = 25, To = draft["loaded"].Parent }));
         split.ValidateProvenance(owned);
+        Check(new HashSet<string>(split.AffectedItemIds).SetEquals(new[] { "loose", "splitId" }), "split scope includes new identity");
+        Check(new HashSet<string>(split.DestinationParentIds).SetEquals(new[] { "magazine" }), "split scope includes target magazine");
         split.Execute(draft, controller, _ => true, _ => true); split.UpdateProvenance(owned);
         split.Execute(live, controller, _ => true, _ => true);
         Check(draft["splitId"].Count == 25 && live["splitId"].Count == 25, "split rounds retain the same ID at Apply");

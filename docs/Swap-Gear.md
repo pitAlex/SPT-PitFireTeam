@@ -4,6 +4,8 @@ The shared staged exchange engine also supports headless [command-loot upgrades 
 
 Core owns the manual in-raid editor. This is separate from add-only commanded [looting](looting/Looting.md) and the out-of-raid [loadout editor](Loadout-Management.md).
 
+Give Gear uses the same edit/replay engine with final validation scoped to accepted changed items and affected container layouts; see [Give Gear](Give-Gear-Spec.md). Manual Swap Gear keeps full-inventory equality because both inventories are editable.
+
 ## Interaction and draft
 
 - Same 2.5 m / 18-degree targeting as View Backpack; eligible targets are the player's living active spawned squad followers. No backpack required. Field recruits cannot use Swap Gear: this prevents stripping a recruited friendly's kit before abandoning them. The existing saved/transit-aware `IsSpawnedSquadMate` identity gates both the prompt and session safety checks, including direct/bound commands and Apply revalidation. Recruitment or a later squad invitation alone does not grant access during the recruitment raid; accepted roster members become eligible when spawned as teammates in a later raid.

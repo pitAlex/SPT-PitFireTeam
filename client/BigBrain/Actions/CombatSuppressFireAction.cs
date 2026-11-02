@@ -202,7 +202,7 @@ namespace pitTeam.BigBrain.Actions
         {
             if (!FollowerCombatCommon.IsGrenadeLauncherSuppressReason(reason))
             {
-                return FollowerSuppressTargetPolicy.TryGetTarget(BotOwner.Memory?.GoalEnemy, out target);
+                return FollowerSuppressTargetPolicy.TryGetTargetForOwner(BotOwner, BotOwner.Memory?.GoalEnemy, out target);
             }
 
             Vector3? plannedPoint = BotOwner.SuppressShoot?.GetPoint();

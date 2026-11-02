@@ -1,5 +1,15 @@
 # Give Gear validation
 
+## 2026-11-02 Accepted-edit replay validation — deployed
+
+The client log records four Birdeye plate handovers (`1fdcd600`, `ecbe126a`, `5c26e601`, `13b216a2`) accepting `fixedKit.plateUpgrade` and then rolling back with a replay mismatch. The differing field is the untouched CheyTac M200 7-round magazine `6ae7c2dfeda1cd57c0609fcc`: live `StackSlots` is an array while its draft representation is null. This establishes an unrelated clone-state difference cancelling an accepted plate upgrade; it does not establish that cartridge payloads can safely be ignored when transferring that weapon.
+
+Give Gear now builds final replay scope from the actual journal, capturing each source container before its edit and every destination parent. Changed/moved/created items require complete matching descriptors and addresses; affected containers require matching direct identities, slot/stack order and grid geometry. This applies to all manual and commanded Give Gear exchanges. Whole transferred items retain full descendant checks, including weapons/ammunition; opening/live/source/ownership checks, private escrow validation and atomic rollback remain. Manual Swap Gear retains full-inventory equality. Removed the blanket initial follower clone comparison diagnostic; rejection diagnostics now describe the affected replay scope.
+
+Debug Core build passes with zero warnings/errors. Regression checks pass: 22 replay-scope checks (including the observed mismatch class and failure-triggered transaction rollback), 47 ammunition/journal checks, existing Swap Gear checks (122 transaction, 108 controller, 10 pockets, 17 plate scope, 24 hands, 24 body, 24 weapon registration, 39 snapshot and 16 clone), 7 plate-only final-validation, 18 Give Gear access, 86 command routing/source guards and 1,951 production planner/invitation checks. Whitespace checks pass. These are controlled/native-metadata checks, not live handover qualification.
+
+Deployment initially waited while Tarkov (19188) and SPT.Server (22464) were running. After the user authorized deployment and both processes stopped, backed up and deployed the verified Debug Core DLL and symbols. Source/installed SHA256 hashes match: DLL `5166810D44E8CBD07678DD676AD009B4522055DDE2E9FBFA7CCAF09344B2D293`, PDB `ADBE3F56F97A0A93852BC6F1076E6EF974E835CE4F672BD2CF727E37A561BA9C`. Backup and manifest: `tests/artifacts/give-gear-replay-scope-deploy-20261102T011602306/`. No server/addon binaries or live items were changed. No release bundle or Git commit was produced. Live plate handover confirmation remains pending.
+
 ## 2026-10-30 Fixed Goon medical and weapon resupply — deployed
 
 The Woods record `20261030-052528-Woods.jsonl` and matching client log show Knight accepting/reserving the adrenaline pickup at 848.44 seconds, then ending it at 850.13 with `TakeLoot:companionEquipmentFixed`. The item never reached a capacity trial. Medical items now enter the same restricted staged transaction as the other allowed loose supplies. This applies to all three addon-managed Goons; ordinary recruits retain their previous routing.
