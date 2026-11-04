@@ -154,11 +154,17 @@ internal static class Program
             GameplayModeAddons.GetCompanionCommandPolicy("pmcUSEC") == null,
             "boss command policy does not leak to other roles");
         bool released = false;
+        GameplayModeAddons.RegisterRecruitmentPolicy(GameplayMode.Allegiance,
+            role => role=="exUsec" ? true : (bool?)null, role => role=="exUsec" ? 0.7f : (float?)null, role => role!="exUsec");
+        Check(GameplayModeAddons.IsExUsecFriendlyRaid && GameplayModeAddons.RecruitmentChance("exUsec")==0.7f &&
+            !GameplayModeAddons.RecruitmentAllowed("exUsec"),"optional Rogue friendship, willingness and eligibility stay separate");
         GameplayModeAddons.Register(GameplayMode.Allegiance, () => roguePresent, () => roguePresent,
             resolveSelection: _ => { }, companionReady: (id, role) => claimed,
             abortCompanion: _ => released = true, ownsCombat: RogueRosterSelection.IsGoonRole);
         Check(GameplayModeAddons.GetCompanionCommandPolicy("bossKnight") == null,
             "replacing a registration cannot keep an abandoned command policy");
+        Check(GameplayModeAddons.RecruitmentFriendship("exUsec")==null && GameplayModeAddons.RecruitmentChance("exUsec")==null &&
+            GameplayModeAddons.RecruitmentAllowed("exUsec"),"replacing addon registration restores neutral Core recruitment defaults");
         Check(!GameplayModeAddons.IsSpawnCombatReady("knight", "bossKnight"), "unclaimed Knight remains pending");
         claimed = true;
         Check(GameplayModeAddons.IsSpawnCombatReady("knight", "bossKnight"), "claimed Knight satisfies readiness");

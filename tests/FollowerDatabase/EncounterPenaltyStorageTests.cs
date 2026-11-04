@@ -40,5 +40,18 @@ internal static class EncounterPenaltyStorageTests
         check(service.Get(session,start+FriendlyEncounterPenaltyPolicy.DurationMs+3600000).Entries.Count==0,"last penalty expires completely");
         kill.MessageKind="traitor";kill.VictimProfileId="recruit-one";kill.KilledAtUnixMs=start;
         check(service.Record(session,kill,start+FriendlyEncounterPenaltyPolicy.DurationMs+7200000).Entries.Count==0,"late retry cannot revive an expired kill penalty");
+        kill.VictimProfileId="friendly-rogue";kill.VictimRole="exUsec";kill.KilledAtUnixMs=start+FriendlyEncounterPenaltyPolicy.DurationMs+7200000;
+        state=service.Record(session,kill,kill.KilledAtUnixMs);
+        check(state.Entries.Single().AffectsRecruitment && FriendlyEncounterPenaltyPolicy.GetRecruitmentReductionPercent(state.Entries,kill.KilledAtUnixMs)==15,"registered friendly Rogue kill is tagged for acceptance and encounters");
+        check(restarted.Get(session,kill.KilledAtUnixMs).Entries.Single().AffectsRecruitment,"recruitment tag survives encrypted storage reload");
+        check(FriendlyEncounterPenaltyPolicy.GetRecruitmentReductionPercent(service.Get(session,kill.KilledAtUnixMs+FriendlyEncounterPenaltyPolicy.DurationMs).Entries,kill.KilledAtUnixMs+FriendlyEncounterPenaltyPolicy.DurationMs)==0,"Rogue acceptance reduction expires after the same 24 hours");
+        kill.KilledAtUnixMs+=FriendlyEncounterPenaltyPolicy.DurationMs;
+        foreach(string role in new[]{"pmcUSEC","exUsec","bossKnight","followerBigPipe","followerBirdEye"}){
+            var member=new SPTarkov.Server.Core.Models.Eft.Common.Tables.BotBase{Id=new MongoId(),Aid=800,Info=new(){Settings=new(){Role=role}}};
+            storage.Write(session,"800.json",member);
+            kill.VictimProfileId=member.Id.ToString();kill.VictimRole=role;
+            check(service.Record(session,kill,kill.KilledAtUnixMs).Entries.Count==0,"saved member exempt from stale encounter report: "+role);
+            storage.DeleteTeammate(session,800);
+        }
     }
 }

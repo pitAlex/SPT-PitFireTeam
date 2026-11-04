@@ -45,6 +45,7 @@ public sealed class KnightQuestModule(CustomQuestService quests, TemplateTable t
     internal static bool CanSpawnBirdeye(BotBase player, string location) =>
         CanSpawnCompanion(player, location, quest => quest == KnightQuestPolicy.BadgeBandit || quest == KnightQuestPolicy.EnemySpotted || quest == KnightQuestPolicy.OffLimits || quest == KnightQuestPolicy.AFavor);
     private static bool CanSpawnCompanion(BotBase player, string location, Func<string, bool> usesRole) =>
+        !RogueAlliance.Conflict(player) &&
         player.Info?.Level >= KnightTraderCatalog.UnlockLevel &&
         player.Quests?.Any(quest => quest.Status == QuestStatusEnum.Started && usesRole(quest.QId.ToString()) &&
             KnightQuestPolicy.NeedsCompanion(quest.QId.ToString(), location, objective => quest.CompletedConditions?.Contains(objective) == true)) == true &&

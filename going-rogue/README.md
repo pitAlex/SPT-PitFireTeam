@@ -4,7 +4,7 @@ Core base: [gameplay modes](../docs/Gameplay-Modes.md), [storage](../docs/Teamma
 
 ## Mode and profiles
 
-Going Rogue is an optional client plugin and server module extending **Allegiance**. Both depend on Core; Core has no assembly dependency on the addon. Guns for Hire and Allegiance are the only gameplay modes. The addon activates its quests, trader and Goon policies inside Allegiance and uses `Resources/teammates-allegiance`.
+Going Rogue is an optional client plugin and server module extending **Allegiance**. Both require Core 1.1.1 or later; Core has no assembly dependency on the addon. Guns for Hire and Allegiance are the only gameplay modes. The addon activates its quests, trader and Goon policies inside Allegiance and uses `Resources/teammates-allegiance`.
 
 First-time My Squad onboarding always offers two cards. The addon may override Allegiance's onboarding artwork while keeping the Allegiance name and description. The combined artwork is a separate future asset task; the existing Going Rogue cover remains in the source/resources but is not registered as a third card or temporarily substituted for the future combined art. Installing the addon later never prompts an existing player to choose a mode again.
 
@@ -42,19 +42,19 @@ All three Goons' top raid-statistics block (raids, kills, leave/survival rates, 
 
 The [raid-results kill list](../docs/Raid-Results.md) includes registered boss allies under their own names, including Knight with `IsSquadMate == false`. His recruited-member runtime classification and hidden profile statistics panel do not suppress those result rows.
 
-Killing an allied Goon does not apply the ordinary recruited-follower Friendly Encounters penalty. Core excludes the three registered Goon roles before kill reporting; server companion definitions register the corresponding exemption for stale reports by saved profile identity/role. Ordinary recruit penalties and native Goon spawn-loot restrictions remain intact. Future Knight trader-standing consequences are recorded only in the [roadmap](Roadmap.md#boss-ally-deaths-and-knight-standing-future).
+Killing an allied Goon does not apply the ordinary recruited-follower Friendly Encounters penalty. Core excludes the three registered Goon roles before kill reporting; the server rejects stale reports targeting any saved teammate. Ordinary recruit penalties and native Goon spawn-loot restrictions remain intact. Current standing penalties, spawned-teammate exemptions and friendly-Rogue recruitment penalties are described in the [Rogue alliance contract](docs/Rogue-Alliance.md).
 
 The role-specific skill display focuses on assault for Knight, heavy weapons for Big Pipe and precision weapons for Birdeye, alongside the native template's skill rows. These are display selections only; no numeric role bonuses are added.
 
 ## Raid policy preparation
 
-The intended Allegiance-to-Rogue quest progression is recorded in the [future roadmap](Roadmap.md). It is separate from the current combat testing policy below.
+Current ally progression is documented in [Rogue alliance](docs/Rogue-Alliance.md); future combat coordination is in the [roadmap](Roadmap.md).
 
 The addon also supplies Goon combat command willingness through Core's `CompanionCommandPolicy` bridge. All three Goons accept valid combat There point moves; Knight/Big Pipe use equipment confidence and known enemy threat for Go Forward, while Birdeye refuses assault pushes. Level and pickup personality are excluded from boss push confidence. Knight and Big Pipe consume accepted pushes through Core's ordered-push objective. The addon registers ownership by native companion role, so stale SAIN tactic preferences cannot prepare an SAIN combat owner, redirect commands or bypass Core hearing. All three have separate [combat layers](docs/README.md) with shared Goons lifecycle, recovery and assistance. Birdeye follows Knight's firing positions using native sniper distance preferences and Core Marksman secondary handling. See [combat command willingness](docs/Knight-Combat.md#combat-command-willingness).
 
-The client addon resolves selected saved roles before raid setup and covers the initial follower conversion as well as living registered companions. Rogue presence keeps Allegiance's Bad Guy setting off, including raid transit, without changing saved Guns for Hire settings. Selected Goons block hostile Goons waves and native role spawning. Automatic exUsec friendship is deferred during combat testing. PMC friendship encounters remain disabled during Rogue context. Friendly Scav encounters use the existing checkbox, chance/Fence calculation, solo eligibility, greetings, recruitment, separate-group diplomacy and trust rules; selected Scavs are neutral to both the human and allied Goons. Combat, late-spawn and retaliation behavior still require live raid qualification.
+The client addon resolves selected saved roles before raid setup and covers the initial follower conversion as well as living registered companions. Rogue presence keeps Allegiance's Bad Guy setting off, including raid transit, without changing saved Guns for Hire settings. Selected Goons block hostile Goons waves and native role spawning. ExUsec friendship, recruitment progression and standing/hostile-task restrictions are described in the [Rogue alliance contract](docs/Rogue-Alliance.md). PMC friendship encounters remain disabled alongside the Goons; Rogue-only teams apply one 15% relative PMC encounter reduction per squad, adding to actual kill penalties without a saved entry. Friendly Scav encounters use the existing checkbox, chance/Fence calculation, solo eligibility, greetings, recruitment, separate-group diplomacy and trust rules; selected Scavs are neutral to both the human and allied Goons. Combat, late-spawn and retaliation behavior still require live raid qualification.
 
-Further exUsec recruitment work, removal of PMC requests and quest progression remain on the roadmap. Friendly Scav encounters remain supported alongside allied Goons.
+The player remains an ally; existing member roles are retained. Rogue-only accompaniment reduces PMC encounter chances once; Goon accompaniment prevents them. Knight quests increase Rogue acceptance to 70%, without a final roster conversion. Future Rogue combat coordination remains on the roadmap. Friendly Scav encounters remain supported alongside allied Goons.
 
 ## Knight trader
 

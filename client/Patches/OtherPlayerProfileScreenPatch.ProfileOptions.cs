@@ -455,6 +455,7 @@ namespace pitTeam.Patches
 
                 if (tacticIds.Contains(selected.Id))
                 {
+                    if (options.LockCombatSettings) return;
                     try
                     {
                         if (!tacticValueByDropdownId.TryGetValue(selected.Id, out string tacticValue) || string.IsNullOrWhiteSpace(tacticValue))
@@ -486,6 +487,7 @@ namespace pitTeam.Patches
             {
                 ReplaceLoadoutDropdownWithEditButton(screen, profile, panel);
             }
+            if (options.LockCombatSettings) SetProfileSelectorSectionActive(panel.transform as RectTransform, "Lower", false);
         }
 
         private static void ReplaceLoadoutDropdownWithEditButton(

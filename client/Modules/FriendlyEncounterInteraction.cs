@@ -32,7 +32,7 @@ namespace pitTeam.Modules
             if (cancelled || bot == null || bot.IsDead || bot.BotState != EBotState.Active ||
                 BossPlayers.IsFollower(bot) || bot.GetPlayer?.HealthController?.IsAlive != true ||
                 human?.HealthController?.IsAlive != true ||
-                !AllegiancePmcFriendship.IsEnabled ||
+                !AllegiancePmcFriendship.IsEnabled || AllegiancePmcFriendship.HasRecruitmentGuardDuty(bot) ||
                 (!refusing && bot.Side != EPlayerSide.Savage && BossPlayers.HasDeniedRecruitment(bot.ProfileId)))
             {
                 End(bot);

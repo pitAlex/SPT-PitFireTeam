@@ -12,6 +12,7 @@
     <EmbeddedResource Include="Resources/quests/*.json" />
     <Content Include="Resources/quests/*.jpg" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../shared/KnightQuestPolicy.cs" Link="Quests/KnightQuestPolicy.cs" />
+    <Compile Include="../shared/RogueAlliancePolicy.cs" Link="RogueAlliancePolicy.cs" />
     <Content Include="Resources/avatars/knight.jpg" CopyToOutputDirectory="PreserveNewest" />
     <InternalsVisibleTo Include="KnightTrader" />
   </ItemGroup>

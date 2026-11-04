@@ -409,7 +409,10 @@ namespace pitTeam.Modules
                     Profile pr = item.GetBot().Profile;
                     WildSpawnType role = pr.Info.Settings.Role;
 
-                    if (item.GetBot().Side == EPlayerSide.Savage ||
+                    // Recruited Rogues retain the native Savage side until roster
+                    // acceptance. Ordinary Scavs still use their separate return flow.
+                    if ((item.GetBot().Side == EPlayerSide.Savage &&
+                         !(role == WildSpawnType.exUsec && GameplayModeAddons.OwnsCompanionCombat(role.ToString()))) ||
                         (Utils.Props.BossFollowersType.Contains(role) && !item.HasPersistentProgress))
                     {
                         continue;

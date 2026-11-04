@@ -49,6 +49,12 @@ namespace pitTeam.Modules
             return BossPlayers.Instance?.GetFollower(botOwner)?.CombatIndependent == true;
         }
 
+        // Combat independence removes the human leash, not cohesion with another
+        // living unit leader. A commander anchored to himself remains independent.
+        public static bool CanAutomaticallyRegroup(BotOwner botOwner)
+            => !IsCombatIndependent(botOwner) ||
+               TryGetCompanionLeader(botOwner, out var leader) && leader != botOwner;
+
         public static bool TryGetCompanionLeader(BotOwner botOwner, out BotOwner leader)
         {
             leader = null;
@@ -72,7 +78,7 @@ namespace pitTeam.Modules
         {
             BotFollowerPlayer? follower = BossPlayers.Instance?.GetFollower(botOwner);
             return follower == null ||
-                   !follower.CombatIndependent ||
+                   !follower.CombatIndependent && !follower.CompanionLeaderControlsPosition ||
                    follower.CombatRegroupUsesBossAnchor ||
                    follower.CompanionCombatLeader != null && follower.TryPeekActiveCommand(out _, out _, out _);
         }

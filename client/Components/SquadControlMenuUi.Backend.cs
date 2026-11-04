@@ -634,9 +634,8 @@ namespace pitTeam.Components
             }
 
             const string prefix = "pitFireTeam_RosterTile_";
-            for (int i = 0; i < rosterGridRoot.childCount; i++)
+            foreach (Transform tile in RosterTiles())
             {
-                Transform tile = rosterGridRoot.GetChild(i);
                 if (tile == null || !tile.name.StartsWith(prefix, StringComparison.Ordinal))
                 {
                     continue;

@@ -1,5 +1,17 @@
 # SAIN addon validation and raid evidence
 
+## 2026-11-03 - Explicit push after automatic approach failure
+
+Core base: [ordered push](../../docs/Combat-Tactics.md#go-forward--push-enemy); addon adaptation: [push objectives](Combat.md#push-objectives) and [Go Forward](Commands.md#go-forward).
+
+In `20261103-024023-Shoreline`, Rusak's automatic approach failed at 845.27 seconds with `coverInvalidated`. The accepted Go Forward at 874.99 changed aggression to 100 and mode to Ordered but retained Exhausted, causing the push decision to return SeekCover before reassessment. Across 68 snapshots from 875.14 to 888.55, displacement was zero; he was healthy, ready and carrying 21 loaded shotgun rounds, with the enemy about 23 m away. The later There command replaced the push and moved him. This identifies addon command-state handling rather than weapon range, healing or command refusal.
+
+`BeginOrdered` now starts its existing fresh ordered activation when the same-target automatic attempt is exhausted. Productive automatic approaches retain their destination and elapsed execution budget; existing ordered missions retain contact-grace and failure limits on repeated commands. Native failed-engagement latches, medical/urgent priorities, admission and firing safety are unchanged. No Core gameplay source, external SAIN patch or per-frame planner is added. The change is one command-time condition and uses existing bounded planning on the fresh attempt.
+
+The new production regression failed before the correction at `first explicit push must reopen failed automatic approach: coverInvalidated`. All **1,705** addon combat checks pass afterward (**27 new**): automatic cover/stall/path failures can be promoted, medicine still preempts, movement resumes, repeated ordered failures remain latched, and productive promotion preserves its destination/stall budget. The fixture also received a missing stand-in for Core's existing incoming-fire suppression helper so it compiles against the current shared policy; this does not change production suppression. Matching Core/addon Debug build passes with zero warnings/errors, and scoped whitespace checks pass. Actual navigation and useful in-raid assault remain unqualified.
+
+After the user resumed deployment with Tarkov closed, deployed matching Core/addon Debug DLLs and PDBs and verified all four SHA-256 hashes against the validated artifacts. Core DLL: `71D83420F23F9EC8A056205B2E70A638079FD84B9EF49D08F4283E06DC7BF6EB`; addon DLL: `E166C662D4FE5756AFBE0741C95601CD258F9644AC88949895442A62AD8EEF40`. The matching Core artifact includes the checkout's pre-existing work; this correction changes only addon push policy. This was a client-only copy: server files were untouched, and SPT.Server need not be stopped for this boundary. No backup or commit was made. A fresh raid must still confirm useful movement after an exhausted automatic approach is promoted by Go Forward.
+
 ## 2026-10-24 - local Release-config test deployment
 
 The matching [Core Release test deployment](../../docs/validation/Release-1.0.0.md#2026-10-24--local-release-config-test-deployment) rebuilt and installed the optional SAIN addon alongside Core and server from the current checkout. The addon Release build had zero warnings/errors, its 1,678 production combat checks and 178 grenade integration checks passed, and the installed DLL SHA-256 matched the built output: `E47E8E430AD915FAD15FE1C09B753763137576965B9F4373DAF5808EF599414F`. Its matching PDB was deployed. A fresh raid with the Release binary remains unqualified.

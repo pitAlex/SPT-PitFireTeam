@@ -672,7 +672,7 @@ public partial class FriendlyTeammateService(
         var accountIds = new List<string>();
         foreach (var teammate in LoadTeammates(sessionId))
         {
-            if (!IsCompanionRaidReady(teammate)) continue;
+            if (!IsCompanionRaidReady(teammate) || CompanionRaidRestriction(sessionId, teammate) != null) continue;
             if (!GetTeammateSettings(sessionId, teammate).AutoJoinEnabled)
             {
                 continue;
@@ -854,6 +854,7 @@ public partial class FriendlyTeammateService(
         var response = new FriendlyTeammateProfileOptionsResponse
         {
             ProficiencyOnly = CompanionPolicy(teammate)?.ProficiencyOnly == true,
+            LockCombatSettings = AreCompanionCombatSettingsLocked(teammate),
             HideRaidStats = CompanionPolicy(teammate)?.HideRaidStats == true,
             VisibleSkills = CompanionPolicy(teammate)?.GetVisibleSkills?.Invoke().ToList() ?? [],
             InsuredItems = settings.InsuredItems.ToList(),
@@ -1345,6 +1346,7 @@ public partial class FriendlyTeammateService(
     public void SetTeammateAggression(MongoId sessionId, FriendlyTeammateAggressionRequest request)
     {
         var teammate = FindByAccountId(sessionId, request.Aid);
+        RequireCombatSettingsAllowed(teammate);
         var settings = GetTeammateSettings(sessionId, teammate);
         settings.Aggression = NormalizeAggression(request.Aggression);
         SaveTeammateSettings(sessionId, teammate, settings);
@@ -1355,7 +1357,7 @@ public partial class FriendlyTeammateService(
         var teammate = FindByAccountId(sessionId, request.Aid);
         var settings = GetTeammateSettings(sessionId, teammate);
         settings.Proficiency = NormalizeProficiency(request.Proficiency);
-        if (request.SelfDetermination.HasValue)
+        if (request.SelfDetermination.HasValue && !AreCompanionCombatSettingsLocked(teammate))
             settings.SelfDetermination = pitTeam.Shared.SelfDeterminationPolicy.Normalize(request.SelfDetermination.Value);
         SaveTeammateSettings(sessionId, teammate, settings);
     }
@@ -1363,6 +1365,7 @@ public partial class FriendlyTeammateService(
     public void SetTeammateTactic(MongoId sessionId, FriendlyTeammateTacticRequest request)
     {
         var teammate = FindByAccountId(sessionId, request.Aid);
+        RequireCombatSettingsAllowed(teammate);
         RequireCompanionCustomizationAllowed(teammate);
         var settings = GetTeammateSettings(sessionId, teammate);
         settings.CombatTactic = NormalizeCombatTactic(request.Tactic);
@@ -1409,9 +1412,14 @@ public partial class FriendlyTeammateService(
     }
 
     public bool TryGetRaidGroupCharacter(MongoId sessionId, string? accountId, out GroupCharacter? groupCharacter, out string? rejectionReason)
+        => TryGetRaidGroupCharacter(sessionId, accountId, out groupCharacter, out rejectionReason, out _);
+
+    public bool TryGetRaidGroupCharacter(MongoId sessionId, string? accountId, out GroupCharacter? groupCharacter,
+        out string? rejectionReason, out UserDialogInfo? rejectionSender)
     {
         groupCharacter = null;
         rejectionReason = null;
+        rejectionSender = null;
         if (!TryFindByAccountId(sessionId, accountId, out var teammate))
         {
             return false;
@@ -1423,6 +1431,17 @@ public partial class FriendlyTeammateService(
         if (!IsCompanionRaidReady(teammate!))
         {
             rejectionReason = GetLanguageValue(languageService.GetStringMap(sessionId, "socialUi"), "CompanionCombatUnavailable", "CompanionCombatUnavailable");
+            return false;
+        }
+        if (CompanionRaidRestriction(sessionId, teammate!) is { } restriction)
+        {
+            var text = languageService.GetStringMap(sessionId, "socialUi");
+            rejectionReason = GetLanguageValue(text, restriction, restriction);
+            if (CompanionPolicy(teammate!)?.RaidDeclineMessageKey?.Invoke(restriction) is { Length: > 0 } replyKey)
+            {
+                rejectionReason = GetLanguageValue(text, replyKey, rejectionReason);
+                rejectionSender = ToFriendDialog(preparedTeammate);
+            }
             return false;
         }
         if (FriendlyTeammateRegeneration.IsWounded(teammate!.Health))
@@ -1449,6 +1468,7 @@ public partial class FriendlyTeammateService(
         }
 
         if (!IsCompanionRaidReady(teammate!)) return false;
+        if (CompanionRaidRestriction(sessionId, teammate!) != null) return false;
         RecoverTeammateTreatment(sessionId);
         // The native raid-start gate is already active while profiles are fetched. This is
         // the last off-raid recovery checkpoint before that saved health enters the raid.
@@ -4527,6 +4547,7 @@ public partial class FriendlyTeammateService(
                 SelectedMemberCategory = CompanionPolicy(teammate) != null ? info.SelectedMemberCategory ?? info.MemberCategory ?? MemberCategory.Unheard : MemberCategory.Unheard,
             },
             AutoJoinEnabled = settings.AutoJoinEnabled,
+            PinnedRoster = CompanionPolicy(teammate)?.PinnedRoster == true,
             PortraitColor = CompanionPolicy(teammate)?.PortraitColor,
             IsWounded = FriendlyTeammateRegeneration.IsWounded(teammate.Health),
             RecruitmentGearPrice = settings.RecruitmentGearPrice,
@@ -4562,6 +4583,8 @@ public partial class FriendlyTeammateService(
                 Side = info.Side,
                 Experience = info.Experience,
                 MemberCategory = (int)(CompanionPolicy(teammate) != null ? info.MemberCategory ?? MemberCategory.Unheard : MemberCategory.Unheard),
+                ExtensionData = new() { ["SelectedMemberCategory"] = (int)(CompanionPolicy(teammate) != null
+                    ? info.SelectedMemberCategory ?? info.MemberCategory ?? MemberCategory.Unheard : MemberCategory.Unheard) },
                 BannedState = info.BannedState,
                 BannedUntil = info.BannedUntil,
                 RegistrationDate = info.RegistrationDate,
@@ -4625,6 +4648,8 @@ public partial class FriendlyTeammateService(
                 MemberCategory = CompanionPolicy(teammate) != null ? info.MemberCategory ?? MemberCategory.Unheard : MemberCategory.Unheard,
                 GameVersion = info.GameVersion,
                 HasCoopExtension = info.HasCoopExtension,
+                ExtensionData = new() { ["SelectedMemberCategory"] = (int)(CompanionPolicy(teammate) != null
+                    ? info.SelectedMemberCategory ?? info.MemberCategory ?? MemberCategory.Unheard : MemberCategory.Unheard) },
             },
             VisualRepresentation = new PlayerVisualRepresentation
             {
@@ -4635,6 +4660,8 @@ public partial class FriendlyTeammateService(
                     Level = info.Level,
                     MemberCategory = CompanionPolicy(teammate) != null ? info.MemberCategory ?? MemberCategory.Unheard : MemberCategory.Unheard,
                     GameVersion = info.GameVersion,
+                    ExtensionData = new() { ["SelectedMemberCategory"] = (int)(CompanionPolicy(teammate) != null
+                        ? info.SelectedMemberCategory ?? info.MemberCategory ?? MemberCategory.Unheard : MemberCategory.Unheard) },
                 },
                 Customization = new SPTarkov.Server.Core.Models.Eft.Match.Customization
                 {
@@ -4701,7 +4728,7 @@ public partial class FriendlyTeammateService(
         loadedSettings.Aggression = NormalizeAggression(loadedSettings.Aggression);
         loadedSettings.SelfDetermination = pitTeam.Shared.SelfDeterminationPolicy.Normalize(loadedSettings.SelfDetermination);
         loadedSettings.Proficiency = NormalizeProficiency(loadedSettings.Proficiency);
-        loadedSettings.CombatTactic = NormalizeCombatTactic(loadedSettings.CombatTactic);
+        loadedSettings.CombatTactic = CompanionPolicy(teammate)?.LockCombatSettings == true ? "Rifleman" : NormalizeCombatTactic(loadedSettings.CombatTactic);
         if (teammateInsuranceService.PrunePolicies(teammate, loadedSettings))
             SaveTeammateSettings(sessionId, teammate, loadedSettings);
         return loadedSettings;

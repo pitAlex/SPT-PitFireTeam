@@ -59,6 +59,12 @@ internal static class QuestRuntimeChecks
         Tick(woods); Tick(myLand);
         Check(woods.Value == 3 && myLand.Value == 0, "Core forwarded ordinary follower kills cannot count for either task");
         player.QuestController.Profile = knight.Profile;
+        pitTeam.Patches.PlayerKilledPatch.IsForwardingRosterKill = true;
+        Tick(woods); Tick(myLand); Tick(unrelated);
+        Check(woods.Value == 3 && myLand.Value == 0 && unrelated.Value == 1,
+            "generic roster kill reaches ordinary counters while Knight companion counters wait for their own death handler");
+        pitTeam.Patches.PlayerKilledPatch.IsForwardingRosterKill = false;
+        unrelated.Value = 0;
         Tick(woods); Tick(myLand);
         Check(woods.Value == 3 && myLand.Value == 1, "Knight attribution excluded from personal task but admitted for team task");
         player.QuestController.Profile = player.Profile;
@@ -398,3 +404,4 @@ namespace pitTeam.Modules
     public static class BossPlayers { public static List<Follower> Followers = new List<Follower>(); public static List<Follower> GetFollowers() => Followers; }
     public static class Logger { public static void LogError(string text) { throw new Exception(text); } public static void LogInfo(string text) {} }
 }
+namespace pitTeam.Patches {public static class PlayerKilledPatch {public static bool IsForwardingRosterKill;}}

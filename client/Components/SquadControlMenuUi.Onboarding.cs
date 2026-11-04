@@ -71,6 +71,10 @@ namespace pitTeam.Components
             settingsPanel?.SetActive(false);
             ClosePortraitContextMenu();
             CloseRemoveConfirmOverlay();
+            // Existing tiles are reused after this temporary loading gate. If their
+            // portrait jobs are canceled, the next injection must rebuild/requeue them.
+            if (_portraitQueueCoroutine != null || _portraitQueue.Count > 0)
+                RequestRosterRefreshOnNextInject();
             CancelPortraitQueue();
         }
 

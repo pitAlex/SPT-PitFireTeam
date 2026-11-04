@@ -6,9 +6,12 @@ public sealed record FriendlyModeCompanion(string Role, string Nickname, string 
     bool ProficiencyOnly = false, bool SeedForTesting = false, bool RaidReady = true)
 {
     public bool HideRaidStats { get; init; }
+    public bool PinnedRoster { get; init; }
+    public bool LockCombatSettings { get; init; }
     public bool GenerateEquipmentEachRaid { get; init; }
     public bool ProtectSpawnInventory { get; init; }
     public bool IgnoreEncounterKillPenalty { get; init; }
+    public bool PenalizeRecruitmentOnFriendlyKill { get; init; }
     public Func<BotBase, bool>? PrepareProfile { get; init; }
     public Func<IReadOnlyList<string>>? GetVisibleSkills { get; init; }
     public string? GeneratedSkillsVersion { get; init; }
@@ -16,6 +19,9 @@ public sealed record FriendlyModeCompanion(string Role, string Nickname, string 
     public Action<BotBase>? PrepareRaidEquipment { get; init; }
     public Func<BotBase, string, bool>? CanSpawnForQuest { get; init; }
     public Func<BotBase, bool>? CanJoinRoster { get; init; }
+    public Func<BotBase, string?>? RaidRestriction { get; init; }
+    public Func<string, string?>? RaidDeclineMessageKey { get; init; }
+    public Func<BotBase, int?>? RosterInvitationChance { get; init; }
 }
 
 public static class FriendlyGameplayModeAddons

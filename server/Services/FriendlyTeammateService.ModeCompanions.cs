@@ -65,4 +65,13 @@ public partial class FriendlyTeammateService
         if (CompanionPolicy(teammate)?.ProficiencyOnly == true)
             throw new FriendlyTeammateException("CompanionCustomizationLocked");
     }
+
+    private void RequireCombatSettingsAllowed(BotBase teammate)
+    {
+        if (AreCompanionCombatSettingsLocked(teammate))
+            throw new FriendlyTeammateException("CompanionCustomizationLocked");
+    }
+
+    private bool AreCompanionCombatSettingsLocked(BotBase teammate) =>
+        CompanionPolicy(teammate) is { } policy && (policy.LockCombatSettings || policy.ProficiencyOnly);
 }

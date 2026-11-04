@@ -66,6 +66,12 @@ namespace pitTeam.Patches
                         }
                     }
                 }
+                if (AllegiancePmcFriendship.HasRecruitmentGuardDuty(posibleExecuter))
+                {
+                    TrySayRecruitmentResponse(posibleExecuter, EPhraseTrigger.Negative);
+                    __result = false;
+                    return false;
+                }
                 // allow player to request a BOT to follow him
                 if (IsRecruitmentSideAllowed(player, posibleExecuter))
                 {
@@ -281,7 +287,8 @@ namespace pitTeam.Patches
             BossPlayers.GetFollowersByBoss(bossProfileId).FindAll(f =>
             {
                 BotOwner member = f?.GetBot();
-                return f != null && !f.IsSquadMate && member != null && !member.IsDead &&
+                // Roster deployments and temporary boss companions are not field pickups.
+                return f != null && !f.IsRosterMember && !(f is BossFollowerPlayer) && member != null && !member.IsDead &&
                        member.BotState == EBotState.Active && member.GetPlayer?.HealthController?.IsAlive == true;
             }).Count;
 

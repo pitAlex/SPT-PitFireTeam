@@ -23,18 +23,19 @@ public record GoingRogueMetadata : IModMetadata
     public Range SptVersion { get; init; } = new("~4.1.0");
     public bool HasPrepatcher { get; init; }
     public List<string>? Incompatibilities { get; init; }
-    public Dictionary<string, Range>? ModDependencies { get; init; } = new() { ["xyz.pit.fireteam"] = new(">=1.1.0") };
+    public Dictionary<string, Range>? ModDependencies { get; init; } = new() { ["xyz.pit.fireteam"] = new(">=1.1.1") };
     public string? Url { get; init; }
     public string License { get; init; } = "MIT";
 }
 
 [Injectable(TypePriority = OnLoadOrder.Preload)]
 public sealed class GoingRogueServerPlugin(GlobalTable globals, BotTable bots, ItemHelper itemHelper, InventoryHelper inventoryHelper,
-    BotConfig botConfig, BotInventoryGenerator inventoryGenerator, BotHelper botHelper) : IOnLoad
+    BotConfig botConfig, BotInventoryGenerator inventoryGenerator, BotHelper botHelper, TemplateTable templates) : IOnLoad
 {
     public Task OnLoadAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        RogueAlliance.Configure(templates);
         var profiles = new BossProfilePolicy(globals, bots);
         var magazines = new BossMagazineProvisioning(itemHelper, inventoryHelper);
         var headwear = new BossHeadwearPolicy(bots, botConfig, inventoryGenerator, botHelper, itemHelper);
@@ -45,12 +46,12 @@ public sealed class GoingRogueServerPlugin(GlobalTable globals, BotTable bots, I
         }
         FriendlyGameplayModeAddons.Register("Allegiance", [
             new("bossKnight", "Knight", "#667D91", ProficiencyOnly: true, SeedForTesting: false, RaidReady: true)
-                { HideRaidStats = true, GenerateEquipmentEachRaid = true, ProtectSpawnInventory = true, IgnoreEncounterKillPenalty = true, PrepareProfile = profiles.Apply, PrepareRaidEquipment = PrepareRaidEquipment, GeneratedSkillsVersion = "native-v1", AdoptGeneratedSkills = profiles.AdoptGeneratedSkills, GetVisibleSkills = () => profiles.VisibleSkills("bossKnight"), CanSpawnForQuest = KnightQuestModule.CanSpawnKnight, CanJoinRoster = KnightQuestModule.CanJoinKnightRoster },
+                { PinnedRoster = true, HideRaidStats = true, GenerateEquipmentEachRaid = true, ProtectSpawnInventory = true, IgnoreEncounterKillPenalty = true, PrepareProfile = profiles.Apply, PrepareRaidEquipment = PrepareRaidEquipment, GeneratedSkillsVersion = "native-v1", AdoptGeneratedSkills = profiles.AdoptGeneratedSkills, GetVisibleSkills = () => profiles.VisibleSkills("bossKnight"), CanSpawnForQuest = KnightQuestModule.CanSpawnKnight, CanJoinRoster = KnightQuestModule.CanJoinKnightRoster, RaidDeclineMessageKey = RogueAlliance.DeclineMessageKey, RaidRestriction = player => RogueAlliance.Restriction(player, "bossKnight") },
             new("followerBigPipe", "Big Pipe", "#C9A044", ProficiencyOnly: true, SeedForTesting: false, RaidReady: true)
-                { HideRaidStats = true, GenerateEquipmentEachRaid = true, ProtectSpawnInventory = true, IgnoreEncounterKillPenalty = true, PrepareProfile = profiles.Apply, PrepareRaidEquipment = PrepareRaidEquipment, GeneratedSkillsVersion = "native-v1", AdoptGeneratedSkills = profiles.AdoptGeneratedSkills, GetVisibleSkills = () => profiles.VisibleSkills("followerBigPipe"), CanSpawnForQuest = KnightQuestModule.CanSpawnGoon, CanJoinRoster = KnightQuestModule.CanJoinBigPipeRoster },
+                { PinnedRoster = true, HideRaidStats = true, GenerateEquipmentEachRaid = true, ProtectSpawnInventory = true, IgnoreEncounterKillPenalty = true, PrepareProfile = profiles.Apply, PrepareRaidEquipment = PrepareRaidEquipment, GeneratedSkillsVersion = "native-v1", AdoptGeneratedSkills = profiles.AdoptGeneratedSkills, GetVisibleSkills = () => profiles.VisibleSkills("followerBigPipe"), CanSpawnForQuest = KnightQuestModule.CanSpawnGoon, CanJoinRoster = KnightQuestModule.CanJoinBigPipeRoster, RaidDeclineMessageKey = RogueAlliance.DeclineMessageKey, RaidRestriction = player => RogueAlliance.Restriction(player, "followerBigPipe") },
             new("followerBirdEye", "Birdeye", "#789B78", ProficiencyOnly: true, SeedForTesting: false, RaidReady: true)
-                { HideRaidStats = true, GenerateEquipmentEachRaid = true, ProtectSpawnInventory = true, IgnoreEncounterKillPenalty = true, PrepareProfile = profiles.Apply, PrepareRaidEquipment = PrepareRaidEquipment, GeneratedSkillsVersion = "native-v1", AdoptGeneratedSkills = profiles.AdoptGeneratedSkills, GetVisibleSkills = () => profiles.VisibleSkills("followerBirdEye"), CanSpawnForQuest = KnightQuestModule.CanSpawnBirdeye, CanJoinRoster = KnightQuestModule.CanJoinBirdeyeRoster },
-            new("exUsec", "", "#2D9C9A")
+                { PinnedRoster = true, HideRaidStats = true, GenerateEquipmentEachRaid = true, ProtectSpawnInventory = true, IgnoreEncounterKillPenalty = true, PrepareProfile = profiles.Apply, PrepareRaidEquipment = PrepareRaidEquipment, GeneratedSkillsVersion = "native-v1", AdoptGeneratedSkills = profiles.AdoptGeneratedSkills, GetVisibleSkills = () => profiles.VisibleSkills("followerBirdEye"), CanSpawnForQuest = KnightQuestModule.CanSpawnBirdeye, CanJoinRoster = KnightQuestModule.CanJoinBirdeyeRoster, RaidDeclineMessageKey = RogueAlliance.DeclineMessageKey, RaidRestriction = player => RogueAlliance.Restriction(player, "followerBirdEye") },
+            new("exUsec", "", "#2D9C9A") { LockCombatSettings = true, PrepareProfile = RogueAlliance.PrepareMember, RaidDeclineMessageKey = RogueAlliance.DeclineMessageKey, RaidRestriction = player => RogueAlliance.Restriction(player, "exUsec"), RosterInvitationChance = RogueAlliance.RosterInvitation, PenalizeRecruitmentOnFriendlyKill = true }
         ]);
         return Task.CompletedTask;
     }

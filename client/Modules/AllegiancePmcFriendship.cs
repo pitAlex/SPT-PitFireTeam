@@ -46,8 +46,13 @@ namespace pitTeam.Modules
             float chance = botSide == EPlayerSide.Savage
                 ? ScavFenceKarma.EncounterChance(oppositeSideChance, Human?.Profile?.FenceInfo?.Standing ?? 0d)
                 : botSide == playerSide ? sameSideChance : oppositeSideChance;
-            return Shared.FriendlyEncounterPenaltyPolicy.Apply(chance,
-                GameplayModeRuntime.IsAllegiance ? FriendlyEncounterPenaltyRuntime.GetReductionPercent() : 0);
+            int reduction = GameplayModeRuntime.IsAllegiance ? FriendlyEncounterPenaltyRuntime.GetReductionPercent() : 0;
+            // Presence is a single squad modifier, never one entry per Rogue or a saved kill.
+            // Goons exclude PMC candidates entirely; Scavs retain their existing calculation.
+            if (GameplayModeRuntime.IsAllegiance && botSide != EPlayerSide.Savage &&
+                GameplayModeAddons.IsRogueRaid && !GameplayModeAddons.HasSelectedBossCompanions)
+                reduction += Shared.FriendlyEncounterPenaltyPolicy.ReductionPercentPerKill;
+            return Shared.FriendlyEncounterPenaltyPolicy.Apply(chance, reduction);
         }
 
         internal static void Reset()
@@ -71,8 +76,16 @@ namespace pitTeam.Modules
         internal static bool IsRegularScav(BotOwner bot) => bot?.Side == EPlayerSide.Savage &&
             bot.Profile?.Info?.Settings?.Role == WildSpawnType.assault;
 
-        private static bool IsCandidate(BotOwner bot) => (!GameplayModeAddons.IsRogueRaid && IsPmc(bot)) ||
-            (GameplayModeRuntime.IsAllegiance && (pitFireTeam.friendlyScavEncounters?.Value ?? true) && IsRegularScav(bot));
+        private static bool IsAllianceRecruit(BotOwner bot) =>
+            GameplayModeAddons.RecruitmentFriendship(bot?.Profile?.Info?.Settings?.Role.ToString()) == true;
+
+        internal static bool HasRecruitmentGuardDuty(BotOwner bot) => bot?.Profile?.Info?.Settings?.Role == WildSpawnType.exUsec &&
+            (bot.WeaponManager?.Stationary?.Taken == true ||
+             bot.WeaponManager?.Stationary?.HaveLink == true && bot.WeaponManager.Stationary.WantToTake ||
+             bot.GetPlayer?.MovementContext?.IsStationaryWeaponInHands == true);
+
+        private static bool IsCandidate(BotOwner bot) => (!GameplayModeAddons.HasSelectedBossCompanions && IsPmc(bot)) ||
+            (GameplayModeRuntime.IsAllegiance && (pitFireTeam.friendlyScavEncounters?.Value ?? true) && IsRegularScav(bot)) || IsAllianceRecruit(bot);
 
 #if DEBUG
         internal static void RegisterDebugRecruit(BotOwner bot, IPlayer leader)
@@ -114,15 +127,17 @@ namespace pitTeam.Modules
             {
                 decision = new Decision { Bot = bot, Group = bot.BotsGroup };
                 Decisions.Add(bot.ProfileId, decision);
-                if (IsGrouped(bot))
+                bool allianceRecruit = IsAllianceRecruit(bot);
+                if (!allianceRecruit && IsGrouped(bot) || bot.BotsGroup == null)
                 {
                     Logger.LogInfo($"{LogPrefix} candidate={bot.ProfileId} decision=excluded-group");
                     RecordSelection(bot, "excludedGroup");
                     return;
                 }
-                float roll = UnityEngine.Random.value;
-                float chance = GetSelectionChance(bot.Side, human.Side);
+                float roll = allianceRecruit ? 0f : UnityEngine.Random.value;
+                float chance = allianceRecruit ? 1f : GetSelectionChance(bot.Side, human.Side);
                 decision.SelectionChance = chance;
+                decision.RecruitmentChance = GameplayModeAddons.RecruitmentChance(bot.Profile.Info.Settings.Role.ToString());
                 // Freeze willingness from the raw slider. Fence and penalties affect
                 // finding a friendly Scav, not whether that Scav wants to join.
                 if (IsRegularScav(bot))
@@ -130,13 +145,14 @@ namespace pitTeam.Modules
                 bool passedRoll = chance >= 1f || roll < chance;
                 int? populationAlive = null, populationFriendly = null, populationLimit = null;
                 bool populationBlocked = false;
-                if (passedRoll)
+                if (allianceRecruit) decision.Friendly = true;
+                else if (passedRoll)
                 {
                     populationBlocked = !FriendlyEncounterPopulation.CanAdmit(bot, out int alive, out int friendly, out int limit);
                     populationAlive = alive; populationFriendly = friendly; populationLimit = limit;
                     decision.Friendly = !populationBlocked;
                 }
-                if (decision.Friendly)
+                if (decision.Friendly && !allianceRecruit)
                 {
                     // Reserve this raid-local solo group. Native spawn lookup skips locked
                     // groups, so a later wave cannot reuse it and revoke the encounter.
@@ -159,6 +175,7 @@ namespace pitTeam.Modules
                     };
                     decision.Group.OnMemberAdd += decision.MemberAdded;
                 }
+                if (decision.Friendly && allianceRecruit) BotOwnerUpdateHub.Register(GreetingSubscriber, UpdateGreeting);
                 Logger.LogInfo($"{LogPrefix} candidate={bot.ProfileId} side={bot.Side} playerSide={human.Side} roll={roll:F3} chance={chance:F2} friendly={decision.Friendly}");
                 RecordSelection(bot, populationBlocked ? "populationCap" : decision.Friendly ? "selected" : "failedRoll", roll, chance,
                     populationAlive: populationAlive, populationFriendly: populationFriendly, populationLimit: populationLimit);
@@ -227,8 +244,10 @@ namespace pitTeam.Modules
         private static bool IsFriendly(BotOwner bot)
         {
             if (bot == null || !Decisions.TryGetValue(bot.ProfileId, out var decision) || !decision.Friendly) return false;
+            if (GameplayModeAddons.RecruitmentFriendship(bot.Profile?.Info?.Settings?.Role.ToString()) == false)
+                Revoke(decision, "alliance-suspended");
             if (AllegianceScavRelations.RefusesRecruitment(bot)) Revoke(decision, "scav-trust-broken");
-            if (!BossPlayers.IsFollower(bot) && IsGrouped(bot)) Revoke(decision, "grouped");
+            if (!IsAllianceRecruit(bot) && !BossPlayers.IsFollower(bot) && IsGrouped(bot)) Revoke(decision, "grouped");
             return decision.Friendly;
         }
 
@@ -238,6 +257,7 @@ namespace pitTeam.Modules
             !AllegianceScavRelations.RefusesRecruitment(bot) && !IsGrouped(bot);
 
         internal static bool CanRecruit(BotOwner bot, IPlayer player) =>
+            !HasRecruitmentGuardDuty(bot) && GameplayModeAddons.RecruitmentAllowed(bot?.Profile?.Info?.Settings?.Role.ToString()) &&
             !AllegianceScavRelations.RefusesRecruitment(bot) &&
             (!GameplayModeRuntime.IsAllegiance || player?.Side == EPlayerSide.Savage || IsSelectedFriendly(bot, player));
 
@@ -263,9 +283,16 @@ namespace pitTeam.Modules
         internal static bool TryResolveRecruitmentAcceptance(BotOwner bot, IPlayer player, bool proactive, out bool accepted)
         {
             accepted = false;
+            if (!CanRecruit(bot, player)) return false;
             if (!IsSelectedFriendly(bot, player) || !Decisions.TryGetValue(bot.ProfileId, out var decision)) return false;
-            // Scav probability was captured at selection; PMCs still use levels.
-            float chance = decision.RecruitmentChance ?? (GameplayModeRuntime.GetEffectiveValue(pitFireTeam.tieredPickup)
+            // Sampled answers stay stable unless an addon now explicitly guarantees
+            // acceptance (for example, a Goon has joined the Rogue recruitment).
+            float? addonChance = GameplayModeAddons.RecruitmentChance(bot.Profile.Info.Settings.Role.ToString());
+            if (addonChance >= 1f && decision.RecruitmentAccepted == false)
+                decision.RecruitmentAccepted = null;
+            float? currentChance = !decision.RecruitmentAccepted.HasValue
+                ? addonChance : null;
+            float chance = currentChance ?? decision.RecruitmentChance ?? (GameplayModeRuntime.GetEffectiveValue(pitFireTeam.tieredPickup)
                 ? Math.Max(0f, Math.Min(1f, (player.Profile.Info.Level - bot.Profile.Info.Level + 10) / 20f)) : 1f);
             if (proactive && chance < 0.6f) return false;
             if (!decision.RecruitmentAccepted.HasValue)

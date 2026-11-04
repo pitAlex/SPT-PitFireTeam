@@ -17,6 +17,7 @@ internal static class GoonUnitTactics
         internal bool Applied;
     }
     private static readonly Dictionary<BotOwner, Membership> Members = new();
+    private static readonly Dictionary<BotOwner, BotFollowerPlayer> MovementMembers = new();
 
     internal static void RefreshAll()
     {
@@ -65,12 +66,30 @@ internal static class GoonUnitTactics
             entry.Value.Applied = true;
             Members[entry.Key] = entry.Value;
         }
+        // Movement succession is independent of Knight's combat-percentage baseline.
+        // It also applies when a commander was never brought into this raid.
+        foreach (var old in MovementMembers.ToArray())
+            if (!actors.Contains(old.Value))
+            { old.Value.SetCompanionCombatLeader(null); MovementMembers.Remove(old.Key); }
+        foreach (var follower in actors)
+        {
+            var human = follower.GetBoss();
+            var commander = actors.FirstOrDefault(f => ReferenceEquals(f.GetBoss(), human) &&
+                f.GetBot().Profile.Info.Settings.Role == WildSpawnType.bossKnight)?.GetBot() ??
+                actors.FirstOrDefault(f => ReferenceEquals(f.GetBoss(), human) &&
+                f.GetBot().Profile.Info.Settings.Role == WildSpawnType.followerBigPipe)?.GetBot();
+            if (commander == follower.GetBot() && !desired.ContainsKey(commander)) commander = null;
+            // A self-anchor keeps the commander following the human. Pipe's remaining
+            // members need positional cohesion without reapplying the 70/100 baseline.
+            follower.SetCompanionCombatLeader(commander, controlsPosition: commander != null &&
+                commander != follower.GetBot() && commander.Profile.Info.Settings.Role == WildSpawnType.followerBigPipe);
+            MovementMembers[follower.GetBot()] = follower;
+        }
     }
 
     private static void Apply(Membership membership)
     {
         membership.Follower.SetCompanionCombatPreferences(70f, 100f);
-        membership.Follower.SetCompanionCombatLeader(membership.Knight);
     }
 
     private static bool IsGoon(BotOwner bot) => bot.Profile?.Info?.Settings?.Role is
@@ -78,7 +97,10 @@ internal static class GoonUnitTactics
 
     internal static void Release(BotOwner owner)
     {
-        if (owner == null || !Members.TryGetValue(owner, out var membership)) return;
+        if (owner == null) return;
+        if (MovementMembers.TryGetValue(owner, out var follower))
+        { follower.SetCompanionCombatLeader(null); MovementMembers.Remove(owner); }
+        if (!Members.TryGetValue(owner, out var membership)) return;
         membership.Follower.ClearCompanionCombatPreferences();
         membership.Applied = false;
     }
@@ -86,5 +108,7 @@ internal static class GoonUnitTactics
     {
         foreach (var member in Members.Values) member.Follower.ClearCompanionCombatPreferences();
         Members.Clear();
+        foreach (var follower in MovementMembers.Values) follower.SetCompanionCombatLeader(null);
+        MovementMembers.Clear();
     }
 }

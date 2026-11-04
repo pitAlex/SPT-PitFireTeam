@@ -66,6 +66,8 @@ namespace pitTeam.Components
         protected BotSettingsInGameModif settingModif;
 
         protected bool _IsSquadMate = false;
+        // Deployment origin, separate from squadmate loot and command permissions.
+        public bool IsRosterMember { get; protected set; }
         protected bool UsesSavedCombatPreferences { get; set; }
         // Saved boss allies retain progression without acquiring squadmate loot/command privileges.
         internal bool HasPersistentProgress => IsSquadMate || UsesSavedCombatPreferences;
@@ -255,11 +257,17 @@ namespace pitTeam.Components
         {
             _companionCombatAggression = null;
             _companionCombatDetermination = null;
-            CompanionCombatLeader = null;
+            SetCompanionCombatLeader(null);
         }
 
         public BotOwner? CompanionCombatLeader { get; private set; }
-        public void SetCompanionCombatLeader(BotOwner? leader) => CompanionCombatLeader = leader;
+        public bool CompanionLeaderControlsPosition { get; private set; }
+        public void SetCompanionCombatLeader(BotOwner? leader) => SetCompanionCombatLeader(leader, false);
+        public void SetCompanionCombatLeader(BotOwner? leader, bool controlsPosition)
+        {
+            CompanionCombatLeader = leader;
+            CompanionLeaderControlsPosition = leader != null && controlsPosition;
+        }
 
         public bool CombatIndependent
         {
@@ -387,6 +395,7 @@ namespace pitTeam.Components
             Proficiency = FollowerProficiency.DefaultValues.Clone();
 
             _IsSquadMate = isSquad;
+            IsRosterMember = isSquad;
             UsesSavedCombatPreferences = isSquad;
             CaptureInitialHolsterWeapon(finalAttempt: false);
 

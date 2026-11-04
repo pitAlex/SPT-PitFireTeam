@@ -286,6 +286,8 @@ namespace pitTeam.Patches
     /** Have follower kills grant the same raid XP counters used by the legacy plugin. **/
     internal class PlayerKilledPatch : ModulePatch
     {
+        [ThreadStatic] private static bool forwardingRosterKill;
+        internal static bool IsForwardingRosterKill => forwardingRosterKill;
         private const string KillMessageRoute = "/singleplayer/pitfireteam/postraid/kill-message";
         private static readonly HashSet<string> RecordedKillMessageVictims = new HashSet<string>(StringComparer.Ordinal);
         private static readonly HashSet<string> PlayerDamagedPmcVictims = new HashSet<string>(StringComparer.Ordinal);
@@ -346,8 +348,9 @@ namespace pitTeam.Patches
 
                 if (follower.ReportsRaidKills)
                     SquadRaidKillReport.RecordTeammateKill(followerPlayer, __instance);
+                if (follower.IsRosterMember)
+                    TryCreditFollowerKillQuestProgress(__instance, followerPlayer, follower, damageInfo, bodyPart);
                 if (!follower.IsSquadMate) return;
-                TryCreditFollowerKillQuestProgress(__instance, followerPlayer, follower, damageInfo, bodyPart);
 
                 EPlayerSide killedPlayerSide = __instance.Side;
                 EFT.Counters.CountersCollection sessionCounters = followerPlayer.Profile.EftStats.SessionCounters;
@@ -486,13 +489,16 @@ namespace pitTeam.Patches
                 !attacker.IsYourPlayer ||
                 target == null ||
                 !target.IsAI ||
-                target.Side != attacker.Side ||
-                !IsPmc(target.Side) ||
-                string.IsNullOrWhiteSpace(target.ProfileId) ||
-                !IsFriendlyPmcKillMessageContextEnabled())
+                string.IsNullOrWhiteSpace(target.ProfileId))
             {
                 return;
             }
+
+            bool? rogueFriendship = GameplayModeRuntime.IsAllegiance && target.Profile?.Info?.Settings?.Role == WildSpawnType.exUsec
+                ? GameplayModeAddons.RecruitmentFriendship("exUsec") : null;
+            bool allianceRogue = rogueFriendship.HasValue;
+            if (!allianceRogue && (target.Side != attacker.Side || !IsPmc(target.Side) ||
+                !IsFriendlyPmcKillMessageContextEnabled())) return;
 
             BotOwner targetBot = target.AIData?.BotOwner;
             BotsGroup targetGroup = targetBot?.BotsGroup;
@@ -518,7 +524,7 @@ namespace pitTeam.Patches
                         attacker.ProfileId,
                         StringComparison.Ordinal);
 
-                if (!wasAlreadyEnemy)
+                if (!wasAlreadyEnemy && (!allianceRogue || rogueFriendship == true))
                 {
                     FriendlyBeforePlayerDamageVictims.Add(target.ProfileId);
                 }
@@ -578,13 +584,16 @@ namespace pitTeam.Patches
                 {
                     victimProfileId,
                     victimAccountId = victim.AccountId,
+                    victimRole = victim.Profile?.Info?.Settings?.Role.ToString(),
                     messageKind,
                     messageText,
                     raidId,
                     killedAtUnixMs,
                 });
 
-                _ = FriendlyEncounterPenaltyRuntime.SendKillReport(KillMessageRoute, json, victimProfileId, killedAtUnixMs, raidId);
+                bool affectsRecruitment = encounterPenalty && victim.Profile?.Info?.Settings?.Role == WildSpawnType.exUsec &&
+                    GameplayModeAddons.RecruitmentFriendship("exUsec").HasValue;
+                _ = FriendlyEncounterPenaltyRuntime.SendKillReport(KillMessageRoute, json, victimProfileId, killedAtUnixMs, raidId, affectsRecruitment);
             }
             catch (Exception ex)
             {
@@ -596,12 +605,21 @@ namespace pitTeam.Patches
         private static string GetKillMessageKind(Player victim, IPlayer aggressor)
         {
             BotFollowerPlayer follower = BossPlayers.GetFollowerByProfileId(victim.ProfileId);
-            if (follower != null && victim.Profile?.Info?.Settings != null &&
-                Utils.Props.BossFollowersType.Contains(victim.Profile.Info.Settings.Role))
+            if (follower != null && (follower.HasPersistentProgress || (victim.Profile?.Info?.Settings != null &&
+                Utils.Props.BossFollowersType.Contains(victim.Profile.Info.Settings.Role))))
+            {
+                // Remember exemption before native death cleanup removes the follower reference.
+                lock (RecordedKillMessageLock) RecordedKillMessageVictims.Add(victim.ProfileId);
                 return string.Empty;
+            }
             if (GameplayModeRuntime.IsAllegiance && follower != null)
                 return !follower.IsSquadMate && follower.GetBoss()?.realPlayer?.ProfileId == aggressor.ProfileId
                     ? "traitor" : string.Empty;
+
+            // Capture before retaliation: another death prefix may already have suspended the alliance.
+            if (GameplayModeRuntime.IsAllegiance && victim.Profile?.Info?.Settings?.Role == WildSpawnType.exUsec &&
+                GameplayModeAddons.RecruitmentFriendship("exUsec").HasValue && WasFriendlyBeforePlayerDamage(victim.ProfileId))
+                return "traitor";
 
             if (!IsFriendlyPmcKillMessageContextEnabled() ||
                 !WasFriendlyBeforePlayerDamage(victim.ProfileId))
@@ -680,9 +698,11 @@ namespace pitTeam.Patches
 
             EFT.Quests.QuestController questController = boss.realPlayer.QuestController;
             Profile originalProfile = null;
+            bool previousForwarding = forwardingRosterKill;
 
             try
             {
+                forwardingRosterKill = true;
                 FieldInfo profileField = GetQuestControllerProfileField();
                 if (profileField != null)
                 {
@@ -723,6 +743,7 @@ namespace pitTeam.Patches
             }
             finally
             {
+                forwardingRosterKill = previousForwarding;
                 try
                 {
                     FieldInfo profileField = GetQuestControllerProfileField();

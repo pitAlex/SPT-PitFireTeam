@@ -156,9 +156,21 @@ Each tile is built from backend teammate data:
 - level
 - auto-join enabled flag
 
+The native invite list takes both account-category fields from that same server summary, including when updating an existing shared chat member. Going Rogue's Sherpa category is retained for Goons; ordinary teammates retain the server's Unheard category. Missing category fields fall back to Unheard, and a missing selected category falls back to the supplied member category.
+
+Before a saved teammate enters the native group collection, Core copies the group payload's `MemberCategory` into both category fields and the visual representation. Legacy group payloads can omit the selected field, whose native Default value must not override the supplied category. This runs before collection insertion because the native group panel can render immediately.
+
+Profile, group and group-visual server responses explicitly include `SelectedMemberCategory`. The SPT response models expose it through their JSON extension-data contract. AcceptScreen equipment refresh rebuilds a native `OtherPlayerProfile` and replaces the existing member's profile/visual info without adding the member again, so the serialized selected field must survive that path as well. Managed profile views and refreshed Confirmation names retain the companion's selected category; ordinary teammates use Unheard.
+
 The roster is rebuilt on first injection and on explicit refresh requests. It also supports lighter tile-only refreshes for specific account ids after profile-side edits.
 
 Roster entries use ascending profile registration time, then account id. Newly accepted raid recruits receive the acceptance timestamp so their captured bot registration date cannot place them ahead of existing squadmates. Opening a pending recruit preview does not change this timestamp. Previously accepted profiles retain their saved ordering.
+
+### Fixed companion row
+
+The optional addon can mark a roster member `PinnedRoster`. Going Rogue applies this only to unlocked Knight, Big Pipe and Birdeye. Those cards form a centered row above the scrolling roster, as a sibling of the scroll area outside its viewport/mask. The row is hidden before the first Goon joins. One, two and three cards use the same dimensions and spacing as normal cards; the lower scrolling viewport reserves exactly one card height plus the usual gap. Ordinary teammates and Rogues remain in the scrolling section. Each section keeps its existing registration ordering.
+
+Pinned cards retain profiles, portraits, health tinting, auto-join, invitations and live group badges. Partial profile refresh and portrait lookup cover both roots, and a Goon-only roster is populated rather than empty. Pinned cards have no remove button or removal-confirmation action. The server independently rejects account-id and profile-id deletion before payment or removal journaling, using the localized `CompanionRemovalLocked` response. The generic capability defaults off without an addon; ordinary removal remains available. Dated checks and live limits are recorded in [fixed-row validation](validation/Goon-Roster-2026-11-04.md).
 
 ### Tile composition
 
@@ -169,7 +181,7 @@ Each roster entry is a runtime-created tile containing:
 - portrait area
 - level display
 - nickname label
-- delete button
+- delete button, except for pinned companions
 - auto-join badge
 - in-group badge
 
@@ -179,13 +191,19 @@ Wounded teammates tint the native `PortraitRoot/Portrait/Background` image RGBA 
 
 Invites use the server's current recovered health rather than trusting cached card colour. Wounded teammates receive the native decline and the localized message `{0} is still wounded and cannot join a raid yet`. Auto-join skips them without clearing their preference, and the spawn endpoint independently rejects wounded profiles. Companion availability and proper-kit checks remain separate requirements; see [health readiness](Teammate-Health.md#raid-readiness).
 
-Portraits are loaded asynchronously and sequentially. The queue fetches `GetOtherPlayerProfile(accountId)` and then uses `PlayerIconImage.SetPresetIcon(...)`.
+Portraits are loaded asynchronously and sequentially. The queue fetches `GetOtherPlayerProfile(accountId)`, requests the native `PlayerIconCreator` cached portrait and waits for its sprite before applying `PlayerIconImage.SetPresetIcon(...)`. The native renderer and cache retain ownership. No pending native icon-change callback is attached to a roster tile that may be destroyed on refresh.
 
 Important implementation details:
 
 - portrait loading is deferred through a queue to avoid blasting the UI all at once
 - loading indicators are tracked per account id
 - tile rebuilds are versioned so stale portrait callbacks do not paint onto a replaced tile
+- profile waits stop after 20 seconds and native sprite waits after 30 seconds; a canceled, failed or timed-out entry logs its account/stage and releases the queue for later portraits
+- the drain catches per-entry synchronous/iterator failures and releases queue ownership on completion/cancellation; a failed tile cannot strand later teammates behind a dead coroutine handle
+- the onboarding loading gate marks canceled portrait work for a full roster refresh when normal panels return; reusing existing tiles must not discard their incomplete queue
+- refreshing one teammate keeps the current roster generation; the destroyed tile root invalidates only that tile's pending work, while unrelated portraits continue
+
+Dated source/fixture evidence and the remaining live portrait qualification are recorded in [portrait validation](validation/Roster-Portraits-2026-11-04.md).
 
 ### Empty state and add flow
 
@@ -621,6 +639,10 @@ Equipment saves and kit purchases persist through the backend and refresh the li
 
 `PROFICIENCY` opens the teammate-profile modal that owns follower proficiency controls. Its panel uses the same draggable header behavior and title styling as `Edit Loadout`.
 
+An addon may return `LockCombatSettings` independently of the Proficiency-only layout. This hides the tactic, Aggression and Self-Determination controls, preserves their saved numeric values during Reset and excludes determination from delayed proficiency writes. The server also protects the corresponding mutation routes. Identity, equipment and proficiency controls retain their normal permissions. Going Rogue applies this capability to [exUsec teammates](../going-rogue/docs/ExUsec-Combat.md).
+
+Proficiency-only companions such as the Goons also hide Aggression and Self-Determination, with the same server mutation protection. This does not apply the Rogue-only Rifleman tactic override to boss profiles. The dialog creates only its visible rows: five for ordinary teammates or three when combat settings are locked. Both use a 12-unit gap below the 36-unit header, 56-unit rows separated by 6 units, and a compact Reset footer. Panel height is 416 or 292 UI units respectively; the three-row panel does not reserve space for hidden controls.
+
 Behavior:
 
 - `Aggression` is functional: its current value comes from teammate profile options, values are clamped to `0..100`, and persistence is delayed/debounced before posting to the backend
@@ -717,7 +739,7 @@ This is teammate-only UI and is destroyed/reset on profile close.
 
 The teammate health UI is available in all builds, including Proficiency-only companion profiles. It adds a localized `HEAL` button to the right of the name/EXP block, with total health on the left. Both align vertically with the combined visible name and EXP bounds. They live in an owned overlay host with `LayoutElement.ignoreLayout`, so the profile's native layout cannot append HEAL below its controls. Placement measures the health icon/numbers and button label rather than assuming their root pivots match their visible content. It loads the selected teammate's saved health through `/singleplayer/pitfireteam/teammate/health`; there are no generated sample injuries in the UI. Healthy teammates have no health overlay. In Restricted, new raid injuries require Field Upkeep; Immersive/Realistic retain them automatically. Existing wounds remain visible and treatable after disabling Field Upkeep.
 
-HEAL requests a two-minute server quote, then asks for confirmation with the rouble cost. The HP-only price follows native `HealthObserver`/`HealthTreatmentServiceView`: rounded missing HP per body part, the configured health-point price, Therapist's current loyalty healing coefficient, the player's Charisma discounts, and the player's new-character free-treatment eligibility. Payment uses unlocked stash roubles and counts toward Therapist turnover. The server saves the player's payment before atomically committing restored teammate HP and its receipt. Retries of the completed token cannot charge twice; a lost response reads authoritative payment/health before another service or equipment save is allowed. The player's own health is never treated. Existing effects are rejected in this HP-only pass rather than removed without a quoted effect price.
+HEAL offers **APPLY {cost} ₽** and **USE MEDKIT**. The first confirms a two-minute server quote; the second closes this choice and opens the native searchable item grid for accessible player medkits. [Medkit treatment](Teammate-Health.md#medkit-treatment) describes resource consumption, lock filtering and partial healing. The money price follows native `HealthObserver`/`HealthTreatmentServiceView`: rounded missing HP per body part, the configured health-point price, Therapist's current loyalty healing coefficient, the player's Charisma discounts, and the player's new-character free-treatment eligibility. Payment uses unlocked stash roubles and counts toward Therapist turnover. The server saves the player's payment before atomically committing restored teammate HP and its receipt. Retries of the completed token cannot charge twice; a lost response reads authoritative payment/health before another service or equipment save is allowed. The player's own health is never treated. Existing effects are rejected in this HP-only pass rather than removed without a quoted effect price.
 
 After saved treatment succeeds, the UI animates to the returned HP and hides the button, total health and body-part bars only after all seven displayed fills finish and every part has full HP. Profile close cancels only the visual wait; the saved transaction remains valid. Reopening/restarting reads saved health, so it cannot recreate the test injuries. The first real payment and reopen flow were observed live: one 7,635-rouble treatment completed. Its whole-stash refresh needed the existing snapshot fallback; treatment now uses the shared, verified money-only update path, preserving other stash item instances.
 
@@ -731,7 +753,7 @@ Custom clothing without an armband mesh mapping keeps EFT's native first-mesh fa
 
 ### Current profile limitations
 
-All builds overlay native body-part health bars on the existing left character preview for injured saved teammates. The source is `Menu UI/UI/MatchMaker Side Selection Screen/PMCs/Button/Health Panel`, bound by `MatchMakerSideSelectionScreen._healthPanel`. Its CanvasGroup alpha controls visibility; its silhouette is hidden. Placement uses the rendered ancestor RawImage (`PMCPlayerMV` in side selection), not the inner `PlayerMVObject` 3D transform. Placement waits one frame for layout and preserves native widget scale through the source/target world scales rather than sizing widgets from changing viewport heights. The skills panel stays visible. Closing the profile cancels pending placement and disposes the overlay. Raid-retained HP feeds the existing passive recovery and paid HP treatment. Effects are intentionally discarded after raids; stash-medkit treatment remains unimplemented.
+All builds overlay native body-part health bars on the existing left character preview for injured saved teammates. The source is `Menu UI/UI/MatchMaker Side Selection Screen/PMCs/Button/Health Panel`, bound by `MatchMakerSideSelectionScreen._healthPanel`. Its CanvasGroup alpha controls visibility; its silhouette is hidden. Placement uses the rendered ancestor RawImage (`PMCPlayerMV` in side selection), not the inner `PlayerMVObject` 3D transform. Placement waits one frame for layout and preserves native widget scale through the source/target world scales rather than sizing widgets from changing viewport heights. The skills panel stays visible. Closing the profile cancels pending placement and disposes the overlay. Raid-retained HP feeds the existing passive recovery and paid HP treatment. Effects are intentionally discarded after raids; [medkit treatment](Teammate-Health.md#medkit-treatment) restores HP using accessible player medicine resources.
 
 - teammate profile still lives inside `OtherPlayerProfileScreen`, not a dedicated squad detail screen
 - head editing is not implemented in this screen

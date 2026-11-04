@@ -60,6 +60,7 @@ namespace pitTeam.Patches
     internal class FriendlyTeammateProfileOptions
     {
         public bool ProficiencyOnly { get; set; }
+        public bool LockCombatSettings { get; set; }
         public bool HideSkills { get; set; }
         public bool HideRaidStats { get; set; }
         public List<string> VisibleSkills { get; set; }
@@ -1067,6 +1068,7 @@ namespace pitTeam.Patches
                 CreateEditLoadoutButton(__instance, clone, parent, profile, 2);
                 CreateEditNameButton(__instance, clone, parent, profile, 3);
                 ArrangeProfileControlRows();
+                if (options.LockCombatSettings) SetProfileSelectorSectionActive(LoadoutSelector as RectTransform, "Lower", false);
                 DisplaySkillsPanel(__instance, profile, session);
                 DisplayHealthPreview(__instance, profile, session);
                 ShowProfileRecoveryOverlay(__instance, options.RecoveryNotice);

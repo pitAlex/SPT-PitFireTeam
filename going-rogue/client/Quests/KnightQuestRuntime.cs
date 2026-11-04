@@ -75,6 +75,8 @@ internal static class KnightQuestRuntime
         // A synthetic Knight event must never credit vanilla or unrelated addon quests.
         if (forwardingKnightKill && id != forwardedCounter) return false;
         if (!KnightQuestPolicy.OwnsCounter(id)) return true;
+        // Owned companion objectives have their own single death forwarder (including 120m sniper rules).
+        if (!forwardingKnightKill && pitTeam.Patches.PlayerKilledPatch.IsForwardingRosterKill) return false;
         var player = LocalPlayer;
         var owner = player?.QuestController;
         // Never alter AI quest books or non-local profiles that happen to contain these IDs.

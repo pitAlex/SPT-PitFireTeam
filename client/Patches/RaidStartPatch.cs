@@ -685,11 +685,18 @@ namespace pitTeam.Patches
             return AccessTools.Method(typeof(EFT.UI.Matchmaker.BaseMatchmakerController<RaidSettings>), nameof(EFT.UI.Matchmaker.BaseMatchmakerController<RaidSettings>.AddPlayerToGroup));
         }
 
+        [PatchPrefix]
+        private static void PatchPrefix(EFT.UI.Matchmaker.RaidPlayer player)
+        {
+            if (QuestCompanionPreview.IsPreview(player?.AccountId)) return;
+            // Native collection insertion can render the panel immediately.
+            NormalizeTeammateIconCategory(player);
+        }
+
         [PatchPostfix]
         private static void PatchPostfix(EFT.UI.Matchmaker.MatchmakerPlayersController __instance, EFT.UI.Matchmaker.RaidPlayer player)
         {
             if (QuestCompanionPreview.IsPreview(player?.AccountId)) return;
-            NormalizeTeammateIconCategory(player);
             EnsureTeammateVisualHealth(__instance, player);
             TeammateAutoJoinRuntime.ClearSuppression(player?.AccountId);
             if (__instance.CurrentPlayer != player &&
@@ -713,7 +720,8 @@ namespace pitTeam.Patches
                 return;
             }
 
-            EMemberCategory category = player.Info?.SelectedMemberCategory ??
+            // GroupCharacter carries MemberCategory; an absent selected field deserializes as Default.
+            EMemberCategory category = player.Info?.MemberCategory ??
                 player.PlayerVisualRepresentation?.Info?.MemberCategory ?? EMemberCategory.Unheard;
             if (player.Info != null)
             {

@@ -2,11 +2,35 @@ using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Common.Tables;
 using SPTarkov.Server.Core.Models.Spt.Bots;
 using SPTarkov.Server.Core.Models.Eft.Match;
+using SPTarkov.Server.Core.Models.Eft.Profile;
+using SPTarkov.Server.Core.Models.Enums;
 
 namespace pitTeam.Server.Services;
 
 public partial class FriendlyTeammateService
 {
+    public void SendCompanionInvitationDecline(MongoId sessionId, UserDialogInfo sender, string message)
+    {
+        // Use native mail for both new and existing conversations. The installed
+        // NotificationSendHelper's direct-chat path fails on existing dialogs.
+        var dialogs = saveServer.GetProfile(sessionId).DialogueRecords ??= [];
+        if (!dialogs.TryGetValue(sender.Id, out var dialog))
+        {
+            dialog = new Dialogue { Id = sender.Id, Type = MessageType.UserMessage, Messages = [],
+                New = 0, AttachmentsNew = 0, Pinned = false, Users = [] };
+            dialogs[sender.Id] = dialog;
+        }
+        dialog.Users ??= [];
+        if (dialog.Users.All(user => user.Id != sender.Id)) dialog.Users.Add(sender);
+        mailSendService.SendUserMessageToPlayer(sessionId, sender, message);
+    }
+
+    private string? CompanionRaidRestriction(MongoId sessionId, BotBase teammate) =>
+        CompanionPolicy(teammate)?.RaidRestriction?.Invoke(GetPlayerProfile(sessionId));
+
+    internal int? CompanionRosterInvitationChance(MongoId sessionId, pitTeam.Server.Models.FriendlyRecruitPickupCandidate candidate) =>
+        TryDeserializeRecruitProfile(candidate, out var captured)
+            ? CompanionPolicy(captured)?.RosterInvitationChance?.Invoke(GetPlayerProfile(sessionId)) : null;
     private bool IsCompanionRaidReady(BotBase teammate)
     {
         var policy = CompanionPolicy(teammate);

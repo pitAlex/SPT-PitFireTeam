@@ -37,7 +37,10 @@ public static class TrackingHookChecks
             core.GetType("pitTeam.Patches.FollowerSainHearingPatch",true)
                 .GetMethod("BindReaders",BindingFlags.Static|BindingFlags.NonPublic)
                 .Invoke(null,new object[]{native.GetType("SAIN.Components.PlayerComponentSpace.AISoundData",true)});
-            Console.WriteLine("Core native hearing accessors compiled against installed SAIN metadata.");
+            core.GetType("pitTeam.Patches.FollowerSainTrackingReportPatch",true)
+                .GetMethod("BindReaders",BindingFlags.Static|BindingFlags.NonPublic)
+                .Invoke(null,new object[]{native.GetType("SAIN.Components.PlayerComponentSpace.AISoundData",true)});
+            Console.WriteLine("Core native hearing/original-report accessors compiled against installed SAIN metadata.");
             var source=File.ReadAllText(Path.Combine(repo,"addon/SainEnemyTracking.cs"));
             var names=System.Text.RegularExpressions.Regex.Matches(source,"\"(SAIN\\.[^\"]+)\"").Cast<System.Text.RegularExpressions.Match>().Select(m=>m.Groups[1].Value).ToArray();
             var types=new List<Type>();

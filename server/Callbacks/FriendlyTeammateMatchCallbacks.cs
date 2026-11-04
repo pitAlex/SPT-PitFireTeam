@@ -30,7 +30,7 @@ public class FriendlyTeammateMatchCallbacks(
         string? previousOutput)
     {
         long modeGeneration = FriendlyModeRequestGate.Generation;
-        if (!teammateService.TryGetRaidGroupCharacter(sessionId, request.To, out var teammate, out var rejectionReason))
+        if (!teammateService.TryGetRaidGroupCharacter(sessionId, request.To, out var teammate, out var rejectionReason, out var rejectionSender))
         {
             if (teammate != null && !string.IsNullOrWhiteSpace(rejectionReason))
             {
@@ -50,7 +50,10 @@ public class FriendlyTeammateMatchCallbacks(
                             }
                         );
 
-                        mailSendService.SendSystemMessageToPlayer(sessionId, rejectionReason, null);
+                        if (rejectionSender != null)
+                            teammateService.SendCompanionInvitationDecline(sessionId, rejectionSender, rejectionReason);
+                        else
+                            mailSendService.SendSystemMessageToPlayer(sessionId, rejectionReason, null);
                     });
                 });
 

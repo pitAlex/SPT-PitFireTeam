@@ -143,7 +143,7 @@ namespace pitTeam.GoingRogue.Combat
             decision = default;
             // This is a fresh decision after committed work, never a distance interrupt.
             // A distant remembered enemy must not renew no-cover recovery indefinitely.
-            if (!CanSupport() || FollowerCombatAnchor.IsCombatIndependent(BotOwner) ||
+            if (!CanSupport() || !FollowerCombatAnchor.CanAutomaticallyRegroup(BotOwner) ||
                 enemy.IsVisible || enemy.CanShoot || CombatCommon.IsTemporaryHoldPositionAggressionActive() ||
                 BotOwner.WeaponManager.Reload?.Reloading == true || !BotOwner.WeaponManager.IsWeaponReady ||
                 BotOwner.WeaponManager.Selector?.IsChanging == true ||

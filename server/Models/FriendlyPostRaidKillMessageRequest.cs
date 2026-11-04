@@ -11,6 +11,9 @@ public record FriendlyPostRaidKillMessageRequest : IRequestData
     [JsonPropertyName("victimAccountId")]
     public string? VictimAccountId { get; set; }
 
+    [JsonPropertyName("victimRole")]
+    public string? VictimRole { get; set; }
+
     [JsonPropertyName("messageKind")]
     public string? MessageKind { get; set; }
 

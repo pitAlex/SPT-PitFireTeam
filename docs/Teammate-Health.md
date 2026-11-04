@@ -30,7 +30,7 @@ The visible roster requests HP readiness on opening and polls every three second
 
 Transit continues the same raid: the carried native health/effect snapshot remains authoritative and no post-raid treatment is performed on living transit followers. Original spawn maxima remain available until final teardown; captured outcome payloads remain independent of later runtime mutations/disposal.
 
-An accepted raid result sets a fresh `Health.UpdateTime` checkpoint. The existing server recovery calculation and Therapist payment journal then operate on the retained HP. The server owns healing/payment; the client never applies its snapshot to the player's own health. Effects are intentionally discarded at the final raid boundary, so they cannot block passive recovery or paid HP treatment afterward. Stash-medkit treatment is not implemented.
+An accepted raid result sets a fresh `Health.UpdateTime` checkpoint. The existing server recovery calculation and Therapist payment journal then operate on the retained HP. The server owns healing/payment; the client never applies its snapshot to the player's own health. Effects are intentionally discarded at the final raid boundary, so they cannot block passive recovery or paid HP treatment afterward. Medkit treatment uses the same verified payment journal; see below.
 
 ## Source and qualification
 
@@ -44,3 +44,15 @@ An accepted raid result sets a fresh `Health.UpdateTime` checkpoint. The existin
 | Recovery and treatment | `server/Services/FriendlyTeammateRegeneration.cs`, `FriendlyTeammateService.Treatment.cs` |
 
 Fixture/build evidence and live raid qualification are separate. See the [1.0.1 validation ledger](validation/Release-1.0.1.md) for initial retention checks and remaining extraction/death/transit tests, and the [1.1.0 validation ledger](validation/Release-1.1.0.md) for the Field Upkeep policy and normal-build health UI checks.
+
+## Medkit treatment
+
+HEAL offers **APPLY {cost} ₽** for Therapist treatment and **USE MEDKIT** for item treatment. The latter closes the choice and opens a cloned native `EquipItemWindow`, using its searchable icon/resource grid and text-view toggle with a separate selection context. Selection spends the chosen kit; it never equips or moves it. Closing either window cancels before payment.
+
+The server lists only nonempty MedKit-class items rooted in the player stash, equipment or sorting table, including nested containers. A locked item or any locked ancestor excludes the kit. Quest/mail storage, detached/cyclic ownership, ambiguous IDs and medicine containers with children are excluded. Bandages, surgery kits, painkillers and injectors do not restore HP through this service.
+
+One resource point restores one HP, up to the missing HP or available resource. Body parts are treated in the centralized Head, Chest, Stomach, LeftArm, RightArm, LeftLeg, RightLeg order. Partial kits may leave the teammate wounded; exhausted kits are removed. Remaining resource is retained on the same item. Player HP, money and Therapist relationship fields are untouched. Effects remain outside the HP-only contract.
+
+Quotes bind the selected item and current HP. Commit rechecks accessibility, locks and the complete item state; deterministic passive recovery may reduce consumption. The existing intent journal verifies the saved player item before atomically committing teammate HP and its receipt. A completed token is idempotent. Lost responses resolve using the matching receipt, including partial healing, and a native item delta refreshes only the affected medkit. Unverified persistence or live inventory refresh blocks further editing/payment through the existing recovery gate.
+
+Build, fixture and deployment evidence, with remaining live checks: [2026-11-03 medkit validation](validation/Teammate-Medkits-2026-11-03.md).

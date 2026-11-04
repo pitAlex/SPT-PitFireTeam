@@ -2,6 +2,14 @@
 
 **Scope:** compatibility owned by pitFireTeam core and needed whether the optional addon is installed or not. SAIN means the external `me.sol.sain` plugin. The addon is a separate combat brain documented under [addon/docs](../addon/docs/README.md).
 
+## Accepted report synchronization
+
+Core owns the SAIN-installed adaptation of [shared enemy tracking](Enemy-Tracking.md), including when Rifleman, Marksman or Going Rogue owns combat. `FollowerSainTrackingReportPatch` observes completed native `ReactToHeardSound` / two-argument `ReactToBulletFlyBy` reactions and their actual `CalcRandomizedPosition` result. It does not run hearing, dispersion, decision or path providers a second time. Only living already-accepted follower contacts in Realistic mode may be synchronized; rejected sounds, ordinary bots, absent SAIN and Simple mode do not enter this route. Native exceptions propagate and scoped capture is released even on failure. `AISoundData` is a value type, so matching uses its sound event and owner rather than boxed-object identity.
+
+`SainGoalEnemyBridge.TrySyncTrackingReport` uses native `EnemyKnownPlaces.UpdatePersonalHeardPosition` for heard/reported knowledge and `UpdateSeenPlace` only for confirmed personal sight. The existing native enemy/EnemyInfo identity must match. It never adds/selects a goal, broadcasts a report, runs a decision provider or sets EFT visibility/shot flags. Native timestamps at least as new are preserved and future/invalid incoming observations are rejected. If native hearing already published, Core reads that final position/time without another native event; this includes native squad height correction. A missing native squad publication receives a heard place, preserving the calculated uncertainty and sound kind.
+
+Explicit accepted Core reports also update the corresponding existing native goal's known place. Unfinished native visibility checks cannot publish provisional sight. Generic EFT personal/group mirror timestamps remain non-authoritative when an exact native SAIN report is present, since memory repairs can alter bookkeeping without fresh perception. Recorder snapshots remain passive. Native getters/ordinary-bot state and presets are unchanged. Controlled and deployment evidence: [SAIN report validation](validation/SAIN-Tracking-Reports.md).
+
 Core also owns the [reload stance boundary](Combat-Tactics.md): an accepted active follower reload leaves the relaxed hands stance before native animation starts. This applies to Core, Going Rogue and ready SAIN-addon followers. It repairs SAIN 4.5.1's already-relaxed stance latch through native EFT APIs without changing ordinary bots or shared SAIN settings.
 
 ## Runtime ownership

@@ -77,7 +77,7 @@
     "friendlypmc-knight-afavor name": "Tripwire",
     "friendlypmc-knight-afavor description": "Heard of Partizan?\nOld bastard's been giving our boys hell on Lighthouse. Every time someone leaves the water treatment plant, there's a chance he's waiting. Tripwires, ambushes, bodies in the bushes. Then he disappears.\n\nWord is he's got some twisted code of honor. Thinks going rogue makes you some kind of traitor. Guess that puts us pretty high on his shit list.\n\nAnyway, Knight wants him gone. Can't have some lunatic picking off our guys whenever they step outside.\n\nMe? I'm interested. They say he's a ghost. Knows how to hide, how to stalk his prey. Sounds like my kind of game.\n\nSo, what do you say? Let's go hunting. You help me put that bastard down, and maybe I'll have a place for you on my next run.",
     "friendlypmc-knight-afavor startedMessageText": "",
-    "friendlypmc-knight-afavor successMessageText": "Lovely, just lovely! That will teach him to mess with us.\n\nBirdEye has now join your team roster.\nKeep you Knight standing high to be able to do raids while teamed up with the Goons.",
+    "friendlypmc-knight-afavor successMessageText": "Lovely, just lovely! That will teach him to mess with us.\n\nBirdEye has now join your team roster and you can now recruit rogues as part of your team.\nRogue teammates can be commanded by Knight, but you need to keep your Knight trader standing high (min. 1.0) to be able to do raids with a rogue member.",
     "friendlypmc-knight-afavor failMessageText": "Just when I got my hopes up, you go ahead and let me down. Not cool man, not cool",
     "friendlypmc-knight-afavor acceptPlayerMessage": "",
     "friendlypmc-knight-afavor declinePlayerMessage": "",

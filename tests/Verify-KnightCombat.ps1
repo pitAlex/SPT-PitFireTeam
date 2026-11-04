@@ -40,7 +40,8 @@ try {
         @('EFT.EftClientBackendSession','SendRaidSettings'), @('BossSpawnScenario','Init'), @('BigPipeBotWeaponSelector','ManualUpdate'),
         @('EFT.UI.MerchantsList','Show'), @('EFT.UI.TraderScreensGroup','get_TradersList'),
         @('EFT.UI.TraderScreensGroup','SelectTrader'), @('EFT.UI.TraderScreensGroup','Show'), @('EFT.UI.TradingScreen','Show'),
-        @('EFT.Quests.ConditionCounterManager','Test'), @('EFT.Player','OnBeenKilledByAggressor'))) {
+        @('EFT.Quests.ConditionCounterManager','Test'), @('EFT.Player','OnBeenKilledByAggressor'), @('EFT.GameWorld','OnGameStarted'),
+        @('BotGroupWarnData','UpdateWarnTargets'))) {
         $type = $game.GetType($pair[0])
         if (!$type -or !($type.Methods | Where-Object Name -eq $pair[1])) { throw "Missing Harmony boundary: $pair" }
     }
@@ -79,7 +80,13 @@ try {
         $_.Name -eq 'Test' -and $_.IsStatic -and ($_.Parameters.ParameterType.FullName -join ',') -eq 'System.Int32,EFT.Quests.TaskConditionCounter,EFT.Quests.ConditionCheck[]'
     })
     if($counterTest.Count -ne 1){throw 'Native static quest counter Test overload changed'}
-    Write-Output "PASS: $count addon Core/installed EFT/BigBrain/Harmony API references and 18 patch targets resolved. No typed SAIN dependency."
+    $warnTargets=@($game.GetType('BotGroupWarnData').Methods | Where-Object {
+        $_.Name -eq 'UpdateWarnTargets' -and $_.IsPublic -and !$_.IsStatic -and $_.Parameters.Count -eq 1 -and
+        $_.Parameters[0].ParameterType.FullName -eq 'System.Collections.Generic.List`1<BotGroupEnemyInfo>' -and
+        $_.ReturnType.FullName -eq 'System.Collections.Generic.List`1<BotGroupEnemyInfo>'
+    })
+    if($warnTargets.Count -ne 1){throw 'Native Rogue warning-target list signature changed'}
+    Write-Output "PASS: $count addon Core/installed EFT/BigBrain/Harmony API references and 20 patch targets resolved. No typed SAIN dependency."
 }
 finally { $module.Dispose(); $resolver.Dispose() }
 

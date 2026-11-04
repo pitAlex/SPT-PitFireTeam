@@ -18,6 +18,10 @@
     <Compile Include="../../going-rogue/client/Combat/BigPipeVanillaCombat.cs" Link="BigPipeVanillaCombat.cs" />
     <Compile Include="../../going-rogue/client/Combat/BigPipeCombatObjective.cs" Link="BigPipeCombatObjective.cs" />
     <Compile Include="../../going-rogue/client/Combat/BigPipeCombatLogic.cs" Link="BigPipeCombatLogic.cs" />
+    <Compile Include="../../going-rogue/client/Combat/ExUsecCombatExtension.cs" Link="ExUsecCombatExtension.cs" />
+    <Compile Include="../../going-rogue/client/Combat/ExUsecCombatLayer.cs" Link="ExUsecCombatLayer.cs" />
+    <Compile Include="../../going-rogue/client/Combat/ExUsecCombatObjective.cs" Link="ExUsecCombatObjective.cs" />
+    <Compile Include="../../going-rogue/client/Combat/RoguePositionCoordinator.cs" Link="RoguePositionCoordinator.cs" />
     <Compile Include="../../going-rogue/client/Combat/GoonCombatScope.cs" Link="GoonCombatScope.cs" />
     <Compile Include="../../going-rogue/client/GoonCombatConfidence.cs" Link="GoonCombatConfidence.cs" />
     <Compile Include="../../going-rogue/client/Combat/GoonCombatThreat.cs" Link="GoonCombatThreat.cs" />

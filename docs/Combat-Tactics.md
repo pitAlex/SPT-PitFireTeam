@@ -317,6 +317,8 @@ Shared rule: movement and cover commitments stabilize travel; arrival holders st
 
 ## Rifleman Router Order
 
+Optional companion brains may supply an admitted commander advance to the shared Rifleman engagement calculation. This replaces individual aggression willingness and personal-sighting requirements only for a live, known, same-target directive; survival, weapon, navigation and firing safety remain owned by Core. Cache identity includes the live directive and cohesion state, so withdrawal is immediate. Engagement distance/pull use the valid companion commander when present, with the real human as fallback. Independent members retain commander cohesion while dropping human pull. Ordinary Riflemen have no commander callback. See [exUsec combat](../going-rogue/docs/ExUsec-Combat.md).
+
 Rifleman/default combat currently routes in this order:
 
 1. Refresh shooting-cover state and validate committed cover.
@@ -435,6 +437,8 @@ Arrival holders break for:
 If the follower is in cover and only under fire, the hold is extended instead of ended. Suppression against valid cover is treated as a reason to stay down, rescan, and look toward recent incoming-fire points, not as proof that the cover failed.
 
 Hold-facing in Realistic tracking uses the same eligible reported contact as pursuit, including native hearing reports. It does not expire that look solely because the short attack-movement steering freshness window elapsed. Visible enemies retain visible-body targeting; expired/searched/dead contacts and already-visited remembered points cannot regain hold-facing without new evidence. Command looks, target handoff and urgent threat priorities remain above this look. This changes orientation only, preserving arrival-hold duration, posture and permission to fire.
+
+Generic combat point movement owns route-facing after the native movement update, including the walking slowdown before arrival. It uses the shared movement-or-level look helper so native hearing/cover looks cannot turn an advancing follower away from travel when sprint steering releases. Active native door-facing and the native close visible-enemy look remain authoritative. Destinations, path calculation, sprint slowdown and the subsequent arrival hold retain their existing owners. See [point-movement facing validation](validation/Combat-Point-Facing.md).
 
 Recorded examples and qualification are in [hold-facing validation](validation/Combat-Hold-Facing.md).
 
@@ -711,6 +715,8 @@ Marksman hold behavior periodically evaluates:
 ## Regroup Objective
 
 Combat regroup is objective-owned.
+
+Combat independence suppresses automatic distance-regroup toward the human. A validated, living companion leader other than the actor retains positional cohesion: `FollowerCombatAnchor.CanAutomaticallyRegroup` allows the existing distance fallback toward that leader without lowering combat independence. A commander anchored to himself and an independent actor without a valid companion leader remain free of automatic regroup. Explicit player commands retain their human-anchor routing. Selection and automatic-objective release use the same predicate, so a companion-bound regroup is not immediately cancelled as independent; protected work and existing arrival/navigation semantics remain authoritative.
 
 Regroup behavior:
 

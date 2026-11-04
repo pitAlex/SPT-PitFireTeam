@@ -51,15 +51,21 @@ namespace pitTeam.Patches
             public Profile.HealthInfo health;
             public string quoteToken;
             public int price;
+            public string[] eligibleMedkitIds;
+            public string completedToken;
+            public string usedMedkitId;
+            public JsonType.FlatItem medkitItem;
+            public double? medkitResourceRemaining;
             public JsonType.FlatItem[] insurancePlayerRoubles;
             public Dictionary<string, EFT.TraderData> insurancePlayerTraders;
             public Dictionary<EBodyPart, double> regenerationPerSecond;
             public double loopSeconds;
         }
 
-        private static async Task<TeammateTreatmentResponse> RequestTeammateTreatmentAsync(string suffix, string aid, string token = null, bool syncPayment = false)
+        private static async Task<TeammateTreatmentResponse> RequestTeammateTreatmentAsync(string suffix, string aid, string token = null,
+            bool syncPayment = false, bool includeMedkits = false, string medkitId = null)
         {
-            string body = SerializeBody(new { aid, quoteToken = token, syncPayment });
+            string body = SerializeBody(new { aid, quoteToken = token, syncPayment, includeMedkits, medkitId });
             string json = await Task.Run(() => RequestHandler.PostJson(TeammateHealthRoute + suffix, body));
             var response = DeserializeBodySuccess<TeammateTreatmentResponse>(json)?.data;
             if (response?.health?.BodyParts == null) throw new InvalidOperationException("ProfileHealingFailed");
@@ -246,26 +252,35 @@ namespace pitTeam.Patches
             try
             {
                 EnsureRepairStashRefreshReady();
-                // Resolve refresh capability before the server can charge real money.
+                // Resolve refresh capability before the server can spend player inventory.
                 var controller = ResolveActiveProfileInventoryControllerForBackendUpdate(session.Profile, inventory)
                     as EFT.InventoryLogic.OfflineInventoryController;
                 if (controller == null) throw new InvalidOperationException("ProfileHealingFailed");
                 string aid = profile.AccountId.ToString();
                 var quote = await RequestTeammateTreatmentAsync("/quote", aid);
                 if (panel == null || panel != HealthPreviewPanel || profile != ViewedProfile) return;
-                string prompt = string.Format(GetSocialUiText("ProfileHealingPrompt"), profile.GetCorrectedNickname(), quote.price.ToString("N0"));
-                if (!await ItemUiContext.Instance.ShowMessageWindow(out _, prompt, GetSocialUiText("ProfileHealingTitle"), true)) return;
+                var choice = await ChooseTreatmentAsync(profile, quote.price);
                 if (panel == null || panel != HealthPreviewPanel || profile != ViewedProfile) return;
+                if (choice == TreatmentChoice.Cancel) return;
+                if (choice == TreatmentChoice.Medkit)
+                {
+                    var available = await RequestTeammateTreatmentAsync("", aid, includeMedkits: true);
+                    if (panel == null || panel != HealthPreviewPanel || profile != ViewedProfile) return;
+                    var medkit = await ChooseTreatmentMedkitAsync(session, controller, available.eligibleMedkitIds);
+                    if (medkit == null || panel == null || panel != HealthPreviewPanel || profile != ViewedProfile) return;
+                    quote = await RequestTeammateTreatmentAsync("/quote", aid, medkitId: medkit.Id);
+                    if (panel == null || panel != HealthPreviewPanel || profile != ViewedProfile) return;
+                }
                 EnsureRepairStashRefreshReady();
                 RepairStashRefreshRequired = true;
                 TeammateTreatmentResponse result;
                 try { result = await RequestTeammateTreatmentAsync("/heal", aid, quote.quoteToken); }
                 catch
                 {
-                    // An HTTP failure can hide a successful payment. Read the server receipt and
-                    // authoritative money before allowing any editor save or another payment.
-                    result = await RequestTeammateTreatmentAsync("", aid, syncPayment: true);
-                    if (!IsHealthPreviewFull(result.health))
+                    // A receipt, rather than full HP, also confirms successful partial medkit
+                    // treatment when the original response was lost.
+                    result = await RequestTeammateTreatmentAsync("", aid, quote.quoteToken, syncPayment: true);
+                    if (result.completedToken != quote.quoteToken)
                     {
                         ApplyTreatmentPlayerState(session, controller, result);
                         RepairStashRefreshRequired = false;
@@ -296,6 +311,11 @@ namespace pitTeam.Patches
 
         private static void ApplyTreatmentPlayerState(IEftSession session, EFT.InventoryLogic.OfflineInventoryController inventory, TeammateTreatmentResponse response)
         {
+            if (response.usedMedkitId != null)
+            {
+                ApplyTreatmentMedkitState(session, inventory, response);
+                return;
+            }
             ApplyPlayerRoublePaymentState(session, inventory, new FriendlyTeammateDefaultEquipmentResponse
             {
                 insurancePlayerRoubles = response.insurancePlayerRoubles,
@@ -366,6 +386,8 @@ namespace pitTeam.Patches
         internal static void CloseHealthPreview()
         {
             HealthPreviewGeneration++;
+            if (TreatmentChoiceWindow != null) TreatmentChoiceWindow.Close();
+            if (TreatmentMedkitWindow != null) TreatmentMedkitWindow.Close();
             HealthPreviewRecoveryPerMinute = 0f;
             if (HealthPreviewCoroutine != null && pitFireTeam.Instance != null)
                 pitFireTeam.Instance.StopCoroutine(HealthPreviewCoroutine);

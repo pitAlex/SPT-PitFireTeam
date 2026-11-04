@@ -1,5 +1,7 @@
 # Knight quests
 
+Core's [quest assist](../../docs/Quest-Assist.md) also admits Goons deployed from the roster for ordinary quest kills within 80 metres. Generic roster forwarding is excluded from the Knight-owned counters; their existing dedicated Goon death handler remains the single owner, preserving personal-kill and role/proximity conditions without double credit. Temporary quest companions do not receive general quest assist.
+
 Core base: [architecture](../../docs/Architecture.md), [localization](../../docs/Localization.md) and [Knight trader](Knight-Trader.md). Further relationship/recruitment changes remain in the [roadmap](../Roadmap.md).
 
 Going Rogue extends Allegiance and registers its first seven quests through SPT's native `CustomQuestService`. The addon embeds the definitions and EN/RU/GE/RO locales, with English fallback for other locales. No Virtual's Custom Quest Loader, Virtual's Custom Quests content pack or WTT dependency is required. Native EFT/SPT owns quest status, counter persistence, item handover, restart handling, rewards, notifications and prerequisite delays. Quest 3 chooses one of three configured Streets sports bags and saves the selection per player and quest attempt.
@@ -30,7 +32,7 @@ Quest 1's native `Success` status unlocks Knight in Allegiance. The normal roste
 - Knight's death on Customs fails the active/ready task. The legacy native player exit conditions also fail KIA, Left and MIA on Customs.
 - Rewards: 24,000 XP, +0.1 Knight standing and $2,000. Restartable.
 
-Neither task needs custom zone creation. The legacy text mentioned Ran Through failures, but neither JSON exit condition included that status; the port preserves those actual conditions and corrects the text. Obsolete parenthetical promises about legacy chat invitation unlocks are removed. Automatic test seeding of Knight, Big Pipe and Birdeye is disabled. Quest 1 grants Knight roster access after hand-in as described above. Quest completion does not yet activate exUsec friendship or encounter/recruitment progression.
+Neither task needs custom zone creation. The legacy text mentioned Ran Through failures, but neither JSON exit condition included that status; the port preserves those actual conditions and corrects the text. Obsolete parenthetical promises about legacy chat invitation unlocks are removed. Automatic test seeding of Knight, Big Pipe and Birdeye is disabled. Quest 1 grants Knight roster access after hand-in as described above. Quest completion activates [Rogue alliance progression](Rogue-Alliance.md): first-quest friendship and ten percentage points of Rogue recruitment acceptance per handed-in task, up to 70%.
 
 ## They robbed us!
 

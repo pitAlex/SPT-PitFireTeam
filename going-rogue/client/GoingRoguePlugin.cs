@@ -11,7 +11,7 @@ using UnityEngine;
 namespace pitTeam.GoingRogue;
 
 [BepInPlugin("xyz.pit.fireteam.goingrogue", "PitFireTeam Going Rogue", "0.1.0")]
-[BepInDependency("xyz.pit.fireteam", BepInDependency.DependencyFlags.HardDependency)]
+[BepInDependency("xyz.pit.fireteam", "1.1.1")]
 [BepInDependency("xyz.drakia.bigbrain", BepInDependency.DependencyFlags.HardDependency)]
 public sealed class GoingRoguePlugin : BaseUnityPlugin
 {
@@ -22,14 +22,16 @@ public sealed class GoingRoguePlugin : BaseUnityPlugin
     {
         GameplayModeAddons.Register(GameplayMode.Allegiance, HasRogueCompanions, HasGoonCompanions, exUsecFriendly: false,
             resolveSelection: RogueRaidContext.ResolveSelection,
-            companionReady: (id, role) => !RogueRosterSelection.IsGoonRole(role) || GoonCombatLayer.IsSpawnReady(id, role),
+            companionReady: (id, role) => !(RogueRosterSelection.IsGoonRole(role) || ExUsecCombatExtension.OwnsCombat(role)) || GoonCombatLayer.IsSpawnReady(id, role),
             abortCompanion: GoonCombatLayer.AbortSpawn,
             gearPolicy: GoonGearPolicy.ForRole,
-            ownsCombat: RogueRosterSelection.IsGoonRole);
+            ownsCombat: role => RogueRosterSelection.IsGoonRole(role) || ExUsecCombatExtension.OwnsCombat(role));
+        GameplayModeAddons.RegisterRecruitmentPolicy(GameplayMode.Allegiance,
+            RogueAlliance.Friendship, RogueAlliance.Acceptance, RogueAlliance.CanRecruit);
         GameplayModeAddons.RegisterCommandPolicy(GameplayMode.Allegiance,
             role => GoonCommandPolicy.ForRole(role, KnightSquadCoordinator.HasLocalKnight()));
         GameplayModeAddons.RegisterAdvanceOrderPolicy(GameplayMode.Allegiance, GoonPushLeadership.Evaluate);
-        GameplayModeAddons.RegisterQuestCompanionProgressPolicy(GameplayMode.Allegiance, Quests.KnightQuestPolicy.NeedsCompanion);
+        GameplayModeAddons.RegisterQuestCompanionProgressPolicy(GameplayMode.Allegiance, RogueAlliance.NeedsCompanion);
         GameplayModeAddons.RegisterSessionRefresh(GameplayMode.Allegiance, Trading.KnightSessionRefresh.RefreshAsync);
         harmony = new Harmony("xyz.pit.fireteam.goingrogue");
         harmony.PatchAll(typeof(GoingRoguePlugin).Assembly);
@@ -39,6 +41,8 @@ public sealed class GoingRoguePlugin : BaseUnityPlugin
             BigPipeCombatLayer.LayerPriority, new List<WildSpawnType> { WildSpawnType.followerBigPipe });
         BrainManager.AddCustomLayer(typeof(BirdEyeCombatLayer), new List<string> { "BirdEye" },
             BirdEyeCombatLayer.LayerPriority, new List<WildSpawnType> { WildSpawnType.followerBirdEye });
+        BrainManager.AddCustomLayer(typeof(ExUsecCombatLayer), new List<string> { "ExUsec" },
+            GoonCombatLayer.LayerPriority, new List<WildSpawnType> { WildSpawnType.exUsec });
         CombatEnabled = true;
     }
     private void Update()
@@ -47,6 +51,9 @@ public sealed class GoingRoguePlugin : BaseUnityPlugin
         nextRefresh = Time.time + 0.25f;
         Trading.KnightTraderVisibility.RefreshMode();
         GoonCombatLayer.RefreshAll();
+        ExUsecCombatExtension.RefreshAnchors();
+        RogueAlliance.ApplyHostility();
+        RogueEnemyReports.Update();
     }
     private void OnDestroy()
     {
@@ -54,8 +61,10 @@ public sealed class GoingRoguePlugin : BaseUnityPlugin
         Quests.KnightQuestZones.Reset();
         Quests.PartizanQuestSpawn.Reset();
         GoonCombatLayer.ReleaseAll();
+        ExUsecCombatExtension.Reset();
         harmony?.UnpatchSelf();
         RogueRaidContext.Reset();
+        RogueAlliance.Reset();
         Quests.KnightQuestRuntime.Reset();
         GameplayModeAddons.Unregister(GameplayMode.Allegiance);
     }

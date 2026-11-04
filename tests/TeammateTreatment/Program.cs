@@ -67,13 +67,16 @@ internal static partial class Program
         var traders = new TradersTable { [Traders.THERAPIST] = new() { Base = therapist, Assort = null!, Dialogue = null!, QuestAssort = null! } };
         var traderHelper = Construct<TraderHelper>(new() { ["globalTable"] = globals, ["traderTable"] = traders });
         var cloner = new FastCloner();
+        var templates = (TemplateTable)RuntimeHelpers.GetUninitializedObject(typeof(TemplateTable));
+        typeof(TemplateTable).GetProperty("Items")!.SetValue(templates, json.Deserialize<Dictionary<MongoId, TemplateItem>>(
+            File.ReadAllText(Path.Combine(runtime, "SPT_Data", "database", "templates", "items.json"))));
         var language = new FriendlyLanguageService(Logger<ISptLogger<FriendlyLanguageService>>());
         var service = Construct<FriendlyTeammateService>(new()
         {
             ["storage"] = storage, ["jsonUtil"] = json, ["profileHelper"] = helper, ["saveServer"] = save,
             ["fileUtil"] = new FileUtil(), ["globalTable"] = globals, ["traderHelper"] = traderHelper,
             ["cloner"] = cloner, ["settingsService"] = settings, ["logger"] = Logger<ISptLogger<FriendlyTeammateService>>(),
-            ["healthConfig"] = healthConfig, ["languageService"] = language,
+            ["healthConfig"] = healthConfig, ["languageService"] = language, ["templateTable"] = templates,
             ["teammateInsuranceService"] = Construct<FriendlyTeammateInsuranceService>(new() { ["settingsService"] = settings })
         });
         string settingsPath = Path.Combine(AppContext.BaseDirectory, "user/mods/pitFireTeam-ServerMod/Resources/settings.json");
@@ -221,10 +224,11 @@ internal static partial class Program
                 "a recovery poll between quote and payment remains valid and lowers the charged price");
             Check(player.Inventory.Items.Single(i => i.Template == Money.ROUBLES).Upd!.StackObjectsCount == fundsBeforeRecovery - completedRecovery.Price,
                 "payment charges the recovered HP cost rather than the stale maximum quote");
+            TestMedkits(service, storage, save, json, cloner, session, player, globals);
             health.BodyParts["LeftLeg"].Effects = new() { ["Fracture"] = new() };
             Refuses(() => FriendlyTeammateTreatmentPricing.MissingHealth(health), "ProfileHealingUnavailable");
             TestRaidHealth(service, storage, settings, json, session, player, healthConfig);
-            Console.WriteLine($"PASS: {checks} paid teammate healing checks. {work}");
+            Console.WriteLine($"PASS: {checks} teammate treatment/recovery checks. {work}");
             return 0;
         }
         finally

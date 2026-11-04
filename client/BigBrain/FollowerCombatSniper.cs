@@ -3314,7 +3314,7 @@ namespace pitTeam.BigBrain
         /// </summary>
         private bool ShouldRegroupForBossDistance()
         {
-            if (FollowerCombatAnchor.IsCombatIndependent(BotOwner)) return false;
+            if (!FollowerCombatAnchor.CanAutomaticallyRegroup(BotOwner)) return false;
             Vector3 bossPosition = CombatCommon.GetBossPosition();
             if (!IsFinite(bossPosition))
             {

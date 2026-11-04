@@ -27,7 +27,7 @@ try {
     $plugin=Get-Content -Raw (Join-Path $RepositoryRoot 'going-rogue/client/GoingRoguePlugin.cs')
     $module=Get-Content -Raw (Join-Path $RepositoryRoot 'going-rogue/server/KnightQuestModule.cs')
     if(!$preview.Contains('quest.CompletedConditions?.Contains(new MongoID(objective))') -or
-       !$plugin.Contains('RegisterQuestCompanionProgressPolicy(GameplayMode.Allegiance, Quests.KnightQuestPolicy.NeedsCompanion)') -or
+       !$plugin.Contains('RegisterQuestCompanionProgressPolicy(GameplayMode.Allegiance, RogueAlliance.NeedsCompanion)') -or
        !$module.Contains('KnightQuestPolicy.NeedsCompanion(quest.QId.ToString(), location, objective => quest.CompletedConditions?.Contains(objective) == true)')){throw 'Preview and server must share current native per-objective completion admission'}
     $server=Get-Content -Raw (Join-Path $RepositoryRoot 'going-rogue/server/GoingRogueServerPlugin.cs')
     if($server.Contains('SeedForTesting: true') -or !$server.Contains('CanSpawnForQuest = KnightQuestModule.CanSpawnKnight')) {throw 'Quest test Goons must not be reseeded; native quest authorization required'}

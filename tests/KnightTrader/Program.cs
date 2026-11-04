@@ -58,6 +58,7 @@ internal static class Program
         var globals = json.Deserialize<GlobalTable>(File.ReadAllText(Path.Combine(runtime, "SPT_Data/database/globals.json")))!;
         GoonHeadwearChecks.Run(runtime,json,globals,Check);
         LegacyGoonMigrationChecks.Run(Check);
+        InviteDeclineChecks.Run(Check);
         var catalog = KnightTraderCatalog.Create(json, templates);
         Check(catalog.Base.Id == "67768b19fa281ca31708b187" && catalog.Base.Currency == CurrencyType.USD, "legacy identity and USD currency retained");
         Check(catalog.Base.UnlockedByDefault == false && catalog.Base.IsAvailableInPVE, "modern PVE visibility and actual default lock");

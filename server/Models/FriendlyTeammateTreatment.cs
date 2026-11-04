@@ -9,6 +9,8 @@ public record FriendlyTeammateTreatmentRequest : IRequestData
     [JsonPropertyName("aid")] public string? Aid { get; set; }
     [JsonPropertyName("quoteToken")] public string? QuoteToken { get; set; }
     [JsonPropertyName("syncPayment")] public bool SyncPayment { get; set; }
+    [JsonPropertyName("includeMedkits")] public bool IncludeMedkits { get; set; }
+    [JsonPropertyName("medkitId")] public string? MedkitId { get; set; }
 }
 
 public record FriendlyTeammateTreatmentResponse : FriendlyTeammateDefaultEquipmentResponse
@@ -16,6 +18,11 @@ public record FriendlyTeammateTreatmentResponse : FriendlyTeammateDefaultEquipme
     [JsonPropertyName("health")] public BotBaseHealth Health { get; set; } = new();
     [JsonPropertyName("quoteToken")] public string? QuoteToken { get; set; }
     [JsonPropertyName("price")] public int Price { get; set; }
+    [JsonPropertyName("eligibleMedkitIds")] public List<string>? EligibleMedkitIds { get; set; }
+    [JsonPropertyName("completedToken")] public string? CompletedToken { get; set; }
+    [JsonPropertyName("usedMedkitId")] public string? UsedMedkitId { get; set; }
+    [JsonPropertyName("medkitItem")] public Item? MedkitItem { get; set; }
+    [JsonPropertyName("medkitResourceRemaining")] public double? MedkitResourceRemaining { get; set; }
     [JsonPropertyName("regenerationPerSecond")] public Dictionary<string, double>? RegenerationPerSecond { get; set; }
     [JsonPropertyName("loopSeconds")] public double LoopSeconds { get; set; }
 }
@@ -33,4 +40,7 @@ public record FriendlyTeammateTreatmentJournal
     public BotBaseHealth HealthAfter { get; set; } = new();
     public string? PlayerBefore { get; set; }
     public string? PlayerAfter { get; set; }
+    public string? MedkitId { get; set; }
+    public string? MedkitBefore { get; set; }
+    public double MedkitResourceUsed { get; set; }
 }

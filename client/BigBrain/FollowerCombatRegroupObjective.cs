@@ -506,7 +506,7 @@ namespace pitTeam.BigBrain
         private bool ShouldReleaseAutomaticRegroup(AICoreActionResult<BotLogicDecision, CoreActionResultParams> current)
         {
             return automaticRegroup && IsRegroupReason(current.Reason) &&
-                FollowerCombatAnchor.IsCombatIndependent(BotOwner) &&
+                !FollowerCombatAnchor.CanAutomaticallyRegroup(BotOwner) &&
                 BossPlayers.Instance?.GetFollower(BotOwner)?.CombatRegroupUsesBossAnchor != true &&
                 !FollowerCombatCommon.IsMedicalDecision(current) &&
                 !FollowerCombatCommon.IsReloadHoldReason(current.Reason) &&

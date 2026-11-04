@@ -206,7 +206,7 @@ namespace pitTeam
         public string Message { get; set; }
     }
 
-    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "1.1.0")]
+    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "1.1.1")]
     [BepInDependency("xyz.drakia.bigbrain")]
     [BepInDependency(pitFireTeam.SainPluginId, BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency(pitFireTeam.MenuOverhaulPluginId, BepInDependency.DependencyFlags.SoftDependency)]
@@ -381,6 +381,7 @@ namespace pitTeam
             new FollowerFoundInRaidPatch().Enable();
             new FollowerHumanPatrolChooserPatch().Enable();
             new FollowerNativeBrainActivationPatch().Enable();
+            new FollowerRogueStationaryInitializationPatch().Enable();
             new SessionLoadBotsEnglishVoicePatch().Enable();
             new LootPatrolActiveLayerListPatch().Enable();
             new LootPatrolDecisionBypassPatch().Enable();

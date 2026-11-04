@@ -304,4 +304,7 @@ BirdEyeChecks.Run(Check);
 GoonRejoinChecks.Run(Check);
 IndependentPursuitChecks.Run(Check);
 BirdEyeSupportChecks.Run(Check);
+ExUsecChecks.Run(Check);
+RoguePositionChecks.Run(Check);
+RogueAdvanceStopChecks.Run(Check);
 Console.WriteLine($"PASS: {checks} production Knight/Big Pipe objective/support/caution/lease/command checks. Stubbed EFT inputs; no Unity raid simulation.");

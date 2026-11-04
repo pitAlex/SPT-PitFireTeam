@@ -216,6 +216,8 @@ namespace pitTeam.Components
         private RectTransform rosterViewport;
         private RectTransform rosterContentRoot;
         private RectTransform rosterGridRoot;
+        private RectTransform pinnedRosterRoot;
+        private RectTransform rosterScrollRoot;
         private GridLayoutGroup rosterGridLayout;
         private Scrollbar rosterScrollbar;
         private ScrollRectNoDrag settingsScrollRect;
@@ -307,6 +309,7 @@ namespace pitTeam.Components
             public string Side { get; set; } = string.Empty;
             public int? RecruitmentGearPrice { get; set; }
             public string PortraitColor { get; set; }
+            public bool PinnedRoster { get; set; }
             public bool IsWounded { get; set; }
             public bool AutoJoinEnabled { get; set; }
             public bool HasProperRaidKit { get; set; } = true;
@@ -1092,7 +1095,7 @@ namespace pitTeam.Components
             forceRosterRefreshOnNextInject = false;
             List<string> pendingTileRefreshIds = pendingTileRefreshAccountIds.ToList();
             pendingTileRefreshAccountIds.Clear();
-            bool needsRoster = rosterGridRoot != null && (rosterGridRoot.childCount == 0 || shouldForceRosterRefresh);
+            bool needsRoster = rosterGridRoot != null && (!RosterTiles().Any() || shouldForceRosterRefresh);
             bool needsSettings = SettingsEntriesNeedRebuildForCurrentContext();
 
             if (!needsRoster && rosterGridRoot != null)

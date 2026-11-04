@@ -36,6 +36,21 @@ namespace pitTeam.Modules
         private static Func<string, bool> companionCombatPolicy;
         private static Func<string, string, bool> questCompanionPolicy;
         private static Func<string, string, Func<string, bool>, bool> questCompanionProgressPolicy;
+        private static Func<string, bool?> recruitmentFriendship;
+        private static Func<string, float?> recruitmentChance;
+        private static Func<string, bool> recruitmentAllowed;
+
+        public static void RegisterRecruitmentPolicy(GameplayMode mode, Func<string, bool?> friendship,
+            Func<string, float?> chance, Func<string, bool> allowed)
+        {
+            if (mode != GameplayMode.Allegiance || !Registered.Contains(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
+            recruitmentFriendship = friendship;
+            recruitmentChance = chance;
+            recruitmentAllowed = allowed;
+        }
+        public static bool? RecruitmentFriendship(string role) => Registered.Contains(Current) ? recruitmentFriendship?.Invoke(role) : null;
+        internal static float? RecruitmentChance(string role) => Registered.Contains(Current) ? recruitmentChance?.Invoke(role) : null;
+        internal static bool RecruitmentAllowed(string role) => !Registered.Contains(Current) || recruitmentAllowed?.Invoke(role) != false;
 
         public static void RegisterQuestCompanionPolicy(GameplayMode mode, Func<string, string, bool> policy)
         {
@@ -62,7 +77,7 @@ namespace pitTeam.Modules
         public static bool HasSelectedBossCompanions => Utils.SpawnHelper.spawnMemberIdsBoss.Count > 0 ||
             (Current == GameplayMode.Allegiance && Registered.Contains(Current) && goonCompanionsPresent?.Invoke() == true);
         public static bool IsRogueRaid => Current == GameplayMode.Allegiance && Registered.Contains(Current) && rogueCompanionsPresent?.Invoke() == true;
-        public static bool IsExUsecFriendlyRaid => IsRogueRaid && exUsecFriendshipEnabled;
+        public static bool IsExUsecFriendlyRaid => RecruitmentFriendship("exUsec") ?? (IsRogueRaid && exUsecFriendshipEnabled);
         public static void Register(GameplayMode mode, Func<bool> companionsPresent = null,
             Func<bool> goonsPresent = null, bool exUsecFriendly = false,
             Action<string> resolveSelection = null, Func<string, string, bool> companionReady = null,
@@ -85,6 +100,9 @@ namespace pitTeam.Modules
             advanceOrderPolicy = null;
             questCompanionPolicy = null;
             questCompanionProgressPolicy = null;
+            recruitmentFriendship = null;
+            recruitmentChance = null;
+            recruitmentAllowed = null;
         }
         public static void Unregister(GameplayMode mode)
         {
@@ -102,6 +120,9 @@ namespace pitTeam.Modules
             companionCombatPolicy = null;
             companionCommandPolicy = null;
             advanceOrderPolicy = null;
+            recruitmentFriendship = null;
+            recruitmentChance = null;
+            recruitmentAllowed = null;
         }
         public static void RegisterCommandPolicy(GameplayMode mode, Func<string, CompanionCommandPolicy> policy)
         {

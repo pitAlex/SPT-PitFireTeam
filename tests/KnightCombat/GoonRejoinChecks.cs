@@ -10,10 +10,11 @@ internal static class GoonRejoinChecks
     internal static void Run(Action<bool,string> check)
     {
         foreach(bool pipe in new[]{false,true})
+        foreach(bool unit in new[]{false,true})
         foreach(string gate in new[]{"none","nearby","recentFight","visible","shootable","underFire","medical","reload",
-            "nativeReload","drawing","grenade","position","movement","orderedPush","playerCommand","HoldPosition","independent"})
+            "nativeReload","drawing","grenade","position","movement","orderedPush","playerCommand","HoldPosition","independent","companion"})
         {
-            Time.time=100;FollowerCombatAnchor.Independent=false;KnightSquadCoordinator.Assigned=false;
+            Time.time=100;FollowerCombatAnchor.Independent=unit;FollowerCombatAnchor.CompanionRegroup=unit;KnightSquadCoordinator.Assigned=false;
             var bot=new BotOwner();bot.Memory.GoalEnemy.Distance=145;
             var follower=new BotFollowerPlayer{Owner=bot};BossPlayers.Instance.Followers[bot]=follower;
             var common=new FollowerCombatCommon{BossPosition=new(100,0,0),BossNavDistance=100};
@@ -36,14 +37,15 @@ internal static class GoonRejoinChecks
                 case "orderedPush":follower.HasOrderedPushTargetLock=true;break;
                 case "playerCommand":follower.Command=FollowerCommandType.SuppressEnemy;break;
                 case "HoldPosition":common.HoldAggression=true;break;
-                case "independent":FollowerCombatAnchor.Independent=true;break;
+                case "independent":FollowerCombatAnchor.Independent=true;FollowerCombatAnchor.CompanionRegroup=false;break;
+                case "companion":FollowerCombatAnchor.Independent=true;FollowerCombatAnchor.CompanionRegroup=true;break;
             }
             var chosen=objective.GetDecision(bot.Memory.GoalEnemy);
-            check((chosen.Reason=="regroup")==(gate=="none"),"idle Goon rejoins without stealing protected work: "+pipe+"/"+gate);
+            check((chosen.Reason=="regroup")==(gate=="none"||gate=="companion"),"idle Goon rejoins without stealing protected work: "+pipe+"/"+unit+"/"+gate);
             check(bot.Memory.GoalEnemy?.Person.HealthController.IsAlive==true,"rejoin retains living enemy memory: "+gate);
             BossPlayers.Instance.Followers.Remove(bot);
         }
-        FollowerCombatAnchor.Independent=false;
+        FollowerCombatAnchor.Independent=false;FollowerCombatAnchor.CompanionRegroup=false;
         foreach(bool pipe in new[]{false,true})
         {
             var bot=new BotOwner();var common=new FollowerCombatCommon{BossPosition=new(100,0,0),BossNavDistance=100,RecoveryEnded=true};

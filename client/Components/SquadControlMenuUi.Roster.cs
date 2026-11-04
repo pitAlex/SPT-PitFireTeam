@@ -170,17 +170,19 @@ namespace pitTeam.Components
             groupRequestsInFlight.Clear();
             rosterBuildVersion++;
 
-            for (int i = rosterGridRoot.childCount - 1; i >= 0; i--)
+            foreach (Transform tile in RosterTiles().ToArray())
             {
-                Destroy(rosterGridRoot.GetChild(i).gameObject);
+                Destroy(tile.gameObject);
             }
 
             List<SquadRosterEntry> entries = BuildRosterEntries().ToList();
-            UpdateRosterGridLayout(entries.Count);
+            int pinnedCount = entries.Count(entry => entry.PinnedRoster);
+            UpdateRosterSections(pinnedCount);
+            UpdateRosterGridLayout(entries.Count - pinnedCount);
 
-            foreach (SquadRosterEntry entry in entries)
+            foreach (SquadRosterEntry entry in entries.OrderByDescending(entry => entry.PinnedRoster))
             {
-                CreateRosterTile(rosterGridRoot, entry, rosterBuildVersion);
+                CreateRosterTile(entry.PinnedRoster ? pinnedRosterRoot : rosterGridRoot, entry, rosterBuildVersion);
             }
 
             UpdateEmptyRosterState(entries.Count == 0);
@@ -261,7 +263,7 @@ namespace pitTeam.Components
                 return false;
             }
 
-            Transform existingTile = rosterGridRoot.Find($"pitFireTeam_RosterTile_{entry.AccountId}");
+            Transform existingTile = FindRosterTile(entry.AccountId);
             if (existingTile == null)
             {
                 return false;
@@ -272,7 +274,9 @@ namespace pitTeam.Components
 
             // Capture the new tile directly — Destroy() is deferred, so Find() by name would
             // match the still-alive old tile first, leaving the new tile at the end every time.
-            GameObject createdTile = CreateRosterTile(rosterGridRoot, entry, ++rosterBuildVersion);
+            // Only a whole-roster replacement advances the generation. Destroying
+            // this tile already invalidates its own portrait root, not its neighbours.
+            GameObject createdTile = CreateRosterTile(entry.PinnedRoster ? pinnedRosterRoot : rosterGridRoot, entry, rosterBuildVersion);
             if (createdTile == null)
             {
                 return false;
@@ -319,6 +323,7 @@ namespace pitTeam.Components
                                 Side = teammate?["Info"]?["Side"]?.ToString() ?? teammate?["info"]?["side"]?.ToString() ?? string.Empty,
                                 RecruitmentGearPrice = (teammate?["RecruitmentGearPrice"] ?? teammate?["recruitmentGearPrice"])?.Value<int?>(),
                                 PortraitColor = (teammate?["PortraitColor"] ?? teammate?["portraitColor"])?.ToString(),
+                                PinnedRoster = ParseBool((teammate?["PinnedRoster"] ?? teammate?["pinnedRoster"])?.ToString()),
                                 IsWounded = ParseBool((teammate?["IsWounded"] ?? teammate?["isWounded"])?.ToString()),
                                 AutoJoinEnabled = ParseBool(teammate?["AutoJoinEnabled"]?.ToString() ?? teammate?["autoJoinEnabled"]?.ToString()),
                                 HasProperRaidKit = ParseBool(teammate?["HasProperRaidKit"]?.ToString() ?? teammate?["hasProperRaidKit"]?.ToString(), defaultValue: true)
@@ -518,6 +523,7 @@ namespace pitTeam.Components
 
         private void CreateRemoveButton(RectTransform tileRect, SquadRosterEntry entry)
         {
+            if (entry.PinnedRoster) return;
             GameObject buttonObject = new GameObject("pitFireTeam_RemoveButton", typeof(RectTransform), typeof(Image), typeof(Button));
             buttonObject.transform.SetParent(tileRect, false);
 
@@ -611,7 +617,7 @@ namespace pitTeam.Components
                 return;
             }
 
-            Transform tile = rosterGridRoot.Find($"pitFireTeam_RosterTile_{accountId}");
+            Transform tile = FindRosterTile(accountId);
             if (tile == null)
             {
                 return;
@@ -669,7 +675,7 @@ namespace pitTeam.Components
                 return;
             }
 
-            Transform tile = rosterGridRoot.Find($"pitFireTeam_RosterTile_{accountId}");
+            Transform tile = FindRosterTile(accountId);
             if (tile == null)
             {
                 return;
@@ -684,6 +690,7 @@ namespace pitTeam.Components
 
         private void ShowRemoveConfirmOverlay(SquadRosterEntry entry)
         {
+            if (entry?.PinnedRoster == true) return;
             CloseRemoveConfirmOverlay();
 
             Transform? overlayParent = rosterPanel?.transform.parent;
@@ -1222,7 +1229,7 @@ namespace pitTeam.Components
                 return true;
             }
 
-            Transform tile = rosterGridRoot?.Find($"pitFireTeam_RosterTile_{accountId}");
+            Transform tile = FindRosterTile(accountId);
             Transform progressTransform = FindChildRecursive(tile, "Progress");
             if (progressTransform == null)
             {
@@ -1257,14 +1264,31 @@ namespace pitTeam.Components
 
         private IEnumerator DrainPortraitQueueCoroutine()
         {
-            while (_portraitQueue.Count > 0)
+            try
             {
-                var (accountId, iconImage, portraitRoot, buildVersion) = _portraitQueue.Dequeue();
-                yield return LoadTeammatePortraitCoroutine(accountId, iconImage, portraitRoot, buildVersion);
-                yield return new WaitForSeconds(0.3f);
+                while (_portraitQueue.Count > 0)
+                {
+                    var (accountId, iconImage, portraitRoot, buildVersion) = _portraitQueue.Dequeue();
+                    var loader = LoadTeammatePortraitCoroutine(accountId, iconImage, portraitRoot, buildVersion);
+                    // A canceled task or synchronous backend/renderer exception must
+                    // not terminate Unity's parent coroutine and strand later entries.
+                    while (true)
+                    {
+                        bool next;
+                        try { next = loader.MoveNext(); }
+                        catch (Exception ex)
+                        {
+                            pitFireTeam.Log.LogError($"[UI] Portrait load failed account='{accountId}' build={buildVersion}: {ex}");
+                            if (buildVersion == rosterBuildVersion) SetPortraitLoading(accountId, false);
+                            break;
+                        }
+                        if (!next) break;
+                        yield return loader.Current;
+                    }
+                    yield return new WaitForSeconds(0.3f);
+                }
             }
-
-            _portraitQueueCoroutine = null;
+            finally { _portraitQueueCoroutine = null; }
         }
 
         private IEnumerator LoadTeammatePortraitCoroutine(string accountId, PlayerIconImage iconImage, RectTransform portraitRoot, int buildVersion)
@@ -1275,8 +1299,16 @@ namespace pitTeam.Components
             }
 
             var profileTask = ItemUiContext.Instance.Session.GetOtherPlayerProfile(accountId);
+            float deadline = Time.unscaledTime + 20f;
             while (!profileTask.IsCompleted)
             {
+                if (buildVersion != rosterBuildVersion || portraitRoot == null || iconImage._pmcPreview == null) yield break;
+                if (Time.unscaledTime >= deadline)
+                {
+                    pitFireTeam.Log.LogWarning($"[UI] Portrait profile timeout account='{accountId}' build={buildVersion}; continuing roster queue.");
+                    SetPortraitLoading(accountId, false);
+                    yield break;
+                }
                 yield return null;
             }
 
@@ -1285,21 +1317,40 @@ namespace pitTeam.Components
                 yield break;
             }
 
-            if (profileTask.IsFaulted || profileTask.Result.Failed || profileTask.Result.Value == null)
+            if (profileTask.IsCanceled || profileTask.IsFaulted)
             {
+                pitFireTeam.Log.LogWarning($"[UI] Portrait profile request failed account='{accountId}' status={profileTask.Status}: {profileTask.Exception}");
+                SetPortraitLoading(accountId, false);
+                yield break;
+            }
+            if (profileTask.Result.Failed || profileTask.Result.Value == null)
+            {
+                pitFireTeam.Log.LogWarning($"[UI] Portrait profile unavailable account='{accountId}' build={buildVersion}.");
+                SetPortraitLoading(accountId, false);
                 yield break;
             }
 
-            try
+            EFT.OtherPlayerProfile profile = new EFT.OtherPlayerProfile(profileTask.Result.Value);
+            var request = new PlayerIconRequest(profile.Equipment, profile.Customization);
+            var creator = Singleton<EFT.PlayerIcons.PlayerIconCreator>.Instance;
+            ItemIcon portrait = creator.GetIcon(request);
+            deadline = Time.unscaledTime + 30f;
+            while (portrait.Sprite == null)
             {
-                EFT.OtherPlayerProfile profile = new EFT.OtherPlayerProfile(profileTask.Result.Value);
-                iconImage.SetPresetIcon(profile.Customization, profile.Equipment);
+                if (buildVersion != rosterBuildVersion || portraitRoot == null || iconImage._pmcPreview == null) yield break;
+                if (Time.unscaledTime >= deadline)
+                {
+                    pitFireTeam.Log.LogWarning($"[UI] Portrait render timeout account='{accountId}' hash={request.hash} progress={request.progress} busy={creator._containerIsBusy} queued={creator._renderQueue.Count}; continuing roster queue.");
+                    SetPortraitLoading(accountId, false);
+                    yield break;
+                }
+                yield return null;
             }
-            catch (Exception ex)
-            {
-                pitFireTeam.Log.LogError($"[UI] Failed to load teammate portrait for '{accountId}'.");
-                pitFireTeam.Log.LogError(ex);
-            }
+            if (buildVersion != rosterBuildVersion || portraitRoot == null || iconImage._pmcPreview == null) yield break;
+            // Native SetPresetIcon binds an undisposed callback if the sprite is
+            // pending. Await the cached sprite first so destroyed roster tiles never
+            // retain that callback; the native renderer/cache remains the owner.
+            iconImage.SetPresetIcon(request);
         }
 
         private async void OpenProfile(string accountId)
@@ -1345,6 +1396,54 @@ namespace pitTeam.Components
                 ENotificationDurationType.Default);
         }
 
+        private Transform FindRosterTile(string accountId)
+        {
+            if (string.IsNullOrWhiteSpace(accountId)) return null;
+            string name = $"pitFireTeam_RosterTile_{accountId}";
+            return pinnedRosterRoot?.Find(name) ?? rosterGridRoot?.Find(name);
+        }
+
+        private IEnumerable<Transform> RosterTiles()
+        {
+            foreach (RectTransform root in new[] { pinnedRosterRoot, rosterGridRoot })
+            {
+                if (root == null) continue;
+                for (int i = 0; i < root.childCount; i++) yield return root.GetChild(i);
+            }
+        }
+
+        private void UpdateRosterSections(int pinnedCount)
+        {
+            bool hasPinned = pinnedCount > 0;
+            if (pinnedRosterRoot != null)
+            {
+                pinnedRosterRoot.gameObject.SetActive(hasPinned);
+                pinnedRosterRoot.sizeDelta = new Vector2(hasPinned ?
+                    pinnedCount * RosterTileWidth + (pinnedCount - 1) * RosterTileSpacing : 0f, RosterTileHeight);
+                pinnedRosterRoot.GetComponent<GridLayoutGroup>().constraintCount = Mathf.Max(1, pinnedCount);
+            }
+            if (rosterScrollRoot != null)
+                rosterScrollRoot.offsetMax = new Vector2(-18f, -RosterViewportTopInset -
+                    (hasPinned ? RosterTileHeight + RosterTileSpacing : 0f));
+        }
+
+        private void CreatePinnedRosterArea(RectTransform shellRect)
+        {
+            // A sibling of the scroll area, outside its viewport and clipping mask.
+            GameObject pinnedObject = new GameObject("pitFireTeam_PinnedRoster", typeof(RectTransform), typeof(GridLayoutGroup));
+            pinnedObject.transform.SetParent(shellRect, false);
+            pinnedRosterRoot = pinnedObject.GetComponent<RectTransform>();
+            pinnedRosterRoot.anchorMin = pinnedRosterRoot.anchorMax = new Vector2(0.5f, 1f);
+            pinnedRosterRoot.pivot = new Vector2(0.5f, 1f);
+            pinnedRosterRoot.anchoredPosition = new Vector2(0f, -RosterViewportTopInset);
+            var pinnedLayout = pinnedObject.GetComponent<GridLayoutGroup>();
+            pinnedLayout.cellSize = new Vector2(RosterTileWidth, RosterTileHeight);
+            pinnedLayout.spacing = new Vector2(RosterTileSpacing, 0f);
+            pinnedLayout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+            pinnedLayout.childAlignment = TextAnchor.UpperCenter;
+            pinnedObject.SetActive(false);
+        }
+
         private void CreateScrollableRosterArea(RectTransform shellRect)
         {
             if (shellRect == null)
@@ -1355,9 +1454,12 @@ namespace pitTeam.Components
             GameObject scrollRootObject = new GameObject("pitFireTeam_SquadControlRosterScroll", typeof(RectTransform), typeof(ScrollRectNoDrag));
             scrollRootObject.transform.SetParent(shellRect, false);
             RectTransform scrollRoot = scrollRootObject.GetComponent<RectTransform>();
+            rosterScrollRoot = scrollRoot;
             Stretch(scrollRoot);
             scrollRoot.offsetMin = new Vector2(18f, RosterViewportBottomInset);
             scrollRoot.offsetMax = new Vector2(-18f, -RosterViewportTopInset);
+
+            CreatePinnedRosterArea(shellRect);
 
             GameObject viewportObject = new GameObject("Viewport", typeof(RectTransform), typeof(Image), typeof(RectMask2D));
             viewportObject.transform.SetParent(scrollRoot, false);
@@ -1446,7 +1548,8 @@ namespace pitTeam.Components
             float contentHeight = CalculateRowsHeight(rowCount) - RosterViewportPadding;
             float viewportHeight = Mathf.Max(0f, rosterViewport != null && rosterViewport.rect.height > 1f
                 ? rosterViewport.rect.height
-                : currentRosterShellHeight - 20f);
+                : currentRosterShellHeight - RosterViewportTopInset - RosterViewportBottomInset -
+                    (pinnedRosterRoot?.gameObject.activeSelf == true ? RosterTileHeight + RosterTileSpacing : 0f));
             float wrapperHeight = Mathf.Max(viewportHeight, contentHeight);
             float gridOffsetY = contentHeight < wrapperHeight ? (wrapperHeight - contentHeight) * 0.5f : 0f;
 
@@ -1534,7 +1637,7 @@ namespace pitTeam.Components
             return Mathf.Clamp(EFT.UI.UICanvasScalerController._scaleFactor / scaler.scaleFactor, 0.5f, 2f);
         }
 
-        // Sequential portrait load queue — one SetPresetIcon per entry, processed in order.
+        // Sequential profile/render queue; stale tiles never subscribe to pending native icons.
         private static readonly Queue<(string accountId, PlayerIconImage iconImage, RectTransform portraitRoot, int buildVersion)> _portraitQueue
             = new Queue<(string, PlayerIconImage, RectTransform, int)>();
         private static Coroutine _portraitQueueCoroutine;

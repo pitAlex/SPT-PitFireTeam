@@ -403,6 +403,9 @@ namespace pitTeam.BigBrain
         private int threatCoverPhysicsProbeCount;
         private bool lastAssignedRetreatCoverWasWeak;
         private readonly FollowerCombatRiflemanEngagement riflemanEngagement;
+        // Optional brain-owned admission of a live commander order. It supplies intent,
+        // never a decision or permission to fire, and is not consulted by diagnostics.
+        internal Func<EnemyInfo, bool>? CompanionAdvanceOrder { get; set; }
 
         private readonly struct PreparedCombatDecisionTransition
         {
@@ -3888,7 +3891,7 @@ namespace pitTeam.BigBrain
 
         public FollowerCombatRiflemanEngagement.Evaluation EvaluateAutonomousEngagement(EnemyInfo goalEnemy)
         {
-            return riflemanEngagement.Evaluate(goalEnemy);
+            return riflemanEngagement.Evaluate(goalEnemy, CompanionAdvanceOrder?.Invoke(goalEnemy) == true);
         }
 
         public bool IsAutonomousEngagementLowThreat(EnemyInfo goalEnemy)

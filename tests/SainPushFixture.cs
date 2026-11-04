@@ -58,7 +58,37 @@ public static partial class CombatChecks {
         if(ordered)b.Follower.SetPushEnemy(12);else b.Follower.CombatAggression=100;
         return b;
     }
+    private static void TestAutomaticPushPromotion(){
+        foreach(string failure in new[]{"coverInvalidated","noProgress","pathRejected"}) {
+            var b=PushBot("promoteFailedAutomatic"+failure,false);var p=SAINFollowerRuntime.GetPush(b);var m=b.Sain.Decision.Manager;
+            m.Publish(ECombatDecision.Search);
+            Check(p.Mode==SAINPushMode.Automatic&&p.OwnsMovement,"automatic push starts before ordered promotion: "+failure);
+            p.Fail(failure);m.Publish(ECombatDecision.SeekCover);
+            Check(p.Exhausted&&!p.Destination.HasValue,"automatic failure latches before command: "+failure);
+            var enemy=b.Sain.GoalEnemy;
+            var order=new SainPushOrder(enemy.EnemyProfileId,enemy.KnownPlaces.LastKnownPosition.Value);
+            Check(SainAddonBridge.TryPushEnemy(b,order),"explicit same-target command accepted after automatic failure: "+failure);
+            Check(p.Ordered&&!p.Exhausted&&p.Phase==SAINPushPhase.Approach,"first explicit push must reopen failed automatic approach: "+failure);
+            Check(enemy.KnownPlaces.CommandReports==0&&!enemy.IsVisible&&!enemy.CanShoot,"promotion retains remembered contact without granting visibility: "+failure);
+            m.Publish(ECombatDecision.SeekCover,ESquadDecision.None,ESelfActionType.FirstAid);
+            Check(p.Ordered&&!p.OwnsMovement&&b.Sain.Decision.CurrentSelfDecision==ESelfActionType.FirstAid,"promoted order still yields to medicine: "+failure);
+            m.Publish(ECombatDecision.SeekCover);
+            Check(p.Ordered&&p.OwnsMovement&&p.Destination.HasValue&&b.Sain.Decision.CurrentCombatDecision==ECombatDecision.MoveToEngage,"promoted order plans movement instead of inheriting SeekCover: "+failure);
+            p.Fail("noProgress");
+            for(int i=0;i<20;i++){SainAddonBridge.TryPushEnemy(b,order);m.Publish(ECombatDecision.SeekCover);}
+            Check(p.Ordered&&p.Exhausted&&!p.OwnsMovement&&!p.Destination.HasValue,"repeated explicit orders cannot rearm failed ordered attempt: "+failure);
+        }
+        var moving=PushBot("promoteMovingAutomatic",false);var push=SAINFollowerRuntime.GetPush(moving);
+        moving.Sain.Decision.Manager.Publish(ECombatDecision.Search);
+        var destination=push.Destination.Value;
+        push.TickMovement();Time.time+=2f;push.TickMovement();
+        Check(SainAddonBridge.TryPushEnemy(moving,new SainPushOrder(moving.Sain.GoalEnemy.EnemyProfileId,moving.Sain.GoalEnemy.KnownPlaces.LastKnownPosition.Value)),"live automatic approach accepts explicit promotion");
+        Check(push.Ordered&&push.OwnsMovement&&push.Destination.Value.x==destination.x&&push.Destination.Value.z==destination.z,"productive automatic promotion preserves committed destination");
+        Time.time+=5f;push.TickMovement();
+        Check(push.Exhausted&&push.Reason=="noProgress","productive promotion preserves elapsed stall budget");
+    }
     private static void TestPushObjectives(){
+        TestAutomaticPushPromotion();
         var b=PushBot("objectiveOrdered");var layer=new SAINFollowerSoloCombatLayer(b,74);Tick();var p=SAINFollowerRuntime.GetPush(b);var m=b.Sain.Decision.Manager;
         Check(p.Ordered&&p.EnemyId==b.Sain.GoalEnemy.EnemyProfileId&&b.Follower.Command==pitTeam.Components.FollowerCommandType.None,"accepted push creates addon objective without core pending order");
         var point=CoverAt(15);b.Sain.Cover.CoverPoints.Add(point);

@@ -40,6 +40,12 @@ namespace pitTeam.Modules
             lock (Sync) return entries.Where(entry => entry.ExpiresAtUnixMs > NowUnixMs).ToList();
         }
 
+        internal static int GetRecruitmentReductionPercent()
+        {
+            if (!GameplayModeRuntime.IsAllegiance) return 0;
+            lock (Sync) return FriendlyEncounterPenaltyPolicy.GetRecruitmentReductionPercent(entries, NowUnixMs);
+        }
+
         internal static async Task ReloadAsync()
         {
             await Requests.WaitAsync().ConfigureAwait(false);
@@ -57,6 +63,9 @@ namespace pitTeam.Modules
         }
 
         internal static Task SendKillReport(string route, string json, string victimId, long killedAtUnixMs, string raidId)
+            => SendKillReport(route, json, victimId, killedAtUnixMs, raidId, false);
+
+        internal static Task SendKillReport(string route, string json, string victimId, long killedAtUnixMs, string raidId, bool affectsRecruitment)
         {
             string id = raidId + "/" + victimId;
             bool penalized = killedAtUnixMs > 0;
@@ -64,7 +73,7 @@ namespace pitTeam.Modules
             {
                 lock (Sync)
                 {
-                    var entry = new FriendlyEncounterPenaltyEntry { Id = id, ExpiresAtUnixMs = killedAtUnixMs + FriendlyEncounterPenaltyPolicy.DurationMs };
+                    var entry = new FriendlyEncounterPenaltyEntry { Id = id, ExpiresAtUnixMs = killedAtUnixMs + FriendlyEncounterPenaltyPolicy.DurationMs, AffectsRecruitment = affectsRecruitment };
                     Pending[id] = entry;
                     entries.Add(entry);
                     version++;

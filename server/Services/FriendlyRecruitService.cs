@@ -53,6 +53,9 @@ public class FriendlyRecruitService(
                     CalculateRecruitChance(playerLevel, Math.Max(1, candidate.Level)),
                     string.Equals(candidate.Side, "Usec", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(candidate.Side, "Bear", StringComparison.OrdinalIgnoreCase) ? donationSlots : []);
+                int? companionChance = teammateService.CompanionRosterInvitationChance(sessionId, candidate);
+                if (companionChance.HasValue) invitationChance = companionChance.Value;
+                if (companionChance == 0) continue;
 #if DEBUG
                 bool forceInvite = IsDebugForcedInvite(candidate);
                 if (forceInvite)

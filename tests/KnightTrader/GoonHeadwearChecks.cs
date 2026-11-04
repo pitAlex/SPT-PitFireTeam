@@ -89,7 +89,8 @@ internal static class GoonHeadwearChecks
             generation=settings=>{settings.RootEquipmentPool!.Clear();throw new InvalidOperationException("fixture native equipment failure");};
             try{policy.Ensure(failed);throw new Exception("expected generation failure");}catch(InvalidOperationException){check(ReferenceEquals(original,failed.Inventory) && json.Serialize(failed.Inventory)==snapshot && json.Serialize(bots.Types["bossknight"])==poolSnapshot,"generation failure preserves original inventory and shared pools");}
             generation=Generate;
-            new GoingRogueServerPlugin(globals,bots,itemHelper,(InventoryHelper)RuntimeHelpers.GetUninitializedObject(typeof(InventoryHelper)),config,generator,botHelper).OnLoadAsync(default).GetAwaiter().GetResult();
+            new GoingRogueServerPlugin(globals,bots,itemHelper,(InventoryHelper)RuntimeHelpers.GetUninitializedObject(typeof(InventoryHelper)),config,generator,botHelper,
+                (TemplateTable)RuntimeHelpers.GetUninitializedObject(typeof(TemplateTable))).OnLoadAsync(default).GetAwaiter().GetResult();
             foreach(var role in roles)
             {
                 var profile=Profile(role);profile.Inventory!.Items!.RemoveAll(item=>item.SlotId=="FirstPrimaryWeapon");requests.Clear();

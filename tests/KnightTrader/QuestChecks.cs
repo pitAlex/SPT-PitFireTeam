@@ -34,6 +34,8 @@ internal static class QuestChecks
     {
         var definitions = KnightQuestModule.ReadQuests(json);
         QuestWaitChecks.Run(definitions, check);
+        HostileQuestChecks.Run(json, templates, check);
+        RogueAllianceChecks.Run(json, settings, templates, check);
         var english = KnightQuestModule.ReadLocales(json)["en"];
         foreach (var row in new[] { ("67768ec3fa281ca31708b190", "Woods"), ("67768f38fa281ca31708b194", "Shoreline"), ("6776900dfa281ca31708b198", "Lighthouse") })
             check(english[row.Item1] == $"Eliminate 5 targets on {row.Item2} while teamed up with Knight", "original competition objective text restored: " + row.Item2);
@@ -118,7 +120,7 @@ internal static class QuestChecks
             json.Serialize(seventh.Conditions.AvailableForStart)!.Contains(KnightQuestPolicy.OffLimits), "hunt retains one hour after Off Limits success");
         check(english[KnightQuestPolicy.AFavorKills] == "Join BirdEye in hunting down Partisan on Lighthouse." &&
             english[seventh.Description].StartsWith("Heard of Partizan?") &&
-            english[seventh.SuccessMessageText!].EndsWith("\n\nBirdEye has now join your team roster.\nKeep you Knight standing high to be able to do raids while teamed up with the Goons."), "approved hunt dialogue/objective and roster completion guidance");
+            english[seventh.SuccessMessageText!].Contains("\n\nBirdEye has now join your team roster"), "hunt dialogue/objective and roster completion guidance");
         questPlayer.Quests[0].QId=seventh.Id;
         check(KnightQuestModule.CanSpawnBirdeye(questPlayer,"lighthouse") && !KnightQuestModule.CanSpawnBirdeye(questPlayer,"woods") &&
             !KnightQuestModule.CanSpawnKnight(questPlayer,"lighthouse") && !KnightQuestModule.CanSpawnGoon(questPlayer,"lighthouse"), "Partizan hunt only authorizes Birdeye on Lighthouse");

@@ -10,4 +10,7 @@ Core base: [architecture](../../docs/Architecture.md), [combat](../../docs/Comba
 - [Addon guide](../README.md): current mode, profile and relationship preparation.
 - [Validation](../Validation.md): dated build/fixture evidence and live qualification limits.
 
+- [Rogue alliance](Rogue-Alliance.md): quest-driven recruitment, Knight standing, hostile tasks and raid betrayal.
+- [exUsec combat](ExUsec-Combat.md): Rifleman execution, Knight/Pipe command hierarchy and locked combat settings.
+
 Going Rogue owns its character-specific combat. The external SAIN plugin and the separate [SAIN addon](../../addon/docs/Integration.md) retain their existing ownership.

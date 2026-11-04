@@ -21,6 +21,7 @@ internal static class Program
         {
             var f=BossPlayers.Instance.GetFollower(member);f.CompanionCombatLeader=knight;
             Check(FollowerCombatAnchor.GetAnchorPosition(member).x==100,"unit anchor is Knight even with nearer player-side allies");
+            Check(FollowerCombatAnchor.CanAutomaticallyRegroup(member),"independent unit member retains positional cohesion with Knight");
             Check(FollowerCombatAnchor.GetRealBossPosition(member).x==0,"real player anchor remains available for commands and safety");
             var follow=new FollowHarness(member);
             Check(follow.Resolve()&&ReferenceEquals(follow.Leader,knight.GetPlayer),"actual peaceful FollowAction binds to Knight without inventing contact");
@@ -47,6 +48,7 @@ internal static class Program
                 if(invalid=="foreign")k.Leader=new pitAIBossPlayer();
                 if(invalid=="nan")knight.Position=new(float.NaN,0,0);
                 Check(!FollowerCombatAnchor.TryGetCompanionLeader(member,out _),"invalid unit leader cannot supply an anchor: "+invalid);
+                Check(!FollowerCombatAnchor.CanAutomaticallyRegroup(member),"invalid leader does not enable automatic human regroup: "+invalid);
                 Check(follow.Resolve()&&ReferenceEquals(follow.Leader,human.realPlayer),"invalid leader safely releases ordinary following: "+invalid);
                 knight.IsDead=false;knight.BotState=EBotState.Active;knight.GetPlayer.HealthController.IsAlive=true;
                 k.Leader=human;BossPlayers.Instance.Followers[knight]=k;knight.Position=new(100,0,0);
@@ -55,6 +57,7 @@ internal static class Program
         }
         BossPlayers.Instance.GetFollower(knight).CompanionCombatLeader=knight;
         Check(FollowerCombatAnchor.GetAnchorPosition(knight).x==100,"unit commander anchors independent combat to his own position");
+        Check(!FollowerCombatAnchor.CanAutomaticallyRegroup(knight),"Knight cannot regroup to himself or regain the human leash");
         var head=new FollowHarness(knight);
         Check(head.Resolve()&&ReferenceEquals(head.Leader,human.realPlayer),"Knight continues following the human during ordinary peaceful movement");
         var plain=BossPlayers.Instance.GetFollower(ordinary);plain.PendingCommand=true;
@@ -64,14 +67,39 @@ internal static class Program
         var marksman=new MarksmanRegroupHarness(bird);
         var birdState=BossPlayers.Instance.GetFollower(bird);
         birdState.CompanionCombatLeader=knight;
-        Check(!marksman.NeedsRegroup()&&marksman.DistanceReads==0,"independent sniper cannot start automatic player-distance regroup or collapse native sniper spacing");
+        Check(marksman.NeedsRegroup()&&marksman.DistanceReads==1&&marksman.LastAnchor.x==100,
+            "far Knight triggers cohesion even when Birdeye is beside the human");
+        human.realPlayer.Position=new(1000,0,0);knight.Position=new(20,0,0);
+        Check(!marksman.NeedsRegroup()&&marksman.LastAnchor.x==20,
+            "near Knight preserves sniper spacing even when the human is far away");
+        knight.Position=new(60,0,0);
+        Check(marksman.NeedsRegroup()&&marksman.LastAnchor.x==60,"live Knight movement crosses the existing sniper regroup threshold");
+        knight.Position=new(59,0,0);
+        Check(!marksman.NeedsRegroup(),"exact sniper regroup threshold does not churn into a new objective");
+        knight.Position=new(100,0,0);human.realPlayer.Position=new(0,0,0);
+        marksman.RecentFight=true;
+        Check(!marksman.NeedsRegroup(),"productive recent combat retains the existing regroup deferral");
+        marksman.RecentFight=false;
+        birdState.PendingCommand=true;
+        int before=marksman.DistanceReads;
+        Check(!marksman.NeedsRegroup()&&marksman.DistanceReads==before,"automatic cohesion cannot override an active player command");
+        birdState.PendingCommand=false;
         birdState.CompanionCombatLeader=null;
-        Check(!marksman.NeedsRegroup()&&marksman.DistanceReads==0,"ordinary independent sniper shares the existing no-automatic-regroup contract");
+        Check(!marksman.NeedsRegroup()&&marksman.DistanceReads==before,"solo independent sniper keeps the existing no-automatic-regroup contract");
         birdState.CombatIndependent=false;
-        Check(marksman.NeedsRegroup()&&marksman.DistanceReads==1,"dependent Marksman keeps normal distance-based regroup");
-        foreach(string mode in new[]{"obsolete","explicit","dependent","nonAutomatic","medical","medicineUsing","reload","weaponDraw","handsReload","grenade","airborne","unrelated"})
+        birdState.CompanionCombatLeader=knight;birdState.CompanionLeaderControlsPosition=true;
+        Check(marksman.NeedsRegroup()&&marksman.LastAnchor.x==100,"commander position can own ordinary-determination members without changing their percentages");
+        birdState.PendingCommand=true;
+        Check(FollowerCombatAnchor.GetAnchorPosition(bird).x==0,"player command overrides a position-owning commander at ordinary determination");
+        birdState.PendingCommand=false;birdState.CompanionCombatLeader=null;birdState.CompanionLeaderControlsPosition=false;
+        human.realPlayer.Position=new(100,0,0);
+        Check(marksman.NeedsRegroup()&&marksman.LastAnchor.x==100,"dependent Marksman keeps normal human-distance regroup");
+        human.realPlayer.Position=new(0,0,0);
+        foreach(string mode in new[]{"obsolete","companion","selfLeader","deadLeader","explicit","dependent","nonAutomatic","medical","medicineUsing","reload","weaponDraw","handsReload","grenade","airborne","unrelated"})
         {
             var f=BossPlayers.Instance.GetFollower(pipe);f.CombatIndependent=mode!="dependent";
+            f.CompanionCombatLeader=mode=="companion"||mode=="deadLeader"?knight:mode=="selfLeader"?pipe:null;
+            knight.IsDead=mode=="deadLeader";
             f.CombatRegroupUsesBossAnchor=mode=="explicit";
             var regroup=new AutomaticRegroupHarness(pipe,mode!="nonAutomatic");
             var current=new AICoreActionResult<BotLogicDecision,CoreActionResultParams>(
@@ -81,13 +109,30 @@ internal static class Program
             pipe.WeaponManager.Selector.IsChanging=mode=="weaponDraw";pipe.WeaponManager.ShootController.Reloading=mode=="handsReload";
             pipe.WeaponManager.Grenades.ThrowindNow=mode=="grenade";pipe.GetPlayer.MovementContext.IsGrounded=mode!="airborne";
             var end=regroup.ShallEndCurrentDecision(current);
-            Check(end.Value==(mode=="obsolete")&&regroup.Complete==(mode=="obsolete"),"only obsolete safe automatic regroup completes: "+mode);
-            Check(regroup.Clears==(mode=="obsolete"?2:0),"regroup transition clears only its own state after a valid release: "+mode);
+            bool release=mode=="obsolete"||mode=="selfLeader"||mode=="deadLeader";
+            Check(end.Value==release&&regroup.Complete==release,"Knight-bound regroup survives independence; obsolete safe regroup releases: "+mode);
+            Check(regroup.Clears==(release?2:0),"regroup transition clears only its own state after a valid release: "+mode);
             Check(regroup.MedicalEnds==(mode=="medical"?1:0),"medical action keeps its existing owner before independence release: "+mode);
             pipe.Medecine.Using=pipe.WeaponManager.Reload.Reloading=pipe.WeaponManager.Selector.IsChanging=
                 pipe.WeaponManager.ShootController.Reloading=pipe.WeaponManager.Grenades.ThrowindNow=false;
             pipe.GetPlayer.MovementContext.IsGrounded=true;
+            knight.IsDead=false;f.CompanionCombatLeader=null;
         }
+        birdState.CombatIndependent=false;birdState.PendingCommand=false;birdState.CombatRegroupUsesBossAnchor=false;
+        birdState.CompanionCombatLeader=pipe;birdState.CompanionLeaderControlsPosition=true;
+        var succession=new FollowHarness(bird);
+        Check(succession.Resolve()&&ReferenceEquals(succession.Leader,pipe.GetPlayer),
+            "actual peaceful FollowAction uses Pipe after commander succession at saved determination");
+        Check(FollowerCombatAnchor.GetAnchorPosition(bird).x==pipe.Position.x,
+            "saved determination keeps Pipe as the positional anchor");
+        Check(new FollowHarness(pipe).Resolve()&&ReferenceEquals(FollowerCombatAnchor.GetFollowPlayer(pipe,human.realPlayer),human.realPlayer),
+            "Pipe follows the human rather than himself when he leads");
+        pipe.IsDead=true;
+        Check(succession.Resolve()&&ReferenceEquals(succession.Leader,human.realPlayer),
+            "dead Pipe cannot remain the peaceful follow target even before hierarchy refresh");
+        pipe.IsDead=false;birdState.CompanionCombatLeader=null;birdState.CompanionLeaderControlsPosition=false;
+        Check(succession.Resolve()&&ReferenceEquals(succession.Leader,human.realPlayer),
+            "cleared succession returns actual FollowAction to the human");
         Console.WriteLine($"PASS: {checks} production combat/peaceful companion anchor and FollowAction binding checks; controlled EFT inputs.");
     }
 }
@@ -98,14 +143,16 @@ partial class MarksmanRegroupHarness(BotOwner owner)
     private AnchorCommon CombatCommon=new(owner);
     private static bool IsFinite(Vector3 point)=>float.IsFinite(point.x)&&float.IsFinite(point.y)&&float.IsFinite(point.z);
     public int DistanceReads=>CombatCommon.DistanceReads;
+    public Vector3 LastAnchor=>CombatCommon.LastAnchor;
+    public bool RecentFight{set=>CombatCommon.RecentFight=value;}
     public bool NeedsRegroup()=>ShouldRegroupForBossDistance();
 }
 class AnchorCommon(BotOwner owner)
 {
-    public int DistanceReads;
+    public int DistanceReads;public Vector3 LastAnchor;public bool RecentFight;
     public Vector3 GetBossPosition()=>FollowerCombatAnchor.GetAnchorPosition(owner);
-    public float GetBossNavDistance(Vector3 point){DistanceReads++;return 1000;}
-    public bool ShouldDeferAutonomousRegroupAfterRecentFight(object enemy,float distance,float trigger)=>false;
+    public float GetBossNavDistance(Vector3 point){DistanceReads++;LastAnchor=point;return Vector3.Distance(owner.Position,point);}
+    public bool ShouldDeferAutonomousRegroupAfterRecentFight(object enemy,float distance,float trigger)=>RecentFight;
 }
 partial class AutomaticRegroupHarness(BotOwner owner,bool automatic)
 {
@@ -175,7 +222,7 @@ namespace pitTeam.Components
     public class BotFollowerPlayer
     {
         public BotOwner Owner,CompanionCombatLeader;public pitAIBossPlayer Leader;
-        public bool CombatIndependent,CombatRegroupUsesBossAnchor,PendingCommand;
+        public bool CombatIndependent,CombatRegroupUsesBossAnchor,PendingCommand,CompanionLeaderControlsPosition;
         public pitAIBossPlayer GetBoss()=>Leader;
         public bool TryPeekActiveCommand(out int command,out Vector3 target,out float until){command=0;target=default;until=0;return PendingCommand;}
     }

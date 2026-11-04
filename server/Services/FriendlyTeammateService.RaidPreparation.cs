@@ -50,7 +50,8 @@ public partial class FriendlyTeammateService
         foreach (string account in members)
         {
             if (!TryFindByAccountId(sessionId, account, out var teammate) || CompanionPolicy(teammate!)?.GenerateEquipmentEachRaid != true) continue;
-            if (!IsCompanionRaidReady(teammate!)) throw new InvalidOperationException("Companion is not raid ready");
+            if (!IsCompanionRaidReady(teammate!) || CompanionRaidRestriction(sessionId, teammate!) != null)
+                throw new InvalidOperationException("Companion is not raid ready");
             if (!preparation.Kits.ContainsKey(account) || !preparation.JoinRevisions.TryGetValue(account, out string? revision) || revision != request.MemberRevisions[account])
             {
                 // A failed rejoin generation must not leave the previous join's

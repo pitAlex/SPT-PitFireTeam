@@ -192,6 +192,7 @@ namespace pitTeam.Utils
         public static bool PlayerHasKnightQuest(Profile playerProfile)
         {
             // Optional-mode friendship is raid-scoped and must never enter the quest cache.
+            if (Modules.GameplayModeAddons.RecruitmentFriendship("exUsec") is bool friendship) return friendship;
             if (Modules.GameplayModeAddons.IsRogueRaid) return Modules.GameplayModeAddons.IsExUsecFriendlyRaid;
             if (FlagGet("knightKiller_" + playerProfile.ProfileId)) return false;
 

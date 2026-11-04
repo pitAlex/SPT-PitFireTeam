@@ -18,6 +18,10 @@ namespace pitTeam.Patches
         [PatchPrefix]
         private static bool PatchPrefix(ExUsecLayersStrategy __instance, EFT.Ballistics.DamageInfo damageinfo, Player victim)
         {
+            if (Modules.GameplayModeAddons.RecruitmentFriendship("exUsec") is bool friendly)
+                return !(friendly && damageinfo.Player?.iPlayer?.IsYourPlayer == true &&
+                    victim?.Profile?.Info?.Settings?.Role != WildSpawnType.exUsec &&
+                    !Utils.Props.BossFollowersType.Contains(victim?.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault));
             EFT.IObserverToPlayerBridge player = damageinfo.Player;
             // this is original condition + does player have knight quest
             if (

@@ -64,7 +64,14 @@ namespace pitTeam.Modules
             contact.Position = position;
             contact.ObservedAt = observedAt;
             contact.Source = source;
+            if (pitFireTeam.IsSAINInstalled && IsRealistic(enemy) && IsExplicitReport(source))
+                SainGoalEnemyBridge.TrySyncTrackingReport(enemy, position, observedAt, source == "personalSight");
         }
+
+        // EFT mirror timestamps can be bookkeeping, not new evidence. Genuine native
+        // hearing arrives separately after SAIN has calculated its dispersed point.
+        private static bool IsExplicitReport(string source) => source is
+            "personalSight" or "playerReport" or "contactReport" or "squadReport" or "closeThreat" or "directHit";
 
         private static Contact Observe(EnemyInfo enemy)
         {
@@ -73,7 +80,12 @@ namespace pitTeam.Modules
             contact.SampleFrame = Time.frameCount;
             if (SainGoalEnemyBridge.TryGetTrackingReport(enemy.Owner, enemy, out var nativePosition, out float nativeTime))
             {
+                if (Mode == EnemyTrackingMode.Realistic && enemy.IsVisible && !BigBrain.FollowerEnemyInfoCorrection.IsInsideLookCheck)
+                    Report(enemy, enemy.CurrPosition, Time.time, "personalSight");
                 Report(enemy, nativePosition, nativeTime, "nativeReport");
+                if (contact.ObservedAt > nativeTime && IsExplicitReport(contact.Source))
+                    SainGoalEnemyBridge.TrySyncTrackingReport(enemy, contact.Position, contact.ObservedAt,
+                        contact.Source == "personalSight");
                 // Native hearing carries dispersion and provenance. An EFT mirror must not
                 // overwrite it with a bookkeeping timestamp and a hidden transform.
                 return contact;
