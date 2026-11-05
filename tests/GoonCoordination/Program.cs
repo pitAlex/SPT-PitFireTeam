@@ -115,10 +115,12 @@ public class BossKnight
 }
 namespace pitTeam.Components
 {
-    public class BossLogic { public bool IsHitted; }
+    public class BossLogic { public bool IsHitted, HasManualHelpRequest; }
     public class pitAIBossPlayer { public Player realPlayer = new();public BossLogic Logic=new();public BossLogic GetBossLogic()=>Logic; }
     public class BotFollowerPlayer
     {
+        public bool TeamSplitCombatActive;
+        public bool TryGetTeamSplitHelpEnemy(out BotOwner enemy) { enemy=null; return false; }
         public float? UnitAggression,UnitDetermination;public int DeathResets;public bool CommandOverride;
         public float SelfDetermination=50f;
         public BotOwner CompanionLeader;public bool CompanionLeaderControlsPosition;

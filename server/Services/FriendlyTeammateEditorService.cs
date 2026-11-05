@@ -48,6 +48,7 @@ public class FriendlyTeammateEditorService(FriendlyTeammateStorage storage, Save
     {
         var session = Validate(player, mode);
         return storage.ReadModeProfiles(session, mode).Select(p => JsonNode.Parse(p.Value)!)
+            .Where(p => AddonAvailable(session, mode, p))
             .Select(p => new TeammateEditorSummary(int.Parse(p["aid"]!.ToString()), p["Info"]?["Nickname"]?.GetValue<string>() ?? p["aid"]!.ToString(), CanEdit(mode, p)))
             .OrderBy(p => p.Name).ToList();
     });
@@ -85,12 +86,17 @@ public class FriendlyTeammateEditorService(FriendlyTeammateStorage storage, Save
         if (aid <= 0) throw new InvalidDataException("EditorNotFound");
         string? profile = storage.ReadModeDocument<JsonObject>(session, aid + ".json", mode)?.ToJsonString();
         if (profile == null || JsonNode.Parse(profile)?["aid"]?.ToString() != aid.ToString()) throw new InvalidDataException("EditorNotFound");
+        if (!AddonAvailable(session, mode, JsonNode.Parse(profile)!)) throw new InvalidDataException("EditorNotFound");
         if (!CanEdit(mode, JsonNode.Parse(profile)!)) throw new InvalidDataException("EditorManagedCompanion");
         string? equipment = storage.ReadModeDocument<JsonArray>(session, aid + "-equipment.json", mode)?.ToJsonString();
         return (profile, equipment);
     }
 
     // Capabilities come from the registered addon, never a name check or an addon assembly reference.
+    private bool AddonAvailable(MongoId session, string mode, JsonNode profile) =>
+        storage.IsTeammateAddonAvailable(session, int.Parse(profile["aid"]!.ToString()),
+            profile["Info"]?["Settings"]?["Role"]?.GetValue<string>(), mode);
+
     private static bool CanEdit(string mode, JsonNode profile) =>
         FriendlyGameplayModeAddons.PolicyForRole(mode, profile["Info"]?["Settings"]?["Role"]?.GetValue<string>())?.ProficiencyOnly != true;
 

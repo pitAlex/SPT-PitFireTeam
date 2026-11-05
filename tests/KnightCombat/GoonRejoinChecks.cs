@@ -15,7 +15,9 @@ internal static class GoonRejoinChecks
             "nativeReload","drawing","grenade","position","movement","orderedPush","playerCommand","HoldPosition","independent","companion"})
         {
             Time.time=100;FollowerCombatAnchor.Independent=unit;FollowerCombatAnchor.CompanionRegroup=unit;KnightSquadCoordinator.Assigned=false;
-            var bot=new BotOwner();bot.Memory.GoalEnemy.Distance=145;
+            var bot=new BotOwner();bot.Profile.Info.Settings.Role=pipe?WildSpawnType.followerBigPipe:WildSpawnType.bossKnight;
+            GoonPushLeadership.Knight=pipe?new BotOwner():null;
+            bot.Memory.GoalEnemy.Distance=145;
             var follower=new BotFollowerPlayer{Owner=bot};BossPlayers.Instance.Followers[bot]=follower;
             var common=new FollowerCombatCommon{BossPosition=new(100,0,0),BossNavDistance=100};
             GoonCombatObjective objective=pipe?new BigPipeCombatObjective(bot,common):new KnightCombatObjective(bot,common);
@@ -41,10 +43,11 @@ internal static class GoonRejoinChecks
                 case "companion":FollowerCombatAnchor.Independent=true;FollowerCombatAnchor.CompanionRegroup=true;break;
             }
             var chosen=objective.GetDecision(bot.Memory.GoalEnemy);
-            check((chosen.Reason=="regroup")==(gate=="none"||gate=="companion"),"idle Goon rejoins without stealing protected work: "+pipe+"/"+unit+"/"+gate);
+            check((chosen.Reason=="regroup")==(pipe && (gate=="none"||gate=="companion")),"idle Goon rejoins without stealing protected work: "+pipe+"/"+unit+"/"+gate);
             check(bot.Memory.GoalEnemy?.Person.HealthController.IsAlive==true,"rejoin retains living enemy memory: "+gate);
             BossPlayers.Instance.Followers.Remove(bot);
         }
+        GoonPushLeadership.Knight=null;
         FollowerCombatAnchor.Independent=false;FollowerCombatAnchor.CompanionRegroup=false;
         foreach(bool pipe in new[]{false,true})
         {
@@ -54,7 +57,7 @@ internal static class GoonRejoinChecks
             objective.StartDecision();
             var oldHold=new AICoreActionResult<BotLogicDecision,CoreActionResultParams>(BotLogicDecision.holdPosition,FollowerCombatCommon.RecoveryNoCoverThreatHoldReason);
             check(objective.ShallEndCurrentDecision(oldHold).Value,"bounded no-cover retry releases through its existing end owner: "+pipe);
-            check(objective.GetDecision(bot.Memory.GoalEnemy).Reason=="regroup","expired recovery retry hands off to regroup instead of renewing the same hold: "+pipe);
+            check(objective.GetDecision(bot.Memory.GoalEnemy).Reason!="regroup","a commander without another commander never defaults to player escort regroup: "+pipe);
             BossPlayers.Instance.Followers.Remove(bot);
         }
     }

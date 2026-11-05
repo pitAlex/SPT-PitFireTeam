@@ -14,6 +14,6 @@ The optional addon implements the **SAINGrunt** and **SAINShooter** follower com
 | [SAINShooter](SAINShooter.md) | [Core Marksman](../../docs/Combat-Tactics.md#marksman-combat-behavior) | Native Marksman adaptation, bounded support and explicit parity limits |
 | [References](References.md) | [Build baselines](../../docs/SPT-Compatibility.md) | Private 4.5.1 references, source provenance and attribution |
 | [Validation](Validation.md) | Core validation at the relevant shared boundary | Dated fixture/deployment evidence and raid limitations |
-| [Roadmap](Roadmap.md) | [Core roadmap](../../TASKS.md) | Deferred addon extensions and qualification |
+| [Roadmap](Roadmap.md) | [Core roadmap](../../docs/Roadmap.md) | Deferred addon extensions and qualification |
 
 Read the core base first, then the addon differences. Do not copy core contracts into another addon handoff log. General external-SAIN fixes needed without this brain belong in core documentation and code.

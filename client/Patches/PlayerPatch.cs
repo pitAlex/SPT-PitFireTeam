@@ -174,14 +174,16 @@ namespace pitTeam.Patches
             }
 
             if (!isGesture &&
-                phrase == (EPhraseTrigger)CustomPhrases.TeamStatus)
+                (phrase == (EPhraseTrigger)CustomPhrases.TeamStatus ||
+                 phrase == (EPhraseTrigger)CustomPhrases.TeamSplit ||
+                 phrase == (EPhraseTrigger)CustomPhrases.TeamCombine))
             {
 
                 if (boss != null)
                 {
                     EventInfo info = new EventInfo
                     {
-                        phrase = (EPhraseTrigger)CustomPhrases.TeamStatus,
+                        phrase = phrase,
                         PlayerRequester = __instance.Player
                     };
 

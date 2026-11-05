@@ -10,7 +10,7 @@ using UnityEngine;
 
 namespace pitTeam.GoingRogue;
 
-[BepInPlugin("xyz.pit.fireteam.goingrogue", "PitFireTeam Going Rogue", "0.1.0")]
+[BepInPlugin("xyz.pit.fireteam.goingrogue", "PitFireTeam Going Rogue", "1.0.0")]
 [BepInDependency("xyz.pit.fireteam", "1.1.1")]
 [BepInDependency("xyz.drakia.bigbrain", BepInDependency.DependencyFlags.HardDependency)]
 public sealed class GoingRoguePlugin : BaseUnityPlugin
@@ -43,6 +43,7 @@ public sealed class GoingRoguePlugin : BaseUnityPlugin
             BirdEyeCombatLayer.LayerPriority, new List<WildSpawnType> { WildSpawnType.followerBirdEye });
         BrainManager.AddCustomLayer(typeof(ExUsecCombatLayer), new List<string> { "ExUsec" },
             GoonCombatLayer.LayerPriority, new List<WildSpawnType> { WildSpawnType.exUsec });
+        CompanionTeamCommands.Register(GoonTeamSplit.Available, GoonTeamSplit.SetSplit, GoonTeamSplit.Refresh);
         CombatEnabled = true;
     }
     private void Update()
@@ -52,14 +53,16 @@ public sealed class GoingRoguePlugin : BaseUnityPlugin
         Trading.KnightTraderVisibility.RefreshMode();
         GoonCombatLayer.RefreshAll();
         ExUsecCombatExtension.RefreshAnchors();
+        GoonTeamSplit.Refresh();
         RogueAlliance.ApplyHostility();
         RogueEnemyReports.Update();
     }
     private void OnDestroy()
     {
         CombatEnabled = false;
+        GoonTeamSplit.Reset();
+        CompanionTeamCommands.Unregister();
         Quests.KnightQuestZones.Reset();
-        Quests.PartizanQuestSpawn.Reset();
         GoonCombatLayer.ReleaseAll();
         ExUsecCombatExtension.Reset();
         harmony?.UnpatchSelf();

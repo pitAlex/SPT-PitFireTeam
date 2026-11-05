@@ -33,7 +33,12 @@ internal static class GoonUnitTactics
             var leader = follower.GetBoss();
             var knight = actors.FirstOrDefault(f => ReferenceEquals(f.GetBoss(), leader) &&
                 f.GetBot().Profile.Info.Settings.Role == WildSpawnType.bossKnight)?.GetBot();
-            if (knight == null || !actors.Any(f => ReferenceEquals(f.GetBoss(), leader) && f.GetBot() != knight)) continue;
+            bool hasPartner = actors.Any(f => ReferenceEquals(f.GetBoss(), leader) && f.GetBot() != knight) ||
+                BossPlayers.GetFollowers().Any(f => ReferenceEquals(f.GetBoss(), leader) && f.GetBot() is { } rogue &&
+                    rogue.Profile?.Info?.Settings?.Role == WildSpawnType.exUsec && !rogue.IsDead &&
+                    rogue.BotState == EBotState.Active && rogue.GetPlayer?.HealthController?.IsAlive == true &&
+                    GoonCombatLayer.IsOwned(rogue, "exUsec"));
+            if (knight == null || !hasPartner) continue;
             desired[follower.GetBot()] = new Membership(follower, knight);
         }
         foreach (var entry in Members.ToArray())

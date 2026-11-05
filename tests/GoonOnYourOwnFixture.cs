@@ -5,14 +5,15 @@ using pitTeam.GoingRogue;
 
 public interface IPlayer { }
 public sealed class Requester : IPlayer { }
+public sealed class Player : IPlayer { }
 public enum EBotState { Active, NonActive }
 public enum EPhraseTrigger { Roger }
 public enum EInteraction { OkGesture }
 public sealed class Settings { public string Role; }
 public sealed class Info { public Settings Settings = new Settings(); }
 public sealed class Profile { public Info Info = new Info(); }
-public sealed class Talk { public void TrySay(EPhraseTrigger phrase, bool ignored) { } }
-public sealed class Gesture { public void TryGestus(EInteraction gesture, bool ignored) { } }
+public sealed class Talk { public int Calls; public void TrySay(EPhraseTrigger phrase, bool ignored) { Calls++; } }
+public sealed class Gesture { public int Calls; public void TryGestus(EInteraction gesture, bool ignored) { Calls++; } }
 public sealed class BotOwner
 {
     public bool IsDead;
@@ -49,8 +50,15 @@ namespace pitTeam.Modules
 }
 public sealed class Receiver
 {
+    private const float PhraseCommandDistance = 30f;
     public List<BotOwner> Followers = new List<BotOwner>();
+    private IEnumerable<BotOwner> CommandFollowers => Followers;
     public bool Combat = true, LootLocked;
+    public BotOwner Focused;
+    public int FocusQueries;
+    public float FocusDistance, FocusRadius, FocusAngle;
+    private BotOwner FindLookedAtFollower(Player player, float distance, float sphereRadius, float maxAngleDegrees)
+    { FocusQueries++; FocusDistance=distance; FocusRadius=sphereRadius; FocusAngle=maxAngleDegrees; return Focused; }
     private bool IsCombatRegroupContext() => Combat;
     private bool IsFollowerLockedByLootCommand(BotOwner owner) => LootLocked;
     public void Issue(IPlayer requester) => ApplyOnYourOwnCommand(requester);
@@ -62,6 +70,39 @@ public static class Program
     private static void Check(bool value, string reason) { checks++; if (!value) throw new Exception(reason); }
     public static void Main()
     {
+        GameplayModeAddons.Registered = true; GameplayModeAddons.KnightPresent = true;
+        foreach(bool combat in new[]{false,true})
+        foreach(string focus in new[]{"bossKnight","followerBigPipe","followerBirdEye","pmcUSEC","exUsec","broadcast"})
+        {
+            var receiver=new Receiver {Combat=combat};
+            foreach(string role in new[]{"bossKnight","followerBigPipe","followerBirdEye","pmcUSEC","exUsec"})
+            {
+                var owner=new BotOwner();owner.Profile.Info.Settings.Role=role;
+                receiver.Followers.Add(owner);BossPlayers.Instance.States[owner]=new BotFollowerPlayer();
+                if(role==focus)receiver.Focused=owner;
+            }
+            receiver.Issue(new Player());
+            Check(receiver.FocusQueries==1&&receiver.FocusDistance==30f&&receiver.FocusRadius==.15f&&receiver.FocusAngle==4f,"reuse narrow percentage-command focus once: "+combat+"/"+focus);
+            foreach(var owner in receiver.Followers)
+            {
+                var state=BossPlayers.Instance.States[owner];string role=owner.Profile.Info.Settings.Role;
+                bool selected=focus=="broadcast"||owner==receiver.Focused;
+                bool goon=role=="bossKnight"||role=="followerBigPipe"||role=="followerBirdEye";
+                Check(state.Determination==(selected&&combat?100:50),"only selected combat recipients become independent: "+combat+"/"+focus+"/"+role);
+                Check(state.Patrol==(selected&&!combat),"only selected peaceful recipients start patrol: "+combat+"/"+focus+"/"+role);
+                Check(state.Aggression==(selected&&combat&&goon?70:37),"unselected preferences and role-specific aggression preserved: "+combat+"/"+focus+"/"+role);
+                Check(owner.BotTalk.Calls==(selected?1:0)&&owner.Gesture.Calls==(selected?1:0),"only selected recipients acknowledge: "+combat+"/"+focus+"/"+role);
+            }
+        }
+        foreach(string gate in new[]{"dead","inactive","loot"})
+        {
+            var receiver=new Receiver();var target=new BotOwner();var other=new BotOwner();
+            receiver.Followers.Add(target);receiver.Followers.Add(other);receiver.Focused=target;
+            BossPlayers.Instance.States[target]=new BotFollowerPlayer();BossPlayers.Instance.States[other]=new BotFollowerPlayer();
+            if(gate=="dead")target.IsDead=true;if(gate=="inactive")target.BotState=EBotState.NonActive;if(gate=="loot")receiver.LootLocked=true;
+            receiver.Issue(new Player());
+            Check(BossPlayers.Instance.States[target].Determination==50&&BossPlayers.Instance.States[other].Determination==50,"ineligible focused recipient does not redirect command to others: "+gate);
+        }
         foreach (bool registered in new[] { false, true })
         foreach (bool knight in new[] { false, true })
         foreach (string role in new[] { "bossKnight", "followerBigPipe", "followerBirdEye", "exUsec", "pmcUSEC", "assault" })

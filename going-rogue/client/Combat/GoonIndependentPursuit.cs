@@ -24,7 +24,7 @@ internal sealed class GoonIndependentPursuit(BotOwner owner, FollowerCombatCommo
         holdStarted = decision.Action == BotLogicDecision.holdPosition ? Time.time : -1f;
         holdReason = decision.Action == BotLogicDecision.holdPosition ? decision.Reason : null;
         if (decision.Reason?.StartsWith(reason, System.StringComparison.Ordinal) != true &&
-            decision.Reason?.StartsWith("bigPipe.autonomousAdvance", System.StringComparison.Ordinal) != true) { EndSearch(); return; }
+            decision.Reason?.Contains(".autonomousAdvance") != true) { EndSearch(); return; }
         var enemy = owner.Memory.GoalEnemy;
         if (enemy?.ProfileId != searchEnemy) EndSearch();
         if (enemy != null) { searchEnemy = enemy.ProfileId; FollowerEnemyTracking.SearchTick(enemy); }
@@ -34,10 +34,10 @@ internal sealed class GoonIndependentPursuit(BotOwner owner, FollowerCombatCommo
         point = default; decision = default;
         var enemy = owner.Memory.GoalEnemy;
         bool independent = FollowerCombatAnchor.IsCombatIndependent(owner);
-        if ((!independent && !CanSoloPipeAdvance(owner, common, enemy)) || !common.HasActiveCombatEnemy(enemy) ||
+        if ((!independent && !GoonAssaultPolicy.CanAssault(owner, common, enemy)) || !common.HasActiveCombatEnemy(enemy) ||
             enemy.IsVisible && enemy.CanShoot || common.HasActiveOrPendingHealWork() || owner.Medecine.Using ||
-            common.HasRecoveryPressure(1f) || common.HasImmediateExplosiveDanger() || owner.Memory.IsUnderFire ||
-            FollowerCombatCommon.WasHitRecently(owner, 0.75f) || common.IsTemporaryHoldPositionAggressionActive() ||
+            GoonAssaultPolicy.HasBlockingPressure(owner, common, enemy) || common.HasImmediateExplosiveDanger() ||
+            FollowerCombatCommon.WasHitRecently(owner, 1.5f) || common.IsFollowerCriticallyWounded() || common.IsTemporaryHoldPositionAggressionActive() ||
             owner.WeaponManager.Reload?.Reloading == true || !owner.WeaponManager.IsWeaponReady || !owner.WeaponManager.HaveBullets ||
             owner.WeaponManager.Selector?.IsChanging == true ||
             (owner.WeaponManager.ShootController as Player.FirearmController)?.IsInReloadOperation() == true ||
@@ -48,24 +48,15 @@ internal sealed class GoonIndependentPursuit(BotOwner owner, FollowerCombatCommo
             follower.TryPeekActiveCommand(out _, out _, out _)) return false;
         if (owner.Profile.Info.Settings.Role != WildSpawnType.bossKnight &&
             !GoonPushLeadership.CanAutonomousAdvance(owner, enemy)) return false;
-        string moveReason = independent ? reason : "bigPipe.autonomousAdvance";
-        if (FollowerEnemyTracking.Distance(enemy) > 60f && common.CanSprintForCombatMovement() && common.CanRunToEnemyNow())
+        if (GoonAssaultPolicy.HasPlayerHelp(owner)) return false;
+        string moveReason = independent ? reason : owner.Profile.Info.Settings.Role == WildSpawnType.bossKnight
+            ? "knight.autonomousAdvance" : "bigPipe.autonomousAdvance";
+        if (FollowerEnemyTracking.Distance(enemy) > 30f && common.CanSprintForCombatMovement() && common.CanRunToEnemyNow())
             moveReason += ".runToPoint";
+        else moveReason += ".walkToPoint";
         return common.TryPlanContactAdvanceDecision(enemy, stopDistance, moveReason, out point, out decision);
     }
 
-    // Solo Pipe keeps native initiative without changing saved determination or borrowing
-    // the whole unit stance. This is movement from an admitted report, never firing permission.
-    internal static bool CanSoloPipeAdvance(BotOwner actor, FollowerCombatCommon context, EnemyInfo enemy)
-    {
-        if (actor.Profile?.Info?.Settings?.Role != WildSpawnType.followerBigPipe ||
-            GoonPushLeadership.FindKnight(actor) != null || !context.HasActiveCombatEnemy(enemy) ||
-            !(context.GetAggression01() >= 0.6f) ||
-            !(FollowerEnemyTracking.Distance(enemy) <= 60f)) return false;
-        var role = enemy.Person?.Profile?.Info?.Settings?.Role;
-        return role.HasValue && GoonCombatConfidence.PowerMultiplier(role.Value.ToString()) > 1f &&
-            GoonCombatThreat.IsLowThreat(actor, enemy, context, allowReportedContact: true);
-    }
     internal bool TryGetDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
     {
         if (!TryPlan(out var point, out decision)) return false;

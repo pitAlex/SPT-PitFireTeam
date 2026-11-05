@@ -41,12 +41,30 @@ internal static class ExUsecHierarchyChecks
             GoonPushLeadership.PublishAutonomousIntent(expected,target.ProfileId,false);
             Check(!GoonPushLeadership.CanAutonomousAdvance(rogue,target),"selected commander hold wins over lower-priority advance");
             Check(!GoonPushLeadership.TryGetSearchLeader(rogue,target,out _),"hold does not fabricate a follow mission");
+            // A detached member cannot borrow the player's local delegation while his commander holds.
+            rogue.Position=new(0,0,0);expected.Position=new(100,0,0);
+            follower.TeamSplitCombatActive=true;
+            Check(!GoonPushLeadership.CanAutonomousAdvance(rogue,target),"Split suppresses player-proximity delegation against commander's hold");
+            follower.TeamSplitCombatActive=false;
+            Check(GoonPushLeadership.CanAutonomousAdvance(rogue,target),"Combined member retains existing player-proximity delegation");
+            rogue.Position=new(100,0,0);expected.Position=new(0,0,0);
             GoonPushLeadership.PublishAutonomousIntent(expected,target.ProfileId,true,true);
             Check(GoonPushLeadership.TryGetSearchLeader(rogue,target,out var lead)&&lead==expected,"admitted commander search drives unit follow");
             Check(GoonPushLeadership.Evaluate(new(rogue,human.realPlayer,target,2,(actor,enemy)=>actor==expected&&enemy==target))==true,
                 "player push shares selected commander's confidence verdict");
             follower.PushEnemyIssueSequence++;
             Check(GoonPushLeadership.TryGetAdvanceOrder(expected,out _,out var revision,out var at),"published leader directive can be observed passively");
+            expected.Memory.IsUnderFire=true;
+            Check(!GoonPushLeadership.TryGetAdvanceLeader(rogue,target,out _),"ordinary published advances retain pressure cancellation");
+            GoonPushLeadership.PublishAutonomousIntent(expected,target.ProfileId,true,true,allowHarassment:true);
+            Check(GoonPushLeadership.TryGetAdvanceLeader(rogue,target,out _),"commander-admitted harmless Scav pressure preserves unit authority");
+            Check(GoonPushLeadership.TryGetAdvanceOrder(expected,out _,out var pressureRevision,out _) && pressureRevision==revision,
+                "harassment admission does not manufacture a new directive revision");
+            expected.RecentHit=true;
+            Check(!GoonPushLeadership.TryGetAdvanceLeader(rogue,target,out _),"actual commander hit cancels even an admitted harassment advance");
+            expected.RecentHit=false;expected.Medecine.Using=true;
+            Check(!GoonPushLeadership.TryGetAdvanceOrder(expected,out _,out _,out _),"treatment retains priority over admitted harassment");
+            expected.Medecine.Using=false;expected.Memory.IsUnderFire=false;
             Time.time++;
             GoonPushLeadership.PublishAutonomousIntent(expected,target.ProfileId,true,true);
             Check(GoonPushLeadership.TryGetAdvanceOrder(expected,out _,out var sameRevision,out _)&&sameRevision==revision,

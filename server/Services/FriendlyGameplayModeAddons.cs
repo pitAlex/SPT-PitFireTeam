@@ -5,6 +5,7 @@ namespace pitTeam.Server.Services;
 public sealed record FriendlyModeCompanion(string Role, string Nickname, string PortraitColor,
     bool ProficiencyOnly = false, bool SeedForTesting = false, bool RaidReady = true)
 {
+    public string? AddonRequired { get; init; }
     public bool HideRaidStats { get; init; }
     public bool PinnedRoster { get; init; }
     public bool LockCombatSettings { get; init; }
@@ -33,6 +34,9 @@ public static class FriendlyGameplayModeAddons
         Modes.Add(mode, companions);
     }
     public static bool HasExtension(string mode) => Modes.ContainsKey(mode);
+    public static bool IsAddonAvailable(string? addon) => string.IsNullOrWhiteSpace(addon) ||
+        Modes.Values.SelectMany(companions => companions).Any(companion =>
+            string.Equals(companion.AddonRequired, addon, StringComparison.Ordinal));
     public static bool IsAvailable(string mode) => mode is "GunsForHire" or "Allegiance";
     public static IReadOnlyList<FriendlyModeCompanion> Companions(string mode) => Modes.TryGetValue(mode, out var value) ? value : [];
     public static FriendlyModeCompanion? Policy(string mode, BotBase profile) => PolicyForRole(mode, profile.Info?.Settings?.Role);

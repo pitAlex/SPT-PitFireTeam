@@ -25,4 +25,4 @@ Loads and saves share the mode/request gate with in-game operations and use expl
 
 When a request is blocked by an active raid, the page shows the localized finish-the-raid message and hides the teammate list and edit panel. It does not display an empty-roster state for that error. Player, roster and language selectors remain available for retrying after the raid.
 
-Implementation: [page](../server/Web/Teammates.razor), [service](../server/Services/FriendlyTeammateEditorService.cs), [edit policy](../server/Services/FriendlyTeammateEditorPolicy.cs), [validation](validation/Teammate-Web-Editor.md). [Teammate Storage](Teammate-Storage.md) owns the database contract.
+Implementation: [page](../server/Web/Teammates.razor), [service](../server/Services/FriendlyTeammateEditorService.cs), [edit policy](../server/Services/FriendlyTeammateEditorPolicy.cs), validation (historical notes retained in Git). [Teammate Storage](Teammate-Storage.md) owns the database contract.

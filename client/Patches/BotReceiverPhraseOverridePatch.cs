@@ -35,6 +35,8 @@ namespace pitTeam.Patches
                 return true;
             }
 
+            if (!CompanionTeamCommands.AllowsPhrase(botOwner, info.phrase)) return false;
+
             switch (info.phrase)
             {
                 case EPhraseTrigger.Stop:

@@ -1643,7 +1643,8 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            BotOwner? bossEnemy = boss.ClosestEnemy();
+            BotOwner? bossEnemy = BossPlayers.Instance?.GetFollower(botOwner) is { } member &&
+                member.TryGetTeamSplitHelpEnemy(out var requested) ? requested : boss.ClosestEnemy();
             if (bossEnemy == null || bossEnemy.GetPlayer?.HealthController?.IsAlive != true)
             {
                 return false;
@@ -2624,7 +2625,8 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            BotOwner? bossEnemy = boss.ClosestEnemy();
+            BotOwner? bossEnemy = BossPlayers.Instance?.GetFollower(botOwner) is { } member &&
+                member.TryGetTeamSplitHelpEnemy(out var requested) ? requested : boss.ClosestEnemy();
             if (bossEnemy?.GetPlayer?.HealthController?.IsAlive != true ||
                 string.IsNullOrEmpty(bossEnemy.ProfileId))
             {
@@ -2899,7 +2901,8 @@ namespace pitTeam.BigBrain
                         return false;
                     }
 
-                    BotOwner? bossEnemy = boss.ClosestEnemy();
+                    BotOwner? bossEnemy = BossPlayers.Instance?.GetFollower(botOwner) is { } member &&
+                member.TryGetTeamSplitHelpEnemy(out var requested) ? requested : boss.ClosestEnemy();
                     if (bossEnemy == null || bossEnemy.GetPlayer?.HealthController?.IsAlive != true)
                     {
                         return false;

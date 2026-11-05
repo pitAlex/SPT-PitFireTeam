@@ -20,7 +20,7 @@ internal static class GoonPushLeadership
     }
     private static readonly Dictionary<string, bool> Verdicts = new();
     private static readonly Dictionary<BotOwner, PlayerPush> PlayerPushes = new();
-    private static readonly Dictionary<BotOwner, (string Target, bool Advance, bool Searching)> AutonomousIntents = new();
+    private static readonly Dictionary<BotOwner, (string Target, bool Advance, bool Searching, bool Harassment)> AutonomousIntents = new();
     private static readonly Dictionary<BotOwner, (int Revision, float At)> IntentRevisions = new();
     private static int nextIntentRevision;
     private static int currentSequence;
@@ -28,24 +28,27 @@ internal static class GoonPushLeadership
 
     internal static void Reset() { Verdicts.Clear(); PlayerPushes.Clear(); AutonomousIntents.Clear(); IntentRevisions.Clear(); nextIntentRevision = 0; currentRequester = null; }
 
-    internal static void PublishAutonomousIntent(BotOwner knight, string target, bool advance, bool searching = false)
+    internal static void PublishAutonomousIntent(BotOwner knight, string target, bool advance, bool searching = false, bool allowHarassment = false)
     {
         if (string.IsNullOrEmpty(target)) { ClearAutonomousIntent(knight); return; }
-        if (!AutonomousIntents.TryGetValue(knight, out var previous) || previous != (target, advance, searching))
+        if (!AutonomousIntents.TryGetValue(knight, out var previous) || (previous.Target != target || previous.Advance != advance || previous.Searching != searching))
             IntentRevisions[knight] = (++nextIntentRevision, Time.time);
-        AutonomousIntents[knight] = (target, advance, searching);
+        AutonomousIntents[knight] = (target, advance, searching, allowHarassment);
     }
     internal static void ClearAutonomousIntent(BotOwner owner) { AutonomousIntents.Remove(owner); IntentRevisions.Remove(owner); }
 
     internal static BotOwner FindCommandLeader(BotOwner member) => member?.Profile?.Info?.Settings?.Role == WildSpawnType.exUsec
-        ? ExUsecCombatExtension.FindLeader(member) : FindKnight(member);
+        ? ExUsecCombatExtension.FindLeader(member) : GoonTeamSplit.CombatCommander(member) ?? FindKnight(member);
+
+    private static bool BlockingLeaderPressure(BotOwner leader) =>
+        leader.Memory.IsUnderFire && !(AutonomousIntents.TryGetValue(leader, out var intent) && intent.Harassment) ||
+        FollowerCombatCommon.WasHitRecently(leader, 1f);
 
     internal static bool TryGetAdvanceOrder(BotOwner leader, out EnemyInfo target, out int revision, out float publishedAt)
     {
         target = null; revision = 0; publishedAt = 0f;
         if (leader == null || leader.IsDead || leader.BotState != EBotState.Active ||
-            leader.GetPlayer?.HealthController?.IsAlive != true || leader.Medecine.Using || leader.Memory.IsUnderFire ||
-            FollowerCombatCommon.WasHitRecently(leader, 1f) ||
+            leader.GetPlayer?.HealthController?.IsAlive != true || leader.Medecine.Using || BlockingLeaderPressure(leader) ||
             !AutonomousIntents.TryGetValue(leader, out var intent) || !intent.Advance ||
             !IntentRevisions.TryGetValue(leader, out var stamp) || leader.Memory.GoalEnemy?.ProfileId != intent.Target) return false;
         target = KnownTarget(leader, intent.Target);
@@ -69,7 +72,7 @@ internal static class GoonPushLeadership
         // Following an allied advance uses admitted shared memory, not personal sight.
         return knight != null && target != null && KnownTarget(member, target.ProfileId) != null &&
             KnownTarget(knight, target.ProfileId) != null && knight.Memory.GoalEnemy?.ProfileId == target.ProfileId &&
-            !knight.Memory.IsUnderFire && !FollowerCombatCommon.WasHitRecently(knight, 1f) && !knight.Medecine.Using &&
+            !BlockingLeaderPressure(knight) && !knight.Medecine.Using &&
             AutonomousIntents.TryGetValue(knight, out var intent) && intent.Target == target.ProfileId &&
             intent.Advance;
     }
@@ -80,9 +83,10 @@ internal static class GoonPushLeadership
         var leader = BossPlayers.Instance?.GetFollower(member)?.GetBoss();
         if (leader?.realPlayer?.IsYourPlayer != true) return false;
         var knight = FindCommandLeader(member);
-        if (Delegated(member, leader.realPlayer.Position, target.ProfileId, knight, out var known)) return true;
+        bool delegated = Delegated(member, leader.realPlayer.Position, target.ProfileId, knight, out var known);
+        if (knight == null || delegated && BossPlayers.Instance?.GetFollower(member)?.TeamSplitCombatActive != true) return true;
         return known != null && knight.Memory.GoalEnemy?.ProfileId == target.ProfileId &&
-            !knight.Memory.IsUnderFire && !FollowerCombatCommon.WasHitRecently(knight, 1f) && !knight.Medecine.Using &&
+            !BlockingLeaderPressure(knight) && !knight.Medecine.Using &&
             AutonomousIntents.TryGetValue(knight, out var intent) && intent.Target == target.ProfileId && intent.Advance;
     }
 

@@ -257,6 +257,8 @@ namespace pitTeam.Localization
                 {
                     ["OverThere"] = "Over There",
                     ["TeamStatus"] = "Status Report",
+                    ["TeamSplit"] = "Team Split",
+                    ["TeamCombine"] = "Team Combine",
                     ["ViewBackpack"] = "View Backpack",
                     ["SwapGear"] = "Swap Gear",
                     ["GiveGear"] = "Give Gear",

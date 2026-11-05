@@ -522,6 +522,7 @@ internal static class GoingRogueModeTests
         var locked = storage.Read<FriendlyTeammateSettings>(session, "129-settings.json")!;
         check(locked.Aggression == 68 && locked.SelfDetermination == 42 && locked.Proficiency.Accuracy == 130,
             "proficiency remains editable while a forged determination field cannot change saved combat percentages");
+        check(locked.AddonRequired == "xyz.pit.fireteam.goingrogue", "recruited Rogue settings retain the same addon owner as Goons");
         storage.DeleteTeammate(session, 129);
         var bigPipeSession = new MongoId("c1c1c1c1c1c1c1c1c1c1c1c1");
         storage.InitializeProfile(bigPipeSession);
@@ -571,15 +572,36 @@ internal static class GoingRogueModeTests
             "boss exemption preserves penalties for ordinary recruits");
         var registrations = (System.Collections.IDictionary)typeof(FriendlyGameplayModeAddons).GetField("Modes", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
         var installed = registrations["Allegiance"]!;
+        // Backfill a legacy member while its owner is loaded, then remove the
+        // registration without touching its profile, kit, skills or grant receipt.
+        check(storage.IsTeammateAddonAvailable(session, 123, "bossKnight", "Allegiance"), "installed addon admits a legacy Knight");
+        check(storage.Read<FriendlyTeammateSettings>(session, "123-settings.json")?.AddonRequired == "xyz.pit.fireteam.goingrogue", "legacy companion persists a generic addon requirement");
+        var memberDocuments = storage.ReadModeProfiles(session, "Allegiance");
+        var loadRoster = typeof(FriendlyTeammateService).GetMethod("LoadTeammates", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var otherAddonMember = new FastCloner().Clone(knight)!;
+        otherAddonMember.Aid = 987;
+        otherAddonMember.Id = new MongoId();
+        otherAddonMember.Info!.Settings!.Role = "pmcUSEC";
+        storage.Write(session, "987.json", otherAddonMember);
+        storage.Write(session, "987-settings.json", new FriendlyTeammateSettings { AddonRequired = "some.other.addon" });
+        check(!((List<BotBase>)loadRoster.Invoke(service, [session])!).Any(member => member.Aid == 987), "generic addon requirement also hides a non-Goon from an unavailable unrelated addon");
+        storage.DeleteTeammate(session, 987);
         registrations.Remove("Allegiance");
         try
         {
+            check(!storage.IsTeammateAddonAvailable(session, 123, "bossKnight", "Allegiance"), "absent addon hides its stored Knight");
+            check(!((List<BotBase>)loadRoster.Invoke(service, [session])!).Any(member => member.Aid == 123), "Core roster and social reads omit missing-addon members");
+            check(storage.ReadModeProfiles(session, "Allegiance").SequenceEqual(memberDocuments), "hidden teammate profile remains unchanged in storage");
+            check(storage.GetAllAccountIds().Contains(123), "hidden members keep their account IDs reserved");
+            check(FriendlyGameplayModeAddons.IsAddonAvailable(null) && FriendlyGameplayModeAddons.IsAddonAvailable(""), "ordinary legacy teammates require no addon");
+            check(!FriendlyGameplayModeAddons.IsAddonAvailable("some.other.addon"), "requirement lookup is generic and unknown addons remain unavailable");
             var ready = typeof(FriendlyTeammateService).GetMethod("IsCompanionRaidReady", BindingFlags.NonPublic | BindingFlags.Instance)!;
             foreach(string role in new[] { "bossKnight", "followerBigPipe", "followerBirdEye" })
                 check(!(bool)ready.Invoke(service, [new BotBase { Info = new() { Settings = new() { Role = role } } }])!, "missing addon cannot spawn a stored Goon through ordinary Allegiance: " + role);
             check((bool)ready.Invoke(service, [new BotBase { Info = new() { Settings = new() { Role = "pmcUSEC" } } }])!, "ordinary Allegiance teammates remain available without addon");
         }
         finally { registrations["Allegiance"] = installed; }
+        check(storage.IsTeammateAddonAvailable(session, 123, "bossKnight", "Allegiance"), "reinstalling restores visibility without granting or recreating the teammate");
         settings.SaveAndApply(new());
     }
     private static void Reject(Action action, Action<bool, string> check)

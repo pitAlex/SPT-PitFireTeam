@@ -2914,8 +2914,11 @@ namespace pitTeam.BigBrain
             return Mathf.Clamp01(aggression / 100f);
         }
 
+        public bool HasTeamSplitHelpRequest => BossPlayers.Instance?.GetFollower(botOwner)?.TryGetTeamSplitHelpEnemy(out _) == true;
+
         public float GetBossProtectionWillingness01()
         {
+            if (HasTeamSplitHelpRequest) return 1f;
             return BossPlayers.Instance?.GetFollower(botOwner)?.BossProtectionWillingness01 ?? 1f;
         }
 
@@ -4716,7 +4719,7 @@ namespace pitTeam.BigBrain
             bool hasActivePushOrder = false,
             float stalePersonalEnemySeconds = 2.5f)
         {
-            if (FollowerCombatAnchor.IsCombatIndependent(botOwner))
+            if (FollowerCombatAnchor.IsCombatIndependent(botOwner) && !HasTeamSplitHelpRequest)
             {
                 return false;
             }
@@ -4738,7 +4741,7 @@ namespace pitTeam.BigBrain
             }
 
             float sinceLastSeen = Time.time - goalEnemy.PersonalLastSeenTime;
-            if (botOwner.Memory.HaveEnemy && sinceLastSeen > stalePersonalEnemySeconds)
+            if (!HasTeamSplitHelpRequest && botOwner.Memory.HaveEnemy && sinceLastSeen > stalePersonalEnemySeconds)
             {
                 return false;
             }

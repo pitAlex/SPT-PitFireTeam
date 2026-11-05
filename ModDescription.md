@@ -724,8 +724,12 @@ This remains a known issue. Swap Gear and Give Gear also deliberately refuse to 
 
 ### Movement and combat troubleshooting
 
+**Keep track of your followers' positions and be mindful of the terrain you lead them through.** Bots cannot reliably follow you everywhere you can go. Dense vegetation, obstacles, steep terrain, stairs and tight spaces can slow them down or prevent them from reaching you. Choose accessible routes and check that your followers have caught up before advancing into another fight.
+
 - **Not moving after a fight:** allow ongoing treatment or reloads to finish. If the follower still does not resume, try **Attention**.
+- **Slowing down in bushes:** followers may run straight through bushes instead of going around them, significantly slowing their movement. Watch their positions when crossing dense vegetation; do not assume they are keeping pace with you.
 - **Stuck on a route or falling behind:** followers can struggle with doors, stairs, tight interiors, or map geometry. Check their position before starting another fight. Try Attention, then teleportation if needed.
+- **Teleporting back and forth while following:** followers can repeatedly teleport between positions while trying to approach you. Check the terrain and the route between you and them, and lead them toward more accessible ground.
 - **Teleportation problems:** avoid teleporting a follower while he is using a door, transferring items, or performing another interaction. With some AI setups, he may return to his previous position afterward.
 - **Missing body after a fall:** followers have been reported falling below the playable map. Equipment may not be recoverable during that raid. Do not assume an empty spot means the gear was returned or safely stored.
 - **Hesitation around foliage:** a known enemy behind bushes does not always produce an immediate shot. **Suppress** can help a suitably equipped follower fire toward a known position, but cannot bypass hard cover or friendly-fire safety.

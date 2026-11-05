@@ -8,7 +8,7 @@ using SPT.Reflection.Patching;
 
 /* PHRASE_ENUM */
 namespace EFT { public enum EPlayerSide { Usec, Bear, Savage } }
-public enum CustomPhrases { TeamStatus = 10000 }
+public enum CustomPhrases { TeamStatus = 10000, TeamSplit=10005, TeamCombine=10006 }
 public static class pitFireTeam
 {
     public class Config { public bool Value; }

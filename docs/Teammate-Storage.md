@@ -8,7 +8,7 @@ For supported head, level/XP, skill, health and pocket edits, use the [server-ho
 
 The [Database Tool](../tools/DatabaseTool/README.md) lists editable documents, exports readable JSON and imports validated changes using the production storage/encryption implementation. Close Tarkov and SPT first. It checks profile identity and stale exports, preserves internal records and creates an exact encrypted backup before atomically replacing the database. Validation covers JSON structure and existing identities, not every EFT item or statistic rule.
 
-The portable Windows package includes its runtime and needs no game installation, server DLL or manually supplied key. Exports contain private plaintext profile data. See [dated validation](validation/Database-Tool.md) for synthetic test coverage; no live player database was edited during qualification.
+The portable Windows package includes its runtime and needs no game installation, server DLL or manually supplied key. Exports contain private plaintext profile data. See dated validation (historical notes retained in Git) for synthetic test coverage; no live player database was edited during qualification.
 
 ## Location and lifecycle
 
@@ -73,9 +73,12 @@ Completion stores either `skipped` for an existing squad or the exact candidate 
 
 Delivery commits `recruit-requests.json` and `welcome-invitation-delivery.json` together in the selected mode's database, then marks the shared state `delivered` and releases the candidate payload. The target receipt survives acceptance and decline. If the server stops between these two database commits, recovery observes that receipt and completes the shared outcome without recreating the invitation. Acceptance reuses the existing recruit transaction. The invitation's server-owned `IsWelcomeTeammate` marker preserves its prepared level (the player's PMC level at creation, minimum 1), native baseline XP for that level and zero starting skill progress in both preview and acceptance; incoming raid candidates cannot set that marker. Existing pending invitations retain their saved level. Ordinary recruits retain their existing skill/stat policy.
 
-The mode-storage fixture covers shared first-visit state, existing/late squad suppression, refresh deadlines, early/wrong-mode/in-raid delivery rejection, duplicate delivery and recovery after invitation consumption. It also exercises player-level generation details and production starter normalization. See [dated onboarding validation](validation/Squad-Onboarding.md) for checks and deployment evidence. Native bot generation, UI layout and invitation display still require an EFT pass.
+The mode-storage fixture covers shared first-visit state, existing/late squad suppression, refresh deadlines, early/wrong-mode/in-raid delivery rejection, duplicate delivery and recovery after invitation consumption. It also exercises player-level generation details and production starter normalization. See dated onboarding validation (historical notes retained in Git) for checks and deployment evidence. Native bot generation, UI layout and invitation display still require an EFT pass.
 
 ### Teammate documents
+
+Teammate settings may persist `addonRequired`, the stable addon identifier supplied by an optional companion registration. New companion/recruit creation saves it with the normal profile/settings transaction; reads backfill existing members while their addon is loaded. Core omits members whose required addon is absent from roster/social/profile access and the web editor. Their profiles, equipment, skills, settings and grant receipts remain stored, their account IDs remain reserved, and reinstalling the addon restores availability. Ordinary teammates with no requirement keep their existing behavior. This is generic Core metadata, not a hardcoded Goon-role or nickname filter. It does not undo a removed addon's persistent native trader/quest/item changes or provide a safe profile uninstall.
+
 
 Recruit invitations carry nullable `Aggression` captured from the follower's base combat aggression after native SAIN personality mapping. Acceptance writes it into the teammate settings in the existing profile/default-equipment/receipt transaction. It remains stable through invitation storage, acceptance and roster reload; temporary raid command overrides are never saved here. Missing legacy values and non-finite values use 50%, and finite values are clamped to 0–100%.
 

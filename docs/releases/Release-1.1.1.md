@@ -5,6 +5,8 @@
 - Added protected companion roster rows, personal invitation refusals and quest credit for roster-deployed Goons through optional companion policies.
 - Retained separate Core and addon ownership: Going Rogue extends Allegiance and now requires Core 1.1.1 or later.
 
-Going Rogue remains a separate addon. Its companion changes include Rogue recruitment and command hierarchy, dynamic detection of hostile quest objectives, ambient Rogue/Goon hostility during those tasks, and localized invitation rebukes. Core does not require Going Rogue or the SAIN addon.
+Going Rogue **1.0.0** remains a separate addon. Its companion changes include Rogue recruitment and command hierarchy, dynamic detection of hostile quest objectives, ambient Rogue/Goon hostility during those tasks, and localized invitation rebukes. Core does not require Going Rogue or the SAIN addon.
+
+Going Rogue also adds Team Split and Team Combine under Command. A detached Knight/Pipe unit fights independently during combat while the player's remaining teammates retain ordinary orders. Combat gestures, Status Report and Need Help within 40m remain available. Team Combine reunites the squad and issues Regroup toward the player. Knight and Pipe take favourable assault opportunities, with Birdeye retaining precision support.
 
 Source/build verification and live qualification limits are recorded in [validation](../validation/Release-1.1.1.md).

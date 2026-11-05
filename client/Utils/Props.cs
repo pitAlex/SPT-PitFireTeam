@@ -234,10 +234,6 @@ namespace pitTeam.Utils
             {
                 WildSpawnType.bossKolontay,
                 new List<string> { "67768936fa281ca31708b17c" }
-            },
-            {
-                WildSpawnType.bossPartisan,
-                new List<string> { "67768a41fa281ca31708b182" }
             }
         };
     }

@@ -8,6 +8,7 @@ public static class BattleRecorder {public static void RecordCombatAggressionOve
 public sealed class BotOwner {public string ProfileId;public Follower State;}
 public sealed class BossPlayers {public static BossPlayers Instance=new BossPlayers();public Follower GetFollower(BotOwner owner)=>owner.State;}
 public sealed class Follower {
+    public bool TeamSplitCombatActive; private float? teamSplitAggression = null;
     public bool _IsSquadMate=true;private float _selfDetermination=50;private float? _combatDeterminationOverride;
     public bool SavedBossPreferences;private bool UsesSavedCombatPreferences=>_IsSquadMate||SavedBossPreferences;
     private bool _combatRegroupUsesBossAnchor;private float _combatAggression=50,_temporaryCombatAggressionOverride,_temporaryCombatAggressionClearAfter;
@@ -113,6 +114,7 @@ public sealed class SavedSettings {public float SelfDetermination=50;public obje
 public sealed class Persistence {
     public SavedSettings Settings=new SavedSettings();
     private object FindByAccountId(MongoId session,string aid)=>new object();
+    private bool AreCompanionCombatSettingsLocked(object teammate)=>false;
     private SavedSettings GetTeammateSettings(MongoId session,object teammate)=>Settings;
     private object NormalizeProficiency(object value)=>value;
     private void SaveTeammateSettings(MongoId session,object teammate,SavedSettings settings){}

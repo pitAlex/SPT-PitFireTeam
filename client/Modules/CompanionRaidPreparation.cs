@@ -90,29 +90,35 @@ namespace pitTeam.Modules
             QuestRoles.UnionWith(roles);
             QuestProfile = null;
             QuestProfiles.Clear();
-            try
+            for (int attempt = 0; attempt < 2; attempt++)
             {
-                string response = RequestHandler.PostJson("/client/game/bot/followerprepare", JsonConvert.SerializeObject(new
-                { token = _token, members = Members.Keys.ToArray(), memberRevisions = Members, raidConfiguration, questCompanionRole = questRole, questCompanionRoles = roles }));
-                var body = JObject.Parse(response);
-                if ((int?)body["err"] != 0 || !string.Equals((string)(body["data"]?["Token"] ?? body["data"]?["token"]), _token, StringComparison.Ordinal))
-                    throw new InvalidOperationException("Companion preparation was not acknowledged: " + (string)body["errmsg"]);
-                QuestProfile = body["data"]?["QuestCompanion"] ?? body["data"]?["questCompanion"];
-                if (QuestProfile?.Type == JTokenType.Null) QuestProfile = null;
-                var companions = body["data"]?["QuestCompanions"] ?? body["data"]?["questCompanions"];
-                foreach (var companion in companions as JArray ?? new JArray())
+                try
                 {
-                    string role = (string)(companion["Info"]?["Settings"]?["Role"] ?? companion["info"]?["settings"]?["role"]);
-                    if (role != null && roles.Contains(role, StringComparer.OrdinalIgnoreCase)) QuestProfiles[role] = companion;
+                    string response = RequestHandler.PostJson("/client/game/bot/followerprepare", JsonConvert.SerializeObject(new
+                    { token = _token, members = Members.Keys.ToArray(), memberRevisions = Members, raidConfiguration, questCompanionRole = questRole, questCompanionRoles = roles }));
+                    var body = JObject.Parse(response);
+                    if ((int?)body["err"] != 0 || !string.Equals((string)(body["data"]?["Token"] ?? body["data"]?["token"]), _token, StringComparison.Ordinal))
+                        throw new InvalidOperationException("Companion preparation was not acknowledged: " + (string)body["errmsg"]);
+                    QuestProfile = body["data"]?["QuestCompanion"] ?? body["data"]?["questCompanion"];
+                    if (QuestProfile?.Type == JTokenType.Null) QuestProfile = null;
+                    var companions = body["data"]?["QuestCompanions"] ?? body["data"]?["questCompanions"];
+                    foreach (var companion in companions as JArray ?? new JArray())
+                    {
+                        string role = (string)(companion["Info"]?["Settings"]?["Role"] ?? companion["info"]?["settings"]?["role"]);
+                        if (role != null && roles.Contains(role, StringComparer.OrdinalIgnoreCase)) QuestProfiles[role] = companion;
+                    }
+                    if (QuestProfile != null && questRole != null && !QuestProfiles.ContainsKey(questRole)) QuestProfiles[questRole] = QuestProfile;
+                    Logger.LogInfo($"[CompanionRaidKit] acceptScreen token={_token} members={Members.Count} location={settings.LocationId}");
+                    return;
                 }
-                if (QuestProfile != null && questRole != null && !QuestProfiles.ContainsKey(questRole)) QuestProfiles[questRole] = QuestProfile;
-                Logger.LogInfo($"[CompanionRaidKit] acceptScreen token={_token} members={Members.Count} location={settings.LocationId}");
-            }
-            catch (Exception ex)
-            {
-                // Keep the token: actual spawn must not silently reroll a kit after
-                // a failed or lost preparation response. Existing spawn errors own UI.
-                Logger.LogError("[CompanionRaidKit] Accept-screen preparation failed; spawn will require the reserved kit: " + ex);
+                catch (Exception ex)
+                {
+                    if (attempt == 0) continue;
+                    // Exactly one retry, with the same token/revisions: a lost response
+                    // must not reroll an already reserved/displayed kit. Later UI calls
+                    // remain suppressed after both attempts fail.
+                    Logger.LogError("[CompanionRaidKit] Accept-screen preparation failed after one retry; spawn will require the reserved kit: " + ex);
+                }
             }
         }
     }

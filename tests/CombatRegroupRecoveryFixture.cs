@@ -17,14 +17,20 @@ public struct AICoreActionEnd
     public AICoreActionEnd(string reason,bool value) { Reason=reason; Value=value; }
 }
 public class EnemyInfo { public bool Alive=true, Admitted=true; }
-public class Memory { public EnemyInfo GoalEnemy=new EnemyInfo(); public bool HaveEnemy=true; }
+public class Memory { public EnemyInfo GoalEnemy=new EnemyInfo(); public bool HaveEnemy=true; public bool IsUnderFire; }
 public class Talk { public void TrySay(EPhraseTrigger phrase,bool force) { } }
 public class Gesture { public void TryGestus(EInteraction gesture,bool force) { } }
-public class BotOwner { public Memory Memory=new Memory(); public Talk BotTalk=new Talk(); public Gesture Gesture=new Gesture(); }
+public class Player { public Movement MovementContext=new Movement(); }
+public class Movement { public bool IsGrounded=true; }
+public class Reload {public bool Reloading;}
+public class Selector {public bool IsChanging;}
+public class Grenades {public bool ThrowindNow,ReadyToThrow;}
+public class Weapons {public Reload Reload=new Reload(); public Selector Selector=new Selector(); public Grenades Grenades=new Grenades();}
+public class BotOwner { public Player GetPlayer=new Player(); public Weapons WeaponManager=new Weapons(); public Memory Memory=new Memory(); public Talk BotTalk=new Talk(); public Gesture Gesture=new Gesture(); }
 public class BotFollowerPlayer
 {
     public FollowerCommandType Command=FollowerCommandType.RegroupNearBoss;
-    public bool HasOrderedPushCancelRequest;
+    public bool HasOrderedPushCancelRequest, TeamSplitHandoffPending;
     public bool TryGetActiveCommand(out FollowerCommandType command,out Vector3 target)
     { command=Command; target=default; return command!=FollowerCommandType.None; }
     public void ClearCommand(string reason) { Command=FollowerCommandType.None; }
@@ -39,7 +45,11 @@ public static class FollowerEnemyInfoCorrection { public static void CorrectDist
 public class FollowerCombatCommon
 {
     public BotOwner Owner;
-    public bool Committed=true;
+    public bool Committed=true, Healing, AllowPrepare=true;
+    public static bool RecentHit; public int Prepared;
+    public bool HasActiveOrPendingHealWork()=>Healing;
+    public static bool WasHitRecently(BotOwner bot,float duration)=>RecentHit;
+    public bool TryPrepareDecisionTransition(Decision current,string reason,Decision next) { if(!AllowPrepare)return false; Prepared++; return true; }
     public Decision Commitment;
     public int SharedEnds,TargetCorrections;
     public void BeginCoverEvaluationCycle() { }
@@ -137,6 +147,29 @@ public static class CombatRegroupRecoveryChecks
             if(scenario=="heal" || scenario=="healMovement" || scenario=="dogfight" || scenario=="shoot")
                 check(router.Objective.Ends==1,"Protected action retains its objective end handler: "+scenario);
         }
+        foreach(string scenario in new[]{"hold","coverMovement","medical","medicalMove","dogfight","fire","reload","switch","grenade","airborne","pressure","recentHit","prepareFailed"})
+        {
+            var router=new RecoveryRegroupRouter();
+            BossPlayers.Instance.Follower.Command=FollowerCommandType.None;
+            BossPlayers.Instance.Follower.TeamSplitHandoffPending=true;
+            FollowerCombatCommon.RecentHit=scenario=="recentHit";
+            router.BotOwner.GetPlayer.MovementContext.IsGrounded=scenario!="airborne";
+            router.BotOwner.Memory.IsUnderFire=scenario=="pressure";
+            router.BotOwner.WeaponManager.Reload.Reloading=scenario=="reload";
+            router.BotOwner.WeaponManager.Selector.IsChanging=scenario=="switch";
+            router.BotOwner.WeaponManager.Grenades.ThrowindNow=scenario=="grenade";
+            router.combatCommon.AllowPrepare=scenario!="prepareFailed";
+            var action=scenario=="medical"?BotLogicDecision.heal:
+                scenario=="dogfight"?BotLogicDecision.dogFight:scenario=="fire"?BotLogicDecision.shootFromPlace:
+                scenario=="medicalMove" || scenario=="coverMovement"?BotLogicDecision.runToCover:BotLogicDecision.holdPosition;
+            var current=new Decision(action,scenario=="medicalMove"?"moveToHealPoint":"oldPlayerOrder");
+            var end=router.ShallEndCurrentDecision(current);
+            bool release=scenario=="hold" || scenario=="coverMovement";
+            check((end.Value && end.Reason=="teamSplitHandoff")==release,"Split handoff preserves protected work: "+scenario);
+            check(router.combatCommon.Prepared==(release?1:0),"Concrete successor only published for admitted safe handoff: "+scenario);
+            check(BossPlayers.Instance.Follower.TeamSplitHandoffPending,"End provider does not consume split state");
+        }
+        FollowerCombatCommon.RecentHit=false;
         return checks;
     }
 }

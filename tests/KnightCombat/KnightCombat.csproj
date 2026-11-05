@@ -4,6 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings><Nullable>annotations</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../going-rogue/client/Combat/GoonAssaultPolicy.cs" Link="GoonAssaultPolicy.cs" />
     <Compile Include="../../going-rogue/client/Combat/BirdEyeCombatLayer.cs" Link="BirdEyeCombatLayer.cs" />
     <Compile Include="../../going-rogue/client/Combat/BirdEyeNativePatches.cs" Link="BirdEyeNativePatches.cs" />
     <Compile Include="../../going-rogue/client/Combat/BirdEyeCombatLogic.cs" Link="BirdEyeCombatLogic.cs" />

@@ -96,6 +96,9 @@ namespace pitTeam.Components
     public enum FollowerCommandType { None, PushEnemy, SuppressEnemy, NeedSniper, Regroup }
     public class BotFollowerPlayer
     {
+        public bool TeamSplitCombatActive;
+        public BotOwner SplitHelpEnemy;
+        public bool TryGetTeamSplitHelpEnemy(out BotOwner enemy) { enemy=SplitHelpEnemy; return enemy!=null; }
         public float? UnitAggression,UnitDetermination;
         public float SelfDetermination=50f;
         public BotOwner CompanionLeader;
@@ -121,7 +124,7 @@ namespace pitTeam.Components
         public bool TryPeekActiveCommand(out FollowerCommandType command, out Vector3 target, out float until)
         { until = 100; return TryGetActiveCommand(out command, out target); }
     }
-    public class BossLogic { public bool IsHitted; }
+    public class BossLogic { public bool IsHitted, HasManualHelpRequest; }
     public class pitAIBossPlayer
     {
         public static int CountKnownAdvanceEnemies(BotOwner owner,EnemyInfo enemy)=>owner.KnownEnemies;
@@ -148,7 +151,7 @@ namespace pitTeam.Modules
         public static bool CanAutomaticallyRegroup(BotOwner owner)=>!Independent||CompanionRegroup;
     }
     public static class BattleRecorder {public static void RecordObjectiveDiagnostic(BotOwner owner,string objective,string action,string reason,Func<object> details){} }
-    public static class FollowerAwareness { }
+    public static class FollowerAwareness { public static bool Damaged; public static bool WasRecentlyDamaged(BotOwner actor)=>Damaged; }
     public static class FollowerEnemyTracking
     { public static bool GroupSearching;
       public static void SearchTick(EnemyInfo enemy){GroupSearching=true;}
@@ -205,6 +208,7 @@ namespace pitTeam.BigBrain
     }
     public class FollowerCombatCommon
     {
+        public bool HasTeamSplitHelpRequest;
         public Func<EnemyInfo,bool> CompanionAdvanceOrder { get; set; }
         public FollowerCombatCommon(){} public FollowerCombatCommon(BotOwner owner){}
         public static bool SupportedGround=true;
@@ -397,12 +401,13 @@ namespace pitTeam.GoingRogue.Combat
         public static bool GroupSearch; public static BotOwner SearchLeader=new(){Position=new Vector3(20,0,0)};
         public static bool TryGetSearchLeader(BotOwner member,EnemyInfo enemy,out BotOwner leader){leader=SearchLeader;return GroupSearch;}
         public static bool TryGetAdvanceLeader(BotOwner member,EnemyInfo enemy,out BotOwner leader){leader=SearchLeader;return GroupSearch;}
-        public static void PublishAutonomousIntent(BotOwner owner,string target,bool advance,bool searching=false) { PublishedTarget=target;PublishedAdvance=advance; }
+        public static void PublishAutonomousIntent(BotOwner owner,string target,bool advance,bool searching=false,bool allowHarassment=false) { PublishedTarget=target;PublishedAdvance=advance; }
         public static bool CanAutonomousAdvance(BotOwner owner,EnemyInfo target)=>AdvanceAllowed;
         public static HashSet<BotOwner> Advancing=new();
         public static bool HasAutonomousAdvanceIntent(BotOwner actor,string target)=>Advancing.Contains(actor);
         public static BotOwner Knight;
         public static BotOwner FindKnight(BotOwner owner)=>Knight;
+        public static BotOwner FindCommandLeader(BotOwner owner)=>Knight;
         public static bool TryGetAdvanceOrder(BotOwner leader,out EnemyInfo target,out int revision,out float publishedAt)
         {target=leader.Memory.GoalEnemy;revision=1;publishedAt=Time.time;return false;}
         public static bool CanSupersede(BotOwner member,string target,int revision,float publishedAt)=>false;

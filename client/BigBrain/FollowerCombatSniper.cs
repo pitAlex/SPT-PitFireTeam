@@ -3519,7 +3519,7 @@ namespace pitTeam.BigBrain
             out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
-            if (FollowerCombatAnchor.IsCombatIndependent(BotOwner))
+            if (FollowerCombatAnchor.IsCombatIndependent(BotOwner) && !CombatCommon.HasTeamSplitHelpRequest)
             {
                 return false;
             }
@@ -3541,7 +3541,8 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            BotOwner? bossEnemy = boss.ClosestEnemy();
+            BotOwner? bossEnemy = BossPlayers.Instance?.GetFollower(BotOwner) is { } member &&
+                member.TryGetTeamSplitHelpEnemy(out var requested) ? requested : boss.ClosestEnemy();
             if (bossEnemy == null || bossEnemy.GetPlayer?.HealthController?.IsAlive != true)
             {
                 return false;

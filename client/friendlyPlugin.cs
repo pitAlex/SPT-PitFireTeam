@@ -57,6 +57,8 @@ namespace pitTeam
         ViewBackpack = 10002,
         SwapGear = 10003,
         GiveGear = 10004,
+        TeamSplit = 10005,
+        TeamCombine = 10006,
     }
 
     public enum CustomGestures
@@ -556,6 +558,7 @@ namespace pitTeam
             new QuickPanelUpdateBackpackInteractionPatch().Enable();
             new GestureMenuPatch().Enable();
             new CreatePhraseGroupPatch().Enable();
+            new TeamSplitMenuAvailabilityPatch().Enable();
             new CreateGesturesPatch().Enable();
             new CustomPlayerGestureIntPatch().Enable();
             new CustomPlayerGestureInteractionPatch().Enable();

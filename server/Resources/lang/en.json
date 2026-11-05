@@ -84,7 +84,9 @@
 	"spawnPoint": { "Name": "Use Coop Spawn Point", "Description": "Use Coop Spawn Points when spawning with followers." },
 	"battleRecorder": { "Name": "Battle Recorder", "Description": "Write deep follower combat timelines to a dedicated JSONL file for raid analysis." },
 	"battleRecorderSnapshotIntervalMs": { "Name": "Battle Recorder Snapshot Interval (ms)", "Description": "Snapshot cadence for follower battle recorder positional samples." },
-	"gestures": { "OverThere": "Over There", "TeamStatus": "Status Report", "ViewBackpack": "View Backpack", "SwapGear": "Swap Gear", "GiveGear": "Give Gear", "OnRepeatedContact": "Contact" },
+	"gestures": { "OverThere": "Over There", "TeamStatus": "Status Report",
+    "TeamSplit": "Team Split",
+    "TeamCombine": "Team Combine", "ViewBackpack": "View Backpack", "SwapGear": "Swap Gear", "GiveGear": "Give Gear", "OnRepeatedContact": "Contact" },
 	"botStatus": { "Dead": "Dead", "Engaged": "In Combat", "Alerted": "Enemy Detected", "Heal": "Healing", "WantToHeal": "Wants to heal" },
 	"socialUi": {
 		"ProfileHeal": "HEAL",

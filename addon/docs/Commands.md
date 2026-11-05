@@ -47,6 +47,8 @@ Ready SAINGrunt followers now consume the existing `CombatMoveToPointTactical` a
 
 ## On Your Own and Attention
 
+Core selects the recipients of On Your Own: a looked-at follower only, or all eligible followers when no follower is focused. Ready SAIN tactics consume only their own resulting override; addon squad membership does not broadcast it again. See [Core targeting](../../docs/Commands.md#on-your-own).
+
 The addon consumes Core's [combat percentage overrides](../../docs/Self-Determination.md#settings-and-commands): On Your Own sets determination to 100%, Cover Me to exactly 20% and one protective regroup, Hold Position sets aggression to 0%, and eligible Go Forward to 100%. Go Go Go and Attention immediately restore both saved values. Aggregate combat end clears both; individual action/layer handoffs cannot. Normal/tight Regroup retains its command-owned distances, while Cover Me captures its determination-specific completion envelope.
 
 On Your Own retains native automatic investigation/approach, disables automatic regroup and removes boss-oriented ordinary cover constraints. Explicit combat orders can still act while independent. Core owns the saved patrol/request intent and Attention routing; addon force-release/reset callbacks clean up only addon-owned state. See [admission and recovery](Combat.md#admission-and-recovery).

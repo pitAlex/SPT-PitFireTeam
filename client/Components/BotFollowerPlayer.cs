@@ -57,7 +57,7 @@ namespace pitTeam.Components
         SAINShooter = 4,
     }
 
-    public class BotFollowerPlayer
+    public partial class BotFollowerPlayer
     {
         protected BotOwner _bot;
         private readonly FollowerPostCombatDiagnostics postCombatDiagnostics = new FollowerPostCombatDiagnostics();
@@ -228,9 +228,9 @@ namespace pitTeam.Components
             get => UsesSavedCombatPreferences ? _selfDetermination : 50f;
             set => _selfDetermination = pitTeam.Shared.SelfDeterminationPolicy.Normalize(value);
         }
-        public float EffectiveSelfDetermination => _combatDeterminationOverride ?? _companionCombatDetermination ?? SelfDetermination;
+        public float EffectiveSelfDetermination => _combatDeterminationOverride ?? (TeamSplitCombatActive ? 100f : _companionCombatDetermination ?? SelfDetermination);
         public bool HasDeterminationOverride => _combatDeterminationOverride.HasValue;
-        public string DeterminationSource => !_combatDeterminationOverride.HasValue ? (_companionCombatDetermination.HasValue ? "companion" : UsesSavedCombatPreferences ? "saved" : "pickupBaseline")
+        public string DeterminationSource => !_combatDeterminationOverride.HasValue ? (TeamSplitCombatActive ? "teamSplit" : _companionCombatDetermination.HasValue ? "companion" : UsesSavedCombatPreferences ? "saved" : "pickupBaseline")
             : _combatDeterminationOverride.Value == 100f ? "OnYourOwn" : _combatDeterminationOverride.Value == 20f ? "CoverMe" : "command";
         public float BossInfluence => pitTeam.Shared.SelfDeterminationPolicy.BossInfluence(EffectiveSelfDetermination);
         public bool HasCombatPercentageOverrides => _combatDeterminationOverride.HasValue || _temporaryCombatAggressionOverrideActive;
@@ -304,7 +304,7 @@ namespace pitTeam.Components
                 UpdateTemporaryCombatAggressionClearDelay();
                 return _temporaryCombatAggressionOverrideActive
                     ? _temporaryCombatAggressionOverride
-                    : _companionCombatAggression ?? _combatAggression;
+                    : teamSplitAggression ?? _companionCombatAggression ?? _combatAggression;
             }
         }
 

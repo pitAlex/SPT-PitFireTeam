@@ -57,9 +57,9 @@ Check(SPT.Common.Http.RequestHandler.Calls==calls,"carried raid flag also exclud
 pitTeam.Utils.Utils.Transit=false;SPT.Common.Http.RequestHandler.Fail=true;
 CompanionRaidPreparation.Prepare(settings,["123"]);
 string lost=CompanionRaidPreparation.TokenFor("123");
-Check(!string.IsNullOrEmpty(lost) && Logger.Errors==1,"lost responses retain the attempt token and log failure");
+Check(!string.IsNullOrEmpty(lost) && Logger.Errors==1 && SPT.Common.Http.RequestHandler.Calls==calls+2,"two failed attempts retain the token and log one final error");
 CompanionRaidPreparation.Prepare(settings,["123"]);
-Check(CompanionRaidPreparation.TokenFor("123")==lost && SPT.Common.Http.RequestHandler.Calls==calls+1,"profile redisplay cannot silently replace a failed reservation");
+Check(CompanionRaidPreparation.TokenFor("123")==lost && SPT.Common.Http.RequestHandler.Calls==calls+2,"profile redisplay cannot cause endless retries or replace a failed reservation");
 string lostJoin=(string)SPT.Common.Http.RequestHandler.LastRequest["memberRevisions"]["123"];
 CompanionRaidPreparation.Remove("123");
 Check(CompanionRaidPreparation.TokenFor("123")==null && ((JArray)SPT.Common.Http.RequestHandler.LastRequest["members"]).Count==0,"removing the last member submits an empty selection even if its response is lost");
@@ -102,6 +102,17 @@ CompanionRaidPreparation.Prepare(settings,[],questRoles:new[]{"followerBirdEye",
 Check(SPT.Common.Http.RequestHandler.Calls==threeCalls && CompanionRaidPreparation.QuestProfileFor("followerBigPipe").ToString()==preparedPipe,"changing role iteration order cannot reroll reserved quest kits");
 CompanionRaidPreparation.InvalidateQuest();
 Check(new[]{"bossKnight","followerBigPipe","followerBirdEye"}.All(role=>CompanionRaidPreparation.QuestProfileFor(role)==null && CompanionRaidPreparation.QuestTokenFor(role)==null),"invitation clears every quest companion reservation locally");
+CompanionRaidPreparation.Reset();
+int retryCalls=SPT.Common.Http.RequestHandler.Calls, retryErrors=Logger.Errors;
+SPT.Common.Http.RequestHandler.FailuresRemaining=1;
+SPT.Common.Http.RequestHandler.Requests.Clear();
+CompanionRaidPreparation.Prepare(settings,[],questRoles:new[]{"bossKnight","followerBigPipe","followerBirdEye"});
+Check(SPT.Common.Http.RequestHandler.Calls==retryCalls+2 && Logger.Errors==retryErrors,"a transient failure recovers once without logging an error");
+Check(SPT.Common.Http.RequestHandler.Requests.Distinct().Count()==1,"retry preserves the exact token, joins, map and roles even after a lost response");
+Check(new[]{"bossKnight","followerBigPipe","followerBirdEye"}.All(role=>CompanionRaidPreparation.QuestProfileFor(role)!=null),"successful retry restores every temporary Goon preview");
+CompanionRaidPreparation.Prepare(settings,[],questRoles:new[]{"bossKnight","followerBigPipe","followerBirdEye"});
+Check(SPT.Common.Http.RequestHandler.Calls==retryCalls+2,"successful retry stays acknowledged on subsequent views");
+CompanionRaidPreparation.Reset();
 SPT.Common.Http.RequestHandler.Fail=true;
 CompanionRaidPreparation.Prepare(settings,[],questRoles:new[]{"bossKnight","followerBigPipe","followerBirdEye"});
 Check(new[]{"bossKnight","followerBigPipe","followerBirdEye"}.All(role=>CompanionRaidPreparation.QuestTokenFor(role)!=null && CompanionRaidPreparation.QuestProfileFor(role)==null),"lost multi-Goon response retains strict tokens for all roles, preventing generation at spawn");
@@ -126,12 +137,14 @@ namespace SPT.Common.Http
 {
     internal static class RequestHandler
     {
-        internal static int Calls;internal static bool Fail;internal static JObject LastRequest;
+        internal static int Calls,FailuresRemaining;internal static bool Fail;internal static JObject LastRequest;
+        internal static readonly List<string> Requests=new();
         internal static string PostJson(string url,string request)
         {
-            Calls++;
+            Calls++;Requests.Add(request);
             var data=JObject.Parse(request);LastRequest=data;
             if(Fail)throw new Exception("Lost preparation response");
+            if(FailuresRemaining>0){FailuresRemaining--;throw new Exception("Lost preparation response");}
             var companions=new JArray((data["questCompanionRoles"] as JArray ?? new JArray()).Select(role=>new JObject{["_id"]="reserved-"+(string)role,["Info"]=new JObject{["Settings"]=new JObject{["Role"]=role.DeepClone()}}}));
             return new JObject{["err"]=0,["data"]=new JObject{["Token"]=data["token"], ["QuestCompanions"]=companions, ["QuestCompanion"]=data["questCompanionRole"]?.Type==JTokenType.String ? new JObject{["_id"]="reserved-knight"} : JValue.CreateNull()}}.ToString(Formatting.None);
         }

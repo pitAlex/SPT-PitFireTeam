@@ -76,6 +76,16 @@ There are three execution paths:
 
 ## Phrases And Gestures
 
+### Team Split / Team Combine
+
+Going Rogue supplies two fixed-ID, assignable phrases under Command. Both remain visible whenever the local squad has a living Knight (otherwise Big Pipe), at least one living Goon/Rogue subordinate and at least one living player-side member. Changing split state or menu visibility never rewrites native key bindings.
+
+Team Split arms a raid-local latch at any time. Its effects apply only during the shared combat episode, including existing handoff signals. Peaceful follow, patrol and commands retain their existing behavior. During combat the commander and his Goons/Rogues use independent unit control: Goons receive the existing 70% aggression/100% determination behavior; Rogues retain their role aggression and receive 100% determination. Combat anchoring follows the commander, with a self-anchor for the commander. Explicit combat gestures retain their existing targeting and safety gates.
+
+Ordinary player phrases, including Regroup, Go Forward, Hold, Suppress and Cover Me, exclude the detached unit before command state or percentages change. Attention always uses the existing global reset for all followers and their shared enemy cache, regardless of split state; it does not issue Combine or discard the split latch. Status Report still includes everyone. Birdeye accepts Need Sniper through the existing Marksman handler with its normal target, availability and firing-safety gates. This exception does not admit Knight, Pipe or Rogues or inherit Need Help's distance limit. Need Help is admitted separately for each detached member within 40m of the player; its eight-second, living-target support request temporarily uses the real player anchor and then returns to commander control. Normal player-side support is unchanged. Native phrase receivers share the same admission policy.
+
+Team Combine removes the latch and split runtime layer, then issues one ordinary Regroup toward the player to the reunited squad. Combat Regroup explicitly uses the real player anchor rather than the Goon commander; peaceful Regroup retains its existing handling. Repeating Combine while already combined does not restart the regroup. Ending a fight only suspends its effects, so the next fight remains split. Loss/removal of the commander, last subordinate or last player-side member, commander replacement, mode exit and raid teardown discard it. Obsolete pre-split commands hand back through Core's protected combat transition; healing, weapon/grenade work, close defense and airborne movement retain priority. See [Going Rogue unit command policy](../going-rogue/docs/Knight-Combat.md#team-split).
+
 ### Team Status
 
 Input:
@@ -201,7 +211,7 @@ State:
 
 Targeting:
 
-- Broadcast to all active followers every time.
+- Looking directly at a visible follower within 30 m selects only that follower, using the same narrow sight/aim test as Hold Position and Go Go Go (0.15 m sphere, 4-degree alignment). With no looked-at follower, broadcasts to all eligible active followers. If the selected recipient fails eligibility or is loot-locked, the order does not redirect to the rest of the squad.
 
 Behavior:
 

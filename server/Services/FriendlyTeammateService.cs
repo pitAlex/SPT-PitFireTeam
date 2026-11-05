@@ -4345,7 +4345,9 @@ public partial class FriendlyTeammateService(
         EnsureModeCompanions(sessionId);
         RecoverTeammateTreatment(sessionId);
         RecoverTeammateDeletion(sessionId);
-        var teammates = storage.ReadProfiles(sessionId);
+        var teammates = storage.ReadProfiles(sessionId).Where(teammate =>
+            storage.IsTeammateAddonAvailable(sessionId, teammate.Aid ?? 0, teammate.Info?.Settings?.Role,
+                settingsService.LoadSettings().GameplayMode)).ToList();
         foreach (var teammate in teammates)
         {
             RecoverTeammateProfileIfNeeded(sessionId, teammate);
@@ -4784,6 +4786,7 @@ public partial class FriendlyTeammateService(
 
     private void SaveTeammateSettings(MongoId sessionId, BotBase teammate, FriendlyTeammateSettings settings)
     {
+        settings.AddonRequired ??= CompanionPolicy(teammate)?.AddonRequired;
         string documentKey = GetTeammateSettingsDocumentKey(teammate);
         string? json = jsonUtil.Serialize(settings, indented: true);
         if (json is null)
@@ -4834,6 +4837,7 @@ public partial class FriendlyTeammateService(
         IReadOnlyDictionary<string, string>? additionalDocuments = null)
     {
         settings ??= GetTeammateSettings(sessionId, teammate);
+        settings.AddonRequired ??= CompanionPolicy(teammate)?.AddonRequired;
         teammateInsuranceService.PrunePolicies(teammate, settings);
         var items = CreateDefaultEquipmentSnapshot(teammate, includeSecureContainer);
         var documents = new Dictionary<string, string>

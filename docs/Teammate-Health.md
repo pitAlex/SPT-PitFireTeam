@@ -43,7 +43,7 @@ An accepted raid result sets a fresh `Health.UpdateTime` checkpoint. The existin
 | Profile/receipt commit and spawn clone | `server/Services/FriendlyTeammateService.cs` |
 | Recovery and treatment | `server/Services/FriendlyTeammateRegeneration.cs`, `FriendlyTeammateService.Treatment.cs` |
 
-Fixture/build evidence and live raid qualification are separate. See the [1.0.1 validation ledger](validation/Release-1.0.1.md) for initial retention checks and remaining extraction/death/transit tests, and the [1.1.0 validation ledger](validation/Release-1.1.0.md) for the Field Upkeep policy and normal-build health UI checks.
+Fixture/build evidence and live raid qualification are separate. See the 1.0.1 validation ledger (historical notes retained in Git) for initial retention checks and remaining extraction/death/transit tests, and the 1.1.0 validation ledger (historical notes retained in Git) for the Field Upkeep policy and normal-build health UI checks.
 
 ## Medkit treatment
 

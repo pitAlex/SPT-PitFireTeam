@@ -2,7 +2,7 @@
 
 Status: implemented; deferred-ammunition transfer, registered-secondary, packed-vest and backpack-replacement corrections require new raid qualification. Earlier main raid behavior was verified by the user. Updated: 2026-10-23.
 
-This document owns the current Core Give Gear contract. The approved disposition, nesting, invitation and insurance rules are collected in section 10. Dated evidence belongs in the [validation ledger](validation/Give-Gear.md); build/fixture success does not establish live raid behavior.
+This document owns the current Core Give Gear contract. The approved disposition, nesting, invitation and insurance rules are collected in section 10. Dated evidence belongs in the validation ledger (historical notes retained in Git); build/fixture success does not establish live raid behavior.
 
 Optional gameplay addons may register an immutable `CompanionGearPolicy` for a role. Core applies it when building both manual and recruited command-gear plans; it does not depend on an addon assembly. A fixed-equipment policy preserves the worn kit, permits removable body-plate upgrades through the shared condition-aware protection comparison and a bounded-score empty secondary slot, and accepts medical supplies (including injectors), compatible ammunition/magazines and hand grenades while preserving native reload landing space. It suppresses ordinary acquisition/cargo paths for that recipient. Mode changes/unregistration release the policy. [Going Rogue](../going-rogue/README.md#mode-and-profiles) owns Knight's exact restrictions and score tolerance; the ordinary recruit contract below is unchanged.
 
@@ -328,4 +328,4 @@ Give Gear's strict replay checks now emit bounded error details to the ordinary 
 
 Debug builds additionally record explicit handover events and full captured descriptors in the existing client log and optional per-raid battle ledger. Trial details are bounded; there is no per-frame inventory polling. Release builds keep the bounded mismatch errors without full inventory snapshots. Temporary captured-kit spawn overrides and automatic private replays were removed after both tests accepted the plate; that result did not establish the original intermittent cause.
 
-See the [dated validation ledger](validation/Give-Gear.md) for investigation history, fixture counts and deployment evidence.
+See the dated validation ledger (historical notes retained in Git) for investigation history, fixture counts and deployment evidence.

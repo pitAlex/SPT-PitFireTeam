@@ -104,9 +104,9 @@ internal static class IndependentPursuitChecks
             var (bot,c,_,_)=Setup(WildSpawnType.bossKnight);
             c.Engagement=true;
             var objective=new KnightCombatObjective(bot,c);objective.StartDecision();
-            check(objective.GetDecision(bot.Memory.GoalEnemy).Reason=="allyEngagement",
-                "independent Knight can help an ally through the common engagement planner");
-            check(!c.Calls.Contains("planContactAdvance"),"concrete ally support precedes a fresh independent assault");
+            check(objective.GetDecision(bot.Memory.GoalEnemy).Reason.StartsWith("knight.onYourOwn.pursuit"),
+                "Knight leads the assault ahead of optional ally positioning");
+            check(c.Calls.Contains("planContactAdvance"),"offensive movement retains the admitted contact planner");
             objective.Deactivate();
         }
         {
@@ -155,16 +155,17 @@ internal static class IndependentPursuitChecks
                 case "arrival": f.CombatRegroupUsesBossAnchor=true;break;
             }
             bool allowed=pursuit.TryGetDecision(out var next);
-            check(allowed==(gate=="clear"),"solo Pipe bounded initiative and safety gate: "+gate);
+            check(allowed==(gate is "clear" or "cautious" or "far" or "pressure" or "knight"),"solo Pipe bounded initiative and safety gate: "+gate);
             if(allowed)
             {
-                check(next.Reason=="bigPipe.autonomousAdvance" && c.AdvanceStop==10,"solo approach has distinct diagnostics and ordinary standoff");
+                check(next.Reason.StartsWith("bigPipe.autonomousAdvance") && c.AdvanceStop==10,"solo approach has distinct diagnostics and ordinary standoff");
                 pursuit.DecisionChanged(next);check(FollowerEnemyTracking.GroupSearching,"solo movement retains search tracking ownership");
                 pursuit.Reset();
                 check(!FollowerCombatAnchor.Independent,"solo advance never changes determination/independence");
                 f.Boss.Logic.IsHitted=true;f.Boss.Attacker=new BotOwner();c.AdmittedThreat=enemy;
+                GoonPushLeadership.Knight=null;
                 var objective=new BigPipeCombatObjective(bot,c);objective.StartDecision();
-                check(objective.GetDecision(enemy).Reason=="bigPipe.autonomousAdvance","nearby solo Pipe does not repeatedly regroup during help fallback");
+                check(objective.GetDecision(enemy).Reason.StartsWith("bigPipe.autonomousAdvance"),"nearby solo Pipe does not repeatedly regroup during help fallback");
                 objective.Deactivate();
             }
             GoonPushLeadership.Knight=null;

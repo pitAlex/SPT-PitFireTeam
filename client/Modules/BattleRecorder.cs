@@ -1416,7 +1416,10 @@ namespace pitTeam.Modules
                         temporaryDeterminationOverride = followerData.HasDeterminationOverride,
                         determinationSource = followerData.DeterminationSource,
                         bossInfluence = followerData.BossInfluence,
-                        combatIndependent = followerData.CombatIndependent
+                        combatIndependent = followerData.CombatIndependent,
+                        teamSplitCombat = followerData.TeamSplitCombatActive,
+                        teamSplitCommander = followerData.TeamSplitCommander?.ProfileId,
+                        teamSplitHelp = followerData.TryGetTeamSplitHelpEnemy(out _)
                     }
                     : null
             };

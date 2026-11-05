@@ -14,9 +14,9 @@ After the user resumed deployment with Tarkov closed, deployed matching Core/add
 
 ## 2026-10-24 - local Release-config test deployment
 
-The matching [Core Release test deployment](../../docs/validation/Release-1.0.0.md#2026-10-24--local-release-config-test-deployment) rebuilt and installed the optional SAIN addon alongside Core and server from the current checkout. The addon Release build had zero warnings/errors, its 1,678 production combat checks and 178 grenade integration checks passed, and the installed DLL SHA-256 matched the built output: `E47E8E430AD915FAD15FE1C09B753763137576965B9F4373DAF5808EF599414F`. Its matching PDB was deployed. A fresh raid with the Release binary remains unqualified.
+The matching Core Release test deployment (historical notes retained in Git) rebuilt and installed the optional SAIN addon alongside Core and server from the current checkout. The addon Release build had zero warnings/errors, its 1,678 production combat checks and 178 grenade integration checks passed, and the installed DLL SHA-256 matched the built output: `E47E8E430AD915FAD15FE1C09B753763137576965B9F4373DAF5808EF599414F`. Its matching PDB was deployed. A fresh raid with the Release binary remains unqualified.
 
-The later [Release zip packaging](../../docs/validation/Release-1.0.0.md#2026-10-24--release-zip-packaging) produced a separate two-entry addon archive containing the matching Release DLL and SAIN license only. Its payloads were verified against staging, with zip SHA-256 `4B11E4F2842FBF6D6862A25715E00954DB42EEC536289873C110C244BD09D388`; no private SAIN reference DLL or PDB was shipped.
+The later Release zip packaging (historical notes retained in Git) produced a separate two-entry addon archive containing the matching Release DLL and SAIN license only. Its payloads were verified against staging, with zip SHA-256 `4B11E4F2842FBF6D6862A25715E00954DB42EEC536289873C110C244BD09D388`; no private SAIN reference DLL or PDB was shipped.
 
 ## 2026-10-22 - Friendly Contact admission, combat help and Questing Bots handoff
 

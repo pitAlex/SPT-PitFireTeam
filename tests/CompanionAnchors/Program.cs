@@ -58,6 +58,22 @@ internal static class Program
         BossPlayers.Instance.GetFollower(knight).CompanionCombatLeader=knight;
         Check(FollowerCombatAnchor.GetAnchorPosition(knight).x==100,"unit commander anchors independent combat to his own position");
         Check(!FollowerCombatAnchor.CanAutomaticallyRegroup(knight),"Knight cannot regroup to himself or regain the human leash");
+        var splitCommander=BossPlayers.Instance.GetFollower(knight);
+        splitCommander.CompanionCombatLeader=null;splitCommander.TeamSplitCombatActive=true;splitCommander.TeamSplitCommander=knight;
+        Check(FollowerCombatAnchor.GetAnchorPosition(knight).x==100,"split commander self-anchor works without another Goon baseline");
+        var splitMember=BossPlayers.Instance.GetFollower(pipe);
+        splitMember.TeamSplitCombatActive=true;splitMember.TeamSplitCommander=knight;splitMember.CompanionCombatLeader=null;
+        Check(FollowerCombatAnchor.GetAnchorPosition(pipe).x==100,"split member uses explicit commander instead of nearby player-side allies");
+        splitMember.SplitHelp=true;
+        Check(!FollowerCombatAnchor.IsCombatIndependent(pipe)&&FollowerCombatAnchor.GetAnchorPosition(pipe).x==0,
+            "accepted help temporarily uses the real player without replacing the unit leader");
+        splitMember.SplitHelp=false;
+        Check(FollowerCombatAnchor.IsCombatIndependent(pipe)&&FollowerCombatAnchor.GetAnchorPosition(pipe).x==100,
+            "help completion restores commander cohesion");
+        splitMember.PendingCommand=true;
+        Check(FollowerCombatAnchor.GetAnchorPosition(pipe).x==0,"combat gesture keeps human anchor with split-only commander");
+        splitMember.PendingCommand=false;splitMember.TeamSplitCombatActive=false;splitMember.TeamSplitCommander=null;
+        splitCommander.TeamSplitCombatActive=false;splitCommander.TeamSplitCommander=null;splitCommander.CompanionCombatLeader=knight;
         var head=new FollowHarness(knight);
         Check(head.Resolve()&&ReferenceEquals(head.Leader,human.realPlayer),"Knight continues following the human during ordinary peaceful movement");
         var plain=BossPlayers.Instance.GetFollower(ordinary);plain.PendingCommand=true;
@@ -221,6 +237,8 @@ namespace pitTeam.Components
     public class pitAIBossPlayer:Boss {public Player realPlayer=new();public List<BotOwner> Followers=new();}
     public class BotFollowerPlayer
     {
+        public bool TeamSplitCombatActive, SplitHelp; public BotOwner TeamSplitCommander;
+        public bool TryGetTeamSplitHelpEnemy(out BotOwner enemy) { enemy=null; return SplitHelp; }
         public BotOwner Owner,CompanionCombatLeader;public pitAIBossPlayer Leader;
         public bool CombatIndependent,CombatRegroupUsesBossAnchor,PendingCommand,CompanionLeaderControlsPosition;
         public pitAIBossPlayer GetBoss()=>Leader;
